@@ -40,6 +40,21 @@ func (k KVStore) GetReferenceMemoIterator(ctx cosmos.Context) cosmos.Iterator {
 
 // SetReferenceMemo save the ReferenceMemo object to store.
 // Normalizes the reference with leading zeros before saving.
+//
+// Note: When a reference expires and is reused, the old hash alias (mapping the
+// previous RegistrationHash to this reference key) is intentionally not cleaned up.
+// While the stale alias means GetReferenceMemoByTxnHash with the old hash will
+// return the new registration's data, this is not a security concern because all
+// swap memo details are publicly available on the blockchain. Reference memos are
+// also publicly queryable by anyone via the queryReferenceMemo endpoint using
+// asset + reference number. There is no sensitive information to be leaked.
+//
+// WARNING: All CRUD operations normalize reference keys using the current MemolessTxnRefCount
+// value. Changing MemolessTxnRefCount via Mimir governance (e.g., from 99999 to 999999) changes
+// the padding length (5 → 6 digits), making all previously stored references inaccessible
+// through the public API. Existing entries become orphaned state: they cannot be retrieved,
+// checked, or deleted. If MemolessTxnRefCount must be changed, ensure all existing references
+// have expired first (see MemolessTxnTTL), or coordinate a store migration.
 func (k KVStore) SetReferenceMemo(ctx cosmos.Context, record ReferenceMemo) {
 	// Normalize the reference with leading zeros if needed
 	refCount := k.GetConfigInt64(ctx, constants.MemolessTxnRefCount)
@@ -114,6 +129,9 @@ func (k KVStore) GetReferenceMemoByTxnHash(ctx cosmos.Context, hash common.TxID)
 
 // DeleteReferenceMemo remove the given ReferenceMemo from data store.
 // Normalizes the reference with leading zeros before deleting.
+// Note: The associated hash alias is intentionally not cleaned up here. All memo
+// data is publicly available on the blockchain, so stale aliases pose no security
+// risk. See SetReferenceMemo for details.
 func (k KVStore) DeleteReferenceMemo(ctx cosmos.Context, asset common.Asset, ref string) error {
 	// Normalize the reference with leading zeros if needed
 	refCount := k.GetConfigInt64(ctx, constants.MemolessTxnRefCount)

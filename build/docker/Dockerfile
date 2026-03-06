@@ -2,7 +2,8 @@
 # Build
 ########################################################################################
 
-FROM golang:1.24.6-bullseye AS build
+ARG DOCKER_MIRROR=
+FROM ${DOCKER_MIRROR}golang:1.24.6-bullseye AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
@@ -12,7 +13,20 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+COPY api api
+COPY app app
+COPY bifrost bifrost
+COPY cmd cmd
+COPY common common
+COPY config config
+COPY constants constants
+COPY log log
+COPY openapi openapi
+COPY x x
+COPY Makefile Makefile
+COPY version version
+COPY tools/thorscan tools/thorscan
+COPY tools/recover-keyshare-backup tools/recover-keyshare-backup
 
 ARG TAG=mainnet
 ARG COMMIT=unknown
@@ -31,8 +45,8 @@ RUN apt-get update && \
   curl=7.74.0-1.3+deb11u16 \
   jq=1.6-2.1+deb11u1 \
   libffi-dev=3.3-6 \
-  libssl-dev=1.1.1w-0+deb11u4 \
-  openssl=1.1.1w-0+deb11u4 \
+  libssl-dev=1.1.1w-0+deb11u5 \
+  openssl=1.1.1w-0+deb11u5 \
   procps=2:3.3.17-5 \
   python3=3.9.2-3 \
   python3-pip=20.3.4-4+deb11u2 && \

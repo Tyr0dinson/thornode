@@ -110,6 +110,13 @@ func (s *KeeperHaltSuite) TestIsTradingHalt(c *C) {
 	c.Check(k.IsTradingHalt(ctx, swapMsg), Equals, false)
 	c.Check(k.IsTradingHalt(ctx, addMsg), Equals, false)
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, false)
+
+	// empty coins should not panic and should fall back to global trading halt check
+	emptyCoinsSwap := &MsgSwap{Tx: common.Tx{Coins: common.Coins{}}, TargetAsset: common.ETHAsset}
+	c.Check(k.IsTradingHalt(ctx, emptyCoinsSwap), Equals, false)
+	k.SetMimir(ctx, "HaltTrading", 1)
+	c.Check(k.IsTradingHalt(ctx, emptyCoinsSwap), Equals, true)
+	_ = k.DeleteMimir(ctx, "HaltTrading")
 }
 
 func (s *KeeperHaltSuite) TestIsGlobalTradingHalted(c *C) {
@@ -299,6 +306,31 @@ func (s *KeeperHaltSuite) TestIsLPPaused(c *C) {
 
 	// no pauses
 	c.Check(k.IsLPPaused(ctx, common.BTCChain), Equals, false)
+}
+
+func (s *KeeperHaltSuite) TestIsTCYTradingHalted(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(10)
+
+	// no halts
+	c.Check(k.IsTCYTradingHalted(ctx), Equals, false)
+
+	// pending TCY trading halt
+	k.SetMimir(ctx, "HaltTCYTrading", 11)
+	c.Check(k.IsTCYTradingHalted(ctx), Equals, false)
+
+	// current-block TCY trading halt
+	k.SetMimir(ctx, "HaltTCYTrading", 10)
+	c.Check(k.IsTCYTradingHalted(ctx), Equals, true)
+
+	// current TCY trading halt
+	k.SetMimir(ctx, "HaltTCYTrading", 1)
+	c.Check(k.IsTCYTradingHalted(ctx), Equals, true)
+
+	_ = k.DeleteMimir(ctx, "HaltTCYTrading")
+
+	// no halts
+	c.Check(k.IsTCYTradingHalted(ctx), Equals, false)
 }
 
 func (s *KeeperHaltSuite) TestIsPoolDepositPaused(c *C) {

@@ -11,7 +11,10 @@ import (
 
 // SetLastSignedHeight save last signed height into kv store
 func (k KVStore) SetLastSignedHeight(ctx cosmos.Context, height int64) error {
-	lastHeight, _ := k.GetLastSignedHeight(ctx)
+	lastHeight, err := k.GetLastSignedHeight(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get last signed height: %w", err)
+	}
 	if lastHeight > height {
 		// old observations may be in the past
 		ctx.Logger().Debug("cannot set past height", "last", lastHeight, "current", height)
@@ -30,7 +33,10 @@ func (k KVStore) GetLastSignedHeight(ctx cosmos.Context) (int64, error) {
 
 // SetLastChainHeight save last chain height
 func (k KVStore) SetLastChainHeight(ctx cosmos.Context, chain common.Chain, height int64) error {
-	lastHeight, _ := k.GetLastChainHeight(ctx, chain)
+	lastHeight, err := k.GetLastChainHeight(ctx, chain)
+	if err != nil {
+		return fmt.Errorf("fail to get last chain height: %w", err)
+	}
 	if lastHeight > height {
 		err := fmt.Errorf("last block height %d is larger than %d, block height can't go backward ", lastHeight, height)
 		return dbError(ctx, "", err)
@@ -64,7 +70,9 @@ func (k KVStore) GetLastChainHeights(ctx cosmos.Context) (map[common.Chain]int64
 			return nil, fmt.Errorf("fail to parse chain: %w", err)
 		}
 		value := ProtoInt64{}
-		k.cdc.MustUnmarshal(iter.Value(), &value)
+		if err := k.cdc.Unmarshal(iter.Value(), &value); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal last chain height for %s: %w", chain, err)
+		}
 		result[chain] = value.Value
 	}
 	return result, nil
@@ -76,6 +84,9 @@ func (k KVStore) SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, ad
 	key := k.GetKey(prefixLastObserveHeight, address.String(), "/", chain.String())
 	exist, err := k.getInt64(ctx, key, &lastHeight)
 	if err != nil {
+		// Log but continue: overwriting corrupted data with a valid height
+		// is intentional self-healing behavior, consistent with
+		// SetLastSignedHeight and SetLastChainHeight.
 		ctx.Logger().Error("fail to get last observe height", "error", err)
 	}
 	// if the last height is already larger then current height , then just bail out
@@ -109,7 +120,9 @@ func (k KVStore) GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddr
 			return nil, fmt.Errorf("fail to parse chain: %w", err)
 		}
 		value := ProtoInt64{}
-		k.cdc.MustUnmarshal(iter.Value(), &value)
+		if err := k.cdc.Unmarshal(iter.Value(), &value); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal last observe height for %s: %w", chain, err)
+		}
 		result[chain] = value.Value
 	}
 	return result, nil

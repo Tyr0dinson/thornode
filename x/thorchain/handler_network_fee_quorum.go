@@ -1,6 +1,9 @@
 package thorchain
 
 import (
+	"fmt"
+	"math"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -45,8 +48,14 @@ func (h NetworkFeeQuorumHandler) handle(ctx cosmos.Context, msg types.MsgNetwork
 		return nil, err
 	}
 
+	if msg.QuoNetFee == nil || msg.QuoNetFee.NetworkFee == nil {
+		return nil, cosmos.ErrUnknownRequest("QuoNetFee and NetworkFee cannot be nil")
+	}
 	nf := msg.QuoNetFee.NetworkFee
 
+	if nf.TransactionRate > uint64(math.MaxInt64) || nf.TransactionSize > uint64(math.MaxInt64) {
+		return nil, fmt.Errorf("transaction rate or size exceeds int64 max")
+	}
 	voter, err := h.mgr.Keeper().GetObservedNetworkFeeVoter(ctx, nf.Height, nf.Chain, int64(nf.TransactionRate), int64(nf.TransactionSize))
 	if err != nil {
 		return nil, err
@@ -59,10 +68,11 @@ func (h NetworkFeeQuorumHandler) handle(ctx cosmos.Context, msg types.MsgNetwork
 	signBz, err := nf.GetSignablePayload()
 	if err != nil {
 		ctx.Logger().Error("fail to marshal network fee sign payload", "error", err)
-		return &cosmos.Result{}, nil
+		return nil, fmt.Errorf("fail to marshal network fee sign payload: %w", err)
 	}
 
-	for _, att := range msg.QuoNetFee.Attestations {
+	attestations := deduplicateAttestations(msg.QuoNetFee.Attestations, len(active))
+	for _, att := range attestations {
 		accAddr, err := verifyQuorumAttestation(active, signBz, att)
 		if err != nil {
 			ctx.Logger().Error("fail to verify quorum network fee attestation", "error", err)
@@ -70,7 +80,7 @@ func (h NetworkFeeQuorumHandler) handle(ctx cosmos.Context, msg types.MsgNetwork
 		}
 
 		if err := processNetworkFeeAttestation(ctx, h.mgr, &voter, accAddr, active, nf, false); err != nil {
-			ctx.Logger().Error("fail to process network fee attestation", "error", err)
+			return nil, fmt.Errorf("fail to process network fee attestation: %w", err)
 		}
 	}
 

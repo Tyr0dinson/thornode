@@ -31,6 +31,8 @@ const (
 	SOLChain   = Chain("SOL")
 	ZECChain   = Chain("ZEC")
 	POLChain   = Chain("POL")
+	SUIChain   = Chain("SUI")
+	ADAChain   = Chain("ADA")
 	TONChain   = Chain("TON")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
@@ -153,7 +155,7 @@ func (c Chain) String() string {
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
 	switch c {
-	case SOLChain, TONChain:
+	case SOLChain, SUIChain, ADAChain, TONChain:
 		return SigningAlgoEd25519
 	default:
 		return SigningAlgoSecp256k1
@@ -196,6 +198,10 @@ func (c Chain) GetGasAsset() Asset {
 		return ZECAsset
 	case POLChain:
 		return POLAsset
+	case SUIChain:
+		return SUIAsset
+	case ADAChain:
+		return ADAAsset
 	case TONChain:
 		return TONAsset
 	default:
@@ -228,6 +234,10 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "mwei", cosmos.NewUint(1e12)
 	case SOLChain:
 		return "lamport", cosmos.NewUint(1e9)
+	case SUIChain:
+		return "mist", cosmos.NewUint(1e9)
+	case ADAChain:
+		return "lovelace", cosmos.NewUint(1e6)
 	case TONChain:
 		return "nanoton", cosmos.NewUint(1e9)
 	default:
@@ -252,11 +262,11 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 // 1e8, just return cosmos.DefaultCoinDecimals.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
-	case GAIAChain, NOBLEChain, TRONChain:
+	case GAIAChain, NOBLEChain, TRONChain, ADAChain:
 		return 6
 	case XRPChain:
 		return 6
-	case SOLChain, TONChain:
+	case SOLChain, SUIChain, TONChain:
 		return 9
 	default:
 		return cosmos.DefaultCoinDecimals
@@ -294,6 +304,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
 		case ZECChain:
 			return "tm"
+		case ADAChain:
+			return "addr_test1"
 		}
 	case MainNet, StageNet, ChainNet:
 		switch c {
@@ -311,6 +323,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return dogchaincfg.MainNetParams.Bech32HRPSegwit
 		case ZECChain:
 			return "t1"
+		case ADAChain:
+			return "addr1"
 		}
 	}
 	return ""
@@ -355,6 +369,10 @@ func (c Chain) DustThreshold() cosmos.Uint {
 	case SOLChain:
 		return cosmos.NewUint(100_000) // 0.001 SOL
 	case TRONChain:
+		return cosmos.NewUint(10_000_000)
+	case SUIChain:
+		return cosmos.NewUint(1_000_000)
+	case ADAChain:
 		return cosmos.NewUint(10_000_000)
 	case TONChain:
 		return cosmos.NewUint(500_000) // 0.005 TON
@@ -454,6 +472,10 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 75_000
 	case POLChain:
 		return 2_000
+	case SUIChain:
+		return 250
+	case ADAChain:
+		return 20_000
 	case TONChain:
 		return 2_500
 	default:

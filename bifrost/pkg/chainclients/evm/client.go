@@ -566,7 +566,8 @@ func (c *EVMClient) GetAccount(pk common.PubKey, height *big.Int) (common.Accoun
 	if err != nil {
 		return common.Account{}, err
 	}
-	coins, err := c.GetBalances(addr, height)
+	contractAddr := c.getSmartContractAddr(pk)
+	coins, err := c.GetBalances(addr, height, contractAddr.String())
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -580,7 +581,8 @@ func (c *EVMClient) GetAccountByAddress(address string, height *big.Int) (common
 	if err != nil {
 		return common.Account{}, err
 	}
-	coins, err := c.GetBalances(address, height)
+	contractAddr := c.getSmartContractByAddress(common.Address(address))
+	coins, err := c.GetBalances(address, height, contractAddr.String())
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -622,18 +624,14 @@ func (c *EVMClient) getTokenAddressFromAsset(asset common.Asset) string {
 // --------------------------------- balances ---------------------------------
 
 // GetBalance returns the balance of the provided address.
-func (c *EVMClient) GetBalance(addr, token string, height *big.Int) (*big.Int, error) {
-	contractAddresses := c.pubkeyMgr.GetContracts(c.cfg.ChainID)
-	c.logger.Debug().Interface("contractAddresses", contractAddresses).Msg("got contracts")
-	if len(contractAddresses) == 0 {
-		return nil, fmt.Errorf("fail to get contract address")
-	}
-
-	return c.evmScanner.tokenManager.GetBalance(addr, token, height, contractAddresses[0].String())
+// contractAddr is the router contract for the vault; for native tokens it is unused.
+func (c *EVMClient) GetBalance(addr, token string, height *big.Int, contractAddr string) (*big.Int, error) {
+	return c.evmScanner.tokenManager.GetBalance(addr, token, height, contractAddr)
 }
 
 // GetBalances returns the balances of the provided address.
-func (c *EVMClient) GetBalances(addr string, height *big.Int) (common.Coins, error) {
+// contractAddr is the router contract for the vault.
+func (c *EVMClient) GetBalances(addr string, height *big.Int, contractAddr string) (common.Coins, error) {
 	// for all the tokens the chain client has dealt with before
 	tokens, err := c.evmScanner.GetTokens()
 	if err != nil {
@@ -642,7 +640,7 @@ func (c *EVMClient) GetBalances(addr string, height *big.Int) (common.Coins, err
 	coins := common.Coins{}
 	for _, token := range tokens {
 		var balance *big.Int
-		balance, err = c.GetBalance(addr, token.Address, height)
+		balance, err = c.GetBalance(addr, token.Address, height, contractAddr)
 		if err != nil {
 			c.logger.Err(err).Str("token", token.Address).Msg("fail to get balance for token")
 			continue
@@ -823,15 +821,24 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 
 	// outbound tx always send to smart contract address
 	estimatedEVMValue := big.NewInt(0)
+	estimateTxData := txData
 	if evmValue.Uint64() > 0 {
-		// when the EVM value is non-zero, here override it with a fixed value to estimate gas
-		// when EVM value is non-zero, if we send the real value for estimate gas, sometimes it will fail, for many reasons, a few I saw during test
-		// 1. insufficient fund
-		// 2. gas required exceeds allowance
-		// as long as we pass in an EVM value , which we almost guarantee it will not exceed the EVM balance , so we can avoid the above two errors
+		// Use a small fixed value to estimate gas to avoid "insufficient fund" or "gas required
+		// exceeds allowance" errors that can occur with the real value.
 		estimatedEVMValue = estimatedEVMValue.SetInt64(21000)
+		// The V6 router's transferOut requires msg.value == amount, so for transferOut calls
+		// (non-aggregator native transfers) we must repack the call data with the matching
+		// small value. transferOutAndCall doesn't have this check, so it uses txData as-is.
+		if txOutItem.Aggregator == "" {
+			toAddr := ecommon.HexToAddress(txOutItem.ToAddress.String())
+			tokenAddr := c.getTokenAddressFromAsset(txOutItem.Coins[0].Asset)
+			estimateTxData, err = c.vaultABI.Pack("transferOut", toAddr, ecommon.HexToAddress(tokenAddr), estimatedEVMValue, txOutItem.Memo)
+			if err != nil {
+				return nil, fmt.Errorf("fail to pack gas estimation transferOut: %w", err)
+			}
+		}
 	}
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedEVMValue, c.cfg.BlockScanner.MaxGasLimit, gasRate, txData)
+	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedEVMValue, c.cfg.BlockScanner.MaxGasLimit, gasRate, estimateTxData)
 	estimatedGas, err := c.evmScanner.ethRpc.EstimateGas(fromAddr.String(), createdTx)
 	if err != nil {
 		// in an edge case that vault doesn't have enough fund to fulfill an outbound transaction , it will fail to estimate gas
@@ -998,49 +1005,12 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, err
 	}
 
-	// Update nonce if approval was needed
+	// If approval transaction was created, sign and broadcast it before building the outbound.
+	// The V6 router uses transferFrom for ERC20 transfers, which requires the vault to have
+	// approved the router. The approval must be on-chain before gas estimation for the outbound
+	// can succeed, so we broadcast it first and let the outbound be rescheduled if needed.
 	if approvalTx != nil {
-		nonce++
-	}
-
-	outboundTx, err := c.buildOutboundTx(tx, memo, nonce)
-	if err != nil {
-		c.logger.Err(err).Msg("fail to build outbound tx")
-		return nil, nil, nil, err
-	}
-
-	// if transaction is nil, abort to allow thornode reschedule
-	if outboundTx == nil {
-		return nil, nil, nil, nil
-	}
-
-	// before signing, confirm the vault has enough gas asset
-	gasBalance, err := c.GetBalance(fromAddr.String(), evm.NativeTokenAddr, nil)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to get gas asset balance: %w", err)
-	}
-
-	// Subtract pending liabilities (signed but unconfirmed transactions) from the balance
-	confirmedNonce, _ := c.evmScanner.GetNonceFinalized(fromAddr.String())
-	pendingLiability := c.getPendingLiability(fromAddr.String(), confirmedNonce)
-	effectiveBalance := new(big.Int).Sub(gasBalance, pendingLiability)
-
-	// Calculate required balance (value + estimated fee)
-	evmValue := outboundTx.Value()
-	estimatedFee := new(big.Int).Mul(big.NewInt(int64(outboundTx.Gas())), outboundTx.GasPrice())
-	requiredBalance := new(big.Int).Add(evmValue, estimatedFee)
-
-	if effectiveBalance.Cmp(requiredBalance) < 0 {
-		return nil, nil, nil, fmt.Errorf("insufficient gas asset balance: effective %s (latest %s - liability %s) < required %s",
-			effectiveBalance.String(), gasBalance.String(), pendingLiability.String(), requiredBalance.String())
-	}
-
-	// Declare rawTx at function level for proper scoping
-	var rawTx []byte
-
-	// If approval transaction was created, sign and broadcast it first
-	if approvalTx != nil {
-		// Sign approval transaction first
+		// Sign approval transaction
 		var approvalRawTx []byte
 		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, height, tx)
 		if err != nil {
@@ -1063,12 +1033,6 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 			return nil, nonceBytes, nil, fmt.Errorf("fail to broadcast approval transaction: %w", err)
 		}
 
-		// If the approval transaction broadcast successfully, update the checkpoint nonce
-		nonceBytes, err = json.Marshal(nonce)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to marshal nonce: %w", err)
-		}
-
 		tokenAddr := c.getTokenAddressFromAsset(tx.Coins[0].Asset)
 		contractAddr := c.getSmartContractAddr(tx.VaultPubKey)
 
@@ -1078,13 +1042,54 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 			Str("router", contractAddr.String()).
 			Msg("successfully broadcast approval transaction")
 
-		// NOTE: Unlike unstuck transactions, approval transactions do NOT update signer cache
-		// because they are internal operations, not THORChain outbound transactions
+		// Update nonce past the approval tx
+		nonce++
 
-		// Only proceed with main transaction if approval succeeded
+		// Update the checkpoint nonce so the rescheduled outbound uses the correct nonce
+		nonceBytes, err = json.Marshal(nonce)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to marshal nonce: %w", err)
+		}
 	}
 
-	// Sign main transaction (only reached if no approval needed OR approval succeeded)
+	outboundTx, err := c.buildOutboundTx(tx, memo, nonce)
+	if err != nil {
+		c.logger.Err(err).Msg("fail to build outbound tx")
+		return nil, nil, nil, err
+	}
+
+	// if transaction is nil, abort to allow thornode reschedule.
+	// Return nonceBytes so the checkpoint is preserved (important when an approval tx was
+	// just broadcast — the rescheduled attempt needs to use the nonce after the approval).
+	if outboundTx == nil {
+		return nil, nonceBytes, nil, nil
+	}
+
+	// before signing, confirm the vault has enough gas asset
+	gasBalance, err := c.GetBalance(fromAddr.String(), evm.NativeTokenAddr, nil, "")
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get gas asset balance: %w", err)
+	}
+
+	// Subtract pending liabilities (signed but unconfirmed transactions) from the balance
+	confirmedNonce, _ := c.evmScanner.GetNonceFinalized(fromAddr.String())
+	pendingLiability := c.getPendingLiability(fromAddr.String(), confirmedNonce)
+	effectiveBalance := new(big.Int).Sub(gasBalance, pendingLiability)
+
+	// Calculate required balance (value + estimated fee)
+	evmValue := outboundTx.Value()
+	estimatedFee := new(big.Int).Mul(big.NewInt(int64(outboundTx.Gas())), outboundTx.GasPrice())
+	requiredBalance := new(big.Int).Add(evmValue, estimatedFee)
+
+	if effectiveBalance.Cmp(requiredBalance) < 0 {
+		return nil, nil, nil, fmt.Errorf("insufficient gas asset balance: effective %s (latest %s - liability %s) < required %s",
+			effectiveBalance.String(), gasBalance.String(), pendingLiability.String(), requiredBalance.String())
+	}
+
+	// Declare rawTx at function level for proper scoping
+	var rawTx []byte
+
+	// Sign main transaction
 	rawTx, err = c.sign(outboundTx, tx.VaultPubKey, height, tx)
 	if err != nil || len(rawTx) == 0 {
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)

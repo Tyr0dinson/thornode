@@ -114,8 +114,10 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"EnableADVSwapQueue",
 		"StreamingLimitSwapMaxAge",
 		constants.OverSolvencyCheckInterval.String(),
+		constants.OverSolvencyToTreasuryBps.String(),
 		constants.MimirKeyScheduledMigration,
 		constants.MaxRetiredVaultRecoveryAttempts.String(),
+		constants.P2PGateDisabled.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

@@ -274,6 +274,21 @@ func (s *AddressSuite) TestAddress(c *C) {
 			Info:    "tex address",
 		},
 		{
+			Address: "0x3619ed62358db1c24fc0a180c6e2959cc79e22646c7cf3cb7ffa9cdeb0ab7698",
+			Chain:   SUIChain,
+			Network: CurrentChainNetwork,
+		},
+		{
+			Address: "addr1vyacmg042vn3r6g9e5uv25sjj4jmm27vewztphr9qrtafkgl35pq2",
+			Chain:   ADAChain,
+			Network: notMockNet,
+		},
+		{
+			Address: "addr_test1vqacmg042vn3r6g9e5uv25sjj4jmm27vewztphr9qrtafkgyeqa00",
+			Chain:   ADAChain,
+			Network: MockNet,
+		},
+		{
 			Address: "UQCznsShsJmFo54R1GwGzmbHI5ze4gyxhdf9GKUCCx7kAsPJ",
 			Chain:   TONChain,
 			Network: notMockNet,

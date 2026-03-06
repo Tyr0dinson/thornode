@@ -106,7 +106,11 @@ func (h RunePoolDepositHandler) handle(ctx cosmos.Context, msg MsgRunePoolDeposi
 	// compute deposit units
 	if !runePool.TotalUnits().IsZero() {
 		depositRune := msg.Tx.Coins[0].Amount
-		depositUnits = common.GetSafeShare(depositRune, runePoolValue, runePool.TotalUnits())
+		depositUnits = common.GetUncappedShare(depositRune, runePoolValue, runePool.TotalUnits())
+	}
+
+	if depositUnits.IsZero() {
+		return fmt.Errorf("deposit would result in zero units")
 	}
 
 	// update the provider and rune pool records

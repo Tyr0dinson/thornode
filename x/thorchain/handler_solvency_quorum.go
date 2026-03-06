@@ -45,6 +45,9 @@ func (h SolvencyQuorumHandler) validate(ctx cosmos.Context, msg types.MsgSolvenc
 //     that is insolvent will be halt
 //  3. When chain is halt , bifrost will not observe inbound , and will not sign outbound txs until the issue has been investigated , and enabled it again using mimir
 func (h SolvencyQuorumHandler) handle(ctx cosmos.Context, msg types.MsgSolvencyQuorum) (*cosmos.Result, error) {
+	if msg.QuoSolvency == nil || msg.QuoSolvency.Solvency == nil {
+		return nil, cosmos.ErrUnknownRequest("QuoSolvency and Solvency cannot be nil")
+	}
 	s := msg.QuoSolvency.Solvency
 
 	ctx.Logger().Debug("handle Solvency request", "id", s.Id.String(), "signer", msg.Signer.String())
@@ -74,7 +77,8 @@ func (h SolvencyQuorumHandler) handle(ctx cosmos.Context, msg types.MsgSolvencyQ
 		return &cosmos.Result{}, nil
 	}
 
-	for _, att := range msg.QuoSolvency.Attestations {
+	attestations := deduplicateAttestations(msg.QuoSolvency.Attestations, len(active))
+	for _, att := range attestations {
 		accAddr, err := verifyQuorumAttestation(active, signBz, att)
 		if err != nil {
 			ctx.Logger().Error("fail to verify quorum solvency attestation", "error", err)
@@ -82,7 +86,10 @@ func (h SolvencyQuorumHandler) handle(ctx cosmos.Context, msg types.MsgSolvencyQ
 		}
 
 		if err := processSolvencyAttestation(ctx, h.mgr, &voter, accAddr, active, s, false); err != nil {
-			ctx.Logger().Error("fail to process solvency attestation", "error", err)
+			// Propagate the error to prevent persisting a voter in inconsistent state.
+			// This matches the non-quorum handler (handler_solvency.go) and network fee
+			// quorum handler behavior, causing state rollback via CacheContext.
+			return nil, fmt.Errorf("fail to process solvency attestation: %w", err)
 		}
 	}
 

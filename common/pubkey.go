@@ -2,6 +2,7 @@ package common
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -12,9 +13,11 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
+	eth "github.com/ethereum/go-ethereum/crypto"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
@@ -26,6 +29,9 @@ import (
 	eth "github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"golang.org/x/crypto/blake2b"
+
+	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -261,6 +267,42 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		copy(bz[:], pk.Address().Bytes())
 
 		addressString = zecutil.NewAddressPubKeyHash(bz, prefix).String()
+	case SUIChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+
+		pub := append([]byte{0x00}, pk.Bytes()...)
+
+		hash := blake2b.Sum256(pub)
+
+		addressString = "0x" + hex.EncodeToString(hash[:])
+	case ADAChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+
+		var network uint8
+		switch chainNetwork {
+		case MockNet:
+			network = adacommon.AddressNetworkTestnet
+		default:
+			network = adacommon.AddressNetworkMainnet
+		}
+
+		addr, err := adacommon.NewAddressFromParts(
+			adacommon.AddressTypeKeyNone,
+			network,
+			pk.Bytes(),
+			nil,
+		)
+		if err != nil {
+			return NoAddress, err
+		}
+
+		addressString = addr.String()
 	case TONChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {
