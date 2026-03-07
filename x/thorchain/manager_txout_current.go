@@ -899,15 +899,23 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get observed tx voter: %w", err)
 			}
 
-			activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
-			if err != nil {
-				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get active node accounts: %w", err)
-			}
-
-			// Set voter.FinalisedHeight only when the inbound has actually finalized.
-			// For mempool swaps, this should remain 0 until finalization to enable reversal.
-			if voter.HasFinalised(activeNodeAccounts) && voter.FinalisedHeight == 0 {
-				voter.FinalisedHeight = ctx.BlockHeight()
+			if voter.FinalisedHeight == 0 {
+				if voter.UnfinalizedHeight > 0 {
+					// Mempool swap: only set FinalisedHeight when actually finalized by validators,
+					// so it remains 0 until finalization to enable reversal.
+					activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
+					if err != nil {
+						return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get active node accounts: %w", err)
+					}
+					if voter.HasFinalised(activeNodeAccounts) {
+						voter.FinalisedHeight = ctx.BlockHeight()
+					}
+				} else {
+					// Non-mempool path (including internally-generated swaps like recovery swaps):
+					// set FinalisedHeight unconditionally so the slasher has a reasonable "birth time"
+					// for age calculations.
+					voter.FinalisedHeight = ctx.BlockHeight()
+				}
 			}
 
 			voter.Actions = append(voter.Actions, outputs[i])
