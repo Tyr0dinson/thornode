@@ -1406,13 +1406,19 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 			FinaliseHeight: 0, // Not finalized
 		},
 	})
+	voter.Tx = voter.Txs[0] // Set consolidated tx for revertMempoolSwap
 	voter.UnfinalizedHeight = ctx.BlockHeight()
 	voter.FinalisedHeight = 0
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
-	// Create unsigned outbound (mempool swap output)
-	// With the staged queue design, mempool swap outbounds are in the staged queue,
-	// not the TxOut queue. This test verifies the slasher handles finalized outbounds.
+	// Create unsigned outbound (mempool swap output).
+	// OutHash must be empty (not BlankTxID) for LackSigning to process it,
+	// and the outbound must be at height = lackSigningHeight - signingTransPeriod
+	// since LackSigning checks TxOut at (currentBlockHeight - signingTransPeriod).
+	voterHeight := ctx.BlockHeight()
+	lackSigningHeight := voterHeight + (maxOutboundAttempts * signingTransPeriod) + 10
+	outboundHeight := lackSigningHeight - signingTransPeriod
+
 	txOutItem := TxOutItem{
 		Chain:       common.ETHChain,
 		InHash:      inTxID,
@@ -1420,34 +1426,33 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 		ToAddress:   GetRandomETHAddress(),
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
 		Memo:        "OUT:" + inTxID.String(),
-		OutHash:     common.BlankTxID,
 	}
 
-	// Queue the outbound at future height
-	outboundHeight := ctx.BlockHeight() + 10
 	txOut := NewTxOut(outboundHeight)
 	txOut.TxArray = append(txOut.TxArray, txOutItem)
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 
-	// Advance blocks to exceed MaxOutboundAttempts
-	blocksToAdvance := (maxOutboundAttempts * signingTransPeriod) + 10
-	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + blocksToAdvance)
+	ctx = ctx.WithBlockHeight(lackSigningHeight)
 
 	// Run LackSigning
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	err := slasher.LackSigning(ctx, mgr)
 	c.Assert(err, IsNil)
 
-	// TODO: Debug revertMempoolSwap - for now just verify LackSigning doesn't error
-	// updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
-	// c.Assert(err, IsNil)
-	// c.Check(len(updatedTxOut.TxArray), Equals, 0, Commentf("Outbound should be removed after reverting mempool swap"))
-	// updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
-	// c.Assert(err, IsNil)
-	// c.Check(updatedVoter.Reverted, Equals, true, Commentf("Voter should be marked as reverted"))
+	// Verify the mempool swap was reverted
+	updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
+	c.Assert(err, IsNil)
+	c.Check(updatedTxOut.TxArray[0].OutHash, Equals, common.BlankTxID,
+		Commentf("Outbound should be marked as handled after reverting mempool swap"))
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.Reverted, Equals, true, Commentf("Voter should be marked as reverted"))
 
 	// Test 2: Finalized inbound (traditional flow) should NOT be reverted
 	finalizedTxID := GetRandomTxHash()
+	test2VoterHeight := ctx.BlockHeight()
+	test2LackSigningHeight := test2VoterHeight + (maxOutboundAttempts * signingTransPeriod) + 10
+	finalizedOutHeight := test2LackSigningHeight - signingTransPeriod
 
 	finalizedVoter := NewObservedTxVoter(finalizedTxID, ObservedTxs{
 		ObservedTx{
@@ -1473,24 +1478,24 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 		ToAddress:   GetRandomETHAddress(),
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
 		Memo:        "OUT:" + finalizedTxID.String(),
-		OutHash:     common.BlankTxID,
 	}
 
-	finalizedOutHeight := ctx.BlockHeight() + 20
 	finalizedTxOut := NewTxOut(finalizedOutHeight)
 	finalizedTxOut.TxArray = append(finalizedTxOut.TxArray, finalizedTxOutItem)
 	c.Assert(mgr.Keeper().SetTxOut(ctx, finalizedTxOut), IsNil)
 
-	// Advance blocks again
-	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + blocksToAdvance)
+	ctx = ctx.WithBlockHeight(test2LackSigningHeight)
 
 	err = slasher.LackSigning(ctx, mgr)
 	c.Assert(err, IsNil)
 
-	// Verify finalized outbound is NOT reverted (should go to treasury recovery instead)
+	// Verify finalized outbound is NOT reverted (goes to treasury recovery instead)
 	updatedFinalizedTxOut, err := mgr.Keeper().GetTxOut(ctx, finalizedOutHeight)
 	c.Assert(err, IsNil)
-	// The outbound should have been sent to treasury recovery (OutHash set to BlankTxID by treasury logic)
 	c.Check(updatedFinalizedTxOut.TxArray[0].OutHash, Equals, common.BlankTxID,
 		Commentf("Finalized outbound should be handled by treasury recovery, not revert"))
+	updatedFinalizedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, finalizedTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedFinalizedVoter.Reverted, Equals, false,
+		Commentf("Finalized inbound should NOT be marked as reverted"))
 }
