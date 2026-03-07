@@ -361,7 +361,6 @@ func handleObservedTxInQuorum(
 		if err = finalizeOutbounds(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 		}
-		ctx.Logger().Info("mempool swap already processed, finalizing only", "hash", voter.TxID)
 		return nil
 	}
 
