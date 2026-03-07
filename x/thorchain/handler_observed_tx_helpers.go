@@ -549,8 +549,11 @@ func handleObservedTxInQuorum(
 		}
 	}
 
-	// When a mempool swap finalizes, update all associated outbound TxOutItems to Finalized=true
-	// and return early - the swap was already executed from mempool, don't process it again
+	// When a mempool swap finalizes, move staged outbounds to the real queue
+	// and return early - the swap was already executed from mempool, don't process it again.
+	// The error is intentionally not returned: propagating it would roll back the handler's
+	// cache context, reverting voter state, chain height, and vault updates made above.
+	// Finalization failure is logged and the swap still completes correctly.
 	if hasFinalised && len(voter.Actions) > 0 {
 		if err = finalizeOutbounds(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
