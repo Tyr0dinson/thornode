@@ -153,7 +153,7 @@ func (c MockClient) SendExternalMessage(ctx context.Context, msg *tlb.ExternalMe
 }
 
 func (c MockClient) SendExternalMessageWaitTransaction(ctx context.Context, msg *tlb.ExternalMessage) (*tlb.Transaction, *ton.BlockIDExt, []byte, error) {
-	return nil, nil, nil, nil
+	return &tlb.Transaction{Hash: make([]byte, 32)}, nil, nil, nil
 }
 
 func (c MockClient) RunGetMethod(ctx context.Context, blockInfo *ton.BlockIDExt, addr *tonaddress.Address, method string, params ...interface{}) (*ton.ExecutionResult, error) {

@@ -103,18 +103,6 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 	}, nil
 }
 
-// // fromThor converts THORChain amount (1e8) to TON native amount (1e9)
-// func fromThor(amount sdkmath.Uint) tlb.Coins {
-// 	nanoAmount := amount.MulUint64(10) // 1e8 -> 1e9
-// 	return tlb.FromNanoTON(nanoAmount.BigInt())
-// }
-//
-// // toThor converts TON native amount (1e9) to THORChain amount (1e8)
-// func toThor(nanoAmount tlb.Coins) sdkmath.Uint {
-// 	amount := nanoAmount.Nano().Div(nanoAmount.Nano(), tlb.FromNanoTON(big.NewInt(10)).Nano()) // 1e9 -> 1e8
-// 	return sdkmath.NewUintFromBigInt(amount)
-// }
-
 // GetAccount returns the account details for the given public key
 func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	var address string

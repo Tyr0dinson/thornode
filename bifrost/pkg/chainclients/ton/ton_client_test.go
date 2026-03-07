@@ -247,7 +247,7 @@ func (s *TonTestSuite) TestCreateTx(c *C) {
 		coins := []common.Coin{{
 			Asset:    common.TONAsset,
 			Amount:   cosmos.NewUint(tc.Amount),
-			Decimals: 6,
+			Decimals: 9,
 		}}
 
 		txOutItem := types.TxOutItem{

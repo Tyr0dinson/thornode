@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tonaddress "github.com/xssnick/tonutils-go/address"
+	"github.com/xssnick/tonutils-go/tlb"
 	. "gopkg.in/check.v1"
 )
 
@@ -68,8 +69,11 @@ func (s *MockTestSuite) TestClient(c *C) {
 
 	c.Assert(client.SendExternalMessage(ctx, nil), IsNil)
 
-	_, _, _, err = client.SendExternalMessageWaitTransaction(ctx, nil)
+	var tx *tlb.Transaction
+	tx, _, _, err = client.SendExternalMessageWaitTransaction(ctx, nil)
 	c.Assert(err, IsNil)
+	c.Assert(tx, NotNil)
+	c.Assert(tx.Hash, NotNil)
 
 	resp, err := client.RunGetMethod(ctx, nil, nil, "foo")
 	c.Assert(resp, IsNil)

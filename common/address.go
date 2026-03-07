@@ -37,16 +37,12 @@ const (
 	// TreasuryAddress is defined in address_treasury_*.go with build tags for network-specific addresses
 )
 
-var alphaNumRegex = regexp.MustCompile("^[:_A-Za-z0-9]*$")
+var alphaNumRegex = regexp.MustCompile("^[:_A-Za-z0-9-]*$")
 
 // NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP.
 func NewAddress(address string) (Address, error) {
 	if len(address) == 0 {
 		return NoAddress, nil
-	}
-
-	if IsValidTONAddress(address) {
-		return Address(address), nil
 	}
 
 	if !alphaNumRegex.MatchString(address) {
@@ -88,6 +84,10 @@ func NewAddress(address string) (Address, error) {
 	}
 
 	if IsValidSUIAddress(address) {
+		return Address(address), nil
+	}
+
+	if IsValidTONAddress(address) {
 		return Address(address), nil
 	}
 

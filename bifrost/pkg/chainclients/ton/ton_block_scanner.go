@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"sort"
 	"sync"
+	"time"
 
 	"cosmossdk.io/math"
 	"github.com/rs/zerolog"
@@ -132,6 +133,7 @@ func (s *TonBlockScanner) GetNetworkFee() (transactionSize, transactionFeeRate u
 func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 	s.feeRateMtx.Lock()
 	defer s.feeRateMtx.Unlock()
+
 	if len(s.feeRateCache) == 0 {
 		// Not enough txs yet
 		return
@@ -185,11 +187,15 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 
 	s.lastFeeRate = roundedFeeRate
 
-	s.globalNetworkFeeQueue <- common.NetworkFee{
+	select {
+	case s.globalNetworkFeeQueue <- common.NetworkFee{
 		Chain:           common.TONChain,
 		Height:          height,
 		TransactionSize: 1,
 		TransactionRate: roundedFeeRate,
+	}:
+	case <-time.After(constants.ThorchainBlockTime):
+		s.logger.Error().Msg("fail to send solvency info to THORChain, timeout")
 	}
 
 	s.logger.Info().
@@ -201,8 +207,8 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, error) {
 	master, err := s.api.LookupBlock(
 		s.ctx,
-		-1,
-		-9223372036854775808,
+		masterChainId,
+		masterShardId,
 		masterSeqno,
 	)
 	if err != nil {
@@ -227,6 +233,8 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 	var mu sync.Mutex
 	var eg errgroup.Group
 
+	s.lastShardsMtx.Lock()
+	defer s.lastShardsMtx.Unlock()
 	for _, shard := range shards {
 		shardSeqno, found := s.lastShards[shardId(shard)]
 		if found {
@@ -298,7 +306,7 @@ func (s *TonBlockScanner) processShard(
 	info := data.BlockInfo
 
 	txInfos, _, err := s.api.GetBlockTransactionsV2(
-		context.TODO(),
+		s.ctx,
 		block,
 		500_000,
 		nil,
@@ -402,12 +410,10 @@ func (s *TonBlockScanner) processMessage(
 	msg *tlb.InternalMessage,
 ) (txInItem types.TxInItem, err error) {
 	if msg.Bounce {
-		s.logger.Debug().Err(err).Msg("")
 		return txInItem, fmt.Errorf("bounce flag set")
 	}
 
 	if msg.Bounced {
-		s.logger.Debug().Err(err).Msg("")
 		return txInItem, fmt.Errorf("message bounced")
 	}
 
@@ -463,7 +469,7 @@ func (s *TonBlockScanner) processMessage(
 		err = fmt.Errorf("amount less than or equal to zero")
 		s.logger.Err(err).
 			Str("hash", hash).
-			Uint64("amount", amount.Uint64()).
+			Str("amount", amount.String()).
 			Msg("")
 		return txInItem, err
 	}
@@ -479,7 +485,7 @@ func (s *TonBlockScanner) processMessage(
 	}
 
 	amountGas, err := common.ConvertDecimals(
-		big.NewInt(fees.Int64()),
+		new(big.Int).Set(fees),
 		int(decimals),
 		common.THORChainDecimals,
 	)

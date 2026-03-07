@@ -306,6 +306,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return "tm"
 		case ADAChain:
 			return "addr_test1"
+		case TONChain:
+			return "0"
 		}
 	case MainNet, StageNet, ChainNet:
 		switch c {
@@ -325,6 +327,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return "t1"
 		case ADAChain:
 			return "addr1"
+		case TONChain:
+			return "U"
 		}
 	}
 	return ""
