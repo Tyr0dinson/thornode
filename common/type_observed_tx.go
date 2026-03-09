@@ -49,16 +49,16 @@ func (m *ObservedTx) IsEmpty() bool {
 	return m.Tx.IsEmpty()
 }
 
-// Hash calculate a hash based on tx data
+// Hash calculate a hash based on tx data (gas is excluded because it differs
+// between SignTx results and scanner observations).
 func (m ObservedTx) Hash() TxID {
 	str := fmt.Sprintf(
-		"%s|%s|%s|%s|%s|%s|%s",
+		"%s|%s|%s|%s|%s|%s",
 		m.Tx.ID.String(),
 		m.Tx.Chain.String(),
 		m.Tx.FromAddress,
 		m.Tx.ToAddress,
 		m.Tx.Coins.String(),
-		m.Tx.Gas.ToCoins().String(),
 		m.Tx.Memo,
 	)
 	return TxID(fmt.Sprintf("%X", sha256.Sum256([]byte(str))))
