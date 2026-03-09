@@ -25,8 +25,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/xssnick/tonutils-go/ton/wallet"
 
-	"github.com/cometbft/cometbft/crypto"
-	eth "github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 	"golang.org/x/crypto/blake2b"
@@ -145,7 +143,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		if err != nil {
 			return NoAddress, err
 		}
-		str, err := ConvertAndEncode(chain.AddressPrefix(chainNetwork), pk.Address().Bytes())
+		str, err := ConvertAndEncode(chain.BechPrefix(), pk.Address().Bytes())
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to bech32 encode the address, err: %w", err)
 		}

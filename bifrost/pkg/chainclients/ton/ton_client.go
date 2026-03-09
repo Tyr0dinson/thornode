@@ -628,14 +628,9 @@ func (c *TonClient) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
-	fee, err := common.ConvertDecimals(
-		big.NewInt(int64(c.tonScanner.lastFeeRate)),
-		int(common.TONChain.GetGasAssetDecimal()),
-		common.THORChainDecimals,
+	fee := c.config.ChainID.NativeGasToThorchain(
+		math.NewUint(c.tonScanner.lastFeeRate),
 	)
-	if err != nil {
-		return fmt.Errorf("failed to convert fee amount to decimals")
-	}
 
 	solventMsgs := make([]types.Solvency, 0, len(vaults))
 	insolventMsgs := make([]types.Solvency, 0, len(vaults))
@@ -654,7 +649,7 @@ func (c *TonClient) ReportSolvency(height int64) error {
 			Coins:  acc.Coins,
 		}
 
-		if runners.IsVaultSolvent(acc, vaults[i], cosmos.NewUintFromBigInt(fee)) {
+		if runners.IsVaultSolvent(acc, vaults[i], fee) {
 			solventMsgs = append(solventMsgs, msg)
 			continue
 		}

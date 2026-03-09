@@ -4,11 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/cosmos/cosmos-sdk/types"
-	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/hashicorp/go-multierror"
-	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -273,65 +270,18 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	}
 }
 
-// IsValidAddress make sure the address is correct for the chain
-// And this also make sure mocknet doesn't use mainnet address vice versa
-func (c Chain) IsValidAddress(addr Address) bool {
-	network := CurrentChainNetwork
-	prefix := c.AddressPrefix(network)
-	return strings.HasPrefix(addr.String(), prefix)
-}
-
-// AddressPrefix return the address prefix used by the given network (mocknet/mainnet)
-func (c Chain) AddressPrefix(cn ChainNetwork) string {
-	if c.IsEVM() {
-		return "0x"
+// BechPrefix returns the bech32 prefix for cosmos chains
+func (c Chain) BechPrefix() string {
+	switch c {
+	case THORChain:
+		return types.GetConfig().GetBech32AccountAddrPrefix()
+	case GAIAChain:
+		return "cosmos"
+	case NOBLEChain:
+		return "noble"
+	default:
+		return ""
 	}
-	switch cn {
-	case MockNet:
-		switch c {
-		case GAIAChain:
-			return "cosmos"
-		case NOBLEChain:
-			return "noble"
-		case THORChain:
-			// TODO update this to use mocknet address prefix
-			return types.GetConfig().GetBech32AccountAddrPrefix()
-		case BTCChain:
-			return chaincfg.RegressionNetParams.Bech32HRPSegwit
-		case LTCChain:
-			return ltcchaincfg.RegressionNetParams.Bech32HRPSegwit
-		case DOGEChain:
-			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
-		case ZECChain:
-			return "tm"
-		case ADAChain:
-			return "addr_test1"
-		case TONChain:
-			return "0"
-		}
-	case MainNet, StageNet, ChainNet:
-		switch c {
-		case GAIAChain:
-			return "cosmos"
-		case NOBLEChain:
-			return "noble"
-		case THORChain:
-			return types.GetConfig().GetBech32AccountAddrPrefix()
-		case BTCChain:
-			return chaincfg.MainNetParams.Bech32HRPSegwit
-		case LTCChain:
-			return ltcchaincfg.MainNetParams.Bech32HRPSegwit
-		case DOGEChain:
-			return dogchaincfg.MainNetParams.Bech32HRPSegwit
-		case ZECChain:
-			return "t1"
-		case ADAChain:
-			return "addr1"
-		case TONChain:
-			return "U"
-		}
-	}
-	return ""
 }
 
 // DustThreshold returns the min dust threshold for each chain

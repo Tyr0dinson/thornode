@@ -1,9 +1,6 @@
 package common
 
 import (
-	"github.com/btcsuite/btcd/chaincfg"
-	dogchaincfg "github.com/eager7/dogd/chaincfg"
-	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	. "gopkg.in/check.v1"
 )
 
@@ -41,23 +38,6 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(TONChain.GetGasAsset(), Equals, TONAsset)
 	c.Assert(EmptyChain.GetGasAsset(), Equals, EmptyAsset)
 
-	c.Assert(BTCChain.AddressPrefix(MockNet), Equals, chaincfg.RegressionNetParams.Bech32HRPSegwit)
-	c.Assert(BTCChain.AddressPrefix(MainNet), Equals, chaincfg.MainNetParams.Bech32HRPSegwit)
-	c.Assert(BTCAsset.Chain.AddressPrefix(StageNet), Equals, chaincfg.MainNetParams.Bech32HRPSegwit)
-
-	c.Assert(LTCChain.AddressPrefix(MockNet), Equals, ltcchaincfg.RegressionNetParams.Bech32HRPSegwit)
-	c.Assert(LTCChain.AddressPrefix(MainNet), Equals, ltcchaincfg.MainNetParams.Bech32HRPSegwit)
-	c.Assert(LTCChain.AddressPrefix(StageNet), Equals, ltcchaincfg.MainNetParams.Bech32HRPSegwit)
-
-	c.Assert(DOGEChain.AddressPrefix(MockNet), Equals, dogchaincfg.RegressionNetParams.Bech32HRPSegwit)
-	c.Assert(DOGEChain.AddressPrefix(MainNet), Equals, dogchaincfg.MainNetParams.Bech32HRPSegwit)
-	c.Assert(DOGEChain.AddressPrefix(StageNet), Equals, dogchaincfg.MainNetParams.Bech32HRPSegwit)
-
-	// Noble chain tests
-	c.Assert(NOBLEChain.AddressPrefix(MockNet), Equals, "noble")
-	c.Assert(NOBLEChain.AddressPrefix(MainNet), Equals, "noble")
-	c.Assert(NOBLEChain.AddressPrefix(StageNet), Equals, "noble")
-
 	// Test GetGasUnits
 	nobleGasUnits, _ := NOBLEChain.GetGasUnits()
 	gaiaGasUnits, _ := GAIAChain.GetGasUnits()
@@ -75,6 +55,10 @@ func (s ChainSuite) TestChain(c *C) {
 	// Test InboundNotes
 	c.Assert(NOBLEChain.InboundNotes(), Equals, "Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions.")
 	c.Assert(GAIAChain.InboundNotes(), Equals, "Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions.")
+
+	// Test BechPrefix
+	c.Assert(NOBLEChain.BechPrefix(), Equals, "noble")
+	c.Assert(GAIAChain.BechPrefix(), Equals, "cosmos")
 
 	// Tron chain tests
 	tronGasUnits, _ := TRONChain.GetGasUnits()
