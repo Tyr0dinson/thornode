@@ -6,6 +6,11 @@ deps:
   - buf.build/googleapis/googleapis
   - buf.build/cosmwasm/wasmd
 
+breaking:
+  ignore:
+    - types/query.proto
+    - types/query_tx.proto
+
 lint:
   use:
     - DEFAULT
