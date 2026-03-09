@@ -182,14 +182,18 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 	}
 
 	coinsInMsg := msg.Coins
-	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() && memo.GetType() != TxIntentSolve {
-		// send funds to target module
-		err = h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
-		if err != nil {
-			return nil, err
+	if !coinsInMsg.IsEmpty() {
+		asset := coinsInMsg[0].Asset
+		// Trade/secured assets manage their own escrow, and intent solves only bypass
+		// the normal transfer for RUNE because solve-side escrow handles it directly.
+		skipModuleTransfer := asset.IsTradeAsset() || asset.IsSecuredAsset() || (memo.GetType() == TxIntentSolve && asset.IsRune())
+		if !skipModuleTransfer {
+			err = h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
-
 	to, err := h.mgr.Keeper().GetModuleAddress(targetModule)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get to address: %w", err)

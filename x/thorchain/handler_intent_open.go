@@ -89,6 +89,13 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	sourceAsset := msg.Tx.Coins[0].Asset
 	targetAsset := msg.TargetAsset
 
+	if isUnsupportedIntentNativeAsset(sourceAsset) {
+		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(sourceAsset))
+	}
+	if isUnsupportedIntentNativeAsset(targetAsset) {
+		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(targetAsset))
+	}
+
 	// At least one asset must have an active pool or be native
 	sourcePool, err := h.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
 	if err != nil {
@@ -101,19 +108,16 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 
 	hasActiveSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 	hasActiveTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
-	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
-	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
+	isSourceNative := isSupportedIntentNativeAsset(sourceAsset)
+	isTargetNative := isSupportedIntentNativeAsset(targetAsset)
 
 	if !hasActiveSourcePool && !hasActiveTargetPool && !isSourceNative && !isTargetNative {
 		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must have an active pool or be a native/secured/trade asset")
 	}
 
-	// At least one side must be fee-chargeable (has active L1 pool or is RUNE).
-	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
-	// Use IsRune() (not IsNative()) to match runtime behavior — IsNative() includes non-fee-chargeable
-	// THORChain assets like TOR and TCY.
-	canChargeSource := (hasActiveSourcePool && !sourceAsset.IsSecuredAsset() && !sourceAsset.IsTradeAsset()) || sourceAsset.IsRune()
-	canChargeTarget := (hasActiveTargetPool && !targetAsset.IsSecuredAsset() && !targetAsset.IsTradeAsset()) || targetAsset.IsRune()
+	// At least one side must be fee-chargeable (has active pool or is native to THORChain).
+	canChargeSource := hasActiveSourcePool || isSupportedIntentNativeAsset(sourceAsset)
+	canChargeTarget := hasActiveTargetPool || isSupportedIntentNativeAsset(targetAsset)
 	if !canChargeSource && !canChargeTarget {
 		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (has active pool or is native)")
 	}

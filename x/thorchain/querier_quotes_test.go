@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
@@ -231,6 +232,12 @@ func (s *QuotesSuite) TestIsIntentCompatibleAsset(c *C) {
 	c.Assert(compatible, Equals, true)
 	c.Assert(reason, Equals, "trade asset")
 
+	// Unsupported THOR-native assets are intentionally blocked for now
+	synthBTC := common.BTCAsset.GetSyntheticAsset()
+	compatible, reason = isIntentCompatibleAsset(ctx, mgr, synthBTC)
+	c.Assert(compatible, Equals, false)
+	c.Assert(reason, Equals, unsupportedIntentNativeAssetError(synthBTC))
+
 	// Test gas asset for supported chain is compatible
 	compatible, reason = isIntentCompatibleAsset(ctx, mgr, common.BTCAsset)
 	c.Assert(compatible, Equals, true)
@@ -297,4 +304,45 @@ func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp.Valid, Equals, false)
 	c.Assert(resp.ValidationError, Equals, "high_target must be >= low_target")
+
+	synthBTC := common.BTCAsset.GetSyntheticAsset()
+	req = &types.QueryQuoteIntentRequest{
+		FromAsset:   synthBTC.String(),
+		ToAsset:     common.BTCAsset.String(),
+		Amount:      "1000000000",
+		Destination: "bc1qtest",
+		HighTarget:  "5000000",
+		LowTarget:   "4800000",
+	}
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, unsupportedIntentNativeAssetError(synthBTC))
+}
+
+func (s *QuotesSuite) TestQueryQuoteIntentSolveRejectsUnsupportedNativeAsset(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+
+	intentTxID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	synthBTC := common.BTCAsset.GetSyntheticAsset()
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   synthBTC,
+		TargetAddress: common.Address("thor1target"),
+		HighTarget:    cosmos.NewUint(20),
+		LowTarget:     cosmos.NewUint(10),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	resp, err := qs.queryQuoteIntentSolve(ctx, &types.QueryQuoteIntentSolveRequest{
+		IntentTxId: intentTxID.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, unsupportedIntentNativeAssetError(synthBTC))
 }

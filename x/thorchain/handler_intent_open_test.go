@@ -299,6 +299,40 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 			expectedErrMsg: ".*below dust threshold.*",
 		},
 		{
+			name: "unsupported THOR-native source asset should fail",
+			setupMsg: func() *MsgIntentOpen {
+				synthTx := GetRandomTx()
+				synthTx.Coins = common.Coins{common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(100*common.One))}
+				return NewMsgIntentOpen(
+					synthTx,
+					common.BTCAsset,
+					GetRandomBTCAddress(),
+					cosmos.NewUint(15*common.One),
+					cosmos.NewUint(10*common.One),
+					common.NoAddress,
+					cosmos.ZeroUint(),
+					w.activeNodeAccount.NodeAddress,
+				)
+			},
+			expectedErrMsg: ".*THOR-native asset BTC/BTC is not supported by intents.*",
+		},
+		{
+			name: "unsupported THOR-native target asset should fail",
+			setupMsg: func() *MsgIntentOpen {
+				return NewMsgIntentOpen(
+					tx,
+					common.BTCAsset.GetSyntheticAsset(),
+					GetRandomTHORAddress(),
+					cosmos.NewUint(15*common.One),
+					cosmos.NewUint(10*common.One),
+					common.NoAddress,
+					cosmos.ZeroUint(),
+					w.activeNodeAccount.NodeAddress,
+				)
+			},
+			expectedErrMsg: ".*THOR-native asset BTC/BTC is not supported by intents.*",
+		},
+		{
 			name: "empty target address should fail",
 			setupMsg: func() *MsgIntentOpen {
 				return NewMsgIntentOpen(

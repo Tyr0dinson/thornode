@@ -24,6 +24,21 @@ func isSimulationMode(ctx cosmos.Context) bool {
 	return ok && simulationMode
 }
 
+func isSupportedIntentNativeAsset(asset common.Asset) bool {
+	return asset.IsRune() || asset.IsSecuredAsset() || asset.IsTradeAsset()
+}
+
+func isUnsupportedIntentNativeAsset(asset common.Asset) bool {
+	return asset.IsNative() && !isSupportedIntentNativeAsset(asset)
+}
+
+func unsupportedIntentNativeAssetError(asset common.Asset) string {
+	return fmt.Sprintf(
+		"THOR-native asset %s is not supported by intents; only RUNE, secured assets, and trade assets are currently supported",
+		asset,
+	)
+}
+
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.

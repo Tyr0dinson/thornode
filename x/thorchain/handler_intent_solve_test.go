@@ -337,6 +337,20 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 			},
 			expectedErr: se.ErrInvalidRequest,
 		},
+		{
+			name: "unsupported THOR-native target asset should fail",
+			setupMsg: func() *MsgIntentSolve {
+				unsupportedIntent := intent
+				unsupportedIntent.TargetAsset = common.BTCAsset.GetSyntheticAsset()
+				w.keeper.SetIntent(w.ctx, unsupportedIntent)
+
+				synthTx := GetRandomTx()
+				synthTx.FromAddress = GetRandomTHORAddress()
+				synthTx.Coins = common.Coins{common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(15*common.One))}
+				return NewMsgIntentSolve(synthTx, intentTx.ID, GetRandomDOGEAddress(), w.activeNodeAccount.NodeAddress)
+			},
+			expectedErr: se.ErrInvalidRequest,
+		},
 	}
 
 	for _, tc := range testCases {
