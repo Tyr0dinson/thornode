@@ -83,6 +83,7 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 			pubKey := tx.GetPubKey()
 			if pubKey.IsEmpty() {
 				ctx.Logger().Error("unknown signing algo", "signing_algo", tx.Chain.GetSigningAlgo())
+				continue
 			}
 
 			fromAddress, _ := pubKey.GetAddress(tx.Chain)

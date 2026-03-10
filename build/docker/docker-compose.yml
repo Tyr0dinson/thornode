@@ -825,3 +825,9 @@ services:
       #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
       - VERBOSITY=1
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 90
+      start_period: 30s

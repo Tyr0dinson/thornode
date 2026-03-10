@@ -96,6 +96,10 @@ func NewAddress(address string) (Address, error) {
 }
 
 func IsValidTONAddress(address string) bool {
+	if len(address) == 0 {
+		return false
+	}
+
 	if address[:1] != "U" && address[:1] != "0" {
 		return false
 	}

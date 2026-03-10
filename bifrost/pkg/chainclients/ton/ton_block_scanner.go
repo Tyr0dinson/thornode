@@ -163,7 +163,12 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 	medianFeeRate := common.GetMedianUint64(allRates)
 
 	// round medianFeeRate to the nearest resolution
-	resolution := uint64(s.config.GasPriceResolution)
+	var resolution uint64
+	if s.config.GasPriceResolution > 0 {
+		resolution = uint64(s.config.GasPriceResolution)
+	} else {
+		resolution = 1_000_000
+	}
 
 	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
 
@@ -173,11 +178,6 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 	}
 
 	roundedFeeRate = max(roundedFeeRate, minNetworkFee)
-
-	if roundedFeeRate == 0 {
-		s.logger.Debug().Msg("network fee is 0")
-		return
-	}
 
 	// Update the fee rate if it has changed
 	if roundedFeeRate == s.lastFeeRate {
