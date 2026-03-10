@@ -116,6 +116,10 @@ generate:
       if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
         export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
         echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
       fi
   script:
     - |
@@ -215,6 +219,10 @@ build-thornode:
       if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
         export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
         echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
       fi
     - make docker-gitlab-login
   script:
@@ -308,6 +316,10 @@ test-simulation:
       if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
         export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
         echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
       fi
     - |
       PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
@@ -353,6 +365,10 @@ test-regression:
       if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
         export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
         echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
       fi
   script:
     - make test-regression
