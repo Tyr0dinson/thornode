@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	stded25519 "crypto/ed25519"
+	"strings"
 	"testing"
 
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
@@ -44,4 +46,31 @@ func (*ED25519TestSuite) TestGetEd25519Keys(c *C) {
 	result, err = ed25519.DeriveKeypairFromMnemonic(mnemonic, "", ed25519.HDPath)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
+}
+
+func (*ED25519TestSuite) TestEd25519Command(c *C) {
+	thorchain.SetupConfigForTest()
+	mnemonic := "grape safe sound obtain bachelor festival profit iron meat moon exit garbage chapter promote noble grocery blood letter junk click mesh arm shop decorate"
+
+	cmd := GetEd25519Keys()
+	cmd.SetIn(strings.NewReader(mnemonic + "\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := cmd.Execute()
+	c.Assert(err, IsNil)
+	c.Assert(strings.TrimSpace(out.String()), Equals, "tthorpub1zcjduepqrcthx0ke3r2z39rp42xrr777af7qfcs6wcxtxck6tj9j0ap8cl0q0msnrn")
+}
+
+func (*ED25519TestSuite) TestEd25519CommandInvalidMnemonic(c *C) {
+	thorchain.SetupConfigForTest()
+	mnemonic := "invalid mnemonic words that should fail"
+
+	cmd := GetEd25519Keys()
+	cmd.SetIn(strings.NewReader(mnemonic + "\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := cmd.Execute()
+	c.Assert(err, NotNil)
 }
