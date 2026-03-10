@@ -159,6 +159,9 @@ type consensusBlockHashEntry struct {
 	slot int64
 }
 
+// Compile-time check that the SOL client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*SOLClient)(nil)
+
 // NewSOLClient creates a new instance of a SOLClient
 func NewSOLClient(
 	thorKeys *thorclient.Keys,

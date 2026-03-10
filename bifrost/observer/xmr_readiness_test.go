@@ -263,13 +263,13 @@ func TestXMRPeriodicRetryStartsClientAfterFailure(t *testing.T) {
 	}
 	started := time.Now()
 	o.startXMRErrataMaintenance(context.Background(), deferred)
-	t.Cleanup(func() { o.stopStartedChainClients(); o.wg.Wait() })
+	t.Cleanup(func() { o.stopStartedChainClients(); o.xmrStartupWG.Wait() })
 	<-firstPass
 	require.False(t, o.IsChainClientStarted(common.XMRChain))
 	require.Eventually(t, func() bool { return o.IsChainClientStarted(common.XMRChain) }, 2*constants.ThorchainBlockTime, 5*time.Millisecond)
 	require.GreaterOrEqual(t, time.Since(started), constants.ThorchainBlockTime, "retry must not restore one-second history scans")
 	o.stopStartedChainClients()
-	o.wg.Wait()
+	o.xmrStartupWG.Wait()
 	require.Equal(t, 2, calls)
 	require.Equal(t, 1, xmr.starts)
 	tombstone, err := o.storage.getErrataTombstone(er.Chain, er.Id.String())

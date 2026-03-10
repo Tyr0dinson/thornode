@@ -88,6 +88,9 @@ func (c *EVMClient) getSignerCacheExpiry() time.Duration {
 	return c.cfg.SignerCacheExpiry
 }
 
+// Compile-time check that the generic EVM client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*EVMClient)(nil)
+
 // NewEVMClient creates a new EVMClient.
 func NewEVMClient(
 	thorKeys *thorclient.Keys,

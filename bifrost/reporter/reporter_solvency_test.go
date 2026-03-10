@@ -32,11 +32,13 @@ var _ = Suite(&SolvencySuite{})
 
 // mockChainClient is a mock that satisfies the chainclients.ChainClient interface
 type mockChainClient struct {
-	chain                 common.Chain
-	cfg                   config.BifrostChainConfiguration
-	gas                   cosmos.Uint
-	account               common.Account
-	accounts              map[string]common.Account
+	chain    common.Chain
+	cfg      config.BifrostChainConfiguration
+	gas      cosmos.Uint
+	account  common.Account
+	accounts map[string]common.Account
+	// accountErrors lets tests fail specific vault lookups without affecting others.
+	accountErrors         map[string]error
 	err                   error
 	blockScannerHeight    int64
 	blockScannerIsHealthy bool
@@ -49,7 +51,17 @@ func (m *mockChainClient) GetCurrentGas() cosmos.Uint                  { return 
 func (m *mockChainClient) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
 	if m.accounts != nil {
 		if acct, ok := m.accounts[pk.String()]; ok {
+			if m.accountErrors != nil {
+				if err, ok := m.accountErrors[pk.String()]; ok {
+					return acct, err
+				}
+			}
 			return acct, m.err
+		}
+	}
+	if m.accountErrors != nil {
+		if err, ok := m.accountErrors[pk.String()]; ok {
+			return m.account, err
 		}
 	}
 	return m.account, m.err
@@ -723,6 +735,47 @@ func (s *SolvencySuite) TestCollectReportsAllSolventWhenScannerDown(c *C) {
 	c.Assert(reported[otherSolventVault.PubKey.String()], Equals, true)
 }
 
+// TestCollectAllSolventPathRequiresRunner verifies the auto-unhalt "all solvent"
+// branch cannot be reached by block-scanner-triggered collects.
+func (s *SolvencySuite) TestCollectAllSolventPathRequiresRunner(c *C) {
+	solventVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	otherSolventVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(2_000_000_000))),
+	}
+	asgards := ctypes.Vaults{solventVault, otherSolventVault}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return asgards, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.ETHChain,
+		blockScannerIsHealthy: false,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 1,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 40,
+			},
+		},
+		accounts: map[string]common.Account{
+			solventVault.PubKey.String():      {Coins: solventVault.Coins},
+			otherSolventVault.PubKey.String(): {Coins: otherSolventVault.Coins},
+		},
+		blockScannerHeight: 200,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromBlockScanner, client.blockScannerHeight)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 0)
+}
+
 func (s *SolvencySuite) TestShouldReportAtHeightSolChain(c *C) {
 	client := &mockChainClient{
 		chain:                 common.SOLChain,
@@ -776,6 +829,72 @@ func (s *SolvencySuite) TestShouldReportRejectsNonPositiveHeight(c *C) {
 
 	c.Assert(reporter.ShouldReport(fromBlockScanner, 0), Equals, false)
 	c.Assert(reporter.ShouldReport(fromRunner, -1), Equals, false)
+}
+
+// TestShouldReportSkipsTronHeightsBeforeFinalityFloor verifies the added TRON
+// low-height guard prevents non-positive solvency message heights.
+func (s *SolvencySuite) TestShouldReportSkipsTronHeightsBeforeFinalityFloor(c *C) {
+	client := &mockChainClient{
+		chain:                 common.TRONChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 100,
+			},
+		},
+		account:     common.Account{Coins: common.NewCoins(common.NewCoin(common.TRXAsset, cosmos.NewUint(1)))},
+		chainHeight: 20,
+	}
+
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 10), Equals, false)
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, true)
+}
+
+// TestCollectDoesNotAdvanceCadenceOnPartialFailure verifies a failed vault lookup
+// does not consume the next cadence window for height-gated chains.
+func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnPartialFailure(c *C) {
+	solventVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000_000))),
+	}
+	failingVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(2_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{solventVault, failingVault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.BTCChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 1,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 10,
+			},
+		},
+		accounts: map[string]common.Account{
+			solventVault.PubKey.String(): {Coins: solventVault.Coins},
+		},
+		accountErrors: map[string]error{
+			failingVault.PubKey.String(): fmt.Errorf("boom"),
+		},
+		chainHeight: 3,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromBlockScanner, 2)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 0)
+	c.Assert(reporter.lastSolvencyCheckHeight, Equals, int64(0))
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 3), Equals, true)
 }
 
 func (s *SolvencySuite) TestCollectUsesAlgoPubKeyForSolanaLookup(c *C) {
@@ -946,4 +1065,85 @@ func (s *SolvencySuite) TestSendCollectedToThorchainLogsInactiveNode(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(bridge.getMsgs(), HasLen, 0)
 	c.Assert(logBuf.String(), Matches, `(?s).*"node_status":"Standby".*"report_count":1.*skipping broadcast of collected reports to thorchain: local node is not active.*`)
+}
+
+// TestNewDispatcherBuffersReportQueuePerChain verifies the queue is small but
+// intentionally buffered relative to the number of configured chains.
+func (s *SolvencySuite) TestNewDispatcherBuffersReportQueuePerChain(c *C) {
+	stopper := make(chan struct{})
+	wg := &sync.WaitGroup{}
+	chains := map[common.Chain]ChainClient{
+		common.ETHChain: &mockChainClient{chain: common.ETHChain},
+		common.BTCChain: &mockChainClient{chain: common.BTCChain},
+	}
+
+	disp, ok := NewDispatcher(chains, &thorMockBridge{}, nil, stopper, wg).(*dispatcher)
+	c.Assert(ok, Equals, true)
+	c.Assert(cap(disp.reportQueue), Equals, len(chains))
+
+	close(stopper)
+	wg.Wait()
+}
+
+// TestProcessInternalReturnsOnStopWhenReportQueueBackedUp verifies shutdown
+// unblocks a producer even if the report queue is currently full.
+func (s *SolvencySuite) TestProcessInternalReturnsOnStopWhenReportQueueBackedUp(c *C) {
+	origBlockTime := constants.ThorchainBlockTime
+	defer func() { constants.ThorchainBlockTime = origBlockTime }()
+	constants.ThorchainBlockTime = 200 * time.Millisecond
+
+	vault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{vault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.ETHChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 20,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 100,
+			},
+		},
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		},
+		chainHeight: 100,
+	}
+
+	stopper := make(chan struct{})
+	d := &dispatcher{
+		logger:      log.Logger,
+		reportQueue: make(chan ReportBatch, 1),
+		stopper:     stopper,
+		chains:      map[common.Chain]ChainClient{common.ETHChain: client},
+		reporters: map[common.Chain]Reporters{
+			common.ETHChain: {newSolvencyReporter(client, bridge)},
+		},
+	}
+
+	d.processInternal(common.ETHChain, fromBlockScanner, 100)
+	c.Assert(len(d.reportQueue), Equals, 1)
+
+	done := make(chan struct{})
+	go func() {
+		d.processInternal(common.ETHChain, fromBlockScanner, 100)
+		close(done)
+	}()
+
+	time.Sleep(constants.ThorchainBlockTime / 10)
+	close(stopper)
+
+	select {
+	case <-done:
+	case <-time.After(constants.ThorchainBlockTime / 2):
+		c.Fatal("processInternal did not unblock after stopper closed")
+	}
 }

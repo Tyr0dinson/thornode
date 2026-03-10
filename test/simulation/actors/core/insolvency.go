@@ -21,60 +21,23 @@ import (
 //
 // InsolvencyActor does this:
 //  1. Find the active Asgard vault and lock one node user + one normal user.
-//  2. "Steal" funds - create a temporary gap between "vault and wallet (insolvency).
+//  2. "Steal" funds - create a temporary gap between vault accounting and the
+//     real wallet balance using a mocknet-only ignore memo.
 //  3. Wait until Mimir key SolvencyHalt<Chain>Chain is set (> 1).
 //  4. Keep checking for a few blocks to confirm the halt stays active.
-//  5. Restore funds using a chain-specific method.
+//  5. Return funds to the vault with the same ignore memo.
 //  6. Wait until Mimir key SolvencyHalt<Chain>Chain returns to 0.
 //  7. Keep checking for a few blocks to confirm the unhalt stays active.
 //  8. Release all locked users.
 //
-// The actor currently serves these chain categories:
+// The observer drops any vault-adjacent tx whose memo is an exact match for the
+// simulation ignore marker. The steal path therefore reduces the wallet balance
+// without changing vault accounting, and the return path restores the wallet
+// without creating a matching inbound observation. stolenAmount is recorded as
+// the actual Asgard wallet delta after the steal so the restore closes the
+// fee-inclusive gap instead of only the nominal transfer amount.
 //
-// A) EVM chains & GAIA
-//   - Steal path:
-//     Send from Asgard wallet to a user with empty memo.
-//     This creates a real wallet delta using stolenAmount as the transfer target.
-//   - Restore path:
-//     1) Send from Asgard wallet to itself with memo "NOOP:novault"
-//     to reconcile vault accounting once observed.
-//     2) Send user->Asgard "DONATE:<asset>" to raise wallet balance and let
-//     auto-unhalt resume scanner processing of pending EVM txs.
-//
-// B) UTXO chains
-//   - Steal path:
-//     Send from Asgard wallet to user using "CONSOLIDATE" memo.
-//     This is used to build a simulation-only mismatch scenario.
-//   - Restore path:
-//     User deposits back to Asgard with "CONSOLIDATE".
-//     In simulation this uses the unobserved consolidate behavior to close the test flow.
-//
-// C) SOL
-//   - Steal path:
-//     Same as EVM-like send, but the actor records the real wallet delta
-//     (amount + fee) so restore can close the full gap exactly.
-//   - Restore path:
-//     User deposits to Asgard with memo "NOOP:novault" using a custom tx shape
-//     that contains two transfer instructions. SOL scanner rejects multi-transfer
-//     txs, so wallet can be re-funded without increasing vault accounting.
-//
-// D) TRON
-//   - Steal path:
-//     Compute the minimum required gap (from pool ratio + PermittedSolvencyGapUSD &
-//     DollarsPerRune config mimirs) that should cross solvency threshold,
-//     then execute steal and track the real wallet delta (amount + fee).
-//   - Restore path:
-//     Split restore amount into many sub-dust TRX inbounds (< DustThreshold).
-//     TRON scanner drops these txs while wallet balance still increases.
-//
-// E) XRP
-//   - XRP restore flow remains provisional and not treated as suite-stable.
-//
-// Extra notes:
-//   - stolenAmount target starts as 10% of Asgard wallet balance by default.
-//   - TRON steal path computes a lower target that is just above permitted
-//     solvency gap (to minimize restore tx count), and fails if lookup fails.
-//   - Suite-level inclusion/exclusion is controlled by the insolvency launcher.
+// Keep this memo in sync with bifrost/observer/simulation_ignore_mocknet.go.
 type InsolvencyActor struct {
 	Actor
 
@@ -92,13 +55,7 @@ type InsolvencyActor struct {
 	solvencyStartAt          int64
 }
 
-type solanaExtraTransferSigner interface {
-	SignTxWithExtraTransfer(tx SimTx, extraTo common.Address, extraAmount cosmos.Uint) ([]byte, error)
-}
-
-type xrpMemoTypeOnlySigner interface {
-	SignTxWithMemoTypeOnly(tx SimTx, memoType string) ([]byte, error)
-}
+const simulationIgnoreMemo = "MOCKNET_SIMULATION_ONLY_SKIP_OBSERVATION"
 
 // bumpBlock submits a small number of self-transfers on chains that only
 // produce blocks when txs are pending in mocknet.
@@ -301,13 +258,13 @@ func (a *InsolvencyActor) setup(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
-// stealFunds creates the accounting/wallet delta that should trigger solvency halt.
-// The exact transaction type is chain-specific, but each path is intended to produce
-// a temporary discrepancy between observed vault accounting and real wallet balance.
+// stealFunds creates the wallet/accounting delta that should trigger solvency halt.
+// The tx is intentionally ignored by the mocknet biforst observer, so vault accounting
+// stays unchanged while the on-chain vault wallet balance decreases.
 func (a *InsolvencyActor) stealFunds(config *OpConfig) OpResult {
 	a.Log().Info().Msg("attempting to steal funds from Asgard vault to create insolvency")
 
-	nodeBalance, err := a.getNodeBalance()
+	startBalance, err := a.getNodeBalance()
 	if err != nil {
 		return OpResult{
 			Error:  fmt.Errorf("failed to get asgard node balance for chain %s: %w", a.chain, err),
@@ -315,595 +272,81 @@ func (a *InsolvencyActor) stealFunds(config *OpConfig) OpResult {
 		}
 	}
 
-	if nodeBalance.IsZero() {
+	if startBalance.IsZero() {
 		return OpResult{
 			Error:  fmt.Errorf("asgard node %s has no %s balance to steal", a.nodeL1Address, a.asset),
 			Finish: true,
 		}
 	}
 
-	// TRON-specific target: keep insolvency delta as low as possible while still
-	// crossing the configured solvency gap threshold. This is required for TRON
-	// so scanner-blind restore does not need an excessive number of txs.
-	if a.chain.Equals(common.TRONChain) {
-		targetAmount, permittedGapRune, expectedGapRune, err := a.getTRONMinimalStealAmount(nodeBalance)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to compute minimal TRON steal target: %w", err),
-				Finish: true,
-			}
-		}
+	// Default target: meaningful but non-exhaustive delta so restore remains feasible.
+	targetAmount := startBalance.QuoUint64(10)
 
-		a.stolenAmount = targetAmount
-		a.Log().Info().
-			Stringer("node_balance", nodeBalance).
-			Stringer("target_stolen_amount", targetAmount).
-			Stringer("permitted_gap_in_rune", permittedGapRune).
-			Stringer("expected_gap_in_rune", expectedGapRune).
-			Msg("using minimal TRON steal target for insolvency trigger")
-	} else {
-		// Default target: meaningful but non-exhaustive delta so restore paths remain feasible.
-		a.stolenAmount = nodeBalance.QuoUint64(10)
-	}
-
-	if a.stolenAmount.IsZero() {
+	if targetAmount.IsZero() {
 		return OpResult{
-			Error:  fmt.Errorf("calculated stolen amount is zero, node balance %s too small", nodeBalance),
+			Error:  fmt.Errorf("calculated stolen amount is zero, node balance %s too small", startBalance),
 			Finish: true,
 		}
 	}
 
-	var txid string
-
-	switch {
-	case a.chain.IsUTXO():
-		// CONSOLIDATE memo is used by simulation plumbing for UTXO mismatch scenarios.
-		toAddress := a.userAccount.Address(a.chain)
-		txid, err = Send(a.Log(), a.nodeUser, toAddress, a.asset, "CONSOLIDATE", a.stolenAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute steal transaction: %w", err),
-				Finish: true,
-			}
+	toAddress := a.userAccount.Address(a.chain)
+	txid, err := Send(a.Log(), a.nodeUser, toAddress, a.asset, simulationIgnoreMemo, targetAmount)
+	if err != nil {
+		return OpResult{
+			Error:  fmt.Errorf("failed to execute steal transaction: %w", err),
+			Finish: true,
 		}
-		a.Log().Info().
-			Str("txid", txid).
-			Stringer("stolen_amount", a.stolenAmount).
-			Str("balances", a.getBalancesStr()).
-			Int64("chain_height", a.getHeight()).
-			Msg("broadcasted UTXO steal transaction")
-		return OpResult{Continue: true}
-	case a.chain.IsEVM(),
-		a.chain.Equals(common.GAIAChain):
-		// EVM-like steal path: plain vault->user transfer with empty memo.
-		toAddress := a.userAccount.Address(a.chain)
-		txid, err = Send(a.Log(), a.nodeUser, toAddress, a.asset, "", a.stolenAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute send-steal transaction: %w", err),
-				Finish: true,
-			}
-		}
-		a.Log().Info().
-			Str("txid", txid).
-			Stringer("stolen_amount", a.stolenAmount).
-			Str("balances", a.getBalancesStr()).
-			Int64("chain_height", a.getHeight()).
-			Msg("broadcasted send-steal transaction")
-		return OpResult{Continue: true}
-	case a.chain.Equals(common.SOLChain),
-		a.chain.Equals(common.TRONChain),
-		a.chain.Equals(common.XRPChain):
-		// Fee-aware steal for SOL/TRON/XRP:
-		// track the real Asgard wallet delta (amount + network fee) so restore
-		// can close the exact solvency gap without leaving fee residue.
-		toAddress := a.userAccount.Address(a.chain)
-		targetAmount := a.stolenAmount
-		startBalance, err := a.getNodeBalance()
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to get starting node balance for %s steal: %w", a.chain, err),
-				Finish: true,
-			}
-		}
-
-		txid, err = Send(a.Log(), a.nodeUser, toAddress, a.asset, "", targetAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute %s send-steal transaction: %w", a.chain, err),
-				Finish: true,
-			}
-		}
-
-		actualDelta, err := a.getBalanceDelta(startBalance)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to compute %s steal delta after tx %s: %w", a.chain, txid, err),
-				Finish: true,
-			}
-		}
-		a.stolenAmount = actualDelta
-
-		a.Log().Info().
-			Str("txid", txid).
-			Stringer("target_stolen_amount", targetAmount).
-			Stringer("stolen_amount", a.stolenAmount).
-			Str("balances", a.getBalancesStr()).
-			Int64("chain_height", a.getHeight()).
-			Msg("broadcasted fee-aware send-steal transaction")
-		return OpResult{Continue: true}
-	default:
-		a.Log().Info().
-			Stringer("chain", a.chain).
-			Msg("skipping actor: unsupported chain for insolvency steal path")
-		// Release acquired accounts before finishing early.
-		return a.cleanup(config)
 	}
+
+	actualDelta, err := a.getBalanceDelta(startBalance)
+	if err != nil {
+		return OpResult{
+			Error:  fmt.Errorf("failed to compute steal delta after tx %s on %s: %w", txid, a.chain, err),
+			Finish: true,
+		}
+	}
+	a.stolenAmount = actualDelta
+
+	a.Log().Info().
+		Str("txid", txid).
+		Str("memo", simulationIgnoreMemo).
+		Stringer("target_stolen_amount", targetAmount).
+		Stringer("stolen_amount", a.stolenAmount).
+		Str("balances", a.getBalancesStr()).
+		Int64("chain_height", a.getHeight()).
+		Msg("broadcasted simulation-ignore steal transaction")
+	return OpResult{Continue: true}
 }
 
-// getTRONMinimalStealAmount computes a TRON steal amount that is just above the
-// configured solvency gap threshold, to minimize scanner-blind restore tx count.
-func (a *InsolvencyActor) getTRONMinimalStealAmount(nodeBalance cosmos.Uint) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
-	if !a.asset.Chain.Equals(common.TRONChain) {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("getTRONMinimalStealAmount only supports TRON, got %s", a.asset.Chain)
-	}
-
-	pool, err := thornode.GetPool(a.asset.GetLayer1Asset())
-	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("failed to get pool for %s: %w", a.asset, err)
-	}
-
-	runeDepth := cosmos.NewUintFromString(pool.BalanceRune)
-	assetDepth := cosmos.NewUintFromString(pool.BalanceAsset)
-	if runeDepth.IsZero() || assetDepth.IsZero() {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("invalid pool depth for %s: rune=%s asset=%s", a.asset, runeDepth, assetDepth)
-	}
-
-	// Mimir values are stored in 1e8 notation:
-	// - PermittedSolvencyGapUSD: USD value (1e8)
-	// - DollarsPerRune:          USD per RUNE (1e8)
-	permittedGapUSD, err := thornode.GetMimir("PermittedSolvencyGapUSD")
-	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("failed to get PermittedSolvencyGapUSD: %w", err)
-	}
-	if permittedGapUSD <= 0 {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("invalid PermittedSolvencyGapUSD value: %d", permittedGapUSD)
-	}
-
-	dollarsPerRune, err := thornode.GetMimir("DollarsPerRune")
-	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("failed to get DollarsPerRune: %w", err)
-	}
-	if dollarsPerRune <= 0 {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("invalid DollarsPerRune value: %d", dollarsPerRune)
-	}
-
-	// Match thornode's solvency threshold conversion:
-	// permittedGapRune ~= permittedGapUSD * 1e8 / dollarsPerRune
-	permittedGapRune := cosmos.NewUint(uint64(permittedGapUSD)).
-		MulUint64(common.One).
-		Quo(cosmos.NewUint(uint64(dollarsPerRune)))
-	if permittedGapRune.IsZero() {
-		permittedGapRune = cosmos.OneUint()
-	}
-
-	// TRON tx amounts are signed in 1e6 units while simulation tracks 1e8.
-	tronBaseUnit := cosmos.NewUint(100)
-
-	// Choose requiredStealAmount such that
-	// round(requiredStealAmount * runeDepth / assetDepth) > permittedGapRune.
-	// Conservatively target unrounded value >= permittedGapRune+1, then ceil-divide.
-	requiredGapRune := permittedGapRune.Add(cosmos.OneUint())
-	numerator := requiredGapRune.Mul(assetDepth)
-	requiredStealAmount := numerator.Add(runeDepth.Sub(cosmos.OneUint())).Quo(runeDepth) // ceil(numerator / runeDepth)
-	// Align up to TRON base unit (1 sun => 100 in 1e8 units).
-	requiredStealAmount = requiredStealAmount.Add(tronBaseUnit.Sub(cosmos.OneUint())).Quo(tronBaseUnit).Mul(tronBaseUnit)
-	if requiredStealAmount.IsZero() {
-		requiredStealAmount = tronBaseUnit
-	}
-	if !requiredStealAmount.LT(nodeBalance) {
-		return cosmos.ZeroUint(), permittedGapRune, cosmos.ZeroUint(), fmt.Errorf("computed TRON steal amount %s is not below node balance %s", requiredStealAmount, nodeBalance)
-	}
-
-	// Safety check for rounding/edge cases before executing steal tx.
-	expectedGapRune := common.GetUncappedShare(runeDepth, assetDepth, requiredStealAmount)
-	if !expectedGapRune.GT(permittedGapRune) {
-		return cosmos.ZeroUint(), permittedGapRune, expectedGapRune, fmt.Errorf("computed TRON steal target did not exceed permitted gap (expected=%s permitted=%s)", expectedGapRune, permittedGapRune)
-	}
-
-	return requiredStealAmount, permittedGapRune, expectedGapRune, nil
-}
-
-// restoreFunds attempts to close the induced insolvency gap using chain-specific
-// simulation plumbing. GAIA follows the stable EVM-like reconcile flow.
-// SOL/TRON/XRP remain simulation-only scanner-blind restore paths.
+// restoreFunds closes the induced insolvency gap by sending funds back to the
+// vault with the same ignore memo, so wallet balance rises without observation.
 func (a *InsolvencyActor) restoreFunds(config *OpConfig) OpResult {
 	a.Log().Info().Msg("attempting to restore solvency after induced insolvency")
 
-	restoreAmount := a.stolenAmount
-	switch {
-	case a.chain.IsUTXO():
-		// - For UTXO chains, user->Asgard with CONSOLIDATE is not observed as
-		//   an inbound (sender is non-vault while memo is internal consolidate),
-		//   so wallet balance is restored without changing vault accounting.
-		txid, err := DepositL1(a.Log(), a.userClient, a.asset, "CONSOLIDATE", restoreAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute restore transaction: %w", err),
-				Finish: true,
-			}
-		}
-		a.Log().Info().
-			Str("txid", txid).
-			Stringer("stolen_amount", a.stolenAmount).
-			Stringer("restored_amount", restoreAmount).
-			Str("restore_mode", "user_to_asgard_unobserved_consolidate").
-			Int64("chain_height", a.getHeight()).
-			Str("balances", a.getBalancesStr()).
-			Msg("broadcasted restore transaction")
-		return OpResult{Continue: true}
-	case a.chain.IsEVM(),
-		a.chain.Equals(common.GAIAChain):
-		// EVM and GAIA restore:
-		// 1) Use self-transfer reconciliation to trigger the NOOP path.
-		// 2) Send DONATE inbound to raise wallet balance so auto-unhalt can resume
-		//    scanner processing and observe the queued reconcile tx.
-		txid, reconciledAmount, err := a.reconcileVaultGapBySelfTransfer(restoreAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute restore transaction: %w", err),
-				Finish: true,
-			}
-		}
-
-		a.Log().Info().
-			Str("txid", txid).
-			Stringer("stolen_amount", a.stolenAmount).
-			Stringer("restored_amount", reconciledAmount).
-			Str("restore_mode", "self_transfer_reconcile").
-			Int64("chain_height", a.getHeight()).
-			Str("balances", a.getBalancesStr()).
-			Msg("broadcasted restore transaction")
-
-		donateMemo := fmt.Sprintf("DONATE:%s", a.asset)
-		donateTxID, err := DepositL1(a.Log(), a.userClient, a.asset, donateMemo, reconciledAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute donate restore transaction: %w", err),
-				Finish: true,
-			}
-		}
-
-		a.Log().Info().
-			Str("txid", donateTxID).
-			Stringer("donated_amount", reconciledAmount).
-			Str("memo", donateMemo).
-			Str("restore_mode", "user_to_asgard_donate_unhalt_bootstrap").
-			Int64("chain_height", a.getHeight()).
-			Str("balances", a.getBalancesStr()).
-			Msg("broadcasted donate transaction after reconcile")
-
-		return OpResult{Continue: true}
-	case a.chain.Equals(common.TRONChain):
-		// Simulation-only TRON restore trick:
-		// split restore into sub-dust TRX inbounds. Scanner drops each tx by dust
-		// filter, while Asgard wallet balance still increases.
-		txids, restoredAmount, err := a.restoreSolvencyTRONScannerBlindDust(restoreAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute restore transaction: %w", err),
-				Finish: true,
-			}
-		}
-
-		lastTxID := ""
-		if len(txids) > 0 {
-			lastTxID = txids[len(txids)-1]
-		}
-		a.Log().Info().
-			Str("txid", lastTxID).
-			Int("tx_count", len(txids)).
-			Stringer("stolen_amount", a.stolenAmount).
-			Stringer("restored_amount", restoredAmount).
-			Str("restore_mode", "user_to_asgard_scanner_blind_sub_dust").
-			Int64("chain_height", a.getHeight()).
-			Str("balances", a.getBalancesStr()).
-			Msg("broadcasted restore transaction batch")
-		return OpResult{Continue: true}
-	case a.chain.Equals(common.XRPChain):
-		// Simulation-only XRP restore trick:
-		// send a valid Payment with memo fields that omit MemoData, so scanner
-		// parsing drops it while Asgard wallet balance still increases.
-		txid, err := a.restoreSolvencyXRPScannerBlind(restoreAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute restore transaction: %w", err),
-				Finish: true,
-			}
-		}
-		a.Log().Info().
-			Str("txid", txid).
-			Stringer("stolen_amount", a.stolenAmount).
-			Stringer("restored_amount", restoreAmount).
-			Str("restore_mode", "user_to_asgard_scanner_blind_payment").
-			Int64("chain_height", a.getHeight()).
-			Str("balances", a.getBalancesStr()).
-			Msg("broadcasted restore transaction")
-		return OpResult{Continue: true}
-	case a.chain.Equals(common.SOLChain):
-		// Simulation-only SOL restore trick:
-		// Build a valid inbound tx with two transfer instructions. SOL scanner
-		// rejects multi-transfer txs, so wallet gets credited while vault
-		// accounting remains unchanged.
-		txid, extraTo, extraAmount, err := a.restoreSolvencySOLScannerBlind(config, restoreAmount)
-		if err != nil {
-			return OpResult{
-				Error:  fmt.Errorf("failed to execute restore transaction: %w", err),
-				Finish: true,
-			}
-		}
-		a.Log().Info().
-			Str("txid", txid).
-			Stringer("stolen_amount", a.stolenAmount).
-			Stringer("restored_amount", restoreAmount).
-			Stringer("extra_to", extraTo).
-			Stringer("extra_amount", extraAmount).
-			Str("restore_mode", "user_to_asgard_scanner_blind_noop").
-			Int64("chain_height", a.getHeight()).
-			Str("balances", a.getBalancesStr()).
-			Msg("broadcasted restore transaction")
-		return OpResult{Continue: true}
-	default:
+	if a.stolenAmount.IsZero() {
 		return OpResult{
-			Error:  fmt.Errorf("unsupported chain type: %s", a.chain),
+			Error:  fmt.Errorf("restore amount is zero"),
 			Finish: true,
 		}
 	}
-}
 
-// restoreSolvencyTRONScannerBlindDust submits a batch of TRX inbounds below
-// TRON DustThreshold so scanner parsing drops them while wallet balance rises.
-func (a *InsolvencyActor) restoreSolvencyTRONScannerBlindDust(amount cosmos.Uint) ([]string, cosmos.Uint, error) {
-	if !a.asset.Chain.Equals(common.TRONChain) {
-		return nil, cosmos.ZeroUint(), fmt.Errorf("restoreSolvencyTRONScannerBlindDust only supports TRON, got %s", a.asset.Chain)
-	}
-	if amount.IsZero() {
-		return nil, cosmos.ZeroUint(), fmt.Errorf("restore amount is zero")
-	}
-
-	// TRON tx amounts are signed in 1e6 units while simulation tracks 1e8,
-	// so keep all chunks aligned to 100.
-	tronBaseUnit := cosmos.NewUint(100)
-	dust := common.TRONChain.DustThreshold()
-	if !dust.GT(tronBaseUnit) {
-		return nil, cosmos.ZeroUint(), fmt.Errorf("invalid TRON dust threshold: %s", dust)
-	}
-
-	maxChunk := dust.Sub(tronBaseUnit)
-	maxChunk = maxChunk.Quo(tronBaseUnit).Mul(tronBaseUnit)
-	if maxChunk.IsZero() {
-		return nil, cosmos.ZeroUint(), fmt.Errorf("invalid TRON max restore chunk")
-	}
-	// Each chunk is strictly below DustThreshold so scanner drops every inbound.
-
-	// Ceil(amount/maxChunk) without floating point.
-	txEstimate := amount.Quo(maxChunk)
-	if txEstimate.Mul(maxChunk).LT(amount) {
-		txEstimate = txEstimate.Add(cosmos.OneUint())
+	txid, err := Send(a.Log(), a.userAccount, a.nodeL1Address, a.asset, simulationIgnoreMemo, a.stolenAmount)
+	if err != nil {
+		return OpResult{
+			Error:  fmt.Errorf("failed to execute restore transaction: %w", err),
+			Finish: true,
+		}
 	}
 
 	a.Log().Info().
-		Stringer("restore_amount", amount).
-		Stringer("chunk_max_amount", maxChunk).
-		Stringer("estimated_tx_count", txEstimate).
-		Msg("starting TRON scanner-blind restore batch")
-
-	remaining := amount
-	restored := cosmos.ZeroUint()
-	txids := make([]string, 0)
-	sent := cosmos.ZeroUint()
-	// Keep logs readable on large batches: first few txs, then periodic updates.
-	progressLogEvery := uint64(25)
-
-	for remaining.GT(cosmos.ZeroUint()) {
-		chunk := remaining
-		if chunk.GT(maxChunk) {
-			chunk = maxChunk
-		}
-		chunk = chunk.Quo(tronBaseUnit).Mul(tronBaseUnit)
-		if chunk.IsZero() {
-			return txids, restored, fmt.Errorf("remaining amount %s is below TRON base unit", remaining)
-		}
-
-		txid, err := DepositL1(a.Log(), a.userClient, a.asset, "", chunk)
-		if err != nil {
-			return txids, restored, err
-		}
-
-		txids = append(txids, txid)
-		restored = restored.Add(chunk)
-		remaining = remaining.Sub(chunk)
-		sent = sent.Add(cosmos.OneUint())
-
-		// Log early chunks and then periodic progress for visibility.
-		shouldLog := sent.LTE(cosmos.NewUint(10))
-		if !shouldLog {
-			multiple := sent.QuoUint64(progressLogEvery).MulUint64(progressLogEvery)
-			shouldLog = sent.Equal(multiple)
-		}
-		if !shouldLog && remaining.IsZero() {
-			shouldLog = true
-		}
-		if shouldLog {
-			// Remaining tx count is exact because chunk sizing is deterministic:
-			// every tx uses maxChunk except the last one (ceil division).
-			remainingTxEstimate := remaining.Quo(maxChunk)
-			if remainingTxEstimate.Mul(maxChunk).LT(remaining) {
-				remainingTxEstimate = remainingTxEstimate.Add(cosmos.OneUint())
-			}
-			a.Log().Info().
-				Str("txid", txid).
-				Stringer("restore_tx_index", sent).
-				Stringer("restore_tx_total_estimate", txEstimate).
-				Stringer("restore_tx_sent", sent).
-				Stringer("restore_tx_total", txEstimate).
-				Stringer("restore_tx_remaining", remainingTxEstimate).
-				Stringer("chunk_amount", chunk).
-				Stringer("restore_amount_sent", restored).
-				Stringer("restore_amount_total", amount).
-				Stringer("restore_amount_remaining", remaining).
-				Stringer("remaining_amount", remaining).
-				Msg("broadcasted TRON restore chunk")
-		}
-	}
-
-	return txids, restored, nil
-}
-
-// restoreSolvencyXRPScannerBlind submits an XRP payment inbound that credits
-// Asgard wallet while avoiding scanner accounting updates by omitting MemoData.
-func (a *InsolvencyActor) restoreSolvencyXRPScannerBlind(amount cosmos.Uint) (string, error) {
-	if amount.IsZero() {
-		return "", fmt.Errorf("restore amount is zero")
-	}
-	return a.depositL1XRPScannerBlind("novault", amount)
-}
-
-// restoreSolvencySOLScannerBlind submits a SOL inbound that credits Asgard wallet
-// while avoiding scanner accounting updates by using a multi-transfer tx shape.
-func (a *InsolvencyActor) restoreSolvencySOLScannerBlind(config *OpConfig, amount cosmos.Uint) (string, common.Address, cosmos.Uint, error) {
-	if amount.IsZero() {
-		return "", common.NoAddress, cosmos.ZeroUint(), fmt.Errorf("restore amount is zero")
-	}
-	extraTo, err := a.getSOLDistinctUserRecipient(config)
-	if err != nil {
-		return "", common.NoAddress, cosmos.ZeroUint(), err
-	}
-	// Keep the second transfer tiny, it only exists to force transferCount > 1.
-	extraAmount := cosmos.NewUint(1)
-
-	txid, err := a.depositL1SOLScannerBlind("NOOP:novault", amount, extraTo, extraAmount)
-	if err != nil {
-		return "", common.NoAddress, cosmos.ZeroUint(), err
-	}
-	return txid, extraTo, extraAmount, nil
-}
-
-// depositL1SOLScannerBlind submits a SOL inbound tx with an extra transfer
-// instruction so scanner-side single-transfer parsing ignores it.
-func (a *InsolvencyActor) depositL1SOLScannerBlind(
-	memo string,
-	amount cosmos.Uint,
-	extraTo common.Address,
-	extraAmount cosmos.Uint,
-) (string, error) {
-	if !a.asset.Chain.Equals(common.SOLChain) {
-		return "", fmt.Errorf("depositL1SOLScannerBlind only supports SOL, got %s", a.asset.Chain)
-	}
-
-	solClient, ok := a.userClient.(solanaExtraTransferSigner)
-	if !ok {
-		return "", fmt.Errorf("solana client does not support extra-transfer signing")
-	}
-
-	inboundAddr, _, err := thornode.GetInboundAddress(a.asset.Chain)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to get inbound address")
-		return "", err
-	}
-
-	tx := SimTx{
-		Chain:     a.asset.Chain,
-		ToAddress: inboundAddr,
-		Coin:      common.NewCoin(a.asset, amount),
-		Memo:      memo,
-	}
-
-	signed, err := solClient.SignTxWithExtraTransfer(tx, extraTo, extraAmount)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to sign scanner-blind sol tx")
-		return "", err
-	}
-
-	txid, err := a.userClient.BroadcastTx(signed)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to broadcast scanner-blind sol tx")
-	}
-
-	return txid, err
-}
-
-// depositL1XRPScannerBlind submits an XRP Payment with memo type only (no
-// MemoData), so scanner parsing drops it while wallet balance still increases.
-func (a *InsolvencyActor) depositL1XRPScannerBlind(memoType string, amount cosmos.Uint) (string, error) {
-	if !a.asset.Chain.Equals(common.XRPChain) {
-		return "", fmt.Errorf("depositL1XRPScannerBlind only supports XRP, got %s", a.asset.Chain)
-	}
-
-	xrpClient, ok := a.userClient.(xrpMemoTypeOnlySigner)
-	if !ok {
-		return "", fmt.Errorf("xrp client does not support memo-type-only signing")
-	}
-
-	inboundAddr, _, err := thornode.GetInboundAddress(a.asset.Chain)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to get inbound address")
-		return "", err
-	}
-
-	tx := SimTx{
-		Chain:     a.asset.Chain,
-		ToAddress: inboundAddr,
-		Coin:      common.NewCoin(a.asset, amount),
-	}
-
-	signed, err := xrpClient.SignTxWithMemoTypeOnly(tx, memoType)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to sign scanner-blind xrp tx")
-		return "", err
-	}
-
-	txid, err := a.userClient.BroadcastTx(signed)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to broadcast scanner-blind xrp tx")
-	}
-
-	return txid, err
-}
-
-// getSOLDistinctUserRecipient returns any configured simulation user address that
-// differs from the currently locked sender account.
-func (a *InsolvencyActor) getSOLDistinctUserRecipient(config *OpConfig) (common.Address, error) {
-	if config == nil {
-		return common.NoAddress, fmt.Errorf("op config is nil")
-	}
-	sender := a.userAccount
-	for _, u := range config.Users {
-		if u == nil || u == sender {
-			continue
-		}
-		return u.Address(common.SOLChain), nil
-	}
-	return common.NoAddress, fmt.Errorf("failed to find distinct SOL user recipient")
-}
-
-// reconcileVaultGapBySelfTransfer uses an Asgard self-transfer with NOOP memo to
-// close the temporary accounting gap on EVM chains.
-func (a *InsolvencyActor) reconcileVaultGapBySelfTransfer(amount cosmos.Uint) (string, cosmos.Uint, error) {
-	if amount.IsZero() {
-		return "", cosmos.ZeroUint(), fmt.Errorf("restore amount is zero")
-	}
-
-	// NOOP inbound memo - on observed tx out drives the inbound-memo slash path,
-	// which reconciles vault accounting without inbound NOOP handler execution.
-	memo := "NOOP:novault"
-
-	txid, err := Send(a.Log(), a.nodeUser, a.nodeL1Address, a.asset, memo, amount)
-	if err != nil {
-		return "", cosmos.ZeroUint(), fmt.Errorf("failed self-transfer restore send: %w", err)
-	}
-
-	return txid, amount, nil
+		Str("txid", txid).
+		Str("memo", simulationIgnoreMemo).
+		Stringer("stolen_amount", a.stolenAmount).
+		Stringer("restored_amount", a.stolenAmount).
+		Str("balances", a.getBalancesStr()).
+		Int64("chain_height", a.getHeight()).
+		Msg("broadcasted simulation-ignore restore transaction")
+	return OpResult{Continue: true}
 }
 
 // verifyInsolvencyHalt waits for SolvencyHalt<Chain>Chain to become active (> 0).

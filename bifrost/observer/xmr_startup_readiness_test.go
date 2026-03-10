@@ -41,7 +41,7 @@ func TestXMRStartupMissingClientKeepsOtherChainsAvailable(t *testing.T) {
 	require.False(t, o.IsChainClientStarted(common.XMRChain))
 	o.wg = &sync.WaitGroup{}
 	o.startXMRErrataMaintenance(context.Background(), deferred) // No configured XMR client: no worker.
-	o.wg.Wait()
+	o.xmrStartupWG.Wait()
 	after, err := storage.db.Get([]byte(errataTombstoneKey(er.Chain, er.Id.String())), nil)
 	require.NoError(t, err)
 	require.Equal(t, before, after)
@@ -100,7 +100,7 @@ func TestXMRStartupRestoresCompletedQuarantineAfterRestart(t *testing.T) {
 	require.True(t, deferred)
 	o.wg = &sync.WaitGroup{}
 	o.startXMRErrataMaintenance(context.Background(), deferred)
-	t.Cleanup(func() { o.stopStartedChainClients(); o.wg.Wait() })
+	t.Cleanup(func() { o.stopStartedChainClients(); o.xmrStartupWG.Wait() })
 	require.Eventually(t, func() bool { return o.IsChainClientStarted(common.XMRChain) }, time.Second, time.Millisecond)
 	// The same worker must stay alive for later receipts without replaying
 	// completed startup history on every maintenance pass.
@@ -110,7 +110,7 @@ func TestXMRStartupRestoresCompletedQuarantineAfterRestart(t *testing.T) {
 		return readErr == nil && tombstone != nil && tombstone.isPermanentlyReverted()
 	}, 2*constants.ThorchainBlockTime, time.Millisecond)
 	o.stopStartedChainClients()
-	o.wg.Wait()
+	o.xmrStartupWG.Wait()
 	require.Equal(t, map[common.TxID]int{er.Id: 1, runtimeErrata.Id: 1}, calls)
 	require.Equal(t, 1, xmr.starts)
 }

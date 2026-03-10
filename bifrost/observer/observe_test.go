@@ -405,6 +405,45 @@ func (s *ObserverSuite) TestErrataTx(c *C) {
 	}), IsNil)
 }
 
+// TestStopTimesOutReporterWait ensures Observer.Stop keeps shutdown bounded even
+// if reporter goroutines are still stuck in THORChain RPC work and do not drain
+// their waitgroup promptly.
+func (s *ObserverSuite) TestStopTimesOutReporterWait(c *C) {
+	origTimeout := observerReporterStopTimeout
+	observerReporterStopTimeout = 50 * time.Millisecond
+	defer func() {
+		observerReporterStopTimeout = origTimeout
+	}()
+
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
+	c.Assert(err, IsNil)
+
+	ag, err := NewAttestationGossip(NewMockHost([]peer.ID{}), s.thorKeys, "localhost:50052", s.bridge, s.metrics, config.BifrostAttestationGossipConfig{})
+	c.Assert(err, IsNil)
+
+	obs, err := NewObserver(pubkeyMgr, nil, s.bridge, s.metrics, "", metrics.NewTssKeysignMetricMgr(), ag, "")
+	c.Assert(err, IsNil)
+	c.Assert(obs, NotNil)
+
+	// Simulate a stuck reporter goroutine so Stop() has to use the timeout path.
+	obs.wg.Add(1)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- obs.Stop()
+	}()
+
+	select {
+	case err := <-done:
+		c.Assert(err, IsNil)
+	case <-time.After(500 * time.Millisecond):
+		c.Fatal("Observer.Stop() blocked waiting for reporter shutdown")
+	}
+
+	// Release the synthetic waitgroup entry so the test does not leak the helper goroutine.
+	obs.wg.Done()
+}
+
 func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 	vault1 := types2.GetRandomPubKey()
 	vault2 := types2.GetRandomPubKey()

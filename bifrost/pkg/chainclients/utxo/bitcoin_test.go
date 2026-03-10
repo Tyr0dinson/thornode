@@ -214,6 +214,23 @@ func (s *BitcoinSuite) TearDownTest(_ *C) {
 	s.server.Close()
 }
 
+// TestGetGasEstimateForSolvency verifies the UTXO solvency buffer formula:
+// 3 * EstimatedAverageTxSize * lastFeeRate, already expressed in THORChain 1e8 units.
+func (s *BitcoinSuite) TestGetGasEstimateForSolvency(c *C) {
+	cfg := config.BifrostChainConfiguration{
+		ChainID: common.BTCChain,
+	}
+	cfg.UTXO.EstimatedAverageTxSize = 1_000
+
+	client := &Client{
+		cfg:         cfg,
+		lastFeeRate: 50,
+	}
+
+	got := client.GetGasEstimateForSolvency()
+	c.Assert(got.Equal(cosmos.NewUint(150_000)), Equals, true)
+}
+
 func (s *BitcoinSuite) TestGetBlock(c *C) {
 	block, err := s.client.getBlock(1696761)
 	c.Assert(err, IsNil)

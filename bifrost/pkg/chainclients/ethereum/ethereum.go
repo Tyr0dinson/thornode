@@ -90,6 +90,9 @@ type Client struct {
 	signingReady atomic.Bool
 }
 
+// Compile-time check that the ETH client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*Client)(nil)
+
 // NewClient create new instance of Ethereum client
 func NewClient(thorKeys *thorclient.Keys,
 	cfg config.BifrostChainConfiguration,

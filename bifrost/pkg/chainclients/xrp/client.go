@@ -83,6 +83,9 @@ type Client struct {
 	vaultLocks   map[string]*sync.Mutex
 }
 
+// Compile-time check that the XRP client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*Client)(nil)
+
 // NewClient creates a new instance of an XRP-based chain client
 func NewClient(
 	thorKeys *thorclient.Keys,

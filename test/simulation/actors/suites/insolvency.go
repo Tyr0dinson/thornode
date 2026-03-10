@@ -21,7 +21,7 @@ import (
 // The suite:
 // 1) enables log-only mode for the solvency-halt watcher,
 // 2) applies deterministic USD config mimirs used by solvency threshold logic,
-// 3) runs selected chain-specific insolvency actors sequentially,
+// 3) runs one insolvency actor per simulation chain sequentially,
 // 4) waits for all solvency halts to clear,
 // 5) restores watcher behavior to fatal mode.
 func Insolvency(rng *rand.Rand) *Actor {
@@ -42,7 +42,7 @@ func Insolvency(rng *rand.Rand) *Actor {
 
 	tests := NewActor("Insolvency-Launcher", rng)
 
-	chains := insolvencySimulationChains()
+	chains := append([]common.Chain(nil), acommon.SimChains...)
 
 	// In mocknet, insolvency actors contend for the same node lock/account,
 	// so we chain them sequentially instead of running as parallel children.
@@ -86,10 +86,4 @@ func Insolvency(rng *rand.Rand) *Actor {
 	a.Append(restoreWatcherMode)
 
 	return a
-}
-
-func insolvencySimulationChains() []common.Chain {
-	chains := make([]common.Chain, 0, len(acommon.SimChains))
-	chains = append(chains, acommon.SimChains...)
-	return chains
 }

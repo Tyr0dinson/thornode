@@ -196,6 +196,9 @@ type TronClient struct {
 	stopchan     chan struct{}
 }
 
+// Compile-time check that the TRON client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*TronClient)(nil)
+
 // NewTronClient creates a new instance of a Tron chain client
 func NewTronClient(
 	thorKeys *thorclient.Keys,

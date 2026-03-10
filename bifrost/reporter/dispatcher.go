@@ -66,7 +66,13 @@ type dispatcher struct {
 // It initializes per-chain reporters and async workers.
 func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
 	logger := log.Logger.With().Str("module", "reporter_dispatcher").Logger()
-	reportQueue := make(chan ReportBatch)
+	reportQueueSize := len(chains)
+	if reportQueueSize < 1 {
+		reportQueueSize = 1
+	}
+	// Keep one batch slot per configured chain so collectors are less coupled to
+	// THORChain RPC latency while still keeping the queue tightly bounded.
+	reportQueue := make(chan ReportBatch, reportQueueSize)
 	reporters := make(map[common.Chain]Reporters, len(chains))
 	chainTaskQueues := make(map[common.Chain]chan reportTask, len(chains))
 	for _, client := range chains {

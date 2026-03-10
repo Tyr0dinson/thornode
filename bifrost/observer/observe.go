@@ -73,6 +73,11 @@ var (
 	errObservedTxErrata   = types.ErrObservedTxOrphaned
 )
 
+// observerReporterStopTimeout bounds how long Observer.Stop waits for the
+// reporter dispatcher goroutines after signaling shutdown. The dispatcher can
+// still be inside THORChain RPC calls, so this wait must be best-effort.
+var observerReporterStopTimeout = 2 * constants.ThorchainBlockTime
+
 type txInKey struct {
 	chain                  common.Chain
 	height                 int64
@@ -108,6 +113,7 @@ type Observer struct {
 	onDeck                map[txInKey]*types.TxIn
 	lock                  *sync.Mutex
 	wg                    *sync.WaitGroup
+	xmrStartupWG          sync.WaitGroup
 	globalTxsQueue        chan types.TxIn
 	globalErrataQueue     chan types.ErrataBlock
 	globalNetworkFeeQueue chan common.NetworkFee
@@ -351,9 +357,7 @@ func (o *Observer) stopStartedChainClients() {
 	if xmrClient != nil {
 		// Maintenance may still use the XMR client. Let other chains stop first,
 		// then join without holding the lifecycle lock before stopping XMR.
-		if o.wg != nil {
-			o.wg.Wait()
-		}
+		o.xmrStartupWG.Wait()
 		xmrClient.Stop()
 	}
 }
@@ -400,9 +404,9 @@ func (o *Observer) startXMRErrataMaintenance(ctx context.Context, restoreQuarant
 		return
 	}
 	// Register before shutdown can close stopChan and wait for maintenance.
-	o.wg.Add(1)
+	o.xmrStartupWG.Add(1)
 	go func() {
-		defer o.wg.Done()
+		defer o.xmrStartupWG.Done()
 		o.maintainXMRErrata(ctx, restoreQuarantines)
 	}()
 }
@@ -435,6 +439,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
+	// The reporter dispatcher is the active solvency path.
 	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.errCounter, o.stopChan, o.wg)
 	deferXMR, err := o.startRestoredChainClients()
 	if err != nil {
@@ -2146,6 +2151,20 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 			invalidIndices = append(invalidIndices, i)
 			continue
 		}
+		// Mocknet-only simulation hook: let specially marked vault-adjacent txs
+		// disappear before observation so tests can create wallet/vault deltas.
+		if shouldIgnoreSimulationTx(item, chainAddr) {
+			o.logger.Info().
+				Str("tx", item.Tx).
+				Stringer("chain", txIn.Chain).
+				Str("memo", item.Memo).
+				Str("sender", item.Sender).
+				Str("to", item.To).
+				Str("vault", chainAddr.String()).
+				Msg("ignoring mocknet simulation tx")
+			invalidIndices = append(invalidIndices, i)
+			continue
+		}
 		height := item.BlockHeight
 		if finalized {
 			height = finaliseHeight
@@ -2232,10 +2251,14 @@ func (o *Observer) Stop() error {
 	defer o.logger.Debug().Msg("observer stopped")
 
 	o.stopStartedChainClients()
-	// Startup restoration may still be running without a started XMR client.
-	// Join it before closing the Observer database it uses.
-	o.wg.Wait()
+	// Startup restoration and maintenance must finish before closing storage.
+	o.xmrStartupWG.Wait()
 	o.oracle.Stop()
+	if !o.waitForReporterShutdown() {
+		o.logger.Error().
+			Dur("timeout", observerReporterStopTimeout).
+			Msg("timed out waiting for reporter dispatcher shutdown; continuing observer stop")
+	}
 	if err := o.pubkeyMgr.Stop(); err != nil {
 		o.logger.Error().Err(err).Msg("fail to stop pool address manager")
 	}
@@ -2244,6 +2267,30 @@ func (o *Observer) Stop() error {
 	}
 
 	return o.m.Stop()
+}
+
+// waitForReporterShutdown waits for reporter goroutines to drain, but keeps
+// observer shutdown bounded if a reporter is stuck in slow external work.
+func (o *Observer) waitForReporterShutdown() bool {
+	if o.wg == nil {
+		return true
+	}
+
+	done := make(chan struct{})
+	go func() {
+		o.wg.Wait()
+		close(done)
+	}()
+
+	timer := time.NewTimer(observerReporterStopTimeout)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 func (o *Observer) processOracle() {

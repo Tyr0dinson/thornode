@@ -93,6 +93,9 @@ type CosmosClient struct {
 	stopchan     chan struct{}
 }
 
+// Compile-time check that the Cosmos client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*CosmosClient)(nil)
+
 // NewCosmosClient creates a new instance of a Cosmos-based chain client
 func NewCosmosClient(
 	thorKeys *thorclient.Keys,

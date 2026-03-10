@@ -33,9 +33,9 @@ func (r *solvencyReporter) String() string {
 }
 
 // Collect gathers solvency messages for all Asgard vaults on this chain.
-// It prefers reporting insolvent vaults, and when scanner health is degraded it can
-// emit "all solvent" reports to allow auto-unhalt.
-func (r *solvencyReporter) Collect(_ triggeredFrom, height int64) (ReportBatch, error) {
+// It prefers reporting insolvent vaults, and only runner-triggered checks can
+// emit "all solvent" reports to allow auto-unhalt when scanner health is degraded.
+func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatch, error) {
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
 	currentGasFee := r.client.GetGasEstimateForSolvency()
@@ -49,7 +49,7 @@ func (r *solvencyReporter) Collect(_ triggeredFrom, height int64) (ReportBatch, 
 
 	msgs := make(ReportBatch, 0, len(asgardVaults))
 	solventMsgs := make(ReportBatch, 0, len(asgardVaults))
-	checkedVaults := 0
+	processedVaults := 0
 	msgHeight := solvencyMsgHeight(r.client.GetChain(), height)
 	queryHeight := big.NewInt(height)
 	for _, asgard := range asgardVaults {
@@ -62,17 +62,20 @@ func (r *solvencyReporter) Collect(_ triggeredFrom, height int64) (ReportBatch, 
 		var acct common.Account
 		acct, err = r.client.GetAccount(accountPubKey, queryHeight)
 		if err != nil {
-			r.logger.Err(err).Msg("fail to get account balance")
+			r.logger.Err(err).
+				Stringer("vault", asgard.PubKey).
+				Stringer("account_lookup_pubkey", accountPubKey).
+				Int64("query_height", height).
+				Msg("fail to get account balance")
 			continue
 		}
-		checkedVaults++
-
 		var msg *types.MsgSolvency
 		msg, err = r.createSolvencyMsg(asgard.PubKey, acct.Coins, msgHeight)
 		if err != nil {
 			r.logger.Err(err).Stringer("chain", r.client.GetChain()).Msg("fail to create solvency msg")
 			continue
 		}
+		processedVaults++
 		if r.isVaultSolvent(acct, asgard, currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 		} else {
@@ -80,7 +83,8 @@ func (r *solvencyReporter) Collect(_ triggeredFrom, height int64) (ReportBatch, 
 		}
 	}
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all vaults are solvent,
+	// Only if the runner is checking while the block scanner is unhealthy (e.g. solvency-halted)
+	// and all vaults are solvent,
 	// report that all the vaults are solvent.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
@@ -88,9 +92,14 @@ func (r *solvencyReporter) Collect(_ triggeredFrom, height int64) (ReportBatch, 
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	//
 	// Note: only report "all solvent" when every vault was successfully checked,
-	// to avoid clearing a solvency halt on partial data.
+	// to avoid clearing a solvency halt on partial data. This matches the legacy
+	// behavior where only the auto-unhalt runner could reach this path.
 	solvent := false
-	if !r.client.IsBlockScannerHealthy() && checkedVaults == len(asgardVaults) && len(solventMsgs) == len(asgardVaults) {
+	allVaultsProcessed := processedVaults == len(asgardVaults)
+	if from == fromRunner &&
+		!r.client.IsBlockScannerHealthy() &&
+		allVaultsProcessed &&
+		len(solventMsgs) == len(asgardVaults) {
 		msgs = solventMsgs
 		solvent = true
 	}
@@ -107,7 +116,10 @@ func (r *solvencyReporter) Collect(_ triggeredFrom, height int64) (ReportBatch, 
 			Msg("reporting solvency")
 	}
 
-	r.lastSolvencyCheckHeight = height
+	// Only advance cadence state when every vault was checked successfully.
+	if allVaultsProcessed {
+		r.lastSolvencyCheckHeight = height
+	}
 
 	return msgs, nil
 }
@@ -133,6 +145,15 @@ func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {
 			Stringer("from", from).
 			Int64("height", height).
 			Msg("skip solvency report: invalid raw height")
+		return false
+	}
+	if r.client.GetChain() == common.TRONChain && height <= tronSolvencyFinalityBlocks {
+		// Safety addition versus the legacy per-chain code: do not emit non-positive
+		// TRON solvency message heights on low/mocknet block heights.
+		r.logger.Debug().
+			Stringer("from", from).
+			Int64("height", height).
+			Msg("skip solvency report: TRON report height would be non-positive")
 		return false
 	}
 	if from == fromRunner && !r.shouldReportFromRunner() {

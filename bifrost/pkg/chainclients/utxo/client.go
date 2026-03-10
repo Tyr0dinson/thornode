@@ -101,6 +101,9 @@ type Client struct {
 	regexpRemoveTrailingZeros *regexp.Regexp
 }
 
+// Compile-time check that the UTXO client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*Client)(nil)
+
 // NewClient generates a new Client
 func NewClient(
 	thorKeys *thorclient.Keys,
