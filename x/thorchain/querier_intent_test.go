@@ -4,6 +4,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	. "gopkg.in/check.v1"
 )
 
@@ -20,6 +22,12 @@ func (s *QuerierIntentSuite) TestQueryIntent(c *C) {
 	_, err := qs.queryIntent(ctx, req)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "tx_id is required")
+
+	// Test: missing TxID returns not found instead of an empty intent
+	req = &types.QueryIntentRequest{TxId: "FFFF1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234"}
+	_, err = qs.queryIntent(ctx, req)
+	c.Assert(err, NotNil)
+	c.Assert(status.Code(err), Equals, codes.NotFound)
 
 	// Create an intent for testing
 	txID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
@@ -165,6 +173,12 @@ func (s *QuerierIntentSuite) TestQueryIntentAuction(c *C) {
 	_, err := qs.queryIntentAuction(ctx, req)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "tx_id is required")
+
+	// Test: missing TxID returns not found instead of an empty auction
+	req = &types.QueryIntentAuctionRequest{TxId: "FFFF1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234"}
+	_, err = qs.queryIntentAuction(ctx, req)
+	c.Assert(err, NotNil)
+	c.Assert(status.Code(err), Equals, codes.NotFound)
 
 	// Create an auction for testing
 	intentTxID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
