@@ -83,7 +83,7 @@ func (s *MockTestSuite) TestClient(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(txs, HasLen, 0)
 
-	tx, err := client.GetTransaction(ctx, nil, &tonaddress.Address{}, 1)
+	tx, err = client.GetTransaction(ctx, nil, &tonaddress.Address{}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(tx, IsNil)
 
