@@ -5,7 +5,7 @@ printf "%s\n%s\n" "password" "password" | thornode tx thorchain set-version --fr
 
 # set node keys
 NODE_PUB_KEY=$(echo "password" | thornode keys show thorchain --pubkey --keyring-backend file | thornode pubkey)
-NODE_PUB_KEY_ED25519=$(echo "password" | thornode ed25519)
+NODE_PUB_KEY_ED25519=$(printf "%s\n" "$SIGNER_SEED_PHRASE" | thornode ed25519)
 VALIDATOR=$(thornode tendermint show-validator | thornode pubkey --bech cons)
 printf "%s\n%s\n" "password" "password" | thornode tx thorchain set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" --from thorchain --keyring-backend file --chain-id "$CHAIN_ID" --node http://localhost:27147 --yes
 
