@@ -432,11 +432,11 @@ func (c *SOLClient) getSigningBlockhash() (string, error) {
 		return "", fmt.Errorf("fail to get current slot for signing blockhash: %w", err)
 	}
 
-	if hash, _, ok := c.getFreshScannerBlockhash(currentSlot); ok {
+	hash, hashSlot, ok := c.getFreshScannerBlockhash(currentSlot)
+	if ok {
 		return hash, nil
 	}
 
-	hash, hashSlot := c.solScanner.getRecentBlockHash()
 	if hash == "" {
 		return "", errors.New("scanner blockhash is empty")
 	}
@@ -449,7 +449,9 @@ func (c *SOLClient) getSigningBlockhash() (string, error) {
 }
 
 // getFreshScannerBlockhash returns scanner-selected hash only when it is fresh enough
-// to avoid signing near-expiry hashes.
+// to avoid signing near-expiry hashes. When the hash is present but not usable,
+// it still returns the cached hash and slot so callers can report the exact reason
+// without taking the lock again.
 func (c *SOLClient) getFreshScannerBlockhash(currentSlot uint64) (string, uint64, bool) {
 	hash, hashSlot := c.solScanner.getRecentBlockHash()
 
@@ -459,12 +461,12 @@ func (c *SOLClient) getFreshScannerBlockhash(currentSlot uint64) (string, uint64
 
 	// If slot unexpectedly moves backwards, do not trust cached age.
 	if currentSlot < hashSlot {
-		return "", 0, false
+		return hash, hashSlot, false
 	}
 
 	age := currentSlot - hashSlot
 	if age > solBlockhashMaxCachedAgeSlots {
-		return "", 0, false
+		return hash, hashSlot, false
 	}
 
 	return hash, hashSlot, true
