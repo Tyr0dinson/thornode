@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "3"
+          "sequence": "2"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -133,7 +133,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200006392688",
+              "amount": "200005327248",
               "denom": "rune"
             }
           ]
@@ -142,7 +142,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999999340946",
+              "amount": "35000000950781",
               "denom": "rune"
             }
           ]
@@ -155,11 +155,7 @@
               "denom": "btc-btc"
             },
             {
-              "amount": "60000000",
-              "denom": "eth-eth"
-            },
-            {
-              "amount": "2499998000000",
+              "amount": "2500497500000",
               "denom": "rune"
             }
           ]
@@ -172,11 +168,7 @@
               "denom": "btc-btc"
             },
             {
-              "amount": "40000000",
-              "denom": "eth-eth"
-            },
-            {
-              "amount": "2499998000000",
+              "amount": "2499498000000",
               "denom": "rune"
             }
           ]
@@ -185,7 +177,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998266366",
+              "amount": "4999998221971",
               "denom": "rune"
             }
           ]
@@ -201,10 +193,6 @@
         {
           "amount": "10000000",
           "denom": "btc-btc"
-        },
-        {
-          "amount": "100000000",
-          "denom": "eth-eth"
         },
         {
           "amount": "50200000000000",
@@ -242,10 +230,10 @@
       "intent_solves": [],
       "intents": [
         {
-          "create_height": "5",
-          "expiry_height": "10",
-          "high_target": "60000000",
-          "low_target": "60000000",
+          "create_height": "4",
+          "expiry_height": "9",
+          "high_target": "500000000",
+          "low_target": "500000000",
           "min_fee_basis_points": "10",
           "source": {
             "amount": "5000000",
@@ -254,18 +242,14 @@
           "source_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "status": 2,
           "target_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-          "target_asset": "ETH-ETH",
-          "tx_id": "660E3F71D3DB4383A79C8C1C6EDEB3324D49174FC7F325B94A08464034D6B5A6"
+          "target_asset": "THOR.RUNE",
+          "tx_id": "3044464A622433D2C1A5A9813CF0E889A1E1DF5FC08CCBC6EAB4FC866984DB49"
         }
       ],
       "last_chain_heights": [
         {
           "chain": "BTC",
           "height": "2"
-        },
-        {
-          "chain": "ETH",
-          "height": "3"
         }
       ],
       "liquidity_providers": [
@@ -301,8 +285,8 @@
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
-        "bond_reward_rune": "266366",
-        "total_bond_units": "6"
+        "bond_reward_rune": "221971",
+        "total_bond_units": "5"
       },
       "network_fees": [
         {
@@ -347,7 +331,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100003196344",
+          "balance_rune": "100002663624",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -358,7 +342,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100003196344",
+          "balance_rune": "100002663624",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -379,10 +363,6 @@
         {
           "asset": "BTC-BTC",
           "depth": "10000000"
-        },
-        {
-          "asset": "ETH-ETH",
-          "depth": "100000000"
         }
       ],
       "streaming_swaps": [],
@@ -413,12 +393,12 @@
               "decimals": "8"
             },
             {
-              "amount": "1100000000",
+              "amount": "1000000000",
               "asset": "ETH.ETH",
               "decimals": "8"
             }
           ],
-          "inbound_tx_count": "4",
+          "inbound_tx_count": "3",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -477,5 +457,5 @@
       }
     }
   },
-  "initial_height": 7
+  "initial_height": 6
 }

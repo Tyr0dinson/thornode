@@ -59,7 +59,8 @@ asserts:
 ---
 ########################################################################################
 # Create an intent using secured assets
-# Fox wants to swap BTC-BTC secured for ETH-ETH secured
+# Fox wants to swap BTC-BTC secured for RUNE
+# One side must be fee-chargeable (RUNE is native, so fee-chargeable)
 # Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
 # native_txid counts: 1=IntentsEnabled, 2=observed-in BTC, 3=tx-deposit intent
 ########################################################################################
@@ -68,7 +69,7 @@ signer: {{ addr_thor_fox }}
 coins:
   - amount: "5000000"
     asset: "BTC-BTC"
-memo: "IO:ETH-ETH:50000000:40000000:{{ addr_thor_fox }}"
+memo: "IO:THOR.RUNE:500000000:400000000:{{ addr_thor_fox }}"
 ---
 type: create-blocks
 count: 1
@@ -82,7 +83,7 @@ asserts:
   - .intent.tx_id == "{{ native_txid 3 }}"
   - .intent.source.asset == "BTC-BTC"
   - .intent.source.amount == "5000000"
-  - .intent.target_asset == "ETH-ETH"
+  - .intent.target_asset == "THOR.RUNE"
   - .intent.status == "IntentActive"
 ---
 ########################################################################################
