@@ -998,3 +998,45 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MaxSolvesPerIntent(c *C) {
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*maximum number of solves.*")
 }
+
+func (HandlerIntentSolveSuite) TestIntentSolve_UnsupportedNativeAsset(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
+
+	// Use a hypothetical native non-RUNE asset (e.g. IBC token)
+	ibcAsset, err := common.NewAsset("THOR.IBC-TOKEN")
+	c.Assert(err, IsNil)
+
+	// Create intent targeting this asset
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		TargetAsset:   ibcAsset,
+		TargetAddress: GetRandomTHORAddress(),
+		HighTarget:    cosmos.NewUint(200 * common.One),
+		LowTarget:     cosmos.NewUint(100 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentSolveHandler(mgr)
+
+	// Solve with the IBC token via a native (THORChain) tx
+	solveTx := GetRandomTx()
+	solveTx.Chain = common.THORChain
+	solveTx.FromAddress = GetRandomTHORAddress()
+	solveTx.Coins = common.Coins{common.NewCoin(ibcAsset, cosmos.NewUint(150*common.One))}
+	destAddr := GetRandomBTCAddress()
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, destAddr, w.activeNodeAccount.NodeAddress)
+
+	_, err = handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*unsupported native asset for intent solve escrow.*")
+}

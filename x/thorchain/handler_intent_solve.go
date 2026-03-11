@@ -190,9 +190,15 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 			return fmt.Errorf("fail to escrow RUNE for intent solve: %w", err)
 		}
 		ctx.Logger().Info("escrowed RUNE for intent solve", "amount", targetCoin.Amount)
+	default:
+		// L1 assets observed on-chain via bifrost don't require explicit escrow.
+		// However, if a native non-RUNE asset (e.g. IBC token) arrives via MsgDeposit,
+		// the deposit handler skips SendFromAccountToModule for TxIntentSolve, so the
+		// coins would not be escrowed. Reject this case to prevent a silent no-escrow path.
+		if msg.Tx.Chain.Equals(common.THORChain) {
+			return fmt.Errorf("unsupported native asset for intent solve escrow: %s", targetCoin.Asset)
+		}
 	}
-	// Note: L1 assets don't require explicit escrow - they are observed on-chain
-	// and will be handled by the bifrost when the intent is executed or refunded
 
 	// Get the offered amount
 	offeredAmount := targetCoin.Amount
