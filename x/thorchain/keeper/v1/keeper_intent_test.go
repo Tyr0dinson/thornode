@@ -268,6 +268,51 @@ func (KeeperIntentSuite) TestIntentSolve_GetByMatchHeight(c *C) {
 	c.Check(len(solves), Equals, 2)
 }
 
+func (KeeperIntentSuite) TestIntentSolve_GetByMatchHeight_PrefixCollision(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Create solves at height 50 and 500. Without the "/" suffix in the key,
+	// querying height 50 would also match height 500 entries since "50" is
+	// a string prefix of "500".
+	solve50 := types.IntentSolve{
+		SolveTxID:     common.TxID("SOLVE50234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123"),
+		IntentTxID:    common.TxID("INTEN50234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123"),
+		SolverAddress: common.Address("thor1solver50"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(10)),
+		MatchHeight:   50,
+	}
+	k.SetIntentSolve(ctx, solve50)
+
+	solve500a := types.IntentSolve{
+		SolveTxID:     common.TxID("SOLV500A34567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123"),
+		IntentTxID:    common.TxID("INTE500A34567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123"),
+		SolverAddress: common.Address("thor1solver500a"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(20)),
+		MatchHeight:   500,
+	}
+	k.SetIntentSolve(ctx, solve500a)
+
+	solve500b := types.IntentSolve{
+		SolveTxID:     common.TxID("SOLV500B34567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123"),
+		IntentTxID:    common.TxID("INTE500B34567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123"),
+		SolverAddress: common.Address("thor1solver500b"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(25)),
+		MatchHeight:   500,
+	}
+	k.SetIntentSolve(ctx, solve500b)
+
+	// Query height 50 - should return only the one solve at height 50
+	solves50, err := k.GetIntentSolvesByMatchHeight(ctx, 50)
+	c.Assert(err, IsNil)
+	c.Check(len(solves50), Equals, 1)
+	c.Check(solves50[0].SolveTxID.Equals(solve50.SolveTxID), Equals, true)
+
+	// Query height 500 - should return only the two solves at height 500
+	solves500, err := k.GetIntentSolvesByMatchHeight(ctx, 500)
+	c.Assert(err, IsNil)
+	c.Check(len(solves500), Equals, 2)
+}
+
 func (KeeperIntentSuite) TestIntentSolve_Remove(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
