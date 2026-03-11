@@ -109,8 +109,9 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	}
 
 	// At least one side must be fee-chargeable (has active pool or is native to THORChain).
-	canChargeSource := hasActiveSourcePool || sourceAsset.IsNative()
-	canChargeTarget := hasActiveTargetPool || targetAsset.IsNative()
+	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
+	canChargeSource := (hasActiveSourcePool && !sourceAsset.IsSecuredAsset() && !sourceAsset.IsTradeAsset()) || sourceAsset.IsNative()
+	canChargeTarget := (hasActiveTargetPool && !targetAsset.IsSecuredAsset() && !targetAsset.IsTradeAsset()) || targetAsset.IsNative()
 	if !canChargeSource && !canChargeTarget {
 		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (has active pool or is native)")
 	}
