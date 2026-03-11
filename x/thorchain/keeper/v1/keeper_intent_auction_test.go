@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -465,4 +466,96 @@ func (KeeperIntentAuctionSuite) TestIntentAuctionBid_GetByIntentIDEmpty(c *C) {
 	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, nonExistentIntentTxID)
 	c.Assert(err, IsNil)
 	c.Check(len(bids), Equals, 0)
+}
+
+func (KeeperIntentAuctionSuite) TestCleanupStaleActiveAuctions_OrphanedIndex(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Create two active auctions
+	txID1 := common.TxID("STAUC134567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	auction1 := types.IntentAuction{
+		IntentTxID:    txID1,
+		AuctionAmount: common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
+		Status:        types.IntentAuctionStatus_AuctionActive,
+	}
+	k.SetIntentAuction(ctx, auction1)
+
+	txID2 := common.TxID("STAUC234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	auction2 := types.IntentAuction{
+		IntentTxID:    txID2,
+		AuctionAmount: common.NewCoin(common.BTCAsset, cosmos.NewUint(200)),
+		Status:        types.IntentAuctionStatus_AuctionActive,
+	}
+	k.SetIntentAuction(ctx, auction2)
+
+	active, err := k.GetActiveAuctions(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(active), Equals, 2)
+
+	// Directly delete auction1's record, leaving its index entry orphaned
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Delete(k.GetKey(prefixIntentAuction, txID1.String()))
+	c.Check(k.IntentAuctionExists(ctx, txID1), Equals, false)
+
+	// Cleanup should remove the orphaned index entry
+	k.CleanupStaleActiveAuctions(ctx)
+
+	active, err = k.GetActiveAuctions(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(active), Equals, 1)
+	c.Check(active[0].IntentTxID.Equals(txID2), Equals, true)
+}
+
+func (KeeperIntentAuctionSuite) TestCleanupStaleActiveAuctions_StatusMismatch(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Create an active auction (adds to index)
+	txID := common.TxID("STAUC334567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	auction := types.IntentAuction{
+		IntentTxID:    txID,
+		AuctionAmount: common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
+		Status:        types.IntentAuctionStatus_AuctionActive,
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	// Directly overwrite the auction record with completed status,
+	// bypassing SetIntentAuction's index management
+	auction.Status = types.IntentAuctionStatus_AuctionCompleted
+	k.setIntentAuction(ctx, k.GetKey(prefixIntentAuction, txID.String()), auction)
+
+	// Index still has this as active
+	active, err := k.GetActiveAuctions(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(active), Equals, 1)
+
+	// Cleanup should remove the stale index entry
+	k.CleanupStaleActiveAuctions(ctx)
+
+	active, err = k.GetActiveAuctions(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(active), Equals, 0)
+
+	// Auction record itself should still exist
+	c.Check(k.IntentAuctionExists(ctx, txID), Equals, true)
+}
+
+func (KeeperIntentAuctionSuite) TestCleanupStaleActiveAuctions_CleanState(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Create a valid active auction
+	txID := common.TxID("CLAUC134567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	auction := types.IntentAuction{
+		IntentTxID:    txID,
+		AuctionAmount: common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
+		Status:        types.IntentAuctionStatus_AuctionActive,
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	// Cleanup should not remove anything
+	k.CleanupStaleActiveAuctions(ctx)
+
+	active, err := k.GetActiveAuctions(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(active), Equals, 1)
+	c.Check(active[0].IntentTxID.Equals(txID), Equals, true)
 }
