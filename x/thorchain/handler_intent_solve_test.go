@@ -638,10 +638,12 @@ func (HandlerIntentSolveSuite) TestIntentSolve_RUNEEscrow(c *C) {
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
+	// Fund the solver account so RUNE escrow deterministically succeeds
+	FundAccount(c, w.ctx, w.keeper, w.activeNodeAccount.NodeAddress, 200*common.One)
+
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentSolveHandler(mgr)
 
-	// Use a funded node account address as the FromAddress (has RUNE balance)
 	// Source asset is BTC, so destination needs to be BTC address
 	solveTx := GetRandomTx()
 	solveTx.FromAddress, _ = common.NewAddress(w.activeNodeAccount.NodeAddress.String())
@@ -649,20 +651,13 @@ func (HandlerIntentSolveSuite) TestIntentSolve_RUNEEscrow(c *C) {
 	destAddr := GetRandomBTCAddress()
 	msg := NewMsgIntentSolve(solveTx, intentTx.ID, destAddr, w.activeNodeAccount.NodeAddress)
 
-	// Note: This test may fail with insufficient funds if the node account
-	// doesn't have enough RUNE. The RUNEEscrowError test validates the escrow
-	// code path correctly handles errors.
 	_, err := handler.Run(w.ctx, msg)
-	// Either succeeds (account has funds) or fails with insufficient funds
-	// Both validate the RUNE escrow code path is executed
-	if err != nil {
-		c.Check(err.Error(), Matches, ".*(insufficient funds|fail to escrow RUNE).*")
-	} else {
-		// Verify solve was created
-		solve, err := w.keeper.GetIntentSolve(w.ctx, solveTx.ID)
-		c.Assert(err, IsNil)
-		c.Check(solve.TargetCoin.Asset.IsRune(), Equals, true)
-	}
+	c.Assert(err, IsNil)
+
+	// Verify solve was created
+	solve, err := w.keeper.GetIntentSolve(w.ctx, solveTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(solve.TargetCoin.Asset.IsRune(), Equals, true)
 }
 
 func (HandlerIntentSolveSuite) TestIntentSolve_RUNEEscrowError(c *C) {

@@ -79,9 +79,10 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	}
 
 	// Determine if we should refund or abandon based on asset type.
-	// GetPool returns an empty pool if not found; error is ignored as we only
-	// care whether a pool exists (non-empty) for this asset.
-	sourcePool, _ := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+	sourcePool, err := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+	if err != nil {
+		return fmt.Errorf("fail to get pool for cancel refund decision: %w", err)
+	}
 	isPoolAsset := !sourcePool.IsEmpty()
 	isNativeAsset := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset() || intent.Source.Asset.IsTradeAsset()
 	shouldRefund := isPoolAsset || isNativeAsset
