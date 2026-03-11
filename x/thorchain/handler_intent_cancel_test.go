@@ -291,6 +291,15 @@ func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNonPoolAsset(c *C) {
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
+
+	// Create a voter for the cancel tx (mimics handler_deposit.go creating a voter)
+	txIn := ObservedTx{Tx: cancelTx}
+	voter := NewObservedTxVoter(cancelTx.ID, []ObservedTx{txIn})
+	voter.Height = w.ctx.BlockHeight()
+	voter.FinalisedHeight = w.ctx.BlockHeight()
+	voter.Tx = txIn
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
@@ -305,6 +314,11 @@ func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNonPoolAsset(c *C) {
 	expectedBalance := cosmos.NewUint(100 * common.One) // 200 - 100
 	c.Check(updatedVault.GetCoin(common.BTCAsset).Amount.Equal(expectedBalance), Equals, true,
 		Commentf("expected %s, got %s", expectedBalance, updatedVault.GetCoin(common.BTCAsset).Amount))
+
+	// Verify the cancel tx voter is marked done (abandon path has no outbound)
+	updatedVoter, err := w.keeper.GetObservedTxInVoter(w.ctx, cancelTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.IsDone(), Equals, true, Commentf("voter should be marked done in abandon path"))
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNoVaultWithSufficientBalance(c *C) {
