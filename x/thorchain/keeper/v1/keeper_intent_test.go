@@ -183,6 +183,99 @@ func (KeeperIntentSuite) TestIntent_RemoveIntent(c *C) {
 	c.Check(len(activeIntents), Equals, 0)
 }
 
+func (KeeperIntentSuite) TestIntent_RemoveIntentCascading(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("CASC1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender1"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent)
+
+	// Create associated solves
+	solveTxID1 := common.TxID("SOLVA1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	solve1 := types.IntentSolve{
+		SolveTxID:     solveTxID1,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver1"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   100,
+	}
+	k.SetIntentSolve(ctx, solve1)
+
+	solveTxID2 := common.TxID("SOLVB1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	solve2 := types.IntentSolve{
+		SolveTxID:     solveTxID2,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver2"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(18)),
+		MatchHeight:   200,
+	}
+	k.SetIntentSolve(ctx, solve2)
+
+	// Create associated auction
+	auction := types.IntentAuction{
+		IntentTxID:   intentTxID,
+		Status:       types.IntentAuctionStatus_AuctionActive,
+		ExpiryHeight: 500,
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	// Create associated bids
+	bidTxID1 := common.TxID("BIDA1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	bid1 := types.IntentAuctionBid{
+		BidTxID:       bidTxID1,
+		IntentTxID:    intentTxID,
+		BidderAddress: common.Address("thor1bidder1"),
+		BidAmount:     common.NewCoin(common.RuneAsset(), cosmos.NewUint(10)),
+	}
+	k.SetIntentAuctionBid(ctx, bid1)
+
+	bidTxID2 := common.TxID("BIDB1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	bid2 := types.IntentAuctionBid{
+		BidTxID:       bidTxID2,
+		IntentTxID:    intentTxID,
+		BidderAddress: common.Address("thor1bidder2"),
+		BidAmount:     common.NewCoin(common.RuneAsset(), cosmos.NewUint(12)),
+	}
+	k.SetIntentAuctionBid(ctx, bid2)
+
+	// Verify everything exists before removal
+	c.Check(k.IntentExists(ctx, intentTxID), Equals, true)
+	c.Check(k.IntentSolveExists(ctx, solveTxID1), Equals, true)
+	c.Check(k.IntentSolveExists(ctx, solveTxID2), Equals, true)
+	c.Check(k.IntentAuctionExists(ctx, intentTxID), Equals, true)
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID1), Equals, true)
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID2), Equals, true)
+
+	// Remove intent - should cascade to all child records
+	k.RemoveIntent(ctx, intentTxID)
+
+	// Verify intent is gone
+	c.Check(k.IntentExists(ctx, intentTxID), Equals, false)
+
+	// Verify solves are gone
+	c.Check(k.IntentSolveExists(ctx, solveTxID1), Equals, false)
+	c.Check(k.IntentSolveExists(ctx, solveTxID2), Equals, false)
+	solves, err := k.GetIntentSolvesByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+
+	// Verify auction is gone
+	c.Check(k.IntentAuctionExists(ctx, intentTxID), Equals, false)
+
+	// Verify bids are gone
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID1), Equals, false)
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID2), Equals, false)
+	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(bids), Equals, 0)
+}
+
 func (KeeperIntentSuite) TestIntentSolve_SetAndGet(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
