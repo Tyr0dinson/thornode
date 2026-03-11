@@ -178,7 +178,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		selectedVault.SubFunds(common.NewCoins(intent.Source))
 
 		// Save the updated vault
-		if err := h.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
+		if err = h.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
 
