@@ -123,6 +123,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -311,6 +314,7 @@
           ],
           "finalised_height": "4",
           "height": "4",
+          "mempool_swap_tor": "0",
           "out_txs": [
             {
               "chain": "AVAX",
@@ -426,7 +430,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
-      "sol_vault_nonces": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
