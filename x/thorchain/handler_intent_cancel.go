@@ -188,6 +188,16 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 			"amount", intent.Source.Amount,
 			"vault", selectedVault.PubKey,
 		)
+
+		// Mark the cancel tx voter as done since no outbound is scheduled.
+		// Without this, the voter created in handler_deposit.go stays open forever
+		// because TxIntentCancel.HasOutbound() returns true (for the refund path).
+		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
+		if err != nil {
+			return fmt.Errorf("fail to get voter for cancel tx: %w", err)
+		}
+		voter.SetDone()
+		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	}
 
 	// Refund any pending solves for this intent.
