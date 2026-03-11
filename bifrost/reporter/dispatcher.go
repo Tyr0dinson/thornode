@@ -116,9 +116,16 @@ func (d *dispatcher) start() {
 	d.wg.Add(2)
 	go d.runner(
 		// get chain-specific timing
+		// You can define chain-specific check intervals here
 		func(chain common.Chain) time.Duration {
-			// You can define chain-specific check intervals here
-			return constants.ThorchainBlockTime
+			switch {
+			case chain.Equals(common.TRONChain):
+				return 3 * time.Second
+			case chain.Equals(common.AVAXChain):
+				return time.Second
+			default:
+				return constants.ThorchainBlockTime
+			}
 		},
 	)
 	go d.processReportQueue()

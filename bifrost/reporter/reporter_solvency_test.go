@@ -30,6 +30,17 @@ type SolvencySuite struct{}
 
 var _ = Suite(&SolvencySuite{})
 
+func runnerIntervalForTest(chain common.Chain) time.Duration {
+	switch {
+	case chain.Equals(common.TRONChain):
+		return 3 * time.Second
+	case chain.Equals(common.AVAXChain):
+		return time.Second
+	default:
+		return constants.ThorchainBlockTime
+	}
+}
+
 // mockChainClient is a mock that satisfies the chainclients.ChainClient interface
 type mockChainClient struct {
 	chain    common.Chain
@@ -135,6 +146,7 @@ type thorMockBridge struct {
 	fetchNodeStatusFunc func() (ctypes.NodeStatus, error)
 	msgs                []ctypes.MsgSolvency
 	mimir               mimirMap
+	thorchainHeight     int64
 	mu                  sync.Mutex
 }
 
@@ -185,6 +197,10 @@ func (b *thorMockBridge) GetMimir(key string) (int64, error) {
 func (b *thorMockBridge) GetMimirWithRef(template, ref string) (int64, error) {
 	key := fmt.Sprintf(template, ref)
 	return b.GetMimir(key)
+}
+
+func (b *thorMockBridge) GetBlockHeight() (int64, error) {
+	return b.thorchainHeight, nil
 }
 
 func (b *thorMockBridge) clearMsgs() {
@@ -514,8 +530,13 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			}
 		}
 		verifyResults := func(from triggeredFrom, expectReport bool) {
-			// wait for message to arrive
-			for range 20 {
+			waitFor := constants.ThorchainBlockTime
+			if from == fromRunner {
+				// Runner checks use chain-specific intervals, so allow enough time for the first tick.
+				waitFor = runnerIntervalForTest(tc.client.GetChain()) + constants.ThorchainBlockTime
+			}
+			deadline := time.Now().Add(waitFor)
+			for time.Now().Before(deadline) {
 				time.Sleep(constants.ThorchainBlockTime / 15)
 				if mockBridge.msgs != nil {
 					break
@@ -537,6 +558,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 		} else {
 			tc.client.chainHeight = tc.height + 20 // within default ObservationFlexibilityBlocks (40)
 		}
+		mockBridge.thorchainHeight = tc.client.chainHeight
 		// set default ObservationFlexibilityBlocks if not set
 		if tc.client.cfg.BlockScanner.ObservationFlexibilityBlocks == 0 {
 			tc.client.cfg.BlockScanner.ObservationFlexibilityBlocks = 40
@@ -629,6 +651,30 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			verifyResults(fromRunner, tc.expectReportFromRunner)
 		}()
 	}
+}
+
+func (s *SolvencySuite) TestShouldReportFromRunnerRequiresActiveHalt(c *C) {
+	client := &mockChainClient{chain: common.ETHChain}
+	bridge := &thorMockBridge{thorchainHeight: 100}
+	reporter := newSolvencyReporter(client, bridge)
+
+	c.Assert(reporter.shouldReportFromRunner(), Equals, false)
+
+	bridge.mimir.set("HaltETHChain", 1)
+	c.Assert(reporter.shouldReportFromRunner(), Equals, false)
+
+	bridge.mimir.set("HaltETHChain", 120)
+	c.Assert(reporter.shouldReportFromRunner(), Equals, false)
+
+	bridge.mimir.set("HaltETHChain", 100)
+	c.Assert(reporter.shouldReportFromRunner(), Equals, true)
+
+	bridge.mimir.set("HaltETHChain", 0)
+	bridge.mimir.set("SolvencyHaltETHChain", 120)
+	c.Assert(reporter.shouldReportFromRunner(), Equals, false)
+
+	bridge.mimir.set("SolvencyHaltETHChain", 100)
+	c.Assert(reporter.shouldReportFromRunner(), Equals, true)
 }
 
 // TestCollectSkipsSolventVaultsWhenInsolventPresent ensures a runner collect only reports

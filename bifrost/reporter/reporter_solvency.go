@@ -242,9 +242,10 @@ func (r *solvencyReporter) shouldReportAtHeight(height int64) bool {
 	}
 }
 
-// shouldReportFromRunner gates runner-triggered reporting by Mimir halt state.
-// It reports only when chain halt or solvency halt conditions indicate the
-// runner should actively attempt auto-unhalt checks.
+// shouldReportFromRunner gates runner-triggered reporting by the active Mimir halt state.
+// The runner only takes over once THORChain considers a halt active, because the
+// block scanner pauses on active chain/solvency halts. Manual Halt<Chain>Chain == 1
+// is excluded to avoid auto-unhalt/reporting during an explicit operator halt.
 func (r *solvencyReporter) shouldReportFromRunner() bool {
 	var err error
 	var haltHeight, solvencyHaltHeight int64
@@ -265,15 +266,27 @@ func (r *solvencyReporter) shouldReportFromRunner() bool {
 		return false
 	}
 
-	// when HaltHeight == 1 means admin halt the chain, no need to do solvency check
-	// when Chain is not halted, the normal chain client will report solvency when it need to
-	// But if SolvencyHalt<chain>Chain > 0 this means the chain is halted, and we need to report solvency here
+	// Manual halt `== 1` is an explicit operator pause; do not auto-report from the runner.
+	// If neither halt type is configured, the block scanner remains responsible for reporting.
 	if haltHeight <= 1 && solvencyHaltHeight <= 0 {
 		return false
 	}
 
-	// should report solvency from runner
-	return true
+	thorHeight, err := r.thorchainBridge.GetBlockHeight()
+	if err != nil {
+		r.logger.Err(err).Msg("fail to get thorchain block height")
+		return false
+	}
+
+	// Case 2: a solvency halt is active, so runner should triggered reporting
+	if solvencyHaltHeight > 0 && thorHeight >= solvencyHaltHeight {
+		return true
+	}
+	// Case 3: no solvency halt is active, but a regular chain halt is active
+	if haltHeight > 1 && thorHeight >= haltHeight {
+		return true
+	}
+	return false
 }
 
 // isVaultSolvent checks whether the chain-specific portion of the vault is solvent.
