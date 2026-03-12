@@ -603,6 +603,10 @@ func (c *TonClient) BroadcastTx(
 		}
 	}
 
+	if tx == nil {
+		return "", fmt.Errorf("failed to broadcast transaction")
+	}
+
 	hash := hex.EncodeToString(tx.Hash)
 
 	if err = c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), hash); err != nil {

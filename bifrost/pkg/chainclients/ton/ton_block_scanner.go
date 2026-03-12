@@ -74,7 +74,7 @@ func NewTonBlockScanner(
 	}, nil
 }
 
-// Return the latest block height from master chain
+// GetHeight queries the master chain and returns its latest height
 func (s *TonBlockScanner) GetHeight() (int64, error) {
 	info, err := s.api.GetMasterchainInfo(s.ctx)
 	if err != nil {
@@ -314,6 +314,11 @@ func (s *TonBlockScanner) processShard(
 		return nil, fmt.Errorf("failed to get transactions %d: %w", shard.SeqNo, err)
 	}
 
+	// reverse order to have highest lt per tx first, so lookback cache needs
+	// to fetch only once for each address
+
+	txLookBackCache := map[string][]*tlb.Transaction{}
+
 	var txInItems []types.TxInItem
 	for _, txInfo := range txInfos {
 		addr := address.NewAddress(0x17, 0x00, txInfo.Account)
@@ -374,7 +379,32 @@ func (s *TonBlockScanner) processShard(
 		}
 
 		var txInItem types.TxInItem
-		txInItem, err = s.processMessage(tx, msg.AsInternal())
+
+		in := msg.AsInternal()
+
+		src := in.SrcAddr
+		txs, found := txLookBackCache[src.String()]
+		if !found {
+			var acc *tlb.Account
+			acc, err = s.api.WaitForBlock(block.SeqNo).GetAccount(s.ctx, block, src)
+			if err != nil {
+				// possible by sending all funds from wallet
+				s.logger.Err(err).Msg("source account not found")
+				txLookBackCache[src.String()] = nil
+			}
+
+			lt := acc.LastTxLT
+			hash := acc.LastTxHash
+
+			txs, err = s.api.ListTransactions(s.ctx, src, extInLookback, lt, hash)
+			if err != nil {
+				s.logger.Err(err).Msg("no transactions found for " + src.String())
+				txLookBackCache[src.String()] = nil
+				continue
+			}
+		}
+
+		txInItem, err = s.processMessage(tx, msg.AsInternal(), txs)
 		if err != nil {
 			s.logger.Err(err).Msg("failed to process message")
 			continue
@@ -413,6 +443,7 @@ func (s *TonBlockScanner) processShard(
 func (s *TonBlockScanner) processMessage(
 	tx *tlb.Transaction,
 	msg *tlb.InternalMessage,
+	txs []*tlb.Transaction,
 ) (txInItem types.TxInItem, err error) {
 	if msg.Bounce {
 		return txInItem, fmt.Errorf("bounce flag set")
@@ -445,7 +476,7 @@ func (s *TonBlockScanner) processMessage(
 	// wallet to transfer the funds. In case the message wasn't triggered
 	// externally, use the "deposit" hash
 	var in *tlb.Transaction
-	in, err = s.findExternalInTx(msg)
+	in, err = s.findExternalInTx(msg, txs)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to find previous transaction")
 		return txInItem, err
@@ -521,31 +552,8 @@ func (s *TonBlockScanner) processMessage(
 
 func (s *TonBlockScanner) findExternalInTx(
 	in *tlb.InternalMessage,
+	txs []*tlb.Transaction,
 ) (*tlb.Transaction, error) {
-	block, err := s.api.CurrentMasterchainInfo(s.ctx)
-	if err != nil {
-		s.logger.Err(err).Msg("")
-		return nil, err
-	}
-
-	src := in.SrcAddr
-
-	acc, err := s.api.WaitForBlock(block.SeqNo).GetAccount(s.ctx, block, src)
-	if err != nil {
-		// possible by sending all funds from wallet
-		s.logger.Err(err).Msg("source account not found")
-		return nil, nil
-	}
-
-	lt := acc.LastTxLT
-	hash := acc.LastTxHash
-
-	txs, err := s.api.ListTransactions(s.ctx, src, extInLookback, lt, hash)
-	if err != nil {
-		s.logger.Err(err).Msg("no transactions found for " + src.String())
-		return nil, err
-	}
-
 	for i := len(txs) - 1; i >= 0; i-- {
 		tx := txs[i]
 
@@ -557,8 +565,7 @@ func (s *TonBlockScanner) findExternalInTx(
 			continue
 		}
 
-		var msgs []tlb.Message
-		msgs, err = tx.IO.Out.ToSlice()
+		msgs, err := tx.IO.Out.ToSlice()
 		if err != nil {
 			continue
 		}
@@ -597,7 +604,7 @@ func skipTx(tx *tlb.Transaction) (bool, string) {
 		return true, "no incoming tx found"
 	}
 
-	// if tx is not aborted => dont skip
+	// if tx is not aborted => don't skip
 	if !desc.Aborted {
 		return false, ""
 	}
