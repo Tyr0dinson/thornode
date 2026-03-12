@@ -24,6 +24,63 @@ func isSimulationMode(ctx cosmos.Context) bool {
 	return ok && simulationMode
 }
 
+// isSupportedIntentNativeAsset reports the THOR-native asset classes that
+// intents currently allow: RUNE plus native secured and trade assets.
+func isSupportedIntentNativeAsset(asset common.Asset) bool {
+	return asset.IsRune() || asset.IsSecuredAsset() || asset.IsTradeAsset()
+}
+
+// isUnsupportedIntentNativeAsset identifies THOR-native assets that exist on
+// chain but are not yet supported by the intents feature.
+func isUnsupportedIntentNativeAsset(asset common.Asset) bool {
+	return asset.IsNative() && !isSupportedIntentNativeAsset(asset)
+}
+
+// unsupportedIntentNativeAssetError returns the shared validation message for
+// THOR-native assets that intents intentionally reject for now.
+func unsupportedIntentNativeAssetError(asset common.Asset) string {
+	return fmt.Sprintf(
+		"THOR-native asset %s is not supported by intents; only RUNE, secured assets, and trade assets are currently supported",
+		asset,
+	)
+}
+
+// hasActiveIntentPool reports whether an asset's backing L1 pool is available for intent logic.
+func hasActiveIntentPool(pool Pool) bool {
+	return !pool.IsEmpty() && pool.Status == PoolAvailable
+}
+
+// isIntentPoolOrSupportedNativeAsset matches the open/quote rule that at least one side must
+// either have an active pool or already live natively on THORChain.
+func isIntentPoolOrSupportedNativeAsset(asset common.Asset, pool Pool) bool {
+	return hasActiveIntentPool(pool) || isSupportedIntentNativeAsset(asset)
+}
+
+// isIntentFeeChargeableAsset matches runtime execution: fees can only be charged on RUNE or on
+// an available L1 pool asset. Secured and trade assets stay excluded even though they are native.
+func isIntentFeeChargeableAsset(asset common.Asset, pool Pool) bool {
+	return asset.IsRune() || (hasActiveIntentPool(pool) && !asset.IsSecuredAsset() && !asset.IsTradeAsset())
+}
+
+// calculateIntentSolveMinIncrement calculates the gas-fee-based minimum
+// increment (1x gas determines what's "better"). A solve must exceed other
+// bids by this amount to be considered "better". It uses the target asset's
+// chain gas fee since solve amounts are denominated in the target asset. This
+// keeps the gas fee tolerance and solve amounts in the same units and avoids
+// unit mismatches. For RUNE, GetChain() returns THORChain with near-zero gas
+// (exact matching). For secured/trade assets, GetChain() returns the
+// underlying L1 chain, providing a reasonable tolerance in the same
+// denomination (e.g. satoshis).
+func calculateIntentSolveMinIncrement(ctx cosmos.Context, mgr Manager, targetAsset common.Asset) (cosmos.Uint, common.Asset, error) {
+	gasFeeChain := targetAsset.GetChain()
+	minIncrement, err := calculateGasFee(ctx, mgr, gasFeeChain)
+	if err != nil {
+		return cosmos.ZeroUint(), common.EmptyAsset, err
+	}
+
+	return minIncrement, gasFeeChain.GetGasAsset(), nil
+}
+
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.

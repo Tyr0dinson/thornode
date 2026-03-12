@@ -337,6 +337,20 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 			},
 			expectedErr: se.ErrInvalidRequest,
 		},
+		{
+			name: "unsupported THOR-native target asset should fail",
+			setupMsg: func() *MsgIntentSolve {
+				unsupportedIntent := intent
+				unsupportedIntent.TargetAsset = common.BTCAsset.GetSyntheticAsset()
+				w.keeper.SetIntent(w.ctx, unsupportedIntent)
+
+				synthTx := GetRandomTx()
+				synthTx.FromAddress = GetRandomTHORAddress()
+				synthTx.Coins = common.Coins{common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(15*common.One))}
+				return NewMsgIntentSolve(synthTx, intentTx.ID, GetRandomDOGEAddress(), w.activeNodeAccount.NodeAddress)
+			},
+			expectedErr: se.ErrInvalidRequest,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1028,7 +1042,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_UnsupportedNativeAsset(c *C) {
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentSolveHandler(mgr)
 
-	// Solve with the IBC token via a native (THORChain) tx
+	// Solve with the IBC token via a native (THORChain) tx. Validation should
+	// reject unsupported THOR-native assets before escrow handling.
 	solveTx := GetRandomTx()
 	solveTx.Chain = common.THORChain
 	solveTx.FromAddress = GetRandomTHORAddress()
@@ -1038,5 +1053,5 @@ func (HandlerIntentSolveSuite) TestIntentSolve_UnsupportedNativeAsset(c *C) {
 
 	_, err = handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
-	c.Check(err.Error(), Matches, ".*unsupported native asset for intent solve escrow.*")
+	c.Check(err.Error(), Matches, ".*THOR-native asset THOR.IBC-TOKEN is not supported by intents.*")
 }

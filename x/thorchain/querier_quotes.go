@@ -1326,13 +1326,16 @@ func isIntentCompatibleAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) 
 	if asset.IsTradeAsset() {
 		return true, "trade asset"
 	}
+	if isUnsupportedIntentNativeAsset(asset) {
+		return false, unsupportedIntentNativeAssetError(asset)
+	}
 
 	// Has active pool
 	pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
 	if err != nil {
 		ctx.Logger().Error("fail to get pool for intent compatibility check", "asset", asset, "error", err)
 		// Continue to check other criteria - don't fail entirely
-	} else if !pool.IsEmpty() && pool.Status == PoolAvailable {
+	} else if hasActiveIntentPool(pool) {
 		return true, "has active pool"
 	}
 
@@ -1433,6 +1436,19 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		}, nil
 	}
 
+	if isUnsupportedIntentNativeAsset(fromAsset) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(fromAsset),
+		}, nil
+	}
+	if isUnsupportedIntentNativeAsset(toAsset) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(toAsset),
+		}, nil
+	}
+
 	// Validate asset compatibility
 	sourceCompatible, sourceReason := isIntentCompatibleAsset(ctx, qs.mgr, fromAsset)
 	targetCompatible, targetReason := isIntentCompatibleAsset(ctx, qs.mgr, toAsset)
@@ -1454,24 +1470,20 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		ctx.Logger().Error("fail to get target pool for intent quote", "asset", toAsset, "error", err)
 	}
 
-	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
-	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
-	isSourceNative := fromAsset.IsRune() || fromAsset.IsSecuredAsset() || fromAsset.IsTradeAsset()
-	isTargetNative := toAsset.IsRune() || toAsset.IsSecuredAsset() || toAsset.IsTradeAsset()
+	hasSourcePool := hasActiveIntentPool(sourcePool)
+	hasTargetPool := hasActiveIntentPool(targetPool)
+	isSourceNative := isSupportedIntentNativeAsset(fromAsset)
 
-	if !hasSourcePool && !hasTargetPool && !isSourceNative && !isTargetNative {
+	if !isIntentPoolOrSupportedNativeAsset(fromAsset, sourcePool) && !isIntentPoolOrSupportedNativeAsset(toAsset, targetPool) {
 		return &types.QueryQuoteIntentResponse{
 			Valid:           false,
 			ValidationError: "at least one asset must have an active pool or be native/secured/trade",
 		}, nil
 	}
 
-	// Determine fee chargeability for fee estimation.
-	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
-	// Use IsRune() (not IsNative()) to match runtime behavior — IsNative() includes non-fee-chargeable
-	// THORChain assets like TOR and TCY.
-	canChargeSource := (hasSourcePool && !fromAsset.IsSecuredAsset() && !fromAsset.IsTradeAsset()) || fromAsset.IsRune()
-	canChargeTarget := (hasTargetPool && !toAsset.IsSecuredAsset() && !toAsset.IsTradeAsset()) || toAsset.IsRune()
+	// Match runtime fee charging: only RUNE or an active L1 pool asset can actually pay fees.
+	canChargeSource := isIntentFeeChargeableAsset(fromAsset, sourcePool)
+	canChargeTarget := isIntentFeeChargeableAsset(toAsset, targetPool)
 
 	if !canChargeSource && !canChargeTarget {
 		return &types.QueryQuoteIntentResponse{
@@ -1597,26 +1609,11 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	confSeconds := confBlocks * fromChain.ApproximateBlockMilliseconds() / 1000
 	expiryHeight := ctx.BlockHeight() + ttlBlocks
 
-	// Calculate solve min increment (1x gas fee)
-	// A solve must exceed other bids by this amount to be considered "better"
-	// The chain used depends on which asset lacks a pool:
-	// - If source has no pool and is not native → source chain gas
-	// - Else if target has no pool and is not native → target chain gas
-	// - Else (both have pools/native) → source chain gas
-	var solveMinIncrementChain common.Chain
-	switch {
-	case !hasSourcePool && !isSourceNative:
-		solveMinIncrementChain = fromAsset.GetChain()
-	case !hasTargetPool && !isTargetNative:
-		solveMinIncrementChain = toAsset.GetChain()
-	default:
-		solveMinIncrementChain = fromAsset.GetChain()
-	}
-	solveMinIncrement, err := calculateGasFee(ctx, qs.mgr, solveMinIncrementChain)
+	// Use the same target-side gas basis as runtime solve selection and QuoteIntentSolve.
+	solveMinIncrement, solveMinIncrementAsset, err := calculateIntentSolveMinIncrement(ctx, qs.mgr, toAsset)
 	if err != nil {
 		return nil, fmt.Errorf("fail to calculate solve minimum increment: %w", err)
 	}
-	solveMinIncrementAsset := solveMinIncrementChain.GetGasAsset()
 
 	// Build response
 	response := &types.QueryQuoteIntentResponse{
@@ -1704,6 +1701,19 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 		}, nil
 	}
 
+	if isUnsupportedIntentNativeAsset(intent.Source.Asset) {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(intent.Source.Asset),
+		}, nil
+	}
+	if isUnsupportedIntentNativeAsset(intent.TargetAsset) {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(intent.TargetAsset),
+		}, nil
+	}
+
 	// Check if intent is active
 	if intent.Status != types.IntentStatus_IntentActive {
 		return &types.QueryQuoteIntentSolveResponse{
@@ -1730,16 +1740,11 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 		}, nil
 	}
 
-	// Calculate gas fee for minimum increment (1x gas determines what's "better").
-	// Use the target asset's chain gas fee since solve amounts are in target denomination.
-	// This ensures the gas fee tolerance and solve amounts are in the same units.
-	targetAsset := intent.TargetAsset
-	gasFeeChain := targetAsset.GetChain()
-	minIncrement, err := calculateGasFee(ctx, qs.mgr, gasFeeChain)
+	// Use the shared target-side min-increment basis from runtime solve selection.
+	minIncrement, minIncrementAsset, err := calculateIntentSolveMinIncrement(ctx, qs.mgr, intent.TargetAsset)
 	if err != nil {
 		return nil, fmt.Errorf("fail to calculate minimum increment: %w", err)
 	}
-	minIncrementAsset := gasFeeChain.GetGasAsset()
 
 	// Find current best solve (highest amount)
 	currentBestAmount := cosmos.ZeroUint()

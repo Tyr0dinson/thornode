@@ -69,6 +69,13 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 		return se.ErrUnauthorized.Wrapf("intent is not active, status: %s", intent.Status.String())
 	}
 
+	if isUnsupportedIntentNativeAsset(intent.Source.Asset) {
+		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(intent.Source.Asset))
+	}
+	if isUnsupportedIntentNativeAsset(intent.TargetAsset) {
+		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(intent.TargetAsset))
+	}
+
 	// Check if intent has expired
 	if ctx.BlockHeight() >= intent.ExpiryHeight {
 		return se.ErrUnauthorized.Wrapf("intent has expired at height %d", intent.ExpiryHeight)

@@ -67,17 +67,11 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 		return solves[0]
 	}
 
-	// Use the target asset's chain gas fee for the comparison threshold.
-	// Since solve amounts are denominated in the target asset, we must use the
-	// same denomination for the gas fee tolerance to avoid unit mismatches.
-	// For RUNE, GetChain() returns THORChain with near-zero gas (exact matching).
-	// For secured/trade assets, GetChain() returns the underlying L1 chain,
-	// providing a reasonable tolerance in the same denomination (e.g. satoshis).
-	targetAsset := intent.TargetAsset
-	gasFeeChain := targetAsset.GetChain()
-	gasFee, err := calculateGasFee(ctx, im.mgr, gasFeeChain)
+	// Use the shared target-side min-increment basis so runtime matching stays aligned
+	// with both quote endpoints.
+	gasFee, _, err := calculateIntentSolveMinIncrement(ctx, im.mgr, intent.TargetAsset)
 	if err != nil {
-		ctx.Logger().Error("fail to calculate gas fee for solve selection, using first solve", "chain", gasFeeChain, "error", err)
+		ctx.Logger().Error("fail to calculate gas fee for solve selection, using first solve", "asset", intent.TargetAsset, "error", err)
 		return solves[0] // Return first solve as deterministic fallback
 	}
 
@@ -351,13 +345,8 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 		return fmt.Errorf("fail to get target pool: %w", err)
 	}
 
-	isSourcePoolAsset := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable && !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset()
-	isSourceRune := intent.Source.Asset.IsRune()
-	isTargetPoolAsset := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable && !solve.TargetCoin.Asset.IsSecuredAsset() && !solve.TargetCoin.Asset.IsTradeAsset()
-	isTargetRune := solve.TargetCoin.Asset.IsRune()
-
-	canChargeSource := isSourcePoolAsset || isSourceRune
-	canChargeTarget := isTargetPoolAsset || isTargetRune
+	canChargeSource := isIntentFeeChargeableAsset(intent.Source.Asset, sourcePool)
+	canChargeTarget := isIntentFeeChargeableAsset(solve.TargetCoin.Asset, targetPool)
 
 	// Log a warning if no fees can be charged (pool may have changed status since intent was opened)
 	if !canChargeSource && !canChargeTarget {

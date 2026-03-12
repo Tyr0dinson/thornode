@@ -89,6 +89,13 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	sourceAsset := msg.Tx.Coins[0].Asset
 	targetAsset := msg.TargetAsset
 
+	if isUnsupportedIntentNativeAsset(sourceAsset) {
+		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(sourceAsset))
+	}
+	if isUnsupportedIntentNativeAsset(targetAsset) {
+		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(targetAsset))
+	}
+
 	// At least one asset must have an active pool or be native
 	sourcePool, err := h.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
 	if err != nil {
@@ -99,23 +106,16 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		return ErrInternal(err, "fail to get target pool")
 	}
 
-	hasActiveSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
-	hasActiveTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
-	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
-	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
-
-	if !hasActiveSourcePool && !hasActiveTargetPool && !isSourceNative && !isTargetNative {
+	if !isIntentPoolOrSupportedNativeAsset(sourceAsset, sourcePool) && !isIntentPoolOrSupportedNativeAsset(targetAsset, targetPool) {
 		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must have an active pool or be a native/secured/trade asset")
 	}
 
-	// At least one side must be fee-chargeable (has active L1 pool or is RUNE).
-	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
-	// Use IsRune() (not IsNative()) to match runtime behavior — IsNative() includes non-fee-chargeable
-	// THORChain assets like TOR and TCY.
-	canChargeSource := (hasActiveSourcePool && !sourceAsset.IsSecuredAsset() && !sourceAsset.IsTradeAsset()) || sourceAsset.IsRune()
-	canChargeTarget := (hasActiveTargetPool && !targetAsset.IsSecuredAsset() && !targetAsset.IsTradeAsset()) || targetAsset.IsRune()
+	// Fee charging must match runtime execution: only RUNE or an active L1 pool asset can
+	// actually carry intent fees. Secured/trade assets remain non-chargeable even though native.
+	canChargeSource := isIntentFeeChargeableAsset(sourceAsset, sourcePool)
+	canChargeTarget := isIntentFeeChargeableAsset(targetAsset, targetPool)
 	if !canChargeSource && !canChargeTarget {
-		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (has active pool or is native)")
+		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (active L1 pool asset or RUNE)")
 	}
 
 	// Validate combined fee basis points won't consume entire outbound
