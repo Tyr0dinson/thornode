@@ -199,46 +199,44 @@ func (r *solvencyReporter) requiresNonZeroGas() bool {
 }
 
 // shouldReportAtHeight applies per-chain solvency cadence rules.
-// Some chains use fixed intervals while others rely on configured
-// solvency_blocks and/or last report height.
+// SOL keeps its legacy "strictly after the next boundary" behavior.
+// All other chains report once they enter a later cadence bucket
+// than the last successful report.
 func (r *solvencyReporter) shouldReportAtHeight(height int64) bool {
-	chain := r.client.GetChain()
-	solvencyBlocks := r.client.GetConfig().SolvencyBlocks
+	solvencyBlocks := r.solvencyBlocks()
 
-	// if solvencyBlocks is not set use hardcoded values from legacy code
-	if solvencyBlocks <= 0 {
-		switch chain {
-		case common.ETHChain:
-			solvencyBlocks = 20
-		case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain:
-			solvencyBlocks = 10
-		case common.BTCChain, common.BCHChain:
-			solvencyBlocks = 1
-		case common.LTCChain:
-			solvencyBlocks = 5
-		default:
-			solvencyBlocks = 1 // default to 1 if not set, to allow reporting every block
-		}
-	}
-
-	switch chain {
-	case common.ETHChain, common.AVAXChain, common.BSCChain, common.BASEChain,
-		common.GAIAChain, common.NOBLEChain, common.TRONChain, common.XRPChain:
-		return height%solvencyBlocks == 0
+	switch r.client.GetChain() {
 	case common.SOLChain:
 		lastSlotMultiple := r.lastSolvencyCheckHeight / solvencyBlocks
 		return height > (lastSlotMultiple+1)*solvencyBlocks
-	case common.DOGEChain, common.ZECChain:
-		if height-r.lastSolvencyCheckHeight <= 1 {
-			return false
-		}
-		return height%solvencyBlocks == 0
-	case common.BTCChain, common.BCHChain:
-		return height-r.lastSolvencyCheckHeight > solvencyBlocks
-	case common.LTCChain:
-		return height-r.lastSolvencyCheckHeight >= solvencyBlocks && height%solvencyBlocks == 0
 	default:
-		return height-r.lastSolvencyCheckHeight > solvencyBlocks
+		// return true once the current height has moved into a later solvency
+		// cadence bucket than the last successful report height. This avoids
+		// missing reports when a runner skips over the exact modulo height.
+		return height/solvencyBlocks > r.lastSolvencyCheckHeight/solvencyBlocks
+	}
+}
+
+// solvencyBlocks returns the effective cadence interval for the current chain.
+// It prefers the configured `solvency_blocks` value when present and otherwise
+// falls back to the legacy per-chain defaults.
+func (r *solvencyReporter) solvencyBlocks() int64 {
+	solvencyBlocks := r.client.GetConfig().SolvencyBlocks
+	if solvencyBlocks > 0 {
+		return solvencyBlocks
+	}
+
+	switch r.client.GetChain() {
+	case common.ETHChain:
+		return 20
+	case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain:
+		return 10
+	case common.BTCChain, common.BCHChain:
+		return 2
+	case common.LTCChain:
+		return 5
+	default:
+		return 1 // default to 1 if not set, to allow reporting every block
 	}
 }
 

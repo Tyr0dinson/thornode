@@ -25,17 +25,6 @@ func createReporters(client ChainClient, thorchainBridge ThorchainBridge) Report
 	return reporters
 }
 
-// chainRequiresSolvencyBlocks identifies chains whose solvency cadence depends
-// on the configured `solvency_blocks` value.
-func chainRequiresSolvencyBlocks(chain common.Chain) bool {
-	switch chain {
-	case common.AVAXChain, common.BSCChain, common.BASEChain, common.XRPChain, common.SOLChain:
-		return true
-	default:
-		return false
-	}
-}
-
 type reportTask struct {
 	from   triggeredFrom
 	height int64
@@ -77,12 +66,6 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 	chainTaskQueues := make(map[common.Chain]chan reportTask, len(chains))
 	for _, client := range chains {
 		chain := client.GetChain()
-		if chainRequiresSolvencyBlocks(chain) && client.GetConfig().SolvencyBlocks <= 0 {
-			logger.Warn().
-				Stringer("chain", chain).
-				Int64("solvency_blocks", client.GetConfig().SolvencyBlocks).
-				Msg("invalid solvency_blocks: solvency reporting disabled for this chain")
-		}
 		reporters[chain] = createReporters(client, thorchainBridge)
 		chainTaskQueues[chain] = make(chan reportTask, chainTaskQueueSize)
 	}

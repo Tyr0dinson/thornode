@@ -330,8 +330,9 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			expectReportFromRunner:  true, // runner reports insolvent vaults
 		},
 		{
-			name:                    "2. skip report when height is less than the default SolvencyBlocks value (1000)",
-			height:                  959,
+			name:                    "2. skip report on ETH before the first default 20-block cadence bucket",
+			height:                  19,
+			chainHeight:             100,
 			shouldReport:            false,
 			client:                  stdMockClient,
 			mockSetup:               stdMockBridgeSetup,
@@ -340,17 +341,18 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			expectReportFromRunner:  false,
 		},
 		{
-			name:                    "2a. - Insolvent Vault - skip report when height is less than the default SolvencyBlocks value (1000)",
-			height:                  959,
+			name:                    "2a. - Insolvent Vault - skip report on ETH before the first default 20-block cadence bucket",
+			height:                  19,
+			chainHeight:             100,
 			shouldReport:            false,
 			client:                  insolventStdMockClient, // <<-- vault is insolvent
 			mockSetup:               stdMockBridgeSetup,
 			expectedError:           "",
 			expectReportFromCollect: false, // scanner won't report at this height
-			expectReportFromRunner:  false, // runner shouldn't report at this height regardless of the vault state
+			expectReportFromRunner:  true, // runner uses chain height, which is already in the next cadence bucket
 		},
 		{
-			name:         "3. should report when height is a multiple of the configured SolvencyBlocks value (123) for EVM chains",
+			name:         "3. should report when height is in a configured solvency cadence bucket (123) for EVM chains",
 			height:       246,
 			chainHeight:  246,
 			shouldReport: true,
@@ -369,7 +371,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			expectReportFromRunner:  false,
 		},
 		{
-			name:         "3a. - Insolvent Vault - should report when height is a multiple of the configured SolvencyBlocks value (123) for EVM chains",
+			name:         "3a. - Insolvent Vault - should report when height is in a configured solvency cadence bucket (123) for EVM chains",
 			height:       246,
 			chainHeight:  246,
 			shouldReport: true,
@@ -388,7 +390,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			expectReportFromRunner:  true, // runner reports insolvent vaults
 		},
 		{
-			name:         "4. skip report when height is not a multiple of the configured SolvencyBlocks value (1500) for EVM chains",
+			name:         "4. skip report when height is before the first configured solvency cadence bucket (1500) for EVM chains",
 			height:       1001,
 			shouldReport: false,
 			client: &mockChainClient{
@@ -837,6 +839,68 @@ func (s *SolvencySuite) TestShouldReportAtHeightSolChain(c *C) {
 
 	c.Assert(reporter.shouldReportAtHeight(100), Equals, false)
 	c.Assert(reporter.shouldReportAtHeight(101), Equals, true)
+}
+
+func (s *SolvencySuite) TestShouldReportAtHeightEVMUsesCrossedConfiguredBoundary(c *C) {
+	client := &mockChainClient{
+		chain: common.AVAXChain,
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 100,
+		},
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.AVAXAsset, cosmos.NewUint(1))),
+		},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+	reporter.lastSolvencyCheckHeight = 101
+
+	c.Assert(reporter.shouldReportAtHeight(199), Equals, false)
+	c.Assert(reporter.shouldReportAtHeight(204), Equals, true)
+}
+
+func (s *SolvencySuite) TestShouldReportAtHeightETHUsesCrossedDefaultBoundary(c *C) {
+	client := &mockChainClient{
+		chain: common.ETHChain,
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+	reporter.lastSolvencyCheckHeight = 21
+
+	c.Assert(reporter.shouldReportAtHeight(39), Equals, false)
+	c.Assert(reporter.shouldReportAtHeight(43), Equals, true)
+}
+
+func (s *SolvencySuite) TestShouldReportAtHeightXRPUsesCrossedConfiguredBoundary(c *C) {
+	xrpAsset, err := common.NewAsset("XRP.XRP")
+	c.Assert(err, IsNil)
+	client := &mockChainClient{
+		chain: common.XRPChain,
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+		},
+		account: common.Account{Coins: common.NewCoins(common.NewCoin(xrpAsset, cosmos.NewUint(1)))},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+	reporter.lastSolvencyCheckHeight = 101
+
+	c.Assert(reporter.shouldReportAtHeight(109), Equals, false)
+	c.Assert(reporter.shouldReportAtHeight(119), Equals, true)
+}
+
+func (s *SolvencySuite) TestShouldReportAtHeightBTCUsesTwoBlockFallback(c *C) {
+	client := &mockChainClient{
+		chain: common.BTCChain,
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1))),
+		},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+	reporter.lastSolvencyCheckHeight = 0
+
+	c.Assert(reporter.shouldReportAtHeight(1), Equals, false)
+	c.Assert(reporter.shouldReportAtHeight(2), Equals, true)
 }
 
 func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
