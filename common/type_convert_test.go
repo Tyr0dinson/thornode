@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"math/big"
+	"testing"
 
 	. "gopkg.in/check.v1"
 

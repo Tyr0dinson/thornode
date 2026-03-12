@@ -335,6 +335,9 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 		c.Log("case:", f.name)
 
 		ctx, k := setupKeeperForTest(c)
+		k.SetMimir(ctx, constants.BankSendEnabled.String(), 1)
+		k.SetMimir(ctx, constants.AltNativeTxFeeEnabled.String(), 1)
+		k.SetMimir(ctx, constants.AltNativeTxFeeAddedBps.String(), 5000)
 		altNativeTxFeeAddedBps := uint64(max(0, k.GetConfigInt64(ctx, constants.AltNativeTxFeeAddedBps)))
 		altNativeTxFeeAddedBps = min(altNativeTxFeeAddedBps, 90000) // sanity cap: max 10x of the normal native tx fee
 
@@ -343,7 +346,7 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 		mgr := NewDummyMgrWithKeeper(k)
 		ad := AnteDecorator{keeper: k}
 		handler := NewSendHandler(mgr)
-		mgr.networkMgr = newNetworkMgrVCUR(k, mgr.TxOutStore(), mgr.EventMgr())
+		mgr.networkMgr = newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
 
 		feeAsset := common.NAMI
 		fundAccountWith(c, ctx, k, signer, feeAsset, cosmos.NewUint(100*common.One))

@@ -1101,30 +1101,6 @@ func (k KVStoreDummy) GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset)
 
 func (k KVStoreDummy) SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, _, _, _, _ int64) {}
 
-func (k KVStoreDummy) ReferenceMemoExists(ctx cosmos.Context, _ common.Asset, _ string) bool {
-	return false
-}
-
-func (k KVStoreDummy) GetReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) (ReferenceMemo, error) {
-	return ReferenceMemo{}, kaboom
-}
-
-func (k KVStoreDummy) GetReferenceMemoByTxnHash(ctx cosmos.Context, _ common.TxID) (ReferenceMemo, error) {
-	return ReferenceMemo{}, kaboom
-}
-
-func (k KVStoreDummy) SetReferenceMemo(ctx cosmos.Context, name ReferenceMemo)     {}
-func (k KVStoreDummy) GetReferenceMemoIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
-func (k KVStoreDummy) DeleteReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) error {
-	return kaboom
-}
-
-func (k KVStoreDummy) GetLastReferenceNumber(ctx cosmos.Context, asset common.Asset) string {
-	return ""
-}
-
-func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.Asset, ref string) {}
-
 // Alt-native fee escrow stubs
 func (k KVStoreDummy) AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error {
 	return nil

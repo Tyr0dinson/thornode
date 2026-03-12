@@ -2782,3 +2782,119 @@ func (s *HelperSuite) TestIsStableToStableMatchesGetAnchors(c *C) {
 	}
 	c.Check(isStableToStable(ctx, k, usdc, usdt), Equals, true)
 }
+
+type altNativeEscrowKeeperHelper struct {
+	keeper.Keeper
+	failReserveTransferAbove cosmos.Uint
+}
+
+func (h *altNativeEscrowKeeperHelper) SendFromModuleToModule(ctx cosmos.Context, from, to string, coins common.Coins) error {
+	if from == AsgardName && to == ReserveName {
+		for _, coin := range coins {
+			if coin.Asset.IsRune() && coin.Amount.GT(h.failReserveTransferAbove) {
+				return errKaboom
+			}
+		}
+	}
+	return h.Keeper.SendFromModuleToModule(ctx, from, to, coins)
+}
+
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCreditsReserveAndClearsEscrow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	asset := common.NAMI
+	escrowAmount := cosmos.NewUint(1_000 * common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 0)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, escrowAmount), IsNil)
+
+	poolBefore, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
+	_, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
+
+	poolAfter, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(poolAfter.BalanceAsset.GT(poolBefore.BalanceAsset), Equals, true)
+	c.Assert(poolAfter.BalanceRune.LT(poolBefore.BalanceRune), Equals, true)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+}
+
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsThreshold(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	asset := common.NAMI
+	escrowAmount := cosmos.NewUint(1_000 * common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 100)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, escrowAmount), IsNil)
+
+	poolBefore, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
+	escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(escrowAmount), Equals, true)
+
+	poolAfter, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(poolAfter.BalanceAsset.Equal(poolBefore.BalanceAsset), Equals, true)
+	c.Assert(poolAfter.BalanceRune.Equal(poolBefore.BalanceRune), Equals, true)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
+}
+
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsRollbackOnReserveTransferFailure(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	asset := common.NAMI
+	escrowAmount := cosmos.NewUint(1_000 * common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 0)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, escrowAmount), IsNil)
+
+	poolBefore, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	mgr.K = &altNativeEscrowKeeperHelper{
+		Keeper:                   mgr.Keeper(),
+		failReserveTransferAbove: cosmos.NewUint(10_000 * common.One),
+	}
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
+	escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(escrowAmount), Equals, true)
+
+	poolAfter, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(poolAfter.BalanceAsset.Equal(poolBefore.BalanceAsset), Equals, true)
+	c.Assert(poolAfter.BalanceRune.Equal(poolBefore.BalanceRune), Equals, true)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
+}

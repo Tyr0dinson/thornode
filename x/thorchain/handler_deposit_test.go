@@ -13,6 +13,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -466,6 +467,7 @@ func (s *HandlerDepositSuite) TestMemolessNativeDepositReferenceResolution(c *C)
 
 func (s *HandlerDepositSuite) TestAltNativeTxFeeWithShallowPool(c *C) {
 	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.AltNativeTxFeeAddedBps.String(), 5000)
 
 	// pool: NAMI:RUNE = 1:200 (5,000:1,000,000)
 	pool := NewPool()
@@ -496,6 +498,7 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeWithShallowPool(c *C) {
 
 func (s *HandlerDepositSuite) TestAltNativeTxFeeRecalcOnPoolRatioChange(c *C) {
 	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.AltNativeTxFeeAddedBps.String(), 5000)
 
 	// nami:rune = 1:200 (5,000:1,000,000)
 	pool := NewPool()
@@ -566,7 +569,7 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 		memo := fmt.Sprintf("=:r:%s", toAddr)
 		msg = NewMsgDeposit(coins, memo, signer)
 		ctx = ctx.WithTxBytes([]byte(common.RandHexString(32)))
-		_, err := ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
+		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
 		c.Assert(err, expCheck1)
 		if expCheck1 == NotNil {
 			c.Assert(strings.Contains(err.Error(), expErrStr), Equals, true)
@@ -585,11 +588,13 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 	setup := func() {
 		ctx, mgr = setupManagerForTest(c)
 		k = mgr.Keeper()
+		k.SetMimir(ctx, constants.AltNativeTxFeeEnabled.String(), 1)
+		k.SetMimir(ctx, constants.AltNativeTxFeeAddedBps.String(), 5000)
 		signer = GetRandomBech32Addr()
 		ad = AnteDecorator{keeper: k}
 		handler = NewDepositHandler(mgr)
-		mgr.advSwapQueue = newSwapQueueAdvVCUR(k)
-		mgr.networkMgr = newNetworkMgrVCUR(k, mgr.TxOutStore(), mgr.EventMgr())
+		mgr.advSwapQueue = newSwapQueueAdv(k)
+		mgr.networkMgr = newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
 	}
 
 	seedPegged := func(deposit func(cosmos.Context, common.Asset, cosmos.Uint, cosmos.AccAddress, common.Address, common.TxID) (cosmos.Uint, error)) {
@@ -622,10 +627,7 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 				seedPegged(mgr.TradeAccountManager().Deposit)
 			},
 			bal: func() cosmos.Uint {
-				tu, err := k.GetTradeUnit(ctx, asset)
-				c.Assert(err, IsNil)
-				c.Assert(tu.Asset.String(), Equals, asset.String())
-				return tu.Depth
+				return getTradeAssetBalanceOf(ctx, k, asset, signer)
 			},
 		},
 		{
@@ -641,16 +643,13 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 				fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(10*common.One)) // fund with nami
 			},
 			bal: func() cosmos.Uint {
-				sa, err := k.GetSecuredAsset(ctx, asset)
-				c.Assert(err, IsNil)
-				c.Assert(sa.Asset.String(), Equals, asset.String())
-				return sa.Depth
+				return getSecuredAssetBalanceOf(ctx, k, asset, signer)
 			},
 		},
 	}
 
-	for _, tc := range cases {
-		c.Logf("running %s", tc.name)
+	for i, tc := range cases {
+		c.Logf("running (%d.)%s", i, tc.name)
 		setup()
 		tc.seed()
 
@@ -682,16 +681,16 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 		fee, err = calculateAltNativeTxFee(ctx, k, feeAsset)
 		c.Assert(err, IsNil)
 
-		// -- Test spam protection
+		// -- Test spam protection for direct native balances
 		// swap out balance - 1,5 x of the tx fee in asset -> 0.5 x fee remains in account
 		toAddr = GetRandomTHORAddress()
 		bal := tc.bal()
 		swapOutAmt := bal.Sub(fee.MulUint64(3).QuoUint64(2)) // bal - 1.5 x fee
 		coins = common.Coins{common.NewCoin(asset, swapOutAmt)}
 		runSwap(coins, IsNil, IsNil, "") // should succeed
-		// 0 < amount left in account < fee
+		// 0 < amount left in account <= fee
 		bal = tc.bal()
-		c.Assert(!bal.IsZero() && bal.LT(fee), Equals, true)
+		c.Assert(!bal.IsZero() && bal.LTE(fee), Equals, true)
 		// now try swap the smallest unit of asset - should fail due to insufficient funds for tx fee
 		coins = common.Coins{common.NewCoin(asset, cosmos.OneUint())}
 		// ante should succeed (deduct the entire balance), swap should fail

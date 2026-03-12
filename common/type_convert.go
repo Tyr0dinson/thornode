@@ -1,6 +1,7 @@
 package common
 
 import (
+	"math/big"
 
 	"github.com/cometbft/cometbft/crypto"
 	tmed25519 "github.com/cometbft/cometbft/crypto/ed25519"
