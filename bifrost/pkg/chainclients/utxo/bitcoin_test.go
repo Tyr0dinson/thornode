@@ -223,9 +223,9 @@ func (s *BitcoinSuite) TestGetGasEstimateForSolvency(c *C) {
 	cfg.UTXO.EstimatedAverageTxSize = 1_000
 
 	client := &Client{
-		cfg:         cfg,
-		lastFeeRate: 50,
+		cfg: cfg,
 	}
+	client.lastFeeRate.Store(50)
 
 	got := client.GetGasEstimateForSolvency()
 	c.Assert(got.Equal(cosmos.NewUint(150_000)), Equals, true)

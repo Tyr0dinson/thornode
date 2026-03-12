@@ -349,7 +349,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			mockSetup:               stdMockBridgeSetup,
 			expectedError:           "",
 			expectReportFromCollect: false, // scanner won't report at this height
-			expectReportFromRunner:  true, // runner uses chain height, which is already in the next cadence bucket
+			expectReportFromRunner:  true,  // runner uses chain height, which is already in the next cadence bucket
 		},
 		{
 			name:         "3. should report when height is in a configured solvency cadence bucket (123) for EVM chains",
