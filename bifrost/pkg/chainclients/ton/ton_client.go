@@ -83,6 +83,10 @@ func NewTonClient(
 		stopchan: make(chan struct{}),
 	}
 
+	if client.config.BlockScanner.PrefetchBlocks != 0 {
+		return nil, fmt.Errorf("prefetch blocks not supported")
+	}
+
 	ctx := context.Background()
 	pool := liteclient.NewConnectionPool()
 

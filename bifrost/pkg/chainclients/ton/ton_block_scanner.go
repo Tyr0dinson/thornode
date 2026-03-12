@@ -50,11 +50,6 @@ func NewTonBlockScanner(
 	bridge thorclient.ThorchainBridge,
 	api ton.APIClientWrapped,
 ) (*TonBlockScanner, error) {
-	logger := log.Logger.With().
-		Str("module", "blockscanner").
-		Str("chain", cfg.ChainID.String()).
-		Logger()
-
 	if cfg.GasCacheBlocks <= 0 {
 		cfg.GasCacheBlocks = 10
 	}
@@ -63,14 +58,12 @@ func NewTonBlockScanner(
 		cfg.GasPriceResolution = 1_000_000
 	}
 
-	if cfg.PrefetchBlocks != 0 {
-		logger.Warn().Msg("prefetch blocks not supported for TON")
-		cfg.PrefetchBlocks = 0
-	}
-
 	return &TonBlockScanner{
-		config:        cfg,
-		logger:        logger,
+		config: cfg,
+		logger: log.Logger.With().
+			Str("module", "blockscanner").
+			Str("chain", cfg.ChainID.String()).
+			Logger(),
 		bridge:        bridge,
 		ctx:           context.Background(),
 		api:           api,
