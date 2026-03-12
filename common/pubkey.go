@@ -22,7 +22,6 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
-	"github.com/rs/zerolog/log"
 	"github.com/xssnick/tonutils-go/ton/wallet"
 
 	"github.com/mr-tron/base58"
@@ -313,7 +312,6 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		addr, err := wallet.AddressFromPubKey(pk.Bytes(), wallet.V3R2, wallet.DefaultSubwallet)
 		if err != nil {
-			log.Err(err).Msg("")
 			return NoAddress, err
 		}
 		// never bounce

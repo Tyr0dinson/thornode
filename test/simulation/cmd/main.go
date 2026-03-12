@@ -135,11 +135,16 @@ func main() {
 		res, err = http.Get("http://localhost:6040/status/scanner")
 
 		if err != nil || res.StatusCode != 200 {
+			if res != nil {
+				err = res.Body.Close()
+				if err != nil {
+					log.Error().Err(err).Msg("failed to close response body")
+				}
+			}
+
 			time.Sleep(duration)
 			continue
 		}
-
-		defer res.Body.Close()
 
 		var data []byte
 		data, err = io.ReadAll(res.Body)

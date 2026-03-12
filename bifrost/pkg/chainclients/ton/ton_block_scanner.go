@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cosmossdk.io/math"
@@ -39,7 +40,7 @@ type TonBlockScanner struct {
 
 	feeRateCache [][]uint64
 	feeRateMtx   sync.Mutex
-	lastFeeRate  uint64
+	feeRate      atomic.Uint64
 
 	globalNetworkFeeQueue chan common.NetworkFee
 }
@@ -49,6 +50,11 @@ func NewTonBlockScanner(
 	bridge thorclient.ThorchainBridge,
 	api ton.APIClientWrapped,
 ) (*TonBlockScanner, error) {
+	logger := log.Logger.With().
+		Str("module", "blockscanner").
+		Str("chain", cfg.ChainID.String()).
+		Logger()
+
 	if cfg.GasCacheBlocks <= 0 {
 		cfg.GasCacheBlocks = 10
 	}
@@ -57,16 +63,17 @@ func NewTonBlockScanner(
 		cfg.GasPriceResolution = 1_000_000
 	}
 
+	if cfg.PrefetchBlocks != 0 {
+		logger.Warn().Msg("prefetch blocks not supported for TON")
+		cfg.PrefetchBlocks = 0
+	}
+
 	return &TonBlockScanner{
-		config: cfg,
-		logger: log.Logger.With().
-			Str("module", "blockscanner").
-			Str("chain", cfg.ChainID.String()).
-			Logger(),
+		config:        cfg,
+		logger:        logger,
 		bridge:        bridge,
 		ctx:           context.Background(),
 		api:           api,
-		lastFeeRate:   0,
 		feeRateCache:  make([][]uint64, 0),
 		feeRateMtx:    sync.Mutex{},
 		lastShards:    make(map[string]uint32),
@@ -127,7 +134,7 @@ func (s *TonBlockScanner) FetchTxs(
 
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (s *TonBlockScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return 1, s.lastFeeRate
+	return 1, s.feeRate.Load()
 }
 
 func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
@@ -143,6 +150,8 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 		// not enough txs yet
 		return
 	}
+
+	currentFeeRate := s.feeRate.Load()
 
 	// Calculate the median fee rate from the gas cache
 
@@ -179,13 +188,11 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 
 	roundedFeeRate = max(roundedFeeRate, minNetworkFee)
 
-	// Update the fee rate if it has changed
-	if roundedFeeRate == s.lastFeeRate {
+	// if it has changed
+	if s.feeRate.CompareAndSwap(currentFeeRate, roundedFeeRate) {
 		s.logger.Debug().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
 		return
 	}
-
-	s.lastFeeRate = roundedFeeRate
 
 	select {
 	case s.globalNetworkFeeQueue <- common.NetworkFee{
@@ -233,10 +240,9 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 	var mu sync.Mutex
 	var eg errgroup.Group
 
-	s.lastShardsMtx.Lock()
-	defer s.lastShardsMtx.Unlock()
 	for _, shard := range shards {
 		shardSeqno, found := s.lastShards[shardId(shard)]
+
 		if found {
 			shardSeqno++
 		} else {
@@ -351,6 +357,12 @@ func (s *TonBlockScanner) processShard(
 			Str("lt", fmt.Sprintf("%d", tx.LT)).
 			Str("account", addr.String()).
 			Msg("processing transaction")
+
+		// this should be already filtered by skipTx(), just in case
+		if tx.IO.In == nil {
+			s.logger.Error().Msg("no in msgs found")
+			continue
+		}
 
 		msg := tx.IO.In
 
@@ -587,6 +599,11 @@ func skipTx(tx *tlb.Transaction) (bool, string) {
 		return true, "no ordinary transaction"
 	}
 
+	// no in msg => skip
+	if tx.IO.In == nil {
+		return true, "no incoming tx found"
+	}
+
 	// if tx is not aborted => dont skip
 	if !desc.Aborted {
 		return false, ""
@@ -600,11 +617,6 @@ func skipTx(tx *tlb.Transaction) (bool, string) {
 	// zero funds credited => skip
 	if desc.CreditPhase.Credit.Coins.IsZero() {
 		return true, "zero funds credited"
-	}
-
-	// no in msg => skip
-	if tx.IO.In == nil {
-		return true, "no incoming tx found"
 	}
 
 	if desc.Aborted && tx.EndStatus == tlb.AccountStatusUninit {

@@ -86,7 +86,11 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 				continue
 			}
 
-			fromAddress, _ := pubKey.GetAddress(tx.Chain)
+			var fromAddress common.Address
+			fromAddress, err = pubKey.GetAddress(tx.Chain)
+			if err != nil {
+				return nil, ErrInternal(err, "failed to get address")
+			}
 
 			if tx.InHash.Equals(common.BlankTxID) &&
 				tx.OutHash.IsEmpty() &&

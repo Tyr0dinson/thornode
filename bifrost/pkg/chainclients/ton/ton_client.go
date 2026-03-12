@@ -629,7 +629,7 @@ func (c *TonClient) ReportSolvency(height int64) error {
 	}
 
 	fee := c.config.ChainID.NativeGasToThorchain(
-		math.NewUint(c.tonScanner.lastFeeRate),
+		math.NewUint(c.tonScanner.feeRate.Load()),
 	)
 
 	solventMsgs := make([]types.Solvency, 0, len(vaults))
