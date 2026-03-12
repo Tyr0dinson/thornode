@@ -1457,8 +1457,9 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	}
 
 	// Determine fee chargeability for fee estimation.
-	canChargeSource := hasSourcePool || fromAsset.IsNative()
-	canChargeTarget := hasTargetPool || toAsset.IsNative()
+	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
+	canChargeSource := (hasSourcePool && !fromAsset.IsSecuredAsset() && !fromAsset.IsTradeAsset()) || fromAsset.IsNative()
+	canChargeTarget := (hasTargetPool && !toAsset.IsSecuredAsset() && !toAsset.IsTradeAsset()) || toAsset.IsNative()
 
 	if !canChargeSource && !canChargeTarget {
 		return &types.QueryQuoteIntentResponse{
