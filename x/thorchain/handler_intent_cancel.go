@@ -5,7 +5,6 @@ import (
 
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -78,35 +77,33 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		return ErrInternal(err, "fail to get intent")
 	}
 
-	// Determine if we should refund directly based on asset type.
-	// Use the same predicate as expiry: pool must exist AND be available.
-	sourcePool, err := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
-	if err != nil {
-		return fmt.Errorf("fail to get pool for cancel refund decision: %w", err)
-	}
-	isPoolAsset := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
-	shouldRefund := isPoolAsset || intent.Source.Asset.IsNative()
-
-	if !shouldRefund {
-		// Non-pool, non-native source asset: route to auction instead of
-		// abandoning immediately. This gives the owner (or anyone) the
-		// opportunity to bid gas-asset funds and recover the escrowed source.
-		if err := h.mgr.IntentMgr().StartIntentAuction(ctx, intent); err != nil {
-			return fmt.Errorf("fail to start auction for cancelled intent: %w", err)
+	// For non-native, non-pool, non-gas-asset sources, require gas tokens in the cancel tx.
+	if !intent.Source.Asset.IsNative() {
+		sourcePool, err := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+		if err != nil {
+			return fmt.Errorf("fail to get pool for cancel gas check: %w", err)
 		}
-
-		// Emit cancel event indicating the intent moved to auction
-		evt := NewEventIntentCancel(
-			intent.TxID,
-			common.NewCoin(intent.Source.Asset, cosmos.ZeroUint()),
-			intent.SourceAddress,
-			false,
-		)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			return fmt.Errorf("fail to emit intent cancel event: %w", err)
+		hasActivePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
+		if !hasActivePool && !intent.Source.Asset.IsGasAsset() {
+			chain := intent.Source.Asset.GetChain()
+			maxGasCoin, err := h.mgr.GasMgr().GetMaxGas(ctx, chain)
+			if err != nil {
+				return fmt.Errorf("fail to get max gas for %s: %w", chain, err)
+			}
+			gasAsset := chain.GetGasAsset()
+			gasFromCancel := cosmos.ZeroUint()
+			for _, coin := range msg.Tx.Coins {
+				if coin.Asset.Equals(gasAsset) {
+					gasFromCancel = gasFromCancel.Add(coin.Amount)
+				}
+			}
+			if gasFromCancel.LT(maxGasCoin.Amount) {
+				return se.ErrInsufficientFunds.Wrapf(
+					"cancel of non-pool asset requires gas: need %s %s, got %s",
+					maxGasCoin.Amount, gasAsset, gasFromCancel,
+				)
+			}
 		}
-
-		return nil
 	}
 
 	// Refund the source asset back to the source address.
