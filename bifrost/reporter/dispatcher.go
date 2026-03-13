@@ -249,6 +249,9 @@ func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, hei
 			logger.Debug().Msg("dispatcher stopped, dropping report batch")
 			return
 		case <-time.After(constants.ThorchainBlockTime):
+			if d.errCounter != nil {
+				d.errCounter.WithLabelValues("fail_to_enqueue_report_batch", "").Inc()
+			}
 			logger.Error().Msg("fail to send report batch to queue: timeout")
 		}
 	}

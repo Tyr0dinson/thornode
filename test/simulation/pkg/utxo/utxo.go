@@ -1033,10 +1033,6 @@ func (c *Client) GetRawTransactionVerbose(txid string) (*btcjson.TxRawResult, er
 	return c.rpc.GetRawTransactionVerbose(txid)
 }
 
-func (c *Client) GetZECRawTransactionVerbose(txid string) (*btcjson.TxRawResult, error) {
-	return c.GetRawTransactionVerbose(txid)
-}
-
 // GetAddressUTXOKeys returns outpoint keys ("txid:vout") for the given address.
 // ZEC uses getaddressutxos; other UTXO chains use listunspent.
 func (c *Client) GetAddressUTXOKeys(address string) (map[string]struct{}, error) {

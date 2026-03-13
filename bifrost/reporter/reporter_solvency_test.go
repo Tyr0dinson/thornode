@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	. "gopkg.in/check.v1"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -1256,4 +1258,61 @@ func (s *SolvencySuite) TestProcessInternalReturnsOnStopWhenReportQueueBackedUp(
 	case <-time.After(constants.ThorchainBlockTime / 2):
 		c.Fatal("processInternal did not unblock after stopper closed")
 	}
+}
+
+func (s *SolvencySuite) TestProcessInternalIncrementsErrCounterOnReportQueueTimeout(c *C) {
+	origBlockTime := constants.ThorchainBlockTime
+	defer func() { constants.ThorchainBlockTime = origBlockTime }()
+	constants.ThorchainBlockTime = 20 * time.Millisecond
+
+	vault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{vault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.ETHChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 20,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 100,
+			},
+		},
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		},
+		chainHeight: 100,
+	}
+
+	errCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "reporter_dispatcher_test_errors_total",
+		Help: "test counter",
+	}, []string{"error_name", "additional"})
+
+	d := &dispatcher{
+		logger:      log.Logger,
+		reportQueue: make(chan ReportBatch, 1),
+		stopper:     make(chan struct{}),
+		errCounter:  errCounter,
+		chains:      map[common.Chain]ChainClient{common.ETHChain: client},
+		reporters: map[common.Chain]Reporters{
+			common.ETHChain: {newSolvencyReporter(client, bridge)},
+		},
+	}
+
+	d.processInternal(common.ETHChain, fromBlockScanner, 100)
+	c.Assert(len(d.reportQueue), Equals, 1)
+
+	d.processInternal(common.ETHChain, fromBlockScanner, 120)
+
+	metric, err := errCounter.GetMetricWithLabelValues("fail_to_enqueue_report_batch", "")
+	c.Assert(err, IsNil)
+	c.Assert(testutil.ToFloat64(metric), Equals, float64(1))
 }
