@@ -9,6 +9,7 @@ ENV GOBIN=/go/bin
 ENV GOPATH=/go
 ENV GOOS=linux
 
+
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
