@@ -85,8 +85,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		return fmt.Errorf("fail to get pool for cancel refund decision: %w", err)
 	}
 	isPoolAsset := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
-	isNativeAsset := intent.Source.Asset.IsNative()
-	shouldRefund := isPoolAsset || isNativeAsset
+	shouldRefund := isPoolAsset || intent.Source.Asset.IsNative()
 
 	if !shouldRefund {
 		// Non-pool, non-native source asset: route to auction instead of
