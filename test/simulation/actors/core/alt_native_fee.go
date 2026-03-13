@@ -25,6 +25,7 @@ import (
 type AltNativeFeeMode string
 
 const (
+	AltNativeFeeModeNative  AltNativeFeeMode = "native"
 	AltNativeFeeModeTrade   AltNativeFeeMode = "trade"
 	AltNativeFeeModeSecured AltNativeFeeMode = "secured"
 )
@@ -32,18 +33,19 @@ const (
 // AltNativeFeeActor exercises the happy-path alt-native-fee flow for THOR-native
 // transactions that are funded by non-RUNE assets.
 //
-// The actor borrows a normal simulation user with L1 funds, creates one or more
-// fresh local THOR wallets with zero RUNE, then bootstraps the wallet under test
-// with either a trade asset or a secured asset using L1 deposits and the
-// corresponding memo:
-//   - trade+:<thor address>
-//   - secure+:<thor address>
+// The actor borrows a funded bootstrap account, creates one or more fresh local
+// THOR wallets with zero RUNE, then bootstraps the wallet under test with one
+// of three source asset types:
+//   - native mode: a THOR-native asset is sent directly from a seeded THOR account
+//   - trade mode: an L1 deposit credits trade+:<thor address>
+//   - secured mode: an L1 deposit credits secure+:<thor address>
 //
 // Once the wallet under test holds the source asset but still has no RUNE, the
 // actor proves that the tx fee is being paid in that source asset by executing:
-//   - secured mode: a native MsgSend of the secured asset to another ad-hoc wallet
-//   - trade or secured mode: a native MsgDeposit swap from the source asset to RUNE,
-//     with the RUNE output sent to a separate ad-hoc recipient wallet
+//   - native or secured mode: a native MsgSend of the source asset to another
+//     ad-hoc wallet
+//   - native, trade, or secured mode: a native MsgDeposit swap from the source
+//     asset to RUNE, with the RUNE output sent to a separate ad-hoc recipient wallet
 //
 // The assertions are balance-based:
 //   - the source wallet never receives RUNE
@@ -54,7 +56,7 @@ type AltNativeFeeActor struct {
 	Actor
 
 	mode  AltNativeFeeMode
-	asset common.Asset // L1 asset backing the trade/secured asset under test
+	asset common.Asset // Native asset under test, or L1 asset backing trade/secured mode
 
 	bootstrapUser     *User
 	bootstrapAmount   cosmos.Uint
@@ -70,16 +72,18 @@ type AltNativeFeeActor struct {
 	swapRecipientAccount cosmos.AccAddress
 	swapRecipientAddress common.Address
 
-	sendAmount               cosmos.Uint
-	swapAmount               cosmos.Uint
-	sourceShareBeforeSend    cosmos.Uint
-	recipientShareBeforeSend cosmos.Uint
-	sourceBalanceBeforeSwap  cosmos.Uint
-	recipientRuneBeforeSwap  cosmos.Uint
+	sendAmount                 cosmos.Uint
+	swapAmount                 cosmos.Uint
+	sourceBalanceBeforeSend    cosmos.Uint
+	recipientBalanceBeforeSend cosmos.Uint
+	sourceBalanceBeforeSwap    cosmos.Uint
+	recipientRuneBeforeSwap    cosmos.Uint
 
 	swapTxID common.TxID
 }
 
+// NewAltNativeFeeActor builds the op sequence for one asset/mode combination.
+// Native and secured modes include a send flow; all modes include a swap flow.
 func NewAltNativeFeeActor(asset common.Asset, mode AltNativeFeeMode, rng *rand.Rand) *Actor {
 	a := &AltNativeFeeActor{
 		Actor: *NewActor(fmt.Sprintf("AltNativeFee-%s-%s", mode, asset), rng),
@@ -95,11 +99,11 @@ func NewAltNativeFeeActor(asset common.Asset, mode AltNativeFeeMode, rng *rand.R
 		a.waitForBootstrap,
 	)
 
-	if mode == AltNativeFeeModeSecured {
+	if mode == AltNativeFeeModeNative || mode == AltNativeFeeModeSecured {
 		a.Ops = append(a.Ops,
-			a.prepareSecuredSend,
-			a.sendSecured,
-			a.verifySecuredSend,
+			a.prepareSend,
+			a.sendSourceAsset,
+			a.verifySend,
 		)
 	}
 
@@ -117,8 +121,11 @@ func NewAltNativeFeeActor(asset common.Asset, mode AltNativeFeeMode, rng *rand.R
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// sourceAsset resolves the THOR-side asset that the test wallet actually spends.
 func (a *AltNativeFeeActor) sourceAsset() common.Asset {
 	switch a.mode {
+	case AltNativeFeeModeNative:
+		return a.asset
 	case AltNativeFeeModeTrade:
 		return a.asset.GetTradeAsset()
 	case AltNativeFeeModeSecured:
@@ -163,8 +170,13 @@ func (a *AltNativeFeeActor) newLocalUser() (*User, cosmos.AccAddress, common.Add
 	return user, account, address, nil
 }
 
+// balance returns the wallet balance relevant to the current mode.
+// Native mode reads bank balances directly, while trade and secured modes read
+// their effective spendable value from thornode queries.
 func (a *AltNativeFeeActor) balance(addr common.Address) (cosmos.Uint, error) {
 	switch a.mode {
+	case AltNativeFeeModeNative:
+		return a.coinBalance(addr)
 	case AltNativeFeeModeTrade:
 		return thornode.GetEffectiveTradeBalance(addr, a.sourceAsset())
 	case AltNativeFeeModeSecured:
@@ -174,6 +186,7 @@ func (a *AltNativeFeeActor) balance(addr common.Address) (cosmos.Uint, error) {
 	}
 }
 
+// balances loads THOR bank balances and treats a missing auth account as empty.
 func (a *AltNativeFeeActor) balances(addr common.Address) (common.Coins, error) {
 	coins, err := thornode.GetBalances(addr)
 	if err != nil && strings.Contains(err.Error(), "HTTP: 404") {
@@ -182,6 +195,7 @@ func (a *AltNativeFeeActor) balances(addr common.Address) (common.Coins, error) 
 	return coins, err
 }
 
+// runeBalance returns the wallet's direct native RUNE bank balance.
 func (a *AltNativeFeeActor) runeBalance(addr common.Address) (cosmos.Uint, error) {
 	coins, err := a.balances(addr)
 	if err != nil {
@@ -190,7 +204,8 @@ func (a *AltNativeFeeActor) runeBalance(addr common.Address) (cosmos.Uint, error
 	return coins.GetCoin(common.RuneAsset()).Amount, nil
 }
 
-func (a *AltNativeFeeActor) shareBalance(addr common.Address) (cosmos.Uint, error) {
+// coinBalance returns the wallet's direct bank balance for the source asset.
+func (a *AltNativeFeeActor) coinBalance(addr common.Address) (cosmos.Uint, error) {
 	coins, err := a.balances(addr)
 	if err != nil {
 		return cosmos.ZeroUint(), err
@@ -198,6 +213,7 @@ func (a *AltNativeFeeActor) shareBalance(addr common.Address) (cosmos.Uint, erro
 	return coins.GetCoin(a.sourceAsset()).Amount, nil
 }
 
+// releaseBootstrapUser unlocks the borrowed funded user once the actor is done.
 func (a *AltNativeFeeActor) releaseBootstrapUser() {
 	if a.bootstrapUserHeld {
 		a.bootstrapUser.Release()
@@ -206,6 +222,7 @@ func (a *AltNativeFeeActor) releaseBootstrapUser() {
 	}
 }
 
+// fail centralizes cleanup for error exits from any op.
 func (a *AltNativeFeeActor) fail(err error) OpResult {
 	a.releaseBootstrapUser()
 	return OpResult{
@@ -214,6 +231,7 @@ func (a *AltNativeFeeActor) fail(err error) OpResult {
 	}
 }
 
+// chooseBootstrapAmount keeps the borrowed funding amount small and bounded.
 func (a *AltNativeFeeActor) chooseBootstrapAmount(balance cosmos.Uint) cosmos.Uint {
 	if balance.IsZero() {
 		return cosmos.ZeroUint()
@@ -227,6 +245,8 @@ func (a *AltNativeFeeActor) chooseBootstrapAmount(balance cosmos.Uint) cosmos.Ui
 	return amount
 }
 
+// chooseAccountBootstrapAmount picks the tiny secured deposit used only to
+// materialize a THOR auth account ahead of trade-mode tests.
 func (a *AltNativeFeeActor) chooseAccountBootstrapAmount() cosmos.Uint {
 	amount := a.bootstrapAmount.QuoUint64(100)
 	if !a.bootstrapAmount.IsZero() && amount.IsZero() {
@@ -239,7 +259,43 @@ func (a *AltNativeFeeActor) chooseAccountBootstrapAmount() cosmos.Uint {
 // Ops
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// acquireBootstrapUser borrows a funded user that can source the asset under
+// test, either from native THOR balances or from an external L1 wallet.
 func (a *AltNativeFeeActor) acquireBootstrapUser(config *OpConfig) OpResult {
+	if a.mode == AltNativeFeeModeNative {
+		for _, user := range config.NodeUsers {
+			if !user.Acquire() {
+				continue
+			}
+
+			coins, err := a.balances(user.Address(common.THORChain))
+			if err != nil {
+				user.Release()
+				continue
+			}
+
+			amount := a.chooseBootstrapAmount(coins.GetCoin(a.sourceAsset()).Amount)
+			if amount.IsZero() {
+				user.Release()
+				continue
+			}
+
+			a.bootstrapUser = user
+			a.bootstrapAmount = amount
+			a.bootstrapUserHeld = true
+			a.SetLogger(a.Log().With().
+				Str("mode", string(a.mode)).
+				Stringer("asset", a.asset).
+				Str("bootstrap_user", user.Name()).
+				Logger())
+			a.Log().Info().Stringer("bootstrap_amount", amount).Msg("acquired bootstrap user")
+
+			return OpResult{Continue: true}
+		}
+
+		return OpResult{Continue: false}
+	}
+
 	for _, user := range config.Users {
 		if !user.Acquire() {
 			continue
@@ -273,6 +329,7 @@ func (a *AltNativeFeeActor) acquireBootstrapUser(config *OpConfig) OpResult {
 	return OpResult{Continue: false}
 }
 
+// createLocalUsers creates the ad-hoc wallets used by this actor only.
 func (a *AltNativeFeeActor) createLocalUsers(config *OpConfig) OpResult {
 	var err error
 	a.testUser, a.testAccount, a.testAddress, err = a.newLocalUser()
@@ -280,9 +337,9 @@ func (a *AltNativeFeeActor) createLocalUsers(config *OpConfig) OpResult {
 		return a.fail(fmt.Errorf("failed to create test wallet: %w", err))
 	}
 
-	if a.mode == AltNativeFeeModeSecured {
+	if a.mode == AltNativeFeeModeNative || a.mode == AltNativeFeeModeSecured {
 		// Secured send needs a separate recipient so the source and destination
-		// balances can be checked independently.
+		// balances can be checked independently. Native mode uses the same pattern.
 		a.sendRecipient, a.sendRecipientAccount, a.sendRecipientAddress, err = a.newLocalUser()
 		if err != nil {
 			return a.fail(fmt.Errorf("failed to create send recipient wallet: %w", err))
@@ -304,7 +361,41 @@ func (a *AltNativeFeeActor) createLocalUsers(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
+// bootstrapAsset funds the zero-RUNE test wallet with the source asset for the
+// current mode, either natively on THORChain or via L1 deposit memos.
 func (a *AltNativeFeeActor) bootstrapAsset(config *OpConfig) OpResult {
+	if a.mode == AltNativeFeeModeNative {
+		from, err := a.bootstrapUser.PubKey(common.THORChain).GetThorAddress()
+		if err != nil {
+			return a.fail(fmt.Errorf("failed to get native bootstrap sender address: %w", err))
+		}
+
+		nativeCoins, err := common.NewCoins(common.NewCoin(a.sourceAsset(), a.bootstrapAmount)).Native()
+		if err != nil {
+			return a.fail(fmt.Errorf("failed to convert native bootstrap coin: %w", err))
+		}
+
+		// Native mode is bootstrapped entirely on THORChain: a seeded THOR account
+		// transfers NAMI directly to the ad-hoc zero-RUNE wallet under test.
+		msg := &ttypes.MsgSend{
+			FromAddress: from,
+			ToAddress:   a.testAccount,
+			Amount:      sdk.Coins(nativeCoins),
+		}
+
+		txid, err := a.bootstrapUser.Thorchain.BroadcastWithBlocking(msg)
+		if err != nil {
+			return a.fail(fmt.Errorf("failed to bootstrap native asset: %w", err))
+		}
+
+		a.Log().Info().
+			Str("txid", txid.String()).
+			Stringer("amount", a.bootstrapAmount).
+			Msg("submitted native bootstrap send")
+
+		return OpResult{Continue: true}
+	}
+
 	if a.mode == AltNativeFeeModeTrade {
 		// Trade balances alone do not materialize an auth account, so trade mode
 		// first performs a tiny secured bootstrap to create the THOR account while
@@ -364,6 +455,8 @@ func (a *AltNativeFeeActor) bootstrapAsset(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
+// waitForBootstrap polls until the test wallet shows a usable source balance
+// while still remaining RUNE-free.
 func (a *AltNativeFeeActor) waitForBootstrap(config *OpConfig) OpResult {
 	balance, err := a.balance(a.testAddress)
 	if err != nil {
@@ -393,48 +486,49 @@ func (a *AltNativeFeeActor) waitForBootstrap(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
-func (a *AltNativeFeeActor) prepareSecuredSend(config *OpConfig) OpResult {
+// prepareSend snapshots balances and chooses the amount for the send leg.
+func (a *AltNativeFeeActor) prepareSend(config *OpConfig) OpResult {
 	runeBal, err := a.runeBalance(a.testAddress)
 	if err != nil {
 		return OpResult{Continue: false}
 	}
 	if !runeBal.IsZero() {
-		return a.fail(fmt.Errorf("secured send source wallet unexpectedly has rune balance %s", runeBal))
+		return a.fail(fmt.Errorf("%s send source wallet unexpectedly has rune balance %s", a.mode, runeBal))
 	}
 
-	sourceShare, err := a.shareBalance(a.testAddress)
+	sourceBalance, err := a.coinBalance(a.testAddress)
 	if err != nil {
 		return OpResult{Continue: false}
 	}
-	if sourceShare.IsZero() {
+	if sourceBalance.IsZero() {
 		return OpResult{Continue: false}
 	}
 
-	recipientShare, err := a.shareBalance(a.sendRecipientAddress)
+	recipientBalance, err := a.coinBalance(a.sendRecipientAddress)
 	if err != nil {
 		return OpResult{Continue: false}
 	}
 
-	a.sendAmount = sourceShare.QuoUint64(3)
+	a.sendAmount = sourceBalance.QuoUint64(3)
 	if a.sendAmount.IsZero() {
-		return a.fail(fmt.Errorf("secured send amount resolved to zero from share balance %s", sourceShare))
+		return a.fail(fmt.Errorf("%s send amount resolved to zero from balance %s", a.mode, sourceBalance))
 	}
 
-	a.sourceShareBeforeSend = sourceShare
-	a.recipientShareBeforeSend = recipientShare
+	a.sourceBalanceBeforeSend = sourceBalance
+	a.recipientBalanceBeforeSend = recipientBalance
 
 	return OpResult{Continue: true}
 }
 
-func (a *AltNativeFeeActor) sendSecured(config *OpConfig) OpResult {
+// sendSourceAsset broadcasts a native MsgSend from the zero-RUNE wallet under test.
+func (a *AltNativeFeeActor) sendSourceAsset(config *OpConfig) OpResult {
 	nativeCoins, err := common.NewCoins(common.NewCoin(a.sourceAsset(), a.sendAmount)).Native()
 	if err != nil {
-		return a.fail(fmt.Errorf("failed to convert secured send coin: %w", err))
+		return a.fail(fmt.Errorf("failed to convert %s send coin: %w", a.mode, err))
 	}
 
-	// Native MsgSend moves the secured share tokens to another THOR wallet.
-	// The sender has no RUNE, so success here depends on the secured asset also
-	// covering the native tx fee.
+	// Native MsgSend moves the source asset to another THOR wallet. The sender has
+	// no RUNE, so success here depends on that same asset also covering the native tx fee.
 	msg := &ttypes.MsgSend{
 		FromAddress: a.testAccount,
 		ToAddress:   a.sendRecipientAccount,
@@ -443,56 +537,59 @@ func (a *AltNativeFeeActor) sendSecured(config *OpConfig) OpResult {
 
 	txid, err := a.testUser.Thorchain.BroadcastWithBlocking(msg)
 	if err != nil {
-		return a.fail(fmt.Errorf("failed to broadcast secured send: %w", err))
+		return a.fail(fmt.Errorf("failed to broadcast %s send: %w", a.mode, err))
 	}
 
-	a.Log().Info().Stringer("txid", txid).Stringer("amount", a.sendAmount).Msg("broadcasted secured send")
+	a.Log().Info().Stringer("txid", txid).Stringer("amount", a.sendAmount).Msg("broadcasted source-asset send")
 
 	return OpResult{Continue: true}
 }
 
-func (a *AltNativeFeeActor) verifySecuredSend(config *OpConfig) OpResult {
-	sourceAfter, err := a.shareBalance(a.testAddress)
+// verifySend proves the business transfer succeeded and the fee was also paid
+// from the same source asset instead of RUNE.
+func (a *AltNativeFeeActor) verifySend(config *OpConfig) OpResult {
+	sourceAfter, err := a.coinBalance(a.testAddress)
 	if err != nil {
 		return OpResult{Continue: false}
 	}
-	recipientAfter, err := a.shareBalance(a.sendRecipientAddress)
+	recipientAfter, err := a.coinBalance(a.sendRecipientAddress)
 	if err != nil {
 		return OpResult{Continue: false}
 	}
 
-	expectedRecipient := a.recipientShareBeforeSend.Add(a.sendAmount)
+	expectedRecipient := a.recipientBalanceBeforeSend.Add(a.sendAmount)
 	if recipientAfter.LT(expectedRecipient) {
 		return OpResult{Continue: false}
 	}
 	if recipientAfter.GT(expectedRecipient) {
-		return a.fail(fmt.Errorf("secured send recipient balance mismatch: expected %s got %s", expectedRecipient, recipientAfter))
+		return a.fail(fmt.Errorf("%s send recipient balance mismatch: expected %s got %s", a.mode, expectedRecipient, recipientAfter))
 	}
 
-	expectedMaxSource := a.sourceShareBeforeSend.Sub(a.sendAmount)
+	expectedMaxSource := a.sourceBalanceBeforeSend.Sub(a.sendAmount)
 	if !sourceAfter.LT(expectedMaxSource) {
 		return OpResult{Continue: false}
 	}
 
 	// The source must have spent more than the transferred amount. The difference
-	// is the evidence that the tx fee was also charged in the secured asset.
+	// is the evidence that the tx fee was also charged in the same source asset.
 	runeBal, err := a.runeBalance(a.testAddress)
 	if err != nil {
 		return OpResult{Continue: false}
 	}
 	if !runeBal.IsZero() {
-		return a.fail(fmt.Errorf("secured send source wallet unexpectedly has rune balance %s", runeBal))
+		return a.fail(fmt.Errorf("%s send source wallet unexpectedly has rune balance %s", a.mode, runeBal))
 	}
 
 	a.Log().Info().
-		Stringer("source_before", a.sourceShareBeforeSend).
+		Stringer("source_before", a.sourceBalanceBeforeSend).
 		Stringer("source_after", sourceAfter).
 		Stringer("recipient_after", recipientAfter).
-		Msg("verified secured send alt-fee path")
+		Msg("verified source-asset send alt-fee path")
 
 	return OpResult{Continue: true}
 }
 
+// prepareSwap snapshots balances and chooses the amount for the swap leg.
 func (a *AltNativeFeeActor) prepareSwap(config *OpConfig) OpResult {
 	runeBal, err := a.runeBalance(a.testAddress)
 	if err != nil {
@@ -526,6 +623,8 @@ func (a *AltNativeFeeActor) prepareSwap(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
+// submitSwap broadcasts the native deposit that swaps the source asset into
+// RUNE for the dedicated swap recipient wallet.
 func (a *AltNativeFeeActor) submitSwap(config *OpConfig) OpResult {
 	// The swap is submitted from the source wallet, but the output RUNE is sent
 	// to a separate ad-hoc wallet. This makes it unambiguous where the swapped
@@ -552,6 +651,8 @@ func (a *AltNativeFeeActor) submitSwap(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
+// verifySwap rejects refunded swaps and then checks that RUNE reached the
+// recipient while the source wallet spent more than the swap input alone.
 func (a *AltNativeFeeActor) verifySwap(config *OpConfig) OpResult {
 	details, err := thornode.GetTxDetails(a.swapTxID.String())
 	if err == nil {
@@ -608,6 +709,7 @@ func (a *AltNativeFeeActor) verifySwap(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
+// finish releases the borrowed bootstrap user and ends the actor successfully.
 func (a *AltNativeFeeActor) finish(config *OpConfig) OpResult {
 	a.releaseBootstrapUser()
 	return OpResult{

@@ -15,6 +15,9 @@ import (
 func AltNativeFees(rng *rand.Rand) *Actor {
 	a := NewActor("Alt Native Fees", rng)
 
+	// Use NAMI to exercise native alt-fee send and swap.
+	a.Children[core.NewAltNativeFeeActor(common.NAMI, core.AltNativeFeeModeNative, rng)] = true
+
 	// Use ETH to exercise:
 	// - trade asset alt-fee swap
 	// - secured asset alt-fee send

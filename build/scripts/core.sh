@@ -88,7 +88,59 @@ add_account() {
   jq --arg ADDRESS "$1" --arg ASSET "$2" --arg AMOUNT "$3" '.app_state.bank.balances += [{
         "address": $ADDRESS,
         "coins": [ { "denom": $ASSET, "amount": $AMOUNT } ],
-    }]' <~/.thornode/config/genesis.json >/tmp/genesis.json
+  }]' <~/.thornode/config/genesis.json >/tmp/genesis.json
+  mv /tmp/genesis.json ~/.thornode/config/genesis.json
+}
+
+# add_balance upserts a bank balance entry for an existing address, incrementing
+# the denom if it is already present or appending a fresh coin otherwise.
+add_balance() {
+  jq --arg ADDRESS "$1" --arg ASSET "$2" --arg AMOUNT "$3" '
+    .app_state.bank.balances |=
+      if any(.[]; .address == $ADDRESS) then
+        map(
+          if .address == $ADDRESS then
+            .coins |=
+              if any(.[]; .denom == $ASSET) then
+                map(
+                  if .denom == $ASSET then
+                    .amount = (((.amount | tonumber) + ($AMOUNT | tonumber)) | tostring)
+                  else
+                    .
+                  end
+                )
+              else
+                . + [{ "denom": $ASSET, "amount": $AMOUNT }]
+              end
+          else
+            .
+          end
+        )
+      else
+        . + [{
+          "address": $ADDRESS,
+          "coins": [{ "denom": $ASSET, "amount": $AMOUNT }]
+        }]
+      end
+  ' <~/.thornode/config/genesis.json >/tmp/genesis.json
+  mv /tmp/genesis.json ~/.thornode/config/genesis.json
+}
+
+# add_pool appends a minimal Available pool record for mocknet bootstrap state.
+add_pool() {
+  jq --arg ASSET "$1" --arg BALANCE_ASSET "$2" --arg BALANCE_RUNE "$3" --arg DECIMALS "$4" '
+    .app_state.thorchain.pools += [{
+      "LP_units": "100000000000",
+      "asset": $ASSET,
+      "balance_asset": $BALANCE_ASSET,
+      "balance_rune": $BALANCE_RUNE,
+      "decimals": $DECIMALS,
+      "pending_inbound_asset": "0",
+      "pending_inbound_rune": "0",
+      "status": "Available",
+      "synth_units": "0"
+    }]
+  ' <~/.thornode/config/genesis.json >/tmp/genesis.json
   mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
 

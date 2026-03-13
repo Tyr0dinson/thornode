@@ -15,6 +15,24 @@ resolve_signer_seed_phrase
 # Genesis Init
 ########################################################################################
 
+# seed_mocknet_nami adds a small native NAMI distribution plus a backed THOR.NAMI
+# pool so simulation can test native alt-fee send/swap flows without any L1 leg.
+seed_mocknet_nami() {
+  ASGARD_MODULE_ADDR="tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+
+  # Seed a small THOR.NAMI supply on deterministic THOR accounts so simulation
+  # can bootstrap ad-hoc zero-RUNE wallets with a native asset entirely on THORChain.
+  add_balance tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m thor.nami 1000000000 # dog
+  add_balance tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej thor.nami 1000000000 # cat
+  add_balance tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr thor.nami 1000000000 # fox
+  add_balance tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u thor.nami 1000000000 # pig
+
+  # Back the native NAMI pool with matching Asgard balances.
+  add_balance "$ASGARD_MODULE_ADDR" thor.nami 1000000000
+  add_balance "$ASGARD_MODULE_ADDR" rune 10000000000000
+  add_pool THOR.NAMI 1000000000 10000000000000 6
+}
+
 genesis_init() {
   init_chain
   create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
@@ -58,6 +76,10 @@ genesis_init() {
 
     # mint to reserve for mocknet
     reserve 22000000000000000
+
+    # Seed native NAMI state before the simulation actors start, so the native
+    # alt-fee actor can borrow a funded THOR account and bootstrap ad-hoc wallets.
+    seed_mocknet_nami
 
     set_bond_module # set bond module balance for invariant
 

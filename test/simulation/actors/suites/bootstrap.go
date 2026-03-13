@@ -28,8 +28,11 @@ func Bootstrap(rng *rand.Rand) *Actor {
 		log.Fatal().Err(err).Msg("failed to get pools")
 	}
 
-	// bootstrap pools for all chains
-	count := 0
+	// Start from any pools already present in genesis/mocknet bootstrap so the
+	// verification logic accounts for preseeded native pools such as THOR.NAMI.
+	count := len(pools)
+
+	// Bootstrap pools for all simulated L1 gas assets.
 	for _, chain := range acommon.SimChains {
 		count++
 		a.Children[core.NewDualLPActor(chain.GetGasAsset(), rng)] = true
