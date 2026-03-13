@@ -160,6 +160,7 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 	toAddress, err := ledger.NewAddress(simTx.ToAddress.String())
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get address")
+		return nil, err
 	}
 
 	result, err := c.n2c.GetUTxOByAddress([]ledger.Address{fromAddress}, nil)

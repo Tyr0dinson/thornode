@@ -22,8 +22,6 @@ if [ ! -d /root/mocknet ]; then
   sed -ri "s/ScJson/ScText/" mocknet/configuration.yaml
 fi
 
-nohup socat TCP-LISTEN:3002,fork UNIX-CONNECT:$CARDANO_NODE_SOCKET_PATH &
-
 cardano-node run \
   --config mocknet/configuration.yaml \
   --topology mocknet/node-data/node1/topology.json \

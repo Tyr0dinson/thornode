@@ -35,9 +35,8 @@ import (
 )
 
 type Client struct {
-	logger zerolog.Logger
-	config config.BifrostChainConfiguration
-
+	logger              zerolog.Logger
+	config              config.BifrostChainConfiguration
 	n2c                 ClientWrapper
 	ttl                 uint64
 	bridge              thorclient.ThorchainBridge

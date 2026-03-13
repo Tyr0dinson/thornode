@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,17 +16,18 @@ import (
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/helper"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type Scanner struct {
 	config                config.BifrostBlockScannerConfiguration
 	logger                zerolog.Logger
 	bridge                thorclient.ThorchainBridge
+	helper                helper.Helper
 	db                    *blockscanner.BlockScannerStorageCardano
 	n2c                   ClientWrapper
 	n2n                   NodeWrapper
@@ -35,9 +35,6 @@ type Scanner struct {
 	minFeeB               uint64
 	networkFee            uint64
 	networkMtx            sync.Mutex
-	lastAsgardUpdate      time.Time
-	asgardAddresses       []common.Address
-	asgardMtx             sync.Mutex
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalErrataQueue     chan types.ErrataBlock
 	rollbackHeight        int64
@@ -60,8 +57,8 @@ func NewScanner(
 		logger:     logger.With().Str("module", "scanner").Logger(),
 		config:     cfg,
 		bridge:     bridge,
+		helper:     helper.NewHelper(logger, common.ADAChain, bridge),
 		db:         storage,
-		asgardMtx:  sync.Mutex{},
 		errataMtx:  sync.Mutex{},
 		networkMtx: sync.Mutex{},
 	}
@@ -298,7 +295,8 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 		var amount *big.Int
 
 		// deposits _must_ have asgard address as first, like BTC for example
-		isToAsgard := s.isAsgardAddress(tx.Outputs()[0].Address())
+		address := tx.Outputs()[0].Address().String()
+		isToAsgard := s.helper.IsAsgardAddress(address)
 		if isToAsgard {
 			isToAsgard = true
 			toAddress = tx.Outputs()[0].Address()
@@ -311,7 +309,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 		}
 
 		// ignore if neither from nor to an asgard vault
-		if !isToAsgard && !s.isAsgardAddress(fromAddress) {
+		if !isToAsgard && !s.helper.IsAsgardAddress(fromAddress.String()) {
 			continue
 		}
 
@@ -321,7 +319,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 
 			// if we don't have height - 1 indexed yet (directly after start)
 			// we can't determine the utxos
-			if previousPoint.Slot == 0 {
+			if len(previousPoint.Hash) == 0 {
 				s.logger.Error().
 					Str("tx_id", tx.Hash().String()).
 					Msg("previous point not available, skipping")
@@ -498,7 +496,7 @@ func (s *Scanner) rollForwardHandler(
 
 func (s *Scanner) rollBackwardHandler(
 	_ chainsync.CallbackContext,
-	point pcommon.Point,
+	_ pcommon.Point,
 	tip chainsync.Tip,
 ) error {
 	s.logger.Warn().
@@ -561,43 +559,6 @@ func (s *Scanner) rollBackwardHandler(
 	atomic.StoreInt64(&s.rollbackHeight, int64(tip.BlockNumber))
 
 	return nil
-}
-
-func (s *Scanner) getAsgardAddresses() ([]common.Address, error) {
-	s.asgardMtx.Lock()
-	defer s.asgardMtx.Unlock()
-
-	if time.Since(s.lastAsgardUpdate) < constants.ThorchainBlockTime && s.asgardAddresses != nil {
-		return s.asgardAddresses, nil
-	}
-
-	addresses, err := s.bridge.GetAsgardAddresses(s.config.ChainID)
-	if err != nil {
-		return nil, err
-	}
-
-	// ensure we don't overwrite with empty list
-	if len(addresses) > 0 {
-		s.asgardAddresses = addresses
-	}
-
-	s.lastAsgardUpdate = time.Now()
-
-	return s.asgardAddresses, nil
-}
-
-func (s *Scanner) isAsgardAddress(address ledger.Address) bool {
-	asgards, err := s.getAsgardAddresses()
-	if err != nil {
-		s.logger.Err(err).Msg("failed to get asgard addresses")
-		return false
-	}
-	for _, asgard := range asgards {
-		if strings.EqualFold(asgard.String(), address.String()) {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Scanner) getPoint(height int64) (pcommon.Point, error) {
