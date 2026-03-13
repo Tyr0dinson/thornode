@@ -3,7 +3,7 @@
 ########################################################################################
 
 ARG DOCKER_MIRROR=
-FROM ${DOCKER_MIRROR}golang:1.24.6-bullseye AS build
+FROM golang:1.24.6-bullseye AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
