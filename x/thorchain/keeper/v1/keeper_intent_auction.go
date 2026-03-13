@@ -106,8 +106,7 @@ func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, e
 
 		auction, err := k.GetIntentAuction(ctx, txID)
 		if err != nil {
-			ctx.Logger().Error("failed to get auction from active index", "txid", txID, "error", err)
-			continue
+			return nil, fmt.Errorf("failed to get auction from active index (txid=%s): %w", txID, err)
 		}
 		auctions = append(auctions, auction)
 	}
@@ -270,8 +269,7 @@ func (k KVStore) GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID c
 
 		bid, err := k.GetIntentAuctionBid(ctx, bidTxID)
 		if err != nil {
-			ctx.Logger().Error("failed to get intent auction bid", "txid", bidTxID, "error", err)
-			continue
+			return nil, fmt.Errorf("failed to get intent auction bid (txid=%s): %w", bidTxID, err)
 		}
 		bids = append(bids, bid)
 	}
