@@ -2,6 +2,7 @@ package reporter
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/big"
 	"strings"
@@ -215,6 +216,33 @@ func (b *thorMockBridge) getMsgs() []ctypes.MsgSolvency {
 	copyMsgs := b.msgs
 	b.msgs = nil
 	return copyMsgs
+}
+
+type mockSolvencyAttester struct {
+	msgs []common.Solvency
+	err  error
+	mu   sync.Mutex
+}
+
+func (m *mockSolvencyAttester) AttestSolvency(_ context.Context, solvency common.Solvency) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.msgs = append(m.msgs, solvency)
+	return m.err
+}
+
+func (m *mockSolvencyAttester) getMsgs() []common.Solvency {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := append([]common.Solvency(nil), m.msgs...)
+	m.msgs = nil
+	return cp
+}
+
+func (m *mockSolvencyAttester) msgCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.msgs)
 }
 
 // ------- Tests
@@ -523,6 +551,21 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			c.Assert(msg.Coins[0].Asset.Equals(tc.client.account.Coins[0].Asset), Equals, true)
 			c.Assert(msg.Coins[0].Amount.Equal(tc.client.account.Coins[0].Amount), Equals, true)
 		}
+		verifyAttestedReport := func(from triggeredFrom, solvency common.Solvency) {
+			var expectedHeight int64
+			if from == fromBlockScanner {
+				expectedHeight = tc.client.blockScannerHeight
+			} else {
+				expectedHeight = tc.client.chainHeight
+			}
+			c.Assert(solvency.Height, Equals, expectedHeight)
+			c.Assert(solvency.Chain, Equals, tc.client.GetChain())
+			c.Assert(solvency.PubKey.Equals(asgards[0].PubKey), Equals, true)
+			c.Assert(solvency.Coins, HasLen, 1)
+			c.Assert(solvency.Coins[0].Asset.Equals(tc.client.account.Coins[0].Asset), Equals, true)
+			c.Assert(solvency.Coins[0].Amount.Equal(tc.client.account.Coins[0].Amount), Equals, true)
+			c.Assert(solvency.Id.IsEmpty(), Equals, true)
+		}
 		verifyCollectedFromScanner := func(allMsgs []sdk.Msg) {
 			if tc.expectReportFromCollect {
 				c.Assert(allMsgs, HasLen, 1)
@@ -533,6 +576,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 				c.Assert(allMsgs, HasLen, 0)
 			}
 		}
+		var attester *mockSolvencyAttester
 		verifyResults := func(from triggeredFrom, expectReport bool) {
 			waitFor := constants.ThorchainBlockTime
 			if from == fromRunner {
@@ -542,15 +586,14 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			deadline := time.Now().Add(waitFor)
 			for time.Now().Before(deadline) {
 				time.Sleep(constants.ThorchainBlockTime / 15)
-				if mockBridge.msgs != nil {
+				if attester != nil && attester.msgCount() > 0 {
 					break
 				}
 			}
-			msgs := mockBridge.getMsgs()
+			msgs := attester.getMsgs()
 			if expectReport {
 				c.Assert(msgs, HasLen, 1)
-				msg := msgs[0]
-				verifyReport(from, msg)
+				verifyAttestedReport(from, msgs[0])
 			} else {
 				c.Assert(msgs, HasLen, 0)
 			}
@@ -596,6 +639,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			wg := sync.WaitGroup{}
 			chain := tc.client.GetChain()
 			chains := map[common.Chain]ChainClient{chain: tc.client}
+			attester = &mockSolvencyAttester{}
 			defer func() {
 				// stop goroutines
 				close(stopper)
@@ -603,12 +647,12 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			}()
 
 			// prepare dispatcher
-			disp := NewDispatcher(chains, mockBridge, nil, stopper, &wg)
+			disp := NewDispatcher(chains, mockBridge, attester, nil, stopper, &wg)
 
 			// now trigger reporter checks
 			disp.Process(chain, 0)
 
-			// verify the solvency message was broadcast
+			// verify the solvency message was attested
 			verifyResults(fromBlockScanner, tc.expectReportFromCollect)
 
 			// test solvency runner (it's already running, started by NewDispatcher())
@@ -1179,6 +1223,57 @@ func (s *SolvencySuite) TestSendCollectedToThorchainLogsInactiveNode(c *C) {
 	c.Assert(logBuf.String(), Matches, `(?s).*"node_status":"Standby".*"report_count":1.*skipping broadcast of collected reports to thorchain: local node is not active.*`)
 }
 
+func (s *SolvencySuite) TestSendCollectedToThorchainUsesSolvencyAttester(c *C) {
+	bridge := &thorMockBridge{
+		fetchNodeStatusFunc: func() (ctypes.NodeStatus, error) {
+			return ctypes.NodeStatus_Active, nil
+		},
+	}
+	attester := &mockSolvencyAttester{}
+	d := &dispatcher{
+		logger:           log.Logger,
+		thorchainBridge:  bridge,
+		solvencyAttester: attester,
+	}
+
+	msg := bridge.GetSolvencyMsg(123, common.BCHChain, ctypes.GetRandomPubKey(), common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(42))))
+	err := d.sendCollectedToThorchain(ReportBatch{msg})
+	c.Assert(err, IsNil)
+
+	attested := attester.getMsgs()
+	c.Assert(attested, HasLen, 1)
+	c.Assert(attested[0].Chain.Equals(common.BCHChain), Equals, true)
+	c.Assert(attested[0].Height, Equals, int64(123))
+	c.Assert(attested[0].Id.IsEmpty(), Equals, true)
+	c.Assert(bridge.getMsgs(), HasLen, 0)
+}
+
+func (s *SolvencySuite) TestSendCollectedToThorchainRequiresSolvencyAttester(c *C) {
+	var logBuf bytes.Buffer
+
+	bridge := &thorMockBridge{
+		fetchNodeStatusFunc: func() (ctypes.NodeStatus, error) {
+			return ctypes.NodeStatus_Active, nil
+		},
+	}
+	errCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "report_failures_total",
+		Help: "test counter",
+	}, []string{"type", "chain"})
+	d := &dispatcher{
+		logger:          zerolog.New(&logBuf),
+		thorchainBridge: bridge,
+		errCounter:      errCounter,
+	}
+
+	msg := bridge.GetSolvencyMsg(123, common.BCHChain, ctypes.GetRandomPubKey(), common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(42))))
+	err := d.sendCollectedToThorchain(ReportBatch{msg})
+	c.Assert(err, IsNil)
+	c.Assert(bridge.getMsgs(), HasLen, 0)
+	c.Assert(logBuf.String(), Matches, `(?s).*missing solvency attester for report message.*fail to attest solvency.*`)
+	c.Assert(testutil.ToFloat64(errCounter.WithLabelValues("fail_to_broadcast_solvency", "")), Equals, float64(1))
+}
+
 // TestNewDispatcherBuffersReportQueuePerChain verifies the queue is small but
 // intentionally buffered relative to the number of configured chains.
 func (s *SolvencySuite) TestNewDispatcherBuffersReportQueuePerChain(c *C) {
@@ -1189,7 +1284,7 @@ func (s *SolvencySuite) TestNewDispatcherBuffersReportQueuePerChain(c *C) {
 		common.BTCChain: &mockChainClient{chain: common.BTCChain},
 	}
 
-	disp, ok := NewDispatcher(chains, &thorMockBridge{}, nil, stopper, wg).(*dispatcher)
+	disp, ok := NewDispatcher(chains, &thorMockBridge{}, nil, nil, stopper, wg).(*dispatcher)
 	c.Assert(ok, Equals, true)
 	c.Assert(cap(disp.reportQueue), Equals, len(chains))
 

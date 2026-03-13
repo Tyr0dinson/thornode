@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"context"
 	"math/big"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -29,6 +30,13 @@ type ChainClient interface {
 
 type Dispatcher interface {
 	Process(chain common.Chain, height int64)
+}
+
+// SolvencyAttester submits solvency reports through the observer attestation path.
+// The unified reporter uses it to preserve the previous supermajority-gated
+// observer behavior before a MsgSolvency reaches THORChain.
+type SolvencyAttester interface {
+	AttestSolvency(ctx context.Context, solvency common.Solvency) error
 }
 
 type ReportBatch []sdk.Msg

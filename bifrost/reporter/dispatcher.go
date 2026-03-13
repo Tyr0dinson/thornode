@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -40,20 +41,21 @@ const (
 )
 
 type dispatcher struct {
-	logger          zerolog.Logger
-	reportQueue     chan ReportBatch
-	stopper         chan struct{}
-	wg              *sync.WaitGroup
-	chains          map[common.Chain]ChainClient
-	thorchainBridge ThorchainBridge
-	errCounter      *prometheus.CounterVec
-	reporters       map[common.Chain]Reporters
-	chainTaskQueues map[common.Chain]chan reportTask
+	logger           zerolog.Logger
+	reportQueue      chan ReportBatch
+	stopper          chan struct{}
+	wg               *sync.WaitGroup
+	chains           map[common.Chain]ChainClient
+	thorchainBridge  ThorchainBridge
+	solvencyAttester SolvencyAttester
+	errCounter       *prometheus.CounterVec
+	reporters        map[common.Chain]Reporters
+	chainTaskQueues  map[common.Chain]chan reportTask
 }
 
 // NewDispatcher creates and starts a reporter dispatcher for all configured chains.
 // It initializes per-chain reporters and async workers.
-func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
+func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, solvencyAttester SolvencyAttester, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
 	logger := log.Logger.With().Str("module", "reporter_dispatcher").Logger()
 	reportQueueSize := len(chains)
 	if reportQueueSize < 1 {
@@ -71,15 +73,16 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 	}
 
 	d := &dispatcher{
-		logger:          logger,
-		stopper:         stopper,
-		wg:              wg,
-		chains:          chains,
-		thorchainBridge: thorchainBridge,
-		errCounter:      errCounter,
-		reportQueue:     reportQueue,
-		reporters:       reporters,
-		chainTaskQueues: chainTaskQueues,
+		logger:           logger,
+		stopper:          stopper,
+		wg:               wg,
+		chains:           chains,
+		thorchainBridge:  thorchainBridge,
+		solvencyAttester: solvencyAttester,
+		errCounter:       errCounter,
+		reportQueue:      reportQueue,
+		reporters:        reporters,
+		chainTaskQueues:  chainTaskQueues,
 	}
 
 	d.start()
@@ -306,11 +309,11 @@ func (d *dispatcher) sendCollectedToThorchain(allMsgs ReportBatch) error {
 			d.logger.Error().Msg("skip nil report message")
 			continue
 		}
-		if err := d.sendMsgToThorchain(msg); err != nil {
+		if err := d.sendMsg(msg); err != nil {
 			if d.errCounter != nil {
-				d.errCounter.WithLabelValues("fail_to_broadcast_report", "").Inc()
+				d.errCounter.WithLabelValues("fail_to_broadcast_solvency", "").Inc()
 			}
-			d.logger.Error().Err(err).Str("msg_type", sdk.MsgTypeURL(msg)).Msg("fail to broadcast report tx")
+			d.logger.Error().Err(err).Str("msg_type", sdk.MsgTypeURL(msg)).Msg("fail to attest solvency")
 			continue
 		}
 		d.logger.Info().Str("msg_type", sdk.MsgTypeURL(msg)).Msg("report message sent to thorchain")
@@ -318,10 +321,24 @@ func (d *dispatcher) sendCollectedToThorchain(allMsgs ReportBatch) error {
 	return nil
 }
 
-// sendMsgToThorchain broadcasts a reporter message to thornode.
-func (d *dispatcher) sendMsgToThorchain(msg sdk.Msg) error {
-	if _, err := d.thorchainBridge.Broadcast(msg); err != nil {
-		return fmt.Errorf("fail to broadcast report message: %w", err)
+// sendMsg routes reporter messages through the observer attestation path.
+// Solvency is the only supported reporter today, so preserve the previous
+// supermajority-gated observer behavior instead of directly broadcasting
+// MsgSolvency transactions to THORChain.
+func (d *dispatcher) sendMsg(msg sdk.Msg) error {
+	solvencyMsg, ok := msg.(*types.MsgSolvency)
+	if !ok {
+		return fmt.Errorf("unsupported report message type: %s", sdk.MsgTypeURL(msg))
 	}
-	return nil
+
+	if d.solvencyAttester == nil {
+		return fmt.Errorf("missing solvency attester for report message: %s", sdk.MsgTypeURL(msg))
+	}
+
+	return d.solvencyAttester.AttestSolvency(context.Background(), common.Solvency{
+		Chain:  solvencyMsg.Chain,
+		PubKey: solvencyMsg.PubKey,
+		Coins:  solvencyMsg.Coins,
+		Height: solvencyMsg.Height,
+	})
 }
