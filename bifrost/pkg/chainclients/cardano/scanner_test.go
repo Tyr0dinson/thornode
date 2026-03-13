@@ -101,6 +101,7 @@ func makeTestScanner(c *C) *Scanner {
 		},
 		db:           storage,
 		n2c:          &mockClientWrapper{},
+		n2n:          &mockNodeWrapper{},
 		errataBlocks: []types.ErrataBlock{},
 		errataMtx:    sync.Mutex{},
 	}
