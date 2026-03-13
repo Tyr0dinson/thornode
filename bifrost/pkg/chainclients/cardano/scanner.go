@@ -364,7 +364,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			amount = tx.Outputs()[0].Amount()
 		}
 
-		if amount == nil || amount.Uint64() == 0 {
+		if amount == nil || !amount.IsUint64() || amount.Uint64() == 0 {
 			continue
 		}
 

@@ -328,6 +328,9 @@ func (c *Client) getUtxosByAddress(
 
 	var utxos []Utxo
 
+	// Map iteration order is non-deterministic, but callers that require
+	// determinism (CreateConwayTx) sort by (Amount, Hash, Index) which is
+	// unique per UTXO, so the final order is always consistent across nodes.
 	for id, output := range result.Results {
 		key := getUtxoKey(id.Hash.Bytes(), uint32(id.Idx))
 

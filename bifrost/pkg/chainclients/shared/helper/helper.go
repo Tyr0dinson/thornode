@@ -15,7 +15,7 @@ type Helper struct {
 	chain           common.Chain
 	bridge          thorclient.ThorchainBridge
 	asgardAddresses map[string]bool
-	asgardMtx       sync.Mutex
+	asgardMtx       sync.RWMutex
 	asgardTimestamp time.Time
 }
 
@@ -29,15 +29,16 @@ func NewHelper(
 		chain:           chain,
 		bridge:          bridge,
 		asgardAddresses: map[string]bool{},
-		asgardMtx:       sync.Mutex{},
+		asgardMtx:       sync.RWMutex{},
 	}
 }
 
 func (h *Helper) UpdateAsgardAddresses() error {
-	h.asgardMtx.Lock()
-	defer h.asgardMtx.Unlock()
+	h.asgardMtx.RLock()
+	isValid := time.Since(h.asgardTimestamp) < constants.ThorchainBlockTime && h.asgardAddresses != nil
+	h.asgardMtx.RUnlock()
 
-	if time.Since(h.asgardTimestamp) < constants.ThorchainBlockTime && h.asgardAddresses != nil {
+	if isValid {
 		return nil
 	}
 
@@ -48,6 +49,9 @@ func (h *Helper) UpdateAsgardAddresses() error {
 
 	// ensure we don't overwrite with empty list
 	if len(addresses) > 0 {
+		h.asgardMtx.Lock()
+		defer h.asgardMtx.Unlock()
+
 		h.asgardAddresses = make(map[string]bool)
 		for _, address := range addresses {
 			h.asgardAddresses[address.String()] = true
@@ -66,8 +70,8 @@ func (h *Helper) IsAsgardAddress(address string) bool {
 		return false
 	}
 
-	h.asgardMtx.Lock()
-	defer h.asgardMtx.Unlock()
+	h.asgardMtx.RLock()
+	defer h.asgardMtx.RUnlock()
 
 	_, found := h.asgardAddresses[address]
 	return found
