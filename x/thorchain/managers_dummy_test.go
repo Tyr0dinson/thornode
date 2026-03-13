@@ -138,3 +138,7 @@ func (d *DummyIntentManager) EndBlock(ctx cosmos.Context) error {
 func (d *DummyIntentManager) RefundIntentSolves(ctx cosmos.Context, intent types.Intent) error {
 	return nil
 }
+
+func (d *DummyIntentManager) StartIntentAuction(ctx cosmos.Context, intent types.Intent) error {
+	return nil
+}

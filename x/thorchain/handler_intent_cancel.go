@@ -78,127 +78,83 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		return ErrInternal(err, "fail to get intent")
 	}
 
-	// Determine if we should refund or abandon based on asset type.
+	// Determine if we should refund directly based on asset type.
+	// Use the same predicate as expiry: pool must exist AND be available.
 	sourcePool, err := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
 	if err != nil {
 		return fmt.Errorf("fail to get pool for cancel refund decision: %w", err)
 	}
-	isPoolAsset := !sourcePool.IsEmpty()
-	isNativeAsset := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset() || intent.Source.Asset.IsTradeAsset()
+	isPoolAsset := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
+	isNativeAsset := intent.Source.Asset.IsNative()
 	shouldRefund := isPoolAsset || isNativeAsset
 
-	var refundCoin common.Coin
-	abandoned := false
-
-	if shouldRefund {
-		// Refund the source asset back to the source address
-		// Include any coins sent with the cancel tx (same asset) in the refund,
-		// but only for non-secured/trade assets. The deposit handler skips escrowing
-		// secured/trade coins for cancel messages, so including them would create
-		// units from nothing.
-		refundCoin = intent.Source
-		if !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset() {
-			for _, coin := range msg.Tx.Coins {
-				if coin.Asset.Equals(intent.Source.Asset) && !coin.Amount.IsZero() {
-					refundCoin.Amount = refundCoin.Amount.Add(coin.Amount)
-				}
-			}
+	if !shouldRefund {
+		// Non-pool, non-native source asset: route to auction instead of
+		// abandoning immediately. This gives the owner (or anyone) the
+		// opportunity to bid gas-asset funds and recover the escrowed source.
+		if err := h.mgr.IntentMgr().StartIntentAuction(ctx, intent); err != nil {
+			return fmt.Errorf("fail to start auction for cancelled intent: %w", err)
 		}
 
-		// For RUNE, use Asgard module (where intent RUNE is escrowed)
-		// For other assets, default to Asgard
-		moduleName := ""
-		if intent.Source.Asset.IsRune() {
-			moduleName = AsgardName
-		}
-
-		// Schedule the txout for refund
-		toi := TxOutItem{
-			Chain:      intent.Source.Asset.GetChain(),
-			ToAddress:  intent.SourceAddress,
-			Coin:       refundCoin,
-			Memo:       fmt.Sprintf("REFUND:%s", intent.TxID),
-			InHash:     intent.TxID,
-			ModuleName: moduleName,
-		}
-
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
-			return fmt.Errorf("fail to add outbound tx: %w", err)
-		}
-		if !ok {
-			return fmt.Errorf("fail to schedule refund txout")
-		}
-
-		ctx.Logger().Info("scheduled intent refund",
-			"txid", intent.TxID,
-			"asset", refundCoin.Asset,
-			"amount", refundCoin.Amount,
-			"to", intent.SourceAddress,
+		// Emit cancel event indicating the intent moved to auction
+		evt := NewEventIntentCancel(
+			intent.TxID,
+			common.NewCoin(intent.Source.Asset, cosmos.ZeroUint()),
+			intent.SourceAddress,
+			false,
 		)
-	} else {
-		// Abandon (burn) the source asset by updating the vault
-		refundCoin = common.NewCoin(intent.Source.Asset, cosmos.ZeroUint())
-		abandoned = true
-
-		// Get active vaults and find the one with sufficient balance and closest amount
-		vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-		if err != nil {
-			return fmt.Errorf("fail to get active vaults: %w", err)
-		}
-		if len(vaults) == 0 {
-			return fmt.Errorf("no active vaults available")
+		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			return fmt.Errorf("fail to emit intent cancel event: %w", err)
 		}
 
-		// Find vault with sufficient balance and closest amount to the source coin
-		var selectedVault *Vault
-		var closestDiff cosmos.Uint
-		for i := range vaults {
-			vaultBalance := vaults[i].GetCoin(intent.Source.Asset).Amount
-
-			// Check if vault has sufficient balance
-			if vaultBalance.GTE(intent.Source.Amount) {
-				diff := common.SafeSub(vaultBalance, intent.Source.Amount)
-
-				// Select this vault if it's the first valid one, has a closer balance,
-				// or has the same balance but lower PubKey (deterministic tiebreaker)
-				if selectedVault == nil || diff.LT(closestDiff) ||
-					(diff.Equal(closestDiff) && vaults[i].PubKey.String() < selectedVault.PubKey.String()) {
-					selectedVault = &vaults[i]
-					closestDiff = diff
-				}
-			}
-		}
-
-		if selectedVault == nil {
-			return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", intent.Source.Asset, intent.Source.Amount)
-		}
-
-		// Subtract the abandoned amount from the selected vault
-		selectedVault.SubFunds(common.NewCoins(intent.Source))
-
-		// Save the updated vault
-		if err = h.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
-			return fmt.Errorf("fail to save vault: %w", err)
-		}
-
-		ctx.Logger().Info("abandoned intent source asset (non-pool, non-native)",
-			"txid", intent.TxID,
-			"asset", intent.Source.Asset,
-			"amount", intent.Source.Amount,
-			"vault", selectedVault.PubKey,
-		)
-
-		// Mark the cancel tx voter as done since no outbound is scheduled.
-		// Without this, the voter created in handler_deposit.go stays open forever
-		// because TxIntentCancel.HasOutbound() returns true (for the refund path).
-		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
-		if err != nil {
-			return fmt.Errorf("fail to get voter for cancel tx: %w", err)
-		}
-		voter.SetDone()
-		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		return nil
 	}
+
+	// Refund the source asset back to the source address.
+	// Include any coins sent with the cancel tx (same asset) in the refund,
+	// but only for non-secured/trade assets. The deposit handler skips escrowing
+	// secured/trade coins for cancel messages, so including them would create
+	// units from nothing.
+	refundCoin := intent.Source
+	if !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset() {
+		for _, coin := range msg.Tx.Coins {
+			if coin.Asset.Equals(intent.Source.Asset) && !coin.Amount.IsZero() {
+				refundCoin.Amount = refundCoin.Amount.Add(coin.Amount)
+			}
+		}
+	}
+
+	// For RUNE, use Asgard module (where intent RUNE is escrowed)
+	// For other assets, default to Asgard
+	moduleName := ""
+	if intent.Source.Asset.IsRune() {
+		moduleName = AsgardName
+	}
+
+	// Schedule the txout for refund
+	toi := TxOutItem{
+		Chain:      intent.Source.Asset.GetChain(),
+		ToAddress:  intent.SourceAddress,
+		Coin:       refundCoin,
+		Memo:       fmt.Sprintf("REFUND:%s", intent.TxID),
+		InHash:     intent.TxID,
+		ModuleName: moduleName,
+	}
+
+	ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
+	if err != nil {
+		return fmt.Errorf("fail to add outbound tx: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("fail to schedule refund txout")
+	}
+
+	ctx.Logger().Info("scheduled intent refund",
+		"txid", intent.TxID,
+		"asset", refundCoin.Asset,
+		"amount", refundCoin.Amount,
+		"to", intent.SourceAddress,
+	)
 
 	// Refund any pending solves for this intent.
 	// Return the error to trigger CacheContext rollback and retry next block,
@@ -216,7 +172,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		intent.TxID,
 		refundCoin,
 		intent.SourceAddress,
-		abandoned,
+		false,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 		return fmt.Errorf("fail to emit intent cancel event: %w", err)

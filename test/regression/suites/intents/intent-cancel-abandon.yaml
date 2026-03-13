@@ -3,8 +3,8 @@
 {{ template "btc-eth-pool-state.yaml" }}
 ---
 ########################################################################################
-# Add custom ERC20 token to vault for testing fund abandonment
-# This token has no pool so cancelling an intent with it will abandon funds
+# Add custom ERC20 token to vault for testing non-pool cancel behavior
+# This token has no pool so cancelling an intent with it will route to auction
 ########################################################################################
 type: state
 genesis:
@@ -70,7 +70,7 @@ count: 1
 ########################################################################################
 # Create an intent with non-pool ERC20 token
 # Using ETH.TKN-0X... which has no pool
-# This ensures that cancellation will abandon the funds (not refund)
+# Cancellation will now route to auction instead of abandoning
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -110,8 +110,7 @@ asserts:
 # Cancel the intent (owner sends IC memo)
 # Format: IC:INTENT_TX_HASH
 # The cancel must come from the same source address that created the intent
-# Since the token has no pool, funds will be abandoned (not refunded)
-# Note: We send the same asset type to be included in the abandonment
+# Since the token has no pool, cancel now routes to auction (not abandon)
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -137,27 +136,26 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Check intent status is now cancelled
+# Check intent status is now auctioning (not cancelled/abandoned)
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
 asserts:
-  - .intent.status == "IntentCancelled"
+  - .intent.status == "IntentAuctioning"
 ---
 ########################################################################################
-# Check vault balance (funds abandoned from vault)
-# Flow: Original 200M -> Intent adds 50M = 250M -> Cancel adds 1M = 251M -> Abandon 50M = 201M
-# Note: The extra 1M sent with cancel is NOT included in the abandonment (only intent.Source is)
-# This is current behavior - the extra coins sent with cancel remain in vault
+# Check vault balance is unchanged (no abandon, funds still escrowed for auction)
+# Flow: Original 200M -> Intent adds 50M = 250M -> Cancel adds 1M = 251M
+# No funds abandoned from vault
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
   - .|length >= 1
-  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "201000000"
+  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "251000000"
 ---
 ########################################################################################
-# Verify NO refund outbound was scheduled (funds were abandoned, not refunded)
+# Verify NO refund outbound was scheduled (cancel routes to auction)
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -165,9 +163,11 @@ asserts:
   - .|length == 0
 ---
 ########################################################################################
-# Verify intents list is empty
+# Verify an auction was created for the intent
 ########################################################################################
 type: check
-endpoint: http://localhost:1317/thorchain/intents
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
 asserts:
-  - .intents | length == 0
+  - .auction.intent_tx_id == "{{ observe_txid 1 }}"
+  - .auction.status == "AuctionActive"
+  - .auction.owner_address == "{{ addr_eth_fox }}"
