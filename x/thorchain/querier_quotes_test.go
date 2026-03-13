@@ -318,6 +318,19 @@ func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp.Valid, Equals, false)
 	c.Assert(resp.ValidationError, Equals, unsupportedIntentNativeAssetError(synthBTC))
+
+	req = &types.QueryQuoteIntentRequest{
+		FromAsset:   common.BTCAsset.GetSecuredAsset().String(),
+		ToAsset:     common.BTCAsset.GetTradeAsset().String(),
+		Amount:      "500000000",
+		Destination: GetRandomTHORAddress().String(),
+		HighTarget:  "5000000",
+		LowTarget:   "4800000",
+	}
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "at least one of source or target asset must be fee-chargeable (L1 pool asset or RUNE)")
 }
 
 func (s *QuotesSuite) TestQueryQuoteIntentSolveRejectsUnsupportedNativeAsset(c *C) {

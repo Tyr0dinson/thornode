@@ -1052,5 +1052,5 @@ func (HandlerIntentSolveSuite) TestIntentSolve_UnsupportedNativeAsset(c *C) {
 
 	_, err = handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
-	c.Check(err.Error(), Matches, ".*unsupported native asset for intent solve escrow.*")
+	c.Check(err.Error(), Matches, ".*"+unsupportedIntentNativeAssetError(ibcAsset)+".*")
 }

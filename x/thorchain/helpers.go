@@ -28,6 +28,10 @@ func isSupportedIntentNativeAsset(asset common.Asset) bool {
 	return asset.IsRune() || asset.IsSecuredAsset() || asset.IsTradeAsset()
 }
 
+func isIntentFeeChargeableAsset(asset common.Asset, hasActivePool bool) bool {
+	return (hasActivePool && !asset.IsSecuredAsset() && !asset.IsTradeAsset()) || asset.IsRune()
+}
+
 func isUnsupportedIntentNativeAsset(asset common.Asset) bool {
 	return asset.IsNative() && !isSupportedIntentNativeAsset(asset)
 }

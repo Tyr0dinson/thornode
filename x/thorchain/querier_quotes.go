@@ -1472,24 +1472,9 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 
 	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
-	isSourceNative := isSupportedIntentNativeAsset(fromAsset)
-	isTargetNative := isSupportedIntentNativeAsset(toAsset)
-
-	if !hasSourcePool && !hasTargetPool && !isSourceNative && !isTargetNative {
-		return &types.QueryQuoteIntentResponse{
-			Valid:           false,
-			ValidationError: "at least one asset must have an active pool or be native/secured/trade",
-		}, nil
-	}
-
-	// Determine fee chargeability for fee estimation.
-	canChargeSource := hasSourcePool || isSupportedIntentNativeAsset(fromAsset)
-	canChargeTarget := hasTargetPool || isSupportedIntentNativeAsset(toAsset)
-	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
-	// Use IsRune() (not IsNative()) to match runtime behavior — IsNative() includes non-fee-chargeable
-	// THORChain assets like TOR and TCY.
-	canChargeSource := (hasSourcePool && !fromAsset.IsSecuredAsset() && !fromAsset.IsTradeAsset()) || fromAsset.IsRune()
-	canChargeTarget := (hasTargetPool && !toAsset.IsSecuredAsset() && !toAsset.IsTradeAsset()) || toAsset.IsRune()
+	// Match runtime fee charging: only RUNE or an active non-secured/non-trade pool asset can pay fees.
+	canChargeSource := isIntentFeeChargeableAsset(fromAsset, hasSourcePool)
+	canChargeTarget := isIntentFeeChargeableAsset(toAsset, hasTargetPool)
 
 	if !canChargeSource && !canChargeTarget {
 		return &types.QueryQuoteIntentResponse{
