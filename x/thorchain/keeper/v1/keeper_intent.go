@@ -111,8 +111,7 @@ func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
 
 		intent, err := k.GetIntent(ctx, txID)
 		if err != nil {
-			ctx.Logger().Error("failed to get intent from active index", "txid", txID, "error", err)
-			continue
+			return nil, fmt.Errorf("failed to get intent from active index (txid=%s): %w", txID, err)
 		}
 		intents = append(intents, intent)
 	}
@@ -288,8 +287,7 @@ func (k KVStore) GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common
 
 		solve, err := k.GetIntentSolve(ctx, solveTxID)
 		if err != nil {
-			ctx.Logger().Error("failed to get intent solve", "txid", solveTxID, "error", err)
-			continue
+			return nil, fmt.Errorf("failed to get intent solve (txid=%s): %w", solveTxID, err)
 		}
 		solves = append(solves, solve)
 	}
@@ -319,8 +317,7 @@ func (k KVStore) GetIntentSolvesByMatchHeight(ctx cosmos.Context, height int64) 
 
 		solve, err := k.GetIntentSolve(ctx, solveTxID)
 		if err != nil {
-			ctx.Logger().Error("failed to get intent solve", "txid", solveTxID, "error", err)
-			continue
+			return nil, fmt.Errorf("failed to get intent solve by match height (txid=%s): %w", solveTxID, err)
 		}
 		solves = append(solves, solve)
 	}
