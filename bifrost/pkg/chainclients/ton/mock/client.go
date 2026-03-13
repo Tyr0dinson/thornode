@@ -162,7 +162,11 @@ func (c MockClient) RunGetMethod(ctx context.Context, blockInfo *ton.BlockIDExt,
 }
 
 func (c MockClient) ListTransactions(ctx context.Context, addr *tonaddress.Address, num uint32, lt uint64, txHash []byte) ([]*tlb.Transaction, error) {
-	return nil, nil
+	var result []*tlb.Transaction
+	for i := range c.txs {
+		result = append(result, &c.txs[i])
+	}
+	return result, nil
 }
 
 func (c MockClient) GetTransaction(ctx context.Context, block *ton.BlockIDExt, addr *tonaddress.Address, lt uint64) (*tlb.Transaction, error) {
