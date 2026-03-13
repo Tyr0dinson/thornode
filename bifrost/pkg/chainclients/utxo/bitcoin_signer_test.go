@@ -16,6 +16,8 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -48,6 +50,9 @@ type BitcoinSignerSuite struct {
 	m      *metrics.Metrics
 	db     *leveldb.DB
 	keys   *thorclient.Keys
+
+	vinsUnspentFixtureAddress string
+	subDustFixtureAddress     string
 }
 
 var _ = Suite(&BitcoinSignerSuite{})
@@ -130,9 +135,14 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 				c.Assert(err, IsNil)
 			case "listunspent":
 				body := string(buf)
-				if strings.Contains(body, "tb1qleqepvj0d9n7899qj3skd8tw7c7jvh3zlxul70") {
+				switch {
+				case s.vinsUnspentFixtureAddress != "" && strings.Contains(body, s.vinsUnspentFixtureAddress):
+					httpTestHandler(c, rw, "../../../../test/fixtures/btc/listunspent-vins-unspent.json")
+				case s.subDustFixtureAddress != "" && strings.Contains(body, s.subDustFixtureAddress):
+					httpTestHandler(c, rw, "../../../../test/fixtures/btc/listunspent-subdust.json")
+				case strings.Contains(body, "tb1qleqepvj0d9n7899qj3skd8tw7c7jvh3zlxul70"):
 					httpTestHandler(c, rw, "../../../../test/fixtures/btc/listunspent-tss.json")
-				} else {
+				default:
 					httpTestHandler(c, rw, "../../../../test/fixtures/btc/listunspent.json")
 				}
 			}
@@ -211,6 +221,35 @@ func (s *BitcoinSignerSuite) TestSignTx(c *C) {
 	result, _, _, err = s.client.SignTx(txOutItem, 4)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
+}
+
+func (s *BitcoinSignerSuite) TestVinsUnspentUsesTxIDAndVout(c *C) {
+	const txID = "1111111111111111111111111111111111111111111111111111111111111111"
+	vaultPubKey := types2.GetRandomPubKey()
+	vaultAddr, err := vaultPubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	s.vinsUnspentFixtureAddress = vaultAddr.String()
+	defer func() {
+		s.vinsUnspentFixtureAddress = ""
+	}()
+
+	hash, err := chainhash.NewHashFromStr(txID)
+	c.Assert(err, IsNil)
+
+	tx := stypes.TxOutItem{
+		Chain:       common.BTCChain,
+		VaultPubKey: vaultPubKey,
+	}
+
+	matchingVin := wire.NewTxIn(wire.NewOutPoint(hash, 1), nil, nil)
+	unspent, err := s.client.vinsUnspent(tx, []*wire.TxIn{matchingVin})
+	c.Assert(err, IsNil)
+	c.Assert(unspent, Equals, true)
+
+	spentSiblingVin := wire.NewTxIn(wire.NewOutPoint(hash, 0), nil, nil)
+	unspent, err = s.client.vinsUnspent(tx, []*wire.TxIn{spentSiblingVin})
+	c.Assert(err, IsNil)
+	c.Assert(unspent, Equals, false)
 }
 
 func (s *BitcoinSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
@@ -420,4 +459,70 @@ func (s *BitcoinSignerSuite) TestToAddressCanNotRoundTripShouldBlock(c *C) {
 	buf, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
 	c.Assert(buf, IsNil)
+}
+
+// TestGetUtxoToSpendSweepDust verifies that sub-dust UTXOs are only included
+// for migration transactions (sweepDust=true) and only when confirmed.
+//
+// Fixture listunspent-subdust.json contains:
+//   - aaaa...: 2000 sats, 100 confirmations (above dust)
+//   - bbbb...: 500 sats, 50 confirmations (sub-dust, confirmed)
+//   - cccc...: 300 sats, 50 confirmations (sub-dust, confirmed)
+//   - dddd...: 400 sats, 0 confirmations (sub-dust, unconfirmed)
+//
+// BTC dust threshold = 1000 sats = 0.00001 BTC
+func (s *BitcoinSignerSuite) TestGetUtxoToSpendSweepDust(c *C) {
+	// Set UTXO config for this test: require 1 confirmation and allow up to 15 UTXOs.
+	origMinConf := s.client.cfg.UTXO.MinUTXOConfirmations
+	origMaxSpend := s.client.cfg.UTXO.MaxUTXOsToSpend
+	s.client.cfg.UTXO.MinUTXOConfirmations = 1
+	s.client.cfg.UTXO.MaxUTXOsToSpend = 15
+	defer func() {
+		s.client.cfg.UTXO.MinUTXOConfirmations = origMinConf
+		s.client.cfg.UTXO.MaxUTXOsToSpend = origMaxSpend
+	}()
+
+	// Use a known pubkey and route listunspent to the sub-dust fixture.
+	vaultPubKey := types2.GetRandomPubKey()
+	vaultAddr, err := vaultPubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	s.subDustFixtureAddress = vaultAddr.String()
+	defer func() {
+		s.subDustFixtureAddress = ""
+	}()
+
+	// Without sweepDust: only the above-dust UTXO (aaaa) should be returned.
+	// Sub-dust UTXOs are not self-transactions, so they get filtered out.
+	utxos, err := s.client.getUtxoToSpend(vaultPubKey, 1000, false)
+	c.Assert(err, IsNil)
+	c.Assert(len(utxos), Equals, 1)
+	c.Assert(utxos[0].TxID, Equals, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+	// With sweepDust: above-dust + confirmed sub-dust UTXOs should be included.
+	// The unconfirmed sub-dust UTXO (dddd, 0 confirmations) should still be excluded.
+	utxos, err = s.client.getUtxoToSpend(vaultPubKey, 1000, true)
+	c.Assert(err, IsNil)
+	c.Assert(len(utxos), Equals, 3)
+
+	// Verify the included UTXOs are the confirmed ones (aaaa, bbbb, cccc).
+	txids := make(map[string]bool)
+	for _, u := range utxos {
+		txids[u.TxID] = true
+	}
+	c.Assert(txids["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"], Equals, true)
+	c.Assert(txids["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"], Equals, true)
+	c.Assert(txids["cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"], Equals, true)
+	// Unconfirmed sub-dust UTXO must not be included.
+	_, hasUnconfirmed := txids["dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"]
+	c.Assert(hasUnconfirmed, Equals, false)
+
+	// Without sweepDust, requesting more than the above-dust total should fail.
+	_, err = s.client.getUtxoToSpend(vaultPubKey, 2500, false)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "insufficient available UTXOs"), Equals, true)
+
+	// With sweepDust, the same amount succeeds because sub-dust UTXOs cover the gap.
+	utxos, err = s.client.getUtxoToSpend(vaultPubKey, 2500, true)
+	c.Assert(err, IsNil)
+	c.Assert(len(utxos), Equals, 3)
 }

@@ -94,7 +94,8 @@ func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORNam
 	}
 
 	// validate preferred asset pool exists and is active
-	if !msg.PreferredAsset.IsEmpty() {
+	// RUNE is allowed as a sentinel to explicitly clear the preferred asset
+	if !msg.PreferredAsset.IsEmpty() && !msg.PreferredAsset.IsRune() {
 		if !h.mgr.Keeper().PoolExist(ctx, msg.PreferredAsset) {
 			return fmt.Errorf("pool %s does not exist", msg.PreferredAsset)
 		}
@@ -110,7 +111,6 @@ func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORNam
 	return nil
 }
 
-// handle process MsgManageTHORName
 // handle process MsgManageTHORName
 func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
@@ -185,16 +185,29 @@ func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName)
 	}
 
 	// check if we need to update the preferred asset
-	if !tn.PreferredAsset.Equals(msg.PreferredAsset) && !msg.PreferredAsset.IsEmpty() {
-		tn.PreferredAsset = msg.PreferredAsset
+	// RUNE is used as a sentinel to explicitly clear the preferred asset
+	if !msg.PreferredAsset.IsEmpty() {
+		if msg.PreferredAsset.IsRune() {
+			tn.PreferredAsset = common.EmptyAsset
+		} else if !tn.PreferredAsset.Equals(msg.PreferredAsset) {
+			tn.PreferredAsset = msg.PreferredAsset
+		}
+	}
+
+	// check if we need to update the preferred asset outbound fee multiplier
+	// -1 = not provided (no-op), 0 = reset to global default, >= 1 = custom value
+	if msg.PreferredAssetOutboundFeeMultiplier >= 0 {
+		tn.PreferredAssetOutboundFeeMultiplier = msg.PreferredAssetOutboundFeeMultiplier
 	}
 
 	tn.SetAlias(msg.Chain, msg.Address) // update address
-	// Update owner if it has changed
-	// Also, if owner has changed, null out the PreferredAsset/Aliases so the new owner is forced to reset it.
+	// Update owner if it has changed. Intentionally placed after the field updates above
+	// so that ownership transfer unconditionally resets PreferredAsset, Aliases, and
+	// PreferredAssetOutboundFeeMultiplier — ensuring the new owner starts with a clean slate.
 	if !msg.Owner.Empty() && !bytes.Equal(msg.Owner, tn.Owner) {
 		tn.Owner = msg.Owner
 		tn.PreferredAsset = common.EmptyAsset
+		tn.PreferredAssetOutboundFeeMultiplier = 0
 		tn.Aliases = []types.THORNameAlias{}
 	}
 	h.mgr.Keeper().SetTHORName(ctx, tn)
