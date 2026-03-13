@@ -100,7 +100,7 @@ func Swaps(rng *rand.Rand) *Actor {
 		}
 
 		// cross-chain EVM → different EVM gas asset via aggregator
-		for _, otherChain := range acommon.SimChains {
+		for _, otherChain := range acommon.SimChains() {
 			if !otherChain.IsEVM() || otherChain.Equals(cfg.chain) {
 				continue
 			}
