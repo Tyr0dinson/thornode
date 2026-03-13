@@ -490,7 +490,7 @@ func (c *TonClient) BroadcastTx(
 	txOut types.TxOutItem,
 	txBytes []byte,
 ) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), broadcastTimeout)
 	defer cancel()
 
 	var stateInit *tlb.StateInit

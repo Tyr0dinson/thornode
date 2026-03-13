@@ -256,8 +256,7 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 			sh := shard.Copy()
 			sh.SeqNo = shardSeqno
 			eg.Go(func() error {
-				var newTxInItems []types.TxInItem
-				newTxInItems, err = s.processShard(sh)
+				newTxInItems, err := s.processShard(sh)
 				if err != nil {
 					return fmt.Errorf("failed to process shard %d: %w", sh.SeqNo, err)
 				}
@@ -411,11 +410,18 @@ func (s *TonBlockScanner) processShard(
 			hash := acc.LastTxHash
 
 			txs, err = s.api.ListTransactions(s.ctx, src, extInLookback, lt, hash)
-			if err != nil || len(txs) == 0 {
-				s.logger.Err(err).Msg("no transactions found for " + src.String())
-
+			if err != nil {
+				s.logger.Err(err).
+					Str("address", src.String()).
+					Msg("failed to list transactions")
 				// assuming there are no transactions, exclude the address
 				// from being queried again for this shard
+				txLookBackCache[src.String()] = nil
+				continue
+			}
+
+			if len(txs) == 0 {
+				// doesn't have any tx in this shard, don't query again
 				txLookBackCache[src.String()] = nil
 				continue
 			}

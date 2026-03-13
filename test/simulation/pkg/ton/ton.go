@@ -270,7 +270,8 @@ func (c *Client) SignTx(tx types.SimTx) ([]byte, error) {
 
 // BroadcastTx broadcasts a signed transaction to the TON network
 func (c *Client) BroadcastTx(signed []byte) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
 
 	// Decode BOC
 	body, err := cell.FromBOC(signed)

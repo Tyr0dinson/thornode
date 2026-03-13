@@ -17,22 +17,23 @@ import (
 func MemolessSwaps(rng *rand.Rand) *Actor {
 	a := NewActor("Memoless Swaps", rng)
 
-	if len(acommon.SimChains()) < 2 {
+	simChains := acommon.SimChains()
+	if len(simChains) < 2 {
 		return nil
 	}
 
 	// memoless swaps
 	for _, t := range []core.MemolessType{core.MemolessTypeRef, core.MemolessTypeAmount} {
-		for _, chain := range acommon.SimChains() {
+		for _, chain := range simChains {
 			// choose a random (other) pool to swap to
-			j := rng.IntN(len(acommon.SimChains()))
-			for chain.Equals(acommon.SimChains()[j]) {
-				j = rng.IntN(len(acommon.SimChains()))
+			j := rng.IntN(len(simChains))
+			for chain.Equals(simChains[j]) {
+				j = rng.IntN(len(simChains))
 			}
-			a.Children[core.NewSwapMemolessActor(chain.GetGasAsset(), acommon.SimChains()[j].GetGasAsset(), t, rng)] = true
+			a.Children[core.NewSwapMemolessActor(chain.GetGasAsset(), simChains[j].GetGasAsset(), t, rng)] = true
 		}
 		// Add non-gas EVM token sources to exercise memoless router flow.
-		for _, chain := range acommon.SimChains() {
+		for _, chain := range simChains {
 			if !chain.IsEVM() {
 				continue
 			}
@@ -40,7 +41,7 @@ func MemolessSwaps(rng *rand.Rand) *Actor {
 				if asset.IsGasAsset() {
 					continue
 				}
-				toAsset := acommon.SimChains()[rng.IntN(len(acommon.SimChains()))].GetGasAsset()
+				toAsset := simChains[rng.IntN(len(simChains))].GetGasAsset()
 				a.Children[core.NewSwapMemolessActor(asset, toAsset, t, rng)] = true
 			}
 		}
@@ -57,9 +58,11 @@ func MemolessSwaps(rng *rand.Rand) *Actor {
 func Swaps(rng *rand.Rand) *Actor {
 	a := NewActor("Swaps", rng)
 
+	simChains := acommon.SimChains()
+
 	// gather all pools we expect to swap through
 	var swapPools []common.Asset
-	for _, chain := range acommon.SimChains() {
+	for _, chain := range simChains {
 		swapPools = append(swapPools, chain.GetGasAsset())
 
 		// add tokens to swap pools
@@ -100,7 +103,7 @@ func Swaps(rng *rand.Rand) *Actor {
 		}
 
 		// cross-chain EVM → different EVM gas asset via aggregator
-		for _, otherChain := range acommon.SimChains() {
+		for _, otherChain := range simChains {
 			if !otherChain.IsEVM() || otherChain.Equals(cfg.chain) {
 				continue
 			}
