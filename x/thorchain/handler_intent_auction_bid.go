@@ -341,24 +341,33 @@ func calculateSolveBeatIncrement(ctx cosmos.Context, mgr Manager, targetAsset co
 		return gasFee, targetAsset, nil
 	}
 
-	// Price the chain gas fee into the target asset using the existing spot pools:
-	// gas asset -> RUNE -> target asset.
-	gasPool, err := mgr.Keeper().GetPool(ctx, gasAsset.GetLayer1Asset())
-	if err != nil {
-		return cosmos.ZeroUint(), common.EmptyAsset, err
+	var runeValue cosmos.Uint
+	if gasAsset.IsRune() {
+		// THORChain gas is already denominated in RUNE, so no RUNE pool lookup is needed.
+		runeValue = gasFee
+	} else {
+		// Price the chain gas fee into RUNE using the gas asset pool first.
+		gasPool, err := mgr.Keeper().GetPool(ctx, gasAsset.GetLayer1Asset())
+		if err != nil {
+			return cosmos.ZeroUint(), common.EmptyAsset, err
+		}
+		if gasPool.IsEmpty() || gasPool.Status != PoolAvailable {
+			return cosmos.OneUint(), targetAsset, nil
+		}
+
+		runeValue = gasPool.AssetValueInRune(gasFee)
+		if runeValue.IsZero() {
+			return cosmos.OneUint(), targetAsset, nil
+		}
 	}
+
 	targetPool, err := mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
 	if err != nil {
 		return cosmos.ZeroUint(), common.EmptyAsset, err
 	}
-	if gasPool.IsEmpty() || gasPool.Status != PoolAvailable || targetPool.IsEmpty() || targetPool.Status != PoolAvailable {
-		// Without both pools we cannot compare like-for-like units, so fall back to
-		// the smallest possible step in the target asset.
-		return cosmos.OneUint(), targetAsset, nil
-	}
-
-	runeValue := gasPool.AssetValueInRune(gasFee)
-	if runeValue.IsZero() {
+	if targetPool.IsEmpty() || targetPool.Status != PoolAvailable {
+		// Without a target-side pricing pool we cannot compare like-for-like units,
+		// so fall back to the smallest possible step in the target asset.
 		return cosmos.OneUint(), targetAsset, nil
 	}
 

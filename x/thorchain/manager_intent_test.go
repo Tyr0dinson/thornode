@@ -438,3 +438,75 @@ func (s *IntentMgrTestSuite) TestSelectBestSolve_NonGasTargetUsesConvertedGasSte
 	selected := intentMgr.selectBestSolve(w.ctx, intent, solves)
 	c.Check(selected.SolveTxID.Equals(losingSolveTxID), Equals, true)
 }
+
+func (s *IntentMgrTestSuite) TestSelectBestSolve_THORNativeTargetUsesRuneGas(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.NAMI
+	targetPool.Status = PoolAvailable
+	targetPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	targetPool.BalanceRune = cosmos.NewUint(1_000_000_000)
+	c.Assert(w.keeper.SetPool(w.ctx, targetPool), IsNil)
+
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	intent := Intent{
+		TxID:        GetRandomTx().ID,
+		TargetAsset: common.NAMI,
+	}
+
+	winningSolveTxID := GetRandomTx().ID
+	losingSolveTxID := GetRandomTx().ID
+	solves := []IntentSolve{
+		{
+			SolveTxID:    winningSolveTxID,
+			TargetCoin:   common.NewCoin(common.NAMI, cosmos.NewUint(1000)),
+			SubmitHeight: 20,
+		},
+		{
+			SolveTxID:    losingSolveTxID,
+			TargetCoin:   common.NewCoin(common.NAMI, cosmos.NewUint(999)),
+			SubmitHeight: 10,
+		},
+	}
+
+	selected := intentMgr.selectBestSolve(w.ctx, intent, solves)
+	c.Check(selected.SolveTxID.Equals(losingSolveTxID), Equals, true)
+}
+
+func (s *IntentMgrTestSuite) TestSelectBestSolve_PricingUnavailableFallsBackToExactComparison(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	intent := Intent{
+		TxID:        GetRandomTx().ID,
+		TargetAsset: common.NAMI,
+	}
+
+	highestSolveTxID := GetRandomTx().ID
+	lowerEarlierSolveTxID := GetRandomTx().ID
+	solves := []IntentSolve{
+		{
+			SolveTxID:    highestSolveTxID,
+			TargetCoin:   common.NewCoin(common.NAMI, cosmos.NewUint(1000)),
+			SubmitHeight: 20,
+		},
+		{
+			SolveTxID:    lowerEarlierSolveTxID,
+			TargetCoin:   common.NewCoin(common.NAMI, cosmos.NewUint(999)),
+			SubmitHeight: 10,
+		},
+	}
+
+	selected := intentMgr.selectBestSolve(w.ctx, intent, solves)
+	c.Check(selected.SolveTxID.Equals(highestSolveTxID), Equals, true)
+}

@@ -363,3 +363,99 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_NonGasTargetUsesConvertedGasStep
 	c.Assert(resp.Valid, Equals, true)
 	c.Assert(resp.WouldBeatCurrentBest, Equals, true)
 }
+
+func (s *QuotesSuite) TestQueryQuoteIntentSolve_THORNativeTargetUsesRuneGas(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+
+	targetPool := NewPool()
+	targetPool.Asset = common.NAMI
+	targetPool.Status = PoolAvailable
+	targetPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	targetPool.BalanceRune = cosmos.NewUint(1_000_000_000)
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+
+	intentTxID := GetRandomTx().ID
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		TargetAsset:   common.NAMI,
+		TargetAddress: GetRandomTHORAddress(),
+		HighTarget:    cosmos.NewUint(2000),
+		LowTarget:     cosmos.NewUint(1000),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	mgr.Keeper().SetIntentSolve(ctx, types.IntentSolve{
+		SolveTxID:     GetRandomTx().ID,
+		IntentTxID:    intentTxID,
+		SolverAddress: GetRandomTHORAddress(),
+		TargetCoin:    common.NewCoin(common.NAMI, cosmos.NewUint(1000)),
+		SubmitHeight:  ctx.BlockHeight(),
+		MatchHeight:   ctx.BlockHeight(),
+	})
+
+	resp, err := qs.queryQuoteIntentSolve(ctx, &types.QueryQuoteIntentSolveRequest{
+		IntentTxId: intentTxID.String(),
+		Amount:     "1000",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, true)
+	c.Assert(resp.MinIncrement, Equals, "375000")
+	c.Assert(resp.MinIncrementAsset, Equals, common.NAMI.String())
+	c.Assert(resp.AmountToBeatBest, Equals, "376000")
+	c.Assert(resp.WouldBeatCurrentBest, Equals, false)
+}
+
+func (s *QuotesSuite) TestQueryQuoteIntentSolve_PricingUnavailableUsesOneUnitFallback(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+
+	intentTxID := GetRandomTx().ID
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		TargetAsset:   common.NAMI,
+		TargetAddress: GetRandomTHORAddress(),
+		HighTarget:    cosmos.NewUint(2000),
+		LowTarget:     cosmos.NewUint(1000),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	mgr.Keeper().SetIntentSolve(ctx, types.IntentSolve{
+		SolveTxID:     GetRandomTx().ID,
+		IntentTxID:    intentTxID,
+		SolverAddress: GetRandomTHORAddress(),
+		TargetCoin:    common.NewCoin(common.NAMI, cosmos.NewUint(1000)),
+		SubmitHeight:  ctx.BlockHeight(),
+		MatchHeight:   ctx.BlockHeight(),
+	})
+
+	resp, err := qs.queryQuoteIntentSolve(ctx, &types.QueryQuoteIntentSolveRequest{
+		IntentTxId: intentTxID.String(),
+		Amount:     "1000",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, true)
+	c.Assert(resp.MinIncrement, Equals, "1")
+	c.Assert(resp.MinIncrementAsset, Equals, common.NAMI.String())
+	c.Assert(resp.AmountToBeatBest, Equals, "1001")
+	c.Assert(resp.WouldBeatCurrentBest, Equals, false)
+
+	resp, err = qs.queryQuoteIntentSolve(ctx, &types.QueryQuoteIntentSolveRequest{
+		IntentTxId: intentTxID.String(),
+		Amount:     "1001",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, true)
+	c.Assert(resp.WouldBeatCurrentBest, Equals, true)
+}
