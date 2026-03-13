@@ -17,12 +17,8 @@ var _ = Suite(&HandlerIntentCancelSuite{})
 
 type HandlerIntentCancelTestHelper struct {
 	keeper.Keeper
-	failToGetIntent          bool
-	failToGetAsgardVaults    bool
-	failToSetVault           bool
-	failToGetIntentInHandle  bool
-	forceEmptyVaults         bool
-	insufficientVaultBalance bool
+	failToGetIntent         bool
+	failToGetIntentInHandle bool
 }
 
 func NewHandlerIntentCancelTestHelper(k keeper.Keeper) *HandlerIntentCancelTestHelper {
@@ -41,33 +37,6 @@ func (h *HandlerIntentCancelTestHelper) GetIntent(ctx cosmos.Context, txID commo
 		h.failToGetIntent = true
 	}
 	return h.Keeper.GetIntent(ctx, txID)
-}
-
-func (h *HandlerIntentCancelTestHelper) GetAsgardVaultsByStatus(ctx cosmos.Context, status VaultStatus) (Vaults, error) {
-	if h.failToGetAsgardVaults {
-		return nil, errKaboom
-	}
-	if h.forceEmptyVaults {
-		return Vaults{}, nil
-	}
-	vaults, err := h.Keeper.GetAsgardVaultsByStatus(ctx, status)
-	if err != nil {
-		return nil, err
-	}
-	if h.insufficientVaultBalance {
-		// Return vaults but with zero balance for the asset
-		for i := range vaults {
-			vaults[i].Coins = common.Coins{}
-		}
-	}
-	return vaults, nil
-}
-
-func (h *HandlerIntentCancelTestHelper) SetVault(ctx cosmos.Context, vault Vault) error {
-	if h.failToSetVault {
-		return errKaboom
-	}
-	return h.Keeper.SetVault(ctx, vault)
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_RefundPoolAsset(c *C) {
@@ -257,7 +226,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_InvalidMessage(c *C) {
 	c.Check(result, IsNil)
 }
 
-func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNonPoolAsset(c *C) {
+func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetRoutesToAuction(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Create an active vault with BTC (no pool will be created for BTC)
@@ -267,7 +236,6 @@ func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNonPoolAsset(c *C) {
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
 
 	// Create an active intent with BTC (non-pool, non-native asset)
-	// Note: NOT creating a pool for BTC, so it should take the abandon path
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
 	intentAmount := cosmos.NewUint(100 * common.One)
@@ -292,53 +260,36 @@ func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNonPoolAsset(c *C) {
 	cancelTx.FromAddress = userAddr
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 
-	// Create a voter for the cancel tx (mimics handler_deposit.go creating a voter)
-	txIn := ObservedTx{Tx: cancelTx}
-	voter := NewObservedTxVoter(cancelTx.ID, []ObservedTx{txIn})
-	voter.Height = w.ctx.BlockHeight()
-	voter.FinalisedHeight = w.ctx.BlockHeight()
-	voter.Tx = txIn
-	w.keeper.SetObservedTxInVoter(w.ctx, voter)
-
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
-	// Verify intent status updated
-	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
-	c.Assert(err, IsNil)
-	c.Check(updatedIntent.Status, Equals, IntentCancelled)
-
-	// Verify vault balance was reduced (abandon = burn from vault)
+	// Verify vault balance is NOT reduced (no longer abandoning)
 	updatedVault, err := w.keeper.GetVault(w.ctx, vaultPubKey)
 	c.Assert(err, IsNil)
-	expectedBalance := cosmos.NewUint(100 * common.One) // 200 - 100
-	c.Check(updatedVault.GetCoin(common.BTCAsset).Amount.Equal(expectedBalance), Equals, true,
-		Commentf("expected %s, got %s", expectedBalance, updatedVault.GetCoin(common.BTCAsset).Amount))
-
-	// Verify the cancel tx voter is marked done (abandon path has no outbound)
-	updatedVoter, err := w.keeper.GetObservedTxInVoter(w.ctx, cancelTx.ID)
-	c.Assert(err, IsNil)
-	c.Check(updatedVoter.IsDone(), Equals, true, Commentf("voter should be marked done in abandon path"))
+	c.Check(updatedVault.GetCoin(common.BTCAsset).Amount.Equal(cosmos.NewUint(200*common.One)), Equals, true,
+		Commentf("vault balance should be unchanged, got %s", updatedVault.GetCoin(common.BTCAsset).Amount))
 }
 
-func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNoVaultWithSufficientBalance(c *C) {
+func (HandlerIntentCancelSuite) TestIntentCancel_StagedPoolRoutesToAuction(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
-	// Create an active vault with insufficient BTC balance
-	vaultPubKey := GetRandomPubKey()
-	vault := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
-	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(50*common.One)))) // Only 50, need 100
-	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+	// Create a STAGED pool for DOGE (not Available, so not refundable)
+	pool := NewPool()
+	pool.Asset = common.DOGEAsset
+	pool.Status = PoolStaged
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
 
-	// Create an active intent with BTC requiring more than vault has
+	// Create an active intent with DOGE
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
 	intent := Intent{
 		TxID:          intentTx.ID,
 		SourceAddress: userAddr,
-		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)), // Need 100
-		TargetAsset:   common.DOGEAsset,
-		TargetAddress: GetRandomDOGEAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
 		HighTarget:    cosmos.NewUint(20 * common.One),
 		LowTarget:     cosmos.NewUint(10 * common.One),
 		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
@@ -353,110 +304,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNoVaultWithSufficientBal
 	cancelTx.FromAddress = userAddr
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(w.ctx, msg)
-	c.Check(err, NotNil)
-	c.Check(err.Error(), Matches, ".*no vault found with sufficient balance.*")
-}
-
-func (HandlerIntentCancelSuite) TestIntentCancel_AbandonNoActiveVaults(c *C) {
-	w := getHandlerTestWrapper(c, 1, true, true)
-
-	// Don't create any vaults
-
-	// Create an active intent with BTC (non-pool asset)
-	intentTx := GetRandomTx()
-	userAddr := GetRandomTHORAddress()
-	intent := Intent{
-		TxID:          intentTx.ID,
-		SourceAddress: userAddr,
-		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:   common.DOGEAsset,
-		TargetAddress: GetRandomDOGEAddress(),
-		HighTarget:    cosmos.NewUint(20 * common.One),
-		LowTarget:     cosmos.NewUint(10 * common.One),
-		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
-		Status:        IntentActive,
-	}
-	w.keeper.SetIntent(w.ctx, intent)
-
-	// Use test helper to force empty vaults
-	testKeeper := NewHandlerIntentCancelTestHelper(w.keeper)
-	testKeeper.forceEmptyVaults = true
-	handler := NewIntentCancelHandler(NewDummyMgrWithKeeper(testKeeper))
-
-	cancelTx := GetRandomTx()
-	cancelTx.FromAddress = userAddr
-	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
-	_, err := handler.Run(w.ctx, msg)
-	c.Check(err, NotNil)
-	c.Check(err.Error(), Matches, ".*no active vaults available.*")
-}
-
-func (HandlerIntentCancelSuite) TestIntentCancel_AbandonGetVaultsFails(c *C) {
-	w := getHandlerTestWrapper(c, 1, true, true)
-
-	// Create an active intent with BTC (non-pool asset)
-	intentTx := GetRandomTx()
-	userAddr := GetRandomTHORAddress()
-	intent := Intent{
-		TxID:          intentTx.ID,
-		SourceAddress: userAddr,
-		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:   common.DOGEAsset,
-		TargetAddress: GetRandomDOGEAddress(),
-		HighTarget:    cosmos.NewUint(20 * common.One),
-		LowTarget:     cosmos.NewUint(10 * common.One),
-		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
-		Status:        IntentActive,
-	}
-	w.keeper.SetIntent(w.ctx, intent)
-
-	testKeeper := NewHandlerIntentCancelTestHelper(w.keeper)
-	testKeeper.failToGetAsgardVaults = true
-	handler := NewIntentCancelHandler(NewDummyMgrWithKeeper(testKeeper))
-
-	cancelTx := GetRandomTx()
-	cancelTx.FromAddress = userAddr
-	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
-	_, err := handler.Run(w.ctx, msg)
-	c.Check(err, NotNil)
-	c.Check(err.Error(), Matches, ".*fail to get active vaults.*")
-}
-
-func (HandlerIntentCancelSuite) TestIntentCancel_AbandonSetVaultFails(c *C) {
-	w := getHandlerTestWrapper(c, 1, true, true)
-
-	// Create an active vault with BTC
-	vaultPubKey := GetRandomPubKey()
-	vault := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
-	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One))))
-	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
-
-	// Create an active intent with BTC (non-pool asset)
-	intentTx := GetRandomTx()
-	userAddr := GetRandomTHORAddress()
-	intent := Intent{
-		TxID:          intentTx.ID,
-		SourceAddress: userAddr,
-		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:   common.DOGEAsset,
-		TargetAddress: GetRandomDOGEAddress(),
-		HighTarget:    cosmos.NewUint(20 * common.One),
-		LowTarget:     cosmos.NewUint(10 * common.One),
-		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
-		Status:        IntentActive,
-	}
-	w.keeper.SetIntent(w.ctx, intent)
-
-	testKeeper := NewHandlerIntentCancelTestHelper(w.keeper)
-	testKeeper.failToSetVault = true
-	handler := NewIntentCancelHandler(NewDummyMgrWithKeeper(testKeeper))
-
-	cancelTx := GetRandomTx()
-	cancelTx.FromAddress = userAddr
-	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
-	_, err := handler.Run(w.ctx, msg)
-	c.Check(err, NotNil)
-	c.Check(err.Error(), Matches, ".*fail to save vault.*")
+	c.Assert(err, IsNil, Commentf("cancel of staged-pool asset should route to auction, not fail"))
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_RefundWithExtraCoins(c *C) {
@@ -507,29 +355,26 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundWithExtraCoins(c *C) {
 	// We've verified the handler runs without error when extra coins are included
 }
 
-func (HandlerIntentCancelSuite) TestIntentCancel_VaultSelectionDeterminism(c *C) {
+func (HandlerIntentCancelSuite) TestIntentCancel_AvailablePoolRefunds(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
-	// Create two vaults with the same BTC balance
-	vault1PubKey := GetRandomPubKey()
-	vault1 := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vault1PubKey, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
-	vault1.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One))))
-	c.Assert(w.keeper.SetVault(w.ctx, vault1), IsNil)
+	// Create an Available pool for DOGE
+	pool := NewPool()
+	pool.Asset = common.DOGEAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
 
-	vault2PubKey := GetRandomPubKey()
-	vault2 := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vault2PubKey, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
-	vault2.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One))))
-	c.Assert(w.keeper.SetVault(w.ctx, vault2), IsNil)
-
-	// Create an active intent with BTC (non-pool asset)
+	// Create an active intent with DOGE (pool asset with Available status)
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
 	intent := Intent{
 		TxID:          intentTx.ID,
 		SourceAddress: userAddr,
-		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:   common.DOGEAsset,
-		TargetAddress: GetRandomDOGEAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
 		HighTarget:    cosmos.NewUint(20 * common.One),
 		LowTarget:     cosmos.NewUint(10 * common.One),
 		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
@@ -546,22 +391,8 @@ func (HandlerIntentCancelSuite) TestIntentCancel_VaultSelectionDeterminism(c *C)
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
-	// Verify intent status updated
+	// Verify intent status is cancelled (direct refund path)
 	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentCancelled)
-
-	// One vault should have 100 BTC, the other should have 200 BTC
-	// The vault with the lower PubKey string should be selected (deterministic tiebreaker)
-	updatedVault1, _ := w.keeper.GetVault(w.ctx, vault1PubKey)
-	updatedVault2, _ := w.keeper.GetVault(w.ctx, vault2PubKey)
-
-	vault1Balance := updatedVault1.GetCoin(common.BTCAsset).Amount
-	vault2Balance := updatedVault2.GetCoin(common.BTCAsset).Amount
-
-	// One should be 100, the other 200
-	c.Check(vault1Balance.Add(vault2Balance).Equal(cosmos.NewUint(300*common.One)), Equals, true,
-		Commentf("total balance should be 300, got %s", vault1Balance.Add(vault2Balance)))
-	c.Check(vault1Balance.Equal(cosmos.NewUint(100*common.One)) || vault2Balance.Equal(cosmos.NewUint(100*common.One)), Equals, true,
-		Commentf("one vault should have 100 BTC remaining"))
 }

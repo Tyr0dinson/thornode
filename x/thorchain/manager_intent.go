@@ -751,6 +751,14 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 		return im.refundExpiredIntent(ctx, intent)
 	}
 
+	return im.StartIntentAuction(ctx, intent)
+}
+
+// StartIntentAuction creates an auction for the intent's source asset and
+// transitions the intent to auctioning status. This is used both by the expiry
+// path (for non-refundable assets) and by the cancel path (for non-pool,
+// non-native assets that cannot be directly refunded).
+func (im *IntentMgr) StartIntentAuction(ctx cosmos.Context, intent Intent) error {
 	// Get auction parameters
 	auctionBps := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionBasisPoints)
 	if auctionBps <= 0 {
