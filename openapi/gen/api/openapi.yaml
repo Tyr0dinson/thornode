@@ -2611,9 +2611,8 @@ paths:
         name: amount
         required: true
         schema:
-          example: 1000000000
-          format: int64
-          type: integer
+          example: "1000000000"
+          type: string
         style: form
       - description: the destination address for receiving target asset
         explode: true
@@ -2631,9 +2630,8 @@ paths:
         name: high_target
         required: true
         schema:
-          example: 50000000
-          format: int64
-          type: integer
+          example: "50000000"
+          type: string
         style: form
       - description: "low target amount - minimum acceptable, no execution below this"
         explode: true
@@ -2641,9 +2639,8 @@ paths:
         name: low_target
         required: true
         schema:
-          example: 48000000
-          format: int64
-          type: integer
+          example: "48000000"
+          type: string
         style: form
       - description: the affiliate (address or thorname)
         explode: true
@@ -2659,8 +2656,7 @@ paths:
         name: affiliate_bps
         required: false
         schema:
-          format: int64
-          type: integer
+          type: string
         style: form
       responses:
         "200":
@@ -2678,6 +2674,16 @@ paths:
         \ successful."
       operationId: quoteIntentSolve
       parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
       - description: the transaction ID of the intent to solve
         explode: true
         in: query
@@ -2703,7 +2709,7 @@ paths:
                 $ref: '#/components/schemas/QuoteIntentSolveResponse'
           description: OK
       tags:
-      - Quotes
+      - Quote
   /thorchain/invariant/{invariant}:
     get:
       description: Returns result of running the given invariant.
@@ -8043,6 +8049,7 @@ components:
     IntentSolve:
       example:
         intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+        destination_address: bc1qxyz
         target_coin:
           amount: "100000"
           decimals: 6
@@ -8076,6 +8083,10 @@ components:
           example: 12345700
           format: int64
           type: integer
+        destination_address:
+          description: where the solver wants to receive the intent's source asset
+          example: bc1qxyz
+          type: string
       required:
       - intent_tx_id
       - match_height
@@ -8088,6 +8099,7 @@ components:
       example:
         solves:
         - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          destination_address: bc1qxyz
           target_coin:
             amount: "100000"
             decimals: 6
@@ -8097,6 +8109,7 @@ components:
           submit_height: 12345678
           solver_address: bc1qyyy
         - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          destination_address: bc1qxyz
           target_coin:
             amount: "100000"
             decimals: 6
@@ -8137,6 +8150,7 @@ components:
       example:
         solves:
         - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          destination_address: bc1qxyz
           target_coin:
             amount: "100000"
             decimals: 6
@@ -8146,6 +8160,7 @@ components:
           submit_height: 12345678
           solver_address: bc1qyyy
         - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          destination_address: bc1qxyz
           target_coin:
             amount: "100000"
             decimals: 6
@@ -8187,6 +8202,7 @@ components:
         intents:
         - solves:
           - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            destination_address: bc1qxyz
             target_coin:
               amount: "100000"
               decimals: 6
@@ -8196,6 +8212,7 @@ components:
             submit_height: 12345678
             solver_address: bc1qyyy
           - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            destination_address: bc1qxyz
             target_coin:
               amount: "100000"
               decimals: 6
@@ -8223,6 +8240,7 @@ components:
             status: IntentActive
         - solves:
           - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            destination_address: bc1qxyz
             target_coin:
               amount: "100000"
               decimals: 6
@@ -8232,6 +8250,7 @@ components:
             submit_height: 12345678
             solver_address: bc1qyyy
           - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            destination_address: bc1qxyz
             target_coin:
               amount: "100000"
               decimals: 6
@@ -8282,6 +8301,7 @@ components:
         owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
         min_bid: "10000"
         status: AuctionActive
+        winning_bid_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
       properties:
         intent_tx_id:
           description: the transaction ID of the intent
@@ -8320,6 +8340,10 @@ components:
         owner_address:
           description: the owner address (original intent creator)
           example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        winning_bid_tx_id:
+          description: the transaction ID of the winning bid
+          example: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
           type: string
       required:
       - auction_amount
@@ -8403,6 +8427,7 @@ components:
           owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
           min_bid: "10000"
           status: AuctionActive
+          winning_bid_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
       properties:
         auction:
           $ref: '#/components/schemas/IntentAuction'
@@ -8449,6 +8474,7 @@ components:
           owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
           min_bid: "10000"
           status: AuctionActive
+          winning_bid_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
       properties:
         auction:
           $ref: '#/components/schemas/IntentAuction'
@@ -8496,6 +8522,7 @@ components:
             owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
             min_bid: "10000"
             status: AuctionActive
+            winning_bid_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
         - bids:
           - bid_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
             intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
@@ -8529,6 +8556,7 @@ components:
             owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
             min_bid: "10000"
             status: AuctionActive
+            winning_bid_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
       properties:
         auctions:
           items:

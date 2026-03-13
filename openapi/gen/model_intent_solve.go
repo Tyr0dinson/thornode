@@ -27,6 +27,8 @@ type IntentSolve struct {
 	SubmitHeight int64 `json:"submit_height"`
 	// the block height when the solve should be matched
 	MatchHeight int64 `json:"match_height"`
+	// where the solver wants to receive the intent's source asset
+	DestinationAddress *string `json:"destination_address,omitempty"`
 }
 
 // NewIntentSolve instantiates a new IntentSolve object
@@ -196,6 +198,38 @@ func (o *IntentSolve) SetMatchHeight(v int64) {
 	o.MatchHeight = v
 }
 
+// GetDestinationAddress returns the DestinationAddress field value if set, zero value otherwise.
+func (o *IntentSolve) GetDestinationAddress() string {
+	if o == nil || o.DestinationAddress == nil {
+		var ret string
+		return ret
+	}
+	return *o.DestinationAddress
+}
+
+// GetDestinationAddressOk returns a tuple with the DestinationAddress field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *IntentSolve) GetDestinationAddressOk() (*string, bool) {
+	if o == nil || o.DestinationAddress == nil {
+		return nil, false
+	}
+	return o.DestinationAddress, true
+}
+
+// HasDestinationAddress returns a boolean if a field has been set.
+func (o *IntentSolve) HasDestinationAddress() bool {
+	if o != nil && o.DestinationAddress != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetDestinationAddress gets a reference to the given string and assigns it to the DestinationAddress field.
+func (o *IntentSolve) SetDestinationAddress(v string) {
+	o.DestinationAddress = &v
+}
+
 func (o IntentSolve) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -215,6 +249,9 @@ func (o IntentSolve) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["match_height"] = o.MatchHeight
+	}
+	if o.DestinationAddress != nil {
+		toSerialize["destination_address"] = o.DestinationAddress
 	}
 	return json.Marshal(toSerialize)
 }
