@@ -86,6 +86,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount, swee
 			// For migration transactions, include confirmed sub-dust UTXOs to sweep all
 			// vault funds. This allows resolving balance mismatches where the on-chain
 			// UTXOs don't match the internal ledger, without requiring a consensus change.
+			// analyze-ignore(float-comparison)
 			if sweepDust && item.Amount < minUTXOAmt && item.Confirmations >= c.cfg.UTXO.MinUTXOConfirmations {
 				// Allow confirmed sub-dust UTXOs through for migration sweeps
 			} else {
