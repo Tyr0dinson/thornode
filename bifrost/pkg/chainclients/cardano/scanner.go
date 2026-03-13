@@ -31,13 +31,12 @@ type Scanner struct {
 	db                    *blockscanner.BlockScannerStorageCardano
 	n2c                   ClientWrapper
 	n2n                   NodeWrapper
-	minFeeA               uint64
-	minFeeB               uint64
-	networkFee            uint64
-	networkMtx            sync.Mutex
+	minFeeA               atomic.Uint64
+	minFeeB               atomic.Uint64
+	networkFee            atomic.Uint64
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalErrataQueue     chan types.ErrataBlock
-	rollbackHeight        int64
+	rollbackHeight        atomic.Int64
 	indexedBlocks         atomic.Uint64
 	errataBlocks          []types.ErrataBlock
 	errataMtx             sync.Mutex
@@ -54,13 +53,12 @@ func NewScanner(
 	var err error
 
 	s := &Scanner{
-		logger:     logger.With().Str("module", "scanner").Logger(),
-		config:     cfg,
-		bridge:     bridge,
-		helper:     helper.NewHelper(logger, common.ADAChain, bridge),
-		db:         storage,
-		errataMtx:  sync.Mutex{},
-		networkMtx: sync.Mutex{},
+		logger:    logger.With().Str("module", "scanner").Logger(),
+		config:    cfg,
+		bridge:    bridge,
+		helper:    helper.NewHelper(logger, common.ADAChain, bridge),
+		db:        storage,
+		errataMtx: sync.Mutex{},
 	}
 
 	// create n2n connection
@@ -149,19 +147,33 @@ func (s *Scanner) FetchMemPool(_ int64) (types.TxIn, error) {
 }
 
 func (s *Scanner) GetNetworkFee() (uint64, uint64) {
-	s.networkMtx.Lock()
-	defer s.networkMtx.Unlock()
-	return 1, s.networkFee
+	return 1, s.networkFee.Load()
 }
 
 func (s *Scanner) GetNetworkMinFees() (uint64, uint64) {
-	s.networkMtx.Lock()
-	defer s.networkMtx.Unlock()
-	return s.minFeeA, s.minFeeB
+	return s.minFeeA.Load(), s.minFeeB.Load()
 }
 
 // FetchTxs implements blockscanner.BlockScannerFetcher.
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
+	// check n2n connection, set sync if it was reset
+	if !s.n2n.IsSyncSet() {
+		_, slot, hash, err := s.db.GetLastBlockId()
+		if err != nil {
+			return types.TxIn{}, fmt.Errorf("failed to fetch last block id: %w", err)
+		}
+
+		point := pcommon.NewPoint(slot, hash)
+
+		err = s.n2n.Sync(point)
+		if err != nil {
+			return types.TxIn{}, fmt.Errorf("failed to set n2n sync: %w", err)
+		}
+
+		// skip this run to give the n2n sync time to catch up
+		return types.TxIn{}, nil
+	}
+
 	// handle erratas first
 	s.errataMtx.Lock()
 	errataBlocks := s.errataBlocks
@@ -174,7 +186,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 	var allTxIns []*types.TxInItem
 
-	rollbackHeight := atomic.LoadInt64(&s.rollbackHeight)
+	rollbackHeight := s.rollbackHeight.Load()
 	if rollbackHeight > 0 {
 		latestHeight, _, _, err := s.db.GetLastBlockId()
 		if err != nil {
@@ -233,8 +245,8 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	}
 
 	// reset rollbackHeight only if no new rollback occurred
-	if rollbackHeight > 0 {
-		atomic.CompareAndSwapInt64(&s.rollbackHeight, rollbackHeight, 0)
+	if rollbackHeight > 0 && s.rollbackHeight.Load() != rollbackHeight {
+		s.rollbackHeight.Store(rollbackHeight)
 	}
 
 	return types.TxIn{
@@ -400,7 +412,10 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 		return nil
 	}
 
-	if height%networkFeeUpdatePeriod != 0 && s.minFeeA > 0 && s.minFeeB > 0 {
+	minFeeA := s.minFeeA.Load()
+	minFeeB := s.minFeeB.Load()
+
+	if height%networkFeeUpdatePeriod != 0 && minFeeA > 0 && minFeeB > 0 {
 		return nil
 	}
 
@@ -415,18 +430,15 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 		return fmt.Errorf("failed to get protocol parameters")
 	}
 
-	minFeeA := uint64(params.MinFeeA)
-	minFeeB := uint64(params.MinFeeB)
-
-	s.networkMtx.Lock()
-
-	if minFeeA == s.minFeeA && minFeeB == s.minFeeB {
-		s.networkMtx.Unlock()
+	if uint64(params.MinFeeA) == minFeeA && uint64(params.MinFeeB) == minFeeB {
 		return nil
 	}
 
-	s.minFeeA = minFeeA
-	s.minFeeB = minFeeB
+	minFeeA = uint64(params.MinFeeA)
+	minFeeB = uint64(params.MinFeeB)
+
+	s.minFeeA.Store(minFeeA)
+	s.minFeeB.Store(minFeeB)
 
 	feeRate := minFeeA*estimatedTxSize + minFeeB + extraFeeBuffer
 
@@ -440,18 +452,13 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 	roundedFeeRate := ((feeRate + (resolution / 2)) / resolution) * resolution
 
 	if roundedFeeRate == 0 {
-		s.networkMtx.Unlock()
 		return fmt.Errorf("rounded fee rate is zero")
 	}
 
-	// no need to update
-	if s.networkFee == roundedFeeRate {
-		s.networkMtx.Unlock()
+	if s.networkFee.Load() == roundedFeeRate {
 		return nil
 	}
-
-	s.networkFee = roundedFeeRate
-	s.networkMtx.Unlock()
+	s.networkFee.Store(roundedFeeRate)
 
 	s.globalNetworkFeeQueue <- common.NetworkFee{
 		Chain:           common.ADAChain,
@@ -556,7 +563,7 @@ func (s *Scanner) rollBackwardHandler(
 
 	// signal FetchTxs to reprocess blocks from this height, blockscanner
 	// doesn't know of this rollback
-	atomic.StoreInt64(&s.rollbackHeight, int64(tip.BlockNumber))
+	s.rollbackHeight.Store(int64(tip.BlockNumber))
 
 	return nil
 }

@@ -77,6 +77,7 @@ type mockNodeWrapper struct {
 }
 
 func (m *mockNodeWrapper) Sync(_ pcommon.Point) error                     { return nil }
+func (m *mockNodeWrapper) IsSyncSet() bool                                { return true }
 func (m *mockNodeWrapper) GetBlock(_ pcommon.Point) (ledger.Block, error) { return m.block, m.blockErr }
 func (m *mockNodeWrapper) Close()                                         {}
 
@@ -130,7 +131,7 @@ func (s *ScannerTestSuite) TestGetNetworkFee(c *C) {
 	c.Assert(fee, Equals, uint64(0))
 
 	// after setting
-	scanner.networkFee = 250_000
+	scanner.networkFee.Store(250_000)
 	size, fee = scanner.GetNetworkFee()
 	c.Assert(size, Equals, uint64(1))
 	c.Assert(fee, Equals, uint64(250_000))
@@ -149,8 +150,8 @@ func (s *ScannerTestSuite) TestGetNetworkMinFees(c *C) {
 	c.Assert(b, Equals, uint64(0))
 
 	// after setting
-	scanner.minFeeA = 44
-	scanner.minFeeB = 155_381
+	scanner.minFeeA.Store(44)
+	scanner.minFeeB.Store(155_381)
 	a, b = scanner.GetNetworkMinFees()
 	c.Assert(a, Equals, uint64(44))
 	c.Assert(b, Equals, uint64(155_381))
@@ -415,17 +416,17 @@ func (s *ScannerTestSuite) TestUpdateNetworkFee(c *C) {
 	err := scanner.updateNetworkFee(99)
 	c.Assert(err, IsNil)
 
-	c.Assert(scanner.minFeeA, Equals, uint64(43))
-	c.Assert(scanner.minFeeB, Equals, uint64(155_951))
+	c.Assert(scanner.minFeeA.Load(), Equals, uint64(43))
+	c.Assert(scanner.minFeeB.Load(), Equals, uint64(155_951))
 	// 577 * 43 + 155951 + 5 = 180767 => 181000
-	c.Assert(scanner.networkFee, Equals, uint64(181_000))
+	c.Assert(scanner.networkFee.Load(), Equals, uint64(181_000))
 
 	select {
 	case nf := <-queue:
 		c.Assert(nf.Chain, Equals, common.ADAChain)
 		c.Assert(nf.Height, Equals, int64(99))
 		c.Assert(nf.TransactionSize, Equals, uint64(1))
-		c.Assert(nf.TransactionRate, Equals, scanner.networkFee)
+		c.Assert(nf.TransactionRate, Equals, scanner.networkFee.Load())
 	default:
 		c.Fatal("expected network fee on queue")
 	}
@@ -440,10 +441,10 @@ func (s *ScannerTestSuite) TestUpdateNetworkFee(c *C) {
 	err = scanner.updateNetworkFee(100)
 	c.Assert(err, IsNil)
 
-	c.Assert(scanner.minFeeA, Equals, uint64(44))
-	c.Assert(scanner.minFeeB, Equals, uint64(155_381))
+	c.Assert(scanner.minFeeA.Load(), Equals, uint64(44))
+	c.Assert(scanner.minFeeB.Load(), Equals, uint64(155_381))
 	// 577 * 44 + 155_381 + 5 = 180774 => 181000
-	c.Assert(scanner.networkFee, Equals, uint64(181_000))
+	c.Assert(scanner.networkFee.Load(), Equals, uint64(181_000))
 
 	// no update sent, because rounded fee is still 181_000
 	select {
@@ -501,8 +502,8 @@ func (s *ScannerTestSuite) TestUpdateNetworkFeeSkipsWhenFeesSetAndNotPeriod(c *C
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 
 	// pre-set fee values so the early return kicks in
-	scanner.minFeeA = 44
-	scanner.minFeeB = 155_381
+	scanner.minFeeA.Store(44)
+	scanner.minFeeB.Store(155_381)
 
 	// height 50 is not divisible by networkFeeUpdatePeriod (100)
 	// and fees are already set, so should return nil immediately

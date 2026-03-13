@@ -28,6 +28,7 @@ type wrapper struct {
 	logger   zerolog.Logger
 	address  string
 	shutdown atomic.Bool
+	syncing  atomic.Bool
 }
 
 func newWrapper(
@@ -103,18 +104,15 @@ func (c *wrapper) connect(
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	if c.conn != nil {
-		c.conn.Close()
-	}
-
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 
+	var conn *ouroboros.Connection
 	var err error
 
 	if rollBackwardFunc != nil || rollForwardFunc != nil {
-		c.conn, err = ouroboros.NewConnection(
+		conn, err = ouroboros.NewConnection(
 			ouroboros.WithPeerSharing(true),
 			ouroboros.WithNetworkMagic(networkMagic),
 			ouroboros.WithLogger(logger),
@@ -129,7 +127,7 @@ func (c *wrapper) connect(
 			)),
 		)
 	} else {
-		c.conn, err = ouroboros.NewConnection(
+		conn, err = ouroboros.NewConnection(
 			ouroboros.WithLogger(logger),
 			ouroboros.WithNetworkMagic(networkMagic),
 		)
@@ -139,10 +137,19 @@ func (c *wrapper) connect(
 		return nil, fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
 	}
 
-	err = c.conn.Dial("tcp", c.address)
+	err = conn.Dial("tcp", c.address)
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
 	}
+
+	if c.conn != nil {
+		c.conn.Close()
+	}
+
+	c.conn = conn
+
+	c.syncing.Store(false)
 
 	return c.conn.ErrorChan(), nil
 }
@@ -159,6 +166,7 @@ func (c *wrapper) close() {
 
 type NodeWrapper interface {
 	Sync(pcommon.Point) error
+	IsSyncSet() bool
 	GetBlock(pcommon.Point) (ledger.Block, error)
 	Close()
 }
@@ -183,7 +191,15 @@ func NewNodeConnection(
 func (c *nodeWrapper) Sync(point pcommon.Point) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	return c.conn.ChainSync().Client.Sync([]pcommon.Point{point})
+	err := c.conn.ChainSync().Client.Sync([]pcommon.Point{point})
+	if err == nil {
+		c.syncing.Store(true)
+	}
+	return err
+}
+
+func (c *nodeWrapper) IsSyncSet() bool {
+	return c.syncing.Load()
 }
 
 func (c *nodeWrapper) GetBlock(point pcommon.Point) (ledger.Block, error) {
@@ -204,7 +220,9 @@ func (c *nodeWrapper) Close() {
 		c.logger.Error().Err(err).Msg("failed to stop client")
 	}
 
-	c.close()
+	if c.conn != nil {
+		c.close()
+	}
 }
 
 //  client

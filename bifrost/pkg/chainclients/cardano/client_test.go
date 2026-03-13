@@ -110,7 +110,7 @@ func (s *ClientTestSuite) TestGetNetworkFee(c *C) {
 	c.Assert(rate, Equals, uint64(0))
 
 	// after setting
-	s.client.chainScanner.networkFee = 200_000
+	s.client.chainScanner.networkFee.Store(200_000)
 	size, rate = s.client.chainScanner.GetNetworkFee()
 	c.Assert(size, Equals, uint64(1))
 	c.Assert(rate, Equals, uint64(200_000))
@@ -509,8 +509,8 @@ func (s *ClientTestSuite) TestSignTxFullFlow(c *C) {
 
 	// 3. Set TTL and fee params
 	s.client.ttl = 400
-	s.client.chainScanner.minFeeA = 44
-	s.client.chainScanner.minFeeB = 155_381
+	s.client.chainScanner.minFeeA.Store(44)
+	s.client.chainScanner.minFeeB.Store(155_381)
 
 	// 4. Store a block (height=1, slot=100) for UTXO lookup and TTL
 	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
@@ -605,8 +605,8 @@ func (s *ClientTestSuite) TestSignTxAlreadySigned(c *C) {
 	vaultAddress := s.client.GetAddress(vaultPubKey)
 	s.client.localAddress = vaultAddress
 	s.client.ttl = 400
-	s.client.chainScanner.minFeeA = 44
-	s.client.chainScanner.minFeeB = 155_381
+	s.client.chainScanner.minFeeA.Store(44)
+	s.client.chainScanner.minFeeB.Store(155_381)
 
 	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
 	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())
@@ -689,8 +689,8 @@ func (s *ClientTestSuite) TestSignTxInsufficientFunds(c *C) {
 	vaultAddress := s.client.GetAddress(vaultPubKey)
 	s.client.localAddress = vaultAddress
 	s.client.ttl = 400
-	s.client.chainScanner.minFeeA = 44
-	s.client.chainScanner.minFeeB = 155_381
+	s.client.chainScanner.minFeeA.Store(44)
+	s.client.chainScanner.minFeeB.Store(155_381)
 
 	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
 	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())

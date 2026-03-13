@@ -193,10 +193,10 @@ func (c *Client) Start(
 func (c *Client) Stop() {
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
-	c.n2c.Close()
 	c.chainScanner.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
+	c.n2c.Close()
 }
 
 func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string, error) {
