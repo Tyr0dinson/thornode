@@ -245,8 +245,8 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	}
 
 	// reset rollbackHeight only if no new rollback occurred
-	if rollbackHeight > 0 && s.rollbackHeight.Load() != rollbackHeight {
-		s.rollbackHeight.Store(rollbackHeight)
+	if rollbackHeight > 0 {
+		s.rollbackHeight.CompareAndSwap(rollbackHeight, 0)
 	}
 
 	return types.TxIn{
@@ -481,6 +481,11 @@ func (s *Scanner) rollForwardHandler(
 	blockData any,
 	_ chainsync.Tip,
 ) error {
+	// after reconnect wait for n2n sync is set
+	if !s.n2n.IsSyncSet() {
+		return nil
+	}
+
 	switch h := blockData.(type) {
 	case ledger.Block:
 		s.logger.Warn().Msg("block type is ledger.Block, chain-sync n2n protocol expects ledger.BlockHeader")
@@ -506,6 +511,11 @@ func (s *Scanner) rollBackwardHandler(
 	_ pcommon.Point,
 	tip chainsync.Tip,
 ) error {
+	// after reconnect wait for n2n sync is set
+	if !s.n2n.IsSyncSet() {
+		return nil
+	}
+
 	s.logger.Warn().
 		Uint64("height", tip.BlockNumber).
 		Msg("roll backward")

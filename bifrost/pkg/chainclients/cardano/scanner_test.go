@@ -418,7 +418,7 @@ func (s *ScannerTestSuite) TestUpdateNetworkFee(c *C) {
 
 	c.Assert(scanner.minFeeA.Load(), Equals, uint64(43))
 	c.Assert(scanner.minFeeB.Load(), Equals, uint64(155_951))
-	// 577 * 43 + 155951 + 5 = 180767 => 181000
+	// 581 * 43 + 155951 + 0 = 180934 => 181000
 	c.Assert(scanner.networkFee.Load(), Equals, uint64(181_000))
 
 	select {
@@ -443,7 +443,7 @@ func (s *ScannerTestSuite) TestUpdateNetworkFee(c *C) {
 
 	c.Assert(scanner.minFeeA.Load(), Equals, uint64(44))
 	c.Assert(scanner.minFeeB.Load(), Equals, uint64(155_381))
-	// 577 * 44 + 155_381 + 5 = 180774 => 181000
+	// 581 * 44 + 155_381 + 0 = 180945 => 181000
 	c.Assert(scanner.networkFee.Load(), Equals, uint64(181_000))
 
 	// no update sent, because rounded fee is still 181_000

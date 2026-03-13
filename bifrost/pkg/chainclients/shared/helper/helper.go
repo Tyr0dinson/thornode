@@ -66,6 +66,9 @@ func (h *Helper) IsAsgardAddress(address string) bool {
 		return false
 	}
 
+	h.asgardMtx.Lock()
+	defer h.asgardMtx.Unlock()
+
 	_, found := h.asgardAddresses[address]
 	return found
 }
