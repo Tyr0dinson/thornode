@@ -1625,9 +1625,8 @@ paths:
         required: true
         description: the source asset amount in 1e8 decimals
         schema:
-          type: integer
-          format: int64
-          example: 1000000000
+          type: string
+          example: "1000000000"
       - name: destination
         in: query
         required: true
@@ -1640,17 +1639,15 @@ paths:
         required: true
         description: high target amount - immediate execution if solver offers >= this
         schema:
-          type: integer
-          format: int64
-          example: 50000000
+          type: string
+          example: "50000000"
       - name: low_target
         in: query
         required: true
         description: low target amount - minimum acceptable, no execution below this
         schema:
-          type: integer
-          format: int64
-          example: 48000000
+          type: string
+          example: "48000000"
       - name: affiliate
         in: query
         description: the affiliate (address or thorname)
@@ -1660,8 +1657,7 @@ paths:
         in: query
         description: the affiliate fee in basis points
         schema:
-          type: integer
-          format: int64
+          type: string
     get:
       description: Provide a quote for an intent swap, validating parameters and generating the memo.
       operationId: quoteintent
@@ -1676,6 +1672,8 @@ paths:
                 $ref: "#/components/schemas/QuoteIntentResponse"
 
   /thorchain/quote/intent/solve:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
     get:
       operationId: quoteIntentSolve
       description: >-
@@ -1683,7 +1681,7 @@ paths:
         about minimum amounts, current best solve, and whether a solve would
         be successful.
       tags:
-        - Quotes
+        - Quote
       parameters:
         - name: intent_tx_id
           in: query
@@ -5396,6 +5394,10 @@ components:
           format: int64
           description: the block height when the solve should be matched
           example: 12345700
+        destination_address:
+          type: string
+          description: where the solver wants to receive the intent's source asset
+          example: "bc1qxyz"
 
     IntentWithSolves:
       type: object
@@ -5483,6 +5485,10 @@ components:
           type: string
           description: the owner address (original intent creator)
           example: "thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt"
+        winning_bid_tx_id:
+          type: string
+          description: the transaction ID of the winning bid
+          example: "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890"
 
     IntentAuctionBid:
       type: object

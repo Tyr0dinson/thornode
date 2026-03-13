@@ -13,6 +13,7 @@ Name | Type | Description | Notes
 **ExpiryHeight** | **int64** | the block height when the auction expires | 
 **Status** | **string** | the status of the auction | 
 **OwnerAddress** | Pointer to **string** | the owner address (original intent creator) | [optional] 
+**WinningBidTxId** | Pointer to **string** | the transaction ID of the winning bid | [optional] 
 
 ## Methods
 
@@ -217,6 +218,31 @@ SetOwnerAddress sets OwnerAddress field to given value.
 `func (o *IntentAuction) HasOwnerAddress() bool`
 
 HasOwnerAddress returns a boolean if a field has been set.
+
+### GetWinningBidTxId
+
+`func (o *IntentAuction) GetWinningBidTxId() string`
+
+GetWinningBidTxId returns the WinningBidTxId field if non-nil, zero value otherwise.
+
+### GetWinningBidTxIdOk
+
+`func (o *IntentAuction) GetWinningBidTxIdOk() (*string, bool)`
+
+GetWinningBidTxIdOk returns a tuple with the WinningBidTxId field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetWinningBidTxId
+
+`func (o *IntentAuction) SetWinningBidTxId(v string)`
+
+SetWinningBidTxId sets WinningBidTxId field to given value.
+
+### HasWinningBidTxId
+
+`func (o *IntentAuction) HasWinningBidTxId() bool`
+
+HasWinningBidTxId returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

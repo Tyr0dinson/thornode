@@ -32,6 +32,8 @@ type IntentAuction struct {
 	Status string `json:"status"`
 	// the owner address (original intent creator)
 	OwnerAddress *string `json:"owner_address,omitempty"`
+	// the transaction ID of the winning bid
+	WinningBidTxId *string `json:"winning_bid_tx_id,omitempty"`
 }
 
 // NewIntentAuction instantiates a new IntentAuction object
@@ -283,6 +285,38 @@ func (o *IntentAuction) SetOwnerAddress(v string) {
 	o.OwnerAddress = &v
 }
 
+// GetWinningBidTxId returns the WinningBidTxId field value if set, zero value otherwise.
+func (o *IntentAuction) GetWinningBidTxId() string {
+	if o == nil || o.WinningBidTxId == nil {
+		var ret string
+		return ret
+	}
+	return *o.WinningBidTxId
+}
+
+// GetWinningBidTxIdOk returns a tuple with the WinningBidTxId field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *IntentAuction) GetWinningBidTxIdOk() (*string, bool) {
+	if o == nil || o.WinningBidTxId == nil {
+		return nil, false
+	}
+	return o.WinningBidTxId, true
+}
+
+// HasWinningBidTxId returns a boolean if a field has been set.
+func (o *IntentAuction) HasWinningBidTxId() bool {
+	if o != nil && o.WinningBidTxId != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetWinningBidTxId gets a reference to the given string and assigns it to the WinningBidTxId field.
+func (o *IntentAuction) SetWinningBidTxId(v string) {
+	o.WinningBidTxId = &v
+}
+
 func (o IntentAuction) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -311,6 +345,9 @@ func (o IntentAuction) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.OwnerAddress != nil {
 		toSerialize["owner_address"] = o.OwnerAddress
+	}
+	if o.WinningBidTxId != nil {
+		toSerialize["winning_bid_tx_id"] = o.WinningBidTxId
 	}
 	return json.Marshal(toSerialize)
 }

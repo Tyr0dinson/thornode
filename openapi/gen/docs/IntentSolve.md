@@ -10,6 +10,7 @@ Name | Type | Description | Notes
 **TargetCoin** | [**Coin**](Coin.md) |  | 
 **SubmitHeight** | **int64** | the block height when the solve was submitted | 
 **MatchHeight** | **int64** | the block height when the solve should be matched | 
+**DestinationAddress** | Pointer to **string** | where the solver wants to receive the intent&#39;s source asset | [optional] 
 
 ## Methods
 
@@ -149,6 +150,31 @@ and a boolean to check if the value has been set.
 
 SetMatchHeight sets MatchHeight field to given value.
 
+
+### GetDestinationAddress
+
+`func (o *IntentSolve) GetDestinationAddress() string`
+
+GetDestinationAddress returns the DestinationAddress field if non-nil, zero value otherwise.
+
+### GetDestinationAddressOk
+
+`func (o *IntentSolve) GetDestinationAddressOk() (*string, bool)`
+
+GetDestinationAddressOk returns a tuple with the DestinationAddress field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetDestinationAddress
+
+`func (o *IntentSolve) SetDestinationAddress(v string)`
+
+SetDestinationAddress sets DestinationAddress field to given value.
+
+### HasDestinationAddress
+
+`func (o *IntentSolve) HasDestinationAddress() bool`
+
+HasDestinationAddress returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

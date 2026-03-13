@@ -21,7 +21,6 @@ api_pool_slip.go
 api_pools.go
 api_queue.go
 api_quote.go
-api_quotes.go
 api_reference_memos.go
 api_rune_pool.go
 api_savers.go
@@ -146,7 +145,6 @@ docs/QuoteLimitResponse.md
 docs/QuoteSaverDepositResponse.md
 docs/QuoteSaverWithdrawResponse.md
 docs/QuoteSwapResponse.md
-docs/QuotesApi.md
 docs/RUNEPoolApi.md
 docs/RUNEPoolResponse.md
 docs/RUNEPoolResponseProviders.md
