@@ -2,7 +2,9 @@ package keeperv1
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -455,4 +457,171 @@ func (s *InvariantsSuite) TestIntentInvariantAuctionConsistency(c *C) {
 	c.Assert(broken, Equals, true)
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Matches, "auction.*auction_amount.*remaining_amount.*11000.*intent source.*10000.*")
+}
+
+func (s *InvariantsSuite) TestIntentInvariantAuctionUnderAccounting(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := IntentInvariant(k)
+
+	intentTxID := GetRandomTxHash()
+
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		Status:        IntentStatus_IntentAuctioning,
+	}
+	k.SetIntent(ctx, intent)
+
+	// Create an auction where amounts are LESS than intent source (under-accounting)
+	auction := IntentAuction{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000)),
+		RemainingAmount: common.NewCoin(common.RuneAsset(), cosmos.NewUint(5000)),
+		BidAsset:        common.RuneAsset(),
+		MinBid:          cosmos.NewUint(100),
+		StartHeight:     ctx.BlockHeight(),
+		ExpiryHeight:    ctx.BlockHeight() + 50,
+		Status:          IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    GetRandomTHORAddress(),
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	// Should break - 1000 + 5000 = 6000 != 10000
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, true)
+	found := false
+	for _, m := range msg {
+		if strings.Contains(m, "6000") && strings.Contains(m, "10000") {
+			found = true
+		}
+	}
+	c.Assert(found, Equals, true)
+}
+
+func (s *InvariantsSuite) TestIntentInvariantRemainingAssetMismatch(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := IntentInvariant(k)
+
+	intentTxID := GetRandomTxHash()
+
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		Status:        IntentStatus_IntentAuctioning,
+	}
+	k.SetIntent(ctx, intent)
+
+	// RemainingAmount asset doesn't match intent source asset
+	auction := IntentAuction{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000)),
+		RemainingAmount: common.NewCoin(common.BTCAsset, cosmos.NewUint(9000)),
+		BidAsset:        common.RuneAsset(),
+		MinBid:          cosmos.NewUint(100),
+		StartHeight:     ctx.BlockHeight(),
+		ExpiryHeight:    ctx.BlockHeight() + 50,
+		Status:          IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    GetRandomTHORAddress(),
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, true)
+	found := false
+	for _, m := range msg {
+		if strings.Contains(m, "remaining asset") {
+			found = true
+		}
+	}
+	c.Assert(found, Equals, true)
+}
+
+func (s *InvariantsSuite) TestIntentInvariantIntentStatusMismatch(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := IntentInvariant(k)
+
+	intentTxID := GetRandomTxHash()
+
+	// Intent is completed but has an active auction — inconsistent
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		Status:        IntentStatus_IntentCompleted,
+	}
+	k.SetIntent(ctx, intent)
+
+	auction := IntentAuction{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000)),
+		RemainingAmount: common.NewCoin(common.RuneAsset(), cosmos.NewUint(9000)),
+		BidAsset:        common.RuneAsset(),
+		MinBid:          cosmos.NewUint(100),
+		StartHeight:     ctx.BlockHeight(),
+		ExpiryHeight:    ctx.BlockHeight() + 50,
+		Status:          IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    GetRandomTHORAddress(),
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, true)
+	found := false
+	for _, m := range msg {
+		if strings.Contains(m, "intent status is") && strings.Contains(m, "IntentCompleted") {
+			found = true
+		}
+	}
+	c.Assert(found, Equals, true)
+}
+
+func (s *InvariantsSuite) TestIntentInvariantConverseIndexChecks(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := IntentInvariant(k)
+
+	// Manually create an intent with active status but corrupt the index
+	// by directly writing to the store without the index
+	intentTxID := GetRandomTxHash()
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		Status:        IntentStatus_IntentActive,
+	}
+	// Use SetIntent which manages the index correctly first
+	k.SetIntent(ctx, intent)
+
+	// Verify it passes
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	// Now corrupt: remove from active index but keep active status
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	activeKey := k.GetKey(prefixIntentStatusIndex, intentTxID.String())
+	store.Delete(activeKey)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	found := false
+	for _, m := range msg {
+		if strings.Contains(m, "missing from active index") {
+			found = true
+		}
+	}
+	c.Assert(found, Equals, true)
 }

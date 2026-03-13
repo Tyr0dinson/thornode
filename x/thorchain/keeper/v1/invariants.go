@@ -554,9 +554,27 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 // IntentInvariant validates intent-specific consistency
 func IntentInvariant(k KVStore) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
-		// 1. Verify auction amounts are consistent with intent sources
-		activeAuctions, _ := k.GetActiveAuctions(ctx)
+		// 1. Verify active auctions are consistent with their intents
+		activeAuctions, err := k.GetActiveAuctions(ctx)
+		if err != nil {
+			broken = true
+			msg = append(msg, fmt.Sprintf("failed to get active auctions: %s", err))
+		}
+
+		// Track active auction intent IDs for converse index check later
+		activeAuctionIntentIDs := make(map[string]bool)
+
 		for _, auction := range activeAuctions {
+			activeAuctionIntentIDs[auction.IntentTxID.String()] = true
+
+			// Active auction index should only contain active auctions
+			if auction.Status != IntentAuctionStatus_AuctionActive {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"auction %s in active index but status is %s",
+					auction.IntentTxID, auction.Status.String()))
+			}
+
 			intent, err := k.GetIntent(ctx, auction.IntentTxID)
 			if err != nil || intent.TxID.IsEmpty() {
 				broken = true
@@ -564,14 +582,20 @@ func IntentInvariant(k KVStore) common.Invariant {
 				continue
 			}
 
-			// Auction amount + remaining amount should not exceed intent source amount
-			// (they should be equal by construction, but checking <= as a bounds check
-			// catches corruption without being tautological)
-			totalAuction := auction.AuctionAmount.Amount.Add(auction.RemainingAmount.Amount)
-			if totalAuction.GT(intent.Source.Amount) {
+			// Active auction's intent should be in auctioning status
+			if intent.Status != IntentStatus_IntentAuctioning {
 				broken = true
 				msg = append(msg, fmt.Sprintf(
-					"auction %s: auction_amount + remaining_amount (%s) exceeds intent source (%s)",
+					"auction %s: intent status is %s, expected IntentAuctioning",
+					auction.IntentTxID, intent.Status.String()))
+			}
+
+			// Auction amount + remaining amount should equal intent source amount
+			totalAuction := auction.AuctionAmount.Amount.Add(auction.RemainingAmount.Amount)
+			if !totalAuction.Equal(intent.Source.Amount) {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"auction %s: auction_amount + remaining_amount (%s) != intent source (%s)",
 					auction.IntentTxID, totalAuction, intent.Source.Amount))
 			}
 
@@ -582,13 +606,23 @@ func IntentInvariant(k KVStore) common.Invariant {
 					"auction %s: auction asset %s doesn't match intent source asset %s",
 					auction.IntentTxID, auction.AuctionAmount.Asset, intent.Source.Asset))
 			}
-		}
 
-		// 2. Verify all bids on active auctions have correct asset
-		for _, auction := range activeAuctions {
-			bids, _ := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+			// Verify remaining amount asset matches intent source asset
+			if !auction.RemainingAmount.Asset.Equals(intent.Source.Asset) {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"auction %s: remaining asset %s doesn't match intent source asset %s",
+					auction.IntentTxID, auction.RemainingAmount.Asset, intent.Source.Asset))
+			}
+
+			// Verify all bids on this auction have the correct asset
+			bids, err := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+			if err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("failed to get bids for auction %s: %s", auction.IntentTxID, err))
+				continue
+			}
 			for _, bid := range bids {
-				// Bid asset should match auction's expected bid asset
 				if !bid.BidAmount.Asset.Equals(auction.BidAsset) {
 					broken = true
 					msg = append(msg, fmt.Sprintf(
@@ -598,39 +632,41 @@ func IntentInvariant(k KVStore) common.Invariant {
 			}
 		}
 
-		// 3. Check for orphaned bids on non-active auctions by scanning all
-		// auctioning intents. If a non-active auction still has bid records,
-		// those bids' funds would be in Asgard but unaccounted for.
-		intentIter := k.GetIntentIterator(ctx)
-		defer intentIter.Close()
-		for ; intentIter.Valid(); intentIter.Next() {
-			var intent Intent
-			k.Cdc().MustUnmarshal(intentIter.Value(), &intent)
+		// 2. Check for orphaned bids on non-active auctions
+		auctionIter := k.GetIntentAuctionIterator(ctx)
+		defer auctionIter.Close()
+		for ; auctionIter.Valid(); auctionIter.Next() {
+			var auction IntentAuction
+			k.Cdc().MustUnmarshal(auctionIter.Value(), &auction)
 
-			// Only check intents that have/had auctions
-			if !k.IntentAuctionExists(ctx, intent.TxID) {
+			if auction.Status == IntentAuctionStatus_AuctionActive {
 				continue
 			}
-			auction, err := k.GetIntentAuction(ctx, intent.TxID)
+
+			orphanedBids, err := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
 			if err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("failed to get bids for non-active auction %s: %s", auction.IntentTxID, err))
 				continue
 			}
-			// If auction is NOT active but still has bids, those bids are orphaned
-			if auction.Status != IntentAuctionStatus_AuctionActive {
-				orphanedBids, _ := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
-				if len(orphanedBids) > 0 {
-					broken = true
-					msg = append(msg, fmt.Sprintf(
-						"auction %s (status %s) has %d orphaned bid(s)",
-						auction.IntentTxID, auction.Status.String(), len(orphanedBids)))
-				}
+			if len(orphanedBids) > 0 {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"auction %s (status %s) has %d orphaned bid(s)",
+					auction.IntentTxID, auction.Status.String(), len(orphanedBids)))
 			}
 		}
 
-		// 4. Verify active intent index is consistent
-		// (all entries in active index should be truly active intents)
-		activeIntents, _ := k.GetActiveIntents(ctx)
+		// 3. Verify active intent index is consistent (both directions)
+		activeIntents, err := k.GetActiveIntents(ctx)
+		if err != nil {
+			broken = true
+			msg = append(msg, fmt.Sprintf("failed to get active intents: %s", err))
+		}
+
+		activeIntentIDs := make(map[string]bool)
 		for _, intent := range activeIntents {
+			activeIntentIDs[intent.TxID.String()] = true
 			if intent.Status != IntentStatus_IntentActive {
 				broken = true
 				msg = append(msg, fmt.Sprintf(
@@ -639,14 +675,33 @@ func IntentInvariant(k KVStore) common.Invariant {
 			}
 		}
 
-		// 5. Verify active auction index is consistent
-		// (all entries in active index should be truly active auctions)
-		for _, auction := range activeAuctions {
-			if auction.Status != IntentAuctionStatus_AuctionActive {
+		// Converse: check that all intents with active status are in the active index
+		intentIter := k.GetIntentIterator(ctx)
+		defer intentIter.Close()
+		for ; intentIter.Valid(); intentIter.Next() {
+			var intent Intent
+			k.Cdc().MustUnmarshal(intentIter.Value(), &intent)
+
+			if intent.Status == IntentStatus_IntentActive && !activeIntentIDs[intent.TxID.String()] {
 				broken = true
 				msg = append(msg, fmt.Sprintf(
-					"auction %s in active index but status is %s",
-					auction.IntentTxID, auction.Status.String()))
+					"intent %s has active status but is missing from active index",
+					intent.TxID))
+			}
+		}
+
+		// 4. Converse auction index check: all active-status auctions should be in the active index
+		allAuctionIter := k.GetIntentAuctionIterator(ctx)
+		defer allAuctionIter.Close()
+		for ; allAuctionIter.Valid(); allAuctionIter.Next() {
+			var auction IntentAuction
+			k.Cdc().MustUnmarshal(allAuctionIter.Value(), &auction)
+
+			if auction.Status == IntentAuctionStatus_AuctionActive && !activeAuctionIntentIDs[auction.IntentTxID.String()] {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"auction %s has active status but is missing from active auction index",
+					auction.IntentTxID))
 			}
 		}
 
