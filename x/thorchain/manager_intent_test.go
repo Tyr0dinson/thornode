@@ -390,3 +390,51 @@ func (s *IntentMgrTestSuite) TestExecuteIntent_AffiliateFeeOnTargetAsset(c *C) {
 	c.Check(expectedProtocolFee.Equal(cosmos.NewUint(10000000)), Equals, true)   // 0.1% of 10B = 10M
 	c.Check(expectedAffiliateFee.Equal(cosmos.NewUint(100000000)), Equals, true) // 1% of 10B = 100M
 }
+
+func (s *IntentMgrTestSuite) TestSelectBestSolve_NonGasTargetUsesConvertedGasStep(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	targetAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	gasPool := NewPool()
+	gasPool.Asset = common.ETHAsset
+	gasPool.Status = PoolAvailable
+	gasPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	gasPool.BalanceRune = cosmos.NewUint(1_000_000_000)
+	c.Assert(w.keeper.SetPool(w.ctx, gasPool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = targetAsset
+	targetPool.Status = PoolAvailable
+	targetPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	targetPool.BalanceRune = cosmos.NewUint(1_000_000_000)
+	c.Assert(w.keeper.SetPool(w.ctx, targetPool), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	intent := Intent{
+		TxID:        GetRandomTx().ID,
+		TargetAsset: targetAsset,
+	}
+
+	winningSolveTxID := GetRandomTx().ID
+	losingSolveTxID := GetRandomTx().ID
+	solves := []IntentSolve{
+		{
+			SolveTxID:    winningSolveTxID,
+			TargetCoin:   common.NewCoin(targetAsset, cosmos.NewUint(1000)),
+			SubmitHeight: 20,
+		},
+		{
+			SolveTxID:    losingSolveTxID,
+			TargetCoin:   common.NewCoin(targetAsset, cosmos.NewUint(999)),
+			SubmitHeight: 10,
+		},
+	}
+
+	selected := intentMgr.selectBestSolve(w.ctx, intent, solves)
+	c.Check(selected.SolveTxID.Equals(losingSolveTxID), Equals, true)
+}

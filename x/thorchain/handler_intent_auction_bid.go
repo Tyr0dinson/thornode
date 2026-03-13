@@ -308,3 +308,65 @@ func calculateGasFee(ctx cosmos.Context, mgr Manager, chain common.Chain) (cosmo
 	}
 	return fee, nil
 }
+
+// calculateSolveEqualityTolerance returns the amount difference still treated as
+// equal when comparing solves for the same intent. The tolerance must be in the
+// target asset's own denomination, so for non-gas targets we convert the chain
+// gas fee through RUNE when both pools are available. If pricing is unavailable,
+// we fall back to exact-amount comparison.
+func calculateSolveEqualityTolerance(ctx cosmos.Context, mgr Manager, targetAsset common.Asset) (cosmos.Uint, error) {
+	increment, _, err := calculateSolveBeatIncrement(ctx, mgr, targetAsset)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+	// When we cannot price the gas fee into the target asset, treat only exact
+	// amounts as equal rather than mixing denominations.
+	if increment.Equal(cosmos.OneUint()) && !targetAsset.Equals(targetAsset.GetChain().GetGasAsset()) {
+		return cosmos.ZeroUint(), nil
+	}
+	return increment, nil
+}
+
+// calculateSolveBeatIncrement returns the minimum amount a new solve should add
+// on top of the current best quote, expressed in the target asset. When the
+// target is not the chain gas asset, the gas fee is converted gas asset -> RUNE
+// -> target asset using spot pool pricing if both pools are available.
+func calculateSolveBeatIncrement(ctx cosmos.Context, mgr Manager, targetAsset common.Asset) (cosmos.Uint, common.Asset, error) {
+	gasAsset := targetAsset.GetChain().GetGasAsset()
+	gasFee, err := calculateGasFee(ctx, mgr, targetAsset.GetChain())
+	if err != nil {
+		return cosmos.ZeroUint(), common.EmptyAsset, err
+	}
+	if targetAsset.Equals(gasAsset) {
+		return gasFee, targetAsset, nil
+	}
+
+	// Price the chain gas fee into the target asset using the existing spot pools:
+	// gas asset -> RUNE -> target asset.
+	gasPool, err := mgr.Keeper().GetPool(ctx, gasAsset.GetLayer1Asset())
+	if err != nil {
+		return cosmos.ZeroUint(), common.EmptyAsset, err
+	}
+	targetPool, err := mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+	if err != nil {
+		return cosmos.ZeroUint(), common.EmptyAsset, err
+	}
+	if gasPool.IsEmpty() || gasPool.Status != PoolAvailable || targetPool.IsEmpty() || targetPool.Status != PoolAvailable {
+		// Without both pools we cannot compare like-for-like units, so fall back to
+		// the smallest possible step in the target asset.
+		return cosmos.OneUint(), targetAsset, nil
+	}
+
+	runeValue := gasPool.AssetValueInRune(gasFee)
+	if runeValue.IsZero() {
+		return cosmos.OneUint(), targetAsset, nil
+	}
+
+	targetValue := targetPool.RuneValueInAsset(runeValue)
+	if targetValue.IsZero() {
+		// Keep the increment strictly positive so quote output and "beat current best"
+		// checks never claim that a zero-difference bid is sufficient.
+		targetValue = cosmos.OneUint()
+	}
+	return targetValue, targetAsset, nil
+}
