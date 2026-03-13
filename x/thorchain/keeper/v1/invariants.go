@@ -661,7 +661,8 @@ func IntentInvariant(k KVStore) common.Invariant {
 		}
 
 		// 3. Verify active intent index is consistent (both directions)
-		activeIntents, err := k.GetActiveIntents(ctx)
+		var activeIntents []Intent
+		activeIntents, err = k.GetActiveIntents(ctx)
 		if err != nil {
 			broken = true
 			msg = append(msg, fmt.Sprintf("failed to get active intents: %s", err))
