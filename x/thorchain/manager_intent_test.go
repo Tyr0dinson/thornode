@@ -174,6 +174,11 @@ func (s *IntentMgrTestSuite) TestExpireIntent_AuctionNoPoolAsset(c *C) {
 	auction, err := w.keeper.GetIntentAuction(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(auction.Status, Equals, IntentAuctionStatus_AuctionActive)
+
+	// Verify expiry does not schedule any owner refund for the non-pool asset.
+	items, err := mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
 }
 
 // TestExpireIntent_CancelWindowDefersAuction tests that a freshly-expired
@@ -389,4 +394,71 @@ func (s *IntentMgrTestSuite) TestExecuteIntent_AffiliateFeeOnTargetAsset(c *C) {
 	expectedAffiliateFee := common.GetSafeShare(cosmos.NewUint(100), cosmos.NewUint(10000), targetAmount)
 	c.Check(expectedProtocolFee.Equal(cosmos.NewUint(10000000)), Equals, true)   // 0.1% of 10B = 10M
 	c.Check(expectedAffiliateFee.Equal(cosmos.NewUint(100000000)), Equals, true) // 1% of 10B = 100M
+}
+
+// TestCompleteAuction_NoBidsForNonPoolNonNativeSourceAbandonsOwnerFunds tests
+// the full unhappy path for an external non-pool source asset: expiry starts an
+// auction, and expiry of that auction with no bids abandons the entire source.
+func (s *IntentMgrTestSuite) TestCompleteAuction_NoBidsForNonPoolNonNativeSourceAbandonsOwnerFunds(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	vaultPubKey := GetRandomPubKey()
+	startingBalance := cosmos.NewUint(250 * common.One)
+	vault := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, startingBalance)))
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	intentTx := GetRandomTx()
+	ownerAddr := GetRandomBTCAddress()
+	sourceAmount := cosmos.NewUint(100 * common.One)
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: ownerAddr,
+		Source:        common.NewCoin(common.BTCAsset, sourceAmount),
+		TargetAsset:   common.DOGEAsset,
+		TargetAddress: GetRandomDOGEAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err := intentMgr.expireIntent(w.ctx, intent)
+	c.Assert(err, IsNil)
+
+	auction, err := w.keeper.GetIntentAuction(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(auction.Status, Equals, IntentAuctionStatus_AuctionActive)
+	c.Check(auction.AuctionAmount.Amount.Add(auction.RemainingAmount.Amount).Equal(sourceAmount), Equals, true)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+
+	auctionCtx := w.ctx.WithBlockHeight(auction.ExpiryHeight)
+	err = intentMgr.completeAuction(auctionCtx, auction)
+	c.Assert(err, IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(auctionCtx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentExpired)
+
+	updatedAuction, err := w.keeper.GetIntentAuction(auctionCtx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedAuction.Status, Equals, IntentAuctionStatus_AuctionCancelled)
+
+	items, err = mgr.TxOutStore().GetOutboundItems(auctionCtx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+
+	updatedVault, err := w.keeper.GetVault(auctionCtx, vaultPubKey)
+	c.Assert(err, IsNil)
+	expectedBalance := common.SafeSub(startingBalance, sourceAmount)
+	c.Check(updatedVault.GetCoin(common.BTCAsset).Amount.Equal(expectedBalance), Equals, true,
+		Commentf("expected %s, got %s", expectedBalance, updatedVault.GetCoin(common.BTCAsset).Amount))
 }

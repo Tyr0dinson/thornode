@@ -275,6 +275,23 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetRefundsDirect(c *C)
 	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentCancelled)
+
+	// Verify vault balance was reduced (abandon = burn from vault)
+	updatedVault, err := w.keeper.GetVault(w.ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	expectedBalance := cosmos.NewUint(100 * common.One) // 200 - 100
+	c.Check(updatedVault.GetCoin(common.BTCAsset).Amount.Equal(expectedBalance), Equals, true,
+		Commentf("expected %s, got %s", expectedBalance, updatedVault.GetCoin(common.BTCAsset).Amount))
+
+	// Verify the owner gets no refund outbound when a non-pool/non-native source is cancelled.
+	items, err := mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+
+	// Verify the cancel tx voter is marked done (abandon path has no outbound)
+	updatedVoter, err := w.keeper.GetObservedTxInVoter(w.ctx, cancelTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.IsDone(), Equals, true, Commentf("voter should be marked done in abandon path"))
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_StagedPoolRefundsDirect(c *C) {
