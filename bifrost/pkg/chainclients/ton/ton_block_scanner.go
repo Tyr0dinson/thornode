@@ -182,10 +182,12 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 	roundedFeeRate = max(roundedFeeRate, minNetworkFee)
 
 	// if it has changed
-	if s.feeRate.CompareAndSwap(currentFeeRate, roundedFeeRate) {
+	if currentFeeRate == roundedFeeRate {
 		s.logger.Debug().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
 		return
 	}
+
+	s.feeRate.Store(roundedFeeRate)
 
 	select {
 	case s.globalNetworkFeeQueue <- common.NetworkFee{
@@ -195,7 +197,7 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 		TransactionRate: roundedFeeRate,
 	}:
 	case <-time.After(constants.ThorchainBlockTime):
-		s.logger.Error().Msg("fail to send solvency info to THORChain, timeout")
+		s.logger.Error().Msg("fail to send network fee to THORChain, timeout")
 	}
 
 	s.logger.Info().
@@ -267,7 +269,7 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		}
 	}
 
-	if err := eg.Wait(); err != nil {
+	if err = eg.Wait(); err != nil {
 		return nil, err
 	}
 
@@ -391,6 +393,7 @@ func (s *TonBlockScanner) processShard(
 				// possible by sending all funds from wallet
 				s.logger.Err(err).Msg("source account not found")
 				txLookBackCache[src.String()] = nil
+				continue
 			}
 
 			lt := acc.LastTxLT

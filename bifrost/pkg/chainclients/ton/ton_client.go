@@ -175,7 +175,6 @@ func NewTonClient(
 		// api client with full proof checks
 		policy := ton.ProofCheckPolicyFast
 		client.api = ton.NewAPIClient(pool, policy)
-		// client.api.SetTrustedBlockFromConfig(liteClientConfig)
 	}
 
 	// only relevant for mocknet, test image starts with height < 0
