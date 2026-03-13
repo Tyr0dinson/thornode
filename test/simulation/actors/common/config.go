@@ -17,7 +17,7 @@ func SimChains() []common.Chain {
 
 	for _, name := range strings.Split(os.Getenv("CHAINS"), ",") {
 		if name == "" {
-			break
+			continue
 		}
 
 		chain, err := common.NewChain(name)

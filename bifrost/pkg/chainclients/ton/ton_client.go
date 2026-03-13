@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"cosmossdk.io/math"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton/mock"
+	"github.com/xssnick/tonutils-go/liteclient"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -20,7 +20,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tonaddress "github.com/xssnick/tonutils-go/address"
-	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/ton/wallet"
@@ -56,6 +55,7 @@ type TonClient struct {
 	tssKeyManager       *tss.KeySign
 	tonScanner          *TonBlockScanner
 	api                 ton.APIClientWrapped
+	ctx                 context.Context
 	bridge              thorclient.ThorchainBridge
 	globalSolvencyQueue chan types.Solvency
 	wg                  *sync.WaitGroup
@@ -75,62 +75,71 @@ func NewTonClient(
 
 	logger := log.With().Str("module", config.ChainID.String()).Logger()
 
-	client := TonClient{
+	c := TonClient{
 		logger:   logger,
 		config:   config,
 		bridge:   bridge,
+		ctx:      context.Background(),
 		wg:       &sync.WaitGroup{},
 		stopchan: make(chan struct{}),
 	}
 
-	if client.config.BlockScanner.PrefetchBlocks != 0 {
+	if c.config.BlockScanner.PrefetchBlocks != 0 {
 		return nil, fmt.Errorf("prefetch blocks not supported")
 	}
 
-	ctx := context.Background()
 	pool := liteclient.NewConnectionPool()
 
-	switch config.RPCHost {
+	switch c.config.RPCHost {
 	case "":
 		return nil, fmt.Errorf("no client config set")
 	case "mock":
-		client.api = mock.NewMockApiClient()
+		c.api, err = getMockApi()
+		if err != nil {
+			return nil, err
+		}
 	case "mainnet", "testnet":
 		url := "https://ton.org/testnet-global.config.json"
 
-		if config.RPCHost == "mainnet" {
+		if c.config.RPCHost == "mainnet" {
 			url = "https://ton.org/global-config.json"
 		}
 
-		logger.Info().Str("url", url).Msg("get global config")
+		c.logger.Info().Str("url", url).Msg("get global config")
 
 		var cfg *liteclient.GlobalConfig
-		cfg, err = liteclient.GetConfigFromUrl(ctx, url)
+		cfg, err = liteclient.GetConfigFromUrl(c.ctx, url)
 		if err != nil {
-			logger.Err(err).Msg("fail to get network config")
+			c.logger.Err(err).Msg("fail to get network config")
 			return nil, err
 		}
 
 		// connect to mainnet lite servers
-		err = pool.AddConnectionsFromConfig(ctx, cfg)
+		err = pool.AddConnectionsFromConfig(c.ctx, cfg)
 		if err != nil {
-			logger.Err(err).Msg("fail to add connections to pool")
+			c.logger.Err(err).Msg("fail to add connections to pool")
 			return nil, err
 		}
 	default:
-		if config.Password == "" {
+		if c.config.Password == "" {
 			err = fmt.Errorf("liteserver key not set")
-			client.logger.Err(err).Msg("")
+			c.logger.Err(err).Msg("")
 			return nil, err
 		}
-		err = pool.AddConnection(ctx, config.RPCHost, config.Password)
+		err = pool.AddConnection(c.ctx, c.config.RPCHost, c.config.Password)
 		if err != nil {
-			logger.Err(err).Msg("fail to add client connection")
+			c.logger.Err(err).Msg("fail to add client connection")
 			return nil, err
 		}
 	}
 
-	client.tssKeyManager, err = tss.NewKeySign(server, bridge)
+	if c.config.RPCHost != "mock" {
+		// api client with full proof checks
+		policy := ton.ProofCheckPolicyFast
+		c.api = ton.NewAPIClient(pool, policy)
+	}
+
+	c.tssKeyManager, err = tss.NewKeySign(server, bridge)
 	if err != nil {
 		logger.Err(err).Msg("failed to create tss signer")
 		return nil, err
@@ -140,7 +149,7 @@ func NewTonClient(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get private key: %w", err)
 	}
-	client.k = priv
+	c.k = priv
 
 	pub, ok := priv.PubKey().(*cosmoscryptoed25519.PubKey)
 	if !ok {
@@ -153,60 +162,54 @@ func NewTonClient(
 
 	tonWallet.SetBounce(false)
 	tonWallet.SetTestnetOnly(common.IsMocknet)
-	client.localPubKey = tonWallet.String()
+	c.localPubKey = tonWallet.String()
 
 	var path string // if not set later, will in memory storage
-	if len(client.config.BlockScanner.DBPath) > 0 {
+	if len(c.config.BlockScanner.DBPath) > 0 {
 		path = fmt.Sprintf(
 			"%s/%s", config.BlockScanner.DBPath, config.BlockScanner.ChainID,
 		)
 	}
 
-	client.storage, err = blockscanner.NewBlockScannerStorage(
+	c.storage, err = blockscanner.NewBlockScannerStorage(
 		path,
-		client.config.ScannerLevelDB,
+		c.config.ScannerLevelDB,
 	)
 	if err != nil {
 		logger.Err(err).Msg("failed to create scan storage")
 		return nil, err
 	}
 
-	if config.RPCHost != "mock" {
-		// api client with full proof checks
-		policy := ton.ProofCheckPolicyFast
-		client.api = ton.NewAPIClient(pool, policy)
-	}
-
 	// only relevant for mocknet, test image starts with height < 0
 	var info *ton.BlockIDExt
-	info, err = client.api.GetMasterchainInfo(ctx)
+	info, err = c.api.GetMasterchainInfo(c.ctx)
 	if err != nil || info.SeqNo < 1 {
 		return nil, fmt.Errorf("failed to get master chain info: %w", err)
 	}
 
-	client.tonScanner, err = NewTonBlockScanner(
+	c.tonScanner, err = NewTonBlockScanner(
 		config.BlockScanner,
-		client.bridge,
-		client.api,
+		c.bridge,
+		c.api,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	client.blockScanner, err = blockscanner.NewBlockScanner(
-		client.config.BlockScanner,
-		client.storage,
+	c.blockScanner, err = blockscanner.NewBlockScanner(
+		c.config.BlockScanner,
+		c.storage,
 		metrics,
-		client.bridge,
-		client.tonScanner,
+		c.bridge,
+		c.tonScanner,
 	)
 	if err != nil {
 		logger.Err(err).Msg("failed to create block scanner")
 		return nil, err
 	}
 
-	client.signerCacheManager, err = signercache.NewSignerCacheManager(
-		client.storage.GetInternalDb(),
+	c.signerCacheManager, err = signercache.NewSignerCacheManager(
+		c.storage.GetInternalDb(),
 	)
 	if err != nil {
 		logger.Err(err).Msg("failed to create signer cache manager")
@@ -220,13 +223,13 @@ func NewTonClient(
 		return nil, err
 	}
 
-	client.walletCode, err = cell.FromBOC(data)
+	c.walletCode, err = cell.FromBOC(data)
 	if err != nil {
 		logger.Err(err).Msg("failed to decode BOC")
 		return nil, err
 	}
 
-	return &client, nil
+	return &c, nil
 }
 
 func (c *TonClient) GetAddress(poolPubKey common.PubKey) string {

@@ -235,8 +235,15 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 	var mu sync.Mutex
 	var eg errgroup.Group
 
+	// s.lastShards is updated inside the spawned go routines, so use
+	// lastShards to ensure correct seq no
+	lastShards := map[string]uint32{}
+	for k, v := range s.lastShards {
+		lastShards[k] = v
+	}
+
 	for _, shard := range shards {
-		shardSeqno, found := s.lastShards[shardId(shard)]
+		shardSeqno, found := lastShards[shardId(shard)]
 
 		if found {
 			shardSeqno++
@@ -393,6 +400,9 @@ func (s *TonBlockScanner) processShard(
 			if err != nil {
 				// possible by sending all funds from wallet
 				s.logger.Err(err).Msg("source account not found")
+
+				// assuming the account does not exist, exclude the address
+				// from being queried again for this shard
 				txLookBackCache[src.String()] = nil
 				continue
 			}
@@ -401,8 +411,11 @@ func (s *TonBlockScanner) processShard(
 			hash := acc.LastTxHash
 
 			txs, err = s.api.ListTransactions(s.ctx, src, extInLookback, lt, hash)
-			if err != nil {
+			if err != nil || len(txs) == 0 {
 				s.logger.Err(err).Msg("no transactions found for " + src.String())
+
+				// assuming there are no transactions, exclude the address
+				// from being queried again for this shard
 				txLookBackCache[src.String()] = nil
 				continue
 			}

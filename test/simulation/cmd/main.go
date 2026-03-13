@@ -148,6 +148,7 @@ func main() {
 
 		var data []byte
 		data, err = io.ReadAll(res.Body)
+		res.Body.Close()
 		if err != nil {
 			log.Error().Err(err).Msg("failed to read response body")
 			time.Sleep(duration)
