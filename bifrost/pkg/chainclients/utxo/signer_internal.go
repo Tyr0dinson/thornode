@@ -49,8 +49,7 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 
 // getAllUtxos will iterate unspend utxos for the given address and return the oldest
 // set of utxos that can cover the amount.
-func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount, includeDust ...bool) ([]btcjson.ListUnspentResult, error) {
-	sweepDust := len(includeDust) > 0 && includeDust[0]
+func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount, sweepDust bool) ([]btcjson.ListUnspentResult, error) {
 	// get all unspent utxos
 	addr, err := pubkey.GetAddress(c.cfg.ChainID)
 	if err != nil {
@@ -717,7 +716,7 @@ func (c *Client) consolidateUTXOs() {
 		}
 		// the amount used here doesn't matter , just to see whether there are more than 15 UTXO available or not
 		var utxos []btcjson.ListUnspentResult
-		utxos, err = c.getUtxoToSpend(vault.PubKey, 100000)
+		utxos, err = c.getUtxoToSpend(vault.PubKey, 100000, false)
 		if err != nil {
 			c.log.Err(err).Msg("fail to get utxos to spend")
 			continue
