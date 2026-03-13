@@ -179,7 +179,7 @@ require (
 	github.com/shamaton/msgpack/v2 v2.2.0 // indirect
 	github.com/tidwall/btree v1.7.0 // indirect
 	github.com/tyler-smith/go-bip32 v1.0.0 // indirect
-	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
+	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	gitlab.com/thorchain/tss/tss-lib-private.git/v3 v3.0.0-rc6 // indirect

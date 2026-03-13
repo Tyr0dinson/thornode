@@ -2,8 +2,7 @@ syntax = "proto3";
 package types;
 
 option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
-//option (gogoproto.goproto_stringer_all) = false;
-option (gogoproto.stringer_all)         = false;
+option (gogoproto.stringer_all) = false;
 option (gogoproto.goproto_getters_all) = false;
 
 import "gogoproto/gogo.proto";
@@ -13,5 +12,5 @@ import "common/common.proto";
 // that has been collected as transaction fees and is awaiting swap to RUNE.
 // Each entry is stored under a key derived from the asset identifier.
 message AltNativeFeeEscrow {
-  common.Coin balance = 1 [(gogoproto.nullable) = false];
+  common.Coin balance = 1 [ (gogoproto.nullable) = false ];
 }
