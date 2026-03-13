@@ -297,4 +297,65 @@ func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp.Valid, Equals, false)
 	c.Assert(resp.ValidationError, Equals, "high_target must be >= low_target")
+
+	baseReq := func() *types.QueryQuoteIntentRequest {
+		return &types.QueryQuoteIntentRequest{
+			FromAsset:   common.RuneNative.String(),
+			ToAsset:     common.BTCAsset.String(),
+			Amount:      "1000000000",
+			Destination: GetRandomBTCAddress().String(),
+			HighTarget:  "5000000",
+			LowTarget:   "4800000",
+		}
+	}
+
+	// Test: zero high target validation
+	req = baseReq()
+	req.HighTarget = "0"
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "high target cannot be zero")
+
+	// Test: zero low target validation
+	req = baseReq()
+	req.LowTarget = "0"
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "low target cannot be zero")
+
+	// Test: same source and target asset validation
+	req = baseReq()
+	req.ToAsset = req.FromAsset
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "source and target assets cannot be the same")
+
+	// Test: dust threshold validation
+	req = baseReq()
+	req.FromAsset = common.DOGEAsset.String()
+	req.Amount = "100000000" // DOGE dust threshold
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Matches, "source amount .* is below dust threshold .*")
+
+	// Test: affiliate_bps without affiliate validation
+	req = baseReq()
+	req.AffiliateBps = "1"
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "affiliate address cannot be empty while affiliate basis points is non-zero")
+
+	// Test: affiliate_bps max validation aligns with MsgIntentOpen.ValidateBasic
+	req = baseReq()
+	req.Affiliate = GetRandomTHORAddress().String()
+	req.AffiliateBps = "1001"
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "affiliate_bps 1001 exceeds maximum 1000")
 }

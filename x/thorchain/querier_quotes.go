@@ -1425,11 +1425,40 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		return nil, fmt.Errorf("bad low_target: %w", err)
 	}
 
+	if highTarget.IsZero() {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "high target cannot be zero",
+		}, nil
+	}
+	if lowTarget.IsZero() {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "low target cannot be zero",
+		}, nil
+	}
+
 	// Validate high >= low
 	if highTarget.LT(lowTarget) {
 		return &types.QueryQuoteIntentResponse{
 			Valid:           false,
 			ValidationError: "high_target must be >= low_target",
+		}, nil
+	}
+
+	// Match open-handler validation: source and target must differ.
+	if fromAsset.Equals(toAsset) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "source and target assets cannot be the same",
+		}, nil
+	}
+
+	dustThreshold := fromAsset.GetLayer1Asset().Chain.DustThreshold()
+	if !dustThreshold.IsZero() && amount.LTE(dustThreshold) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("source amount %s is below dust threshold %s for %s", amount, dustThreshold, fromAsset.GetLayer1Asset().Chain),
 		}, nil
 	}
 
@@ -1497,18 +1526,24 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		if err != nil {
 			return nil, fmt.Errorf("bad affiliate: %w", err)
 		}
-		if len(req.AffiliateBps) > 0 {
-			affiliateBps, err = cosmos.ParseUint(req.AffiliateBps)
-			if err != nil {
-				return nil, fmt.Errorf("bad affiliate_bps: %w", err)
-			}
-			if affiliateBps.GT(cosmos.NewUint(constants.MaxBasisPts)) {
-				return &types.QueryQuoteIntentResponse{
-					Valid:           false,
-					ValidationError: fmt.Sprintf("affiliate_bps %s exceeds maximum %d", affiliateBps, constants.MaxBasisPts),
-				}, nil
-			}
+	}
+	if len(req.AffiliateBps) > 0 {
+		affiliateBps, err = cosmos.ParseUint(req.AffiliateBps)
+		if err != nil {
+			return nil, fmt.Errorf("bad affiliate_bps: %w", err)
 		}
+		if affiliateBps.GT(cosmos.NewUint(types.MaxAffiliateFeeBasisPoints)) {
+			return &types.QueryQuoteIntentResponse{
+				Valid:           false,
+				ValidationError: fmt.Sprintf("affiliate_bps %s exceeds maximum %d", affiliateBps, types.MaxAffiliateFeeBasisPoints),
+			}, nil
+		}
+	}
+	if affiliateAddr.IsEmpty() && !affiliateBps.IsZero() {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "affiliate address cannot be empty while affiliate basis points is non-zero",
+		}, nil
 	}
 
 	// Get protocol config
