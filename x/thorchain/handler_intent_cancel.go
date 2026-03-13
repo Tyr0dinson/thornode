@@ -5,6 +5,7 @@ import (
 
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -79,14 +80,16 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 
 	// For non-native, non-pool, non-gas-asset sources, require gas tokens in the cancel tx.
 	if !intent.Source.Asset.IsNative() {
-		sourcePool, err := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+		var sourcePool Pool
+		sourcePool, err = h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
 		if err != nil {
 			return fmt.Errorf("fail to get pool for cancel gas check: %w", err)
 		}
 		hasActivePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 		if !hasActivePool && !intent.Source.Asset.IsGasAsset() {
 			chain := intent.Source.Asset.GetChain()
-			maxGasCoin, err := h.mgr.GasMgr().GetMaxGas(ctx, chain)
+			var maxGasCoin common.Coin
+			maxGasCoin, err = h.mgr.GasMgr().GetMaxGas(ctx, chain)
 			if err != nil {
 				return fmt.Errorf("fail to get max gas for %s: %w", chain, err)
 			}
