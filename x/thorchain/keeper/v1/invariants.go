@@ -575,7 +575,8 @@ func IntentInvariant(k KVStore) common.Invariant {
 					auction.IntentTxID, auction.Status.String()))
 			}
 
-			intent, err := k.GetIntent(ctx, auction.IntentTxID)
+			var intent Intent
+			intent, err = k.GetIntent(ctx, auction.IntentTxID)
 			if err != nil || intent.TxID.IsEmpty() {
 				broken = true
 				msg = append(msg, fmt.Sprintf("auction %s references non-existent intent", auction.IntentTxID))
@@ -616,7 +617,8 @@ func IntentInvariant(k KVStore) common.Invariant {
 			}
 
 			// Verify all bids on this auction have the correct asset
-			bids, err := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+			var bids []IntentAuctionBid
+			bids, err = k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
 			if err != nil {
 				broken = true
 				msg = append(msg, fmt.Sprintf("failed to get bids for auction %s: %s", auction.IntentTxID, err))
@@ -643,7 +645,8 @@ func IntentInvariant(k KVStore) common.Invariant {
 				continue
 			}
 
-			orphanedBids, err := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+			var orphanedBids []IntentAuctionBid
+			orphanedBids, err = k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
 			if err != nil {
 				broken = true
 				msg = append(msg, fmt.Sprintf("failed to get bids for non-active auction %s: %s", auction.IntentTxID, err))
