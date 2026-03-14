@@ -256,11 +256,11 @@ func NewClientConnection(
 }
 
 func (c *clientWrapper) release() {
+	defer c.mtx.Unlock()
 	err := c.conn.LocalStateQuery().Client.Release()
 	if err != nil {
 		c.logger.Err(err).Msg("failed to release client")
 	}
-	c.mtx.Unlock()
 }
 
 func (c *clientWrapper) client() *localstatequery.Client {

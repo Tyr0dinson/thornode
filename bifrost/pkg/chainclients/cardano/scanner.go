@@ -16,6 +16,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	types2 "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/helper"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -184,14 +185,22 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		s.globalErrataQueue <- errata
 	}
 
+	latestHeight, _, _, err := s.db.GetLastBlockId()
+	if err != nil {
+		return types.TxIn{}, err
+	}
+
+	// s.fetchTxs fails if fetchHeight is not indexed yet, which
+	// could be the case after a rollback, bail out early and
+	// wait until they are synced
+	if latestHeight < uint64(fetchHeight) {
+		return types.TxIn{}, types2.ErrUnavailableBlock
+	}
+
 	var allTxIns []*types.TxInItem
 
 	rollbackHeight := s.rollbackHeight.Load()
 	if rollbackHeight > 0 {
-		latestHeight, _, _, err := s.db.GetLastBlockId()
-		if err != nil {
-			return types.TxIn{}, err
-		}
 
 		s.logger.Info().
 			Int64("rollback_height", rollbackHeight).
@@ -288,7 +297,9 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 
 		// only tx with exactly one VKey are supported
 		if len(tx.Witnesses().Vkey()) != 1 {
-			s.logger.Warn().Msg("tx with multiple witnesses are not supported")
+			s.logger.Warn().
+				Str("txid", tx.Hash().String()).
+				Msg("tx with multiple witnesses are not supported")
 			continue
 		}
 
