@@ -360,6 +360,148 @@ func (s *HelperSuite) TestAddGasFees(c *C) {
 	}
 }
 
+func (s *HelperSuite) TestSettleIntentPrepaidGas(c *C) {
+	helper := newAddGasFeeTestHelper(c)
+
+	// Create a cancelled intent with prepaid gas
+	intentTxID := GetRandomTxHash()
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+	userAddr := GetRandomETHAddress()
+	intent := Intent{
+		TxID:          intentTxID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(erc20Asset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		ExpiryHeight:  helper.ctx.BlockHeight() + 1000,
+		Status:        IntentCancelled,
+	}
+	helper.mgr.Keeper().SetIntent(helper.ctx, intent)
+
+	// Record prepaid gas (50000 wei ETH, more than the 10000 gas spent)
+	prepaidAmount := cosmos.NewUint(50000)
+	helper.mgr.Keeper().SetIntentPrepaidGas(helper.ctx, intentTxID,
+		common.NewCoin(common.ETHAsset, prepaidAmount))
+
+	// Simulate the refund outbound observation with REFUND:<intentTxID> memo
+	tx := ObservedTx{
+		Tx: common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.ETHChain,
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   userAddr,
+			Coins: common.Coins{
+				common.NewCoin(erc20Asset, cosmos.NewUint(100*common.One)),
+			},
+			Gas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(10000)),
+			},
+			Memo: "REFUND:" + intentTxID.String(),
+		},
+		Status:         common.Status_done,
+		BlockHeight:    helper.ctx.BlockHeight(),
+		Signers:        []string{helper.na.NodeAddress.String()},
+		ObservedPubKey: helper.na.PubKeySet.Secp256k1,
+	}
+
+	err := addGasFees(helper.ctx, helper.mgr, tx)
+	c.Assert(err, IsNil)
+
+	// Gas manager should have NO gas recorded (reimbursement was skipped)
+	c.Check(helper.mgr.GasMgr().GetGas(), HasLen, 0,
+		Commentf("user-funded gas should skip reserve reimbursement, but gas was recorded"))
+
+	// Prepaid gas record should be consumed (deleted)
+	postPrepaid, err := helper.mgr.Keeper().GetIntentPrepaidGas(helper.ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(postPrepaid.IsEmpty(), Equals, true,
+		Commentf("prepaid gas record should be consumed after settlement"))
+}
+
+func (s *HelperSuite) TestSettleIntentPrepaidGas_NoPrepaidGas(c *C) {
+	helper := newAddGasFeeTestHelper(c)
+
+	// Normal outbound without prepaid gas should still be reimbursed
+	tx := ObservedTx{
+		Tx: common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.ETHChain,
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   GetRandomETHAddress(),
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
+			},
+			Gas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(10000)),
+			},
+			Memo: "REFUND:" + GetRandomTxHash().String(),
+		},
+		Status:         common.Status_done,
+		BlockHeight:    helper.ctx.BlockHeight(),
+		Signers:        []string{helper.na.NodeAddress.String()},
+		ObservedPubKey: helper.na.PubKeySet.Secp256k1,
+	}
+
+	err := addGasFees(helper.ctx, helper.mgr, tx)
+	c.Assert(err, IsNil)
+
+	// Gas manager SHOULD have gas recorded (normal reimbursement path)
+	c.Check(helper.mgr.GasMgr().GetGas(), HasLen, 1,
+		Commentf("non-prepaid outbound should use normal reimbursement"))
+}
+
+func (s *HelperSuite) TestIsUserFundedIntentRefund(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+	intentTxID := GetRandomTxHash()
+
+	// No intent exists → false
+	c.Check(isUserFundedIntentRefund(ctx, mgr, "REFUND:"+intentTxID.String()), Equals, false)
+
+	// Create a cancelled intent with a non-pool, non-native, non-gas source
+	intent := Intent{
+		TxID:          intentTxID,
+		SourceAddress: GetRandomETHAddress(),
+		Source:        common.NewCoin(erc20Asset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		ExpiryHeight:  ctx.BlockHeight() + 1000,
+		Status:        IntentCancelled,
+	}
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	// Cancelled intent with non-pool ERC20 source → true
+	c.Check(isUserFundedIntentRefund(ctx, mgr, "REFUND:"+intentTxID.String()), Equals, true)
+
+	// Not a REFUND memo → false
+	c.Check(isUserFundedIntentRefund(ctx, mgr, "OUT:"+intentTxID.String()), Equals, false)
+
+	// Active intent (not cancelled) → false
+	intent.Status = IntentActive
+	mgr.Keeper().SetIntent(ctx, intent)
+	c.Check(isUserFundedIntentRefund(ctx, mgr, "REFUND:"+intentTxID.String()), Equals, false)
+
+	// Gas asset source → false
+	intent.Status = IntentCancelled
+	intent.Source = common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))
+	mgr.Keeper().SetIntent(ctx, intent)
+	c.Check(isUserFundedIntentRefund(ctx, mgr, "REFUND:"+intentTxID.String()), Equals, false)
+
+	// Pool-backed source → false
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	intent.Source = common.NewCoin(erc20Asset, cosmos.NewUint(100*common.One))
+	mgr.Keeper().SetIntent(ctx, intent)
+	// ERC20 with no pool still returns true (ETH pool doesn't matter for ERC20)
+	c.Check(isUserFundedIntentRefund(ctx, mgr, "REFUND:"+intentTxID.String()), Equals, true)
+}
+
 func (s *HelperSuite) TestEmitPoolStageCostEvent(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	emitPoolBalanceChangedEvent(ctx,

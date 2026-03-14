@@ -509,6 +509,62 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetSucceedsWithGas(c *
 	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentCancelled)
+
+	// Verify prepaid gas was recorded in the keeper
+	prepaidGas, err := w.keeper.GetIntentPrepaidGas(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(prepaidGas.Asset.Equals(common.ETHAsset), Equals, true,
+		Commentf("prepaid gas asset should be ETH, got %s", prepaidGas.Asset))
+	c.Check(prepaidGas.Amount.Equal(cosmos.NewUint(37500)), Equals, true,
+		Commentf("prepaid gas amount should be 37500, got %s", prepaidGas.Amount))
+}
+
+func (HandlerIntentCancelSuite) TestIntentCancel_PoolAssetNoPrepaidGas(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Create a pool for DOGE (Available pool = no prepaid gas needed)
+	pool := NewPool()
+	pool.Asset = common.DOGEAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	// Create an active vault
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.DOGEChain}.Strings(), []ChainContract{})
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.DOGEAsset, cosmos.NewUint(200*common.One))))
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomTHORAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentCancelHandler(mgr)
+
+	cancelTx := GetRandomTx()
+	cancelTx.FromAddress = userAddr
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, IsNil)
+
+	// Pool-backed assets should NOT have prepaid gas recorded
+	prepaidGas, err := w.keeper.GetIntentPrepaidGas(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(prepaidGas.IsEmpty(), Equals, true,
+		Commentf("pool-backed assets should not record prepaid gas, got %s", prepaidGas))
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_GasAssetNoPoolSkipsGasCheck(c *C) {

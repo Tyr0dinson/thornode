@@ -79,6 +79,8 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	}
 
 	// For non-native, non-pool, non-gas-asset sources, require gas tokens in the cancel tx.
+	// The user-provided gas is recorded as "prepaid gas" so that downstream gas accounting
+	// skips reserve reimbursement and settles any leftover explicitly.
 	if !intent.Source.Asset.IsNative() {
 		var sourcePool Pool
 		sourcePool, err = h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
@@ -106,6 +108,11 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 					maxGasCoin.Amount, gasAsset, gasFromCancel,
 				)
 			}
+
+			// Record the user-funded gas so the outbound observation path can
+			// skip pool reimbursement and settle any leftover.
+			h.mgr.Keeper().SetIntentPrepaidGas(ctx, intent.TxID,
+				common.NewCoin(gasAsset, gasFromCancel))
 		}
 	}
 
