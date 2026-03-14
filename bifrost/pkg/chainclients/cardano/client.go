@@ -306,7 +306,7 @@ func (c *Client) getUtxosByAddress(
 		if err != nil {
 			c.logger.Err(err).
 				Uint64("height", height.Uint64()).
-				Msg("failed to get block id for height, falling back to tip")
+				Msg("failed to get block id for height")
 			return nil, err
 		}
 
@@ -588,7 +588,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 	}
 	err = c.storage.SetSpentUtxos(spentUtxos, uint64(currentHeight))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to set spent utxos")
+		return nil, nil, nil, fmt.Errorf("failed to set spent utxos: %w", err)
 	}
 
 	amount := tx.Body.TxOutputs[0].Amount()

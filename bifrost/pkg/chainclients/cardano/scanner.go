@@ -22,6 +22,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type Scanner struct {
@@ -181,8 +182,16 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	s.errataBlocks = nil
 	s.errataMtx.Unlock()
 
-	for _, errata := range errataBlocks {
-		s.globalErrataQueue <- errata
+	for i, errata := range errataBlocks {
+		select {
+		case s.globalErrataQueue <- errata:
+		case <-time.After(constants.ThorchainBlockTime):
+			s.errataMtx.Lock()
+			s.errataBlocks = append(errataBlocks[i:], s.errataBlocks...)
+			s.errataMtx.Unlock()
+
+			return types.TxIn{}, fmt.Errorf("timeout sending errata to THORChain")
+		}
 	}
 
 	latestHeight, _, _, err := s.db.GetLastBlockId()
@@ -471,11 +480,17 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 	}
 	s.networkFee.Store(roundedFeeRate)
 
-	s.globalNetworkFeeQueue <- common.NetworkFee{
+	networkFee := common.NetworkFee{
 		Chain:           common.ADAChain,
 		Height:          height,
 		TransactionSize: 1,
 		TransactionRate: roundedFeeRate,
+	}
+
+	select {
+	case s.globalNetworkFeeQueue <- networkFee:
+	case <-time.After(constants.ThorchainBlockTime):
+		return fmt.Errorf("timeout sending network fee to THORChain")
 	}
 
 	s.logger.Info().

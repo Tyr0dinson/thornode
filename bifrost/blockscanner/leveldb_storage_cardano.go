@@ -156,7 +156,7 @@ func (s *LevelDBScannerStorageCardano) PruneBlockIds(height uint64) error {
 	)
 	defer iterator.Release()
 
-	for ; iterator.Next(); iterator.Valid() {
+	for iterator.Next() {
 		if iterator.Key() == nil {
 			continue
 		}
@@ -300,7 +300,7 @@ func (s *LevelDBScannerStorageCardano) getPruneCandidates(height uint64, key str
 	)
 	defer iterator.Release()
 
-	for ; iterator.Next(); iterator.Valid() {
+	for iterator.Next() {
 		bz := iterator.Value()
 		if len(bz) == 0 {
 			continue

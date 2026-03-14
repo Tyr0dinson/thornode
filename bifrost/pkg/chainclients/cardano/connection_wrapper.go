@@ -301,7 +301,7 @@ func (c *clientWrapper) GetUTxOByAddress(
 	if point != nil {
 		err := client.Acquire(point)
 		if err != nil {
-			c.release()
+			c.mtx.Unlock()
 			c.logger.Err(err).Msg("failed to acquire point")
 			return nil, err
 		}
@@ -321,7 +321,7 @@ func (c *clientWrapper) GetUTxOByTxIn(
 	if point != nil {
 		err := client.Acquire(point)
 		if err != nil {
-			c.release()
+			c.mtx.Unlock()
 			c.logger.Err(err).Msg("failed to acquire point")
 			return nil, err
 		}

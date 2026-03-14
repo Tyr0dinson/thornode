@@ -272,7 +272,6 @@ func calculateFee(
 		return 0, fmt.Errorf("transaction too large")
 	}
 
-	// add 5 byte for rounding issues or change of fee value
 	fee := uint64(len(encoded))*minFeeA + minFeeB + extraFeeBuffer*minFeeA
 
 	if fee > maxFee {

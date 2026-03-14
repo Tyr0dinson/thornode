@@ -47,18 +47,20 @@ func (h *Helper) UpdateAsgardAddresses() error {
 		return err
 	}
 
-	// ensure we don't overwrite with empty list
-	if len(addresses) > 0 {
-		h.asgardMtx.Lock()
-		defer h.asgardMtx.Unlock()
-
-		h.asgardAddresses = make(map[string]bool)
-		for _, address := range addresses {
-			h.asgardAddresses[address.String()] = true
-		}
-
-		h.asgardTimestamp = time.Now()
+	if len(addresses) == 0 {
+		return nil
 	}
+
+	asgardAddresses := make(map[string]bool)
+	for _, address := range addresses {
+		asgardAddresses[address.String()] = true
+	}
+
+	h.asgardMtx.Lock()
+	defer h.asgardMtx.Unlock()
+
+	h.asgardAddresses = asgardAddresses
+	h.asgardTimestamp = time.Now()
 
 	return nil
 }
