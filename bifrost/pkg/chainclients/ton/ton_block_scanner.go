@@ -256,9 +256,9 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 			sh := shard.Copy()
 			sh.SeqNo = shardSeqno
 			eg.Go(func() error {
-				newTxInItems, err := s.processShard(sh)
-				if err != nil {
-					return fmt.Errorf("failed to process shard %d: %w", sh.SeqNo, err)
+				newTxInItems, shardErr := s.processShard(sh)
+				if shardErr != nil {
+					return fmt.Errorf("failed to process shard %d: %w", sh.SeqNo, shardErr)
 				}
 				if len(newTxInItems) == 0 {
 					return nil
