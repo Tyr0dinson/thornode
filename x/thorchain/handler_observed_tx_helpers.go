@@ -563,7 +563,8 @@ func correctOutboundGas(ctx cosmos.Context, mgr Manager, consensusTx common.Obse
 	}
 
 	// If more gas was spent, add the delta to the gas manager for reserve reimbursement,
-	// skipping reimbursement for inactive vaults and during ragnarok (matching addGasFees behavior).
+	// skipping reimbursement for inactive vaults, during ragnarok, and for user-funded
+	// intent cancel outbounds (matching addGasFees behavior).
 	if !additionalGas.IsEmpty() {
 		if vault.Status == InactiveVault {
 			return
@@ -573,6 +574,13 @@ func correctOutboundGas(ctx cosmos.Context, mgr Manager, consensusTx common.Obse
 			if !correctedTx.Tx.Coins.GetCoin(gasAsset).IsEmpty() {
 				return
 			}
+		}
+		// Skip reimbursement for user-funded intent cancel refund outbounds.
+		// The prepaid gas record may already be consumed by addGasFees, so check
+		// whether the intent itself was cancelled (which implies user-funded gas
+		// for non-pool assets).
+		if isUserFundedIntentRefund(ctx, mgr, correctedTx.Tx.Memo) {
+			return
 		}
 		outAsset := common.EmptyAsset
 		if len(correctedTx.Tx.Coins) != 0 {

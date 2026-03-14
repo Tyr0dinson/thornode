@@ -469,6 +469,13 @@ func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 		}
 	}
 
+	// If this outbound is a refund for an intent with user-prepaid gas,
+	// skip reserve reimbursement — the user funded the gas, not the pool.
+	// Settle any leftover (prepaid − actual) explicitly.
+	if settled := settleIntentPrepaidGas(ctx, mgr, tx); settled {
+		return nil
+	}
+
 	// Add the gas to the gas manager to be reimbursed by the Reserve.
 	outAsset := common.EmptyAsset
 	if len(tx.Tx.Coins) != 0 {
@@ -477,6 +484,126 @@ func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	}
 	mgr.GasMgr().AddGasAsset(outAsset, tx.Tx.Gas, true)
 	return nil
+}
+
+// settleIntentPrepaidGas checks whether the observed outbound is for an intent
+// whose cancel transaction included user-funded gas. If so, it skips reserve
+// reimbursement and handles any leftover (prepaid − actual_gas_spent):
+//   - leftover >= dust threshold → schedule a gas-asset refund back to the user
+//   - leftover < dust threshold  → leave in the vault (similar to unrefundableCoinCleanup)
+//
+// Returns true if the outbound was settled as user-funded, false otherwise.
+func settleIntentPrepaidGas(ctx cosmos.Context, mgr Manager, tx ObservedTx) bool {
+	// Parse the outbound memo to extract the originating TxID.
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
+	if err != nil || !memo.IsType(TxRefund) {
+		return false
+	}
+	intentTxID := memo.GetTxID()
+	if intentTxID.IsEmpty() {
+		return false
+	}
+
+	// Check if there is prepaid gas recorded for this intent.
+	prepaid, err := mgr.Keeper().GetIntentPrepaidGas(ctx, intentTxID)
+	if err != nil {
+		ctx.Logger().Error("fail to get intent prepaid gas", "txid", intentTxID, "error", err)
+		return false
+	}
+	if prepaid.IsEmpty() || prepaid.Amount.IsZero() {
+		return false
+	}
+
+	// Consume the prepaid gas record — it's a one-time settlement.
+	mgr.Keeper().DeleteIntentPrepaidGas(ctx, intentTxID)
+
+	// Calculate actual gas spent for the prepaid asset.
+	actualGas := tx.Tx.Gas.ToCoins().GetCoin(prepaid.Asset).Amount
+
+	ctx.Logger().Info("settling intent prepaid gas",
+		"intent_txid", intentTxID,
+		"prepaid", prepaid,
+		"actual_gas", actualGas,
+	)
+
+	// If prepaid > actual, there is leftover sitting in the vault.
+	if prepaid.Amount.GT(actualGas) {
+		leftover := common.SafeSub(prepaid.Amount, actualGas)
+
+		// Only send a refund if the leftover justifies the cost of another outbound.
+		// Use the chain's max gas as the dust threshold.
+		chain := prepaid.Asset.GetChain()
+		dustCoin, dustErr := mgr.GasMgr().GetMaxGas(ctx, chain)
+		if dustErr != nil {
+			ctx.Logger().Error("fail to get max gas for leftover dust check", "chain", chain, "error", dustErr)
+			// Can't determine dust threshold — leave leftover in vault.
+			return true
+		}
+
+		if leftover.GT(dustCoin.Amount) {
+			// Look up the intent to get the source address for the refund.
+			intent, intentErr := mgr.Keeper().GetIntent(ctx, intentTxID)
+			if intentErr != nil {
+				ctx.Logger().Error("fail to get intent for leftover gas refund", "txid", intentTxID, "error", intentErr)
+				return true
+			}
+
+			toi := TxOutItem{
+				Chain:     chain,
+				ToAddress: intent.SourceAddress,
+				Coin:      common.NewCoin(prepaid.Asset, leftover),
+				Memo:      fmt.Sprintf("REFUND:%s", intentTxID),
+				InHash:    intentTxID,
+			}
+			ok, addErr := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+			if addErr != nil || !ok {
+				ctx.Logger().Error("fail to refund leftover prepaid gas, leaving in vault",
+					"intent_txid", intentTxID, "leftover", leftover, "error", addErr)
+			} else {
+				ctx.Logger().Info("scheduled leftover prepaid gas refund",
+					"intent_txid", intentTxID, "amount", leftover, "asset", prepaid.Asset)
+			}
+		} else {
+			ctx.Logger().Info("leftover prepaid gas below dust threshold, leaving in vault",
+				"intent_txid", intentTxID, "leftover", leftover, "dust", dustCoin.Amount)
+		}
+	}
+
+	return true
+}
+
+// isUserFundedIntentRefund returns true if the given memo corresponds to a
+// REFUND outbound for a cancelled intent that had user-prepaid gas. This is
+// used by the gas correction path (reorgs) to also skip reserve reimbursement.
+func isUserFundedIntentRefund(ctx cosmos.Context, mgr Manager, memoStr string) bool {
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), memoStr)
+	if err != nil || !memo.IsType(TxRefund) {
+		return false
+	}
+	txID := memo.GetTxID()
+	if txID.IsEmpty() {
+		return false
+	}
+	if !mgr.Keeper().IntentExists(ctx, txID) {
+		return false
+	}
+	intent, err := mgr.Keeper().GetIntent(ctx, txID)
+	if err != nil {
+		return false
+	}
+	// A cancelled intent with a non-native, non-pool, non-gas source asset
+	// implies user-funded gas was used for the refund outbound.
+	if intent.Status != IntentCancelled {
+		return false
+	}
+	if intent.Source.Asset.IsNative() || intent.Source.Asset.IsGasAsset() {
+		return false
+	}
+	pool, err := mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+	if err != nil {
+		return false
+	}
+	return pool.IsEmpty() || pool.Status != PoolAvailable
 }
 
 func emitPoolBalanceChangedEvent(ctx cosmos.Context, poolMod PoolMod, reason string, mgr Manager) {
