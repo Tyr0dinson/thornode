@@ -75,6 +75,7 @@ func init() {
 		IntentAuctionMaxOvertimeBlocks:      10, // very short for testing
 		IntentMaxSolvesPerIntent:            100,
 		IntentMaxEndBlockProcessing:         100,
+		IntentPostExpiryCancelBlocks:        5, // very short for testing
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,

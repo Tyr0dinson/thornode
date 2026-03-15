@@ -575,13 +575,6 @@ func correctOutboundGas(ctx cosmos.Context, mgr Manager, consensusTx common.Obse
 				return
 			}
 		}
-		// Skip reimbursement for user-funded intent cancel refund outbounds.
-		// The prepaid gas record may already be consumed by addGasFees, so check
-		// whether the intent itself was cancelled (which implies user-funded gas
-		// for non-pool assets).
-		if isUserFundedIntentRefund(ctx, mgr, correctedTx.Tx.Memo) {
-			return
-		}
 		outAsset := common.EmptyAsset
 		if len(correctedTx.Tx.Coins) != 0 {
 			outAsset = correctedTx.Tx.Coins[0].Asset

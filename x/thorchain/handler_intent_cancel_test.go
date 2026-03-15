@@ -510,19 +510,19 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetSucceedsWithGas(c *
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentCancelled)
 
-	// Verify prepaid gas was recorded in the keeper
-	prepaidGas, err := w.keeper.GetIntentPrepaidGas(w.ctx, intentTx.ID)
+	// Verify the gas was booked into the ETH pool (pool balance increased)
+	updatedPool, err := w.keeper.GetPool(w.ctx, common.ETHAsset)
 	c.Assert(err, IsNil)
-	c.Check(prepaidGas.Asset.Equals(common.ETHAsset), Equals, true,
-		Commentf("prepaid gas asset should be ETH, got %s", prepaidGas.Asset))
-	c.Check(prepaidGas.Amount.Equal(cosmos.NewUint(37500)), Equals, true,
-		Commentf("prepaid gas amount should be 37500, got %s", prepaidGas.Amount))
+	c.Check(updatedPool.BalanceAsset.GT(ethPool.BalanceAsset), Equals, true,
+		Commentf("ETH pool asset balance should have increased after booking cancel gas"))
+	c.Check(updatedPool.BalanceRune.LT(ethPool.BalanceRune), Equals, true,
+		Commentf("ETH pool RUNE balance should have decreased after booking cancel gas"))
 }
 
-func (HandlerIntentCancelSuite) TestIntentCancel_PoolAssetNoPrepaidGas(c *C) {
+func (HandlerIntentCancelSuite) TestIntentCancel_PoolAssetNoGasBooking(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
-	// Create a pool for DOGE (Available pool = no prepaid gas needed)
+	// Create a pool for DOGE (Available pool = gas booking not needed)
 	pool := NewPool()
 	pool.Asset = common.DOGEAsset
 	pool.Status = PoolAvailable
@@ -560,11 +560,11 @@ func (HandlerIntentCancelSuite) TestIntentCancel_PoolAssetNoPrepaidGas(c *C) {
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
-	// Pool-backed assets should NOT have prepaid gas recorded
-	prepaidGas, err := w.keeper.GetIntentPrepaidGas(w.ctx, intentTx.ID)
+	// Pool-backed assets should NOT have gas booked (pool balance unchanged)
+	updatedPool, err := w.keeper.GetPool(w.ctx, common.DOGEAsset)
 	c.Assert(err, IsNil)
-	c.Check(prepaidGas.IsEmpty(), Equals, true,
-		Commentf("pool-backed assets should not record prepaid gas, got %s", prepaidGas))
+	c.Check(updatedPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true,
+		Commentf("pool-backed cancel should not book gas into pool"))
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_GasAssetNoPoolSkipsGasCheck(c *C) {

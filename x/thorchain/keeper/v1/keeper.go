@@ -113,7 +113,6 @@ const (
 	prefixIntentAuctionBidByAuction types.DbPrefix = "intaucba/"
 	prefixIntentAuctionBidByBidder  types.DbPrefix = "intaucbb/"
 	prefixActiveAuctionIndex        types.DbPrefix = "intaucst/"
-	prefixIntentPrepaidGas          types.DbPrefix = "intpg/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {

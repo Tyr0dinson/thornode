@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -127,6 +128,7 @@ func (s *IntentMgrTestSuite) TestExpireIntent_RefundNativeAsset(c *C) {
 }
 
 // TestExpireIntent_AuctionNoPoolAsset tests that an intent with no L1 pool goes to auction
+// after the post-expiry cancel window has elapsed.
 func (s *IntentMgrTestSuite) TestExpireIntent_AuctionNoPoolAsset(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
@@ -134,6 +136,11 @@ func (s *IntentMgrTestSuite) TestExpireIntent_AuctionNoPoolAsset(c *C) {
 	// Use a made-up asset that doesn't exist
 	noPoolAsset, err := common.NewAsset("UNKNOWN.NOPOOL")
 	c.Assert(err, IsNil)
+
+	// Set the expiry far enough in the past that the post-expiry cancel window
+	// has elapsed (mocknet default is 5 blocks).
+	cancelWindow := w.keeper.GetConfigInt64(w.ctx, constants.IntentPostExpiryCancelBlocks)
+	expiryHeight := w.ctx.BlockHeight() - cancelWindow - 1
 
 	intentTx := GetRandomTx()
 	userAddr := GetRandomBTCAddress()
@@ -145,7 +152,7 @@ func (s *IntentMgrTestSuite) TestExpireIntent_AuctionNoPoolAsset(c *C) {
 		TargetAddress: GetRandomBTCAddress(),
 		HighTarget:    cosmos.NewUint(2 * common.One),
 		LowTarget:     cosmos.NewUint(1 * common.One),
-		ExpiryHeight:  w.ctx.BlockHeight() - 1, // Already expired
+		ExpiryHeight:  expiryHeight,
 		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
@@ -154,7 +161,7 @@ func (s *IntentMgrTestSuite) TestExpireIntent_AuctionNoPoolAsset(c *C) {
 	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
 	c.Assert(ok, Equals, true)
 
-	// Call expireIntent
+	// Call expireIntent — cancel window has passed, should go to auction
 	err = intentMgr.expireIntent(w.ctx, intent)
 	c.Assert(err, IsNil)
 
@@ -167,6 +174,42 @@ func (s *IntentMgrTestSuite) TestExpireIntent_AuctionNoPoolAsset(c *C) {
 	auction, err := w.keeper.GetIntentAuction(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(auction.Status, Equals, IntentAuctionStatus_AuctionActive)
+}
+
+// TestExpireIntent_CancelWindowDefersAuction tests that a freshly-expired
+// non-pool intent stays active during the post-expiry cancel window.
+func (s *IntentMgrTestSuite) TestExpireIntent_CancelWindowDefersAuction(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	noPoolAsset, err := common.NewAsset("UNKNOWN.NOPOOL")
+	c.Assert(err, IsNil)
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(noPoolAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - 1, // Just expired
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	// Call expireIntent — within cancel window, should defer auction
+	err = intentMgr.expireIntent(w.ctx, intent)
+	c.Assert(err, IsNil)
+
+	// Verify intent is STILL active (not yet auctioning)
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
 }
 
 // TestExpireIntent_RefundTradeAsset tests that a trade asset is refunded directly
