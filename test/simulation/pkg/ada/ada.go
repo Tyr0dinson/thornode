@@ -40,7 +40,7 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 	var err error
 	c.n2c, err = cardano.NewClientConnection(c.logger, n2cAddress)
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to create ouroboros connection")
+		return nil, fmt.Errorf("fail to create ouroboros connection: %w", err)
 	}
 
 	// fetch network protocol parameters, needed for tx signing

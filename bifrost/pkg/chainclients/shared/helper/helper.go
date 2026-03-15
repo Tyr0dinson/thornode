@@ -68,7 +68,7 @@ func (h *Helper) UpdateAsgardAddresses() error {
 func (h *Helper) IsAsgardAddress(address string) bool {
 	err := h.UpdateAsgardAddresses()
 	if err != nil {
-		h.logger.Err(err).Msg("failed to get asgard addresses")
+		h.logger.Warn().Err(err).Msg("failed to get asgard addresses")
 		return false
 	}
 

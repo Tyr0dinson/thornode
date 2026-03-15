@@ -161,6 +161,8 @@ func (c *wrapper) close() {
 	if err != nil {
 		c.logger.Error().Err(err).Msg("failed to close ouroboros connection")
 	}
+
+	c.conn = nil
 }
 
 //  node

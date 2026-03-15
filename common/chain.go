@@ -368,7 +368,7 @@ func (c Chain) DustThreshold() cosmos.Uint {
 	case SUIChain:
 		return cosmos.NewUint(1_000_000)
 	case ADAChain:
-		return cosmos.NewUint(2_000_000)
+		return cosmos.NewUint(One)
 	default:
 		return cosmos.ZeroUint()
 	}
