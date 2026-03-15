@@ -167,6 +167,7 @@ func NewConstantValue() *ConstantVals {
 			IntentAuctionMaxOvertimeBlocks:      7200,               // max total overtime extension in blocks (~12 hours at 6 second blocks)
 			IntentMaxSolvesPerIntent:            100,                // maximum number of solve bids per intent
 			IntentMaxEndBlockProcessing:         100,                // max intents/auctions to process per EndBlock
+			IntentPostExpiryCancelBlocks:        3600,               // post-expiry owner-cancel window (~6 hours at 6 second blocks)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

@@ -79,8 +79,8 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	}
 
 	// For non-native, non-pool, non-gas-asset sources, require gas tokens in the cancel tx.
-	// The user-provided gas is recorded as "prepaid gas" so that downstream gas accounting
-	// skips reserve reimbursement and settles any leftover explicitly.
+	// The user-provided gas is booked into the chain gas pool immediately (similar to
+	// processWinningBid), so the standard outbound gas reimbursement path works unchanged.
 	if !intent.Source.Asset.IsNative() {
 		var sourcePool Pool
 		sourcePool, err = h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
@@ -109,10 +109,33 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 				)
 			}
 
-			// Record the user-funded gas so the outbound observation path can
-			// skip pool reimbursement and settle any leftover.
-			h.mgr.Keeper().SetIntentPrepaidGas(ctx, intent.TxID,
-				common.NewCoin(gasAsset, gasFromCancel))
+			// Cap retained gas at 3x MaxGas. If the user overpaid, refund the excess
+			// immediately so they recover the obvious surplus.
+			retainCap := maxGasCoin.Amount.MulUint64(3)
+			retained := gasFromCancel
+			if gasFromCancel.GT(retainCap) {
+				excess := common.SafeSub(gasFromCancel, retainCap)
+				retained = retainCap
+
+				excessToi := TxOutItem{
+					Chain:     chain,
+					ToAddress: intent.SourceAddress,
+					Coin:      common.NewCoin(gasAsset, excess),
+					Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
+					InHash:    intent.TxID,
+				}
+				if excessOk, excessErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, excessToi, cosmos.ZeroUint()); excessErr != nil || !excessOk {
+					ctx.Logger().Error("fail to refund excess cancel gas, leaving in vault",
+						"intent_txid", intent.TxID, "excess", excess, "error", excessErr)
+				}
+			}
+
+			// Book the retained gas into the chain gas pool and convert to RUNE for
+			// reserve. After this, the pool has been credited, so the normal observed-
+			// outbound gas path can charge it without any special-casing.
+			if bookErr := bookCancelGasToPool(ctx, h.mgr, intent.TxID, gasAsset, retained); bookErr != nil {
+				return fmt.Errorf("fail to book cancel gas to pool: %w", bookErr)
+			}
 		}
 	}
 
@@ -183,6 +206,79 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 		return fmt.Errorf("fail to emit intent cancel event: %w", err)
 	}
+
+	return nil
+}
+
+// bookCancelGasToPool adds the retained cancel gas into the chain's gas pool
+// and converts its value to RUNE for the reserve, using a direct pool swap
+// (same pattern as processWinningBid). After this, the pool has been credited
+// so the normal outbound gas reimbursement path can charge it unchanged.
+func bookCancelGasToPool(ctx cosmos.Context, mgr Manager, intentTxID common.TxID, gasAsset common.Asset, amount cosmos.Uint) error {
+	gasPool, err := mgr.Keeper().GetPool(ctx, gasAsset)
+	if err != nil {
+		return fmt.Errorf("fail to get gas pool %s: %w", gasAsset, err)
+	}
+	if gasPool.IsEmpty() {
+		return fmt.Errorf("no gas pool for %s", gasAsset)
+	}
+
+	swapper, err := GetSwapper(mgr.Keeper().GetVersion())
+	if err != nil {
+		return fmt.Errorf("fail to get swapper: %w", err)
+	}
+
+	// Calculate swap: gas asset → RUNE
+	X := gasPool.BalanceAsset
+	x := amount
+	Y := gasPool.BalanceRune
+
+	slipBps := swapper.CalcSwapSlip(X, x)
+	minSlipBps := cosmos.ZeroUint()
+	emitRune, liquidityFee, _ := swapper.GetSwapCalc(X, x, Y, slipBps, minSlipBps)
+
+	if emitRune.GTE(Y) {
+		return fmt.Errorf("not enough RUNE in gas pool for cancel gas booking")
+	}
+
+	// Update pool balances directly
+	gasPool.BalanceAsset = gasPool.BalanceAsset.Add(x)
+	gasPool.BalanceRune = common.SafeSub(gasPool.BalanceRune, emitRune)
+
+	if err := mgr.Keeper().SetPool(ctx, gasPool); err != nil {
+		return fmt.Errorf("fail to save gas pool after cancel gas booking: %w", err)
+	}
+
+	// Transfer emitted RUNE from Asgard to Reserve
+	if err := mgr.Keeper().AddPoolFeeToReserve(ctx, emitRune); err != nil {
+		return fmt.Errorf("fail to add cancel gas RUNE to reserve: %w", err)
+	}
+
+	// Emit swap event for the direct swap
+	swapEvt := NewEventSwap(
+		gasPool.Asset,
+		cosmos.ZeroUint(),
+		slipBps,
+		liquidityFee,
+		cosmos.ZeroUint(),
+		common.Tx{
+			ID:    intentTxID,
+			Chain: common.THORChain,
+			Coins: common.NewCoins(common.NewCoin(gasAsset, amount)),
+		},
+		common.NewCoin(common.RuneAsset(), emitRune),
+		cosmos.ZeroUint(),
+	)
+	if err := mgr.EventMgr().EmitEvent(ctx, swapEvt); err != nil {
+		ctx.Logger().Error("fail to emit cancel gas swap event", "error", err)
+	}
+
+	ctx.Logger().Info("booked cancel gas into pool for reserve",
+		"intent_txid", intentTxID,
+		"gas_asset", gasAsset,
+		"amount", amount,
+		"emit_rune", emitRune,
+	)
 
 	return nil
 }

@@ -751,6 +751,19 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 		return im.refundExpiredIntent(ctx, intent)
 	}
 
+	// For non-refundable assets, give the owner a cancel window before auctioning.
+	// During this window the intent stays Active so the owner can still cancel
+	// and recover their funds without being exposed to auction sniping.
+	cancelWindow := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentPostExpiryCancelBlocks)
+	if cancelWindow > 0 && ctx.BlockHeight() < intent.ExpiryHeight+cancelWindow {
+		ctx.Logger().Info("intent in post-expiry cancel window, deferring auction",
+			"txid", intent.TxID,
+			"expiry_height", intent.ExpiryHeight,
+			"cancel_deadline", intent.ExpiryHeight+cancelWindow,
+		)
+		return nil // still in cancel window, skip auction for now
+	}
+
 	return im.StartIntentAuction(ctx, intent)
 }
 

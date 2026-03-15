@@ -976,14 +976,6 @@ func (k KVStoreDummy) GetBidderBidForAuction(_ cosmos.Context, _ common.TxID, _ 
 	return types.IntentAuctionBid{}, kaboom
 }
 
-// Prepaid gas keeper methods
-func (k KVStoreDummy) SetIntentPrepaidGas(_ cosmos.Context, _ common.TxID, _ common.Coin) {}
-
-func (k KVStoreDummy) GetIntentPrepaidGas(_ cosmos.Context, _ common.TxID) (common.Coin, error) {
-	return common.NoCoin, kaboom
-}
-func (k KVStoreDummy) DeleteIntentPrepaidGas(_ cosmos.Context, _ common.TxID) {}
-
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

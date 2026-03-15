@@ -541,8 +541,4 @@ type KeeperIntent interface {
 	GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentAuctionBid, error)
 	GetBidderBidForAuction(ctx cosmos.Context, intentTxID common.TxID, bidder common.Address) (types.IntentAuctionBid, error)
 
-	// Prepaid gas methods — tracks user-funded gas for intent cancel refund outbounds
-	SetIntentPrepaidGas(ctx cosmos.Context, txID common.TxID, coin common.Coin)
-	GetIntentPrepaidGas(ctx cosmos.Context, txID common.TxID) (common.Coin, error)
-	DeleteIntentPrepaidGas(ctx cosmos.Context, txID common.TxID)
 }
