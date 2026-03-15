@@ -63,6 +63,18 @@ func NewScanner(
 		errataMtx: sync.Mutex{},
 	}
 
+	success := false
+	defer func() {
+		if !success {
+			if s.n2n != nil {
+				s.n2n.Close()
+			}
+			if s.n2c != nil {
+				s.n2c.Close()
+			}
+		}
+	}()
+
 	// create n2n connection
 	s.n2n, err = NewNodeConnection(
 		logger, n2nAddress, s.rollBackwardHandler, s.rollForwardHandler,
@@ -128,6 +140,8 @@ func NewScanner(
 			break
 		}
 	}
+
+	success = true
 
 	return s, nil
 }
@@ -447,7 +461,7 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 
 	params, ok := protocolParams.(*conway.ConwayProtocolParameters)
 	if !ok {
-		return fmt.Errorf("failed to get protocol parameters")
+		return fmt.Errorf("unexpected protocol params type: %T", protocolParams)
 	}
 
 	if uint64(params.MinFeeA) == minFeeA && uint64(params.MinFeeB) == minFeeB {
@@ -460,7 +474,7 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 	s.minFeeA.Store(minFeeA)
 	s.minFeeB.Store(minFeeB)
 
-	feeRate := minFeeA*estimatedTxSize + minFeeB + extraFeeBuffer
+	feeRate := minFeeA*estimatedTxSize + minFeeB + extraFeeBytes*minFeeA
 
 	var resolution uint64
 	if s.config.GasPriceResolution > 0 {

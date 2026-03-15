@@ -143,9 +143,7 @@ func (c *wrapper) connect(
 		return nil, fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
 	}
 
-	if c.conn != nil {
-		c.conn.Close()
-	}
+	c.close()
 
 	c.conn = conn
 
@@ -155,6 +153,10 @@ func (c *wrapper) connect(
 }
 
 func (c *wrapper) close() {
+	if c.conn == nil {
+		return
+	}
+
 	err := c.conn.Close()
 	if err != nil {
 		c.logger.Error().Err(err).Msg("failed to close ouroboros connection")
@@ -215,14 +217,16 @@ func (c *nodeWrapper) Close() {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
+	if c.conn == nil {
+		return
+	}
+
 	err := c.conn.ChainSync().Client.Stop()
 	if err != nil {
 		c.logger.Error().Err(err).Msg("failed to stop client")
 	}
 
-	if c.conn != nil {
-		c.close()
-	}
+	c.close()
 }
 
 //  client

@@ -24,7 +24,7 @@ const (
 	maxTransactionSize = 2048
 
 	// extra bytes added to calculated fees to mitigate rounding issues
-	extraFeeBuffer = 0
+	extraFeeBytes = 0
 
 	maxRetryInterval = time.Minute
 )
