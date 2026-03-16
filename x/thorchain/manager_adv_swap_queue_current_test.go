@@ -16,6 +16,19 @@ type AdvSwapQueueSuite struct{}
 
 var _ = Suite(&AdvSwapQueueSuite{})
 
+type ExpiredLimitSwapRetryTestKeeper struct {
+	keeper.Keeper
+	voter ObservedTxVoter
+}
+
+func (k *ExpiredLimitSwapRetryTestKeeper) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
+	return k.voter, nil
+}
+
+func (k *ExpiredLimitSwapRetryTestKeeper) GetVault(_ cosmos.Context, _ common.PubKey) (Vault, error) {
+	return Vault{}, fmt.Errorf("vault not found")
+}
+
 func (s AdvSwapQueueSuite) TestGetTodoNum(c *C) {
 	book := newSwapQueueAdv(keeper.KVStoreDummy{})
 
@@ -3469,6 +3482,78 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsWithMixedSwapTypes(c *C) 
 	retrievedMarketSwap, err := k.GetAdvSwapQueueItem(ctx, txID2, 0)
 	c.Assert(err, IsNil)
 	c.Assert(retrievedMarketSwap.Tx.ID.Equals(txID2), Equals, true)
+}
+
+func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsDoesNotDuplicateOutboundOnRetry(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	baseKeeper := mgr.Keeper()
+
+	currentBlockHeight := int64(200)
+	ctx = ctx.WithBlockHeight(currentBlockHeight)
+
+	maxAge := int64(50)
+	baseKeeper.SetMimir(ctx, "StreamingLimitSwapMaxAge", maxAge)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(baseKeeper.SetPool(ctx, btcPool), IsNil)
+
+	txID := GetRandomTxHash()
+	observedPubKey := GetRandomPubKey()
+
+	mgr.K = &ExpiredLimitSwapRetryTestKeeper{
+		Keeper: baseKeeper,
+		voter: ObservedTxVoter{
+			Tx: ObservedTx{
+				Tx: common.Tx{ID: txID},
+				ObservedPubKey: observedPubKey,
+			},
+		},
+	}
+	mgr.txOutStore = NewTxStoreDummy()
+
+	vm := newSwapQueueAdv(mgr.Keeper())
+
+	expiredSwap := types.MsgSwap{
+		Tx: common.Tx{
+			ID:          txID,
+			FromAddress: GetRandomBTCAddress(),
+			ToAddress:   GetRandomBTCAddress(),
+			Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+			Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))},
+			Memo:        "SWAP:ETH.ETH",
+		},
+		TargetAsset:        common.ETHAsset,
+		TradeTarget:        cosmos.NewUint(5000000),
+		Destination:        GetRandomETHAddress(),
+		SwapType:           types.SwapType_limit,
+		InitialBlockHeight: 100,
+		State: &types.SwapState{
+			Quantity: 1,
+			Count:    0,
+			Deposit:  cosmos.NewUint(1000),
+			In:       cosmos.NewUint(600),
+			Out:      cosmos.NewUint(550),
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, expiredSwap), IsNil)
+	c.Assert(mgr.Keeper().AddToLimitSwapTTL(ctx, expiredSwap.InitialBlockHeight+maxAge, txID), IsNil)
+
+	c.Assert(vm.processExpiredLimitSwaps(ctx, mgr), IsNil)
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(len(outItems), Equals, 1)
+
+	ctx = ctx.WithBlockHeight(currentBlockHeight + 1)
+	c.Assert(vm.processExpiredLimitSwaps(ctx, mgr), IsNil)
+
+	outItems, err = mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(len(outItems), Equals, 1, Commentf("retry must not append a second identical outbound"))
 }
 
 func (s AdvSwapQueueSuite) TestAddSwapQueueItemFailsWhenTTLWriteFails(c *C) {
