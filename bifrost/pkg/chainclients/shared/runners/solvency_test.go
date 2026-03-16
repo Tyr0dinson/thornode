@@ -135,7 +135,6 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 			"HaltETHChain":         tc.haltHeight,
 			"SolvencyHaltETHChain": tc.solvencyHaltHeight,
 		}
-	thorHeight := 10
 
 		var lastBlockHits atomic.Int32
 		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -157,14 +156,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 					c.Error(err)
 				}
 				return
-		}
-
-		if strings.HasPrefix(r.RequestURI, thorclient.LastBlockEndpoint) {
-			body := `[{"chain":"ETH","last_observed_in":1,"last_signed_out":1,"thorchain":` + strconv.Itoa(thorHeight) + `}]`
-			if _, err := w.Write([]byte(body)); err != nil {
-				c.Error(err)
 			}
-		}
 		})
 
 		server := httptest.NewServer(h)
