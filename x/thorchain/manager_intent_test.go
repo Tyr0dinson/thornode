@@ -51,6 +51,30 @@ func (k *TestIntentMgrKeeper) SetIntent(ctx cosmos.Context, intent Intent) {
 	k.Keeper.SetIntent(ctx, intent)
 }
 
+type TxOutStoreFailOnCallDummy struct {
+	*TxOutStoreDummy
+	failOnCall int
+	callCount  int
+}
+
+func NewTxOutStoreFailOnCallDummy(failOnCall int) *TxOutStoreFailOnCallDummy {
+	return &TxOutStoreFailOnCallDummy{
+		TxOutStoreDummy: NewTxStoreDummy(),
+		failOnCall:      failOnCall,
+	}
+}
+
+func (tos *TxOutStoreFailOnCallDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+	tos.callCount++
+	if tos.callCount == tos.failOnCall {
+		return false, errKaboom
+	}
+	if !toi.Chain.Equals(common.THORChain) {
+		tos.addToBlockOut(ctx, toi)
+	}
+	return true, nil
+}
+
 // TestExpireIntent_RefundWithL1Pool tests that an intent with an L1 pool asset is refunded directly
 func (s *IntentMgrTestSuite) TestExpireIntent_RefundWithL1Pool(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
@@ -246,6 +270,58 @@ func (s *IntentMgrTestSuite) TestExpireIntent_RefundTradeAsset(c *C) {
 	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentExpired)
+}
+
+func (s *IntentMgrTestSuite) TestProcessExpirations_DirectRefundSolveFailureStaysRetryable(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	solveTx := GetRandomTx()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomETHAddress(),
+		TargetCoin:    common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		SubmitHeight:  w.ctx.BlockHeight(),
+		MatchHeight:   w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	mgr.txOutStore = NewTxOutStoreFailOnCallDummy(2) // owner refund succeeds, solve refund fails
+
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err := intentMgr.processExpirations(w.ctx)
+	c.Assert(err, IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+
+	_, err = w.keeper.GetIntentSolve(w.ctx, solveTx.ID)
+	c.Assert(err, IsNil)
 }
 
 // TestExecuteIntent_WithAffiliateFee tests that affiliate fee is charged at intent completion

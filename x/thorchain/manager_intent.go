@@ -321,10 +321,16 @@ func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 		}
 		// Check if expired
 		if currentHeight >= intent.ExpiryHeight {
-			if err := im.expireIntent(ctx, intent); err != nil {
+			// Use CacheContext for atomicity so a failed expiration transition does not
+			// leave partial state behind (for example, an auction created before solve
+			// refunds fail). The transition will be retried on the next block.
+			cacheCtx, commit := ctx.CacheContext()
+			if err := im.expireIntent(cacheCtx, intent); err != nil {
 				ctx.Logger().Error("fail to expire intent", "txid", intent.TxID, "error", err)
 				continue
 			}
+			commit()
+			ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 			processed++
 		}
 	}
@@ -810,12 +816,12 @@ func (im *IntentMgr) StartIntentAuction(ctx cosmos.Context, intent Intent) error
 	// Save the auction
 	im.mgr.Keeper().SetIntentAuction(ctx, auction)
 
-	// Refund any existing solves for this intent.
-	// Even if some individual refunds fail (handled by unrefundableCoinCleanup),
-	// we still transition to auctioning. The solve records are always cleaned up
-	// regardless of refund success. Only abort if we can't read solves at all.
+	// Refund any existing solves for this intent before transitioning to auction.
+	// Return the error so processExpirations' CacheContext rolls back and retries
+	// next block rather than finalizing the intent/auction state while some solve
+	// refunds failed to schedule.
 	if err := im.refundIntentSolves(ctx, intent); err != nil {
-		ctx.Logger().Error("fail to refund intent solves", "txid", intent.TxID, "error", err)
+		return fmt.Errorf("fail to refund intent solves before auction start: %w", err)
 	}
 
 	// Update intent status to auctioning
@@ -898,9 +904,11 @@ func (im *IntentMgr) refundExpiredIntent(ctx cosmos.Context, intent Intent) erro
 		}
 	}
 
-	// Refund any existing solves for this intent
+	// Refund any existing solves for this intent. Return the error so the caller's
+	// CacheContext retries next block instead of finalizing the intent as expired
+	// while some solve refunds failed to schedule.
 	if err := im.refundIntentSolves(ctx, intent); err != nil {
-		ctx.Logger().Error("fail to refund intent solves", "txid", intent.TxID, "error", err)
+		return fmt.Errorf("fail to refund intent solves for expired intent: %w", err)
 	}
 
 	// Update intent status
