@@ -197,7 +197,7 @@ asserts:
   - .auction_info.will_auction == false
 ---
 ########################################################################################
-# Test 8: Same asset swap (ETH to ETH - valid for intent)
+# Test 8: Invalid - same asset swap (ETH to ETH)
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/intent
@@ -209,5 +209,5 @@ params:
   high_target: "1100000000"
   low_target: "1000000000"
 asserts:
-  - .valid == true
-  - .memo | contains("io:ETH.ETH")
+  - .valid == false
+  - .validation_error | contains("source and target assets cannot be the same")

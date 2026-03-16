@@ -67,17 +67,13 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 		return solves[0]
 	}
 
-	// Use the target asset's chain gas fee for the comparison threshold.
-	// Since solve amounts are denominated in the target asset, we must use the
-	// same denomination for the gas fee tolerance to avoid unit mismatches.
-	// For RUNE, GetChain() returns THORChain with near-zero gas (exact matching).
-	// For secured/trade assets, GetChain() returns the underlying L1 chain,
-	// providing a reasonable tolerance in the same denomination (e.g. satoshis).
+	// The equality threshold must be denominated in the target asset itself.
+	// When possible we price the chain gas fee into the target asset; otherwise
+	// we fall back to exact-amount comparison to avoid mixing denominations.
 	targetAsset := intent.TargetAsset
-	gasFeeChain := targetAsset.GetChain()
-	gasFee, err := calculateGasFee(ctx, im.mgr, gasFeeChain)
+	tolerance, err := calculateSolveEqualityTolerance(ctx, im.mgr, targetAsset)
 	if err != nil {
-		ctx.Logger().Error("fail to calculate gas fee for solve selection, using first solve", "chain", gasFeeChain, "error", err)
+		ctx.Logger().Error("fail to calculate solve equality tolerance, using first solve", "target_asset", targetAsset, "error", err)
 		return solves[0] // Return first solve as deterministic fallback
 	}
 
@@ -91,13 +87,13 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	// Find the highest amount
 	highestAmount := sorted[0].TargetCoin.Amount
 
-	// Collect all solves within 1x gas of the highest (they're considered equal)
+	// Collect all solves within the converted tolerance of the highest; these are
+	// treated as equal and resolved by submit-height / txid tiebreakers.
 	var candidates []types.IntentSolve
 	for _, solve := range sorted {
-		// If this solve is within 1x gas of highest, it's a candidate
-		// i.e., highest - solve.Amount <= gasFee
+		// i.e., highest - solve.Amount <= tolerance
 		diff := common.SafeSub(highestAmount, solve.TargetCoin.Amount)
-		if diff.LTE(gasFee) {
+		if diff.LTE(tolerance) {
 			candidates = append(candidates, solve)
 		}
 	}

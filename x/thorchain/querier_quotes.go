@@ -1630,26 +1630,12 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	confSeconds := confBlocks * fromChain.ApproximateBlockMilliseconds() / 1000
 	expiryHeight := ctx.BlockHeight() + ttlBlocks
 
-	// Calculate solve min increment (1x gas fee)
-	// A solve must exceed other bids by this amount to be considered "better"
-	// The chain used depends on which asset lacks a pool:
-	// - If source has no pool and is not native → source chain gas
-	// - Else if target has no pool and is not native → target chain gas
-	// - Else (both have pools/native) → source chain gas
-	var solveMinIncrementChain common.Chain
-	switch {
-	case !hasSourcePool && !isSourceNative:
-		solveMinIncrementChain = fromAsset.GetChain()
-	case !hasTargetPool && !isTargetNative:
-		solveMinIncrementChain = toAsset.GetChain()
-	default:
-		solveMinIncrementChain = fromAsset.GetChain()
-	}
-	solveMinIncrement, err := calculateGasFee(ctx, qs.mgr, solveMinIncrementChain)
+	// Share the same helper as runtime solve selection so the quote reports the
+	// step in the same units the matcher will later use.
+	solveMinIncrement, solveMinIncrementAsset, err := calculateSolveBeatIncrement(ctx, qs.mgr, toAsset)
 	if err != nil {
 		return nil, fmt.Errorf("fail to calculate solve minimum increment: %w", err)
 	}
-	solveMinIncrementAsset := solveMinIncrementChain.GetGasAsset()
 
 	// Build response
 	response := &types.QueryQuoteIntentResponse{
@@ -1763,16 +1749,12 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 		}, nil
 	}
 
-	// Calculate gas fee for minimum increment (1x gas determines what's "better").
-	// Use the target asset's chain gas fee since solve amounts are in target denomination.
-	// This ensures the gas fee tolerance and solve amounts are in the same units.
+	// Calculate the solve beat increment in the target asset's own denomination.
 	targetAsset := intent.TargetAsset
-	gasFeeChain := targetAsset.GetChain()
-	minIncrement, err := calculateGasFee(ctx, qs.mgr, gasFeeChain)
+	minIncrement, minIncrementAsset, err := calculateSolveBeatIncrement(ctx, qs.mgr, targetAsset)
 	if err != nil {
 		return nil, fmt.Errorf("fail to calculate minimum increment: %w", err)
 	}
-	minIncrementAsset := gasFeeChain.GetGasAsset()
 
 	// Find current best solve (highest amount)
 	currentBestAmount := cosmos.ZeroUint()

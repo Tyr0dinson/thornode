@@ -803,3 +803,82 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_NetworkFeeFailure(c *C)
 	c.Check(errors.Is(err, errInternal), Equals, true, Commentf("Network fee failure should return internal error"))
 	c.Check(result, IsNil)
 }
+
+func (HandlerIntentAuctionBidSuite) TestCalculateSolveBeatIncrement_GasAssetTarget(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.ETHChain, NewNetworkFee(common.ETHChain, 1, 375000)), IsNil)
+
+	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(increment.Equal(cosmos.NewUint(375000)), Equals, true)
+	c.Assert(incrementAsset.Equals(common.ETHAsset), Equals, true)
+}
+
+func (HandlerIntentAuctionBidSuite) TestCalculateSolveBeatIncrement_RuneTarget(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 123)), IsNil)
+
+	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.RuneNative)
+	c.Assert(err, IsNil)
+	c.Assert(increment.Equal(cosmos.NewUint(123)), Equals, true)
+	c.Assert(incrementAsset.Equals(common.RuneNative), Equals, true)
+}
+
+func (HandlerIntentAuctionBidSuite) TestCalculateSolveBeatIncrement_ExternalTokenTargetUsesPoolConversion(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	targetAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	gasPool := NewPool()
+	gasPool.Asset = common.ETHAsset
+	gasPool.Status = PoolAvailable
+	gasPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	gasPool.BalanceRune = cosmos.NewUint(1_000_000_000)
+	c.Assert(w.keeper.SetPool(w.ctx, gasPool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = targetAsset
+	targetPool.Status = PoolAvailable
+	targetPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	targetPool.BalanceRune = cosmos.NewUint(1_000_000_000)
+	c.Assert(w.keeper.SetPool(w.ctx, targetPool), IsNil)
+
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.ETHChain, NewNetworkFee(common.ETHChain, 1, 375000)), IsNil)
+
+	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), targetAsset)
+	c.Assert(err, IsNil)
+	c.Assert(increment.Equal(cosmos.NewUint(375000)), Equals, true)
+	c.Assert(incrementAsset.Equals(targetAsset), Equals, true)
+}
+
+func (HandlerIntentAuctionBidSuite) TestCalculateSolveBeatIncrement_THORNativeTargetUsesRuneGas(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.NAMI
+	targetPool.Status = PoolAvailable
+	targetPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	targetPool.BalanceRune = cosmos.NewUint(1_000_000_000)
+	c.Assert(w.keeper.SetPool(w.ctx, targetPool), IsNil)
+
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+
+	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.NAMI)
+	c.Assert(err, IsNil)
+	c.Assert(increment.Equal(cosmos.NewUint(375000)), Equals, true)
+	c.Assert(incrementAsset.Equals(common.NAMI), Equals, true)
+}
+
+func (HandlerIntentAuctionBidSuite) TestCalculateSolveEqualityTolerance_PricingUnavailableFallsBackToExactComparison(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+
+	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.NAMI)
+	c.Assert(err, IsNil)
+	c.Assert(increment.Equal(cosmos.OneUint()), Equals, true)
+	c.Assert(incrementAsset.Equals(common.NAMI), Equals, true)
+
+	tolerance, err := calculateSolveEqualityTolerance(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.NAMI)
+	c.Assert(err, IsNil)
+	c.Assert(tolerance.IsZero(), Equals, true)
+}
