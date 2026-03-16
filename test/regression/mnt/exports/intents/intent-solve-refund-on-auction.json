@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "7"
+          "sequence": "8"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -136,7 +136,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999992462647",
+              "amount": "34999994462647",
               "denom": "rune"
             }
           ]
@@ -163,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999992621533",
+              "amount": "4999990621533",
               "denom": "rune"
             }
           ]
@@ -286,6 +286,9 @@
           "key": "INTENTMINFEEBASISPOINTS"
         },
         {
+          "key": "INTENTPOSTEXPIRYCANCELBLOCKS"
+        },
+        {
           "key": "INTENTPRICESLIDEBLOCKS",
           "value": "20"
         },
@@ -322,6 +325,10 @@
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
         },
         {
+          "key": "INTENTPOSTEXPIRYCANCELBLOCKS",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        },
+        {
           "key": "INTENTPRICESLIDEBLOCKS",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "20"
@@ -340,7 +347,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999992000000",
+          "bond": "4999990000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",

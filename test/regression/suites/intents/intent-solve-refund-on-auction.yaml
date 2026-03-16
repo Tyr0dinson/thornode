@@ -47,8 +47,9 @@ asserts:
   - .|length == 2
 ---
 ########################################################################################
-# Enable intents with short TTL and slide blocks for testing
-# Setting protocol fee to 0 to avoid invariant issues
+# Enable intents with short TTL and slide blocks for testing.
+# Disable the post-expiry cancel window so expiry transitions directly into auction.
+# Setting protocol fee to 0 to avoid invariant issues.
 ########################################################################################
 type: tx-mimir
 key: IntentsEnabled
@@ -73,6 +74,12 @@ key: IntentMinFeeBasisPoints
 value: 0
 signer: {{ addr_thor_dog }}
 sequence: 3
+---
+type: tx-mimir
+key: IntentPostExpiryCancelBlocks
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 4
 ---
 type: create-blocks
 count: 1

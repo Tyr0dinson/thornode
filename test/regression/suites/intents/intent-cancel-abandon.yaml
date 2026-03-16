@@ -4,7 +4,7 @@
 ---
 ########################################################################################
 # Add custom ERC20 token to vault for testing non-pool cancel behavior
-# This token has no pool so cancelling an intent with it will route to auction
+# This token has no pool, so cancelling requires ETH gas in the cancel tx
 ########################################################################################
 type: state
 genesis:
@@ -70,7 +70,7 @@ count: 1
 ########################################################################################
 # Create an intent with non-pool ERC20 token
 # Using ETH.TKN-0X... which has no pool
-# Cancellation will now route to auction instead of abandoning
+# Cancellation will refund directly when the cancel tx includes ETH gas
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -110,7 +110,7 @@ asserts:
 # Cancel the intent (owner sends IC memo)
 # Format: IC:INTENT_TX_HASH
 # The cancel must come from the same source address that created the intent
-# Since the token has no pool, cancel now routes to auction (not abandon)
+# Since the token has no pool, the cancel tx includes ETH to fund the refund gas
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -122,7 +122,7 @@ txs:
     to_address: {{ addr_eth_dog }}
     coins:
       - amount: "1000000"
-        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+        asset: "ETH.ETH"
         decimals: 8
     gas:
       - amount: "10000"
@@ -136,26 +136,70 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Check intent status is now auctioning (not cancelled/abandoned)
+# Check intent status is now cancelled
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
 asserts:
-  - .intent.status == "IntentAuctioning"
+  - .intent.status == "IntentCancelled"
 ---
 ########################################################################################
-# Check vault balance is unchanged (no abandon, funds still escrowed for auction)
-# Flow: Original 200M -> Intent adds 50M = 250M -> Cancel adds 1M = 251M
-# No funds abandoned from vault
+# Verify no auction was created for the intent
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+status: 404
+asserts:
+  - .code|tonumber == 5
+  - .message|contains("auction not found")
+---
+########################################################################################
+# Check ERC20 vault balance before the refund outbound is observed
+# Flow: Original 200M -> Intent adds 50M = 250M
+# The cancel tx sends ETH, so the ERC20 balance remains escrowed until refund outbound.
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
   - .|length >= 1
-  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "251000000"
+  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "250000000"
 ---
 ########################################################################################
-# Verify NO refund outbound was scheduled (cancel routes to auction)
+# Check outbound queue has the refund scheduled
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length >= 1
+---
+########################################################################################
+# Observe the refund outbound (fox gets the ERC20 back)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "50000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "REFUND:{{ observe_txid 1 }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify outbound queue is now empty
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -163,11 +207,18 @@ asserts:
   - .|length == 0
 ---
 ########################################################################################
-# Verify an auction was created for the intent
+# Verify the vault ERC20 balance returned to the starting amount after the refund
 ########################################################################################
 type: check
-endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
-  - .auction.intent_tx_id == "{{ observe_txid 1 }}"
-  - .auction.status == "AuctionActive"
-  - .auction.owner_address == "{{ addr_eth_fox }}"
+  - .|length >= 1
+  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "200000000"
+---
+########################################################################################
+# Verify intents list is empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0

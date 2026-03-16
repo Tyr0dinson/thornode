@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "10"
+          "sequence": "11"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -127,7 +127,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "196557650262",
+              "amount": "196557650265",
               "denom": "rune"
             }
           ]
@@ -136,7 +136,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35003443553868",
+              "amount": "35003445553865",
               "denom": "rune"
             }
           ]
@@ -163,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998795870",
+              "amount": "4999996795870",
               "denom": "rune"
             }
           ]
@@ -281,6 +281,9 @@
       ],
       "mimirs": [
         {
+          "key": "INTENTPOSTEXPIRYCANCELBLOCKS"
+        },
+        {
           "key": "INTENTSENABLED",
           "value": "1"
         }
@@ -305,6 +308,10 @@
       ],
       "nodeMimirs": [
         {
+          "key": "INTENTPOSTEXPIRYCANCELBLOCKS",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        },
+        {
           "key": "INTENTSENABLED",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "1"
@@ -313,7 +320,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999998000000",
+          "bond": "4999996000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -352,7 +359,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100009630906",
+          "balance_rune": "100009630908",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -363,7 +370,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1037439872",
-          "balance_rune": "96548019356",
+          "balance_rune": "96548019357",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",

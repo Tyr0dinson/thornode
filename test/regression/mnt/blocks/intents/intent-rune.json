@@ -525,6 +525,7 @@
                   }
                 ],
                 "memo": "IO:ETH.ETH:100000000:80000000:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+                "salt": null,
                 "signer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
               }
             ],

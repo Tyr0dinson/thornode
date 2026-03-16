@@ -795,6 +795,7 @@
                   }
                 ],
                 "memo": "IO:THOR.RUNE:500000000:500000000:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+                "salt": null,
                 "signer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
               }
             ],
@@ -1337,6 +1338,7 @@
                   }
                 ],
                 "memo": "IS:3044464A622433D2C1A5A9813CF0E889A1E1DF5FC08CCBC6EAB4FC866984DB49",
+                "salt": null,
                 "signer": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
               }
             ],

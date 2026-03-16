@@ -47,13 +47,20 @@ asserts:
   - .|length == 2
 ---
 ########################################################################################
-# Enable intents
+# Enable intents and disable the post-expiry cancel window so the suite
+# exercises the auction path immediately at expiry.
 ########################################################################################
 type: tx-mimir
 key: IntentsEnabled
 value: 1
 signer: {{ addr_thor_dog }}
 sequence: 0
+---
+type: tx-mimir
+key: IntentPostExpiryCancelBlocks
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 1
 ---
 type: create-blocks
 count: 1
