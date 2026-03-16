@@ -3,6 +3,7 @@ package reporter
 import (
 	"fmt"
 	"math/big"
+	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -12,7 +13,7 @@ import (
 
 type solvencyReporter struct {
 	baseReporter
-	lastSolvencyCheckHeight int64
+	lastSolvencyCheckHeight atomic.Int64
 }
 
 // newSolvencyReporter creates a solvency reporter bound to a specific chain client
@@ -30,6 +31,14 @@ func newSolvencyReporter(client ChainClient, thorchainBridge ThorchainBridge) *s
 // String returns a stable reporter identifier used in logs.
 func (r *solvencyReporter) String() string {
 	return "solvency_reporter"
+}
+
+func (r *solvencyReporter) getLastSolvencyCheckHeight() int64 {
+	return r.lastSolvencyCheckHeight.Load()
+}
+
+func (r *solvencyReporter) setLastSolvencyCheckHeight(height int64) {
+	r.lastSolvencyCheckHeight.Store(height)
 }
 
 // Collect gathers solvency messages for all Asgard vaults on this chain.
@@ -118,7 +127,7 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 
 	// Only advance cadence state when every vault was checked successfully.
 	if allVaultsProcessed {
-		r.lastSolvencyCheckHeight = height
+		r.setLastSolvencyCheckHeight(height)
 	}
 
 	return msgs, nil
@@ -207,13 +216,13 @@ func (r *solvencyReporter) shouldReportAtHeight(height int64) bool {
 
 	switch r.client.GetChain() {
 	case common.SOLChain:
-		lastSlotMultiple := r.lastSolvencyCheckHeight / solvencyBlocks
+		lastSlotMultiple := r.getLastSolvencyCheckHeight() / solvencyBlocks
 		return height > (lastSlotMultiple+1)*solvencyBlocks
 	default:
 		// return true once the current height has moved into a later solvency
 		// cadence bucket than the last successful report height. This avoids
 		// missing reports when a runner skips over the exact modulo height.
-		return height/solvencyBlocks > r.lastSolvencyCheckHeight/solvencyBlocks
+		return height/solvencyBlocks > r.getLastSolvencyCheckHeight()/solvencyBlocks
 	}
 }
 

@@ -612,7 +612,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 		}
 		tc.client.blockScannerHeight = tc.height
 		reporter := newSolvencyReporter(tc.client, mockBridge)
-		reporter.lastSolvencyCheckHeight = 0
+		reporter.setLastSolvencyCheckHeight(0)
 
 		// test ShouldReport
 		shouldReport := reporter.ShouldReport(fromBlockScanner, tc.client.blockScannerHeight)
@@ -674,7 +674,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 					}
 				}
 				c.Assert(solvencyRep, NotNil)
-				solvencyRep.lastSolvencyCheckHeight = 0 // reset to 0
+				solvencyRep.setLastSolvencyCheckHeight(0) // reset to 0
 			}
 
 			resetLastSolvencyCheck()
@@ -765,7 +765,7 @@ func (s *SolvencySuite) TestCollectSkipsSolventVaultsWhenInsolventPresent(c *C) 
 	}
 
 	reporter := newSolvencyReporter(client, bridge)
-	reporter.lastSolvencyCheckHeight = 0
+	reporter.setLastSolvencyCheckHeight(0)
 
 	batch, err := reporter.Collect(fromRunner, client.chainHeight)
 	c.Assert(err, IsNil)
@@ -813,7 +813,7 @@ func (s *SolvencySuite) TestCollectReportsAllSolventWhenScannerDown(c *C) {
 	}
 
 	reporter := newSolvencyReporter(client, bridge)
-	reporter.lastSolvencyCheckHeight = 0
+	reporter.setLastSolvencyCheckHeight(0)
 
 	batch, err := reporter.Collect(fromRunner, client.chainHeight)
 	c.Assert(err, IsNil)
@@ -881,7 +881,7 @@ func (s *SolvencySuite) TestShouldReportAtHeightSolChain(c *C) {
 		account: common.Account{Coins: common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1)))},
 	}
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.lastSolvencyCheckHeight = 0
+	reporter.setLastSolvencyCheckHeight(0)
 
 	c.Assert(reporter.shouldReportAtHeight(100), Equals, false)
 	c.Assert(reporter.shouldReportAtHeight(101), Equals, true)
@@ -898,7 +898,7 @@ func (s *SolvencySuite) TestShouldReportAtHeightEVMUsesCrossedConfiguredBoundary
 		},
 	}
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.lastSolvencyCheckHeight = 101
+	reporter.setLastSolvencyCheckHeight(101)
 
 	c.Assert(reporter.shouldReportAtHeight(199), Equals, false)
 	c.Assert(reporter.shouldReportAtHeight(204), Equals, true)
@@ -912,7 +912,7 @@ func (s *SolvencySuite) TestShouldReportAtHeightETHUsesCrossedDefaultBoundary(c 
 		},
 	}
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.lastSolvencyCheckHeight = 21
+	reporter.setLastSolvencyCheckHeight(21)
 
 	c.Assert(reporter.shouldReportAtHeight(39), Equals, false)
 	c.Assert(reporter.shouldReportAtHeight(43), Equals, true)
@@ -929,7 +929,7 @@ func (s *SolvencySuite) TestShouldReportAtHeightXRPUsesCrossedConfiguredBoundary
 		account: common.Account{Coins: common.NewCoins(common.NewCoin(xrpAsset, cosmos.NewUint(1)))},
 	}
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.lastSolvencyCheckHeight = 101
+	reporter.setLastSolvencyCheckHeight(101)
 
 	c.Assert(reporter.shouldReportAtHeight(109), Equals, false)
 	c.Assert(reporter.shouldReportAtHeight(119), Equals, true)
@@ -943,7 +943,7 @@ func (s *SolvencySuite) TestShouldReportAtHeightBTCUsesTwoBlockFallback(c *C) {
 		},
 	}
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.lastSolvencyCheckHeight = 0
+	reporter.setLastSolvencyCheckHeight(0)
 
 	c.Assert(reporter.shouldReportAtHeight(1), Equals, false)
 	c.Assert(reporter.shouldReportAtHeight(2), Equals, true)
@@ -965,7 +965,7 @@ func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
 	client.blockScannerHeight = 20
 
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.lastSolvencyCheckHeight = 0
+	reporter.setLastSolvencyCheckHeight(0)
 
 	c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, false)
 }
@@ -981,7 +981,7 @@ func (s *SolvencySuite) TestShouldReportRejectsNonPositiveHeight(c *C) {
 		account: common.Account{Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))},
 	}
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.lastSolvencyCheckHeight = 0
+	reporter.setLastSolvencyCheckHeight(0)
 
 	c.Assert(reporter.ShouldReport(fromBlockScanner, 0), Equals, false)
 	c.Assert(reporter.ShouldReport(fromRunner, -1), Equals, false)
@@ -1049,7 +1049,7 @@ func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnPartialFailure(c *C) {
 	batch, err := reporter.Collect(fromBlockScanner, 2)
 	c.Assert(err, IsNil)
 	c.Assert(batch, HasLen, 0)
-	c.Assert(reporter.lastSolvencyCheckHeight, Equals, int64(0))
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
 	c.Assert(reporter.ShouldReport(fromBlockScanner, 3), Equals, true)
 }
 
