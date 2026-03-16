@@ -6,6 +6,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func (qs queryServer) queryIntent(ctx cosmos.Context, req *types.QueryIntentRequest) (*types.QueryIntentResponse, error) {
@@ -21,6 +23,10 @@ func (qs queryServer) queryIntent(ctx cosmos.Context, req *types.QueryIntentRequ
 
 	// Convert string to TxID
 	txID := common.TxID(req.TxId)
+
+	if !qs.mgr.Keeper().IntentExists(ctx, txID) {
+		return nil, status.Errorf(codes.NotFound, "intent not found: %s", txID)
+	}
 
 	// Get the intent
 	intent, err := qs.mgr.Keeper().GetIntent(ctx, txID)
@@ -82,6 +88,10 @@ func (qs queryServer) queryIntentAuction(ctx cosmos.Context, req *types.QueryInt
 
 	// Convert string to TxID
 	txID := common.TxID(req.TxId)
+
+	if !qs.mgr.Keeper().IntentAuctionExists(ctx, txID) {
+		return nil, status.Errorf(codes.NotFound, "auction not found: %s", txID)
+	}
 
 	// Get the auction
 	auction, err := qs.mgr.Keeper().GetIntentAuction(ctx, txID)

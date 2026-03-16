@@ -105,12 +105,14 @@ asserts:
 ---
 ########################################################################################
 # Verify no auction was created (native secured assets skip auction)
-# The endpoint returns an empty auction object when no auction exists
+# The endpoint returns not found when no auction exists
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 3 }}
+status: 404
 asserts:
-  - .auction.intent_tx_id == ""
+  - .code|tonumber == 5
+  - .message|contains("auction not found")
 ---
 ########################################################################################
 # Verify fox's BTC-BTC secured asset was returned after intent expired
