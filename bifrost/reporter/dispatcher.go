@@ -185,7 +185,12 @@ func (d *dispatcher) enqueueProcess(chain common.Chain, from triggeredFrom, heig
 
 	// Backpressure policy:
 	// - runner ticks are periodic and can be dropped when busy;
-	// - block-scanner triggers should prefer the latest height, so drop one stale task and enqueue the latest.
+	// - block-scanner triggers should prefer the latest height, so on overflow
+	//   we best-effort remove one queued task and enqueue the latest.
+	//
+	// This is intentionally lossy: the queue can change between the failed send
+	// above and the drain below, so the dropped task is not guaranteed to be the
+	// one that made the queue look full or to be truly stale.
 	if from == fromRunner {
 		d.logger.Debug().
 			Stringer("chain", chain).
@@ -204,7 +209,7 @@ func (d *dispatcher) enqueueProcess(chain common.Chain, from triggeredFrom, heig
 			Stringer("chain", chain).
 			Stringer("from", from).
 			Int64("height", height).
-			Msg("chain task queue full: dropped one stale task and enqueued latest")
+			Msg("chain task queue full: best-effort dropped one queued task and enqueued latest")
 	case <-d.stopper:
 	default:
 		d.logger.Warn().
