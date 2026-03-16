@@ -1564,6 +1564,14 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		auctionBps = 10000
 	}
 
+	// Validate combined fee basis points won't consume entire outbound
+	if minFeeBps+affiliateBps.BigInt().Int64() >= int64(constants.MaxBasisPts) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("combined fee basis points (%d + %s = %d) must be less than %d", minFeeBps, affiliateBps, minFeeBps+affiliateBps.BigInt().Int64(), constants.MaxBasisPts),
+		}, nil
+	}
+
 	var feeAsset common.Asset
 	estimatedFee := cosmos.ZeroUint()
 	if canChargeSource {

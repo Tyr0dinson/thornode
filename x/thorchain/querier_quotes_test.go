@@ -358,4 +358,15 @@ func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp.Valid, Equals, false)
 	c.Assert(resp.ValidationError, Equals, "affiliate_bps 1001 exceeds maximum 1000")
+
+	// Test: combined fee basis points exceed MaxBasisPts
+	mgr.Keeper().SetMimir(ctx, constants.IntentMinFeeBasisPoints.String(), 9500)
+	req = baseReq()
+	req.Affiliate = GetRandomTHORAddress().String()
+	req.AffiliateBps = "500"
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Matches, "combined fee basis points.*must be less than.*")
+	mgr.Keeper().SetMimir(ctx, constants.IntentMinFeeBasisPoints.String(), 50) // restore
 }
