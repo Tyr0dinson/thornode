@@ -610,16 +610,17 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101608.0
+    # Last published op-reth image; op-reth crates moved to ethereum-optimism/optimism
+    # but no standalone container is published there yet.
+    image: ghcr.io/paradigmxyz/op-reth:v1.4.7
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-5}
-      OP_NODE_L1_ETH_RPC: ${ETH_HOST:-http://ethereum:8545}
     ports:
       - 8547:8545
     volumes:
       - "../scripts:/docker/scripts"
-    entrypoint: /docker/scripts/mock/start-eth.sh
+    entrypoint: /docker/scripts/mock/start-base.sh
 
   # ------------------------------ xrp ------------------------------
 

@@ -49,7 +49,8 @@ class EVMSetupTool:
         self.addr = self.account.address
 
         # fund admin admin account with 10M ETH
-        if self.chain not in ["AVAX", "POL"]:
+        # BASE uses op-reth where the admin is pre-funded by start-base.sh
+        if self.chain not in ["AVAX", "POL", "BASE"]:
             coinbase_addr = self.web3.eth.accounts[0]
             self.fund_account(coinbase_addr, self.addr, int(10000000e18))  # 10M ETH
 
@@ -62,6 +63,8 @@ class EVMSetupTool:
         amount = 1_000_000e18
         if self.chain == "POL":
             amount = 100_000_000e18
+        elif self.chain == "BASE":
+            amount = 500_000e18  # admin is pre-funded with 900k by start-base.sh
         # fund simulation account with 1m ETH
         self.fund_account(self.addr, self.simulation_master, int(amount))
 
