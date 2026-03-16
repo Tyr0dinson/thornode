@@ -268,9 +268,10 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		}
 	}
 
-	if chainHeight > transactionTimeout {
-		pruneHeight := uint64(chainHeight - transactionTimeout)
-		err = s.db.PruneSpentUtxos(pruneHeight)
+	// keep the spent utxos twice as long as the tx ttl to be safe
+	pruneHeight := chainHeight - transactionTimeout*2
+	if pruneHeight > 0 {
+		err = s.db.PruneSpentUtxos(uint64(pruneHeight))
 		if err != nil {
 			s.logger.Err(err).Msg("failed to prune spent utxos")
 		}

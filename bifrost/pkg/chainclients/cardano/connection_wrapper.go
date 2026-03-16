@@ -18,6 +18,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+var ErrNoConn = fmt.Errorf("client disconnected")
+
 //  generic
 // ----------------------------------------------------------------------------
 
@@ -195,6 +197,9 @@ func NewNodeConnection(
 func (c *nodeWrapper) Sync(point pcommon.Point) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
+	if c.conn == nil {
+		return ErrNoConn
+	}
 	err := c.conn.ChainSync().Client.Sync([]pcommon.Point{point})
 	if err == nil {
 		c.syncing.Store(true)
@@ -209,6 +214,10 @@ func (c *nodeWrapper) IsSyncSet() bool {
 func (c *nodeWrapper) GetBlock(point pcommon.Point) (ledger.Block, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
+	if c.conn == nil {
+		return nil, ErrNoConn
+	}
+
 	return c.conn.BlockFetch().Client.GetBlock(point)
 }
 
@@ -269,31 +278,56 @@ func (c *clientWrapper) release() {
 	}
 }
 
-func (c *clientWrapper) client() *localstatequery.Client {
+func (c *clientWrapper) client(point *pcommon.Point) (*localstatequery.Client, error) {
 	c.mtx.Lock()
-	return c.conn.LocalStateQuery().Client
+	if c.conn == nil {
+		c.mtx.Unlock()
+		return nil, ErrNoConn
+	}
+
+	if point != nil {
+		err := c.conn.LocalStateQuery().Client.Acquire(point)
+		if err != nil {
+			c.mtx.Unlock()
+			return nil, fmt.Errorf("failed to acquire point")
+		}
+	}
+
+	return c.conn.LocalStateQuery().Client, nil
 }
 
 func (c *clientWrapper) GetChainBlockNo() (int64, error) {
-	client := c.client()
+	client, err := c.client(nil)
+	if err != nil {
+		return 0, err
+	}
 	defer c.release()
 	return client.GetChainBlockNo()
 }
 
 func (c *clientWrapper) GetCurrentProtocolParams() (lcommon.ProtocolParameters, error) {
-	client := c.client()
+	client, err := c.client(nil)
+	if err != nil {
+		return nil, err
+	}
 	defer c.release()
 	return client.GetCurrentProtocolParams()
 }
 
 func (c *clientWrapper) GetChainPoint() (*pcommon.Point, error) {
-	client := c.client()
+	client, err := c.client(nil)
+	if err != nil {
+		return nil, err
+	}
 	defer c.release()
 	return client.GetChainPoint()
 }
 
 func (c *clientWrapper) GetGenesisConfig() (*localstatequery.GenesisConfigResult, error) {
-	client := c.client()
+	client, err := c.client(nil)
+	if err != nil {
+		return nil, err
+	}
 	defer c.release()
 	return client.GetGenesisConfig()
 }
@@ -302,19 +336,11 @@ func (c *clientWrapper) GetUTxOByAddress(
 	addresses []ledger.Address,
 	point *pcommon.Point,
 ) (*localstatequery.UTxOsResult, error) {
-	client := c.client()
-
-	if point != nil {
-		err := client.Acquire(point)
-		if err != nil {
-			c.mtx.Unlock()
-			c.logger.Err(err).Msg("failed to acquire point")
-			return nil, err
-		}
+	client, err := c.client(point)
+	if err != nil {
+		return nil, err
 	}
-
 	defer c.release()
-
 	return client.GetUTxOByAddress(addresses)
 }
 
@@ -322,23 +348,20 @@ func (c *clientWrapper) GetUTxOByTxIn(
 	inputs []ledger.TransactionInput,
 	point *pcommon.Point,
 ) (*localstatequery.UTxOByTxInResult, error) {
-	client := c.client()
-
-	if point != nil {
-		err := client.Acquire(point)
-		if err != nil {
-			c.mtx.Unlock()
-			c.logger.Err(err).Msg("failed to acquire point")
-			return nil, err
-		}
+	client, err := c.client(point)
+	if err != nil {
+		return nil, err
 	}
-
 	defer c.release()
 	return client.GetUTxOByTxIn(inputs)
 }
 
 func (c *clientWrapper) SubmitTx(era uint16, bz []byte) error {
 	c.mtx.Lock()
+	if c.conn == nil {
+		c.mtx.Unlock()
+		return ErrNoConn
+	}
 	defer c.mtx.Unlock()
 	return c.conn.LocalTxSubmission().Client.SubmitTx(era, bz)
 }

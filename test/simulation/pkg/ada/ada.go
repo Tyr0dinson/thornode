@@ -11,7 +11,6 @@ import (
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -19,11 +18,10 @@ import (
 )
 
 type Client struct {
-	n2c      cardano.ClientWrapper
-	key      ed25519.PrivateKey
-	logger   zerolog.Logger
-	address  lcommon.Address
-	protocol *utxocardano.PParams
+	n2c     cardano.ClientWrapper
+	key     ed25519.PrivateKey
+	logger  zerolog.Logger
+	address lcommon.Address
 }
 
 func NewConstructor(n2cAddress string) simtypes.LiteChainClientConstructor {
@@ -41,16 +39,6 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 	c.n2c, err = cardano.NewClientConnection(c.logger, n2cAddress)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create ouroboros connection: %w", err)
-	}
-
-	// fetch network protocol parameters, needed for tx signing
-	protocolParams, err := c.n2c.GetCurrentProtocolParams()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get protocol parameters: %w", err)
-	}
-	c.protocol, err = protocolParams.Utxorpc()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get utxorpc params: %w", err)
 	}
 
 	priv, err := keys.GetPrivateKeyEDDSA()

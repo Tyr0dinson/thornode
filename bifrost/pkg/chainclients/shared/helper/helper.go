@@ -48,7 +48,7 @@ func (h *Helper) UpdateAsgardAddresses() error {
 	}
 
 	if len(addresses) == 0 {
-		return nil
+		h.logger.Warn().Msg("No asgard addresses found")
 	}
 
 	asgardAddresses := make(map[string]bool)
