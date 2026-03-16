@@ -44,7 +44,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect
-	github.com/utxorpc/go-codegen v0.18.1
+	github.com/utxorpc/go-codegen v0.18.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.34.0 // indirect
