@@ -108,14 +108,11 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must have an active pool or be a native/secured/trade asset")
 	}
 
-	// At least one side must be fee-chargeable (has active L1 pool or is RUNE).
-	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
-	// Use IsRune() (not IsNative()) to match runtime behavior — IsNative() includes non-fee-chargeable
-	// THORChain assets like TOR and TCY.
-	canChargeSource := (hasActiveSourcePool && !sourceAsset.IsSecuredAsset() && !sourceAsset.IsTradeAsset()) || sourceAsset.IsRune()
-	canChargeTarget := (hasActiveTargetPool && !targetAsset.IsSecuredAsset() && !targetAsset.IsTradeAsset()) || targetAsset.IsRune()
+	// At least one side must be fee-chargeable under the same rule used at runtime.
+	canChargeSource := isIntentFeeChargeableAsset(sourceAsset, hasActiveSourcePool)
+	canChargeTarget := isIntentFeeChargeableAsset(targetAsset, hasActiveTargetPool)
 	if !canChargeSource && !canChargeTarget {
-		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (has active pool or is native)")
+		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (has active pool or is RUNE)")
 	}
 
 	// Validate combined fee basis points won't consume entire outbound

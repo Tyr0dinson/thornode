@@ -540,5 +540,4 @@ type KeeperIntent interface {
 	GetIntentAuctionBidIterator(ctx cosmos.Context) cosmos.Iterator
 	GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentAuctionBid, error)
 	GetBidderBidForAuction(ctx cosmos.Context, intentTxID common.TxID, bidder common.Address) (types.IntentAuctionBid, error)
-
 }

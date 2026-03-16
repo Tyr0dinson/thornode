@@ -1466,12 +1466,9 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		}, nil
 	}
 
-	// Determine fee chargeability for fee estimation.
-	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
-	// Use IsRune() (not IsNative()) to match runtime behavior — IsNative() includes non-fee-chargeable
-	// THORChain assets like TOR and TCY.
-	canChargeSource := (hasSourcePool && !fromAsset.IsSecuredAsset() && !fromAsset.IsTradeAsset()) || fromAsset.IsRune()
-	canChargeTarget := (hasTargetPool && !toAsset.IsSecuredAsset() && !toAsset.IsTradeAsset()) || toAsset.IsRune()
+	// Determine fee chargeability for fee estimation using the same rule as open/runtime.
+	canChargeSource := isIntentFeeChargeableAsset(fromAsset, hasSourcePool)
+	canChargeTarget := isIntentFeeChargeableAsset(toAsset, hasTargetPool)
 
 	if !canChargeSource && !canChargeTarget {
 		return &types.QueryQuoteIntentResponse{

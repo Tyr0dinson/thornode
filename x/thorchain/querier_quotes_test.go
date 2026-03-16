@@ -298,3 +298,52 @@ func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
 	c.Assert(resp.Valid, Equals, false)
 	c.Assert(resp.ValidationError, Equals, "high_target must be >= low_target")
 }
+
+func (s *QuotesSuite) TestQueryQuoteIntent_RejectsNonFeeChargeableSecuredAndTradePairs(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.IntentsEnabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.IntentTTLBlocks.String(), 100)
+	mgr.Keeper().SetMimir(ctx, constants.IntentPriceSlideBlocks.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.IntentMinFeeBasisPoints.String(), 50)
+
+	qs := queryServer{mgr: mgr}
+
+	testCases := []struct {
+		name      string
+		fromAsset string
+		toAsset   string
+	}{
+		{
+			name:      "secured to secured should fail",
+			fromAsset: common.BTCAsset.GetSecuredAsset().String(),
+			toAsset:   common.ETHAsset.GetSecuredAsset().String(),
+		},
+		{
+			name:      "trade to trade should fail",
+			fromAsset: common.BTCAsset.GetTradeAsset().String(),
+			toAsset:   common.ETHAsset.GetTradeAsset().String(),
+		},
+		{
+			name:      "secured to trade should fail",
+			fromAsset: common.BTCAsset.GetSecuredAsset().String(),
+			toAsset:   common.ETHAsset.GetTradeAsset().String(),
+		},
+	}
+
+	for _, tc := range testCases {
+		req := &types.QueryQuoteIntentRequest{
+			FromAsset:   tc.fromAsset,
+			ToAsset:     tc.toAsset,
+			Amount:      "100000000",
+			Destination: GetRandomTHORAddress().String(),
+			HighTarget:  "500000000",
+			LowTarget:   "400000000",
+		}
+
+		resp, err := qs.queryQuoteIntent(ctx, req)
+		c.Assert(err, IsNil, Commentf("name:%s", tc.name))
+		c.Assert(resp.Valid, Equals, false, Commentf("name:%s", tc.name))
+		c.Check(resp.ValidationError, Matches, ".*fee-chargeable.*", Commentf("name:%s, got err: %s", tc.name, resp.ValidationError))
+	}
+}

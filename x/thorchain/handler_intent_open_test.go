@@ -325,6 +325,63 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 	}
 }
 
+func (HandlerIntentOpenSuite) TestIntentOpen_RejectsNonFeeChargeableSecuredAndTradePairs(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	handler := NewIntentOpenHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	securedBTC := common.BTCAsset.GetSecuredAsset()
+	securedETH := common.ETHAsset.GetSecuredAsset()
+	tradeBTC := common.BTCAsset.GetTradeAsset()
+	tradeETH := common.ETHAsset.GetTradeAsset()
+
+	testCases := []struct {
+		name        string
+		sourceAsset common.Asset
+		targetAsset common.Asset
+	}{
+		{
+			name:        "secured to secured should fail",
+			sourceAsset: securedBTC,
+			targetAsset: securedETH,
+		},
+		{
+			name:        "trade to trade should fail",
+			sourceAsset: tradeBTC,
+			targetAsset: tradeETH,
+		},
+		{
+			name:        "secured to trade should fail",
+			sourceAsset: securedBTC,
+			targetAsset: tradeETH,
+		},
+	}
+
+	for _, tc := range testCases {
+		tx := GetRandomTx()
+		tx.FromAddress = GetRandomTHORAddress()
+		tx.Coins = common.Coins{common.NewCoin(tc.sourceAsset, cosmos.NewUint(100*common.One))}
+
+		msg := NewMsgIntentOpen(
+			tx,
+			tc.targetAsset,
+			GetRandomTHORAddress(),
+			cosmos.NewUint(15*common.One),
+			cosmos.NewUint(10*common.One),
+			common.NoAddress,
+			cosmos.ZeroUint(),
+			w.activeNodeAccount.NodeAddress,
+		)
+
+		_, err := handler.Run(w.ctx, msg)
+		c.Assert(err, NotNil, Commentf("name:%s should have failed", tc.name))
+		c.Check(err.Error(), Matches, ".*fee-chargeable asset.*", Commentf("name:%s, got err: %v", tc.name, err))
+	}
+}
+
 func (HandlerIntentOpenSuite) TestIntentOpen_KeeperErrors(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 

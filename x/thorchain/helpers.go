@@ -24,6 +24,12 @@ func isSimulationMode(ctx cosmos.Context) bool {
 	return ok && simulationMode
 }
 
+// Intent fees can only be charged on RUNE or on pooled L1 assets.
+// Secured/trade assets are intentionally excluded to match executeIntent.
+func isIntentFeeChargeableAsset(asset common.Asset, hasActivePool bool) bool {
+	return (hasActivePool && !asset.IsSecuredAsset() && !asset.IsTradeAsset()) || asset.IsRune()
+}
+
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
