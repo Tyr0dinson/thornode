@@ -353,13 +353,8 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 		return fmt.Errorf("fail to get target pool: %w", err)
 	}
 
-	isSourcePoolAsset := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable && !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset()
-	isSourceRune := intent.Source.Asset.IsRune()
-	isTargetPoolAsset := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable && !solve.TargetCoin.Asset.IsSecuredAsset() && !solve.TargetCoin.Asset.IsTradeAsset()
-	isTargetRune := solve.TargetCoin.Asset.IsRune()
-
-	canChargeSource := isSourcePoolAsset || isSourceRune
-	canChargeTarget := isTargetPoolAsset || isTargetRune
+	canChargeSource := isIntentFeeChargeableAsset(intent.Source.Asset, !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable)
+	canChargeTarget := isIntentFeeChargeableAsset(solve.TargetCoin.Asset, !targetPool.IsEmpty() && targetPool.Status == PoolAvailable)
 
 	// Log a warning if no fees can be charged (pool may have changed status since intent was opened)
 	if !canChargeSource && !canChargeTarget {

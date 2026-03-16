@@ -24,6 +24,33 @@ func isSimulationMode(ctx cosmos.Context) bool {
 	return ok && simulationMode
 }
 
+// isSupportedIntentNativeAsset reports whether a THOR-native asset is currently
+// supported by the intents flow.
+func isSupportedIntentNativeAsset(asset common.Asset) bool {
+	return asset.IsRune() || asset.IsSecuredAsset() || asset.IsTradeAsset()
+}
+
+// isIntentFeeChargeableAsset reports whether intent fees can be charged on the
+// given asset under the current pool-availability state.
+func isIntentFeeChargeableAsset(asset common.Asset, hasActivePool bool) bool {
+	return (hasActivePool && !asset.IsSecuredAsset() && !asset.IsTradeAsset()) || asset.IsRune()
+}
+
+// isUnsupportedIntentNativeAsset reports whether an asset is THOR-native but
+// outside the set currently supported by intents.
+func isUnsupportedIntentNativeAsset(asset common.Asset) bool {
+	return asset.IsNative() && !isSupportedIntentNativeAsset(asset)
+}
+
+// unsupportedIntentNativeAssetError formats the validation error returned when
+// intents receive a THOR-native asset class that is not yet supported.
+func unsupportedIntentNativeAssetError(asset common.Asset) string {
+	return fmt.Sprintf(
+		"THOR-native asset %s is not supported by intents; only RUNE, secured assets, and trade assets are currently supported",
+		asset,
+	)
+}
+
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.

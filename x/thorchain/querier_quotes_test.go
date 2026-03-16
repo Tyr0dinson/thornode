@@ -232,6 +232,12 @@ func (s *QuotesSuite) TestIsIntentCompatibleAsset(c *C) {
 	c.Assert(compatible, Equals, true)
 	c.Assert(reason, Equals, "trade asset")
 
+	// Unsupported THOR-native assets are intentionally blocked for now
+	synthBTC := common.BTCAsset.GetSyntheticAsset()
+	compatible, reason = isIntentCompatibleAsset(ctx, mgr, synthBTC)
+	c.Assert(compatible, Equals, false)
+	c.Assert(reason, Equals, unsupportedIntentNativeAssetError(synthBTC))
+
 	// Test gas asset for supported chain is compatible
 	compatible, reason = isIntentCompatibleAsset(ctx, mgr, common.BTCAsset)
 	c.Assert(compatible, Equals, true)
@@ -370,6 +376,27 @@ func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
 	c.Assert(resp.Valid, Equals, false)
 	c.Assert(resp.ValidationError, Matches, "combined fee basis points.*must be less than.*")
 	mgr.Keeper().SetMimir(ctx, constants.IntentMinFeeBasisPoints.String(), 50) // restore
+
+	synthBTC := common.BTCAsset.GetSyntheticAsset()
+	req = baseReq()
+	req.FromAsset = synthBTC.String()
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, unsupportedIntentNativeAssetError(synthBTC))
+
+	req = &types.QueryQuoteIntentRequest{
+		FromAsset:   common.BTCAsset.GetSecuredAsset().String(),
+		ToAsset:     common.BTCAsset.GetTradeAsset().String(),
+		Amount:      "500000000",
+		Destination: GetRandomTHORAddress().String(),
+		HighTarget:  "5000000",
+		LowTarget:   "4800000",
+	}
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "at least one of source or target asset must be fee-chargeable (L1 pool asset or RUNE)")
 }
 
 func (s *QuotesSuite) TestQueryQuoteIntentSolve_NonGasTargetUsesConvertedGasStep(c *C) {
@@ -439,9 +466,10 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_NonGasTargetUsesConvertedGasStep
 func (s *QuotesSuite) TestQueryQuoteIntentSolve_THORNativeTargetUsesRuneGas(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	qs := queryServer{mgr: mgr}
+	targetAsset := common.BTCAsset.GetSecuredAsset()
 
 	targetPool := NewPool()
-	targetPool.Asset = common.NAMI
+	targetPool.Asset = common.BTCAsset
 	targetPool.Status = PoolAvailable
 	targetPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
 	targetPool.BalanceRune = cosmos.NewUint(1_000_000_000)
@@ -454,7 +482,7 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_THORNativeTargetUsesRuneGas(c *C
 		TxID:          intentTxID,
 		SourceAddress: GetRandomBTCAddress(),
 		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
-		TargetAsset:   common.NAMI,
+		TargetAsset:   targetAsset,
 		TargetAddress: GetRandomTHORAddress(),
 		HighTarget:    cosmos.NewUint(2000),
 		LowTarget:     cosmos.NewUint(1000),
@@ -467,7 +495,7 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_THORNativeTargetUsesRuneGas(c *C
 		SolveTxID:     GetRandomTx().ID,
 		IntentTxID:    intentTxID,
 		SolverAddress: GetRandomTHORAddress(),
-		TargetCoin:    common.NewCoin(common.NAMI, cosmos.NewUint(1000)),
+		TargetCoin:    common.NewCoin(targetAsset, cosmos.NewUint(1000)),
 		SubmitHeight:  ctx.BlockHeight(),
 		MatchHeight:   ctx.BlockHeight(),
 	})
@@ -479,7 +507,7 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_THORNativeTargetUsesRuneGas(c *C
 	c.Assert(err, IsNil)
 	c.Assert(resp.Valid, Equals, true)
 	c.Assert(resp.MinIncrement, Equals, "375000")
-	c.Assert(resp.MinIncrementAsset, Equals, common.NAMI.String())
+	c.Assert(resp.MinIncrementAsset, Equals, targetAsset.String())
 	c.Assert(resp.AmountToBeatBest, Equals, "376000")
 	c.Assert(resp.WouldBeatCurrentBest, Equals, false)
 }
@@ -488,13 +516,14 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_PricingUnavailableUsesOneUnitFal
 	ctx, mgr := setupManagerForTest(c)
 	qs := queryServer{mgr: mgr}
 	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+	targetAsset := common.BTCAsset.GetSecuredAsset()
 
 	intentTxID := GetRandomTx().ID
 	intent := types.Intent{
 		TxID:          intentTxID,
 		SourceAddress: GetRandomBTCAddress(),
 		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
-		TargetAsset:   common.NAMI,
+		TargetAsset:   targetAsset,
 		TargetAddress: GetRandomTHORAddress(),
 		HighTarget:    cosmos.NewUint(2000),
 		LowTarget:     cosmos.NewUint(1000),
@@ -507,7 +536,7 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_PricingUnavailableUsesOneUnitFal
 		SolveTxID:     GetRandomTx().ID,
 		IntentTxID:    intentTxID,
 		SolverAddress: GetRandomTHORAddress(),
-		TargetCoin:    common.NewCoin(common.NAMI, cosmos.NewUint(1000)),
+		TargetCoin:    common.NewCoin(targetAsset, cosmos.NewUint(1000)),
 		SubmitHeight:  ctx.BlockHeight(),
 		MatchHeight:   ctx.BlockHeight(),
 	})
@@ -519,7 +548,7 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_PricingUnavailableUsesOneUnitFal
 	c.Assert(err, IsNil)
 	c.Assert(resp.Valid, Equals, true)
 	c.Assert(resp.MinIncrement, Equals, "1")
-	c.Assert(resp.MinIncrementAsset, Equals, common.NAMI.String())
+	c.Assert(resp.MinIncrementAsset, Equals, targetAsset.String())
 	c.Assert(resp.AmountToBeatBest, Equals, "1001")
 	c.Assert(resp.WouldBeatCurrentBest, Equals, false)
 
@@ -530,4 +559,31 @@ func (s *QuotesSuite) TestQueryQuoteIntentSolve_PricingUnavailableUsesOneUnitFal
 	c.Assert(err, IsNil)
 	c.Assert(resp.Valid, Equals, true)
 	c.Assert(resp.WouldBeatCurrentBest, Equals, true)
+}
+
+func (s *QuotesSuite) TestQueryQuoteIntentSolveRejectsUnsupportedNativeAsset(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+
+	intentTxID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	synthBTC := common.BTCAsset.GetSyntheticAsset()
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   synthBTC,
+		TargetAddress: common.Address("thor1target"),
+		HighTarget:    cosmos.NewUint(20),
+		LowTarget:     cosmos.NewUint(10),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	resp, err := qs.queryQuoteIntentSolve(ctx, &types.QueryQuoteIntentSolveRequest{
+		IntentTxId: intentTxID.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, unsupportedIntentNativeAssetError(synthBTC))
 }

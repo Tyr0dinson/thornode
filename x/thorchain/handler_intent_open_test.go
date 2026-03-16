@@ -299,6 +299,60 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 			expectedErrMsg: ".*below dust threshold.*",
 		},
 		{
+			name: "unsupported THOR-native source asset should fail",
+			setupMsg: func() *MsgIntentOpen {
+				synthTx := GetRandomTx()
+				synthTx.Coins = common.Coins{common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(100*common.One))}
+				return NewMsgIntentOpen(
+					synthTx,
+					common.BTCAsset,
+					GetRandomBTCAddress(),
+					cosmos.NewUint(15*common.One),
+					cosmos.NewUint(10*common.One),
+					common.NoAddress,
+					cosmos.ZeroUint(),
+					w.activeNodeAccount.NodeAddress,
+				)
+			},
+			expectedErrMsg: ".*" + unsupportedIntentNativeAssetError(common.BTCAsset.GetSyntheticAsset()) + ".*",
+		},
+		{
+			name: "unsupported THOR-native target asset should fail",
+			setupMsg: func() *MsgIntentOpen {
+				return NewMsgIntentOpen(
+					tx,
+					common.BTCAsset.GetSyntheticAsset(),
+					GetRandomTHORAddress(),
+					cosmos.NewUint(15*common.One),
+					cosmos.NewUint(10*common.One),
+					common.NoAddress,
+					cosmos.ZeroUint(),
+					w.activeNodeAccount.NodeAddress,
+				)
+			},
+			expectedErrMsg: ".*" + unsupportedIntentNativeAssetError(common.BTCAsset.GetSyntheticAsset()) + ".*",
+		},
+		{
+			name: "supported THOR-native assets without fee-chargeable side should fail",
+			setupMsg: func() *MsgIntentOpen {
+				securedAsset := common.BTCAsset.GetSecuredAsset()
+				tradeAsset := common.BTCAsset.GetTradeAsset()
+				nativeTx := GetRandomTx()
+				nativeTx.Coins = common.Coins{common.NewCoin(securedAsset, cosmos.NewUint(5*common.One))}
+				return NewMsgIntentOpen(
+					nativeTx,
+					tradeAsset,
+					GetRandomTHORAddress(),
+					cosmos.NewUint(15*common.One),
+					cosmos.NewUint(10*common.One),
+					common.NoAddress,
+					cosmos.ZeroUint(),
+					w.activeNodeAccount.NodeAddress,
+				)
+			},
+			expectedErrMsg: ".*fee-chargeable.*L1 pool asset or RUNE.*",
+		},
+		{
 			name: "empty target address should fail",
 			setupMsg: func() *MsgIntentOpen {
 				return NewMsgIntentOpen(

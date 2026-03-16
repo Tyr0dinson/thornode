@@ -1316,6 +1316,9 @@ func isIntentCompatibleAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) 
 	if asset.IsTradeAsset() {
 		return true, "trade asset"
 	}
+	if isUnsupportedIntentNativeAsset(asset) {
+		return false, unsupportedIntentNativeAssetError(asset)
+	}
 
 	// Has active pool
 	pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
@@ -1452,6 +1455,19 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		}, nil
 	}
 
+	if isUnsupportedIntentNativeAsset(fromAsset) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(fromAsset),
+		}, nil
+	}
+	if isUnsupportedIntentNativeAsset(toAsset) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(toAsset),
+		}, nil
+	}
+
 	// Validate asset compatibility
 	sourceCompatible, sourceReason := isIntentCompatibleAsset(ctx, qs.mgr, fromAsset)
 	targetCompatible, targetReason := isIntentCompatibleAsset(ctx, qs.mgr, toAsset)
@@ -1475,8 +1491,8 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 
 	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
-	isSourceNative := fromAsset.IsRune() || fromAsset.IsSecuredAsset() || fromAsset.IsTradeAsset()
-	isTargetNative := toAsset.IsRune() || toAsset.IsSecuredAsset() || toAsset.IsTradeAsset()
+	isSourceNative := isSupportedIntentNativeAsset(fromAsset)
+	isTargetNative := isSupportedIntentNativeAsset(toAsset)
 
 	if !hasSourcePool && !hasTargetPool && !isSourceNative && !isTargetNative {
 		return &types.QueryQuoteIntentResponse{
@@ -1485,12 +1501,9 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		}, nil
 	}
 
-	// Determine fee chargeability for fee estimation.
-	// Secured/trade assets are excluded from fee charging at runtime, so exclude them here too.
-	// Use IsRune() (not IsNative()) to match runtime behavior — IsNative() includes non-fee-chargeable
-	// THORChain assets like TOR and TCY.
-	canChargeSource := (hasSourcePool && !fromAsset.IsSecuredAsset() && !fromAsset.IsTradeAsset()) || fromAsset.IsRune()
-	canChargeTarget := (hasTargetPool && !toAsset.IsSecuredAsset() && !toAsset.IsTradeAsset()) || toAsset.IsRune()
+	// Match runtime fee charging: only RUNE or an active non-secured/non-trade pool asset can pay fees.
+	canChargeSource := isIntentFeeChargeableAsset(fromAsset, hasSourcePool)
+	canChargeTarget := isIntentFeeChargeableAsset(toAsset, hasTargetPool)
 
 	if !canChargeSource && !canChargeTarget {
 		return &types.QueryQuoteIntentResponse{
@@ -1720,6 +1733,19 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 		return &types.QueryQuoteIntentSolveResponse{
 			Valid:           false,
 			ValidationError: fmt.Sprintf("failed to get intent: %s", err),
+		}, nil
+	}
+
+	if isUnsupportedIntentNativeAsset(intent.Source.Asset) {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(intent.Source.Asset),
+		}, nil
+	}
+	if isUnsupportedIntentNativeAsset(intent.TargetAsset) {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: unsupportedIntentNativeAssetError(intent.TargetAsset),
 		}, nil
 	}
 

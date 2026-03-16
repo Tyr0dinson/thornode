@@ -853,9 +853,10 @@ func (HandlerIntentAuctionBidSuite) TestCalculateSolveBeatIncrement_ExternalToke
 
 func (HandlerIntentAuctionBidSuite) TestCalculateSolveBeatIncrement_THORNativeTargetUsesRuneGas(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
+	targetAsset := common.BTCAsset.GetSecuredAsset()
 
 	targetPool := NewPool()
-	targetPool.Asset = common.NAMI
+	targetPool.Asset = common.BTCAsset
 	targetPool.Status = PoolAvailable
 	targetPool.BalanceAsset = cosmos.NewUint(1_000_000_000)
 	targetPool.BalanceRune = cosmos.NewUint(1_000_000_000)
@@ -863,22 +864,23 @@ func (HandlerIntentAuctionBidSuite) TestCalculateSolveBeatIncrement_THORNativeTa
 
 	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
 
-	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.NAMI)
+	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), targetAsset)
 	c.Assert(err, IsNil)
 	c.Assert(increment.Equal(cosmos.NewUint(375000)), Equals, true)
-	c.Assert(incrementAsset.Equals(common.NAMI), Equals, true)
+	c.Assert(incrementAsset.Equals(targetAsset), Equals, true)
 }
 
 func (HandlerIntentAuctionBidSuite) TestCalculateSolveEqualityTolerance_PricingUnavailableFallsBackToExactComparison(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.THORChain, NewNetworkFee(common.THORChain, 1, 375000)), IsNil)
+	targetAsset := common.BTCAsset.GetSecuredAsset()
 
-	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.NAMI)
+	increment, incrementAsset, err := calculateSolveBeatIncrement(w.ctx, NewDummyMgrWithKeeper(w.keeper), targetAsset)
 	c.Assert(err, IsNil)
 	c.Assert(increment.Equal(cosmos.OneUint()), Equals, true)
-	c.Assert(incrementAsset.Equals(common.NAMI), Equals, true)
+	c.Assert(incrementAsset.Equals(targetAsset), Equals, true)
 
-	tolerance, err := calculateSolveEqualityTolerance(w.ctx, NewDummyMgrWithKeeper(w.keeper), common.NAMI)
+	tolerance, err := calculateSolveEqualityTolerance(w.ctx, NewDummyMgrWithKeeper(w.keeper), targetAsset)
 	c.Assert(err, IsNil)
 	c.Assert(tolerance.IsZero(), Equals, true)
 }
