@@ -1447,8 +1447,11 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		}, nil
 	}
 
-	dustThreshold := fromAsset.GetLayer1Asset().Chain.DustThreshold()
-	if !dustThreshold.IsZero() && amount.LTE(dustThreshold) {
+	dustThreshold, shouldCheckDust, err := intentSourceDustThreshold(ctx, qs.mgr, fromAsset)
+	if err != nil {
+		return nil, fmt.Errorf("fail to determine dust threshold for intent quote: %w", err)
+	}
+	if shouldCheckDust && amount.LTE(dustThreshold) {
 		return &types.QueryQuoteIntentResponse{
 			Valid:           false,
 			ValidationError: fmt.Sprintf("source amount %s is below dust threshold %s for %s", amount, dustThreshold, fromAsset.GetLayer1Asset().Chain),
@@ -1679,7 +1682,7 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		PriceContext:           priceContext,
 		Expiry:                 ctx.BlockTime().Add(quoteExpiration).Unix(),
 		Warning:                quoteWarning,
-		RecommendedMinAmountIn: fromAsset.Chain.DustThreshold().String(),
+		RecommendedMinAmountIn: "",
 		SolveMinIncrement:      solveMinIncrement.String(),
 		SolveMinIncrementAsset: solveMinIncrementAsset.String(),
 	}
@@ -1688,8 +1691,9 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	if fromAsset.Chain.IsEVM() {
 		response.Router = routerAddr.String()
 	}
-	if !fromAsset.Chain.DustThreshold().IsZero() {
-		response.DustThreshold = fromAsset.Chain.DustThreshold().String()
+	if shouldCheckDust {
+		response.RecommendedMinAmountIn = dustThreshold.String()
+		response.DustThreshold = dustThreshold.String()
 	}
 	response.Notes = fromAsset.GetChain().InboundNotes()
 	if !fromAsset.Chain.IsTHORChain() {

@@ -349,6 +349,47 @@ func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
 	c.Assert(resp.Valid, Equals, false)
 	c.Assert(resp.ValidationError, Matches, "source amount .* is below dust threshold .*")
 
+	// Test: priceable non-gas asset dust validation via pool pricing
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	tokenPool := NewPool()
+	tokenPool.Asset = erc20Asset
+	tokenPool.Status = PoolAvailable
+	tokenPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	tokenPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, tokenPool), IsNil)
+
+	req = baseReq()
+	req.FromAsset = erc20Asset.String()
+	req.Amount = "1000"
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Matches, "source amount .* is below dust threshold .*")
+
+	// Test: unpriceable non-gas asset skips dust validation, even if quote
+	// construction later fails for unrelated inbound-pricing reasons.
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	req = baseReq()
+	req.FromAsset = "ETH.NOPRICE-0XDEADBEEF"
+	req.Amount = "1"
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(resp, IsNil)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "failed to get inbound info: unable to convert asset: pool does not exist")
+
 	// Test: affiliate_bps without affiliate validation
 	req = baseReq()
 	req.AffiliateBps = "1"

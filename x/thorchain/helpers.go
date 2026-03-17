@@ -51,6 +51,48 @@ func unsupportedIntentNativeAssetError(asset common.Asset) string {
 	)
 }
 
+// intentSourceDustThreshold returns the dust-threshold-equivalent minimum in the
+// source asset's own units when it can be determined. Gas assets use the chain
+// dust threshold directly. Non-gas assets use gas-asset -> RUNE -> source-asset
+// pool pricing when both pools are available, otherwise the dust check is
+// skipped.
+func intentSourceDustThreshold(ctx cosmos.Context, mgr Manager, sourceAsset common.Asset) (cosmos.Uint, bool, error) {
+	layer1Asset := sourceAsset.GetLayer1Asset()
+	dustThreshold := layer1Asset.GetChain().DustThreshold()
+	if dustThreshold.IsZero() {
+		return cosmos.ZeroUint(), false, nil
+	}
+
+	if sourceAsset.IsGasAsset() {
+		return dustThreshold, true, nil
+	}
+
+	gasPool, err := mgr.Keeper().GetPool(ctx, layer1Asset.GetChain().GetGasAsset())
+	if err != nil {
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to get gas pool for intent dust check: %w", err)
+	}
+	sourcePool, err := mgr.Keeper().GetPool(ctx, layer1Asset)
+	if err != nil {
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to get source pool for intent dust check: %w", err)
+	}
+
+	if gasPool.IsEmpty() || gasPool.Status != PoolAvailable || sourcePool.IsEmpty() || sourcePool.Status != PoolAvailable {
+		return cosmos.ZeroUint(), false, nil
+	}
+
+	runeValue := gasPool.AssetValueInRune(dustThreshold)
+	if runeValue.IsZero() {
+		return cosmos.ZeroUint(), false, nil
+	}
+
+	sourceThreshold := sourcePool.RuneValueInAsset(runeValue)
+	if sourceThreshold.IsZero() {
+		return cosmos.ZeroUint(), false, nil
+	}
+
+	return sourceThreshold, true, nil
+}
+
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.

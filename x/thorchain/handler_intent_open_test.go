@@ -379,6 +379,80 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 	}
 }
 
+func (HandlerIntentOpenSuite) TestIntentOpen_PriceableNonGasAssetUsesConvertedDustThreshold(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, ethPool), IsNil)
+
+	tokenPool := NewPool()
+	tokenPool.Asset = erc20Asset
+	tokenPool.Status = PoolAvailable
+	tokenPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	tokenPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, tokenPool), IsNil)
+
+	handler := NewIntentOpenHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(erc20Asset, cosmos.NewUint(1000))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.NewUint(15*common.One),
+		cosmos.NewUint(10*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*below dust threshold.*")
+}
+
+func (HandlerIntentOpenSuite) TestIntentOpen_UnpriceableNonGasAssetSkipsDustCheck(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, btcPool), IsNil)
+
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "NOPRICE-0XDEADBEEF", Ticker: "NOPRICE"}
+
+	handler := NewIntentOpenHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(erc20Asset, cosmos.NewUint(1))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.NewUint(15*common.One),
+		cosmos.NewUint(10*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, IsNil)
+}
+
 func (HandlerIntentOpenSuite) TestIntentOpen_KeeperErrors(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 

@@ -72,28 +72,33 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		return se.ErrInvalidRequest.Wrap("no coins in transaction")
 	}
 
-	// Reject amounts below the chain's dust threshold to prevent spam
 	sourceCoin := msg.Tx.Coins[0]
-	dustThreshold := sourceCoin.Asset.GetLayer1Asset().Chain.DustThreshold()
-	if !dustThreshold.IsZero() && sourceCoin.Amount.LTE(dustThreshold) {
-		return se.ErrInvalidRequest.Wrapf(
-			"source amount %s is below dust threshold %s for %s",
-			sourceCoin.Amount, dustThreshold, sourceCoin.Asset.GetLayer1Asset().Chain,
-		)
-	}
+	sourceAsset := sourceCoin.Asset
+	targetAsset := msg.TargetAsset
 
 	if msg.Tx.Coins[0].Asset.Equals(msg.TargetAsset) {
 		return cosmos.ErrUnknownRequest("source and target assets cannot be the same")
 	}
-
-	sourceAsset := msg.Tx.Coins[0].Asset
-	targetAsset := msg.TargetAsset
 
 	if isUnsupportedIntentNativeAsset(sourceAsset) {
 		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(sourceAsset))
 	}
 	if isUnsupportedIntentNativeAsset(targetAsset) {
 		return se.ErrInvalidRequest.Wrap(unsupportedIntentNativeAssetError(targetAsset))
+	}
+
+	// Reject amounts below the source asset's dust-threshold-equivalent minimum
+	// when that threshold can be priced. If the asset cannot be priced, skip the
+	// dust check instead of comparing unlike units.
+	dustThreshold, shouldCheckDust, err := intentSourceDustThreshold(ctx, h.mgr, sourceAsset)
+	if err != nil {
+		return ErrInternal(err, "fail to determine dust threshold for intent source asset")
+	}
+	if shouldCheckDust && sourceCoin.Amount.LTE(dustThreshold) {
+		return se.ErrInvalidRequest.Wrapf(
+			"source amount %s is below dust threshold %s for %s",
+			sourceCoin.Amount, dustThreshold, sourceCoin.Asset.GetLayer1Asset().Chain,
+		)
 	}
 
 	// At least one asset must have an active pool or be native
