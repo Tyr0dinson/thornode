@@ -347,7 +347,8 @@ func calculateSolveBeatIncrement(ctx cosmos.Context, mgr Manager, targetAsset co
 		runeValue = gasFee
 	} else {
 		// Price the chain gas fee into RUNE using the gas asset pool first.
-		gasPool, err := mgr.Keeper().GetPool(ctx, gasAsset.GetLayer1Asset())
+		var gasPool Pool
+		gasPool, err = mgr.Keeper().GetPool(ctx, gasAsset.GetLayer1Asset())
 		if err != nil {
 			return cosmos.ZeroUint(), common.EmptyAsset, err
 		}

@@ -33,10 +33,15 @@ func (h IntentCancelHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 		return nil, err
 	}
 
-	if err := h.handle(ctx, *msg); err != nil {
+	// Execute cancel atomically so gas booking, txout scheduling, solve refunds,
+	// and the status transition either all commit together or all roll back.
+	cacheCtx, commit := ctx.CacheContext()
+	if err := h.handle(cacheCtx, *msg); err != nil {
 		ctx.Logger().Error("fail to process MsgIntentCancel", "error", err)
 		return nil, err
 	}
+	commit()
+	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
 	return &cosmos.Result{}, nil
 }
@@ -110,7 +115,8 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 			}
 
 			// Cap retained gas at 3x MaxGas. If the user overpaid, refund the excess
-			// immediately so they recover the obvious surplus.
+			// immediately so they recover the obvious surplus. Excess refund failure
+			// is fatal for the cancel so the whole operation can roll back cleanly.
 			retainCap := maxGasCoin.Amount.MulUint64(3)
 			retained := gasFromCancel
 			if gasFromCancel.GT(retainCap) {
@@ -124,9 +130,12 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 					Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
 					InHash:    intent.TxID,
 				}
-				if excessOk, excessErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, excessToi, cosmos.ZeroUint()); excessErr != nil || !excessOk {
-					ctx.Logger().Error("fail to refund excess cancel gas, leaving in vault",
-						"intent_txid", intent.TxID, "excess", excess, "error", excessErr)
+				excessOk, excessErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, excessToi, cosmos.ZeroUint())
+				if excessErr != nil {
+					return fmt.Errorf("fail to schedule excess cancel gas refund: %w", excessErr)
+				}
+				if !excessOk {
+					return fmt.Errorf("fail to schedule excess cancel gas refund")
 				}
 			}
 
