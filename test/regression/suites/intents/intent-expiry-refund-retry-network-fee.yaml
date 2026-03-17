@@ -1,0 +1,204 @@
+{{ template "default-state.yaml" }}
+---
+########################################################################################
+# Minimal intent state for direct expiry refunds.
+# Intentionally omit BTC network_fees at genesis so the first refund scheduling
+# attempt fails and the intent stays retryable until a later tx-network-fee op.
+########################################################################################
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "100000000000"
+              denom: rune
+    thorchain:
+      liquidity_providers:
+        - asset: BTC.BTC
+          asset_address: {{ addr_btc_cat }}
+          asset_deposit_value: "100000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: BTC.BTC
+          balance_asset: "100000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+          coins:
+            - amount: "200000000"
+              asset: BTC.BTC
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+  - .[0].asset == "BTC.BTC"
+---
+########################################################################################
+# Enable intents and shorten TTL so the expiry path triggers quickly.
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: IntentTTLBlocks
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: IntentMinFeeBasisPoints
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create a BTC-source intent. BTC has an active pool so expiry should refund it
+# directly instead of routing to auction.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "IO:ETH.ETH:100000000:80000000:{{ addr_eth_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check the intent exists and is active before expiry.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.source.asset == "BTC.BTC"
+  - .intent.source.amount == "100000000"
+---
+########################################################################################
+# Let the intent expire. Because BTC network fees are missing, refund scheduling
+# should fail and the intent must stay retryable with no outbound queued.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentActive"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - (. == null) or (. | length == 0)
+---
+########################################################################################
+# Add the missing BTC network fee and let the next block retry the refund.
+########################################################################################
+type: tx-network-fee
+block_height: 4
+chain: BTC
+transaction_size: 1000
+transaction_rate: 7
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# The retry should now succeed: the intent transitions to expired and the refund
+# is present in the outbound queue.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentExpired"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "BTC"
+  - .[0].to_address == "{{ addr_btc_fox }}"
+  - .[0].original_memo == "REFUND:{{ observe_txid 1 }}"
+---
+########################################################################################
+# Observe the retry refund so the suite ends with a consistent exported state.
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "99993000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "REFUND:{{ observe_txid 1 }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: fail-export-invariants

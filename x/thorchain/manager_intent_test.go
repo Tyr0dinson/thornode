@@ -15,6 +15,63 @@ type IntentMgrTestSuite struct{}
 
 var _ = Suite(&IntentMgrTestSuite{})
 
+type txOutAttempt struct {
+	ok  bool
+	err error
+}
+
+// scriptedTxOutStore lets tests force specific txout scheduling outcomes before
+// falling back to the normal store behavior.
+type scriptedTxOutStore struct {
+	TxOutStore
+	attempts []txOutAttempt
+}
+
+// newScriptedTxOutStore wraps a real txout store and scripts the next
+// TryAddTxOutItem outcomes for retry-path tests.
+func newScriptedTxOutStore(inner TxOutStore, attempts ...txOutAttempt) *scriptedTxOutStore {
+	return &scriptedTxOutStore{
+		TxOutStore: inner,
+		attempts:   attempts,
+	}
+}
+
+// TryAddTxOutItem consumes the scripted outcomes first, then falls back to the
+// wrapped store once the scripted attempts are exhausted.
+func (s *scriptedTxOutStore) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+	if len(s.attempts) == 0 {
+		return s.TxOutStore.TryAddTxOutItem(ctx, mgr, toi, minOut)
+	}
+
+	attempt := s.attempts[0]
+	s.attempts = s.attempts[1:]
+	if attempt.err != nil || !attempt.ok {
+		return attempt.ok, attempt.err
+	}
+
+	return s.TxOutStore.TryAddTxOutItem(ctx, mgr, toi, minOut)
+}
+
+// setTestTxOutStore swaps the live test manager to use the provided txout
+// store implementation.
+func setTestTxOutStore(c *C, mgr Manager, txOutStore TxOutStore) {
+	realMgr, ok := mgr.(*Mgrs)
+	c.Assert(ok, Equals, true)
+	realMgr.txOutStore = txOutStore
+}
+
+// fundActiveVault tops up the first active Asgard vault with the test coins
+// needed by the real txout store.
+func fundActiveVault(c *C, ctx cosmos.Context, k keeper.Keeper, coins common.Coins) {
+	vaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(vaults) > 0, Equals, true)
+
+	vault := vaults[0]
+	vault.AddFunds(coins)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+}
+
 type TestIntentMgrKeeper struct {
 	keeper.Keeper
 	pools   map[string]Pool
@@ -430,6 +487,605 @@ func (s *IntentMgrTestSuite) TestProcessAuctions_CleansStaleActiveAuctionIndexIn
 	c.Assert(err, IsNil)
 	c.Assert(len(activeAuctions), Equals, 1)
 	c.Check(activeAuctions[0].IntentTxID.Equals(validAuctionTx), Equals, true)
+}
+
+// TestProcessMatches_ExecuteFailureRefundsAllIntentSolves verifies that a
+// failed execution refunds the user source and all solves together.
+func (s *IntentMgrTestSuite) TestProcessMatches_ExecuteFailureRefundsAllIntentSolves(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	))
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 10,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	matchedSolveTx := GetRandomTx()
+	matchedSolve := IntentSolve{
+		SolveTxID:          matchedSolveTx.ID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:       w.ctx.BlockHeight(),
+		MatchHeight:        w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, matchedSolve)
+
+	futureSolveTx := GetRandomTx()
+	futureSolve := IntentSolve{
+		SolveTxID:          futureSolveTx.ID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		SubmitHeight:       w.ctx.BlockHeight() + 1,
+		MatchHeight:        w.ctx.BlockHeight() + 5,
+	}
+	w.keeper.SetIntentSolve(w.ctx, futureSolve)
+
+	txOutStore := newScriptedTxOutStore(w.mgr.TxOutStore(), txOutAttempt{ok: false, err: errKaboom})
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.processMatches(w.ctx), IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentExpired)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, matchedSolveTx.ID), Equals, false)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, futureSolveTx.ID), Equals, false)
+
+	items, err := txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(items), Equals, 3)
+	c.Check(len(txOutStore.GetOutboundItemByToAddress(w.ctx, intent.SourceAddress)), Equals, 1)
+	c.Check(len(txOutStore.GetOutboundItemByToAddress(w.ctx, matchedSolve.SolverAddress)), Equals, 1)
+	c.Check(len(txOutStore.GetOutboundItemByToAddress(w.ctx, futureSolve.SolverAddress)), Equals, 1)
+}
+
+// TestProcessMatches_RefundFailureReschedulesOnlyCurrentMatches verifies that
+// only the currently matched solves are pushed forward after a transient refund
+// failure.
+func (s *IntentMgrTestSuite) TestProcessMatches_RefundFailureReschedulesOnlyCurrentMatches(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	))
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 10,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	matchedSolveTx := GetRandomTx()
+	matchedSolve := IntentSolve{
+		SolveTxID:          matchedSolveTx.ID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:       w.ctx.BlockHeight(),
+		MatchHeight:        w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, matchedSolve)
+
+	futureSolveTx := GetRandomTx()
+	futureSolve := IntentSolve{
+		SolveTxID:          futureSolveTx.ID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		SubmitHeight:       w.ctx.BlockHeight() + 1,
+		MatchHeight:        w.ctx.BlockHeight() + 5,
+	}
+	w.keeper.SetIntentSolve(w.ctx, futureSolve)
+
+	txOutStore := newScriptedTxOutStore(
+		w.mgr.TxOutStore(),
+		txOutAttempt{ok: false, err: errKaboom},
+		txOutAttempt{ok: false, err: errKaboom},
+	)
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.processMatches(w.ctx), IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+
+	rescheduledSolve, err := w.keeper.GetIntentSolve(w.ctx, matchedSolveTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(rescheduledSolve.MatchHeight, Equals, w.ctx.BlockHeight()+1)
+
+	unchangedSolve, err := w.keeper.GetIntentSolve(w.ctx, futureSolveTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(unchangedSolve.MatchHeight, Equals, futureSolve.MatchHeight)
+
+	items, err := txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(items), Equals, 0)
+}
+
+// TestProcessMatches_RefundFailureAtExpiryEdgeDefersToExpiryPath verifies that
+// match-time refund failures right at the expiry boundary are left for the
+// expiry path instead of being rescheduled.
+func (s *IntentMgrTestSuite) TestProcessMatches_RefundFailureAtExpiryEdgeDefersToExpiryPath(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	))
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	matchedSolveTx := GetRandomTx()
+	matchedSolve := IntentSolve{
+		SolveTxID:          matchedSolveTx.ID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:       w.ctx.BlockHeight(),
+		MatchHeight:        w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, matchedSolve)
+
+	txOutStore := newScriptedTxOutStore(
+		w.mgr.TxOutStore(),
+		txOutAttempt{ok: false, err: errKaboom},
+		txOutAttempt{ok: false, err: errKaboom},
+	)
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.processMatches(w.ctx), IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+
+	unchangedSolve, err := w.keeper.GetIntentSolve(w.ctx, matchedSolveTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(unchangedSolve.MatchHeight, Equals, w.ctx.BlockHeight())
+
+	nextCtx := w.ctx.WithBlockHeight(w.ctx.BlockHeight() + 1)
+	c.Assert(intentMgr.EndBlock(nextCtx), IsNil)
+
+	updatedIntent, err = w.keeper.GetIntent(nextCtx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentExpired)
+	c.Check(w.keeper.IntentAuctionExists(nextCtx, intentTx.ID), Equals, false)
+	c.Check(w.keeper.IntentSolveExists(nextCtx, matchedSolveTx.ID), Equals, false)
+}
+
+// TestRefundExpiredIntent_PastGraceDeadlineFallsBackToCleanup verifies that the
+// expiry refund path stops retrying and falls back to cleanup after the grace
+// window has elapsed.
+func (s *IntentMgrTestSuite) TestRefundExpiredIntent_PastGraceDeadlineFallsBackToCleanup(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	))
+
+	ttlBlocks := w.keeper.GetConfigInt64(w.ctx, constants.IntentTTLBlocks)
+	if ttlBlocks <= 0 {
+		ttlBlocks = 14400
+	}
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - ttlBlocks - 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	solveTx := GetRandomTx()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomETHAddress(),
+		TargetCoin:    common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:  w.ctx.BlockHeight() - 5,
+		MatchHeight:   w.ctx.BlockHeight() - 1,
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	txOutStore := newScriptedTxOutStore(
+		w.mgr.TxOutStore(),
+		txOutAttempt{ok: false, err: errKaboom},
+		txOutAttempt{ok: false, err: errKaboom},
+	)
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.refundExpiredIntent(w.ctx, intent), IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentExpired)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, solveTx.ID), Equals, false)
+
+	items, err := txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(items), Equals, 0)
+}
+
+// TestRefundExpiredIntent_RefundErrorLeavesStateRetryable verifies that an
+// expiry refund scheduling failure leaves the intent and solves unchanged for
+// retry on a later block.
+func (s *IntentMgrTestSuite) TestRefundExpiredIntent_RefundErrorLeavesStateRetryable(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	solveTx := GetRandomTx()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomETHAddress(),
+		TargetCoin:    common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:  w.ctx.BlockHeight() - 5,
+		MatchHeight:   w.ctx.BlockHeight() - 1,
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	txOutStore := newScriptedTxOutStore(w.mgr.TxOutStore(), txOutAttempt{ok: false, err: errKaboom})
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err := intentMgr.refundExpiredIntent(w.ctx, intent)
+	c.Assert(err, NotNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, solveTx.ID), Equals, true)
+}
+
+// TestExpireIntent_AuctionRefundFalseLeavesStateRetryable verifies that a
+// failed auction-start solve refund does not persist the auction transition.
+func (s *IntentMgrTestSuite) TestExpireIntent_AuctionRefundFalseLeavesStateRetryable(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	cancelWindow := w.keeper.GetConfigInt64(w.ctx, constants.IntentPostExpiryCancelBlocks)
+	if cancelWindow < 0 {
+		cancelWindow = 0
+	}
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomETHAddress(),
+		Source:        common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - cancelWindow - 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	solveTx := GetRandomTx()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomBTCAddress(),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:  w.ctx.BlockHeight() - 5,
+		MatchHeight:   w.ctx.BlockHeight() - 1,
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	txOutStore := newScriptedTxOutStore(w.mgr.TxOutStore(), txOutAttempt{ok: false, err: nil})
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err := intentMgr.expireIntent(w.ctx, intent)
+	c.Assert(err, NotNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+	c.Check(w.keeper.IntentAuctionExists(w.ctx, intentTx.ID), Equals, false)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, solveTx.ID), Equals, true)
+}
+
+// TestEndBlock_RetriesIntentRefundAfterTransientFailure verifies that EndBlock
+// retries a previously failed expiry-to-auction transition on the next block.
+func (s *IntentMgrTestSuite) TestEndBlock_RetriesIntentRefundAfterTransientFailure(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	cancelWindow := w.keeper.GetConfigInt64(w.ctx, constants.IntentPostExpiryCancelBlocks)
+	if cancelWindow < 0 {
+		cancelWindow = 0
+	}
+	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One)),
+	))
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomETHAddress(),
+		Source:        common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - cancelWindow - 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	solveTx := GetRandomTx()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomBTCAddress(),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:  w.ctx.BlockHeight() - 5,
+		MatchHeight:   w.ctx.BlockHeight() - 1,
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	txOutStore := newScriptedTxOutStore(w.mgr.TxOutStore(), txOutAttempt{ok: false, err: errKaboom})
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.EndBlock(w.ctx), IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+	c.Check(w.keeper.IntentAuctionExists(w.ctx, intentTx.ID), Equals, false)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, solveTx.ID), Equals, true)
+
+	nextCtx := w.ctx.WithBlockHeight(w.ctx.BlockHeight() + 1)
+	c.Assert(intentMgr.EndBlock(nextCtx), IsNil)
+
+	updatedIntent, err = w.keeper.GetIntent(nextCtx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentAuctioning)
+	c.Check(w.keeper.IntentAuctionExists(nextCtx, intentTx.ID), Equals, true)
+	c.Check(w.keeper.IntentSolveExists(nextCtx, solveTx.ID), Equals, false)
+}
+
+// TestEndBlock_RetriesTerminalSolveRefundsForCompletedIntent verifies that
+// leftover solves on a terminal intent are retried by EndBlock until refunded.
+func (s *IntentMgrTestSuite) TestEndBlock_RetriesTerminalSolveRefundsForCompletedIntent(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	))
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 100,
+		Status:        IntentCompleted,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	solveTx := GetRandomTx()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomETHAddress(),
+		TargetCoin:    common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:  w.ctx.BlockHeight() - 5,
+		MatchHeight:   w.ctx.BlockHeight() - 1,
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	txOutStore := newScriptedTxOutStore(w.mgr.TxOutStore(), txOutAttempt{ok: false, err: errKaboom})
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.EndBlock(w.ctx), IsNil)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, solveTx.ID), Equals, true)
+
+	nextCtx := w.ctx.WithBlockHeight(w.ctx.BlockHeight() + 1)
+	c.Assert(intentMgr.EndBlock(nextCtx), IsNil)
+	c.Check(w.keeper.IntentSolveExists(nextCtx, solveTx.ID), Equals, false)
+
+	updatedIntent, err := w.keeper.GetIntent(nextCtx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentCompleted)
+}
+
+// TestProcessMatches_CompletionRefundFailureLeavesTerminalSolveRetryable
+// verifies that a post-completion refund failure leaves only the remaining
+// solve retryable for the terminal-refund pass.
+func (s *IntentMgrTestSuite) TestProcessMatches_CompletionRefundFailureLeavesTerminalSolveRetryable(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	))
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 10,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	winningSolveTx := GetRandomTx()
+	winningSolve := IntentSolve{
+		SolveTxID:          winningSolveTx.ID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		SubmitHeight:       w.ctx.BlockHeight(),
+		MatchHeight:        w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, winningSolve)
+
+	losingSolveTx := GetRandomTx()
+	losingSolve := IntentSolve{
+		SolveTxID:          losingSolveTx.ID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:       w.ctx.BlockHeight() + 1,
+		MatchHeight:        w.ctx.BlockHeight() + 5,
+	}
+	w.keeper.SetIntentSolve(w.ctx, losingSolve)
+
+	txOutStore := newScriptedTxOutStore(
+		w.mgr.TxOutStore(),
+		txOutAttempt{ok: true, err: nil},
+		txOutAttempt{ok: true, err: nil},
+		txOutAttempt{ok: false, err: errKaboom},
+	)
+	setTestTxOutStore(c, w.mgr, txOutStore)
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.processMatches(w.ctx), IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentCompleted)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, winningSolveTx.ID), Equals, false)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, losingSolveTx.ID), Equals, true)
+
+	nextCtx := w.ctx.WithBlockHeight(w.ctx.BlockHeight() + 1)
+	c.Assert(intentMgr.processTerminalSolveRefunds(nextCtx), IsNil)
+	c.Check(w.keeper.IntentSolveExists(nextCtx, losingSolveTx.ID), Equals, false)
 }
 
 // TestExecuteIntent_WithAffiliateFee tests that affiliate fee is charged at intent completion

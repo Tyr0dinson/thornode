@@ -223,29 +223,15 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		}
 	}
 
-	// For RUNE, use Asgard module (where intent RUNE is escrowed)
-	// For other assets, default to Asgard
-	moduleName := ""
-	if intent.Source.Asset.IsRune() {
-		moduleName = AsgardName
-	}
-
-	// Schedule the txout for refund
-	toi := TxOutItem{
-		Chain:      intent.Source.Asset.GetChain(),
-		ToAddress:  intent.SourceAddress,
-		Coin:       refundCoin,
-		Memo:       fmt.Sprintf("REFUND:%s", intent.TxID),
-		InHash:     intent.TxID,
-		ModuleName: moduleName,
-	}
-
-	ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-	if err != nil {
-		return fmt.Errorf("fail to add outbound tx: %w", err)
-	}
-	if !ok {
-		return fmt.Errorf("fail to schedule refund txout")
+	toi := newRefundTxOutItem(intent.SourceAddress, refundCoin, intent.TxID)
+	if err := tryScheduleRefundTxOut(ctx, h.mgr, toi, "schedule refund txout", false, ""); err != nil {
+		ctx.Logger().Error("fail to schedule intent refund txout",
+			"txid", intent.TxID,
+			"asset", refundCoin.Asset,
+			"amount", refundCoin.Amount,
+			"error", err,
+		)
+		return err
 	}
 
 	ctx.Logger().Info("scheduled intent refund",

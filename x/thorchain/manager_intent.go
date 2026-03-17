@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// IntentMgr handles intent matching and expiration in EndBlock
+// IntentMgr handles the end-block intent lifecycle.
 type IntentMgr struct {
 	mgr Manager
 }
@@ -22,7 +22,7 @@ func NewIntentManager(mgr Manager) IntentManager {
 	}
 }
 
-// EndBlock processes intents at the end of each block
+// EndBlock processes intents at the end of each block.
 func (im *IntentMgr) EndBlock(ctx cosmos.Context) error {
 	intentsEnabled := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentsEnabled) > 0
 
@@ -44,6 +44,11 @@ func (im *IntentMgr) EndBlock(ctx cosmos.Context) error {
 
 	if err := im.processAuctions(ctx); err != nil {
 		ctx.Logger().Error("fail to process intent auctions", "error", err)
+		return err
+	}
+
+	if err := im.processTerminalSolveRefunds(ctx); err != nil {
+		ctx.Logger().Error("fail to process terminal intent solve refunds", "error", err)
 		return err
 	}
 
@@ -105,83 +110,34 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	return candidates[0]
 }
 
-// refundLosingSolves refunds all solve bids except the winning one
-func (im *IntentMgr) refundLosingSolves(ctx cosmos.Context, intent types.Intent, winningSolveTxID common.TxID, solves []types.IntentSolve) {
-	for _, solve := range solves {
-		if solve.SolveTxID.Equals(winningSolveTxID) {
-			continue // Skip winner
-		}
-
-		// Set ModuleName for RUNE solves (RUNE is escrowed in Asgard module)
-		moduleName := ""
-		if solve.TargetCoin.Asset.IsRune() {
-			moduleName = AsgardName
-		}
-
-		toi := TxOutItem{
-			Chain:      solve.TargetCoin.Asset.GetChain(),
-			ToAddress:  solve.SolverAddress,
-			Coin:       solve.TargetCoin,
-			Memo:       NewRefundMemo(solve.SolveTxID).String(),
-			InHash:     solve.SolveTxID,
-			ModuleName: moduleName,
-		}
-
-		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
-		switch {
-		case err != nil:
-			ctx.Logger().Error("fail to refund losing solve", "solve_txid", solve.SolveTxID, "error", err)
-			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
-		case !ok:
-			ctx.Logger().Error("fail to schedule losing solve refund", "solve_txid", solve.SolveTxID)
-			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
-		default:
-			ctx.Logger().Info("refunded losing intent solve",
-				"intent_txid", intent.TxID,
-				"solve_txid", solve.SolveTxID,
-				"amount", solve.TargetCoin.Amount,
-			)
-		}
-		// Clean up the solve record
-		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
-	}
-}
-
-// refundUserSource refunds the user's escrowed source funds when intent execution fails
-func (im *IntentMgr) refundUserSource(ctx cosmos.Context, intent types.Intent) {
-	sourceAsset := intent.Source.Asset
-
-	moduleName := ""
-	if sourceAsset.IsRune() {
-		moduleName = AsgardName
+// refundUserSource refunds the user's escrowed source funds in the various
+// intent refund paths.
+func (im *IntentMgr) refundUserSource(ctx cosmos.Context, intent types.Intent, reason, cleanupReason string, cleanupOnFailure bool) error {
+	toi := newRefundTxOutItem(intent.SourceAddress, intent.Source, intent.TxID)
+	if err := tryScheduleRefundTxOut(
+		ctx,
+		im.mgr,
+		toi,
+		fmt.Sprintf("schedule user source refund during %s", reason),
+		cleanupOnFailure,
+		cleanupReason,
+	); err != nil {
+		ctx.Logger().Error("fail to refund user source",
+			"intent_txid", intent.TxID,
+			"reason", reason,
+			"error", err,
+		)
+		return err
 	}
 
-	toi := TxOutItem{
-		Chain:      sourceAsset.GetChain(),
-		ToAddress:  intent.SourceAddress,
-		Coin:       intent.Source,
-		Memo:       NewRefundMemo(intent.TxID).String(),
-		InHash:     intent.TxID,
-		ModuleName: moduleName,
-	}
-
-	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
-	if err != nil {
-		ctx.Logger().Error("fail to refund user source on intent execution failure", "intent_txid", intent.TxID, "error", err)
-		unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_intent_execution_refund")
-		return
-	}
-	if !ok {
-		ctx.Logger().Error("fail to schedule user source refund on intent execution failure", "intent_txid", intent.TxID)
-		unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_intent_execution_refund")
-		return
-	}
-
-	ctx.Logger().Info("refunded user source due to intent execution failure",
+	ctx.Logger().Info("refunded user source",
 		"intent_txid", intent.TxID,
 		"amount", intent.Source.Amount,
 		"to", intent.SourceAddress,
+		"reason", reason,
 	)
+
+	return nil
 }
 
 // processMatches executes intents that have solve bids matching at the current height
@@ -261,30 +217,26 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 		cacheCtx, commit := ctx.CacheContext()
 		if err := im.executeIntent(cacheCtx, intent, winningSolve); err != nil {
 			ctx.Logger().Error("fail to execute intent", "intent_txid", intentTxID, "solve_txid", winningSolve.SolveTxID, "error", err)
-			// CacheContext discarded - no pool/fee changes persisted
-			// Refund ALL solvers (including winner) since execution failed
-			im.refundLosingSolves(ctx, intent, common.BlankTxID, intentSolves)
-			// Refund the user's escrowed source funds
-			im.refundUserSource(ctx, intent)
-			// Mark intent as expired to prevent double-refund in processExpirations
-			intent.Status = IntentExpired
-			im.mgr.Keeper().SetIntent(ctx, intent)
-			// Refund any remaining solves at other match heights to prevent orphaned funds
-			if err := im.refundIntentSolves(ctx, intent); err != nil {
-				ctx.Logger().Error("fail to refund remaining solves after execution failure", "intent_txid", intentTxID, "error", err)
+			// CacheContext discarded - no pool/fee changes persisted.
+			// Refund the full solve set and user source atomically.
+			// If that still fails, keep the relevant solves retryable
+			// rather than orphaning funds.
+			if refundErr := im.refundFailedMatch(ctx, intent); refundErr != nil {
+				if currentHeight+1 < intent.ExpiryHeight {
+					ctx.Logger().Error("fail to refund intent after execution failure, rescheduling current matches for retry", "intent_txid", intentTxID, "error", refundErr)
+					im.rescheduleMatchedSolves(ctx, intent, intentSolves, currentHeight+1)
+				} else {
+					ctx.Logger().Error("fail to refund intent after execution failure, leaving matched solves for expiry-path cleanup", "intent_txid", intentTxID, "expiry_height", intent.ExpiryHeight, "error", refundErr)
+				}
 			}
 			continue
 		}
 		commit()
 
-		// Refund losing solves at this height (winner excluded since execution succeeded)
-		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
-
-		// Clean up the winning solve record
+		// The winner has already been consumed by executeIntent.
+		// Refund any remaining still-escrowed solves regardless of original match height.
 		im.mgr.Keeper().RemoveIntentSolve(ctx, winningSolve.SolveTxID)
-
-		// Refund any remaining solves at other match heights to prevent orphaned funds
-		if err := im.refundIntentSolves(ctx, intent); err != nil {
+		if err := im.RefundIntentSolves(ctx, intent); err != nil {
 			ctx.Logger().Error("fail to refund remaining solves after intent completion", "intent_txid", intentTxID, "error", err)
 		}
 	}
@@ -817,44 +769,43 @@ func (im *IntentMgr) StartIntentAuction(ctx cosmos.Context, intent Intent) error
 		OwnerAddress:    intent.SourceAddress,
 	}
 
-	// Save the auction
-	im.mgr.Keeper().SetIntentAuction(ctx, auction)
+	return im.withCachedContext(ctx, func(cacheCtx cosmos.Context) error {
+		// Save the auction first, then refund any existing solves before changing
+		// the intent status. If any refund fails to schedule, the cache is
+		// discarded so the auction start is retried next block instead of
+		// finalizing the transition with orphaned solve funds.
+		im.mgr.Keeper().SetIntentAuction(cacheCtx, auction)
 
-	// Refund any existing solves for this intent before transitioning to auction.
-	// Return the error so processExpirations' CacheContext rolls back and retries
-	// next block rather than finalizing the intent/auction state while some solve
-	// refunds failed to schedule.
-	if err := im.refundIntentSolves(ctx, intent); err != nil {
-		return fmt.Errorf("fail to refund intent solves before auction start: %w", err)
-	}
+		if err := im.refundIntentSolves(cacheCtx, intent, false, ""); err != nil {
+			return err
+		}
 
-	// Update intent status to auctioning
-	intent.Status = IntentAuctioning
-	im.mgr.Keeper().SetIntent(ctx, intent)
+		intent.Status = IntentAuctioning
+		im.mgr.Keeper().SetIntent(cacheCtx, intent)
 
-	// Emit auction start event
-	evt := NewEventIntentAuctionStart(
-		intent.TxID,
-		auction.AuctionAmount,
-		auction.RemainingAmount,
-		bidAsset,
-		minBid,
-		auction.ExpiryHeight,
-	)
-	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-		ctx.Logger().Error("fail to emit intent auction start event", "error", err)
-	}
+		evt := NewEventIntentAuctionStart(
+			intent.TxID,
+			auction.AuctionAmount,
+			auction.RemainingAmount,
+			bidAsset,
+			minBid,
+			auction.ExpiryHeight,
+		)
+		if err := im.mgr.EventMgr().EmitEvent(cacheCtx, evt); err != nil {
+			cacheCtx.Logger().Error("fail to emit intent auction start event", "error", err)
+		}
 
-	ctx.Logger().Info("started intent auction",
-		"intent_txid", intent.TxID,
-		"auction_amount", auctionAmount,
-		"remaining_amount", remainingAmount,
-		"bid_asset", bidAsset,
-		"min_bid", minBid,
-		"expiry_height", auction.ExpiryHeight,
-	)
+		cacheCtx.Logger().Info("started intent auction",
+			"intent_txid", intent.TxID,
+			"auction_amount", auctionAmount,
+			"remaining_amount", remainingAmount,
+			"bid_asset", bidAsset,
+			"min_bid", minBid,
+			"expiry_height", auction.ExpiryHeight,
+		)
 
-	return nil
+		return nil
+	})
 }
 
 // refundExpiredIntent refunds an expired intent directly without auction
@@ -863,133 +814,90 @@ func (im *IntentMgr) StartIntentAuction(ctx cosmos.Context, intent Intent) error
 // IntentTTLBlocks beyond expiry falls back to unrefundableCoinCleanup
 // to prevent the intent from blocking processing indefinitely.
 func (im *IntentMgr) refundExpiredIntent(ctx cosmos.Context, intent Intent) error {
-	sourceAsset := intent.Source.Asset
-
-	// Determine module name for RUNE
-	moduleName := ""
-	if sourceAsset.IsRune() {
-		moduleName = AsgardName
+	ttlBlocks := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentTTLBlocks)
+	if ttlBlocks <= 0 {
+		ttlBlocks = 14400
+	}
+	graceDeadline := intent.ExpiryHeight + ttlBlocks
+	cleanupOnFailure := ctx.BlockHeight() > graceDeadline
+	if cleanupOnFailure {
+		ctx.Logger().Error("intent refund grace period exceeded, cleaning up unrefundable funds",
+			"txid", intent.TxID,
+			"expiry_height", intent.ExpiryHeight,
+			"grace_deadline", graceDeadline,
+		)
 	}
 
-	// Create refund txout
-	toi := TxOutItem{
-		Chain:      sourceAsset.GetChain(),
-		ToAddress:  intent.SourceAddress,
-		Coin:       intent.Source,
-		Memo:       NewRefundMemo(intent.TxID).String(),
-		InHash:     intent.TxID,
-		ModuleName: moduleName,
-	}
-
-	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
-	if err != nil || !ok {
-		// Check if we've exceeded the grace period for retries
-		ttlBlocks := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentTTLBlocks)
-		if ttlBlocks <= 0 {
-			ttlBlocks = 14400
+	return im.withCachedContext(ctx, func(cacheCtx cosmos.Context) error {
+		if err := im.refundUserSource(cacheCtx, intent, "expired intent", "intent_refund_grace_exceeded", cleanupOnFailure); err != nil {
+			return err
 		}
-		graceDeadline := intent.ExpiryHeight + ttlBlocks
-		if ctx.BlockHeight() > graceDeadline {
-			// Grace period exceeded — fall back to unrefundableCoinCleanup to unblock processing
-			ctx.Logger().Error("intent refund grace period exceeded, cleaning up unrefundable funds",
-				"txid", intent.TxID,
-				"expiry_height", intent.ExpiryHeight,
-				"grace_deadline", graceDeadline,
-			)
-			unrefundableCoinCleanup(ctx, im.mgr, toi, "intent_refund_grace_exceeded")
-
-			// Still proceed with cleanup below
-		} else {
-			// Within grace period — return error to retry next block
-			if err != nil {
-				return fmt.Errorf("fail to schedule refund for expired intent: %w", err)
-			}
-			return fmt.Errorf("fail to add refund txout for expired intent")
+		if err := im.refundIntentSolves(cacheCtx, intent, cleanupOnFailure, "intent_refund_grace_exceeded"); err != nil {
+			return err
 		}
-	}
 
-	// Refund any existing solves for this intent. Return the error so the caller's
-	// CacheContext retries next block instead of finalizing the intent as expired
-	// while some solve refunds failed to schedule.
-	if err := im.refundIntentSolves(ctx, intent); err != nil {
-		return fmt.Errorf("fail to refund intent solves for expired intent: %w", err)
-	}
+		intent.Status = IntentExpired
+		im.mgr.Keeper().SetIntent(cacheCtx, intent)
 
-	// Update intent status
-	intent.Status = IntentExpired
-	im.mgr.Keeper().SetIntent(ctx, intent)
+		evt := NewEventIntentExpire(intent.TxID, intent.Source, intent.SourceAddress, false)
+		if err := im.mgr.EventMgr().EmitEvent(cacheCtx, evt); err != nil {
+			cacheCtx.Logger().Error("fail to emit intent expire event", "error", err)
+		}
 
-	// Emit expiry event (abandoned=false since we are refunding)
-	evt := NewEventIntentExpire(intent.TxID, intent.Source, intent.SourceAddress, false)
-	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-		ctx.Logger().Error("fail to emit intent expire event", "error", err)
-	}
+		cacheCtx.Logger().Info("refunded expired intent",
+			"txid", intent.TxID,
+			"amount", intent.Source.Amount,
+			"to", intent.SourceAddress,
+		)
 
-	ctx.Logger().Info("refunded expired intent",
-		"txid", intent.TxID,
-		"amount", intent.Source.Amount,
-		"to", intent.SourceAddress,
-	)
-
-	return nil
+		return nil
+	})
 }
 
-// RefundIntentSolves refunds all solve bids for an intent (public interface method)
+// RefundIntentSolves refunds all solve bids for an intent inside an atomic
+// cache context.
 func (im *IntentMgr) RefundIntentSolves(ctx cosmos.Context, intent types.Intent) error {
-	return im.refundIntentSolves(ctx, intent)
+	return im.withCachedContext(ctx, func(cacheCtx cosmos.Context) error {
+		return im.refundIntentSolves(cacheCtx, intent, false, "")
+	})
 }
 
-// refundIntentSolves refunds all solve bids for an intent when auction starts
-func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error {
+// refundIntentSolves refunds all solve bids for an intent while reloading them
+// inside the active cache context so retries operate on the latest state.
+func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent, cleanupOnFailure bool, cleanupReason string) error {
 	solves, err := im.mgr.Keeper().GetIntentSolvesByIntentID(ctx, intent.TxID)
 	if err != nil {
 		return fmt.Errorf("fail to get intent solves: %w", err)
 	}
 
-	var failedRefunds []string
 	for _, solve := range solves {
-		// Set ModuleName for RUNE solves (RUNE is escrowed in Asgard module)
-		moduleName := ""
-		if solve.TargetCoin.Asset.IsRune() {
-			moduleName = AsgardName
-		}
-
-		// Schedule refund for the solve
-		toi := TxOutItem{
-			Chain:      solve.TargetCoin.Asset.GetChain(),
-			ToAddress:  solve.SolverAddress,
-			Coin:       solve.TargetCoin,
-			Memo:       NewRefundMemo(solve.SolveTxID).String(),
-			InHash:     solve.SolveTxID,
-			ModuleName: moduleName,
-		}
-
-		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
-		switch {
-		case err != nil:
-			// Record the failure and return error so the caller's CacheContext rolls
-			// back and retries; do not run unrefundable cleanup in this path.
-			ctx.Logger().Error("fail to refund solve", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount, "error", err)
-			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
-		case !ok:
-			// Record the failure and return error so the caller's CacheContext rolls
-			// back and retries; do not run unrefundable cleanup in this path.
-			ctx.Logger().Error("fail to schedule solve refund", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount)
-			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
-		default:
-			ctx.Logger().Info("refunded intent solve due to auction start",
+		toi := newRefundTxOutItem(solve.SolverAddress, solve.TargetCoin, solve.SolveTxID)
+		if err := tryScheduleRefundTxOut(
+			ctx,
+			im.mgr,
+			toi,
+			fmt.Sprintf("schedule solve refund for %s", solve.SolveTxID),
+			cleanupOnFailure,
+			cleanupReason,
+		); err != nil {
+			ctx.Logger().Error("fail to schedule intent solve refund",
 				"intent_txid", intent.TxID,
 				"solve_txid", solve.SolveTxID,
+				"solver_address", solve.SolverAddress,
 				"amount", solve.TargetCoin.Amount,
+				"error", err,
 			)
+			return err
 		}
-		// Clean up the solve record
+
+		ctx.Logger().Info("refunded intent solve",
+			"intent_txid", intent.TxID,
+			"solve_txid", solve.SolveTxID,
+			"amount", solve.TargetCoin.Amount,
+		)
 		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
 	}
 
-	if len(failedRefunds) > 0 {
-		return fmt.Errorf("failed to refund %d solves: %v", len(failedRefunds), failedRefunds)
-	}
 	return nil
 }
 
@@ -1426,6 +1334,146 @@ func (im *IntentMgr) cancelAuction(ctx cosmos.Context, auction IntentAuction, in
 	evt := NewEventIntentAuctionCancel(auction.IntentTxID, abandoned)
 	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 		ctx.Logger().Error("fail to emit auction cancel event", "error", err)
+	}
+
+	return nil
+}
+
+// withCachedContext stages intent-related state changes and only commits them
+// after the wrapped operation completes successfully.
+func (im *IntentMgr) withCachedContext(ctx cosmos.Context, handler func(cosmos.Context) error) error {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := handler(cacheCtx); err != nil {
+		return err
+	}
+	commit()
+	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
+	return nil
+}
+
+// newRefundTxOutItem keeps refund txout construction consistent across intent
+// execution, expiry, and cancel flows.
+func newRefundTxOutItem(toAddress common.Address, coin common.Coin, inHash common.TxID) TxOutItem {
+	moduleName := ""
+	if coin.Asset.IsRune() {
+		moduleName = AsgardName
+	}
+
+	return TxOutItem{
+		Chain:      coin.Asset.GetChain(),
+		ToAddress:  toAddress,
+		Coin:       coin,
+		Memo:       NewRefundMemo(inHash).String(),
+		InHash:     inHash,
+		ModuleName: moduleName,
+	}
+}
+
+// tryScheduleRefundTxOut centralizes the choice between leaving a refund
+// retryable and taking the explicit last-resort cleanup path.
+func tryScheduleRefundTxOut(ctx cosmos.Context, mgr Manager, toi TxOutItem, attempt string, cleanupOnFailure bool, cleanupReason string) error {
+	ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+	if err != nil || !ok {
+		if cleanupOnFailure {
+			unrefundableCoinCleanup(ctx, mgr, toi, cleanupReason)
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("fail to %s: %w", attempt, err)
+		}
+		return fmt.Errorf("fail to %s", attempt)
+	}
+	return nil
+}
+
+// refundFailedMatch finalizes a failed execution only after both the user
+// refund and every solve refund were successfully scheduled together.
+func (im *IntentMgr) refundFailedMatch(ctx cosmos.Context, intent Intent) error {
+	return im.withCachedContext(ctx, func(cacheCtx cosmos.Context) error {
+		if err := im.refundUserSource(cacheCtx, intent, "intent execution failure", "failed_intent_execution_refund", false); err != nil {
+			return err
+		}
+		if err := im.refundIntentSolves(cacheCtx, intent, false, ""); err != nil {
+			return err
+		}
+
+		intent.Status = IntentExpired
+		im.mgr.Keeper().SetIntent(cacheCtx, intent)
+		return nil
+	})
+}
+
+// rescheduleMatchedSolves moves only the current match-height solves forward by
+// one block after a transient refund scheduling failure.
+func (im *IntentMgr) rescheduleMatchedSolves(ctx cosmos.Context, intent Intent, solves []types.IntentSolve, nextHeight int64) {
+	for _, solve := range solves {
+		solve.MatchHeight = nextHeight
+		im.mgr.Keeper().SetIntentSolve(ctx, solve)
+	}
+
+	ctx.Logger().Info("rescheduled matched intent solves for retry",
+		"intent_txid", intent.TxID,
+		"next_match_height", nextHeight,
+		"solve_count", len(solves),
+	)
+}
+
+// processTerminalSolveRefunds retries leftover solve refunds for intents that
+// are already in a terminal state from a prior block.
+func (im *IntentMgr) processTerminalSolveRefunds(ctx cosmos.Context) error {
+	maxProcessing := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMaxEndBlockProcessing)
+	if maxProcessing <= 0 {
+		maxProcessing = 100
+	}
+
+	var terminalIntents []types.Intent
+	seen := make(map[string]struct{})
+	iter := im.mgr.Keeper().GetIntentSolveIterator(ctx)
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		if int64(len(terminalIntents)) >= maxProcessing {
+			break
+		}
+
+		var solve types.IntentSolve
+		im.mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &solve)
+		if solve.IntentTxID.IsEmpty() {
+			continue
+		}
+
+		// Multiple leftover solves can belong to the same terminal intent; only
+		// queue one refund retry per intent per block.
+		intentKey := solve.IntentTxID.String()
+		if _, ok := seen[intentKey]; ok {
+			continue
+		}
+		seen[intentKey] = struct{}{}
+
+		intent, err := im.mgr.Keeper().GetIntent(ctx, solve.IntentTxID)
+		if err != nil {
+			ctx.Logger().Error("fail to get intent while scanning terminal solve refunds", "intent_txid", solve.IntentTxID, "error", err)
+			continue
+		}
+		if intent.TxID.IsEmpty() {
+			continue
+		}
+		// Active and auctioning intents are still handled by the normal match and
+		// expiry flows; this pass is only for already-terminal intents.
+		if intent.Status == IntentActive || intent.Status == IntentAuctioning {
+			continue
+		}
+
+		terminalIntents = append(terminalIntents, intent)
+	}
+	if iter.Valid() {
+		ctx.Logger().Warn("reached per-block processing cap for terminal intent solve refunds", "cap", maxProcessing)
+	}
+
+	for _, intent := range terminalIntents {
+		if err := im.RefundIntentSolves(ctx, intent); err != nil {
+			ctx.Logger().Error("fail to refund terminal intent solves", "intent_txid", intent.TxID, "error", err)
+		}
 	}
 
 	return nil
