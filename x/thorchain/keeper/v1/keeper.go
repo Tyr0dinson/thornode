@@ -104,6 +104,7 @@ const (
 	prefixVolumeBucket              types.DbPrefix = "volume_bucket/"
 	prefixVolume                    types.DbPrefix = "volume/"
 	prefixIntent                    types.DbPrefix = "int/"
+	prefixIntentDeferredCancel      types.DbPrefix = "intdc/"
 	prefixIntentSolve               types.DbPrefix = "ints/"
 	prefixIntentSolveByIntent       types.DbPrefix = "intsi/"
 	prefixIntentSolveByMatchHeight  types.DbPrefix = "intsh/"

@@ -929,6 +929,13 @@ func (k KVStoreDummy) GetActiveIntents(_ cosmos.Context) ([]types.Intent, error)
 
 func (k KVStoreDummy) RemoveActiveIntentIndex(_ cosmos.Context, _ common.TxID) {}
 
+func (k KVStoreDummy) SetIntentDeferredCancel(_ cosmos.Context, _ types.MsgIntentCancel) {}
+func (k KVStoreDummy) GetIntentDeferredCancel(_ cosmos.Context, _ common.TxID) (types.MsgIntentCancel, error) {
+	return types.MsgIntentCancel{}, kaboom
+}
+func (k KVStoreDummy) IntentDeferredCancelExists(_ cosmos.Context, _ common.TxID) bool { return false }
+func (k KVStoreDummy) RemoveIntentDeferredCancel(_ cosmos.Context, _ common.TxID)      {}
+
 // IntentSolve keeper methods
 func (k KVStoreDummy) SetIntentSolve(_ cosmos.Context, _ types.IntentSolve) {}
 

@@ -114,6 +114,21 @@ func (s *MemoIntentSuite) TestIntentCancelMemo_String(c *C) {
 	c.Check(str, Equals, "ic:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
 }
 
+// TestIntentCancelMemo_DeferredParseAndString verifies that the optional
+// :defer mode round-trips through parsing and serialization.
+func (s *MemoIntentSuite) TestIntentCancelMemo_DeferredParseAndString(c *C) {
+	txID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+
+	m, err := ParseMemoWithTHORNames(s.ctx, s.k, "IC:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234:DEFER")
+	c.Assert(err, IsNil)
+
+	cancelMemo, ok := m.(IntentCancelMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(cancelMemo.GetIntentTxID().Equals(txID), Equals, true)
+	c.Check(cancelMemo.GetDeferUntilExpiry(), Equals, true)
+	c.Check(NewIntentCancelMemo(txID, true).String(), Equals, "ic:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234:defer")
+}
+
 func (s *MemoIntentSuite) TestIntentSolveMemo_Parse(c *C) {
 	// Test without destination address
 	memoStr := "IS:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234"

@@ -164,6 +164,23 @@ func AsgardInvariant(k KVStore) common.Invariant {
 						intentCoins = intentCoins.Add(solveCoin)
 					}
 				}
+
+				// Deferred cancel registrations can also hold native escrow in Asgard
+				// until the intent either expires into cancel execution or completes
+				// and refunds the stored top-up.
+				if k.IntentDeferredCancelExists(ctx, intent.TxID) {
+					deferredCancel, err := k.GetIntentDeferredCancel(ctx, intent.TxID)
+					if err != nil {
+						broken = true
+						msg = append(msg, fmt.Sprintf("failed to get deferred cancel for intent %s: %s", intent.TxID, err))
+						continue
+					}
+					for _, coin := range deferredCancel.Tx.Coins {
+						if !coin.Amount.IsZero() && coin.IsNative() && !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
+							intentCoins = intentCoins.Add(coin)
+						}
+					}
+				}
 			}
 
 			// Sum native coins from auction bids
@@ -684,6 +701,36 @@ func IntentInvariant(k KVStore) common.Invariant {
 		for ; intentIter.Valid(); intentIter.Next() {
 			var intent Intent
 			k.Cdc().MustUnmarshal(intentIter.Value(), &intent)
+
+			// Deferred cancel registrations should only exist while the parent intent
+			// is still active, and the stored message should still point back to the
+			// same intent owner.
+			if k.IntentDeferredCancelExists(ctx, intent.TxID) {
+				deferredCancel, err := k.GetIntentDeferredCancel(ctx, intent.TxID)
+				if err != nil {
+					broken = true
+					msg = append(msg, fmt.Sprintf("failed to get deferred cancel for intent %s: %s", intent.TxID, err))
+				} else {
+					if intent.Status != IntentStatus_IntentActive {
+						broken = true
+						msg = append(msg, fmt.Sprintf(
+							"intent %s has deferred cancel registration but status is %s",
+							intent.TxID, intent.Status.String()))
+					}
+					if !deferredCancel.IntentTxID.Equals(intent.TxID) {
+						broken = true
+						msg = append(msg, fmt.Sprintf(
+							"intent %s deferred cancel references mismatched intent %s",
+							intent.TxID, deferredCancel.IntentTxID))
+					}
+					if !deferredCancel.Tx.FromAddress.Equals(intent.SourceAddress) {
+						broken = true
+						msg = append(msg, fmt.Sprintf(
+							"intent %s deferred cancel sender %s doesn't match source address %s",
+							intent.TxID, deferredCancel.Tx.FromAddress, intent.SourceAddress))
+					}
+				}
+			}
 
 			if intent.Status == IntentStatus_IntentActive && !activeIntentIDs[intent.TxID.String()] {
 				broken = true

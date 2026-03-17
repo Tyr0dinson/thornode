@@ -489,6 +489,20 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 		return fmt.Errorf("fail to schedule txouts: solver=%v, user=%v", solverOk, userOk)
 	}
 
+	// A deferred cancel registration is just escrow for a possible future cancel.
+	// If the intent completes first, refund that escrow before marking the intent
+	// terminal so no cancel top-up remains stranded in Asgard.
+	if im.mgr.Keeper().IntentDeferredCancelExists(ctx, intent.TxID) {
+		deferredCancel, err := im.mgr.Keeper().GetIntentDeferredCancel(ctx, intent.TxID)
+		if err != nil {
+			return fmt.Errorf("fail to get deferred intent cancel for completion refund: %w", err)
+		}
+		if err := refundDeferredIntentCancelRegistration(ctx, im.mgr, deferredCancel); err != nil {
+			return fmt.Errorf("fail to refund deferred intent cancel registration: %w", err)
+		}
+		im.mgr.Keeper().RemoveIntentDeferredCancel(ctx, intent.TxID)
+	}
+
 	// Update intent status to completed
 	intent.Status = IntentCompleted
 	im.mgr.Keeper().SetIntent(ctx, intent)
@@ -744,6 +758,14 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 
 // expireIntent handles an expired intent by starting an auction
 func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
+	if im.mgr.Keeper().IntentDeferredCancelExists(ctx, intent.TxID) {
+		deferredCancel, err := im.mgr.Keeper().GetIntentDeferredCancel(ctx, intent.TxID)
+		if err != nil {
+			return fmt.Errorf("fail to get deferred cancel for expired intent: %w", err)
+		}
+		return NewIntentCancelHandler(im.mgr).executeCancel(ctx, intent, deferredCancel, true)
+	}
+
 	// Check if we should refund directly instead of auctioning
 	// Refund if: source asset is native OR has an available L1 pool
 	sourcePool, err := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())

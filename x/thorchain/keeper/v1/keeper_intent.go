@@ -38,6 +38,31 @@ func (k KVStore) getIntent(ctx cosmos.Context, key []byte, record *types.Intent)
 	return true, nil
 }
 
+func (k KVStore) setIntentDeferredCancel(ctx cosmos.Context, key []byte, record types.MsgIntentCancel) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	buf := k.cdc.MustMarshal(&record)
+	if buf == nil {
+		store.Delete(key)
+	} else {
+		store.Set(key, buf)
+	}
+}
+
+// getIntentDeferredCancel reads the stored cancel registration that should be
+// executed later at expiry, keyed by the parent intent txid.
+func (k KVStore) getIntentDeferredCancel(ctx cosmos.Context, key []byte, record *types.MsgIntentCancel) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
+		return false, nil
+	}
+
+	bz := store.Get(key)
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	return true, nil
+}
+
 // SetIntent saves an intent to the KV store and updates active status index
 func (k KVStore) SetIntent(ctx cosmos.Context, intent types.Intent) {
 	// Save the intent
@@ -61,6 +86,30 @@ func (k KVStore) GetIntent(ctx cosmos.Context, txID common.TxID) (types.Intent, 
 	return record, err
 }
 
+// SetIntentDeferredCancel saves a deferred intent cancel registration keyed by intent txid.
+func (k KVStore) SetIntentDeferredCancel(ctx cosmos.Context, cancel types.MsgIntentCancel) {
+	k.setIntentDeferredCancel(ctx, k.GetKey(prefixIntentDeferredCancel, cancel.IntentTxID.String()), cancel)
+}
+
+// GetIntentDeferredCancel retrieves a deferred cancel registration for an intent.
+func (k KVStore) GetIntentDeferredCancel(ctx cosmos.Context, txID common.TxID) (types.MsgIntentCancel, error) {
+	record := types.MsgIntentCancel{}
+	_, err := k.getIntentDeferredCancel(ctx, k.GetKey(prefixIntentDeferredCancel, txID.String()), &record)
+	return record, err
+}
+
+// IntentDeferredCancelExists checks whether a deferred cancel registration exists.
+func (k KVStore) IntentDeferredCancelExists(ctx cosmos.Context, txID common.TxID) bool {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	return store.Has(k.GetKey(prefixIntentDeferredCancel, txID.String()))
+}
+
+// RemoveIntentDeferredCancel removes a deferred cancel registration for an intent.
+func (k KVStore) RemoveIntentDeferredCancel(ctx cosmos.Context, txID common.TxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Delete(k.GetKey(prefixIntentDeferredCancel, txID.String()))
+}
+
 // IntentExists checks whether an intent exists
 func (k KVStore) IntentExists(ctx cosmos.Context, txID common.TxID) bool {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
@@ -76,6 +125,12 @@ func (k KVStore) RemoveIntent(ctx cosmos.Context, txID common.TxID) {
 	// Remove auction state and its bids even if the parent auction record is
 	// already missing; stale bid indexes are still scoped by the intent txid.
 	k.RemoveIntentAuction(ctx, txID)
+
+	// Deferred cancel registrations are child records of the intent and must be
+	// removed with it so no stale cancel escrow metadata survives cleanup.
+	if k.IntentDeferredCancelExists(ctx, txID) {
+		k.RemoveIntentDeferredCancel(ctx, txID)
+	}
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntent, txID.String()))

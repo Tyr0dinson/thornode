@@ -305,6 +305,56 @@ func (s *IntentMgrTestSuite) TestProcessWinningBid_UnavailablePoolFails(c *C) {
 	c.Check(updatedPool.BalanceRune.Equal(bidPool.BalanceRune), Equals, true)
 }
 
+// TestExpireIntent_DeferredCancelExecutesAtExpiry verifies that expiry prefers
+// the stored deferred cancel path over the normal refund-or-auction flow.
+func (s *IntentMgrTestSuite) TestExpireIntent_DeferredCancelExecutesAtExpiry(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	sourceAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	gasPool := NewPool()
+	gasPool.Asset = common.ETHAsset
+	gasPool.Status = PoolAvailable
+	gasPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	gasPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, gasPool), IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomETHAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(sourceAsset, cosmos.NewUint(50*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() - 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	deferredCancelTx := GetRandomTx()
+	deferredCancelTx.Chain = common.ETHChain
+	deferredCancelTx.FromAddress = userAddr
+	deferredCancelTx.Memo = NewIntentCancelMemo(intentTx.ID, true).String()
+	deferredCancelTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)))
+	w.keeper.SetIntentDeferredCancel(w.ctx, *NewMsgIntentCancel(deferredCancelTx, intentTx.ID, cosmos.AccAddress(userAddr)))
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err = intentMgr.expireIntent(w.ctx, intent)
+	c.Assert(err, IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentCancelled)
+	c.Check(w.keeper.IntentDeferredCancelExists(w.ctx, intentTx.ID), Equals, false)
+}
+
 func (s *IntentMgrTestSuite) TestProcessExpirations_DirectRefundSolveFailureStaysRetryable(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
@@ -573,6 +623,69 @@ func (s *IntentMgrTestSuite) TestExecuteIntent_AffiliateFeeOnTargetAsset(c *C) {
 	expectedAffiliateFee := common.GetSafeShare(cosmos.NewUint(100), cosmos.NewUint(10000), targetAmount)
 	c.Check(expectedProtocolFee.Equal(cosmos.NewUint(10000000)), Equals, true)   // 0.1% of 10B = 10M
 	c.Check(expectedAffiliateFee.Equal(cosmos.NewUint(100000000)), Equals, true) // 1% of 10B = 100M
+}
+
+// TestExecuteIntent_RefundsDeferredCancelRegistration verifies that a stored
+// deferred cancel top-up is refunded if the intent completes successfully first.
+func (s *IntentMgrTestSuite) TestExecuteIntent_RefundsDeferredCancelRegistration(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	sourceAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomETHAddress()
+	intent := Intent{
+		TxID:              intentTx.ID,
+		SourceAddress:     userAddr,
+		Source:            common.NewCoin(sourceAsset, cosmos.NewUint(50*common.One)),
+		TargetAsset:       common.RuneAsset(),
+		TargetAddress:     GetRandomTHORAddress(),
+		HighTarget:        cosmos.NewUint(100 * common.One),
+		LowTarget:         cosmos.NewUint(80 * common.One),
+		ExpiryHeight:      w.ctx.BlockHeight() + 100,
+		Status:            IntentActive,
+		MinFeeBasisPoints: 10,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	solveTx := GetRandomTx()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomTHORAddress(),
+		TargetCoin:    common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		SubmitHeight:  w.ctx.BlockHeight(),
+		MatchHeight:   w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	deferredCancelTx := GetRandomTx()
+	deferredCancelTx.Chain = common.ETHChain
+	deferredCancelTx.FromAddress = userAddr
+	deferredCancelTx.Memo = NewIntentCancelMemo(intentTx.ID, true).String()
+	deferredCancelTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)))
+	w.keeper.SetIntentDeferredCancel(w.ctx, *NewMsgIntentCancel(deferredCancelTx, intentTx.ID, cosmos.AccAddress(userAddr)))
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err = intentMgr.executeIntent(w.ctx, intent, solve)
+	c.Assert(err, IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentCompleted)
+	c.Check(w.keeper.IntentDeferredCancelExists(w.ctx, intentTx.ID), Equals, false)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 2)
+	c.Check(items[1].ToAddress.Equals(userAddr), Equals, true)
+	c.Check(items[1].Coin.Asset.Equals(common.ETHAsset), Equals, true)
+	c.Check(items[1].Coin.Amount.Equal(cosmos.NewUint(3*common.One)), Equals, true)
+	c.Check(items[1].Memo, Equals, "REFUND:"+intentTx.ID.String())
 }
 
 func (s *IntentMgrTestSuite) TestSelectBestSolve_NonGasTargetUsesConvertedGasStep(c *C) {

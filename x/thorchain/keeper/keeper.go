@@ -512,6 +512,10 @@ type KeeperIntent interface {
 	GetActiveIntentTxIDs(ctx cosmos.Context) []common.TxID
 	GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error)
 	RemoveActiveIntentIndex(ctx cosmos.Context, txID common.TxID)
+	SetIntentDeferredCancel(ctx cosmos.Context, cancel types.MsgIntentCancel)
+	GetIntentDeferredCancel(ctx cosmos.Context, txID common.TxID) (types.MsgIntentCancel, error)
+	IntentDeferredCancelExists(ctx cosmos.Context, txID common.TxID) bool
+	RemoveIntentDeferredCancel(ctx cosmos.Context, txID common.TxID)
 
 	// IntentSolve methods
 	SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve)

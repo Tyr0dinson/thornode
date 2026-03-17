@@ -184,6 +184,42 @@ func (KeeperIntentSuite) TestIntent_RemoveIntent(c *C) {
 	c.Check(len(activeIntents), Equals, 0)
 }
 
+// TestIntent_DeferredCancel verifies that deferred cancel registrations can be
+// stored, loaded, and removed independently of the parent intent record.
+func (KeeperIntentSuite) TestIntent_DeferredCancel(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("DEFER1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	cancelTx := common.Tx{
+		ID:          common.TxID("CANCEL123456789ABCD1234567890ABCD1234567890ABCD1234567890ABCD12"),
+		Chain:       common.ETHChain,
+		FromAddress: common.Address("0x1234567890123456789012345678901234567890"),
+		ToAddress:   common.Address("0x0987654321098765432109876543210987654321"),
+		Coins: common.NewCoins(
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)),
+		),
+		Memo: "ic:" + intentTxID.String() + ":defer",
+	}
+	cancel := types.MsgIntentCancel{
+		Tx:         cancelTx,
+		IntentTxID: intentTxID,
+		Signer:     cosmos.AccAddress("signer"),
+	}
+
+	c.Check(k.IntentDeferredCancelExists(ctx, intentTxID), Equals, false)
+	k.SetIntentDeferredCancel(ctx, cancel)
+	c.Check(k.IntentDeferredCancelExists(ctx, intentTxID), Equals, true)
+
+	stored, err := k.GetIntentDeferredCancel(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(stored.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Check(len(stored.Tx.Coins), Equals, 1)
+	c.Check(stored.Tx.Coins[0].Equals(cancelTx.Coins[0]), Equals, true)
+
+	k.RemoveIntentDeferredCancel(ctx, intentTxID)
+	c.Check(k.IntentDeferredCancelExists(ctx, intentTxID), Equals, false)
+}
+
 func (KeeperIntentSuite) TestIntent_RemoveIntentCascading(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
@@ -196,6 +232,20 @@ func (KeeperIntentSuite) TestIntent_RemoveIntentCascading(c *C) {
 		Status:        types.IntentStatus_IntentActive,
 	}
 	k.SetIntent(ctx, intent)
+
+	cancel := types.MsgIntentCancel{
+		Tx: common.Tx{
+			ID:          common.TxID("CANCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1"),
+			Chain:       common.ETHChain,
+			FromAddress: common.Address("0x1234567890123456789012345678901234567890"),
+			Coins: common.NewCoins(
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)),
+			),
+		},
+		IntentTxID: intentTxID,
+		Signer:     cosmos.AccAddress("signer"),
+	}
+	k.SetIntentDeferredCancel(ctx, cancel)
 
 	// Create associated solves
 	solveTxID1 := common.TxID("SOLVA1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
@@ -247,6 +297,7 @@ func (KeeperIntentSuite) TestIntent_RemoveIntentCascading(c *C) {
 
 	// Verify everything exists before removal
 	c.Check(k.IntentExists(ctx, intentTxID), Equals, true)
+	c.Check(k.IntentDeferredCancelExists(ctx, intentTxID), Equals, true)
 	c.Check(k.IntentSolveExists(ctx, solveTxID1), Equals, true)
 	c.Check(k.IntentSolveExists(ctx, solveTxID2), Equals, true)
 	c.Check(k.IntentAuctionExists(ctx, intentTxID), Equals, true)
@@ -258,6 +309,7 @@ func (KeeperIntentSuite) TestIntent_RemoveIntentCascading(c *C) {
 
 	// Verify intent is gone
 	c.Check(k.IntentExists(ctx, intentTxID), Equals, false)
+	c.Check(k.IntentDeferredCancelExists(ctx, intentTxID), Equals, false)
 
 	// Verify solves are gone
 	c.Check(k.IntentSolveExists(ctx, solveTxID1), Equals, false)

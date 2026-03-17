@@ -92,29 +92,48 @@ func (p *parser) ParseIntentOpenMemo() (IntentOpenMemo, error) {
 }
 
 // IntentCancelMemo represents a memo for cancelling an intent
-// Format: IC:INTENT_TX_HASH
+// Format: IC:INTENT_TX_HASH[:DEFER]
 type IntentCancelMemo struct {
 	MemoBase
-	IntentTxID common.TxID
+	IntentTxID       common.TxID
+	DeferUntilExpiry bool
 }
 
 func (m IntentCancelMemo) GetIntentTxID() common.TxID { return m.IntentTxID }
+func (m IntentCancelMemo) GetDeferUntilExpiry() bool  { return m.DeferUntilExpiry }
 
 func (m IntentCancelMemo) String() string {
+	if m.DeferUntilExpiry {
+		return fmt.Sprintf("%s:%s:defer", m.TxType.String(), m.IntentTxID.String())
+	}
 	return fmt.Sprintf("%s:%s", m.TxType.String(), m.IntentTxID.String())
 }
 
-func NewIntentCancelMemo(txID common.TxID) IntentCancelMemo {
+func NewIntentCancelMemo(txID common.TxID, deferUntilExpiry ...bool) IntentCancelMemo {
+	deferFlag := false
+	if len(deferUntilExpiry) > 0 {
+		deferFlag = deferUntilExpiry[0]
+	}
 	return IntentCancelMemo{
-		MemoBase:   MemoBase{TxType: TxIntentCancel},
-		IntentTxID: txID,
+		MemoBase:         MemoBase{TxType: TxIntentCancel},
+		IntentTxID:       txID,
+		DeferUntilExpiry: deferFlag,
 	}
 }
 
 func (p *parser) ParseIntentCancelMemo() (IntentCancelMemo, error) {
-	// Format: IC:INTENT_TX_HASH
+	// Format: IC:INTENT_TX_HASH[:DEFER]
 	txID := p.getTxID(1, true, common.TxID(""))
-	return NewIntentCancelMemo(txID), p.Error()
+	deferFlag := false
+	mode := p.getString(2, false, "")
+	if mode != "" {
+		if strings.EqualFold(mode, "defer") {
+			deferFlag = true
+		} else {
+			p.addErr(fmt.Errorf("invalid intent cancel mode: %s", mode))
+		}
+	}
+	return NewIntentCancelMemo(txID, deferFlag), p.Error()
 }
 
 // IntentSolveMemo represents a memo for solving an intent

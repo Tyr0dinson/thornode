@@ -48,6 +48,36 @@ func (h IntentCancelHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 	return &cosmos.Result{}, nil
 }
 
+// isDeferredCancel parses the cancel memo and reports whether it should execute
+// only once the intent reaches expiry.
+func (h IntentCancelHandler) isDeferredCancel(ctx cosmos.Context, memo string) (bool, error) {
+	// Direct handler/unit-test callers may construct MsgIntentCancel without the
+	// observed tx memo. Treat that as the legacy immediate-cancel path.
+	if memo == "" {
+		return false, nil
+	}
+
+	parsedMemo, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), memo)
+	if err != nil {
+		return false, fmt.Errorf("fail to parse intent cancel memo: %w", err)
+	}
+
+	cancelMemo, ok := parsedMemo.(IntentCancelMemo)
+	if !ok {
+		return false, fmt.Errorf("unexpected memo type for intent cancel: %T", parsedMemo)
+	}
+
+	return cancelMemo.GetDeferUntilExpiry(), nil
+}
+
+// mergeIntentCancelMsgs combines cancel funding from two messages so an
+// immediate cancel can reuse any previously deferred top-up.
+func mergeIntentCancelMsgs(primary, secondary MsgIntentCancel) MsgIntentCancel {
+	merged := primary
+	merged.Tx.Coins = primary.Tx.Coins.Add(secondary.Tx.Coins...)
+	return merged
+}
+
 func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -74,7 +104,12 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 		return se.ErrUnauthorized.Wrap("only the intent creator can cancel it")
 	}
 
-	mode, err := h.getCancelFundingMode(ctx, intent)
+	deferred, err := h.isDeferredCancel(ctx, msg.Tx.Memo)
+	if err != nil {
+		return ErrInternal(err, "fail to determine intent cancel mode")
+	}
+
+	mode, err := h.getCancelFundingMode(ctx, intent, !(deferred && ctx.BlockHeight() < intent.ExpiryHeight))
 	if err != nil {
 		return ErrInternal(err, "fail to determine cancel funding mode")
 	}
@@ -92,7 +127,7 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 
 // getCancelFundingMode determines which asset a cancel tx may carry and whether
 // the cancel must prepay chain gas for the outbound refund.
-func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Intent) (cancelFundingMode, error) {
+func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Intent, requireGasPool bool) (cancelFundingMode, error) {
 	// Native sources and assets with an available pool refund directly, so only
 	// permit the source asset to avoid trapping unrelated coins in Asgard.
 	if intent.Source.Asset.IsNative() || intent.Source.Asset.IsGasAsset() {
@@ -112,6 +147,14 @@ func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Int
 	// outbound refund, so only accept the chain gas asset when that gas pool is
 	// available for booking.
 	gasAsset := intent.Source.Asset.GetChain().GetGasAsset()
+	mode := cancelFundingMode{
+		allowedAsset:       gasAsset,
+		requiresPrepaidGas: true,
+		gasAsset:           gasAsset,
+	}
+	if !requireGasPool {
+		return mode, nil
+	}
 	gasPool, err := h.mgr.Keeper().GetPool(ctx, gasAsset)
 	if err != nil {
 		return cancelFundingMode{}, fmt.Errorf("fail to get gas pool for cancel funding mode: %w", err)
@@ -120,22 +163,23 @@ func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Int
 		return cancelFundingMode{}, fmt.Errorf("gas pool %s is not available", gasAsset)
 	}
 
-	return cancelFundingMode{
-		allowedAsset:       gasAsset,
-		requiresPrepaidGas: true,
-		gasAsset:           gasAsset,
-	}, nil
+	return mode, nil
 }
 
-func (h IntentCancelHandler) bookCancelGasIfNeeded(ctx cosmos.Context, msg MsgIntentCancel, intent Intent, mode cancelFundingMode) error {
-	if !mode.requiresPrepaidGas {
-		return nil
-	}
+type cancelGasFunding struct {
+	gasFromCancel cosmos.Uint
+	minRequired   cosmos.Uint
+	retainCap     cosmos.Uint
+}
 
+func (h IntentCancelHandler) getCancelGasFunding(ctx cosmos.Context, msg MsgIntentCancel, intent Intent, mode cancelFundingMode) (cancelGasFunding, error) {
+	if !mode.requiresPrepaidGas {
+		return cancelGasFunding{}, nil
+	}
 	chain := intent.Source.Asset.GetChain()
 	maxGasCoin, err := h.mgr.GasMgr().GetMaxGas(ctx, chain)
 	if err != nil {
-		return fmt.Errorf("fail to get max gas for %s: %w", chain, err)
+		return cancelGasFunding{}, fmt.Errorf("fail to get max gas for %s: %w", chain, err)
 	}
 
 	gasFromCancel := cosmos.ZeroUint()
@@ -157,23 +201,46 @@ func (h IntentCancelHandler) bookCancelGasIfNeeded(ctx cosmos.Context, msg MsgIn
 		retainGasMultiplier = minGasMultiplier
 	}
 
-	minRequired := maxGasCoin.Amount.MulUint64(uint64(minGasMultiplier))
-	if gasFromCancel.LT(minRequired) {
-		return se.ErrInsufficientFunds.Wrapf(
+	return cancelGasFunding{
+		gasFromCancel: gasFromCancel,
+		minRequired:   maxGasCoin.Amount.MulUint64(uint64(minGasMultiplier)),
+		retainCap:     maxGasCoin.Amount.MulUint64(uint64(retainGasMultiplier)),
+	}, nil
+}
+
+func (h IntentCancelHandler) validateCancelGasIfNeeded(ctx cosmos.Context, msg MsgIntentCancel, intent Intent, mode cancelFundingMode) (cancelGasFunding, error) {
+	funding, err := h.getCancelGasFunding(ctx, msg, intent, mode)
+	if err != nil {
+		return cancelGasFunding{}, err
+	}
+	if mode.requiresPrepaidGas && funding.gasFromCancel.LT(funding.minRequired) {
+		return cancelGasFunding{}, se.ErrInsufficientFunds.Wrapf(
 			"cancel of non-pool asset requires gas: need %s %s, got %s",
-			minRequired, mode.gasAsset, gasFromCancel,
+			funding.minRequired, mode.gasAsset, funding.gasFromCancel,
 		)
+	}
+	return funding, nil
+}
+
+func (h IntentCancelHandler) bookCancelGasIfNeeded(ctx cosmos.Context, msg MsgIntentCancel, intent Intent, mode cancelFundingMode) error {
+	if !mode.requiresPrepaidGas {
+		return nil
+	}
+
+	chain := intent.Source.Asset.GetChain()
+	funding, err := h.validateCancelGasIfNeeded(ctx, msg, intent, mode)
+	if err != nil {
+		return err
 	}
 
 	// Cap retained gas using the configured multiplier. If the user overpaid,
 	// refund the excess immediately so they recover the obvious surplus.
 	// Excess refund failure is fatal for the cancel so the whole operation
 	// can roll back cleanly.
-	retainCap := maxGasCoin.Amount.MulUint64(uint64(retainGasMultiplier))
-	retained := gasFromCancel
-	if gasFromCancel.GT(retainCap) {
-		excess := common.SafeSub(gasFromCancel, retainCap)
-		retained = retainCap
+	retained := funding.gasFromCancel
+	if funding.gasFromCancel.GT(funding.retainCap) {
+		excess := common.SafeSub(funding.gasFromCancel, funding.retainCap)
+		retained = funding.retainCap
 
 		excessToi := TxOutItem{
 			Chain:     chain,
@@ -213,8 +280,60 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		return fmt.Errorf("intent %s is no longer active, status: %s", msg.IntentTxID, intent.Status.String())
 	}
 
-	var mode cancelFundingMode
-	mode, err = h.getCancelFundingMode(ctx, intent)
+	// A deferred cancel means "hold this funding now, but do not execute the
+	// cancel until the intent has actually expired".
+	deferred, err := h.isDeferredCancel(ctx, msg.Tx.Memo)
+	if err != nil {
+		return ErrInternal(err, "fail to determine intent cancel mode")
+	}
+	if deferred && ctx.BlockHeight() < intent.ExpiryHeight {
+		return h.registerDeferredCancel(ctx, intent, msg)
+	}
+
+	clearDeferred := false
+	if h.mgr.Keeper().IntentDeferredCancelExists(ctx, intent.TxID) {
+		// If an immediate cancel arrives later, consume any stored deferred top-up
+		// through the normal cancel execution path instead of leaving it stranded.
+		pending, err := h.mgr.Keeper().GetIntentDeferredCancel(ctx, intent.TxID)
+		if err != nil {
+			return ErrInternal(err, "fail to get deferred intent cancel")
+		}
+		msg = mergeIntentCancelMsgs(msg, pending)
+		clearDeferred = true
+	}
+
+	return h.executeCancel(ctx, intent, msg, clearDeferred)
+}
+
+// registerDeferredCancel stores the cancel request for execution at expiry.
+func (h IntentCancelHandler) registerDeferredCancel(ctx cosmos.Context, intent Intent, msg MsgIntentCancel) error {
+	if h.mgr.Keeper().IntentDeferredCancelExists(ctx, msg.IntentTxID) {
+		// Allow the owner to top up an existing deferred cancel registration.
+		existing, err := h.mgr.Keeper().GetIntentDeferredCancel(ctx, msg.IntentTxID)
+		if err != nil {
+			return ErrInternal(err, "fail to get existing deferred intent cancel")
+		}
+		msg = mergeIntentCancelMsgs(existing, msg)
+	}
+
+	mode, err := h.getCancelFundingMode(ctx, intent, false)
+	if err != nil {
+		return ErrInternal(err, "fail to determine cancel funding mode")
+	}
+	if _, err := h.validateCancelGasIfNeeded(ctx, msg, intent, mode); err != nil {
+		return err
+	}
+
+	h.mgr.Keeper().SetIntentDeferredCancel(ctx, msg)
+	ctx.Logger().Info("registered deferred intent cancel",
+		"intent_txid", msg.IntentTxID,
+		"coins", msg.Tx.Coins,
+	)
+	return nil
+}
+
+func (h IntentCancelHandler) executeCancel(ctx cosmos.Context, intent Intent, msg MsgIntentCancel, clearDeferred bool) error {
+	mode, err := h.getCancelFundingMode(ctx, intent, true)
 	if err != nil {
 		return fmt.Errorf("fail to determine cancel funding mode: %w", err)
 	}
@@ -284,6 +403,11 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	// Update intent status to cancelled
 	intent.Status = IntentCancelled
 	h.mgr.Keeper().SetIntent(ctx, intent)
+	if clearDeferred {
+		// The stored deferred registration has now been fully consumed by this
+		// cancel execution, so it should disappear together with the status update.
+		h.mgr.Keeper().RemoveIntentDeferredCancel(ctx, intent.TxID)
+	}
 
 	// Emit cancel event
 	evt := NewEventIntentCancel(
@@ -294,6 +418,49 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 		return fmt.Errorf("fail to emit intent cancel event: %w", err)
+	}
+
+	return nil
+}
+
+// refundableDeferredCancelCoins filters deferred cancel escrow down to coins
+// that were actually escrowed and can be returned later.
+func refundableDeferredCancelCoins(msg MsgIntentCancel) common.Coins {
+	refundCoins := make(common.Coins, 0, len(msg.Tx.Coins))
+	for _, coin := range msg.Tx.Coins {
+		if coin.Amount.IsZero() || coin.Asset.IsTradeAsset() || coin.Asset.IsSecuredAsset() {
+			continue
+		}
+		refundCoins = append(refundCoins, coin)
+	}
+	return refundCoins
+}
+
+// refundDeferredIntentCancelRegistration returns stored deferred-cancel escrow
+// when the intent completes without needing the deferred cancel.
+func refundDeferredIntentCancelRegistration(ctx cosmos.Context, mgr Manager, msg MsgIntentCancel) error {
+	for _, coin := range refundableDeferredCancelCoins(msg) {
+		moduleName := ""
+		if coin.Asset.IsRune() {
+			moduleName = AsgardName
+		}
+
+		toi := TxOutItem{
+			Chain:      coin.Asset.GetChain(),
+			ToAddress:  msg.Tx.FromAddress,
+			Coin:       coin,
+			Memo:       fmt.Sprintf("REFUND:%s", msg.IntentTxID),
+			InHash:     msg.IntentTxID,
+			ModuleName: moduleName,
+		}
+
+		ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+		if err != nil {
+			return fmt.Errorf("fail to refund deferred cancel coin %s: %w", coin, err)
+		}
+		if !ok {
+			return fmt.Errorf("fail to schedule deferred cancel refund for %s", coin)
+		}
 	}
 
 	return nil

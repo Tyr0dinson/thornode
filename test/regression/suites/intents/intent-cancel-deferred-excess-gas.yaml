@@ -1,0 +1,222 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+########################################################################################
+# Add custom ERC20 token to vault for deferred cancel testing with excess gas
+########################################################################################
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - ETH
+            - DOGE
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+            - amount: "1000000000"
+              asset: ETH.ETH
+              decimals: "8"
+            - amount: "200000000"
+              asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent with a non-pool ERC20 source asset.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "50000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:BTC.BTC:5000000:4000000:{{ addr_btc_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Register a deferred cancel with ETH gas well above the retain cap.
+# In mocknet this produces:
+# - a normal ERC20 source refund
+# - a second ETH refund for the excess above 3x MaxGas, minus outbound fee
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IC:{{ observe_txid 1 }}:defer"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# The deferred cancel should still be inert before expiry.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentActive"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Let the intent expire. The deferred cancel should execute instead of auctioning.
+########################################################################################
+type: create-blocks
+count: 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCancelled"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+status: 404
+asserts:
+  - .code|tonumber == 5
+  - .message|contains("auction not found")
+---
+########################################################################################
+# Check both refunds are queued:
+# - ETH excess refund: 5000000 - 2880000 retain cap - 640000 outbound fee = 1480000
+# - ERC20 source refund: full original source amount
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - . | map(select(.coin.asset == "ETH.ETH")) | length == 1
+  - . | map(select(.coin.asset == "ETH.ETH")) | .[0].coin.amount == "1480000"
+  - . | map(select(.coin.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | length == 1
+  - . | map(select(.coin.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].coin.amount == "50000000"
+---
+########################################################################################
+# Observe both refund outbounds.
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "1480000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "REFUND:{{ observe_txid 1 }}"
+  block_height: 9
+  finalise_height: 9
+  observed_pub_key: {{ pubkey_dog }}
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "50000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "REFUND:{{ observe_txid 1 }}"
+  block_height: 9
+  finalise_height: 9
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify the outbound queue is empty and the ERC20 balance is back to the starting amount.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length >= 1
+  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "200000000"
+---
+########################################################################################
+# Verify intents list is empty after both refunds complete.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0
