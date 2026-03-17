@@ -355,12 +355,18 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			return nil, fmt.Errorf("failed to calculate address: %w", err)
 		}
 
+		isFromAsgard := s.helper.IsAsgardAddress(fromAddress.String())
+
 		// ignore if neither from nor to an asgard vault
-		if !isToAsgard && !s.helper.IsAsgardAddress(fromAddress.String()) {
+		if !isToAsgard && !isFromAsgard {
 			continue
 		}
 
-		if isToAsgard {
+		if isFromAsgard {
+			// fromAddress is asgard vault, so recipient is first output
+			toAddress = tx.Outputs()[0].Address()
+			amount = tx.Outputs()[0].Amount()
+		} else {
 			// toAddress is asgard vault, get sender from first input
 			// txs with multiple VKeys where already discarded
 
@@ -379,12 +385,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 				return nil, fmt.Errorf("failed to fetch utxo result for tx: %w", err)
 			}
 
-			if len(result.Results) != 1 {
-				s.logger.Warn().
-					Str("tx", tx.Hash().String()).
-					Int("results", len(result.Results)).
-					Int("expected", 1).
-					Msg("unexpected amount of utxo results")
+			if len(result.Results) < 1 {
 				continue
 			}
 
@@ -393,10 +394,6 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 				fromAddress = output.Address()
 				break
 			}
-		} else {
-			// fromAddress is asgard vault, so recipient is first output
-			toAddress = tx.Outputs()[0].Address()
-			amount = tx.Outputs()[0].Amount()
 		}
 
 		if amount == nil || !amount.IsUint64() || amount.Uint64() == 0 {
