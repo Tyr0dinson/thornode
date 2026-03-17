@@ -157,13 +157,17 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	return signedTx, nil
 }
 
-// SignTxWithExtraTransfer signs a SOL tx that contains one primary transfer and one
-// additional transfer instruction. Used by simulation-only restore paths.
-// extraTo must be distinct from sender and primary destination in this builder,
-// because duplicate account keys can trigger "Account loaded twice" simulation errors.
+// SignTxWithExtraTransfer signs a simulation-only SOL tx with a primary transfer
+// to tx.ToAddress and an additional transfer to extraTo.
+// This builder requires three distinct writable accounts: sender, tx.ToAddress,
+// and extraTo. Reusing any of them can fail Solana simulation with
+// "Account loaded twice".
 func (c *Client) SignTxWithExtraTransfer(tx SimTx, extraTo common.Address, extraAmount cosmos.Uint) ([]byte, error) {
 	if extraAmount.IsZero() {
 		return nil, fmt.Errorf("extra transfer amount cannot be zero")
+	}
+	if c.address.Equals(tx.ToAddress) || c.address.Equals(extraTo) || tx.ToAddress.Equals(extraTo) {
+		return nil, fmt.Errorf("sender, primary destination, and extra destination must be distinct")
 	}
 
 	// get latest blockhash
