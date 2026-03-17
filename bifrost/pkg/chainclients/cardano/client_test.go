@@ -7,9 +7,13 @@ import (
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/babbage"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/blinklabs-io/gouroboros/ledger/conway"
 	"github.com/blinklabs-io/gouroboros/ledger/mary"
+	"github.com/blinklabs-io/gouroboros/ledger/shelley"
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -680,6 +684,241 @@ func (s *ClientTestSuite) TestSignTxNoADACoin(c *C) {
 	_, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, "no ADA coins found")
+}
+
+// signTestTx sets up the client with an ed25519 keypair, 10 ADA UTXO, and signs
+// a transaction sending 2 ADA with memo "OUT:AABBCCDD". Returns the TxOutItem
+// and signed tx bytes. The signed tx has TTL = slot(100) + ttl(400) = 500.
+func (s *ClientTestSuite) signTestTx(c *C) (types.TxOutItem, []byte) {
+	vaultPubKey, priv, _ := makeVaultPubKey(c)
+
+	s.client.localKey = priv
+	vaultAddress := s.client.GetAddress(vaultPubKey)
+	c.Assert(vaultAddress, Not(Equals), "")
+	s.client.localAddress = vaultAddress
+
+	s.client.ttl = 400
+	s.client.chainScanner.minFeeA.Store(44)
+	s.client.chainScanner.minFeeB.Store(155_381)
+
+	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
+	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())
+	c.Assert(err, IsNil)
+
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 1}
+
+	utxoHash := lcommon.Blake2b256Hash([]byte("utxo1"))
+	s.client.n2c = &mockClientWrapper{
+		blockNo: 1,
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
+				{Hash: utxoHash, Idx: 0}: {
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 10_000_000},
+				},
+			},
+		},
+	}
+
+	toAddr, err := AddressFromBytes([]byte("to-address-seed"))
+	c.Assert(err, IsNil)
+
+	txOutItem := types.TxOutItem{
+		Chain:            common.ADAChain,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        common.Address(toAddr.String()),
+		Coins: common.Coins{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(200_000_000)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(50_000_000)),
+		},
+		Memo: "OUT:AABBCCDD",
+	}
+
+	txBytes, _, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(txBytes, NotNil)
+
+	return txOutItem, txBytes
+}
+
+// ---------------------------------------------------------------------------
+// BroadcastTx
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestBroadcastTxInvalidCbor(c *C) {
+	txOutItem := types.TxOutItem{Chain: common.ADAChain}
+	_, err := s.client.BroadcastTx(txOutItem, []byte("not cbor"))
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "failed to decode transaction.*")
+}
+
+func (s *ClientTestSuite) TestBroadcastTxExpiredTTL(c *C) {
+	txOutItem, txBytes := s.signTestTx(c)
+
+	// The signed tx has TTL=500. Store a block with slot=600 (>= 500) to make it expired.
+	blockHash := lcommon.Blake2b256Hash([]byte("block-expired"))
+	err := s.client.storage.SetBlockId(2, 600, blockHash.Bytes())
+	c.Assert(err, IsNil)
+
+	_, err = s.client.BroadcastTx(txOutItem, txBytes)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "transaction expired")
+}
+
+func (s *ClientTestSuite) TestBroadcastTxInvalidOutputCount(c *C) {
+	txOutItem := types.TxOutItem{Chain: common.ADAChain}
+
+	// Store a block so GetLastBlockId succeeds
+	blockHash := lcommon.Blake2b256Hash([]byte("blk"))
+	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())
+	c.Assert(err, IsNil)
+
+	inputHash := lcommon.Blake2b256Hash([]byte("input"))
+	input := shelley.NewShelleyTransactionInput(inputHash.String(), 0)
+
+	// 0 outputs
+	tx0 := &conway.ConwayTransaction{}
+	tx0.Body.TxInputs = conway.NewConwayTransactionInputSet(
+		[]shelley.ShelleyTransactionInput{input},
+	)
+	tx0.Body.TxOutputs = []babbage.BabbageTransactionOutput{}
+	tx0.Body.Ttl = 999_999
+	tx0.TxIsValid = true
+	txBytes0, err := cbor.Encode(tx0)
+	c.Assert(err, IsNil)
+
+	_, err = s.client.BroadcastTx(txOutItem, txBytes0)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "invalid number of transaction outputs.*")
+
+	// 3 outputs
+	tx3 := &conway.ConwayTransaction{}
+	tx3.Body.TxInputs = conway.NewConwayTransactionInputSet(
+		[]shelley.ShelleyTransactionInput{input},
+	)
+	addr, err := AddressFromBytes([]byte("test-addr"))
+	c.Assert(err, IsNil)
+	tx3.Body.TxOutputs = []babbage.BabbageTransactionOutput{
+		{OutputAddress: addr, OutputAmount: mary.MaryTransactionOutputValue{Amount: 1_000_000}},
+		{OutputAddress: addr, OutputAmount: mary.MaryTransactionOutputValue{Amount: 2_000_000}},
+		{OutputAddress: addr, OutputAmount: mary.MaryTransactionOutputValue{Amount: 3_000_000}},
+	}
+	tx3.Body.Ttl = 999_999
+	tx3.TxIsValid = true
+	txBytes3, err := cbor.Encode(tx3)
+	c.Assert(err, IsNil)
+
+	_, err = s.client.BroadcastTx(txOutItem, txBytes3)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "invalid number of transaction outputs.*")
+}
+
+func (s *ClientTestSuite) TestBroadcastTxSubmitError(c *C) {
+	txOutItem, txBytes := s.signTestTx(c)
+
+	// Set n2c to return a submit error
+	s.client.n2c = &mockClientWrapper{submitErr: fmt.Errorf("network failure")}
+
+	_, err := s.client.BroadcastTx(txOutItem, txBytes)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "failed to submit transaction.*")
+}
+
+func (s *ClientTestSuite) TestBroadcastTxAlreadySubmitted(c *C) {
+	txOutItem, txBytes := s.signTestTx(c)
+
+	// "probably already been included" is treated as success
+	s.client.n2c = &mockClientWrapper{
+		submitErr: fmt.Errorf("probably already been included"),
+	}
+
+	txHash, err := s.client.BroadcastTx(txOutItem, txBytes)
+	c.Assert(err, IsNil)
+	c.Assert(txHash, Not(Equals), "")
+
+	// signer cache should be updated
+	c.Assert(s.client.signerCacheManager.HasSigned(txOutItem.CacheHash()), Equals, true)
+}
+
+func (s *ClientTestSuite) TestBroadcastTxSuccess(c *C) {
+	txOutItem, txBytes := s.signTestTx(c)
+
+	// Default mock — no submit error
+	s.client.n2c = &mockClientWrapper{}
+
+	txHash, err := s.client.BroadcastTx(txOutItem, txBytes)
+	c.Assert(err, IsNil)
+	c.Assert(txHash, Not(Equals), "")
+
+	// Verify hash matches decoded tx hash
+	decodedTx, err := ledger.NewConwayTransactionFromCbor(txBytes)
+	c.Assert(err, IsNil)
+	c.Assert(txHash, Equals, decodedTx.Hash().String())
+
+	// Signer cache should have the entry
+	c.Assert(s.client.signerCacheManager.HasSigned(txOutItem.CacheHash()), Equals, true)
+}
+
+func (s *ClientTestSuite) TestBroadcastTxSuccessSingleOutput(c *C) {
+	// Setup with a small UTXO so change falls below dust and is absorbed into fee
+	vaultPubKey, priv, _ := makeVaultPubKey(c)
+
+	s.client.localKey = priv
+	vaultAddress := s.client.GetAddress(vaultPubKey)
+	s.client.localAddress = vaultAddress
+	s.client.ttl = 400
+	s.client.chainScanner.minFeeA.Store(44)
+	s.client.chainScanner.minFeeB.Store(155_381)
+
+	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
+	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())
+	c.Assert(err, IsNil)
+
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 1}
+
+	// 1.7 ADA — enough to cover 1 ADA send + maxFee 0.5 ADA, but change below dust threshold
+	utxoHash := lcommon.Blake2b256Hash([]byte("utxo-small"))
+	s.client.n2c = &mockClientWrapper{
+		blockNo: 1,
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
+				{Hash: utxoHash, Idx: 0}: {
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 1_700_000},
+				},
+			},
+		},
+	}
+
+	toAddr, err := AddressFromBytes([]byte("to-address-seed"))
+	c.Assert(err, IsNil)
+
+	txOutItem := types.TxOutItem{
+		Chain:            common.ADAChain,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        common.Address(toAddr.String()),
+		Coins: common.Coins{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(100_000_000)), // 1 ADA
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(50_000_000)),
+		},
+		Memo: "OUT:AABBCCDD",
+	}
+
+	txBytes, _, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+
+	// Verify the tx has only 1 output (change absorbed into fee)
+	decodedTx, err := ledger.NewConwayTransactionFromCbor(txBytes)
+	c.Assert(err, IsNil)
+	c.Assert(decodedTx.Outputs(), HasLen, 1)
+
+	// Now broadcast
+	s.client.n2c = &mockClientWrapper{}
+	txHash, err := s.client.BroadcastTx(txOutItem, txBytes)
+	c.Assert(err, IsNil)
+	c.Assert(txHash, Not(Equals), "")
 }
 
 func (s *ClientTestSuite) TestSignTxInsufficientFunds(c *C) {
