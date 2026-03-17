@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // IntentCancelHandler handles cancelling intents
@@ -107,17 +108,32 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 					gasFromCancel = gasFromCancel.Add(coin.Amount)
 				}
 			}
-			if gasFromCancel.LT(maxGasCoin.Amount) {
+
+			minGasMultiplier := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentCancelMinGasMultiplier)
+			if minGasMultiplier <= 0 {
+				minGasMultiplier = 1
+			}
+			retainGasMultiplier := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentCancelRetainGasMultiplier)
+			if retainGasMultiplier < 3 {
+				retainGasMultiplier = 3
+			}
+			if retainGasMultiplier < minGasMultiplier {
+				retainGasMultiplier = minGasMultiplier
+			}
+
+			minRequired := maxGasCoin.Amount.MulUint64(uint64(minGasMultiplier))
+			if gasFromCancel.LT(minRequired) {
 				return se.ErrInsufficientFunds.Wrapf(
 					"cancel of non-pool asset requires gas: need %s %s, got %s",
-					maxGasCoin.Amount, gasAsset, gasFromCancel,
+					minRequired, gasAsset, gasFromCancel,
 				)
 			}
 
-			// Cap retained gas at 3x MaxGas. If the user overpaid, refund the excess
-			// immediately so they recover the obvious surplus. Excess refund failure
-			// is fatal for the cancel so the whole operation can roll back cleanly.
-			retainCap := maxGasCoin.Amount.MulUint64(3)
+			// Cap retained gas using the configured multiplier. If the user overpaid,
+			// refund the excess immediately so they recover the obvious surplus.
+			// Excess refund failure is fatal for the cancel so the whole operation
+			// can roll back cleanly.
+			retainCap := maxGasCoin.Amount.MulUint64(uint64(retainGasMultiplier))
 			retained := gasFromCancel
 			if gasFromCancel.GT(retainCap) {
 				excess := common.SafeSub(gasFromCancel, retainCap)

@@ -892,6 +892,75 @@
               "refund_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
               "tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
               "type": "intent_cancel"
+            },
+            {
+              "amount": "99801894rune",
+              "msg_index": "0",
+              "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "99801894rune",
+              "msg_index": "0",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "99801894rune",
+              "msg_index": "0",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "transfer"
+            },
+            {
+              "msg_index": "0",
+              "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "message"
+            },
+            {
+              "chain": "THOR",
+              "coin": "1000000 ETH.ETH",
+              "emit_asset": "99801894 THOR.RUNE",
+              "from": "",
+              "id": "0000000000000000000000000000000000000000000000000000000000000001",
+              "liquidity_fee": "10",
+              "liquidity_fee_in_rune": "0",
+              "memo": "",
+              "msg_index": "0",
+              "pool": "ETH.ETH",
+              "pool_slip": "0",
+              "streaming_swap_count": "0",
+              "streaming_swap_quantity": "0",
+              "swap_slip": "99801",
+              "swap_target": "0",
+              "to": "",
+              "type": "swap"
+            },
+            {
+              "chain": "ETH",
+              "coin_amount": "50000000",
+              "coin_asset": "ETH.TKN-0X0000000000000000000000000000000000001234",
+              "coin_decimals": "8",
+              "gas_rate": "120",
+              "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+              "max_gas_amount_0": "960000",
+              "max_gas_asset_0": "ETH.ETH",
+              "max_gas_decimals_0": "8",
+              "memo": "",
+              "module_name": "",
+              "msg_index": "0",
+              "out_hash": "",
+              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+              "type": "scheduled_outbound",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            },
+            {
+              "abandoned": "false",
+              "msg_index": "0",
+              "refund": "50000000 ETH.TKN-0X0000000000000000000000000000000000001234",
+              "refund_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
+              "type": "intent_cancel"
             }
           ]
         }

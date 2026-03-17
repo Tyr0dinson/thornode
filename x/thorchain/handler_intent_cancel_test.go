@@ -8,6 +8,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -455,6 +456,44 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetFailsWithoutGas(c *
 	c.Check(stillActive.Status, Equals, IntentActive)
 }
 
+func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetRespectsConfiguredMinGasMultiplier(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+	w.keeper.SetMimir(w.ctx, constants.IntentCancelMinGasMultiplier.String(), 2)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomTHORAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(erc20Asset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentCancelHandler(mgr)
+
+	cancelTx := GetRandomTx()
+	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(37500))}
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(errors.Is(err, se.ErrInsufficientFunds), Equals, true)
+
+	stillActive, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(stillActive.Status, Equals, IntentActive)
+}
+
 func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetSucceedsWithGas(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
@@ -517,6 +556,62 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetSucceedsWithGas(c *
 		Commentf("ETH pool asset balance should have increased after booking cancel gas"))
 	c.Check(updatedPool.BalanceRune.LT(ethPool.BalanceRune), Equals, true,
 		Commentf("ETH pool RUNE balance should have decreased after booking cancel gas"))
+}
+
+func (HandlerIntentCancelSuite) TestIntentCancel_ConfigurableRetainGasMultiplierRefundsExcess(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+	w.keeper.SetMimir(w.ctx, constants.IntentCancelRetainGasMultiplier.String(), 4)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, ethPool), IsNil)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.AddFunds(common.NewCoins(
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(erc20Asset, cosmos.NewUint(200*common.One)),
+	))
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomTHORAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(erc20Asset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentCancelHandler(mgr)
+
+	cancelTx := GetRandomTx()
+	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(187500))}
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, IsNil)
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 2)
+	c.Check(outItems[0].Coin.Asset.Equals(common.ETHAsset), Equals, true)
+	c.Check(outItems[0].Coin.Amount.Equal(cosmos.NewUint(37500)), Equals, true)
+	c.Check(outItems[1].Coin.Asset.Equals(erc20Asset), Equals, true)
+	c.Check(outItems[1].Coin.Amount.Equal(intent.Source.Amount), Equals, true)
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_ExcessGasRefundFailureRollsBack(c *C) {
