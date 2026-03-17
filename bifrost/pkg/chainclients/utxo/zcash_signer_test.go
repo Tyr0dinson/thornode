@@ -367,7 +367,7 @@ func (s *ZcashSignerSuite) TestBroadcastTxAlreadyInBlockChainMarksSignerCache(c 
 
 	c.Assert(s.client.signerCacheManager.HasSigned(txOutItem.CacheHash()), Equals, false)
 
-	txid, err := s.client.BroadcastTx(txOutItem, payload)
+	txid, err := s.client.BroadcastTx([]stypes.TxOutItem{txOutItem}, payload)
 	c.Assert(err, IsNil)
 	c.Assert(txid, Equals, zecPayloadTxID(payload))
 	c.Assert(s.client.signerCacheManager.HasSigned(txOutItem.CacheHash()), Equals, true)

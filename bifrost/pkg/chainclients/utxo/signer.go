@@ -802,9 +802,10 @@ func (c *Client) BroadcastTx(txs []stypes.TxOutItem, payload []byte) (string, er
 			if strings.Contains(err.Error(), msg) {
 				c.log.Info().Str("hash", txid).Msg("broadcasted by another node")
 				expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
-				cacheErr := c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry)
-				if cacheErr != nil {
-					c.log.Err(cacheErr).Msgf("fail to mark tx out item (%+v) as signed", txOut)
+				for _, txOut := range txs {
+					if cacheErr := c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry); cacheErr != nil {
+						c.log.Err(cacheErr).Msgf("fail to mark tx out item (%+v) as signed", txOut)
+					}
 				}
 				return txid, nil
 			}
