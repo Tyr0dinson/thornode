@@ -473,8 +473,25 @@ memo: "secure-:bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm"
 type: create-blocks
 count: 1
 ---
-# Verify balance unchanged - withdrawal was rejected due to wrong network
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.code == 99'
+  - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.log|match("address\\(bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm\\) is not same network")'
+---
+# Verify the secured withdraw was rejected due to wrong network, but the
+# alt-native tx fee was still charged in ante from BTC-BTC.
+# Note: before alt-native tx fee was introduced, this case did not actually
+# exercise the wrong-address secured withdrawal path. addr_thor_pig had no
+# RUNE, so the tx failed in ante ("spendable balance 0rune is smaller than 2000000rune: insufficient funds")
+# and never reached secured withdraw validation.
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
-  - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 100000000
+  - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 99996999
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.code == 99'
+  - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.log|match("address\\(bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm\\) is not same network")'

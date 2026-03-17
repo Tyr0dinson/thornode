@@ -58,7 +58,7 @@ func TestSelectFundedCandidateQueriesL1InRuneOrder(t *testing.T) {
 
 	var skips dualLPSkips
 	selected := selectFundedCandidate(common.DOGEAsset, []dualLPCandidate{low, high, mid}, &skips)
-	if selected == nil || selected.user != mid.user || !selected.l1Balance.Equal(sdkmath.NewUint(8)) {
+	if selected == nil || selected.user != mid.user || !selected.assetBalance.Equal(sdkmath.NewUint(8)) {
 		t.Fatalf("expected mid with balance 8, got %+v", selected)
 	}
 	if !mid.user.IsLocked() {
@@ -107,7 +107,7 @@ func TestSelectFundedCandidateSkipsFailingUser(t *testing.T) {
 
 	var skips dualLPSkips
 	selected := selectFundedCandidate(common.DOGEAsset, []dualLPCandidate{broken, funded}, &skips)
-	if selected == nil || selected.user != funded.user || !selected.l1Balance.Equal(sdkmath.NewUint(7)) {
+	if selected == nil || selected.user != funded.user || !selected.assetBalance.Equal(sdkmath.NewUint(7)) {
 		t.Fatalf("expected funded with balance 7, got %+v", selected)
 	}
 	assertReleased(t, broken.user)
@@ -177,5 +177,35 @@ func TestDualLPWaitStateNamesPendingSide(t *testing.T) {
 	got := dualLPWaitState(lps, thorAddr, dogeAddr)
 	if !strings.Contains(got, "pending_asset=2500000000000") || !strings.Contains(got, "units=25000000000") {
 		t.Fatalf("unexpected state for pending position: %s", got)
+	}
+}
+
+func TestSelectFundedCandidateNativeBalances(t *testing.T) {
+	unfunded, _ := newDualLPTestCandidate(t, "unfunded", 400, 0, nil)
+	taken, _ := newDualLPTestCandidate(t, "taken", 300, 0, nil)
+	funded, _ := newDualLPTestCandidate(t, "funded", 200, 0, nil)
+	low, _ := newDualLPTestCandidate(t, "low", 100, 0, nil)
+	unfunded.assetBalance = sdkmath.ZeroUint()
+	taken.assetBalance = sdkmath.NewUint(9)
+	funded.assetBalance = sdkmath.NewUint(8)
+	low.assetBalance = sdkmath.NewUint(7)
+	if !taken.user.Acquire() {
+		t.Fatal("failed to acquire taken")
+	}
+	defer taken.user.Release()
+
+	// Native NAMI has no L1 client; selection must use the THORChain balance.
+	var skips dualLPSkips
+	selected := selectFundedCandidate(common.NAMI, []dualLPCandidate{low, funded, taken, unfunded}, &skips)
+	if selected == nil || selected.user != funded.user || !selected.assetBalance.Equal(sdkmath.NewUint(8)) {
+		t.Fatalf("expected funded with native balance 8, got %+v", selected)
+	}
+	defer selected.user.Release()
+	if !funded.user.IsLocked() || !taken.user.IsLocked() {
+		t.Fatal("selected user and previously acquired user must stay locked")
+	}
+	assertReleased(t, unfunded.user, low.user)
+	if skips.noL1Balance != 1 || skips.busy != 1 || skips.l1Errors != 0 {
+		t.Fatalf("unexpected skips: %+v", skips)
 	}
 }

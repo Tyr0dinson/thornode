@@ -2673,8 +2673,10 @@ func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signe
 	if err = k.BurnFromModule(ctx, ModuleName, shareCoin); err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("failed to burn secured asset shares: %w", err)
 	}
-	// Translate the burned shares back into underlying collateral.
-	tokensToConfiscate := common.GetSafeShare(burnAmt, shareBalance, assetAvailable)
+		// Translate the burned shares back into underlying collateral using the
+		// pre-burn share snapshot above; the burn changes on-chain balances, but
+		// the proportional claim we are confiscating is defined by that snapshot.
+		tokensToConfiscate := common.GetSafeShare(burnAmt, shareBalance, assetAvailable)
 	if tokensToConfiscate.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("secured asset produced zero underlying amount")
 	}

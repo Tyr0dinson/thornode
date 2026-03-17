@@ -126,24 +126,6 @@ add_balance() {
   mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
 
-# add_pool appends a minimal Available pool record for mocknet bootstrap state.
-add_pool() {
-  jq --arg ASSET "$1" --arg BALANCE_ASSET "$2" --arg BALANCE_RUNE "$3" --arg DECIMALS "$4" '
-    .app_state.thorchain.pools += [{
-      "LP_units": "100000000000",
-      "asset": $ASSET,
-      "balance_asset": $BALANCE_ASSET,
-      "balance_rune": $BALANCE_RUNE,
-      "decimals": $DECIMALS,
-      "pending_inbound_asset": "0",
-      "pending_inbound_rune": "0",
-      "status": "Available",
-      "synth_units": "0"
-    }]
-  ' <~/.thornode/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thornode/config/genesis.json
-}
-
 account_exists() {
   jq -e --arg ADDRESS "$1" '.app_state.bank.balances[]? | select(.address == $ADDRESS)' \
     ~/.thornode/config/genesis.json >/dev/null

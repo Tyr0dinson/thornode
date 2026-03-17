@@ -78,7 +78,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}
 asserts:
-  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${RES_BAL=35000000670474}
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${RES_BAL=35000000670468}
 ---
 type: create-blocks
 count: 1

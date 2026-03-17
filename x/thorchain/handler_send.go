@@ -209,7 +209,6 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 	}
 
 	asset := feeCoin.Asset
-	balanceCsCoins := k.GetBalance(ctx, signer)
 
 	var balanceFeeCoin cosmos.Uint
 	switch {
@@ -218,6 +217,7 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 	case asset.IsSecuredAsset():
 		balanceFeeCoin = getSecuredAssetBalanceOf(ctx, k, asset, signer)
 	default:
+		balanceCsCoins := k.GetBalance(ctx, signer)
 		amt := balanceCsCoins.AmountOf(asset.Native())
 		balanceFeeCoin = cosmos.NewUintFromBigInt(amt.BigInt())
 	}

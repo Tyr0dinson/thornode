@@ -185,6 +185,10 @@ func (a *ArbActor) bootstrapTradeAssets(config *OpConfig) OpResult {
 		if err != nil {
 			a.Log().Fatal().Err(err).Str("asset", pool.Asset).Msg("failed to create asset")
 		}
+		if asset.IsNative() {
+			a.Log().Info().Stringer("asset", asset).Msg("skipping native pool trade-asset bootstrap")
+			return
+		}
 
 		// lock chain
 		chainLocks.Lock()
@@ -198,10 +202,12 @@ func (a *ArbActor) bootstrapTradeAssets(config *OpConfig) OpResult {
 		defer chainLock.Unlock()
 
 		// get deposit parameters for 90% of asset balance
-		client := a.account.ChainClients[asset.Chain]
+		client, ok := a.account.ChainClients[asset.Chain]
+		if !ok || client == nil {
+			a.Log().Fatal().Stringer("asset", asset).Msg("missing chain client for pool asset")
+		}
 		memo := fmt.Sprintf("trade+:%s", a.thorAddress)
-		var l1Acct *common.Account
-		l1Acct, err = a.account.ChainClients[asset.Chain].GetAccount(nil)
+		l1Acct, err := client.GetAccount(nil)
 		if err != nil {
 			a.Log().Fatal().Err(err).Msg("failed to get L1 account")
 		}
@@ -283,8 +289,14 @@ func (a *ArbActor) arb(config *OpConfig) OpResult {
 	// gather pools we have seen
 	arbPools := []openapi.Pool{}
 	for _, pool := range pools {
+		var asset common.Asset
+		asset, err = common.NewAsset(pool.Asset)
+		if err != nil {
+			a.Log().Fatal().Err(err).Str("asset", pool.Asset).Msg("failed to create asset")
+		}
+
 		// skip unavailable pools and those with no liquidity
-		if pool.BalanceRune == "0" || pool.BalanceAsset == "0" || pool.Status != types.PoolStatus_Available.String() {
+		if asset.IsNative() || pool.BalanceRune == "0" || pool.BalanceAsset == "0" || pool.Status != types.PoolStatus_Available.String() {
 			continue
 		}
 

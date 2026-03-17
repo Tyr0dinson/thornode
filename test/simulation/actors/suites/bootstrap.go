@@ -29,8 +29,12 @@ func Bootstrap(rng *rand.Rand) *Actor {
 	}
 
 	// Start from any pools already present in genesis/mocknet bootstrap so the
-	// verification logic accounts for preseeded native pools such as THOR.NAMI.
+	// verification logic stays accurate if the environment pre-seeds any pools.
 	count := len(pools)
+
+	// Bootstrap the native NAMI pool inside the simulation.
+	count++
+	a.Children[core.NewDualLPActor(common.NAMI, rng)] = true
 
 	// Bootstrap pools for all simulated L1 gas assets.
 	for _, chain := range acommon.SimChains {

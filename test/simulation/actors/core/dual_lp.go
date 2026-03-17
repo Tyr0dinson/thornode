@@ -28,9 +28,9 @@ type DualLPActor struct {
 	asset            common.Asset
 	account          *User
 	thorAddress      common.Address
-	l1Address        common.Address
+	assetAddress     common.Address
 	runeAmount       cosmos.Uint
-	l1Amount         cosmos.Uint
+	assetAmount      cosmos.Uint
 	minLastAddHeight int64
 
 	// l1DepositAt and lpWait show how the remaining actor timeout was spent
@@ -46,14 +46,16 @@ func NewDualLPActor(asset common.Asset, rng *rand.Rand) *Actor {
 	}
 	a.Timeout = dualLPActorTimeout(asset)
 
-	// lock a user that has L1 and RUNE balance
+	// lock a user that has the asset and RUNE balance needed for the pool
 	a.Ops = append(a.Ops, a.acquireUser)
 
 	// deposit 10% of the user RUNE balance
 	a.Ops = append(a.Ops, a.depositRune)
 
-	// deposit 10% of the user L1 balance to match
-	if asset.Chain.IsEVM() && !asset.IsGasAsset() {
+	// deposit 10% of the user's matching asset balance
+	if asset.IsNative() {
+		a.Ops = append(a.Ops, a.depositNative)
+	} else if asset.Chain.IsEVM() && !asset.IsGasAsset() {
 		a.Ops = append(a.Ops, a.depositL1Token)
 	} else {
 		a.Ops = append(a.Ops, a.depositL1)
@@ -84,12 +86,16 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 			Continue: false,
 		}
 	}
+	users := config.Users
+	if a.asset.IsNative() {
+		users = config.NodeUsers
+	}
 
 	// THORChain checks are cheap. Every L1 balance query hits one shared daemon,
 	// so query L1 only in RUNE order until the first funded candidate.
 	var skips dualLPSkips
 	var candidates []dualLPCandidate
-	for _, user := range config.Users {
+	for _, user := range users {
 		if candidate := a.runeCandidate(user, existingLPs, &skips); candidate != nil {
 			candidates = append(candidates, *candidate)
 		}
@@ -100,7 +106,7 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 		skips.event(a.Log().Warn()).
 			Str("step", "acquireUser").
 			Int("candidates", len(candidates)).
-			Msg("no user with RUNE and L1 balance available")
+			Msg("no user with RUNE and asset balance available")
 		return OpResult{
 			Continue: false,
 		}
@@ -108,13 +114,13 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 
 	a.account = selected.user
 	a.thorAddress = selected.thorAddress
-	a.l1Address = selected.l1Address
+	a.assetAddress = selected.assetAddress
 	a.runeAmount = selected.runeBalance.QuoUint64(4)
-	a.l1Amount = selected.l1Balance.QuoUint64(4)
+	a.assetAmount = selected.assetBalance.QuoUint64(4)
 	a.SetLogger(a.Log().With().Str("user", a.account.Name()).Logger())
 	a.Log().Info().
 		Stringer("address", a.thorAddress).
-		Stringer("l1Address", a.l1Address).
+		Stringer("assetAddress", a.assetAddress).
 		Msg("acquired user")
 
 	block, err := thornode.GetBlock(0)
@@ -130,11 +136,11 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 
 // dualLPCandidate is a user with RUNE and no existing LP position.
 type dualLPCandidate struct {
-	user        *User
-	thorAddress common.Address
-	l1Address   common.Address
-	runeBalance cosmos.Uint
-	l1Balance   cosmos.Uint
+	user         *User
+	thorAddress  common.Address
+	assetAddress common.Address
+	runeBalance  cosmos.Uint
+	assetBalance cosmos.Uint
 }
 
 // dualLPSkips counts why users were not selected, so a stalled acquireUser
@@ -166,12 +172,15 @@ func (a *DualLPActor) runeCandidate(user *User, existingLPs []openapi.LiquidityP
 		skips.lastErr = fmt.Errorf("%s thor address: %w", user.Name(), err)
 		return nil
 	}
-	l1Address, err := user.PubKey(a.asset.Chain).GetAddress(a.asset.Chain)
-	if err != nil {
-		skips.lastErr = fmt.Errorf("%s %s address: %w", user.Name(), a.asset.Chain, err)
-		return nil
+	assetAddress := thorAddress
+	if !a.asset.IsNative() {
+		assetAddress, err = user.PubKey(a.asset.Chain).GetAddress(a.asset.Chain)
+		if err != nil {
+			skips.lastErr = fmt.Errorf("%s %s address: %w", user.Name(), a.asset.Chain, err)
+			return nil
+		}
 	}
-	if findLP(existingLPs, thorAddress, l1Address) != nil {
+	if findLP(existingLPs, thorAddress, assetAddress) != nil {
 		skips.existingLP++
 		return nil
 	}
@@ -185,11 +194,16 @@ func (a *DualLPActor) runeCandidate(user *User, existingLPs []openapi.LiquidityP
 		skips.noRune++
 		return nil
 	}
+	assetBalance := cosmos.ZeroUint()
+	if a.asset.IsNative() {
+		assetBalance = thorBalances.GetCoin(a.asset).Amount
+	}
 	return &dualLPCandidate{
-		user:        user,
-		thorAddress: thorAddress,
-		l1Address:   l1Address,
-		runeBalance: runeBalance,
+		user:         user,
+		thorAddress:  thorAddress,
+		assetAddress: assetAddress,
+		runeBalance:  runeBalance,
+		assetBalance: assetBalance,
 	}
 }
 
@@ -201,7 +215,8 @@ func (a *DualLPActor) runeCandidate(user *User, existingLPs []openapi.LiquidityP
 const dualLPMaxL1Errors = 2
 
 // selectFundedCandidate acquires and returns the candidate with the most RUNE
-// that also has an L1 balance. The search ends after dualLPMaxL1Errors failed
+// that also has an asset balance. Native balances come from runeCandidate.
+// The search ends after dualLPMaxL1Errors failed
 // L1 queries.
 func selectFundedCandidate(asset common.Asset, candidates []dualLPCandidate, skips *dualLPSkips) *dualLPCandidate {
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -217,15 +232,17 @@ func selectFundedCandidate(asset common.Asset, candidates []dualLPCandidate, ski
 			skips.busy++
 			continue
 		}
-		acct, err := candidate.user.ChainClients[asset.Chain].GetAccount(nil)
-		if err != nil {
-			skips.lastErr = fmt.Errorf("%s %s balance: %w", candidate.user.Name(), asset.Chain, err)
-			skips.l1Errors++
-			candidate.user.Release()
-			continue
+		if !asset.IsNative() {
+			acct, err := candidate.user.ChainClients[asset.Chain].GetAccount(nil)
+			if err != nil {
+				skips.lastErr = fmt.Errorf("%s %s balance: %w", candidate.user.Name(), asset.Chain, err)
+				skips.l1Errors++
+				candidate.user.Release()
+				continue
+			}
+			candidate.assetBalance = acct.Coins.GetCoin(asset).Amount
 		}
-		candidate.l1Balance = acct.Coins.GetCoin(asset).Amount
-		if candidate.l1Balance.IsZero() {
+		if candidate.assetBalance.IsZero() {
 			skips.noL1Balance++
 			candidate.user.Release()
 			continue
@@ -236,13 +253,13 @@ func selectFundedCandidate(asset common.Asset, candidates []dualLPCandidate, ski
 }
 
 // findLP returns the position for the address pair, in any state.
-func findLP(lps []openapi.LiquidityProvider, thorAddress, l1Address common.Address) *openapi.LiquidityProvider {
+func findLP(lps []openapi.LiquidityProvider, thorAddress, assetAddress common.Address) *openapi.LiquidityProvider {
 	for i, lp := range lps {
 		if lp.RuneAddress == nil || lp.AssetAddress == nil {
 			continue
 		}
 		if common.Address(*lp.RuneAddress).Equals(thorAddress) &&
-			common.Address(*lp.AssetAddress).Equals(l1Address) {
+			common.Address(*lp.AssetAddress).Equals(assetAddress) {
 			return &lps[i]
 		}
 	}
@@ -252,7 +269,7 @@ func findLP(lps []openapi.LiquidityProvider, thorAddress, l1Address common.Addre
 func (a *DualLPActor) depositL1Token(config *OpConfig) OpResult {
 	memo := fmt.Sprintf("+:%s:%s", a.asset, a.thorAddress)
 	client := a.account.ChainClients[a.asset.Chain]
-	txid, err := DepositL1Token(a.Log(), client, a.asset, memo, a.l1Amount)
+	txid, err := DepositL1Token(a.Log(), client, a.asset, memo, a.assetAmount)
 	if err != nil {
 		a.Log().Error().Err(err).Str("step", "depositL1Token").Msg("failed to deposit L1 token")
 		return OpResult{
@@ -267,10 +284,38 @@ func (a *DualLPActor) depositL1Token(config *OpConfig) OpResult {
 	}
 }
 
+func (a *DualLPActor) depositNative(config *OpConfig) OpResult {
+	memo := fmt.Sprintf("+:%s:%s", a.asset, a.thorAddress)
+	accAddr, err := a.account.PubKey(common.THORChain).GetThorAddress()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get thor address")
+		return OpResult{
+			Continue: false,
+		}
+	}
+	deposit := types.NewMsgDeposit(
+		common.NewCoins(common.NewCoin(a.asset, a.assetAmount)),
+		memo,
+		accAddr,
+	)
+	txid, err := a.account.Thorchain.Broadcast(deposit)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast native asset add liquidity tx")
+		return OpResult{
+			Continue: false,
+		}
+	}
+
+	a.Log().Info().Stringer("txid", txid).Msg("broadcasted native asset add liquidity tx")
+	return OpResult{
+		Continue: true,
+	}
+}
+
 func (a *DualLPActor) depositL1(config *OpConfig) OpResult {
 	memo := fmt.Sprintf("+:%s:%s", a.asset, a.thorAddress)
 	client := a.account.ChainClients[a.asset.Chain]
-	txid, err := DepositL1(a.Log(), client, a.asset, memo, a.l1Amount)
+	txid, err := DepositL1(a.Log(), client, a.asset, memo, a.assetAmount)
 	if err != nil {
 		a.Log().Error().Err(err).Str("step", "depositL1").Msg("failed to deposit L1")
 		return SimTxErrorResult(err)
@@ -285,8 +330,8 @@ func (a *DualLPActor) depositL1(config *OpConfig) OpResult {
 
 // dualLPWaitState describes why the LP position for the address pair is not
 // complete yet.
-func dualLPWaitState(lps []openapi.LiquidityProvider, thorAddress, l1Address common.Address) string {
-	lp := findLP(lps, thorAddress, l1Address)
+func dualLPWaitState(lps []openapi.LiquidityProvider, thorAddress, assetAddress common.Address) string {
+	lp := findLP(lps, thorAddress, assetAddress)
 	if lp == nil {
 		return "waiting for LP position to be created"
 	}
@@ -295,7 +340,7 @@ func dualLPWaitState(lps []openapi.LiquidityProvider, thorAddress, l1Address com
 }
 
 func (a *DualLPActor) depositRune(config *OpConfig) OpResult {
-	memo := fmt.Sprintf("+:%s:%s", a.asset, a.l1Address)
+	memo := fmt.Sprintf("+:%s:%s", a.asset, a.assetAddress)
 	accAddr, err := a.account.PubKey(common.THORChain).GetThorAddress()
 	if err != nil {
 		a.Log().Error().Err(err).Str("step", "depositRune").Msg("failed to get thor address")
@@ -331,11 +376,11 @@ func (a *DualLPActor) verifyLP(config *OpConfig) OpResult {
 		}
 	}
 
-	lp := findCompletedLP(lps, a.thorAddress, a.l1Address)
+	lp := findCompletedLP(lps, a.thorAddress, a.assetAddress)
 	if lp == nil {
 		// log each change of the pending position once, so a timeout shows
 		// which side of the deposit never arrived
-		if wait := dualLPWaitState(lps, a.thorAddress, a.l1Address); wait != a.lpWait {
+		if wait := dualLPWaitState(lps, a.thorAddress, a.assetAddress); wait != a.lpWait {
 			a.lpWait = wait
 			a.Log().Info().
 				Str("step", "verifyLP").

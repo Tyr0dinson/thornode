@@ -5,6 +5,7 @@ import (
 	rand "math/rand/v2"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
@@ -46,6 +47,9 @@ func Ragnarok(rng *rand.Rand) *Actor {
 	for _, chain := range acommon.SimChains {
 		interval.Children[core.NewRagnarokPoolActor(chain.GetGasAsset(), rng)] = true
 	}
+
+	// Explicitly ragnarok the native NAMI pool created by the simulation bootstrap.
+	interval.Children[core.NewRagnarokPoolActor(common.NAMI, rng)] = true
 
 	// verify pool removals
 	verify := NewActor("Ragnarok-Verify", rng)
