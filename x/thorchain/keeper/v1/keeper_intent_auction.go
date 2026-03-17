@@ -91,18 +91,17 @@ func (k KVStore) RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID)
 
 // GetActiveAuctions retrieves all active intent auctions using prefix key iteration
 func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, error) {
-	key := k.GetKey(prefixActiveAuctionIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	prefix := k.GetKey(prefixActiveAuctionIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
 	defer iter.Close()
 
 	var auctions []types.IntentAuction
 	for ; iter.Valid(); iter.Next() {
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) == 0 {
+		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(txIDSuffix) == 0 {
 			continue
 		}
-		txID := common.TxID(parts[len(parts)-1])
+		txID := common.TxID(string(txIDSuffix))
 
 		auction, err := k.GetIntentAuction(ctx, txID)
 		if err != nil {
@@ -118,18 +117,17 @@ func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, e
 // This should be called from EndBlock to ensure deterministic cleanup.
 func (k KVStore) CleanupStaleActiveAuctions(ctx cosmos.Context) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixActiveAuctionIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	prefix := k.GetKey(prefixActiveAuctionIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
 	defer iter.Close()
 
 	var staleKeys [][]byte
 	for ; iter.Valid(); iter.Next() {
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) == 0 {
+		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(txIDSuffix) == 0 {
 			continue
 		}
-		txID := common.TxID(parts[len(parts)-1])
+		txID := common.TxID(string(txIDSuffix))
 
 		if !k.IntentAuctionExists(ctx, txID) {
 			ctx.Logger().Warn("removing non-existent entry from active auction index", "txid", txID)
@@ -254,18 +252,17 @@ func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
 
 // GetIntentAuctionBidsByIntentID retrieves all auction bids for a specific intent auction using prefix key iteration
 func (k KVStore) GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentAuctionBid, error) {
-	key := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String(), "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	prefix := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String(), "/")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
 	defer iter.Close()
 
 	var bids []types.IntentAuctionBid
 	for ; iter.Valid(); iter.Next() {
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) < 2 {
+		bidTxIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(bidTxIDSuffix) == 0 {
 			continue
 		}
-		bidTxID := common.TxID(parts[len(parts)-1])
+		bidTxID := common.TxID(string(bidTxIDSuffix))
 
 		bid, err := k.GetIntentAuctionBid(ctx, bidTxID)
 		if err != nil {

@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 
@@ -95,19 +96,17 @@ func (k KVStore) GetIntentIterator(ctx cosmos.Context) cosmos.Iterator {
 
 // GetActiveIntents retrieves all active intents using prefix key iteration
 func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
-	key := k.GetKey(prefixIntentStatusIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	prefix := k.GetKey(prefixIntentStatusIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
 	defer iter.Close()
 
 	var intents []types.Intent
 	for ; iter.Valid(); iter.Next() {
-		// Extract the TxID from the key
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) == 0 {
+		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(txIDSuffix) == 0 {
 			continue
 		}
-		txID := common.TxID(parts[len(parts)-1])
+		txID := common.TxID(string(txIDSuffix))
 
 		intent, err := k.GetIntent(ctx, txID)
 		if err != nil {
@@ -123,18 +122,17 @@ func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
 // This should be called from EndBlock to ensure deterministic cleanup.
 func (k KVStore) CleanupStaleActiveIntents(ctx cosmos.Context) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixIntentStatusIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	prefix := k.GetKey(prefixIntentStatusIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
 	defer iter.Close()
 
 	var staleKeys [][]byte
 	for ; iter.Valid(); iter.Next() {
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) == 0 {
+		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(txIDSuffix) == 0 {
 			continue
 		}
-		txID := common.TxID(parts[len(parts)-1])
+		txID := common.TxID(string(txIDSuffix))
 
 		// Check existence first
 		if !k.IntentExists(ctx, txID) {
@@ -272,18 +270,17 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 
 // GetIntentSolvesByIntentID retrieves all solve bids for a specific intent using prefix key iteration
 func (k KVStore) GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentSolve, error) {
-	key := k.GetKey(prefixIntentSolveByIntent, intentTxID.String(), "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	prefix := k.GetKey(prefixIntentSolveByIntent, intentTxID.String(), "/")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
 	defer iter.Close()
 
 	var solves []types.IntentSolve
 	for ; iter.Valid(); iter.Next() {
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) < 2 {
+		solveTxIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(solveTxIDSuffix) == 0 {
 			continue
 		}
-		solveTxID := common.TxID(parts[len(parts)-1])
+		solveTxID := common.TxID(string(solveTxIDSuffix))
 
 		solve, err := k.GetIntentSolve(ctx, solveTxID)
 		if err != nil {
@@ -302,18 +299,16 @@ func (k KVStore) GetIntentSolvesByMatchHeight(ctx cosmos.Context, height int64) 
 	// Append "/" to prevent prefix collision: without it, height "50" would also
 	// match keys for heights 500, 5000, etc. since "intsh//50" is a string prefix
 	// of "intsh//500/TXID".
-	key := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	prefix := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
 	defer iter.Close()
 
 	for ; iter.Valid(); iter.Next() {
-		// Extract the solve TxID from the key
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) < 2 {
+		solveTxIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(solveTxIDSuffix) == 0 {
 			continue
 		}
-		solveTxID := common.TxID(parts[len(parts)-1])
+		solveTxID := common.TxID(string(solveTxIDSuffix))
 
 		solve, err := k.GetIntentSolve(ctx, solveTxID)
 		if err != nil {
@@ -325,22 +320,17 @@ func (k KVStore) GetIntentSolvesByMatchHeight(ctx cosmos.Context, height int64) 
 	return solves, nil
 }
 
-// Helper function to split a key string by "/" separator
-func splitKey(key string) []string {
-	parts := []string{}
-	current := ""
-	for _, ch := range key {
-		if ch == '/' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(ch)
-		}
+// keySuffixAfterPrefix returns the identifier suffix stored after an exact
+// index prefix, or nil when the key does not match that prefix.
+func keySuffixAfterPrefix(key, prefix []byte) []byte {
+	if !bytes.HasPrefix(key, prefix) {
+		return nil
 	}
-	if current != "" {
-		parts = append(parts, current)
+
+	suffix := bytes.TrimPrefix(key, prefix)
+	if len(suffix) == 0 {
+		return nil
 	}
-	return parts
+
+	return suffix
 }
