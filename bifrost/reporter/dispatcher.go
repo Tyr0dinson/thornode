@@ -101,17 +101,15 @@ func (d *dispatcher) start() {
 	}
 	d.wg.Add(2)
 	go d.runner(
-		// get chain-specific timing
-		// You can define chain-specific check intervals here
+		// Get chain-specific timing
 		func(chain common.Chain) time.Duration {
-			switch {
-			case chain.Equals(common.TRONChain):
-				return 3 * time.Second
-			case chain.Equals(common.AVAXChain):
-				return time.Second
-			default:
+			// Use the chain block time for fast chains so the periodic runner does not skip
+			// modulo-based solvency report heights. Fall back to THORChain block time.
+			dur := time.Duration(chain.ApproximateBlockMilliseconds()) * time.Millisecond
+			if dur <= 0 || dur > constants.ThorchainBlockTime {
 				return constants.ThorchainBlockTime
 			}
+			return dur
 		},
 	)
 	go d.processReportQueue()
