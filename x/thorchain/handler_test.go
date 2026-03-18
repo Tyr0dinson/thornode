@@ -308,14 +308,35 @@ type handlerTestWrapper struct {
 	notActiveNodeAccount NodeAccount
 }
 
-func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieDOGEPool bool) handlerTestWrapper {
+type handlerTestWrapperOption func(*handlerTestWrapperOptions)
+
+type handlerTestWrapperOptions struct {
+	withActiveVault bool
+}
+
+func withActiveVault() handlerTestWrapperOption {
+	return func(opts *handlerTestWrapperOptions) {
+		opts.withActiveVault = true
+	}
+}
+
+func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieDOGEPool bool, options ...handlerTestWrapperOption) handlerTestWrapper {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(height)
+
+	opts := handlerTestWrapperOptions{}
+	for _, option := range options {
+		option(&opts)
+	}
 
 	acc1 := GetRandomValidatorNode(NodeActive)
 	acc1.Version = mgr.GetVersion().String()
 	if withActiveNode {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, acc1), IsNil)
+		if opts.withActiveVault {
+			vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+			c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+		}
 	}
 	if withActieDOGEPool {
 		p, err := mgr.Keeper().GetPool(ctx, common.DOGEAsset)
