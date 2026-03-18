@@ -166,6 +166,7 @@ func NewConstantValue() *ConstantVals {
 			IntentAuctionOvertimeBlocks:         600,                // overtime window in blocks (~1 hour at 6 second blocks)
 			IntentAuctionMaxOvertimeBlocks:      7200,               // max total overtime extension in blocks (~12 hours at 6 second blocks)
 			IntentMaxSolvesPerIntent:            100,                // maximum number of solve bids per intent
+			IntentMaxBidsPerAuction:             100,                // maximum number of distinct bidders per auction
 			IntentMaxEndBlockProcessing:         100,                // max intents/auctions to process per EndBlock
 			IntentCancelMinGasMultiplier:        1,                  // minimum cancel gas required for non-pool assets as a multiple of MaxGas
 			IntentCancelRetainGasMultiplier:     3,                  // max cancel gas to keep before refunding excess, as a multiple of MaxGas

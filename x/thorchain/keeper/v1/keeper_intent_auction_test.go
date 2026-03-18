@@ -429,6 +429,44 @@ func (KeeperIntentAuctionSuite) TestIntentAuctionBid_UpdateExisting(c *C) {
 	c.Check(len(bids), Equals, 1)
 }
 
+// Regression test for updating an existing bid after both the auction and the
+// bidder key change: the stale bidder index entry must be removed.
+func (KeeperIntentAuctionSuite) TestIntentAuctionBid_UpdateExistingCleansOldBidderIndex(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID1 := common.TxID("INTENT123456789ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	intentTxID2 := common.TxID("INTENT223456789ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	bidTxID := common.TxID("BID01234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	bidder1 := common.Address("thor1bidder1")
+	bidder2 := common.Address("thor1bidder2")
+
+	bid := types.IntentAuctionBid{
+		BidTxID:       bidTxID,
+		IntentTxID:    intentTxID1,
+		BidderAddress: bidder1,
+		BidAmount:     common.NewCoin(common.BTCAsset, cosmos.NewUint(500)),
+		SubmitHeight:  100,
+	}
+	k.SetIntentAuctionBid(ctx, bid)
+
+	bid.IntentTxID = intentTxID2
+	bid.BidderAddress = bidder2
+	bid.BidAmount = common.NewCoin(common.BTCAsset, cosmos.NewUint(800))
+	k.SetIntentAuctionBid(ctx, bid)
+
+	oldBidderBid, err := k.GetBidderBidForAuction(ctx, intentTxID1, bidder1)
+	c.Assert(err, IsNil)
+	c.Check(oldBidderBid.BidTxID.IsEmpty(), Equals, true)
+
+	oldAuctionBids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID1)
+	c.Assert(err, IsNil)
+	c.Check(len(oldAuctionBids), Equals, 0)
+
+	newBidderBid, err := k.GetBidderBidForAuction(ctx, intentTxID2, bidder2)
+	c.Assert(err, IsNil)
+	c.Check(newBidderBid.BidTxID.Equals(bidTxID), Equals, true)
+}
+
 func (KeeperIntentAuctionSuite) TestIntentAuction_GetNonExistent(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

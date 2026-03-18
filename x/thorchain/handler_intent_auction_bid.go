@@ -110,6 +110,13 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 	bids := IntentAuctionBids(currentBids)
 	highestBid := bids.HighestBid()
 
+	// Enforce maximum number of distinct bids per auction to prevent unbounded
+	// per-auction growth. Top-ups remain allowed after the cap is reached.
+	maxBidsPerAuction := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMaxBidsPerAuction)
+	if maxBidsPerAuction > 0 && existingBid.BidTxID.IsEmpty() && int64(len(currentBids)) >= maxBidsPerAuction {
+		return se.ErrInvalidRequest.Wrapf("maximum number of bids (%d) reached for this auction", maxBidsPerAuction)
+	}
+
 	// First bid must meet minimum bid requirement
 	if highestBid.IsZero() {
 		if bidAmount.LT(auction.MinBid) {
@@ -193,38 +200,33 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 		}
 	}
 
-	// Get current bids to determine the previous highest bid (before this bid).
-	// Exclude the current bidder's own bid so that top-ups by the highest bidder
-	// don't trivially trigger overtime extension.
+	// Get current bids to determine the highest bid before this bid is written.
+	// We intentionally re-fetch here so validate() and handle() remain
+	// self-contained. If this ever needs optimization, a keeper-level
+	// highest-bid query/index is cleaner than threading ad-hoc state through Run.
 	currentBids, err := h.mgr.Keeper().GetIntentAuctionBidsByIntentID(ctx, msg.IntentTxID)
 	if err != nil {
 		return ErrInternal(err, "fail to get current bids for overtime calculation")
 	}
-	previousHighest := cosmos.ZeroUint()
-	for _, b := range currentBids {
-		if b.BidderAddress.Equals(msg.Tx.FromAddress) {
-			continue // Skip the current bidder's own previous bid
-		}
-		if b.BidAmount.Amount.GT(previousHighest) {
-			previousHighest = b.BidAmount.Amount
-		}
-	}
+	highestBid := IntentAuctionBids(currentBids).HighestBid()
 
 	// Save the bid
 	h.mgr.Keeper().SetIntentAuctionBid(ctx, bid)
 
 	// Check if we should extend the auction due to overtime (guard against underflow)
+	// Match validate() semantics: only an already-contested auction can earn an
+	// overtime extension, and the new total must clear the previous highest bid
+	// by at least 1x gas.
 	overtimeBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionOvertimeBlocks)
 	inOvertimeWindow := overtimeBlocks > 0 && auction.ExpiryHeight >= overtimeBlocks && ctx.BlockHeight() >= auction.ExpiryHeight-overtimeBlocks
-
-	if inOvertimeWindow {
+	if inOvertimeWindow && !highestBid.IsZero() {
 		gasFee, err := calculateGasFee(ctx, h.mgr, auction.BidAsset.GetChain())
 		if err != nil {
 			return ErrInternal(err, "fail to calculate gas fee for overtime extension")
 		}
-		minOvertimeBid := previousHighest.Add(gasFee)
+		minOvertimeBid := highestBid.Add(gasFee)
 
-		// If this bid qualifies for overtime extension (new highest >= previous + 1x gas)
+		// If this bid qualifies for overtime extension (new total >= previous highest + 1x gas)
 		if bid.BidAmount.Amount.GTE(minOvertimeBid) {
 			newExpiry := ctx.BlockHeight() + overtimeBlocks
 

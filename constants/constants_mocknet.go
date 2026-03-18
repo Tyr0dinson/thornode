@@ -74,6 +74,7 @@ func init() {
 		IntentAuctionOvertimeBlocks:         2,  // very short for testing
 		IntentAuctionMaxOvertimeBlocks:      10, // very short for testing
 		IntentMaxSolvesPerIntent:            100,
+		IntentMaxBidsPerAuction:             100,
 		IntentMaxEndBlockProcessing:         100,
 		IntentCancelMinGasMultiplier:        1,
 		IntentCancelRetainGasMultiplier:     3,

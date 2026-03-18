@@ -70,7 +70,9 @@ func (k KVStore) IntentExists(ctx cosmos.Context, txID common.TxID) bool {
 func (k KVStore) RemoveIntent(ctx cosmos.Context, txID common.TxID) {
 	// Remove all associated solves
 	solves, err := k.GetIntentSolvesByIntentID(ctx, txID)
-	if err == nil {
+	if err != nil {
+		ctx.Logger().Error("failed to load intent solves during intent removal", "txid", txID, "error", err)
+	} else {
 		for _, solve := range solves {
 			k.RemoveIntentSolve(ctx, solve.SolveTxID)
 		}

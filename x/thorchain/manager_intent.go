@@ -958,15 +958,15 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
 		switch {
 		case err != nil:
+			// Record the failure and return error so the caller's CacheContext rolls
+			// back and retries; do not run unrefundable cleanup in this path.
 			ctx.Logger().Error("fail to refund solve", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount, "error", err)
 			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
-			// Move funds to reserve
-			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
 		case !ok:
+			// Record the failure and return error so the caller's CacheContext rolls
+			// back and retries; do not run unrefundable cleanup in this path.
 			ctx.Logger().Error("fail to schedule solve refund", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount)
 			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
-			// Move funds to reserve
-			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
 		default:
 			ctx.Logger().Info("refunded intent solve due to auction start",
 				"intent_txid", intent.TxID,

@@ -239,8 +239,6 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeExtension(c *C)
 	c.Assert(err, IsNil)
 
 	// Place higher bid from a DIFFERENT bidder to trigger overtime extension.
-	// The handle method excludes the current bidder's own bid from previousHighest
-	// to prevent trivial self-top-up overtime extension.
 	// Gas fee for DOGE is 37500 (150 * 250), so bid must be >= 5000 + 37500 = 42500
 	bidTx2 := GetRandomTx()
 	bidTx2.FromAddress = GetRandomDOGEAddress()
@@ -253,6 +251,59 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeExtension(c *C)
 	updatedAuction, err := w.keeper.GetIntentAuction(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(updatedAuction.ExpiryHeight > auctionExpiry, Equals, true, Commentf("Auction should be extended in overtime"))
+}
+
+// Regression test for the validate()/handle() alignment: the first bid in the
+// overtime window must not extend the auction.
+func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_FirstBidInOvertimeDoesNotExtend(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMinBidMultiplier.String(), 3)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionOvertimeBlocks.String(), 100)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMaxOvertimeBlocks.String(), 500)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionDurationBlocks.String(), 200)
+
+	currentHeight := w.ctx.BlockHeight()
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  currentHeight + 2000,
+		Status:        IntentAuctioning,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	auctionExpiry := currentHeight + 99
+	auction := IntentAuction{
+		IntentTxID:      intentTx.ID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:          cosmos.NewUint(1000),
+		StartHeight:     currentHeight - 100,
+		ExpiryHeight:    auctionExpiry,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, auction)
+
+	handler := NewIntentAuctionBidHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	bidTx := GetRandomTx()
+	bidTx.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(100000))}
+	msg := NewMsgIntentAuctionBid(bidTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, IsNil)
+
+	updatedAuction, err := w.keeper.GetIntentAuction(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedAuction.ExpiryHeight, Equals, auctionExpiry, Commentf("first bid should not extend auction in overtime"))
 }
 
 func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_ValidationErrors(c *C) {
@@ -567,6 +618,75 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_GetBidderBidFailure(c *
 	c.Check(err, NotNil)
 	c.Check(errors.Is(err, errInternal), Equals, true, Commentf("GetBidderBidForAuction failure should return internal error"))
 	c.Check(result, IsNil)
+}
+
+// Enforces a per-auction bidder cap while still allowing existing bidders to
+// top up after the cap is reached.
+func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_MaxBidsPerAuction(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature with a low bid cap.
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMinBidMultiplier.String(), 3)
+	w.keeper.SetMimir(w.ctx, constants.IntentMaxBidsPerAuction.String(), 2)
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentAuctioning,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	auction := IntentAuction{
+		IntentTxID:      intentTx.ID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:          cosmos.NewUint(1000),
+		StartHeight:     w.ctx.BlockHeight(),
+		ExpiryHeight:    w.ctx.BlockHeight() + 1000,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, auction)
+
+	handler := NewIntentAuctionBidHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	bidder1 := GetRandomDOGEAddress()
+	bidder2 := GetRandomDOGEAddress()
+
+	// First two distinct bidders should succeed.
+	for i, bidder := range []common.Address{bidder1, bidder2} {
+		bidTx := GetRandomTx()
+		bidTx.FromAddress = bidder
+		bidTx.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(uint64(5000+i*1000)))}
+		msg := NewMsgIntentAuctionBid(bidTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+		_, err := handler.Run(w.ctx, msg)
+		c.Assert(err, IsNil, Commentf("bid %d should succeed", i+1))
+	}
+
+	// A third distinct bidder should be rejected once the cap is reached.
+	bidTx3 := GetRandomTx()
+	bidTx3.FromAddress = GetRandomDOGEAddress()
+	bidTx3.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(7000))}
+	msg3 := NewMsgIntentAuctionBid(bidTx3, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg3)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*maximum number of bids.*")
+
+	// Top-ups by an existing bidder should still be allowed after the cap is reached.
+	topUpTx := GetRandomTx()
+	topUpTx.FromAddress = bidder1
+	topUpTx.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(2000))}
+	topUpMsg := NewMsgIntentAuctionBid(topUpTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(w.ctx, topUpMsg)
+	c.Assert(err, IsNil)
 }
 
 func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeBidRejection(c *C) {

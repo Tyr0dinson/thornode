@@ -179,6 +179,7 @@ const (
 	IntentAuctionOvertimeBlocks
 	IntentAuctionMaxOvertimeBlocks
 	IntentMaxSolvesPerIntent
+	IntentMaxBidsPerAuction
 	IntentMaxEndBlockProcessing
 	IntentCancelMinGasMultiplier
 	IntentCancelRetainGasMultiplier

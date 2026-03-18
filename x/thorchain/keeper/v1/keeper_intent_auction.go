@@ -76,7 +76,9 @@ func (k KVStore) IntentAuctionExists(ctx cosmos.Context, intentTxID common.TxID)
 func (k KVStore) RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID) {
 	// Remove all associated bids
 	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
-	if err == nil {
+	if err != nil {
+		ctx.Logger().Error("failed to load auction bids during auction removal", "intent_txid", intentTxID, "error", err)
+	} else {
 		for _, bid := range bids {
 			k.RemoveIntentAuctionBid(ctx, bid.BidTxID)
 		}
@@ -188,10 +190,9 @@ func (k KVStore) SetIntentAuctionBid(ctx cosmos.Context, bid types.IntentAuction
 			if !existing.IntentTxID.Equals(bid.IntentTxID) {
 				oldAuctionKey := k.GetKey(prefixIntentAuctionBidByAuction, existing.IntentTxID.String(), "/"+bid.BidTxID.String())
 				store.Delete(oldAuctionKey)
-				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), "/"+existing.BidderAddress.String())
-				store.Delete(oldBidderKey)
-			} else if !existing.BidderAddress.Equals(bid.BidderAddress) {
-				// Remove old bidder index if BidderAddress changed
+			}
+			// Remove the old bidder index whenever either side of the mapping changes.
+			if !existing.IntentTxID.Equals(bid.IntentTxID) || !existing.BidderAddress.Equals(bid.BidderAddress) {
 				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), "/"+existing.BidderAddress.String())
 				store.Delete(oldBidderKey)
 			}
