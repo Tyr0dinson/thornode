@@ -133,6 +133,57 @@ func (KeeperIntentSuite) TestIntent_ActiveIndex(c *C) {
 	c.Check(len(activeIntents), Equals, 0)
 }
 
+func (KeeperIntentSuite) TestIntent_TerminalSolveRefundIndex(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("TERMIDX1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABC1")
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender1"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent)
+
+	solveTxID := common.TxID("TERMSOLVE1234567890ABCD1234567890ABCD1234567890ABCD1234567890AB1")
+	solve := types.IntentSolve{
+		SolveTxID:     solveTxID,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver1"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   100,
+	}
+	k.SetIntentSolve(ctx, solve)
+
+	terminalIntents, err := k.GetTerminalSolveRefundIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 0)
+
+	intent.Status = types.IntentStatus_IntentCompleted
+	k.SetIntent(ctx, intent)
+
+	terminalIntents, err = k.GetTerminalSolveRefundIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 1)
+	c.Check(terminalIntents[0].TxID.Equals(intentTxID), Equals, true)
+
+	k.RemoveIntentSolve(ctx, solveTxID)
+
+	terminalIntents, err = k.GetTerminalSolveRefundIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 0)
+
+	newSolveTxID := common.TxID("TERMSOLVE2234567890ABCD1234567890ABCD1234567890ABCD1234567890AB2")
+	solve.SolveTxID = newSolveTxID
+	k.SetIntentSolve(ctx, solve)
+
+	terminalIntents, err = k.GetTerminalSolveRefundIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 1)
+	c.Check(terminalIntents[0].TxID.Equals(intentTxID), Equals, true)
+}
+
 func (KeeperIntentSuite) TestIntent_RemoveIntent(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
@@ -475,6 +526,41 @@ func (KeeperIntentSuite) TestIntentSolve_RemoveCorruptedRecord(c *C) {
 	solves, err = k.GetIntentSolvesByMatchHeight(ctx, matchHeight)
 	c.Assert(err, IsNil)
 	c.Check(len(solves), Equals, 0)
+}
+
+func (KeeperIntentSuite) TestIntent_TerminalSolveRefundIndex_CleansStaleEntries(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("TERMSTALE1234567890ABCD1234567890ABCD1234567890ABCD1234567890A")
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender1"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentCompleted,
+	}
+	k.SetIntent(ctx, intent)
+
+	solveTxID := common.TxID("TERMSTALESOLVE1234567890ABCD1234567890ABCD1234567890ABCD123456789")
+	solve := types.IntentSolve{
+		SolveTxID:     solveTxID,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver1"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   100,
+	}
+	k.SetIntentSolve(ctx, solve)
+
+	terminalIntents, err := k.GetTerminalSolveRefundIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 1)
+
+	intent.Status = types.IntentStatus_IntentActive
+	k.setIntent(ctx, k.GetKey(prefixIntent, intentTxID.String()), intent)
+
+	terminalIntents, err = k.GetTerminalSolveRefundIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 0)
 }
 
 func (KeeperIntentSuite) TestIntent_RemoveIntentWithCorruptedSolve(c *C) {

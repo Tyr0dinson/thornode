@@ -107,6 +107,7 @@ const (
 	prefixIntentSolve               types.DbPrefix = "ints/"
 	prefixIntentSolveByIntent       types.DbPrefix = "intsi/"
 	prefixIntentSolveByMatchHeight  types.DbPrefix = "intsh/"
+	prefixIntentSolveRefundIndex    types.DbPrefix = "intsr/"
 	prefixIntentStatusIndex         types.DbPrefix = "intst/"
 	prefixIntentAuction             types.DbPrefix = "intauc/"
 	prefixIntentAuctionBid          types.DbPrefix = "intaucb/"

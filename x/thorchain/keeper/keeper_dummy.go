@@ -929,6 +929,11 @@ func (k KVStoreDummy) GetActiveIntents(_ cosmos.Context) ([]types.Intent, error)
 
 func (k KVStoreDummy) RemoveActiveIntentIndex(_ cosmos.Context, _ common.TxID) {}
 
+// GetTerminalSolveRefundIntents satisfies the intent keeper interface in tests.
+func (k KVStoreDummy) GetTerminalSolveRefundIntents(_ cosmos.Context) ([]types.Intent, error) {
+	return nil, kaboom
+}
+
 // IntentSolve keeper methods
 func (k KVStoreDummy) SetIntentSolve(_ cosmos.Context, _ types.IntentSolve) {}
 

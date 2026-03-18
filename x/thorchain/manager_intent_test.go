@@ -1082,10 +1082,17 @@ func (s *IntentMgrTestSuite) TestProcessMatches_CompletionRefundFailureLeavesTer
 	c.Check(updatedIntent.Status, Equals, IntentCompleted)
 	c.Check(w.keeper.IntentSolveExists(w.ctx, winningSolveTx.ID), Equals, false)
 	c.Check(w.keeper.IntentSolveExists(w.ctx, losingSolveTx.ID), Equals, true)
+	terminalIntents, err := w.keeper.GetTerminalSolveRefundIntents(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 1)
+	c.Check(terminalIntents[0].TxID.Equals(intentTx.ID), Equals, true)
 
 	nextCtx := w.ctx.WithBlockHeight(w.ctx.BlockHeight() + 1)
 	c.Assert(intentMgr.processTerminalSolveRefunds(nextCtx), IsNil)
 	c.Check(w.keeper.IntentSolveExists(nextCtx, losingSolveTx.ID), Equals, false)
+	terminalIntents, err = w.keeper.GetTerminalSolveRefundIntents(nextCtx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 0)
 }
 
 // TestExecuteIntent_WithAffiliateFee tests that affiliate fee is charged at intent completion

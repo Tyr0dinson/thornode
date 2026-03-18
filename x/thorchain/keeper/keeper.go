@@ -512,6 +512,7 @@ type KeeperIntent interface {
 	GetActiveIntentTxIDs(ctx cosmos.Context) []common.TxID
 	GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error)
 	RemoveActiveIntentIndex(ctx cosmos.Context, txID common.TxID)
+	GetTerminalSolveRefundIntents(ctx cosmos.Context) ([]types.Intent, error)
 
 	// IntentSolve methods
 	SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve)

@@ -1,0 +1,323 @@
+{{ template "default-state.yaml" }}
+---
+########################################################################################
+# Minimal BTC+ETH intent state for a completed intent whose losing BTC solve refund
+# is initially too small to survive an explicitly elevated BTC outbound fee, but
+# becomes schedulable after a later network fee update.
+########################################################################################
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "200000000000"
+              denom: rune
+    thorchain:
+      liquidity_providers:
+        - asset: BTC.BTC
+          asset_address: {{ addr_btc_cat }}
+          asset_deposit_value: "100000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+        - asset: ETH.ETH
+          asset_address: {{ addr_eth_cat }}
+          asset_deposit_value: "1000000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: BTC.BTC
+          balance_asset: "100000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+        - LP_units: "100000000000"
+          asset: ETH.ETH
+          balance_asset: "1000000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      network_fees:
+        - chain: ETH
+          transaction_fee_rate: "80"
+          transaction_size: "80000"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - ETH
+            - DOGE
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+            - amount: "1000000000"
+              asset: ETH.ETH
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+  - .[0].asset == "BTC.BTC"
+  - .[1].asset == "ETH.ETH"
+---
+########################################################################################
+# Enable intents.
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Set an elevated BTC fee up front so the losing solve refund is initially too
+# small to survive the outbound fee deduction.
+########################################################################################
+type: tx-network-fee
+block_height: 2
+chain: BTC
+transaction_size: 1000
+transaction_rate: 14
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an ETH->BTC intent. The low target is intentionally small so a losing
+# solve can remain valid while still being too small to refund under the initial
+# BTC outbound fee.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:BTC.BTC:1200000:14500:{{ addr_btc_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.high_target == "1200000"
+  - .intent.low_target == "14500"
+---
+########################################################################################
+# Submit both solves in the same block. The 1,200,000 sat solve wins. The 14,500
+# sat solve is valid, but its refund cannot be scheduled yet because 14,500 -
+# 14,000 = 500 sats, which is below BTC's 1,000 sat dust threshold.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "1200000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "IS:{{ observe_txid 1 }}:{{ addr_eth_cat }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_pig }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "14500"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "IS:{{ observe_txid 1 }}:{{ addr_eth_pig }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# The intent completes, but only the winner's execution outbounds are queued.
+# The losing solve remains retryable and does not appear in the outbound queue yet.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .|map(select(.original_memo == "REFUND:{{ observe_txid 3 }}"))|length == 0
+  - .|map(select(.original_memo == "OUT:{{ observe_txid 2 }}" and .to_address == "{{ addr_eth_cat }}"))|length == 1
+  - .|map(select(.original_memo == "OUT:{{ observe_txid 1 }}" and .to_address == "{{ addr_btc_fox }}"))|length == 1
+---
+########################################################################################
+# Observe the outbounds to clean the queue
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_cat }}
+    coins:
+      - amount: "99260000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 2 }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 5 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "1186000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ observe_txid 1 }}"
+  block_height: 6
+  finalise_height: 6
+  observed_pub_key: {{ pubkey_dog }}
+---
+########################################################################################
+# Lower the BTC fee so the next EndBlock retry can finally schedule the leftover
+# losing solve refund.
+########################################################################################
+type: tx-network-fee
+block_height: 4
+chain: BTC
+transaction_size: 1000
+transaction_rate: 7
+signer: {{ addr_thor_dog }}
+sequence: 6
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# The retry succeeds: the completed intent stays completed and the missing refund
+# now appears in the outbound queue.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .|map(select(.original_memo == "REFUND:{{ observe_txid 3 }}" and .to_address == "{{ addr_btc_pig }}"))|length == 1
+---
+########################################################################################
+# Observe all outbounds so the suite ends with a clean queue.
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 6 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_pig }}
+    coins:
+      - amount: "7500"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "REFUND:{{ observe_txid 3 }}"
+  block_height: 7
+  finalise_height: 7
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

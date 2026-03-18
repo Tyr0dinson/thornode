@@ -52,6 +52,10 @@ func (k KVStore) SetIntent(ctx cosmos.Context, intent types.Intent) {
 	} else {
 		store.Delete(activeKey)
 	}
+
+	// Keep the terminal refund retry index aligned with status transitions so
+	// EndBlock can iterate only retryable terminal intents.
+	k.syncTerminalSolveRefundIndex(ctx, intent)
 }
 
 // GetIntent retrieves an intent from the KV store
@@ -82,6 +86,7 @@ func (k KVStore) RemoveIntent(ctx cosmos.Context, txID common.TxID) {
 
 	// Remove from active intent index (O(1) with prefix keys)
 	store.Delete(k.GetKey(prefixIntentStatusIndex, txID.String()))
+	store.Delete(k.GetKey(prefixIntentSolveRefundIndex, txID.String()))
 }
 
 func (k KVStore) removeIntentSolvesByIntentTxID(ctx cosmos.Context, intentTxID common.TxID) {
@@ -147,10 +152,139 @@ func (k KVStore) RemoveActiveIntentIndex(ctx cosmos.Context, txID common.TxID) {
 	store.Delete(k.GetKey(prefixIntentStatusIndex, txID.String()))
 }
 
+// GetTerminalSolveRefundIntents retrieves terminal intents that still have
+// solve records which need refund retries.
+func (k KVStore) GetTerminalSolveRefundIntents(ctx cosmos.Context) ([]types.Intent, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	prefix := k.GetKey(prefixIntentSolveRefundIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
+	defer iter.Close()
+
+	var intents []types.Intent
+	var staleKeys [][]byte
+	for ; iter.Valid(); iter.Next() {
+		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(txIDSuffix) == 0 {
+			continue
+		}
+		txID := common.TxID(string(txIDSuffix))
+
+		// Revalidate indexed intents on read and drop stale entries eagerly so
+		// the retry scan stays small even if an earlier write path missed cleanup.
+		intent, err := k.GetIntent(ctx, txID)
+		if err != nil {
+			ctx.Logger().Error("failed to get intent from terminal solve refund index", "txid", txID, "error", err)
+			staleKeys = append(staleKeys, iter.Key())
+			continue
+		}
+		if intent.TxID.IsEmpty() || !isTerminalIntentStatus(intent.Status) {
+			staleKeys = append(staleKeys, iter.Key())
+			continue
+		}
+
+		solves, err := k.GetIntentSolvesByIntentID(ctx, txID)
+		if err != nil {
+			ctx.Logger().Error("failed to get intent solves from terminal solve refund index", "txid", txID, "error", err)
+			staleKeys = append(staleKeys, iter.Key())
+			continue
+		}
+		if len(solves) == 0 {
+			staleKeys = append(staleKeys, iter.Key())
+			continue
+		}
+
+		intents = append(intents, intent)
+	}
+
+	for _, staleKey := range staleKeys {
+		store.Delete(staleKey)
+	}
+
+	return intents, nil
+}
+
 // GetIntentSolveIterator returns an iterator for all intent solves
 func (k KVStore) GetIntentSolveIterator(ctx cosmos.Context) cosmos.Iterator {
 	key := k.GetKey(prefixIntentSolve, "")
 	return k.getIterator(ctx, kvTypes.DbPrefix(key))
+}
+
+// isTerminalIntentStatus returns true when an intent should be handled only by
+// terminal cleanup paths such as leftover solve refunds.
+func isTerminalIntentStatus(status types.IntentStatus) bool {
+	switch status {
+	case types.IntentStatus_IntentCancelled,
+		types.IntentStatus_IntentCompleted,
+		types.IntentStatus_IntentExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+// setTerminalSolveRefundIndex records that a terminal intent still has solve
+// records which require refund retries.
+func (k KVStore) setTerminalSolveRefundIndex(ctx cosmos.Context, txID common.TxID) {
+	if txID.IsEmpty() {
+		return
+	}
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(k.GetKey(prefixIntentSolveRefundIndex, txID.String()), []byte{1})
+}
+
+// clearTerminalSolveRefundIndex removes an intent from the terminal solve
+// refund retry index.
+func (k KVStore) clearTerminalSolveRefundIndex(ctx cosmos.Context, txID common.TxID) {
+	if txID.IsEmpty() {
+		return
+	}
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Delete(k.GetKey(prefixIntentSolveRefundIndex, txID.String()))
+}
+
+// syncTerminalSolveRefundIndex updates the retry index after an intent status
+// change by checking whether terminal leftover solves still exist.
+func (k KVStore) syncTerminalSolveRefundIndex(ctx cosmos.Context, intent types.Intent) {
+	if intent.TxID.IsEmpty() || !isTerminalIntentStatus(intent.Status) {
+		k.clearTerminalSolveRefundIndex(ctx, intent.TxID)
+		return
+	}
+
+	solves, err := k.GetIntentSolvesByIntentID(ctx, intent.TxID)
+	if err != nil {
+		ctx.Logger().Error("failed to sync terminal solve refund index", "txid", intent.TxID, "error", err)
+		k.clearTerminalSolveRefundIndex(ctx, intent.TxID)
+		return
+	}
+	if len(solves) == 0 {
+		k.clearTerminalSolveRefundIndex(ctx, intent.TxID)
+		return
+	}
+
+	k.setTerminalSolveRefundIndex(ctx, intent.TxID)
+}
+
+// syncTerminalSolveRefundIndexByTxID refreshes the retry index after solve
+// writes/removals by reloading the parent intent and applying current rules.
+func (k KVStore) syncTerminalSolveRefundIndexByTxID(ctx cosmos.Context, txID common.TxID) {
+	if txID.IsEmpty() {
+		return
+	}
+
+	intent, err := k.GetIntent(ctx, txID)
+	if err != nil {
+		ctx.Logger().Error("failed to sync terminal solve refund index by txid", "txid", txID, "error", err)
+		k.clearTerminalSolveRefundIndex(ctx, txID)
+		return
+	}
+	if intent.TxID.IsEmpty() {
+		k.clearTerminalSolveRefundIndex(ctx, txID)
+		return
+	}
+
+	k.syncTerminalSolveRefundIndex(ctx, intent)
 }
 
 // -------------------- IntentSolve Methods --------------------
@@ -213,6 +347,8 @@ func (k KVStore) SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve) {
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
 	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/"+solve.SolveTxID.String())
 	store.Set(matchHeightIndexKey, []byte{1})
+
+	k.syncTerminalSolveRefundIndexByTxID(ctx, solve.IntentTxID)
 }
 
 // GetIntentSolve retrieves an intent solve bid from the KV store
@@ -261,6 +397,8 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
 	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/"+solveTxID.String())
 	store.Delete(matchHeightIndexKey)
+
+	k.syncTerminalSolveRefundIndexByTxID(ctx, solve.IntentTxID)
 }
 
 // removeIntentSolveIndexEntriesByTxID is a corruption-recovery helper used when

@@ -1426,48 +1426,13 @@ func (im *IntentMgr) processTerminalSolveRefunds(ctx cosmos.Context) error {
 		maxProcessing = 100
 	}
 
-	var terminalIntents []types.Intent
-	seen := make(map[string]struct{})
-	iter := im.mgr.Keeper().GetIntentSolveIterator(ctx)
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		if int64(len(terminalIntents)) >= maxProcessing {
-			break
-		}
-
-		var solve types.IntentSolve
-		im.mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &solve)
-		if solve.IntentTxID.IsEmpty() {
-			continue
-		}
-
-		// Multiple leftover solves can belong to the same terminal intent; only
-		// queue one refund retry per intent per block.
-		intentKey := solve.IntentTxID.String()
-		if _, ok := seen[intentKey]; ok {
-			continue
-		}
-		seen[intentKey] = struct{}{}
-
-		intent, err := im.mgr.Keeper().GetIntent(ctx, solve.IntentTxID)
-		if err != nil {
-			ctx.Logger().Error("fail to get intent while scanning terminal solve refunds", "intent_txid", solve.IntentTxID, "error", err)
-			continue
-		}
-		if intent.TxID.IsEmpty() {
-			continue
-		}
-		// Active and auctioning intents are still handled by the normal match and
-		// expiry flows; this pass is only for already-terminal intents.
-		if intent.Status == IntentActive || intent.Status == IntentAuctioning {
-			continue
-		}
-
-		terminalIntents = append(terminalIntents, intent)
+	terminalIntents, err := im.mgr.Keeper().GetTerminalSolveRefundIntents(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get terminal solve refund intents: %w", err)
 	}
-	if iter.Valid() {
+	if int64(len(terminalIntents)) > maxProcessing {
 		ctx.Logger().Warn("reached per-block processing cap for terminal intent solve refunds", "cap", maxProcessing)
+		terminalIntents = terminalIntents[:maxProcessing]
 	}
 
 	for _, intent := range terminalIntents {
