@@ -1,12 +1,14 @@
 package thorchain
 
 import (
+	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 type IntentMgrTestSuite struct{}
@@ -322,6 +324,81 @@ func (s *IntentMgrTestSuite) TestProcessExpirations_DirectRefundSolveFailureStay
 
 	_, err = w.keeper.GetIntentSolve(w.ctx, solveTx.ID)
 	c.Assert(err, IsNil)
+}
+
+// Expiration processing should clean stale active-intent index entries inline
+// instead of relying on a separate EndBlock cleanup pre-pass.
+func (s *IntentMgrTestSuite) TestProcessExpirations_CleansStaleActiveIntentIndexInline(c *C) {
+	w := getHandlerTestWrapper(c, 10, true, true)
+
+	validIntentTx := GetRandomTx().ID
+	validIntent := Intent{
+		TxID:          validIntentTx,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 100,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, validIntent)
+
+	staleIntentTx := GetRandomTx().ID
+	staleIntent := validIntent
+	staleIntent.TxID = staleIntentTx
+	w.keeper.SetIntent(w.ctx, staleIntent)
+
+	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(w.ctx))
+	store.Delete(w.keeper.GetKey(kvTypes.DbPrefix("int/"), staleIntentTx.String()))
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err := intentMgr.processExpirations(w.ctx)
+	c.Assert(err, IsNil)
+
+	activeIntents, err := w.keeper.GetActiveIntents(w.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(len(activeIntents), Equals, 1)
+	c.Check(activeIntents[0].TxID.Equals(validIntentTx), Equals, true)
+}
+
+// Auction processing should clean stale active-auction index entries inline
+// instead of relying on a separate EndBlock cleanup pre-pass.
+func (s *IntentMgrTestSuite) TestProcessAuctions_CleansStaleActiveAuctionIndexInline(c *C) {
+	w := getHandlerTestWrapper(c, 10, true, true)
+
+	validAuctionTx := GetRandomTx().ID
+	validAuction := IntentAuction{
+		IntentTxID:    validAuctionTx,
+		AuctionAmount: common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		ExpiryHeight:  w.ctx.BlockHeight() + 100,
+		Status:        IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, validAuction)
+
+	staleAuctionTx := GetRandomTx().ID
+	staleAuction := validAuction
+	staleAuction.IntentTxID = staleAuctionTx
+	w.keeper.SetIntentAuction(w.ctx, staleAuction)
+
+	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(w.ctx))
+	store.Delete(w.keeper.GetKey(kvTypes.DbPrefix("intauc/"), staleAuctionTx.String()))
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err := intentMgr.processAuctions(w.ctx)
+	c.Assert(err, IsNil)
+
+	activeAuctions, err := w.keeper.GetActiveAuctions(w.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(len(activeAuctions), Equals, 1)
+	c.Check(activeAuctions[0].IntentTxID.Equals(validAuctionTx), Equals, true)
 }
 
 // TestExecuteIntent_WithAffiliateFee tests that affiliate fee is charged at intent completion

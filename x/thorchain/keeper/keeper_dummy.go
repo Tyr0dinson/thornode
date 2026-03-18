@@ -921,9 +921,13 @@ func (k KVStoreDummy) GetIntentIterator(_ cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
+func (k KVStoreDummy) GetActiveIntentTxIDs(_ cosmos.Context) []common.TxID { return nil }
+
 func (k KVStoreDummy) GetActiveIntents(_ cosmos.Context) ([]types.Intent, error) {
 	return nil, kaboom
 }
+
+func (k KVStoreDummy) RemoveActiveIntentIndex(_ cosmos.Context, _ common.TxID) {}
 
 func (k KVStoreDummy) CleanupStaleActiveIntents(_ cosmos.Context) {}
 
@@ -953,9 +957,12 @@ func (k KVStoreDummy) GetIntentAuction(_ cosmos.Context, _ common.TxID) (types.I
 func (k KVStoreDummy) IntentAuctionExists(_ cosmos.Context, _ common.TxID) bool  { return false }
 func (k KVStoreDummy) RemoveIntentAuction(_ cosmos.Context, _ common.TxID)       {}
 func (k KVStoreDummy) GetIntentAuctionIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetActiveAuctionTxIDs(_ cosmos.Context) []common.TxID      { return nil }
 func (k KVStoreDummy) GetActiveAuctions(_ cosmos.Context) ([]types.IntentAuction, error) {
 	return nil, kaboom
 }
+
+func (k KVStoreDummy) RemoveActiveAuctionIndex(_ cosmos.Context, _ common.TxID) {}
 
 func (k KVStoreDummy) CleanupStaleActiveAuctions(_ cosmos.Context) {}
 

@@ -93,18 +93,9 @@ func (k KVStore) RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID)
 
 // GetActiveAuctions retrieves all active intent auctions using prefix key iteration
 func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, error) {
-	prefix := k.GetKey(prefixActiveAuctionIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
-	defer iter.Close()
-
-	var auctions []types.IntentAuction
-	for ; iter.Valid(); iter.Next() {
-		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
-		if len(txIDSuffix) == 0 {
-			continue
-		}
-		txID := common.TxID(string(txIDSuffix))
-
+	activeTxIDs := k.GetActiveAuctionTxIDs(ctx)
+	auctions := make([]types.IntentAuction, 0, len(activeTxIDs))
+	for _, txID := range activeTxIDs {
 		auction, err := k.GetIntentAuction(ctx, txID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get auction from active index (txid=%s): %w", txID, err)
@@ -113,6 +104,30 @@ func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, e
 	}
 
 	return auctions, nil
+}
+
+// GetActiveAuctionTxIDs retrieves all intent txids from the active auction index.
+func (k KVStore) GetActiveAuctionTxIDs(ctx cosmos.Context) []common.TxID {
+	prefix := k.GetKey(prefixActiveAuctionIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
+	defer iter.Close()
+
+	var txIDs []common.TxID
+	for ; iter.Valid(); iter.Next() {
+		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(txIDSuffix) == 0 {
+			continue
+		}
+		txIDs = append(txIDs, common.TxID(string(txIDSuffix)))
+	}
+
+	return txIDs
+}
+
+// RemoveActiveAuctionIndex deletes an entry from the active auction index.
+func (k KVStore) RemoveActiveAuctionIndex(ctx cosmos.Context, intentTxID common.TxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Delete(k.GetKey(prefixActiveAuctionIndex, intentTxID.String()))
 }
 
 // CleanupStaleActiveAuctions removes stale entries from the active auction index.

@@ -509,7 +509,9 @@ type KeeperIntent interface {
 	IntentExists(ctx cosmos.Context, txID common.TxID) bool
 	RemoveIntent(ctx cosmos.Context, txID common.TxID)
 	GetIntentIterator(ctx cosmos.Context) cosmos.Iterator
+	GetActiveIntentTxIDs(ctx cosmos.Context) []common.TxID
 	GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error)
+	RemoveActiveIntentIndex(ctx cosmos.Context, txID common.TxID)
 	CleanupStaleActiveIntents(ctx cosmos.Context)
 
 	// IntentSolve methods
@@ -529,7 +531,9 @@ type KeeperIntent interface {
 	IntentAuctionExists(ctx cosmos.Context, intentTxID common.TxID) bool
 	RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID)
 	GetIntentAuctionIterator(ctx cosmos.Context) cosmos.Iterator
+	GetActiveAuctionTxIDs(ctx cosmos.Context) []common.TxID
 	GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, error)
+	RemoveActiveAuctionIndex(ctx cosmos.Context, intentTxID common.TxID)
 	CleanupStaleActiveAuctions(ctx cosmos.Context)
 
 	// IntentAuctionBid methods

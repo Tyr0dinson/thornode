@@ -98,18 +98,9 @@ func (k KVStore) GetIntentIterator(ctx cosmos.Context) cosmos.Iterator {
 
 // GetActiveIntents retrieves all active intents using prefix key iteration
 func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
-	prefix := k.GetKey(prefixIntentStatusIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
-	defer iter.Close()
-
-	var intents []types.Intent
-	for ; iter.Valid(); iter.Next() {
-		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
-		if len(txIDSuffix) == 0 {
-			continue
-		}
-		txID := common.TxID(string(txIDSuffix))
-
+	activeTxIDs := k.GetActiveIntentTxIDs(ctx)
+	intents := make([]types.Intent, 0, len(activeTxIDs))
+	for _, txID := range activeTxIDs {
 		intent, err := k.GetIntent(ctx, txID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get intent from active index (txid=%s): %w", txID, err)
@@ -118,6 +109,30 @@ func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
 	}
 
 	return intents, nil
+}
+
+// GetActiveIntentTxIDs retrieves all txids from the active intent index.
+func (k KVStore) GetActiveIntentTxIDs(ctx cosmos.Context) []common.TxID {
+	prefix := k.GetKey(prefixIntentStatusIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
+	defer iter.Close()
+
+	var txIDs []common.TxID
+	for ; iter.Valid(); iter.Next() {
+		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(txIDSuffix) == 0 {
+			continue
+		}
+		txIDs = append(txIDs, common.TxID(string(txIDSuffix)))
+	}
+
+	return txIDs
+}
+
+// RemoveActiveIntentIndex deletes an entry from the active intent index.
+func (k KVStore) RemoveActiveIntentIndex(ctx cosmos.Context, txID common.TxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Delete(k.GetKey(prefixIntentStatusIndex, txID.String()))
 }
 
 // CleanupStaleActiveIntents removes stale entries from the active intent index.

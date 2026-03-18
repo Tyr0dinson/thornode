@@ -24,10 +24,6 @@ func NewIntentManager(mgr Manager) IntentManager {
 
 // EndBlock processes intents at the end of each block
 func (im *IntentMgr) EndBlock(ctx cosmos.Context) error {
-	// Clean up stale entries from the active intent and auction indices
-	im.mgr.Keeper().CleanupStaleActiveIntents(ctx)
-	im.mgr.Keeper().CleanupStaleActiveAuctions(ctx)
-
 	intentsEnabled := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentsEnabled) > 0
 
 	// Only process new matches when intents are enabled; when disabled as an
@@ -300,12 +296,7 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 // processExpirations handles intents that have expired
 func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 	currentHeight := ctx.BlockHeight()
-
-	// Get all active intents from the active status index
-	activeIntents, err := im.mgr.Keeper().GetActiveIntents(ctx)
-	if err != nil {
-		return fmt.Errorf("fail to get active intents: %w", err)
-	}
+	activeIntentTxIDs := im.mgr.Keeper().GetActiveIntentTxIDs(ctx)
 
 	// Cap the number of expirations per block to prevent timeout
 	maxProcessing := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMaxEndBlockProcessing)
@@ -313,14 +304,34 @@ func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 		maxProcessing = 100
 	}
 	var processed int64
+	capReached := false
 
-	for _, intent := range activeIntents {
-		if processed >= maxProcessing {
-			ctx.Logger().Warn("reached per-block processing cap for intent expirations", "cap", maxProcessing)
-			break
+	for _, txID := range activeIntentTxIDs {
+		intent, err := im.mgr.Keeper().GetIntent(ctx, txID)
+		switch {
+		case err != nil:
+			ctx.Logger().Error("failed to get intent from active index during expiration processing", "txid", txID, "error", err)
+			im.mgr.Keeper().RemoveActiveIntentIndex(ctx, txID)
+			continue
+		case intent.TxID.IsEmpty():
+			ctx.Logger().Warn("removing non-existent entry from active intent index during expiration processing", "txid", txID)
+			im.mgr.Keeper().RemoveActiveIntentIndex(ctx, txID)
+			continue
+		case intent.Status != types.IntentStatus_IntentActive:
+			ctx.Logger().Warn("removing stale entry from active intent index during expiration processing", "txid", txID, "status", intent.Status.String())
+			im.mgr.Keeper().RemoveActiveIntentIndex(ctx, txID)
+			continue
 		}
+
 		// Check if expired
 		if currentHeight >= intent.ExpiryHeight {
+			if processed >= maxProcessing {
+				if !capReached {
+					ctx.Logger().Warn("reached per-block processing cap for intent expirations", "cap", maxProcessing)
+					capReached = true
+				}
+				continue
+			}
 			// Use CacheContext for atomicity so a failed expiration transition does not
 			// leave partial state behind (for example, an auction created before solve
 			// refunds fail). The transition will be retried on the next block.
@@ -987,12 +998,7 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 // processAuctions processes active auctions at the end of each block
 func (im *IntentMgr) processAuctions(ctx cosmos.Context) error {
 	currentHeight := ctx.BlockHeight()
-
-	// Get all active auctions
-	activeAuctions, err := im.mgr.Keeper().GetActiveAuctions(ctx)
-	if err != nil {
-		return fmt.Errorf("fail to get active auctions: %w", err)
-	}
+	activeAuctionTxIDs := im.mgr.Keeper().GetActiveAuctionTxIDs(ctx)
 
 	// Cap the number of auctions processed per block to prevent timeout
 	maxProcessing := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMaxEndBlockProcessing)
@@ -1000,14 +1006,34 @@ func (im *IntentMgr) processAuctions(ctx cosmos.Context) error {
 		maxProcessing = 100
 	}
 	var processed int64
+	capReached := false
 
-	for _, auction := range activeAuctions {
-		if processed >= maxProcessing {
-			ctx.Logger().Warn("reached per-block processing cap for auction completions", "cap", maxProcessing)
-			break
+	for _, txID := range activeAuctionTxIDs {
+		auction, err := im.mgr.Keeper().GetIntentAuction(ctx, txID)
+		switch {
+		case err != nil:
+			ctx.Logger().Error("failed to get auction from active index during auction processing", "intent_txid", txID, "error", err)
+			im.mgr.Keeper().RemoveActiveAuctionIndex(ctx, txID)
+			continue
+		case auction.IntentTxID.IsEmpty():
+			ctx.Logger().Warn("removing non-existent entry from active auction index during auction processing", "intent_txid", txID)
+			im.mgr.Keeper().RemoveActiveAuctionIndex(ctx, txID)
+			continue
+		case auction.Status != types.IntentAuctionStatus_AuctionActive:
+			ctx.Logger().Warn("removing stale entry from active auction index during auction processing", "intent_txid", txID, "status", auction.Status.String())
+			im.mgr.Keeper().RemoveActiveAuctionIndex(ctx, txID)
+			continue
 		}
+
 		// Check if auction has expired
 		if currentHeight >= auction.ExpiryHeight {
+			if processed >= maxProcessing {
+				if !capReached {
+					ctx.Logger().Warn("reached per-block processing cap for auction completions", "cap", maxProcessing)
+					capReached = true
+				}
+				continue
+			}
 			if err := im.completeAuction(ctx, auction); err != nil {
 				ctx.Logger().Error("fail to complete auction", "intent_txid", auction.IntentTxID, "error", err)
 				continue
