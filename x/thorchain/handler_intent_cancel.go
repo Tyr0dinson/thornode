@@ -34,15 +34,10 @@ func (h IntentCancelHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 		return nil, err
 	}
 
-	// Execute cancel atomically so gas booking, txout scheduling, solve refunds,
-	// and the status transition either all commit together or all roll back.
-	cacheCtx, commit := ctx.CacheContext()
-	if err := h.handle(cacheCtx, *msg); err != nil {
+	if err := h.handle(ctx, *msg); err != nil {
 		ctx.Logger().Error("fail to process MsgIntentCancel", "error", err)
 		return nil, err
 	}
-	commit()
-	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
 	return &cosmos.Result{}, nil
 }

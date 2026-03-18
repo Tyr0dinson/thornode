@@ -651,14 +651,14 @@ func (HandlerIntentCancelSuite) TestIntentCancel_ExcessGasRefundFailureRollsBack
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	mgr.txOutStore = NewTxOutStoreFailOnCallDummy(1) // excess gas refund fails
-	handler := NewIntentCancelHandler(mgr)
+	handler := NewInternalHandler(mgr)
 
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
 	cancelTx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(150000))} // > 3x MaxGas
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 
-	_, err := handler.Run(w.ctx, msg)
+	_, err := handler(w.ctx, msg)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*excess cancel gas refund.*")
 
@@ -709,14 +709,14 @@ func (HandlerIntentCancelSuite) TestIntentCancel_LaterRefundFailureRollsBackBook
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	mgr.txOutStore = NewTxOutStoreFailOnCallDummy(2) // excess refund succeeds, source refund fails
-	handler := NewIntentCancelHandler(mgr)
+	handler := NewInternalHandler(mgr)
 
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
 	cancelTx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(150000))} // > 3x MaxGas
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 
-	_, err := handler.Run(w.ctx, msg)
+	_, err := handler(w.ctx, msg)
 	c.Assert(err, NotNil)
 
 	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
