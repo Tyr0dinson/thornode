@@ -125,6 +125,12 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 	return nil
 }
 
+type cancelGasFunding struct {
+	gasFromCancel cosmos.Uint
+	minRequired   cosmos.Uint
+	retainCap     cosmos.Uint
+}
+
 // getCancelFundingMode determines which asset a cancel tx may carry and whether
 // the cancel must prepay chain gas for the outbound refund.
 func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Intent, requireGasPool bool) (cancelFundingMode, error) {
@@ -155,6 +161,7 @@ func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Int
 	if !requireGasPool {
 		return mode, nil
 	}
+
 	gasPool, err := h.mgr.Keeper().GetPool(ctx, gasAsset)
 	if err != nil {
 		return cancelFundingMode{}, fmt.Errorf("fail to get gas pool for cancel funding mode: %w", err)
@@ -166,16 +173,11 @@ func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Int
 	return mode, nil
 }
 
-type cancelGasFunding struct {
-	gasFromCancel cosmos.Uint
-	minRequired   cosmos.Uint
-	retainCap     cosmos.Uint
-}
-
 func (h IntentCancelHandler) getCancelGasFunding(ctx cosmos.Context, msg MsgIntentCancel, intent Intent, mode cancelFundingMode) (cancelGasFunding, error) {
 	if !mode.requiresPrepaidGas {
 		return cancelGasFunding{}, nil
 	}
+
 	chain := intent.Source.Asset.GetChain()
 	maxGasCoin, err := h.mgr.GasMgr().GetMaxGas(ctx, chain)
 	if err != nil {
@@ -320,6 +322,9 @@ func (h IntentCancelHandler) registerDeferredCancel(ctx cosmos.Context, intent I
 	if err != nil {
 		return ErrInternal(err, "fail to determine cancel funding mode")
 	}
+
+	// Reject underfunded deferred cancels up front so expiry processing cannot
+	// get stuck repeatedly retrying an execution that can never satisfy gas.
 	if _, err := h.validateCancelGasIfNeeded(ctx, msg, intent, mode); err != nil {
 		return err
 	}

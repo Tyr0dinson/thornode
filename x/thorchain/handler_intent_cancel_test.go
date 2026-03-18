@@ -967,6 +967,51 @@ func (HandlerIntentCancelSuite) TestIntentCancel_GasAssetNoPoolSkipsGasCheck(c *
 	}
 }
 
+func (HandlerIntentCancelSuite) TestIntentCancel_DeferredRegistrationRejectsUnderfundedGas(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	sourceAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomETHAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(sourceAsset, cosmos.NewUint(50*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 100,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentCancelHandler(mgr)
+
+	cancelTx := GetRandomTx()
+	cancelTx.Chain = common.ETHChain
+	cancelTx.FromAddress = userAddr
+	cancelTx.Memo = NewIntentCancelMemo(intentTx.ID, true).String()
+	cancelTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))
+
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
+	_, err = handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(errors.Is(err, se.ErrInsufficientFunds), Equals, true)
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+	c.Check(w.keeper.IntentDeferredCancelExists(w.ctx, intentTx.ID), Equals, false)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+}
+
 // TestIntentCancel_DeferredRegistrationBeforeExpiry verifies that a :defer
 // cancel stores funding for later without cancelling the still-active intent.
 func (HandlerIntentCancelSuite) TestIntentCancel_DeferredRegistrationBeforeExpiry(c *C) {
