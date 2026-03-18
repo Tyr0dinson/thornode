@@ -15,7 +15,7 @@ if [ ! -d /root/mocknet ]; then
     --nodeLoggingFormat text \
     --output mocknet
 
-  jq --arg MASTER "$MASTER" '.initialFunds[$MASTER] = 20000000000000' <mocknet/shelley-genesis.json >/tmp/shelley-genesis.json
+  jq --arg MASTER "$MASTER" '.initialFunds[$MASTER] = 20000000000000 | .securityParam = 10000' <mocknet/shelley-genesis.json >/tmp/shelley-genesis.json
   mv /tmp/shelley-genesis.json mocknet/shelley-genesis.json
 
   sed -ri 's/("Trace[^"]+":) true/\1 false/' mocknet/configuration.yaml

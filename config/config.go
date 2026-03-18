@@ -35,6 +35,9 @@ import (
 const (
 	MaxRetries   = 3
 	RetryBackoff = time.Second * 5
+
+	bootstrapPeerRetries       = 30
+	bootstrapPeerRetryInterval = 5 * time.Second
 )
 
 var (
@@ -1050,9 +1053,35 @@ type WhitelistCosmosAsset struct {
 
 // GetBootstrapPeers return the internal bootstrap peers in a slice of maddr.Multiaddr
 func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
-	var addrs []maddr.Multiaddr
+	if len(c.BootstrapPeers) == 0 {
+		return nil, nil
+	}
 
-	for _, ip := range resolveAddrs(c.BootstrapPeers) {
+	for attempt := 1; attempt <= bootstrapPeerRetries; attempt++ {
+		addrs := resolveBootstrapPeers(c.BootstrapPeers)
+		if len(addrs) > 0 {
+			log.Info().Interface("peers", addrs).Msg("bootstrap peers")
+			return addrs, nil
+		}
+
+		if attempt < bootstrapPeerRetries {
+			log.Warn().
+				Int("attempt", attempt).
+				Msg("no bootstrap peers reachable, retrying")
+			time.Sleep(bootstrapPeerRetryInterval)
+		}
+	}
+
+	log.Error().Msg("no bootstrap peers found after retries")
+
+	assertBifrostHasSeeds()
+
+	return nil, nil
+}
+
+func resolveBootstrapPeers(peers []string) []maddr.Multiaddr {
+	var addrs []maddr.Multiaddr
+	for _, ip := range resolveAddrs(peers) {
 		if len(ip) == 0 {
 			continue
 		}
@@ -1067,6 +1096,7 @@ func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) 
 		// skip peers with a bad response status
 		if res.StatusCode != http.StatusOK {
 			log.Warn().Msgf("failed to get p2p id, status code: %d", res.StatusCode)
+			res.Body.Close()
 			continue
 		}
 
@@ -1074,13 +1104,12 @@ func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) 
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to read p2p id response")
+			res.Body.Close()
 			continue
 		}
 		res.Body.Close()
 
-		// format the multiaddr
 		peerMultiAddr := fmt.Sprintf("/ip4/%s/tcp/5040/ipfs/%s", ip, string(body))
-
 		addr, err := maddr.NewMultiaddr(peerMultiAddr)
 		if err != nil {
 			log.Error().Err(err).Str("addr", peerMultiAddr).Msg("failed to parse multiaddr")
@@ -1088,14 +1117,7 @@ func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) 
 		}
 		addrs = append(addrs, addr)
 	}
-
-	if len(addrs) == 0 {
-		log.Error().Msg("no bootstrap peers found")
-		assertBifrostHasSeeds()
-	} else {
-		log.Info().Interface("peers", addrs).Msg("bootstrap peers")
-	}
-	return addrs, nil
+	return addrs
 }
 
 // -------------------------------------------------------------------------------------

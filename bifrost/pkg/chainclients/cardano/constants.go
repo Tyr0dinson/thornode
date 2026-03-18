@@ -9,11 +9,15 @@ const (
 	// precise tx fee will be calculated on actual tx creation
 	estimatedTxSize = 581
 
+	// timeout in blocks, multiplied by the active-slots coefficient
+	// to compute TTL in slots.
 	transactionTimeout = 20
 
 	networkFeeUpdatePeriod = 100
 
-	// minimum ADA per UTXO (~ 0.86 ADA on mainnet)
+	// Cardano enforces a minimum ADA per UTXO output (size-dependent,
+	// ~1 ADA for ADA-only outputs). Change below this is absorbed
+	// into the fee.
 	dustThreshold = uint64(1e6)
 
 	// amount of smallest utxos that should be consumed first

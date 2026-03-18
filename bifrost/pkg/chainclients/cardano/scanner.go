@@ -17,7 +17,7 @@ import (
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	types2 "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/helper"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -25,11 +25,14 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// Scanner observes Cardano blocks via the Ouroboros protocol. N2N
+// delivers block headers via ChainSync callbacks, N2C handles
+// UTXO lookups and state queries. Block headers are indexed locally
+// as they arrive; FetchTxs reads from that index.
 type Scanner struct {
 	config                config.BifrostBlockScannerConfiguration
 	logger                zerolog.Logger
 	bridge                thorclient.ThorchainBridge
-	helper                helper.Helper
 	db                    *blockscanner.BlockScannerStorageCardano
 	n2c                   ClientWrapper
 	n2n                   NodeWrapper
@@ -42,6 +45,7 @@ type Scanner struct {
 	indexedBlocks         atomic.Uint64
 	errataBlocks          []types.ErrataBlock
 	errataMtx             sync.Mutex
+	pubKeyMgr             pubkeymanager.PubKeyValidator
 }
 
 func NewScanner(
@@ -49,6 +53,7 @@ func NewScanner(
 	cfg config.BifrostBlockScannerConfiguration,
 	bridge thorclient.ThorchainBridge,
 	storage *blockscanner.BlockScannerStorageCardano,
+	pubKeyMgr pubkeymanager.PubKeyValidator,
 	n2cAddress string,
 	n2nAddress string,
 ) (*Scanner, error) {
@@ -58,8 +63,8 @@ func NewScanner(
 		logger:    logger.With().Str("module", "scanner").Logger(),
 		config:    cfg,
 		bridge:    bridge,
-		helper:    helper.NewHelper(logger, common.ADAChain, bridge),
 		db:        storage,
+		pubKeyMgr: pubKeyMgr,
 		errataMtx: sync.Mutex{},
 	}
 
@@ -157,7 +162,8 @@ func (s *Scanner) GetHeight() (int64, error) {
 	return s.n2c.GetChainBlockNo()
 }
 
-// FetchMemPool implements blockscanner.BlockScannerFetcher.
+// Mempool monitoring via the Ouroboros LocalTxMonitor
+// mini-protocol is not implemented in this client.
 func (s *Scanner) FetchMemPool(_ int64) (types.TxIn, error) {
 	return types.TxIn{}, nil
 }
@@ -222,6 +228,9 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 	var allTxIns []*types.TxInItem
 
+	// Cardano receives rollbacks as push events from ChainSync
+	// (see rollBackwardHandler), which sets rollbackHeight. This
+	// code reprocesses all blocks from that height forward.
 	rollbackHeight := s.rollbackHeight.Load()
 	if rollbackHeight > 0 {
 
@@ -312,6 +321,17 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			Msg("failed to fetch previous point")
 	}
 
+	vaultAddrs := map[string]bool{}
+	for _, pubKey := range s.pubKeyMgr.GetAlgoPubKeys(common.SigningAlgoEd25519, true) {
+		var address common.Address
+		address, err = pubKey.GetAddress(common.ADAChain)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("failed to get vault address")
+			continue
+		}
+		vaultAddrs[address.String()] = true
+	}
+
 	var txIds [][]byte
 	var txIns []*types.TxInItem
 	for _, tx := range block.Transactions() {
@@ -319,7 +339,9 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			continue
 		}
 
-		// only tx with exactly one VKey are supported
+		// Cardano transactions can have multiple VKey witnesses,
+		// but only single-signer transactions are supported.
+		// Multi-sig is not yet implemented.
 		if len(tx.Witnesses().Vkey()) != 1 {
 			s.logger.Warn().
 				Str("txid", tx.Hash().String()).
@@ -341,11 +363,10 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 		var toAddress, fromAddress ledger.Address
 		var amount *big.Int
 
-		// deposits _must_ have asgard address as first, like BTC for example
+		// Deposits must have the asgard vault address as the first output.
 		address := tx.Outputs()[0].Address().String()
-		isToAsgard := s.helper.IsAsgardAddress(address)
+		_, isToAsgard := vaultAddrs[address]
 		if isToAsgard {
-			isToAsgard = true
 			toAddress = tx.Outputs()[0].Address()
 			amount = tx.Outputs()[0].Amount()
 		}
@@ -355,20 +376,26 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			return nil, fmt.Errorf("failed to calculate address: %w", err)
 		}
 
-		isFromAsgard := s.helper.IsAsgardAddress(fromAddress.String())
+		_, isFromAsgard := vaultAddrs[fromAddress.String()]
 
 		// ignore if neither from nor to an asgard vault
 		if !isToAsgard && !isFromAsgard {
 			continue
 		}
 
+		// Cardano node does not serve historical transactions.
+		// For inbound transactions, the sender is resolved by
+		// querying the spent UTXOs at the previous block's state
+		// Point. For outbound transactions (isFromAsgard), the
+		// sender is derived from the VKey witness pubkey via
+		// Blake2b-224.
 		if isFromAsgard {
 			// fromAddress is asgard vault, so recipient is first output
 			toAddress = tx.Outputs()[0].Address()
 			amount = tx.Outputs()[0].Amount()
 		} else {
-			// toAddress is asgard vault, get sender from first input
-			// txs with multiple VKeys where already discarded
+			// toAddress is asgard vault, get sender from first input.
+			// Multi-witness transactions were already filtered out above.
 
 			// if we don't have height - 1 indexed yet (directly after start)
 			// we can't determine the utxos
@@ -382,7 +409,12 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			var result *localstatequery.UTxOByTxInResult
 			result, err = s.n2c.GetUTxOByTxIn(tx.Consumed()[:1], &previousPoint)
 			if err != nil {
-				return nil, fmt.Errorf("failed to fetch utxo result for tx: %w", err)
+				// previousPoint can't be acquired when chain state is already
+				// pruned from cardano node -> log error and drop tx
+				s.logger.Err(err).
+					Str("txid", tx.Hash().String()).
+					Msg("failed to fetch utxo result for tx")
+				continue
 			}
 
 			if len(result.Results) < 1 {
@@ -544,6 +576,10 @@ func (s *Scanner) rollForwardHandler(
 	return nil
 }
 
+// ChainSync notifies of rollbacks via this callback. Rolled-back
+// blocks are guaranteed to no longer be on the canonical chain, so
+// errata are generated for all observed transactions in those
+// blocks unconditionally.
 func (s *Scanner) rollBackwardHandler(
 	_ chainsync.CallbackContext,
 	_ pcommon.Point,
@@ -616,6 +652,9 @@ func (s *Scanner) rollBackwardHandler(
 	return nil
 }
 
+// Cardano identifies blocks by Point = (slot, hash), not by height
+// alone. Not every slot produces a block, so the scanner maintains
+// a height-to-(slot, hash) mapping.
 func (s *Scanner) getPoint(height int64) (pcommon.Point, error) {
 	_, slot, hash, err := s.db.GetBlockId(uint64(height))
 	if err != nil {

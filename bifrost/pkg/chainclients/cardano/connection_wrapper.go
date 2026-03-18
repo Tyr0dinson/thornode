@@ -20,7 +20,8 @@ import (
 
 var ErrNoConn = fmt.Errorf("client disconnected")
 
-//  generic
+// Cardano communicates via the Ouroboros mini-protocol suite over persistent
+// TCP connections. The wrapper handles automatic reconnection with backoff.
 // ----------------------------------------------------------------------------
 
 type wrapper struct {
@@ -62,7 +63,7 @@ func newWrapper(
 						return
 					}
 				} else {
-					c.logger.Err(err).Msg("ouroboros network error")
+					c.logger.Warn().Err(err).Msg("ouroboros network error")
 				}
 
 				interval := time.Second
@@ -167,7 +168,9 @@ func (c *wrapper) close() {
 	c.conn = nil
 }
 
-//  node
+// Node-to-node (N2N) connection for block synchronization via ChainSync,
+// a consumer-driven protocol that delivers block headers through
+// rollForward/rollBackward callbacks.
 // ----------------------------------------------------------------------------
 
 type NodeWrapper interface {
@@ -240,7 +243,10 @@ func (c *nodeWrapper) Close() {
 	c.close()
 }
 
-//  client
+// Node-to-client (N2C) connection for state queries (LocalStateQuery) and
+// transaction submission (LocalTxSubmission).
+// State queries use Acquire/Release semantics to pin the ledger to
+// a specific Point (slot + block hash) for consistent reads.
 // ----------------------------------------------------------------------------
 
 type ClientWrapper interface {
@@ -278,6 +284,9 @@ func (c *clientWrapper) release() {
 	}
 }
 
+// client returns a LocalStateQuery client, optionally acquiring
+// a specific chain state Point. Acquiring a Point pins the
+// ledger to that slot for consistent reads across queries.
 func (c *clientWrapper) client(point *pcommon.Point) (*localstatequery.Client, error) {
 	c.mtx.Lock()
 	if c.conn == nil {
@@ -289,7 +298,7 @@ func (c *clientWrapper) client(point *pcommon.Point) (*localstatequery.Client, e
 		err := c.conn.LocalStateQuery().Client.Acquire(point)
 		if err != nil {
 			c.mtx.Unlock()
-			return nil, fmt.Errorf("failed to acquire point")
+			return nil, fmt.Errorf("failed to acquire point: %w", err)
 		}
 	}
 

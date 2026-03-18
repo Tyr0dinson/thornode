@@ -23,6 +23,9 @@ type Utxo struct {
 	Amount uint64
 }
 
+// AddressFromBytes derives a Cardano enterprise address from a raw
+// Ed25519 public key via Blake2b-224. AddressTypeKeyNone = enterprise
+// address (payment only, no staking component).
 func AddressFromBytes(bz []byte) (ledger.Address, error) {
 	hash := lcommon.Blake2b224Hash(bz)
 
@@ -34,8 +37,11 @@ func AddressFromBytes(bz []byte) (ledger.Address, error) {
 	)
 }
 
-// ExtractMemo extracts and returns the CIP-20 cbor encoded memo
-// { "674": { "msg": ["my memo"] } }
+// ExtractMemo extracts a memo from CIP-20 transaction metadata
+// stored in auxiliary data outside the transaction body.
+// Format: { 674: { "msg": ["chunk1", "chunk2", ...] } }
+// Each msg entry is at most 64 bytes; this client joins them into
+// a single memo string.
 func ExtractMemo(data lcommon.TransactionMetadatum, depth int) string {
 	metaMap, okMap := data.(lcommon.MetaMap)
 	if !okMap {
@@ -124,6 +130,8 @@ func CreateConwayTx(
 		return nil, fmt.Errorf("uint64 overflow for amount + fee")
 	}
 
+	// Sort UTXOs by amount descending, then move the 3 smallest to the front
+	// for opportunistic consolidation during normal spending.
 	sort.Slice(utxos, func(i, j int) bool {
 		if utxos[i].Amount != utxos[j].Amount {
 			return utxos[i].Amount > utxos[j].Amount
@@ -259,6 +267,8 @@ func CreateConwayTx(
 	return tx, nil
 }
 
+// Cardano fee formula: fee = txSize * minFeeA + minFeeB.
+// Both parameters are set by on-chain governance via protocol parameters.
 func calculateFee(
 	tx *conway.ConwayTransaction,
 	minFeeA, minFeeB, maxFee uint64,

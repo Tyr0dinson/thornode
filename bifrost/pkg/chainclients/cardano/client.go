@@ -23,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -49,15 +50,16 @@ type Client struct {
 	localAddress        string
 	globalSolvencyQueue chan types.Solvency
 	wg                  *sync.WaitGroup
-	stopchan            chan struct{}
+	stopChan            chan struct{}
 }
 
 func NewClient(
 	thorKeys *thorclient.Keys,
 	cfg config.BifrostChainConfiguration,
-	server *tssp.TssServer,
+	tssServer *tssp.TssServer,
 	thorchainBridge thorclient.ThorchainBridge,
 	metrics *metrics.Metrics,
+	pubKeyMgr pubkeymanager.PubKeyValidator,
 ) (*Client, error) {
 	if thorchainBridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
@@ -67,12 +69,12 @@ func NewClient(
 		logger:   log.With().Str("module", cfg.ChainID.String()).Logger(),
 		config:   cfg,
 		wg:       &sync.WaitGroup{},
-		stopchan: make(chan struct{}),
+		stopChan: make(chan struct{}),
 	}
 
 	var err error
 
-	c.tssKeyManager, err = tss.NewKeySign(server, thorchainBridge)
+	c.tssKeyManager, err = tss.NewKeySign(tssServer, thorchainBridge)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tss signer: %w", err)
 	}
@@ -91,7 +93,7 @@ func NewClient(
 
 	c.localAddress = address.String()
 
-	var path string // if not set later, will in memory db
+	var path string // empty path falls back to in-memory LevelDB
 	if len(cfg.BlockScanner.DBPath) > 0 {
 		path = fmt.Sprintf("%s/%s", cfg.BlockScanner.DBPath, cfg.BlockScanner.ChainID)
 	}
@@ -115,13 +117,19 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create client connection: %w", err)
 	}
 
-	// get slot coefficient
+	// Cardano time is divided into fixed-length slots; not every slot
+	// produces a block. The active-slots coefficient determines how
+	// many slots elapse per block on average, and is used to compute
+	// transaction TTL in slot units.
 	var genesisConfig *localstatequery.GenesisConfigResult
 	genesisConfig, err = c.n2c.GetGenesisConfig()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get genesis config: %w", err)
 	}
 
+	// TTL is an optional slot deadline (since the Allegra era); the
+	// network rejects transactions once the current slot exceeds it.
+	// This client always sets a TTL for safety.
 	coefficient := uint64(20)
 	if len(genesisConfig.ActiveSlotsCoeff) == 2 {
 		num, ok1 := genesisConfig.ActiveSlotsCoeff[0].(uint64)
@@ -145,6 +153,7 @@ func NewClient(
 		cfg.BlockScanner,
 		c.bridge,
 		c.storage,
+		pubKeyMgr,
 		cfg.APIHost,
 		cfg.RPCHost,
 	)
@@ -184,7 +193,7 @@ func (c *Client) Start(
 		c.GetChain(),
 		c,
 		c.bridge,
-		c.stopchan,
+		c.stopChan,
 		c.wg,
 		constants.ThorchainBlockTime,
 	)
@@ -194,7 +203,7 @@ func (c *Client) Stop() {
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
 	c.chainScanner.Stop()
-	close(c.stopchan)
+	close(c.stopChan)
 	c.wg.Wait()
 	c.n2c.Close()
 }
@@ -296,6 +305,8 @@ func (c *Client) getUtxosByAddress(
 		return nil, fmt.Errorf("failed to create address: %w", err)
 	}
 
+	// Cardano UTXO queries are pinned to a specific Point (slot + block hash)
+	// for consistent reads across the query.
 	var point pcommon.Point
 
 	var slot uint64
@@ -411,7 +422,6 @@ func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
 		return 0
 	}
 
-	//  n2c call may be slow, may also query leveldb if chain-sync is current
 	tip, err := c.n2c.GetChainBlockNo()
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get current tip")
@@ -419,10 +429,9 @@ func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
 	}
 	var height int64
 	for _, tx := range txIn.TxArray {
-		if tx.BlockHeight > height {
-			height = tx.BlockHeight
-		}
+		height = max(height, tx.BlockHeight)
 	}
+
 	return tip - height
 }
 
@@ -537,8 +546,13 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		return nil, nil, nil, fmt.Errorf("failed to get last block id: %w", err)
 	}
 
+	// Set the TTL slot. Transactions are rejected
+	// if the current slot exceeds this value.
 	tx.Body.Ttl = slot + c.ttl
 
+	// Cardano encodes the transaction body as CBOR, then signs the
+	// Blake2b-256 hash once with Ed25519. A single signature covers
+	// all inputs (no per-input signing).
 	encoded, err := cbor.Encode(tx.Body)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to encode transaction: %w", err)
@@ -566,6 +580,8 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		return nil, nil, nil, fmt.Errorf("failed to verify signature")
 	}
 
+	// Cardano separates witnesses from inputs. A single VkeyWitness
+	// (pubkey + signature) covers every input owned by that key.
 	tx.WitnessSet.VkeyWitnesses = cbor.NewSetType(
 		[]lcommon.VkeyWitness{
 			{
@@ -581,6 +597,9 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		return nil, nil, nil, fmt.Errorf("failed to encode transaction: %w", err)
 	}
 
+	// Cardano node has no wallet-level UTXO management.
+	// Therefore UTXOs are tracked locally to prevent double-spending.
+	// Pruned after transactionTimeout * 2.
 	var spentUtxos [][]byte
 	for _, input := range tx.Inputs() {
 		key := getUtxoKey(input.Id().Bytes(), input.Index())
