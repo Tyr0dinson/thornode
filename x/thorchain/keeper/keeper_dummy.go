@@ -1067,10 +1067,6 @@ func (k KVStoreDummy) GetTHORNamePerBlockFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 
-func (k KVStoreDummy) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error {
-	return kaboom
-}
-
 func (k KVStoreDummy) ReferenceMemoExists(ctx cosmos.Context, _ common.Asset, _ string) bool {
 	return false
 }

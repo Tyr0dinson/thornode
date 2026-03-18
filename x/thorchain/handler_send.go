@@ -175,12 +175,17 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 
 func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins cosmos.Coins, signer cosmos.AccAddress, m sdk.Msg) error {
 	nativeTxFee := k.GetNativeTxFee(ctx)
-	nativeTxFeeCoins, err := common.NewCoins(common.NewCoin(common.RuneNative, nativeTxFee)).Native()
+	nativeTxFeeCoin := common.NewCoin(common.RuneNative, nativeTxFee)
+	nativeTxFeeCommonCoins := common.NewCoins(nativeTxFeeCoin)
+	nativeTxFeeCoins, err := nativeTxFeeCommonCoins.Native()
 	if err != nil {
 		return fmt.Errorf("fail to convert native tx fee to sdk coins: %w", err)
 	}
 	if k.HasCoins(ctx, signer, nativeTxFeeCoins) {
-		return k.DeductNativeTxFeeFromAccount(ctx, signer)
+		if nativeTxFee.IsZero() {
+			return nil
+		}
+		return k.SendFromAccountToModule(ctx, signer, ReserveName, nativeTxFeeCommonCoins)
 	}
 
 	if k.GetConfigInt64(ctx, constants.AltNativeTxFeeEnabled) <= 0 {

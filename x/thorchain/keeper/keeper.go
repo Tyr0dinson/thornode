@@ -53,8 +53,6 @@ type Keeper interface {
 	GetTHORNameRegisterFee(ctx cosmos.Context) cosmos.Uint
 	GetTHORNamePerBlockFee(ctx cosmos.Context) cosmos.Uint
 
-	DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error
-
 	// Keeper Interfaces
 	KeeperConfig
 	KeeperPool
