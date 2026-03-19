@@ -135,47 +135,6 @@ func (k KVStore) RemoveActiveIntentIndex(ctx cosmos.Context, txID common.TxID) {
 	store.Delete(k.GetKey(prefixIntentStatusIndex, txID.String()))
 }
 
-// CleanupStaleActiveIntents removes stale entries from the active intent index.
-// This should be called from EndBlock to ensure deterministic cleanup.
-func (k KVStore) CleanupStaleActiveIntents(ctx cosmos.Context) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	prefix := k.GetKey(prefixIntentStatusIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
-	defer iter.Close()
-
-	var staleKeys [][]byte
-	for ; iter.Valid(); iter.Next() {
-		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
-		if len(txIDSuffix) == 0 {
-			continue
-		}
-		txID := common.TxID(string(txIDSuffix))
-
-		// Check existence first
-		if !k.IntentExists(ctx, txID) {
-			ctx.Logger().Warn("removing non-existent entry from active intent index", "txid", txID)
-			staleKeys = append(staleKeys, iter.Key())
-			continue
-		}
-
-		intent, err := k.GetIntent(ctx, txID)
-		if err != nil {
-			ctx.Logger().Error("failed to get intent from active index", "txid", txID, "error", err)
-			staleKeys = append(staleKeys, iter.Key())
-			continue
-		}
-
-		if intent.Status != types.IntentStatus_IntentActive {
-			ctx.Logger().Warn("removing stale entry from active intent index", "txid", txID, "status", intent.Status.String())
-			staleKeys = append(staleKeys, iter.Key())
-		}
-	}
-
-	for _, staleKey := range staleKeys {
-		store.Delete(staleKey)
-	}
-}
-
 // GetIntentSolveIterator returns an iterator for all intent solves
 func (k KVStore) GetIntentSolveIterator(ctx cosmos.Context) cosmos.Iterator {
 	key := k.GetKey(prefixIntentSolve, "")

@@ -1,7 +1,6 @@
 package keeperv1
 
 import (
-	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -440,105 +439,4 @@ func (KeeperIntentSuite) TestIntentSolve_Remove(c *C) {
 	solves, err = k.GetIntentSolvesByMatchHeight(ctx, matchHeight)
 	c.Assert(err, IsNil)
 	c.Check(len(solves), Equals, 0)
-}
-
-func (KeeperIntentSuite) TestCleanupStaleActiveIntents_OrphanedIndex(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	// Create two active intents
-	txID1 := common.TxID("STALE134567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
-	intent1 := types.Intent{
-		TxID:          txID1,
-		SourceAddress: common.Address("thor1sender1"),
-		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
-		TargetAsset:   common.BTCAsset,
-		Status:        types.IntentStatus_IntentActive,
-	}
-	k.SetIntent(ctx, intent1)
-
-	txID2 := common.TxID("STALE234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
-	intent2 := types.Intent{
-		TxID:          txID2,
-		SourceAddress: common.Address("thor1sender2"),
-		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
-		TargetAsset:   common.BTCAsset,
-		Status:        types.IntentStatus_IntentActive,
-	}
-	k.SetIntent(ctx, intent2)
-
-	// Both should be in active index
-	active, err := k.GetActiveIntents(ctx)
-	c.Assert(err, IsNil)
-	c.Check(len(active), Equals, 2)
-
-	// Directly delete intent1's record, leaving its index entry orphaned
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	store.Delete(k.GetKey(prefixIntent, txID1.String()))
-	c.Check(k.IntentExists(ctx, txID1), Equals, false)
-
-	// Cleanup should remove the orphaned index entry
-	k.CleanupStaleActiveIntents(ctx)
-
-	active, err = k.GetActiveIntents(ctx)
-	c.Assert(err, IsNil)
-	c.Check(len(active), Equals, 1)
-	c.Check(active[0].TxID.Equals(txID2), Equals, true)
-}
-
-func (KeeperIntentSuite) TestCleanupStaleActiveIntents_StatusMismatch(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	// Create an active intent (adds to index)
-	txID := common.TxID("STALE334567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
-	intent := types.Intent{
-		TxID:          txID,
-		SourceAddress: common.Address("thor1sender1"),
-		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
-		TargetAsset:   common.BTCAsset,
-		Status:        types.IntentStatus_IntentActive,
-	}
-	k.SetIntent(ctx, intent)
-
-	// Directly overwrite the intent record with completed status,
-	// bypassing SetIntent's index management
-	intent.Status = types.IntentStatus_IntentCompleted
-	k.setIntent(ctx, k.GetKey(prefixIntent, txID.String()), intent)
-
-	// Index still has this as active, but intent status is completed
-	active, err := k.GetActiveIntents(ctx)
-	c.Assert(err, IsNil)
-	c.Check(len(active), Equals, 1)
-
-	// Cleanup should remove the stale index entry
-	k.CleanupStaleActiveIntents(ctx)
-
-	active, err = k.GetActiveIntents(ctx)
-	c.Assert(err, IsNil)
-	c.Check(len(active), Equals, 0)
-
-	// Intent record itself should still exist
-	c.Check(k.IntentExists(ctx, txID), Equals, true)
-}
-
-func (KeeperIntentSuite) TestCleanupStaleActiveIntents_CleanState(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	// Create a valid active intent
-	txID := common.TxID("CLEAN134567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
-	intent := types.Intent{
-		TxID:          txID,
-		SourceAddress: common.Address("thor1sender1"),
-		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
-		TargetAsset:   common.BTCAsset,
-		Status:        types.IntentStatus_IntentActive,
-	}
-	k.SetIntent(ctx, intent)
-
-	// Cleanup should not remove anything
-	k.CleanupStaleActiveIntents(ctx)
-
-	active, err := k.GetActiveIntents(ctx)
-	c.Assert(err, IsNil)
-	c.Check(len(active), Equals, 1)
-	c.Check(active[0].TxID.Equals(txID), Equals, true)
 }

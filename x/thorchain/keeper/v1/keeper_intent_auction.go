@@ -130,46 +130,6 @@ func (k KVStore) RemoveActiveAuctionIndex(ctx cosmos.Context, intentTxID common.
 	store.Delete(k.GetKey(prefixActiveAuctionIndex, intentTxID.String()))
 }
 
-// CleanupStaleActiveAuctions removes stale entries from the active auction index.
-// This should be called from EndBlock to ensure deterministic cleanup.
-func (k KVStore) CleanupStaleActiveAuctions(ctx cosmos.Context) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	prefix := k.GetKey(prefixActiveAuctionIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
-	defer iter.Close()
-
-	var staleKeys [][]byte
-	for ; iter.Valid(); iter.Next() {
-		txIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
-		if len(txIDSuffix) == 0 {
-			continue
-		}
-		txID := common.TxID(string(txIDSuffix))
-
-		if !k.IntentAuctionExists(ctx, txID) {
-			ctx.Logger().Warn("removing non-existent entry from active auction index", "txid", txID)
-			staleKeys = append(staleKeys, iter.Key())
-			continue
-		}
-
-		auction, err := k.GetIntentAuction(ctx, txID)
-		if err != nil {
-			ctx.Logger().Error("failed to get auction from active index", "txid", txID, "error", err)
-			staleKeys = append(staleKeys, iter.Key())
-			continue
-		}
-
-		if auction.Status != types.IntentAuctionStatus_AuctionActive {
-			ctx.Logger().Warn("removing stale entry from active auction index", "txid", txID, "status", auction.Status.String())
-			staleKeys = append(staleKeys, iter.Key())
-		}
-	}
-
-	for _, staleKey := range staleKeys {
-		store.Delete(staleKey)
-	}
-}
-
 // -------------------- IntentAuctionBid Methods --------------------
 
 func (k KVStore) setIntentAuctionBid(ctx cosmos.Context, key []byte, record types.IntentAuctionBid) {

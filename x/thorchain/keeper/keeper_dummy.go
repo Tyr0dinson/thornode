@@ -929,8 +929,6 @@ func (k KVStoreDummy) GetActiveIntents(_ cosmos.Context) ([]types.Intent, error)
 
 func (k KVStoreDummy) RemoveActiveIntentIndex(_ cosmos.Context, _ common.TxID) {}
 
-func (k KVStoreDummy) CleanupStaleActiveIntents(_ cosmos.Context) {}
-
 // IntentSolve keeper methods
 func (k KVStoreDummy) SetIntentSolve(_ cosmos.Context, _ types.IntentSolve) {}
 
@@ -963,8 +961,6 @@ func (k KVStoreDummy) GetActiveAuctions(_ cosmos.Context) ([]types.IntentAuction
 }
 
 func (k KVStoreDummy) RemoveActiveAuctionIndex(_ cosmos.Context, _ common.TxID) {}
-
-func (k KVStoreDummy) CleanupStaleActiveAuctions(_ cosmos.Context) {}
 
 // IntentAuctionBid keeper methods
 func (k KVStoreDummy) SetIntentAuctionBid(_ cosmos.Context, _ types.IntentAuctionBid) {}

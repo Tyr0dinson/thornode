@@ -314,12 +314,6 @@ type handlerTestWrapperOptions struct {
 	withActiveVault bool
 }
 
-func withActiveVault() handlerTestWrapperOption {
-	return func(opts *handlerTestWrapperOptions) {
-		opts.withActiveVault = true
-	}
-}
-
 func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieDOGEPool bool, options ...handlerTestWrapperOption) handlerTestWrapper {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(height)
