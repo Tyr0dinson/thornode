@@ -320,7 +320,8 @@
           "status": "ActiveVault",
           "type": "AsgardVault"
         }
-      ]
+      ],
+      "staged_outbounds": []
     },
     "upgrade": {},
     "wasm": {
