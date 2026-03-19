@@ -5789,6 +5789,7 @@
                   }
                 ],
                 "memo": "=:BTC~BTC:tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+                "salt": null,
                 "signer": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm"
               }
             ],
