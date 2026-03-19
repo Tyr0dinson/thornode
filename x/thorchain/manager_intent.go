@@ -812,7 +812,6 @@ func (im *IntentMgr) executeDeferredCancelAtExpiry(ctx cosmos.Context, intent In
 	cancelCtx, commit := ctx.CacheContext()
 	if err = NewIntentCancelHandler(im.mgr).executeCancel(cancelCtx, intent, deferredCancel, true); err == nil {
 		commit()
-		ctx.EventManager().EmitEvents(cancelCtx.EventManager().Events())
 		return true, nil
 	} else {
 		ctx.Logger().Warn("deferred cancel failed at expiry, falling back to normal expiry path",

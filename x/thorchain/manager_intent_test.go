@@ -383,6 +383,75 @@ func (s *IntentMgrTestSuite) TestExpireIntent_DeferredCancelExecutesAtExpiry(c *
 	c.Check(w.keeper.IntentDeferredCancelExists(w.ctx, intentTx.ID), Equals, false)
 }
 
+func (s *IntentMgrTestSuite) TestProcessExpirations_DeferredCancelExcessGasEmitsEventsOnce(c *C) {
+	w := getHandlerTestWrapper(c, 10, true, true, func(opts *handlerTestWrapperOptions) {
+		opts.withActiveVault = true
+	})
+
+	ctx := w.ctx.WithEventManager(cosmos.NewEventManager())
+	sourceAsset, err := common.NewAsset("ETH.TKN-0X0000000000000000000000000000000000001234")
+	c.Assert(err, IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(ctx, ethPool), IsNil)
+
+	vaults, err := w.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(vaults) > 0, Equals, true)
+
+	vault := vaults[0]
+	vault.AddFunds(common.NewCoins(
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(sourceAsset, cosmos.NewUint(200*common.One)),
+	))
+	c.Assert(w.keeper.SetVault(ctx, vault), IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomETHAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(sourceAsset, cosmos.NewUint(50*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  ctx.BlockHeight() + 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(ctx, intent)
+
+	cancelTx := GetRandomTx()
+	cancelTx.Chain = common.ETHChain
+	cancelTx.FromAddress = userAddr
+	cancelTx.Memo = NewIntentCancelMemo(intentTx.ID, true).String()
+	cancelTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(5_000_000)))
+
+	handler := NewIntentCancelHandler(w.mgr)
+	_, err = handler.Run(ctx, NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr)))
+	c.Assert(err, IsNil)
+
+	expiryCtx := ctx.WithBlockHeight(intent.ExpiryHeight).WithEventManager(cosmos.NewEventManager())
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err = intentMgr.processExpirations(expiryCtx)
+	c.Assert(err, IsNil)
+
+	eventCounts := make(map[string]int)
+	for _, evt := range expiryCtx.EventManager().Events() {
+		eventCounts[evt.Type]++
+	}
+
+	c.Check(eventCounts["swap"], Equals, 1)
+	c.Check(eventCounts["intent_cancel"], Equals, 1)
+	c.Check(eventCounts["scheduled_outbound"], Equals, 2)
+}
+
 func (s *IntentMgrTestSuite) TestProcessExpirations_DeferredCancelGasIncreaseFallsBackToAuction(c *C) {
 	w := getHandlerTestWrapper(c, 10, true, true)
 
