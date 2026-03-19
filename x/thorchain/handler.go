@@ -36,7 +36,7 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 		// CacheContext() returns a context which caches all changes and only forwards
 		// to the underlying context when commit() is called. Call commit() only when
 		// the handler succeeds, otherwise return error and the changes will be discarded.
-		// On commit, cached events also have to be explicitly emitted.
+		// On commit, cached events are automatically forwarded to the parent context.
 		cacheCtx, commit := ctx.CacheContext()
 		res, err := h.Run(cacheCtx, msg)
 		if err == nil {

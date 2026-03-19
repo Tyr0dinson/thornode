@@ -84,6 +84,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundPoolAsset(c *C) {
 
 func (HandlerIntentCancelSuite) TestIntentCancel_RefundNativeAsset(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
+	ctx := w.ctx.WithEventManager(cosmos.NewEventManager())
 
 	// Create an active intent with RUNE (native asset)
 	intentTx := GetRandomTx()
@@ -99,22 +100,32 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundNativeAsset(c *C) {
 		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
 		Status:        IntentActive,
 	}
-	w.keeper.SetIntent(w.ctx, intent)
+	w.keeper.SetIntent(ctx, intent)
+	FundModule(c, ctx, w.keeper, AsgardName, 100*common.One)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
+	mgr.eventMgr = w.mgr.EventMgr()
 	handler := NewIntentCancelHandler(mgr)
 
 	// Cancel the intent - tx FromAddress must match intent's SourceAddress
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
-	_, err := handler.Run(w.ctx, msg)
+	_, err := handler.Run(ctx, msg)
 	c.Assert(err, IsNil)
 
 	// Verify intent status updated
-	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	updatedIntent, err := w.keeper.GetIntent(ctx, intentTx.ID)
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentCancelled)
+
+	cancelEvents := 0
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type == "intent_cancel" {
+			cancelEvents++
+		}
+	}
+	c.Check(cancelEvents, Equals, 1)
 }
 
 func (HandlerIntentCancelSuite) TestIntentCancel_ValidationErrors(c *C) {

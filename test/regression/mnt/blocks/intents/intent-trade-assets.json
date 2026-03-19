@@ -1595,34 +1595,6 @@
         "refund_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "tx_id": "33F793A6727CFD02CB698E298309F50668A74C6724C1724F63E61E27A0F9985B",
         "type": "intent_expire"
-      },
-      {
-        "amount": "5000000",
-        "asset": "BTC~BTC",
-        "asset_address": "",
-        "mode": "EndBlock",
-        "rune_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "tx_id": "33F793A6727CFD02CB698E298309F50668A74C6724C1724F63E61E27A0F9985B",
-        "type": "trade_account_deposit"
-      },
-      {
-        "chain": "THOR",
-        "coin": "5000000 BTC~BTC",
-        "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
-        "id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "in_tx_id": "33F793A6727CFD02CB698E298309F50668A74C6724C1724F63E61E27A0F9985B",
-        "memo": "REFUND:33F793A6727CFD02CB698E298309F50668A74C6724C1724F63E61E27A0F9985B",
-        "mode": "EndBlock",
-        "to": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "type": "outbound"
-      },
-      {
-        "abandoned": "false",
-        "mode": "EndBlock",
-        "refund": "5000000 BTC~BTC",
-        "refund_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "tx_id": "33F793A6727CFD02CB698E298309F50668A74C6724C1724F63E61E27A0F9985B",
-        "type": "intent_expire"
       }
     ],
     "txs": []

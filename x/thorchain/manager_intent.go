@@ -276,7 +276,6 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 			continue
 		}
 		commit()
-		ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
 		// Refund losing solves at this height (winner excluded since execution succeeded)
 		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
@@ -341,7 +340,6 @@ func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 				continue
 			}
 			commit()
-			ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 			processed++
 		}
 	}
@@ -1203,7 +1201,6 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 
 	// All steps succeeded, commit all state changes atomically
 	commit()
-	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
 	// Emit auction complete event
 	evt := NewEventIntentAuctionComplete(

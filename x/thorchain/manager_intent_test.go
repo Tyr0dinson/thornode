@@ -287,7 +287,6 @@ func (s *IntentMgrTestSuite) TestProcessWinningBid_UnavailablePoolFails(c *C) {
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
 	c.Assert(ok, Equals, true)
-
 	bid := IntentAuctionBid{
 		BidTxID:       GetRandomTx().ID,
 		IntentTxID:    GetRandomTx().ID,
@@ -305,6 +304,7 @@ func (s *IntentMgrTestSuite) TestProcessWinningBid_UnavailablePoolFails(c *C) {
 	c.Check(updatedPool.BalanceAsset.Equal(bidPool.BalanceAsset), Equals, true)
 	c.Check(updatedPool.BalanceRune.Equal(bidPool.BalanceRune), Equals, true)
 }
+
 func (s *IntentMgrTestSuite) TestProcessExpirations_DirectRefundSolveFailureStaysRetryable(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
