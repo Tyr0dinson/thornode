@@ -77,6 +77,34 @@ func (tos *TxOutStoreFailOnCallDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Ma
 	return true, nil
 }
 
+type AdjustableGasManager struct {
+	*DummyGasManager
+	maxGas map[string]common.Coin
+}
+
+func NewAdjustableGasManager() *AdjustableGasManager {
+	return &AdjustableGasManager{
+		DummyGasManager: NewDummyGasManager(),
+		maxGas:          make(map[string]common.Coin),
+	}
+}
+
+func (m *AdjustableGasManager) SetMaxGas(chain common.Chain, coin common.Coin) {
+	m.maxGas[chain.String()] = coin
+}
+
+func (m *AdjustableGasManager) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, int64, error) {
+	if coin, ok := m.maxGas[chain.String()]; ok {
+		return coin, 1, nil
+	}
+	return m.DummyGasManager.GetGasDetails(ctx, chain)
+}
+
+func (m *AdjustableGasManager) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error) {
+	maxGasCoin, _, err := m.GetGasDetails(ctx, chain)
+	return maxGasCoin, err
+}
+
 // TestExpireIntent_RefundWithL1Pool tests that an intent with an L1 pool asset is refunded directly
 func (s *IntentMgrTestSuite) TestExpireIntent_RefundWithL1Pool(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
@@ -353,6 +381,70 @@ func (s *IntentMgrTestSuite) TestExpireIntent_DeferredCancelExecutesAtExpiry(c *
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentCancelled)
 	c.Check(w.keeper.IntentDeferredCancelExists(w.ctx, intentTx.ID), Equals, false)
+}
+
+func (s *IntentMgrTestSuite) TestProcessExpirations_DeferredCancelGasIncreaseFallsBackToAuction(c *C) {
+	w := getHandlerTestWrapper(c, 10, true, true)
+
+	sourceAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomETHAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(sourceAsset, cosmos.NewUint(50*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	gasMgr := NewAdjustableGasManager()
+	gasMgr.SetMaxGas(common.ETHChain, common.NewCoin(common.ETHAsset, cosmos.NewUint(37500)))
+	mgr.gasMgr = gasMgr
+
+	cancelTx := GetRandomTx()
+	cancelTx.Chain = common.ETHChain
+	cancelTx.FromAddress = userAddr
+	cancelTx.Memo = NewIntentCancelMemo(intentTx.ID, true).String()
+	cancelTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(37500)))
+
+	handler := NewIntentCancelHandler(mgr)
+	_, err = handler.Run(w.ctx, NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr)))
+	c.Assert(err, IsNil)
+	c.Check(w.keeper.IntentDeferredCancelExists(w.ctx, intentTx.ID), Equals, true)
+
+	gasMgr.SetMaxGas(common.ETHChain, common.NewCoin(common.ETHAsset, cosmos.NewUint(75000)))
+
+	expiryCtx := w.ctx.WithBlockHeight(intent.ExpiryHeight + w.keeper.GetConfigInt64(w.ctx, constants.IntentPostExpiryCancelBlocks) + 1)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	err = intentMgr.processExpirations(expiryCtx)
+	c.Assert(err, IsNil)
+
+	updatedIntent, err := w.keeper.GetIntent(expiryCtx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentAuctioning)
+	c.Check(w.keeper.IntentDeferredCancelExists(expiryCtx, intentTx.ID), Equals, false)
+
+	auction, err := w.keeper.GetIntentAuction(expiryCtx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(auction.Status, Equals, IntentAuctionStatus_AuctionActive)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(expiryCtx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Check(items[0].ToAddress.Equals(userAddr), Equals, true)
+	c.Check(items[0].Coin.Asset.Equals(common.ETHAsset), Equals, true)
+	c.Check(items[0].Coin.Amount.Equal(cosmos.NewUint(37500)), Equals, true)
+	c.Check(items[0].Memo, Equals, "REFUND:"+intentTx.ID.String())
 }
 
 func (s *IntentMgrTestSuite) TestProcessExpirations_DirectRefundSolveFailureStaysRetryable(c *C) {

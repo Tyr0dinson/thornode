@@ -756,14 +756,15 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 	return nil
 }
 
-// expireIntent handles an expired intent by starting an auction
+// expireIntent handles an expired intent by executing a deferred cancel,
+// refunding directly, or starting an auction.
 func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
-	if im.mgr.Keeper().IntentDeferredCancelExists(ctx, intent.TxID) {
-		deferredCancel, err := im.mgr.Keeper().GetIntentDeferredCancel(ctx, intent.TxID)
-		if err != nil {
-			return fmt.Errorf("fail to get deferred cancel for expired intent: %w", err)
-		}
-		return NewIntentCancelHandler(im.mgr).executeCancel(ctx, intent, deferredCancel, true)
+	handled, err := im.executeDeferredCancelAtExpiry(ctx, intent)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
 	}
 
 	// Check if we should refund directly instead of auctioning
@@ -793,6 +794,39 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 	}
 
 	return im.StartIntentAuction(ctx, intent)
+}
+
+// executeDeferredCancelAtExpiry tries the stored deferred cancel first. If it
+// fails, the failed attempt is discarded and expiry falls back to the normal
+// refund-or-auction path after refunding the deferred cancel escrow.
+func (im *IntentMgr) executeDeferredCancelAtExpiry(ctx cosmos.Context, intent Intent) (bool, error) {
+	if !im.mgr.Keeper().IntentDeferredCancelExists(ctx, intent.TxID) {
+		return false, nil
+	}
+
+	deferredCancel, err := im.mgr.Keeper().GetIntentDeferredCancel(ctx, intent.TxID)
+	if err != nil {
+		return false, fmt.Errorf("fail to get deferred cancel for expired intent: %w", err)
+	}
+
+	cancelCtx, commit := ctx.CacheContext()
+	if err = NewIntentCancelHandler(im.mgr).executeCancel(cancelCtx, intent, deferredCancel, true); err == nil {
+		commit()
+		ctx.EventManager().EmitEvents(cancelCtx.EventManager().Events())
+		return true, nil
+	} else {
+		ctx.Logger().Warn("deferred cancel failed at expiry, falling back to normal expiry path",
+			"txid", intent.TxID,
+			"error", err,
+		)
+	}
+
+	if err = refundDeferredIntentCancelRegistration(ctx, im.mgr, deferredCancel); err != nil {
+		return false, fmt.Errorf("fail to refund deferred cancel registration after expiry execution failure: %w", err)
+	}
+	im.mgr.Keeper().RemoveIntentDeferredCancel(ctx, intent.TxID)
+
+	return false, nil
 }
 
 // StartIntentAuction creates an auction for the intent's source asset and
