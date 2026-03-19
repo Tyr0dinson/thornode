@@ -1253,8 +1253,8 @@ func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid)
 	if err != nil {
 		return fmt.Errorf("fail to get pool for winning bid swap: %w", err)
 	}
-	if bidPool.IsEmpty() {
-		return fmt.Errorf("no pool found for winning bid asset %s", bid.BidAmount.Asset)
+	if bidPool.IsEmpty() || bidPool.Status != PoolAvailable {
+		return fmt.Errorf("winning bid pool %s is not available", bid.BidAmount.Asset)
 	}
 
 	swapper, err := GetSwapper(im.mgr.Keeper().GetVersion())

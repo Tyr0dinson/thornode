@@ -558,6 +558,67 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetSucceedsWithGas(c *
 		Commentf("ETH pool RUNE balance should have decreased after booking cancel gas"))
 }
 
+func (HandlerIntentCancelSuite) TestIntentCancel_NonAvailableGasPoolFails(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolSuspended
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, ethPool), IsNil)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(w.ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.AddFunds(common.NewCoins(
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+		common.NewCoin(erc20Asset, cosmos.NewUint(200*common.One)),
+	))
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomTHORAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(erc20Asset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentCancelHandler(mgr)
+
+	cancelTx := GetRandomTx()
+	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(37500))}
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*gas pool .* is not available.*")
+
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentActive)
+
+	updatedPool, err := w.keeper.GetPool(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(updatedPool.BalanceAsset.Equal(ethPool.BalanceAsset), Equals, true)
+	c.Check(updatedPool.BalanceRune.Equal(ethPool.BalanceRune), Equals, true)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+}
+
 func (HandlerIntentCancelSuite) TestIntentCancel_ConfigurableRetainGasMultiplierRefundsExcess(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 

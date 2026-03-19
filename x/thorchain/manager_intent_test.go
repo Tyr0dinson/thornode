@@ -274,6 +274,37 @@ func (s *IntentMgrTestSuite) TestExpireIntent_RefundTradeAsset(c *C) {
 	c.Check(updatedIntent.Status, Equals, IntentExpired)
 }
 
+func (s *IntentMgrTestSuite) TestProcessWinningBid_UnavailablePoolFails(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	bidPool := NewPool()
+	bidPool.Asset = common.ETHAsset
+	bidPool.Status = PoolStaged
+	bidPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	bidPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, bidPool), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	bid := IntentAuctionBid{
+		BidTxID:       GetRandomTx().ID,
+		IntentTxID:    GetRandomTx().ID,
+		BidderAddress: GetRandomETHAddress(),
+		BidAmount:     common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:  w.ctx.BlockHeight(),
+	}
+
+	err := intentMgr.processWinningBid(w.ctx, bid)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*winning bid pool .* is not available.*")
+
+	updatedPool, err := w.keeper.GetPool(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(updatedPool.BalanceAsset.Equal(bidPool.BalanceAsset), Equals, true)
+	c.Check(updatedPool.BalanceRune.Equal(bidPool.BalanceRune), Equals, true)
+}
 func (s *IntentMgrTestSuite) TestProcessExpirations_DirectRefundSolveFailureStaysRetryable(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 

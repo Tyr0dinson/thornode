@@ -239,8 +239,8 @@ func bookCancelGasToPool(ctx cosmos.Context, mgr Manager, intentTxID common.TxID
 	if err != nil {
 		return fmt.Errorf("fail to get gas pool %s: %w", gasAsset, err)
 	}
-	if gasPool.IsEmpty() {
-		return fmt.Errorf("no gas pool for %s", gasAsset)
+	if gasPool.IsEmpty() || gasPool.Status != PoolAvailable {
+		return fmt.Errorf("gas pool %s is not available", gasAsset)
 	}
 
 	swapper, err := GetSwapper(mgr.Keeper().GetVersion())
