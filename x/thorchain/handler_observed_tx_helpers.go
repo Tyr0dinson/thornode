@@ -506,6 +506,12 @@ func handleObservedTxInQuorum(
 
 	mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
 
+	// Do not allow 0-conf swap execution to start from an inactive vault.
+	if !hasFinalised && canProcessMempoolSwap && vault.Status == InactiveVault {
+		ctx.Logger().Info("inactive vault cannot process mempool swap before finalization", "hash", voter.TxID)
+		return nil
+	}
+
 	if !hasFinalised && !canProcessMempoolSwap {
 		ctx.Logger().Info("transaction pending confirmation counting", "hash", voter.TxID)
 		return nil
@@ -547,6 +553,21 @@ func handleObservedTxInQuorum(
 		if !canProcessMempoolSwap {
 			return nil
 		}
+	}
+
+	// If a mempool swap was executed before finalization but the inbound finalized
+	// on an inactive vault, revert the staged mempool swap first and then refund
+	// the inbound instead of releasing staged outbounds.
+	if hasFinalised && len(voter.Actions) > 0 && vault.Status == InactiveVault {
+		if err = revertMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
+			ctx.Logger().Error("fail to revert mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+			return nil
+		}
+		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
+		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
+			ctx.Logger().Error("fail to refund", "error", newErr)
+		}
+		return nil
 	}
 
 	// When a mempool swap finalizes, move staged outbounds to the real queue
