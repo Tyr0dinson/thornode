@@ -22,7 +22,7 @@ func TestCanonicalTssRoundSecp256k1(t *testing.T) {
 
 	for in, want := range tests {
 		if got := canonicalTssRound(in, common.SigningAlgoSecp256k1); got != want {
-			t.Fatalf("canonicalTssRound(%q) = %q, want %q", in, got, want)
+			t.Errorf("canonicalTssRound(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -41,7 +41,7 @@ func TestCanonicalTssRoundEd25519(t *testing.T) {
 
 	for in, want := range tests {
 		if got := canonicalTssRound(in, common.SigningAlgoEd25519); got != want {
-			t.Fatalf("canonicalTssRound(%q) = %q, want %q", in, got, want)
+			t.Errorf("canonicalTssRound(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
