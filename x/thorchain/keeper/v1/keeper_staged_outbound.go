@@ -35,6 +35,12 @@ func (k KVStore) SetStagedOutbound(ctx cosmos.Context, item TxOutItem, scheduled
 	return k.setStagedOutboundList(ctx, inHash, list)
 }
 
+// HasStagedOutbound returns whether any staged outbounds exist for an inbound transaction.
+func (k KVStore) HasStagedOutbound(ctx cosmos.Context, inHash common.TxID) bool {
+	key := k.GetKey(prefixStagedOutbound, inHash.String())
+	return k.has(ctx, key)
+}
+
 // GetStagedOutbounds returns all staged outbounds for an inbound transaction.
 func (k KVStore) GetStagedOutbounds(ctx cosmos.Context, inHash common.TxID) ([]StagedOutbound, error) {
 	list, err := k.getStagedOutboundList(ctx, inHash)
