@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ethereum"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/gaia"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron"
@@ -23,6 +24,7 @@ import (
 
 // ChainClient exports the shared type.
 type ChainClient = types.ChainClient
+type CustomKeygenChainClient = types.CustomKeygenChainClient
 
 // LoadChains returns chain clients from chain configuration
 func LoadChains(thorKeys *thorclient.Keys,
@@ -53,6 +55,8 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return tron.NewTronClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		case common.XRPChain:
 			return xrp.NewClient(thorKeys, chain, server, thorchainBridge, m)
+		case common.XMRChain:
+			return monero.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.SOLChain:
 			return solana.NewSOLClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		default:

@@ -1003,6 +1003,73 @@ func (s *SlashingSuite) TestTreasuryRecoveryForMaxAttempts(c *C) {
 	c.Assert(hasSwap, Equals, true, Commentf("Expected a swap to be queued for treasury recovery"))
 }
 
+func (s *SlashingSuite) TestQueueRecoverySwapUsesEddsaVaultAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = types2.VaultStatus_ActiveVault
+	vault.PubKey = GetRandomPubKey()
+	vault.PubKeyEddsa = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	xmrAddr, err := vault.PubKeyEddsa.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	txID := GetRandomTxHash()
+	toi := TxOutItem{
+		Chain:            common.XMRChain,
+		InHash:           txID,
+		VaultPubKey:      vault.PubKey,
+		VaultPubKeyEddsa: vault.PubKeyEddsa,
+		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('8')),
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+		Memo:             fmt.Sprintf("OUT:%s", txID),
+	}
+
+	err = slasher.queueRecoverySwap(
+		ctx,
+		mgr,
+		toi,
+		vault,
+		txID,
+		common.RuneAsset(),
+		common.TreasuryAddress,
+		fmt.Sprintf("=:RUNE:%s", common.TreasuryAddress),
+		"treasury",
+	)
+	c.Assert(err, IsNil)
+
+	var queuedSwap *MsgSwap
+	iter := mgr.Keeper().GetSwapQueueIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		var msg MsgSwap
+		if unmarshalErr := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg); unmarshalErr == nil {
+			queuedSwap = &msg
+			break
+		}
+	}
+	iter.Close()
+
+	// Fallback to advanced queue if standard queue has no item.
+	if queuedSwap == nil {
+		advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		for ; advIter.Valid(); advIter.Next() {
+			var msg MsgSwap
+			if unmarshalErr := mgr.Keeper().Cdc().Unmarshal(advIter.Value(), &msg); unmarshalErr == nil {
+				queuedSwap = &msg
+				break
+			}
+		}
+		advIter.Close()
+	}
+
+	c.Assert(queuedSwap, NotNil)
+	c.Assert(queuedSwap.Tx.FromAddress.Equals(xmrAddr), Equals, true)
+	c.Assert(queuedSwap.Tx.ToAddress.Equals(xmrAddr), Equals, true)
+}
+
 func (s *SlashingSuite) TestTreasuryRecoveryWithDifferentMemoTypes(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

@@ -25,6 +25,7 @@ type TxOutItem struct {
 	AggregatorTargetAsset string         `json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
 	Checkpoint            []byte         `json:"-"`
+	SigningID             string         `json:"-"`
 	Height                int64          `json:"height"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
 }

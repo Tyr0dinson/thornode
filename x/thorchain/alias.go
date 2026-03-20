@@ -237,6 +237,7 @@ var (
 	GetRandomBech32Addr            = types.GetRandomBech32Addr
 	GetRandomBech32ConsensusPubKey = types.GetRandomBech32ConsensusPubKey
 	GetRandomPubKey                = types.GetRandomPubKey
+	GetRandomEd25519PubKey         = types.GetRandomEd25519PubKey
 	GetRandomPubKeySet             = types.GetRandomPubKeySet
 	GetCurrentVersion              = types.GetCurrentVersion
 	SetupConfigForTest             = types.SetupConfigForTest

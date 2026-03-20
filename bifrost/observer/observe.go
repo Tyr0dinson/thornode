@@ -597,6 +597,10 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
 	var txs []*types.TxInItem
 	for _, txInItem := range items {
+		if o.pubkeyMgr == nil {
+			continue
+		}
+
 		// NOTE: the following could result in the same tx being added
 		// twice, which is expected. We want to make sure we generate both
 		// a inbound and outbound txn, if we both apply.
@@ -730,14 +734,18 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		blockHeight := strconv.FormatInt(item.BlockHeight, 10)
 		txID, err := common.NewTxID(item.Tx)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail_to_parse_tx_hash", blockHeight).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_parse_tx_hash", blockHeight).Inc()
+			}
 			o.logger.Err(err).Msgf("fail to parse tx hash, %s is invalid", item.Tx)
 			invalidIndices = append(invalidIndices, i)
 			continue
 		}
 		sender, err := common.NewAddress(item.Sender)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail_to_parse_sender", item.Sender).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_parse_sender", item.Sender).Inc()
+			}
 			// log the error , and ignore the transaction, since the address is not valid
 			o.logger.Err(err).Msgf("fail to parse sender, %s is invalid sender address", item.Sender)
 			invalidIndices = append(invalidIndices, i)
@@ -746,7 +754,9 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 
 		to, err := common.NewAddress(item.To)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail_to_parse_to", item.To).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_parse_to", item.To).Inc()
+			}
 			o.logger.Err(err).Msgf("fail to parse to, %s is invalid to address", item.To)
 			invalidIndices = append(invalidIndices, i)
 			continue
@@ -756,7 +766,9 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		chainAddr, err := item.ObservedVaultPubKey.GetAddress(txIn.Chain)
 		o.logger.Debug().Msgf("%s address %s", txIn.Chain.String(), chainAddr)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail to parse observed pool address", item.ObservedVaultPubKey.String()).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail to parse observed pool address", item.ObservedVaultPubKey.String()).Inc()
+			}
 			o.logger.Err(err).Msgf("fail to parse observed pool address: %s", item.ObservedVaultPubKey.String())
 			invalidIndices = append(invalidIndices, i)
 			continue

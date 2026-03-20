@@ -78,6 +78,7 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			common.XRPChain,
 			common.SOLChain,
 			common.POLChain,
+			common.XMRChain,
 			common.ZECChain,
 		}
 		pubSet := active[0].PubKeySet
@@ -2693,7 +2694,7 @@ func (vm *NetworkMgr) createSwapToOverSolvency(ctx cosmos.Context, mgr Manager, 
 	var chainAddr common.Address
 	for _, vault := range activeVaults {
 		if vault.HasAsset(l1Asset) {
-			addr, addrErr := vault.PubKey.GetAddress(chain)
+			addr, addrErr := vault.GetAddress(chain)
 			if addrErr != nil {
 				ctx.Logger().Error("failed to get vault address for chain", "chain", chain, "error", addrErr)
 				continue

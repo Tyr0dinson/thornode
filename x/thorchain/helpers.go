@@ -49,6 +49,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 		// Only attempt an outbound if a fee can be taken from the coin.
 		if coin.IsRune() || !pool.BalanceRune.IsZero() {
 			toAddr := tx.Tx.FromAddress
+			usesSourceSender := true
 			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
 			if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
 				// If the memo specifies a refund address, send the refund to that address. If
@@ -56,6 +57,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				// default back to the sender address
 				if memo.GetRefundAddress().IsChain(coin.Asset.GetChain()) {
 					toAddr = memo.GetRefundAddress()
+					usesSourceSender = false
 				}
 			}
 
@@ -89,6 +91,13 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				Aggregator:            "",
 				AggregatorTargetAsset: "",
 				AggregatorTargetLimit: &cosmos.Uint{},
+			}
+
+			if coin.Asset.GetChain().Equals(common.XMRChain) && usesSourceSender && common.IsXMRUnknownSenderAddress(tx.Tx.FromAddress) {
+				ctx.Logger().Info("skip xmr refund to unknown sender marker", "in_hash", tx.Tx.ID.String(), "coin", coin.String())
+				refundReason = fmt.Sprintf("%s; fail to refund (%s): unknown xmr sender and no explicit refund address", refundReason, toi.Coin.String())
+				unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund_unknown_sender")
+				continue
 			}
 
 			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
@@ -149,12 +158,26 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 	// External coin, native coin which isn't RUNE, or native RUNE (not from the Reserve).
 	switch {
 	case !coin.Asset.IsNative():
-		// If unable to refund external-chain coins, add them to their pools
-		// (so they aren't left in the vaults with no reflection in the pools).
-		// Failed-refund external coins have earlier been established to have existing pools with non-zero BalanceRune.
-
-		ctx.Logger().Error("fail to refund non-native tx, leaving coins in vault", "toi.InHash", toi.InHash, "toi.Coin", toi.Coin)
-		return
+		// Add unrefundable external coins to their pool so the vault balance
+		// is correctly reflected in the pool accounting.  Failed-refund
+		// external coins have earlier been established to have existing pools
+		// with non-zero BalanceRune.
+		pool, poolErr := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
+		if poolErr != nil || pool.BalanceRune.IsZero() {
+			ctx.Logger().Error("fail to refund non-native tx, leaving coins in vault",
+				"toi.InHash", toi.InHash, "toi.Coin", toi.Coin, "pool_err", poolErr)
+			return
+		}
+		pool.BalanceAsset = pool.BalanceAsset.Add(coin.Amount)
+		if poolErr = mgr.Keeper().SetPool(ctx, pool); poolErr != nil {
+			ctx.Logger().Error("fail to add unrefundable coin to pool",
+				"error", poolErr, "toi.InHash", toi.InHash, "toi.Coin", toi.Coin)
+			return
+		}
+		donateEvt := NewEventDonate(coin.Asset.GetLayer1Asset(), tx)
+		if emitErr := mgr.EventMgr().EmitEvent(ctx, donateEvt); emitErr != nil {
+			ctx.Logger().Error("fail to emit donate event for unrefundable coin", "error", emitErr)
+		}
 	case sourceModuleName != ReserveName:
 		// If unable to refund THOR.RUNE, send it to the Reserve.
 		err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
@@ -387,7 +410,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cos
 		nodeAcc.UpdateStatus(NodeDisabled, ctx.BlockHeight())
 	}
 	if err := mgr.Keeper().SetNodeAccount(ctx, *nodeAcc); err != nil {
-		ctx.Logger().Error(fmt.Sprintf("fail to save node account(%s)", nodeAcc), "error", err)
+		ctx.Logger().Error("fail to save node account", "node_account", nodeAcc, "error", err)
 		return err
 	}
 	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
@@ -450,7 +473,7 @@ func signedByActiveNodeAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmo
 
 func wrapError(ctx cosmos.Context, err error, wrap string) error {
 	err = fmt.Errorf("%s: %w", wrap, err)
-	ctx.Logger().Error(err.Error())
+	ctx.Logger().Error(wrap, "error", err)
 	return multierror.Append(errInternal, err)
 }
 

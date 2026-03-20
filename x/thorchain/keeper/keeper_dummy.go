@@ -31,7 +31,7 @@ func (k KVStoreDummy) DeleteKey(_ cosmos.Context, _ []byte)    {}
 func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }
 func (k KVStoreDummy) AccountKeeper() authkeeper.AccountKeeper { return authkeeper.AccountKeeper{} }
 func (k KVStoreDummy) Logger(ctx cosmos.Context) log.Logger {
-	return ctx.Logger().With("module", fmt.Sprintf("x/%s", ModuleName))
+	return ctx.Logger().With("module", "x/"+ModuleName)
 }
 
 func (k KVStoreDummy) GetVersion() semver.Version { return semver.MustParse("9999999.0.0") }

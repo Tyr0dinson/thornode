@@ -52,7 +52,7 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	if !msg.Tx.ID.IsBlank() { // don't validate tx if internal txn
 		if err := msg.ValidateBasic(); err != nil {
-			ctx.Logger().Error(err.Error())
+			ctx.Logger().Error("msg add liquidity fail validation", "error", err)
 			return errAddLiquidityFailValidation
 		}
 	}

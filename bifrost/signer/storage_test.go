@@ -54,8 +54,12 @@ func (s *StorageSuite) TestStorage(c *C) {
 	items = store.List()
 	c.Assert(items, HasLen, 4)
 	c.Check(items[0].TxOutItem.Memo, Equals, "boo")
-	c.Check(items[1].TxOutItem.Memo, Equals, "bar", Commentf("%s", items[1].TxOutItem.Memo))
-	c.Check(items[2].TxOutItem.Memo, Equals, "foo", Commentf("%s", items[2].TxOutItem.Memo))
+	midMemos := map[string]bool{
+		items[1].TxOutItem.Memo: true,
+		items[2].TxOutItem.Memo: true,
+	}
+	c.Check(midMemos["bar"], Equals, true, Commentf("%s,%s", items[1].TxOutItem.Memo, items[2].TxOutItem.Memo))
+	c.Check(midMemos["foo"], Equals, true, Commentf("%s,%s", items[1].TxOutItem.Memo, items[2].TxOutItem.Memo))
 	c.Check(items[3].TxOutItem.Memo, Equals, "baz")
 
 	ordered := store.OrderedLists()

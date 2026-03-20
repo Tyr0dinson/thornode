@@ -107,7 +107,7 @@ func (s *SlasherImpl) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, 
 	// check if we're recent enough to slash for this behavior
 	maxAge := constAccessor.GetInt64Value(constants.DoubleSignMaxAge)
 	if (ctx.BlockHeight() - infractionHeight) > maxAge {
-		ctx.Logger().Info("double sign detected but too old to be slashed", "infraction height", fmt.Sprintf("%d", infractionHeight), "address", addr.String())
+		ctx.Logger().Info("double sign detected but too old to be slashed", "infraction height", infractionHeight, "address", addr.String())
 		return nil
 	}
 
@@ -583,7 +583,7 @@ func (s *SlasherImpl) queueRecoverySwap(
 	recoveryTxID := s.generateRecoveryTxID(ctx, txID, recoveryType)
 
 	// Get vault's address for the chain of this coin for tracking purposes.
-	vaultAddr, err := vault.PubKey.GetAddress(toi.Coin.Asset.GetChain())
+	vaultAddr, err := vault.GetAddress(toi.Coin.Asset.GetChain())
 	if err != nil {
 		return fmt.Errorf("failed to get vault address for chain %s: %w", toi.Coin.Asset.GetChain(), err)
 	}
@@ -689,6 +689,14 @@ func (s *SlasherImpl) sendFailedSwapReverseSwap(ctx cosmos.Context, mgr Manager,
 				"refund_address", swapMemo.GetRefundAddress(),
 				"expected_chain", originalTx.Tx.Coins[0].Asset.GetChain())
 		}
+	}
+
+	// XMR unknown sender guard: if the destination is still an XMR unknown
+	// sender marker, skip the reverse swap so the caller falls through to
+	// treasury recovery immediately rather than attempting outbounds to an
+	// undeliverable address that would fail MaxOutboundAttempts times first.
+	if originalTx.Tx.Coins[0].Asset.GetChain().Equals(common.XMRChain) && common.IsXMRUnknownSenderAddress(destination) {
+		return fmt.Errorf("cannot reverse swap to XMR unknown sender address %s; falling back to treasury", destination)
 	}
 
 	// Queue reverse swap to original asset

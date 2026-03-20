@@ -244,6 +244,15 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		checksum := sha256sum(sha256sum(addr))
 
 		addressString = base58.Encode(append(addr, checksum[:4]...))
+	case XMRChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+		addressString, err = deriveXMRAddressFromSpendPubKey(pk.Bytes(), chainNetwork)
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to derive monero address from pubkey: %w", err)
+		}
 	case ZECChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {
