@@ -132,8 +132,11 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 
 	// track the count of round 7 failures, only from vault members
 	if msg.Blame.Round == tssMessages.KEYSIGN7 || msg.Blame.Round == tssMessages.EDDSAKEYSIGN3 {
-		if vaultMemberNodes.IsNodeKeys(msg.Signer) {
-			voter.LastRoundCount++
+		for _, na := range vaultMemberNodes {
+			if msg.Signer.Equals(na.NodeAddress) {
+				voter.LastRoundCount++
+				break
+			}
 		}
 	}
 	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
