@@ -36,6 +36,21 @@ func (m *ObservedTxVoter) Valid() error {
 	return nil
 }
 
+// IsEmpty returns true when the voter contains no persisted state beyond its key.
+func (m *ObservedTxVoter) IsEmpty() bool {
+	return m.Tx.IsEmpty() &&
+		len(m.Txs) == 0 &&
+		m.Height == 0 &&
+		len(m.Actions) == 0 &&
+		len(m.OutTxs) == 0 &&
+		m.FinalisedHeight == 0 &&
+		!m.UpdatedVault &&
+		!m.Reverted &&
+		m.OutboundHeight == 0 &&
+		m.UnfinalizedHeight == 0 &&
+		(m.MempoolSwapTOR.IsNil() || m.MempoolSwapTOR.IsZero())
+}
+
 // Key is to get the txid
 func (m *ObservedTxVoter) Key() common.TxID {
 	return m.TxID

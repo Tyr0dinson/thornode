@@ -1378,12 +1378,10 @@ func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxIDWith
 	voter.Height = 100 // Set height to indicate voter has been processed
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
-	// Test recovery with action index 0 - this is the only one guaranteed to work
-	// since the lookup iterates through action indices and returns first match
-	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
+	revertTxID := CreateMempoolRevertTxID(originalTxID, 7)
 	recoveredTxID, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), revertTxID)
-	c.Assert(found, Equals, true, Commentf("Should find original for action index 0"))
-	c.Assert(recoveredTxID, Equals, originalTxID, Commentf("Recovered TxID should match for action index 0"))
+	c.Assert(found, Equals, true, Commentf("Should find original for non-zero action index"))
+	c.Assert(recoveredTxID, Equals, originalTxID, Commentf("Recovered TxID should match for non-zero action index"))
 }
 
 func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxIDInvalidLength(c *C) {
@@ -1407,6 +1405,16 @@ func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxIDInva
 	invalidHexTxID := common.TxID("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDGG")
 	_, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), invalidHexTxID)
 	c.Assert(found, Equals, false, Commentf("Invalid hex should return not found"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxIDMissingVoter(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	originalTxID := common.TxID("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890")
+	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
+
+	_, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), revertTxID)
+	c.Assert(found, Equals, false, Commentf("Missing voter data should return not found"))
 }
 
 func (s *HandlerObservedTxHelpersSuite) TestMempoolRevertTxIDRoundTrip(c *C) {

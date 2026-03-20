@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -240,6 +242,15 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	swapIter := mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer func() { _ = swapIter.Close() }()
 	c.Check(swapIter.Valid(), Equals, true, Commentf("Reverse swap should be queued"))
+
+	reverseTxID := CreateMempoolRevertTxID(inTxID, 0)
+	reverseSwap, err := mgr.Keeper().GetSwapQueueItem(ctx, reverseTxID, 0)
+	c.Assert(err, IsNil)
+
+	destAddress, err := vault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Check(reverseSwap.Tx.Memo, Equals, fmt.Sprintf("=:%s:%s", common.BTCAsset, destAddress))
+	c.Check(reverseSwap.PostSwapMemo, Equals, fmt.Sprintf("DONATE:%s", common.BTCAsset.GetLayer1Asset()))
 
 	// Test 2: Skip already signed outbounds (voter with no staged outbounds should still succeed)
 	voter2TxID := GetRandomTxHash()
