@@ -1,0 +1,188 @@
+package monero
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/rs/zerolog/log"
+
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+)
+
+func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
+	t.Parallel()
+
+	var captured xmrFrostScannerSyncRequest
+	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
+			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 150})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
+			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
+			height, err := strconv.ParseInt(rawHeight, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid height", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+				Height:       height,
+				Reward:       defaultCoinbaseValue + 200000,
+				Hash:         fmt.Sprintf("hash-%d", height),
+				PreviousHash: fmt.Sprintf("hash-%d", height-1),
+				TxHashes:     []string{},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	bridge := &scannerMemoBridge{
+		asgards: ttypes.Vaults{},
+	}
+	scanner := NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 72)
+
+	_, err = scanner.FetchTxs(100, 150)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if captured.Height != 100 {
+		t.Fatalf("expected height 100, got %d", captured.Height)
+	}
+	if captured.TipHeight != 150 {
+		t.Fatalf("expected tip height 150, got %d", captured.TipHeight)
+	}
+	if captured.BlockHash != "hash-100" {
+		t.Fatalf("expected block hash hash-100, got %s", captured.BlockHash)
+	}
+	if captured.ParentHash != "hash-99" {
+		t.Fatalf("expected parent hash hash-99, got %s", captured.ParentHash)
+	}
+	if captured.ReorgWindow != 72 {
+		t.Fatalf("expected reorg window 72, got %d", captured.ReorgWindow)
+	}
+}
+
+func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
+	t.Parallel()
+
+	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
+			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 220})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
+			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
+			height, err := strconv.ParseInt(rawHeight, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid height", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+				Height:       height,
+				Reward:       defaultCoinbaseValue + 200000,
+				Hash:         fmt.Sprintf("hash-%d", height),
+				PreviousHash: fmt.Sprintf("hash-%d", height-1),
+				TxHashes:     []string{},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "scanner sync hash mismatch at height 200",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{asgards: ttypes.Vaults{}},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	_, err = scanner.FetchTxs(200, 220)
+	if !errors.Is(err, btypes.ErrUnavailableBlock) {
+		t.Fatalf("expected unavailable block error, got %v", err)
+	}
+}
+
+func TestFetchTxsFailsClosedWithoutFrostSigner(t *testing.T) {
+	t.Parallel()
+
+	scanner := NewScanner(log.Logger, nil, nil, common.XMRChain, common.EmptyPubKey, 72)
+	_, err := scanner.FetchTxs(100, 100)
+	if err == nil {
+		t.Fatal("expected scanner to fail without frost signer")
+	}
+	if !strings.Contains(err.Error(), "requires frost signer") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFetchTxsPropagatesSidecarUnavailable(t *testing.T) {
+	t.Parallel()
+
+	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/") {
+			http.Error(w, "daemon unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72)
+
+	_, err = scanner.FetchTxs(300, 300)
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+	if errors.Is(err, btypes.ErrUnavailableBlock) {
+		t.Fatalf("unexpected unavailable-block mapping for 503: %v", err)
+	}
+	if !strings.Contains(err.Error(), "status 503") {
+		t.Fatalf("expected propagated 503 detail, got %v", err)
+	}
+}

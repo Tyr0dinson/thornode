@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"regexp"
@@ -38,7 +39,7 @@ const (
 
 var alphaNumRegex = regexp.MustCompile("^[:_A-Za-z0-9]*$")
 
-// NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP.
+// NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP/XMR.
 func NewAddress(address string) (Address, error) {
 	if len(address) == 0 {
 		return NoAddress, nil
@@ -75,6 +76,11 @@ func NewAddress(address string) (Address, error) {
 
 	// Check is sol address
 	if IsValidSOLAddress(address) {
+		return Address(address), nil
+	}
+
+	// Check is xmr address
+	if IsValidXMRAddress(address) {
 		return Address(address), nil
 	}
 
@@ -117,6 +123,14 @@ func IsValidSOLAddress(address string) bool {
 	}
 
 	return len(decoded) == 32
+}
+
+func IsValidXMRAddress(address string) bool {
+	// Standard addresses are 95/106 chars. Featured addresses are 97/108 chars.
+	if len(address) != 95 && len(address) != 106 && len(address) != 97 && len(address) != 108 {
+		return false
+	}
+	return xmrAddressValid(address)
 }
 
 func IsValidZECAddress(address string) bool {
@@ -314,6 +328,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return false
 	case SOLChain:
 		return IsValidSOLAddress(addr.String())
+	case XMRChain:
+		return IsValidXMRAddress(addr.String())
 	case ZECChain:
 		return IsValidZECAddress(addr.String())
 	case SUIChain:
@@ -328,7 +344,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain, ADAChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, ADAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -440,6 +456,22 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 	case SOLChain, SUIChain:
 		return currentNetwork
+	case XMRChain:
+		if info, ok := xmrAddressInfoFromString(addr.String()); ok {
+			if info.isFeatured {
+				if !isSupportedFeaturedNetworkByte(info.networkByte) {
+					return MockNet
+				}
+				if info.featuredSubaddress {
+					return mainNetPredicate()
+				}
+				return MockNet
+			}
+			if info.networkByte == xmrSubaddressNetworkByte {
+				return mainNetPredicate()
+			}
+			return MockNet
+		}
 	case ZECChain:
 		// Determine network based on address prefix
 		if !addr.IsChain(chain) {
@@ -494,6 +526,14 @@ func (addr Address) MappedAccAddress() (cosmos.AccAddress, error) {
 		return cosmos.AccAddressFromHexUnsafe(
 			strings.TrimPrefix(addr.String(), "0x"),
 		)
+	}
+
+	// Non-bech32 chains (XMR, SOL, XRP, TRON): hash the address to a
+	// deterministic 20-byte AccAddress since there is no natural bech32 mapping.
+	chain := addr.GetChain()
+	if chain.Equals(XMRChain) || chain.Equals(SOLChain) || chain.Equals(XRPChain) || chain.Equals(TRONChain) {
+		hash := sha256.Sum256([]byte(addr.String()))
+		return cosmos.AccAddress(hash[:20]), nil
 	}
 
 	_, data, err := bech32.Decode(addr.String())

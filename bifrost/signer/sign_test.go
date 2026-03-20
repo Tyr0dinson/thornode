@@ -3,6 +3,7 @@ package signer
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -301,6 +303,30 @@ func (b *MockChainClient) ConfirmationCountReady(txIn types.TxIn) bool {
 
 func (b *MockChainClient) GetConfirmationCount(txIn types.TxIn) int64 {
 	return 0
+}
+
+type MockCustomKeygenChainClient struct {
+	*MockChainClient
+	called        bool
+	calledKeys    []string
+	calledHeight  int64
+	calledVersion string
+	calledPoolPK  common.PubKey
+	calledPoolED  common.PubKey
+	retBlame      []types2.Blame
+	retErr        error
+}
+
+func (m *MockCustomKeygenChainClient) CustomKeygen() bool { return true }
+
+func (m *MockCustomKeygenChainClient) Keygen(req chainclienttypes.CustomKeygenRequest) (common.Address, []types2.Blame, error) {
+	m.called = true
+	m.calledKeys = append([]string(nil), req.Members...)
+	m.calledHeight = req.BlockHeight
+	m.calledVersion = req.ThorchainVersion
+	m.calledPoolPK = req.PoolPubKey
+	m.calledPoolED = req.PoolPubKeyEddsa
+	return common.NoAddress, m.retBlame, m.retErr
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -598,7 +624,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Chain:       common.ETHChain,
 			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
 			Memo:        msg,
-			VaultPubKey: "tthorpub1addwnpepqfup3y8p0egd7ml7vrnlxgl3wvnp89mpn0tjpj0p2nm2gh0n9hlrvrtylay",
+			VaultPubKey: "thorpub1addwnpepqtspqyy6gk22u37ztra4hq3hdakc0w0k60sfy849mlml2vrpfr0wvm6uz09",
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
 			},
@@ -708,4 +734,55 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	sign.wg.Wait()
 	ks.Stop()
 	ks2.Stop()
+}
+
+func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
+	bridge := fakeBridge{s.bridge}
+
+	custom := &MockCustomKeygenChainClient{
+		MockChainClient: &MockChainClient{},
+	}
+
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.ETHChain: custom,
+		},
+		thorchainBridge: bridge,
+		logger:          log.With().Str("module", "signer").Logger(),
+	}
+
+	poolPK := types2.GetRandomPubKey()
+	poolED := common.EmptyPubKey
+	err := sign.runCustomKeygenHooks([]string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	c.Assert(err, IsNil)
+
+	c.Assert(custom.called, Equals, true)
+	c.Assert(custom.calledHeight, Equals, int64(1234))
+	c.Assert(custom.calledVersion, Equals, "1.0.0")
+	c.Assert(custom.calledPoolPK.Equals(poolPK), Equals, true)
+	c.Assert(custom.calledPoolED.IsEmpty(), Equals, true)
+	c.Assert(len(custom.calledKeys), Equals, 2)
+}
+
+func (s *SignSuite) TestRunCustomKeygenHooksFailClosed(c *C) {
+	bridge := fakeBridge{s.bridge}
+	custom := &MockCustomKeygenChainClient{
+		MockChainClient: &MockChainClient{},
+		retErr:          errors.New("boom"),
+	}
+
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.ETHChain: custom,
+		},
+		thorchainBridge: bridge,
+		logger:          log.With().Str("module", "signer").Logger(),
+	}
+
+	poolPK := types2.GetRandomPubKey()
+	poolED := common.EmptyPubKey
+
+	err := sign.runCustomKeygenHooks([]string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "custom keygen failed for ETH"), Equals, true)
 }

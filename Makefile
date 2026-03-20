@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean
+.PHONY: build build-xmr-frost-signer test test-xmr-frost test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -72,6 +72,7 @@ TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
 RUN_FLAG := -run=$(RUN)
 endif
+XMR_E2E_RUN := TestSeraiDistributedSignAndSubmitFlow|TestSeraiDistributedSignFailsClosedWhenThresholdCannotBeMet|TestKeygenFailsClosedWhenPeerCoordinationFails|TestXMRScannerInboundDeferredReferenceMemoAttribution|TestXMRScannerInboundMemolessDeferredAttribution|TestXMRReportSolvencyMultiVaultAccounting
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
 
@@ -159,6 +160,15 @@ docs-dev: docs-init
 build:
 	go build ${BUILD_FLAGS} ${BINARIES}
 
+build-xmr-frost-signer:
+	cd xmr-frost-signer && cargo build --release
+
+test-xmr-frost:
+	cd xmr-frost-signer && cargo test
+
+test-xmr-frost-e2e:
+	GOTOOLCHAIN=go1.23.10 go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'
+
 install:
 	go install ${BUILD_FLAGS} ${BINARIES}
 
@@ -214,6 +224,9 @@ test-all: test-network-specific
 
 test-go-tss:
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
+
+test-xmr-e2e:
+	@go test -count=1 ./bifrost/pkg/chainclients/monero -run '${XMR_E2E_RUN}'
 
 test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common

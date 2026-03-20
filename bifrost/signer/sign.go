@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/observer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -57,6 +59,34 @@ type Signer struct {
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
 	pipeline              *pipeline
+}
+
+type vaultLocker interface {
+	GetVaultLock(vaultPubKey string) *sync.Mutex
+}
+
+type vaultLockKeyResolver interface {
+	GetVaultLockKey(tx types.TxOutItem) string
+}
+
+func chainVaultLock(chain chainclients.ChainClient, vaultPubKey string) *sync.Mutex {
+	lockable, ok := chain.(vaultLocker)
+	if !ok {
+		return nil
+	}
+	return lockable.GetVaultLock(vaultPubKey)
+}
+
+func chainVaultLockKey(chain chainclients.ChainClient, tx types.TxOutItem) string {
+	resolver, ok := chain.(vaultLockKeyResolver)
+	if !ok {
+		return tx.VaultPubKey.String()
+	}
+	key := strings.TrimSpace(resolver.GetVaultLockKey(tx))
+	if key == "" {
+		return tx.VaultPubKey.String()
+	}
+	return key
 }
 
 // NewSigner create a new instance of signer
@@ -391,6 +421,20 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries")
 		}
 
+		// Give chain clients with custom keygen logic a chance to initialize chain-specific
+		// signer state (for example Monero multisig address mapping) before keygen is finalized.
+		if !pubKey.Secp256k1.IsEmpty() {
+			if err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519); err != nil {
+				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
+				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
+				if s.scheduleKeygenRetry(keygenBlock) {
+					return
+				}
+				s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries after custom keygen hook failure")
+				return
+			}
+		}
+
 		// generate a verification signature to ensure we can sign with the new key
 		secp256k1Sig := s.secp256k1VerificationSignature(pubKey.Secp256k1)
 
@@ -410,6 +454,55 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			s.pubkeyMgr.AddPubKey(pk, false, common.SigningAlgoSecp256k1)
 		}
 	}
+}
+
+func (s *Signer) runCustomKeygenHooks(
+	keys []string,
+	blockHeight int64,
+	poolPubKey common.PubKey,
+	poolPubKeyEddsa common.PubKey,
+) error {
+	version := ""
+	if v, err := s.thorchainBridge.GetThorchainVersion(); err != nil {
+		s.logger.Debug().Err(err).Msg("fail to fetch thorchain version for custom keygen")
+	} else {
+		version = v.String()
+	}
+
+	var customHookErr error
+	for chainID, chainClient := range s.chains {
+		custom, ok := chainClient.(chainclients.CustomKeygenChainClient)
+		if !ok || !custom.CustomKeygen() {
+			continue
+		}
+
+		chainAddress, blame, err := custom.Keygen(chainclienttypes.CustomKeygenRequest{
+			Members:          keys,
+			BlockHeight:      blockHeight,
+			ThorchainVersion: version,
+			PoolPubKey:       poolPubKey,
+			PoolPubKeyEddsa:  poolPubKeyEddsa,
+		})
+		if err != nil {
+			s.logger.Error().Err(err).Str("chain", chainID.String()).Msg("custom keygen failed")
+			for _, b := range blame {
+				s.logger.Error().
+					Str("chain", chainID.String()).
+					Str("reason", b.FailReason).
+					Interface("nodes", b.BlameNodes).
+					Msg("custom keygen blame")
+			}
+			customHookErr = errors.Join(customHookErr, fmt.Errorf("custom keygen failed for %s: %w", chainID.String(), err))
+			continue
+		}
+		if !chainAddress.IsEmpty() {
+			s.logger.Info().
+				Str("chain", chainID.String()).
+				Str("address", chainAddress.String()).
+				Msg("custom keygen produced chain address")
+		}
+	}
+	return customHookErr
 }
 
 // secp256k1VerificationSignature will make a best effort to sign the public key with
@@ -653,10 +746,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		}
 	}
 
-	// If this chain provides a vault lock, hold it across sign and broadcast to avoid
-	// concurrent UTXO selection or local double-spend on ambiguous broadcast errors.
-	if locker, ok := chain.(interface{ GetVaultLock(string) *sync.Mutex }); ok {
-		lock := locker.GetVaultLock(tx.VaultPubKey.String())
+	// If the chain client exposes a vault lock, hold it for sign+broadcast so
+	// chain-specific consolidation routines cannot race normal outbounds.
+	lockKey := chainVaultLockKey(chain, tx)
+	if lock := chainVaultLock(chain, lockKey); lock != nil {
 		lock.Lock()
 		defer lock.Unlock()
 	}
@@ -670,6 +763,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		signedTx = item.SignedTx
 		observation = item.Observation
 	} else {
+		tx.SigningID = item.Key()
 		startKeySign := time.Now()
 		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
 		if err != nil {

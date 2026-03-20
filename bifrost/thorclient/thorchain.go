@@ -368,9 +368,17 @@ func (b *thorchainBridge) GetInboundOutbound(txIns common.ObservedTxs) (common.O
 
 		obAddr, err := tx.ObservedPubKey.GetAddress(chain)
 		if err != nil {
+			if chain.Equals(common.XMRChain) {
+				return nil, nil, fmt.Errorf("xmr observed vault pubkey %s is invalid: %w", tx.ObservedPubKey.String(), err)
+			}
 			b.logger.Err(err).Msgf("fail to parse observed pool address: %s", tx.ObservedPubKey.String())
 			continue
 		}
+
+		if chain.Equals(common.XMRChain) && obAddr.IsEmpty() {
+			return nil, nil, fmt.Errorf("xmr observed vault pubkey %s does not map to an address", tx.ObservedPubKey.String())
+		}
+
 		vaultToAddress := tx.Tx.ToAddress.Equals(obAddr)
 		vaultFromAddress := tx.Tx.FromAddress.Equals(obAddr)
 		var inInboundArray, inOutboundArray bool

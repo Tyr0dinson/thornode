@@ -14,6 +14,9 @@ volumes:
   bifrost-cat:
   bifrost-fox:
   bifrost-pig:
+  monero-daemon:
+  monero-wallet:
+  xmr-frost-data:
 
 ########################################################################################
 # Services
@@ -173,6 +176,9 @@ services:
       - dogecoin
       - gaia
       - litecoin
+      - monero-daemon
+      - monero-wallet-rpc
+      - xmr-frost-signer
       - tron-supernode
       - tron-fullnode
       - thornode
@@ -248,6 +254,14 @@ services:
       BIFROST_CHAINS_XRP_DISABLED: "${BIFROST_CHAINS_XRP_DISABLED:-false}"
       BIFROST_CHAINS_XRP_RPC_HOST: http://xrp:5005
       BIFROST_CHAINS_XRP_CHAIN_NETWORK: "1234"
+
+      # enable xmr
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_XMR_RPC_HOST: http://monero-daemon:18081
+      BIFROST_CHAINS_XMR_CHAIN_HOST: http://monero-wallet-rpc:18082
+      BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
+      BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
 
       # enable tron
       BIFROST_CHAINS_TRON_DISABLED: "${BIFROST_CHAINS_TRON_DISABLED:-false}"
@@ -636,6 +650,112 @@ services:
     volumes:
       - "../scripts:/docker/scripts"
     entrypoint: /docker/scripts/xrp/start-xrp.sh
+
+  # ------------------------------ monero ------------------------------
+
+  monero-daemon:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    build:
+      context: ./mocknet/monero
+      dockerfile: Dockerfile
+    image: thornode-monero-mocknet:latest
+    restart: unless-stopped
+    entrypoint: /usr/local/bin/daemon-entrypoint.sh
+    volumes:
+      - monero-daemon:/var/lib/monero
+    ports:
+      - 18081:18081
+      - 18080:18080
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-H",
+          "Content-Type: application/json",
+          "-d",
+          "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_block_count\"}",
+          "http://localhost:18081/json_rpc",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+  monero-wallet-rpc:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: thornode-monero-mocknet:latest
+    restart: unless-stopped
+    depends_on:
+      monero-daemon:
+        condition: service_healthy
+    entrypoint: /usr/local/bin/wallet-entrypoint.sh
+    environment:
+      XMR_DAEMON_HOST: monero-daemon
+      XMR_DAEMON_PORT: "18081"
+      XMR_WALLET_NAME: mocknet
+      XMR_WALLET_PASSWORD: password
+    volumes:
+      - monero-wallet:/var/lib/monero-wallet
+    ports:
+      - 18082:18082
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-H",
+          "Content-Type: application/json",
+          "-d",
+          "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_address\"}",
+          "http://localhost:18082/json_rpc",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 15s
+
+  # ------------------------------ xmr-frost-signer ------------------------------
+
+  xmr-frost-signer:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    build:
+      context: ../../
+      dockerfile: build/docker/xmr-frost-signer/Dockerfile
+    image: thornode-xmr-frost-signer:latest
+    restart: unless-stopped
+    depends_on:
+      monero-daemon:
+        condition: service_healthy
+    environment:
+      XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
+      XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
+      XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
+      XMR_FROST_CHAIN_NETWORK: "mocknet"
+      XMR_FROST_STORE_SECRET: "${XMR_FROST_STORE_SECRET:-frost-mocknet-secret}"
+      XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
+    volumes:
+      - xmr-frost-data:/var/lib/xmr-frost
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "http://localhost:8283/health",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
   # ------------------------------ binance-smart ------------------------------
 

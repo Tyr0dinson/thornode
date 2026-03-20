@@ -149,6 +149,15 @@ unit-tests:
     paths:
       - coverage*
 
+xmr-e2e-gates:
+  rules:
+    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
+      when: never
+    - *rules
+  stage: test
+  script:
+    - make test-xmr-e2e
+
 lint:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
@@ -263,6 +272,18 @@ go-tss:
   stage: test
   script:
     - make test-go-tss
+
+xmr-frost-signer:
+  rules:
+    - changes:
+        paths:
+          - xmr-frost-signer/**/*
+  stage: test
+  image: rust:1.77-slim
+  before_script:
+    - apt-get update && apt-get install -y pkg-config libssl-dev
+  script:
+    - cd xmr-frost-signer && cargo test
 
 pages:
   rules:

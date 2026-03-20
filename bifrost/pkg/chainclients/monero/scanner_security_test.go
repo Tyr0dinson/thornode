@@ -1,0 +1,147 @@
+package monero
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/rs/zerolog/log"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/storage"
+	"go.uber.org/atomic"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+)
+
+func TestFetchTxsAggregatesDuplicateIncomingTxIDs(t *testing.T) {
+	t.Parallel()
+
+	dupTxID := strings.Repeat("a", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:    dupTxID,
+				Address: vaultAddr.String(),
+				Amount:  uint64(2 * moneroAtomicToThorchain),
+				Height:  100,
+				Note:    "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+			},
+			{
+				TxID:    dupTxID,
+				Address: vaultAddr.String(),
+				Amount:  uint64(3 * moneroAtomicToThorchain),
+				Height:  100,
+				Note:    "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+			},
+		},
+		nil,
+		[]string{vaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected duplicate txid entries to collapse to one observation, got %d", len(txIn.TxArray))
+	}
+	amount := txIn.TxArray[0].Coins.GetCoin(common.XMRAsset).Amount
+	if !amount.Equal(cosmos.NewUint(5)) {
+		t.Fatalf("expected merged amount 5, got %s", amount)
+	}
+}
+
+func TestFetchTxsFailsClosedOnReorgProcessingError(t *testing.T) {
+	t.Parallel()
+
+	syncCalls := atomic.NewInt32(0)
+	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/block/101":
+			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+				Height:       101,
+				Reward:       defaultCoinbaseValue,
+				Hash:         "hash-101",
+				PreviousHash: "canonical-100",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/block/100":
+			http.Error(w, "reorg confirmation failed", http.StatusInternalServerError)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
+			syncCalls.Inc()
+			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	if err != nil {
+		t.Fatalf("open in-memory leveldb: %v", err)
+	}
+	defer db.Close()
+
+	reorgStore := NewReorgStore(db)
+	if err := reorgStore.Set(&reorgBlockMeta{
+		Height:               100,
+		BlockHash:            "stale-100",
+		PreviousHash:         "hash-99",
+		CustomerTransactions: []string{"tx-drop"},
+	}); err != nil {
+		t.Fatalf("set reorg meta: %v", err)
+	}
+
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{asgards: ttypes.Vaults{}},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+	scanner.SetReorgStore(reorgStore)
+
+	_, err = scanner.FetchTxs(101, 101)
+	if err == nil {
+		t.Fatal("expected reorg processing error to abort block processing")
+	}
+	if syncCalls.Load() != 0 {
+		t.Fatalf("expected scanner sync to be skipped after reorg failure, got %d calls", syncCalls.Load())
+	}
+}

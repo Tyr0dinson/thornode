@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -167,6 +168,82 @@ func (s *ThorchainSuite) TestSign(c *C) {
 	_, out, err := s.bridge.GetInboundOutbound(common.ObservedTxs{tx})
 	c.Assert(out, NotNil)
 	c.Assert(err, IsNil)
+}
+
+func (s *ThorchainSuite) TestGetInboundOutboundXMRRequiresDerivableObservedAddress(c *C) {
+	pk := stypes.GetRandomPubKey()
+	tx := common.NewObservedTx(
+		common.Tx{
+			Chain: common.XMRChain,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(123400000)),
+			},
+			FromAddress: common.Address(common.XMRChecksummedDummyAddress('8')),
+			ToAddress:   common.Address(common.XMRChecksummedDummyAddress('4')),
+		},
+		1,
+		pk,
+		1,
+	)
+
+	_, _, err := s.bridge.GetInboundOutbound(common.ObservedTxs{tx})
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "xmr observed vault pubkey"), Equals, true)
+}
+
+func (s *ThorchainSuite) TestGetInboundOutboundXMRInboundWithEddsaObservedPubKey(c *C) {
+	pk, err := common.NewPubKeyFromCrypto(cometed25519.GenPrivKey().PubKey())
+	c.Assert(err, IsNil)
+	vaultAddr, err := pk.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	tx := common.NewObservedTx(
+		common.Tx{
+			Chain: common.XMRChain,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(123400000)),
+			},
+			Memo:        "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+			FromAddress: common.Address(common.XMRChecksummedDummyAddress('8')),
+			ToAddress:   vaultAddr,
+		},
+		1,
+		pk,
+		1,
+	)
+
+	in, out, err := s.bridge.GetInboundOutbound(common.ObservedTxs{tx})
+	c.Assert(err, IsNil)
+	c.Assert(in, HasLen, 1)
+	c.Assert(out, HasLen, 0)
+}
+
+func (s *ThorchainSuite) TestGetInboundOutboundXMROutboundWithEddsaObservedPubKey(c *C) {
+	pk, err := common.NewPubKeyFromCrypto(cometed25519.GenPrivKey().PubKey())
+	c.Assert(err, IsNil)
+	vaultAddr, err := pk.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	tx := common.NewObservedTx(
+		common.Tx{
+			Chain: common.XMRChain,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(123400000)),
+			},
+			Memo:        "OUT:ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890",
+			FromAddress: vaultAddr,
+			ToAddress:   common.Address(common.XMRChecksummedDummyAddress('8')),
+		},
+		1,
+		pk,
+		100,
+	)
+
+	in, out, err := s.bridge.GetInboundOutbound(common.ObservedTxs{tx})
+	c.Assert(err, IsNil)
+	c.Assert(in, HasLen, 0)
+	c.Assert(out, HasLen, 1)
+	c.Assert(out[0].FinaliseHeight > out[0].BlockHeight, Equals, true)
 }
 
 func (ThorchainSuite) TestNewThorchainBridge(c *C) {

@@ -283,7 +283,7 @@ func handleObservedTxInQuorum(
 	// construct msg from memo
 	m, txErr := processOneTxIn(ctx, k, voter.Tx, signer)
 	if txErr != nil {
-		ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
+		ctx.Logger().Error("fail to process inbound tx", "error", txErr, "tx hash", tx.Tx.ID.String())
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}

@@ -1,0 +1,771 @@
+package monero
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/rs/zerolog"
+	"go.uber.org/atomic"
+
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+)
+
+const (
+	// Monero uses 1e12 atomic units and THORChain uses 1e8 decimals.
+	moneroAtomicToThorchain = 10000
+)
+
+// Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
+type Scanner struct {
+	logger          zerolog.Logger
+	frostSigner     *FrostSigner
+	bridge          thorclient.ThorchainBridge
+	chain           common.Chain
+	localNodePubKey common.PubKey
+	reorgStore      *ReorgStore
+
+	currentBlockHeight *atomic.Int64
+	lastFee            *atomic.Uint64
+	globalErrataQueue  chan<- stypes.ErrataBlock
+	maxReorgRescan     int64
+
+	asgardMu       sync.RWMutex
+	asgardLookup   map[string]common.PubKey
+	asgardUpdated  time.Time
+	manualAddrByPK map[string]string
+	manualPKByAddr map[string]common.PubKey
+
+	mempoolMu   sync.Mutex
+	mempoolSeen map[string]struct{}
+}
+
+func NewScanner(
+	logger zerolog.Logger,
+	frostSigner *FrostSigner,
+	bridge thorclient.ThorchainBridge,
+	chain common.Chain,
+	localNodePubKey common.PubKey,
+	maxReorgRescan int64,
+) *Scanner {
+	return &Scanner{
+		logger:             logger,
+		frostSigner:        frostSigner,
+		bridge:             bridge,
+		chain:              chain,
+		localNodePubKey:    localNodePubKey,
+		currentBlockHeight: atomic.NewInt64(0),
+		lastFee:            atomic.NewUint64(0),
+		maxReorgRescan:     maxReorgRescan,
+		asgardLookup:       make(map[string]common.PubKey),
+		manualAddrByPK:     make(map[string]string),
+		manualPKByAddr:     make(map[string]common.PubKey),
+		mempoolSeen:        make(map[string]struct{}),
+	}
+}
+
+func (s *Scanner) SetVaultAddress(vaultPubKey common.PubKey, address string) {
+	if vaultPubKey.IsEmpty() || strings.TrimSpace(address) == "" {
+		return
+	}
+	derived, err := vaultPubKey.GetAddress(s.chain)
+	if err != nil || derived.IsEmpty() {
+		s.logger.Debug().Err(err).Str("vault_pubkey", vaultPubKey.String()).Msg("skip manual monero vault mapping: cannot derive address from pubkey")
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(derived.String()), strings.TrimSpace(address)) {
+		s.logger.Warn().
+			Str("vault_pubkey", vaultPubKey.String()).
+			Str("provided_address", strings.TrimSpace(address)).
+			Str("derived_address", derived.String()).
+			Msg("rejecting manual monero vault mapping that does not match derived vault address")
+		return
+	}
+	s.asgardMu.Lock()
+	s.manualAddrByPK[vaultPubKey.String()] = derived.String()
+	s.manualPKByAddr[derived.String()] = vaultPubKey
+	s.asgardMu.Unlock()
+}
+
+func (s *Scanner) GetVaultAddress(vaultPubKey common.PubKey) (string, bool) {
+	if vaultPubKey.IsEmpty() {
+		return "", false
+	}
+	s.asgardMu.RLock()
+	addr, ok := s.manualAddrByPK[vaultPubKey.String()]
+	s.asgardMu.RUnlock()
+	return addr, ok
+}
+
+func (s *Scanner) CurrentHeight() int64 {
+	return s.currentBlockHeight.Load()
+}
+
+func (s *Scanner) SetErrataQueue(globalErrataQueue chan<- stypes.ErrataBlock) {
+	s.globalErrataQueue = globalErrataQueue
+}
+
+func (s *Scanner) SetReorgStore(store *ReorgStore) {
+	s.reorgStore = store
+}
+
+// FetchMemPool emits only outbound mempool transfers with explicit sender metadata.
+// Inbound mempool attribution is intentionally unsupported for Monero.
+func (s *Scanner) FetchMemPool(height int64) (stypes.TxIn, error) {
+	txIn := stypes.TxIn{
+		Chain:   common.XMRChain,
+		MemPool: true,
+	}
+	if s.frostSigner == nil {
+		return txIn, nil
+	}
+
+	resp, err := s.frostSigner.GetMemPoolTransfers()
+	if err != nil {
+		return txIn, fmt.Errorf("fail to get monero mempool transfers: %w", err)
+	}
+	if len(resp.Outgoing) == 0 {
+		return txIn, nil
+	}
+
+	candidate := len(resp.Outgoing)
+	emitted := 0
+	deduped := 0
+	skipped := 0
+
+	for _, transfer := range resp.Outgoing {
+		to := strings.TrimSpace(transfer.Address)
+		if to == "" {
+			skipped++
+			continue
+		}
+		_, err = common.NewAddress(to)
+		if err != nil {
+			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip mempool outgoing transfer with invalid to address")
+			skipped++
+			continue
+		}
+
+		sender, vaultPubKey := s.resolveOutgoingSender(transfer)
+		if sender == "" || vaultPubKey.IsEmpty() {
+			skipped++
+			continue
+		}
+		item, ok := s.transferToTxInItem(transfer, sender, to, vaultPubKey, strings.TrimSpace(transfer.Note), height)
+		if !ok {
+			skipped++
+			continue
+		}
+		if !s.tryMarkMempoolSeen(item.Tx) {
+			deduped++
+			continue
+		}
+
+		txIn.TxArray = append(txIn.TxArray, item)
+		emitted++
+	}
+
+	if candidate > 0 {
+		s.logger.Info().
+			Int("candidate", candidate).
+			Int("emitted", emitted).
+			Int("deduped", deduped).
+			Int("skipped", skipped).
+			Msg("processed monero mempool outgoing transfers")
+	}
+
+	return txIn, nil
+}
+
+func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
+	txIn := stypes.TxIn{Chain: common.XMRChain}
+	if s.frostSigner == nil {
+		return txIn, fmt.Errorf("monero scanner requires frost signer for chain queries")
+	}
+
+	block, err := s.frostSigner.GetChainBlock(fetchHeight)
+	if err != nil {
+		if errors.Is(err, ErrFrostUnavailableBlock) {
+			return txIn, btypes.ErrUnavailableBlock
+		}
+		return txIn, fmt.Errorf("fail to fetch monero block %d: %w", fetchHeight, err)
+	}
+
+	s.currentBlockHeight.Store(fetchHeight)
+	if feeRate := averageNetworkFeeFromBlock(block.Reward, len(block.TxHashes)); feeRate > 0 {
+		s.lastFee.Store(feeRate)
+	}
+
+	if items, reorgErr := s.processReorg(block, chainHeight); reorgErr != nil {
+		if errors.Is(reorgErr, btypes.ErrUnavailableBlock) {
+			return txIn, btypes.ErrUnavailableBlock
+		}
+		return txIn, fmt.Errorf("fail to process monero reorg at %d: %w", fetchHeight, reorgErr)
+	} else if len(items) > 0 {
+		txIn.TxArray = append(txIn.TxArray, items...)
+	}
+
+	currentItems, err := s.fetchTransfersByHeight(fetchHeight, chainHeight, block.Hash, block.PreviousHash)
+	if err != nil {
+		return txIn, err
+	}
+	if len(currentItems) > 0 {
+		txIn.TxArray = append(txIn.TxArray, currentItems...)
+	}
+	if len(txIn.TxArray) > 0 {
+		txIDs := make([]string, 0, len(txIn.TxArray))
+		for _, item := range txIn.TxArray {
+			if item == nil || strings.TrimSpace(item.Tx) == "" {
+				continue
+			}
+			txIDs = append(txIDs, item.Tx)
+		}
+		s.clearMempoolSeen(txIDs)
+	}
+
+	if err = s.saveBlockMeta(block, fetchHeight, currentItems); err != nil {
+		return txIn, err
+	}
+
+	if s.reorgStore != nil && s.maxReorgRescan > 0 {
+		pruneHeight := fetchHeight - s.maxReorgRescan - 1
+		if pruneHeight >= 0 {
+			if pruneErr := s.reorgStore.Delete(pruneHeight); pruneErr != nil {
+				s.logger.Debug().Err(pruneErr).Int64("height", pruneHeight).Msg("fail to prune monero reorg block meta")
+			}
+		}
+	}
+	return txIn, nil
+}
+
+func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHash, parentHash string) ([]*stypes.TxInItem, error) {
+	if s.frostSigner == nil || s.bridge == nil {
+		return nil, nil
+	}
+	if err := s.refreshAsgardLookup(); err != nil {
+		s.logger.Debug().Err(err).Msg("fail to refresh asgard lookup")
+		return nil, nil
+	}
+
+	resp, err := s.frostSigner.SyncTransfersByHeight(fetchHeight, chainHeight, blockHash, parentHash, s.maxReorgRescan)
+	if err != nil {
+		if isFrostScannerHashMismatchErr(err) {
+			return nil, btypes.ErrUnavailableBlock
+		}
+		return nil, fmt.Errorf("fail to get monero transfers at %d: %w", fetchHeight, err)
+	}
+	if len(resp.Incoming)+len(resp.Outgoing) == 0 {
+		return nil, nil
+	}
+
+	txItems := make([]*stypes.TxInItem, 0, len(resp.Incoming)+len(resp.Outgoing))
+	for _, transfer := range resp.Incoming {
+		to := strings.TrimSpace(transfer.Address)
+		if to == "" {
+			continue
+		}
+		_, err = common.NewAddress(to)
+		if err != nil {
+			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip incoming transfer with invalid to address")
+			continue
+		}
+
+		vaultPubKey, ok := s.getVaultForAddress(to)
+		if !ok {
+			continue
+		}
+
+		memoText := strings.TrimSpace(transfer.Note)
+		if memoText == "" {
+			memoText, err = s.bridge.GetReferenceMemoByTxHash(transfer.TxID)
+			if err != nil {
+				s.logger.Debug().Err(err).Str("txid", transfer.TxID).Msg("incoming transfer has no reference memo yet")
+			}
+			memoText = strings.TrimSpace(memoText)
+		}
+
+		item, ok := s.transferToTxInItem(transfer, unknownSenderAddress(transfer.TxID, to), to, vaultPubKey, memoText, fetchHeight)
+		if !ok {
+			continue
+		}
+		txItems = append(txItems, item)
+	}
+
+	for _, transfer := range resp.Outgoing {
+		to := strings.TrimSpace(transfer.Address)
+		if to == "" {
+			continue
+		}
+		_, err = common.NewAddress(to)
+		if err != nil {
+			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip outgoing transfer with invalid to address")
+			continue
+		}
+
+		sender, vaultPubKey := s.resolveOutgoingSender(transfer)
+		if sender == "" || vaultPubKey.IsEmpty() {
+			continue
+		}
+
+		memoText := strings.TrimSpace(transfer.Note)
+		if memoText == "" {
+			memoText, _ = s.bridge.GetReferenceMemoByTxHash(transfer.TxID)
+			memoText = strings.TrimSpace(memoText)
+		}
+
+		item, ok := s.transferToTxInItem(transfer, sender, to, vaultPubKey, memoText, fetchHeight)
+		if !ok {
+			continue
+		}
+		txItems = append(txItems, item)
+	}
+
+	return s.dedupeTxInItemsByTxID(txItems), nil
+}
+
+func (s *Scanner) resolveOutgoingSender(transfer xmrFrostTransferEntry) (string, common.PubKey) {
+	txID := strings.TrimSpace(transfer.TxID)
+	explicitSender := strings.TrimSpace(transfer.FromAddress)
+	explicitVault := strings.TrimSpace(transfer.VaultPubKey)
+
+	if explicitSender == "" {
+		s.logger.Debug().Str("txid", txID).Msg("skip outgoing transfer: missing explicit from_address")
+		return "", common.EmptyPubKey
+	}
+	sender, err := common.NewAddress(explicitSender)
+	if err != nil {
+		s.logger.Debug().Err(err).Str("txid", txID).Str("from", explicitSender).Msg("skip outgoing transfer: invalid explicit from_address")
+		return "", common.EmptyPubKey
+	}
+	if explicitVault == "" {
+		s.logger.Debug().Str("txid", txID).Str("from", sender.String()).Msg("skip outgoing transfer: missing explicit vault_pub_key")
+		return "", common.EmptyPubKey
+	}
+	vaultPubKey, err := common.NewPubKey(explicitVault)
+	if err != nil || vaultPubKey.IsEmpty() {
+		s.logger.Debug().Err(err).Str("txid", txID).Str("vault_pub_key", explicitVault).Msg("skip outgoing transfer: invalid explicit vault_pub_key")
+		return "", common.EmptyPubKey
+	}
+	deriveChain := s.chain
+	if deriveChain.IsEmpty() {
+		deriveChain = common.XMRChain
+	}
+	derived, err := vaultPubKey.GetAddress(deriveChain)
+	if err != nil || derived.IsEmpty() {
+		s.logger.Debug().Err(err).Str("txid", txID).Str("vault_pub_key", vaultPubKey.String()).Msg("skip outgoing transfer: cannot derive sender address from vault_pub_key")
+		return "", common.EmptyPubKey
+	}
+	if !strings.EqualFold(sender.String(), derived.String()) {
+		s.logger.Warn().
+			Str("txid", txID).
+			Str("from_address", sender.String()).
+			Str("vault_pub_key", vaultPubKey.String()).
+			Str("derived_address", derived.String()).
+			Msg("skip outgoing transfer: from_address does not match derived vault address")
+		return "", common.EmptyPubKey
+	}
+
+	return sender.String(), vaultPubKey
+}
+
+func (s *Scanner) GetHeight() (int64, error) {
+	if s.frostSigner == nil {
+		return 0, fmt.Errorf("monero scanner requires frost signer for chain queries")
+	}
+
+	height, err := s.frostSigner.GetChainHeight()
+	if err != nil {
+		return 0, err
+	}
+	s.currentBlockHeight.Store(height)
+	return height, nil
+}
+
+func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
+	return 1, s.lastFee.Load()
+}
+
+func averageNetworkFeeFromBlock(reward uint64, txCount int) uint64 {
+	if txCount <= 0 || reward <= defaultCoinbaseValue {
+		return 0
+	}
+
+	totalFeesAtomic := reward - defaultCoinbaseValue
+	averageFeeAtomic := totalFeesAtomic / uint64(txCount)
+	return averageFeeAtomic / moneroAtomicToThorchain
+}
+
+func (s *Scanner) processReorg(block chainBlock, chainHeight int64) ([]*stypes.TxInItem, error) {
+	if s.reorgStore == nil || block.Hash == "" || block.PreviousHash == "" {
+		return nil, nil
+	}
+	previousHeight := block.Height - 1
+	if block.Height <= 0 {
+		previousHeight = s.currentBlockHeight.Load() - 1
+	}
+	if previousHeight < 0 {
+		return nil, nil
+	}
+
+	prevBlockMeta, err := s.reorgStore.Get(previousHeight)
+	if err != nil {
+		return nil, err
+	}
+	if prevBlockMeta == nil || strings.EqualFold(prevBlockMeta.BlockHash, block.PreviousHash) {
+		return nil, nil
+	}
+
+	s.logger.Warn().
+		Int64("height", previousHeight+1).
+		Int64("previous_height", previousHeight).
+		Str("expected_previous_hash", prevBlockMeta.BlockHash).
+		Str("actual_previous_hash", block.PreviousHash).
+		Msg("monero reorg detected")
+
+	reorgHeights, err := s.reConfirmTx(previousHeight + 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(reorgHeights) == 0 {
+		return nil, nil
+	}
+
+	reScannedItems := make([]*stypes.TxInItem, 0)
+	for _, height := range reorgHeights {
+		reorgBlock, blockErr := s.frostSigner.GetChainBlock(height)
+		if blockErr != nil {
+			if errors.Is(blockErr, ErrFrostUnavailableBlock) {
+				return nil, btypes.ErrUnavailableBlock
+			}
+			s.logger.Error().Err(blockErr).Int64("height", height).Msg("fail to fetch monero block during reorg rescan")
+			continue
+		}
+
+		items, transferErr := s.fetchTransfersByHeight(height, chainHeight, reorgBlock.Hash, reorgBlock.PreviousHash)
+		if transferErr != nil {
+			if errors.Is(transferErr, btypes.ErrUnavailableBlock) {
+				return nil, btypes.ErrUnavailableBlock
+			}
+			s.logger.Error().Err(transferErr).Int64("height", height).Msg("fail to fetch monero transfers during reorg rescan")
+			continue
+		}
+
+		reScannedItems = append(reScannedItems, items...)
+		if saveErr := s.saveBlockMeta(reorgBlock, height, items); saveErr != nil {
+			return nil, saveErr
+		}
+	}
+
+	return reScannedItems, nil
+}
+
+func (s *Scanner) reConfirmTx(height int64) ([]int64, error) {
+	if s.reorgStore == nil {
+		return nil, nil
+	}
+
+	rescanHeights := make([]int64, 0)
+	earliestHeight := height - s.maxReorgRescan
+	if earliestHeight < 0 {
+		earliestHeight = 0
+	}
+
+	for i := height - 1; i >= earliestHeight; i-- {
+		blockMeta, err := s.reorgStore.Get(i)
+		if err != nil {
+			return nil, err
+		}
+		if blockMeta == nil {
+			continue
+		}
+
+		block, err := s.frostSigner.GetChainBlock(i)
+		if err != nil {
+			return nil, fmt.Errorf("fail to fetch monero block %d during reorg check: %w", i, err)
+		}
+		if strings.EqualFold(blockMeta.BlockHash, block.Hash) {
+			break
+		}
+
+		s.logger.Info().
+			Int64("height", i).
+			Str("recorded_hash", blockMeta.BlockHash).
+			Str("canonical_hash", block.Hash).
+			Msg("reconfirming monero block")
+
+		errataTxs := make([]stypes.ErrataTx, 0)
+		for _, tx := range blockMeta.CustomerTransactions {
+			txExists, confirmErr := s.frostSigner.TxExists(tx)
+			if confirmErr != nil {
+				s.logger.Debug().Err(confirmErr).Str("txid", tx).Msg("unable to confirm monero tx existence during reorg; skipping errata")
+				continue
+			}
+			if txExists {
+				continue
+			}
+
+			errataTxs = append(errataTxs, stypes.ErrataTx{
+				TxID:  common.TxID(tx),
+				Chain: s.chain,
+			})
+		}
+		if len(errataTxs) > 0 && s.globalErrataQueue != nil {
+			s.globalErrataQueue <- stypes.ErrataBlock{
+				Height: i,
+				Txs:    errataTxs,
+			}
+		}
+
+		rescanHeights = append(rescanHeights, i)
+		blockMeta.BlockHash = block.Hash
+		blockMeta.PreviousHash = block.PreviousHash
+		blockMeta.CustomerTransactions = nil
+		if err = s.reorgStore.Set(blockMeta); err != nil {
+			return nil, err
+		}
+	}
+
+	return rescanHeights, nil
+}
+
+func (s *Scanner) saveBlockMeta(block chainBlock, height int64, items []*stypes.TxInItem) error {
+	if s.reorgStore == nil {
+		return nil
+	}
+	if block.Hash == "" {
+		s.logger.Debug().Int64("height", height).Msg("skip monero reorg block meta save: missing block hash")
+		return nil
+	}
+	txIDs := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if item == nil || item.Tx == "" {
+			continue
+		}
+		if _, ok := seen[item.Tx]; ok {
+			continue
+		}
+		seen[item.Tx] = struct{}{}
+		txIDs = append(txIDs, item.Tx)
+	}
+
+	return s.reorgStore.Set(&reorgBlockMeta{
+		Height:               height,
+		BlockHash:            block.Hash,
+		PreviousHash:         block.PreviousHash,
+		CustomerTransactions: txIDs,
+	})
+}
+
+func (s *Scanner) refreshAsgardLookup() error {
+	s.asgardMu.RLock()
+	if time.Since(s.asgardUpdated) < constants.ThorchainBlockTime && len(s.asgardLookup) > 0 {
+		s.asgardMu.RUnlock()
+		return nil
+	}
+	s.asgardMu.RUnlock()
+
+	vaults, err := s.bridge.GetAsgards()
+	if err != nil {
+		return fmt.Errorf("fail to get asgards: %w", err)
+	}
+
+	lookup := make(map[string]common.PubKey)
+	for _, vault := range vaults {
+		observedVault := vault.PubKeyEddsa
+		if observedVault.IsEmpty() {
+			continue
+		}
+		derived, addrErr := observedVault.GetAddress(s.chain)
+		if addrErr != nil || derived.IsEmpty() {
+			s.logger.Debug().Err(addrErr).Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with non-derivable monero address")
+			continue
+		}
+		lookup[derived.String()] = observedVault
+	}
+
+	s.asgardMu.Lock()
+	s.asgardLookup = lookup
+	s.asgardUpdated = time.Now()
+	s.asgardMu.Unlock()
+
+	return nil
+}
+
+func (s *Scanner) getNodeVaultCandidates(vaults ttypes.Vaults) []common.PubKey {
+	if s.localNodePubKey.IsEmpty() {
+		return nil
+	}
+	result := make([]common.PubKey, 0, len(vaults))
+	for _, vault := range vaults {
+		if vault.Status != ttypes.VaultStatus_ActiveVault && vault.Status != ttypes.VaultStatus_RetiringVault && vault.Status != ttypes.VaultStatus_InitVault {
+			continue
+		}
+		if !vault.Contains(s.localNodePubKey) {
+			continue
+		}
+		observedVault := vault.PubKeyEddsa
+		if observedVault.IsEmpty() {
+			continue
+		}
+		result = append(result, observedVault)
+	}
+	return result
+}
+
+func (s *Scanner) getVaultForAddress(addr string) (common.PubKey, bool) {
+	s.asgardMu.RLock()
+	defer s.asgardMu.RUnlock()
+	pk, ok := s.asgardLookup[addr]
+	return pk, ok
+}
+
+func (s *Scanner) transferToTxInItem(
+	transfer xmrFrostTransferEntry,
+	sender string,
+	to string,
+	vaultPubKey common.PubKey,
+	memo string,
+	fallbackHeight int64,
+) (*stypes.TxInItem, bool) {
+	if transfer.TxID == "" || sender == "" || to == "" || vaultPubKey.IsEmpty() {
+		return nil, false
+	}
+
+	amount := cosmos.NewUint(transfer.Amount / moneroAtomicToThorchain)
+	if amount.IsZero() {
+		return nil, false
+	}
+
+	fee := transfer.Fee / moneroAtomicToThorchain
+	if fee == 0 {
+		fee = s.lastFee.Load()
+	}
+
+	height := int64(transfer.Height)
+	if height <= 0 {
+		height = fallbackHeight
+	}
+
+	return stypes.NewTxInItem(
+		height,
+		transfer.TxID,
+		memo,
+		sender,
+		to,
+		common.NewCoins(common.NewCoin(common.XMRAsset, amount)),
+		common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(fee))},
+		vaultPubKey,
+		"",
+		"",
+		nil,
+	), true
+}
+
+func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxInItem {
+	if len(items) < 2 {
+		return items
+	}
+
+	merged := make(map[string]*stypes.TxInItem, len(items))
+	order := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		txID := normalizeTxID(item.Tx)
+		if txID == "" {
+			continue
+		}
+		existing, ok := merged[txID]
+		if !ok {
+			merged[txID] = item
+			order = append(order, txID)
+			continue
+		}
+
+		if existing.BlockHeight != item.BlockHeight ||
+			existing.Memo != item.Memo ||
+			existing.Sender != item.Sender ||
+			existing.To != item.To ||
+			!existing.ObservedVaultPubKey.Equals(item.ObservedVaultPubKey) {
+			s.logger.Debug().
+				Str("txid", item.Tx).
+				Str("existing_sender", existing.Sender).
+				Str("existing_to", existing.To).
+				Str("duplicate_sender", item.Sender).
+				Str("duplicate_to", item.To).
+				Msg("merging duplicate monero transfer with same txid")
+		}
+
+		existing.Coins = existing.Coins.Add(item.Coins...)
+		switch {
+		case len(existing.Gas) == 0:
+			existing.Gas = item.Gas
+		case len(item.Gas) > 0 && item.Gas[0].Amount.GT(existing.Gas[0].Amount):
+			existing.Gas = item.Gas
+		}
+	}
+
+	deduped := make([]*stypes.TxInItem, 0, len(order))
+	for _, txID := range order {
+		deduped = append(deduped, merged[txID])
+	}
+	return deduped
+}
+
+func unknownSenderAddress(txID, to string) string {
+	return common.XMRUnknownSenderAddress(txID, to)
+}
+
+func (s *Scanner) tryMarkMempoolSeen(txID string) bool {
+	normalized := normalizeTxID(txID)
+	if normalized == "" {
+		return false
+	}
+	s.mempoolMu.Lock()
+	defer s.mempoolMu.Unlock()
+	if _, ok := s.mempoolSeen[normalized]; ok {
+		return false
+	}
+	s.mempoolSeen[normalized] = struct{}{}
+	return true
+}
+
+func (s *Scanner) clearMempoolSeen(txIDs []string) {
+	if len(txIDs) == 0 {
+		return
+	}
+	s.mempoolMu.Lock()
+	defer s.mempoolMu.Unlock()
+	for _, txID := range txIDs {
+		normalized := normalizeTxID(txID)
+		if normalized == "" {
+			continue
+		}
+		delete(s.mempoolSeen, normalized)
+	}
+}
+
+func normalizeTxID(txID string) string {
+	return strings.ToLower(strings.TrimSpace(txID))
+}
+
+func IsUnavailableBlockErr(err error) bool {
+	return errors.Is(err, ErrFrostUnavailableBlock)
+}
+
+func isFrostScannerHashMismatchErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "scanner sync hash mismatch")
+}
