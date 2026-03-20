@@ -647,4 +647,6 @@ type KeeperStagedOutbound interface {
 	GetStagedOutboundIterator(ctx cosmos.Context) cosmos.Iterator
 	// GetStagedOutboundValue returns the total RUNE value and clout of all staged outbounds
 	GetStagedOutboundValue(ctx cosmos.Context) (cosmos.Uint, cosmos.Uint, error)
+	// RestoreStagedOutboundList writes an entire list to the store preserving StagedHeight (for genesis import)
+	RestoreStagedOutboundList(ctx cosmos.Context, list StagedOutboundList) error
 }

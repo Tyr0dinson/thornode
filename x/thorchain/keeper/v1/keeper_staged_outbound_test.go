@@ -214,6 +214,55 @@ func (s *KeeperStagedOutboundSuite) TestGetStagedOutboundValue(c *C) {
 	c.Check(cloutValue.String(), Equals, "50")
 }
 
+func (s *KeeperStagedOutboundSuite) TestRestoreStagedOutboundList(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	inHash := GetRandomTxHash()
+	originalStagedHeight := int64(42)
+
+	list := StagedOutboundList{
+		InHash: inHash,
+		Items: []StagedOutbound{
+			{
+				TxOutItem: TxOutItem{
+					Chain:       common.ETHChain,
+					ToAddress:   GetRandomETHAddress(),
+					VaultPubKey: GetRandomPubKey(),
+					Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+					Memo:        "OUT:test",
+					InHash:      inHash,
+				},
+				ScheduledHeight: 100,
+				StagedHeight:    originalStagedHeight,
+			},
+		},
+	}
+
+	// Restore the list directly
+	err := k.RestoreStagedOutboundList(ctx, list)
+	c.Assert(err, IsNil)
+
+	// Verify the staged height is preserved (not overwritten with ctx.BlockHeight())
+	outbounds, err := k.GetStagedOutbounds(ctx, inHash)
+	c.Assert(err, IsNil)
+	c.Assert(outbounds, HasLen, 1)
+	c.Check(outbounds[0].StagedHeight, Equals, originalStagedHeight)
+	c.Check(outbounds[0].ScheduledHeight, Equals, int64(100))
+}
+
+func (s *KeeperStagedOutboundSuite) TestRestoreStagedOutboundListEmptyInHash(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	list := StagedOutboundList{
+		InHash: common.TxID(""),
+		Items:  []StagedOutbound{},
+	}
+
+	err := k.RestoreStagedOutboundList(ctx, list)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Equals, "cannot restore staged outbound list with empty InHash")
+}
+
 func (s *KeeperStagedOutboundSuite) TestGetStagedOutboundValueEmpty(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
