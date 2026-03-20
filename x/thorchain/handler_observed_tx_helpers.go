@@ -40,7 +40,7 @@ func CreateMempoolRevertTxID(originalTxID common.TxID, actionIndex int) common.T
 }
 
 // GetOriginalFromMempoolRevertTxID recovers the original TxID from a mempool revert TxID.
-// It tries action indices 0-15 and returns the first match found in the keeper.
+// It tries action indices 0-15 and returns the first candidate with persisted voter data.
 func GetOriginalFromMempoolRevertTxID(ctx cosmos.Context, k keeper.Keeper, reverseTxID common.TxID) (common.TxID, bool) {
 	s := reverseTxID.String()
 	if len(s) != 64 {
@@ -63,8 +63,8 @@ func GetOriginalFromMempoolRevertTxID(ctx cosmos.Context, k keeper.Keeper, rever
 		}
 		originalTxID := common.TxID(string(runes))
 
-		// Check if voter exists
-		if _, err := k.GetObservedTxInVoter(ctx, originalTxID); err == nil {
+		// Check if the candidate has actual persisted voter data.
+		if voter, err := k.GetObservedTxInVoter(ctx, originalTxID); err == nil && !voter.IsEmpty() {
 			return originalTxID, true
 		}
 	}
@@ -2591,7 +2591,9 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 			continue
 		}
 
-		// External chain output - create reverse swap with chained donate memo
+		// External chain output - create a reverse swap and attach the donate action
+		// via PostSwapMemo so Tx.Memo remains a normal swap memo and | passthrough
+		// semantics remain reserved for outbound memo data.
 		txID := CreateMempoolRevertTxID(voter.TxID, i)
 
 		// Get max gas coin for the chain
@@ -2616,8 +2618,8 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 			return fmt.Errorf("fail to get vault address for THORChain: %w", err)
 		}
 
-		// Create a reverse swap with chained memo: swap back to source asset, then donate to pool
-		memo := fmt.Sprintf("=:%s:%s|DONATE:%s", sourceAsset, destAddress, sourceAsset.GetLayer1Asset())
+		swapMemo := fmt.Sprintf("=:%s:%s", sourceAsset, destAddress)
+		postSwapMemo := fmt.Sprintf("DONATE:%s", sourceAsset.GetLayer1Asset())
 
 		msg := MsgSwap{
 			Tx: common.Tx{
@@ -2627,10 +2629,11 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 				ToAddress:   vaultAddress,
 				Coins:       common.Coins{action.Coin},
 				Gas:         common.Gas{maxGasCoin},
-				Memo:        memo,
+				Memo:        swapMemo,
 			},
 			TargetAsset:             sourceAsset,
 			Destination:             destAddress,
+			PostSwapMemo:            postSwapMemo,
 			TradeTarget:             cosmos.ZeroUint(),
 			AggregatorTargetAddress: "",
 			AggregatorTargetLimit:   nil,
@@ -2647,7 +2650,8 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 			"from_asset", action.Coin.Asset,
 			"from_amount", action.Coin.Amount,
 			"to_asset", sourceAsset,
-			"memo", memo)
+			"memo", swapMemo,
+			"post_swap_memo", postSwapMemo)
 	}
 
 	// Delete all staged outbounds AFTER processing succeeds.
