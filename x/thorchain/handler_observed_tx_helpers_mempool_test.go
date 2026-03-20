@@ -6,11 +6,20 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 type HandlerObservedTxHelpersMempoolSuite struct{}
 
 var _ = Suite(&HandlerObservedTxHelpersMempoolSuite{})
+
+type failSwapQueueKeeper struct {
+	keeper.Keeper
+}
+
+func (k failSwapQueueKeeper) SetSwapQueueItem(_ cosmos.Context, _ MsgSwap, _ int) error {
+	return errKaboom
+}
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	ctx, mgr := setupManagerForTest(c)
@@ -73,7 +82,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	// Test 1: Successfully finalize outbounds
-	err := finalizeOutbounds(ctx, mgr, voter)
+	err := finalizeOutboundsAtomic(ctx, mgr, voter)
 	c.Assert(err, IsNil, Commentf("finalizeOutbounds failed: %v", err))
 
 	// Verify staged outbound was moved to real TxOut
@@ -98,7 +107,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, voter2.Actions[0], ctx.BlockHeight()+20), IsNil)
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, voter2.Actions[1], ctx.BlockHeight()+20), IsNil)
 
-	err = finalizeOutbounds(ctx, mgr, voter2)
+	err = finalizeOutboundsAtomic(ctx, mgr, voter2)
 	c.Assert(err, IsNil)
 
 	// Verify both staged outbounds were moved to TxOut
@@ -113,8 +122,36 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	}
 	// Don't stage anything - simulates already finalized
 
-	err = finalizeOutbounds(ctx, mgr, voter3)
+	err = finalizeOutboundsAtomic(ctx, mgr, voter3)
 	c.Assert(err, IsNil, Commentf("Should succeed when no staged outbounds exist"))
+}
+
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnError(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	dummyMgr := NewDummyMgrWithKeeper(mgr.Keeper())
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.MempoolSwapTOR = cosmos.NewUint(123 * common.One)
+
+	stagedItem := TxOutItem{
+		Chain:  common.THORChain,
+		InHash: inTxID,
+		Coin:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+	}
+
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+5), IsNil)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(999*common.One))
+
+	err := finalizeOutboundsAtomic(ctx, dummyMgr, voter)
+	c.Assert(err, NotNil)
+
+	usage := mgr.Keeper().GetMempoolSwapUsageTOR(ctx)
+	c.Check(usage.Equal(cosmos.NewUint(999*common.One)), Equals, true, Commentf("mempool usage should roll back on finalize failure"))
+
+	stagedItems, stagedErr := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(stagedErr, IsNil)
+	c.Check(stagedItems, HasLen, 1, Commentf("staged outbounds should remain after finalize failure"))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
@@ -186,7 +223,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	// Test 1: Successfully revert mempool swap
-	err := revertMempoolSwap(ctx, mgr.Keeper(), mgr, voter)
+	err := revertMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter)
 	c.Assert(err, IsNil, Commentf("revertMempoolSwap failed: %v", err))
 
 	// Verify voter is marked as reverted
@@ -225,7 +262,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 		},
 	}
 
-	err = revertMempoolSwap(ctx, mgr.Keeper(), mgr, voter2)
+	err = revertMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter2)
 	c.Assert(err, IsNil, Commentf("Should succeed with no staged outbounds"))
 
 	// Verify voter2 is marked as reverted
@@ -258,13 +295,89 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	// Stage the native outbound
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeTxOutItem, ctx.BlockHeight()+15), IsNil)
 
-	err = revertMempoolSwap(ctx, mgr.Keeper(), mgr, runeVoter)
+	err = revertMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, runeVoter)
 	c.Assert(err, IsNil, Commentf("Should handle native (RUNE) output"))
 
 	// Verify voter is marked as reverted
 	updatedRuneVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, runeTxID)
 	c.Assert(err, IsNil)
 	c.Check(updatedRuneVoter.Reverted, Equals, true, Commentf("RUNE voter should be marked as reverted"))
+}
+
+func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnError(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	failKeeper := failSwapQueueKeeper{Keeper: mgr.Keeper()}
+	dummyMgr := NewDummyMgrWithKeeper(failKeeper)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	inTxID := GetRandomTxHash()
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:    inTxID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One))},
+		},
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+		FinaliseHeight: 0,
+	}
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(700*common.One))
+
+	nativeItem := TxOutItem{
+		Chain:     common.THORChain,
+		InHash:    inTxID,
+		ToAddress: GetRandomRUNEAddress(),
+		Coin:      common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)),
+	}
+	externalItem := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)),
+	}
+
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeItem, ctx.BlockHeight()+5), IsNil)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, externalItem, ctx.BlockHeight()+5), IsNil)
+
+	err := revertMempoolSwapAtomic(ctx, failKeeper, dummyMgr, voter)
+	c.Assert(err, NotNil)
+
+	usage := mgr.Keeper().GetMempoolSwapUsageTOR(ctx)
+	c.Check(usage.Equal(cosmos.NewUint(700*common.One)), Equals, true, Commentf("mempool usage should roll back on revert failure"))
+
+	stagedItems, stagedErr := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(stagedErr, IsNil)
+	c.Check(stagedItems, HasLen, 2, Commentf("staged outbounds should remain after revert failure"))
+
+	updatedVoter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(voterErr, IsNil)
+	c.Check(updatedVoter.Reverted, Equals, false, Commentf("voter should not be marked reverted when revert fails"))
+
+	updatedPool, poolErr := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(poolErr, IsNil)
+	c.Check(updatedPool.BalanceRune.Equal(sourcePool.BalanceRune), Equals, true, Commentf("pool rune balance should roll back on revert failure"))
+	c.Check(updatedPool.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true, Commentf("pool asset balance should roll back on revert failure"))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c *C) {

@@ -357,11 +357,11 @@ func handleObservedTxInQuorum(
 
 	// When a mempool swap finalizes, move staged outbounds to the real queue
 	// and return early - the swap was already executed from mempool, don't process it again.
-	// The error is intentionally not returned: propagating it would roll back the handler's
-	// cache context, reverting voter state, chain height, and vault updates made above.
-	// Finalization failure is logged and the swap still completes correctly.
+	// finalizeOutboundsAtomic is internally transactional, so logging the error here does not leak
+	// partial staging/cap/queue side effects while preserving the voter, chain-height, and
+	// vault updates already made above.
 	if hasFinalised && len(voter.Actions) > 0 {
-		if err = finalizeOutbounds(ctx, mgr, voter); err != nil {
+		if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 		}
 		return nil
@@ -1216,10 +1216,21 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
 }
 
-// finalizeOutbounds moves staged outbounds to the real TxOut queue when the inbound transaction
-// finalizes. For native (THORChain) outbounds, this function executes them immediately.
-// This is part of the staged queue approach for mempool swaps.
-func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
+// finalizeOutboundsAtomic moves staged outbounds to the real TxOut queue when the
+// inbound transaction finalizes. For native (THORChain) outbounds, this function
+// executes them immediately. It runs in its own CacheContext and only commits if
+// the full finalize flow succeeds, so partial staging/cap/queue mutations are
+// discarded on error. This is part of the staged queue approach for mempool swaps.
+func finalizeOutboundsAtomic(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := finalizeOutboundsCached(cacheCtx, mgr, voter); err != nil {
+		return err
+	}
+	commit()
+	return nil
+}
+
+func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID)
 
 	// Get staged outbounds for this inbound transaction
@@ -1248,7 +1259,8 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 		"count", len(stagedItems))
 
 	// Delete staged outbounds BEFORE processing to prevent double-processing on retry.
-	// If processing fails, Cosmos SDK will roll back both the deletion and any partial processing.
+	// This helper runs inside a CacheContext, so any later error discards both the deletion
+	// and any partial queue/native-outbound work.
 	mgr.Keeper().DeleteStagedOutbounds(ctx, voter.TxID)
 
 	// Move each staged outbound to the real queue
@@ -1289,12 +1301,24 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 	return nil
 }
 
-// revertMempoolSwap reverts a mempool swap by creating a reverse swap back to the original asset,
-// then donating the result to the original source pool using a chained memo.
-// This is called when a mempool transaction is dropped or replaced before finalization.
-// With the staged queue approach, outbounds are in staging (not the real queue), so we just
-// delete from staging and handle pool accounting.
-func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
+// revertMempoolSwapAtomic reverts a mempool swap by creating a reverse swap back
+// to the original asset, then donating the result to the original source pool
+// using a chained memo. It runs in its own CacheContext and only commits if the
+// full revert flow succeeds, so partial staging/cap/pool/queue mutations are
+// discarded on error. This is called when a mempool transaction is dropped or
+// replaced before finalization. With the staged queue approach, outbounds are in
+// staging (not the real queue), so we just delete from staging and handle pool
+// accounting.
+func revertMempoolSwapAtomic(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := revertMempoolSwapCached(cacheCtx, keeper, mgr, voter); err != nil {
+		return err
+	}
+	commit()
+	return nil
+}
+
+func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("reverting mempool swap", "hash", voter.TxID)
 
 	// Release mempool swap capacity if this was a mempool swap
@@ -1445,8 +1469,8 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 	}
 
 	// Delete all staged outbounds AFTER processing succeeds.
-	// If any operation above failed, we returned an error and Cosmos SDK rolls back all state changes,
-	// allowing retry. Only delete when all operations completed successfully.
+	// This helper runs inside a CacheContext, so returning an error discards all prior pool,
+	// usage, and queue mutations and allows a clean retry.
 	keeper.DeleteStagedOutbounds(ctx, voter.TxID)
 
 	// Mark the voter as reverted
