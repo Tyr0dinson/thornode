@@ -513,6 +513,8 @@ type KeeperMempoolSwapUsage interface {
 type KeeperStagedOutbound interface {
 	// SetStagedOutbound adds a staged outbound for a mempool swap (inHash extracted from item.InHash)
 	SetStagedOutbound(ctx cosmos.Context, item TxOutItem, scheduledHeight int64) error
+	// HasStagedOutbound returns whether any staged outbounds exist for an inbound transaction
+	HasStagedOutbound(ctx cosmos.Context, inHash common.TxID) bool
 	// GetStagedOutbounds returns all staged outbounds for an inbound transaction
 	GetStagedOutbounds(ctx cosmos.Context, inHash common.TxID) ([]StagedOutbound, error)
 	// DeleteStagedOutbounds removes all staged outbounds for an inbound transaction

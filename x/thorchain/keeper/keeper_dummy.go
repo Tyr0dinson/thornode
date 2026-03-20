@@ -926,6 +926,10 @@ func (k KVStoreDummy) SetStagedOutbound(_ cosmos.Context, _ TxOutItem, _ int64) 
 	return kaboom
 }
 
+func (k KVStoreDummy) HasStagedOutbound(_ cosmos.Context, _ common.TxID) bool {
+	return false
+}
+
 func (k KVStoreDummy) GetStagedOutbounds(_ cosmos.Context, _ common.TxID) ([]StagedOutbound, error) {
 	return nil, kaboom
 }

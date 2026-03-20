@@ -2023,7 +2023,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		return
 	}
 
-	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0)
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasStagedOutbound(ctx, voter.TxID)
 
 	// Only look for streaming information when a swap is pending.
 	if pending {
