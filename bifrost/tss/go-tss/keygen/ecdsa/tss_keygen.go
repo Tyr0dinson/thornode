@@ -177,10 +177,6 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 				tKeyGen.logger.Error().Msg("fail to start the keygen, the last produced message of this node is none")
 				return nil, errors.New("timeout before shared message is generated")
 			}
-			lastRound, err := common.GetCanonicalRoundFromParsedMessage(lastMsg)
-			if err != nil {
-				return nil, fmt.Errorf("fail to determine last keygen round: %w", err)
-			}
 			blameNodesUnicast, err := blameMgr.GetUnicastBlame(messages.KEYGEN2aUnicast)
 			if err != nil {
 				tKeyGen.logger.Error().Err(err).Msg("error in get unicast blame")
@@ -195,7 +191,7 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			if len(blameNodesUnicast) > 0 && len(blameNodesUnicast) <= threshold {
 				blameMgr.GetBlame().SetBlame(failReason, blameNodesUnicast, true, messages.KEYGEN2aUnicast)
 			}
-			blameNodesBroadcast, err := blameMgr.GetBroadcastBlame(lastRound)
+			blameNodesBroadcast, err := blameMgr.GetBroadcastBlame(lastMsg.Type())
 			if err != nil {
 				tKeyGen.logger.Error().Err(err).Msg("error in get broadcast blame")
 			}

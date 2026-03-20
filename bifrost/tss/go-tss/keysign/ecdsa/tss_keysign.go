@@ -224,10 +224,6 @@ func (tKeySign *TssKeySign) processKeySign(reqNum int, errChan chan struct{}, ou
 			if failReason == "" {
 				failReason = blame.TssTimeout
 			}
-			lastRound, err := common.GetCanonicalRoundFromParsedMessage(lastMsg)
-			if err != nil {
-				return nil, fmt.Errorf("fail to determine last keysign round: %w", err)
-			}
 
 			tKeySign.tssCommonStruct.P2PPeersLock.RLock()
 			threshold, err := conversion.GetThreshold(len(tKeySign.tssCommonStruct.P2PPeers) + 1)
@@ -236,7 +232,7 @@ func (tKeySign *TssKeySign) processKeySign(reqNum int, errChan chan struct{}, ou
 				tKeySign.logger.Error().Err(err).Msg("error in get the threshold for generate blame")
 			}
 			if !lastMsg.IsBroadcast() {
-				blameNodesUnicast, err := blameMgr.GetUnicastBlame(lastRound)
+				blameNodesUnicast, err := blameMgr.GetUnicastBlame(lastMsg.Type())
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
@@ -244,7 +240,7 @@ func (tKeySign *TssKeySign) processKeySign(reqNum int, errChan chan struct{}, ou
 					blameMgr.GetBlame().SetBlame(failReason, blameNodesUnicast, true, tKeySign.tssCommonStruct.RoundInfo)
 				}
 			} else {
-				blameNodesUnicast, err := blameMgr.GetUnicastBlame(conversion.GetPreviousKeySignUicast(lastRound))
+				blameNodesUnicast, err := blameMgr.GetUnicastBlame(conversion.GetPreviousKeySignUicast(lastMsg.Type()))
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
@@ -253,7 +249,7 @@ func (tKeySign *TssKeySign) processKeySign(reqNum int, errChan chan struct{}, ou
 				}
 			}
 
-			blameNodesBroadcast, err := blameMgr.GetBroadcastBlame(lastRound)
+			blameNodesBroadcast, err := blameMgr.GetBroadcastBlame(lastMsg.Type())
 			if err != nil {
 				tKeySign.logger.Error().Err(err).Msg("error in get broadcast blame")
 			}
@@ -276,11 +272,11 @@ func (tKeySign *TssKeySign) processKeySign(reqNum int, errChan chan struct{}, ou
 		case msg := <-outCh:
 			tKeySign.logger.Debug().Msgf(">>>>>>>>>>key sign msg: %s", msg.String())
 			tKeySign.tssCommonStruct.GetBlameMgr().SetLastMsg(msg)
+			tKeySign.tssCommonStruct.GetBlameMgr().GetBlame().Round = msg.Type()
 			err := tKeySign.tssCommonStruct.ProcessOutCh(msg, messages.TSSKeySignMsg)
 			if err != nil {
 				return nil, err
 			}
-			tKeySign.tssCommonStruct.GetBlameMgr().GetBlame().Round = tKeySign.tssCommonStruct.RoundInfo
 
 		// nolint
 		case msg := <-endCh:

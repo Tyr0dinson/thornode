@@ -13,7 +13,6 @@ import (
 	"time"
 
 	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
-	btsskeysign "github.com/binance-chain/tss-lib/ecdsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
@@ -107,59 +106,22 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	copy(localTestPubKeys, testPubKeys[:])
 	partiesID, localPartyID, err := conversion.GetParties(localTestPubKeys, testPubKeys[0])
 	c.Assert(err, IsNil)
-
-	assertCanonicalRound := func(
-		messageRouting btss.MessageRouting,
-		content btss.MessageContent,
-		msgType messages.THORChainTSSMessageType,
-		expectedRound string,
-	) {
-		broadcastChannel := make(chan *messages.BroadcastMsgChan, 1)
-		msg := btss.NewMessageWrapper(messageRouting, content)
-		tssMsg := btss.NewMessage(messageRouting, content, msg)
-		tssCommonStruct := NewTssCommon("", broadcastChannel, conf, "test", t.privKey, 1)
-		err = tssCommonStruct.ProcessOutCh(tssMsg, msgType)
-		c.Assert(err, IsNil)
-
-		select {
-		case outbound := <-broadcastChannel:
-			var wireMsg messages.WireMessage
-			err = json.Unmarshal(outbound.WrappedMessage.Payload, &wireMsg)
-			c.Assert(err, IsNil)
-			c.Assert(wireMsg.RoundInfo, Equals, expectedRound)
-		case <-time.After(time.Second):
-			c.Fatal("timed out waiting for outbound TSS message")
-		}
+	messageRouting := btss.MessageRouting{
+		From:                    localPartyID,
+		To:                      partiesID[3:],
+		IsBroadcast:             true,
+		IsToOldCommittee:        false,
+		IsToOldAndNewCommittees: false,
 	}
-
-	assertCanonicalRound(
-		btss.MessageRouting{
-			From:                    localPartyID,
-			To:                      partiesID[3:],
-			IsBroadcast:             true,
-			IsToOldCommittee:        false,
-			IsToOldAndNewCommittees: false,
-		},
-		&btsskeygen.KGRound1Message{Commitment: []byte("TEST")},
-		messages.TSSKeyGenMsg,
-		messages.KEYGEN1,
-	)
-
-	assertCanonicalRound(
-		btss.MessageRouting{
-			From:                    localPartyID,
-			To:                      []*btss.PartyID{partiesID[1]},
-			IsBroadcast:             false,
-			IsToOldCommittee:        false,
-			IsToOldAndNewCommittees: false,
-		},
-		&btsskeysign.SignRound1Message1{
-			C:               []byte("TEST"),
-			RangeProofAlice: [][]byte{[]byte("proof")},
-		},
-		messages.TSSKeySignMsg,
-		messages.KEYSIGN1aUnicast,
-	)
+	testFill := []byte("TEST")
+	testContent := &btsskeygen.KGRound1Message{
+		Commitment: testFill,
+	}
+	msg := btss.NewMessageWrapper(messageRouting, testContent)
+	tssMsg := btss.NewMessage(messageRouting, testContent, msg)
+	tssCommonStruct := NewTssCommon("", nil, conf, "test", t.privKey, 1)
+	err = tssCommonStruct.ProcessOutCh(tssMsg, messages.TSSKeyGenMsg)
+	c.Assert(err, IsNil)
 }
 
 func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, roundInfo, msg, msgID string, msgType messages.THORChainTSSMessageType) (*messages.WrappedMessage, []byte) {
