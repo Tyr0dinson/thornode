@@ -217,6 +217,10 @@ func (tKeySign *EDDSAKeySign) processKeySign(reqNum int, errChan chan struct{}, 
 			if failReason == "" {
 				failReason = blame.TssTimeout
 			}
+			lastRound, err := common.GetCanonicalRoundFromParsedMessage(lastMsg)
+			if err != nil {
+				return nil, fmt.Errorf("fail to determine last keysign round: %w", err)
+			}
 
 			tKeySign.tssCommonStruct.P2PPeersLock.RLock()
 			threshold, err := conversion.GetThreshold(len(tKeySign.tssCommonStruct.P2PPeers) + 1)
@@ -225,24 +229,24 @@ func (tKeySign *EDDSAKeySign) processKeySign(reqNum int, errChan chan struct{}, 
 				tKeySign.logger.Error().Err(err).Msg("error in get the threshold for generate blame")
 			}
 			if !lastMsg.IsBroadcast() {
-				blameNodesUnicast, err := blameMgr.GetUnicastBlame(lastMsg.Type())
+				blameNodesUnicast, err := blameMgr.GetUnicastBlame(lastRound)
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 				if len(blameNodesUnicast) > 0 && len(blameNodesUnicast) <= threshold {
-					blameMgr.GetBlame().SetBlame(failReason, blameNodesUnicast, lastMsg.IsBroadcast(), lastMsg.Type())
+					blameMgr.GetBlame().SetBlame(failReason, blameNodesUnicast, lastMsg.IsBroadcast(), lastRound)
 				}
 			} else {
-				blameNodesUnicast, err := blameMgr.GetUnicastBlame(conversion.GetPreviousKeySignUicast(lastMsg.Type()))
+				blameNodesUnicast, err := blameMgr.GetUnicastBlame(conversion.GetPreviousKeySignUicast(lastRound))
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("error in get unicast blame")
 				}
 				if len(blameNodesUnicast) > 0 && len(blameNodesUnicast) <= threshold {
-					blameMgr.GetBlame().SetBlame(failReason, blameNodesUnicast, lastMsg.IsBroadcast(), lastMsg.Type())
+					blameMgr.GetBlame().SetBlame(failReason, blameNodesUnicast, lastMsg.IsBroadcast(), lastRound)
 				}
 			}
 
-			blameNodesBroadcast, err := blameMgr.GetBroadcastBlame(lastMsg.Type())
+			blameNodesBroadcast, err := blameMgr.GetBroadcastBlame(lastRound)
 			if err != nil {
 				tKeySign.logger.Error().Err(err).Msg("error in get broadcast blame")
 			}

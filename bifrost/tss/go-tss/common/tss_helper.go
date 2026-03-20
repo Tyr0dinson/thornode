@@ -274,6 +274,26 @@ func GetMsgRound(msg []byte, partyID *btss.PartyID, isBroadcast bool) (blame.Rou
 	}
 }
 
+// GetCanonicalRoundFromParsedMessage maps a parsed TSS message to THORChain's
+// canonical round identifier (for example, "SignRound1Message1").
+func GetCanonicalRoundFromParsedMessage(msg btss.Message) (string, error) {
+	if msg == nil {
+		return "", errors.New("message is nil")
+	}
+
+	msgData, routing, err := msg.WireBytes()
+	if err != nil {
+		return "", fmt.Errorf("fail to get wire bytes: %w", err)
+	}
+
+	round, err := GetMsgRound(msgData, msg.GetFrom(), routing.IsBroadcast)
+	if err != nil {
+		return "", fmt.Errorf("fail to determine message round: %w", err)
+	}
+
+	return round.RoundMsg, nil
+}
+
 func (t *TssCommon) NotifyTaskDone() error {
 	msg := messages.TssTaskNotifier{TaskDone: true}
 	data, err := json.Marshal(msg)

@@ -510,28 +510,34 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		return fmt.Errorf("fail to get wire bytes: %w", err)
 	}
 
+	wiredMsgType, err := GetCanonicalRoundFromParsedMessage(msg)
+	if err != nil {
+		return fmt.Errorf("fail to get canonical round info: %w", err)
+	}
+	t.RoundInfo = wiredMsgType
+
 	if r.IsBroadcast {
 		cachedWiredMsg := NewBulkWireMsg(msgData, msg.GetFrom().Moniker, r)
 		// now we store this message in cache
-		dat, ok := t.cachedWireBroadcastMsgLists.Load(msg.Type())
+		dat, ok := t.cachedWireBroadcastMsgLists.Load(wiredMsgType)
 		if !ok {
 			l := []BulkWireMsg{cachedWiredMsg}
-			t.cachedWireBroadcastMsgLists.Store(msg.Type(), l)
+			t.cachedWireBroadcastMsgLists.Store(wiredMsgType, l)
 		} else {
 			cachedList := dat.([]BulkWireMsg)
 			cachedList = append(cachedList, cachedWiredMsg)
-			t.cachedWireBroadcastMsgLists.Store(msg.Type(), cachedList)
+			t.cachedWireBroadcastMsgLists.Store(wiredMsgType, cachedList)
 		}
 	} else {
 		cachedWiredMsg := NewBulkWireMsg(msgData, msg.GetFrom().Moniker, r)
-		dat, ok := t.cachedWireUnicastMsgLists.Load(msg.Type() + ":" + r.To[0].String())
+		dat, ok := t.cachedWireUnicastMsgLists.Load(wiredMsgType + ":" + r.To[0].String())
 		if !ok {
 			l := []BulkWireMsg{cachedWiredMsg}
-			t.cachedWireUnicastMsgLists.Store(msg.Type()+":"+r.To[0].String(), l)
+			t.cachedWireUnicastMsgLists.Store(wiredMsgType+":"+r.To[0].String(), l)
 		} else {
 			cachedList := dat.([]BulkWireMsg)
 			cachedList = append(cachedList, cachedWiredMsg)
-			t.cachedWireUnicastMsgLists.Store(msg.Type()+":"+r.To[0].String(), cachedList)
+			t.cachedWireUnicastMsgLists.Store(wiredMsgType+":"+r.To[0].String(), cachedList)
 		}
 	}
 	t.cachedWireUnicastMsgLists.Range(func(key, value interface{}) bool {
