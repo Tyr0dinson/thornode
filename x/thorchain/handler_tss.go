@@ -58,10 +58,10 @@ var verifySecp256K1Signature = func(pk common.PubKey, sig []byte) error {
 	r := new(big.Int).SetBytes(sig[:32])
 	s := new(big.Int).SetBytes(sig[32:])
 
-	// enforce low-S normalization (BIP-62) to prevent signature malleability
+	// reject high-S signatures (BIP-62) to prevent signature malleability
 	halfOrder := new(big.Int).Rsh(btcec.S256().N, 1)
 	if s.Cmp(halfOrder) == 1 {
-		s.Sub(btcec.S256().N, s)
+		return fmt.Errorf("high-S signature rejected (BIP-62)")
 	}
 
 	signature := &btcec.Signature{R: r, S: s}
