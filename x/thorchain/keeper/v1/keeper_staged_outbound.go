@@ -86,6 +86,16 @@ func (k KVStore) GetStagedOutboundValue(ctx cosmos.Context) (cosmos.Uint, cosmos
 	return runeValue, cloutValue, nil
 }
 
+// RestoreStagedOutboundList writes an entire StagedOutboundList to the store
+// without modifying StagedHeight. This is used by InitGenesis to preserve the
+// original staged_height from the exported state.
+func (k KVStore) RestoreStagedOutboundList(ctx cosmos.Context, list StagedOutboundList) error {
+	if list.InHash.IsEmpty() {
+		return fmt.Errorf("cannot restore staged outbound list with empty InHash")
+	}
+	return k.setStagedOutboundList(ctx, list.InHash, list)
+}
+
 // Internal helper functions
 
 func (k KVStore) setStagedOutboundList(ctx cosmos.Context, inHash common.TxID, list StagedOutboundList) error {

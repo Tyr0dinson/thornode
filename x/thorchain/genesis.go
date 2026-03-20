@@ -337,12 +337,13 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
-	// Restore staged outbounds (mempool swaps waiting for inbound finalization)
+	// Restore staged outbounds (mempool swaps waiting for inbound finalization).
+	// Use RestoreStagedOutboundList to preserve the original StagedHeight from
+	// the exported state, rather than SetStagedOutbound which would overwrite it
+	// with the current block height.
 	for _, list := range data.StagedOutbounds {
-		for _, staged := range list.Items {
-			if err := keeper.SetStagedOutbound(ctx, staged.TxOutItem, staged.ScheduledHeight); err != nil {
-				panic(fmt.Errorf("fail to restore staged outbound: %w", err))
-			}
+		if err := keeper.RestoreStagedOutboundList(ctx, list); err != nil {
+			panic(fmt.Errorf("fail to restore staged outbound list: %w", err))
 		}
 	}
 

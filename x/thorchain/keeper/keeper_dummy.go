@@ -937,6 +937,9 @@ func (k KVStoreDummy) GetStagedOutboundIterator(_ cosmos.Context) cosmos.Iterato
 func (k KVStoreDummy) GetStagedOutboundValue(_ cosmos.Context) (cosmos.Uint, cosmos.Uint, error) {
 	return cosmos.ZeroUint(), cosmos.ZeroUint(), kaboom
 }
+func (k KVStoreDummy) RestoreStagedOutboundList(_ cosmos.Context, _ StagedOutboundList) error {
+	return kaboom
+}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
