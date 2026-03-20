@@ -966,6 +966,14 @@ func (k *SettleSwapRetryVaultErrorKeeper) GetVault(_ cosmos.Context, _ common.Pu
 	return Vault{}, fmt.Errorf("vault not found")
 }
 
+type SettleSwapPostSwapSetPoolFailKeeper struct {
+	keeper.Keeper
+}
+
+func (k SettleSwapPostSwapSetPoolFailKeeper) SetPool(_ cosmos.Context, _ Pool) error {
+	return errKaboom
+}
+
 func seedSettleSwapRetryState(c *C, ctx cosmos.Context, k keeper.Keeper, tx common.Tx, observedPubKey common.PubKey) {
 	btcPool := NewPool()
 	btcPool.Asset = common.BTCAsset
@@ -1196,6 +1204,64 @@ func (HelperSuite) TestSettleSwapDoesNotDuplicateOutboundOnRetry(c *C) {
 	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(len(outItems), Equals, 0, Commentf("failed settlement must not leave a partial outbound behind"))
+}
+
+func (HelperSuite) TestSettleSwapPostSwapMemoRollbackOnSetPoolError(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	baseKeeper := mgr.Keeper()
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(baseKeeper.SetPool(ctx, sourcePool), IsNil)
+
+	originalTxID := GetRandomTxHash()
+	originalTx := common.NewTx(
+		originalTxID,
+		GetRandomBTCAddress(),
+		GetRandomBTCAddress(),
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH",
+	)
+
+	voter := NewObservedTxVoter(originalTxID, ObservedTxs{{Tx: originalTx}})
+	voter.Tx = ObservedTx{Tx: originalTx}
+	baseKeeper.SetObservedTxInVoter(ctx, voter)
+
+	mgr.K = SettleSwapPostSwapSetPoolFailKeeper{Keeper: baseKeeper}
+
+	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
+	msg := types.MsgSwap{
+		Tx: common.NewTx(
+			revertTxID,
+			GetRandomTHORAddress(),
+			GetRandomTHORAddress(),
+			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One))},
+			common.Gas{common.NewCoin(common.RuneNative, cosmos.OneUint())},
+			"SWAP:BTC.BTC",
+		),
+		TargetAsset:  common.BTCAsset,
+		Destination:  GetRandomBTCAddress(),
+		PostSwapMemo: "DONATE:BTC.BTC",
+		State: &types.SwapState{
+			Deposit: cosmos.NewUint(3 * common.One),
+			In:      cosmos.NewUint(3 * common.One),
+			Out:     cosmos.NewUint(common.One),
+		},
+	}
+
+	err := settleSwap(ctx, mgr, msg, "mempool revert post-swap")
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "fail to set pool after mempool revert deduction"), Equals, true)
+
+	updatedPool, poolErr := baseKeeper.GetPool(ctx, common.BTCAsset)
+	c.Assert(poolErr, IsNil)
+	c.Check(updatedPool.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true, Commentf("failed post-swap settlement must roll back pool deduction"))
+	c.Check(updatedPool.BalanceRune.Equal(sourcePool.BalanceRune), Equals, true, Commentf("failed post-swap settlement must preserve pool rune balance"))
 }
 
 func (HelperSuite) TestSettleSwapRefundFromInactiveVault(c *C) {

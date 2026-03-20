@@ -1296,51 +1296,59 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 				}
 			}
 		} else if shouldProcessPostSwapMemo {
-			// Check if this is a mempool revert swap - if so, deduct source amount from pool atomically with donate
+			// Post-swap memo execution is part of settlement. Fail closed here so the
+			// settleSwap cache context can discard the entire settlement on any required
+			// recovery/accounting error.
+			//
+			// Check if this is a mempool revert swap - if so, deduct source amount from
+			// the source pool atomically with the post-swap action.
 			if originalTxID, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), msg.Tx.ID); found {
 				voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, originalTxID)
-				if voterErr == nil && !voter.Tx.Tx.Coins.IsEmpty() {
-					sourceAsset := voter.Tx.Tx.Coins[0].Asset
-					sourceAmount := voter.Tx.Tx.Coins[0].Amount
-
-					// Deduct phantom source amount from pool (asset that was never received)
-					pool, poolErr := mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
-					if poolErr == nil {
-						pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
-						if setErr := mgr.Keeper().SetPool(ctx, pool); setErr != nil {
-							ctx.Logger().Error("fail to set pool after mempool revert deduction", "error", setErr)
-						} else {
-							// Emit PoolBalanceChanged event for the deduction
-							emitPoolBalanceChangedEvent(ctx,
-								NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, sourceAmount, false),
-								"mempool swap revert",
-								mgr)
-
-							// Emit MempoolSwapReverted event with full details
-							// msg.State.Out is the donated amount (output of reverse swap)
-							mempoolRevertEvent := NewEventMempoolSwapReverted(
-								originalTxID,
-								ctx.BlockHeight(),
-								sourceAsset,
-								sourceAmount,
-								msg.State.Out,
-							)
-							if err := mgr.EventMgr().EmitEvent(ctx, mempoolRevertEvent); err != nil {
-								ctx.Logger().Error("fail to emit mempool revert event", "error", err)
-							}
-
-							ctx.Logger().Info("deducted phantom source asset from pool for mempool revert",
-								"pool", sourceAsset.GetLayer1Asset(),
-								"asset_removed", sourceAmount,
-								"donated_amount", msg.State.Out,
-								"original_txid", originalTxID)
-						}
-					} else {
-						ctx.Logger().Error("fail to get pool for mempool revert deduction", "error", poolErr, "asset", sourceAsset)
-					}
-				} else {
-					ctx.Logger().Error("fail to get original voter for mempool revert", "error", voterErr, "original_txid", originalTxID)
+				if voterErr != nil {
+					return fmt.Errorf("fail to get original voter for mempool revert: %w", voterErr)
 				}
+				if voter.Tx.Tx.Coins.IsEmpty() {
+					return fmt.Errorf("original voter missing source coins for mempool revert: %s", originalTxID)
+				}
+
+				sourceAsset := voter.Tx.Tx.Coins[0].Asset
+				sourceAmount := voter.Tx.Tx.Coins[0].Amount
+
+				// Deduct phantom source amount from pool (asset that was never received)
+				pool, poolErr := mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+				if poolErr != nil {
+					return fmt.Errorf("fail to get pool for mempool revert deduction: %w", poolErr)
+				}
+
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
+				if setErr := mgr.Keeper().SetPool(ctx, pool); setErr != nil {
+					return fmt.Errorf("fail to set pool after mempool revert deduction: %w", setErr)
+				}
+
+				// Emit PoolBalanceChanged event for the deduction
+				emitPoolBalanceChangedEvent(ctx,
+					NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, sourceAmount, false),
+					"mempool swap revert",
+					mgr)
+
+				// Emit MempoolSwapReverted event with full details
+				// msg.State.Out is the donated amount (output of reverse swap)
+				mempoolRevertEvent := NewEventMempoolSwapReverted(
+					originalTxID,
+					ctx.BlockHeight(),
+					sourceAsset,
+					sourceAmount,
+					msg.State.Out,
+				)
+				if err := mgr.EventMgr().EmitEvent(ctx, mempoolRevertEvent); err != nil {
+					ctx.Logger().Error("fail to emit mempool revert event", "error", err)
+				}
+
+				ctx.Logger().Info("deducted phantom source asset from pool for mempool revert",
+					"pool", sourceAsset.GetLayer1Asset(),
+					"asset_removed", sourceAmount,
+					"donated_amount", msg.State.Out,
+					"original_txid", originalTxID)
 			}
 
 			// Process post-swap memo: create internal transaction with swap output
@@ -1350,42 +1358,37 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 			hashInput := fmt.Sprintf("%s|%d|%s", msg.Tx.ID, ctx.BlockHeight(), msg.PostSwapMemo)
 			internalTxID, err := common.NewTxID(fmt.Sprintf("%X", sha256.Sum256([]byte(hashInput))))
 			if err != nil {
-				ctx.Logger().Error("fail to generate internal tx ID for post-swap memo", "error", err)
-			} else {
-				// Create an ObservedTx with the swap output as input
-				swapOutputCoin := common.NewCoin(msg.TargetAsset, msg.State.Out)
-				internalTx := common.NewTx(
-					internalTxID,
-					msg.Destination, // From the original destination
-					common.NoAddress,
-					common.NewCoins(swapOutputCoin),
-					common.Gas{},
-					msg.PostSwapMemo,
-				)
-
-				observedTx := ObservedTx{
-					Tx: internalTx,
-				}
-
-				// Process the transaction to create the appropriate message
-				internalMsg, err := processOneTxIn(ctx, mgr.Keeper(), observedTx, mgr.Keeper().GetModuleAccAddress(AsgardName))
-				if err != nil {
-					ctx.Logger().Error("fail to process post-swap memo", "error", err, "memo", msg.PostSwapMemo)
-					// Continue with swap completion even if post-swap memo fails
-				} else {
-					// Execute the message through the internal handler
-					handler := NewInternalHandler(mgr)
-					_, err = handler(ctx, internalMsg)
-					if err != nil {
-						ctx.Logger().Error("fail to execute post-swap memo transaction", "error", err, "memo", msg.PostSwapMemo)
-						// Continue with swap completion even if execution fails.
-						// NOTE: Currently post-swap memos are only used for DONATE operations (treasury recovery).
-						// If this feature is expanded to other memo types, additional error handling may be required.
-					} else {
-						ctx.Logger().Info("successfully executed post-swap memo", "memo", msg.PostSwapMemo)
-					}
-				}
+				return fmt.Errorf("fail to generate internal tx ID for post-swap memo: %w", err)
 			}
+
+			// Create an ObservedTx with the swap output as input
+			swapOutputCoin := common.NewCoin(msg.TargetAsset, msg.State.Out)
+			internalTx := common.NewTx(
+				internalTxID,
+				msg.Destination, // From the original destination
+				common.NoAddress,
+				common.NewCoins(swapOutputCoin),
+				common.Gas{},
+				msg.PostSwapMemo,
+			)
+
+			observedTx := ObservedTx{
+				Tx: internalTx,
+			}
+
+			// Process the transaction to create the appropriate message
+			internalMsg, err := processOneTxIn(ctx, mgr.Keeper(), observedTx, mgr.Keeper().GetModuleAccAddress(AsgardName))
+			if err != nil {
+				return fmt.Errorf("fail to process post-swap memo: %w", err)
+			}
+
+			// Execute the message through the internal handler
+			handler := NewInternalHandler(mgr)
+			if _, err = handler(ctx, internalMsg); err != nil {
+				return fmt.Errorf("fail to execute post-swap memo transaction: %w", err)
+			}
+
+			ctx.Logger().Info("successfully executed post-swap memo", "memo", msg.PostSwapMemo)
 		}
 	}
 
