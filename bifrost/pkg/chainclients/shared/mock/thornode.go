@@ -37,6 +37,8 @@ func handleThornodeApi(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/thorchain/vaults/tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn/sign":
 		writeText("[]", w)
+	case "/thorchain/vaults/pubkeys":
+		file = "endpoints/vaults/pubKeys"
 	case "/thorchain/vaults":
 		file = "tss/keysign_party"
 	case "/thorchain/version":

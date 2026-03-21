@@ -659,9 +659,6 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 		if !added {
 			c.log.Info().Msgf("tx: %s had been reported before, ignore", txInItems[0].Tx)
-			if err := c.temporalStorage.UntrackObservedTx(txInItems[0].Tx); err != nil {
-				c.log.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItems[0].Tx)
-			}
 			continue // Skip ALL items for this tx
 		}
 
