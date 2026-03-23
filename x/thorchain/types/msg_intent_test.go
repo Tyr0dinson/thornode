@@ -310,6 +310,21 @@ func (MsgIntentSuite) TestMsgIntentCancel(c *C) {
 			intentTxID: common.TxID(""),
 			signer:     addr,
 		},
+		{
+			name: "zero bid amount",
+			tx: common.NewTx(
+				txID,
+				GetRandomETHAddress(),
+				GetRandomETHAddress(),
+				common.Coins{
+					common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
+				},
+				common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))},
+				"~:intenttxid",
+			),
+			intentTxID: intentTxID,
+			signer:     addr,
+		},
 	}
 
 	for _, item := range inputs {

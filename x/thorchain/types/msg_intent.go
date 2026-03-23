@@ -185,5 +185,8 @@ func (m *MsgIntentAuctionBid) ValidateBasic() error {
 	if len(m.Tx.Coins) > 1 {
 		return cosmos.ErrUnknownRequest("bid can only provide one coin type")
 	}
+	if m.Tx.Coins[0].Amount.IsZero() {
+		return cosmos.ErrUnknownRequest("bid amount cannot be zero")
+	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -432,6 +433,41 @@ func (KeeperIntentSuite) TestIntentSolve_Remove(c *C) {
 	c.Check(k.IntentSolveExists(ctx, solveTxID), Equals, false)
 
 	// Verify indices also removed
+	solves, err := k.GetIntentSolvesByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+
+	solves, err = k.GetIntentSolvesByMatchHeight(ctx, matchHeight)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+}
+
+func (KeeperIntentSuite) TestIntentSolve_RemoveCorruptedRecord(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	solveTxID := common.TxID("SOLVE9999999990ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	intentTxID := common.TxID("INTENT99999999ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	matchHeight := int64(500)
+
+	solve := types.IntentSolve{
+		SolveTxID:     solveTxID,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   matchHeight,
+	}
+	k.SetIntentSolve(ctx, solve)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(k.GetKey(prefixIntentSolve, solveTxID.String()), []byte("corrupted"))
+
+	_, err := k.GetIntentSolve(ctx, solveTxID)
+	c.Assert(err, NotNil)
+
+	k.RemoveIntentSolve(ctx, solveTxID)
+
+	c.Check(k.IntentSolveExists(ctx, solveTxID), Equals, false)
+
 	solves, err := k.GetIntentSolvesByIntentID(ctx, intentTxID)
 	c.Assert(err, IsNil)
 	c.Check(len(solves), Equals, 0)

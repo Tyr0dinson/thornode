@@ -1,7 +1,9 @@
 package keeperv1
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -206,13 +208,19 @@ func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
 		return
 	}
 
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+
 	// Get the bid record to access its indices
 	bid, err := k.GetIntentAuctionBid(ctx, bidTxID)
 	if err != nil {
+		// If the record body is corrupted, we can no longer reconstruct the
+		// auction/bidder index keys from decoded fields. Remove the primary key
+		// and then best-effort sweep any index entries that still reference it.
+		ctx.Logger().Error("failed to decode intent auction bid during removal; deleting primary record and best-effort index entries", "bid_txid", bidTxID, "error", err)
+		store.Delete(k.GetKey(prefixIntentAuctionBid, bidTxID.String()))
+		k.removeIntentAuctionBidIndexEntriesByTxID(ctx, bidTxID)
 		return
 	}
-
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Remove main record
 	store.Delete(k.GetKey(prefixIntentAuctionBid, bidTxID.String()))
@@ -224,6 +232,44 @@ func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
 	// Remove bidder index
 	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, bid.IntentTxID.String(), "/"+bid.BidderAddress.String())
 	store.Delete(bidderIndexKey)
+}
+
+// removeIntentAuctionBidIndexEntriesByTxID is a corruption-recovery helper used
+// when the primary bid record cannot be unmarshaled. It scans the bid index
+// namespaces and removes any entry that still points at this bid txid.
+func (k KVStore) removeIntentAuctionBidIndexEntriesByTxID(ctx cosmos.Context, bidTxID common.TxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	bidTxIDSuffix := []byte("/" + strings.ToUpper(bidTxID.String()))
+
+	auctionIter := k.getIterator(ctx, prefixIntentAuctionBidByAuction)
+	var staleAuctionKeys [][]byte
+	for ; auctionIter.Valid(); auctionIter.Next() {
+		// Auction index keys end with "/<bid_txid>", so suffix matching is
+		// enough to find stale references without decoding the bid record.
+		if bytes.HasSuffix(auctionIter.Key(), bidTxIDSuffix) {
+			staleAuctionKeys = append(staleAuctionKeys, append([]byte(nil), auctionIter.Key()...))
+		}
+	}
+	auctionIter.Close()
+	// Delete after iteration to avoid mutating the store while walking it.
+	for _, key := range staleAuctionKeys {
+		store.Delete(key)
+	}
+
+	bidderIter := k.getIterator(ctx, prefixIntentAuctionBidByBidder)
+	var staleBidderKeys [][]byte
+	for ; bidderIter.Valid(); bidderIter.Next() {
+		// Bidder index values store the bid txid directly, so value matching is
+		// enough to locate stale bidder references.
+		if strings.EqualFold(string(bidderIter.Value()), bidTxID.String()) {
+			staleBidderKeys = append(staleBidderKeys, append([]byte(nil), bidderIter.Key()...))
+		}
+	}
+	bidderIter.Close()
+	// Delete after iteration to avoid mutating the store while walking it.
+	for _, key := range staleBidderKeys {
+		store.Delete(key)
+	}
 }
 
 // GetIntentAuctionBidsByIntentID retrieves all auction bids for a specific intent auction using prefix key iteration

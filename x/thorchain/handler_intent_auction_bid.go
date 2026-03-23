@@ -78,11 +78,6 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 		return se.ErrInvalidRequest.Wrap("no coins in bid transaction")
 	}
 
-	// Reject zero-amount bids
-	if msg.Tx.Coins[0].Amount.IsZero() {
-		return se.ErrInvalidRequest.Wrap("bid amount cannot be zero")
-	}
-
 	// Verify the coin is the expected bid asset (gas asset of source chain)
 	if !msg.Tx.Coins[0].Asset.Equals(auction.BidAsset) {
 		return se.ErrInvalidRequest.Wrapf("bid asset %s does not match expected asset %s", msg.Tx.Coins[0].Asset, auction.BidAsset)

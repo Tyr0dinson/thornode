@@ -190,6 +190,8 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 	}
 
 	coinsInMsg := msg.Coins
+	// TxIntentSolve skips the generic module transfer because solve escrow is
+	// performed by handler_intent_solve.go based on the target asset type.
 	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() && memo.GetType() != TxIntentSolve {
 		// send funds to target module
 		err = h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)

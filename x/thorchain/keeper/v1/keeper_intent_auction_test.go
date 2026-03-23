@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -339,6 +340,40 @@ func (KeeperIntentAuctionSuite) TestIntentAuctionBid_Remove(c *C) {
 	c.Check(len(bids), Equals, 0)
 
 	// Verify bidder index also removed
+	retrievedBid, err := k.GetBidderBidForAuction(ctx, intentTxID, bidder)
+	c.Assert(err, IsNil)
+	c.Check(retrievedBid.BidTxID.IsEmpty(), Equals, true)
+}
+
+func (KeeperIntentAuctionSuite) TestIntentAuctionBid_RemoveCorruptedRecord(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("INTENT99999999ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	bidder := common.Address("thor1bidder")
+	bidTxID := common.TxID("BID99999999990ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+
+	bid := types.IntentAuctionBid{
+		BidTxID:       bidTxID,
+		IntentTxID:    intentTxID,
+		BidderAddress: bidder,
+		BidAmount:     common.NewCoin(common.BTCAsset, cosmos.NewUint(500)),
+	}
+	k.SetIntentAuctionBid(ctx, bid)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(k.GetKey(prefixIntentAuctionBid, bidTxID.String()), []byte("corrupted"))
+
+	_, err := k.GetIntentAuctionBid(ctx, bidTxID)
+	c.Assert(err, NotNil)
+
+	k.RemoveIntentAuctionBid(ctx, bidTxID)
+
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID), Equals, false)
+
+	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(bids), Equals, 0)
+
 	retrievedBid, err := k.GetBidderBidForAuction(ctx, intentTxID, bidder)
 	c.Assert(err, IsNil)
 	c.Check(retrievedBid.BidTxID.IsEmpty(), Equals, true)

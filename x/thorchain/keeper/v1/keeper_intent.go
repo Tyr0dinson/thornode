@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -223,13 +224,19 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 		return
 	}
 
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+
 	// Get the solve record to access its indices
 	solve, err := k.GetIntentSolve(ctx, solveTxID)
 	if err != nil {
+		// If the record body is corrupted, we can no longer derive its index keys
+		// from decoded fields. Drop the primary key and sweep any index entries
+		// that still point at this txid so future reads/removals can recover.
+		ctx.Logger().Error("failed to decode intent solve during removal; deleting primary record and best-effort index entries", "solve_txid", solveTxID, "error", err)
+		store.Delete(k.GetKey(prefixIntentSolve, solveTxID.String()))
+		k.removeIntentSolveIndexEntriesByTxID(ctx, solveTxID)
 		return
 	}
-
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Remove main record
 	store.Delete(k.GetKey(prefixIntentSolve, solveTxID.String()))
@@ -242,6 +249,33 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
 	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/"+solveTxID.String())
 	store.Delete(matchHeightIndexKey)
+}
+
+// removeIntentSolveIndexEntriesByTxID is a corruption-recovery helper used when
+// the primary solve record cannot be unmarshaled. In that case we no longer
+// know the intent txid or match height, so we scan the solve index namespaces
+// and delete any entries whose suffix still references this solve txid.
+func (k KVStore) removeIntentSolveIndexEntriesByTxID(ctx cosmos.Context, solveTxID common.TxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	solveTxIDSuffix := []byte("/" + strings.ToUpper(solveTxID.String()))
+
+	for _, prefix := range []kvTypes.DbPrefix{prefixIntentSolveByIntent, prefixIntentSolveByMatchHeight} {
+		iter := k.getIterator(ctx, prefix)
+		var staleKeys [][]byte
+		for ; iter.Valid(); iter.Next() {
+			// Both solve indexes end with "/<solve_txid>", which lets us clean up
+			// stale entries even when the record fields are unreadable.
+			if bytes.HasSuffix(iter.Key(), solveTxIDSuffix) {
+				staleKeys = append(staleKeys, append([]byte(nil), iter.Key()...))
+			}
+		}
+		iter.Close()
+
+		// Delete after iteration to avoid mutating the store while walking it.
+		for _, key := range staleKeys {
+			store.Delete(key)
+		}
+	}
 }
 
 // GetIntentSolvesByIntentID retrieves all solve bids for a specific intent using prefix key iteration
