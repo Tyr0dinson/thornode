@@ -564,3 +564,77 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempool
 	c.Check(outItems[0].ToAddress.Equals(inboundTx.FromAddress), Equals, true)
 	c.Check(outItems[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 }
+
+func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertedMempoolSwapReprocessedOnChainConfirmation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+
+	// Setup vault
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Setup pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Create a voter that simulates a mempool swap that was reverted after timeout
+	inTxID := GetRandomTxHash()
+	fromAddr := GetRandomBTCAddress()
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.Tx = ObservedTx{
+		Tx: common.Tx{
+			ID:          inTxID,
+			Chain:       common.BTCChain,
+			FromAddress: fromAddr,
+			ToAddress:   GetRandomBTCAddress(),
+			Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+			Memo:        fmt.Sprintf("=:THOR.RUNE:%s", GetRandomTHORAddress()),
+		},
+		ObservedPubKey: vault.PubKey,
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+	}
+	voter.Height = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.Reverted = true                              // Was reverted by timeout
+	voter.MempoolSwapTOR = cosmos.NewUint(50000000000) // Had mempool swap TOR value
+	voter.Actions = []TxOutItem{{                      // Stale speculative actions
+		Chain:  common.BTCChain,
+		InHash: inTxID,
+		Coin:   common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+	}}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Setup active node accounts for quorum
+	nas := make(NodeAccounts, 4)
+	for i := range nas {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+		nas[i] = na
+	}
+
+	// Simulate the on-chain confirmation arriving
+	tx := voter.Tx
+	observers := make([]cosmos.AccAddress, len(nas))
+	for i, na := range nas {
+		observers[i] = na.NodeAddress
+	}
+
+	err := handleObservedTxInQuorum(ctx, mgr, nas[0].NodeAddress, nas, nil, tx, voter, observers, true)
+	c.Assert(err, IsNil)
+
+	// Verify voter state was cleared for re-processing
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.Reverted, Equals, false, Commentf("Reverted flag should be cleared for on-chain confirmation"))
+	c.Check(updatedVoter.MempoolSwapTOR.IsZero(), Equals, true, Commentf("MempoolSwapTOR should be zeroed"))
+}
