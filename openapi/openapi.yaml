@@ -1861,7 +1861,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContractInfoResponse"
 
-
   # ------------------------------ intents ------------------------------
   /thorchain/intent/{tx_id}:
     parameters:
