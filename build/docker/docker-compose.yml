@@ -17,6 +17,7 @@ volumes:
   monero-daemon:
   monero-wallet:
   xmr-frost-data:
+  xmr-sim-data:
 
 ########################################################################################
 # Services
@@ -256,9 +257,10 @@ services:
       BIFROST_CHAINS_XRP_CHAIN_NETWORK: "1234"
 
       # enable xmr
-      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "${BIFROST_CHAINS_XMR_DISABLED:-false}"
       BIFROST_CHAINS_XMR_RPC_HOST: http://monero-daemon:18081
       BIFROST_CHAINS_XMR_CHAIN_HOST: http://monero-wallet-rpc:18082
+      BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
       BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
       BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
@@ -576,12 +578,14 @@ services:
       - mocknet-cluster
     image: registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9
     restart: unless-stopped
+    volumes:
+      - "./mocknet:/mocknet"
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-1}
       DOGE_MASTER_ADDR: ${DOGE_MASTER_ADDR:-mnaioCtEGdw6bd6rWJ13Mbre1kN5rPa2Mo}
     ports:
       - 18332:18332
-    entrypoint: "/scripts/entrypoint-mock.sh"
+    entrypoint: "/mocknet/dogecoin-entrypoint.sh"
 
   # ------------------------------ litecoin ------------------------------
 
@@ -730,6 +734,8 @@ services:
     build:
       context: ../../
       dockerfile: build/docker/xmr-frost-signer/Dockerfile
+      additional_contexts:
+        serai: ../../../serai
     image: thornode-xmr-frost-signer:latest
     restart: unless-stopped
     depends_on:
@@ -744,6 +750,8 @@ services:
       XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
     volumes:
       - xmr-frost-data:/var/lib/xmr-frost
+    ports:
+      - 8283:8283
     healthcheck:
       test:
         [
@@ -751,6 +759,45 @@ services:
           "curl",
           "-sf",
           "http://localhost:8283/health",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  xmr-sim-helper:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: thornode-xmr-frost-signer:latest
+    restart: unless-stopped
+    depends_on:
+      monero-daemon:
+        condition: service_healthy
+      monero-wallet-rpc:
+        condition: service_healthy
+      xmr-frost-signer:
+        condition: service_healthy
+    environment:
+      XMR_FROST_LISTEN_ADDR: "0.0.0.0:8284"
+      XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
+      XMR_FROST_DATA_DIR: "/var/lib/xmr-sim"
+      XMR_FROST_CHAIN_NETWORK: "mocknet"
+      XMR_FROST_STORE_SECRET: "${XMR_SIM_HELPER_STORE_SECRET:-sim-helper-mocknet-secret}"
+      XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:-xmr-sim-helper-mocknet-token}"
+      XMR_SIM_HELPER_ENABLED: "true"
+      XMR_SIM_HELPER_WALLET_RPC_URL: "http://monero-wallet-rpc:18082"
+    volumes:
+      - xmr-sim-data:/var/lib/xmr-sim
+    ports:
+      - 8284:8284
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "http://localhost:8284/health",
         ]
       interval: 5s
       timeout: 5s
@@ -790,6 +837,8 @@ services:
       - --http-host=0.0.0.0
       - --chain-config-dir=/mocknet/configs
       - --http-allowed-hosts=*
+      - --system-tracker-disk-required-available-space-percentage=0
+      - --system-tracker-disk-warning-available-space-percentage=0
     ports:
       - 9650:9650
     environment:

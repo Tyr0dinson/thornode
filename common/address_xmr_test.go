@@ -16,7 +16,7 @@ const (
 	featuredNonGuaranteedSubaddressVector = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v3wfMHCy"
 	featuredGuaranteedSubaddressVector    = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v4Pyz8bD"
 	xmrFixtureSpendHex                    = "b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1"
-	xmrFixtureMockAddress                 = "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDk2s4yUvA6z"
+	xmrFixtureMockAddress                 = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7"
 	xmrFixturePublicAddress               = "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDk2s55z7Nbx"
 )
 
@@ -401,6 +401,24 @@ func (s *XMRAddressSuite) TestXMRCrossStackDeterminismFixture(c *C) {
 	public, err := deriveXMRAddressFromSpendPubKey(spend, MainNet)
 	c.Assert(err, IsNil)
 	c.Check(public, Equals, xmrFixturePublicAddress)
+}
+
+func (s *XMRAddressSuite) TestXMRMocknetUsesWalletCompatibleStandardAddress(c *C) {
+	spend, err := hex.DecodeString(xmrFixtureSpendHex)
+	c.Assert(err, IsNil)
+	c.Assert(len(spend), Equals, 32)
+
+	mock, err := deriveXMRAddressFromSpendPubKey(spend, MockNet)
+	c.Assert(err, IsNil)
+	c.Check(len(mock), Equals, 95)
+	c.Check(strings.HasPrefix(mock, "4"), Equals, true)
+	c.Check(IsXMRFeaturedGuaranteedAddress(mock), Equals, false)
+
+	public, err := deriveXMRAddressFromSpendPubKey(spend, MainNet)
+	c.Assert(err, IsNil)
+	c.Check(len(public), Equals, 97)
+	c.Check(strings.HasPrefix(public, "C"), Equals, true)
+	c.Check(IsXMRFeaturedGuaranteedAddress(public), Equals, true)
 }
 
 func (s *XMRAddressSuite) TestXMRUnknownSenderAddress(c *C) {

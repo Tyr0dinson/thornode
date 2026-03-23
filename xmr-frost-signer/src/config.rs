@@ -55,6 +55,8 @@ pub struct Config {
     pub auth_bearer: Option<String>,
     pub store_secret: String,
     pub chain_network: ChainNetworkMode,
+    pub sim_helper_enabled: bool,
+    pub sim_helper_wallet_rpc_url: Option<String>,
 }
 
 impl Config {
@@ -69,6 +71,16 @@ impl Config {
             &std::env::var("XMR_FROST_CHAIN_NETWORK")
                 .map_err(|_| ConfigError::Missing("XMR_FROST_CHAIN_NETWORK"))?,
         )?;
+        let sim_helper_enabled = read_env_bool("XMR_SIM_HELPER_ENABLED", false)?;
+        let sim_helper_wallet_rpc_url = read_non_empty_env("XMR_SIM_HELPER_WALLET_RPC_URL");
+        if sim_helper_enabled && chain_network != ChainNetworkMode::Mocknet {
+            return Err(ConfigError::InvalidSimHelperConfig(
+                "XMR_SIM_HELPER_ENABLED is only supported in mocknet mode".to_string(),
+            ));
+        }
+        if sim_helper_enabled && sim_helper_wallet_rpc_url.is_none() {
+            return Err(ConfigError::Missing("XMR_SIM_HELPER_WALLET_RPC_URL"));
+        }
 
         let daemon_disable_tls = read_env_bool("XMR_FROST_DAEMON_DISABLE_TLS", false)?;
         let daemon_url_raw = std::env::var("XMR_FROST_DAEMON_URL")
@@ -171,6 +183,8 @@ impl Config {
             auth_bearer,
             store_secret,
             chain_network,
+            sim_helper_enabled,
+            sim_helper_wallet_rpc_url,
         })
     }
 }
@@ -440,6 +454,8 @@ pub enum ConfigError {
     InsecureDaemonEndpoint(String),
     #[error("invalid environment variable {name}: {reason}")]
     InvalidEnv { name: &'static str, reason: String },
+    #[error("invalid sim helper configuration: {0}")]
+    InvalidSimHelperConfig(String),
 }
 
 #[cfg(test)]
@@ -474,6 +490,8 @@ mod tests {
             "XMR_FROST_AUTH_BEARER",
             "XMR_FROST_STORE_SECRET",
             "XMR_FROST_CHAIN_NETWORK",
+            "XMR_SIM_HELPER_ENABLED",
+            "XMR_SIM_HELPER_WALLET_RPC_URL",
         ] {
             std::env::remove_var(name);
         }

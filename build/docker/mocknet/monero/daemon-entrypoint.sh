@@ -12,6 +12,7 @@ mkdir -p "${DATA_DIR}"
 
 exec monerod \
   --regtest \
+  --offline \
   --non-interactive \
   --confirm-external-bind \
   --rpc-bind-ip "${RPC_BIND_IP}" \

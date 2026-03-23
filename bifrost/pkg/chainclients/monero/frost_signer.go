@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
@@ -272,7 +273,9 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 	if err != nil {
 		return nil, err
 	}
-	if parsedEndpoint.Scheme == "http" && !isLoopbackHost(parsedEndpoint.Hostname()) {
+	if parsedEndpoint.Scheme == "http" &&
+		!isLoopbackHost(parsedEndpoint.Hostname()) &&
+		!allowInsecureFrostSignerHTTP(cfg) {
 		return nil, fmt.Errorf("frost signer endpoint %q must use https when not loopback", endpoint)
 	}
 
@@ -352,6 +355,14 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func allowInsecureFrostSignerHTTP(cfg config.BifrostChainConfiguration) bool {
+	chainNetwork := strings.TrimSpace(cfg.ChainNetwork)
+	if strings.EqualFold(chainNetwork, "mocknet") {
+		return true
+	}
+	return common.CurrentChainNetwork == common.MockNet
 }
 
 // --- FROST DKG methods ---

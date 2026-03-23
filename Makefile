@@ -349,15 +349,23 @@ _test-regression:
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
-STAGES ?= all
+TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,solvency,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,solvency,ragnarok,xmr-post-churn
+
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
-	@STAGES=$(STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES --network host -w /app \
+	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM -e STAGES \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 test-simulation-no-reset: build-test-simulation
-	@docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES --network host -w /app \
+	@STAGES=$(TEST_SIMULATION_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM -e STAGES \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 build-test-simulation:
@@ -401,7 +409,10 @@ build-mocknet:
 
 bootstrap-mocknet:
 	@docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES=seed,bootstrap --network host -w /app \
+		-e PARALLELISM -e STAGES=seed,bootstrap \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 ps-mocknet:

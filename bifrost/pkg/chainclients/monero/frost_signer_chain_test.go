@@ -117,3 +117,22 @@ func TestFrostSignerTxExistsHTTPError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestFrostSignerAllowsAuthenticatedMocknetHTTPServiceEndpoint(t *testing.T) {
+	t.Parallel()
+
+	signer, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{
+			ChainNetwork:         "mocknet",
+			AuthorizationBearer: "token",
+			SignerStoreSecret:   testSignerStoreSecret,
+		},
+		"http://xmr-frost-signer:8283",
+	)
+	if err != nil {
+		t.Fatalf("expected mocknet service endpoint to be accepted, got %v", err)
+	}
+	if signer.endpoint != "http://xmr-frost-signer:8283" {
+		t.Fatalf("expected signer endpoint to be preserved, got %q", signer.endpoint)
+	}
+}
