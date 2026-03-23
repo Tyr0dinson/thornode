@@ -25,6 +25,7 @@ import (
 	pkgcosmos "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/dag"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/monero"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/tron"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -54,8 +55,56 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.XRPChain:   xrp.NewConstructor(chainRPCs[common.XRPChain]),
 	common.NOBLEChain: pkgcosmos.NewConstructor(chainRPCs[common.NOBLEChain]),
 	common.SOLChain:   solana.NewConstructor(chainRPCs[common.SOLChain]),
+	common.XMRChain:   monero.NewConstructor(chainRPCs[common.XMRChain]),
 	common.POLChain:   evm.NewConstructor(chainRPCs[common.POLChain]),
 	common.ZECChain:   utxo.NewConstructor(chainRPCs[common.ZECChain]),
+}
+
+type simulationStage struct {
+	name        string
+	defaultOn   bool
+	constructor func(rng *rand.Rand) *Actor
+}
+
+func simulationStages() []simulationStage {
+	return []simulationStage{
+		{name: "seed", defaultOn: true},
+		{name: "bootstrap", defaultOn: true, constructor: suites.Bootstrap},
+		{name: "xmr-coverage", defaultOn: true, constructor: suites.XMRCoverage},
+		{name: "arb", defaultOn: true, constructor: core.NewArbActor},
+		{name: "swaps", defaultOn: true, constructor: suites.Swaps},
+		{name: "memoless-swaps", defaultOn: true, constructor: suites.MemolessSwaps},
+		{name: "consolidate", defaultOn: true, constructor: features.Consolidate},
+		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
+		{name: "inactive-vault-refunds", defaultOn: false, constructor: features.InactiveVaultRefunds},
+		{name: "solvency", defaultOn: true, constructor: core.NewSolvencyCheckActor},
+		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
+		{name: "ragnarok", defaultOn: true, constructor: suites.Ragnarok},
+	}
+}
+
+func simulationStageOptions() []cli.Option {
+	stages := simulationStages()
+	options := make([]cli.Option, 0, len(stages))
+	for _, stage := range stages {
+		options = append(options, cli.Option{Name: stage.name, Default: stage.defaultOn})
+	}
+	return options
+}
+
+func appendSimulationStages(root *Actor, enabledStages map[string]bool, rng *rand.Rand) {
+	appendIfEnabled := func(key string, constructor func(rng *rand.Rand) *Actor) {
+		if constructor == nil {
+			return
+		}
+		if enabledStages[key] || enabledStages["all"] {
+			root.Append(constructor(rng))
+		}
+	}
+
+	for _, stage := range simulationStages() {
+		appendIfEnabled(stage.name, stage.constructor)
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -76,18 +125,7 @@ func init() {
 func main() {
 	// prompt to filter run stages if connected to a terminal
 	enabledStages := map[string]bool{}
-	stages := []cli.Option{
-		{Name: "seed", Default: true},
-		{Name: "bootstrap", Default: true},
-		{Name: "arb", Default: true},
-		{Name: "swaps", Default: true},
-		{Name: "memoless-swaps", Default: true},
-		{Name: "consolidate", Default: true},
-		{Name: "churn", Default: false},
-		{Name: "inactive-vault-refunds", Default: false},
-		{Name: "solvency", Default: true},
-		{Name: "ragnarok", Default: true},
-	}
+	stages := simulationStageOptions()
 	if os.Getenv("STAGES") != "" {
 		for _, stage := range strings.Split(os.Getenv("STAGES"), ",") {
 			enabledStages[stage] = true
@@ -138,6 +176,15 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
+	for _, chain := range []common.Chain{
+		common.ETHChain,
+		common.AVAXChain,
+		common.BASEChain,
+		common.POLChain,
+	} {
+		waitForEVMRPCReadiness(chain, chainRPCs[chain])
+	}
+
 	var randSeed [32]byte
 	randSeedHex := os.Getenv("RANDOM_SEED_HEX")
 	if randSeedHex == "" {
@@ -159,21 +206,7 @@ func main() {
 
 	// combine all actor dags for the complete test run
 	root := NewActor("Root", rng)
-
-	appendIfEnabled := func(key string, constructor func(rng *rand.Rand) *Actor) {
-		if enabledStages[key] || enabledStages["all"] {
-			root.Append(constructor(rng))
-		}
-	}
-	appendIfEnabled("bootstrap", suites.Bootstrap)
-	appendIfEnabled("arb", core.NewArbActor)
-	appendIfEnabled("swaps", suites.Swaps)
-	appendIfEnabled("memoless-swaps", suites.MemolessSwaps)
-	appendIfEnabled("consolidate", features.Consolidate)
-	appendIfEnabled("churn", core.NewChurnActor)
-	appendIfEnabled("inactive-vault-refunds", features.InactiveVaultRefunds)
-	appendIfEnabled("solvency", core.NewSolvencyCheckActor)
-	appendIfEnabled("ragnarok", suites.Ragnarok)
+	appendSimulationStages(root, enabledStages, rng)
 
 	// gather config from the environment
 	parallelism := os.Getenv("PARALLELISM")
@@ -205,4 +238,26 @@ func main() {
 
 	// run the simulation
 	dag.Execute(cfg, root, parallelismInt, rng)
+}
+
+func waitForEVMRPCReadiness(chain common.Chain, endpoint string) {
+	for {
+		res, err := http.Post(
+			endpoint,
+			"application/json",
+			strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}`),
+		)
+		if err == nil && res.StatusCode == http.StatusOK {
+			body, readErr := io.ReadAll(res.Body)
+			res.Body.Close()
+			if readErr == nil && strings.Contains(string(body), `"result"`) {
+				return
+			}
+		} else if res != nil {
+			res.Body.Close()
+		}
+
+		log.Info().Stringer("chain", chain).Msg("waiting for evm chain to be ready")
+		time.Sleep(time.Second)
+	}
 }

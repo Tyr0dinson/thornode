@@ -14,3 +14,15 @@ test/regression/templates
 tools/hardhat
 tmp
 .git
+thornode
+**/target
+
+# Keep the XMR sidecar source visible to the simtest build, but exclude
+# local Rust artifacts that can grow into multi-GB docker contexts.
+xmr-frost-signer/*
+!xmr-frost-signer/Cargo.lock
+!xmr-frost-signer/Cargo.toml
+!xmr-frost-signer/LICENSE
+!xmr-frost-signer/README.md
+!xmr-frost-signer/src
+!xmr-frost-signer/src/**

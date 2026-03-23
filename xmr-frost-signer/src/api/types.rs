@@ -207,6 +207,39 @@ pub struct ScannerSyncRequest {
     pub reorg_window: u64,
 }
 
+// ---- Simulation helper types ----
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SimBalanceRequest {
+    pub spend_key_hex: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SimBalanceResponse {
+    pub address: String,
+    pub balance_atomic: u64,
+    pub unlocked_balance_atomic: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SimTransferRequest {
+    pub spend_key_hex: String,
+    pub to_address: String,
+    pub amount_atomic: u64,
+    pub memo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SimFaucetRequest {
+    pub to_address: String,
+    pub amount_atomic: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SimTransferResponse {
+    pub tx_hash: String,
+}
+
 // ---- Error response ----
 
 #[derive(Debug, Serialize, Deserialize)]

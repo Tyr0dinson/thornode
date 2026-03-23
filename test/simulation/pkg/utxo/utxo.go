@@ -73,6 +73,10 @@ type Client struct {
 
 var _ LiteChainClient = &Client{}
 
+const utxoStartupRPCTimeout = 5 * time.Second
+
+var utxoStartupImportLocks sync.Map
+
 func NewConstructor(host string) LiteChainClientConstructor {
 	return func(chain common.Chain, keys *thorclient.Keys) (LiteChainClient, error) {
 		return NewClient(chain, host, keys)
@@ -82,7 +86,7 @@ func NewConstructor(host string) LiteChainClientConstructor {
 func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChainClient, error) {
 	// create rpc client
 	retries := 5
-	rpc, err := rpc.NewClient(host, "thorchain", "password", retries, time.Second, chain, zerolog.Nop())
+	rpc, err := rpc.NewClient(host, "thorchain", "password", retries, utxoStartupRPCTimeout, chain, zerolog.Nop())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc client: %w", err)
 	}
@@ -110,11 +114,21 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 
 	// import address to wallet, rescan if master account
 	if !chain.Equals(common.ZECChain) {
-		if keys.GetSignerInfo().Name == "master" {
-			err = rpc.ImportAddressRescan(address.String())
-		} else {
-			err = rpc.ImportAddress(address.String())
+		importLock := getUTXOStartupImportLock(chain)
+		importLock.Lock()
+		imported, importedErr := rpc.IsAddressImported(address.String())
+		if importedErr != nil {
+			importLock.Unlock()
+			return nil, fmt.Errorf("fail to query address info(%s): %w", address, importedErr)
 		}
+		if !imported {
+			if keys.GetSignerInfo().Name == "master" {
+				err = rpc.ImportAddressRescan(address.String())
+			} else {
+				err = rpc.ImportAddress(address.String())
+			}
+		}
+		importLock.Unlock()
 
 		if err != nil {
 			return nil, fmt.Errorf("fail to import address(%s): %w", address, err)
@@ -131,6 +145,16 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 		spentUtxos: make(map[string]bool),
 		mtx:        sync.Mutex{},
 	}, nil
+}
+
+func getUTXOStartupImportLock(chain common.Chain) *sync.Mutex {
+	if lock, ok := utxoStartupImportLocks.Load(chain); ok {
+		return lock.(*sync.Mutex)
+	}
+
+	lock := &sync.Mutex{}
+	actual, _ := utxoStartupImportLocks.LoadOrStore(chain, lock)
+	return actual.(*sync.Mutex)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

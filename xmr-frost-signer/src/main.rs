@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         rate_limit_max_tracked_ips = config.rate_limit_max_tracked_ips,
         data_dir = %config.data_dir.display(),
         chain_network = ?config.chain_network,
+        sim_helper_enabled = config.sim_helper_enabled,
         "configuration loaded"
     );
     let auth_config = AuthConfig {
@@ -114,6 +115,8 @@ async fn main() -> anyhow::Result<()> {
         store,
         chain_network: config.chain_network,
         max_sign_scan_lag_blocks: config.max_sign_scan_lag_blocks,
+        sim_helper_enabled: config.sim_helper_enabled,
+        sim_helper_wallet_rpc_url: config.sim_helper_wallet_rpc_url.clone(),
     });
 
     // Protected router for signer APIs.
@@ -157,15 +160,29 @@ async fn main() -> anyhow::Result<()> {
             get(api::routes::get_chain_tx_exists),
         )
         .layer(from_fn(api::rate_limit::rate_limit_middleware))
-        .layer(Extension(rate_limiter))
+        .layer(Extension(rate_limiter.clone()))
         .layer(from_fn(api::auth::auth_middleware))
-        .layer(Extension(auth_config));
+        .layer(Extension(auth_config.clone()));
+
+    let sim_helper_routes = if config.sim_helper_enabled {
+        Router::new()
+            .route("/v1/monero/sim/balance", post(api::routes::sim_get_balance))
+            .route("/v1/monero/sim/transfer", post(api::routes::sim_transfer))
+            .route("/v1/monero/sim/faucet", post(api::routes::sim_faucet))
+            .layer(from_fn(api::rate_limit::rate_limit_middleware))
+            .layer(Extension(rate_limiter.clone()))
+            .layer(from_fn(api::auth::auth_middleware))
+            .layer(Extension(auth_config.clone()))
+    } else {
+        Router::new()
+    };
 
     // Build router.
     let app = Router::new()
         // Health remains unauthenticated for probes.
         .route("/health", get(health::health_check))
         .merge(monero_routes)
+        .merge(sim_helper_routes)
         // Middleware
         .layer(TraceLayer::new_for_http())
         .with_state(app_state.clone());

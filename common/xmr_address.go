@@ -83,21 +83,23 @@ func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, chainNetwork ChainNetwo
 		return "", err
 	}
 
-	featuredSubaddress := false
-	switch chainNetwork {
-	case MainNet, StageNet, ChainNet:
-		featuredSubaddress = true
+	if chainNetwork == MockNet {
+		payload := make([]byte, 0, 1+32+32+4)
+		payload = append(payload, xmrPrimaryNetworkByte)
+		payload = append(payload, spendPubKey...)
+		payload = append(payload, viewPubKey[:]...)
+
+		checksum := eth.Keccak256(payload)
+		payload = append(payload, checksum[:4]...)
+
+		return xmrBase58Encode(payload)
 	}
 
 	payload := make([]byte, 0, 1+32+32+1+4)
 	payload = append(payload, xmrFeaturedMainnetNetworkByte)
 	payload = append(payload, spendPubKey...)
 	payload = append(payload, viewPubKey[:]...)
-	features := uint64(0)
-	if featuredSubaddress {
-		features |= xmrFeaturedSubaddressBit
-	}
-	features |= xmrFeaturedGuaranteedBit
+	features := uint64(xmrFeaturedSubaddressBit | xmrFeaturedGuaranteedBit)
 	payload = xmrAppendVarint(payload, features)
 
 	checksum := eth.Keccak256(payload)

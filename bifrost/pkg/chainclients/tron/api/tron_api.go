@@ -150,6 +150,9 @@ func (api *TronApi) CreateTransaction(
 	if err != nil {
 		return tx, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
+	if tx.Err != "" {
+		return tx, fmt.Errorf("create transaction failed: %s", tx.Err)
+	}
 
 	return tx, nil
 }

@@ -315,7 +315,7 @@ impl DaemonClient {
     /// Get the current blockchain height.
     pub async fn get_height(&self) -> Result<u64> {
         let info = self.get_info().await?;
-        Ok(info.height)
+        Ok(top_block_height(info.height))
     }
 
     /// Get block header by height.
@@ -391,6 +391,10 @@ impl DaemonClient {
     }
 }
 
+fn top_block_height(height: u64) -> u64 {
+    height.saturating_sub(1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,6 +408,13 @@ mod tests {
     };
 
     const TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+    #[test]
+    fn top_block_height_uses_saturating_block_count_translation() {
+        assert_eq!(top_block_height(0), 0);
+        assert_eq!(top_block_height(1), 0);
+        assert_eq!(top_block_height(272), 271);
+    }
 
     async fn spawn_test_server(app: Router) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -9,8 +9,11 @@ use axum::{
 };
 use bech32::decode as bech32_decode;
 use monero_wallet::rpc::Rpc;
+use rand::rngs::OsRng;
+use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use tracing::{error, warn};
+use uuid::Uuid;
 
 use super::types::*;
 use crate::config::ChainNetworkMode;
@@ -19,9 +22,11 @@ use crate::frost::sign::SignCoordinator;
 use crate::state::store::{
     IdempotencyClaimResult, OutputRef, OutputState, ScanBlockMeta, TrackedOutput,
 };
+use crate::tx::builder;
 use crate::tx::daemon::DaemonClient;
 use crate::tx::fee;
 use crate::tx::scanner::Scanner;
+use crate::xmr;
 
 /// Shared application state passed to all route handlers.
 pub struct AppState {
@@ -32,6 +37,8 @@ pub struct AppState {
     pub store: Arc<crate::state::Store>,
     pub chain_network: ChainNetworkMode,
     pub max_sign_scan_lag_blocks: u64,
+    pub sim_helper_enabled: bool,
+    pub sim_helper_wallet_rpc_url: Option<String>,
 }
 
 /// Helper to parse a HashMap<String, String> to HashMap<u16, Vec<u8>>.
@@ -1704,6 +1711,531 @@ pub async fn get_chain_tx_exists(
     )
 }
 
+#[derive(Debug, Clone)]
+struct SimAccount {
+    account_id: String,
+    group_key_hex: String,
+    address: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct JsonRpcRequest<P: serde::Serialize> {
+    jsonrpc: &'static str,
+    id: &'static str,
+    method: &'static str,
+    params: P,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct JsonRpcResponse<R> {
+    result: Option<R>,
+    error: Option<JsonRpcError>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct JsonRpcError {
+    code: i64,
+    message: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct WalletRefreshParams {}
+
+#[derive(Debug, serde::Serialize)]
+struct WalletTransferParams {
+    destinations: Vec<WalletDestination>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct WalletDestination {
+    amount: u64,
+    address: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct WalletTransferResult {
+    tx_hash: Option<String>,
+    tx_hash_list: Option<Vec<String>>,
+}
+
+fn ensure_sim_helper_enabled(state: &AppState) -> Result<(), (StatusCode, serde_json::Value)> {
+    if state.sim_helper_enabled {
+        return Ok(());
+    }
+    Err((
+        StatusCode::NOT_FOUND,
+        error_json("simulation helper disabled"),
+    ))
+}
+
+fn sim_account_from_spend_key(
+    spend_key_hex: &str,
+    chain_network: ChainNetworkMode,
+) -> Result<SimAccount, String> {
+    let group_key_hex = xmr::group_key_hex_from_spend_seed_hex(spend_key_hex)
+        .map_err(|e| format!("invalid spend_key_hex: {e}"))?;
+    let address = xmr::derive_address_from_spend_seed_hex(spend_key_hex, chain_network)
+        .map_err(|e| format!("failed to derive XMR address: {e}"))?;
+    Ok(SimAccount {
+        account_id: group_key_hex.clone(),
+        group_key_hex,
+        address,
+    })
+}
+
+async fn sync_sim_account(state: &AppState, account: &SimAccount) -> Result<(), String> {
+    state
+        .store
+        .register_vault(
+            &account.account_id,
+            &account.group_key_hex,
+            &account.address,
+            "sim_helper",
+        )
+        .map_err(|e| format!("failed to register sim account: {e}"))?;
+
+    let mut outputs = state
+        .store
+        .load_outputs(&account.account_id)
+        .map_err(|e| format!("failed to load sim account outputs: {e}"))?;
+    let mut scan_height = state
+        .store
+        .load_scan_height(&account.account_id)
+        .map_err(|e| format!("failed to load sim account scan height: {e}"))?
+        .unwrap_or(0);
+
+    let tip_height = state
+        .daemon
+        .get_height()
+        .await
+        .map_err(|e| format!("failed to query daemon height: {e}"))?;
+    let rewound_chain = tip_height < scan_height;
+    if rewound_chain {
+        warn!(
+            account = %account.account_id,
+            stored_scan_height = scan_height,
+            tip_height,
+            "resetting sim helper scan state after daemon height rewind"
+        );
+        state
+            .store
+            .rollback_scan_state_from_height(&account.account_id, 1)
+            .map_err(|e| format!("failed to reset sim account scan state: {e}"))?;
+        outputs = state
+            .store
+            .load_outputs(&account.account_id)
+            .map_err(|e| format!("failed to reload sim account outputs: {e}"))?;
+        scan_height = state
+            .store
+            .load_scan_height(&account.account_id)
+            .map_err(|e| format!("failed to reload sim account scan height: {e}"))?
+            .unwrap_or(0);
+    }
+
+    {
+        let mut scanner = state.scanner.lock();
+        if rewound_chain || !scanner.has_vault(&account.account_id) {
+            scanner
+                .register_vault(
+                    &account.account_id,
+                    &account.group_key_hex,
+                    state.chain_network,
+                    outputs.clone(),
+                    Some(scan_height),
+                )
+                .map_err(|e| format!("failed to initialize sim account scanner: {e}"))?;
+        }
+        scanner.merge_output_states(&account.account_id, &outputs);
+        scanner.set_current_height(scan_height);
+    }
+
+    state.scanner.lock().set_current_height(tip_height);
+    if tip_height <= scan_height {
+        return Ok(());
+    }
+
+    let rpc = state
+        .daemon
+        .oxide_rpc()
+        .await
+        .map_err(|e| format!("failed to initialize monero RPC client: {e}"))?;
+
+    for height in (scan_height + 1)..=tip_height {
+        let block = rpc
+            .get_scannable_block_by_number(height as usize)
+            .await
+            .map_err(|e| format!("failed to fetch scannable block {height}: {e}"))?;
+        state
+            .scanner
+            .lock()
+            .scan_block_for_vault_with_added(&account.account_id, height, block)
+            .map_err(|e| format!("failed to scan block {height}: {e}"))?;
+    }
+
+    let outputs = state.scanner.lock().get_all_outputs(&account.account_id);
+    state
+        .store
+        .merge_scanned_outputs(&account.account_id, &outputs)
+        .map_err(|e| format!("failed to persist sim account outputs: {e}"))?;
+    state
+        .store
+        .save_scan_height(&account.account_id, tip_height)
+        .map_err(|e| format!("failed to persist sim account scan height: {e}"))?;
+    Ok(())
+}
+
+async fn wallet_rpc_call<P: serde::Serialize, R: DeserializeOwned>(
+    wallet_rpc_url: &str,
+    method: &'static str,
+    params: P,
+) -> Result<R, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("failed to build wallet-rpc client: {e}"))?;
+    let resp = client
+        .post(format!("{}/json_rpc", wallet_rpc_url.trim_end_matches('/')))
+        .json(&JsonRpcRequest {
+            jsonrpc: "2.0",
+            id: "0",
+            method,
+            params,
+        })
+        .send()
+        .await
+        .map_err(|e| format!("wallet-rpc {method} request failed: {e}"))?;
+    let status = resp.status();
+    let body = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("failed to read wallet-rpc {method} response: {e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "wallet-rpc {method} returned {status}: {}",
+            String::from_utf8_lossy(&body)
+        ));
+    }
+
+    let decoded: JsonRpcResponse<R> = serde_json::from_slice(&body)
+        .map_err(|e| format!("failed to decode wallet-rpc {method} response: {e}"))?;
+    if let Some(result) = decoded.result {
+        return Ok(result);
+    }
+    if let Some(error) = decoded.error {
+        return Err(format!(
+            "wallet-rpc {method} failed with {}: {}",
+            error.code, error.message
+        ));
+    }
+    Err(format!(
+        "wallet-rpc {method} returned neither result nor error"
+    ))
+}
+
+pub async fn sim_get_balance(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SimBalanceRequest>,
+) -> impl IntoResponse {
+    if let Err(err) = ensure_sim_helper_enabled(&state) {
+        return (err.0, Json(err.1));
+    }
+
+    let account = match sim_account_from_spend_key(&req.spend_key_hex, state.chain_network) {
+        Ok(account) => account,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(error_json(e))),
+    };
+    if let Err(e) = sync_sim_account(&state, &account).await {
+        error!(error = %e, account = %account.account_id, "failed to sync sim balance");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(error_json(e)));
+    }
+
+    let (balance_atomic, unlocked_balance_atomic) = {
+        let scanner = state.scanner.lock();
+        scanner.get_balance(&account.account_id)
+    };
+
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::to_value(SimBalanceResponse {
+                address: account.address,
+                balance_atomic,
+                unlocked_balance_atomic,
+            })
+            .unwrap(),
+        ),
+    )
+}
+
+pub async fn sim_transfer(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SimTransferRequest>,
+) -> impl IntoResponse {
+    if let Err(err) = ensure_sim_helper_enabled(&state) {
+        return (err.0, Json(err.1));
+    }
+    if req.to_address.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("to_address is required")),
+        );
+    }
+    if req.amount_atomic == 0 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("amount_atomic must be > 0")),
+        );
+    }
+
+    let account = match sim_account_from_spend_key(&req.spend_key_hex, state.chain_network) {
+        Ok(account) => account,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(error_json(e))),
+    };
+    if let Err(e) = sync_sim_account(&state, &account).await {
+        error!(error = %e, account = %account.account_id, "failed to sync sim transfer account");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(error_json(e)));
+    }
+
+    let tip_height = match state.daemon.get_height().await {
+        Ok(height) => height,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(error_json(format!("daemon height unavailable: {e}"))),
+            )
+        }
+    };
+    let header = match state.daemon.get_block_header_by_height(tip_height).await {
+        Ok(header) => header.block_header,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(error_json(format!("daemon header unavailable: {e}"))),
+            )
+        }
+    };
+    let rpc = match state.daemon.oxide_rpc().await {
+        Ok(rpc) => rpc,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(error_json(e.to_string())),
+            )
+        }
+    };
+    let fee_rate = match fee::estimate_fee_rate(&rpc).await {
+        Ok(rate) => rate,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(error_json(e.to_string())),
+            )
+        }
+    };
+    let available_outputs = state.scanner.lock().get_outputs(&account.account_id);
+    let unsigned = match builder::build_unsigned_transaction(
+        &rpc,
+        req.to_address.trim(),
+        req.amount_atomic,
+        req.memo.as_deref().unwrap_or_default(),
+        fee_rate,
+        &format!("sim-helper:{}", Uuid::new_v4()),
+        header.major_version,
+        tip_height as usize,
+        &available_outputs,
+        Some(&account.address),
+        &HashSet::new(),
+        state.chain_network,
+    )
+    .await
+    {
+        Ok(unsigned) => unsigned,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string()))),
+    };
+
+    let refs = unsigned
+        .selected_inputs
+        .iter()
+        .map(|input| OutputRef {
+            tx_hash: input.tx_hash.clone(),
+            output_index: input.output_index,
+        })
+        .collect::<Vec<_>>();
+    let ref_pairs = refs
+        .iter()
+        .map(|r| (r.tx_hash.clone(), r.output_index))
+        .collect::<Vec<_>>();
+    let session_id = Uuid::new_v4().to_string();
+    let msg_id = session_id.clone();
+    if let Err(e) = state.store.reserve_outputs(
+        &account.account_id,
+        &refs,
+        &session_id,
+        &msg_id,
+        chrono::Utc::now().timestamp() + 300,
+    ) {
+        return (StatusCode::CONFLICT, Json(error_json(e.to_string())));
+    }
+
+    let spend_scalar = match xmr::spend_scalar_from_seed_hex(&req.spend_key_hex) {
+        Ok(scalar) => scalar,
+        Err(e) => {
+            let _ = state.store.release_reservations_for_session(
+                &account.account_id,
+                &session_id,
+                &msg_id,
+            );
+            return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string())));
+        }
+    };
+    let tx = match unsigned.signable.sign(&mut OsRng, &spend_scalar) {
+        Ok(tx) => tx,
+        Err(e) => {
+            let _ = state.store.release_reservations_for_session(
+                &account.account_id,
+                &session_id,
+                &msg_id,
+            );
+            return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string())));
+        }
+    };
+    let tx_hash = hex::encode(tx.hash());
+    let tx_hex = hex::encode(tx.serialize());
+    if let Err(e) =
+        state
+            .store
+            .bind_reservation_tx_hash(&account.account_id, &session_id, &msg_id, &tx_hash)
+    {
+        let _ =
+            state
+                .store
+                .release_reservations_for_session(&account.account_id, &session_id, &msg_id);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(format!(
+                "failed to bind sim transfer reservation: {e}"
+            ))),
+        );
+    }
+
+    match state.daemon.send_raw_transaction(&tx_hex).await {
+        Ok(resp) if resp.status == "OK" => {
+            if let Err(e) =
+                state
+                    .store
+                    .finalize_reserved_for_msg(&account.account_id, &msg_id, &tx_hash)
+            {
+                error!(error = %e, tx_hash = %tx_hash, "failed to finalize sim transfer reservation");
+            }
+            state
+                .scanner
+                .lock()
+                .mark_spent_by_refs(&account.account_id, &ref_pairs);
+            (
+                StatusCode::OK,
+                Json(serde_json::to_value(SimTransferResponse { tx_hash }).unwrap()),
+            )
+        }
+        Ok(resp) => {
+            let _ = state.store.release_reservations_for_session(
+                &account.account_id,
+                &session_id,
+                &msg_id,
+            );
+            (
+                StatusCode::BAD_REQUEST,
+                Json(error_json(resp.reason.unwrap_or(resp.status))),
+            )
+        }
+        Err(e) => {
+            let _ = state.store.release_reservations_for_session(
+                &account.account_id,
+                &session_id,
+                &msg_id,
+            );
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(error_json(format!("failed to broadcast sim transfer: {e}"))),
+            )
+        }
+    }
+}
+
+pub async fn sim_faucet(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SimFaucetRequest>,
+) -> impl IntoResponse {
+    if let Err(err) = ensure_sim_helper_enabled(&state) {
+        return (err.0, Json(err.1));
+    }
+    if req.to_address.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("to_address is required")),
+        );
+    }
+    if req.amount_atomic == 0 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("amount_atomic must be > 0")),
+        );
+    }
+
+    let Some(wallet_rpc_url) = state.sim_helper_wallet_rpc_url.as_deref() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json("sim helper wallet-rpc URL not configured")),
+        );
+    };
+
+    if let Err(e) =
+        wallet_rpc_call::<_, serde_json::Value>(wallet_rpc_url, "refresh", WalletRefreshParams {})
+            .await
+    {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(error_json(format!("wallet-rpc refresh failed: {e}"))),
+        );
+    }
+
+    let transfer = match wallet_rpc_call::<_, WalletTransferResult>(
+        wallet_rpc_url,
+        "transfer",
+        WalletTransferParams {
+            destinations: vec![WalletDestination {
+                amount: req.amount_atomic,
+                address: req.to_address.trim().to_string(),
+            }],
+        },
+    )
+    .await
+    {
+        Ok(transfer) => transfer,
+        Err(e) => return (StatusCode::SERVICE_UNAVAILABLE, Json(error_json(e))),
+    };
+
+    let tx_hash = transfer
+        .tx_hash
+        .or_else(|| {
+            transfer
+                .tx_hash_list
+                .and_then(|mut hashes| hashes.drain(..).next())
+        })
+        .filter(|hash| !hash.trim().is_empty());
+    match tx_hash {
+        Some(tx_hash) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(SimTransferResponse { tx_hash }).unwrap()),
+        ),
+        None => (
+            StatusCode::BAD_GATEWAY,
+            Json(error_json(
+                "wallet-rpc transfer returned success without tx_hash",
+            )),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1821,6 +2353,8 @@ mod tests {
             store,
             chain_network: crate::config::ChainNetworkMode::Public,
             max_sign_scan_lag_blocks: 3,
+            sim_helper_enabled: false,
+            sim_helper_wallet_rpc_url: None,
         });
         (app_state, data_dir, vault_pub_key)
     }
@@ -1865,6 +2399,8 @@ mod tests {
             store,
             chain_network: crate::config::ChainNetworkMode::Public,
             max_sign_scan_lag_blocks: 3,
+            sim_helper_enabled: false,
+            sim_helper_wallet_rpc_url: None,
         });
         (app_state, data_dir)
     }

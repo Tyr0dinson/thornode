@@ -20,6 +20,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/monero"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -44,6 +45,7 @@ var chainRPCs = map[common.Chain]string{
 	common.TRONChain:  "http://localhost:8090",
 	common.XRPChain:   "http://localhost:5005",
 	common.SOLChain:   "http://localhost:8899",
+	common.XMRChain:   envOrDefault("XMR_SIM_HELPER_ENDPOINT", "http://localhost:8284"),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -74,6 +76,11 @@ var (
 		strings.Repeat("rabbit ", 23) + "rent",
 		strings.Repeat("wolf ", 23) + "victory",
 	}
+)
+
+const (
+	xmrStartupRetryAttempts = 30
+	xmrStartupRetryDelay    = 2 * time.Second
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -207,7 +214,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 
 	// log all configured tokens, their decimals, and master balance
 	for _, chain := range chains {
-		account, err := master.ChainClients[chain].GetAccount(nil)
+		account, err := waitForMasterAccount(chain, master.ChainClients[chain])
 		if err != nil {
 			log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
 		}
@@ -281,11 +288,18 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		case common.TRONChain:
-			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+			chainSeedAmount = sdkmath.NewUint(10000 * common.One)
 		case common.POLChain:
 			chainSeedAmount = sdkmath.NewUint(1_000_000 * common.One)
+		case common.XMRChain:
+			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
 		default:
 			continue // all other chains currently unsupported
+		}
+
+		if chain.Equals(common.XMRChain) {
+			fundUserXMRAccounts(master, funded, chainSeedAmount)
+			continue
 		}
 
 		for i := 0; i < chainSeedTxs; i++ {
@@ -315,38 +329,55 @@ func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amou
 
 // nolint:typecheck
 func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath.Uint) {
-	// build tx
 	addr, err := user.PubKey(chain).GetAddress(chain)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get address")
 	}
-	tx := SimTx{
-		Chain:     chain,
-		ToAddress: addr,
-		Coin:      common.NewCoin(chain.GetGasAsset(), amount),
-		Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
-	}
 
-	// sign tx
-	signed, err := master.ChainClients[chain].SignTx(tx)
+	userAccount, err := user.ChainClients[chain].GetAccount(nil)
 	if err != nil {
-		log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to sign master tx")
+		log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to get user account")
 	}
 
-	// broadcast tx
-	txid, err := master.ChainClients[chain].BroadcastTx(signed)
-	if err != nil {
-		log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
-	}
+	currentAmount := userAccount.Coins.GetCoin(chain.GetGasAsset()).Amount
+	if currentAmount.GTE(amount) {
+		log.Info().
+			Str("user", user.Name()).
+			Stringer("chain", chain).
+			Stringer("address", addr).
+			Stringer("balance", currentAmount).
+			Stringer("target", amount).
+			Msg("account already funded")
+	} else {
+		fundingAmount := amount.Sub(currentAmount)
+		tx := SimTx{
+			Chain:     chain,
+			ToAddress: addr,
+			Coin:      common.NewCoin(chain.GetGasAsset(), fundingAmount),
+			Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
+		}
 
-	amountFloat := float64(amount.Uint64()) / float64(common.One)
-	log.Info().
-		Str("txid", txid).
-		Str("user", user.Name()).
-		Stringer("chain", chain).
-		Stringer("address", addr).
-		Str("amount", fmt.Sprintf("%08f", amountFloat)).
-		Msg("account funded")
+		// sign tx
+		signed, err := master.ChainClients[chain].SignTx(tx)
+		if err != nil {
+			log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to sign master tx")
+		}
+
+		// broadcast tx
+		txid, err := master.ChainClients[chain].BroadcastTx(signed)
+		if err != nil {
+			log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
+		}
+
+		amountFloat := float64(fundingAmount.Uint64()) / float64(common.One)
+		log.Info().
+			Str("txid", txid).
+			Str("user", user.Name()).
+			Stringer("chain", chain).
+			Stringer("address", addr).
+			Str("amount", fmt.Sprintf("%08f", amountFloat)).
+			Msg("account funded")
+	}
 
 	// if this is an EVM chain also fund token balances
 	if !chain.IsEVM() {
@@ -356,14 +387,28 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 	// fund token balances
 	eAddr := ecommon.HexToAddress(addr.String())
 	for asset, token := range evm.Tokens(chain) {
-		// for huge amounts like POLChain, total token amount is 500k
-		tokenAmount := sdkmath.NewUint(10_000 * common.One)
-		if amount.LT(tokenAmount) {
-			tokenAmount = amount
+		// Cap EVM token seeding so the master mocknet inventory, especially on AVAX,
+		// can cover every simulation user without later ERC-20 transfers reverting.
+		targetTokenAmount := sdkmath.NewUint(5_000 * common.One)
+		if amount.LT(targetTokenAmount) {
+			targetTokenAmount = amount
 		}
+
+		currentTokenAmount := userAccount.Coins.GetCoin(asset).Amount
+		if currentTokenAmount.GTE(targetTokenAmount) {
+			log.Info().
+				Str("account", user.Name()).
+				Stringer("asset", asset).
+				Stringer("balance", currentTokenAmount).
+				Stringer("target", targetTokenAmount).
+				Msg("token balance already funded")
+			continue
+		}
+		tokenFundingAmount := targetTokenAmount.Sub(currentTokenAmount)
+
 		// convert funding amount to token decimals
 		factor := big.NewInt(1).Exp(big.NewInt(10), big.NewInt(int64(token.Decimals)), nil)
-		tokenAmount = tokenAmount.Mul(sdkmath.NewUintFromBigInt(factor))
+		tokenAmount := tokenFundingAmount.Mul(sdkmath.NewUintFromBigInt(factor))
 		tokenAmount = tokenAmount.Quo(sdkmath.NewUint(common.One))
 
 		tokenTx := SimContractTx{
@@ -385,7 +430,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 				Stringer("from", from).
 				Msg("failed to broadcast funding token tx")
 		}
-		amountFloat := float64(amount.Uint64()) / float64(common.One)
+		amountFloat := float64(tokenFundingAmount.Uint64()) / float64(common.One)
 		log.Info().
 			Str("txid", tokenTxid).
 			Str("account", user.Name()).
@@ -395,6 +440,21 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 			Str("amount", fmt.Sprintf("%08f", amountFloat)).
 			Msg("token balance funded")
 	}
+}
+
+func envOrDefault(key, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func thorUserFundingPlan(coins common.Coins) (seedThor bool, seedChains bool) {
+	if len(coins) > 0 {
+		return false, true
+	}
+	return true, true
 }
 
 func fundUserThorAccount(master, user *User) bool {
@@ -409,9 +469,10 @@ func fundUserThorAccount(master, user *User) bool {
 		log.Fatal().Err(err).Msg("failed to get user thor address")
 	}
 	coins, _ := thornode.GetBalances(userThorAddress)
-	if len(coins) > 0 {
+	seedThor, seedChains := thorUserFundingPlan(coins)
+	if !seedThor {
 		log.Info().Str("account", user.Name()).Msg("user has rune, skipping seed")
-		return false
+		return seedChains
 	}
 
 	// seed thorchain account
@@ -438,5 +499,99 @@ func fundUserThorAccount(master, user *User) bool {
 		Str("amount", fmt.Sprintf("%08f", seedAmountFloat)).
 		Msg("account funded")
 
-	return true
+	return seedChains
+}
+
+func fundUserXMRAccounts(master *User, users []*User, amount sdkmath.Uint) {
+	client, ok := master.ChainClients[common.XMRChain].(*monero.Client)
+	if !ok {
+		log.Fatal().Msg("failed to get monero simulation client")
+	}
+
+	for _, user := range users {
+		addr, err := user.PubKey(common.XMRChain).GetAddress(common.XMRChain)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to get XMR address")
+		}
+
+		txid, err := client.Faucet(addr, amount)
+		if err != nil {
+			log.Fatal().Err(err).Stringer("address", addr).Msg("failed to faucet XMR simulation account")
+		}
+
+		amountFloat := float64(amount.Uint64()) / float64(common.One)
+		log.Info().
+			Str("txid", txid).
+			Str("user", user.Name()).
+			Stringer("chain", common.XMRChain).
+			Stringer("address", addr).
+			Str("amount", fmt.Sprintf("%08f", amountFloat)).
+			Msg("account funded")
+	}
+
+	for _, user := range users {
+		for {
+			acct, err := user.ChainClients[common.XMRChain].GetAccount(nil)
+			if err == nil && acct.Coins.GetCoin(common.XMRAsset).Amount.GTE(amount) {
+				break
+			}
+
+			if err != nil {
+				log.Warn().Err(err).Str("user", user.Name()).Msg("waiting for XMR simulation account balance")
+			} else {
+				log.Info().
+					Str("user", user.Name()).
+					Stringer("balance", acct.Coins.GetCoin(common.XMRAsset).Amount).
+					Stringer("target", amount).
+					Msg("waiting for XMR funds to unlock")
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+	}
+}
+
+func waitForMasterAccount(chain common.Chain, client LiteChainClient) (*common.Account, error) {
+	return waitForMasterAccountWithSleep(chain, client, time.Sleep)
+}
+
+func waitForMasterAccountWithSleep(
+	chain common.Chain,
+	client LiteChainClient,
+	sleep func(time.Duration),
+) (*common.Account, error) {
+	var lastErr error
+	for attempt := 1; attempt <= xmrStartupRetryAttempts; attempt++ {
+		account, err := client.GetAccount(nil)
+		if err == nil {
+			return account, nil
+		}
+
+		lastErr = err
+		if !isRetryableXMRStartupError(chain, err) || attempt == xmrStartupRetryAttempts {
+			return nil, err
+		}
+
+		log.Warn().
+			Stringer("chain", chain).
+			Int("attempt", attempt).
+			Int("max_attempts", xmrStartupRetryAttempts).
+			Err(err).
+			Msg("waiting for XMR master account readiness")
+		sleep(xmrStartupRetryDelay)
+	}
+
+	return nil, lastErr
+}
+
+func isRetryableXMRStartupError(chain common.Chain, err error) bool {
+	if err == nil || !chain.Equals(common.XMRChain) {
+		return false
+	}
+
+	msg := err.Error()
+	return (strings.Contains(msg, "failed to fetch scannable block 1") &&
+		strings.Contains(msg, "Requested block height: 1 greater than current top block height: 0")) ||
+		strings.Contains(msg, "failed to query daemon height:") ||
+		strings.Contains(msg, "daemon RPC get_info failed")
 }

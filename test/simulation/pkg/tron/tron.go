@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"cosmossdk.io/math"
@@ -29,9 +30,13 @@ type Client struct {
 	keys    *thorclient.Keys
 	privKey *ecdsa.PrivateKey
 	address common.Address
+	txMu    sync.Mutex
 }
 
 var _ LiteChainClient = &Client{}
+
+const tronAPITimeout = 10 * time.Second
+const tronCreateTransactionWarmupTimeout = 60 * time.Second
 
 func NewConstructor(host string) LiteChainClientConstructor {
 	return func(chain common.Chain, keys *thorclient.Keys) (LiteChainClient, error) {
@@ -68,7 +73,7 @@ func NewClient(
 
 	client := Client{
 		chain:   chain,
-		api:     api.NewTronApi(host, time.Second*2),
+		api:     api.NewTronApi(host, tronAPITimeout),
 		keys:    keys,
 		address: address,
 	}
@@ -117,14 +122,34 @@ func (c *Client) SignContractTx(_ SimContractTx) ([]byte, error) {
 }
 
 func (c *Client) SignTx(tx SimTx) ([]byte, error) {
-	tronTx, err := c.api.CreateTransaction(
-		c.address.String(),
-		tx.ToAddress.String(),
-		tx.Coin.Amount.Quo(math.NewUint(100)).Uint64(),
-		tx.Memo,
-	)
-	if err != nil {
-		return nil, err
+	c.txMu.Lock()
+	defer c.txMu.Unlock()
+
+	deadline := time.Now().Add(tronCreateTransactionWarmupTimeout)
+	var tronTx api.Transaction
+	var err error
+	for {
+		tronTx, err = c.api.CreateTransaction(
+			c.address.String(),
+			tx.ToAddress.String(),
+			tx.Coin.Amount.Quo(math.NewUint(100)).Uint64(),
+			tx.Memo,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if tronTx.TxId == "" && tronTx.RawDataHex != "" {
+			if rehashErr := tronTx.Rehash(); rehashErr == nil {
+				err = nil
+			}
+		}
+		if tronTx.TxId != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("create transaction returned empty txID")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	hash, err := hex.DecodeString(tronTx.TxId)
