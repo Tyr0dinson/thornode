@@ -79,6 +79,11 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		return ErrInternal(err, "fail to get intent")
 	}
 
+	// Re-validate intent status to guard against state changes between validate and handle
+	if intent.Status != IntentActive {
+		return fmt.Errorf("intent %s is no longer active, status: %s", msg.IntentTxID, intent.Status.String())
+	}
+
 	// For non-native, non-pool, non-gas-asset sources, require gas tokens in the cancel tx.
 	// The user-provided gas is booked into the chain gas pool immediately (similar to
 	// processWinningBid), so the standard outbound gas reimbursement path works unchanged.
