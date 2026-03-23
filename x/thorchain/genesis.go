@@ -347,6 +347,28 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
+	// Recompute mempool swap usage from voters that have both non-zero
+	// MempoolSwapTOR AND corresponding staged outbounds. This cross-validation
+	// prevents stale voter data from inflating the usage counter.
+	stagedInHashes := make(map[common.TxID]bool, len(data.StagedOutbounds))
+	for _, list := range data.StagedOutbounds {
+		stagedInHashes[list.InHash] = true
+	}
+	totalUsage := cosmos.ZeroUint()
+	for _, voter := range data.ObservedTxInVoters {
+		if voter.MempoolSwapTOR.IsNil() || voter.MempoolSwapTOR.IsZero() {
+			continue
+		}
+		if !stagedInHashes[voter.TxID] {
+			continue
+		}
+		totalUsage = totalUsage.Add(voter.MempoolSwapTOR)
+	}
+	if !totalUsage.IsZero() {
+		keeper.SetMempoolSwapUsageTOR(ctx, totalUsage)
+		ctx.Logger().Info("restored mempool swap usage from genesis", "total_tor", totalUsage)
+	}
+
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
 	ctx.Logger().Info("Reserve Module", "address", reserveAddr.String())
 	bondAddr, _ := keeper.GetModuleAddress(BondName)
@@ -485,6 +507,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	}
 
 	var observedTxInVoters ObservedTxVoters
+	voterSeen := make(map[common.TxID]bool)
 	var outs []TxOut
 	startBlockHeight := ctx.BlockHeight() - k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	if startBlockHeight < 1 {
@@ -527,6 +550,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			if item.InHash.IsEmpty() || item.InHash.Equals(common.BlankTxID) {
 				continue
 			}
+			if voterSeen[item.InHash] {
+				continue
+			}
 			var txInVoter ObservedTxVoter
 			txInVoter, err = k.GetObservedTxInVoter(ctx, item.InHash)
 			if err != nil {
@@ -534,6 +560,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 				continue
 			}
 			observedTxInVoters = append(observedTxInVoters, txInVoter)
+			voterSeen[item.InHash] = true
 		}
 		if includeTxOut {
 			outs = append(outs, *txOut)
@@ -784,6 +811,22 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		stagedOutbounds = append(stagedOutbounds, list)
+	}
+
+	// Export voters for staged outbound swaps that weren't already captured
+	// via the TxOut path. These voters carry MempoolSwapTOR which is needed
+	// to recompute usage accounting on import.
+	for _, list := range stagedOutbounds {
+		if list.InHash.IsEmpty() || voterSeen[list.InHash] {
+			continue
+		}
+		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, list.InHash)
+		if voterErr != nil {
+			ctx.Logger().Error("fail to get voter for staged outbound", "error", voterErr, "hash", list.InHash)
+			continue
+		}
+		observedTxInVoters = append(observedTxInVoters, txInVoter)
+		voterSeen[list.InHash] = true
 	}
 
 	return GenesisState{
