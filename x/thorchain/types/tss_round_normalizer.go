@@ -8,22 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-// validTssKeysignRounds is the accepted canonical keysign-round set after
-// alias normalization.
-var validTssKeysignRounds = map[string]bool{
-	tssMessages.KEYSIGN1aUnicast: true,
-	tssMessages.KEYSIGN1b:        true,
-	tssMessages.KEYSIGN2Unicast:  true,
-	tssMessages.KEYSIGN3:         true,
-	tssMessages.KEYSIGN4:         true,
-	tssMessages.KEYSIGN5:         true,
-	tssMessages.KEYSIGN6:         true,
-	tssMessages.KEYSIGN7:         true,
-	tssMessages.EDDSAKEYSIGN1:    true,
-	tssMessages.EDDSAKEYSIGN2:    true,
-	tssMessages.EDDSAKEYSIGN3:    true,
-}
-
 // CanonicalTssRound normalizes raw TSS round names into the canonical constants
 // used in Thornode consensus and telemetry. When algo is empty, it is inferred
 // from the raw round name when possible.
@@ -60,7 +44,7 @@ func NormalizeTssKeysignRound(round string) (string, error) {
 	if canonical == "" {
 		return "", nil
 	}
-	if !validTssKeysignRounds[canonical] {
+	if !tssMessages.ValidTssKeysignRounds[canonical] {
 		return "", fmt.Errorf("invalid blame round: %s", round)
 	}
 	return canonical, nil
