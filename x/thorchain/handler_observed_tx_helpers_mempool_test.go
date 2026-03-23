@@ -614,6 +614,22 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertedMempoolSwapReprocesse
 	}}
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
+	// Simulate stale reverse swaps in the swap queue (queued during timeout revert).
+	// These use deterministic TxIDs derived from the original inbound hash.
+	for i := 0; i < 2; i++ {
+		revertTxID := CreateMempoolRevertTxID(inTxID, i)
+		revertMsg := MsgSwap{
+			Tx: common.Tx{
+				ID:    revertTxID,
+				Chain: common.THORChain,
+				Memo:  fmt.Sprintf("=:BTC.BTC:%s", GetRandomBTCAddress()),
+			},
+		}
+		c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, revertMsg, 0), IsNil)
+		c.Assert(mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0), Equals, true,
+			Commentf("reverse swap %d should exist before re-processing", i))
+	}
+
 	// Setup active node accounts for quorum
 	nas := make(NodeAccounts, 4)
 	for i := range nas {
@@ -637,4 +653,11 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertedMempoolSwapReprocesse
 	c.Assert(err, IsNil)
 	c.Check(updatedVoter.Reverted, Equals, false, Commentf("Reverted flag should be cleared for on-chain confirmation"))
 	c.Check(updatedVoter.MempoolSwapTOR.IsZero(), Equals, true, Commentf("MempoolSwapTOR should be zeroed"))
+
+	// Verify stale reverse swaps were removed from the queue
+	for i := 0; i < 2; i++ {
+		revertTxID := CreateMempoolRevertTxID(inTxID, i)
+		c.Check(mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0), Equals, false,
+			Commentf("reverse swap %d should be removed after on-chain confirmation", i))
+	}
 }
