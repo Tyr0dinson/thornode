@@ -12,26 +12,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/v3/api/types"
-	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
-
-// validTssKeysignRounds contains the set of valid TSS keysign round identifiers.
-var validTssKeysignRounds = map[string]bool{
-	tssMessages.KEYSIGN1aUnicast: true,
-	tssMessages.KEYSIGN1b:        true,
-	tssMessages.KEYSIGN2Unicast:  true,
-	tssMessages.KEYSIGN3:         true,
-	tssMessages.KEYSIGN4:         true,
-	tssMessages.KEYSIGN5:         true,
-	tssMessages.KEYSIGN6:         true,
-	tssMessages.KEYSIGN7:         true,
-	tssMessages.EDDSAKEYSIGN1:    true,
-	tssMessages.EDDSAKEYSIGN2:    true,
-	tssMessages.EDDSAKEYSIGN3:    true,
-}
 
 var (
 	_ sdk.Msg              = &MsgTssKeysignFail{}
@@ -41,6 +25,13 @@ var (
 
 // NewMsgTssKeysignFail create a new instance of MsgTssKeysignFail message
 func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.Coins, signer cosmos.AccAddress, pubKey common.PubKey) (*MsgTssKeysignFail, error) {
+	// Normalize the round before hashing so outgoing messages always use the
+	// canonical wire format and stable consensus ID.
+	round, err := NormalizeTssKeysignRound(blame.Round)
+	if err != nil {
+		return nil, fmt.Errorf("fail to normalize keysign fail round: %w", err)
+	}
+	blame.Round = round
 	id, err := getMsgTssKeysignFailID(blame.BlameNodes, height, memo, coins, pubKey, blame.Round)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keysign fail id:%w", err)
@@ -119,8 +110,14 @@ func (m *MsgTssKeysignFail) ValidateBasic() error {
 	if m.PubKey.IsEmpty() {
 		return cosmos.ErrUnknownRequest("vault pubkey cannot be empty")
 	}
-	if m.Blame.Round != "" && !validTssKeysignRounds[m.Blame.Round] {
-		return cosmos.ErrUnknownRequest("invalid blame round: " + m.Blame.Round)
+	// Enforce canonical round names on-chain so handler logic can safely use the
+	// incoming round value without re-normalizing it.
+	round, err := NormalizeTssKeysignRound(m.Blame.Round)
+	if err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	if round != m.Blame.Round {
+		return cosmos.ErrUnknownRequest("blame round must use canonical name")
 	}
 	return nil
 }

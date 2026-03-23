@@ -349,7 +349,7 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 	// copy blame to our own struct
 	blame := types.Blame{
 		FailReason: keySignResp.Blame.FailReason,
-		Round:      canonicalTssRound(keySignResp.Blame.Round, algo),
+		Round:      types.CanonicalTssRound(keySignResp.Blame.Round, algo),
 		IsUnicast:  keySignResp.Blame.IsUnicast,
 		BlameNodes: make([]types.Node, len(keySignResp.Blame.BlameNodes)),
 	}
