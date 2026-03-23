@@ -389,6 +389,20 @@ func handleObservedTxInQuorum(
 			voter.Reverted = false
 			voter.MempoolSwapTOR = cosmos.ZeroUint() // capacity already released during revert
 			voter.Actions = nil                      // clear stale speculative actions
+
+			// Remove any stale reverse swaps queued during the timeout revert.
+			// These were created with deterministic TxIDs derived from the original.
+			for i := 0; i < 100; i++ {
+				revertTxID := CreateMempoolRevertTxID(voter.TxID, i)
+				if !mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0) {
+					break
+				}
+				mgr.Keeper().RemoveSwapQueueItem(ctx, revertTxID, 0)
+				ctx.Logger().Info("removed stale reverse swap from queue",
+					"original_hash", voter.TxID,
+					"revert_txid", revertTxID,
+					"action_index", i)
+			}
 		} else {
 			ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
 			return nil
