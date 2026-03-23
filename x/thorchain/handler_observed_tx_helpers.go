@@ -214,8 +214,20 @@ func handleObservedTxInQuorum(
 	// all logic after this is upon consensus
 
 	if voter.Reverted {
-		ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
-		return nil
+		// If a mempool swap was reverted (e.g. timeout) but the inbound later confirms
+		// on-chain, clear the reverted state and re-process as a fresh swap.
+		// The revert already undid all speculative state (pool accounting, staged outbounds,
+		// capacity), so re-executing is safe and prevents funds from being stranded in the vault.
+		if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
+			ctx.Logger().Info("reverted mempool swap confirmed on-chain, re-processing",
+				"hash", voter.TxID)
+			voter.Reverted = false
+			voter.MempoolSwapTOR = cosmos.ZeroUint() // capacity already released during revert
+			voter.Actions = nil                      // clear stale speculative actions
+		} else {
+			ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
+			return nil
+		}
 	}
 
 	k := mgr.Keeper()
