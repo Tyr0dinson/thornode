@@ -47,6 +47,8 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 		return err
 	}
 
+	// Intentionally do not gate cancels on IntentsEnabled. Users should
+	// be able to cancel and recover funds while the feature is disabled.
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
 		return ErrInternal(err, "fail to get intent")
