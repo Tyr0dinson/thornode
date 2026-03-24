@@ -226,11 +226,12 @@ func handleObservedTxInQuorum(
 			voter.Actions = nil                      // clear stale speculative actions
 
 			// Remove any stale reverse swaps queued during the timeout revert.
-			// These were created with deterministic TxIDs derived from the original.
+			// These were created with deterministic TxIDs derived from the original,
+			// but only for non-THORChain actions, so indices may be sparse.
 			for i := 0; i < 100; i++ {
 				revertTxID := CreateMempoolRevertTxID(voter.TxID, i)
 				if !mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0) {
-					break
+					continue
 				}
 				mgr.Keeper().RemoveSwapQueueItem(ctx, revertTxID, 0)
 				ctx.Logger().Info("removed stale reverse swap from queue",
