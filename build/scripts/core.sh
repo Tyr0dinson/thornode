@@ -139,8 +139,9 @@ set_node_keys() {
   SIGNER_NAME="$1"
   SIGNER_PASSWD="$2"
   PEER="$3"
+  SIGNER_SEED_PHRASE="$4"
   NODE_PUB_KEY="$(echo "$SIGNER_PASSWD" | thornode keys show thorchain --pubkey --keyring-backend file | thornode pubkey)"
-  NODE_PUB_KEY_ED25519="$(thornode ed25519)"
+  NODE_PUB_KEY_ED25519="$(printf "%s\n" "$SIGNER_SEED_PHRASE" | thornode ed25519)"
   VALIDATOR="$(thornode tendermint show-validator | thornode pubkey --bech cons)"
   echo "Setting THORNode keys"
   printf "%s\n%s\n" "$SIGNER_PASSWD" "$SIGNER_PASSWD" | thornode tx thorchain set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" --node "tcp://$PEER:$PORT_RPC" --from "$SIGNER_NAME" --yes
