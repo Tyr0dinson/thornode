@@ -69,7 +69,43 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 		return se.ErrUnauthorized.Wrap("only the intent creator can cancel it")
 	}
 
+	allowedAsset, err := h.allowedCancelAsset(ctx, intent)
+	if err != nil {
+		return ErrInternal(err, "fail to determine allowed cancel asset")
+	}
+	for _, coin := range msg.Tx.Coins {
+		if !coin.Asset.Equals(allowedAsset) {
+			return se.ErrInvalidRequest.Wrapf(
+				"cancel tx must only send %s for this intent, got %s",
+				allowedAsset, coin.Asset,
+			)
+		}
+	}
+
 	return nil
+}
+
+// allowedCancelAsset returns the only asset type a cancel transaction may carry
+// for the current intent shape.
+func (h IntentCancelHandler) allowedCancelAsset(ctx cosmos.Context, intent Intent) (common.Asset, error) {
+	// Native sources and assets with an available pool refund directly, so only
+	// permit the source asset to avoid trapping unrelated coins in Asgard.
+	if intent.Source.Asset.IsNative() || intent.Source.Asset.IsGasAsset() {
+		return intent.Source.Asset, nil
+	}
+
+	sourcePool, err := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+	if err != nil {
+		return common.EmptyAsset, fmt.Errorf("fail to get pool for cancel asset validation: %w", err)
+	}
+	hasActivePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
+	if hasActivePool {
+		return intent.Source.Asset, nil
+	}
+
+	// Non-pool, non-native long-tail assets require prepaid chain gas to fund the
+	// outbound refund, so only the chain gas asset is accepted.
+	return intent.Source.Asset.GetChain().GetGasAsset(), nil
 }
 
 func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) error {

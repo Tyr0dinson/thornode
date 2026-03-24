@@ -72,6 +72,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundPoolAsset(c *C) {
 	// Cancel the intent - tx FromAddress must match intent's SourceAddress
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.OneUint())}
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
@@ -110,6 +111,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundNativeAsset(c *C) {
 	// Cancel the intent - tx FromAddress must match intent's SourceAddress
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())}
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(ctx, msg)
 	c.Assert(err, IsNil)
@@ -278,6 +280,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetRefundsDirect(c *C)
 	// Cancel the intent
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.OneUint())}
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 
 	_, err := handler.Run(w.ctx, msg)
@@ -327,6 +330,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_StagedPoolRefundsDirect(c *C) {
 
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.OneUint())}
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
@@ -417,6 +421,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_AvailablePoolRefunds(c *C) {
 
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.OneUint())}
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
@@ -451,7 +456,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetFailsWithoutGas(c *
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentCancelHandler(mgr)
 
-	// Cancel with the ERC20 token but no ETH gas tokens
+	// Cancel with the ERC20 token instead of the required ETH gas asset
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
 	cancelTx.Coins = common.Coins{common.NewCoin(erc20Asset, cosmos.NewUint(1))}
@@ -459,7 +464,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetFailsWithoutGas(c *
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
-	c.Check(errors.Is(err, se.ErrInsufficientFunds), Equals, true, Commentf("expected ErrInsufficientFunds, got: %v", err))
+	c.Check(errors.Is(err, se.ErrInvalidRequest), Equals, true, Commentf("expected ErrInvalidRequest, got: %v", err))
 
 	// Verify intent is still active
 	stillActive, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
@@ -838,6 +843,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_PoolAssetNoGasBooking(c *C) {
 
 	cancelTx := GetRandomTx()
 	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.OneUint())}
 	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
@@ -884,4 +890,43 @@ func (HandlerIntentCancelSuite) TestIntentCancel_GasAssetNoPoolSkipsGasCheck(c *
 		c.Check(errors.Is(err, se.ErrInsufficientFunds), Equals, false,
 			Commentf("gas asset source should skip gas check, but got: %v", err))
 	}
+}
+
+func (HandlerIntentCancelSuite) TestIntentCancel_DirectRefundRejectsWrongAsset(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	pool := NewPool()
+	pool.Asset = common.DOGEAsset
+	pool.Status = PoolAvailable
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomTHORAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	handler := NewIntentCancelHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	cancelTx := GetRandomTx()
+	cancelTx.FromAddress = userAddr
+	cancelTx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.OneUint())}
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(errors.Is(err, se.ErrInvalidRequest), Equals, true)
+
+	stillActive, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(stillActive.Status, Equals, IntentActive)
 }
