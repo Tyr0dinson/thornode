@@ -1,6 +1,8 @@
 package types
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -21,6 +23,7 @@ type SimContractTx struct {
 	ABI      abi.ABI
 	Method   string
 	Args     []interface{}
+	Value    *big.Int
 }
 
 // LiteChainClient is a subset of the ChainClient interface used for simulation tests.

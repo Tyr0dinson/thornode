@@ -1291,6 +1291,15 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	err = s.mgr.Keeper().SetPool(s.ctx, poolETH)
 	c.Assert(err, IsNil)
 
+	poolXMR := NewPool()
+	poolXMR.Asset = common.XMRAsset
+	poolXMR.BalanceAsset = cosmos.NewUint(1_000_000_000_000)
+	poolXMR.BalanceRune = cosmos.NewUint(10_000_000_000_000)
+	poolXMR.LPUnits = cosmos.NewUint(100)
+
+	err = s.mgr.Keeper().SetPool(s.ctx, poolXMR)
+	c.Assert(err, IsNil)
+
 	var addressBTC, addressTHOR string
 
 	if common.CurrentChainNetwork == common.MockNet {
@@ -1328,6 +1337,15 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(queryPoolsResp, NotNil)
+
+	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &types.QueryQuoteSwapRequest{
+		FromAsset: common.BTCAsset.String(),
+		ToAsset:   common.XMRAsset.String(),
+		Amount:    "10000000",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(queryPoolsResp, NotNil)
+	c.Assert(queryPoolsResp.Memo, Equals, "")
 
 	// The following assertions are commented out because the request now fails due to fee parsing issues
 	// memo := fmt.Sprintf("=:r:%s/%s:97000000000/1/1:%s:50", addressTHOR, addressBTC, affiliateAddr)

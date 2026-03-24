@@ -241,6 +241,102 @@ func TestSignTxReturnsCreateTransactionErrors(t *testing.T) {
 	}
 }
 
+func TestBroadcastTxWaitsForTransactionToBecomeQueryable(t *testing.T) {
+	restore := overrideBroadcastObservationTimings(100*time.Millisecond, time.Millisecond)
+	defer restore()
+
+	getTransactionCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/wallet/broadcasttransaction":
+			_, _ = w.Write([]byte(`{"result":true,"txid":"5555555555555555555555555555555555555555555555555555555555555555"}`))
+		case "/wallet/gettransactionbyid":
+			getTransactionCalls++
+			if getTransactionCalls < 3 {
+				_, _ = w.Write([]byte(`{}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"txID":"5555555555555555555555555555555555555555555555555555555555555555","raw_data":{"contract":[]}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	txid, err := client.BroadcastTx([]byte(`{"txID":"5555555555555555555555555555555555555555555555555555555555555555","raw_data":{"contract":[]}}`))
+	if err != nil {
+		t.Fatalf("expected TRON broadcast to succeed after transaction becomes queryable, got %v", err)
+	}
+	if txid != "5555555555555555555555555555555555555555555555555555555555555555" {
+		t.Fatalf("expected txid to be returned, got %s", txid)
+	}
+	if getTransactionCalls != 3 {
+		t.Fatalf("expected 3 gettransactionbyid attempts, got %d", getTransactionCalls)
+	}
+}
+
+func TestBroadcastTxReturnsRejectedBroadcastErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/wallet/broadcasttransaction" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"result":false,"txid":"6666666666666666666666666666666666666666666666666666666666666666","code":"SIGERROR","message":"rejected"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	_, err := client.BroadcastTx([]byte(`{"txID":"6666666666666666666666666666666666666666666666666666666666666666","raw_data":{"contract":[]}}`))
+	if err == nil {
+		t.Fatal("expected TRON broadcast rejection to surface as an error")
+	}
+	if !strings.Contains(err.Error(), "SIGERROR") {
+		t.Fatalf("expected broadcast error to include TRON code, got %v", err)
+	}
+}
+
+func TestBroadcastTxFailsWhenBroadcastedTransactionNeverMaterializes(t *testing.T) {
+	restore := overrideBroadcastObservationTimings(25*time.Millisecond, time.Millisecond)
+	defer restore()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/wallet/broadcasttransaction":
+			_, _ = w.Write([]byte(`{"result":true,"txid":"7777777777777777777777777777777777777777777777777777777777777777"}`))
+		case "/wallet/gettransactionbyid":
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	_, err := client.BroadcastTx([]byte(`{"txID":"7777777777777777777777777777777777777777777777777777777777777777","raw_data":{"contract":[]}}`))
+	if err == nil {
+		t.Fatal("expected TRON broadcast to fail when the tx never becomes queryable")
+	}
+	if !strings.Contains(err.Error(), "not observed on tron node") {
+		t.Fatalf("expected missing-broadcast error, got %v", err)
+	}
+}
+
+func overrideBroadcastObservationTimings(timeout, interval time.Duration) func() {
+	prevTimeout := tronBroadcastObservationTimeout
+	prevInterval := tronBroadcastObservationPollInterval
+	tronBroadcastObservationTimeout = timeout
+	tronBroadcastObservationPollInterval = interval
+	return func() {
+		tronBroadcastObservationTimeout = prevTimeout
+		tronBroadcastObservationPollInterval = prevInterval
+	}
+}
+
 func newTestClient(t *testing.T, host string) *Client {
 	t.Helper()
 

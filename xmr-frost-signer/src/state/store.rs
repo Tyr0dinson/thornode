@@ -169,6 +169,8 @@ pub struct TrackedOutput {
 }
 
 impl TrackedOutput {
+    pub const MIN_SPENDABLE_CONFIRMATIONS: u64 = 10;
+
     pub fn ref_key(&self) -> OutputRef {
         OutputRef {
             tx_hash: self.tx_hash.clone(),
@@ -211,6 +213,18 @@ impl TrackedOutput {
 
     pub fn is_available_for_spend(&self) -> bool {
         self.state == OutputState::Unspent
+    }
+
+    pub fn confirmations_at(&self, current_height: u64) -> u64 {
+        current_height.saturating_sub(self.height)
+    }
+
+    pub fn is_unlocked_at(&self, current_height: u64) -> bool {
+        self.confirmations_at(current_height) >= Self::MIN_SPENDABLE_CONFIRMATIONS
+    }
+
+    pub fn is_available_for_spend_at(&self, current_height: u64) -> bool {
+        self.is_available_for_spend() && self.is_unlocked_at(current_height)
     }
 
     pub fn is_reserved(&self) -> bool {

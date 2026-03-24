@@ -76,9 +76,11 @@ XMR_E2E_RUN := TestSeraiDistributedSignAndSubmitFlow|TestSeraiDistributedSignFai
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
 
-# docker tty args are disabled in CI
+# docker tty args are disabled in CI and non-interactive shells
 ifndef CI
+ifneq ($(shell test -t 0 && test -t 1 && echo tty),)
 DOCKER_TTY_ARGS=-it
+endif
 endif
 
 HTTPS_GIT := https://gitlab.com/thorchain/thornode.git
@@ -353,16 +355,18 @@ TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,c
 TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,solvency,ragnarok,xmr-post-churn
 
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 test-simulation-no-reset: build-test-simulation
+	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \
@@ -409,7 +413,7 @@ build-mocknet:
 
 bootstrap-mocknet:
 	@docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES=seed,bootstrap \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES=seed,bootstrap \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \

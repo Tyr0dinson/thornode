@@ -55,7 +55,7 @@ genesis_init() {
     set_bond_module # set bond module balance for invariant
 
     # deploy evm contracts
-    deploy_evm_contracts
+    deploy_evm_contracts || exit 1
   fi
 
   if [ "$NET" = "stagenet" ]; then

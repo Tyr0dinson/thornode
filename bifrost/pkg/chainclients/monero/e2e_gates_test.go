@@ -82,6 +82,8 @@ func newFrostTransfersServer(
 		w.Header().Set("Content-Type", "application/json")
 
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/height"):
 			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 500})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):

@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use bech32::decode as bech32_decode;
+use bech32::{decode as bech32_decode, FromBase32};
 use monero_wallet::rpc::Rpc;
 use rand::rngs::OsRng;
 use serde::de::DeserializeOwned;
@@ -18,6 +18,7 @@ use uuid::Uuid;
 use super::types::*;
 use crate::config::ChainNetworkMode;
 use crate::frost::dkg::DkgCoordinator;
+use crate::frost::keys::ThresholdKeyShare;
 use crate::frost::sign::SignCoordinator;
 use crate::state::store::{
     IdempotencyClaimResult, OutputRef, OutputState, ScanBlockMeta, TrackedOutput,
@@ -213,6 +214,166 @@ fn valid_vault_pub_key(value: &str) -> bool {
     !data.is_empty()
 }
 
+fn normalized_group_key_hex(value: &str) -> Result<String, (StatusCode, serde_json::Value)> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.len() != 64 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            error_json("group_key must be 32-byte hex"),
+        ));
+    }
+    let decoded = match hex::decode(&normalized) {
+        Ok(decoded) => decoded,
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error_json("group_key must be valid hex"),
+            ));
+        }
+    };
+    if decoded.len() != 32 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            error_json("group_key must be 32-byte hex"),
+        ));
+    }
+    Ok(normalized)
+}
+
+const ED25519_PUBKEY_AMINO_PREFIX: &[u8] = &[0x16, 0x24, 0xde, 0x64, 0x20];
+
+fn vault_pub_key_matches_group_key(
+    vault_pub_key: &str,
+    group_key: &str,
+) -> Result<bool, (StatusCode, serde_json::Value)> {
+    let (_, data, _) = match bech32_decode(vault_pub_key.trim()) {
+        Ok(decoded) => decoded,
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                error_json("invalid vault_pub_key format"),
+            ));
+        }
+    };
+
+    let decoded = Vec::<u8>::from_base32(&data).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            error_json("invalid vault_pub_key format"),
+        )
+    })?;
+    if decoded.len() != ED25519_PUBKEY_AMINO_PREFIX.len() + 32 {
+        return Ok(false);
+    }
+    if !decoded.starts_with(ED25519_PUBKEY_AMINO_PREFIX) {
+        return Ok(false);
+    }
+
+    let group_key = hex::decode(group_key).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            error_json("group_key must be valid hex"),
+        )
+    })?;
+    Ok(decoded[ED25519_PUBKEY_AMINO_PREFIX.len()..] == group_key)
+}
+
+fn ensure_bootstrap_frost_key_material(
+    state: &AppState,
+    vault_pub_key: &str,
+    group_key: &str,
+    spend_key_hex: Option<&str>,
+) -> Result<(), (StatusCode, serde_json::Value)> {
+    let Some(spend_key_hex) = spend_key_hex
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+
+    let derived_group_key = xmr::group_key_hex_from_spend_seed_hex(spend_key_hex).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            error_json(format!("invalid spend_key_hex: {e}")),
+        )
+    })?;
+    if derived_group_key != group_key {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            error_json("spend_key_hex does not match group_key"),
+        ));
+    }
+    if !vault_pub_key_matches_group_key(vault_pub_key, group_key)? {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            error_json("vault_pub_key does not match group_key"),
+        ));
+    }
+
+    let existing = state.store.load_frost_keys(group_key).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error_json(format!("failed to load frost key material: {e}")),
+        )
+    })?;
+    if existing.is_some() {
+        return Ok(());
+    }
+
+    let key_share = ThresholdKeyShare::from_spend_seed_hex(spend_key_hex).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            error_json(format!("failed to derive frost key material: {e}")),
+        )
+    })?;
+    state
+        .store
+        .save_frost_keys(group_key, &key_share.to_bytes())
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error_json(format!("failed to persist frost key material: {e}")),
+            )
+        })
+}
+
+fn ensure_registered_vault_state(
+    state: &AppState,
+    vault_pub_key: &str,
+    group_key: &str,
+    address: &str,
+    source: &str,
+) -> Result<bool, String> {
+    let registered = state
+        .store
+        .register_vault(vault_pub_key, group_key, address, source)
+        .map_err(|e| format!("failed to register vault mapping: {e}"))?;
+
+    let outputs = state
+        .store
+        .load_outputs(vault_pub_key)
+        .map_err(|e| format!("failed to load vault outputs: {e}"))?;
+    let scan_height = state
+        .store
+        .load_scan_height(vault_pub_key)
+        .map_err(|e| format!("failed to load vault scan height: {e}"))?
+        .unwrap_or(0);
+
+    let mut scanner = state.scanner.lock();
+    scanner
+        .register_vault(
+            vault_pub_key,
+            group_key,
+            state.chain_network,
+            outputs.clone(),
+            Some(scan_height),
+        )
+        .map_err(|e| format!("failed to initialize vault scanner state: {e}"))?;
+    scanner.merge_output_states(vault_pub_key, &outputs);
+
+    Ok(registered)
+}
+
 // ---- DKG Routes ----
 
 pub async fn dkg_round1(
@@ -346,6 +507,99 @@ pub async fn dkg_finalize(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
             )
+        }
+    }
+}
+
+pub async fn register_vault(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<RegisterVaultRequest>,
+) -> impl IntoResponse {
+    let vault_pub_key = req.vault_pub_key.trim().to_string();
+    if !valid_vault_pub_key(&vault_pub_key) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("invalid vault_pub_key format")),
+        );
+    }
+
+    let group_key = match normalized_group_key_hex(&req.group_key) {
+        Ok(group_key) => group_key,
+        Err((status, response)) => return (status, Json(response)),
+    };
+    match vault_pub_key_matches_group_key(&vault_pub_key, &group_key) {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json("vault_pub_key does not match group_key")),
+            );
+        }
+        Err((status, response)) => return (status, Json(response)),
+    }
+
+    let expected_address = match xmr::derive_vault_address(&group_key, state.chain_network) {
+        Ok(address) => address,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json(format!(
+                    "failed to derive vault address from group_key: {e}"
+                ))),
+            );
+        }
+    };
+
+    let provided_address = req.address.trim();
+    if provided_address.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("address is required")),
+        );
+    }
+    if provided_address != expected_address {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json(
+                "address does not match the derived vault address for group_key",
+            )),
+        );
+    }
+
+    let source = req
+        .source
+        .as_deref()
+        .map(str::trim)
+        .filter(|source| !source.is_empty())
+        .unwrap_or("bifrost");
+
+    if let Err((status, response)) = ensure_bootstrap_frost_key_material(
+        &state,
+        &vault_pub_key,
+        &group_key,
+        req.spend_key_hex.as_deref(),
+    ) {
+        return (status, Json(response));
+    }
+
+    match ensure_registered_vault_state(
+        &state,
+        &vault_pub_key,
+        &group_key,
+        &expected_address,
+        source,
+    ) {
+        Ok(registered) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(RegisterVaultResponse { registered }).unwrap()),
+        ),
+        Err(e) => {
+            error!(
+                error = %e,
+                vault = %vault_pub_key,
+                "runtime vault registration failed"
+            );
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)))
         }
     }
 }
@@ -726,6 +980,7 @@ pub async fn broadcast(
     let (status, response_json) = match state.daemon.send_raw_transaction(&req.tx_hex).await {
         Ok(resp) => {
             if resp.status == "OK" {
+                let caller_tx_hash = req.tx_hash.trim();
                 let tx_hash = resp
                     .tx_hash
                     .or_else(|| {
@@ -733,9 +988,20 @@ pub async fn broadcast(
                             .and_then(|hashes| hashes.into_iter().next())
                     })
                     .map(|hash| hash.trim().to_string())
-                    .filter(|hash| !hash.is_empty());
+                    .filter(|hash| !hash.is_empty())
+                    .or_else(|| {
+                        if caller_tx_hash.is_empty() {
+                            None
+                        } else {
+                            warn!(
+                                msg_id,
+                                caller_tx_hash,
+                                "daemon broadcast omitted tx hash; falling back to caller-supplied tx hash"
+                            );
+                            Some(caller_tx_hash.to_string())
+                        }
+                    });
                 if let Some(tx_hash) = tx_hash {
-                    let caller_tx_hash = req.tx_hash.trim();
                     if !caller_tx_hash.is_empty() && !caller_tx_hash.eq_ignore_ascii_case(&tx_hash)
                     {
                         warn!(
@@ -917,6 +1183,43 @@ fn build_mempool_outgoing_entries(
     outgoing
 }
 
+fn promote_outgoing_records_observed_in_block(
+    store: &crate::state::Store,
+    vault_pub_key: &str,
+    block_tx_hashes: &HashSet<String>,
+    height: u64,
+) -> anyhow::Result<()> {
+    if block_tx_hashes.is_empty() {
+        return Ok(());
+    }
+
+    let records = store.load_outgoing_transfers(vault_pub_key)?;
+    if records.is_empty() {
+        return Ok(());
+    }
+
+    let now_ts = chrono::Utc::now().timestamp();
+    for record in records {
+        let normalized = normalize_tx_hash(&record.tx_hash);
+        if normalized.is_empty() || !block_tx_hashes.contains(&normalized) {
+            continue;
+        }
+        if is_observed_mined_record(&record) && record.observed_height == Some(height) {
+            continue;
+        }
+        store.update_outgoing_transfer_status(
+            vault_pub_key,
+            &record.tx_hash,
+            OUTGOING_STATUS_MINED,
+            Some(height),
+            Some(now_ts),
+            None,
+        )?;
+    }
+
+    Ok(())
+}
+
 fn transfer_entry_from_tracked_output(
     output: &TrackedOutput,
     vault_pub_key: &str,
@@ -951,6 +1254,17 @@ fn transfer_entries_from_added_refs(
         .filter_map(|r| by_ref.get(&(r.tx_hash.clone(), r.output_index)))
         .filter(|output| !output.is_spent())
         .map(|output| transfer_entry_from_tracked_output(output, vault_pub_key, current_height))
+        .collect()
+}
+
+fn output_refs_at_height(outputs: &[TrackedOutput], height: u64) -> Vec<OutputRef> {
+    outputs
+        .iter()
+        .filter(|output| output.height == height && !output.is_spent())
+        .map(|output| OutputRef {
+            tx_hash: output.tx_hash.clone(),
+            output_index: output.output_index,
+        })
         .collect()
 }
 
@@ -1217,7 +1531,43 @@ pub async fn scanner_sync(
         }
 
         if meta_matches {
-            if let Some(meta) = stored_meta {
+            if let Some(mut meta) = stored_meta {
+                let discovered_refs = output_refs_at_height(&outputs, req.height);
+                let known_refs: HashSet<(String, u32)> = meta
+                    .added_outputs
+                    .iter()
+                    .map(|r| (r.tx_hash.clone(), r.output_index))
+                    .collect();
+                let recovered_refs: Vec<OutputRef> = discovered_refs
+                    .into_iter()
+                    .filter(|r| !known_refs.contains(&(r.tx_hash.clone(), r.output_index)))
+                    .collect();
+
+                if !recovered_refs.is_empty() {
+                    warn!(
+                        vault = %vault.vault_pub_key,
+                        height = req.height,
+                        recovered = recovered_refs.len(),
+                        "scanner sync recovered missing added outputs from persisted state"
+                    );
+                    meta.added_outputs.extend(recovered_refs);
+                    if let Err(e) = state
+                        .store
+                        .save_scan_block_meta(&vault.vault_pub_key, &meta)
+                    {
+                        error!(
+                            error = %e,
+                            vault = %vault.vault_pub_key,
+                            height = req.height,
+                            "failed to heal scan block metadata during scanner sync"
+                        );
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(error_json(e.to_string())),
+                        );
+                    }
+                }
+
                 incoming.extend(transfer_entries_from_added_refs(
                     &outputs,
                     &meta.added_outputs,
@@ -1244,6 +1594,30 @@ pub async fn scanner_sync(
                     );
                 }
             };
+            let block_tx_hashes: HashSet<String> = block
+                .block
+                .transactions
+                .iter()
+                .map(|tx_hash| normalize_tx_hash(&hex::encode(tx_hash)))
+                .filter(|hash| !hash.is_empty())
+                .collect();
+            if let Err(e) = promote_outgoing_records_observed_in_block(
+                &state.store,
+                &vault.vault_pub_key,
+                &block_tx_hashes,
+                req.height,
+            ) {
+                error!(
+                    error = %e,
+                    vault = %vault.vault_pub_key,
+                    height = req.height,
+                    "failed to promote outgoing transfer observations from scanned block"
+                );
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(e.to_string())),
+                );
+            }
 
             let added_outputs = match state.scanner.lock().scan_block_for_vault_with_added(
                 &vault.vault_pub_key,
@@ -2247,6 +2621,12 @@ mod tests {
 
     const VALID_VAULT_PUB_KEY: &str =
         "thorpub1addwnpepq0rf954ne8ahjl0es3k32prvngy6tsye4cr8wdqsrmmdqcsvyzrujqexwxp";
+    const BOOTSTRAP_VAULT_PUB_KEY: &str =
+        "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys";
+    const BOOTSTRAP_GROUP_KEY_HEX: &str =
+        "1702d09bd18d772cf38844d866470bb22fc783025677f8bd68e1796750e2d739";
+    const BOOTSTRAP_SPEND_KEY_HEX: &str =
+        "ca82c0463f083f8f0d0bead33828c2cbae6d45350c28bd11c7023e532537640e";
 
     fn sample_outgoing(
         tx_hash: &str,
@@ -2338,6 +2718,7 @@ mod tests {
                 None,
             )
             .expect("failed to register test vault");
+        scanner.set_current_height(200);
 
         let daemon = DaemonClient::new("http://127.0.0.1:18081", 1024 * 1024);
         let app_state = Arc::new(AppState {
@@ -2471,6 +2852,44 @@ mod tests {
     }
 
     #[test]
+    fn promote_outgoing_records_observed_in_block_marks_matching_pending_record_mined() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let mut record = sample_outgoing(
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            VALID_VAULT_PUB_KEY,
+            "48fromd",
+            "48tod",
+            4,
+        );
+        record.status = "signed_pending_observation".to_string();
+        record.observed_height = None;
+        record.observed_at = None;
+
+        state
+            .store
+            .save_outgoing_transfer(&record)
+            .expect("failed to seed outgoing transfer");
+
+        let block_hashes = HashSet::from([normalize_tx_hash(&record.tx_hash)]);
+        promote_outgoing_records_observed_in_block(
+            &state.store,
+            VALID_VAULT_PUB_KEY,
+            &block_hashes,
+            120,
+        )
+        .expect("promotion should succeed");
+
+        let updated = state
+            .store
+            .load_outgoing_transfer(VALID_VAULT_PUB_KEY, &record.tx_hash)
+            .expect("failed to load updated outgoing transfer")
+            .expect("updated outgoing transfer should exist");
+        assert_eq!(updated.status, OUTGOING_STATUS_MINED);
+        assert_eq!(updated.observed_height, Some(120));
+        assert!(updated.observed_at.is_some());
+    }
+
+    #[test]
     fn scan_lag_exceeds_uses_saturating_difference() {
         assert!(!scan_lag_exceeds(100, 98, 2));
         assert!(scan_lag_exceeds(100, 97, 2));
@@ -2503,6 +2922,62 @@ mod tests {
         ));
         assert!(!valid_vault_pub_key(""));
         assert!(!valid_vault_pub_key("thorpub1vaulttest"));
+    }
+
+    #[test]
+    fn vault_pub_key_match_requires_expected_group_key_payload() {
+        assert!(vault_pub_key_matches_group_key(
+            VALID_VAULT_PUB_KEY,
+            "eb5ae9872103c692d2b3c9fb797df9846d15046c9a09a5c099ae067734101ef6"
+        )
+        .expect("thorpub match check should succeed"));
+        assert!(
+            vault_pub_key_matches_group_key(BOOTSTRAP_VAULT_PUB_KEY, BOOTSTRAP_GROUP_KEY_HEX)
+                .expect("tthorpub match check should succeed")
+        );
+        assert!(
+            !vault_pub_key_matches_group_key(BOOTSTRAP_VAULT_PUB_KEY, &test_group_key_hex())
+                .expect("mismatch check should succeed")
+        );
+    }
+
+    #[tokio::test]
+    async fn register_vault_bootstraps_missing_frost_keys_from_spend_seed() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let group_key = xmr::group_key_hex_from_spend_seed_hex(BOOTSTRAP_SPEND_KEY_HEX)
+            .expect("group key should derive");
+        let address = xmr::derive_vault_address(&group_key, state.chain_network)
+            .expect("address should derive");
+
+        let response = register_vault(
+            State(state.clone()),
+            Json(RegisterVaultRequest {
+                vault_pub_key: BOOTSTRAP_VAULT_PUB_KEY.to_string(),
+                group_key: group_key.clone(),
+                address,
+                source: Some("test".to_string()),
+                spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["registered"], serde_json::json!(true));
+
+        let stored = state
+            .store
+            .load_frost_keys(&group_key)
+            .expect("key lookup should succeed")
+            .expect("bootstrapped key material should exist");
+        let key_share = ThresholdKeyShare::from_stored_bytes(&stored)
+            .expect("stored bootstrap key material should deserialize");
+        assert_eq!(
+            key_share
+                .group_key_hex()
+                .expect("group key should be readable"),
+            BOOTSTRAP_GROUP_KEY_HEX
+        );
     }
 
     #[test]
@@ -2721,7 +3196,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broadcast_ok_without_tx_hash_returns_502() {
+    async fn broadcast_ok_without_daemon_hash_falls_back_to_caller_hash() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/send_raw_transaction",
+                axum::routing::post(|| async {
+                    (
+                        StatusCode::OK,
+                        Json(serde_json::json!({
+                            "status": "OK",
+                        })),
+                    )
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let req = BroadcastRequest {
+            tx_hex: "deadbeef".to_string(),
+            tx_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+            msg_id: "msg-broadcast-missing-hash".to_string(),
+        };
+        let response = broadcast(State(state), Json(req)).await.into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["tx_hash"].as_str().unwrap_or_default(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+    }
+
+    #[tokio::test]
+    async fn broadcast_ok_without_any_tx_hash_returns_502() {
         let daemon_server = axum_test::TestServer::builder()
             .http_transport()
             .build(axum::Router::new().route(
@@ -2746,7 +3258,7 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_hash: String::new(),
             vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
-            msg_id: "msg-broadcast-missing-hash".to_string(),
+            msg_id: "msg-broadcast-missing-hash-empty".to_string(),
         };
         let response = broadcast(State(state), Json(req)).await.into_response();
         let (status, body) = response_to_status_json(response).await;
@@ -3095,6 +3607,124 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn scanner_sync_recovers_missing_added_outputs_from_persisted_state() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/json_rpc",
+                axum::routing::post(|Json(req): Json<serde_json::Value>| async move {
+                    let method = req
+                        .get("method")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    match method {
+                        "get_block_header_by_height" => (
+                            StatusCode::OK,
+                            Json(serde_json::json!({
+                                "result": {
+                                    "block_header": {
+                                        "height": 120,
+                                        "hash": "hash120",
+                                        "prev_hash": "hash119",
+                                        "timestamp": 1,
+                                        "major_version": 16,
+                                        "minor_version": 16,
+                                        "nonce": 1,
+                                        "reward": 1,
+                                        "num_txes": 0
+                                    }
+                                }
+                            })),
+                        ),
+                        _ => (
+                            StatusCode::NOT_FOUND,
+                            Json(serde_json::json!({"error": "unsupported method"})),
+                        ),
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let output = TrackedOutput {
+            tx_hash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
+            output_index: 1,
+            amount: 321,
+            height: 120,
+            key_image: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("cc".to_string()),
+            address: Some("48vault".to_string()),
+            note: Some("r:00002".to_string()),
+        };
+        state
+            .store
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                "48vault",
+                "test",
+            )
+            .expect("failed to register vault");
+        state
+            .store
+            .save_outputs(VALID_VAULT_PUB_KEY, std::slice::from_ref(&output))
+            .expect("failed to seed outputs");
+        state
+            .store
+            .save_scan_block_meta(
+                VALID_VAULT_PUB_KEY,
+                &ScanBlockMeta {
+                    height: 120,
+                    block_hash: "hash120".to_string(),
+                    parent_hash: "hash119".to_string(),
+                    added_outputs: vec![],
+                },
+            )
+            .expect("failed to seed scan block metadata");
+        state
+            .store
+            .save_scan_height(VALID_VAULT_PUB_KEY, 120)
+            .expect("failed to seed scan height");
+
+        let req = ScannerSyncRequest {
+            height: 120,
+            tip_height: 9_999,
+            block_hash: "hash120".to_string(),
+            parent_hash: "hash119".to_string(),
+            reorg_window: 120,
+        };
+        let response = scanner_sync(State(state.clone()), Json(req))
+            .await
+            .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let incoming = body["incoming"]
+            .as_array()
+            .expect("incoming should be an array");
+        assert_eq!(incoming.len(), 1);
+        assert_eq!(incoming[0]["txid"], serde_json::json!(output.tx_hash));
+        assert_eq!(incoming[0]["note"], serde_json::json!("r:00002"));
+
+        let healed = state
+            .store
+            .load_scan_block_meta(VALID_VAULT_PUB_KEY, 120)
+            .expect("failed to load healed scan block metadata")
+            .expect("healed scan block metadata missing");
+        assert_eq!(healed.added_outputs.len(), 1);
+        assert_eq!(healed.added_outputs[0].tx_hash, output.tx_hash);
+        assert_eq!(healed.added_outputs[0].output_index, output.output_index);
+    }
+
+    #[tokio::test]
     async fn scanner_sync_balance_unlocks_follow_validated_height_not_tip_height() {
         let daemon_server = axum_test::TestServer::builder()
             .http_transport()
@@ -3336,6 +3966,42 @@ mod tests {
         assert_eq!(seen.get("unspent"), Some(&false));
         assert_eq!(seen.get("reserved"), Some(&false));
         assert_eq!(seen.get("spent"), Some(&true));
+    }
+
+    #[tokio::test]
+    async fn get_outputs_spendable_view_excludes_locked_unspent_outputs() {
+        let mut locked = sample_output(
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            3,
+            OutputState::Unspent,
+        );
+        locked.height = 195;
+
+        let outputs = vec![
+            sample_output(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                0,
+                OutputState::Unspent,
+            ),
+            locked,
+        ];
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(outputs);
+        let uri: Uri = format!("/v1/monero/outputs/{vault_pub_key}")
+            .parse()
+            .expect("invalid test uri");
+        let query = Query::<OutputsQuery>::try_from_uri(&uri)
+            .expect("failed to parse default outputs query");
+        let (status, body) = do_get(state, vault_pub_key, query).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let entries = body["outputs"]
+            .as_array()
+            .expect("outputs should be an array");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0]["tx_hash"],
+            serde_json::json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
     }
 
     #[tokio::test]

@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use zeroize::Zeroize;
 
 use ciphersuite::group::GroupEncoding;
-use dalek_ff_group::Ed25519;
-use dkg_pedpop::ThresholdKeys;
+use ciphersuite::Ciphersuite;
+use dalek_ff_group::{Ed25519, Scalar};
+use dkg_pedpop::{Interpolation, Participant, ThresholdKeys, ThresholdParams};
 
 /// Serialized FROST threshold keys for a participant.
 ///
@@ -27,6 +30,28 @@ impl ThresholdKeyShare {
         ThresholdKeyShare {
             data: serialized.to_vec(),
         }
+    }
+
+    /// Create a deterministic 1-of-1 threshold share from a raw spend seed.
+    pub fn from_spend_seed_hex(spend_key_hex: &str) -> Result<Self> {
+        let spend_scalar = crate::xmr::spend_scalar_from_seed_hex(spend_key_hex)?;
+        let participant =
+            Participant::new(1).ok_or_else(|| anyhow::anyhow!("invalid bootstrap participant"))?;
+        let params = ThresholdParams::new(1, 1, participant).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let secret_share = zeroize::Zeroizing::new(Scalar(*spend_scalar));
+
+        let mut verification_shares = HashMap::new();
+        verification_shares.insert(participant, Ed25519::generator() * *secret_share);
+
+        let threshold_keys = ThresholdKeys::<Ed25519>::new(
+            params,
+            Interpolation::Lagrange,
+            secret_share,
+            verification_shares,
+        )
+        .map_err(|e| anyhow::anyhow!("failed to build bootstrap threshold keys: {e}"))?;
+
+        Ok(Self::from_threshold_keys(&threshold_keys))
     }
 
     /// Deserialize back to Serai ThresholdKeys (e.g. for signing).
@@ -90,5 +115,25 @@ mod tests {
         let data = vec![0u8; 100];
         let result = ThresholdKeyShare::from_stored_bytes(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn spend_seed_bootstrap_matches_expected_group_key() {
+        let spend_key_hex = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
+        let key_share = ThresholdKeyShare::from_spend_seed_hex(spend_key_hex)
+            .expect("bootstrap share should be created");
+        let threshold_keys = key_share
+            .to_threshold_keys()
+            .expect("bootstrap share should deserialize");
+
+        assert_eq!(threshold_keys.params().t(), 1);
+        assert_eq!(threshold_keys.params().n(), 1);
+        assert_eq!(
+            key_share
+                .group_key_hex()
+                .expect("group key should be readable"),
+            crate::xmr::group_key_hex_from_spend_seed_hex(spend_key_hex)
+                .expect("expected group key should derive"),
+        );
     }
 }

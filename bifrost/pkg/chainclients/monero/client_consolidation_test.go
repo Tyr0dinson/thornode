@@ -163,6 +163,8 @@ type consolidationSidecar struct {
 func (s *consolidationSidecar) handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+		_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
 	case strings.HasPrefix(r.URL.Path, "/v1/monero/balance/"):
 		vault := strings.TrimPrefix(r.URL.Path, "/v1/monero/balance/")
 		s.mu.Lock()

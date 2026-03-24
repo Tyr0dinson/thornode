@@ -27,6 +27,8 @@ const maxFrostResponseBytes = 10 * 1024 * 1024
 type FrostSigner struct {
 	endpoint string
 
+	daemonEndpoint string
+
 	dkgRound1Path   string
 	dkgRound2Path   string
 	dkgRound3Path   string
@@ -40,21 +42,50 @@ type FrostSigner struct {
 	scannerSyncPath string
 	addressesPath   string
 	outputsPath     string
+	registerPath    string
 	feeRatePath     string
 	chainHeightPath string
 	chainBlockPath  string
 	chainTxPath     string
 
-	client   *http.Client
-	username string
-	password string
-	bearer   string
+	client       *http.Client
+	daemonClient *http.Client
+	username     string
+	password     string
+	bearer       string
 }
 
 type xmrTSSResponseEnvelope struct {
 	Result  json.RawMessage `json:"result"`
 	Error   string          `json:"error"`
 	Message string          `json:"message"`
+}
+
+type moneroDaemonJSONRPCRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      string `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params"`
+}
+
+type moneroDaemonJSONRPCResponse struct {
+	Result json.RawMessage       `json:"result"`
+	Error  *moneroDaemonRPCError `json:"error"`
+}
+
+type moneroDaemonRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *moneroDaemonRPCError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Message) == "" {
+		return fmt.Sprintf("daemon rpc error %d", e.Code)
+	}
+	return fmt.Sprintf("daemon rpc error %d: %s", e.Code, strings.TrimSpace(e.Message))
 }
 
 // FROST DKG request/response types
@@ -155,6 +186,18 @@ type xmrFrostBalanceResponse struct {
 	UnlockedBalance uint64 `json:"unlocked_balance"`
 }
 
+type xmrFrostRegisterVaultRequest struct {
+	VaultPubKey string `json:"vault_pub_key"`
+	GroupKey    string `json:"group_key"`
+	Address     string `json:"address"`
+	SpendKeyHex string `json:"spend_key_hex,omitempty"`
+	Source      string `json:"source,omitempty"`
+}
+
+type xmrFrostRegisterVaultResponse struct {
+	Registered bool `json:"registered"`
+}
+
 type xmrFrostTransferEntry struct {
 	TxID          string `json:"txid"`
 	Address       string `json:"address"`
@@ -229,6 +272,31 @@ type chainBlock struct {
 	TxHashes     []string
 }
 
+type moneroDaemonGetInfoResponse struct {
+	Height int64 `json:"height"`
+}
+
+type moneroDaemonGetBlockParams struct {
+	Height int64 `json:"height"`
+}
+
+type moneroDaemonBlockHeader struct {
+	Height   int64  `json:"height"`
+	Reward   uint64 `json:"reward"`
+	Hash     string `json:"hash"`
+	PrevHash string `json:"prev_hash"`
+}
+
+type moneroDaemonGetBlockResponse struct {
+	BlockHeader moneroDaemonBlockHeader `json:"block_header"`
+	TxHashes    []string                `json:"tx_hashes"`
+	JSON        string                  `json:"json"`
+}
+
+type moneroDaemonBlockJSON struct {
+	TxHashes []string `json:"tx_hashes"`
+}
+
 type frostHTTPError struct {
 	path   string
 	status int
@@ -291,13 +359,23 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 
 	endpoint = strings.TrimSuffix(parsedEndpoint.String(), "/")
 
+	daemonEndpoint := ""
+	if strings.TrimSpace(cfg.RPCHost) != "" {
+		parsedDaemonEndpoint, err := parseMoneroRPCEndpointURL(cfg.RPCHost)
+		if err != nil {
+			return nil, err
+		}
+		daemonEndpoint = normalizeMoneroRPCEndpoint(parsedDaemonEndpoint)
+	}
+
 	timeout := cfg.BlockScanner.HTTPRequestTimeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 
 	return &FrostSigner{
-		endpoint: endpoint,
+		endpoint:       endpoint,
+		daemonEndpoint: daemonEndpoint,
 
 		dkgRound1Path:   "/v1/monero/dkg/round1",
 		dkgRound2Path:   "/v1/monero/dkg/round2",
@@ -312,15 +390,17 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 		scannerSyncPath: "/v1/monero/scanner/sync",
 		addressesPath:   "/v1/monero/addresses",
 		outputsPath:     "/v1/monero/outputs",
+		registerPath:    "/v1/monero/vaults/register",
 		feeRatePath:     "/v1/monero/fee-rate",
 		chainHeightPath: "/v1/monero/chain/height",
 		chainBlockPath:  "/v1/monero/chain/block",
 		chainTxPath:     "/v1/monero/chain/tx",
 
-		client:   &http.Client{Timeout: timeout},
-		username: username,
-		password: password,
-		bearer:   bearer,
+		client:       &http.Client{Timeout: timeout},
+		daemonClient: &http.Client{Timeout: timeout},
+		username:     username,
+		password:     password,
+		bearer:       bearer,
 	}, nil
 }
 
@@ -343,6 +423,39 @@ func parseSignerEndpointURL(endpoint string) (*url.URL, error) {
 		return nil, fmt.Errorf("invalid frost signer endpoint host")
 	}
 	return parsed, nil
+}
+
+func parseMoneroRPCEndpointURL(endpoint string) (*url.URL, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return nil, fmt.Errorf("monero rpc host is empty")
+	}
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		endpoint = "http://" + endpoint
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid monero rpc host %q: %w", endpoint, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("invalid monero rpc host scheme %q", parsed.Scheme)
+	}
+	if strings.TrimSpace(parsed.Hostname()) == "" {
+		return nil, fmt.Errorf("invalid monero rpc host")
+	}
+	return parsed, nil
+}
+
+func normalizeMoneroRPCEndpoint(parsed *url.URL) string {
+	if parsed == nil {
+		return ""
+	}
+	copied := *parsed
+	copied.Path = strings.TrimSuffix(copied.Path, "/")
+	if strings.HasSuffix(copied.Path, "/json_rpc") {
+		copied.Path = strings.TrimSuffix(copied.Path, "/json_rpc")
+	}
+	return strings.TrimSuffix(copied.String(), "/")
 }
 
 func isLoopbackHost(host string) bool {
@@ -468,6 +581,14 @@ func (s *FrostSigner) GetBalance(vaultPubKey string) (xmrFrostBalanceResponse, e
 	return out, nil
 }
 
+func (s *FrostSigner) RegisterVault(req xmrFrostRegisterVaultRequest) (xmrFrostRegisterVaultResponse, error) {
+	var out xmrFrostRegisterVaultResponse
+	if err := s.call(http.MethodPost, s.registerPath, req, &out); err != nil {
+		return xmrFrostRegisterVaultResponse{}, fmt.Errorf("fail to call frost register vault endpoint: %w", err)
+	}
+	return out, nil
+}
+
 func (s *FrostSigner) GetTransfersByHeight(height int64) (xmrFrostTransfersResponse, error) {
 	var out xmrFrostTransfersResponse
 	path := fmt.Sprintf("%s?height=%d", s.transfersPath, height)
@@ -538,8 +659,20 @@ func (s *FrostSigner) GetFeeRate() (uint64, error) {
 }
 
 func (s *FrostSigner) GetChainHeight() (int64, error) {
+	var daemonErr error
+	if s.hasDaemonRPC() {
+		height, err := s.getDaemonChainHeight()
+		if err == nil {
+			return height, nil
+		}
+		daemonErr = fmt.Errorf("fail to call monero daemon chain-height rpc: %w", err)
+	}
+
 	var out xmrFrostChainHeightResponse
 	if err := s.callGet(s.chainHeightPath, &out); err != nil {
+		if daemonErr != nil {
+			return 0, fmt.Errorf("%v; fail to call frost chain-height endpoint: %w", daemonErr, err)
+		}
 		return 0, fmt.Errorf("fail to call frost chain-height endpoint: %w", err)
 	}
 	return out.Height, nil
@@ -550,11 +683,26 @@ func (s *FrostSigner) GetChainBlock(height int64) (chainBlock, error) {
 		return chainBlock{}, fmt.Errorf("height must be >= 0")
 	}
 
+	var daemonErr error
+	if s.hasDaemonRPC() {
+		block, err := s.getDaemonChainBlock(height)
+		if err == nil {
+			return block, nil
+		}
+		if errors.Is(err, ErrFrostUnavailableBlock) {
+			return chainBlock{}, err
+		}
+		daemonErr = fmt.Errorf("fail to call monero daemon chain-block rpc: %w", err)
+	}
+
 	var out xmrFrostChainBlockResponse
 	path := fmt.Sprintf("%s/%d", s.chainBlockPath, height)
 	if err := s.callGet(path, &out); err != nil {
 		if isFrostHTTPStatus(err, http.StatusConflict) {
 			return chainBlock{}, fmt.Errorf("%w: %d", ErrFrostUnavailableBlock, height)
+		}
+		if daemonErr != nil {
+			return chainBlock{}, fmt.Errorf("%v; fail to call frost chain-block endpoint: %w", daemonErr, err)
 		}
 		return chainBlock{}, fmt.Errorf("fail to call frost chain-block endpoint: %w", err)
 	}
@@ -582,6 +730,119 @@ func (s *FrostSigner) TxExists(txHash string) (bool, error) {
 }
 
 // --- HTTP helpers ---
+
+func (s *FrostSigner) hasDaemonRPC() bool {
+	return s != nil && s.daemonClient != nil && strings.TrimSpace(s.daemonEndpoint) != ""
+}
+
+func (s *FrostSigner) getDaemonChainHeight() (int64, error) {
+	var out moneroDaemonGetInfoResponse
+	if err := s.callDaemonJSONRPC("get_info", struct{}{}, &out); err != nil {
+		return 0, err
+	}
+	if out.Height <= 0 {
+		return 0, nil
+	}
+	return out.Height - 1, nil
+}
+
+func (s *FrostSigner) getDaemonChainBlock(height int64) (chainBlock, error) {
+	tipHeight, err := s.getDaemonChainHeight()
+	if err != nil {
+		return chainBlock{}, err
+	}
+	if height > tipHeight {
+		return chainBlock{}, fmt.Errorf("%w: %d", ErrFrostUnavailableBlock, height)
+	}
+
+	var out moneroDaemonGetBlockResponse
+	if err := s.callDaemonJSONRPC("get_block", moneroDaemonGetBlockParams{Height: height}, &out); err != nil {
+		return chainBlock{}, err
+	}
+
+	txHashes := out.TxHashes
+	if len(txHashes) == 0 && strings.TrimSpace(out.JSON) != "" {
+		var parsed moneroDaemonBlockJSON
+		if err := json.Unmarshal([]byte(out.JSON), &parsed); err == nil && len(parsed.TxHashes) > 0 {
+			txHashes = parsed.TxHashes
+		}
+	}
+
+	return chainBlock{
+		Height:       out.BlockHeader.Height,
+		Reward:       out.BlockHeader.Reward,
+		Hash:         out.BlockHeader.Hash,
+		PreviousHash: out.BlockHeader.PrevHash,
+		TxHashes:     txHashes,
+	}, nil
+}
+
+func (s *FrostSigner) callDaemonJSONRPC(method string, params any, out any) error {
+	if !s.hasDaemonRPC() {
+		return fmt.Errorf("monero daemon rpc is not configured")
+	}
+
+	body, err := json.Marshal(moneroDaemonJSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      "0",
+		Method:  method,
+		Params:  params,
+	})
+	if err != nil {
+		return fmt.Errorf("fail to marshal monero daemon request payload: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, s.daemonEndpoint+"/json_rpc", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("fail to create monero daemon request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.bearer != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bearer))
+	}
+	if s.username != "" {
+		req.SetBasicAuth(s.username, s.password)
+	}
+
+	resp, err := s.daemonClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fail to call monero daemon rpc %s: %w", method, err)
+	}
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	respBody, err := readBoundedResponseBody(resp.Body, maxFrostResponseBytes)
+	if err != nil {
+		return fmt.Errorf("fail to read monero daemon response: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("monero daemon rpc %s returned status %d: %s", method, resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	if out == nil {
+		return nil
+	}
+	if len(respBody) == 0 {
+		return fmt.Errorf("monero daemon rpc %s returned empty response body", method)
+	}
+
+	var envelope moneroDaemonJSONRPCResponse
+	if err = json.Unmarshal(respBody, &envelope); err != nil {
+		return fmt.Errorf("fail to unmarshal monero daemon rpc response: %w", err)
+	}
+	if envelope.Error != nil {
+		return envelope.Error
+	}
+	if len(envelope.Result) == 0 {
+		return fmt.Errorf("monero daemon rpc %s returned empty result", method)
+	}
+	if err = json.Unmarshal(envelope.Result, out); err != nil {
+		return fmt.Errorf("fail to unmarshal monero daemon rpc result: %w", err)
+	}
+	return nil
+}
 
 func (s *FrostSigner) callGet(path string, out any) error {
 	req, err := http.NewRequest(http.MethodGet, s.endpoint+path, nil)

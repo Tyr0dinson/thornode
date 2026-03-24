@@ -664,6 +664,35 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	c.Assert(msgAddLiquidity, NotNil)
 	c.Assert(msgAddLiquidity.RuneAddress, Equals, runeAddr)
 	c.Assert(msgAddLiquidity.AssetAddress, Equals, txin.Tx.FromAddress)
+
+	// Monero asset-side observations do not know the sender, so the
+	// constructed liquidity message should leave AssetAddress empty and rely on
+	// the RUNE-side memo address for staged LP reconciliation.
+	xmrAddr, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	xmrUnknown, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr.String()))
+	c.Assert(err, IsNil)
+	xmrMemo, err := ParseMemo(GetCurrentVersion(), fmt.Sprintf("add:XMR.XMR:%s", GetRandomRUNEAddress()))
+	c.Assert(err, IsNil)
+	xmrTxIn := common.NewObservedTx(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.XMRChain,
+			Coins:       common.Coins{common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One))},
+			Memo:        xmrMemo.String(),
+			FromAddress: xmrUnknown,
+			ToAddress:   xmrAddr,
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		},
+		1024,
+		common.EmptyPubKey, 1024,
+	)
+	xmrMsg, err := getMsgAddLiquidityFromMemo(w.ctx, xmrMemo.(AddLiquidityMemo), xmrTxIn, GetRandomBech32Addr())
+	c.Assert(err, IsNil)
+	c.Assert(xmrMsg, NotNil)
+	xmrAddLiquidity, ok := xmrMsg.(*MsgAddLiquidity)
+	c.Assert(ok, Equals, true)
+	c.Assert(xmrAddLiquidity.AssetAddress, Equals, common.NoAddress)
 }
 
 func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {

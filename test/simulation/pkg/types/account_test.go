@@ -87,6 +87,39 @@ func TestNewChainClientWithRetryStopsOnPermanentError(t *testing.T) {
 	}
 }
 
+func TestNewChainClientWithRetryRetriesWalletLoadRace(t *testing.T) {
+	client := &testLiteChainClient{}
+	attempts := 0
+	sleepCalls := 0
+
+	got, err := newChainClientWithRetryAndSleep(
+		common.LTCChain,
+		func(common.Chain, *thorclient.Keys) (LiteChainClient, error) {
+			attempts++
+			if attempts < 4 {
+				return nil, errors.New(`fail to query address info(rltc1quuds8pd92qnnq0udw0rpg0szpgcslc9p9h3t2p): -18: No wallet is loaded. Load a wallet using loadwallet or create a new one with createwallet. (Note: A default wallet is no longer automatically created)`)
+			}
+			return client, nil
+		},
+		nil,
+		func(time.Duration) {
+			sleepCalls++
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected LTC wallet load race to recover, got %v", err)
+	}
+	if got != client {
+		t.Fatal("expected recovered client to be returned")
+	}
+	if attempts != 4 {
+		t.Fatalf("expected 4 constructor attempts, got %d", attempts)
+	}
+	if sleepCalls != 3 {
+		t.Fatalf("expected 3 retry sleeps, got %d", sleepCalls)
+	}
+}
+
 type testLiteChainClient struct{}
 
 func (t *testLiteChainClient) GetAccount(_ *common.PubKey) (*common.Account, error) {

@@ -105,11 +105,6 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 	if err != nil {
 		return FrostKeygenResponse{}, fmt.Errorf("fail to compute frost keygen msgID: %w", err)
 	}
-	threshold, err := conversion.GetThreshold(len(req.SignerPubKeys))
-	if err != nil {
-		return FrostKeygenResponse{}, fmt.Errorf("fail to compute frost keygen threshold: %w", err)
-	}
-
 	msgChan := make(chan *p2p.Message, 1024)
 	sigChan := make(chan string, 2)
 
@@ -134,7 +129,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		req.Version,
 		req.BlockHeight,
 		req.SignerPubKeys,
-		threshold,
+		frostKeygenJoinThreshold(len(req.SignerPubKeys)),
 		sigChan,
 	)
 	if errJoinParty != nil {
@@ -228,6 +223,15 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		return waitResp, nil
 	}
 	return resp, nil
+}
+
+func frostKeygenJoinThreshold(participantCount int) int {
+	if participantCount <= 0 {
+		return 0
+	}
+	// FROST vault keygen requires every signer to participate, unlike the
+	// threshold-based ECDSA/EDDSA join-party path.
+	return participantCount - 1
 }
 
 func (c *FrostKeygenCoordinator) Execute(

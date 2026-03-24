@@ -47,6 +47,9 @@ struct SignSession {
     vault_pub_key: String,
     msg_id: String,
     from_address: String,
+    participant_count: u16,
+    local_participant_index: u16,
+    peer_participants: Vec<u16>,
     unsigned_tx: Option<UnsignedTransaction>,
     sign_machine: Option<TransactionSignMachine>,
     completion_machine: Option<TransactionSignatureMachine>,
@@ -123,6 +126,77 @@ fn apply_prepare_backoff(retry: usize) {
     }
 }
 
+fn normalize_participant_payloads(
+    payload_kind: &str,
+    participant_count: u16,
+    local_participant_index: u16,
+    payloads: HashMap<u16, Vec<u8>>,
+) -> Result<HashMap<u16, Vec<u8>>> {
+    if participant_count == 0 {
+        anyhow::bail!("signing session has invalid participant count 0");
+    }
+    if local_participant_index == 0 || local_participant_index > participant_count {
+        anyhow::bail!(
+            "signing session has invalid local participant index {} for participant count {}",
+            local_participant_index,
+            participant_count
+        );
+    }
+
+    let mut normalized = HashMap::with_capacity(payloads.len().min(participant_count as usize));
+    let mut dropped = Vec::new();
+    for (idx, payload) in payloads {
+        if idx == 0 || idx > participant_count || idx == local_participant_index {
+            dropped.push(idx);
+            continue;
+        }
+        normalized.insert(idx, payload);
+    }
+
+    if !dropped.is_empty() {
+        dropped.sort_unstable();
+        dropped.dedup();
+        warn!(
+            payload_kind,
+            participant_count,
+            dropped_participants = ?dropped,
+            "ignoring participant payloads outside signing key set"
+        );
+    }
+
+    Ok(normalized)
+}
+
+fn normalize_expected_peer_payloads(
+    payload_kind: &str,
+    expected_peers: &[u16],
+    payloads: HashMap<u16, Vec<u8>>,
+) -> HashMap<u16, Vec<u8>> {
+    let expected: HashSet<u16> = expected_peers.iter().copied().collect();
+    let mut normalized = HashMap::with_capacity(payloads.len().min(expected.len()));
+    let mut dropped = Vec::new();
+    for (idx, payload) in payloads {
+        if !expected.contains(&idx) {
+            dropped.push(idx);
+            continue;
+        }
+        normalized.insert(idx, payload);
+    }
+
+    if !dropped.is_empty() {
+        dropped.sort_unstable();
+        dropped.dedup();
+        warn!(
+            payload_kind,
+            expected_peers = ?expected_peers,
+            dropped_participants = ?dropped,
+            "ignoring participant payloads not present in signing session"
+        );
+    }
+
+    normalized
+}
+
 impl SignCoordinator {
     pub fn new(
         store: Arc<Store>,
@@ -171,6 +245,8 @@ impl SignCoordinator {
 
         let threshold_keys = ThresholdKeys::<FrostEd25519>::read(&mut key_data.as_slice())
             .context("failed to deserialize threshold key material for signing")?;
+        let participant_count = threshold_keys.params().n();
+        let local_participant_index = u16::from(threshold_keys.params().i());
         let group_key_hex = hex::encode(threshold_keys.group_key().to_bytes().as_ref());
         let from_address = xmr::derive_vault_address(&group_key_hex, self.chain_network)
             .context("failed to derive vault address from signing key")?;
@@ -272,6 +348,9 @@ impl SignCoordinator {
             vault_pub_key: vault_pub_key.to_string(),
             msg_id: msg_id.to_string(),
             from_address,
+            participant_count,
+            local_participant_index,
+            peer_participants: Vec::new(),
             unsigned_tx: Some(unsigned_tx),
             sign_machine: Some(sign_machine),
             completion_machine: None,
@@ -335,6 +414,37 @@ impl SignCoordinator {
         })
     }
 
+    fn abandon_session(&self, session_id: &str, vault_pub_key: &str, msg_id: &str, reason: &str) {
+        let removed = self.sessions.lock().remove(session_id).is_some();
+        match self
+            .store
+            .release_reservations_for_session(vault_pub_key, session_id, msg_id)
+        {
+            Ok(released) => {
+                debug!(
+                    session_id,
+                    vault = vault_pub_key,
+                    msg_id,
+                    removed,
+                    released,
+                    reason,
+                    "abandoned signing session and released reservations"
+                );
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    session_id,
+                    vault = vault_pub_key,
+                    msg_id,
+                    removed,
+                    reason,
+                    "failed to release reservations for abandoned signing session"
+                );
+            }
+        }
+    }
+
     #[cfg(test)]
     fn inflight_prepare_count(&self) -> usize {
         self.inflight_prepares.load(Ordering::Acquire)
@@ -345,42 +455,87 @@ impl SignCoordinator {
         session_id: &str,
         all_preprocesses: HashMap<u16, Vec<u8>>,
     ) -> Result<Vec<u8>> {
-        let mut sessions = self.sessions.lock();
-        let session = sessions
-            .get_mut(session_id)
-            .ok_or_else(|| anyhow::anyhow!("signing session {session_id} not found"))?;
+        let (sign_machine, parsed, peer_participants, vault_pub_key, msg_id) = {
+            let mut sessions = self.sessions.lock();
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| anyhow::anyhow!("signing session {session_id} not found"))?;
 
-        if session.phase != SignPhase::Preprocessed {
-            anyhow::bail!(
-                "signing session {} not in correct phase for partial sign (current: {:?})",
-                session_id,
-                session.phase
-            );
-        }
+            if session.phase != SignPhase::Preprocessed {
+                anyhow::bail!(
+                    "signing session {} not in correct phase for partial sign (current: {:?})",
+                    session_id,
+                    session.phase
+                );
+            }
 
-        // Validate all preprocesses BEFORE consuming the sign machine so
-        // that a malformed payload does not permanently poison the session.
-        let sign_machine_ref = session.sign_machine.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("signing session {} missing sign machine", session_id)
-        })?;
+            // Validate all preprocesses BEFORE consuming the sign machine so
+            // that a malformed payload does not permanently poison the session.
+            let sign_machine_ref = session.sign_machine.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("signing session {} missing sign machine", session_id)
+            })?;
+            let all_preprocesses = normalize_participant_payloads(
+                "preprocesses",
+                session.participant_count,
+                session.local_participant_index,
+                all_preprocesses,
+            )?;
 
-        let mut parsed = HashMap::with_capacity(all_preprocesses.len());
-        for (idx, bytes) in all_preprocesses {
-            let participant = Participant::new(idx)
-                .ok_or_else(|| anyhow::anyhow!("invalid participant index {idx}"))?;
-            let preprocess = sign_machine_ref
-                .read_preprocess(&mut bytes.as_slice())
-                .map_err(|e| {
-                    anyhow::anyhow!("failed to parse preprocess from participant {}: {}", idx, e)
-                })?;
-            parsed.insert(participant, preprocess);
-        }
+            let mut parsed = HashMap::with_capacity(all_preprocesses.len());
+            for (idx, bytes) in all_preprocesses {
+                let participant = Participant::new(idx)
+                    .ok_or_else(|| anyhow::anyhow!("invalid participant index {idx}"))?;
+                let preprocess = sign_machine_ref
+                    .read_preprocess(&mut bytes.as_slice())
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "failed to parse preprocess from participant {}: {}",
+                            idx,
+                            e
+                        )
+                    })?;
+                parsed.insert(participant, preprocess);
+            }
+            let mut peer_participants = parsed
+                .keys()
+                .map(|participant| u16::from(*participant))
+                .collect::<Vec<_>>();
+            peer_participants.sort_unstable();
+            peer_participants.dedup();
+
+            (
+                session.sign_machine.take().unwrap(),
+                parsed,
+                peer_participants,
+                session.vault_pub_key.clone(),
+                session.msg_id.clone(),
+            )
+        };
 
         // All inputs validated; now consume the machine for signing.
-        let sign_machine = session.sign_machine.take().unwrap();
-        let (completion_machine, share) = sign_machine
-            .sign(parsed, &[])
-            .map_err(|e| anyhow::anyhow!("failed to produce partial signature: {}", e))?;
+        let (completion_machine, share) = match sign_machine.sign(parsed, &[]) {
+            Ok(result) => result,
+            Err(e) => {
+                self.abandon_session(
+                    session_id,
+                    &vault_pub_key,
+                    &msg_id,
+                    "partial_sign_failed_after_machine_consumption",
+                );
+                return Err(anyhow::anyhow!(
+                    "failed to produce partial signature: {}",
+                    e
+                ));
+            }
+        };
+
+        let mut sessions = self.sessions.lock();
+        let session = sessions.get_mut(session_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "signing session {} disappeared before partial sign completion",
+                session_id
+            )
+        })?;
 
         let mut share_bytes = Vec::new();
         share
@@ -389,6 +544,7 @@ impl SignCoordinator {
 
         session.completion_machine = Some(completion_machine);
         session.phase = SignPhase::PartialSigned;
+        session.peer_participants = peer_participants;
 
         Ok(share_bytes)
     }
@@ -405,71 +561,92 @@ impl SignCoordinator {
             .await
             .context("failed to fetch chain height for outgoing attribution")?;
 
-        let mut sessions = self.sessions.lock();
-        let session = sessions
-            .get_mut(session_id)
-            .ok_or_else(|| anyhow::anyhow!("signing session {session_id} not found"))?;
-        if session.msg_id != msg_id {
-            anyhow::bail!(
-                "signing session {} msg_id mismatch (expected {}, got {})",
-                session_id,
-                session.msg_id,
-                msg_id
-            );
-        }
+        let (completion_machine, parsed, unsigned_tx, vault_pub_key, session_msg_id, from_address) = {
+            let mut sessions = self.sessions.lock();
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| anyhow::anyhow!("signing session {session_id} not found"))?;
+            if session.msg_id != msg_id {
+                anyhow::bail!(
+                    "signing session {} msg_id mismatch (expected {}, got {})",
+                    session_id,
+                    session.msg_id,
+                    msg_id
+                );
+            }
 
-        if session.phase != SignPhase::PartialSigned {
-            anyhow::bail!(
-                "signing session {} not in correct phase for combine (current: {:?})",
-                session_id,
-                session.phase
-            );
-        }
+            if session.phase != SignPhase::PartialSigned {
+                anyhow::bail!(
+                    "signing session {} not in correct phase for combine (current: {:?})",
+                    session_id,
+                    session.phase
+                );
+            }
 
-        // Validate all shares BEFORE consuming the completion machine so
-        // that a malformed payload does not permanently poison the session.
-        let completion_machine_ref = session.completion_machine.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("signing session {} missing completion machine", session_id)
-        })?;
-        let unsigned_tx = session.unsigned_tx.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "signing session {} missing unsigned transaction",
-                session_id
+            // Validate all shares BEFORE consuming the completion machine so
+            // that a malformed payload does not permanently poison the session.
+            let completion_machine_ref = session.completion_machine.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("signing session {} missing completion machine", session_id)
+            })?;
+            let unsigned_tx = session.unsigned_tx.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "signing session {} missing unsigned transaction",
+                    session_id
+                )
+            })?;
+            let all_shares =
+                normalize_expected_peer_payloads("shares", &session.peer_participants, all_shares);
+
+            let mut parsed = HashMap::with_capacity(all_shares.len());
+            for (idx, bytes) in all_shares {
+                let participant = Participant::new(idx)
+                    .ok_or_else(|| anyhow::anyhow!("invalid participant index {idx}"))?;
+                let share = completion_machine_ref
+                    .read_share(&mut bytes.as_slice())
+                    .map_err(|e| {
+                        anyhow::anyhow!("failed to parse share from participant {}: {}", idx, e)
+                    })?;
+                parsed.insert(participant, share);
+            }
+
+            (
+                session.completion_machine.take().unwrap(),
+                parsed,
+                unsigned_tx.clone(),
+                session.vault_pub_key.clone(),
+                session.msg_id.clone(),
+                session.from_address.clone(),
             )
-        })?;
-
-        let mut parsed = HashMap::with_capacity(all_shares.len());
-        for (idx, bytes) in all_shares {
-            let participant = Participant::new(idx)
-                .ok_or_else(|| anyhow::anyhow!("invalid participant index {idx}"))?;
-            let share = completion_machine_ref
-                .read_share(&mut bytes.as_slice())
-                .map_err(|e| {
-                    anyhow::anyhow!("failed to parse share from participant {}: {}", idx, e)
-                })?;
-            parsed.insert(participant, share);
-        }
+        };
 
         // All inputs validated; now consume the machine for combining.
-        let completion_machine = session.completion_machine.take().unwrap();
-        let tx = completion_machine
-            .complete(parsed)
-            .map_err(|e| anyhow::anyhow!("failed to combine threshold shares: {}", e))?;
+        let tx = match completion_machine.complete(parsed) {
+            Ok(tx) => tx,
+            Err(e) => {
+                self.abandon_session(
+                    session_id,
+                    &vault_pub_key,
+                    &session_msg_id,
+                    "combine_failed_after_machine_consumption",
+                );
+                return Err(anyhow::anyhow!("failed to combine threshold shares: {}", e));
+            }
+        };
         let tx_hash = hex::encode(tx.hash());
         let tx_hex = hex::encode(tx.serialize());
         let fee = unsigned_tx.fee;
 
         self.store
-            .bind_reservation_tx_hash(&session.vault_pub_key, session_id, msg_id, &tx_hash)
+            .bind_reservation_tx_hash(&vault_pub_key, session_id, msg_id, &tx_hash)
             .context("failed to bind reservation tx hash")?;
 
         self.store
             .save_outgoing_transfer(&OutgoingTransferRecord {
                 tx_hash: tx_hash.clone(),
                 tx_hex: tx_hex.clone(),
-                msg_id: session.msg_id.clone(),
-                vault_pub_key: session.vault_pub_key.clone(),
-                from_address: session.from_address.clone(),
+                msg_id: session_msg_id,
+                vault_pub_key: vault_pub_key.clone(),
+                from_address,
                 to_address: unsigned_tx.to_address.clone(),
                 amount: unsigned_tx.amount,
                 fee,
@@ -483,6 +660,13 @@ impl SignCoordinator {
             })
             .context("failed to persist outgoing transfer attribution")?;
 
+        let mut sessions = self.sessions.lock();
+        let session = sessions.get_mut(session_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "signing session {} disappeared before combine completion",
+                session_id
+            )
+        })?;
         session.tx_hash = Some(tx_hash.clone());
         session.tx_hex = Some(tx_hex.clone());
         session.fee = Some(fee);
@@ -741,6 +925,9 @@ mod tests {
             vault_pub_key: vault_pub_key.to_string(),
             msg_id: msg_id.to_string(),
             from_address: "48from".to_string(),
+            participant_count: 1,
+            local_participant_index: 1,
+            peer_participants: Vec::new(),
             unsigned_tx: None,
             sign_machine: None,
             completion_machine: None,
@@ -907,6 +1094,55 @@ mod tests {
     }
 
     #[test]
+    fn abandon_session_releases_reservations_and_removes_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let signer = make_signer(store.clone());
+        let session_id = "session-abandon";
+        let msg_id = "msg-abandon";
+        let vault_pub_key = "thorpub1vault";
+
+        store
+            .save_outputs(
+                vault_pub_key,
+                &[reserved_output_for_session(
+                    "tx-abandon",
+                    4,
+                    session_id,
+                    msg_id,
+                )],
+            )
+            .unwrap();
+        signer.sessions.lock().insert(
+            session_id.to_string(),
+            SignSession {
+                phase: SignPhase::PartialSigned,
+                created_at: Instant::now(),
+                vault_pub_key: vault_pub_key.to_string(),
+                msg_id: msg_id.to_string(),
+                from_address: "48from".to_string(),
+                participant_count: 1,
+                local_participant_index: 1,
+                peer_participants: Vec::new(),
+                unsigned_tx: None,
+                sign_machine: None,
+                completion_machine: None,
+                tx_hash: None,
+                tx_hex: None,
+                fee: None,
+            },
+        );
+
+        signer.abandon_session(session_id, vault_pub_key, msg_id, "test");
+
+        assert!(!signer.sessions.lock().contains_key(session_id));
+        let outputs = store.load_outputs(vault_pub_key).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].state, crate::state::store::OutputState::Unspent);
+        assert!(outputs[0].reservation.is_none());
+    }
+
+    #[test]
     fn resolve_group_key_prefers_registry_mapping() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
@@ -953,6 +1189,9 @@ mod tests {
                 vault_pub_key: "thorpub1vault".to_string(),
                 msg_id: "msg-1".to_string(),
                 from_address: "48from".to_string(),
+                participant_count: 1,
+                local_participant_index: 1,
+                peer_participants: Vec::new(),
                 unsigned_tx: None,
                 sign_machine: None,
                 completion_machine: None,
@@ -1093,5 +1332,40 @@ mod tests {
             prepare_backoff_action(PREPARE_SPIN_RETRIES + PREPARE_YIELD_RETRIES + 64),
             PrepareBackoffAction::Sleep(Duration::from_micros(PREPARE_SLEEP_MAX_MICROS))
         );
+    }
+
+    #[test]
+    fn normalize_participant_payloads_drops_self_and_out_of_range_entries() {
+        let mut payloads = HashMap::new();
+        payloads.insert(1, vec![0x01]);
+        payloads.insert(2, vec![0x02]);
+        payloads.insert(3, vec![0x03]);
+
+        let normalized = normalize_participant_payloads("shares", 3, 2, payloads).unwrap();
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized.get(&1), Some(&vec![0x01]));
+        assert_eq!(normalized.get(&3), Some(&vec![0x03]));
+    }
+
+    #[test]
+    fn normalize_expected_peer_payloads_allows_empty_for_single_participant_signing() {
+        let mut payloads = HashMap::new();
+        payloads.insert(1, vec![0x01]);
+
+        let normalized = normalize_expected_peer_payloads("shares", &[], payloads);
+        assert!(normalized.is_empty());
+    }
+
+    #[test]
+    fn normalize_expected_peer_payloads_filters_unexpected_entries() {
+        let mut payloads = HashMap::new();
+        payloads.insert(1, vec![0x01]);
+        payloads.insert(2, vec![0x02]);
+        payloads.insert(3, vec![0x03]);
+
+        let normalized = normalize_expected_peer_payloads("shares", &[1, 3], payloads);
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized.get(&1), Some(&vec![0x01]));
+        assert_eq!(normalized.get(&3), Some(&vec![0x03]));
     }
 }

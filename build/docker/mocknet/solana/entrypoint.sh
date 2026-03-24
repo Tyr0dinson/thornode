@@ -2,8 +2,14 @@
 
 set -e
 
+LEDGER_DIR="${LEDGER_DIR:-/tmp/test-ledger}"
+LEDGER_SHRED_LIMIT="${LEDGER_SHRED_LIMIT:-2000}"
+
 # Start test validator
-solana-test-validator --ledger /tmp/test-ledger --reset --limit-ledger-size --url http://localhost:8899 &
+solana-test-validator \
+  --ledger "$LEDGER_DIR" \
+  --limit-ledger-size "$LEDGER_SHRED_LIMIT" \
+  --url http://localhost:8899 &
 
 # Check if the validator is running
 echo "Waiting for the Solana validator to be fully up..."

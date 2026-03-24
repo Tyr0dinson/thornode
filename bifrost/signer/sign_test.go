@@ -48,6 +48,23 @@ import (
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
+func TestShouldAutoObserve(t *testing.T) {
+	signer := &Signer{}
+
+	signer.cfg.Signer.AutoObserve = false
+	if !signer.shouldAutoObserve(types.TxOutItem{Chain: common.XMRChain}) {
+		t.Fatal("expected XMR outbounds to auto-observe even when disabled globally")
+	}
+	if signer.shouldAutoObserve(types.TxOutItem{Chain: common.ETHChain}) {
+		t.Fatal("expected non-XMR outbounds to honor disabled global auto-observe")
+	}
+
+	signer.cfg.Signer.AutoObserve = true
+	if !signer.shouldAutoObserve(types.TxOutItem{Chain: common.ETHChain}) {
+		t.Fatal("expected global auto-observe to enable non-XMR outbounds")
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Mocks
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -218,15 +218,17 @@ func isRetryableChainClientStartupError(err error) bool {
 		return false
 	}
 
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 	for _, snippet := range []string{
 		"context deadline exceeded",
 		"connect: connection refused",
 		"connection reset by peer",
 		"EOF",
 		"i/o timeout",
+		"no wallet is loaded",
+		"wallet is loading",
 	} {
-		if strings.Contains(msg, snippet) {
+		if strings.Contains(msg, strings.ToLower(snippet)) {
 			return true
 		}
 	}

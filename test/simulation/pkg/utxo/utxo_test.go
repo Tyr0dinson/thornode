@@ -166,6 +166,18 @@ func TestNewClientSkipsImportWhenDogecoinUsesValidateAddress(t *testing.T) {
 	}
 }
 
+func TestGetMemoScriptsSplitsLongMemoForUTXO(t *testing.T) {
+	client := &Client{chain: common.BTCChain}
+
+	scripts, err := client.getMemoScripts(strings.Repeat("a", 81))
+	if err != nil {
+		t.Fatalf("expected long memo to be split into scripts, got %v", err)
+	}
+	if len(scripts) != 2 {
+		t.Fatalf("expected 2 scripts for an 81-byte BTC memo, got %d", len(scripts))
+	}
+}
+
 func newTestKeys(t *testing.T, name, mnemonic string) *thorclient.Keys {
 	t.Helper()
 

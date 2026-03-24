@@ -379,7 +379,7 @@ impl Scanner {
             .map(|s| {
                 s.outputs
                     .iter()
-                    .filter(|o| o.is_available_for_spend())
+                    .filter(|o| o.is_available_for_spend_at(self.current_height))
                     .cloned()
                     .collect()
             })

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -351,6 +352,14 @@ func convertThorchainAmountToWei(amt *big.Int) *big.Int {
 	return big.NewInt(0).Mul(amt, big.NewInt(common.One*100))
 }
 
+func quoteDefaultCoinbaseThorchain(chain common.Chain) sdkmath.Uint {
+	coinbase := chain.DefaultCoinbase()
+	if coinbase <= 0 {
+		return sdkmath.ZeroUint()
+	}
+	return sdkmath.NewUint(uint64(math.Round(coinbase * common.One)))
+}
+
 func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain common.Chain, asset common.Asset) (address, router common.Address, confirmations int64, err error) {
 	// If inbound chain is THORChain there is no inbound address
 	if chain.IsTHORChain() {
@@ -386,12 +395,16 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 
 	// estimate the inbound confirmation count blocks: ceil(amount/coinbase * conf adjustment)
 	confMul, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateConfMultiplierBasisPoints, chain.String())
-	if confMul < 0 || err != nil {
+	if confMul <= 0 || err != nil {
 		confMul = int64(constants.MaxBasisPts)
 	}
 	// analyze-ignore(float-comparison)
 	if chain.DefaultCoinbase() > 0 {
-		confValue := common.GetUncappedShare(cosmos.NewUint(uint64(confMul)), cosmos.NewUint(constants.MaxBasisPts), cosmos.NewUint(uint64(chain.DefaultCoinbase())*common.One))
+		coinbaseThorchain := quoteDefaultCoinbaseThorchain(chain)
+		confValue := common.GetUncappedShare(cosmos.NewUint(uint64(confMul)), cosmos.NewUint(constants.MaxBasisPts), coinbaseThorchain)
+		if confValue.IsZero() {
+			confValue = coinbaseThorchain
+		}
 		confirmations = amount.Quo(confValue).BigInt().Int64()
 		if !amount.Mod(confValue).IsZero() {
 			confirmations++
@@ -1070,7 +1083,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	}
 
 	// shorten the memo if necessary
-	if !fromAsset.IsNative() && len(memoString) > fromAsset.GetChain().MaxMemoLength() {
+	if sendMemo && !fromAsset.IsNative() && len(memoString) > fromAsset.GetChain().MaxMemoLength() {
 		// this is the shortest we can make it
 		maxMemoLength := fromAsset.GetChain().MaxMemoLength()
 		if fromChain.IsUTXO() && req.Extended {

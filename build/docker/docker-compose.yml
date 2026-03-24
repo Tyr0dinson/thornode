@@ -17,6 +17,9 @@ volumes:
   monero-daemon:
   monero-wallet:
   xmr-frost-data:
+  xmr-frost-data-cat:
+  xmr-frost-data-fox:
+  xmr-frost-data-pig:
   xmr-sim-data:
 
 ########################################################################################
@@ -171,7 +174,7 @@ services:
       - mocknet-cluster
       - bifrost
       - validator
-    depends_on:
+    depends_on: &bifrost-depends-on
       - bitcoin
       - bitcoin-cash
       - dogecoin
@@ -433,14 +436,26 @@ services:
     profiles:
       - mocknet-cluster
     depends_on:
-      thornode:
-        condition: service_healthy
+      - bitcoin
+      - bitcoin-cash
+      - dogecoin
+      - gaia
+      - litecoin
+      - monero-daemon
+      - monero-wallet-rpc
+      - xmr-frost-signer
+      - xmr-frost-signer-cat
+      - tron-supernode
+      - tron-fullnode
+      - thornode
+      - polygon
     environment:
       <<: *bifrost-environment
       PEER: bifrost
       CHAIN_API: thornode-cat:1317
       CHAIN_RPC: thornode-cat:26657
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-cat:50051
+      BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-cat:8283"
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
     ports:
       - 5040
@@ -456,14 +471,26 @@ services:
     profiles:
       - mocknet-cluster
     depends_on:
-      thornode:
-        condition: service_healthy
+      - bitcoin
+      - bitcoin-cash
+      - dogecoin
+      - gaia
+      - litecoin
+      - monero-daemon
+      - monero-wallet-rpc
+      - xmr-frost-signer
+      - xmr-frost-signer-fox
+      - tron-supernode
+      - tron-fullnode
+      - thornode
+      - polygon
     environment:
       <<: *bifrost-environment
       PEER: bifrost
       CHAIN_API: thornode-fox:1317
       CHAIN_RPC: thornode-fox:26657
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-fox:50051
+      BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-fox:8283"
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
     ports:
       - 5040
@@ -479,14 +506,26 @@ services:
     profiles:
       - mocknet-cluster
     depends_on:
-      thornode:
-        condition: service_healthy
+      - bitcoin
+      - bitcoin-cash
+      - dogecoin
+      - gaia
+      - litecoin
+      - monero-daemon
+      - monero-wallet-rpc
+      - xmr-frost-signer
+      - xmr-frost-signer-pig
+      - tron-supernode
+      - tron-fullnode
+      - thornode
+      - polygon
     environment:
       <<: *bifrost-environment
       PEER: bifrost
       CHAIN_API: thornode-pig:1317
       CHAIN_RPC: thornode-pig:26657
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-pig:50051
+      BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-pig:8283"
       SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
     ports:
       - 5040
@@ -507,6 +546,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
+    restart: unless-stopped
     image: registry.gitlab.com/thorchain/devops/node-launcher:gaia-daemon-27.1.0
     volumes:
       - "./mocknet:/mocknet"
@@ -524,6 +564,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
+    restart: unless-stopped
     image: registry.gitlab.com/thorchain/devops/node-launcher:noble-daemon-9.0.4
     volumes:
       - "./mocknet:/mocknet"
@@ -727,7 +768,7 @@ services:
 
   # ------------------------------ xmr-frost-signer ------------------------------
 
-  xmr-frost-signer:
+  xmr-frost-signer: &xmr-frost-signer
     profiles:
       - mocknet
       - mocknet-cluster
@@ -746,6 +787,11 @@ services:
       XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
       XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
       XMR_FROST_CHAIN_NETWORK: "mocknet"
+      XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
+      XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
+      XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
+      XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
+      XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
       XMR_FROST_STORE_SECRET: "${XMR_FROST_STORE_SECRET:-frost-mocknet-secret}"
       XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
     volumes:
@@ -765,6 +811,30 @@ services:
       retries: 30
       start_period: 10s
 
+  xmr-frost-signer-cat:
+    <<: *xmr-frost-signer
+    profiles:
+      - mocknet-cluster
+    volumes:
+      - xmr-frost-data-cat:/var/lib/xmr-frost
+    ports: []
+
+  xmr-frost-signer-fox:
+    <<: *xmr-frost-signer
+    profiles:
+      - mocknet-cluster
+    volumes:
+      - xmr-frost-data-fox:/var/lib/xmr-frost
+    ports: []
+
+  xmr-frost-signer-pig:
+    <<: *xmr-frost-signer
+    profiles:
+      - mocknet-cluster
+    volumes:
+      - xmr-frost-data-pig:/var/lib/xmr-frost
+    ports: []
+
   xmr-sim-helper:
     profiles:
       - mocknet
@@ -783,6 +853,11 @@ services:
       XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
       XMR_FROST_DATA_DIR: "/var/lib/xmr-sim"
       XMR_FROST_CHAIN_NETWORK: "mocknet"
+      XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
+      XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
+      XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
+      XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
+      XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
       XMR_FROST_STORE_SECRET: "${XMR_SIM_HELPER_STORE_SECRET:-sim-helper-mocknet-secret}"
       XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:-xmr-sim-helper-mocknet-token}"
       XMR_SIM_HELPER_ENABLED: "true"
@@ -846,21 +921,24 @@ services:
 
   # ------------------------------ tron ------------------------------
   # The fullnode must wait for the supernode to be healthy before starting.
-  # Without this, both nodes try to connect simultaneously, triggering DUPLICATE_PEER
-  # detection which closes both connections. The fullnode ends up with 0 peers and
-  # fails to sync blocks, causing simulation tests to timeout waiting for tron.
+  # Starting the fullnode too early can trigger DUPLICATE_PEER / seed resolution
+  # races that leave it stuck at block 0 with no peers for the rest of the run.
+  # Waiting for several produced blocks and seeding via the stable service alias
+  # makes tron bootstrap deterministic in simulation.
 
   tron-supernode:
     profiles:
       - mocknet
       - mocknet-cluster
+    restart: unless-stopped
     image: registry.gitlab.com/thorchain/devops/node-launcher:tron-daemon-4.8.1
+    entrypoint: /mocknet/tron-entrypoint.sh
     volumes:
       - "./mocknet:/mocknet"
     environment:
       TRON_NODE_TYPE: mocknet-supernode
     healthcheck:
-      # Wait for supernode to produce block 1 before fullnode connects
+      # Wait for supernode to produce several blocks before fullnode connects.
       test:
         [
           "CMD",
@@ -871,7 +949,7 @@ services:
           "-H",
           "Content-Type: application/json",
           "-d",
-          '{"num":1}',
+          '{"num":10}',
           "http://localhost:8090/wallet/getblockbynum",
         ]
       interval: 3s
@@ -883,7 +961,9 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
+    restart: unless-stopped
     image: registry.gitlab.com/thorchain/devops/node-launcher:tron-daemon-4.8.1
+    entrypoint: /mocknet/tron-entrypoint.sh
     depends_on:
       tron-supernode:
         condition: service_healthy
@@ -896,7 +976,7 @@ services:
       - "8091:8091"
     environment:
       TRON_NODE_TYPE: mocknet-fullnode
-      TRON_SEED_NODE: docker-tron-supernode-1:18888
+      TRON_SEED_NODE: supernode:18888
 
   # ------------------------------ solana ------------------------------
 

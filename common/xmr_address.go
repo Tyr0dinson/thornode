@@ -439,6 +439,13 @@ func IsXMRFeaturedGuaranteedAddress(address string) bool {
 	return ok && info.isFeatured && info.featuredGuaranteed
 }
 
+// IsXMRFeaturedAddress returns true when address is a valid Monero featured
+// address, regardless of its guaranteed flag.
+func IsXMRFeaturedAddress(address string) bool {
+	info, ok := xmrDecodeAddressInfo(address)
+	return ok && info.isFeatured
+}
+
 func isSupportedFeaturedNetworkByte(networkByte byte) bool {
 	return networkByte == xmrFeaturedMainnetNetworkByte
 }
