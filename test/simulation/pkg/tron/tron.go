@@ -38,6 +38,9 @@ var _ LiteChainClient = &Client{}
 const tronAPITimeout = 10 * time.Second
 const tronCreateTransactionWarmupTimeout = 60 * time.Second
 
+var tronBroadcastObservationTimeout = 15 * time.Second
+var tronBroadcastObservationPollInterval = 250 * time.Millisecond
+
 func NewConstructor(host string) LiteChainClientConstructor {
 	return func(chain common.Chain, keys *thorclient.Keys) (LiteChainClient, error) {
 		return NewClient(chain, host, keys)
@@ -173,10 +176,67 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 }
 
 func (c *Client) BroadcastTx(signed []byte) (string, error) {
+	var signedTx api.Transaction
+	if err := json.Unmarshal(signed, &signedTx); err != nil {
+		return "", fmt.Errorf("failed to decode signed tx: %w", err)
+	}
+
 	response, err := c.api.BroadcastTransaction(signed)
 	if err != nil {
 		return "", err
 	}
 
-	return response.TxId, nil
+	txID := response.TxId
+	if txID == "" {
+		txID = signedTx.TxId
+	}
+
+	if !response.Result {
+		if response.Code == "DUP_TRANSACTION_ERROR" && txID != "" {
+			if err := c.waitForObservedBroadcast(txID); err == nil {
+				return txID, nil
+			}
+		}
+
+		if response.Message != "" {
+			return "", fmt.Errorf("failed to broadcast tx: %s - %s", response.Code, response.Message)
+		}
+		if response.Code != "" {
+			return "", fmt.Errorf("failed to broadcast tx: %s", response.Code)
+		}
+		return "", fmt.Errorf("failed to broadcast tx")
+	}
+
+	if txID == "" {
+		return "", fmt.Errorf("broadcast transaction returned empty txID")
+	}
+
+	if err := c.waitForObservedBroadcast(txID); err != nil {
+		return "", err
+	}
+
+	return txID, nil
+}
+
+func (c *Client) waitForObservedBroadcast(txID string) error {
+	deadline := time.Now().Add(tronBroadcastObservationTimeout)
+	var lastErr error
+
+	for {
+		tx, err := c.api.GetTransaction(txID)
+		if err == nil && tx.TxId != "" {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return fmt.Errorf("broadcasted tx %s not observed on tron node: %w", txID, lastErr)
+			}
+			return fmt.Errorf("broadcasted tx %s not observed on tron node", txID)
+		}
+
+		time.Sleep(tronBroadcastObservationPollInterval)
+	}
 }

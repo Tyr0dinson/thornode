@@ -46,6 +46,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
@@ -490,7 +491,89 @@ func (c *Client) getPaymentAmount(tx SimTx) float64 {
 	amtToPay1e8 := tx.Coin.Amount.Uint64()
 	amtToPay := btcutil.Amount(int64(amtToPay1e8)).ToBTC()
 	amtToPay += c.getGasSats()
+	if memoScripts, err := c.getMemoScripts(tx.Memo); err == nil && len(memoScripts) > 1 {
+		p2wpkhOutputsCost := int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
+		amtToPay += btcutil.Amount(p2wpkhOutputsCost).ToBTC()
+	}
 	return amtToPay
+}
+
+func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
+	switch c.chain {
+	case common.DOGEChain:
+		return memoToScripts(memo, dogetxscript.MaxDataCarrierSize, dogetxscript.NullDataScript, dogetxscript.PayToWitnessScript)
+	case common.BCHChain:
+		return memoToScripts(memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
+	case common.LTCChain:
+		return memoToScripts(memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
+	case common.BTCChain, common.ZECChain:
+		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
+	default:
+		log.Fatal().Msg("unsupported chain")
+		return nil, nil
+	}
+}
+
+func memoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToWitnessKeyHashScript func([]byte) ([]byte, error)) ([][]byte, error) {
+	if len(memo) == 0 {
+		return nil, nil
+	}
+
+	if len(memo) > constants.MaxMemoSize {
+		return nil, fmt.Errorf("memo size %d exceeds maximum size of %d bytes", len(memo), constants.MaxMemoSize)
+	}
+
+	data := []byte(memo)
+	remainingDataSize := len(data)
+	if remainingDataSize > maxDataCarrierSize {
+		remainingDataSize -= (maxDataCarrierSize - 1)
+	} else {
+		remainingDataSize = 0
+	}
+
+	numScripts := 1 + (remainingDataSize+19)/20
+	scripts := make([][]byte, 0, numScripts)
+
+	firstChunkSize := len(data)
+	continuation := false
+	if firstChunkSize > maxDataCarrierSize {
+		firstChunkSize = maxDataCarrierSize - 1
+		continuation = true
+	}
+
+	firstChunk := make([]byte, 0, maxDataCarrierSize)
+	firstChunk = append(firstChunk, data[:firstChunkSize]...)
+	if continuation {
+		firstChunk = append(firstChunk, '^')
+	}
+
+	script, err := nullDataScript(firstChunk)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create OP_RETURN script: %w", err)
+	}
+	scripts = append(scripts, script)
+
+	if continuation {
+		remainingData := data[firstChunkSize:]
+		for i := 0; len(remainingData) > 0; i++ {
+			chunkSize := len(remainingData)
+			if chunkSize > 20 {
+				chunkSize = 20
+			}
+
+			hash := make([]byte, 20)
+			copy(hash, remainingData[:chunkSize])
+
+			p2wpkhScript, err := payToWitnessKeyHashScript(hash)
+			if err != nil {
+				return nil, fmt.Errorf("fail to create P2WPKH script at index %d: %w", i, err)
+			}
+			scripts = append(scripts, p2wpkhScript)
+			remainingData = remainingData[chunkSize:]
+		}
+	}
+
+	return scripts, nil
 }
 
 func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
@@ -582,31 +665,31 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	redeemTxOut := wire.NewTxOut(int64(tx.Coin.Amount.Uint64()), buf)
 	redeemTx.AddTxOut(redeemTxOut)
 
+	memoScripts, err := c.getMemoScripts(tx.Memo)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fail to generate memo scripts: %w", err)
+	}
+
+	p2wpkhOutputsCost := int64(0)
+	if len(memoScripts) > 1 {
+		p2wpkhOutputsCost = int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
+	}
+
 	// add output to pay the balance back ourselves
-	balance := totalAmt - redeemTxOut.Value - int64(c.getGasSats()*common.One)
+	balance := totalAmt - redeemTxOut.Value - int64(c.getGasSats()*common.One) - p2wpkhOutputsCost
+	if balance < 0 {
+		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
+	}
 	if balance > 0 {
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
 	}
 
-	// memo
-	var nullDataScript []byte
-	switch c.chain {
-	case common.DOGEChain:
-		nullDataScript, err = dogetxscript.NullDataScript([]byte(tx.Memo))
-	case common.BCHChain:
-		nullDataScript, err = bchtxscript.NullDataScript([]byte(tx.Memo))
-	case common.LTCChain:
-		nullDataScript, err = ltctxscript.NullDataScript([]byte(tx.Memo))
-	case common.BTCChain, common.ZECChain:
-		nullDataScript, err = btctxscript.NullDataScript([]byte(tx.Memo))
-	default:
-		log.Fatal().Msg("unsupported chain")
+	if len(memoScripts) > 0 {
+		redeemTx.AddTxOut(wire.NewTxOut(0, memoScripts[0]))
+		for _, script := range memoScripts[1:] {
+			redeemTx.AddTxOut(wire.NewTxOut(c.chain.P2WPKHOutputValue(), script))
+		}
 	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-	}
-
-	redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScript))
 
 	return redeemTx, individualAmounts, nil
 }

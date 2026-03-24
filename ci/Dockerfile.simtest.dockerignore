@@ -15,6 +15,10 @@ tools/hardhat
 tmp
 .git
 thornode
+thornode-image-original
+thornode-linux-arm64
+.codex-tmp
+test/simulation/.codex-tmp
 **/target
 
 # Keep the XMR sidecar source visible to the simtest build, but exclude

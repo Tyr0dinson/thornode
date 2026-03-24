@@ -163,7 +163,7 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
+		ToAddress:        testOutboundXMRDestination(),
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
@@ -237,7 +237,7 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
+		ToAddress:        testOutboundXMRDestination(),
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},

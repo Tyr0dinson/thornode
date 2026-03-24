@@ -2,6 +2,7 @@ package thornode
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -160,7 +161,7 @@ func GetPool(asset common.Asset) (openapi.Pool, error) {
 	return pool, err
 }
 
-func GetSwapQuote(from, to common.Asset, amount sdk.Uint) (openapi.QuoteSwapResponse, error) {
+func GetSwapQuote(from, to common.Asset, amount sdk.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, error) {
 	baseURL := fmt.Sprintf("%s/thorchain/quote/swap", thornodeURL)
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
@@ -170,6 +171,12 @@ func GetSwapQuote(from, to common.Asset, amount sdk.Uint) (openapi.QuoteSwapResp
 	params.Add("from_asset", from.String())
 	params.Add("to_asset", to.String())
 	params.Add("amount", amount.String())
+	if !destination.IsEmpty() {
+		params.Add("destination", destination.String())
+	}
+	if extended {
+		params.Add("extended", "true")
+	}
 	parsedURL.RawQuery = params.Encode()
 	url := parsedURL.String()
 
@@ -217,6 +224,25 @@ func GetMemoHash(txid string) (openapi.ReferenceMemoResponse, error) {
 }
 
 func Get(url string, target interface{}) error {
+	var lastErr error
+	for attempt := 1; attempt <= thornodeHTTPRetryAttempts; attempt++ {
+		err := getOnce(url, target)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		if !isRetryableThornodeGetError(err) || attempt == thornodeHTTPRetryAttempts {
+			return err
+		}
+
+		thornodeHTTPSleep(thornodeHTTPRetryDelay)
+	}
+
+	return lastErr
+}
+
+func getOnce(url string, target interface{}) error {
 	resp, err := httpClient.Get(url)
 	if err != nil {
 		return err
@@ -254,6 +280,37 @@ func Get(url string, target interface{}) error {
 	return json.Unmarshal(buf, target)
 }
 
+func isRetryableThornodeGetError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	msg := err.Error()
+	for _, snippet := range []string{
+		"context deadline exceeded",
+		"connect: connection refused",
+		"connection reset by peer",
+		"EOF",
+		"i/o timeout",
+		"server closed idle connection",
+		"HTTP: 429",
+		"HTTP: 502",
+		"HTTP: 503",
+		"HTTP: 504",
+	} {
+		if strings.Contains(msg, snippet) {
+			return true
+		}
+	}
+
+	return false
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Internal
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -266,3 +323,9 @@ var httpClient = &http.Client{
 	},
 	Timeout: 5 * time.Second,
 }
+
+var (
+	thornodeHTTPRetryAttempts = 2
+	thornodeHTTPRetryDelay    = 250 * time.Millisecond
+	thornodeHTTPSleep         = time.Sleep
+)

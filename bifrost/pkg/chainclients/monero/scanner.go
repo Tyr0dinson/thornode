@@ -26,12 +26,13 @@ const (
 
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
 type Scanner struct {
-	logger          zerolog.Logger
-	frostSigner     *FrostSigner
-	bridge          thorclient.ThorchainBridge
-	chain           common.Chain
-	localNodePubKey common.PubKey
-	reorgStore      *ReorgStore
+	logger              zerolog.Logger
+	frostSigner         *FrostSigner
+	bridge              thorclient.ThorchainBridge
+	chain               common.Chain
+	localNodePubKey     common.PubKey
+	localVaultBootstrap *frostVaultBootstrap
+	reorgStore          *ReorgStore
 
 	currentBlockHeight *atomic.Int64
 	lastFee            *atomic.Uint64
@@ -115,6 +116,10 @@ func (s *Scanner) SetErrataQueue(globalErrataQueue chan<- stypes.ErrataBlock) {
 
 func (s *Scanner) SetReorgStore(store *ReorgStore) {
 	s.reorgStore = store
+}
+
+func (s *Scanner) SetLocalVaultBootstrap(bootstrap *frostVaultBootstrap) {
+	s.localVaultBootstrap = bootstrap
 }
 
 // FetchMemPool emits only outbound mempool transfers with explicit sender metadata.
@@ -266,6 +271,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 		return nil, nil
 	}
 
+	outgoingVaultsByTxID := s.outgoingVaultsByTxID(resp.Outgoing)
 	txItems := make([]*stypes.TxInItem, 0, len(resp.Incoming)+len(resp.Outgoing))
 	for _, transfer := range resp.Incoming {
 		to := strings.TrimSpace(transfer.Address)
@@ -280,6 +286,13 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 
 		vaultPubKey, ok := s.getVaultForAddress(to)
 		if !ok {
+			continue
+		}
+		if s.isSameVaultOutgoingTx(transfer.TxID, vaultPubKey, outgoingVaultsByTxID) {
+			s.logger.Debug().
+				Str("txid", transfer.TxID).
+				Str("vault_pub_key", vaultPubKey.String()).
+				Msg("skip incoming monero change output for known outgoing tx")
 			continue
 		}
 
@@ -329,6 +342,50 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	}
 
 	return s.dedupeTxInItemsByTxID(txItems), nil
+}
+
+func (s *Scanner) outgoingVaultsByTxID(outgoing []xmrFrostTransferEntry) map[string]map[string]struct{} {
+	if len(outgoing) == 0 {
+		return nil
+	}
+
+	result := make(map[string]map[string]struct{}, len(outgoing))
+	for _, transfer := range outgoing {
+		txID := normalizeTxID(transfer.TxID)
+		if txID == "" {
+			continue
+		}
+
+		_, vaultPubKey := s.resolveOutgoingSender(transfer)
+		if vaultPubKey.IsEmpty() {
+			continue
+		}
+
+		vaults, ok := result[txID]
+		if !ok {
+			vaults = make(map[string]struct{})
+			result[txID] = vaults
+		}
+		vaults[vaultPubKey.String()] = struct{}{}
+	}
+	return result
+}
+
+func (s *Scanner) isSameVaultOutgoingTx(
+	txID string,
+	vaultPubKey common.PubKey,
+	outgoingVaultsByTxID map[string]map[string]struct{},
+) bool {
+	if vaultPubKey.IsEmpty() || len(outgoingVaultsByTxID) == 0 {
+		return false
+	}
+
+	vaults, ok := outgoingVaultsByTxID[normalizeTxID(txID)]
+	if !ok {
+		return false
+	}
+	_, ok = vaults[vaultPubKey.String()]
+	return ok
 }
 
 func (s *Scanner) resolveOutgoingSender(transfer xmrFrostTransferEntry) (string, common.PubKey) {
@@ -584,9 +641,16 @@ func (s *Scanner) refreshAsgardLookup() error {
 		if observedVault.IsEmpty() {
 			continue
 		}
-		derived, addrErr := observedVault.GetAddress(s.chain)
+		derived, addrErr := ensureFrostVaultRegistered(
+			s.logger,
+			s.frostSigner,
+			s.chain,
+			observedVault,
+			s.localVaultBootstrap,
+			"bifrost_scanner",
+		)
 		if addrErr != nil || derived.IsEmpty() {
-			s.logger.Debug().Err(addrErr).Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with non-derivable monero address")
+			s.logger.Debug().Err(addrErr).Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with unregistered monero scanner state")
 			continue
 		}
 		lookup[derived.String()] = observedVault
@@ -681,22 +745,18 @@ func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxIn
 		if item == nil {
 			continue
 		}
-		txID := normalizeTxID(item.Tx)
-		if txID == "" {
+		observationKey := txInItemObservationKey(item)
+		if observationKey == "" {
 			continue
 		}
-		existing, ok := merged[txID]
+		existing, ok := merged[observationKey]
 		if !ok {
-			merged[txID] = item
-			order = append(order, txID)
+			merged[observationKey] = item
+			order = append(order, observationKey)
 			continue
 		}
 
-		if existing.BlockHeight != item.BlockHeight ||
-			existing.Memo != item.Memo ||
-			existing.Sender != item.Sender ||
-			existing.To != item.To ||
-			!existing.ObservedVaultPubKey.Equals(item.ObservedVaultPubKey) {
+		if existing.BlockHeight != item.BlockHeight || existing.Memo != item.Memo {
 			s.logger.Debug().
 				Str("txid", item.Tx).
 				Str("existing_sender", existing.Sender).
@@ -713,13 +773,34 @@ func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxIn
 		case len(item.Gas) > 0 && item.Gas[0].Amount.GT(existing.Gas[0].Amount):
 			existing.Gas = item.Gas
 		}
+		if existing.Memo == "" && item.Memo != "" {
+			existing.Memo = item.Memo
+		}
 	}
 
 	deduped := make([]*stypes.TxInItem, 0, len(order))
-	for _, txID := range order {
-		deduped = append(deduped, merged[txID])
+	for _, observationKey := range order {
+		deduped = append(deduped, merged[observationKey])
 	}
 	return deduped
+}
+
+func txInItemObservationKey(item *stypes.TxInItem) string {
+	if item == nil {
+		return ""
+	}
+
+	txID := normalizeTxID(item.Tx)
+	if txID == "" {
+		return ""
+	}
+
+	return strings.Join([]string{
+		txID,
+		strings.TrimSpace(item.Sender),
+		strings.TrimSpace(item.To),
+		item.ObservedVaultPubKey.String(),
+	}, "|")
 }
 
 func unknownSenderAddress(txID, to string) string {

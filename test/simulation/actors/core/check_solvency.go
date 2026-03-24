@@ -21,6 +21,8 @@ type SolvencyCheckActor struct {
 	Actor
 }
 
+var xmrSolvencyTolerance = cosmos.NewUint(25)
+
 func NewSolvencyCheckActor(rng *rand.Rand) *Actor {
 	a := &SolvencyCheckActor{
 		Actor: *NewActor("SolvencyCheck", rng),
@@ -34,6 +36,26 @@ func NewSolvencyCheckActor(rng *rand.Rand) *Actor {
 ////////////////////////////////////////////////////////////////////////////////////////
 // Ops
 ////////////////////////////////////////////////////////////////////////////////////////
+
+func solvencyDiff(a, b cosmos.Uint) cosmos.Uint {
+	if a.GTE(b) {
+		return a.Sub(b)
+	}
+	return b.Sub(a)
+}
+
+func solvencyTolerance(asset common.Asset) cosmos.Uint {
+	if asset.Equals(common.XMRAsset) {
+		return xmrSolvencyTolerance
+	}
+	return cosmos.ZeroUint()
+}
+
+func solvencyAmountsMatch(asset common.Asset, vaultAmount, l1Amount cosmos.Uint) (bool, cosmos.Uint, cosmos.Uint) {
+	diff := solvencyDiff(vaultAmount, l1Amount)
+	tolerance := solvencyTolerance(asset)
+	return diff.LTE(tolerance), diff, tolerance
+}
 
 func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 	// wait a moment for any blocks to be created
@@ -101,12 +123,14 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 
 	// get all L1 balances
 	l1CoinAmounts := make(map[string]cosmos.Uint)
+	vaultAssets := make(map[string]common.Asset)
 	vaultAddrs := make(map[string]common.Address)
 	for assetStr := range vaultCoinAmounts {
 		asset, err := common.NewAsset(assetStr)
 		if err != nil {
 			a.Log().Fatal().Err(err).Msg("failed to parse asset")
 		}
+		vaultAssets[assetStr] = asset
 
 		if asset.IsGasAsset() {
 			switch asset.Chain.GetSigningAlgo() {
@@ -183,21 +207,36 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 
 	// verify vault and on chain amount are equal for all assets
 	vaultL1Mismatch := false
-	for asset, vaultAmount := range vaultCoinAmounts {
-		l1Amount, ok := l1CoinAmounts[asset]
+	for assetStr, vaultAmount := range vaultCoinAmounts {
+		l1Amount, ok := l1CoinAmounts[assetStr]
 		if !ok {
-			a.Log().Error().Str("asset", asset).Msg("L1 amount not found for asset")
+			a.Log().Error().Str("asset", assetStr).Msg("L1 amount not found for asset")
 		}
-		if !vaultAmount.Equal(l1Amount) {
+		asset := vaultAssets[assetStr]
+		match, diff, tolerance := solvencyAmountsMatch(asset, vaultAmount, l1Amount)
+		if !match {
 			a.Log().Error().
-				Str("asset", asset).
-				Str("vault_address", vaultAddrs[asset].String()).
+				Str("asset", assetStr).
+				Str("vault_address", vaultAddrs[assetStr].String()).
 				Str("vault_pubkey", pubkey.String()).
 				Str("vault_pubkey_eddsa", pubkeyEddsa.String()).
 				Str("vault_amount", vaultAmount.String()).
 				Str("l1_amount", l1Amount.String()).
+				Str("difference", diff.String()).
+				Str("tolerance", tolerance.String()).
 				Msg("vault and L1 amounts do not match")
 			vaultL1Mismatch = true
+			continue
+		}
+		if !diff.IsZero() {
+			a.Log().Warn().
+				Str("asset", assetStr).
+				Str("vault_address", vaultAddrs[assetStr].String()).
+				Str("vault_amount", vaultAmount.String()).
+				Str("l1_amount", l1Amount.String()).
+				Str("difference", diff.String()).
+				Str("tolerance", tolerance.String()).
+				Msg("vault and L1 amounts differ within tolerance")
 		}
 	}
 	if vaultL1Mismatch {

@@ -94,6 +94,15 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	}
 	aiResp, err := c.rpcClient.GetAccountInfo(&aiReq)
 	if err != nil {
+		if isAccountNotFoundXRPError(err) {
+			return &common.Account{
+				Sequence:      0,
+				AccountNumber: 0,
+				Coins: common.NewCoins(
+					common.NewCoin(common.XRPAsset, sdkmath.ZeroUint()),
+				),
+			}, nil
+		}
 		return nil, err
 	}
 
@@ -189,16 +198,8 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 		return "", err
 	}
 
-	resp, err := c.rpcClient.Submit(txBlob, true)
-	if err != nil {
+	if err := c.submitTx(txBlob, txHash, lastLedgerSequence); err != nil {
 		return "", err
-	}
-	if resp.EngineResult != "tesSUCCESS" && !resp.Queued {
-		return "", fmt.Errorf(
-			"transaction failed to submit with engine result: %s (%s)",
-			resp.EngineResult,
-			resp.EngineResultMessage,
-		)
 	}
 
 	if err := c.waitForValidation(txHash, lastLedgerSequence); err != nil {
@@ -206,6 +207,65 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 	}
 
 	return txHash, nil
+}
+
+func (c *Client) submitTx(txBlob, txHash string, lastLedgerSequence uint32) error {
+	deadline := time.Now().Add(xrpValidationTimeout)
+	var lastErr error
+
+	for time.Now().Before(deadline) {
+		resp, err := c.rpcClient.Submit(txBlob, true)
+		switch {
+		case err == nil && isAcceptedXRPSubmitResponse(resp):
+			return nil
+		case err == nil:
+			return fmt.Errorf(
+				"transaction failed to submit with engine result: %s (%s)",
+				resp.EngineResult,
+				resp.EngineResultMessage,
+			)
+		case isRetryableXRPError(err):
+			lastErr = err
+
+			txResp, txErr := c.getTx(txHash)
+			switch {
+			case txErr == nil && txResp != nil:
+				return nil
+			case txErr != nil && !isRetryableXRPError(txErr):
+				return txErr
+			case txErr != nil:
+				lastErr = txErr
+			}
+		default:
+			return err
+		}
+
+		currentLedger, err := c.rpcClient.GetLedgerIndex()
+		switch {
+		case err == nil && currentLedger.Int() > int(lastLedgerSequence):
+			if lastErr != nil {
+				return fmt.Errorf(
+					"transaction %s was not accepted before ledger %d: %w",
+					txHash,
+					lastLedgerSequence,
+					lastErr,
+				)
+			}
+			return fmt.Errorf("transaction %s was not accepted before ledger %d", txHash, lastLedgerSequence)
+		case err != nil && !isRetryableXRPError(err):
+			return err
+		case err != nil:
+			lastErr = err
+		}
+
+		time.Sleep(xrpValidationPollInterval)
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("timed out submitting XRP tx %s: %w", txHash, lastErr)
+	}
+
+	return fmt.Errorf("timed out submitting XRP tx %s", txHash)
 }
 
 func (c *Client) waitForValidation(txHash string, lastLedgerSequence uint32) error {
@@ -267,6 +327,16 @@ func (c *Client) getTx(txHash string) (*txqueries.TxResponse, error) {
 	return &txResp, nil
 }
 
+func isAcceptedXRPSubmitResponse(resp *txqueries.SubmitResponse) bool {
+	if resp == nil {
+		return false
+	}
+
+	return resp.EngineResult == "tesSUCCESS" ||
+		resp.EngineResult == "tefPAST_SEQ" ||
+		resp.Queued
+}
+
 func isRetryableXRPError(err error) bool {
 	if err == nil {
 		return false
@@ -286,4 +356,14 @@ func isRetryableXRPError(err error) bool {
 		strings.Contains(errStr, "timeout") ||
 		strings.Contains(errStr, "txnnotfound") ||
 		strings.Contains(errStr, "transaction not found")
+}
+
+func isAccountNotFoundXRPError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "actnotfound") ||
+		strings.Contains(errStr, "account not found")
 }

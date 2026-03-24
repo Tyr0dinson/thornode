@@ -54,6 +54,20 @@ pub struct DkgFinalizeResponse {
     pub success: bool,
 }
 
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct RegisterVaultRequest {
+    pub vault_pub_key: String,
+    pub group_key: String,
+    pub address: String,
+    pub source: Option<String>,
+    pub spend_key_hex: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RegisterVaultResponse {
+    pub registered: bool,
+}
+
 // ---- Signing Request/Response types ----
 
 #[derive(Debug, Deserialize, Clone, Serialize)]

@@ -2278,7 +2278,7 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 	// Should succeed and add another swap to queue
 }
 
-func (s *NetworkManagerTestSuite) TestCreateSwapToReserveXMRUsesEddsaAddress(c *C) {
+func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesEddsaAddress(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
 
@@ -2306,7 +2306,7 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToReserveXMRUsesEddsaAddress(c *
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	swapAmount := cosmos.NewUint(10 * common.One)
-	err := nmgr.createSwapToReserve(ctx, mgr, common.XMRAsset, swapAmount)
+	err := nmgr.createSwapToOverSolvency(ctx, mgr, common.XMRAsset, swapAmount)
 	c.Assert(err, IsNil)
 
 	var foundSwap *types.MsgSwap

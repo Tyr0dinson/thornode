@@ -108,6 +108,7 @@ type Client struct {
 
 	thorchainBridge     thorclient.ThorchainBridge
 	localNodePubKey     common.PubKey
+	localVaultBootstrap *frostVaultBootstrap
 	storage             *blockscanner.BlockScannerStorage
 	blockScanner        *blockscanner.BlockScanner
 	scanner             *Scanner
@@ -153,6 +154,7 @@ func NewClient(
 	if tssServer == nil {
 		return nil, errors.New("tss server is nil")
 	}
+	logger := log.With().Str("module", cfg.ChainID.String()).Logger()
 	frostSigner, err := NewFrostSigner(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create FROST signer: %w", err)
@@ -161,21 +163,22 @@ func NewClient(
 	localNodePubKey := common.EmptyPubKey
 	if thorKeys != nil {
 		if privKey, keyErr := thorKeys.GetPrivateKey(); keyErr != nil {
-			logger := log.With().Str("module", cfg.ChainID.String()).Logger()
 			logger.Debug().Err(keyErr).Msg("fail to get local node private key for monero vault mapping")
 		} else if tmPubKey, convErr := codec.ToTmPubKeyInterface(privKey.PubKey()); convErr != nil {
-			logger := log.With().Str("module", cfg.ChainID.String()).Logger()
 			logger.Debug().Err(convErr).Msg("fail to convert local node pubkey for monero vault mapping")
 		} else if pk, pubErr := common.NewPubKeyFromCrypto(tmPubKey); pubErr != nil {
-			logger := log.With().Str("module", cfg.ChainID.String()).Logger()
 			logger.Debug().Err(pubErr).Msg("fail to encode local node pubkey for monero vault mapping")
 		} else {
 			localNodePubKey = pk
 		}
 	}
 
-	logger := log.With().Str("module", cfg.ChainID.String()).Logger()
+	localVaultBootstrap, bootstrapErr := deriveLocalFrostVaultBootstrap(thorKeys)
+	if bootstrapErr != nil {
+		logger.Debug().Err(bootstrapErr).Msg("fail to derive local monero frost vault bootstrap material")
+	}
 	scanner := NewScanner(logger, frostSigner, bridge, cfg.ChainID, localNodePubKey, cfg.BlockScanner.MaxReorgRescanBlocks)
+	scanner.SetLocalVaultBootstrap(localVaultBootstrap)
 
 	c := &Client{
 		logger:                  logger,
@@ -183,6 +186,7 @@ func NewClient(
 		chain:                   cfg.ChainID,
 		thorchainBridge:         bridge,
 		localNodePubKey:         localNodePubKey,
+		localVaultBootstrap:     localVaultBootstrap,
 		scanner:                 scanner,
 		frostSigner:             frostSigner,
 		tssServer:               tssServer,
@@ -444,6 +448,11 @@ func (c *Client) consolidateVault(
 	}
 	if hasMempoolOutgoing {
 		c.logger.Debug().Str("vault_pubkey", stateKey).Msg("skip xmr consolidation: pending mempool outbound")
+		return
+	}
+
+	if err = c.ensureFrostVaultRegistration(vaultPubKey); err != nil {
+		c.logger.Debug().Err(err).Str("vault_pubkey", stateKey).Msg("skip xmr consolidation: fail to register vault")
 		return
 	}
 
@@ -943,12 +952,18 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 	if !tx.ToAddress.IsChain(c.chain) {
 		return xmrValidatedSignRequest{}, fmt.Errorf("to address %s is not a valid %s address", tx.ToAddress.String(), c.chain.String())
 	}
-	if !common.IsXMRFeaturedGuaranteedAddress(tx.ToAddress.String()) {
+	if common.CurrentChainNetwork == common.MockNet {
+		if common.IsXMRFeaturedAddress(tx.ToAddress.String()) {
+			return xmrValidatedSignRequest{}, fmt.Errorf(
+				"to address %s must use wallet-compatible standard/subaddress Monero address on Mocknet",
+				tx.ToAddress.String(),
+			)
+		}
+	} else if !common.IsXMRFeaturedGuaranteedAddress(tx.ToAddress.String()) {
 		return xmrValidatedSignRequest{}, fmt.Errorf("to address %s must be a featured+guaranteed Monero address", tx.ToAddress.String())
 	}
-	// Network-mode validation (mocknet vs public subaddress flag) is enforced
-	// by the Rust FROST sidecar's builder, which rejects addresses whose
-	// subaddress bit does not match the configured ChainNetworkMode.
+	// The Rust FROST sidecar performs the final network-mode validation, but
+	// Bifrost mirrors the same high-level destination policy to fail fast.
 	if requireThorchainHeight && thorchainHeight <= 0 {
 		return xmrValidatedSignRequest{}, fmt.Errorf("thorchain height must be greater than zero")
 	}
@@ -1018,6 +1033,10 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 		return nil
 	}
 
+	if err := c.ensureFrostVaultRegistration(vaultPubKey); err != nil {
+		return err
+	}
+
 	balance, err := c.frostSigner.GetBalance(vaultPubKey.String())
 	if err != nil {
 		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
@@ -1085,7 +1104,7 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 	return stypes.NewTxInItem(
 		height,
 		txHash,
-		tx.Memo,
+		tx.GetMemo(),
 		from,
 		tx.ToAddress.String(),
 		tx.Coins,
@@ -1172,6 +1191,10 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	pubKey, found := c.findVaultPubKeyByAddress(address)
 	if !found {
 		return common.Account{}, fmt.Errorf("no vault pub key found for address %s", address)
+	}
+
+	if err := c.ensureFrostVaultRegistration(pubKey); err != nil {
+		return common.Account{}, fmt.Errorf("fail to register monero vault for %s: %w", address, err)
 	}
 
 	balance, err := c.frostSigner.GetBalance(pubKey.String())
@@ -1555,6 +1578,21 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	c.asgardMu.Unlock()
 
 	return result, nil
+}
+
+func (c *Client) ensureFrostVaultRegistration(vaultPubKey common.PubKey) error {
+	if c.frostSigner == nil || vaultPubKey.IsEmpty() {
+		return nil
+	}
+
+	address, err := ensureFrostVaultRegistered(c.logger, c.frostSigner, c.chain, vaultPubKey, c.localVaultBootstrap, "bifrost")
+	if err != nil {
+		return err
+	}
+	if !address.IsEmpty() {
+		c.setVaultAddressMapping(vaultPubKey, address)
+	}
+	return nil
 }
 
 func (c *Client) getVaultAddress(vaultPubKey common.PubKey) string {

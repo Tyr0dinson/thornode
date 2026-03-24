@@ -12,6 +12,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"go.uber.org/atomic"
 
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -74,6 +75,162 @@ func TestFetchTxsAggregatesDuplicateIncomingTxIDs(t *testing.T) {
 	amount := txIn.TxArray[0].Coins.GetCoin(common.XMRAsset).Amount
 	if !amount.Equal(cosmos.NewUint(5)) {
 		t.Fatalf("expected merged amount 5, got %s", amount)
+	}
+}
+
+func TestFetchTxsSkipsIncomingChangeForKnownOutgoingSameVault(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("c", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vaultAddress := vaultAddr.String()
+	destinationAddress := common.XMRChecksummedDummyAddress('8')
+
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:    txID,
+				Address: vaultAddress,
+				Amount:  uint64(4 * moneroAtomicToThorchain),
+				Height:  100,
+			},
+		},
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     destinationAddress,
+				FromAddress: vaultAddress,
+				VaultPubKey: vaultPubKey.String(),
+				Amount:      uint64(1 * moneroAtomicToThorchain),
+				Fee:         uint64(1 * moneroAtomicToThorchain),
+				Height:      100,
+			},
+		},
+		[]string{vaultAddress},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected only the outbound observation, got %d items", len(txIn.TxArray))
+	}
+	if txIn.TxArray[0].Sender != vaultAddress {
+		t.Fatalf("expected outbound sender %s, got %s", vaultAddress, txIn.TxArray[0].Sender)
+	}
+	if txIn.TxArray[0].To != destinationAddress {
+		t.Fatalf("expected outbound destination %s, got %s", destinationAddress, txIn.TxArray[0].To)
+	}
+	amount := txIn.TxArray[0].Coins.GetCoin(common.XMRAsset).Amount
+	if !amount.Equal(cosmos.NewUint(1)) {
+		t.Fatalf("expected outbound amount 1, got %s", amount)
+	}
+}
+
+func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("d", 64)
+	sourceVaultPubKey, sourceVaultAddr := testVaultPubKeyAndAddress(t)
+	destVaultPubKey, destVaultAddr := testVaultPubKeyAndAddress(t)
+
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:    txID,
+				Address: destVaultAddr.String(),
+				Amount:  uint64(2 * moneroAtomicToThorchain),
+				Height:  100,
+				Note:    "MIGRATE:100",
+			},
+		},
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     destVaultAddr.String(),
+				FromAddress: sourceVaultAddr.String(),
+				VaultPubKey: sourceVaultPubKey.String(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Fee:         uint64(1 * moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "MIGRATE:100",
+			},
+		},
+		[]string{sourceVaultAddr.String(), destVaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{
+				{PubKeyEddsa: sourceVaultPubKey, PubKey: sourceVaultPubKey},
+				{PubKeyEddsa: destVaultPubKey, PubKey: destVaultPubKey},
+			},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 2 {
+		t.Fatalf("expected both inbound and outbound observations, got %d items", len(txIn.TxArray))
+	}
+
+	var inbound, outbound *stypes.TxInItem
+	for _, item := range txIn.TxArray {
+		switch {
+		case item.Sender == sourceVaultAddr.String():
+			outbound = item
+		case item.To == destVaultAddr.String():
+			inbound = item
+		}
+	}
+	if outbound == nil {
+		t.Fatal("expected outbound observation to be preserved")
+	}
+	if inbound == nil {
+		t.Fatal("expected inbound observation to be preserved")
+	}
+	if !outbound.ObservedVaultPubKey.Equals(sourceVaultPubKey) {
+		t.Fatalf("expected outbound vault pubkey %s, got %s", sourceVaultPubKey, outbound.ObservedVaultPubKey)
+	}
+	if !inbound.ObservedVaultPubKey.Equals(destVaultPubKey) {
+		t.Fatalf("expected inbound vault pubkey %s, got %s", destVaultPubKey, inbound.ObservedVaultPubKey)
 	}
 }
 

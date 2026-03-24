@@ -31,21 +31,21 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 var chainRPCs = map[common.Chain]string{
-	common.BTCChain:   "http://localhost:18443",
-	common.LTCChain:   "http://localhost:38443",
-	common.BCHChain:   "http://localhost:28443",
-	common.DOGEChain:  "http://localhost:18332",
-	common.ZECChain:   "http://localhost:18232",
-	common.ETHChain:   "http://localhost:8545",
-	common.AVAXChain:  "http://localhost:9650/ext/bc/C/rpc",
-	common.GAIAChain:  "localhost:9091",
-	common.NOBLEChain: "localhost:9092",
-	common.BASEChain:  "http://localhost:8547",
-	common.POLChain:   "http://localhost:8548",
-	common.TRONChain:  "http://localhost:8090",
-	common.XRPChain:   "http://localhost:5005",
-	common.SOLChain:   "http://localhost:8899",
-	common.XMRChain:   envOrDefault("XMR_SIM_HELPER_ENDPOINT", "http://localhost:8284"),
+	common.BTCChain:   "http://127.0.0.1:18443",
+	common.LTCChain:   "http://127.0.0.1:38443",
+	common.BCHChain:   "http://127.0.0.1:28443",
+	common.DOGEChain:  "http://127.0.0.1:18332",
+	common.ZECChain:   "http://127.0.0.1:18232",
+	common.ETHChain:   "http://127.0.0.1:8545",
+	common.AVAXChain:  "http://127.0.0.1:9650/ext/bc/C/rpc",
+	common.GAIAChain:  "127.0.0.1:9091",
+	common.NOBLEChain: "127.0.0.1:9092",
+	common.BASEChain:  "http://127.0.0.1:8547",
+	common.POLChain:   "http://127.0.0.1:8548",
+	common.TRONChain:  "http://127.0.0.1:8090",
+	common.XRPChain:   "http://127.0.0.1:5005",
+	common.SOLChain:   "http://127.0.0.1:8899",
+	common.XMRChain:   envOrDefault("XMR_SIM_HELPER_ENDPOINT", "http://127.0.0.1:8284"),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -79,8 +79,9 @@ var (
 )
 
 const (
-	xmrStartupRetryAttempts = 30
-	xmrStartupRetryDelay    = 2 * time.Second
+	masterAccountRetryAttempts = 30
+	masterAccountRetryDelay    = 2 * time.Second
+	mocknetInitConcurrency     = 2
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -88,11 +89,20 @@ const (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
-	if parallelism > len(mocknetUserMnemonics) {
-		log.Error().
+	userCount := parallelism
+	if userCount < 2 {
+		log.Info().
 			Int("parallelism", parallelism).
+			Int("user_count", 2).
+			Msg("allocating spare simulation user for background actors")
+		userCount = 2
+	}
+	if userCount > len(mocknetUserMnemonics) {
+		log.Error().
+			Int("parallelism", userCount).
 			Int("accounts", len(mocknetUserMnemonics)).
 			Msg("parallelism limited by available user accounts")
+		userCount = len(mocknetUserMnemonics)
 	}
 
 	c := &OpConfig{
@@ -100,12 +110,15 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	}
 	mu := &sync.Mutex{}
 	wg := &sync.WaitGroup{}
-	sem := make(chan struct{}, 8)
+	// Creating a simulation user instantiates every chain client for that mnemonic.
+	// Keep the startup fanout low so cluster runs do not spike Docker memory and
+	// lose the sim harness to exit 137 before seed/bootstrap even begins.
+	sem := make(chan struct{}, mocknetInitConcurrency)
 
 	// since we reuse the bifrost thorclient, load endpoints into config package
-	os.Setenv("BIFROST_THORCHAIN_CHAIN_HOST", "localhost:1317")
-	os.Setenv("BIFROST_THORCHAIN_CHAIN_RPC", "localhost:26657")
-	os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "localhost:50051")
+	os.Setenv("BIFROST_THORCHAIN_CHAIN_HOST", "127.0.0.1:1317")
+	os.Setenv("BIFROST_THORCHAIN_CHAIN_RPC", "127.0.0.1:26657")
+	os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "127.0.0.1:50051")
 	config.Init()
 
 	// validators
@@ -168,7 +181,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	}
 
 	// users
-	for _, mnemonic := range mocknetUserMnemonics[:parallelism] {
+	for _, mnemonic := range mocknetUserMnemonics[:userCount] {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(mnemonic string) {
@@ -225,25 +238,36 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				Stringer("address", master.Address(chain)).
 				Str("amount", coin.Amount.String())
 
-			// on evm chains, also log token decimals for debugging
+			// on evm chains, also log decimals for debugging
 			if chain.IsEVM() {
-				token := evm.Tokens(chain)[coin.Asset]
-				evmClient := master.ChainClients[chain].(*evm.Client)
-				tokenDecimals, err := evmClient.GetTokenDecimals(token.Address)
-				if err != nil {
-					log.Fatal().Err(err).Msg("failed to get token decimals")
-				}
+				if coin.Asset.IsGasAsset() {
+					ctxLog = ctxLog.Int64("decimals", chain.GetGasAssetDecimal())
+				} else {
+					token, ok := evm.Tokens(chain)[coin.Asset]
+					if !ok {
+						log.Fatal().
+							Stringer("chain", chain).
+							Stringer("asset", coin.Asset).
+							Msg("missing configured token metadata")
+					}
 
-				// sanity check our configured token decimals
-				if tokenDecimals != token.Decimals {
-					log.Fatal().
-						Int("actual", tokenDecimals).
-						Int("configured", token.Decimals).
-						Err(err).
-						Msg("token decimals mismatch")
-				}
+					evmClient := master.ChainClients[chain].(*evm.Client)
+					tokenDecimals, err := evmClient.GetTokenDecimals(token.Address)
+					if err != nil {
+						log.Fatal().Err(err).Msg("failed to get token decimals")
+					}
 
-				ctxLog = ctxLog.Int("decimals", tokenDecimals)
+					// sanity check our configured token decimals
+					if tokenDecimals != token.Decimals {
+						log.Fatal().
+							Int("actual", tokenDecimals).
+							Int("configured", token.Decimals).
+							Err(err).
+							Msg("token decimals mismatch")
+					}
+
+					ctxLog = ctxLog.Int("decimals", tokenDecimals)
+				}
 			}
 
 			// log balance
@@ -561,27 +585,58 @@ func waitForMasterAccountWithSleep(
 	sleep func(time.Duration),
 ) (*common.Account, error) {
 	var lastErr error
-	for attempt := 1; attempt <= xmrStartupRetryAttempts; attempt++ {
+	for attempt := 1; attempt <= masterAccountRetryAttempts; attempt++ {
 		account, err := client.GetAccount(nil)
-		if err == nil {
+		if err == nil && isMasterAccountReady(chain, account) {
 			return account, nil
 		}
-
-		lastErr = err
-		if !isRetryableXMRStartupError(chain, err) || attempt == xmrStartupRetryAttempts {
-			return nil, err
+		if err == nil {
+			lastErr = fmt.Errorf("%s master account balance is still zero", chain)
+			if !isRetryableZeroBalanceStartupState(chain, account) || attempt == masterAccountRetryAttempts {
+				return nil, lastErr
+			}
+		} else {
+			lastErr = err
+			if !isRetryableMasterAccountStartupError(chain, err) || attempt == masterAccountRetryAttempts {
+				return nil, err
+			}
 		}
 
 		log.Warn().
 			Stringer("chain", chain).
 			Int("attempt", attempt).
-			Int("max_attempts", xmrStartupRetryAttempts).
-			Err(err).
-			Msg("waiting for XMR master account readiness")
-		sleep(xmrStartupRetryDelay)
+			Int("max_attempts", masterAccountRetryAttempts).
+			Err(lastErr).
+			Msg("waiting for master account readiness")
+		sleep(masterAccountRetryDelay)
 	}
 
 	return nil, lastErr
+}
+
+func isMasterAccountReady(chain common.Chain, account *common.Account) bool {
+	if account == nil {
+		return false
+	}
+
+	if requiresFundedMasterAccount(chain) {
+		return !account.Coins.GetCoin(chain.GetGasAsset()).Amount.IsZero()
+	}
+
+	return true
+}
+
+func requiresFundedMasterAccount(chain common.Chain) bool {
+	return chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain)
+}
+
+func isRetryableZeroBalanceStartupState(chain common.Chain, account *common.Account) bool {
+	return requiresFundedMasterAccount(chain) && account != nil &&
+		account.Coins.GetCoin(chain.GetGasAsset()).Amount.IsZero()
+}
+
+func isRetryableMasterAccountStartupError(chain common.Chain, err error) bool {
+	return isRetryableXMRStartupError(chain, err) || isRetryableTransportStartupError(err)
 }
 
 func isRetryableXMRStartupError(chain common.Chain, err error) bool {
@@ -594,4 +649,25 @@ func isRetryableXMRStartupError(chain common.Chain, err error) bool {
 		strings.Contains(msg, "Requested block height: 1 greater than current top block height: 0")) ||
 		strings.Contains(msg, "failed to query daemon height:") ||
 		strings.Contains(msg, "daemon RPC get_info failed")
+}
+
+func isRetryableTransportStartupError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+	for _, snippet := range []string{
+		"context deadline exceeded",
+		"connect: connection refused",
+		"connection reset by peer",
+		"EOF",
+		"i/o timeout",
+	} {
+		if strings.Contains(msg, snippet) {
+			return true
+		}
+	}
+
+	return false
 }

@@ -164,6 +164,18 @@ func TestFrostKeygenRejectsIncompleteParticipantSet(t *testing.T) {
 	}
 }
 
+func TestFrostKeygenJoinThresholdRequiresFullParticipation(t *testing.T) {
+	if got := frostKeygenJoinThreshold(4); got != 3 {
+		t.Fatalf("expected full participation threshold for 4 signers to be 3, got %d", got)
+	}
+	if got := frostKeygenJoinThreshold(1); got != 0 {
+		t.Fatalf("expected single-signer threshold to be 0, got %d", got)
+	}
+	if got := frostKeygenJoinThreshold(0); got != 0 {
+		t.Fatalf("expected empty signer set threshold to be 0, got %d", got)
+	}
+}
+
 func TestFrostKeygenRound1TimeoutReturnsBlame(t *testing.T) {
 	ensureBech32Prefix()
 

@@ -48,11 +48,10 @@ import (
 )
 
 // CosmosSuccessCodes a transaction is considered successful if it returns 0
-// or if tx is unauthorized or already in the mempool (another Bifrost already sent it)
+// or if it is already in the mempool because another Bifrost already sent it.
 var CosmosSuccessCodes = map[uint32]bool{
 	errorsmod.SuccessABCICode:                 true,
 	errortypes.ErrTxInMempoolCache.ABCICode(): true,
-	errortypes.ErrWrongSequence.ABCICode():    true,
 }
 
 // CosmosClient is a structure to sign and broadcast tx to Cosmos chain used by signer mostly

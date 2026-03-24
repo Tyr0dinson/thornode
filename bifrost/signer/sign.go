@@ -204,6 +204,13 @@ func (s *Signer) shouldSign(tx types.TxOutItem) bool {
 	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa)
 }
 
+func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
+	// Monero outbounds need sign-time observation even when global auto-observe is disabled.
+	// The chain scanner can later see the mined tx as an incoming change output, which is
+	// insufficient to attribute the scheduled outbound on THORChain.
+	return s.cfg.Signer.AutoObserve || tx.Chain.Equals(common.XMRChain)
+}
+
 // signTransactions - looks for work to do by getting a list of all unsigned
 // transactions stored in the storage
 func (s *Signer) signTransactions() {
@@ -891,7 +898,7 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	cancel()
 
 	// if enabled and the observation is non-nil, instant observe the outbound
-	if s.cfg.Signer.AutoObserve && obs != nil {
+	if s.shouldAutoObserve(item.TxOutItem) && obs != nil {
 		s.observer.ObserveSigned(types.TxIn{
 			Chain:                  item.TxOutItem.Chain,
 			TxArray:                []*types.TxInItem{obs},

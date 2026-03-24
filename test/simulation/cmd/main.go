@@ -3,6 +3,8 @@ package main
 import (
 	crypto_rand "crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	"math/rand/v2"
@@ -39,8 +41,15 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 const (
-	DefaultParallelism = "8"
+	DefaultParallelism      = "8"
+	tronRPCReadinessTimeout = 2 * time.Minute
 )
+
+var bifrostReadinessEndpoints = []string{
+	"http://localhost:6040/ping",
+	"http://localhost:6040/p2pid",
+	"http://localhost:9000/metrics",
+}
 
 var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.BTCChain:   utxo.NewConstructor(chainRPCs[common.BTCChain]),
@@ -145,35 +154,10 @@ func main() {
 		}
 	}
 
-	// wait until bifrost is ready
-	for {
-		res, err := http.Get("http://localhost:6040/p2pid")
-		if err == nil && res.StatusCode == 200 {
-			break
-		}
-		log.Info().Msg("waiting for bifrost to be ready")
-		time.Sleep(time.Second)
-	}
+	waitForBifrostReadiness()
 
-	// wait for tron chain to produce its first block
-	for {
-		res, err := http.Post(
-			"http://localhost:8090/wallet/getblockbynum",
-			"application/json",
-			strings.NewReader(`{"num":1}`),
-		)
-
-		if err == nil && res.StatusCode == 200 {
-			defer res.Body.Close()
-
-			data, err := io.ReadAll(res.Body)
-			if err == nil && len(data) > 3 {
-				break
-			}
-		}
-
-		log.Info().Msg("waiting for tron to be ready")
-		time.Sleep(time.Second)
+	if err := waitForTronRPCReadiness(chainRPCs[common.TRONChain]); err != nil {
+		log.Fatal().Err(err).Msg("failed waiting for tron rpc readiness")
 	}
 
 	for _, chain := range []common.Chain{
@@ -240,6 +224,32 @@ func main() {
 	dag.Execute(cfg, root, parallelismInt, rng)
 }
 
+func waitForBifrostReadiness() {
+	waitForBifrostReadinessWithSleep(bifrostReadinessEndpoints, http.Get, time.Sleep)
+}
+
+func waitForBifrostReadinessWithSleep(
+	endpoints []string,
+	get func(string) (*http.Response, error),
+	sleep func(time.Duration),
+) {
+	for {
+		for _, endpoint := range endpoints {
+			res, err := get(endpoint)
+			if err == nil && res.StatusCode == http.StatusOK {
+				res.Body.Close()
+				return
+			}
+			if res != nil {
+				res.Body.Close()
+			}
+		}
+
+		log.Info().Msg("waiting for bifrost to be ready")
+		sleep(time.Second)
+	}
+}
+
 func waitForEVMRPCReadiness(chain common.Chain, endpoint string) {
 	for {
 		res, err := http.Post(
@@ -260,4 +270,82 @@ func waitForEVMRPCReadiness(chain common.Chain, endpoint string) {
 		log.Info().Stringer("chain", chain).Msg("waiting for evm chain to be ready")
 		time.Sleep(time.Second)
 	}
+}
+
+func waitForTronRPCReadiness(endpoint string) error {
+	return waitForTronRPCReadinessWithClock(endpoint, getTronBlockHeight, time.Now, time.Sleep, tronRPCReadinessTimeout)
+}
+
+func waitForTronRPCReadinessWithClock(
+	endpoint string,
+	getHeight func(string) (int64, error),
+	now func() time.Time,
+	sleep func(time.Duration),
+	timeout time.Duration,
+) error {
+	const requiredHeight int64 = 20
+	const requiredAdvances = 3
+
+	lastHeight := int64(-1)
+	advances := 0
+	deadline := now().Add(timeout)
+
+	for {
+		if now().After(deadline) {
+			return fmt.Errorf("tron readiness timed out after %s with height=%d advances=%d", timeout, lastHeight, advances)
+		}
+
+		height, err := getHeight(endpoint)
+		switch {
+		case err == nil && height >= requiredHeight && lastHeight >= 0 && height > lastHeight:
+			advances++
+			lastHeight = height
+			if advances >= requiredAdvances {
+				return nil
+			}
+		case err == nil && lastHeight < 0:
+			lastHeight = height
+		case err == nil && height < lastHeight:
+			lastHeight = height
+			advances = 0
+		case err == nil:
+			lastHeight = height
+		}
+
+		log.Info().
+			Int64("height", lastHeight).
+			Int("advances", advances).
+			Msg("waiting for tron to be ready")
+		sleep(time.Second)
+	}
+}
+
+func getTronBlockHeight(endpoint string) (int64, error) {
+	res, err := http.Post(
+		endpoint+"/wallet/getnowblock",
+		"application/json",
+		strings.NewReader(`{}`),
+	)
+	if err != nil {
+		return 0, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected tron status code: %d", res.StatusCode)
+	}
+
+	var response struct {
+		Header struct {
+			RawData struct {
+				Number int64 `json:"number"`
+			} `json:"raw_data"`
+		} `json:"block_header"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return 0, err
+	}
+
+	return response.Header.RawData.Number, nil
 }

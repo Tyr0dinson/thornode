@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	rand "math/rand/v2"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -30,6 +32,7 @@ type SwapActor struct {
 	// starting balances
 	from        common.Asset
 	fromAddress common.Address
+	fromBalance sdkmath.Uint
 	to          common.Asset
 	toAddress   common.Address
 	toBalance   sdkmath.Uint
@@ -42,12 +45,15 @@ type SwapActor struct {
 	maxExpected sdkmath.Uint
 }
 
+var recommendedMinAmountInPattern = regexp.MustCompile(`recommended_min_amount_in:\s*(\d+)`)
+
 func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
 	a := &SwapActor{
 		Actor: *NewActor(fmt.Sprintf("Swap %s => %s", from, to), rng),
 		from:  from,
 		to:    to,
 	}
+	a.Timeout = swapActorTimeout(from, to)
 
 	// lock an account with from balance
 	a.Ops = append(a.Ops, a.acquireUser)
@@ -68,6 +74,123 @@ func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
 	return &a.Actor
 }
 
+func swapActorTimeout(from, to common.Asset) time.Duration {
+	if from.Chain.Equals(common.XMRChain) || to.Chain.Equals(common.XMRChain) {
+		return 4 * time.Minute
+	}
+	return 2 * time.Minute
+}
+
+func getRecommendedMinAmountIn(quote openapi.QuoteSwapResponse) (sdkmath.Uint, bool) {
+	if quote.RecommendedMinAmountIn == nil || *quote.RecommendedMinAmountIn == "" {
+		return sdkmath.ZeroUint(), false
+	}
+	return sdkmath.NewUintFromString(*quote.RecommendedMinAmountIn), true
+}
+
+func getRecommendedMinAmountInFromError(err error) (sdkmath.Uint, bool) {
+	matches := recommendedMinAmountInPattern.FindStringSubmatch(err.Error())
+	if len(matches) != 2 {
+		return sdkmath.ZeroUint(), false
+	}
+	return sdkmath.NewUintFromString(matches[1]), true
+}
+
+func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount sdkmath.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
+	currentAmount := amount
+	for attempt := 0; attempt < 4; attempt++ {
+		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, extended)
+		if err != nil {
+			minAmount, ok := getRecommendedMinAmountInFromError(err)
+			if ok && currentAmount.LT(minAmount) {
+				currentAmount = minAmount
+				continue
+			}
+			return openapi.QuoteSwapResponse{}, currentAmount, err
+		}
+
+		minAmount, ok := getRecommendedMinAmountIn(quote)
+		if ok && currentAmount.LT(minAmount) {
+			currentAmount = minAmount
+			continue
+		}
+
+		return quote, currentAmount, nil
+	}
+
+	return openapi.QuoteSwapResponse{}, currentAmount, fmt.Errorf("failed to settle swap quote amount within recommended minimum")
+}
+
+func swapSpendableBalance(asset common.Asset, balance sdkmath.Uint) sdkmath.Uint {
+	if balance.IsZero() {
+		return sdkmath.ZeroUint()
+	}
+
+	if !asset.IsGasAsset() {
+		return balance
+	}
+
+	// Preserve enough of the gas asset balance to avoid draining the account below
+	// chain dust/reserve requirements while still allowing late-stage swaps to use
+	// whatever balance remains.
+	reserve := asset.Chain.DustThreshold()
+	tenPercent := balance.QuoUint64(10)
+	if tenPercent.GT(reserve) {
+		reserve = tenPercent
+	}
+	if !balance.GT(reserve) {
+		return sdkmath.ZeroUint()
+	}
+
+	return balance.Sub(reserve)
+}
+
+func swapAmountForBalance(asset common.Asset, target, balance sdkmath.Uint) sdkmath.Uint {
+	spendable := swapSpendableBalance(asset, balance)
+	if spendable.IsZero() {
+		return sdkmath.ZeroUint()
+	}
+	if spendable.LT(target) {
+		return spendable
+	}
+	return target
+}
+
+func setQuoteExpectations(a *SwapActor, quote openapi.QuoteSwapResponse) {
+	// store expected range to fail if received amount is outside 10% tolerance
+	quoteOut := sdkmath.NewUintFromString(quote.ExpectedAmountOut)
+	tolerance := quoteOut.QuoUint64(10)
+	if quote.Fees.Outbound != nil {
+		outboundFee := sdkmath.NewUintFromString(*quote.Fees.Outbound)
+		quoteOut = quoteOut.Add(outboundFee)
+
+		// handle 3x gas rate fluctuation (add 2x outbound fee to tolerance)
+		tolerance = tolerance.Add(outboundFee.MulUint64(2))
+	}
+	a.minExpected = common.SafeSub(quoteOut, tolerance)
+	a.maxExpected = quoteOut.Add(tolerance)
+}
+
+func (a *SwapActor) updateSwapAmount(next sdkmath.Uint, reason string) error {
+	if next.GT(a.fromBalance) {
+		if a.user != nil {
+			a.user.Release()
+		}
+		return fmt.Errorf("%s %s exceeds user balance %s", reason, next, a.fromBalance)
+	}
+
+	if !next.Equal(a.swapAmount) {
+		a.Log().Info().
+			Stringer("before", a.swapAmount).
+			Stringer("after", next).
+			Str("reason", reason).
+			Msg("adjusted swap amount")
+	}
+
+	a.swapAmount = next
+	return nil
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Ops
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -80,7 +203,12 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 			Continue: false,
 		}
 	}
-	a.swapAmount = sdkmath.NewUintFromString(pool.BalanceAsset).QuoUint64(400)
+	targetAmount := sdkmath.NewUintFromString(pool.BalanceAsset).QuoUint64(400)
+	a.swapAmount = targetAmount
+
+	var selectedUser *User
+	selectedFromBalance := sdkmath.ZeroUint()
+	selectedSwapAmount := sdkmath.ZeroUint()
 
 	for _, user := range config.Users {
 		// skip users already being used
@@ -103,35 +231,65 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 			user.Release()
 			continue
 		}
-		if fromAcct.Coins.GetCoin(a.from).Amount.LT(a.swapAmount) {
+		fromBalance := fromAcct.Coins.GetCoin(a.from).Amount
+		candidateAmount := swapAmountForBalance(a.from, targetAmount, fromBalance)
+		if candidateAmount.IsZero() {
 			a.Log().Error().Msg("user has insufficient from balance")
 			user.Release()
 			continue
 		}
 
+		// Prefer the user with the most spendable balance so late-stage swaps can
+		// keep progressing even after earlier actors have partially drained assets.
+		if selectedUser != nil && !candidateAmount.GT(selectedSwapAmount) {
+			user.Release()
+			continue
+		}
+
+		if selectedUser != nil {
+			selectedUser.Release()
+		}
+		selectedUser = user
+		selectedFromBalance = fromBalance
+		selectedSwapAmount = candidateAmount
+	}
+
+	if selectedUser != nil {
+		a.user = selectedUser
+		a.fromBalance = selectedFromBalance
+
+		cl := a.Log().With().
+			Str("user", selectedUser.Name()).
+			Stringer("from", a.from).
+			Stringer("to", a.to).
+			Logger()
+		a.SetLogger(cl)
+
 		// get l1 address to store in state context
-		a.fromAddress, err = user.PubKey(a.from.Chain).GetAddress(a.from.Chain)
+		a.fromAddress, err = selectedUser.PubKey(a.from.Chain).GetAddress(a.from.Chain)
 		if err != nil {
 			a.Log().Fatal().Err(err).Msg("failed to get L1 address")
 		}
-		a.toAddress, err = user.PubKey(a.to.Chain).GetAddress(a.to.Chain)
+		a.toAddress, err = selectedUser.PubKey(a.to.Chain).GetAddress(a.to.Chain)
 		if err != nil {
 			a.Log().Fatal().Err(err).Msg("failed to get L1 address")
 		}
 
 		// get to asset balance for tracking
 		var toAcct *common.Account
-		toAcct, err = user.ChainClients[a.to.Chain].GetAccount(nil)
+		toAcct, err = selectedUser.ChainClients[a.to.Chain].GetAccount(nil)
 		if err != nil {
 			a.Log().Warn().Err(err).Msg("failed to get to account")
 		} else {
 			a.toBalance = toAcct.Coins.GetCoin(a.to).Amount
 		}
 
-		// set acquired account and amounts in state context
-		a.user = user
-
-		break
+		if err := a.updateSwapAmount(selectedSwapAmount, "available user balance"); err != nil {
+			return OpResult{
+				Error:  err,
+				Finish: true,
+			}
+		}
 	}
 
 	// continue if we acquired a user
@@ -162,7 +320,7 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 }
 
 func (a *SwapActor) getQuote(config *OpConfig) OpResult {
-	quote, err := thornode.GetSwapQuote(a.from, a.to, a.swapAmount)
+	quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
 	if err != nil {
 		a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get swap quote")
 		return OpResult{
@@ -170,18 +328,14 @@ func (a *SwapActor) getQuote(config *OpConfig) OpResult {
 		}
 	}
 
-	// store expected range to fail if received amount is outside 10% tolerance
-	quoteOut := sdkmath.NewUintFromString(quote.ExpectedAmountOut)
-	tolerance := quoteOut.QuoUint64(10)
-	if quote.Fees.Outbound != nil {
-		outboundFee := sdkmath.NewUintFromString(*quote.Fees.Outbound)
-		quoteOut = quoteOut.Add(outboundFee)
-
-		// handle 3x gas rate fluctuation (add 2x outbound fee to tolerance)
-		tolerance = tolerance.Add(outboundFee.MulUint64(2))
+	if err := a.updateSwapAmount(quoteAmount, "recommended minimum inbound amount"); err != nil {
+		return OpResult{
+			Error:  err,
+			Finish: true,
+		}
 	}
-	a.minExpected = common.SafeSub(quoteOut, tolerance)
-	a.maxExpected = quoteOut.Add(tolerance)
+
+	setQuoteExpectations(a, quote)
 
 	return OpResult{
 		Continue: true,

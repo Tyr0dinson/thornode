@@ -1,11 +1,13 @@
 package core
 
 import (
+	"fmt"
 	rand "math/rand/v2"
 	"time"
 
 	atypes "gitlab.com/thorchain/thornode/v3/api/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
@@ -18,6 +20,8 @@ type XMRPostChurnActor struct {
 	inboundAfter  common.Address
 }
 
+const xmrPostChurnNewNodesPerChurn = int64(3)
+
 func NewXMRPostChurnActor(rng *rand.Rand) *Actor {
 	a := &XMRPostChurnActor{
 		SwapActor: SwapActor{
@@ -26,7 +30,7 @@ func NewXMRPostChurnActor(rng *rand.Rand) *Actor {
 			to:    common.XMRAsset,
 		},
 	}
-	a.Timeout = 10 * time.Minute
+	a.Timeout = 15 * time.Minute
 
 	a.Ops = append(a.Ops, a.captureActiveInbound)
 	a.Ops = append(a.Ops, a.startChurn)
@@ -82,8 +86,17 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	mimir := thorchain.NewMsgMimir("HALTCHURNING", 0, accAddr)
-	txid, err := node.Thorchain.Broadcast(mimir)
+	txid, err := a.broadcastMimir(node, accAddr, "NUMBEROFNEWNODESPERCHURN", xmrPostChurnNewNodesPerChurn)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast node expansion mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", xmrPostChurnNewNodesPerChurn).
+		Str("txid", txid.String()).
+		Msg("broadcasted node expansion mimir")
+
+	txid, err = a.broadcastMimir(node, accAddr, "HALTCHURNING", 0)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast churn mimir")
 		return OpResult{Continue: false}
@@ -137,4 +150,13 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 		Stringer("inbound_after", a.inboundAfter).
 		Msg("XMR active vault rotated")
 	return OpResult{Continue: true}
+}
+
+func (a *XMRPostChurnActor) broadcastMimir(node *User, accAddr cosmos.AccAddress, key string, value int64) (common.TxID, error) {
+	mimir := thorchain.NewMsgMimir(key, value, accAddr)
+	txid, err := node.Thorchain.Broadcast(mimir)
+	if err != nil {
+		return common.TxID(""), fmt.Errorf("broadcast %s=%d: %w", key, value, err)
+	}
+	return txid, nil
 }

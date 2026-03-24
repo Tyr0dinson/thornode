@@ -23,7 +23,7 @@ func TestValidateXMRSignTxRejectsInboundMemo(t *testing.T) {
 	c := &Client{chain: common.XMRChain}
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
+		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
 		Coins: common.Coins{
@@ -48,7 +48,7 @@ func TestValidateXMRSignTxRejectsCheckpoint(t *testing.T) {
 	c := &Client{chain: common.XMRChain}
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
+		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
 		Coins: common.Coins{
@@ -69,6 +69,9 @@ func TestValidateXMRSignTxRejectsCheckpoint(t *testing.T) {
 
 func TestValidateXMRSignTxRejectsStandardDestination(t *testing.T) {
 	t.Parallel()
+	if common.CurrentChainNetwork == common.MockNet {
+		t.Skip("mocknet accepts wallet-compatible standard/subaddress destinations")
+	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
@@ -94,6 +97,9 @@ func TestValidateXMRSignTxRejectsStandardDestination(t *testing.T) {
 
 func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) {
 	t.Parallel()
+	if common.CurrentChainNetwork == common.MockNet {
+		t.Skip("mocknet uses wallet-compatible standard/subaddress destinations")
+	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
@@ -125,6 +131,10 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 	// Mock frost signer server that returns low balance
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			return
+		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
 			_ = json.NewEncoder(w).Encode(xmrFrostBalanceResponse{
 				Balance:         2 * moneroAtomicToThorchain,
@@ -151,7 +161,7 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 	}
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
+		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
 		Coins: common.Coins{
@@ -179,6 +189,10 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			return
+		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
 			_ = json.NewEncoder(w).Encode(xmrFrostBalanceResponse{
 				Balance:         10 * moneroAtomicToThorchain,
@@ -205,7 +219,7 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	}
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
+		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
 		Coins: common.Coins{
@@ -230,7 +244,7 @@ func TestValidateXMRSignTxAcceptsValidRequest(t *testing.T) {
 	c := &Client{chain: common.XMRChain}
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
+		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
 		Coins: common.Coins{
@@ -253,6 +267,10 @@ func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]xmrFrostBala
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			return
+		}
 		// Path format: /v1/monero/balance/{vault_pub_key}
 		if strings.HasPrefix(r.URL.Path, "/v1/monero/balance/") {
 			pk := strings.TrimPrefix(r.URL.Path, "/v1/monero/balance/")

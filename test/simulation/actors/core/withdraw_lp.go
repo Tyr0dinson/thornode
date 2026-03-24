@@ -52,7 +52,7 @@ func findCompletedLP(
 	assetAddress common.Address,
 ) *openapi.LiquidityProvider {
 	for _, lp := range liquidityProviders {
-		if lp.PendingAsset != "0" || lp.PendingRune != "0" || lp.Units == "" {
+		if lp.PendingAsset != "0" || lp.PendingRune != "0" || lp.Units == "" || lp.Units == "0" {
 			continue
 		}
 		if lp.RuneAddress == nil || lp.AssetAddress == nil {

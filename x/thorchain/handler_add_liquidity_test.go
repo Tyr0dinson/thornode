@@ -924,6 +924,200 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityV1(c *C) {
 	c.Check(p.LPUnits.Equal(cosmos.NewUint(100*common.One)), Equals, true, Commentf("%d", p.LPUnits.Uint64()))
 }
 
+func (s *HandlerAddLiquiditySuite) TestAddLiquidityXMRUnknownSender(c *C) {
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+
+	stageRuneFirst := func(runeAddress, assetAddress, unknownSender common.Address) {
+		ps := NewAddLiquidityTestKeeper()
+		ctx, _ := setupKeeperForTest(c)
+		h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(ps))
+
+		c.Assert(ps.SetPool(ctx, Pool{
+			BalanceRune:         cosmos.ZeroUint(),
+			BalanceAsset:        cosmos.ZeroUint(),
+			Asset:               common.XMRAsset,
+			LPUnits:             cosmos.ZeroUint(),
+			SynthUnits:          cosmos.ZeroUint(),
+			PendingInboundAsset: cosmos.ZeroUint(),
+			PendingInboundRune:  cosmos.ZeroUint(),
+			Status:              PoolAvailable,
+		}), IsNil)
+
+		err := h.addLiquidity(ctx, common.XMRAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), runeAddress, assetAddress, GetRandomTxHash(), true, constAccessor)
+		c.Assert(err, IsNil)
+
+		err = h.addLiquidity(ctx, common.XMRAsset, cosmos.ZeroUint(), cosmos.NewUint(100*common.One), runeAddress, unknownSender, GetRandomTxHash(), false, constAccessor)
+		c.Assert(err, IsNil)
+
+		su, err := ps.GetLiquidityProvider(ctx, common.XMRAsset, runeAddress)
+		c.Assert(err, IsNil)
+		c.Check(su.AssetAddress.Equals(assetAddress), Equals, true)
+		c.Check(su.Units.IsZero(), Equals, false)
+
+		pool, err := ps.GetPool(ctx, common.XMRAsset)
+		c.Assert(err, IsNil)
+		c.Check(pool.PendingInboundRune.IsZero(), Equals, true)
+		c.Check(pool.PendingInboundAsset.IsZero(), Equals, true)
+		c.Check(pool.BalanceRune.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+		c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	}
+
+	stageAssetFirst := func(runeAddress, assetAddress, unknownSender common.Address) {
+		ps := NewAddLiquidityTestKeeper()
+		ctx, _ := setupKeeperForTest(c)
+		h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(ps))
+
+		c.Assert(ps.SetPool(ctx, Pool{
+			BalanceRune:         cosmos.ZeroUint(),
+			BalanceAsset:        cosmos.ZeroUint(),
+			Asset:               common.XMRAsset,
+			LPUnits:             cosmos.ZeroUint(),
+			SynthUnits:          cosmos.ZeroUint(),
+			PendingInboundAsset: cosmos.ZeroUint(),
+			PendingInboundRune:  cosmos.ZeroUint(),
+			Status:              PoolAvailable,
+		}), IsNil)
+
+		err := h.addLiquidity(ctx, common.XMRAsset, cosmos.ZeroUint(), cosmos.NewUint(100*common.One), runeAddress, unknownSender, GetRandomTxHash(), true, constAccessor)
+		c.Assert(err, IsNil)
+
+		err = h.addLiquidity(ctx, common.XMRAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), runeAddress, assetAddress, GetRandomTxHash(), false, constAccessor)
+		c.Assert(err, IsNil)
+
+		su, err := ps.GetLiquidityProvider(ctx, common.XMRAsset, runeAddress)
+		c.Assert(err, IsNil)
+		c.Check(su.AssetAddress.Equals(assetAddress), Equals, true)
+		c.Check(su.Units.IsZero(), Equals, false)
+
+		pool, err := ps.GetPool(ctx, common.XMRAsset)
+		c.Assert(err, IsNil)
+		c.Check(pool.PendingInboundRune.IsZero(), Equals, true)
+		c.Check(pool.PendingInboundAsset.IsZero(), Equals, true)
+		c.Check(pool.BalanceRune.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+		c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	}
+
+	xmrAddr1, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	xmrUnknown1, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr1.String()))
+	c.Assert(err, IsNil)
+	stageRuneFirst(GetRandomRUNEAddress(), xmrAddr1, xmrUnknown1)
+
+	xmrAddr2, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	xmrUnknown2, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr2.String()))
+	c.Assert(err, IsNil)
+	stageAssetFirst(GetRandomRUNEAddress(), xmrAddr2, xmrUnknown2)
+
+	ps := NewAddLiquidityTestKeeper()
+	ctx, _ := setupKeeperForTest(c)
+	h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(ps))
+	c.Assert(ps.SetPool(ctx, Pool{
+		BalanceRune:         cosmos.ZeroUint(),
+		BalanceAsset:        cosmos.ZeroUint(),
+		Asset:               common.XMRAsset,
+		LPUnits:             cosmos.ZeroUint(),
+		SynthUnits:          cosmos.ZeroUint(),
+		PendingInboundAsset: cosmos.ZeroUint(),
+		PendingInboundRune:  cosmos.ZeroUint(),
+		Status:              PoolAvailable,
+	}), IsNil)
+
+	xmrRuneAddr := GetRandomRUNEAddress()
+	xmrAddr3, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	xmrUnknown3, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr3.String()))
+	c.Assert(err, IsNil)
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		xmrUnknown3,
+		xmrAddr3,
+		common.Coins{common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One))},
+		common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		fmt.Sprintf("add:%s:%s", common.XMRAsset, xmrRuneAddr),
+	)
+	msg := NewMsgAddLiquidity(
+		tx,
+		common.XMRAsset,
+		cosmos.ZeroUint(),
+		cosmos.NewUint(100*common.One),
+		xmrRuneAddr,
+		xmrUnknown3,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		GetRandomBech32Addr(),
+	)
+	err = h.validate(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	ps = NewAddLiquidityTestKeeper()
+	ctx, _ = setupKeeperForTest(c)
+	h = NewAddLiquidityHandler(NewDummyMgrWithKeeper(ps))
+	c.Assert(ps.SetPool(ctx, Pool{
+		BalanceRune:         cosmos.ZeroUint(),
+		BalanceAsset:        cosmos.ZeroUint(),
+		Asset:               common.XMRAsset,
+		LPUnits:             cosmos.ZeroUint(),
+		SynthUnits:          cosmos.ZeroUint(),
+		PendingInboundAsset: cosmos.ZeroUint(),
+		PendingInboundRune:  cosmos.ZeroUint(),
+		Status:              PoolAvailable,
+	}), IsNil)
+
+	runeTx := common.NewTx(
+		GetRandomTxHash(),
+		xmrRuneAddr,
+		GetRandomTHORAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))},
+		common.Gas{},
+		fmt.Sprintf("add:%s:%s", common.XMRAsset, xmrAddr3),
+	)
+	runeMsg := NewMsgAddLiquidity(
+		runeTx,
+		common.XMRAsset,
+		cosmos.NewUint(100*common.One),
+		cosmos.ZeroUint(),
+		xmrRuneAddr,
+		xmrAddr3,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		GetRandomBech32Addr(),
+	)
+	err = h.validate(ctx, *runeMsg)
+	c.Assert(err, IsNil)
+	err = h.handle(ctx, *runeMsg)
+	c.Assert(err, IsNil)
+
+	assetTx := common.NewTx(
+		GetRandomTxHash(),
+		xmrUnknown3,
+		xmrAddr3,
+		common.Coins{common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One))},
+		common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		fmt.Sprintf("add:%s:%s", common.XMRAsset, xmrRuneAddr),
+	)
+	assetMsg := NewMsgAddLiquidity(
+		assetTx,
+		common.XMRAsset,
+		cosmos.ZeroUint(),
+		cosmos.NewUint(100*common.One),
+		xmrRuneAddr,
+		xmrUnknown3,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		GetRandomBech32Addr(),
+	)
+	err = h.validate(ctx, *assetMsg)
+	c.Assert(err, IsNil)
+	err = h.handle(ctx, *assetMsg)
+	c.Assert(err, IsNil)
+
+	su, err := ps.GetLiquidityProvider(ctx, common.XMRAsset, xmrRuneAddr)
+	c.Assert(err, IsNil)
+	c.Check(su.AssetAddress.Equals(xmrAddr3), Equals, true)
+	c.Check(su.Units.IsZero(), Equals, false)
+}
+
 func (HandlerAddLiquiditySuite) TestRuneOnlyFairMergeProvidedLiquidity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	txID := GetRandomTxHash()

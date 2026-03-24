@@ -28,6 +28,13 @@ use state::Store;
 use tx::daemon::DaemonClient;
 use tx::scanner::Scanner;
 
+const BALANCE_ROUTE: &str = "/v1/monero/balance/:vault_pub_key";
+const ADDRESSES_ROUTE: &str = "/v1/monero/addresses/:vault_pub_key";
+const OUTPUTS_ROUTE: &str = "/v1/monero/outputs/:vault_pub_key";
+const REGISTER_VAULT_ROUTE: &str = "/v1/monero/vaults/register";
+const CHAIN_BLOCK_ROUTE: &str = "/v1/monero/chain/block/:height";
+const CHAIN_TX_EXISTS_ROUTE: &str = "/v1/monero/chain/tx/:tx_hash/exists";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
@@ -132,33 +139,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/monero/sign/combine", post(api::routes::sign_combine))
         .route("/v1/monero/broadcast", post(api::routes::broadcast))
         // Scanner / Balance
-        .route(
-            "/v1/monero/balance/{vault_pub_key}",
-            get(api::routes::get_balance),
-        )
+        .route(REGISTER_VAULT_ROUTE, post(api::routes::register_vault))
+        .route(BALANCE_ROUTE, get(api::routes::get_balance))
         .route("/v1/monero/transfers", get(api::routes::get_transfers))
-        .route(
-            "/v1/monero/addresses/{vault_pub_key}",
-            get(api::routes::get_addresses),
-        )
-        .route(
-            "/v1/monero/outputs/{vault_pub_key}",
-            get(api::routes::get_outputs),
-        )
+        .route(ADDRESSES_ROUTE, get(api::routes::get_addresses))
+        .route(OUTPUTS_ROUTE, get(api::routes::get_outputs))
         .route("/v1/monero/scanner/sync", post(api::routes::scanner_sync))
         .route("/v1/monero/fee-rate", get(api::routes::get_fee_rate))
         .route(
             "/v1/monero/chain/height",
             get(api::routes::get_chain_height),
         )
-        .route(
-            "/v1/monero/chain/block/{height}",
-            get(api::routes::get_chain_block),
-        )
-        .route(
-            "/v1/monero/chain/tx/{tx_hash}/exists",
-            get(api::routes::get_chain_tx_exists),
-        )
+        .route(CHAIN_BLOCK_ROUTE, get(api::routes::get_chain_block))
+        .route(CHAIN_TX_EXISTS_ROUTE, get(api::routes::get_chain_tx_exists))
         .layer(from_fn(api::rate_limit::rate_limit_middleware))
         .layer(Extension(rate_limiter.clone()))
         .layer(from_fn(api::auth::auth_middleware))
@@ -266,5 +259,41 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => info!("received Ctrl+C, shutting down"),
         _ = terminate => info!("received SIGTERM, shutting down"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn parameterized_routes_match_monero_paths() {
+        let app = Router::new()
+            .route(BALANCE_ROUTE, get(|| async { StatusCode::OK }))
+            .route(ADDRESSES_ROUTE, get(|| async { StatusCode::OK }))
+            .route(OUTPUTS_ROUTE, get(|| async { StatusCode::OK }))
+            .route(CHAIN_BLOCK_ROUTE, get(|| async { StatusCode::OK }))
+            .route(CHAIN_TX_EXISTS_ROUTE, get(|| async { StatusCode::OK }));
+
+        for path in [
+            "/v1/monero/balance/test-vault",
+            "/v1/monero/addresses/test-vault",
+            "/v1/monero/outputs/test-vault",
+            "/v1/monero/chain/block/1",
+            "/v1/monero/chain/tx/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/exists",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "route {path} should match");
+        }
     }
 }

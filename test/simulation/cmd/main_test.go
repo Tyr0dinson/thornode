@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -81,6 +83,35 @@ func TestMocknetWaitsForXMRMasterAccountReadiness(t *testing.T) {
 	if !strings.Contains(mocknetGo, "isRetryableXMRStartupError") {
 		t.Fatal("mocknet should recognize and retry the transient XMR block-0 startup error before failing master account discovery")
 	}
+	if !strings.Contains(mocknetGo, "isRetryableZeroBalanceStartupState") {
+		t.Fatal("mocknet should retry zero-balance startup states for chains whose master account must be pre-funded before simulation account seeding")
+	}
+	if !strings.Contains(mocknetGo, "isRetryableTransportStartupError") {
+		t.Fatal("mocknet should retry transient transport failures while querying master-account balances during chain startup")
+	}
+	if !strings.Contains(mocknetGo, "chain.Equals(common.SOLChain)") {
+		t.Fatal("mocknet should also wait for the Solana master account to receive its startup airdrop before funding simulation users")
+	}
+	if !strings.Contains(mocknetGo, "allocating spare simulation user for background actors") {
+		t.Fatal("mocknet should provision at least one spare simulation user so background actors do not deadlock the DAG when execution parallelism is 1")
+	}
+}
+
+func TestMocknetXRPBootstrapWaitsForRPCAndRetriesMasterFunding(t *testing.T) {
+	entrypoint := readRepoFile(t, "build/scripts/xrp/start-xrp.sh")
+
+	for _, snippet := range []string{
+		`wait_for_rippled()`,
+		`master_account_ready()`,
+		`until "${RIPPLED_BIN}" server_state`,
+		`while ! master_account_ready; do`,
+		`fund_submitted=false`,
+		`"engine_result" : "tesSUCCESS"`,
+	} {
+		if !strings.Contains(entrypoint, snippet) {
+			t.Fatalf("xrp bootstrap entrypoint must contain %q so clean resets wait for rippled and retry master funding", snippet)
+		}
+	}
 }
 
 func TestMocknetMoneroDaemonRunsOffline(t *testing.T) {
@@ -154,6 +185,45 @@ func TestMocknetDogecoinRaisesRPCWorkQueueDepth(t *testing.T) {
 	}
 }
 
+func TestMocknetTronSupernodeDisablesParticipationThreshold(t *testing.T) {
+	entrypoint := readRepoFile(t, "build/docker/mocknet/tron-entrypoint.sh")
+	if !strings.Contains(entrypoint, "minParticipationRate = 0") {
+		t.Fatal("mocknet tron supernode entrypoint should disable the default participation threshold so the single-witness local chain keeps producing blocks")
+	}
+}
+
+func TestMocknetCosmosSidecarsRestartAfterDockerRestart(t *testing.T) {
+	compose := readRepoFile(t, "build/docker/docker-compose.yml")
+
+	for _, service := range []string{"gaia", "noble"} {
+		pattern := regexp.MustCompile(`(?ms)^  ` + service + `:\n(?:    .*\n)*?    restart: unless-stopped\n`)
+		if !pattern.MatchString(compose) {
+			t.Fatalf("mocknet %s service should restart automatically so simulation reruns survive Docker Desktop restarts", service)
+		}
+	}
+}
+
+func TestSimulationUsesIPv4LoopbackForHostMappedRPCs(t *testing.T) {
+	mocknetGo := readRepoFile(t, "test/simulation/cmd/mocknet.go")
+
+	if strings.Contains(mocknetGo, "localhost:") {
+		t.Fatal("simulation mocknet rpc endpoints should use explicit IPv4 loopback to avoid Docker Desktop localhost IPv6 resolution failures")
+	}
+
+	for _, snippet := range []string{
+		`common.GAIAChain:  "127.0.0.1:9091"`,
+		`common.NOBLEChain: "127.0.0.1:9092"`,
+		`common.SOLChain:   "http://127.0.0.1:8899"`,
+		`BIFROST_THORCHAIN_CHAIN_HOST", "127.0.0.1:1317"`,
+		`BIFROST_THORCHAIN_CHAIN_RPC", "127.0.0.1:26657"`,
+		`BIFROST_THORCHAIN_CHAIN_EBIFROST", "127.0.0.1:50051"`,
+	} {
+		if !strings.Contains(mocknetGo, snippet) {
+			t.Fatalf("missing expected IPv4 loopback mocknet endpoint %q", snippet)
+		}
+	}
+}
+
 func TestSimulationWaitsForEVMRPCReadinessBeforeCreatingUsers(t *testing.T) {
 	mainGo := readRepoFile(t, "test/simulation/cmd/main.go")
 	if !strings.Contains(mainGo, "waitForEVMRPCReadiness") {
@@ -163,6 +233,145 @@ func TestSimulationWaitsForEVMRPCReadinessBeforeCreatingUsers(t *testing.T) {
 		if !strings.Contains(mainGo, chain) {
 			t.Fatalf("expected simulation startup to include %s in EVM readiness checks", chain)
 		}
+	}
+}
+
+func TestSimulationWaitsForBifrostReadinessBeforeCreatingUsers(t *testing.T) {
+	mainGo := readRepoFile(t, "test/simulation/cmd/main.go")
+	if !strings.Contains(mainGo, "waitForBifrostReadiness()") {
+		t.Fatal("simulation startup should wait for bifrost readiness before creating chain clients")
+	}
+	if !strings.Contains(mainGo, "http://localhost:9000/metrics") {
+		t.Fatal("bifrost readiness should fall back to the metrics endpoint when the legacy info port is unavailable")
+	}
+}
+
+func TestSimulationWaitsForStableTronRPCReadinessBeforeCreatingUsers(t *testing.T) {
+	mainGo := readRepoFile(t, "test/simulation/cmd/main.go")
+	if !strings.Contains(mainGo, "waitForTronRPCReadiness(chainRPCs[common.TRONChain])") {
+		t.Fatal("simulation startup should wait for stable TRON block production before creating chain clients")
+	}
+	if !strings.Contains(mainGo, "const requiredHeight int64 = 20") {
+		t.Fatal("TRON readiness should require a meaningful block height before proceeding")
+	}
+	if !strings.Contains(mainGo, "const requiredAdvances = 3") {
+		t.Fatal("TRON readiness should require multiple advancing block heights before proceeding")
+	}
+	if !strings.Contains(mainGo, "tron readiness timed out after") {
+		t.Fatal("TRON readiness should time out with a clear error instead of hanging forever when block production stalls")
+	}
+}
+
+func TestWaitForTronRPCReadinessRecoversAfterStableAdvances(t *testing.T) {
+	now := time.Unix(0, 0)
+	heights := []int64{10, 20, 20, 21, 21, 22}
+	call := 0
+
+	err := waitForTronRPCReadinessWithClock(
+		"http://tron",
+		func(string) (int64, error) {
+			if call >= len(heights) {
+				return heights[len(heights)-1], nil
+			}
+			height := heights[call]
+			call++
+			return height, nil
+		},
+		func() time.Time { return now },
+		func(d time.Duration) { now = now.Add(d) },
+		10*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("expected stable TRON block production to satisfy readiness, got %v", err)
+	}
+}
+
+func TestWaitForTronRPCReadinessTimesOutWhenHeightStalls(t *testing.T) {
+	now := time.Unix(0, 0)
+
+	err := waitForTronRPCReadinessWithClock(
+		"http://tron",
+		func(string) (int64, error) { return 24, nil },
+		func() time.Time { return now },
+		func(d time.Duration) { now = now.Add(d) },
+		3*time.Second,
+	)
+	if err == nil {
+		t.Fatal("expected stalled TRON height to time out")
+	}
+	if !strings.Contains(err.Error(), "height=24") {
+		t.Fatalf("expected timeout to report the stalled TRON height, got %v", err)
+	}
+}
+
+func TestWaitForBifrostReadinessFallsBackToMetricsEndpoint(t *testing.T) {
+	endpoints := []string{
+		"http://localhost:6040/ping",
+		"http://localhost:6040/p2pid",
+		"http://localhost:9000/metrics",
+	}
+
+	var calls []string
+	waitForBifrostReadinessWithSleep(
+		endpoints,
+		func(endpoint string) (*http.Response, error) {
+			calls = append(calls, endpoint)
+			if endpoint == "http://localhost:9000/metrics" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("ok")),
+				}, nil
+			}
+			return nil, errors.New("connection refused")
+		},
+		func(time.Duration) {
+			t.Fatal("did not expect bifrost readiness to sleep when the fallback endpoint is already healthy")
+		},
+	)
+
+	if strings.Join(calls, ",") != strings.Join(endpoints, ",") {
+		t.Fatalf("expected readiness endpoints to be checked in order, got %v", calls)
+	}
+}
+
+func TestWaitForBifrostReadinessRetriesUntilAnyEndpointIsHealthy(t *testing.T) {
+	metricsPolls := 0
+	sleepCalls := 0
+
+	waitForBifrostReadinessWithSleep(
+		[]string{
+			"http://localhost:6040/ping",
+			"http://localhost:9000/metrics",
+		},
+		func(endpoint string) (*http.Response, error) {
+			switch endpoint {
+			case "http://localhost:6040/ping":
+				return nil, errors.New("connection refused")
+			case "http://localhost:9000/metrics":
+				metricsPolls++
+				status := http.StatusServiceUnavailable
+				if metricsPolls >= 3 {
+					status = http.StatusOK
+				}
+				return &http.Response{
+					StatusCode: status,
+					Body:       io.NopCloser(strings.NewReader("ok")),
+				}, nil
+			default:
+				t.Fatalf("unexpected endpoint %s", endpoint)
+				return nil, nil
+			}
+		},
+		func(time.Duration) {
+			sleepCalls++
+		},
+	)
+
+	if metricsPolls != 3 {
+		t.Fatalf("expected 3 metrics polls before readiness, got %d", metricsPolls)
+	}
+	if sleepCalls != 2 {
+		t.Fatalf("expected 2 retry sleeps before readiness, got %d", sleepCalls)
 	}
 }
 
@@ -230,6 +439,106 @@ func TestWaitForMasterAccountRetriesTransientXMRDaemonHeightError(t *testing.T) 
 	}
 }
 
+func TestWaitForMasterAccountRetriesZeroBalanceXRPStartupState(t *testing.T) {
+	wantAccount := &common.Account{
+		Coins: common.NewCoins(common.NewCoin(common.XRPAsset, sdkmath.NewUint(25*common.One))),
+	}
+
+	client := &stubLiteChainClient{}
+	client.getAccount = func(_ *common.PubKey) (*common.Account, error) {
+		client.calls++
+		if client.calls < 3 {
+			return &common.Account{
+				Coins: common.NewCoins(common.NewCoin(common.XRPAsset, sdkmath.ZeroUint())),
+			}, nil
+		}
+		return wantAccount, nil
+	}
+
+	sleepCalls := 0
+	got, err := waitForMasterAccountWithSleep(common.XRPChain, client, func(time.Duration) {
+		sleepCalls++
+	})
+	if err != nil {
+		t.Fatalf("expected transient XRP zero-balance startup state to recover, got %v", err)
+	}
+	if got != wantAccount {
+		t.Fatal("expected recovered XRP account to be returned")
+	}
+	if client.calls != 3 {
+		t.Fatalf("expected 3 XRP account attempts, got %d", client.calls)
+	}
+	if sleepCalls != 2 {
+		t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)
+	}
+}
+
+func TestWaitForMasterAccountRetriesZeroBalanceSOLStartupState(t *testing.T) {
+	wantAccount := &common.Account{
+		Coins: common.NewCoins(common.NewCoin(common.SOLAsset, sdkmath.NewUint(25*common.One))),
+	}
+
+	client := &stubLiteChainClient{}
+	client.getAccount = func(_ *common.PubKey) (*common.Account, error) {
+		client.calls++
+		if client.calls < 3 {
+			return &common.Account{
+				Coins: common.NewCoins(common.NewCoin(common.SOLAsset, sdkmath.ZeroUint())),
+			}, nil
+		}
+		return wantAccount, nil
+	}
+
+	sleepCalls := 0
+	got, err := waitForMasterAccountWithSleep(common.SOLChain, client, func(time.Duration) {
+		sleepCalls++
+	})
+	if err != nil {
+		t.Fatalf("expected transient Solana zero-balance startup state to recover, got %v", err)
+	}
+	if got != wantAccount {
+		t.Fatal("expected recovered Solana account to be returned")
+	}
+	if client.calls != 3 {
+		t.Fatalf("expected 3 Solana account attempts, got %d", client.calls)
+	}
+	if sleepCalls != 2 {
+		t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)
+	}
+}
+
+func TestWaitForMasterAccountRetriesTransientSOLRPCStartupError(t *testing.T) {
+	wantAccount := &common.Account{
+		Coins: common.NewCoins(common.NewCoin(common.SOLAsset, sdkmath.NewUint(25*common.One))),
+	}
+
+	client := &stubLiteChainClient{}
+	client.getAccount = func(_ *common.PubKey) (*common.Account, error) {
+		client.calls++
+		if client.calls < 3 {
+			return nil, errors.New(`fail to get balance: failed to call getBalance: failed to perform request: Post "http://localhost:8899": read tcp [::1]:55433->[::1]:8899: read: connection reset by peer`)
+		}
+		return wantAccount, nil
+	}
+
+	sleepCalls := 0
+	got, err := waitForMasterAccountWithSleep(common.SOLChain, client, func(time.Duration) {
+		sleepCalls++
+	})
+	if err != nil {
+		t.Fatalf("expected transient Solana RPC startup error to recover, got %v", err)
+	}
+	if got != wantAccount {
+		t.Fatal("expected recovered Solana account to be returned")
+	}
+	if client.calls != 3 {
+		t.Fatalf("expected 3 Solana account attempts, got %d", client.calls)
+	}
+	if sleepCalls != 2 {
+		t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)
+	}
+}
+
 func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 	makefile := readRepoFile(t, "Makefile")
 
@@ -248,6 +557,23 @@ func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 	}
 	if !strings.Contains(makefile, "@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run") {
 		t.Fatal("make test-simulation-cluster should set STAGES from TEST_SIMULATION_CLUSTER_STAGES")
+	}
+	if strings.Count(makefile, "-e PARALLELISM=$(PARALLELISM)") < 3 {
+		t.Fatal("simulation docker targets should pass the explicit make PARALLELISM value into the sim container")
+	}
+	if strings.Count(makefile, "@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true") < 2 {
+		t.Fatal("make test-simulation and make test-simulation-cluster should both stop midgard services before running simulation workloads")
+	}
+}
+
+func TestSimulationTargetsOnlyRequestDockerTTYInteractively(t *testing.T) {
+	makefile := readRepoFile(t, "Makefile")
+
+	if !strings.Contains(makefile, "# docker tty args are disabled in CI and non-interactive shells") {
+		t.Fatal("missing documentation that docker tty args must be disabled outside interactive shells")
+	}
+	if !strings.Contains(makefile, "ifneq ($(shell test -t 0 && test -t 1 && echo tty),)") {
+		t.Fatal("docker tty args should only be enabled when stdin and stdout are both terminals")
 	}
 }
 
