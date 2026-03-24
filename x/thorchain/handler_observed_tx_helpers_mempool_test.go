@@ -616,7 +616,11 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertedMempoolSwapReprocesse
 
 	// Simulate stale reverse swaps in the swap queue (queued during timeout revert).
 	// These use deterministic TxIDs derived from the original inbound hash.
-	for i := 0; i < 2; i++ {
+	// Only non-THORChain actions get reverse swaps, so indices may be sparse.
+	// Here we simulate: action 0 was THORChain-native (no reverse swap),
+	// actions 1 and 3 were external (have reverse swaps), action 2 was native (no reverse swap).
+	sparseIndices := []int{1, 3}
+	for _, i := range sparseIndices {
 		revertTxID := CreateMempoolRevertTxID(inTxID, i)
 		revertMsg := MsgSwap{
 			Tx: common.Tx{
@@ -627,7 +631,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertedMempoolSwapReprocesse
 		}
 		c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, revertMsg, 0), IsNil)
 		c.Assert(mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0), Equals, true,
-			Commentf("reverse swap %d should exist before re-processing", i))
+			Commentf("reverse swap at index %d should exist before re-processing", i))
 	}
 
 	// Setup active node accounts for quorum
@@ -654,10 +658,10 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertedMempoolSwapReprocesse
 	c.Check(updatedVoter.Reverted, Equals, false, Commentf("Reverted flag should be cleared for on-chain confirmation"))
 	c.Check(updatedVoter.MempoolSwapTOR.IsZero(), Equals, true, Commentf("MempoolSwapTOR should be zeroed"))
 
-	// Verify stale reverse swaps were removed from the queue
-	for i := 0; i < 2; i++ {
+	// Verify stale reverse swaps at sparse indices were removed from the queue
+	for _, i := range sparseIndices {
 		revertTxID := CreateMempoolRevertTxID(inTxID, i)
 		c.Check(mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0), Equals, false,
-			Commentf("reverse swap %d should be removed after on-chain confirmation", i))
+			Commentf("reverse swap at index %d should be removed after on-chain confirmation", i))
 	}
 }
