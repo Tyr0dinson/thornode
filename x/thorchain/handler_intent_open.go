@@ -77,7 +77,7 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	targetAsset := msg.TargetAsset
 
 	if msg.Tx.Coins[0].Asset.Equals(msg.TargetAsset) {
-		return cosmos.ErrUnknownRequest("source and target assets cannot be the same")
+		return se.ErrInvalidRequest.Wrap("source and target assets cannot be the same")
 	}
 
 	if isUnsupportedIntentNativeAsset(sourceAsset) {
