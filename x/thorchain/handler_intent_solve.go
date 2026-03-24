@@ -53,15 +53,12 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 		return se.ErrUnauthorized.Wrap("intents feature is disabled")
 	}
 
-	// Check if intent exists
-	if !h.mgr.Keeper().IntentExists(ctx, msg.IntentTxID) {
-		return se.ErrUnknownRequest.Wrapf("intent %s does not exist", msg.IntentTxID)
-	}
-
-	// Get the intent
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
 		return ErrInternal(err, "fail to get intent")
+	}
+	if intent.TxID.IsEmpty() {
+		return se.ErrUnknownRequest.Wrapf("intent %s does not exist", msg.IntentTxID)
 	}
 
 	// Verify the intent is active (rejects auctioning, completed, or expired intents)

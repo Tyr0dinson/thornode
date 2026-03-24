@@ -47,15 +47,12 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 		return err
 	}
 
-	// Check if intent exists
-	if !h.mgr.Keeper().IntentExists(ctx, msg.IntentTxID) {
-		return se.ErrUnknownRequest.Wrapf("intent %s does not exist", msg.IntentTxID)
-	}
-
-	// Get the intent
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
 		return ErrInternal(err, "fail to get intent")
+	}
+	if intent.TxID.IsEmpty() {
+		return se.ErrUnknownRequest.Wrapf("intent %s does not exist", msg.IntentTxID)
 	}
 
 	// Verify the intent is active
