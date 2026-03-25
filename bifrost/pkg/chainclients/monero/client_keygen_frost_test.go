@@ -1,6 +1,7 @@
 package monero
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,11 @@ func (m *mockFrostKeygenTSS) FrostKeygen(req tssp.FrostKeygenRequest, sidecar ts
 func newTestFrostSigner(t *testing.T) *FrostSigner {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/monero/vaults/register" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			return
+		}
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(server.Close)
@@ -67,8 +73,12 @@ func newTestVaultAddressStore(t *testing.T) *VaultAddressStore {
 func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	t.Parallel()
 
-	vaultPubKey, expectedAddress := testVaultPubKeyAndAddress(t)
-	groupKey := strings.Repeat("ab", 32)
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	frostVaultPubKey, expectedAddress := testVaultPubKeyAndAddress(t)
+	groupKey, err := groupKeyHexFromVaultPubKey(frostVaultPubKey)
+	if err != nil {
+		t.Fatalf("group key: %v", err)
+	}
 	tssServer := &mockFrostKeygenTSS{
 		resp: tssp.FrostKeygenResponse{
 			Address:  expectedAddress.String(),
@@ -86,7 +96,7 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 		vaultAddressStore: store,
 	}
 
-	addr, blame, err := c.Keygen(chainclienttypes.CustomKeygenRequest{
+	result, err := c.Keygen(chainclienttypes.CustomKeygenRequest{
 		Members:          []string{" member-a ", "member-b"},
 		BlockHeight:      101,
 		ThorchainVersion: "1.134.0",
@@ -95,11 +105,14 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Keygen failed: %v", err)
 	}
-	if len(blame) != 0 {
-		t.Fatalf("expected no blame, got %+v", blame)
+	if len(result.Blame) != 0 {
+		t.Fatalf("expected no blame, got %+v", result.Blame)
 	}
-	if !addr.Equals(expectedAddress) {
-		t.Fatalf("expected address %s, got %s", expectedAddress, addr)
+	if !result.Address.Equals(expectedAddress) {
+		t.Fatalf("expected address %s, got %s", expectedAddress, result.Address)
+	}
+	if !result.PoolPubKeyEddsa.Equals(frostVaultPubKey) {
+		t.Fatalf("expected eddsa pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyEddsa)
 	}
 
 	if tssServer.calls != 1 {
@@ -111,8 +124,8 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	if tssServer.lastReq.VaultPubKey != vaultPubKey.String() {
 		t.Fatalf("expected vault pubkey %s, got %s", vaultPubKey, tssServer.lastReq.VaultPubKey)
 	}
-	if tssServer.lastReq.ExpectedAddr != expectedAddress.String() {
-		t.Fatalf("expected expected_addr %s, got %s", expectedAddress, tssServer.lastReq.ExpectedAddr)
+	if tssServer.lastReq.ExpectedAddr != "" {
+		t.Fatalf("expected empty expected_addr, got %s", tssServer.lastReq.ExpectedAddr)
 	}
 	if tssServer.lastReq.BlockHeight != 101 {
 		t.Fatalf("expected block height 101, got %d", tssServer.lastReq.BlockHeight)
@@ -124,15 +137,15 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 		t.Fatalf("unexpected signer set: %+v", tssServer.lastReq.SignerPubKeys)
 	}
 
-	mapped, ok := c.getMappedVaultAddress(vaultPubKey)
+	mapped, ok := c.getMappedVaultAddress(frostVaultPubKey)
 	if !ok {
-		t.Fatalf("expected in-memory vault mapping for %s", vaultPubKey)
+		t.Fatalf("expected in-memory vault mapping for %s", frostVaultPubKey)
 	}
 	if !mapped.Equals(expectedAddress) {
 		t.Fatalf("expected mapped address %s, got %s", expectedAddress, mapped)
 	}
 
-	persisted, err := store.Get(vaultPubKey.String())
+	persisted, err := store.Get(frostVaultPubKey.String())
 	if err != nil {
 		t.Fatalf("expected persisted vault mapping: %v", err)
 	}
@@ -145,11 +158,16 @@ func TestClientKeygenFailsWhenFrostAddressMismatchesDerivedAddress(t *testing.T)
 	t.Parallel()
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	frostVaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	_, wrongAddress := testVaultPubKeyAndAddress(t)
+	groupKey, err := groupKeyHexFromVaultPubKey(frostVaultPubKey)
+	if err != nil {
+		t.Fatalf("group key: %v", err)
+	}
 	tssServer := &mockFrostKeygenTSS{
 		resp: tssp.FrostKeygenResponse{
 			Address:  wrongAddress.String(),
-			GroupKey: strings.Repeat("cd", 32),
+			GroupKey: groupKey,
 			Status:   tsscommon.Success,
 		},
 	}
@@ -163,22 +181,22 @@ func TestClientKeygenFailsWhenFrostAddressMismatchesDerivedAddress(t *testing.T)
 		vaultAddressStore: store,
 	}
 
-	_, _, err := c.Keygen(chainclienttypes.CustomKeygenRequest{
+	_, keygenErr := c.Keygen(chainclienttypes.CustomKeygenRequest{
 		Members:         []string{"member-a", "member-b"},
 		BlockHeight:     101,
 		PoolPubKeyEddsa: vaultPubKey,
 	})
-	if err == nil {
+	if keygenErr == nil {
 		t.Fatalf("expected keygen mismatch error")
 	}
-	if !strings.Contains(err.Error(), "returned address") {
-		t.Fatalf("unexpected error: %v", err)
+	if !strings.Contains(keygenErr.Error(), "returned address") {
+		t.Fatalf("unexpected error: %v", keygenErr)
 	}
 
-	if _, ok := c.getMappedVaultAddress(vaultPubKey); ok {
+	if _, ok := c.getMappedVaultAddress(frostVaultPubKey); ok {
 		t.Fatalf("unexpected vault mapping persisted on mismatched result")
 	}
-	if _, err := store.Get(vaultPubKey.String()); err == nil {
+	if _, getErr := store.Get(frostVaultPubKey.String()); getErr == nil {
 		t.Fatalf("expected no persisted mapping on mismatched result")
 	}
 }

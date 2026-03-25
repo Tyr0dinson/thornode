@@ -657,7 +657,6 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: localIndex,
 		EncryptedShares: map[string]string{
-			localIndexKey:  "local-to-local",
 			remoteIndexKey: "local-to-remote",
 		},
 	}
@@ -665,8 +664,7 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 		SenderPubKey:     testPubKeys[1],
 		ParticipantIndex: remoteIndex,
 		EncryptedShares: map[string]string{
-			localIndexKey:  "remote-to-local",
-			remoteIndexKey: "remote-to-remote",
+			localIndexKey: "remote-to-local",
 		},
 	}
 	localRound2Hash, err := FrostTranscriptDKGRound2Hash("msg-id", localRound2)
@@ -787,6 +785,12 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	}
 	if len(sidecar.finalizeReqs) != 1 {
 		t.Fatalf("expected one finalize call, got %d", len(sidecar.finalizeReqs))
+	}
+	if len(sidecar.round3Reqs) != 1 {
+		t.Fatalf("expected one round3 call, got %d", len(sidecar.round3Reqs))
+	}
+	if len(sidecar.round3Reqs[0].AllShares) != 1 || sidecar.round3Reqs[0].AllShares[remoteIndexKey] != "remote-to-local" {
+		t.Fatalf("unexpected round3 shares: %+v", sidecar.round3Reqs[0].AllShares)
 	}
 	if sidecar.finalizeReqs[0].SessionID != "msg-id" {
 		t.Fatalf("unexpected finalize session id: %+v", sidecar.finalizeReqs[0])

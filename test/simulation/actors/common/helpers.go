@@ -74,15 +74,7 @@ func DepositL1(log *zerolog.Logger, client LiteChainClient, asset common.Asset, 
 		Memo:      memo,
 	}
 
-	// sign transaction
-	signed, err := client.SignTx(tx)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to sign tx")
-		return "", err
-	}
-
-	// broadcast transaction
-	txid, err := client.BroadcastTx(signed)
+	txid, err := SignAndBroadcastTx(client, tx)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to broadcast tx")
 	}

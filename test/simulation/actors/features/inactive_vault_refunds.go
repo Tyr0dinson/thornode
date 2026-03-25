@@ -150,17 +150,7 @@ func (a *InactiveVaultRefundActor) sendInactiveVaultInbound(config *OpConfig) Op
 		Memo:      memo,
 	}
 
-	// sign transaction
-	signed, err := client.SignTx(tx)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to sign tx")
-		return OpResult{
-			Continue: false,
-		}
-	}
-
-	// broadcast transaction
-	txid, err := client.BroadcastTx(signed)
+	txid, err := SignAndBroadcastTx(client, tx)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to broadcast tx")
 		return OpResult{

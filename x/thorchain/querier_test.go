@@ -1048,6 +1048,7 @@ func (s *QuerierSuite) TestQueryNetwork(c *C) {
 	c.Assert(openapiNetworkResponse.TotalBondUnits, Equals, queryNetworkResp.TotalBondUnits)
 	c.Assert(openapiNetworkResponse.TotalReserve, Equals, queryNetworkResp.TotalReserve)
 	c.Assert(openapiNetworkResponse.VaultsMigrating, Equals, queryNetworkResp.VaultsMigrating)
+	c.Assert(openapiNetworkResponse.XmrActiveVaultReady, Equals, queryNetworkResp.XmrActiveVaultReady)
 }
 
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {

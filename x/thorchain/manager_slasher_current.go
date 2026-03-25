@@ -670,7 +670,8 @@ func (s *SlasherImpl) sendFailedSwapReverseSwap(ctx cosmos.Context, mgr Manager,
 	// sender marker, skip the reverse swap so the caller falls through to
 	// treasury recovery immediately rather than attempting outbounds to an
 	// undeliverable address that would fail MaxOutboundAttempts times first.
-	if originalTx.Tx.Coins[0].Asset.GetChain().Equals(common.XMRChain) && common.IsXMRUnknownSenderAddress(destination) {
+	destinationSender := common.ResolveObservedSender(originalTx.Tx.Coins[0].Asset.GetChain(), destination)
+	if originalTx.Tx.Coins[0].Asset.GetChain().Equals(common.XMRChain) && destinationSender.RefundAddressRequired {
 		return fmt.Errorf("cannot reverse swap to XMR unknown sender address %s; falling back to treasury", destination)
 	}
 

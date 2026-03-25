@@ -107,6 +107,8 @@ type QueryNetworkResponse struct {
 	TorPriceInRune string `protobuf:"bytes,14,opt,name=tor_price_in_rune,json=torPriceInRune,proto3" json:"tor_price_in_rune"`
 	// indicator if all anchor chains are halted
 	TorPriceHalted bool `protobuf:"varint,17,opt,name=tor_price_halted,json=torPriceHalted,proto3" json:"tor_price_halted"`
+	// indicates whether an active Asgard vault currently has spendable XMR funds
+	XmrActiveVaultReady bool `protobuf:"varint,18,opt,name=xmr_active_vault_ready,json=xmrActiveVaultReady,proto3" json:"xmr_active_vault_ready"`
 }
 
 func (m *QueryNetworkResponse) Reset()         { *m = QueryNetworkResponse{} }
@@ -261,6 +263,13 @@ func (m *QueryNetworkResponse) GetTorPriceHalted() bool {
 	return false
 }
 
+func (m *QueryNetworkResponse) GetXmrActiveVaultReady() bool {
+	if m != nil {
+		return m.XmrActiveVaultReady
+	}
+	return false
+}
+
 func init() {
 	proto.RegisterType((*QueryNetworkRequest)(nil), "types.QueryNetworkRequest")
 	proto.RegisterType((*QueryNetworkResponse)(nil), "types.QueryNetworkResponse")
@@ -365,6 +374,18 @@ func (m *QueryNetworkResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XmrActiveVaultReady {
+		i--
+		if m.XmrActiveVaultReady {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x90
+	}
 	if m.TorPriceHalted {
 		i--
 		if m.TorPriceHalted {
@@ -591,6 +612,9 @@ func (m *QueryNetworkResponse) Size() (n int) {
 		n += 2 + l + sovQueryNetwork(uint64(l))
 	}
 	if m.TorPriceHalted {
+		n += 3
+	}
+	if m.XmrActiveVaultReady {
 		n += 3
 	}
 	return n
@@ -1233,6 +1257,26 @@ func (m *QueryNetworkResponse) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.TorPriceHalted = bool(v != 0)
+		case 18:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field XmrActiveVaultReady", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryNetwork
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.XmrActiveVaultReady = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryNetwork(dAtA[iNdEx:])

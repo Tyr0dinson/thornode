@@ -45,8 +45,16 @@ type Scanner struct {
 	manualAddrByPK map[string]string
 	manualPKByAddr map[string]common.PubKey
 
+	observedOutgoingMu     sync.RWMutex
+	observedOutgoingByTxID map[string]observedOutgoingTx
+
 	mempoolMu   sync.Mutex
 	mempoolSeen map[string]struct{}
+}
+
+type observedOutgoingTx struct {
+	height int64
+	vaults map[string]struct{}
 }
 
 func NewScanner(
@@ -58,18 +66,19 @@ func NewScanner(
 	maxReorgRescan int64,
 ) *Scanner {
 	return &Scanner{
-		logger:             logger,
-		frostSigner:        frostSigner,
-		bridge:             bridge,
-		chain:              chain,
-		localNodePubKey:    localNodePubKey,
-		currentBlockHeight: atomic.NewInt64(0),
-		lastFee:            atomic.NewUint64(0),
-		maxReorgRescan:     maxReorgRescan,
-		asgardLookup:       make(map[string]common.PubKey),
-		manualAddrByPK:     make(map[string]string),
-		manualPKByAddr:     make(map[string]common.PubKey),
-		mempoolSeen:        make(map[string]struct{}),
+		logger:                 logger,
+		frostSigner:            frostSigner,
+		bridge:                 bridge,
+		chain:                  chain,
+		localNodePubKey:        localNodePubKey,
+		currentBlockHeight:     atomic.NewInt64(0),
+		lastFee:                atomic.NewUint64(0),
+		maxReorgRescan:         maxReorgRescan,
+		asgardLookup:           make(map[string]common.PubKey),
+		manualAddrByPK:         make(map[string]string),
+		manualPKByAddr:         make(map[string]common.PubKey),
+		observedOutgoingByTxID: make(map[string]observedOutgoingTx),
+		mempoolSeen:            make(map[string]struct{}),
 	}
 }
 
@@ -255,6 +264,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	if s.frostSigner == nil || s.bridge == nil {
 		return nil, nil
 	}
+	s.pruneObservedOutgoing(fetchHeight)
 	if err := s.refreshAsgardLookup(); err != nil {
 		s.logger.Debug().Err(err).Msg("fail to refresh asgard lookup")
 		return nil, nil
@@ -272,6 +282,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	}
 
 	outgoingVaultsByTxID := s.outgoingVaultsByTxID(resp.Outgoing)
+	s.rememberObservedOutgoingVaults(outgoingVaultsByTxID, fetchHeight)
 	txItems := make([]*stypes.TxInItem, 0, len(resp.Incoming)+len(resp.Outgoing))
 	for _, transfer := range resp.Incoming {
 		to := strings.TrimSpace(transfer.Address)
@@ -284,7 +295,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 			continue
 		}
 
-		vaultPubKey, ok := s.getVaultForAddress(to)
+		vaultPubKey, ok := s.resolveIncomingVault(transfer)
 		if !ok {
 			continue
 		}
@@ -376,16 +387,93 @@ func (s *Scanner) isSameVaultOutgoingTx(
 	vaultPubKey common.PubKey,
 	outgoingVaultsByTxID map[string]map[string]struct{},
 ) bool {
-	if vaultPubKey.IsEmpty() || len(outgoingVaultsByTxID) == 0 {
+	if vaultPubKey.IsEmpty() {
 		return false
 	}
 
-	vaults, ok := outgoingVaultsByTxID[normalizeTxID(txID)]
+	normalizedTxID := normalizeTxID(txID)
+	if normalizedTxID == "" {
+		return false
+	}
+	if len(outgoingVaultsByTxID) > 0 {
+		if vaults, ok := outgoingVaultsByTxID[normalizedTxID]; ok {
+			if _, ok := vaults[vaultPubKey.String()]; ok {
+				return true
+			}
+		}
+	}
+	return s.hasObservedOutgoingVault(normalizedTxID, vaultPubKey)
+}
+
+func (s *Scanner) rememberObservedOutgoingVaults(outgoingVaultsByTxID map[string]map[string]struct{}, height int64) {
+	if len(outgoingVaultsByTxID) == 0 {
+		return
+	}
+
+	s.observedOutgoingMu.Lock()
+	defer s.observedOutgoingMu.Unlock()
+
+	for txID, vaults := range outgoingVaultsByTxID {
+		if txID == "" || len(vaults) == 0 {
+			continue
+		}
+
+		observed := s.observedOutgoingByTxID[txID]
+		if observed.vaults == nil {
+			observed.vaults = make(map[string]struct{}, len(vaults))
+		}
+		if height > observed.height {
+			observed.height = height
+		}
+		for vault := range vaults {
+			if strings.TrimSpace(vault) == "" {
+				continue
+			}
+			observed.vaults[vault] = struct{}{}
+		}
+		s.observedOutgoingByTxID[txID] = observed
+	}
+}
+
+func (s *Scanner) hasObservedOutgoingVault(txID string, vaultPubKey common.PubKey) bool {
+	if txID == "" || vaultPubKey.IsEmpty() {
+		return false
+	}
+
+	s.observedOutgoingMu.RLock()
+	defer s.observedOutgoingMu.RUnlock()
+
+	observed, ok := s.observedOutgoingByTxID[txID]
 	if !ok {
 		return false
 	}
-	_, ok = vaults[vaultPubKey.String()]
+	_, ok = observed.vaults[vaultPubKey.String()]
 	return ok
+}
+
+func (s *Scanner) pruneObservedOutgoing(currentHeight int64) {
+	if currentHeight <= 0 {
+		return
+	}
+
+	retention := s.maxReorgRescan * 4
+	if retention < 1024 {
+		retention = 1024
+	}
+	cutoff := currentHeight - retention
+	if cutoff <= 0 {
+		return
+	}
+
+	s.observedOutgoingMu.Lock()
+	defer s.observedOutgoingMu.Unlock()
+
+	for txID, observed := range s.observedOutgoingByTxID {
+		if observed.height >= cutoff {
+			continue
+		}
+		delete(s.observedOutgoingByTxID, txID)
+	}
 }
 
 func (s *Scanner) resolveOutgoingSender(transfer xmrFrostTransferEntry) (string, common.PubKey) {
@@ -690,6 +778,64 @@ func (s *Scanner) getVaultForAddress(addr string) (common.PubKey, bool) {
 	defer s.asgardMu.RUnlock()
 	pk, ok := s.asgardLookup[addr]
 	return pk, ok
+}
+
+func (s *Scanner) resolveIncomingVault(transfer xmrFrostTransferEntry) (common.PubKey, bool) {
+	to := strings.TrimSpace(transfer.Address)
+	if to == "" {
+		return common.EmptyPubKey, false
+	}
+
+	mappedVault, mappedOK := s.getVaultForAddress(to)
+	explicitVault := strings.TrimSpace(transfer.VaultPubKey)
+	if explicitVault == "" {
+		return mappedVault, mappedOK
+	}
+
+	vaultPubKey, err := common.NewPubKey(explicitVault)
+	if err != nil || vaultPubKey.IsEmpty() {
+		s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("vault_pub_key", explicitVault).Msg("skip incoming transfer: invalid explicit vault_pub_key")
+		return common.EmptyPubKey, false
+	}
+
+	deriveChain := s.chain
+	if deriveChain.IsEmpty() {
+		deriveChain = common.XMRChain
+	}
+	derived, err := vaultPubKey.GetAddress(deriveChain)
+	if err != nil || derived.IsEmpty() {
+		s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("vault_pub_key", vaultPubKey.String()).Msg("skip incoming transfer: cannot derive explicit vault address")
+		return common.EmptyPubKey, false
+	}
+	if !strings.EqualFold(derived.String(), to) {
+		s.logger.Debug().
+			Str("txid", transfer.TxID).
+			Str("vault_pub_key", vaultPubKey.String()).
+			Str("derived_address", derived.String()).
+			Str("to", to).
+			Msg("skip incoming transfer: explicit vault_pub_key address does not match transfer address")
+		return common.EmptyPubKey, false
+	}
+
+	if !mappedOK {
+		s.logger.Debug().
+			Str("txid", transfer.TxID).
+			Str("vault_pub_key", vaultPubKey.String()).
+			Str("to", to).
+			Msg("skip incoming transfer: explicit vault_pub_key is not a current asgard vault")
+		return common.EmptyPubKey, false
+	}
+	if !mappedVault.Equals(vaultPubKey) {
+		s.logger.Debug().
+			Str("txid", transfer.TxID).
+			Str("explicit_vault_pub_key", vaultPubKey.String()).
+			Str("mapped_vault_pub_key", mappedVault.String()).
+			Str("to", to).
+			Msg("skip incoming transfer: explicit vault_pub_key does not match current asgard address attribution")
+		return common.EmptyPubKey, false
+	}
+
+	return vaultPubKey, true
 }
 
 func (s *Scanner) transferToTxInItem(

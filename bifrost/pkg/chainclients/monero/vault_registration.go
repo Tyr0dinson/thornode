@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -26,6 +27,23 @@ func groupKeyHexFromVaultPubKey(vaultPubKey common.PubKey) (string, error) {
 	}
 
 	return hex.EncodeToString(raw), nil
+}
+
+func vaultPubKeyFromGroupKeyHex(groupKeyHex string) (common.PubKey, error) {
+	groupKeyHex = strings.TrimSpace(groupKeyHex)
+	if groupKeyHex == "" {
+		return common.EmptyPubKey, fmt.Errorf("group key is empty")
+	}
+
+	raw, err := hex.DecodeString(groupKeyHex)
+	if err != nil {
+		return common.EmptyPubKey, fmt.Errorf("fail to decode group key %q: %w", groupKeyHex, err)
+	}
+	if len(raw) != 32 {
+		return common.EmptyPubKey, fmt.Errorf("unexpected group key length %d", len(raw))
+	}
+
+	return common.NewPubKeyFromCrypto(cometed25519.PubKey(raw))
 }
 
 func ensureFrostVaultRegistered(

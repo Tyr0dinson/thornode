@@ -70,3 +70,47 @@ func TestSolvencyAmountsMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestSolvencyMismatchRetryable(t *testing.T) {
+	tests := []struct {
+		name       string
+		mismatches []solvencyMismatch
+		retryable  bool
+	}{
+		{
+			name:       "no mismatches is not retryable",
+			mismatches: nil,
+			retryable:  false,
+		},
+		{
+			name: "xmr only mismatch is retryable",
+			mismatches: []solvencyMismatch{
+				{asset: common.XMRAsset},
+			},
+			retryable: true,
+		},
+		{
+			name: "non xmr mismatch is not retryable",
+			mismatches: []solvencyMismatch{
+				{asset: common.BTCAsset},
+			},
+			retryable: false,
+		},
+		{
+			name: "mixed mismatch is not retryable",
+			mismatches: []solvencyMismatch{
+				{asset: common.XMRAsset},
+				{asset: common.BTCAsset},
+			},
+			retryable: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := solvencyMismatchRetryable(tc.mismatches); got != tc.retryable {
+				t.Fatalf("expected retryable=%t, got %t", tc.retryable, got)
+			}
+		})
+	}
+}

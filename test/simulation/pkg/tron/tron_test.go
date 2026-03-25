@@ -241,11 +241,12 @@ func TestSignTxReturnsCreateTransactionErrors(t *testing.T) {
 	}
 }
 
-func TestBroadcastTxWaitsForTransactionToBecomeQueryable(t *testing.T) {
+func TestBroadcastTxWaitsForTransactionToBeConfirmed(t *testing.T) {
 	restore := overrideBroadcastObservationTimings(100*time.Millisecond, time.Millisecond)
 	defer restore()
 
 	getTransactionCalls := 0
+	getTransactionInfoCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -254,11 +255,18 @@ func TestBroadcastTxWaitsForTransactionToBecomeQueryable(t *testing.T) {
 			_, _ = w.Write([]byte(`{"result":true,"txid":"5555555555555555555555555555555555555555555555555555555555555555"}`))
 		case "/wallet/gettransactionbyid":
 			getTransactionCalls++
-			if getTransactionCalls < 3 {
+			if getTransactionCalls < 2 {
 				_, _ = w.Write([]byte(`{}`))
 				return
 			}
 			_, _ = w.Write([]byte(`{"txID":"5555555555555555555555555555555555555555555555555555555555555555","raw_data":{"contract":[]}}`))
+		case "/wallet/gettransactioninfobyid":
+			getTransactionInfoCalls++
+			if getTransactionInfoCalls < 3 {
+				_, _ = w.Write([]byte(`{}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"5555555555555555555555555555555555555555555555555555555555555555","blockNumber":123,"receipt":{"net_usage":277}}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -273,8 +281,11 @@ func TestBroadcastTxWaitsForTransactionToBecomeQueryable(t *testing.T) {
 	if txid != "5555555555555555555555555555555555555555555555555555555555555555" {
 		t.Fatalf("expected txid to be returned, got %s", txid)
 	}
-	if getTransactionCalls != 3 {
-		t.Fatalf("expected 3 gettransactionbyid attempts, got %d", getTransactionCalls)
+	if getTransactionInfoCalls != 3 {
+		t.Fatalf("expected 3 gettransactioninfobyid attempts, got %d", getTransactionInfoCalls)
+	}
+	if getTransactionCalls == 0 {
+		t.Fatal("expected gettransactionbyid to be queried while waiting for confirmation")
 	}
 }
 
@@ -310,6 +321,8 @@ func TestBroadcastTxFailsWhenBroadcastedTransactionNeverMaterializes(t *testing.
 			_, _ = w.Write([]byte(`{"result":true,"txid":"7777777777777777777777777777777777777777777777777777777777777777"}`))
 		case "/wallet/gettransactionbyid":
 			_, _ = w.Write([]byte(`{}`))
+		case "/wallet/gettransactioninfobyid":
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -326,14 +339,86 @@ func TestBroadcastTxFailsWhenBroadcastedTransactionNeverMaterializes(t *testing.
 	}
 }
 
+func TestBroadcastTxRebroadcastsUntilTransactionConfirms(t *testing.T) {
+	restore := overrideBroadcastObservationTimings(30*time.Millisecond, time.Millisecond)
+	defer restore()
+
+	broadcastCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/wallet/broadcasttransaction":
+			broadcastCalls++
+			_, _ = w.Write([]byte(`{"result":true,"txid":"8888888888888888888888888888888888888888888888888888888888888888"}`))
+		case "/wallet/gettransactionbyid":
+			_, _ = w.Write([]byte(`{"txID":"8888888888888888888888888888888888888888888888888888888888888888","raw_data":{"contract":[]}}`))
+		case "/wallet/gettransactioninfobyid":
+			if broadcastCalls < 2 {
+				_, _ = w.Write([]byte(`{}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"8888888888888888888888888888888888888888888888888888888888888888","blockNumber":321,"receipt":{"net_usage":277}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	txid, err := client.BroadcastTx([]byte(`{"txID":"8888888888888888888888888888888888888888888888888888888888888888","raw_data":{"contract":[]}}`))
+	if err != nil {
+		t.Fatalf("expected TRON broadcast to succeed after rebroadcast, got %v", err)
+	}
+	if txid != "8888888888888888888888888888888888888888888888888888888888888888" {
+		t.Fatalf("expected txid to be returned, got %s", txid)
+	}
+	if broadcastCalls < 2 {
+		t.Fatalf("expected tx to be rebroadcast while waiting for confirmation, got %d broadcasts", broadcastCalls)
+	}
+}
+
+func TestBroadcastTxFailsWhenTransactionNeverConfirms(t *testing.T) {
+	restore := overrideBroadcastObservationTimings(25*time.Millisecond, time.Millisecond)
+	defer restore()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/wallet/broadcasttransaction":
+			_, _ = w.Write([]byte(`{"result":true,"txid":"9999999999999999999999999999999999999999999999999999999999999999"}`))
+		case "/wallet/gettransactionbyid":
+			_, _ = w.Write([]byte(`{"txID":"9999999999999999999999999999999999999999999999999999999999999999","raw_data":{"contract":[]}}`))
+		case "/wallet/gettransactioninfobyid":
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	_, err := client.BroadcastTx([]byte(`{"txID":"9999999999999999999999999999999999999999999999999999999999999999","raw_data":{"contract":[]}}`))
+	if err == nil {
+		t.Fatal("expected TRON broadcast to fail when the tx never confirms")
+	}
+	if !strings.Contains(err.Error(), "not confirmed on tron node") {
+		t.Fatalf("expected missing-confirmation error, got %v", err)
+	}
+}
+
 func overrideBroadcastObservationTimings(timeout, interval time.Duration) func() {
 	prevTimeout := tronBroadcastObservationTimeout
 	prevInterval := tronBroadcastObservationPollInterval
+	prevRebroadcastInterval := tronBroadcastRebroadcastInterval
 	tronBroadcastObservationTimeout = timeout
 	tronBroadcastObservationPollInterval = interval
+	tronBroadcastRebroadcastInterval = interval
 	return func() {
 		tronBroadcastObservationTimeout = prevTimeout
 		tronBroadcastObservationPollInterval = prevInterval
+		tronBroadcastRebroadcastInterval = prevRebroadcastInterval
 	}
 }
 

@@ -152,6 +152,11 @@ func (tx Tx) String() string {
 	return fmt.Sprintf("%s: %s ==> %s (Memo: %s) %s (gas: %s)", tx.ID, tx.FromAddress, tx.ToAddress, tx.Memo, tx.Coins, tx.Gas)
 }
 
+// ObservedSender returns explicit sender availability information for the tx.
+func (tx Tx) ObservedSender() ObservedSenderInfo {
+	return ResolveObservedSender(tx.Chain, tx.FromAddress)
+}
+
 // IsEmpty check whether the ID field is empty or not
 func (tx Tx) IsEmpty() bool {
 	return tx.ID.IsEmpty()

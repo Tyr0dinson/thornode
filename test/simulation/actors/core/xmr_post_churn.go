@@ -8,6 +8,7 @@ import (
 	atypes "gitlab.com/thorchain/thornode/v3/api/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
@@ -20,7 +21,13 @@ type XMRPostChurnActor struct {
 	inboundAfter  common.Address
 }
 
-const xmrPostChurnNewNodesPerChurn = int64(3)
+const (
+	xmrPostChurnNewNodesPerChurn = int64(3)
+	// XMR/FROST keygen routinely takes longer than the mocknet churn retry window.
+	// Expand the retry interval before triggering churn so THORNode still accepts
+	// the resulting keygen tx instead of treating it as stale.
+	xmrPostChurnChurnRetryInterval = int64(90)
+)
 
 func NewXMRPostChurnActor(rng *rand.Rand) *Actor {
 	a := &XMRPostChurnActor{
@@ -96,6 +103,16 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		Str("txid", txid.String()).
 		Msg("broadcasted node expansion mimir")
 
+	txid, err = a.broadcastMimir(node, accAddr, "CHURNRETRYINTERVAL", xmrPostChurnChurnRetryInterval)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast churn retry mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", xmrPostChurnChurnRetryInterval).
+		Str("txid", txid.String()).
+		Msg("broadcasted churn retry mimir")
+
 	txid, err = a.broadcastMimir(node, accAddr, "HALTCHURNING", 0)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast churn mimir")
@@ -139,9 +156,13 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 		a.Log().Info().Stringer("inbound_address", inboundAddress).Msg("waiting for XMR inbound address rotation")
 		return OpResult{Continue: false}
 	}
-	if network.VaultsMigrating {
-		a.Log().Info().Stringer("inbound_address", inboundAddress).Msg("waiting for XMR vault migration to finish")
+
+	if !xmrVaultRotationReady(network, a.inboundBefore, inboundAddress, activeNodes) {
+		a.Log().Info().Stringer("inbound_address", inboundAddress).Msg("waiting for active XMR vault funding")
 		return OpResult{Continue: false}
+	}
+	if network.VaultsMigrating {
+		a.Log().Info().Stringer("inbound_address", inboundAddress).Msg("XMR active vault rotated and funded; continuing despite pending migrations")
 	}
 
 	a.inboundAfter = inboundAddress
@@ -150,6 +171,16 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 		Stringer("inbound_after", a.inboundAfter).
 		Msg("XMR active vault rotated")
 	return OpResult{Continue: true}
+}
+
+func xmrVaultRotationReady(network openapi.NetworkResponse, inboundBefore, inboundAfter common.Address, activeNodes int) bool {
+	if activeNodes <= 1 {
+		return false
+	}
+	if inboundAfter.IsEmpty() || inboundAfter.Equals(inboundBefore) {
+		return false
+	}
+	return network.XmrActiveVaultReady
 }
 
 func (a *XMRPostChurnActor) broadcastMimir(node *User, accAddr cosmos.AccAddress, key string, value int64) (common.TxID, error) {

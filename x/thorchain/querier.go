@@ -497,6 +497,10 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
 	}
 	vaultsMigrating := (len(vaults) != 0)
+	xmrActiveVaultReady, err := getXMRActiveVaultReady(ctx, qs.mgr.Keeper())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get xmr active vault readiness: %w", err)
+	}
 
 	nodeAccounts, err := qs.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -541,9 +545,27 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceHalted:        median.IsZero(),
+		XmrActiveVaultReady:   xmrActiveVaultReady,
 	}
 
 	return &result, nil
+}
+
+func getXMRActiveVaultReady(ctx cosmos.Context, k keeper.Keeper) (bool, error) {
+	activeVaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return false, err
+	}
+	for _, vault := range activeVaults {
+		if !vault.HasAsset(common.XMRAsset) {
+			continue
+		}
+		if _, addrErr := vault.GetAddress(common.XMRChain); addrErr != nil {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryInboundAddressesRequest) (*types.QueryInboundAddressesResponse, error) {

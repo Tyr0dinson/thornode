@@ -1041,13 +1041,7 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	if err != nil {
 		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
 	}
-
-	// Spendability on Monero is governed by unlocked outputs. An unlocked balance
-	// of zero is valid and means nothing can be spent yet.
-	availableAtomic := balance.UnlockedBalance
-	if availableAtomic > balance.Balance {
-		availableAtomic = balance.Balance
-	}
+	availableAtomic := spendableBalanceAtomic(balance)
 
 	maxGasAtomic, err := xmrMaxGasToAtomic(maxGas)
 	if err != nil {
@@ -1073,6 +1067,20 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	}
 
 	return nil
+}
+
+func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {
+	availableAtomic := balance.UnlockedBalance
+	if availableAtomic > balance.Balance {
+		availableAtomic = balance.Balance
+	}
+	if balance.SpendableBalance != nil {
+		availableAtomic = *balance.SpendableBalance
+		if availableAtomic > balance.Balance {
+			availableAtomic = balance.Balance
+		}
+	}
+	return availableAtomic
 }
 
 func xmrMaxGasToAtomic(maxGas common.Gas) (uint64, error) {
@@ -1201,7 +1209,9 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get monero wallet balance for %s: %w", address, err)
 	}
-	amount := cosmos.NewUint(balance.Balance / moneroAtomicToThorchain)
+	// Account/solvency reporting must reflect what can actually be spent, not
+	// the wallet's total tracked balance including locked or reserved outputs.
+	amount := cosmos.NewUint(spendableBalanceAtomic(balance) / moneroAtomicToThorchain)
 	return common.Account{
 		Sequence:      0,
 		AccountNumber: 0,
@@ -1242,20 +1252,16 @@ func (c *Client) CustomKeygen() bool {
 	return true
 }
 
-func (c *Client) Keygen(req types.CustomKeygenRequest) (common.Address, []ttypes.Blame, error) {
-	expectedAddress, err := expectedXMRVaultAddress(req.PoolPubKey, req.PoolPubKeyEddsa)
-	if err != nil {
-		return common.NoAddress, nil, fmt.Errorf("fail to derive expected monero vault address: %w", err)
-	}
+func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult, error) {
 	vaultPubKey := req.PoolPubKeyEddsa
 	if vaultPubKey.IsEmpty() {
-		return common.NoAddress, nil, fmt.Errorf("xmr keygen requires a non-empty eddsa vault pubkey")
+		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires a non-empty eddsa vault pubkey")
 	}
 	if c.frostSigner == nil {
-		return common.NoAddress, nil, fmt.Errorf("%w: signer engine is not initialized", ErrFrostNotConfigured)
+		return types.CustomKeygenResult{}, fmt.Errorf("%w: signer engine is not initialized", ErrFrostNotConfigured)
 	}
 	if c.tssServer == nil {
-		return common.NoAddress, nil, fmt.Errorf("tss server is not initialized")
+		return types.CustomKeygenResult{}, fmt.Errorf("tss server is not initialized")
 	}
 
 	members := make([]string, 0, len(req.Members))
@@ -1266,7 +1272,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (common.Address, []ttypes
 		}
 	}
 	if len(members) == 0 {
-		return common.NoAddress, nil, fmt.Errorf("xmr keygen requires non-empty member set")
+		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires non-empty member set")
 	}
 	version := strings.TrimSpace(req.ThorchainVersion)
 	if version == "" && c.thorchainBridge != nil {
@@ -1281,11 +1287,10 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (common.Address, []ttypes
 		SignerPubKeys: members,
 		BlockHeight:   req.BlockHeight,
 		Version:       version,
-		ExpectedAddr:  expectedAddress.String(),
 	}, newFrostSignerAdapter(c.frostSigner))
 	if err != nil {
 		c.logFailClosedCoordination("frost_tss_keygen", err)
-		return common.NoAddress, nil, fmt.Errorf("fail to execute FROST keygen: %w", err)
+		return types.CustomKeygenResult{}, fmt.Errorf("fail to execute FROST keygen: %w", err)
 	}
 	if frostResp.Status != gotsscommon.Success {
 		c.logFailClosedCoordination("frost_tss_keygen", fmt.Errorf("frost keygen failed: %s", frostResp.Blame.FailReason))
@@ -1293,27 +1298,54 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (common.Address, []ttypes
 		if len(frostResp.Blame.BlameNodes) > 0 || strings.TrimSpace(frostResp.Blame.FailReason) != "" {
 			blame = append(blame, frostBlameToThorchainBlame(frostResp.Blame))
 		}
-		return common.NoAddress, blame, fmt.Errorf("FROST keygen failed: %s", strings.TrimSpace(frostResp.Blame.FailReason))
+		return types.CustomKeygenResult{Blame: blame}, fmt.Errorf("FROST keygen failed: %s", strings.TrimSpace(frostResp.Blame.FailReason))
 	}
 
 	frostAddress := strings.TrimSpace(frostResp.Address)
 	if frostAddress == "" {
-		return common.NoAddress, nil, fmt.Errorf("FROST keygen succeeded without an address")
+		return types.CustomKeygenResult{}, fmt.Errorf("FROST keygen succeeded without an address")
 	}
 	frostAddr, err := common.NewAddress(frostAddress)
 	if err != nil {
-		return common.NoAddress, nil, fmt.Errorf("invalid FROST keygen address %q: %w", frostAddress, err)
+		return types.CustomKeygenResult{}, fmt.Errorf("invalid FROST keygen address %q: %w", frostAddress, err)
 	}
-	if !expectedAddress.IsEmpty() && !frostAddr.Equals(expectedAddress) {
-		return common.NoAddress, nil, fmt.Errorf(
+	groupKeyHex := strings.TrimSpace(frostResp.GroupKey)
+	if groupKeyHex == "" {
+		return types.CustomKeygenResult{}, fmt.Errorf("FROST keygen succeeded without a group key")
+	}
+
+	frostVaultPubKey, err := vaultPubKeyFromGroupKeyHex(groupKeyHex)
+	if err != nil {
+		return types.CustomKeygenResult{}, fmt.Errorf("fail to convert FROST group key to vault pubkey: %w", err)
+	}
+
+	expectedAddress, err := frostVaultPubKey.GetAddress(common.XMRChain)
+	if err != nil {
+		return types.CustomKeygenResult{}, fmt.Errorf("fail to derive monero address from FROST group key %s: %w", groupKeyHex, err)
+	}
+	if !frostAddr.Equals(expectedAddress) {
+		return types.CustomKeygenResult{}, fmt.Errorf(
 			"FROST keygen returned address %s but expected derived vault address %s",
 			frostAddr.String(),
 			expectedAddress.String(),
 		)
 	}
 
-	c.setVaultAddressMapping(req.PoolPubKeyEddsa, frostAddr)
-	return frostAddr, nil, nil
+	if _, err := c.frostSigner.RegisterVault(xmrFrostRegisterVaultRequest{
+		VaultPubKey: frostVaultPubKey.String(),
+		GroupKey:    groupKeyHex,
+		Address:     frostAddr.String(),
+		Source:      "bifrost",
+	}); err != nil {
+		c.logFailClosedCoordination("frost_tss_keygen_register", err)
+		return types.CustomKeygenResult{}, fmt.Errorf("fail to register FROST vault mapping for %s: %w", frostVaultPubKey.String(), err)
+	}
+
+	c.setVaultAddressMapping(frostVaultPubKey, frostAddr)
+	return types.CustomKeygenResult{
+		Address:         frostAddr,
+		PoolPubKeyEddsa: frostVaultPubKey,
+	}, nil
 }
 
 func (c *Client) vaultSigningMembers(vaultPubKey common.PubKey) ([]string, error) {

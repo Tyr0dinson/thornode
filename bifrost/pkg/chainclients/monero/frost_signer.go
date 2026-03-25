@@ -182,8 +182,9 @@ type xmrFrostBroadcastResponse struct {
 
 // Scanner/balance response types from the sidecar
 type xmrFrostBalanceResponse struct {
-	Balance         uint64 `json:"balance"`
-	UnlockedBalance uint64 `json:"unlocked_balance"`
+	Balance          uint64  `json:"balance"`
+	UnlockedBalance  uint64  `json:"unlocked_balance"`
+	SpendableBalance *uint64 `json:"spendable_balance,omitempty"`
 }
 
 type xmrFrostRegisterVaultRequest struct {

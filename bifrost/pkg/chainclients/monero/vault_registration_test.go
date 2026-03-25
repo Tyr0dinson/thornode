@@ -37,6 +37,24 @@ func TestGroupKeyHexFromVaultPubKey(t *testing.T) {
 	}
 }
 
+func TestVaultPubKeyFromGroupKeyHex(t *testing.T) {
+	t.Parallel()
+
+	raw := sha256.Sum256([]byte("vault-registration-pubkey-from-group-key"))
+	expectedPubKey, err := common.NewPubKeyFromCrypto(cometed25519.PubKey(raw[:]))
+	if err != nil {
+		t.Fatalf("new pub key: %v", err)
+	}
+
+	pubKey, err := vaultPubKeyFromGroupKeyHex(hex.EncodeToString(raw[:]))
+	if err != nil {
+		t.Fatalf("vaultPubKeyFromGroupKeyHex failed: %v", err)
+	}
+	if !pubKey.Equals(expectedPubKey) {
+		t.Fatalf("expected pubkey %s, got %s", expectedPubKey, pubKey)
+	}
+}
+
 func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 	t.Parallel()
 
@@ -305,5 +323,57 @@ func TestGetAccountByAddressRegistersVaultBeforeBalanceQuery(t *testing.T) {
 	coin := account.Coins.GetCoin(common.XMRAsset)
 	if coin.Amount.Uint64() != 7 {
 		t.Fatalf("expected 7 XMR units, got %s", coin.Amount.String())
+	}
+}
+
+func TestGetAccountByAddressUsesSpendableBalanceWhenProvided(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "account-query-uses-spendable-balance")
+	address, err := vaultPubKey.GetAddress(common.XMRChain)
+	if err != nil {
+		t.Fatalf("derive address: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/monero/vaults/register":
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/balance/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostBalanceResponse{
+				Balance:          9 * moneroAtomicToThorchain,
+				UnlockedBalance:  9 * moneroAtomicToThorchain,
+				SpendableBalance: uint64Ptr(3 * moneroAtomicToThorchain),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{
+		SignerStoreSecret: testSignerStoreSecret,
+	}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	client := &Client{
+		logger:          log.Logger,
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		vaultAddressMap: make(map[string]common.Address),
+	}
+	client.setVaultAddressMapping(vaultPubKey, address)
+
+	account, err := client.GetAccountByAddress(address.String(), nil)
+	if err != nil {
+		t.Fatalf("GetAccountByAddress failed: %v", err)
+	}
+
+	coin := account.Coins.GetCoin(common.XMRAsset)
+	if coin.Amount.Uint64() != 3 {
+		t.Fatalf("expected spendable 3 XMR units, got %s", coin.Amount.String())
 	}
 }

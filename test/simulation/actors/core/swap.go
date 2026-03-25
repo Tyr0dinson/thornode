@@ -173,9 +173,6 @@ func setQuoteExpectations(a *SwapActor, quote openapi.QuoteSwapResponse) {
 
 func (a *SwapActor) updateSwapAmount(next sdkmath.Uint, reason string) error {
 	if next.GT(a.fromBalance) {
-		if a.user != nil {
-			a.user.Release()
-		}
 		return fmt.Errorf("%s %s exceeds user balance %s", reason, next, a.fromBalance)
 	}
 
@@ -191,23 +188,26 @@ func (a *SwapActor) updateSwapAmount(next sdkmath.Uint, reason string) error {
 	return nil
 }
 
-////////////////////////////////////////////////////////////////////////////////////////
-// Ops
-////////////////////////////////////////////////////////////////////////////////////////
-
-func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
-	// swap 0.25% of from pool depth
-	pool, err := thornode.GetPool(a.from)
-	if err != nil {
-		return OpResult{
-			Continue: false,
-		}
+func (a *SwapActor) releaseUserSelection() {
+	if a.user != nil {
+		a.user.Release()
 	}
-	targetAmount := sdkmath.NewUintFromString(pool.BalanceAsset).QuoUint64(400)
+	a.user = nil
+	a.fromAddress = common.NoAddress
+	a.fromBalance = sdkmath.ZeroUint()
+	a.toAddress = common.NoAddress
+	a.toBalance = sdkmath.ZeroUint()
+	a.swapTxID = ""
+	a.minExpected = sdkmath.ZeroUint()
+	a.maxExpected = sdkmath.ZeroUint()
+}
+
+func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.Uint, allowPartial bool) OpResult {
 	a.swapAmount = targetAmount
 
 	var selectedUser *User
-	selectedFromBalance := sdkmath.ZeroUint()
+	selectedAvailableBalance := sdkmath.ZeroUint()
+	selectedSpendableBalance := sdkmath.ZeroUint()
 	selectedSwapAmount := sdkmath.ZeroUint()
 
 	for _, user := range config.Users {
@@ -224,24 +224,32 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 		a.SetLogger(cl)
 
 		// skip users that don't have from asset balance
-		var fromAcct *common.Account
-		fromAcct, err = user.ChainClients[a.from.Chain].GetAccount(nil)
+		fromAcct, err := user.ChainClients[a.from.Chain].GetAccount(nil)
 		if err != nil {
 			a.Log().Error().Err(err).Msg("failed to get from account")
 			user.Release()
 			continue
 		}
 		fromBalance := fromAcct.Coins.GetCoin(a.from).Amount
+		spendableBalance := swapSpendableBalance(a.from, fromBalance)
 		candidateAmount := swapAmountForBalance(a.from, targetAmount, fromBalance)
 		if candidateAmount.IsZero() {
 			a.Log().Error().Msg("user has insufficient from balance")
 			user.Release()
 			continue
 		}
+		if !allowPartial && spendableBalance.LT(targetAmount) {
+			a.Log().Info().
+				Stringer("required_amount", targetAmount).
+				Stringer("available_balance", spendableBalance).
+				Msg("user balance below required swap amount")
+			user.Release()
+			continue
+		}
 
 		// Prefer the user with the most spendable balance so late-stage swaps can
 		// keep progressing even after earlier actors have partially drained assets.
-		if selectedUser != nil && !candidateAmount.GT(selectedSwapAmount) {
+		if selectedUser != nil && !spendableBalance.GT(selectedSpendableBalance) {
 			user.Release()
 			continue
 		}
@@ -250,13 +258,14 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 			selectedUser.Release()
 		}
 		selectedUser = user
-		selectedFromBalance = fromBalance
+		selectedAvailableBalance = spendableBalance
+		selectedSpendableBalance = spendableBalance
 		selectedSwapAmount = candidateAmount
 	}
 
 	if selectedUser != nil {
 		a.user = selectedUser
-		a.fromBalance = selectedFromBalance
+		a.fromBalance = selectedAvailableBalance
 
 		cl := a.Log().With().
 			Str("user", selectedUser.Name()).
@@ -266,18 +275,19 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 		a.SetLogger(cl)
 
 		// get l1 address to store in state context
-		a.fromAddress, err = selectedUser.PubKey(a.from.Chain).GetAddress(a.from.Chain)
+		fromAddress, err := selectedUser.PubKey(a.from.Chain).GetAddress(a.from.Chain)
 		if err != nil {
 			a.Log().Fatal().Err(err).Msg("failed to get L1 address")
 		}
-		a.toAddress, err = selectedUser.PubKey(a.to.Chain).GetAddress(a.to.Chain)
+		a.fromAddress = fromAddress
+		toAddress, err := selectedUser.PubKey(a.to.Chain).GetAddress(a.to.Chain)
 		if err != nil {
 			a.Log().Fatal().Err(err).Msg("failed to get L1 address")
 		}
+		a.toAddress = toAddress
 
 		// get to asset balance for tracking
-		var toAcct *common.Account
-		toAcct, err = selectedUser.ChainClients[a.to.Chain].GetAccount(nil)
+		toAcct, err := selectedUser.ChainClients[a.to.Chain].GetAccount(nil)
 		if err != nil {
 			a.Log().Warn().Err(err).Msg("failed to get to account")
 		} else {
@@ -285,15 +295,13 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 		}
 
 		if err := a.updateSwapAmount(selectedSwapAmount, "available user balance"); err != nil {
+			a.releaseUserSelection()
 			return OpResult{
 				Error:  err,
 				Finish: true,
 			}
 		}
-	}
 
-	// continue if we acquired a user
-	if a.user != nil {
 		a.Log().Info().Msg("acquired user")
 		return OpResult{
 			Continue: true,
@@ -313,30 +321,83 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 	a.Log().Info().
 		Int("available_users", availableUsers).
 		Int("locked_users", lockedUsers).
+		Stringer("target_amount", targetAmount).
+		Bool("allow_partial", allowPartial).
 		Msg("waiting for user with sufficient balance")
 	return OpResult{
 		Continue: false,
 	}
 }
 
-func (a *SwapActor) getQuote(config *OpConfig) OpResult {
-	quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapResponse, OpResult) {
+	for attempt := 0; attempt < 4; attempt++ {
+		if a.user == nil {
+			result := a.acquireUserForAmount(config, a.swapAmount, false)
+			if !result.Continue || result.Finish {
+				return openapi.QuoteSwapResponse{}, result
+			}
+		}
+
+		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+		if err != nil {
+			a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get swap quote")
+			return openapi.QuoteSwapResponse{}, OpResult{
+				Continue: false,
+			}
+		}
+
+		if quoteAmount.GT(a.fromBalance) {
+			a.Log().Info().
+				Stringer("required_amount", quoteAmount).
+				Stringer("user_balance", a.fromBalance).
+				Msg("quote minimum exceeds selected user balance, retrying user selection")
+			a.releaseUserSelection()
+			a.swapAmount = quoteAmount
+			continue
+		}
+
+		if err := a.updateSwapAmount(quoteAmount, "recommended minimum inbound amount"); err != nil {
+			return openapi.QuoteSwapResponse{}, OpResult{
+				Error:  err,
+				Finish: true,
+			}
+		}
+
+		return quote, OpResult{
+			Continue: true,
+		}
+	}
+
+	a.Log().Info().
+		Stringer("amount", a.swapAmount).
+		Msg("waiting for user that can satisfy the quoted minimum amount")
+	return openapi.QuoteSwapResponse{}, OpResult{
+		Continue: false,
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Ops
+////////////////////////////////////////////////////////////////////////////////////////
+
+func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
+	// swap 0.25% of from pool depth
+	pool, err := thornode.GetPool(a.from)
 	if err != nil {
-		a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get swap quote")
 		return OpResult{
 			Continue: false,
 		}
 	}
+	targetAmount := sdkmath.NewUintFromString(pool.BalanceAsset).QuoUint64(400)
+	return a.acquireUserForAmount(config, targetAmount, true)
+}
 
-	if err := a.updateSwapAmount(quoteAmount, "recommended minimum inbound amount"); err != nil {
-		return OpResult{
-			Error:  err,
-			Finish: true,
-		}
+func (a *SwapActor) getQuote(config *OpConfig) OpResult {
+	quote, result := a.getQuoteWithUserRetry(config)
+	if !result.Continue || result.Finish {
+		return result
 	}
-
 	setQuoteExpectations(a, quote)
-
 	return OpResult{
 		Continue: true,
 	}
@@ -369,17 +430,7 @@ func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
 
 	client := a.user.ChainClients[a.from.Chain]
 
-	// sign transaction
-	signed, err := client.SignTx(tx)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to sign tx")
-		return OpResult{
-			Continue: false,
-		}
-	}
-
-	// broadcast transaction
-	txid, err := client.BroadcastTx(signed)
+	txid, err := SignAndBroadcastTx(client, tx)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
 		return OpResult{

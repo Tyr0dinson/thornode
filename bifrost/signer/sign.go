@@ -431,7 +431,8 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		// Give chain clients with custom keygen logic a chance to initialize chain-specific
 		// signer state (for example Monero multisig address mapping) before keygen is finalized.
 		if !pubKey.Secp256k1.IsEmpty() {
-			if err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519); err != nil {
+			pubKey.Ed25519, err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519)
+			if err != nil {
 				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
 				if s.scheduleKeygenRetry(keygenBlock) {
@@ -468,7 +469,7 @@ func (s *Signer) runCustomKeygenHooks(
 	blockHeight int64,
 	poolPubKey common.PubKey,
 	poolPubKeyEddsa common.PubKey,
-) error {
+) (common.PubKey, error) {
 	version := ""
 	if v, err := s.thorchainBridge.GetThorchainVersion(); err != nil {
 		s.logger.Debug().Err(err).Msg("fail to fetch thorchain version for custom keygen")
@@ -477,22 +478,23 @@ func (s *Signer) runCustomKeygenHooks(
 	}
 
 	var customHookErr error
+	effectivePoolPubKeyEddsa := poolPubKeyEddsa
 	for chainID, chainClient := range s.chains {
 		custom, ok := chainClient.(chainclients.CustomKeygenChainClient)
 		if !ok || !custom.CustomKeygen() {
 			continue
 		}
 
-		chainAddress, blame, err := custom.Keygen(chainclienttypes.CustomKeygenRequest{
+		result, err := custom.Keygen(chainclienttypes.CustomKeygenRequest{
 			Members:          keys,
 			BlockHeight:      blockHeight,
 			ThorchainVersion: version,
 			PoolPubKey:       poolPubKey,
-			PoolPubKeyEddsa:  poolPubKeyEddsa,
+			PoolPubKeyEddsa:  effectivePoolPubKeyEddsa,
 		})
 		if err != nil {
 			s.logger.Error().Err(err).Str("chain", chainID.String()).Msg("custom keygen failed")
-			for _, b := range blame {
+			for _, b := range result.Blame {
 				s.logger.Error().
 					Str("chain", chainID.String()).
 					Str("reason", b.FailReason).
@@ -502,14 +504,21 @@ func (s *Signer) runCustomKeygenHooks(
 			customHookErr = errors.Join(customHookErr, fmt.Errorf("custom keygen failed for %s: %w", chainID.String(), err))
 			continue
 		}
-		if !chainAddress.IsEmpty() {
+		if !result.PoolPubKeyEddsa.IsEmpty() && !result.PoolPubKeyEddsa.Equals(effectivePoolPubKeyEddsa) {
+			effectivePoolPubKeyEddsa = result.PoolPubKeyEddsa
 			s.logger.Info().
 				Str("chain", chainID.String()).
-				Str("address", chainAddress.String()).
+				Str("pool_pubkey_eddsa", result.PoolPubKeyEddsa.String()).
+				Msg("custom keygen updated eddsa vault pubkey")
+		}
+		if !result.Address.IsEmpty() {
+			s.logger.Info().
+				Str("chain", chainID.String()).
+				Str("address", result.Address.String()).
 				Msg("custom keygen produced chain address")
 		}
 	}
-	return customHookErr
+	return effectivePoolPubKeyEddsa, customHookErr
 }
 
 // secp256k1VerificationSignature will make a best effort to sign the public key with
@@ -585,12 +594,17 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 			}
 		}
 		if !poolPubKeyEddsa.IsEmpty() {
-			keysharesEddsa, err = tss.EncryptKeyshares(
-				filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPubKeyEddsa)),
-				os.Getenv("SIGNER_SEED_PHRASE"),
-			)
-			if err != nil {
-				s.logger.Error().Err(err).Msg("fail to encrypt eddsa keyshares")
+			eddsaKeysharePath := filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPubKeyEddsa))
+			if _, statErr := os.Stat(eddsaKeysharePath); statErr == nil {
+				keysharesEddsa, err = tss.EncryptKeyshares(
+					eddsaKeysharePath,
+					os.Getenv("SIGNER_SEED_PHRASE"),
+				)
+				if err != nil {
+					s.logger.Error().Err(err).Msg("fail to encrypt eddsa keyshares")
+				}
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				s.logger.Error().Err(statErr).Str("path", eddsaKeysharePath).Msg("fail to stat eddsa keyshares")
 			}
 		}
 	}

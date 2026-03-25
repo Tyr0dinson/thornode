@@ -125,11 +125,12 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 	} else {
 		runeAddr = memo.GetDestination()
 		assetAddr = tx.Tx.FromAddress
-		if memo.GetAsset().GetLayer1Asset().GetChain().Equals(common.XMRChain) && common.IsXMRUnknownSenderAddress(assetAddr) {
+		assetSender := tx.Tx.ObservedSender()
+		if memo.GetAsset().GetLayer1Asset().GetChain().Equals(common.XMRChain) && assetSender.RefundAddressRequired {
 			// Monero inbound observations cannot recover the sender address, so
 			// treat the asset-side address as absent and let staged liquidity
 			// resolution reuse the real address supplied on the RUNE-side memo.
-			assetAddr = common.NoAddress
+			assetAddr = assetSender.Address
 		}
 	}
 	// in case we are providing native rune and another native asset

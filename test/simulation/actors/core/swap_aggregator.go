@@ -92,13 +92,7 @@ func (a *AggregatorSwapActor) sendAggregatorSwap(config *OpConfig) OpResult {
 
 	client := a.user.ChainClients[a.from.Chain]
 
-	signed, err := client.SignTx(tx)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to sign tx")
-		return OpResult{Continue: false}
-	}
-
-	txid, err := client.BroadcastTx(signed)
+	txid, err := SignAndBroadcastTx(client, tx)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
 		return OpResult{Continue: false}

@@ -430,6 +430,11 @@ func (s *XMRAddressSuite) TestXMRUnknownSenderAddress(c *C) {
 
 	c.Check(XMRUnknownSenderAddress("tx-hash-a", "8abcd"), Equals, addr)
 	c.Check(XMRUnknownSenderAddress("tx-hash-b", "8abcd") == addr, Equals, false)
+
+	info := ResolveObservedSender(XMRChain, parsed)
+	c.Check(info.Known, Equals, false)
+	c.Check(info.Address, Equals, NoAddress)
+	c.Check(info.RefundAddressRequired, Equals, true)
 }
 
 func (s *XMRAddressSuite) TestXMRIntegratedAddressNetwork(c *C) {

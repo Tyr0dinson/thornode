@@ -1,9 +1,11 @@
 package monero
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,6 +77,71 @@ func TestFetchTxsAggregatesDuplicateIncomingTxIDs(t *testing.T) {
 	amount := txIn.TxArray[0].Coins.GetCoin(common.XMRAsset).Amount
 	if !amount.Equal(cosmos.NewUint(5)) {
 		t.Fatalf("expected merged amount 5, got %s", amount)
+	}
+}
+
+func TestFetchTxsSkipsIncomingTransfersWithMismatchedExplicitVaultAttribution(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("b", 64)
+	currentVaultPubKey, currentVaultAddr := testVaultPubKeyAndAddress(t)
+	otherVaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     currentVaultAddr.String(),
+				VaultPubKey: currentVaultPubKey.String(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "MIGRATE:100",
+			},
+			{
+				TxID:        txID,
+				Address:     currentVaultAddr.String(),
+				VaultPubKey: otherVaultPubKey.String(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "MIGRATE:100",
+			},
+		},
+		nil,
+		[]string{currentVaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{PubKeyEddsa: currentVaultPubKey, PubKey: currentVaultPubKey}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected only the current asgard attribution to survive, got %d items", len(txIn.TxArray))
+	}
+	amount := txIn.TxArray[0].Coins.GetCoin(common.XMRAsset).Amount
+	if !amount.Equal(cosmos.NewUint(2)) {
+		t.Fatalf("expected mismatched explicit vault attribution to be skipped, got %s", amount)
+	}
+	if !txIn.TxArray[0].ObservedVaultPubKey.Equals(currentVaultPubKey) {
+		t.Fatalf("expected current asgard vault pubkey %s, got %s", currentVaultPubKey, txIn.TxArray[0].ObservedVaultPubKey)
 	}
 }
 
@@ -231,6 +298,113 @@ func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *test
 	}
 	if !inbound.ObservedVaultPubKey.Equals(destVaultPubKey) {
 		t.Fatalf("expected inbound vault pubkey %s, got %s", destVaultPubKey, inbound.ObservedVaultPubKey)
+	}
+}
+
+func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVault(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("e", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vaultAddress := vaultAddr.String()
+	destinationAddress := common.XMRChecksummedDummyAddress('9')
+
+	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
+			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
+			height, err := strconv.ParseInt(rawHeight, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid block height", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+				Height:       height,
+				Reward:       defaultCoinbaseValue + 200000,
+				Hash:         "hash-" + rawHeight,
+				PreviousHash: "hash-" + strconv.FormatInt(height-1, 10),
+				TxHashes:     []string{txID},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
+			var req xmrFrostScannerSyncRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+
+			resp := xmrFrostTransfersResponse{}
+			switch req.Height {
+			case 100:
+				resp.Outgoing = []xmrFrostTransferEntry{
+					{
+						TxID:        txID,
+						Address:     destinationAddress,
+						FromAddress: vaultAddress,
+						VaultPubKey: vaultPubKey.String(),
+						Amount:      uint64(1 * moneroAtomicToThorchain),
+						Fee:         uint64(1 * moneroAtomicToThorchain),
+						Height:      100,
+					},
+				}
+			case 101:
+				resp.Incoming = []xmrFrostTransferEntry{
+					{
+						TxID:        txID,
+						Address:     vaultAddress,
+						VaultPubKey: vaultPubKey.String(),
+						Amount:      uint64(4 * moneroAtomicToThorchain),
+						Height:      101,
+					},
+				}
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/addresses/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostAddressesResponse{Addresses: []string{vaultAddress}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	first, err := scanner.FetchTxs(100, 101)
+	if err != nil {
+		t.Fatalf("fetch txs at height 100: %v", err)
+	}
+	if len(first.TxArray) != 1 {
+		t.Fatalf("expected outbound observation at height 100, got %d items", len(first.TxArray))
+	}
+	if first.TxArray[0].Sender != vaultAddress {
+		t.Fatalf("expected outbound sender %s, got %s", vaultAddress, first.TxArray[0].Sender)
+	}
+
+	second, err := scanner.FetchTxs(101, 101)
+	if err != nil {
+		t.Fatalf("fetch txs at height 101: %v", err)
+	}
+	if len(second.TxArray) != 0 {
+		buf := &bytes.Buffer{}
+		_ = json.NewEncoder(buf).Encode(second.TxArray)
+		t.Fatalf("expected delayed same-vault incoming change to be skipped, got %d items: %s", len(second.TxArray), buf.String())
 	}
 }
 
