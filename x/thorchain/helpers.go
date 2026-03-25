@@ -93,7 +93,8 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				AggregatorTargetLimit: &cosmos.Uint{},
 			}
 
-			if coin.Asset.GetChain().Equals(common.XMRChain) && usesSourceSender && common.IsXMRUnknownSenderAddress(tx.Tx.FromAddress) {
+			sender := tx.Tx.ObservedSender()
+			if coin.Asset.GetChain().Equals(common.XMRChain) && usesSourceSender && sender.RefundAddressRequired {
 				ctx.Logger().Info("skip xmr refund to unknown sender marker", "in_hash", tx.Tx.ID.String(), "coin", coin.String())
 				refundReason = fmt.Sprintf("%s; fail to refund (%s): unknown xmr sender and no explicit refund address", refundReason, toi.Coin.String())
 				unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund_unknown_sender")

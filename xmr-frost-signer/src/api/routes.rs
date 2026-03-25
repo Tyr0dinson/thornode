@@ -1085,6 +1085,7 @@ pub async fn get_balance(
         let scanner = state.scanner.lock();
         scanner.get_balance(&vault_pub_key)
     };
+    let spendable_balance = unlocked_balance;
 
     (
         StatusCode::OK,
@@ -1092,6 +1093,7 @@ pub async fn get_balance(
             serde_json::to_value(BalanceResponse {
                 balance,
                 unlocked_balance,
+                spendable_balance,
             })
             .unwrap(),
         ),
@@ -3859,6 +3861,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["balance"], serde_json::json!(777u64));
         assert_eq!(body["unlocked_balance"], serde_json::json!(0u64));
+        assert_eq!(body["spendable_balance"], serde_json::json!(0u64));
 
         let second = scanner_sync(
             State(state.clone()),
@@ -3882,6 +3885,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["balance"], serde_json::json!(777u64));
         assert_eq!(body["unlocked_balance"], serde_json::json!(777u64));
+        assert_eq!(body["spendable_balance"], serde_json::json!(777u64));
     }
 
     #[tokio::test]

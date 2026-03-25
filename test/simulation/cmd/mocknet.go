@@ -381,14 +381,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 			Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
 		}
 
-		// sign tx
-		signed, err := master.ChainClients[chain].SignTx(tx)
-		if err != nil {
-			log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to sign master tx")
-		}
-
-		// broadcast tx
-		txid, err := master.ChainClients[chain].BroadcastTx(signed)
+		txid, err := SignAndBroadcastTx(master.ChainClients[chain], tx)
 		if err != nil {
 			log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
 		}

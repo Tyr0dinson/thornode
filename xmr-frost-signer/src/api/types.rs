@@ -138,6 +138,7 @@ pub struct BroadcastResponse {
 pub struct BalanceResponse {
     pub balance: u64,
     pub unlocked_balance: u64,
+    pub spendable_balance: u64,
 }
 
 #[derive(Debug, Serialize)]

@@ -77,12 +77,21 @@ type CustomKeygenRequest struct {
 	PoolPubKeyEddsa  common.PubKey
 }
 
+// CustomKeygenResult carries the chain-specific outputs from a custom keygen
+// hook, including the finalized EdDSA pool pubkey when the chain derives it
+// from its own keygen transcript rather than reusing the generic THORChain one.
+type CustomKeygenResult struct {
+	Address         common.Address
+	PoolPubKeyEddsa common.PubKey
+	Blame           []ttypes.Blame
+}
+
 // CustomKeygenChainClient is an optional extension for chains which require
 // chain-specific keygen state initialization during THORChain keygen.
 type CustomKeygenChainClient interface {
 	ChainClient
 	CustomKeygen() bool
-	Keygen(req CustomKeygenRequest) (common.Address, []ttypes.Blame, error)
+	Keygen(req CustomKeygenRequest) (CustomKeygenResult, error)
 }
 
 // SolvencyReporter reports the solvency of the chain at the given height.

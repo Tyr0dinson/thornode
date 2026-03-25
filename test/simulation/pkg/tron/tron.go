@@ -40,6 +40,8 @@ const tronCreateTransactionWarmupTimeout = 60 * time.Second
 
 var tronBroadcastObservationTimeout = 15 * time.Second
 var tronBroadcastObservationPollInterval = 250 * time.Millisecond
+var tronBroadcastRebroadcastInterval = 3 * time.Second
+var tronBroadcastConfirmationGrace = 5 * time.Second
 
 func NewConstructor(host string) LiteChainClientConstructor {
 	return func(chain common.Chain, keys *thorclient.Keys) (LiteChainClient, error) {
@@ -193,7 +195,7 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 
 	if !response.Result {
 		if response.Code == "DUP_TRANSACTION_ERROR" && txID != "" {
-			if err := c.waitForObservedBroadcast(txID); err == nil {
+			if err := c.waitForConfirmedBroadcast(txID, signed, signedTx.RawData.Expiration); err == nil {
 				return txID, nil
 			}
 		}
@@ -211,30 +213,72 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 		return "", fmt.Errorf("broadcast transaction returned empty txID")
 	}
 
-	if err := c.waitForObservedBroadcast(txID); err != nil {
+	if err := c.waitForConfirmedBroadcast(txID, signed, signedTx.RawData.Expiration); err != nil {
 		return "", err
 	}
 
 	return txID, nil
 }
 
-func (c *Client) waitForObservedBroadcast(txID string) error {
+func (c *Client) waitForConfirmedBroadcast(txID string, signed []byte, expirationMs int64) error {
 	deadline := time.Now().Add(tronBroadcastObservationTimeout)
+	if expirationMs > 0 {
+		expiration := time.UnixMilli(expirationMs).Add(tronBroadcastConfirmationGrace)
+		if expiration.After(deadline) {
+			deadline = expiration
+		}
+	}
+
 	var lastErr error
+	observed := false
+	lastBroadcast := time.Now()
 
 	for {
-		tx, err := c.api.GetTransaction(txID)
-		if err == nil && tx.TxId != "" {
+		info, err := c.api.GetTransactionInfo(txID)
+		if err == nil && info.ID != "" && info.BlockNumber > 0 {
 			return nil
 		}
 		if err != nil {
 			lastErr = err
 		}
+
+		tx, err := c.api.GetTransaction(txID)
+		if err == nil && tx.TxId != "" {
+			observed = true
+		} else if err != nil {
+			lastErr = err
+		}
+
 		if time.Now().After(deadline) {
 			if lastErr != nil {
+				if observed {
+					return fmt.Errorf("broadcasted tx %s not confirmed on tron node: %w", txID, lastErr)
+				}
 				return fmt.Errorf("broadcasted tx %s not observed on tron node: %w", txID, lastErr)
 			}
+			if observed {
+				return fmt.Errorf("broadcasted tx %s not confirmed on tron node", txID)
+			}
 			return fmt.Errorf("broadcasted tx %s not observed on tron node", txID)
+		}
+
+		if time.Since(lastBroadcast) >= tronBroadcastRebroadcastInterval &&
+			(expirationMs == 0 || time.Now().Before(time.UnixMilli(expirationMs))) {
+			response, err := c.api.BroadcastTransaction(signed)
+			if err != nil {
+				lastErr = err
+			} else {
+				lastBroadcast = time.Now()
+				if !response.Result && response.Code != "DUP_TRANSACTION_ERROR" {
+					if response.Message != "" {
+						lastErr = fmt.Errorf("failed to rebroadcast tx %s: %s - %s", txID, response.Code, response.Message)
+					} else if response.Code != "" {
+						lastErr = fmt.Errorf("failed to rebroadcast tx %s: %s", txID, response.Code)
+					} else {
+						lastErr = fmt.Errorf("failed to rebroadcast tx %s", txID)
+					}
+				}
+			}
 		}
 
 		time.Sleep(tronBroadcastObservationPollInterval)

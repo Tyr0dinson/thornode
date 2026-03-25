@@ -668,7 +668,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	// Monero asset-side observations do not know the sender, so the
 	// constructed liquidity message should leave AssetAddress empty and rely on
 	// the RUNE-side memo address for staged LP reconciliation.
-	xmrAddr, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	xmrAddr, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	xmrUnknown, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr.String()))
 	c.Assert(err, IsNil)

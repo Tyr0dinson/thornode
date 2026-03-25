@@ -81,3 +81,25 @@ func TestAmountWithEncodedRefAtOrAbove(t *testing.T) {
 		t.Fatalf("expected encoded amount %s, got %s", want, got)
 	}
 }
+
+func TestMaxAmountWithEncodedRefAtOrAbove(t *testing.T) {
+	t.Parallel()
+
+	asset, err := common.NewAsset("AVAX.TKN-0X17AB05351FC94A1A67BF3F56DDBB941AE6C63E25")
+	if err != nil {
+		t.Fatalf("failed to parse asset: %v", err)
+	}
+
+	actor := &SwapMemolessActor{
+		SwapActor: SwapActor{
+			from: asset,
+			to:   common.BTCAsset,
+		},
+	}
+
+	got := actor.maxAmountWithEncodedRefAtOrAbove(sdkmath.NewUint(941178450))
+	want := sdkmath.NewUint(941199999)
+	if !got.Equal(want) {
+		t.Fatalf("expected max encoded amount %s, got %s", want, got)
+	}
+}

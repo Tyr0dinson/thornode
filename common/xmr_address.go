@@ -59,6 +59,16 @@ type xmrAddressInfo struct {
 	featuredGuaranteed bool
 }
 
+// ObservedSenderInfo models whether an observed inbound sender address is
+// usable as a real refund/counterparty address. This lets higher layers reason
+// about "sender unavailable" explicitly instead of branching on marker
+// addresses directly.
+type ObservedSenderInfo struct {
+	Address               Address
+	Known                 bool
+	RefundAddressRequired bool
+}
+
 func init() {
 	for i := range xmrBase58CharMap {
 		xmrBase58CharMap[i] = -1
@@ -395,6 +405,21 @@ func IsXMRUnknownSenderAddress(addr Address) bool {
 	}
 	hrp, _, err := bech32.Decode(strings.ToLower(addr.String()))
 	return err == nil && hrp == xmrUnknownSenderHRP
+}
+
+// ResolveObservedSender normalizes chain-specific sender availability into an
+// explicit runtime model.
+func ResolveObservedSender(chain Chain, addr Address) ObservedSenderInfo {
+	info := ObservedSenderInfo{
+		Address: addr,
+		Known:   !addr.IsEmpty(),
+	}
+	if chain.Equals(XMRChain) && IsXMRUnknownSenderAddress(addr) {
+		info.Address = NoAddress
+		info.Known = false
+		info.RefundAddressRequired = true
+	}
+	return info
 }
 
 func xmrAppendVarint(dst []byte, value uint64) []byte {

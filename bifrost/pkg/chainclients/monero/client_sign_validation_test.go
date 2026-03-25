@@ -237,6 +237,53 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	}
 }
 
+func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:          10 * moneroAtomicToThorchain,
+			UnlockedBalance:  10 * moneroAtomicToThorchain,
+			SpendableBalance: uint64Ptr(moneroAtomicToThorchain),
+		},
+	})
+	defer balanceServer.Close()
+
+	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddr,
+		},
+	}
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        testOutboundXMRDestination(),
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyEddsa: vaultPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(2)),
+		},
+		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+	}
+
+	_, err = c.validateXMRSignTx(tx, 100, true)
+	if err == nil {
+		t.Fatalf("expected insufficient balance error when spendable balance is below amount")
+	}
+	if !strings.Contains(err.Error(), "insufficient xmr balance") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateXMRSignTxAcceptsValidRequest(t *testing.T) {
 	t.Parallel()
 
@@ -284,4 +331,8 @@ func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]xmrFrostBala
 		}
 		http.NotFound(w, r)
 	}))
+}
+
+func uint64Ptr(v uint64) *uint64 {
+	return &v
 }

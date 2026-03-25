@@ -346,6 +346,9 @@ func (c *FrostKeygenCoordinator) Execute(
 	localIndexStr := strconv.FormatUint(uint64(localIndex), 10)
 	allShares := make(map[string]string, len(encryptedSharesBySigner))
 	for senderIndex, senderShares := range encryptedSharesBySigner {
+		if senderIndex == localIndexStr {
+			continue
+		}
 		share := strings.TrimSpace(senderShares[localIndexStr])
 		if share == "" {
 			pubKey := senderIndex
@@ -657,6 +660,9 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 				}
 				for norm, idx := range participantIndexMap {
 					if _, ok := activeSet.originalByNormalized[norm]; !ok {
+						continue
+					}
+					if idx == incoming.ParticipantIndex {
 						continue
 					}
 					idxKey := strconv.FormatUint(uint64(idx), 10)

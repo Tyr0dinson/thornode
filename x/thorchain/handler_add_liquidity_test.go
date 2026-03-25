@@ -648,6 +648,18 @@ func (p *AddLiquidityTestKeeper) GetPool(ctx cosmos.Context, asset common.Asset)
 	return NewPool(), nil
 }
 
+func (p *AddLiquidityTestKeeper) GetPools(_ cosmos.Context) (Pools, error) {
+	pools := make(Pools, 0)
+	for _, value := range p.store {
+		pool, ok := value.(Pool)
+		if !ok {
+			continue
+		}
+		pools = append(pools, pool)
+	}
+	return pools, nil
+}
+
 func (p *AddLiquidityTestKeeper) SetPool(ctx cosmos.Context, ps Pool) error {
 	p.store[ps.Asset.String()] = ps
 	return nil
@@ -997,13 +1009,13 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityXMRUnknownSender(c *C) {
 		c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
 	}
 
-	xmrAddr1, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	xmrAddr1, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	xmrUnknown1, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr1.String()))
 	c.Assert(err, IsNil)
 	stageRuneFirst(GetRandomRUNEAddress(), xmrAddr1, xmrUnknown1)
 
-	xmrAddr2, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	xmrAddr2, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	xmrUnknown2, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr2.String()))
 	c.Assert(err, IsNil)
@@ -1011,7 +1023,13 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityXMRUnknownSender(c *C) {
 
 	ps := NewAddLiquidityTestKeeper()
 	ctx, _ := setupKeeperForTest(c)
-	h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(ps))
+	mgr := NewDummyMgrWithKeeper(ps)
+	mgr.constAccessor = constants.NewDummyConstants(
+		map[constants.ConstantName]int64{},
+		map[constants.ConstantName]bool{constants.StrictBondLiquidityRatio: false},
+		map[constants.ConstantName]string{},
+	)
+	h := NewAddLiquidityHandler(mgr)
 	c.Assert(ps.SetPool(ctx, Pool{
 		BalanceRune:         cosmos.ZeroUint(),
 		BalanceAsset:        cosmos.ZeroUint(),
@@ -1024,7 +1042,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityXMRUnknownSender(c *C) {
 	}), IsNil)
 
 	xmrRuneAddr := GetRandomRUNEAddress()
-	xmrAddr3, err := GetRandomPubKey().GetAddress(common.XMRChain)
+	xmrAddr3, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	xmrUnknown3, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr3.String()))
 	c.Assert(err, IsNil)
@@ -1052,7 +1070,13 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityXMRUnknownSender(c *C) {
 
 	ps = NewAddLiquidityTestKeeper()
 	ctx, _ = setupKeeperForTest(c)
-	h = NewAddLiquidityHandler(NewDummyMgrWithKeeper(ps))
+	mgr = NewDummyMgrWithKeeper(ps)
+	mgr.constAccessor = constants.NewDummyConstants(
+		map[constants.ConstantName]int64{},
+		map[constants.ConstantName]bool{constants.StrictBondLiquidityRatio: false},
+		map[constants.ConstantName]string{},
+	)
+	h = NewAddLiquidityHandler(mgr)
 	c.Assert(ps.SetPool(ctx, Pool{
 		BalanceRune:         cosmos.ZeroUint(),
 		BalanceAsset:        cosmos.ZeroUint(),

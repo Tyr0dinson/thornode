@@ -140,8 +140,10 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 		}
 	}
 
+	assetSender := common.ResolveObservedSender(msg.Asset.GetLayer1Asset().GetChain(), msg.AssetAddress)
+	txSender := msg.Tx.ObservedSender()
 	isXMRUnknownSenderObserved := msg.Asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) &&
-		(common.IsXMRUnknownSenderAddress(msg.AssetAddress) || common.IsXMRUnknownSenderAddress(msg.Tx.FromAddress))
+		(assetSender.RefundAddressRequired || txSender.RefundAddressRequired)
 
 	if !msg.AssetAddress.IsEmpty() {
 		// If the needsSwap check disallows a cross-chain AssetAddress,
@@ -230,12 +232,13 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 		return h.swap(ctx, msg)
 	}
 
+	txSender := msg.Tx.ObservedSender()
 	assetAddress := msg.AssetAddress
-	if msg.Asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) && common.IsXMRUnknownSenderAddress(msg.Tx.FromAddress) {
+	if msg.Asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) && txSender.RefundAddressRequired {
 		// Monero inbound observations cannot reliably recover the sender address.
 		// Normalize the asset-side address here as a final guard so staged LP
 		// reconciliation can reuse the paired address from the RUNE-side memo.
-		assetAddress = common.NoAddress
+		assetAddress = txSender.Address
 	}
 
 	// Use L1 pool for secured assets only, don't change behaviour for synths
@@ -562,12 +565,13 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 
 	effectiveRuneAddr := runeAddr
 	effectiveAssetAddr := assetAddr
-	if asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) && common.IsXMRUnknownSenderAddress(effectiveAssetAddr) {
+	effectiveAssetSender := common.ResolveObservedSender(asset.GetLayer1Asset().GetChain(), effectiveAssetAddr)
+	if asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) && effectiveAssetSender.RefundAddressRequired {
 		// Monero inbound observations cannot recover the sender address, so the
 		// asset-side tx may arrive with an xmrunknown marker instead of the user's
 		// real address. Preserve the staged LP address instead of treating that as
 		// a mismatched counterparty.
-		effectiveAssetAddr = common.NoAddress
+		effectiveAssetAddr = effectiveAssetSender.Address
 	}
 
 	su.LastAddHeight = ctx.BlockHeight()
