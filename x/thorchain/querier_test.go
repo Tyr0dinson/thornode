@@ -1051,6 +1051,64 @@ func (s *QuerierSuite) TestQueryNetwork(c *C) {
 	c.Assert(openapiNetworkResponse.XmrActiveVaultReady, Equals, queryNetworkResp.XmrActiveVaultReady)
 }
 
+func (s *QuerierSuite) TestGetXMRActiveVaultReadyRequiresFundsAndAddress(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	ready, err := getXMRActiveVaultReady(ctx, k)
+	c.Assert(err, IsNil)
+	c.Assert(ready, Equals, false)
+
+	unfunded := NewVaultV2(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.XMRChain}.Strings(),
+		nil,
+		GetRandomEd25519PubKey(),
+	)
+	c.Assert(k.SetVault(ctx, unfunded), IsNil)
+
+	ready, err = getXMRActiveVaultReady(ctx, k)
+	c.Assert(err, IsNil)
+	c.Assert(ready, Equals, false)
+
+	noAddress := NewVault(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.XMRChain}.Strings(),
+		nil,
+	)
+	noAddress.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+	})
+	c.Assert(k.SetVault(ctx, noAddress), IsNil)
+
+	ready, err = getXMRActiveVaultReady(ctx, k)
+	c.Assert(err, IsNil)
+	c.Assert(ready, Equals, false)
+
+	funded := NewVaultV2(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.XMRChain}.Strings(),
+		nil,
+		GetRandomEd25519PubKey(),
+	)
+	funded.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+	})
+	c.Assert(k.SetVault(ctx, funded), IsNil)
+
+	ready, err = getXMRActiveVaultReady(ctx, k)
+	c.Assert(err, IsNil)
+	c.Assert(ready, Equals, true)
+}
+
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	_, mgr := setupManagerForTest(c)

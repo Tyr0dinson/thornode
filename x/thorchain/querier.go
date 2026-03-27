@@ -557,7 +557,10 @@ func getXMRActiveVaultReady(ctx cosmos.Context, k keeper.Keeper) (bool, error) {
 		return false, err
 	}
 	for _, vault := range activeVaults {
-		if !vault.HasAsset(common.XMRAsset) {
+		// "ready" should mean THORChain has observed an active XMR vault with a
+		// usable inbound address and actual XMR funds on the vault, not just that
+		// an active vault record exists for the chain.
+		if vault.GetCoin(common.XMRAsset).Amount.IsZero() {
 			continue
 		}
 		if _, addrErr := vault.GetAddress(common.XMRChain); addrErr != nil {

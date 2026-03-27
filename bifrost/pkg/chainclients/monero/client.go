@@ -462,16 +462,13 @@ func (c *Client) consolidateVault(
 		return
 	}
 
-	unlockedAtomic := balance.UnlockedBalance
-	if unlockedAtomic > balance.Balance {
-		unlockedAtomic = balance.Balance
-	}
-	if unlockedAtomic < settings.MinUnlockedAtomic {
+	spendableAtomic := spendableBalanceAtomic(balance)
+	if spendableAtomic < settings.MinUnlockedAtomic {
 		c.logger.Debug().
 			Str("vault_pubkey", stateKey).
-			Uint64("unlocked_atomic", unlockedAtomic).
+			Uint64("spendable_atomic", spendableAtomic).
 			Uint64("min_unlocked_atomic", settings.MinUnlockedAtomic).
-			Msg("skip xmr consolidation: unlocked balance below threshold")
+			Msg("skip xmr consolidation: spendable balance below threshold")
 		return
 	}
 
@@ -512,14 +509,14 @@ func (c *Client) consolidateVault(
 	if maxRetries <= 0 {
 		maxRetries = 1
 	}
-	reserve := initialConsolidationReserve(unlockedAtomic, settings.ReserveBps)
+	reserve := initialConsolidationReserve(spendableAtomic, settings.ReserveBps)
 	lastErr := error(nil)
 	lastTxHash := ""
 	for attempt := int64(1); attempt <= maxRetries; attempt++ {
-		if reserve >= unlockedAtomic {
+		if reserve >= spendableAtomic {
 			break
 		}
-		amountAtomic := unlockedAtomic - reserve
+		amountAtomic := spendableAtomic - reserve
 		amountThorchain := amountAtomic / moneroAtomicToThorchain
 		if amountThorchain == 0 {
 			break
@@ -615,13 +612,13 @@ func countUnlockedOutputs(outputs []xmrFrostOutputEntry, currentHeight int64) in
 	return count
 }
 
-func initialConsolidationReserve(unlockedAtomic uint64, reserveBps int64) uint64 {
+func initialConsolidationReserve(availableAtomic uint64, reserveBps int64) uint64 {
 	if reserveBps <= 0 {
 		reserveBps = defaultXMRConsolidationReserveBps
 	}
 	reserve := uint64(0)
 	if reserveBps > 0 {
-		reserve = unlockedAtomic * uint64(reserveBps) / 10_000
+		reserve = availableAtomic * uint64(reserveBps) / 10_000
 	}
 	if reserve < defaultXMRConsolidationMinReserveAtomic {
 		reserve = defaultXMRConsolidationMinReserveAtomic
