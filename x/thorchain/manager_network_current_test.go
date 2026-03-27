@@ -2200,6 +2200,7 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create an active vault with BTC asset
 	vaultPubKey := GetRandomPubKey()
@@ -2281,6 +2282,7 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesEddsaAddress(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	vaultPubKey := GetRandomPubKey()
 	vaultPubKeyEddsa := GetRandomEd25519PubKey()

@@ -3,39 +3,38 @@
 > Date: 2026-03-27
 > Branch: `xmr-integration`
 > Diff base: `origin/develop` merge-base `b55e655552db7c01633ceaf06e17320fdabc069f`
-> Scope: current branch/worktree changes under `x/thorchain/...`
+> Scope: current branch changes under `x/thorchain/...` after removing the unrelated TAO MR
 
 ## Executive Summary
 
-The current `x/thorchain` diff is substantial but coherent. It contains 26 changed files and is dominated by four real product/workflow themes:
+The current `x/thorchain` diff is coherent and XMR-focused. It contains `22` changed files with `779` insertions and `34` deletions. The changes cluster into four themes:
 
-1. XMR unknown-sender handling for add-liquidity and refund paths.
-2. EdDSA vault-address correctness for XMR, SOL, and TAO flows.
-3. TAO-specific reserve, migration, and solvency behavior.
-4. Query/API fixes for XMR readiness and quote generation.
+1. XMR unknown-sender handling for add-liquidity, refunds, and failed-swap recovery.
+2. EdDSA vault-address correctness for XMR-facing flows.
+3. Query/API correctness for XMR readiness and quote generation.
+4. Targeted tests that lock in the new XMR behavior.
 
-Most runtime changes are justified. The highest-signal fixes are:
+Most behavior-changing files are justified. The highest-signal fixes are:
 
-- explicit handling of XMR "sender unknown" observations instead of treating the marker address like a real sender;
-- consistent use of `vault.GetAddress(...)` for EdDSA chains rather than `vault.PubKey.GetAddress(...)`;
-- TAO existential-deposit handling during migration and outbound selection;
-- staged-pool solvency handling during Ragnarök;
-- the `xmr_active_vault_ready` query contract.
+- stop treating the deterministic `xmrunknown...` marker as a usable customer address;
+- derive vault addresses through `vault.GetAddress(chain)` for EdDSA chains instead of `vault.PubKey.GetAddress(chain)`;
+- expose a first-class `xmr_active_vault_ready` query contract; and
+- make quote confirmation math safe for XMR's fractional `DefaultCoinbase()`.
 
-The low-signal or incidental changes are limited to:
+The low-signal changes are small and localized:
 
 - logging cleanup in `handler_deposit.go` and `handler_observed_tx_helpers.go`;
 - a trivial logger string cleanup in `keeper/keeper_dummy.go`;
-- test helper exposure in `alias.go`.
+- test-helper exposure in `alias.go`.
 
 ## Scope Summary
 
-- Files changed: `26`
-- Net diff: `905` insertions, `46` deletions
-- Runtime/support files: `16`
-- Test files: `10`
+- Files changed: `22`
+- Net diff: `779` insertions, `34` deletions
+- Runtime/support files: `14`
+- Test files: `8`
 
-Largest files by added lines:
+Largest additions are concentrated in tests:
 
 - `x/thorchain/handler_add_liquidity_test.go`
 - `x/thorchain/querier_test.go`
@@ -43,93 +42,77 @@ Largest files by added lines:
 - `x/thorchain/manager_network_current_test.go`
 - `x/thorchain/handler_ragnarok_test.go`
 
-That distribution is healthy. The branch adds a large amount of targeted coverage rather than relying only on behavioral changes.
+That is the right shape for this branch: the diff is backed by focused regression coverage, not just runtime edits.
 
 ## Main Findings
 
-### 1. XMR unknown-sender handling is the most important `x/thorchain` change set
+### 1. XMR unknown-sender handling is the core runtime change
 
-Monero inbound observations cannot reliably recover the real sender address. Before these changes, THORChain code paths could still treat the deterministic `xmrunknown...` marker as if it were a usable asset-side address. That caused three classes of problems:
+Monero inbound observations cannot reliably recover the user's sender address. Before this branch, several THORChain paths could still treat the deterministic `xmrunknown...` marker as if it were a deliverable external address. That creates three real problems:
 
-- staged add-liquidity reconciliation could see an artificial address mismatch;
-- refund logic could attempt to send funds to an undeliverable marker address;
-- failed swap recovery could waste outbound attempts before falling back to treasury recovery.
+- staged add-liquidity reconciliation can report artificial address mismatches;
+- refund logic can attempt impossible outbounds;
+- failed-swap recovery can waste retries on an undeliverable destination before falling back to treasury recovery.
 
-The fixes in this branch properly move the runtime behavior away from "trust the observed sender string" and toward "respect the fact that the sender may be unavailable."
+This branch fixes that by carrying sender state explicitly and by treating "sender unknown" as a first-class condition inside `x/thorchain`.
 
 Verdict: required.
 
 ### 2. EdDSA vault-address correctness is the second major theme
 
-Several older code paths still derived chain addresses from `vault.PubKey`, which is only correct for secp256k1 chains. For EdDSA chains such as XMR, SOL, and TAO, the correct address source is the vault's Ed25519 key via `vault.GetAddress(chain)`.
+Several older runtime paths still derived external addresses from `vault.PubKey`, which is correct for secp256k1 chains but wrong for XMR. The correct source for XMR is the Ed25519 vault identity through `vault.GetAddress(chain)`.
 
-The branch fixes that in multiple places:
+The branch fixes that in:
 
-- recovery swaps;
-- Ragnarök handling;
-- over-solvency swaps;
-- vault-address queries.
-
-Without these changes, the branch can pass some flows by accident but still encode the wrong address for EdDSA chains in edge cases.
+- failed-swap recovery;
+- Ragnarök address derivation;
+- over-solvency swap generation; and
+- shared vault address lookup helpers.
 
 Verdict: required.
 
-### 3. TAO support required real `x/thorchain` changes, not just simulation tweaks
+### 3. Query-layer changes are real product-contract work
 
-The TAO-related changes are not cosmetic. They address actual chain semantics:
+`xmr_active_vault_ready` is not a cosmetic field. It gives consumers a chain-level readiness contract instead of forcing them to infer XMR churn readiness from raw vault state. The tightened semantics in the current branch are sensible: an active vault must have both a usable XMR address and non-zero XMR funds recorded in THORChain state.
 
-- TAO requires an existential deposit to keep the account alive;
-- late-stage migration/Ragnarök can temporarily make staged pools appear insolvent if pending outbounds are not accounted for correctly;
-- genesis/setup must treat TAO as a supported Asgard chain if the branch expects TAO-aware vault behavior from the start.
+The quote-path changes are smaller but valid:
 
-Verdict: required.
+- XMR confirmation math now handles a fractional `DefaultCoinbase()` without truncation to zero;
+- memo shortening only happens when a sendable memo is actually requested.
 
-### 4. Query-layer fixes are a mix of product contract work and correctness fixes
-
-The `xmr_active_vault_ready` addition is a real product contract change and is justified because the simulation actor should not be reverse-engineering XMR readiness from raw vault state.
-
-The quote-path changes are smaller but still valid:
-
-- XMR's `DefaultCoinbase()` is fractional (`0.6`), so inbound confirmation math needs integer-safe rounding when converted into THORChain units;
-- memo shortening must not run when the caller is not actually requesting a sendable memo.
-
-Verdict: justified, with `xmr_active_vault_ready` being the most important piece.
+Verdict: justified.
 
 ## Runtime File Analysis
 
 | File | What Changed | Why It Changed | Verdict |
 |------|--------------|----------------|---------|
-| `x/thorchain/handler.go` | `getMsgAddLiquidityFromMemo` now clears the asset-side address for XMR when the observed sender is unknown. | Prevents staged LP construction from treating the XMR unknown-sender marker as a real user address. | Required |
-| `x/thorchain/handler_add_liquidity.go` | Validation and handling now tolerate XMR unknown-sender observations and preserve the real staged LP address when known from the paired side. | This is the core runtime fix for XMR add-liquidity reconciliation. Without it, staged LP flows can mismatch or reject valid XMR deposits. | Required |
-| `x/thorchain/helpers.go` | `refundTx` now skips refunds to XMR unknown-sender markers unless an explicit refund address is present, and `unrefundableCoinCleanup` now donates stranded external coins into the pool/accounting path. | Prevents THORChain from generating impossible XMR refund outbounds and prevents accounting drift when such a refund must be skipped. | Required |
-| `x/thorchain/manager_slasher_current.go` | Recovery swap address derivation now uses `vault.GetAddress(chain)`, and reverse swaps now fail fast when the destination is still an XMR unknown-sender marker. | Fixes EdDSA address derivation and avoids wasting failed outbound attempts on an undeliverable XMR marker address. | Required |
-| `x/thorchain/handler_ragnarok.go` | Ragnarök now derives `fromAddress` using the correct signing algorithm, including `VaultPubKeyEddsa` for EdDSA chains. | Necessary for XMR Ragnarök observations and any EdDSA-chain migration path. | Required |
-| `x/thorchain/manager_network_current.go` | Adds XMR and TAO to genesis support chains, uses `vault.GetAddress(chain)` for over-solvency swaps, and preserves TAO reserve balances during migration/burn logic. | This combines one XMR EdDSA-address fix with two TAO migration/support fixes. All three are behaviorally meaningful. | Required |
-| `x/thorchain/manager_txout_current.go` | TAO now receives dust-threshold handling similar to XRP during outbound discovery. | TAO requires an existential deposit; THORChain must not try to spend through the reserve floor. | Required |
-| `x/thorchain/handler_solvency_helpers.go` | Solvency checking now tracks pending outbounds explicitly and treats staged-pool gaps as explainable during Ragnarök when pending outbounds cover the shortage. | Fixes the late-Ragnarök false insolvency halt that surfaced on the TAO path. | Required |
-| `x/thorchain/querier.go` | Fixes EdDSA vault-address enumeration in `getVaultChainAddresses` and adds `xmr_active_vault_ready` to the network response. Current worktree further tightens readiness to require both usable XMR address and non-zero XMR balance. | Both changes are real correctness fixes. The address-enumeration condition was backward for EdDSA chains, and the readiness field gives XMR-specific churn readiness a first-class contract. | Required |
-| `x/thorchain/types/query_network.pb.go` | Generated protobuf artifact for `xmr_active_vault_ready`. | Required generated output to match the query contract. | Required if proto stays |
-| `x/thorchain/querier_quotes.go` | Adds integer-safe conversion for fractional `DefaultCoinbase()` chains and guards memo shortening behind `sendMemo`. | The first fix matters for XMR quote confirmations; the second is a correctness fix for quote generation when a memo is not being returned. | Justified, though orthogonal to the main XMR runtime fixes |
-| `x/thorchain/types/type_vault.go` | `Vaults.HasAddress` now uses `item.GetAddress(chain)` rather than `item.PubKey.GetAddress(chain)`. | Necessary for any EdDSA chain address match, including XMR, SOL, and TAO. | Required |
-| `x/thorchain/handler_deposit.go` | Logging cleanup plus `hashHex` temporary for native deposit txid logging. | Improves clarity only; no meaningful behavior change. | Incidental cleanup |
+| `x/thorchain/handler.go` | `getMsgAddLiquidityFromMemo` now clears the asset-side address when an XMR observation says the sender is unknown. | Prevents memo-to-message translation from hard-coding the XMR unknown-sender marker as the LP's asset address. | Required |
+| `x/thorchain/handler_add_liquidity.go` | Validation and reconciliation now tolerate XMR unknown-sender observations and preserve staged addresses when the real address is known from the paired side. | This is the main XMR LP correctness fix. Without it, staged liquidity can mismatch or reject otherwise valid XMR deposits. | Required |
+| `x/thorchain/helpers.go` | `refundTx` now skips refunds to the XMR unknown-sender marker unless an explicit refund address is present, and `unrefundableCoinCleanup` donates stranded external coins into pool accounting. | Prevents impossible XMR refunds and keeps accounting aligned when an external refund cannot be delivered. | Required |
+| `x/thorchain/manager_slasher_current.go` | Recovery swap tracking now uses `vault.GetAddress(chain)`, and reverse swaps fail fast if the destination is still the XMR unknown-sender marker. | Fixes EdDSA address derivation and avoids burning retries on undeliverable XMR reverse swaps. | Required |
+| `x/thorchain/handler_ragnarok.go` | Ragnarök now derives `fromAddress` by signing algorithm, including `VaultPubKeyEddsa` for EdDSA chains. | Necessary for XMR outbounds observed during Ragnarök and similar EdDSA paths. | Required |
+| `x/thorchain/manager_network_current.go` | Genesis support now includes XMR, and over-solvency swaps derive addresses through `vault.GetAddress(chain)`. | The XMR chain must be present in supported-chain setup, and over-solvency swaps must use the EdDSA vault address for XMR. | Required |
+| `x/thorchain/querier.go` | Fixes EdDSA chain-address enumeration and adds `xmr_active_vault_ready`, with readiness tightened to "usable address + non-zero XMR funds". | Both are correctness fixes and together define a cleaner XMR readiness contract. | Required |
+| `x/thorchain/types/query_network.pb.go` | Generated protobuf output for `xmr_active_vault_ready`. | Required generated artifact for the query contract. | Required if proto stays |
+| `x/thorchain/querier_quotes.go` | Adds integer-safe conversion for fractional `DefaultCoinbase()` chains and guards memo shortening behind `sendMemo`. | The first fix is directly XMR-motivated; the second is a general quote-correctness improvement in the same path. | Justified |
+| `x/thorchain/types/type_vault.go` | `Vaults.HasAddress` now uses `item.GetAddress(chain)` rather than `item.PubKey.GetAddress(chain)`. | Shared EdDSA correctness fix needed for XMR vault address matching. | Required |
+| `x/thorchain/handler_deposit.go` | Logging cleanup plus a `hashHex` temporary for native deposit txid logging. | No meaningful behavior change. | Incidental cleanup |
 | `x/thorchain/handler_observed_tx_helpers.go` | Logging cleanup for inbound processing errors. | No behavior change. | Incidental cleanup |
-| `x/thorchain/keeper/keeper_dummy.go` | Logger module string now uses string concatenation instead of `fmt.Sprintf`. | Cosmetic only. | Incidental cleanup |
+| `x/thorchain/keeper/keeper_dummy.go` | Logger module string now uses concatenation instead of `fmt.Sprintf`. | Cosmetic only. | Incidental cleanup |
 | `x/thorchain/alias.go` | Re-exports `GetRandomEd25519PubKey`. | Test support only. | Support-only |
 
 ## Test File Analysis
 
 | File | What Changed | Why It Matters | Verdict |
 |------|--------------|----------------|---------|
-| `x/thorchain/handler_add_liquidity_test.go` | Adds comprehensive XMR add-liquidity tests covering RUNE-first, asset-first, validation, and staged reconciliation. Also adds `GetPools` to the test keeper. | This is the best coverage in the diff. It proves the unknown-sender model works across the actual LP lifecycle rather than only one narrow function. | Required coverage |
-| `x/thorchain/handler_observed_txin_test.go` | Adds XMR refund test showing refunds are skipped for unknown senders unless an explicit refund address is present. | Directly covers the refund safety change. | Required coverage |
-| `x/thorchain/handler_ragnarok_test.go` | Adds an XMR Ragnarök happy-path test using EdDSA vault addresses. | Proves the new EdDSA address derivation path works in a real handler flow. | Required coverage |
-| `x/thorchain/handler_solvency_test.go` | Adds staged-pool TAO solvency tests covering both the explained-gap and unexplained-gap cases during Ragnarök. | Strong evidence that the late-Ragnarök solvency fix is targeted rather than over-broad. | Required coverage |
-| `x/thorchain/handler_test.go` | Adds memo-to-liquidity conversion test for XMR unknown-sender observations. | Covers the earliest translation step in the XMR LP flow. | Required coverage |
-| `x/thorchain/manager_network_current_test.go` | Adds over-solvency swap test proving XMR uses the vault's EdDSA address. | Good regression test for `vault.GetAddress(chain)` adoption. | Required coverage |
-| `x/thorchain/manager_slasher_current_test.go` | Adds recovery-swap test proving EdDSA vault addresses are used when queueing recovery swaps. | Confirms the XMR recovery path does not regress back to secp256k1 assumptions. | Required coverage |
-| `x/thorchain/querier_test.go` | Adds `xmr_active_vault_ready` assertions and XMR quote coverage ensuring quote swap memo behavior is sane for XMR. Current worktree also adds tighter readiness tests for "funds + address required". | Important coverage for both the query contract and the XMR quote fix. | Required coverage |
+| `x/thorchain/handler_add_liquidity_test.go` | Adds comprehensive XMR add-liquidity tests covering RUNE-first, asset-first, validation, and staged reconciliation. | Best coverage in the diff. It exercises the real LP lifecycle rather than a single helper. | Required coverage |
+| `x/thorchain/handler_observed_txin_test.go` | Adds an XMR refund test showing refunds are skipped for unknown senders unless an explicit refund address is present. | Directly covers the refund safety change. | Required coverage |
+| `x/thorchain/handler_ragnarok_test.go` | Adds an XMR Ragnarök path using the EdDSA vault address. | Proves the new EdDSA address derivation works in a real handler flow. | Required coverage |
+| `x/thorchain/handler_test.go` | Adds memo-to-liquidity translation coverage for XMR unknown-sender observations. | Covers the earliest translation step in the XMR LP flow. | Required coverage |
+| `x/thorchain/manager_network_current_test.go` | Adds an over-solvency swap test proving XMR uses the vault's EdDSA address. | Good regression test for `vault.GetAddress(chain)` in an XMR network-manager path. | Required coverage |
+| `x/thorchain/manager_slasher_current_test.go` | Adds recovery-swap coverage proving EdDSA vault addresses are used when queueing recovery swaps. | Confirms the XMR recovery path no longer assumes secp256k1 vault addresses. | Required coverage |
+| `x/thorchain/querier_test.go` | Adds `xmr_active_vault_ready` assertions and quote coverage around XMR confirmation behavior and memo handling. | Important coverage for the new query contract and quote fix. | Required coverage |
 | `x/thorchain/types/type_vault_test.go` | Adds `Vaults.HasAddress` coverage for XMR/EdDSA. | Validates the shared vault address fix. | Required coverage |
-| `x/thorchain/types/type_vault_v2_test.go` | Extends EdDSA address tests to TAO. | Confirms `Vault.GetAddress` works for TAO's address format as well. | Required coverage |
 
 ## Change Buckets and Necessity
 
@@ -140,26 +123,18 @@ Verdict: justified, with `xmr_active_vault_ready` being the most important piece
 - `helpers.go`
 - `manager_slasher_current.go`
 - `handler_ragnarok.go`
+- `manager_network_current.go`
 - `querier.go`
 - `querier_quotes.go` (confirmation math portion)
 - `types/type_vault.go`
 
-These are the changes that directly close XMR product/runtime gaps.
-
-### Clearly Required For TAO Correctness
-
-- `manager_network_current.go`
-- `manager_txout_current.go`
-- `handler_solvency_helpers.go`
-- `types/type_vault.go` and `querier.go` where EdDSA/TAO address derivation matters indirectly
-
-These are the changes that make TAO behave like a real supported chain rather than only a simulation toggle.
+These are the files that directly close XMR product or runtime gaps.
 
 ### Required Generated / Contract Support
 
 - `types/query_network.pb.go`
 
-This is generated code, but it is required as long as the query contract includes `xmr_active_vault_ready`.
+This is generated code, but it is required as long as the query response includes `xmr_active_vault_ready`.
 
 ### Support-Only or Incidental
 
@@ -168,37 +143,36 @@ This is generated code, but it is required as long as the query contract include
 - `handler_observed_tx_helpers.go`
 - `keeper/keeper_dummy.go`
 
-These are not carrying the branch from red to green on their own.
+These are real changes, but they are not what carries the branch.
 
 ## Risks and Observations
 
 ### 1. `xmr_active_vault_ready` is now a product contract
 
-This is a good change, but it means simulation logic and any external consumers may start treating the field as authoritative. The current worktree tightens it to "active vault + usable XMR address + non-zero XMR funds in THORChain vault state," which is a better definition than "some active XMR vault exists." If the field remains, its semantics should stay explicit and stable.
+That is a good direction, but it means the field should stay explicit and stable. The current semantics are reasonable: active XMR vault, usable XMR address, and non-zero XMR funds recorded on the vault in THORChain state.
 
-### 2. The external-coin cleanup path is broader than just XMR
+### 2. `unrefundableCoinCleanup` is broader than just XMR
 
-The `helpers.go` change that donates unrefundable external coins back into pool accounting is justified by the XMR unknown-sender case, but it affects all external assets routed through `unrefundableCoinCleanup`. That is still reasonable, but it is broader in blast radius than the rest of the XMR patch set and deserves careful review.
+The pool-accounting donation path is justified by the XMR unknown-sender case, but it applies to external assets generally. That broader blast radius is acceptable, but it deserves review with that in mind.
 
-### 3. The quote changes are valid but only partly XMR-driven
+### 3. `querier_quotes.go` mixes one XMR fix with one generic cleanup
 
-`querier_quotes.go` contains one directly XMR-motivated fix and one general quote-correctness fix (`sendMemo` guard). They are both reasonable, but the second one should be understood as a generic bug fix rather than an XMR-specific requirement.
+The fractional-coinbase confirmation fix is specifically relevant to XMR. The `sendMemo` guard is a generic quote-path correctness improvement that simply landed in the same file.
 
-### 4. Test coverage is strong where it matters
+### 4. Coverage is strongest where the branch is riskiest
 
-The branch does a good job of adding focused tests for:
+The branch adds focused tests for:
 
-- XMR add-liquidity reconciliation;
+- XMR LP reconciliation;
 - XMR refund safety;
 - EdDSA vault-address selection;
-- TAO solvency edge cases;
 - XMR readiness/query behavior.
 
-That coverage reduces the risk that these fixes regress during later refactors.
+That materially reduces regression risk.
 
-## Recommended Commit Grouping
+## Recommended Review Grouping
 
-If this branch needs cleanup before merge, the `x/thorchain` changes naturally split into four reviewable groups:
+If reviewers want to mentally split the `x/thorchain` diff, it breaks down cleanly into:
 
 1. XMR unknown-sender handling
    - `handler.go`
@@ -209,39 +183,36 @@ If this branch needs cleanup before merge, the `x/thorchain` changes naturally s
 
 2. EdDSA vault-address correctness
    - `handler_ragnarok.go`
-   - `manager_network_current.go` (address-selection portion)
+   - `manager_network_current.go`
    - `types/type_vault.go`
    - `querier.go` (`getVaultChainAddresses`)
    - related tests
 
-3. TAO migration and solvency
-   - `manager_network_current.go` (TAO support/reserve portions)
-   - `manager_txout_current.go`
-   - `handler_solvency_helpers.go`
-   - related tests
-
-4. Query/API contract changes
+3. Query/API contract work
    - `querier.go`
    - `types/query_network.pb.go`
    - `querier_quotes.go`
    - related tests
 
-The incidental logging/test-helper changes can be split out if a tighter MR is desired.
+4. Incidental cleanup and test support
+   - `alias.go`
+   - `handler_deposit.go`
+   - `handler_observed_tx_helpers.go`
+   - `keeper/keeper_dummy.go`
 
 ## Bottom Line
 
-The `x/thorchain` diff is not random churn. It is a mostly coherent set of product fixes required to make XMR and TAO behave correctly in THORChain runtime paths.
+The current `x/thorchain` diff is not random churn. It is a coherent XMR-focused set of runtime fixes plus targeted coverage.
 
-If I had to reduce the diff, I would keep all behavior-changing files except:
+If the branch needs trimming before merge, I would keep every behavior-changing file and treat only these as optional cleanup or support:
 
 - `handler_deposit.go`
 - `handler_observed_tx_helpers.go`
 - `keeper/keeper_dummy.go`
 - `alias.go`
 
-Everything else looks justified by either:
+Everything else is justified by:
 
 - XMR sender ambiguity,
 - EdDSA vault-address correctness,
-- TAO reserve/ragnarok semantics,
-- or the new XMR readiness/query contract.
+- or the XMR readiness/query contract.
