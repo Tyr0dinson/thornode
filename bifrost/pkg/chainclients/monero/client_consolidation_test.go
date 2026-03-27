@@ -347,6 +347,126 @@ func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
 	}
 }
 
+func TestRunConsolidationPassUsesSpendableBalanceForAmount(t *testing.T) {
+	t.Parallel()
+
+	localNodePubKey, _ := testVaultPubKeyAndAddress(t)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		Status:      ttypes.VaultStatus_ActiveVault,
+		StatusSince: 1,
+		Membership:  []string{localNodePubKey.String()},
+		Chains:      []string{common.XMRChain.String()},
+	}
+
+	bridge := &consolidationBridge{
+		nodeStatus:  ttypes.NodeStatus_Active,
+		blockHeight: 20,
+		asgards:     ttypes.Vaults{vault},
+		constants: map[string]int64{
+			constants.ChurnInterval.String(): 100,
+		},
+	}
+	tssServer := &consolidationTSS{
+		sequence: []consolidationTSSResponse{
+			{
+				resp: tssp.FrostKeySignResponse{
+					TxHash:    "xmr-sign-hash",
+					TxHex:     "deadbeef",
+					FeeAtomic: 1_000,
+					MsgID:     "consolidation-msg-spendable",
+					Status:    tsscommon.Success,
+				},
+			},
+		},
+	}
+	spendableAtomic := uint64(3_000_000_000_000)
+	sidecar := &consolidationSidecar{
+		balanceByVault: map[string]xmrFrostBalanceResponse{
+			vaultPubKey.String(): {
+				Balance:          5_000_000_000_000,
+				UnlockedBalance:  5_000_000_000_000,
+				SpendableBalance: uint64Ptr(spendableAtomic),
+			},
+		},
+		outputsByVault: map[string][]xmrFrostOutputEntry{
+			vaultPubKey.String(): unlockedOutputs(50, 4),
+		},
+		feeRate: 10,
+	}
+	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+
+	if err := client.runConsolidationPass(); err != nil {
+		t.Fatalf("runConsolidationPass failed: %v", err)
+	}
+	if tssServer.callCount() != 1 {
+		t.Fatalf("expected one FrostKeySign call, got %d", tssServer.callCount())
+	}
+
+	req := tssServer.request()
+	expectedReserve := initialConsolidationReserve(spendableAtomic, client.loadConsolidationSettings().ReserveBps)
+	expectedAmount := spendableAtomic - expectedReserve
+	if req.AmountAtomic != expectedAmount {
+		t.Fatalf("expected AmountAtomic=%d from spendable balance, got %d", expectedAmount, req.AmountAtomic)
+	}
+}
+
+func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.T) {
+	t.Parallel()
+
+	localNodePubKey, _ := testVaultPubKeyAndAddress(t)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		Status:      ttypes.VaultStatus_ActiveVault,
+		StatusSince: 1,
+		Membership:  []string{localNodePubKey.String()},
+		Chains:      []string{common.XMRChain.String()},
+	}
+
+	minSpendableAtomic := int64(4_000_000_000_000)
+	bridge := &consolidationBridge{
+		nodeStatus:  ttypes.NodeStatus_Active,
+		blockHeight: 20,
+		asgards:     ttypes.Vaults{vault},
+		mimir: map[string]int64{
+			mimirXMRConsolidationMinUnlockedAtomic: minSpendableAtomic,
+		},
+	}
+	tssServer := &consolidationTSS{
+		sequence: []consolidationTSSResponse{
+			{resp: tssp.FrostKeySignResponse{Status: tsscommon.Success, TxHash: "x", TxHex: "deadbeef", MsgID: "consolidation-msg-threshold"}},
+		},
+	}
+	sidecar := &consolidationSidecar{
+		balanceByVault: map[string]xmrFrostBalanceResponse{
+			vaultPubKey.String(): {
+				Balance:          5_000_000_000_000,
+				UnlockedBalance:  5_000_000_000_000,
+				SpendableBalance: uint64Ptr(3_000_000_000_000),
+			},
+		},
+		outputsByVault: map[string][]xmrFrostOutputEntry{
+			vaultPubKey.String(): unlockedOutputs(50, 4),
+		},
+		feeRate: 10,
+	}
+	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+
+	if err := client.runConsolidationPass(); err != nil {
+		t.Fatalf("runConsolidationPass failed: %v", err)
+	}
+	if tssServer.callCount() != 0 {
+		t.Fatalf("expected no FrostKeySign call when spendable balance is below threshold, got %d", tssServer.callCount())
+	}
+	if sidecar.broadcasts() != 0 {
+		t.Fatalf("expected no broadcast when spendable balance is below threshold, got %d", sidecar.broadcasts())
+	}
+}
+
 func TestRunConsolidationPassSkipsWhenMempoolOutgoingExists(t *testing.T) {
 	t.Parallel()
 
