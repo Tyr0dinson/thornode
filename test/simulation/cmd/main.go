@@ -42,7 +42,9 @@ import (
 
 const (
 	DefaultParallelism      = "8"
-	tronRPCReadinessTimeout = 2 * time.Minute
+	// Clean mocknet-cluster boots can take a few minutes before the TRON fullnode
+	// starts relaying stable block production from the supernode.
+	tronRPCReadinessTimeout = 4 * time.Minute
 )
 
 var bifrostReadinessEndpoints = []string{

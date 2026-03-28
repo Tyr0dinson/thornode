@@ -78,6 +78,12 @@ func swapActorTimeout(from, to common.Asset) time.Duration {
 	if from.Chain.Equals(common.XMRChain) || to.Chain.Equals(common.XMRChain) {
 		return 4 * time.Minute
 	}
+	if from.Chain.Equals(common.SOLChain) || to.Chain.Equals(common.SOLChain) {
+		return 4 * time.Minute
+	}
+	if to.Chain.Equals(common.TRONChain) {
+		return 4 * time.Minute
+	}
 	return 2 * time.Minute
 }
 
@@ -156,6 +162,19 @@ func swapAmountForBalance(asset common.Asset, target, balance sdkmath.Uint) sdkm
 	return target
 }
 
+func accountAssetAmount(account *common.Account, asset common.Asset) sdkmath.Uint {
+	if account == nil {
+		return sdkmath.ZeroUint()
+	}
+
+	coin := account.Coins.GetCoin(asset)
+	if coin.Amount.IsNil() {
+		return sdkmath.ZeroUint()
+	}
+
+	return coin.Amount
+}
+
 func setQuoteExpectations(a *SwapActor, quote openapi.QuoteSwapResponse) {
 	// store expected range to fail if received amount is outside 10% tolerance
 	quoteOut := sdkmath.NewUintFromString(quote.ExpectedAmountOut)
@@ -204,6 +223,8 @@ func (a *SwapActor) releaseUserSelection() {
 
 func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.Uint, allowPartial bool) OpResult {
 	a.swapAmount = targetAmount
+	a.fromBalance = sdkmath.ZeroUint()
+	a.toBalance = sdkmath.ZeroUint()
 
 	var selectedUser *User
 	selectedAvailableBalance := sdkmath.ZeroUint()
@@ -230,7 +251,7 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 			user.Release()
 			continue
 		}
-		fromBalance := fromAcct.Coins.GetCoin(a.from).Amount
+		fromBalance := accountAssetAmount(fromAcct, a.from)
 		spendableBalance := swapSpendableBalance(a.from, fromBalance)
 		candidateAmount := swapAmountForBalance(a.from, targetAmount, fromBalance)
 		if candidateAmount.IsZero() {
@@ -264,15 +285,25 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 	}
 
 	if selectedUser != nil {
-		a.user = selectedUser
-		a.fromBalance = selectedAvailableBalance
-
 		cl := a.Log().With().
 			Str("user", selectedUser.Name()).
 			Stringer("from", a.from).
 			Stringer("to", a.to).
 			Logger()
 		a.SetLogger(cl)
+		a.toBalance = sdkmath.ZeroUint()
+
+		toAcct, err := selectedUser.ChainClients[a.to.Chain].GetAccount(nil)
+		if err != nil {
+			a.Log().Warn().Err(err).Msg("failed to get to account")
+			selectedUser.Release()
+			return OpResult{
+				Continue: false,
+			}
+		}
+
+		a.user = selectedUser
+		a.fromBalance = selectedAvailableBalance
 
 		// get l1 address to store in state context
 		fromAddress, err := selectedUser.PubKey(a.from.Chain).GetAddress(a.from.Chain)
@@ -287,12 +318,7 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 		a.toAddress = toAddress
 
 		// get to asset balance for tracking
-		toAcct, err := selectedUser.ChainClients[a.to.Chain].GetAccount(nil)
-		if err != nil {
-			a.Log().Warn().Err(err).Msg("failed to get to account")
-		} else {
-			a.toBalance = toAcct.Coins.GetCoin(a.to).Amount
-		}
+		a.toBalance = accountAssetAmount(toAcct, a.to)
 
 		if err := a.updateSwapAmount(selectedSwapAmount, "available user balance"); err != nil {
 			a.releaseUserSelection()
@@ -634,9 +660,11 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	}
 
 	// check received amount
-	received := toAcct.Coins.GetCoin(a.to).Amount.Sub(a.toBalance)
+	currentToBalance := accountAssetAmount(toAcct, a.to)
+	received := common.SafeSub(currentToBalance, a.toBalance)
 	a.Log().Info().
 		Stringer("received", received).
+		Stringer("currentToBalance", currentToBalance).
 		Stringer("outAmountPlusMaxGas", outAmountPlusMaxGas).
 		Stringer("minExpected", a.minExpected).
 		Stringer("maxExpected", a.maxExpected).

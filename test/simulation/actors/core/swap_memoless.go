@@ -90,6 +90,9 @@ func swapMemolessActorTimeout(from, to common.Asset) time.Duration {
 	if from.Chain.Equals(common.XMRChain) || to.Chain.Equals(common.XMRChain) {
 		timeout += 2 * time.Minute
 	}
+	if from.Chain.Equals(common.SOLChain) || to.Chain.Equals(common.SOLChain) {
+		timeout += 2 * time.Minute
+	}
 	return timeout
 }
 
@@ -363,7 +366,7 @@ func (a *SwapMemolessActor) signSwap(config *OpConfig) OpResult {
 	a.swapTx = tx
 
 	client := a.user.ChainClients[a.from.Chain]
-	if a.from.Chain.Equals(common.TRONChain) {
+	if a.from.Chain.Equals(common.TRONChain) || a.from.Chain.Equals(common.SOLChain) {
 		a.signedSwap = nil
 		return OpResult{
 			Continue: true,
@@ -483,7 +486,7 @@ func (a *SwapMemolessActor) signTokenSwap() OpResult {
 func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
 	client := a.user.ChainClients[a.from.Chain]
 	var err error
-	if a.from.Chain.Equals(common.TRONChain) {
+	if a.from.Chain.Equals(common.TRONChain) || a.from.Chain.Equals(common.SOLChain) {
 		a.swapTxID, err = SignAndBroadcastTx(client, a.swapTx)
 	} else {
 		a.swapTxID, err = client.BroadcastTx(a.signedSwap)

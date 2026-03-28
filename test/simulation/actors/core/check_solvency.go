@@ -59,6 +59,20 @@ func solvencyDiff(a, b cosmos.Uint) cosmos.Uint {
 	return b.Sub(a)
 }
 
+func solvencyShortfall(vaultAmount, l1Amount cosmos.Uint) cosmos.Uint {
+	if l1Amount.GTE(vaultAmount) {
+		return cosmos.ZeroUint()
+	}
+	return vaultAmount.Sub(l1Amount)
+}
+
+func solvencyExcess(vaultAmount, l1Amount cosmos.Uint) cosmos.Uint {
+	if vaultAmount.GTE(l1Amount) {
+		return cosmos.ZeroUint()
+	}
+	return l1Amount.Sub(vaultAmount)
+}
+
 func solvencyTolerance(asset common.Asset) cosmos.Uint {
 	if asset.Equals(common.XMRAsset) {
 		return xmrSolvencyTolerance
@@ -66,8 +80,8 @@ func solvencyTolerance(asset common.Asset) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 
-func solvencyAmountsMatch(asset common.Asset, vaultAmount, l1Amount cosmos.Uint) (bool, cosmos.Uint, cosmos.Uint) {
-	diff := solvencyDiff(vaultAmount, l1Amount)
+func vaultIsSolvent(asset common.Asset, vaultAmount, l1Amount cosmos.Uint) (bool, cosmos.Uint, cosmos.Uint) {
+	diff := solvencyShortfall(vaultAmount, l1Amount)
 	tolerance := solvencyTolerance(asset)
 	return diff.LTE(tolerance), diff, tolerance
 }
@@ -241,26 +255,36 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 				a.Log().Error().Str("asset", assetStr).Msg("L1 amount not found for asset")
 			}
 			asset := vaultAssets[assetStr]
-			match, diff, tolerance := solvencyAmountsMatch(asset, vaultAmount, l1Amount)
-			if !match {
+			solvent, shortfall, tolerance := vaultIsSolvent(asset, vaultAmount, l1Amount)
+			if !solvent {
 				mismatches = append(mismatches, solvencyMismatch{
 					asset:       asset,
 					assetStr:    assetStr,
 					vaultAddr:   vaultAddrs[assetStr],
 					vaultAmount: vaultAmount,
 					l1Amount:    l1Amount,
-					diff:        diff,
+					diff:        shortfall,
 					tolerance:   tolerance,
 				})
 				continue
 			}
-			if !diff.IsZero() {
+			if excess := solvencyExcess(vaultAmount, l1Amount); !excess.IsZero() {
+				a.Log().Info().
+					Str("asset", assetStr).
+					Str("vault_address", vaultAddrs[assetStr].String()).
+					Str("vault_amount", vaultAmount.String()).
+					Str("l1_amount", l1Amount.String()).
+					Str("difference", excess.String()).
+					Msg("L1 amount exceeds vault amount, vault remains solvent")
+				continue
+			}
+			if !shortfall.IsZero() {
 				a.Log().Warn().
 					Str("asset", assetStr).
 					Str("vault_address", vaultAddrs[assetStr].String()).
 					Str("vault_amount", vaultAmount.String()).
 					Str("l1_amount", l1Amount.String()).
-					Str("difference", diff.String()).
+					Str("difference", shortfall.String()).
 					Str("tolerance", tolerance.String()).
 					Msg("vault and L1 amounts differ within tolerance")
 			}

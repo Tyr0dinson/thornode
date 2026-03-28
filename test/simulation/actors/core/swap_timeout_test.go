@@ -10,6 +10,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	simtypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
 func TestNewSwapActorTimeouts(t *testing.T) {
@@ -26,6 +27,16 @@ func TestNewSwapActorTimeouts(t *testing.T) {
 	if ethToXmr.Timeout != 4*time.Minute {
 		t.Fatalf("expected XMR swap timeout to be 4m, got %s", ethToXmr.Timeout)
 	}
+
+	btcToTron := NewSwapActor(common.BTCAsset, common.TRXAsset, rng)
+	if btcToTron.Timeout != 4*time.Minute {
+		t.Fatalf("expected TRON-destination swap timeout to be 4m, got %s", btcToTron.Timeout)
+	}
+
+	solToPolygon := NewSwapActor(common.SOLAsset, common.POLAsset, rng)
+	if solToPolygon.Timeout != 4*time.Minute {
+		t.Fatalf("expected SOL swap timeout to be 4m, got %s", solToPolygon.Timeout)
+	}
 }
 
 func TestNewSwapMemolessActorTimeouts(t *testing.T) {
@@ -41,6 +52,41 @@ func TestNewSwapMemolessActorTimeouts(t *testing.T) {
 	ethToXmr := NewSwapMemolessActor(common.ETHAsset, common.XMRAsset, MemolessTypeRef, rng)
 	if ethToXmr.Timeout != 7*time.Minute {
 		t.Fatalf("expected XMR memoless swap timeout to be 7m, got %s", ethToXmr.Timeout)
+	}
+
+	ethToSol := NewSwapMemolessActor(common.ETHAsset, common.SOLAsset, MemolessTypeRef, rng)
+	if ethToSol.Timeout != 7*time.Minute {
+		t.Fatalf("expected SOL memoless swap timeout to be 7m, got %s", ethToSol.Timeout)
+	}
+}
+
+func TestNewAggregatorSwapActorTimeouts(t *testing.T) {
+	t.Parallel()
+
+	rng := rand.New(rand.NewPCG(5, 6))
+
+	atomToEth := NewAggregatorSwapActor(
+		common.ATOMAsset,
+		common.ETHAsset,
+		"6f3848",
+		"0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25",
+		"1000000",
+		rng,
+	)
+	if atomToEth.Timeout != 4*time.Minute {
+		t.Fatalf("expected standard aggregator swap timeout to be 4m, got %s", atomToEth.Timeout)
+	}
+
+	solToEth := NewAggregatorSwapActor(
+		common.SOLAsset,
+		common.ETHAsset,
+		"6f3848",
+		"0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25",
+		"1000000",
+		rng,
+	)
+	if solToEth.Timeout != 12*time.Minute {
+		t.Fatalf("expected SOL aggregator swap timeout to be 12m, got %s", solToEth.Timeout)
 	}
 }
 
@@ -101,5 +147,109 @@ func TestMaxAmountWithEncodedRefAtOrAbove(t *testing.T) {
 	want := sdkmath.NewUint(941199999)
 	if !got.Equal(want) {
 		t.Fatalf("expected max encoded amount %s, got %s", want, got)
+	}
+}
+
+type memolessBroadcastClient struct {
+	signCalls      int
+	broadcastCalls int
+	lastSigned     []byte
+	signPayload    []byte
+	txid           string
+}
+
+func (m *memolessBroadcastClient) GetAccount(*common.PubKey) (*common.Account, error) {
+	return &common.Account{}, nil
+}
+
+func (m *memolessBroadcastClient) SignTx(simtypes.SimTx) ([]byte, error) {
+	m.signCalls++
+	if m.signPayload != nil {
+		return m.signPayload, nil
+	}
+	return []byte("fresh"), nil
+}
+
+func (m *memolessBroadcastClient) BroadcastTx(payload []byte) (string, error) {
+	m.broadcastCalls++
+	m.lastSigned = append([]byte(nil), payload...)
+	if m.txid == "" {
+		return "ok", nil
+	}
+	return m.txid, nil
+}
+
+func TestSwapMemolessBroadcastSwapUsesFreshSigningForSol(t *testing.T) {
+	t.Parallel()
+
+	client := &memolessBroadcastClient{
+		signPayload: []byte("fresh-sol"),
+		txid:        "sol-tx",
+	}
+	actor := &SwapMemolessActor{
+		SwapActor: SwapActor{
+			user: &simtypes.User{
+				ChainClients: map[common.Chain]simtypes.LiteChainClient{
+					common.SOLChain: client,
+				},
+			},
+			from: common.SOLAsset,
+		},
+		swapTx:     simtypes.SimTx{Chain: common.SOLChain},
+		signedSwap: []byte("stale-sol"),
+	}
+
+	result := actor.broadcastSwap(nil)
+	if !result.Continue || result.Error != nil {
+		t.Fatalf("expected SOL memoless broadcast to succeed, got %+v", result)
+	}
+	if client.signCalls != 1 {
+		t.Fatalf("expected fresh SOL signing during broadcast, got %d sign calls", client.signCalls)
+	}
+	if client.broadcastCalls != 1 {
+		t.Fatalf("expected 1 SOL broadcast attempt, got %d", client.broadcastCalls)
+	}
+	if string(client.lastSigned) != "fresh-sol" {
+		t.Fatalf("expected SOL broadcast to use freshly signed payload, got %q", string(client.lastSigned))
+	}
+	if actor.swapTxID != "sol-tx" {
+		t.Fatalf("expected SOL swap txid to be recorded, got %s", actor.swapTxID)
+	}
+}
+
+func TestSwapMemolessBroadcastSwapUsesPresignedPayloadForBtc(t *testing.T) {
+	t.Parallel()
+
+	client := &memolessBroadcastClient{
+		txid: "btc-tx",
+	}
+	actor := &SwapMemolessActor{
+		SwapActor: SwapActor{
+			user: &simtypes.User{
+				ChainClients: map[common.Chain]simtypes.LiteChainClient{
+					common.BTCChain: client,
+				},
+			},
+			from: common.BTCAsset,
+		},
+		swapTx:     simtypes.SimTx{Chain: common.BTCChain},
+		signedSwap: []byte("stale-btc"),
+	}
+
+	result := actor.broadcastSwap(nil)
+	if !result.Continue || result.Error != nil {
+		t.Fatalf("expected BTC memoless broadcast to succeed, got %+v", result)
+	}
+	if client.signCalls != 0 {
+		t.Fatalf("expected BTC memoless broadcast to reuse pre-signed payload, got %d sign calls", client.signCalls)
+	}
+	if client.broadcastCalls != 1 {
+		t.Fatalf("expected 1 BTC broadcast attempt, got %d", client.broadcastCalls)
+	}
+	if string(client.lastSigned) != "stale-btc" {
+		t.Fatalf("expected BTC broadcast to use cached payload, got %q", string(client.lastSigned))
+	}
+	if actor.swapTxID != "btc-tx" {
+		t.Fatalf("expected BTC swap txid to be recorded, got %s", actor.swapTxID)
 	}
 }

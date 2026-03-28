@@ -61,20 +61,9 @@ type TransactionResult struct {
 	Transaction RPCTxnData `json:"transaction"`
 }
 
-// GetTransaction makes a getTransaction RPC call using "finalized" commitment.
-func (s *SolRPC) GetTransaction(signature string) (*TransactionResult, error) {
-	return s.getTransaction(signature, "finalized")
-}
-
-// GetTransactionConfirmed makes a getTransaction RPC call using "confirmed"
-// commitment, which resolves as soon as the transaction has been voted on by a
-// supermajority of the cluster — well before finalization (~0.4s vs ~13s).
-// Use this when you need to verify a just-broadcast transaction quickly.
-func (s *SolRPC) GetTransactionConfirmed(signature string) (*TransactionResult, error) {
-	return s.getTransaction(signature, "confirmed")
-}
-
-func (s *SolRPC) getTransaction(signature, commitment string) (*TransactionResult, error) {
+// GetTransactionWithCommitment makes a getTransaction RPC call to the Solana RPC
+// with the requested commitment level.
+func (s *SolRPC) GetTransactionWithCommitment(signature, commitment string) (*TransactionResult, error) {
 	params := []interface{}{
 		signature,
 		map[string]interface{}{
@@ -94,4 +83,18 @@ func (s *SolRPC) getTransaction(signature, commitment string) (*TransactionResul
 	}
 
 	return &response.Result, nil
+}
+
+// GetTransaction makes a getTransaction RPC call to the Solana RPC using
+// "finalized" commitment, which matches the production scanner behavior.
+func (s *SolRPC) GetTransaction(signature string) (*TransactionResult, error) {
+	return s.GetTransactionWithCommitment(signature, "finalized")
+}
+
+// GetTransactionConfirmed makes a getTransaction RPC call using "confirmed"
+// commitment, which resolves as soon as the transaction has been voted on by a
+// supermajority of the cluster — well before finalization (~0.4s vs ~13s).
+// Use this when you need to verify a just-broadcast transaction quickly.
+func (s *SolRPC) GetTransactionConfirmed(signature string) (*TransactionResult, error) {
+	return s.GetTransactionWithCommitment(signature, "confirmed")
 }

@@ -24,7 +24,6 @@ genesis_init() {
 
   NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
   add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_IP_ADDRESS"
-  add_account "$NODE_ADDRESS" rune 100000000000
 
   # disable default bank transfer, and opt to use our own custom one
   disable_bank_send
@@ -48,6 +47,10 @@ genesis_init() {
 
     # simulation master
     add_account tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g rune 100000000000000 # master
+
+    # When the bootstrap validator uses a prefunded mnemonic such as "dog", avoid
+    # appending a second bank/auth entry for the same address.
+    add_account_if_missing "$NODE_ADDRESS" rune 100000000000
 
     # mint to reserve for mocknet
     reserve 22000000000000000
@@ -81,6 +84,10 @@ genesis_init() {
     reserve 5000000000000000
 
     set_bond_module # set bond module balance for invariant
+  fi
+
+  if [ "$NET" != "mocknet" ]; then
+    add_account "$NODE_ADDRESS" rune 100000000000
   fi
 
   if [ -n "${ETH_CONTRACT+x}" ]; then
