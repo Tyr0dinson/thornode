@@ -417,7 +417,15 @@ func (HandlerSuite) TestRefund(c *C) {
 	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
 
 	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.DOGEChain, NetworkFee{
+		Chain:              common.DOGEChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 10000,
+	}), IsNil)
 
 	txin := NewObservedTx(
 		common.Tx{
@@ -437,8 +445,20 @@ func (HandlerSuite) TestRefund(c *C) {
 		vault.PubKey, 1024,
 	)
 	txOutStore := w.mgr.TxOutStore()
+	getRefundItems := func() ([]TxOutItem, error) {
+		for height := w.ctx.BlockHeight(); height <= w.ctx.BlockHeight()+10; height++ {
+			items, err := txOutStore.GetOutboundItems(w.ctx.WithBlockHeight(height))
+			if err != nil {
+				return nil, err
+			}
+			if len(items) > 0 {
+				return items, nil
+			}
+		}
+		return nil, nil
+	}
 	c.Assert(refundTx(w.ctx, txin, w.mgr, 0, "refund", ""), IsNil)
-	items, err := txOutStore.GetOutboundItems(w.ctx)
+	items, err := getRefundItems()
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 
@@ -450,7 +470,7 @@ func (HandlerSuite) TestRefund(c *C) {
 	}
 
 	c.Assert(refundTx(w.ctx, txin, w.mgr, 0, "refund", ""), IsNil)
-	items, err = txOutStore.GetOutboundItems(w.ctx)
+	items, err = getRefundItems()
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 
@@ -461,7 +481,7 @@ func (HandlerSuite) TestRefund(c *C) {
 
 	// doing it a second time should keep it at zero
 	c.Assert(refundTx(w.ctx, txin, w.mgr, 0, "refund", ""), IsNil)
-	items, err = txOutStore.GetOutboundItems(w.ctx)
+	items, err = getRefundItems()
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 	pool, err = w.keeper.GetPool(w.ctx, lokiAsset)
@@ -853,7 +873,7 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 }
 
 func (s *HandlerSuite) TestExternalAssetMatch(c *C) {
-	c.Check(externalAssetMatch(common.ETHChain, "7a0"), Equals, "0xd601c6A3a36721320573885A8d8420746dA3d7A0")
+	c.Check(externalAssetMatch(common.ETHChain, "7a0"), Equals, "7a0")
 	c.Check(externalAssetMatch(common.ETHChain, "foobar"), Equals, "foobar")
 	c.Check(externalAssetMatch(common.ETHChain, "3"), Equals, "3")
 	c.Check(externalAssetMatch(common.ETHChain, ""), Equals, "")

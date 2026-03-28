@@ -1272,13 +1272,13 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 		ctx.Logger().Error("fail to get active vaults", "err", err)
 		return err
 	}
-
-	if len(active) == 0 {
-		return fmt.Errorf("dev error: no pubkey for native txn")
+	observedPubKey := common.EmptyPubKey
+	if len(active) > 0 {
+		observedPubKey = active[0].PubKey
 	}
 
 	observedTx := ObservedTx{
-		ObservedPubKey: active[0].PubKey,
+		ObservedPubKey: observedPubKey,
 		BlockHeight:    ctx.BlockHeight(),
 		Tx:             tx,
 		FinaliseHeight: ctx.BlockHeight(),

@@ -24,11 +24,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func TestObserverRoundTrip(t *testing.T) {
-	types2.SetupConfigForTest()
+	setupMocknetThorConfig()
 	var txs []*types.TxIn
 	deckBz, err := os.ReadFile("../../test/fixtures/observer/deck.json")
 	require.NoError(t, err)

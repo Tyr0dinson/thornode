@@ -1417,6 +1417,24 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	c.Assert(queryPoolsResp, NotNil)
 	c.Assert(queryPoolsResp.Memo, Equals, "")
 
+	longDest := "43hSSzguniAQWhHnwk1rcYH51z2thnf6AVfNaMwg9t99S78LtMrjrKdJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRY3YMUb"
+	longRefund := "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejK5g6JTU2K5uJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRXBN2hK"
+	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &types.QueryQuoteSwapRequest{
+		FromAsset:         common.BTCAsset.String(),
+		ToAsset:           common.XMRAsset.String(),
+		Amount:            "100000000",
+		Destination:       longDest,
+		RefundAddress:     longRefund,
+		Affiliate:         GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String(),
+		AffiliateBps:      "10/10/10",
+		StreamingInterval: "2",
+		StreamingQuantity: "5",
+		Extended:          true,
+	})
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "generated memo too long for source chain")
+	c.Assert(queryPoolsResp, IsNil)
+
 	// The following assertions are commented out because the request now fails due to fee parsing issues
 	// memo := fmt.Sprintf("=:r:%s/%s:97000000000/1/1:%s:50", addressTHOR, addressBTC, affiliateAddr)
 	// c.Assert(queryPoolsResp.Memo, Equals, memo)

@@ -959,6 +959,23 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		RefundAddress:         refundAddress,
 	}
 	memoString := memo.ShortString()
+	validateMemoLength := func(memo string) error {
+		if !sendMemo || fromAsset.IsNative() {
+			return nil
+		}
+
+		maxMemoLength := fromAsset.GetChain().MaxMemoLength()
+		if fromChain.IsUTXO() && req.Extended {
+			maxMemoLength = constants.MaxMemoSizeUtxoExtended
+		}
+		if len(memo) > maxMemoLength {
+			return fmt.Errorf("generated memo too long for source chain")
+		}
+		return nil
+	}
+	if err := validateMemoLength(memoString); err != nil {
+		return nil, err
+	}
 
 	// if from asset is a trade asset, create fake balance
 	if fromAsset.IsTradeAsset() {
@@ -1082,16 +1099,8 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		memoString = memo.ShortString()
 	}
 
-	// shorten the memo if necessary
-	if sendMemo && !fromAsset.IsNative() && len(memoString) > fromAsset.GetChain().MaxMemoLength() {
-		// this is the shortest we can make it
-		maxMemoLength := fromAsset.GetChain().MaxMemoLength()
-		if fromChain.IsUTXO() && req.Extended {
-			maxMemoLength = constants.MaxMemoSizeUtxoExtended
-		}
-		if len(memoString) > maxMemoLength {
-			return nil, fmt.Errorf("generated memo too long for source chain")
-		}
+	if err := validateMemoLength(memoString); err != nil {
+		return nil, err
 	}
 
 	maxQ := int64(maxSwapQuantity)
