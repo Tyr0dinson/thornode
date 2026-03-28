@@ -46,6 +46,7 @@ func NewAggregatorSwapActor(from, to common.Asset, aggregatorSuffix, aggregatorT
 		aggregatorTargetAsset: aggregatorTargetAsset,
 		aggregatorTargetLimit: aggregatorTargetLimit,
 	}
+	a.Timeout = aggregatorSwapActorTimeout(from, to)
 
 	a.Ops = append(a.Ops, a.acquireUser)
 	a.Ops = append(a.Ops, a.getQuote)
@@ -59,6 +60,16 @@ func NewAggregatorSwapActor(from, to common.Asset, aggregatorSuffix, aggregatorT
 	a.Ops = append(a.Ops, a.verifyAggregatorOutbound)
 
 	return &a.Actor
+}
+
+func aggregatorSwapActorTimeout(from, to common.Asset) time.Duration {
+	timeout := swapActorTimeout(from, to) + 2*time.Minute
+	if from.Chain.Equals(common.SOLChain) || to.Chain.Equals(common.SOLChain) {
+		// Aggregator swaps involving Solana can consume several full
+		// broadcast/re-sign cycles while waiting for finalized confirmation.
+		timeout += 6 * time.Minute
+	}
+	return timeout
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

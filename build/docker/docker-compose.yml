@@ -148,7 +148,11 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
-      start_period: 10s
+      # Clean-volume mocknet boots can spend tens of seconds validating genesis,
+      # upgrading IAVL stores, and importing the first state before RPC is ready.
+      # Keep the container in "starting" during that bootstrap window so cluster
+      # depends_on checks do not abort while thornode is still legitimately coming up.
+      start_period: 60s
 
   thornode:
     <<: *thornode

@@ -7,67 +7,90 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-func TestSolvencyAmountsMatch(t *testing.T) {
+func TestVaultIsSolvent(t *testing.T) {
 	tests := []struct {
-		name       string
-		asset      common.Asset
-		vault      cosmos.Uint
-		l1         cosmos.Uint
-		match      bool
-		difference cosmos.Uint
-		tolerance  cosmos.Uint
+		name      string
+		asset     common.Asset
+		vault     cosmos.Uint
+		l1        cosmos.Uint
+		solvent   bool
+		shortfall cosmos.Uint
+		tolerance cosmos.Uint
 	}{
 		{
-			name:       "exact match for non XMR asset",
-			asset:      common.BTCAsset,
-			vault:      cosmos.NewUint(100),
-			l1:         cosmos.NewUint(100),
-			match:      true,
-			difference: cosmos.ZeroUint(),
-			tolerance:  cosmos.ZeroUint(),
+			name:      "exact match for non XMR asset",
+			asset:     common.BTCAsset,
+			vault:     cosmos.NewUint(100),
+			l1:        cosmos.NewUint(100),
+			solvent:   true,
+			shortfall: cosmos.ZeroUint(),
+			tolerance: cosmos.ZeroUint(),
 		},
 		{
-			name:       "non XMR asset still requires exact match",
-			asset:      common.BTCAsset,
-			vault:      cosmos.NewUint(100),
-			l1:         cosmos.NewUint(99),
-			match:      false,
-			difference: cosmos.NewUint(1),
-			tolerance:  cosmos.ZeroUint(),
+			name:      "non XMR asset allows over solvency",
+			asset:     common.BTCAsset,
+			vault:     cosmos.NewUint(100),
+			l1:        cosmos.NewUint(101),
+			solvent:   true,
+			shortfall: cosmos.ZeroUint(),
+			tolerance: cosmos.ZeroUint(),
 		},
 		{
-			name:       "xmr allows small dust difference",
-			asset:      common.XMRAsset,
-			vault:      cosmos.NewUint(100),
-			l1:         cosmos.NewUint(97),
-			match:      true,
-			difference: cosmos.NewUint(3),
-			tolerance:  xmrSolvencyTolerance,
+			name:      "non XMR asset still fails on shortfall",
+			asset:     common.BTCAsset,
+			vault:     cosmos.NewUint(100),
+			l1:        cosmos.NewUint(99),
+			solvent:   false,
+			shortfall: cosmos.NewUint(1),
+			tolerance: cosmos.ZeroUint(),
 		},
 		{
-			name:       "xmr still fails beyond tolerance",
-			asset:      common.XMRAsset,
-			vault:      cosmos.NewUint(100),
-			l1:         cosmos.NewUint(70),
-			match:      false,
-			difference: cosmos.NewUint(30),
-			tolerance:  xmrSolvencyTolerance,
+			name:      "xmr allows small dust shortfall",
+			asset:     common.XMRAsset,
+			vault:     cosmos.NewUint(100),
+			l1:        cosmos.NewUint(97),
+			solvent:   true,
+			shortfall: cosmos.NewUint(3),
+			tolerance: xmrSolvencyTolerance,
+		},
+		{
+			name:      "xmr still fails beyond tolerance",
+			asset:     common.XMRAsset,
+			vault:     cosmos.NewUint(100),
+			l1:        cosmos.NewUint(70),
+			solvent:   false,
+			shortfall: cosmos.NewUint(30),
+			tolerance: xmrSolvencyTolerance,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			match, difference, tolerance := solvencyAmountsMatch(tc.asset, tc.vault, tc.l1)
-			if match != tc.match {
-				t.Fatalf("expected match=%t, got %t", tc.match, match)
+			solvent, shortfall, tolerance := vaultIsSolvent(tc.asset, tc.vault, tc.l1)
+			if solvent != tc.solvent {
+				t.Fatalf("expected solvent=%t, got %t", tc.solvent, solvent)
 			}
-			if !difference.Equal(tc.difference) {
-				t.Fatalf("expected difference %s, got %s", tc.difference, difference)
+			if !shortfall.Equal(tc.shortfall) {
+				t.Fatalf("expected shortfall %s, got %s", tc.shortfall, shortfall)
 			}
 			if !tolerance.Equal(tc.tolerance) {
 				t.Fatalf("expected tolerance %s, got %s", tc.tolerance, tolerance)
 			}
 		})
+	}
+}
+
+func TestSolvencyExcess(t *testing.T) {
+	t.Parallel()
+
+	excess := solvencyExcess(cosmos.NewUint(100), cosmos.NewUint(125))
+	if !excess.Equal(cosmos.NewUint(25)) {
+		t.Fatalf("expected excess of 25, got %s", excess)
+	}
+
+	none := solvencyExcess(cosmos.NewUint(125), cosmos.NewUint(100))
+	if !none.IsZero() {
+		t.Fatalf("expected zero excess, got %s", none)
 	}
 }
 
