@@ -26,9 +26,11 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithChainHalt(c *C) {
 	mgr.K = k
 	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(networkMgr, NotNil)
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
 
 	// 1 standby node
 	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
 	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
 
 	// 1 vault with btc, created at block 1 (so lastChurnHeight=1)
@@ -37,6 +39,7 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithChainHalt(c *C) {
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	// Set block height to churn interval after vault creation (1 + 60 = 61)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
 	ctx = ctx.WithBlockHeight(61)
 
 	// set mimir to halt btc chain
@@ -737,6 +740,7 @@ func (vts *ValidatorMgrTestSuite) TestFindNextVaultNodeAccountsMax(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(validatorMgr, NotNil)
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
 	// create active nodes
 	for i := 0; i < 12; i++ {
 		na := GetRandomValidatorNode(NodeActive)
@@ -748,6 +752,7 @@ func (vts *ValidatorMgrTestSuite) TestFindNextVaultNodeAccountsMax(c *C) {
 	// create standby nodes
 	for i := 0; i < 12; i++ {
 		na := GetRandomValidatorNode(NodeStandby)
+		na.Bond = cosmos.NewUint(uint64(minBond))
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	}
 	err := validatorMgr.markReadyActors(ctx)
@@ -958,6 +963,7 @@ func (vts *ValidatorMgrTestSuite) TestMarkMissingActors(c *C) {
 	// Set MissingBlockChurnOut mimir
 	missingBlocksThreshold := int64(10)
 	mgr.Keeper().SetMimir(ctx, constants.MissingBlockChurnOut.String(), missingBlocksThreshold)
+	mgr.Keeper().SetMimir(ctx, constants.MaxMissingBlockChurnOut.String(), 2)
 
 	// Create active nodes with different missing blocks counts
 	activeNode1 := GetRandomValidatorNode(NodeActive)
@@ -1010,6 +1016,7 @@ func (vts *ValidatorMgrTestSuite) TestMarkMissingActors_EdgeCases(c *C) {
 	// Set MissingBlockChurnOut mimir to exactly match a node's missing blocks
 	missingBlocksThreshold := int64(10)
 	mgr.Keeper().SetMimir(ctx, constants.MissingBlockChurnOut.String(), missingBlocksThreshold)
+	mgr.Keeper().SetMimir(ctx, constants.MaxMissingBlockChurnOut.String(), 1)
 
 	// Create node with exactly the threshold number of missing blocks
 	activeNode := GetRandomValidatorNode(NodeActive)

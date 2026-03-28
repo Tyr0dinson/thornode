@@ -1255,7 +1255,10 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
-	// Schedule outbound for what was already swapped
+	// Schedule outbound for what was already swapped whenever settlement is the
+	// place materializing the final outbound. The advanced swap queue skips
+	// outbound creation during execution and relies on settlement to create the
+	// completed swap outbound, even after multiple sub-swaps have already run.
 	if !msg.State.Out.IsZero() {
 		// Parse memo to check if this is a savers add
 		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.Tx.Memo)

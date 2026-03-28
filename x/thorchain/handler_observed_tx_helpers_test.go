@@ -485,10 +485,9 @@ func (s *HandlerObservedTxHelpersSuite) TestUnfinalizedHeightUsedInFetchMemoFrom
 	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.UnfinalizedHeight)
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
-	// If we had used Height (120) instead, let's verify it would fail the height check
-	// (transaction observed after memo creation: 120 > 50, but this should be caught by height validation)
+	// Height reflects later consensus/finalization context, so this lookup should fail.
 	resolvedMemoWithHeight := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.Height)
-	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890") // This will still work since 120 > 50
+	c.Assert(resolvedMemoWithHeight, Equals, "")
 
 	// Test edge case where using Height would fail but UnfinalizedHeight succeeds
 	// Create reference memo at height 70

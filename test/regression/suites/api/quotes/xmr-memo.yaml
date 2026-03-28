@@ -14,7 +14,7 @@ asserts:
   - .|length == 2
 ---
 ########################################################################################
-# Basic BTC -> XMR quote should succeed
+# Basic BTC -> XMR quote exceeds the default BTC memo limit
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
@@ -23,10 +23,9 @@ params:
   to_asset: XMR.XMR
   amount: 100000000
   destination: {{ addr_xmr_fox }}
+status: 400
 asserts:
-  - .expected_amount_out|tonumber > 0
-  - .memo|startswith("=:")
-  - .memo|contains("{{ addr_xmr_fox }}")
+  - .message|contains("generated memo too long for source chain")
 ---
 ########################################################################################
 # XMR destination + refund address is too long for default BTC memo limit

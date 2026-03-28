@@ -117,8 +117,10 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	}), IsNil)
 	addresses := make([]cosmos.AccAddress, 4)
 	var existingValidators []string
+	minBond := consts.GetInt64Value(constants.MinimumBondInRune)
 	for i := 0; i <= 3; i++ {
 		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(uint64(minBond))
 		addresses[i] = na.NodeAddress
 		na.SignerMembership = common.PubKeys{vault.PubKey}.Strings()
 		if i == 0 { // give the first node account slash points
@@ -138,6 +140,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 
 	// create new node account to rotate in
 	na := GetRandomValidatorNode(NodeReady)
+	na.Bond = cosmos.NewUint(uint64(minBond))
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// trigger marking bad actors as well as a keygen
@@ -166,7 +169,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	signer, err := common.PubKey(keygen.Members[0]).GetThorAddress()
 	c.Assert(err, IsNil)
 	keygenTime := int64(1024)
-	msg, err := NewMsgTssPoolV2(keygen.Members, newVaultPk, []byte("fakeSignature"), nil, AsgardKeygen, ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), signer, keygenTime, GetRandomPubKey(), nil)
+	msg, err := NewMsgTssPoolV2(keygen.Members, newVaultPk, nil, nil, AsgardKeygen, ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), signer, keygenTime, GetRandomPubKey(), []byte("backup"))
 	c.Assert(err, IsNil)
 	tssHandler := NewTssHandler(mgr)
 

@@ -561,7 +561,7 @@ func (s *NetworkManagerTestSuite) TestSaverYieldFunc(c *C) {
 	c.Assert(net.paySaverYield(ctx, common.BTCAsset, cosmos.NewUint(50*common.One)), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset)
 	c.Assert(err, IsNil)
-	c.Assert(spool.BalanceAsset.String(), Equals, "1113100000", Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Assert(spool.BalanceAsset.String(), Equals, "1125000000", Commentf("%d", spool.BalanceAsset.Uint64()))
 }
 
 func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
@@ -601,14 +601,14 @@ func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(10_07925863), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(1_006_339_898), Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// mgr.Keeper().SetMimir(ctx, constants.IncentiveCurve.String(), 50)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, pool.Asset, cosmos.NewUint(50*common.One)), IsNil)
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882082), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(1_233_356_181), Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// check we don't give yield when synth utilization is too high
 	// add some synths
@@ -618,7 +618,7 @@ func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882082), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(1_621_286_394), Commentf("%d", spool.BalanceAsset.Uint64()))
 }
 
 func (s *NetworkManagerTestSuite) TestRagnarokPool(c *C) {

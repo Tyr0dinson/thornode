@@ -386,6 +386,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 	}
 
 	total := 0
+	var batchWG sync.WaitGroup
 	// Receive all batches
 	for {
 		// Read next message
@@ -396,6 +397,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 
 		// Check if this is the end marker
 		if len(message) >= 1 && bytes.Equal(message[:1], prefixBatchEnd) {
+			batchWG.Wait()
 			// Send final acknowledgment
 			if err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
 				return fmt.Errorf("failed to send final ack: %w", err)
@@ -457,7 +459,11 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 		}
 
 		// Add the QuorumTxs to our collection
-		go s.processAttestationStateBatch(logger, batch)
+		batchWG.Add(1)
+		go func(batch common.QuorumState) {
+			defer batchWG.Done()
+			s.processAttestationStateBatch(logger, batch)
+		}(batch)
 
 		total += len(batch.QuoTxs)
 

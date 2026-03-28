@@ -11,7 +11,7 @@ type AddressSuite struct{}
 var _ = Suite(&AddressSuite{})
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 16)
+	c.Assert(AllChains, HasLen, 17)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)

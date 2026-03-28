@@ -1680,7 +1680,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 		}
 		// Decrement the MaxRuneSupply mimir by the amount of RUNE burnt
 		currentMaxRuneSupply := cosmos.SafeUintFromInt64(vm.k.GetConfigInt64(ctx, constants.MaxRuneSupply))
-		currentMaxRuneSupply = currentMaxRuneSupply.Sub(systemIncomeBurnDeduct)
+		currentMaxRuneSupply = common.SafeSub(currentMaxRuneSupply, systemIncomeBurnDeduct)
 		vm.k.SetMimir(ctx, constants.MaxRuneSupply.String(), int64(currentMaxRuneSupply.Uint64()))
 	}
 

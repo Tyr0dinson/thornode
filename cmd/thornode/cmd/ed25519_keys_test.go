@@ -38,7 +38,7 @@ func (*ED25519TestSuite) TestGetEd25519Keys(c *C) {
 	// nolint
 	pubKey, err := bech32.MarshalPubKey(bech32.AccPK, tmp)
 	c.Assert(err, IsNil)
-	c.Assert(pubKey, Equals, "tthorpub1zcjduepqrcthx0ke3r2z39rp42xrr777af7qfcs6wcxtxck6tj9j0ap8cl0q0msnrn")
+	c.Assert(pubKey, Equals, "thorpub1zcjduepqrcthx0ke3r2z39rp42xrr777af7qfcs6wcxtxck6tj9j0ap8cl0qjsfpqy")
 
 	mnemonic = `invalid grape safe sound obtain bachelor festival profit iron meat moon exit garbage chapter promote noble grocery blood letter junk click mesh arm shop decorate`
 	result, err = ed25519.DeriveKeypairFromMnemonic(mnemonic, "", ed25519.HDPath)

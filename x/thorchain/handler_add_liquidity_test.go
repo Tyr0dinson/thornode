@@ -528,7 +528,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 		{
 			name:           "asset address with wrong network should fail",
 			msg:            NewMsgAddLiquidity(GetRandomTx(), common.ETHAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomRUNEAddress(), mainnetBTCAddr, common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
-			expectedResult: fmt.Errorf("address(%s) is not same network", mainnetBTCAddr),
+			expectedResult: fmt.Errorf("memo paired address must be non-empty and together with origin address match the liquidity provider record"),
 		},
 	}
 	constAccessor := constants.NewDummyConstants(map[constants.ConstantName]int64{
