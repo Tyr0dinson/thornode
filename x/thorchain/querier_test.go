@@ -1260,9 +1260,9 @@ func (s *QuerierSuite) TestQueryVersion(c *C) {
 }
 
 func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
-	// Success example, secp256k1 pubkey from Mocknet node tthor1jgnk2mg88m57csrmrlrd6c3qe4lag3e33y2f3k
-	var mocknetPubKey common.PubKey = "tthorpub1addwnpepqt8tnluxnk3y5quyq952klgqnlmz2vmaynm40fp592s0um7ucvjh5lc2l2z"
-	c.Assert(getPeerIDFromPubKey(mocknetPubKey), Equals, "16Uiu2HAm9LeTqHJWSa67eHNZzSz3yKb64dbj7A4V1Ckv9hXyDkQR")
+	// Success example for the current THOR pubkey prefix.
+	var pubKey common.PubKey = "thorpub1addwnpepqt8tnluxnk3y5quyq952klgqnlmz2vmaynm40fp592s0um7ucvjh5dgzmyy"
+	c.Assert(getPeerIDFromPubKey(pubKey), Equals, "16Uiu2HAm9LeTqHJWSa67eHNZzSz3yKb64dbj7A4V1Ckv9hXyDkQR")
 
 	// Failure example.
 	expectedErrorString := "fail to parse account pub key(nonsense): decoding bech32 failed: invalid separator index -1"
@@ -1318,7 +1318,7 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	c.Assert(s.mgr.Keeper().SetNodeAccount(s.ctx, nodeAccount), IsNil)
 
 	// pubKey := GetRandomPubKey()
-	asgard := NewVault(
+	asgard := NewVaultV2(
 		s.ctx.BlockHeight(),
 		ActiveVault,
 		AsgardVault,
@@ -1326,9 +1326,14 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 		common.Chains{
 			common.BTCChain,
 			common.ETHChain,
+			common.XMRChain,
 		}.Strings(),
 		[]ChainContract{},
+		GetRandomEd25519PubKey(),
 	)
+	asgard.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
+	})
 
 	c.Assert(s.mgr.Keeper().SetVault(s.ctx, asgard), IsNil)
 
@@ -1357,6 +1362,12 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	poolXMR.LPUnits = cosmos.NewUint(100)
 
 	err = s.mgr.Keeper().SetPool(s.ctx, poolXMR)
+	c.Assert(err, IsNil)
+	err = s.mgr.Keeper().SaveNetworkFee(s.ctx, common.XMRChain, NetworkFee{
+		Chain:              common.XMRChain,
+		TransactionSize:    10000,
+		TransactionFeeRate: 10000,
+	})
 	c.Assert(err, IsNil)
 
 	var addressBTC, addressTHOR string
