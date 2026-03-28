@@ -5,6 +5,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -38,7 +39,8 @@ func (s *StorageSuite) TestStorage(c *C) {
 	c.Assert(store.Remove(item), IsNil)
 	c.Check(store.Has(item.Key()), Equals, false)
 
-	pk := common.PubKey("tthorpub1addwnpepqfup3y8p0egd7ml7vrnlxgl3wvnp89mpn0tjpj0p2nm2gh0n9hlrvrtylay")
+	pk, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
 
 	spent := NewTxOutStoreItem(10, types.TxOutItem{Chain: common.ETHChain, VaultPubKey: pk, Memo: "spent"}, 0)
 	spent.Status = TxSpent

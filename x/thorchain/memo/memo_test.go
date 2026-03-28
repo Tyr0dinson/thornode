@@ -437,7 +437,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Check(memo.GetDestination().String(), Equals, "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Check(memo.IsType(TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
 
-	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:ETH.ETH:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:1000")
+	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:ETH.ETH:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:"+thorAddr.String()+":1000")
 	c.Assert(err, IsNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "TCY:"+thorAddr.String())
@@ -668,10 +668,11 @@ func (s *MemoSuite) TestParse(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "whatever") // not support
 	c.Assert(err, NotNil)
 
-	memo, err = ParseMemoWithTHORNames(ctx, k, "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==")
+	execAddr := types.GetRandomBech32Addr().String()
+	memo, err = ParseMemoWithTHORNames(ctx, k, "x:"+execAddr+":AA==")
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxExec), Equals, true)
-	c.Check(memo.String(), Equals, "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==")
+	c.Check(memo.String(), Equals, "x:"+execAddr+":AA==")
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a") // invalid thor address
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy-") // emptu bps

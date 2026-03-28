@@ -2125,6 +2125,7 @@ func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapSynthTargetNotSubtrac
 func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create a pool
 	pool := NewPool()
@@ -2655,6 +2656,7 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncome(c *C) {
 func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeTradeAsset(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create an active vault with BTC asset
 	vaultPubKey := GetRandomPubKey()
@@ -2700,6 +2702,7 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeTradeAsset(c *C) {
 func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeSecuredAsset(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create an active vault with BTC asset
 	vaultPubKey := GetRandomPubKey()

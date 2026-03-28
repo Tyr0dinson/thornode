@@ -10,14 +10,16 @@ type VaultSuiteV2 struct{}
 var _ = Suite(&VaultSuiteV2{})
 
 func (s *VaultSuiteV2) TestVaultV2(c *C) {
+	SetupConfigForTest()
+
 	vault := Vault{}
 	c.Check(vault.IsEmpty(), Equals, true)
 	c.Check(vault.Valid(), NotNil)
 
-	poolPk, err := common.NewPubKey("tthorpub1addwnpepqvwfjs23krpfteqgqecmaw2hek54y6uy99jrs2utgfhzu2a48wfhkw4xen7")
+	poolPk, err := common.NewPubKey("thorpub1addwnpepqvwfjs23krpfteqgqecmaw2hek54y6uy99jrs2utgfhzu2a48wfhku9waac")
 	c.Check(err, IsNil)
 
-	poolPkEddsa, err := common.NewPubKey("tthorpub1zcjduepqnd6pdwxvzu35dh60d256sewc5xczlxa35jrzq4uyd95x5476afrs9lzd5u")
+	poolPkEddsa, err := common.NewPubKey("thorpub1zcjduepqnd6pdwxvzu35dh60d256sewc5xczlxa35jrzq4uyd95x5476afrsc5mlht")
 
 	c.Check(err, IsNil)
 	vault = NewVaultV2(12, VaultStatus_ActiveVault, VaultType_AsgardVault, poolPk, common.Chains{common.ETHChain, common.SOLChain}.Strings(), []ChainContract{}, poolPkEddsa)
