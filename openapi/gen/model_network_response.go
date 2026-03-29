@@ -30,7 +30,7 @@ type NetworkResponse struct {
 	TotalReserve string `json:"total_reserve"`
 	// Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
 	VaultsMigrating bool `json:"vaults_migrating"`
-	// indicates whether an active Asgard vault currently has spendable XMR funds
+	// Indicates whether an active Asgard vault currently has spendable XMR funds
 	XmrActiveVaultReady bool `json:"xmr_active_vault_ready"`
 	// Sum of the gas the network has spent to send outbounds
 	GasSpentRune string `json:"gas_spent_rune"`
@@ -622,4 +622,5 @@ func (v *NullableNetworkResponse) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
 
