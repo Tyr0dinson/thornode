@@ -322,6 +322,7 @@ test-simulation:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
+  timeout: 2h
   retry:
     max: 2
     when:
