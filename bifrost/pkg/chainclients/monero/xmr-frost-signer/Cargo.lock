@@ -390,20 +390,6 @@ dependencies = [
 [[package]]
 name = "ciphersuite"
 version = "0.4.2"
-dependencies = [
- "digest",
- "ff",
- "flexible-transcript 0.3.4",
- "group",
- "rand_core",
- "std-shims 0.1.4",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "ciphersuite"
-version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ae44ce6224d75ced726e5597265b8f334b9bf4767b8b42e058f2304005d8475"
 dependencies = [
@@ -420,6 +406,21 @@ dependencies = [
  "sha2",
  "sha3",
  "std-shims 0.1.5",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "ciphersuite"
+version = "0.4.2"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
+dependencies = [
+ "digest",
+ "ff",
+ "flexible-transcript 0.3.4 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
+ "group",
+ "rand_core",
+ "std-shims 0.1.4",
  "subtle",
  "zeroize",
 ]
@@ -555,8 +556,9 @@ dependencies = [
 [[package]]
 name = "dalek-ff-group"
 version = "0.4.4"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
 dependencies = [
- "ciphersuite 0.4.2",
+ "ciphersuite 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
  "crypto-bigint",
  "curve25519-dalek",
  "digest",
@@ -664,17 +666,6 @@ dependencies = [
 [[package]]
 name = "dkg"
 version = "0.6.1"
-dependencies = [
- "borsh",
- "ciphersuite 0.4.2",
- "std-shims 0.1.4",
- "thiserror 2.0.18",
- "zeroize",
-]
-
-[[package]]
-name = "dkg"
-version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881ac13c8de9ec314164a624980704110bbba50f7f5027b4dc839ad9e060f001"
 dependencies = [
@@ -686,17 +677,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "dkg"
+version = "0.6.1"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
+dependencies = [
+ "borsh",
+ "ciphersuite 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
+ "std-shims 0.1.4",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
 name = "dkg-pedpop"
 version = "0.6.0"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
 dependencies = [
  "chacha20",
- "ciphersuite 0.4.2",
- "dkg 0.6.1",
+ "ciphersuite 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
+ "dkg 0.6.1 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
  "dleq",
- "flexible-transcript 0.3.4",
- "multiexp 0.4.2",
+ "flexible-transcript 0.3.4 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
+ "multiexp 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
  "rand_core",
- "schnorr-signatures 0.5.2",
+ "schnorr-signatures 0.5.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
  "thiserror 2.0.18",
  "zeroize",
 ]
@@ -704,12 +708,13 @@ dependencies = [
 [[package]]
 name = "dleq"
 version = "0.4.1"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
 dependencies = [
  "digest",
  "ff",
- "flexible-transcript 0.3.4",
+ "flexible-transcript 0.3.4 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
  "group",
- "multiexp 0.4.2",
+ "multiexp 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
  "rand_core",
  "rustversion",
  "thiserror 2.0.18",
@@ -805,17 +810,6 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 [[package]]
 name = "flexible-transcript"
 version = "0.3.4"
-dependencies = [
- "blake2",
- "digest",
- "merlin",
- "std-shims 0.1.4",
- "zeroize",
-]
-
-[[package]]
-name = "flexible-transcript"
-version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "329fdf3a39d36921c94b665764caa152fdf08f0ed631085ba4ee7e51899d93b4"
 dependencies = [
@@ -824,6 +818,18 @@ dependencies = [
  "merlin",
  "std-shims 0.1.5",
  "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "flexible-transcript"
+version = "0.3.4"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
+dependencies = [
+ "blake2",
+ "digest",
+ "merlin",
+ "std-shims 0.1.4",
  "zeroize",
 ]
 
@@ -1814,18 +1820,6 @@ dependencies = [
 [[package]]
 name = "multiexp"
 version = "0.4.2"
-dependencies = [
- "ff",
- "group",
- "rand_core",
- "rustversion",
- "std-shims 0.1.4",
- "zeroize",
-]
-
-[[package]]
-name = "multiexp"
-version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ec2ce93a6f06ac6cae04c1da3f2a6a24fcfc1f0eb0b4e0f3d302f0df45326cb"
 dependencies = [
@@ -1834,6 +1828,19 @@ dependencies = [
  "rand_core",
  "rustversion",
  "std-shims 0.1.5",
+ "zeroize",
+]
+
+[[package]]
+name = "multiexp"
+version = "0.4.2"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
+dependencies = [
+ "ff",
+ "group",
+ "rand_core",
+ "rustversion",
+ "std-shims 0.1.4",
  "zeroize",
 ]
 
@@ -2388,18 +2395,6 @@ dependencies = [
 [[package]]
 name = "schnorr-signatures"
 version = "0.5.2"
-dependencies = [
- "ciphersuite 0.4.2",
- "flexible-transcript 0.3.4",
- "multiexp 0.4.2",
- "rand_core",
- "std-shims 0.1.4",
- "zeroize",
-]
-
-[[package]]
-name = "schnorr-signatures"
-version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11fe30c28740bba75dc4649a8985861784e8a44fd636706076edb7cb2aec5765"
 dependencies = [
@@ -2408,6 +2403,19 @@ dependencies = [
  "multiexp 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand_core",
  "std-shims 0.1.5",
+ "zeroize",
+]
+
+[[package]]
+name = "schnorr-signatures"
+version = "0.5.2"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
+dependencies = [
+ "ciphersuite 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
+ "flexible-transcript 0.3.4 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
+ "multiexp 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
+ "rand_core",
+ "std-shims 0.1.4",
  "zeroize",
 ]
 
@@ -2594,6 +2602,7 @@ dependencies = [
 [[package]]
 name = "simple-request"
 version = "0.1.0"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
 dependencies = [
  "http-body-util",
  "hyper",
@@ -2666,6 +2675,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "std-shims"
 version = "0.1.4"
+source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"
 dependencies = [
  "hashbrown 0.14.5",
  "rustversion",
@@ -3686,7 +3696,7 @@ dependencies = [
  "bech32",
  "chacha20poly1305",
  "chrono",
- "ciphersuite 0.4.2",
+ "ciphersuite 0.4.2 (git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)",
  "curve25519-dalek",
  "dalek-ff-group 0.4.4",
  "dashmap",

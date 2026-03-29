@@ -779,8 +779,6 @@ services:
     build:
       context: ../../
       dockerfile: build/docker/xmr-frost-signer/Dockerfile
-      additional_contexts:
-        serai: ../../../serai
     image: thornode-xmr-frost-signer:latest
     restart: unless-stopped
     depends_on:

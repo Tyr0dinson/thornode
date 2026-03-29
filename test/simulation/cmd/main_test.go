@@ -589,7 +589,7 @@ func TestSimulationStageOrder(t *testing.T) {
 }
 
 func TestXMRFrostSignerDockerBuilderSupportsCargoLockfile(t *testing.T) {
-	cargoLock := readRepoFile(t, "xmr-frost-signer/Cargo.lock")
+	cargoLock := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock")
 	if !strings.Contains(cargoLock, "\nversion = 4\n") {
 		t.Fatal("expected xmr-frost-signer/Cargo.lock to use lockfile version 4")
 	}
@@ -616,20 +616,32 @@ func TestXMRFrostSignerDockerBuilderSupportsCargoLockfile(t *testing.T) {
 	}
 }
 
-func TestXMRFrostSignerDockerBuildIncludesSeraiPathDependencies(t *testing.T) {
-	cargoToml := readRepoFile(t, "xmr-frost-signer/Cargo.toml")
-	if !strings.Contains(cargoToml, "../../serai/") {
-		t.Fatal("expected xmr-frost-signer/Cargo.toml to use sibling serai path dependencies")
+func TestXMRFrostSignerCargoPinsSeraiGitDependencies(t *testing.T) {
+	cargoToml := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml")
+	for _, snippet := range []string{
+		`dkg-pedpop = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
+		`dalek-ff-group = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
+		`ciphersuite = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391", features = [`,
+		`simple-request = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
+	} {
+		if !strings.Contains(cargoToml, snippet) {
+			t.Fatalf("expected xmr-frost-signer/Cargo.toml to contain %q", snippet)
+		}
+	}
+
+	cargoLock := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock")
+	if !strings.Contains(cargoLock, `source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"`) {
+		t.Fatal("expected xmr-frost-signer/Cargo.lock to pin Serai crates to the documented git revision")
 	}
 
 	compose := readRepoFile(t, "build/docker/docker-compose.yml")
-	if !strings.Contains(compose, "additional_contexts:") || !strings.Contains(compose, "serai: ../../../serai") {
-		t.Fatal("xmr-frost-signer docker compose build must expose sibling serai checkout as a named build context")
+	if strings.Contains(compose, "additional_contexts:") || strings.Contains(compose, "serai: ../../../serai") {
+		t.Fatal("xmr-frost-signer docker compose build should no longer rely on a sibling serai checkout build context")
 	}
 
 	dockerfile := readRepoFile(t, "build/docker/xmr-frost-signer/Dockerfile")
-	if !strings.Contains(dockerfile, "COPY --from=serai . /serai") {
-		t.Fatal("xmr-frost-signer Dockerfile must copy the sibling serai checkout into /serai for Cargo path dependencies")
+	if strings.Contains(dockerfile, "COPY --from=serai . /serai") {
+		t.Fatal("xmr-frost-signer Dockerfile should no longer vendor a sibling serai checkout into the build context")
 	}
 }
 
@@ -682,13 +694,13 @@ func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {
 	for _, snippet := range []string{
 		".git",
 		"thornode",
-		"xmr-frost-signer/*",
-		"!xmr-frost-signer/Cargo.lock",
-		"!xmr-frost-signer/Cargo.toml",
-		"!xmr-frost-signer/LICENSE",
-		"!xmr-frost-signer/README.md",
-		"!xmr-frost-signer/src",
-		"!xmr-frost-signer/src/**",
+		"bifrost/pkg/chainclients/monero/xmr-frost-signer/*",
+		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock",
+		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml",
+		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/LICENSE",
+		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md",
+		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src",
+		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**",
 		"**/target",
 	} {
 		if !strings.Contains(dockerignore, snippet) {

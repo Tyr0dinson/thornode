@@ -7,12 +7,8 @@ license = "AGPL-3.0-only"
 publish = false
 
 [dependencies]
-# Monero/FROST ecosystem (serai)
-# NOTE: The serai ecosystem crates are not fully published to crates.io.
-# We use the mirror crates which track the serai repo releases.
-# When serai publishes official crates, switch to those.
-# For now, we define traits and types that match the serai API surface
-# and leave the actual crypto implementation behind feature flags.
+# Serai-derived crates are pinned to an auditable upstream revision so the
+# provenance of the Rust crypto/request stack is explicit in both source and CI.
 
 # Web server
 axum = { version = "0.7", features = ["macros"] }
@@ -27,10 +23,12 @@ hex = "0.4"
 base64 = "0.22"
 bech32 = "0.9"
 
-# Serai FROST/DKG ecosystem (local path to serai checkout)
-dkg-pedpop = { path = "../../serai/crypto/dkg/pedpop" }
-dalek-ff-group = { path = "../../serai/crypto/dalek-ff-group" }
-ciphersuite = { path = "../../serai/crypto/ciphersuite", features = ["std"] }
+# Serai FROST/DKG ecosystem (pinned to upstream serai revision 737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391)
+dkg-pedpop = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }
+dalek-ff-group = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }
+ciphersuite = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391", features = [
+  "std",
+] }
 modular-frost = { version = "0.10.1", features = ["ed25519"] }
 
 # Monero wallet + RPC stack (monero-oxide, pinned for deterministic compatibility)
@@ -88,4 +86,4 @@ axum-test = "16"
 tempfile = "3"
 
 [patch.crates-io]
-simple-request = { path = "../../serai/common/request" }
+simple-request = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }

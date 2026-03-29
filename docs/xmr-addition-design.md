@@ -12,6 +12,14 @@ This document explains how the XMR integration works in THORNode, with emphasis 
 - `xmr-frost-signer` sidecar: local Rust process for Monero/FROST cryptography, wallet scanning state, and daemon RPC.
 - Monero daemon: canonical chain data and tx relay.
 
+## Provenance
+
+The Rust sidecar lives at `bifrost/pkg/chainclients/monero/xmr-frost-signer`.
+
+- The THORNode-specific HTTP service, scanner wiring, and deployment glue live in-tree in this repository.
+- The Serai-derived Rust cryptography/request crates are attributed and pinned in `Cargo.toml` to `https://github.com/serai-dex/serai` at rev `737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391`.
+- The sidecar keeps its own `LICENSE` file adjacent to source so AGPL obligations for the Rust service remain explicit.
+
 ## Boundary: THORNode/Bifrost vs Sidecar
 
 ### Transport and trust boundary
@@ -283,11 +291,11 @@ ps -p <make-pid> -o pid,ppid,stat,etime,command
 - go-tss DKG/sign coordinators:
   - `bifrost/tss/go-tss/tss/frost_keygen.go`
   - `bifrost/tss/go-tss/tss/frost_keysign.go`
-- Sidecar app/bootstrap: `xmr-frost-signer/src/main.rs`
-- Sidecar routes and API policy: `xmr-frost-signer/src/api/routes.rs`
+- Sidecar app/bootstrap: `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/main.rs`
+- Sidecar routes and API policy: `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/api/routes.rs`
 - Sidecar DKG/sign state machines:
-  - `xmr-frost-signer/src/frost/dkg.rs`
-  - `xmr-frost-signer/src/frost/sign.rs`
+  - `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/frost/dkg.rs`
+  - `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/frost/sign.rs`
 - Sidecar scanner + store:
-  - `xmr-frost-signer/src/tx/scanner.rs`
-  - `xmr-frost-signer/src/state/store.rs`
+  - `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/tx/scanner.rs`
+  - `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/state/store.rs`
