@@ -399,3 +399,19 @@ func (GasManagerTestSuite) TestGetGasDetailsHighPrecisionAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(fee.Uint64(), Equals, uint64(7500))
 }
+
+func (GasManagerTestSuite) TestGetGasDetailsLowDecimalAssetDoesNotRoundToZero(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	gasMgr := newGasMgr(constAccessor, k)
+
+	networkFee := NewNetworkFee(common.XRPChain, 1, 10)
+	c.Assert(k.SaveNetworkFee(ctx, common.XRPChain, networkFee), IsNil)
+
+	maxGasCoin, gasRate, err := gasMgr.GetGasDetails(ctx, common.XRPChain)
+	c.Assert(err, IsNil)
+	c.Assert(maxGasCoin.Asset.Equals(common.XRPAsset), Equals, true)
+	c.Assert(maxGasCoin.Amount.Uint64(), Equals, uint64(15))
+	c.Assert(maxGasCoin.Decimals, Equals, int64(6))
+	c.Assert(gasRate, Equals, int64(15))
+}

@@ -242,10 +242,6 @@ func (gm *GasMgr) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.
 	_, gasRateUnitsPerOne := chain.GetGasUnits()
 	maxGasAmount := gasRate.MulUint64(networkFee.TransactionSize)
 	maxGasAmountForChain := maxGasAmount.Mul(gasAssetPrecisionFactor(chain)).Quo(gasRateUnitsPerOne)
-	maxGasAmountForChain = cosmos.RoundToDecimal(
-		maxGasAmountForChain,
-		chainGasAssetPrecision,
-	)
 
 	maxGasCoin := common.NewCoin(chain.GetGasAsset(), maxGasAmountForChain)
 	maxGasCoin.Decimals = chainGasAssetPrecision
