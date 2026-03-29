@@ -273,7 +273,8 @@ func (c *Client) IsAddressImported(address string) (bool, error) {
 func (c *Client) getAddressTrackingInfo(method, address string) (struct {
 	IsMine      bool `json:"ismine"`
 	IsWatchOnly bool `json:"iswatchonly"`
-}, error) {
+}, error,
+) {
 	var info struct {
 		IsMine      bool `json:"ismine"`
 		IsWatchOnly bool `json:"iswatchonly"`

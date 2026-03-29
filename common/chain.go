@@ -319,15 +319,15 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return ltcchaincfg.RegressionNetParams.Bech32HRPSegwit
 		case DOGEChain:
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
-			case ZECChain:
-				return "tm"
-			case ADAChain:
-				return "addr_test1"
-			case XMRChain:
-				return "C"
-			}
-		case MainNet, StageNet, ChainNet:
-			switch c {
+		case ZECChain:
+			return "tm"
+		case ADAChain:
+			return "addr_test1"
+		case XMRChain:
+			return "C"
+		}
+	case MainNet, StageNet, ChainNet:
+		switch c {
 		case GAIAChain:
 			return "cosmos"
 		case NOBLEChain:
@@ -340,15 +340,15 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return ltcchaincfg.MainNetParams.Bech32HRPSegwit
 		case DOGEChain:
 			return dogchaincfg.MainNetParams.Bech32HRPSegwit
-			case ZECChain:
-				return "t1"
-			case ADAChain:
-				return "addr1"
-			case XMRChain:
-				return "C"
-			}
+		case ZECChain:
+			return "t1"
+		case ADAChain:
+			return "addr1"
+		case XMRChain:
+			return "C"
 		}
-		return ""
+	}
+	return ""
 }
 
 // DustThreshold returns the min dust threshold for each chain

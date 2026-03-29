@@ -16,10 +16,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
-var (
-	// ErrFrostUnavailableBlock indicates the requested block height is above the canonical chain tip.
-	ErrFrostUnavailableBlock = errors.New("frost chain block unavailable")
-)
+// ErrFrostUnavailableBlock indicates the requested block height is above the canonical chain tip.
+var ErrFrostUnavailableBlock = errors.New("frost chain block unavailable")
 
 const maxFrostResponseBytes = 10 * 1024 * 1024
 

@@ -7,10 +7,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-var tronSimTxMaxBroadcastAttempts = 4
-var tronSimTxBroadcastRetryDelay = 2 * time.Second
-var solanaSimTxMaxBroadcastAttempts = 4
-var solanaSimTxBroadcastRetryDelay = 2 * time.Second
+var (
+	tronSimTxMaxBroadcastAttempts   = 4
+	tronSimTxBroadcastRetryDelay    = 2 * time.Second
+	solanaSimTxMaxBroadcastAttempts = 4
+	solanaSimTxBroadcastRetryDelay  = 2 * time.Second
+)
 
 // SignAndBroadcastTx signs a fresh transaction payload for each attempt so
 // chain-specific retries can recover from transient broadcast failures without

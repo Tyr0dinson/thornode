@@ -41,7 +41,7 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 const (
-	DefaultParallelism      = "8"
+	DefaultParallelism = "8"
 	// Clean mocknet-cluster boots can take a few minutes before the TRON fullnode
 	// starts relaying stable block production from the supernode.
 	tronRPCReadinessTimeout = 4 * time.Minute

@@ -35,13 +35,17 @@ type Client struct {
 
 var _ LiteChainClient = &Client{}
 
-const tronAPITimeout = 10 * time.Second
-const tronCreateTransactionWarmupTimeout = 60 * time.Second
+const (
+	tronAPITimeout                     = 10 * time.Second
+	tronCreateTransactionWarmupTimeout = 60 * time.Second
+)
 
-var tronBroadcastObservationTimeout = 15 * time.Second
-var tronBroadcastObservationPollInterval = 250 * time.Millisecond
-var tronBroadcastRebroadcastInterval = 3 * time.Second
-var tronBroadcastConfirmationGrace = 5 * time.Second
+var (
+	tronBroadcastObservationTimeout      = 15 * time.Second
+	tronBroadcastObservationPollInterval = 250 * time.Millisecond
+	tronBroadcastRebroadcastInterval     = 3 * time.Second
+	tronBroadcastConfirmationGrace       = 5 * time.Second
+)
 
 func NewConstructor(host string) LiteChainClientConstructor {
 	return func(chain common.Chain, keys *thorclient.Keys) (LiteChainClient, error) {

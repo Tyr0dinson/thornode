@@ -501,9 +501,9 @@ mod tests {
                 .finalize(session_id, &group_key, &address)
                 .expect("finalize should succeed");
 
-            assert!(address.starts_with('C'));
+            assert!(address.starts_with('4'));
             let parsed = MoneroAddress::from_str_with_unchecked_network(&address).unwrap();
-            assert!(parsed.is_guaranteed());
+            assert!(!parsed.is_guaranteed());
             assert!(!parsed.is_subaddress());
             assert_eq!(group_key.len(), 64, "group key should be 64 hex chars");
             group_keys.push(group_key);

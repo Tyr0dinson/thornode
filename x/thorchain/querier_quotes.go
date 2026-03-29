@@ -354,7 +354,7 @@ func convertThorchainAmountToWei(amt *big.Int) *big.Int {
 
 func quoteDefaultCoinbaseThorchain(chain common.Chain) sdkmath.Uint {
 	coinbase := chain.DefaultCoinbase()
-	if coinbase <= 0 {
+	if math.IsNaN(coinbase) || math.Signbit(coinbase) || math.Float64bits(coinbase) == 0 {
 		return sdkmath.ZeroUint()
 	}
 	return sdkmath.NewUint(uint64(math.Round(coinbase * common.One)))
