@@ -18,9 +18,15 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
+// maxMempoolRevertActions is the maximum number of staged outbound actions that can
+// be reverted via reverse swaps. GetOriginalFromMempoolRevertTxID brute-forces
+// action indices during recovery, so this value caps the search space.
+const maxMempoolRevertActions = 16
+
 // CreateMempoolRevertTxID creates a deterministic reverse TxID from original TxID + action index.
 // The reverse TxID is created by reversing the hex string and XORing the last byte with the action index.
 // This allows the original TxID to be recovered without needing persistent storage.
+// actionIndex must be in [0, maxMempoolRevertActions).
 func CreateMempoolRevertTxID(originalTxID common.TxID, actionIndex int) common.TxID {
 	s := originalTxID.String()
 	if len(s) != 64 {
@@ -38,7 +44,7 @@ func CreateMempoolRevertTxID(originalTxID common.TxID, actionIndex int) common.T
 }
 
 // GetOriginalFromMempoolRevertTxID recovers the original TxID from a mempool revert TxID.
-// It tries action indices 0-15 and returns the first candidate with persisted voter data.
+// It tries action indices 0..maxMempoolRevertActions-1 and returns the first candidate with persisted voter data.
 func GetOriginalFromMempoolRevertTxID(ctx cosmos.Context, k keeper.Keeper, reverseTxID common.TxID) (common.TxID, bool) {
 	s := reverseTxID.String()
 	if len(s) != 64 {
@@ -49,7 +55,7 @@ func GetOriginalFromMempoolRevertTxID(ctx cosmos.Context, k keeper.Keeper, rever
 		return common.TxID(""), false
 	}
 
-	for actionIndex := 0; actionIndex < 16; actionIndex++ {
+	for actionIndex := 0; actionIndex < maxMempoolRevertActions; actionIndex++ {
 		// XOR to undo the action index encoding
 		originalLastByte := lastByte ^ uint64(actionIndex)
 		candidate := s[:62] + fmt.Sprintf("%02X", originalLastByte)
@@ -228,7 +234,7 @@ func handleObservedTxInQuorum(
 			// Remove any stale reverse swaps queued during the timeout revert.
 			// These were created with deterministic TxIDs derived from the original,
 			// but only for non-THORChain actions, so indices may be sparse.
-			for i := 0; i < 100; i++ {
+			for i := 0; i < maxMempoolRevertActions; i++ {
 				revertTxID := CreateMempoolRevertTxID(voter.TxID, i)
 				if !mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0) {
 					continue
@@ -1400,6 +1406,12 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 	ctx.Logger().Info("found staged outbounds to revert",
 		"hash", voter.TxID,
 		"count", len(stagedItems))
+
+	// Enforce the action-index ceiling so every reverse-swap TxID is recoverable
+	// by GetOriginalFromMempoolRevertTxID during post-swap settlement.
+	if len(stagedItems) > maxMempoolRevertActions {
+		return fmt.Errorf("staged outbound count %d exceeds max recoverable actions %d", len(stagedItems), maxMempoolRevertActions)
+	}
 
 	// Lazy-loaded active vault for reverse swaps (only needed for non-RUNE outputs).
 	var vault Vault
