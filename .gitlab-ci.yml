@@ -277,15 +277,13 @@ xmr-frost-signer:
   rules:
     - changes:
         paths:
-          - xmr-frost-signer/**/*
+          - bifrost/pkg/chainclients/monero/xmr-frost-signer/**/*
   stage: test
   image: rust:1.90.0
   before_script:
     - apt-get update && apt-get install -y git pkg-config libssl-dev
-    - git clone https://github.com/serai-dex/serai.git ../serai
-    - git -C ../serai checkout 737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391
   script:
-    - cd xmr-frost-signer && cargo test
+    - cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo test
 
 pages:
   rules:

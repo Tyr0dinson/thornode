@@ -63,13 +63,13 @@ thornode-linux-arm64
 
 # Keep the XMR sidecar Docker context source-only. The local Rust target tree can
 # grow into multi-GB artifacts, but the image build only needs Cargo metadata and src.
-xmr-frost-signer/*
-!xmr-frost-signer/Cargo.lock
-!xmr-frost-signer/Cargo.toml
-!xmr-frost-signer/LICENSE
-!xmr-frost-signer/README.md
-!xmr-frost-signer/src
-!xmr-frost-signer/src/**
+bifrost/pkg/chainclients/monero/xmr-frost-signer/*
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/LICENSE
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/src
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**
 
 # Tools (exclude all, then re-include needed)
 tools

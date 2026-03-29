@@ -2,6 +2,22 @@
 
 `xmr-frost-signer` is the THORNode Monero FROST sidecar.
 
+The sidecar source now lives under `bifrost/pkg/chainclients/monero/xmr-frost-signer` so the
+Monero Rust service remains colocated with the Go Monero chain client it serves.
+
+## Provenance
+
+This sidecar includes THORNode-specific service code plus Serai-derived Rust cryptography and
+request dependencies.
+
+- Upstream Serai source: <https://github.com/serai-dex/serai>
+- Pinned upstream revision: `737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391`
+- Pinned Serai crates in `Cargo.toml`: `dkg-pedpop`, `dalek-ff-group`, `ciphersuite`, and the
+  `simple-request` patch dependency
+
+Keeping the upstream URL and exact git revision here makes the provenance auditable from both the
+crate manifest and the documentation.
+
 ## Required Environment
 
 - `XMR_FROST_CHAIN_NETWORK` is required and must be explicitly set to `mocknet` or `public`.

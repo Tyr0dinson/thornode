@@ -7,9 +7,7 @@ FROM rust:1.85-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-# hadolint ignore=DL3022
-COPY --from=serai . /serai
-COPY xmr-frost-signer/ .
+COPY bifrost/pkg/chainclients/monero/xmr-frost-signer/ .
 RUN cargo build --release
 
 # Runtime stage

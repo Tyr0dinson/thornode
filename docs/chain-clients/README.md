@@ -35,7 +35,7 @@ Similarly, for EVM-based chains like Ethereum, Avalanche, and BSC, shared functi
 
 ## Monero (XMR) Client Notes
 
-Monero integration uses a dedicated Bifrost chain client (`monero/`) plus a local `xmr-frost-signer` sidecar for chain-specific cryptography and scanner state.
+Monero integration uses a dedicated Bifrost chain client (`monero/`) plus a local `xmr-frost-signer` sidecar for chain-specific cryptography and scanner state. The sidecar source lives in `bifrost/pkg/chainclients/monero/xmr-frost-signer`, and its Serai-derived Rust crates are pinned to `serai-dex/serai` rev `737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391`.
 
 - Keygen uses a custom FROST DKG path with explicit finalize (`/v1/monero/dkg/finalize`) before vault mapping/key persistence.
 - Outbound signing is a 3-step FROST API flow (`prepare` -> `partial` -> `combine`) with idempotent `msg_id`.

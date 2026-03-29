@@ -23,10 +23,10 @@ test/simulation/.codex-tmp
 
 # Keep the XMR sidecar source visible to the simtest build, but exclude
 # local Rust artifacts that can grow into multi-GB docker contexts.
-xmr-frost-signer/*
-!xmr-frost-signer/Cargo.lock
-!xmr-frost-signer/Cargo.toml
-!xmr-frost-signer/LICENSE
-!xmr-frost-signer/README.md
-!xmr-frost-signer/src
-!xmr-frost-signer/src/**
+bifrost/pkg/chainclients/monero/xmr-frost-signer/*
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/LICENSE
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/src
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**

@@ -163,10 +163,10 @@ build:
 	go build ${BUILD_FLAGS} ${BINARIES}
 
 build-xmr-frost-signer:
-	cd xmr-frost-signer && cargo build --release
+	cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo build --release
 
 test-xmr-frost:
-	cd xmr-frost-signer && cargo test
+	cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo test
 
 test-xmr-frost-e2e:
 	GOTOOLCHAIN=go1.23.10 go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'
