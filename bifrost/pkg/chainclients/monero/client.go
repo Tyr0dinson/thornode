@@ -61,9 +61,7 @@ const (
 	defaultXMRConsolidationMinReserveAtomic    = uint64(50_000_000) // 0.00005 XMR (piconero)
 )
 
-var (
-	ErrFrostNotConfigured = errors.New("xmr frost signing requires signer_endpoint or api_host configuration")
-)
+var ErrFrostNotConfigured = errors.New("xmr frost signing requires signer_endpoint or api_host configuration")
 
 type signedTxPayload struct {
 	TxHash      string                `json:"tx_hash"`

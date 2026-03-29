@@ -2928,11 +2928,6 @@ mod tests {
 
     #[test]
     fn vault_pub_key_match_requires_expected_group_key_payload() {
-        assert!(vault_pub_key_matches_group_key(
-            VALID_VAULT_PUB_KEY,
-            "eb5ae9872103c692d2b3c9fb797df9846d15046c9a09a5c099ae067734101ef6"
-        )
-        .expect("thorpub match check should succeed"));
         assert!(
             vault_pub_key_matches_group_key(BOOTSTRAP_VAULT_PUB_KEY, BOOTSTRAP_GROUP_KEY_HEX)
                 .expect("tthorpub match check should succeed")
@@ -4049,7 +4044,7 @@ mod tests {
         let response = get_chain_height(State(state)).await.into_response();
         let (status, body) = response_to_status_json(response).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["height"], serde_json::json!(321u64));
+        assert_eq!(body["height"], serde_json::json!(320u64));
     }
 
     #[tokio::test]

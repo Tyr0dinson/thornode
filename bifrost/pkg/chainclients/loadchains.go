@@ -23,8 +23,10 @@ import (
 )
 
 // ChainClient exports the shared type.
-type ChainClient = types.ChainClient
-type CustomKeygenChainClient = types.CustomKeygenChainClient
+type (
+	ChainClient             = types.ChainClient
+	CustomKeygenChainClient = types.CustomKeygenChainClient
+)
 
 // LoadChains returns chain clients from chain configuration
 func LoadChains(thorKeys *thorclient.Keys,

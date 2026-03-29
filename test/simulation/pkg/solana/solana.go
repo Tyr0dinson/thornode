@@ -34,11 +34,13 @@ var _ LiteChainClient = &Client{}
 
 // Wait for finalized Solana confirmation so simulation actors do not proceed on
 // signatures that later disappear before Bifrost can observe the inbound.
-var solanaBroadcastConfirmationAttempts = 20
-var solanaBroadcastConfirmationPollInterval = time.Second
-var solanaBroadcastRebroadcastEvery = 5
-var solanaAccountCommitment = "confirmed"
-var solanaBroadcastConfirmationCommitment = "finalized"
+var (
+	solanaBroadcastConfirmationAttempts     = 20
+	solanaBroadcastConfirmationPollInterval = time.Second
+	solanaBroadcastRebroadcastEvery         = 5
+	solanaAccountCommitment                 = "confirmed"
+	solanaBroadcastConfirmationCommitment   = "finalized"
+)
 
 func NewConstructor(host string) LiteChainClientConstructor {
 	return func(chain common.Chain, keys *thorclient.Keys) (LiteChainClient, error) {

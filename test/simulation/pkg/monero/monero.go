@@ -30,10 +30,10 @@ const (
 	defaultHelperBearer = "xmr-sim-helper-mocknet-token"
 	defaultFrostBearer  = "xmr-frost-mocknet-token"
 
-	xmrAtomicFactor           = uint64(10_000) // 1e12 atomic units => 1e8 simulation units
-	xmrFaucetRetryAttempts    = 30
-	xmrFaucetRetryDelay       = 2 * time.Second
-	xmrFaucetStartupErrMarker = "Unexpected hard fork version"
+	xmrAtomicFactor            = uint64(10_000) // 1e12 atomic units => 1e8 simulation units
+	xmrFaucetRetryAttempts     = 30
+	xmrFaucetRetryDelay        = 2 * time.Second
+	xmrFaucetStartupErrMarker  = "Unexpected hard fork version"
 	xmrFaucetUnlockedErrMarker = "not enough unlocked money"
 )
 

@@ -26,6 +26,7 @@ func (m *mockChainNoVaultLock) GetAddress(common.PubKey) string                 
 func (m *mockChainNoVaultLock) GetAccount(common.PubKey, *big.Int) (common.Account, error) {
 	return common.Account{}, nil
 }
+
 func (m *mockChainNoVaultLock) GetAccountByAddress(string, *big.Int) (common.Account, error) {
 	return common.Account{}, nil
 }
