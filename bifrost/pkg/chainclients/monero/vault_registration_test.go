@@ -149,9 +149,9 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 	t.Parallel()
 
 	vaultPubKey := testVaultPubKey(t, "matching-bootstrap-spend-key")
-	address, err := vaultPubKey.GetAddress(common.XMRChain)
-	if err != nil {
-		t.Fatalf("derive address: %v", err)
+	address, deriveErr := vaultPubKey.GetAddress(common.XMRChain)
+	if deriveErr != nil {
+		t.Fatalf("derive address: %v", deriveErr)
 	}
 	expectedGroupKey, err := groupKeyHexFromVaultPubKey(vaultPubKey)
 	if err != nil {
@@ -216,9 +216,9 @@ func TestEnsureFrostVaultRegisteredOmitsBootstrapSpendKeyForOtherVault(t *testin
 	t.Parallel()
 
 	vaultPubKey := testVaultPubKey(t, "non-matching-bootstrap-spend-key")
-	address, err := vaultPubKey.GetAddress(common.XMRChain)
-	if err != nil {
-		t.Fatalf("derive address: %v", err)
+	address, deriveErr := vaultPubKey.GetAddress(common.XMRChain)
+	if deriveErr != nil {
+		t.Fatalf("derive address: %v", deriveErr)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
