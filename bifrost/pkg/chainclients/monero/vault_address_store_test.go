@@ -18,8 +18,8 @@ func TestVaultAddressStoreRoundTrip(t *testing.T) {
 	defer db.Close()
 
 	store := NewVaultAddressStore(db)
-	if err := store.Set("thorpub1vault", "48qQe7vL5JGG3J8jWzR2a7s9nXh9JepmFp3qfXv5g6G4dR9rVQ4kQ9Q5Y3Vj9zMsF3Qw4Ax6XtW4pS9A"); err != nil {
-		t.Fatalf("set vault address: %v", err)
+	if setErr := store.Set("thorpub1vault", "48qQe7vL5JGG3J8jWzR2a7s9nXh9JepmFp3qfXv5g6G4dR9rVQ4kQ9Q5Y3Vj9zMsF3Qw4Ax6XtW4pS9A"); setErr != nil {
+		t.Fatalf("set vault address: %v", setErr)
 	}
 
 	got, err := store.Get("thorpub1vault")

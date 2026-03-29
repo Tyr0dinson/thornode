@@ -1,9 +1,11 @@
 # XMR Integration Design (THORNode + Sidecar)
 
 ## Goal
+
 This document explains how the XMR integration works in THORNode, with emphasis on the boundary between THORNode/Bifrost and the `xmr-frost-signer` sidecar, and why responsibilities are split the way they are.
 
 ## Components
+
 - THORNode core: chain state, vault/churn policy, outbound scheduling, observation consensus.
 - Bifrost Monero chain client: THORNode adapter for XMR (`bifrost/pkg/chainclients/monero`).
 - go-tss FROST coordinator: peer coordination over libp2p (`bifrost/tss/go-tss/tss`).
@@ -13,6 +15,7 @@ This document explains how the XMR integration works in THORNode, with emphasis 
 ## Boundary: THORNode/Bifrost vs Sidecar
 
 ### Transport and trust boundary
+
 - Boundary transport is HTTP between Bifrost and the sidecar endpoint on each node.
 - Bifrost side (`FrostSigner`) enforces:
   - non-loopback endpoint must be HTTPS,
@@ -21,6 +24,7 @@ This document explains how the XMR integration works in THORNode, with emphasis 
 - Sidecar requires configured auth at startup (bearer or basic) and enforces authenticated protected routes with per-IP/global rate limits.
 
 ### Boundary at a glance
+
 ```mermaid
 flowchart LR
   A["THORNode / Bifrost"] -->|"HTTP API calls"| B["xmr-frost-signer"]
@@ -30,7 +34,9 @@ flowchart LR
 ```
 
 ### API contract at the boundary
+
 Bifrost calls sidecar endpoints for:
+
 - DKG: `/v1/monero/dkg/round1`, `/round2`, `/round3`, `/finalize`
 - Signing: `/v1/monero/sign/prepare`, `/partial`, `/combine`
 - Broadcast: `/v1/monero/broadcast`
@@ -38,10 +44,13 @@ Bifrost calls sidecar endpoints for:
 - No standalone vault registration endpoint; vault mapping is committed by DKG finalize.
 
 The authoritative contract is in:
+
 - `bifrost/pkg/chainclients/monero/XMR_TSS_SIGNER_API.md`
 
 ## Delegation Matrix
+
 ### THORNode/Bifrost/go-tss owns
+
 - Vault membership + signer set from THORChain.
 - FROST party formation (`joinParty`) and libp2p message exchange.
 - Deterministic participant indexing and round transcript verification.
@@ -58,6 +67,7 @@ The authoritative contract is in:
 - Reorg orchestration at block-scanner level.
 
 ### Sidecar owns
+
 - FROST cryptographic state machines for local rounds (DKG and signing).
 - Persistent encrypted key material and vault registry.
 - Local tracked output state machine: unspent/reserved/spent.
@@ -69,11 +79,13 @@ The authoritative contract is in:
 - Direct daemon RPC calls and bounded response parsing.
 
 ### Intentionally split
+
 - **Consensus/coordination in THORNode**, **private key material + chain-specific crypto in sidecar**.
 - Sidecar never performs cross-peer consensus; it only executes local round math.
 - THORNode never stores Monero threshold private key material.
 
 ## Keygen Flow (DKG)
+
 1. THORNode signer triggers custom keygen hook for XMR after TSS keygen context is ready.
 2. Bifrost calls `TssServer.FrostKeygen(...)` with signer set and expected XMR vault address.
 3. go-tss:
@@ -90,9 +102,11 @@ The authoritative contract is in:
 7. Sidecar finalize atomically registers vault mapping and persists encrypted threshold share.
 
 Design choice:
+
 - Finalization is explicit to avoid persisting key material before network-level agreement and address checks complete.
 
 ## Signing and Broadcast Flow
+
 1. THORNode schedules outbound; Bifrost Monero client validates tx intent:
    - featured+guaranteed destination,
    - single XMR coin,
@@ -111,36 +125,45 @@ Design choice:
 6. Broadcast path calls sidecar `/broadcast`; sidecar relays to daemon and finalizes reservations for that `msg_id`.
 
 Design choices:
+
 - Output reservations are sidecar-local and CAS-protected to prevent concurrent spend races.
 - `msg_id` idempotency is enforced at sidecar API level to make retries safe.
 
 ## Scanner and Observation Flow
+
 1. Bifrost block scanner queries canonical block data through sidecar chain-query endpoints.
 2. For each height, Bifrost calls `scanner/sync` with `(height, tip_height, block_hash, parent_hash, reorg_window)`.
 3. Sidecar verifies canonical hash linkage from daemon, performs deterministic rollback/rescan if needed, updates persisted outputs/scan metadata, and returns transfers for that block.
 4. Bifrost converts transfers into `TxInItem`, enriches memo attribution (including deferred reference memo lookups), applies observation filters, and attests to THORChain.
 
 Design choices:
+
 - Canonical hash handshake in `scanner/sync` prevents scanning against mismatched history.
 - Reorg rollback metadata is persisted sidecar-side, while chain-level errata orchestration remains in Bifrost.
 
 ## Why This Boundary
+
 1. Security and blast radius
+
 - Keep Monero threshold key material in a dedicated process with encrypted storage and strict API surface.
 - Keep consensus/blame logic in THORNode where signer identity and p2p trust model already exist.
 
 2. Determinism and fail-closed behavior
+
 - Deterministic IDs, transcript hashes, decoy context, and eventuality checks reduce ambiguity across signers.
 - Any mismatch (membership, transcript, address, stale scan state, reservation mismatch) fails closed.
 
 3. Operational isolation
+
 - Sidecar can evolve Monero-specific cryptography/scanning without embedding all dependencies into THORNode runtime.
 - THORNode keeps chain-agnostic scheduling/attestation responsibilities.
 
 4. Licensing isolation
+
 - Sidecar is intentionally isolated as its own AGPL component, with explicit source/distribution boundary.
 
 ## Important Operational Constraints
+
 - XMR sidecar currently uses hard-cutover storage semantics:
   - no legacy runtime compatibility path,
   - no in-place migration,
@@ -152,9 +175,11 @@ Design choices:
 - `XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS` controls fail-closed signing when scan state is stale (default `3`).
 
 ## Current `x/thorchain` Follow-Up Findings
+
 These are working notes from the current XMR integration review and should be revisited before trimming the branch or upstreaming follow-up cleanup.
 
 ### Runtime-critical for current XMR behavior
+
 - `x/thorchain/handler_ragnarok.go`: required so ragnarok matching derives the vault source address using the chain signing algorithm. XMR needs the Ed25519 path here.
 - `x/thorchain/helpers.go`: required for the current Monero unknown-sender model. Refunds must not attempt an outbound to the synthetic XMR unknown-sender marker when no explicit refund address exists.
 - `x/thorchain/helpers.go`: the unrefundable external-coin cleanup path now donates back into pool accounting instead of silently leaving balance stranded in the vault.
@@ -162,12 +187,14 @@ These are working notes from the current XMR integration review and should be re
 - `x/thorchain/manager_slasher_current.go`: the XMR unknown-sender guard is important on failed swap recovery, otherwise reverse-swap recovery can target an undeliverable marker address before eventually falling back.
 
 ### Useful but not core to existing-chain XMR operation
+
 - `x/thorchain/manager_network_current.go`: adding `common.XMRChain` to single-validator genesis setup matters for fresh bootstrap flows, not for an already-running chain upgrade.
 - `x/thorchain/manager_network_current.go`: using `vault.GetAddress(...)` in over-solvency swap creation matters if that path is exercised for XMR-held assets.
 - `x/thorchain/querier.go`: the Ed25519-chain skip condition is a query/API correctness fix for vault address display, not consensus-critical runtime logic.
 - `x/thorchain/types/type_vault.go`: `Vaults.HasAddress(...)` now respects chain signing algorithm, but no current non-test caller was found during this review.
 
 ### Not required for XMR function
+
 - `x/thorchain/alias.go`: test helper exposure only.
 - `x/thorchain/handler_add_liquidity.go`: logging cleanup only.
 - `x/thorchain/handler_deposit.go`: logging cleanup and small local logging refactor only.
@@ -176,12 +203,15 @@ These are working notes from the current XMR integration review and should be re
 - New `*_test.go` files in `x/thorchain`: coverage only, not runtime behavior.
 
 ### Outstanding cleanup note
+
 - `x/thorchain/manager_network_current_test.go` currently references `nmgr.createSwapToReserve(...)`, but no such method exists on `NetworkMgr`. The production package builds, but the `x/thorchain` test package is not clean until that test is fixed or removed.
 
 ## Simulation Cache and Rerun Notes
+
 These notes are here so future sessions do not relearn the same mocknet build/cache behavior.
 
 ### macOS prerequisite
+
 - THORNode simulation targets expect GNU `make`, `awk`, `find`, `sed`, `grep`, and coreutils on macOS.
 - A working PATH prefix for local runs is:
 
@@ -190,6 +220,7 @@ PATH="/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/opt/gawk/libexec/gnubi
 ```
 
 ### Single-node simulation
+
 - For background/non-interactive runs, set `CI=1` so `docker run` does not inject `-it`.
 - The first successful `make test-simulation` run is expensive because it rebuilds mocknet images and may need to pull large Rust/Golang base images.
 - To warm the cache once:
@@ -216,6 +247,7 @@ tail -f /tmp/test-simulation.log
 ```
 
 ### Cluster simulation
+
 - `make test-simulation-cluster` currently rebuilds and resets the cluster every time.
 - There is no parallel `test-simulation-cluster-no-reset` target yet, so repeated cluster reruns are still heavier than single-node reruns.
 - To warm the cluster cache once:
@@ -245,6 +277,7 @@ ps -p <make-pid> -o pid,ppid,stat,etime,command
 ```
 
 ## Primary Code Anchors
+
 - Bifrost Monero client: `bifrost/pkg/chainclients/monero/client.go`
 - Sidecar HTTP client: `bifrost/pkg/chainclients/monero/frost_signer.go`
 - go-tss DKG/sign coordinators:

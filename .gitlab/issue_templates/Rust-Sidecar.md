@@ -1,3 +1,5 @@
+# Rust Sidecar Issue
+
 ## Summary
 
 Describe the problem or request for the Rust-sidecar THORNode line.

@@ -148,9 +148,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 			return nil, err
 		}
 		if tronTx.TxId == "" && tronTx.RawDataHex != "" {
-			if rehashErr := tronTx.Rehash(); rehashErr == nil {
-				err = nil
-			}
+			_ = tronTx.Rehash()
 		}
 		if tronTx.TxId != "" {
 			break

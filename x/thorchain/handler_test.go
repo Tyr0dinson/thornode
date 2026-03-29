@@ -873,7 +873,7 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 }
 
 func (s *HandlerSuite) TestExternalAssetMatch(c *C) {
-	c.Check(externalAssetMatch(common.ETHChain, "7a0"), Equals, "7a0")
+	c.Check(externalAssetMatch(common.ETHChain, "7a0"), Equals, "0xd601c6A3a36721320573885A8d8420746dA3d7A0")
 	c.Check(externalAssetMatch(common.ETHChain, "foobar"), Equals, "foobar")
 	c.Check(externalAssetMatch(common.ETHChain, "3"), Equals, "3")
 	c.Check(externalAssetMatch(common.ETHChain, ""), Equals, "")

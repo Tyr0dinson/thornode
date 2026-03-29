@@ -76,8 +76,8 @@ func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 		switch r.URL.Path {
 		case "/v1/monero/vaults/register":
 			var req xmrFrostRegisterVaultRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+			if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
 				return
 			}
 			if req.VaultPubKey != vaultPubKey.String() {
@@ -166,8 +166,8 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 		}
 
 		var req xmrFrostRegisterVaultRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
 			return
 		}
 		if req.VaultPubKey != vaultPubKey.String() {

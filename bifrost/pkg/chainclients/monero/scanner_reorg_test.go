@@ -48,13 +48,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 				http.Error(w, "unknown height", http.StatusNotFound)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
-				Height:       block.Height,
-				Reward:       block.Reward,
-				Hash:         block.Hash,
-				PreviousHash: block.PreviousHash,
-				TxHashes:     block.TxHashes,
-			})
+			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse(block))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/tx/"):
 			path := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/tx/")
 			path = strings.TrimSuffix(path, "/exists")
@@ -102,8 +96,8 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 			CustomerTransactions: []string{"tx-drop"},
 		},
 	} {
-		if err := reorgStore.Set(meta); err != nil {
-			t.Fatalf("set reorg meta: %v", err)
+		if setErr := reorgStore.Set(meta); setErr != nil {
+			t.Fatalf("set reorg meta: %v", setErr)
 		}
 	}
 

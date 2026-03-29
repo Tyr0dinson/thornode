@@ -31,7 +31,7 @@ wait_for_tss_bootstrap_peer() {
   echo "Bootstrap peer ready: $peer ($peer_id)"
 }
 
-wait_for_tss_bootstrap_peer "${PEER:-}"
+wait_for_tss_bootstrap_peer "${PEER-}"
 
 create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 

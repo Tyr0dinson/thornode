@@ -3,9 +3,11 @@
 # Build stage
 FROM rust:1.85-slim AS builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+# hadolint ignore=DL3022
 COPY --from=serai . /serai
 COPY xmr-frost-signer/ .
 RUN cargo build --release
@@ -13,13 +15,14 @@ RUN cargo build --release
 # Runtime stage
 FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/xmr-frost-signer /usr/local/bin/xmr-frost-signer
 COPY build/docker/xmr-frost-signer/entrypoint.sh /usr/local/bin/xmr-frost-entrypoint
 
-RUN useradd -m -s /bin/bash frost
-RUN chmod 755 /usr/local/bin/xmr-frost-entrypoint
+RUN useradd -m -s /bin/bash frost \
+  && chmod 755 /usr/local/bin/xmr-frost-entrypoint
 
 EXPOSE 8283 8284
 

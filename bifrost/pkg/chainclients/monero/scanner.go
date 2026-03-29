@@ -16,7 +16,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 const (
@@ -750,27 +749,6 @@ func (s *Scanner) refreshAsgardLookup() error {
 	s.asgardMu.Unlock()
 
 	return nil
-}
-
-func (s *Scanner) getNodeVaultCandidates(vaults ttypes.Vaults) []common.PubKey {
-	if s.localNodePubKey.IsEmpty() {
-		return nil
-	}
-	result := make([]common.PubKey, 0, len(vaults))
-	for _, vault := range vaults {
-		if vault.Status != ttypes.VaultStatus_ActiveVault && vault.Status != ttypes.VaultStatus_RetiringVault && vault.Status != ttypes.VaultStatus_InitVault {
-			continue
-		}
-		if !vault.Contains(s.localNodePubKey) {
-			continue
-		}
-		observedVault := vault.PubKeyEddsa
-		if observedVault.IsEmpty() {
-			continue
-		}
-		result = append(result, observedVault)
-	}
-	return result
 }
 
 func (s *Scanner) getVaultForAddress(addr string) (common.PubKey, bool) {

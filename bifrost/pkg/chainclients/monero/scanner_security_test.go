@@ -449,13 +449,13 @@ func TestFetchTxsFailsClosedOnReorgProcessingError(t *testing.T) {
 	defer db.Close()
 
 	reorgStore := NewReorgStore(db)
-	if err := reorgStore.Set(&reorgBlockMeta{
+	if setErr := reorgStore.Set(&reorgBlockMeta{
 		Height:               100,
 		BlockHash:            "stale-100",
 		PreviousHash:         "hash-99",
 		CustomerTransactions: []string{"tx-drop"},
-	}); err != nil {
-		t.Fatalf("set reorg meta: %v", err)
+	}); setErr != nil {
+		t.Fatalf("set reorg meta: %v", setErr)
 	}
 
 	scanner := NewScanner(

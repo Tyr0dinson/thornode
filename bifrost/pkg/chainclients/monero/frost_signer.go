@@ -450,10 +450,7 @@ func normalizeMoneroRPCEndpoint(parsed *url.URL) string {
 		return ""
 	}
 	copied := *parsed
-	copied.Path = strings.TrimSuffix(copied.Path, "/")
-	if strings.HasSuffix(copied.Path, "/json_rpc") {
-		copied.Path = strings.TrimSuffix(copied.Path, "/json_rpc")
-	}
+	copied.Path = strings.TrimSuffix(strings.TrimSuffix(copied.Path, "/"), "/json_rpc")
 	return strings.TrimSuffix(copied.String(), "/")
 }
 
@@ -705,13 +702,7 @@ func (s *FrostSigner) GetChainBlock(height int64) (chainBlock, error) {
 		}
 		return chainBlock{}, fmt.Errorf("fail to call frost chain-block endpoint: %w", err)
 	}
-	return chainBlock{
-		Height:       out.Height,
-		Reward:       out.Reward,
-		Hash:         out.Hash,
-		PreviousHash: out.PreviousHash,
-		TxHashes:     out.TxHashes,
-	}, nil
+	return chainBlock(out), nil
 }
 
 func (s *FrostSigner) TxExists(txHash string) (bool, error) {
@@ -856,77 +847,6 @@ func (s *FrostSigner) callGet(path string, out any) error {
 	}
 
 	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("fail to call frost endpoint %s: %w", path, err)
-	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
-
-	respBody, err := readBoundedResponseBody(resp.Body, maxFrostResponseBytes)
-	if err != nil {
-		return fmt.Errorf("fail to read frost response: %w", err)
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return &frostHTTPError{
-			path:   path,
-			status: resp.StatusCode,
-			body:   strings.TrimSpace(string(respBody)),
-		}
-	}
-	if out == nil {
-		return nil
-	}
-	if len(respBody) == 0 {
-		return fmt.Errorf("frost endpoint %s returned empty response body", path)
-	}
-
-	if err = json.Unmarshal(respBody, out); err == nil {
-		return nil
-	}
-
-	var envelope xmrTSSResponseEnvelope
-	if envErr := json.Unmarshal(respBody, &envelope); envErr != nil {
-		return fmt.Errorf("fail to unmarshal frost response: %w", err)
-	}
-	if envelope.Error != "" || envelope.Message != "" {
-		msg := strings.TrimSpace(envelope.Error)
-		if msg == "" {
-			msg = strings.TrimSpace(envelope.Message)
-		}
-		return fmt.Errorf("frost endpoint %s error: %s", path, msg)
-	}
-	if len(envelope.Result) == 0 {
-		return fmt.Errorf("frost endpoint %s returned empty result", path)
-	}
-	if err = json.Unmarshal(envelope.Result, out); err != nil {
-		return fmt.Errorf("fail to unmarshal frost result: %w", err)
-	}
-	return nil
-}
-
-func (s *FrostSigner) callWithTimeout(method, path string, payload any, out any, timeout time.Duration) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("fail to marshal frost request payload: %w", err)
-	}
-
-	req, err := http.NewRequest(method, s.endpoint+path, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("fail to create frost request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if s.bearer != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bearer))
-	}
-	if s.username != "" {
-		req.SetBasicAuth(s.username, s.password)
-	}
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("fail to call frost endpoint %s: %w", path, err)
 	}

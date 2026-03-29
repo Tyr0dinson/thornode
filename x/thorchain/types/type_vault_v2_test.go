@@ -20,7 +20,7 @@ func mustPubKeysFromSeed(c *C, seedHex string) (common.PubKey, common.PubKey) {
 	privB, err := hex.DecodeString(seedHex)
 	c.Assert(err, IsNil)
 
-	secpPubAny, err := codec.FromTmPubKeyInterface(secp256k1.PrivKey(privB).PubKey())
+	secpPubAny, err := codec.FromCmtPubKeyInterface(secp256k1.PrivKey(privB).PubKey())
 	c.Assert(err, IsNil)
 	secpBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, secpPubAny)
 	c.Assert(err, IsNil)

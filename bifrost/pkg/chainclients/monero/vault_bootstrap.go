@@ -31,7 +31,7 @@ func deriveLocalFrostVaultBootstrap(thorKeys *thorclient.Keys) (*frostVaultBoots
 		return nil, fmt.Errorf("invalid local ed25519 private key length %d", len(privBytes))
 	}
 
-	tmPubKey, err := cryptocodec.ToTmPubKeyInterface(privKey.PubKey())
+	tmPubKey, err := cryptocodec.ToCmtPubKeyInterface(privKey.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("fail to convert local ed25519 pubkey: %w", err)
 	}

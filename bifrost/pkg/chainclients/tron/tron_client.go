@@ -363,21 +363,20 @@ func (c *TronClient) SignTx(
 				Msg("signed tx cache missing txid mapping, re-signing tx")
 		} else {
 			prevTx, txErr := c.api.GetTransaction(prevTxID)
-			if txErr != nil {
-				if isTronNotFoundErr(txErr) {
-					c.logger.Warn().
-						Str("txid", prevTxID).
-						Interface("tx", txOutItem).
-						Msg("cached signed tx missing from chain, re-signing tx")
-					c.signerCacheManager.RemoveSigned(prevTxID)
-				} else {
-					c.logger.Err(txErr).
-						Str("txid", prevTxID).
-						Interface("tx", txOutItem).
-						Msg("failed to check signed tx on chain")
-					return nil, nil, nil, txErr
-				}
-			} else if prevTx.TxId != "" {
+			switch {
+			case txErr != nil && isTronNotFoundErr(txErr):
+				c.logger.Warn().
+					Str("txid", prevTxID).
+					Interface("tx", txOutItem).
+					Msg("cached signed tx missing from chain, re-signing tx")
+				c.signerCacheManager.RemoveSigned(prevTxID)
+			case txErr != nil:
+				c.logger.Err(txErr).
+					Str("txid", prevTxID).
+					Interface("tx", txOutItem).
+					Msg("failed to check signed tx on chain")
+				return nil, nil, nil, txErr
+			case prevTx.TxId != "":
 				prevInfo, infoErr := c.api.GetTransactionInfo(prevTxID)
 				switch {
 				case infoErr == nil && tronTransactionConfirmed(prevInfo):
@@ -406,7 +405,7 @@ func (c *TronClient) SignTx(
 						Msg("failed to check signed tx confirmation on chain")
 					return nil, nil, nil, infoErr
 				}
-			} else {
+			default:
 				c.logger.Err(txErr).
 					Interface("tx", txOutItem).
 					Msg("cached signed tx missing txid on chain, re-signing tx")

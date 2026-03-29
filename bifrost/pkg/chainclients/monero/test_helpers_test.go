@@ -9,7 +9,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-const testSignerStoreSecret = "test-xmr-store-secret"
+const testSignerStoreSecret = "test-xmr-store-secret" // #nosec G101 -- test fixture only
 
 func testVaultPubKey(t *testing.T, seed string) common.PubKey {
 	t.Helper()
@@ -19,18 +19,6 @@ func testVaultPubKey(t *testing.T, seed string) common.PubKey {
 		t.Fatalf("test xmr pubkey: %v", err)
 	}
 	return pk
-}
-
-// testXMRAddress generates a valid checksummed XMR address deterministic to the seed.
-// In mocknet the address starts with '4' (primary network byte).
-func testXMRAddress(t *testing.T, seed string) string {
-	t.Helper()
-	pk := testVaultPubKey(t, seed)
-	addr, err := pk.GetAddress(common.XMRChain)
-	if err != nil {
-		t.Fatalf("test xmr address: %v", err)
-	}
-	return addr.String()
 }
 
 func testOutboundXMRDestination() common.Address {

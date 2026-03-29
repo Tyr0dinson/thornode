@@ -21,15 +21,13 @@ dogecoind \
   -rpcbind="$(hostname)" &
 
 # give time to dogecoind to start
-while true
-do
-	dogecoin-cli -regtest -rpcuser="$SIGNER_NAME" -rpcpassword="$SIGNER_PASSWD" generatetoaddress 1000 "$MASTER_ADDR" && break
-	sleep 5
+while true; do
+  dogecoin-cli -regtest -rpcuser="$SIGNER_NAME" -rpcpassword="$SIGNER_PASSWD" generatetoaddress 1000 "$MASTER_ADDR" && break
+  sleep 5
 done
 
 # mine a new block every BLOCK_TIME
-while true
-do
-	dogecoin-cli -regtest -rpcuser="$SIGNER_NAME" -rpcpassword="$SIGNER_PASSWD" generatetoaddress 1 "$MASTER_ADDR"
-	sleep "$BLOCK_TIME"
+while true; do
+  dogecoin-cli -regtest -rpcuser="$SIGNER_NAME" -rpcpassword="$SIGNER_PASSWD" generatetoaddress 1 "$MASTER_ADDR"
+  sleep "$BLOCK_TIME"
 done

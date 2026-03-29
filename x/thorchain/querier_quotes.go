@@ -973,8 +973,8 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		}
 		return nil
 	}
-	if err := validateMemoLength(memoString); err != nil {
-		return nil, err
+	if memoErr := validateMemoLength(memoString); memoErr != nil {
+		return nil, memoErr
 	}
 
 	// if from asset is a trade asset, create fake balance
@@ -1099,8 +1099,8 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		memoString = memo.ShortString()
 	}
 
-	if err := validateMemoLength(memoString); err != nil {
-		return nil, err
+	if memoErr := validateMemoLength(memoString); memoErr != nil {
+		return nil, memoErr
 	}
 
 	maxQ := int64(maxSwapQuantity)
