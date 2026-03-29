@@ -1401,12 +1401,8 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 		"hash", voter.TxID,
 		"count", len(stagedItems))
 
-	// Get an active vault to use as the destination for reverse swaps
-	activeVaults, err := keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
-	if err != nil || len(activeVaults) == 0 {
-		return fmt.Errorf("fail to get active vaults: %w", err)
-	}
-	vault := activeVaults[0]
+	// Lazy-loaded active vault for reverse swaps (only needed for non-RUNE outputs).
+	var vault Vault
 
 	// Get the source amount from the voter's inbound transaction
 	// This is the asset that was credited to the pool on mempool observation
@@ -1424,10 +1420,12 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 			"from_amount", action.Coin.Amount,
 			"to_asset", sourceAsset)
 
-		// For native outputs (RUNE, synths, trade assets), directly adjust pool balances
-		// For external chain outputs, create a reverse swap then donate
-		if action.Chain.IsTHORChain() {
-			// Native output - directly adjust pool balances to reverse the swap
+		// For RUNE outputs, directly adjust pool balances to reverse the swap.
+		// For non-RUNE native outputs (synths, trade, secured) and external chain outputs,
+		// create a reverse swap then donate — the emitted amount is denominated in a
+		// non-RUNE asset and cannot be added to BalanceRune.
+		if action.Coin.Asset.IsRune() {
+			// RUNE output - directly adjust pool balances to reverse the swap
 			pool, err := keeper.GetPool(ctx, sourceAsset.GetLayer1Asset())
 			if err != nil {
 				return fmt.Errorf("fail to get pool for native revert: %w", err)
@@ -1441,25 +1439,35 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 			if !assetRemovedFromPool {
 				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
 				assetRemovedFromPool = true
-				ctx.Logger().Info("reverted native mempool swap pool balances",
+				ctx.Logger().Info("reverted RUNE mempool swap pool balances",
 					"pool", sourceAsset.GetLayer1Asset(),
 					"rune_added", action.Coin.Amount,
 					"asset_removed", sourceAmount)
 			} else {
-				ctx.Logger().Info("reverted native mempool swap (rune only)",
+				ctx.Logger().Info("reverted RUNE mempool swap (rune only)",
 					"pool", sourceAsset.GetLayer1Asset(),
 					"rune_added", action.Coin.Amount)
 			}
 
 			if err := keeper.SetPool(ctx, pool); err != nil {
-				return fmt.Errorf("fail to set pool after native revert: %w", err)
+				return fmt.Errorf("fail to set pool after RUNE revert: %w", err)
 			}
 			continue
 		}
 
-		// External chain output - create a reverse swap and attach the donate action
+		// Non-RUNE output - create a reverse swap and attach the donate action
 		// via PostSwapMemo so Tx.Memo remains a normal swap memo and | passthrough
 		// semantics remain reserved for outbound memo data.
+
+		// Lazy-load an active vault on the first non-RUNE iteration.
+		if vault.PubKey.IsEmpty() {
+			activeVaults, err := keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
+			if err != nil || len(activeVaults) == 0 {
+				return fmt.Errorf("fail to get active vaults: %w", err)
+			}
+			vault = activeVaults[0]
+		}
+
 		txID := CreateMempoolRevertTxID(voter.TxID, i)
 
 		// Get max gas coin for the chain

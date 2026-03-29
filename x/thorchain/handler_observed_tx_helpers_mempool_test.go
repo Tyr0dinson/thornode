@@ -313,6 +313,58 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	updatedRuneVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, runeTxID)
 	c.Assert(err, IsNil)
 	c.Check(updatedRuneVoter.Reverted, Equals, true, Commentf("RUNE voter should be marked as reverted"))
+
+	// Test 4: Non-RUNE native output (synth) should use reverse swap, not direct BalanceRune adjustment
+	synthTxID := GetRandomTxHash()
+	synthAsset, err := common.NewAsset("ETH/ETH")
+	c.Assert(err, IsNil)
+	synthObservedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:    synthTxID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		},
+	}
+	synthVoter := NewObservedTxVoter(synthTxID, ObservedTxs{synthObservedTx})
+	synthVoter.Tx = synthObservedTx
+	synthVoter.UnfinalizedHeight = ctx.BlockHeight()
+
+	// Create a synth outbound on THORChain (not RUNE)
+	synthTxOutItem := TxOutItem{
+		Chain:     common.THORChain,
+		InHash:    synthTxID,
+		ToAddress: GetRandomRUNEAddress(),
+		Coin:      common.NewCoin(synthAsset, cosmos.NewUint(3*common.One)),
+	}
+	synthVoter.Actions = []TxOutItem{synthTxOutItem}
+
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, synthTxOutItem, ctx.BlockHeight()+20), IsNil)
+	mgr.Keeper().SetObservedTxInVoter(ctx, synthVoter)
+
+	// Snapshot ETH pool BalanceRune immediately before the call under test
+	ethPoolBefore, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+
+	err = revertMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, synthVoter)
+	c.Assert(err, IsNil, Commentf("Should handle synth output via reverse swap"))
+
+	updatedSynthVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, synthTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedSynthVoter.Reverted, Equals, true, Commentf("Synth voter should be marked as reverted"))
+
+	// Verify a reverse swap was queued (not a direct pool adjustment)
+	synthReverseTxID := CreateMempoolRevertTxID(synthTxID, 0)
+	synthReverseSwap, err := mgr.Keeper().GetSwapQueueItem(ctx, synthReverseTxID, 0)
+	c.Assert(err, IsNil, Commentf("Synth output should queue a reverse swap"))
+	c.Check(synthReverseSwap.Tx.Coins[0].Asset, DeepEquals, synthAsset,
+		Commentf("Reverse swap input should be the synth asset"))
+
+	// Verify the source pool's BalanceRune was NOT corrupted by adding synth amount
+	ethPoolAfter, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(ethPoolAfter.BalanceRune.Equal(ethPoolBefore.BalanceRune), Equals, true,
+		Commentf("ETH pool BalanceRune should not be modified by synth revert; got %s, want %s",
+			ethPoolAfter.BalanceRune, ethPoolBefore.BalanceRune))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnError(c *C) {
