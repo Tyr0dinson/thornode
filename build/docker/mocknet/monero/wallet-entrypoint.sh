@@ -61,17 +61,17 @@ daemon_request() {
 
 current_height() {
   height="$(
-    curl -sf "${DAEMON_HTTP_URL}/get_height" 2>/dev/null \
-      | jq -r '.height // 0' 2>/dev/null || echo 0
+    curl -sf "${DAEMON_HTTP_URL}/get_height" 2>/dev/null |
+      jq -r '.height // 0' 2>/dev/null || echo 0
   )"
 
   case "${height}" in
-    ''|*[!0-9]*)
-      echo 0
-      ;;
-    *)
-      echo "${height}"
-      ;;
+  '' | *[!0-9]*)
+    echo 0
+    ;;
+  *)
+    echo "${height}"
+    ;;
   esac
 }
 
@@ -127,7 +127,7 @@ wallet_pid=$!
 block_pid=
 
 shutdown() {
-  if [ -n "${block_pid:-}" ] && kill -0 "${block_pid}" 2>/dev/null; then
+  if [ -n "${block_pid-}" ] && kill -0 "${block_pid}" 2>/dev/null; then
     kill "${block_pid}" 2>/dev/null || true
     wait "${block_pid}" 2>/dev/null || true
   fi

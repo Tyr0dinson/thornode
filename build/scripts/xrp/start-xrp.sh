@@ -15,8 +15,8 @@ wait_for_rippled() {
 }
 
 master_account_ready() {
-  "${RIPPLED_BIN}" account_info "${SIM_MASTER_ACCOUNT}" validated 2>/dev/null \
-    | grep -q "\"Account\" : \"${SIM_MASTER_ACCOUNT}\""
+  "${RIPPLED_BIN}" account_info "${SIM_MASTER_ACCOUNT}" validated 2>/dev/null |
+    grep -q "\"Account\" : \"${SIM_MASTER_ACCOUNT}\""
 }
 
 # Start xrpl and wait for the local RPC to come up before the bootstrap funding step.
@@ -28,9 +28,9 @@ while ! master_account_ready; do
   if [ "${fund_submitted}" = false ]; then
     submit_output="$("${RIPPLED_BIN}" submit "${GENESIS_SECRET}" "${MASTER_FUND_PAYMENT}" 2>&1 || true)"
     case "${submit_output}" in
-      *'"engine_result" : "tesSUCCESS"'*|*'"engine_result" : "tefPAST_SEQ"'*)
-        fund_submitted=true
-        ;;
+    *'"engine_result" : "tesSUCCESS"'* | *'"engine_result" : "tefPAST_SEQ"'*)
+      fund_submitted=true
+      ;;
     esac
   fi
 

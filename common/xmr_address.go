@@ -109,7 +109,7 @@ func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, chainNetwork ChainNetwo
 	payload = append(payload, xmrFeaturedMainnetNetworkByte)
 	payload = append(payload, spendPubKey...)
 	payload = append(payload, viewPubKey[:]...)
-	features := uint64(xmrFeaturedSubaddressBit | xmrFeaturedGuaranteedBit)
+	features := xmrFeaturedSubaddressBit | xmrFeaturedGuaranteedBit
 	payload = xmrAppendVarint(payload, features)
 
 	checksum := eth.Keccak256(payload)

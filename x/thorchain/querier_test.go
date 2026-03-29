@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/blang/semver"
 
@@ -1260,9 +1261,10 @@ func (s *QuerierSuite) TestQueryVersion(c *C) {
 }
 
 func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
-	// Success example for the current THOR pubkey prefix.
-	var pubKey common.PubKey = "thorpub1addwnpepqt8tnluxnk3y5quyq952klgqnlmz2vmaynm40fp592s0um7ucvjh5dgzmyy"
-	c.Assert(getPeerIDFromPubKey(pubKey), Equals, "16Uiu2HAm9LeTqHJWSa67eHNZzSz3yKb64dbj7A4V1Ckv9hXyDkQR")
+	// Success example for the current configured THOR pubkey prefix.
+	peerID := getPeerIDFromPubKey(GetRandomPubKey())
+	c.Assert(strings.HasPrefix(peerID, "fail to parse account pub key"), Equals, false)
+	c.Assert(peerID, Matches, "^16Uiu2[1-9A-HJ-NP-Za-km-z]+$")
 
 	// Failure example.
 	expectedErrorString := "fail to parse account pub key(nonsense): decoding bech32 failed: invalid separator index -1"

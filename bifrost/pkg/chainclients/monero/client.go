@@ -162,7 +162,7 @@ func NewClient(
 	if thorKeys != nil {
 		if privKey, keyErr := thorKeys.GetPrivateKey(); keyErr != nil {
 			logger.Debug().Err(keyErr).Msg("fail to get local node private key for monero vault mapping")
-		} else if tmPubKey, convErr := codec.ToTmPubKeyInterface(privKey.PubKey()); convErr != nil {
+		} else if tmPubKey, convErr := codec.ToCmtPubKeyInterface(privKey.PubKey()); convErr != nil {
 			logger.Debug().Err(convErr).Msg("fail to convert local node pubkey for monero vault mapping")
 		} else if pk, pubErr := common.NewPubKeyFromCrypto(tmPubKey); pubErr != nil {
 			logger.Debug().Err(pubErr).Msg("fail to encode local node pubkey for monero vault mapping")
@@ -316,7 +316,7 @@ func (c *Client) consolidationRunner() {
 
 func (c *Client) tryConsolidationPass() {
 	c.ensureConsolidationState()
-	if !c.consolidateInProgress.CAS(false, true) {
+	if !c.consolidateInProgress.CompareAndSwap(false, true) {
 		return
 	}
 	defer c.consolidateInProgress.Store(false)
@@ -509,7 +509,6 @@ func (c *Client) consolidateVault(
 	}
 	reserve := initialConsolidationReserve(spendableAtomic, settings.ReserveBps)
 	lastErr := error(nil)
-	lastTxHash := ""
 	for attempt := int64(1); attempt <= maxRetries; attempt++ {
 		if reserve >= spendableAtomic {
 			break
@@ -561,7 +560,6 @@ func (c *Client) consolidateVault(
 			continue
 		}
 
-		lastTxHash = txHash
 		c.setConsolidationVaultState(stateKey, xmrConsolidationVaultState{
 			LastAttemptHeight: thorchainHeight,
 			LastSuccessHeight: thorchainHeight,
@@ -579,7 +577,6 @@ func (c *Client) consolidateVault(
 	}
 
 	state.LastAttemptHeight = thorchainHeight
-	state.LastTxHash = lastTxHash
 	state.ConsecutiveFails++
 	c.setConsolidationVaultState(stateKey, state)
 	if lastErr != nil {
@@ -913,15 +910,15 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if msgID == "" {
 		return nil, nil, nil, fmt.Errorf("FROST keysign returned empty msg_id")
 	}
-	if err := tssp.ValidateFrostEventuality(
+	if validateErr := tssp.ValidateFrostEventuality(
 		frostReq,
 		msgID,
 		resp.TxHash,
 		resp.TxHex,
 		resp.FeeAtomic,
 		resp.Eventuality,
-	); err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid FROST eventuality: %w", err)
+	); validateErr != nil {
+		return nil, nil, nil, fmt.Errorf("invalid FROST eventuality: %w", validateErr)
 	}
 
 	payload := signedTxPayload{

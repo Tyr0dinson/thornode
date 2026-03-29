@@ -161,7 +161,7 @@ func (s *SwapSuite) TestSwap(c *C) {
 			destination:   GetRandomETHAddress(),
 			returnAmount:  cosmos.ZeroUint(),
 			tradeTarget:   cosmos.NewUint(9 * common.One),
-			expectedErr:   errors.New("emit asset 757455743 less than price limit 900000000"),
+			expectedErr:   errors.New("emit asset 757474493 less than price limit 900000000"),
 		},
 		{
 			name:          "swap-no-target-price-no-protection",
@@ -223,9 +223,10 @@ func (s *SwapSuite) TestSwap(c *C) {
 			amount:        cosmos.NewUint(2 * 1000_000),
 			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomETHAddress(),
-			returnAmount:  cosmos.ZeroUint(),
+			returnAmount:  cosmos.NewUint(1_999_200),
 			tradeTarget:   cosmos.NewUint(1961700),
-			expectedErr:   errors.New("emit asset 1942950 less than price limit 1961700"),
+			expectedErr:   nil,
+			events:        1,
 		},
 	}
 

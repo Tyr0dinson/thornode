@@ -726,7 +726,7 @@ services:
           "-H",
           "Content-Type: application/json",
           "-d",
-          "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_block_count\"}",
+          '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}',
           "http://localhost:18081/json_rpc",
         ]
       interval: 5s
@@ -762,7 +762,7 @@ services:
           "-H",
           "Content-Type: application/json",
           "-d",
-          "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_address\"}",
+          '{"jsonrpc":"2.0","id":"0","method":"get_address"}',
           "http://localhost:18082/json_rpc",
         ]
       interval: 5s
@@ -803,13 +803,7 @@ services:
     ports:
       - 8283:8283
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-sf",
-          "http://localhost:8283/health",
-        ]
+      test: ["CMD", "curl", "-sf", "http://localhost:8283/health"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -871,13 +865,7 @@ services:
     ports:
       - 8284:8284
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-sf",
-          "http://localhost:8284/health",
-        ]
+      test: ["CMD", "curl", "-sf", "http://localhost:8284/health"]
       interval: 5s
       timeout: 5s
       retries: 30

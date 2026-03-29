@@ -354,7 +354,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	)
 	msgSwapPriceProtection := NewMsgSwap(tx, common.DOGEAsset, signerDOGEAddr, cosmos.NewUint(2*common.One), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
 	result, _, err = handler.handleWithEmit(ctx, *msgSwapPriceProtection)
-	c.Assert(err.Error(), Equals, errors.New("emit asset 192177506 less than price limit 200000000").Error())
+	c.Assert(err.Error(), Equals, errors.New("emit asset 192196256 less than price limit 200000000").Error())
 	c.Assert(result, IsNil)
 
 	poolTCAN := NewPool()

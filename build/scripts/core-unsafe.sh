@@ -59,7 +59,7 @@ deploy_evm_contracts() {
     RPC_VAR="${CHAIN}_HOST"
     RPC_URL="$(eval echo "\$${RPC_VAR}")"
     REQUIRE_ACCOUNTS=0
-    if [[ "$CHAIN" == "ETH" || "$CHAIN" == "BASE" || "$CHAIN" == "BSC" ]]; then
+    if [[ $CHAIN == "ETH" || $CHAIN == "BASE" || $CHAIN == "BSC" ]]; then
       REQUIRE_ACCOUNTS=1
     fi
 

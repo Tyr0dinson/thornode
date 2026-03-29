@@ -52,13 +52,6 @@ func NewSolvencyCheckActor(rng *rand.Rand) *Actor {
 // Ops
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func solvencyDiff(a, b cosmos.Uint) cosmos.Uint {
-	if a.GTE(b) {
-		return a.Sub(b)
-	}
-	return b.Sub(a)
-}
-
 func solvencyShortfall(vaultAmount, l1Amount cosmos.Uint) cosmos.Uint {
 	if l1Amount.GTE(vaultAmount) {
 		return cosmos.ZeroUint()

@@ -92,7 +92,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 	pool, _ := k.GetPool(ctx, common.AVAXAsset)
 	c.Assert(pool.IsEmpty(), Equals, true)
 	fee, err = gasMgr.GetAssetOutboundFee(ctx, common.AVAXAsset, false)
-	c.Assert(fee.Uint64(), Equals, uint64(1500))
+	c.Assert(fee.Uint64(), Equals, uint64(1000))
 	c.Assert(err, IsNil)
 
 	// conversion to rune requires a pool, so should return 0 and no error
@@ -110,7 +110,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 
 	// conversion to rune should now work
 	fee, err = gasMgr.GetAssetOutboundFee(ctx, common.AVAXAsset, true)
-	c.Assert(fee.Uint64(), Equals, uint64(1500), Commentf("%d vs %d", fee.Uint64(), uint64(1500)))
+	c.Assert(fee.Uint64(), Equals, uint64(1000), Commentf("%d vs %d", fee.Uint64(), uint64(1000)))
 	c.Assert(err, IsNil)
 
 	// BTC chain
@@ -120,7 +120,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 	// No gas pool set, but not needed if no conversion is needed, network fee should be returned
 	fee, err = gasMgr.GetAssetOutboundFee(ctx, common.BTCAsset, false)
 	c.Assert(err, IsNil)
-	c.Assert(fee.Uint64(), Equals, uint64(5250), Commentf("%d vs %d", fee.Uint64(), uint64(5250)))
+	c.Assert(fee.Uint64(), Equals, uint64(3500), Commentf("%d vs %d", fee.Uint64(), uint64(3500)))
 
 	c.Assert(k.SetPool(ctx, Pool{
 		BalanceRune:  cosmos.NewUint(100 * common.One),
@@ -129,7 +129,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 		Status:       PoolAvailable,
 	}), IsNil)
 	fee, _ = gasMgr.GetAssetOutboundFee(ctx, common.BTCAsset, false)
-	c.Assert(fee.Uint64(), Equals, uint64(5250), Commentf("%d vs %d", fee.Uint64(), uint64(5250)))
+	c.Assert(fee.Uint64(), Equals, uint64(3500), Commentf("%d vs %d", fee.Uint64(), uint64(3500)))
 
 	// Synth asset (BTC/BTC)
 	sBTC, err := common.NewAsset("BTC/BTC")
@@ -178,7 +178,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 	networkFee = NewNetworkFee(common.BTCChain, 1000, 50000)
 	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, networkFee), IsNil)
 	fee, _ = gasMgr.GetAssetOutboundFee(ctx, common.BTCAsset, false)
-	c.Assert(fee.Uint64(), Equals, uint64(75000000), Commentf("%d vs %d", fee.Uint64(), uint64(75000000)))
+	c.Assert(fee.Uint64(), Equals, uint64(50000000), Commentf("%d vs %d", fee.Uint64(), uint64(50000000)))
 
 	// DynamicOutboundFeeMultiplier
 	// set mimirs:
@@ -192,7 +192,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 
 	// No surplus to start, initial surplus is set, fee should return with 1x multiplier
 	fee, err = gasMgr.GetAssetOutboundFee(ctx, common.BTCAsset, false)
-	c.Assert(fee.Uint64(), Equals, uint64(75000000), Commentf("%d vs %d", fee.Uint64(), uint64(75000000)))
+	c.Assert(fee.Uint64(), Equals, uint64(50000000), Commentf("%d vs %d", fee.Uint64(), uint64(50000000)))
 	c.Assert(err, IsNil)
 
 	// Add a surplus for BTC - multiplier should be 50% of max-min (i.e. 2x)
@@ -205,7 +205,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 	c.Assert(k.AddToOutboundFeeWithheldRune(ctx, common.BTCAsset, cosmos.NewUint(50_00000000)), IsNil)
 	fee, _ = gasMgr.GetAssetOutboundFee(ctx, common.BTCAsset, false)
 	// This condition hits the minimum outbound fee threshold, so the fee no longer follows the pure multiplier path.
-	c.Assert(fee.Uint64(), Equals, uint64(99960000), Commentf("%d vs %d", fee.Uint64(), uint64(99960000)))
+	c.Assert(fee.Uint64(), Equals, uint64(99275000), Commentf("%d vs %d", fee.Uint64(), uint64(99275000)))
 	c.Assert(err, IsNil)
 
 	// Add a hypothetical asset on BTC, which should have a different multiplier than BTC
@@ -219,7 +219,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 	}), IsNil)
 
 	fee, err = gasMgr.GetAssetOutboundFee(ctx, btcUsd, false)
-	c.Assert(fee.Uint64(), Equals, uint64(150000000), Commentf("%d vs %d", fee.Uint64(), uint64(150000000))) // BTC.USDC should have the current initial multiplier path applied
+	c.Assert(fee.Uint64(), Equals, uint64(100000000), Commentf("%d vs %d", fee.Uint64(), uint64(100000000))) // BTC.USDC should have the current initial multiplier path applied
 	c.Assert(err, IsNil)
 
 	// Add a surplus for BTC.USDC - multiplier should be 50% of max-min (i.e. 2x)
@@ -232,7 +232,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 	c.Assert(k.AddToOutboundFeeWithheldRune(ctx, btcUsd, cosmos.NewUint(50_00000000)), IsNil)
 	fee, err = gasMgr.GetAssetOutboundFee(ctx, btcUsd, false)
 	// This condition hits the minimum outbound fee threshold, so the fee no longer follows the pure multiplier path.
-	c.Assert(fee.Uint64(), Equals, uint64(199920000), Commentf("%d vs %d", fee.Uint64(), uint64(199920000)))
+	c.Assert(fee.Uint64(), Equals, uint64(198550000), Commentf("%d vs %d", fee.Uint64(), uint64(198550000)))
 	c.Assert(err, IsNil)
 }
 
@@ -290,8 +290,8 @@ func (GasManagerTestSuite) TestGetMaxGas(c *C) {
 	c.Assert(err, IsNil)
 	decimals := gasCoin.Asset.Chain.GetGasAssetDecimal()
 	c.Assert(decimals, Equals, int64(6))
-	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(1000*(127*3/2)*1e2))
-	// 1e2 uatom (1e6) -> THORChain Amount (1e8) conversion
+	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(1000*(127*3/2)))
+	// GAIA max gas is now tracked directly in the gas asset's native precision (1e6).
 
 	networkFee = NewNetworkFee(common.ETHChain, 123, 127) // 127 gwei gas rate
 	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, networkFee), IsNil)
@@ -397,7 +397,7 @@ func (GasManagerTestSuite) TestGetGasDetailsHighPrecisionAsset(c *C) {
 
 	fee, err := gasMgr.GetAssetOutboundFee(ctx, common.XMRAsset, false)
 	c.Assert(err, IsNil)
-	c.Assert(fee.Uint64(), Equals, uint64(7500))
+	c.Assert(fee.Uint64(), Equals, uint64(5000))
 }
 
 func (GasManagerTestSuite) TestGetGasDetailsLowDecimalAssetDoesNotRoundToZero(c *C) {

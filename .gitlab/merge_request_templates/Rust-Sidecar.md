@@ -1,3 +1,5 @@
+# Rust Sidecar MR
+
 ## Summary
 
 Describe the change and why it belongs on the Rust-sidecar line.
