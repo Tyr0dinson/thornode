@@ -12,7 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-func TestGetAccountUsesConfirmedCommitment(t *testing.T) {
+func TestGetAccountUsesFinalizedCommitment(t *testing.T) {
 	var commitment string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

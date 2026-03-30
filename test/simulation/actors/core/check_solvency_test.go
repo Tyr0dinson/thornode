@@ -113,6 +113,21 @@ func TestSolvencyMismatchRetryable(t *testing.T) {
 			retryable: true,
 		},
 		{
+			name: "sol only mismatch is retryable",
+			mismatches: []solvencyMismatch{
+				{asset: common.SOLAsset},
+			},
+			retryable: true,
+		},
+		{
+			name: "xmr and sol mismatch is retryable",
+			mismatches: []solvencyMismatch{
+				{asset: common.XMRAsset},
+				{asset: common.SOLAsset},
+			},
+			retryable: true,
+		},
+		{
 			name: "non xmr mismatch is not retryable",
 			mismatches: []solvencyMismatch{
 				{asset: common.BTCAsset},
