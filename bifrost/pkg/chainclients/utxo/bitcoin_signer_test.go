@@ -132,11 +132,12 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 				c.Assert(err, IsNil)
 			case "listunspent":
 				body := string(buf)
-				if s.subDustFixtureAddress != "" && strings.Contains(body, s.subDustFixtureAddress) {
+				switch {
+				case s.subDustFixtureAddress != "" && strings.Contains(body, s.subDustFixtureAddress):
 					httpTestHandler(c, rw, "../../../../test/fixtures/btc/listunspent-subdust.json")
-				} else if strings.Contains(body, "tb1qleqepvj0d9n7899qj3skd8tw7c7jvh3zlxul70") {
+				case strings.Contains(body, "tb1qleqepvj0d9n7899qj3skd8tw7c7jvh3zlxul70"):
 					httpTestHandler(c, rw, "../../../../test/fixtures/btc/listunspent-tss.json")
-				} else {
+				default:
 					httpTestHandler(c, rw, "../../../../test/fixtures/btc/listunspent.json")
 				}
 			}
