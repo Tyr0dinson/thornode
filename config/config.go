@@ -1007,6 +1007,7 @@ type BifrostMetricsConfiguration struct {
 
 type BifrostTSSConfiguration struct {
 	BootstrapPeers               []string `mapstructure:"bootstrap_peers"`
+	BootstrapRetries             int      `mapstructure:"bootstrap_retries"`
 	Rendezvous                   string   `mapstructure:"rendezvous"`
 	P2PPort                      int      `mapstructure:"p2p_port"`
 	InfoAddress                  string   `mapstructure:"info_address"`
@@ -1057,14 +1058,19 @@ func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) 
 		return nil, nil
 	}
 
-	for attempt := 1; attempt <= bootstrapPeerRetries; attempt++ {
+	retries := c.BootstrapRetries
+	if retries <= 0 {
+		retries = bootstrapPeerRetries
+	}
+
+	for attempt := 1; attempt <= retries; attempt++ {
 		addrs := resolveBootstrapPeers(c.BootstrapPeers)
 		if len(addrs) > 0 {
 			log.Info().Interface("peers", addrs).Msg("bootstrap peers")
 			return addrs, nil
 		}
 
-		if attempt < bootstrapPeerRetries {
+		if attempt < retries {
 			log.Warn().
 				Int("attempt", attempt).
 				Msg("no bootstrap peers reachable, retrying")
