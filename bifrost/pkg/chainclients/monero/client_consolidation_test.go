@@ -368,7 +368,9 @@ func TestEnsureConsolidationStateInitializesZeroValueClient(t *testing.T) {
 	if client.consolidationState == nil {
 		t.Fatal("expected consolidationState to be initialized")
 	}
-	if client.GetVaultLock("") != client.GetVaultLock("") {
+	lock1 := client.GetVaultLock("")
+	lock2 := client.GetVaultLock("")
+	if lock1 != lock2 {
 		t.Fatal("expected empty vault lock lookups to share the same mutex")
 	}
 }
