@@ -1926,7 +1926,7 @@ func isExplicitStreamingSwap(swapType types.SwapType, streamInterval, streamQuan
 // inbound is the kind of swap that may use the mempool path; live TOR-capacity
 // checks still happen separately at execution time.
 func canUseMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.Tx, memo mem.Memo) bool {
-	if !memo.IsType(TxSwap) {
+	if !memo.IsType(TxSwap) && !memo.IsType(TxLimitSwap) {
 		return false
 	}
 

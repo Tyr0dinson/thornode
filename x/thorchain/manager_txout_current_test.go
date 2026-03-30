@@ -284,7 +284,7 @@ func (s TxOutStoreSuite) TestTryAddTxOutItemDefersMempoolAffiliateSideEffects(c 
 			chain:       common.ETHChain,
 			targetAsset: common.ETHAsset,
 			stagedAsset: common.ETHAsset,
-			exactAmount: false,
+			exactAmount: true,
 		},
 	}
 
@@ -396,6 +396,7 @@ func (s TxOutStoreSuite) TestTryAddTxOutItemDeferredMempoolAffiliateFeeStillHono
 	voter := NewObservedTxVoter(inHash, common.ObservedTxs{observedTx})
 	voter.Tx = observedTx
 	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	item := TxOutItem{
@@ -425,6 +426,102 @@ func (s TxOutStoreSuite) TestTryAddTxOutItemDeferredMempoolAffiliateFeeStillHono
 
 	_, queueErr := mgr.Keeper().GetSwapQueueItem(ctx, inHash, 2)
 	c.Assert(queueErr, NotNil, Commentf("failed minOut validation must not queue affiliate sidecars"))
+}
+
+func (s TxOutStoreSuite) TestTryAddTxOutItemStagesGrossExternalMempoolOutboundWithoutFeeSideEffects(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+
+	w.keeper.SetMimir(w.ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	w.keeper.SetMimir(w.ctx, constants.EnableAdvSwapQueue.String(), 0)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, w.activeNodeAccount), IsNil)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.LPUnits = cosmos.NewUint(1000 * common.One)
+		c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	}
+
+	activeVault := GetRandomVault()
+	activeVault.Status = ActiveVault
+	activeVault.Type = AsgardVault
+	activeVault.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))}
+	c.Assert(w.keeper.SetVault(w.ctx, activeVault), IsNil)
+
+	ownerAddr := GetRandomETHAddress()
+	inHash := GetRandomTxHash()
+	inboundMemo := NewSwapMemo(w.ctx, w.mgr, common.ETHAsset, ownerAddr, cosmos.ZeroUint(), "", cosmos.ZeroUint())
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          inHash,
+			Chain:       common.BTCChain,
+			FromAddress: GetRandomBTCAddress(),
+			ToAddress:   GetRandomBTCAddress(),
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+			},
+			Memo: inboundMemo,
+		},
+		Status:         common.Status_done,
+		BlockHeight:    w.ctx.BlockHeight(),
+		FinaliseHeight: 0,
+		Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+	}
+	voter := NewObservedTxVoter(inHash, common.ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.UnfinalizedHeight = w.ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	initialOutboundFeeWithheldRune, err := w.keeper.GetOutboundFeeWithheldRune(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	initialPool, err := w.keeper.GetPool(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+
+	// A mempool-staged outbound should stay gross and should not touch pool or
+	// fee accounting until finalization.
+	outboundAmount := cosmos.NewUint(100 * common.One)
+	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   ownerAddr,
+		InHash:      inHash,
+		VaultPubKey: activeVault.PubKey,
+		Coin:        common.NewCoin(common.ETHAsset, outboundAmount),
+	}, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	// The staged outbound and speculative voter action should both keep the full
+	// gross amount so rollback can unwind exactly what the mempool swap emitted.
+	stagedItems, err := w.keeper.GetStagedOutbounds(w.ctx, inHash)
+	c.Assert(err, IsNil)
+	c.Assert(stagedItems, HasLen, 1)
+	c.Check(stagedItems[0].TxOutItem.Coin.Amount.Equal(outboundAmount), Equals, true,
+		Commentf("mempool staging should keep the gross external outbound amount"))
+
+	updatedVoter, err := w.keeper.GetObservedTxInVoter(w.ctx, inHash)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVoter.Actions, HasLen, 1)
+	c.Check(updatedVoter.Actions[0].Coin.Amount.Equal(outboundAmount), Equals, true,
+		Commentf("planned mempool action should stay gross until finalization"))
+
+	// The deferred-fee fix is only correct if no fee-side accounting leaks into
+	// staging. Reserve/pool accounting must remain unchanged here.
+	outboundFeeWithheldRune, err := w.keeper.GetOutboundFeeWithheldRune(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(outboundFeeWithheldRune.Equal(initialOutboundFeeWithheldRune), Equals, true,
+		Commentf("mempool staging should not add outbound fee withheld rune early"))
+
+	updatedPool, err := w.keeper.GetPool(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(updatedPool.BalanceRune.Equal(initialPool.BalanceRune), Equals, true,
+		Commentf("mempool staging should not mutate pool rune balance"))
+	c.Check(updatedPool.BalanceAsset.Equal(initialPool.BalanceAsset), Equals, true,
+		Commentf("mempool staging should not mutate pool asset balance"))
 }
 
 func (s TxOutStoreSuite) TestAddGasFees(c *C) {
