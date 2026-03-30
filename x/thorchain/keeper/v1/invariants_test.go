@@ -94,6 +94,21 @@ func (s *InvariantsSuite) TestAsgardInvariant(c *C) {
 	c.Assert(broken, Equals, false)
 	c.Assert(msg, IsNil)
 
+	// Escrowed mempool secured targets stage the underlying L1 asset on THORChain.
+	// That bookkeeping entry should not break native Asgard accounting.
+	stagedEscrow := TxOutItem{
+		Chain:     common.THORChain,
+		InHash:    GetRandomTxHash(),
+		ToAddress: GetRandomTHORAddress(),
+		Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(123)),
+	}
+	c.Assert(k.SetStagedOutbound(ctx, stagedEscrow, ctx.BlockHeight()+10), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+	k.DeleteStagedOutbounds(ctx, stagedEscrow.InHash)
+
 	// send a little more to make asgard oversolvent
 	extraCoins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1)))
 	c.Assert(k.SendFromModuleToModule(ctx, ReserveName, AsgardName, extraCoins), IsNil)

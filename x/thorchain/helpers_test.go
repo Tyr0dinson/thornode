@@ -1268,26 +1268,11 @@ func (HelperSuite) TestSettleSwapPostSwapMemoRollbackOnSetPoolError(c *C) {
 	sourcePool.Status = PoolAvailable
 	c.Assert(baseKeeper.SetPool(ctx, sourcePool), IsNil)
 
-	originalTxID := GetRandomTxHash()
-	originalTx := common.NewTx(
-		originalTxID,
-		GetRandomBTCAddress(),
-		GetRandomBTCAddress(),
-		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One))},
-		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
-		"SWAP:ETH.ETH",
-	)
-
-	voter := NewObservedTxVoter(originalTxID, ObservedTxs{{Tx: originalTx}})
-	voter.Tx = ObservedTx{Tx: originalTx}
-	baseKeeper.SetObservedTxInVoter(ctx, voter)
-
 	mgr.K = SettleSwapPostSwapSetPoolFailKeeper{Keeper: baseKeeper}
 
-	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
 	msg := types.MsgSwap{
 		Tx: common.NewTx(
-			revertTxID,
+			GetRandomTxHash(),
 			GetRandomTHORAddress(),
 			GetRandomTHORAddress(),
 			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One))},
@@ -1304,9 +1289,9 @@ func (HelperSuite) TestSettleSwapPostSwapMemoRollbackOnSetPoolError(c *C) {
 		},
 	}
 
-	err := settleSwap(ctx, mgr, msg, "mempool revert post-swap")
+	err := settleSwap(ctx, mgr, msg, "mempool rollback post-swap")
 	c.Assert(err, NotNil)
-	c.Assert(strings.Contains(err.Error(), "fail to set pool after mempool revert deduction"), Equals, true)
+	c.Assert(strings.Contains(err.Error(), "fail to execute post-swap memo transaction"), Equals, true)
 
 	updatedPool, poolErr := baseKeeper.GetPool(ctx, common.BTCAsset)
 	c.Assert(poolErr, IsNil)
@@ -3055,4 +3040,70 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityErrorCases(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(hasCapacity, Equals, false, Commentf("Should return false for zero amount"))
 	c.Check(torValue.IsZero(), Equals, true)
+}
+
+// TestIsMempoolSwapEligible verifies the mempool policy for streaming, native,
+// trade-target, and THOR-target swaps.
+func (s *HelperSuite) TestIsMempoolSwapEligible(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	mgr.Keeper().SetMimir(ctx, constants.L1SlipMinBps.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), MarketSwap, 1, 1),
+		Equals,
+		true,
+		Commentf("explicit streaming THOR targets should be mempool-eligible"),
+	)
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.ETHAsset.GetTradeAsset(), cosmos.NewUint(common.One), MarketSwap, 1, 2),
+		Equals,
+		false,
+		Commentf("trade targets should never be mempool-eligible"),
+	)
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.RuneAsset(), common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 1, 2),
+		Equals,
+		false,
+		Commentf("native THOR inbounds should not use the mempool path"),
+	)
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), MarketSwap, 0, 0),
+		Equals,
+		false,
+		Commentf("non-streaming THOR targets should not be mempool-eligible"),
+	)
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0),
+		Equals,
+		true,
+		Commentf("non-streaming external targets should remain mempool-eligible"),
+	)
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), LimitSwap, 30, 1),
+		Equals,
+		false,
+		Commentf("limit swap custom TTL alone should not make a THOR target mempool-eligible"),
+	)
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), LimitSwap, 30, 2),
+		Equals,
+		true,
+		Commentf("streaming limit swaps should still be mempool-eligible for THOR targets"),
+	)
+
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10*common.One), MarketSwap, 0, 0),
+		Equals,
+		true,
+		Commentf("implicit streaming THOR targets should be mempool-eligible when the advanced queue will split them"),
+	)
 }

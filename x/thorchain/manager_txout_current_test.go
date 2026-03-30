@@ -177,6 +177,282 @@ func (s TxOutStoreSuite) TestIsAffiliateFeeExempt(c *C) {
 	}
 }
 
+// Trade-asset affiliate fees are collected later from the user's trade balance,
+// so TryAddTxOutItem must not reduce the immediate outbound amount when the
+// target is a trade asset.
+func (s TxOutStoreSuite) TestTryAddTxOutItemDoesNotReduceTradeAssetAffiliateOutbound(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+
+	tradeAsset := common.BTCAsset.GetTradeAsset()
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.Type = AsgardVault
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.LPUnits = cosmos.NewUint(1000 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	ownerAddr := GetRandomTHORAddress()
+	affiliateAddr := GetRandomTHORAddress()
+	inboundMemo := NewSwapMemo(w.ctx, w.mgr, tradeAsset, ownerAddr, cosmos.ZeroUint(), affiliateAddr.String(), cosmos.NewUint(100))
+	inHash := GetRandomTxHash()
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          inHash,
+			Chain:       common.ETHChain,
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   ownerAddr,
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+			},
+			Memo: inboundMemo,
+		},
+		Status:         common.Status_done,
+		BlockHeight:    w.ctx.BlockHeight(),
+		FinaliseHeight: w.ctx.BlockHeight(),
+		Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+	}
+	voter := NewObservedTxVoter(inHash, common.ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	outboundAmount := cosmos.NewUint(100 * common.One)
+	// The outbound amount should be credited exactly as requested. The affiliate
+	// fee for trade assets is not applied by shrinking this outbound.
+	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, TxOutItem{
+		Chain:     common.THORChain,
+		ToAddress: ownerAddr,
+		InHash:    inHash,
+		Coin:      common.NewCoin(tradeAsset, outboundAmount),
+	}, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	ownerAcc, err := ownerAddr.AccAddress()
+	c.Assert(err, IsNil)
+	balance := w.mgr.TradeAccountManager().BalanceOf(w.ctx, tradeAsset, ownerAcc)
+	c.Assert(balance.Equal(outboundAmount), Equals, true)
+}
+
+// Unfinalized mempool swaps stage only the primary outbound. Any affiliate side
+// effects must wait until finalization so mempool execution does not create
+// extra queue items or other irreversible work ahead of consensus.
+func (s TxOutStoreSuite) TestTryAddTxOutItemDefersMempoolAffiliateSideEffects(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+
+	w.keeper.SetMimir(w.ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	w.keeper.SetMimir(w.ctx, constants.EnableAdvSwapQueue.String(), 0)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, w.activeNodeAccount), IsNil)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.LPUnits = cosmos.NewUint(1000 * common.One)
+		c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	}
+
+	activeVault := GetRandomVault()
+	activeVault.Status = ActiveVault
+	activeVault.Type = AsgardVault
+	activeVault.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))}
+	c.Assert(w.keeper.SetVault(w.ctx, activeVault), IsNil)
+
+	outboundAmount := cosmos.NewUint(100 * common.One)
+	testCases := []struct {
+		name        string
+		chain       common.Chain
+		targetAsset common.Asset
+		stagedAsset common.Asset
+		moduleName  string
+		exactAmount bool
+	}{
+		{
+			name:        "rune target",
+			chain:       common.THORChain,
+			targetAsset: common.RuneAsset(),
+			stagedAsset: common.RuneAsset(),
+			exactAmount: true,
+		},
+		{
+			name:        "synth target",
+			chain:       common.THORChain,
+			targetAsset: common.ETHAsset.GetSyntheticAsset(),
+			stagedAsset: common.ETHAsset.GetSyntheticAsset(),
+			moduleName:  ModuleName,
+			exactAmount: true,
+		},
+		{
+			name:        "trade target",
+			chain:       common.THORChain,
+			targetAsset: common.BTCAsset.GetTradeAsset(),
+			stagedAsset: common.BTCAsset.GetTradeAsset(),
+			exactAmount: true,
+		},
+		{
+			name:        "secured target",
+			chain:       common.THORChain,
+			targetAsset: common.ETHAsset.GetSecuredAsset(),
+			stagedAsset: common.ETHAsset,
+			exactAmount: true,
+		},
+		{
+			name:        "external l1 target",
+			chain:       common.ETHChain,
+			targetAsset: common.ETHAsset,
+			stagedAsset: common.ETHAsset,
+			exactAmount: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		ownerAddr := GetRandomTHORAddress()
+		if !tc.chain.IsTHORChain() {
+			ownerAddr = GetRandomETHAddress()
+		}
+		affiliateAddr := GetRandomTHORAddress()
+		inHash := GetRandomTxHash()
+		inboundMemo := NewSwapMemo(w.ctx, w.mgr, tc.targetAsset, ownerAddr, cosmos.ZeroUint(), affiliateAddr.String(), cosmos.NewUint(100))
+
+		observedTx := common.ObservedTx{
+			Tx: common.Tx{
+				ID:          inHash,
+				Chain:       common.BTCChain,
+				FromAddress: GetRandomBTCAddress(),
+				ToAddress:   GetRandomBTCAddress(),
+				Coins: common.Coins{
+					common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+				},
+				Memo: inboundMemo,
+			},
+			Status:         common.Status_done,
+			BlockHeight:    w.ctx.BlockHeight(),
+			FinaliseHeight: 0,
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+		}
+		voter := NewObservedTxVoter(inHash, common.ObservedTxs{observedTx})
+		voter.Tx = observedTx
+		voter.UnfinalizedHeight = w.ctx.BlockHeight()
+		// TxOut staging now keys off the voter reservation that handleObservedTxInQuorum
+		// sets when the swap is admitted to the mempool path.
+		voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+		w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+		// Each target type should stage exactly one outbound representation for
+		// the owner, while deferring affiliate sidecars until the inbound finalizes.
+		ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, TxOutItem{
+			Chain:      tc.chain,
+			ToAddress:  ownerAddr,
+			InHash:     inHash,
+			Coin:       common.NewCoin(tc.targetAsset, outboundAmount),
+			ModuleName: tc.moduleName,
+		}, cosmos.ZeroUint())
+		c.Assert(err, IsNil, Commentf("case %s", tc.name))
+		c.Assert(ok, Equals, true, Commentf("case %s", tc.name))
+
+		stagedItems, err := w.keeper.GetStagedOutbounds(w.ctx, inHash)
+		c.Assert(err, IsNil, Commentf("case %s", tc.name))
+		c.Assert(stagedItems, HasLen, 1, Commentf("case %s", tc.name))
+		c.Check(stagedItems[0].TxOutItem.Chain.Equals(tc.chain), Equals, true, Commentf("case %s", tc.name))
+		c.Check(stagedItems[0].TxOutItem.Coin.Asset.Equals(tc.stagedAsset), Equals, true, Commentf("case %s", tc.name))
+		if tc.exactAmount {
+			c.Check(stagedItems[0].TxOutItem.Coin.Amount.Equal(outboundAmount), Equals, true, Commentf("case %s", tc.name))
+		} else {
+			c.Check(stagedItems[0].TxOutItem.Coin.Amount.GT(cosmos.ZeroUint()), Equals, true, Commentf("case %s", tc.name))
+		}
+
+		// Affiliate fee handling for mempool swaps is deferred, so no affiliate
+		// follow-up queue item should exist yet.
+		_, err = w.keeper.GetSwapQueueItem(w.ctx, inHash, 2)
+		c.Assert(err, NotNil, Commentf("case %s should not queue affiliate sidecars before finalization", tc.name))
+	}
+}
+
+// Even when affiliate fee side effects are deferred for a mempool swap, minOut
+// validation must still use the affiliate-fee-adjusted outbound amount. A swap
+// that would fall below minOut must fail before staging anything.
+func (s TxOutStoreSuite) TestTryAddTxOutItemDeferredMempoolAffiliateFeeStillHonorsMinOut(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), mgr.EventMgr(), mgr.GasMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.LPUnits = cosmos.NewUint(1000 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	ownerAddr := GetRandomTHORAddress()
+	affiliateAddr := GetRandomTHORAddress()
+	targetAsset := common.ETHAsset.GetSyntheticAsset()
+	inHash := GetRandomTxHash()
+	inboundMemo := NewSwapMemo(ctx, mgr, targetAsset, ownerAddr, cosmos.ZeroUint(), affiliateAddr.String(), cosmos.NewUint(500))
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          inHash,
+			Chain:       common.BTCChain,
+			FromAddress: GetRandomBTCAddress(),
+			ToAddress:   GetRandomBTCAddress(),
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+			},
+			Memo: inboundMemo,
+		},
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+		FinaliseHeight: 0,
+		Signers:        []string{na.NodeAddress.String()},
+	}
+	voter := NewObservedTxVoter(inHash, common.ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	item := TxOutItem{
+		Chain:      common.THORChain,
+		ToAddress:  ownerAddr,
+		InHash:     inHash,
+		Coin:       common.NewCoin(targetAsset, cosmos.NewUint(1000*common.One)),
+		ModuleName: ModuleName,
+	}
+	// First verify the adjusted outbound amount explicitly: a 5% affiliate fee
+	// reduces the deliverable synth amount to 950, which is below the requested
+	// minOut of 1000.
+	validationCtx, _ := ctx.CacheContext()
+	adjustedItem, adjustedErr := txOutStore.getAffiliateFeeAdjustedTxOutItem(validationCtx, mgr, item)
+	c.Assert(adjustedErr, IsNil)
+	c.Assert(adjustedItem.Coin.Amount.Equal(cosmos.NewUint(950*common.One)), Equals, true)
+
+	// The real TryAddTxOutItem call must reject the outbound before it stages the
+	// mempool item or queues any deferred affiliate side effects.
+	ok, err := txOutStore.TryAddTxOutItem(ctx, mgr, item, cosmos.NewUint(1000*common.One))
+	c.Check(ok, Equals, false)
+	c.Assert(err, ErrorMatches, "outbound amount does not meet requirements .*")
+
+	stagedItems, stagedErr := mgr.Keeper().GetStagedOutbounds(ctx, inHash)
+	c.Assert(stagedErr, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("failed minOut validation must not leave staged outbounds behind"))
+
+	_, queueErr := mgr.Keeper().GetSwapQueueItem(ctx, inHash, 2)
+	c.Assert(queueErr, NotNil, Commentf("failed minOut validation must not queue affiliate sidecars"))
+}
+
 func (s TxOutStoreSuite) TestAddGasFees(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	tx := GetRandomObservedTx()
@@ -1962,7 +2238,8 @@ func (s *TxOutStoreSuite) TestTxOutItemStagingBehavior(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(len(stagedItems), Equals, 0, Commentf("Finalized inbound should NOT be staged"))
 
-	// Test 2: Unfinalized (mempool) inbound transaction should be staged
+	// Test 2: An admitted mempool swap should be staged instead of entering the
+	// live outbound queue.
 	txOutStore.ClearOutboundItems(w.ctx)
 
 	unfinalizedTxID := GetRandomTxHash()
@@ -1981,6 +2258,7 @@ func (s *TxOutStoreSuite) TestTxOutItemStagingBehavior(c *C) {
 	})
 	unfinalizedVoter.UnfinalizedHeight = w.ctx.BlockHeight()
 	unfinalizedVoter.FinalisedHeight = 0
+	unfinalizedVoter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
 	w.keeper.SetObservedTxInVoter(w.ctx, unfinalizedVoter)
 
 	unfinalizedItem := TxOutItem{
@@ -1994,13 +2272,37 @@ func (s *TxOutStoreSuite) TestTxOutItemStagingBehavior(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
 
-	// Unfinalized inbound should NOT be in TxOut queue (should be staged)
+	// Admitted mempool swaps should NOT be in the live TxOut queue.
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
-	c.Assert(msgs, HasLen, 0, Commentf("Unfinalized inbound should NOT be in TxOut queue"))
+	c.Assert(msgs, HasLen, 0, Commentf("admitted mempool swap should NOT be in TxOut queue"))
 
-	// Verify it IS in staged queue
+	// Verify it IS in the staged mempool queue.
 	stagedItems, err = w.keeper.GetStagedOutbounds(w.ctx, unfinalizedTxID)
 	c.Assert(err, IsNil)
-	c.Check(len(stagedItems), Equals, 1, Commentf("Unfinalized inbound should be staged"))
+	c.Check(len(stagedItems), Equals, 1, Commentf("admitted mempool swap should be staged"))
+
+	// Test 3: A missing voter should not be treated like a mempool swap just
+	// because the hash is non-empty and the mempool cap is enabled.
+	txOutStore.ClearOutboundItems(w.ctx)
+
+	missingVoterTxID := GetRandomTxHash()
+	missingVoterItem := TxOutItem{
+		Chain:     common.BTCChain,
+		ToAddress: GetRandomBTCAddress(),
+		InHash:    missingVoterTxID,
+		Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+	}
+
+	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, missingVoterItem, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	msgs, err = txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(msgs, HasLen, 1, Commentf("missing voter should fall back to the normal outbound queue"))
+
+	stagedItems, err = w.keeper.GetStagedOutbounds(w.ctx, missingVoterTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(stagedItems), Equals, 0, Commentf("missing voter should not stage an outbound as a mempool swap"))
 }

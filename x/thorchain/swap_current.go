@@ -201,12 +201,21 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 			AggregatorTargetLimit: dexAggLimit,
 		}
 
+		// Some callers need this function to perform only the swap math and pool
+		// state transition. They settle the emitted amount themselves afterward, so
+		// creating a normal outbound here would duplicate that later settlement or
+		// bypass mempool/native staging handled outside this function. This explicit
+		// skip flag is used by inline mempool revert swaps and cached queue-settlement
+		// paths.
+		skipDirectOutboundScheduling, ok := ctx.Value(constants.CtxSkipSwapOutbounds).(bool)
+		callerSettlesSwapResult := ok && skipDirectOutboundScheduling
+
 		// streaming swap outbounds are handled in the swap queue manager
 		// all swaps are managed by the swap queue manager for the advanced swap queue
 		// Skip outbound creation when:
 		// 1. It's a streaming swap (swp.Valid() == nil)
-		// 2. OR advanced swap queue is enabled AND we're not in simulation mode
-		advSwapQueueEnabled := keeper.AdvSwapQueueEnabled(ctx)
+		// 2. OR outbound scheduling is intentionally deferred to the caller/queue manager
+		deferOutboundScheduling := keeper.AdvSwapQueueEnabled(ctx) || callerSettlesSwapResult
 		isSimMode := isSimulationMode(ctx)
 		streamingSwap := swp.Valid() == nil
 
@@ -215,7 +224,7 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 		collectorAddress := common.Address(keeper.GetModuleAccAddress(AffiliateCollectorName).String())
 		collectorOutput := (target.IsRune() && destination.Equals(collectorAddress)) ||
 			(tx.FromAddress.Equals(collectorAddress) && strings.HasPrefix(tx.Memo, PreferredAssetSwapMemoPrefix+"-"))
-		if collectorOutput || streamingSwap || (advSwapQueueEnabled && !isSimMode) {
+		if collectorOutput || streamingSwap || (deferOutboundScheduling && !isSimMode) {
 			// Skip - outbound will be created by swap queue manager or settleSwap
 		} else {
 			// Create outbound for regular swaps when advanced queue is disabled

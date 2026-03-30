@@ -384,8 +384,8 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		return &cosmos.Result{}, emit, msg.Tx.Coins[0].Amount, nil
 	}
 
-	// Only create streaming swap records for actual streaming swaps (not limit swaps)
-	if msg.IsLegacyStreaming() && !msg.IsLimitSwap() {
+	// Only create streaming swap records for actual legacy streaming swaps.
+	if msg.IsActualLegacyStreaming() {
 		if h.mgr.Keeper().StreamingSwapExists(ctx, msg.Tx.ID) {
 			swp, err = h.mgr.Keeper().GetStreamingSwap(ctx, msg.Tx.ID)
 			if err != nil {
@@ -481,8 +481,8 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		}
 	}
 
-	// Only update streaming swap records for actual streaming swaps (not limit swaps)
-	if msg.IsLegacyStreaming() && !msg.IsLimitSwap() {
+	// Only update streaming swap records for actual legacy streaming swaps.
+	if msg.IsActualLegacyStreaming() {
 		// only increment In/Out if we have a successful swap
 		swp.In = swp.In.Add(msg.Tx.Coins[0].Amount)
 		swp.Out = swp.Out.Add(emit)

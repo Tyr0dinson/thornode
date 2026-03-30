@@ -595,6 +595,8 @@ func (s *QuotesSuite) TestQuotePlaceholderIsDeterministic(c *C) {
 
 func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.L1SlipMinBps.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
 
 	// Setup test pool
 	pool := NewPool()
@@ -609,104 +611,91 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 	inboundConfSeconds := int64(600) // Simulated inbound confirmation time (longer)
 	inboundConfBlocks := int64(100)  // Number of confirmation blocks needed
 
-	// Test 1: With mempool swaps DISABLED (traditional sequential flow)
+	totalSecondsFor := func(fromAsset, toAsset common.Asset, amount cosmos.Uint, swapType types.SwapType, streamInterval, streamQuantity uint64, inboundSeconds, swapSeconds int64, inboundBlocks int64) int64 {
+		mempoolSwapCap := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+		canUseMempoolSwap := !mempoolSwapCap.IsZero() &&
+			isMempoolSwapEligible(ctx, mgr, fromAsset, toAsset, amount, swapType, streamInterval, streamQuantity)
+
+		totalSeconds := swapSeconds
+		if canUseMempoolSwap {
+			if inboundBlocks > 0 && inboundSeconds > totalSeconds {
+				totalSeconds = inboundSeconds
+			}
+			return totalSeconds
+		}
+
+		if inboundBlocks > 0 {
+			totalSeconds += inboundSeconds
+		}
+		return totalSeconds
+	}
+
+	// Test 1: With mempool swaps disabled, timing stays sequential even when the
+	// route would otherwise be eligible.
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds+swapSeconds,
+		Commentf("disabled mempool swaps should keep timing sequential"),
+	)
 
-	// When mempool swaps are disabled, total time = inbound_conf + swap_time
-	expectedTotalWithDisabled := inboundConfSeconds + swapSeconds
-
-	// Simulate the logic from querier_quotes.go
-	mempoolSwapCap := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-	canUseMempoolSwap := !mempoolSwapCap.IsZero()
-	c.Check(canUseMempoolSwap, Equals, false)
-
-	var totalSeconds int64
-	if canUseMempoolSwap {
-		// With mempool swap optimization, times are parallel
-		totalSeconds = swapSeconds
-		if inboundConfBlocks > 0 && inboundConfSeconds > totalSeconds {
-			totalSeconds = inboundConfSeconds
-		}
-	} else {
-		// Traditional flow: sequential
-		totalSeconds = swapSeconds
-		if inboundConfBlocks > 0 {
-			totalSeconds += inboundConfSeconds
-		}
-	}
-
-	c.Check(totalSeconds, Equals, expectedTotalWithDisabled,
-		Commentf("With mempool swaps disabled, time should be sequential: %d", expectedTotalWithDisabled))
-
-	// Test 2: With mempool swaps ENABLED (parallel flow)
+	// Test 2: Non-streaming swaps to external targets still get the mempool
+	// overlap benefit when the cap is enabled.
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds,
+		Commentf("eligible external-target swaps should use parallel timing"),
+	)
 
-	// When mempool swaps are enabled, total time = max(inbound_conf, swap_time)
-	expectedTotalWithEnabled := inboundConfSeconds // max(600, 100) = 600
+	// Test 3: Explicit streaming swaps to native targets are also mempool-eligible.
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), MarketSwap, 1, 1, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds,
+		Commentf("streaming native-target swaps should use parallel timing"),
+	)
 
-	mempoolSwapCap = cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-	canUseMempoolSwap = !mempoolSwapCap.IsZero()
-	c.Check(canUseMempoolSwap, Equals, true)
+	// Test 4: Non-streaming swaps to native targets should not use the mempool path.
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds+swapSeconds,
+		Commentf("non-streaming native target swaps should keep sequential timing"),
+	)
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), LimitSwap, 30, 1, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds+swapSeconds,
+		Commentf("limit swap TTL alone should not switch native target timing to the mempool path"),
+	)
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), LimitSwap, 30, 2, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds,
+		Commentf("streaming limit swaps should still use parallel timing for native targets"),
+	)
 
-	if canUseMempoolSwap {
-		// With mempool swap optimization, times are parallel
-		totalSeconds = swapSeconds
-		if inboundConfBlocks > 0 && inboundConfSeconds > totalSeconds {
-			totalSeconds = inboundConfSeconds
-		}
-	} else {
-		// Traditional flow: sequential
-		totalSeconds = swapSeconds
-		if inboundConfBlocks > 0 {
-			totalSeconds += inboundConfSeconds
-		}
-	}
+	// Test 5: Implicit streaming swap to native targets should also use the mempool path
+	// once the advanced queue is enabled and will split the swap.
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10*common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds,
+		Commentf("implicit streaming native target swaps should use parallel timing"),
+	)
 
-	c.Check(totalSeconds, Equals, expectedTotalWithEnabled,
-		Commentf("With mempool swaps enabled, time should be parallel: %d", expectedTotalWithEnabled))
-
-	// Test 3: Edge case - swap time longer than inbound confirmation
+	// Test 6: When the swap itself takes longer, the mempool path should still
+	// use the slower of the two parallel branches.
 	swapSecondsLonger := int64(800)
 	inboundConfSecondsShort := int64(200)
-
-	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mempoolSwapCap = cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-	canUseMempoolSwap = !mempoolSwapCap.IsZero()
-
-	if canUseMempoolSwap {
-		totalSeconds = swapSecondsLonger
-		if inboundConfBlocks > 0 && inboundConfSecondsShort > totalSeconds {
-			totalSeconds = inboundConfSecondsShort
-		}
-	} else {
-		totalSeconds = swapSecondsLonger
-		if inboundConfBlocks > 0 {
-			totalSeconds += inboundConfSecondsShort
-		}
-	}
-
-	// With mempool enabled and swap time > inbound time, should use swap time
-	c.Check(totalSeconds, Equals, swapSecondsLonger,
-		Commentf("With mempool enabled, should use max(800, 200) = 800"))
-
-	// Test 4: Same edge case but with mempool disabled
-	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
-	mempoolSwapCap = cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-	canUseMempoolSwap = !mempoolSwapCap.IsZero()
-
-	if canUseMempoolSwap {
-		totalSeconds = swapSecondsLonger
-		if inboundConfBlocks > 0 && inboundConfSecondsShort > totalSeconds {
-			totalSeconds = inboundConfSecondsShort
-		}
-	} else {
-		totalSeconds = swapSecondsLonger
-		if inboundConfBlocks > 0 {
-			totalSeconds += inboundConfSecondsShort
-		}
-	}
-
-	// With mempool disabled, should add times: 800 + 200 = 1000
-	c.Check(totalSeconds, Equals, swapSecondsLonger+inboundConfSecondsShort,
-		Commentf("With mempool disabled, should add: 800 + 200 = 1000"))
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSecondsShort, swapSecondsLonger, inboundConfBlocks),
+		Equals,
+		swapSecondsLonger,
+		Commentf("parallel timing should use the longer swap branch when it dominates"),
+	)
 }

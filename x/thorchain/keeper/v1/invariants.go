@@ -94,8 +94,11 @@ func AsgardInvariant(k KVStore) common.Invariant {
 			k.Cdc().MustUnmarshal(stagedIter.Value(), &stagedList)
 			for _, staged := range stagedList.Items {
 				item := staged.TxOutItem
-				// Only count native outbounds that haven't been executed yet
-				if item.Chain.IsTHORChain() && item.OutHash.IsEmpty() {
+				// Only count staged THOR outbounds backed by a THOR-native module coin.
+				// Escrowed secured targets stage their underlying L1 asset on the
+				// THOR chain for bookkeeping, but that asset is not yet a bank balance
+				// owned by the Asgard module and should not enter native accounting here.
+				if item.Chain.IsTHORChain() && item.OutHash.IsEmpty() && item.Coin.IsNative() {
 					// Trade Assets and Secured Assets do not correspond to Module balance coins
 					if !item.Coin.Asset.IsTradeAsset() && !item.Coin.Asset.IsSecuredAsset() {
 						txOutCoins = txOutCoins.Add(item.Coin)

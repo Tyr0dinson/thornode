@@ -240,6 +240,11 @@ func checkExportInvariants(out io.Writer, genesis map[string]any) error {
 		sumPoolAsset = sumPoolAsset.Add(coin)
 	}
 
+	voterByTxID := make(map[common.TxID]thorchain.ObservedTxVoter, len(genesisState.ObservedTxInVoters))
+	for _, voter := range genesisState.ObservedTxInVoters {
+		voterByTxID[voter.TxID] = voter
+	}
+
 	// adjust vault depths to ignore streaming swap amounts
 	for _, swp := range genesisState.StreamingSwaps {
 		for _, msg := range genesisState.SwapQueueItems {
@@ -250,12 +255,39 @@ func checkExportInvariants(out io.Writer, genesis map[string]any) error {
 		}
 	}
 
-	// adjust vault depths to account for advanced swap queue items (limit swaps)
+	// adjust vault depths to account for advanced swap queue items
 	for _, msg := range genesisState.AdvSwapQueueItems {
-		// For limit swaps in the advanced queue, the input asset is already in the vault
-		// but not yet in the pool, so we need to subtract it from vault accounting
 		if len(msg.Tx.Coins) > 0 {
-			sumVaultAsset = sumVaultAsset.SafeSub(msg.Tx.Coins[0])
+			sourceCoin := msg.Tx.Coins[0]
+			stateIn := common.SafeSub(sourceCoin.Amount, sourceCoin.Amount)
+			stateOut := common.SafeSub(sourceCoin.Amount, sourceCoin.Amount)
+			if msg.State != nil {
+				stateIn = msg.State.In
+				stateOut = msg.State.Out
+			}
+
+			voter, hasVoter := voterByTxID[msg.Tx.ID]
+			if hasVoter && voter.FinalisedHeight == 0 {
+				// An unfinalized mempool queue item has already moved State.In
+				// through the pool, but the source vault credit is deferred until
+				// finalization.
+				if poolAssets[sourceCoin.Asset] && !stateIn.IsZero() {
+					sumVaultAsset = sumVaultAsset.Add(common.NewCoin(sourceCoin.Asset, stateIn))
+				}
+			} else {
+				// A finalized or plain queued item still has its unprocessed input
+				// sitting in the vault instead of the pool.
+				remainingIn := common.SafeSub(sourceCoin.Amount, stateIn)
+				if poolAssets[sourceCoin.Asset] && !remainingIn.IsZero() {
+					sumVaultAsset = sumVaultAsset.SafeSub(common.NewCoin(sourceCoin.Asset, remainingIn))
+				}
+			}
+
+			// State.Out has already left the pool, but settlement/outbound has not
+			// yet removed the matching asset from the vault.
+			if poolAssets[msg.TargetAsset] && !stateOut.IsZero() {
+				sumVaultAsset = sumVaultAsset.SafeSub(common.NewCoin(msg.TargetAsset, stateOut))
+			}
 		}
 	}
 

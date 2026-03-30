@@ -51,6 +51,11 @@ func (m *MsgSwap) IsLegacyStreaming() bool {
 	return m.StreamInterval > 0 && m.IsV1()
 }
 
+// Legacy streaming, but not limit swap
+func (m *MsgSwap) IsActualLegacyStreaming() bool {
+	return m.IsLegacyStreaming() && !m.IsLimitSwap()
+}
+
 func (m *MsgSwap) IsV1() bool {
 	return m.Version == SwapVersion_v1
 }

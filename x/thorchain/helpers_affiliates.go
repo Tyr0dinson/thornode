@@ -497,6 +497,13 @@ func ensureAffiliateFromAddress(ctx cosmos.Context, mgr Manager, tx *common.Tx) 
 	source := tx.Coins[0].Asset
 	if source.IsSecuredAsset() || source.IsTradeAsset() {
 		if !tx.FromAddress.GetChain().IsTHORChain() {
+			if tx.ToAddress.GetChain().IsTHORChain() {
+				// These affiliate swaps still need a THOR address as "from".
+				// If the tx already has a THOR destination, reuse it instead
+				// of falling back to Asgard so the swap stays tied to the user.
+				tx.FromAddress = tx.ToAddress
+				return nil
+			}
 			asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
 			if err != nil {
 				return fmt.Errorf("failed to retrieve the asgard module address: %w", err)

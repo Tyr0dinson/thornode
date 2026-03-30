@@ -6,6 +6,13 @@
       "accounts": [
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "9",
+          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+          "pub_key": null,
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "6",
           "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "pub_key": {
@@ -27,6 +34,13 @@
             "minter",
             "burner"
           ]
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "10",
+          "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+          "pub_key": null,
+          "sequence": "0"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -115,10 +129,28 @@
     "bank": {
       "balances": [
         {
+          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+          "coins": [
+            {
+              "amount": "2500000000000",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
           "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "coins": [
             {
               "amount": "5000000000000",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+          "coins": [
+            {
+              "amount": "2500000000000",
               "denom": "rune"
             }
           ]
@@ -177,7 +209,7 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "50200000000000",
+          "amount": "55200000000000",
           "denom": "rune"
         }
       ]
