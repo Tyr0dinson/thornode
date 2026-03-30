@@ -435,19 +435,166 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 	txOut, err := mgr.Keeper().GetTxOut(ctx, scheduledHeight)
 	c.Assert(err, IsNil)
 	c.Assert(txOut.TxArray, HasLen, 2)
-	// The two queued pieces together should equal the net amount after one fee.
+	outboundFee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, common.ETHAsset, false)
+	c.Assert(err, IsNil)
+	expectedQueuedAmount := netAmount.Sub(outboundFee).Sub(outboundFee)
+	// The two queued pieces together should equal the deferred-affiliate net
+	// amount less the real outbound fee on each finalized split piece.
 	totalQueued := cosmos.ZeroUint()
 	for _, item := range txOut.TxArray {
 		totalQueued = totalQueued.Add(item.Coin.Amount)
 	}
-	c.Check(totalQueued.Equal(netAmount), Equals, true,
-		Commentf("split external targets should enter TxOut net of one deferred affiliate fee"))
+	c.Check(totalQueued.Equal(expectedQueuedAmount), Equals, true,
+		Commentf("split external targets should enter TxOut net of deferred affiliate fee and per-piece outbound fees"))
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVoter.Actions, HasLen, 2)
+	finalActionTotal := cosmos.ZeroUint()
+	for _, action := range updatedVoter.Actions {
+		finalActionTotal = finalActionTotal.Add(action.Coin.Amount)
+	}
+	c.Check(finalActionTotal.Equal(expectedQueuedAmount), Equals, true,
+		Commentf("finalized actions should be rewritten to the net queued outputs"))
 
 	affiliateSwap, err := mgr.Keeper().GetSwapQueueItem(ctx, inTxID, 2)
 	c.Assert(err, IsNil)
 	c.Check(affiliateSwap.Tx.Coins, DeepEquals, common.Coins{common.NewCoin(common.ETHAsset, affiliateAmount)},
 		Commentf("external target should queue the deferred affiliate sidecar on finalization"))
 	c.Check(affiliateSwap.TargetAsset.Equals(common.RuneAsset()), Equals, true)
+}
+
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsCommitsOutboundFeeAccountingAtFinalization(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	activeVault := GetRandomVault()
+	activeVault.Type = AsgardVault
+	activeVault.Status = ActiveVault
+	activeVault.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.LPUnits = pool.BalanceRune
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	ownerAddr := GetRandomETHAddress()
+	inTxID := GetRandomTxHash()
+	outboundAmount := cosmos.NewUint(100 * common.One)
+	inboundMemo := NewSwapMemo(ctx, mgr, common.ETHAsset, ownerAddr, cosmos.ZeroUint(), "", cosmos.ZeroUint())
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:          inTxID,
+			Chain:       common.BTCChain,
+			FromAddress: GetRandomBTCAddress(),
+			ToAddress:   GetRandomBTCAddress(),
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+			},
+			Memo: inboundMemo,
+		},
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+		FinaliseHeight: 0,
+		Signers:        []string{na.NodeAddress.String()},
+	}
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), mgr.EventMgr(), mgr.GasMgr())
+
+	initialOutboundFeeWithheldRune, err := mgr.Keeper().GetOutboundFeeWithheldRune(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	initialPool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+
+	// Stage a gross outbound first. The earlier mempool path must not deduct the
+	// outbound fee or commit its accounting side effects yet.
+	ok, err := txOutStore.TryAddTxOutItem(ctx, mgr, TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: activeVault.PubKey,
+		ToAddress:   ownerAddr,
+		Coin:        common.NewCoin(common.ETHAsset, outboundAmount),
+		Memo:        NewOutboundMemo(inTxID).String(),
+	}, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(stagedItems, HasLen, 1)
+	c.Check(stagedItems[0].TxOutItem.Coin.Amount.Equal(outboundAmount), Equals, true,
+		Commentf("mempool staging should keep the gross external outbound amount"))
+
+	// Before finalization, the withheld-fee accounting should still be untouched.
+	outboundFeeWithheldRune, err := mgr.Keeper().GetOutboundFeeWithheldRune(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(outboundFeeWithheldRune.Equal(initialOutboundFeeWithheldRune), Equals, true,
+		Commentf("mempool staging should not add outbound fee withheld rune early"))
+
+	stagedHeight := stagedItems[0].ScheduledHeight
+	voter, err = mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	voter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Finalization is the point where the staged gross outbound becomes a real
+	// outbound and must therefore pick up the normal outbound fee accounting.
+	err = finalizeOutboundsAtomic(ctx, mgr, voter)
+	c.Assert(err, IsNil)
+
+	outboundFee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, common.ETHAsset, false)
+	c.Assert(err, IsNil)
+	expectedNetAmount := outboundAmount.Sub(outboundFee)
+	expectedRuneFee := initialPool.RuneDisbursementForAssetAdd(outboundFee)
+	if expectedRuneFee.GT(initialPool.BalanceRune) {
+		expectedRuneFee = initialPool.BalanceRune
+	}
+
+	// The queued outbound is now net of the outbound fee, proving the deduction
+	// happened at finalization rather than during staging.
+	txOut, err := mgr.Keeper().GetTxOut(ctx, stagedHeight)
+	c.Assert(err, IsNil)
+	c.Assert(txOut.TxArray, HasLen, 1)
+	c.Check(txOut.TxArray[0].Coin.Amount.Equal(expectedNetAmount), Equals, true,
+		Commentf("finalization should apply the outbound fee when queueing the staged outbound"))
+
+	// Fee-side accounting should also land exactly once at finalization.
+	outboundFeeWithheldRune, err = mgr.Keeper().GetOutboundFeeWithheldRune(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(outboundFeeWithheldRune.Sub(initialOutboundFeeWithheldRune).Equal(expectedRuneFee), Equals, true,
+		Commentf("finalization should record the outbound fee withheld rune exactly once"))
+
+	// Pool balances should now reflect the same finalized fee that was kept out
+	// of the mempool staging path.
+	updatedPool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(updatedPool.BalanceAsset.Equal(initialPool.BalanceAsset.Add(outboundFee)), Equals, true,
+		Commentf("finalization should add the outbound asset fee back into the pool"))
+	c.Check(updatedPool.BalanceRune.Equal(common.SafeSub(initialPool.BalanceRune, expectedRuneFee)), Equals, true,
+		Commentf("finalization should deduct the corresponding rune fee from the pool"))
+
+	// The voter actions should also be rewritten from speculative gross outputs
+	// to the finalized net outputs so outbound observation still matches.
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVoter.Actions, HasLen, 1)
+	c.Check(updatedVoter.Actions[0].Coin.Amount.Equal(expectedNetAmount), Equals, true,
+		Commentf("finalization should rewrite the planned action to the net outbound amount"))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
@@ -616,7 +763,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	c.Check(updatedRuneVoter.Reverted, Equals, false, Commentf("RUNE rollback should normalize the voter"))
 	c.Check(updatedRuneVoter.Actions, IsNil, Commentf("RUNE rollback should clear speculative actions"))
 
-	// Test 4: Non-RUNE native output (synth) should use reverse swap, not direct BalanceRune adjustment
+	// Test 4: Non-RUNE native output (synth) should use inline rollback and
+	// consume the staged synth from Asgard instead of queueing a reverse swap.
 	synthTxID := GetRandomTxHash()
 	synthAsset, err := common.NewAsset("ETH/ETH")
 	c.Assert(err, IsNil)
@@ -642,31 +790,33 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, synthTxOutItem, ctx.BlockHeight()+20), IsNil)
 	mgr.Keeper().SetObservedTxInVoter(ctx, synthVoter)
+	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, synthTxOutItem.Coin), IsNil)
+	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(synthTxOutItem.Coin)), IsNil)
 
-	// Snapshot ETH pool BalanceRune immediately before the call under test
-	ethPoolBefore, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
-	c.Assert(err, IsNil)
+	asgardBalance := mgr.Keeper().GetBalance(ctx, mgr.Keeper().GetModuleAccAddress(AsgardName))
+	c.Check(asgardBalance.AmountOf(synthAsset.Native()).Equal(cosmos.NewIntFromBigInt(synthTxOutItem.Coin.Amount.BigInt())), Equals, true,
+		Commentf("synth rollback test should stage the synth balance in Asgard before rollback"))
 
-	err = revertMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, synthVoter)
-	c.Assert(err, IsNil, Commentf("Should handle synth output via reverse swap"))
+	err = rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, synthVoter)
+	c.Assert(err, IsNil, Commentf("Should handle synth output via inline rollback"))
 
 	updatedSynthVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, synthTxID)
 	c.Assert(err, IsNil)
-	c.Check(updatedSynthVoter.Reverted, Equals, true, Commentf("Synth voter should be marked as reverted"))
+	c.Check(updatedSynthVoter.Reverted, Equals, false, Commentf("Synth rollback should normalize the voter"))
+	c.Check(updatedSynthVoter.Actions, IsNil, Commentf("Synth rollback should clear speculative actions"))
 
-	// Verify a reverse swap was queued (not a direct pool adjustment)
-	synthReverseTxID := CreateMempoolRevertTxID(synthTxID, 0)
-	synthReverseSwap, err := mgr.Keeper().GetSwapQueueItem(ctx, synthReverseTxID, 0)
-	c.Assert(err, IsNil, Commentf("Synth output should queue a reverse swap"))
-	c.Check(synthReverseSwap.Tx.Coins[0].Asset, DeepEquals, synthAsset,
-		Commentf("Reverse swap input should be the synth asset"))
+	// Verify no reverse swap remains queued after inline rollback.
+	synthReverseTxID := CreateMempoolRollbackTxID(synthTxID, 0)
+	_, err = mgr.Keeper().GetSwapQueueItem(ctx, synthReverseTxID, 0)
+	c.Assert(err, NotNil, Commentf("Synth rollback should settle inline without leaving a queued reverse swap"))
 
-	// Verify the source pool's BalanceRune was NOT corrupted by adding synth amount
-	ethPoolAfter, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	stagedItems, err = mgr.Keeper().GetStagedOutbounds(ctx, synthTxID)
 	c.Assert(err, IsNil)
-	c.Check(ethPoolAfter.BalanceRune.Equal(ethPoolBefore.BalanceRune), Equals, true,
-		Commentf("ETH pool BalanceRune should not be modified by synth revert; got %s, want %s",
-			ethPoolAfter.BalanceRune, ethPoolBefore.BalanceRune))
+	c.Check(stagedItems, HasLen, 0, Commentf("Synth rollback should delete staged outbounds"))
+
+	asgardBalance = mgr.Keeper().GetBalance(ctx, mgr.Keeper().GetModuleAccAddress(AsgardName))
+	c.Check(asgardBalance.AmountOf(synthAsset.Native()).IsZero(), Equals, true,
+		Commentf("Synth rollback should consume the staged synth from Asgard"))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnError(c *C) {
@@ -779,6 +929,17 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c
 		memo,
 	)
 	c.Check(canProcessMempoolSwap, Equals, true, Commentf("swap should remain mempool-eligible when the feature is enabled"))
+
+	limitMemo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), "=<:THOR.RUNE:"+GetRandomTHORAddress().String()+":1/30/2")
+	c.Assert(err, IsNil)
+	canProcessMempoolSwap = canUseMempoolSwap(
+		ctx,
+		mgr,
+		common.Tx{Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))}},
+		limitMemo,
+	)
+	c.Check(canProcessMempoolSwap, Equals, true, Commentf("streaming limit swaps should also be admitted by the runtime mempool gate"))
+
 	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, mgr.Keeper(), common.BTCAsset, cosmos.NewUint(common.One))
 	c.Assert(err, IsNil)
 	c.Check(hasCapacity, Equals, true, Commentf("eligible swap should have capacity with a large cap"))
@@ -801,6 +962,17 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(
 		memo,
 	)
 	c.Check(canProcessMempoolSwap, Equals, true, Commentf("policy eligibility should not depend on the runtime cap setting"))
+
+	limitMemo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), "=<:THOR.RUNE:"+GetRandomTHORAddress().String()+":1/30/2")
+	c.Assert(err, IsNil)
+	canProcessMempoolSwap = canUseMempoolSwap(
+		ctx,
+		mgr,
+		common.Tx{Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))}},
+		limitMemo,
+	)
+	c.Check(canProcessMempoolSwap, Equals, true, Commentf("streaming limit swap policy eligibility should not depend on the runtime cap setting"))
+
 	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, mgr.Keeper(), common.BTCAsset, cosmos.NewUint(common.One))
 	c.Assert(err, IsNil)
 	c.Check(hasCapacity, Equals, false, Commentf("disabled mempool swaps should report no runtime capacity"))
@@ -1219,6 +1391,12 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempool
 // and settle inline during rollback.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboundExecutesInlineRollbackSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(10_000_000 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// Set up realistic source and target pools so the swap mutates both pool
 	// state and synth supply before the rollback path tries to unwind it.
@@ -1238,23 +1416,63 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboun
 	targetPool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
 
-	activeVault := GetRandomVault()
+	activeVault := NewVault(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.THORChain}.Strings(),
+		nil,
+	)
 	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
 
 	destination := GetRandomTHORAddress()
+	inboundMemo := fmt.Sprintf("=:%s:%s", common.ETHAsset.GetSyntheticAsset(), destination)
 	tx := common.NewTx(
 		GetRandomTxHash(),
 		GetRandomBTCAddress(),
 		GetRandomBTCAddress(),
 		common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(50*common.One))),
 		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(200_000))},
-		"",
+		inboundMemo,
 	)
 	tx.Chain = common.BTCChain
 
-	// Execute a real BTC -> synth ETH swap first so the subsequent rollback runs
-	// against genuine post-swap pool balances rather than hand-crafted numbers.
-	synthAmount, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.ETHAsset.GetSyntheticAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr)
+	observedTx := ObservedTx{
+		Tx:             tx,
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+		ObservedPubKey: activeVault.PubKey,
+	}
+	voter := NewObservedTxVoter(tx.ID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+
+	// Reproduce the real legacy queue mempool path: execute the swap with direct
+	// outbound scheduling suppressed, then materialize the emitted synth through
+	// the shared staging logic. This keeps the minted synth in Asgard while the
+	// outbound remains speculative and staged.
+	msg := MsgSwap{
+		Tx:                    tx,
+		TargetAsset:           common.ETHAsset.GetSyntheticAsset(),
+		Destination:           destination,
+		TradeTarget:           cosmos.ZeroUint(),
+		AffiliateBasisPoints:  cosmos.ZeroUint(),
+		AggregatorTargetLimit: nil,
+		Signer:                mgr.Keeper().GetModuleAccAddress(AsgardName),
+		Version:               types.SwapVersion_v2,
+	}
+	err := executeSwapWithoutOutboundsCached(ctx, mgr, &msg)
+	c.Assert(err, IsNil)
+	c.Assert(msg.State, NotNil)
+	synthAmount := msg.State.Out
+	c.Assert(synthAmount.GT(cosmos.ZeroUint()), Equals, true)
+
+	err = settleSwapResultCached(ctx, mgr, msg, "swap has been completed")
 	c.Assert(err, IsNil)
 
 	postSwapSourcePool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
@@ -1265,22 +1483,14 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboun
 	c.Assert(postSwapSynthSupply.GT(cosmos.ZeroUint()), Equals, true)
 	c.Assert(postSwapSourcePool.BalanceRune.Equal(sourcePool.BalanceRune), Equals, false)
 	c.Assert(postSwapTargetPool.BalanceRune.Equal(targetPool.BalanceRune), Equals, false)
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(stagedItems, HasLen, 1)
+	c.Check(stagedItems[0].TxOutItem.Coin.Equals(common.NewCoin(common.ETHAsset.GetSyntheticAsset(), synthAmount)), Equals, true)
 
-	observedTx := ObservedTx{Tx: tx}
-	voter := NewObservedTxVoter(tx.ID, ObservedTxs{observedTx})
-	voter.Tx = observedTx
-
-	// Stage the synth outbound exactly the way the mempool path would: native
-	// THORChain txout with a synth asset coin.
-	stagedOutbound := TxOutItem{
-		Chain:     common.THORChain,
-		InHash:    tx.ID,
-		ToAddress: destination,
-		Coin:      common.NewCoin(common.ETHAsset.GetSyntheticAsset(), synthAmount),
-	}
-	voter.Actions = []TxOutItem{stagedOutbound}
-	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+5), IsNil)
+	asgardBalance := mgr.Keeper().GetBalance(ctx, mgr.Keeper().GetModuleAccAddress(AsgardName))
+	c.Check(asgardBalance.AmountOf(common.ETHAsset.GetSyntheticAsset().Native()).Equal(cosmos.NewIntFromBigInt(synthAmount.BigInt())), Equals, true,
+		Commentf("real mempool staging should leave the minted synth in Asgard until finalization or rollback"))
 
 	err = rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter)
 	c.Assert(err, IsNil)
@@ -1290,12 +1500,16 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboun
 	c.Check(updatedVoter.Reverted, Equals, false, Commentf("synth mempool rollback should normalize the voter"))
 	c.Check(updatedVoter.Actions, IsNil, Commentf("synth mempool rollback should clear speculative actions"))
 
-	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, tx.ID)
+	stagedItems, err = mgr.Keeper().GetStagedOutbounds(ctx, tx.ID)
 	c.Assert(err, IsNil)
 	c.Check(stagedItems, HasLen, 0, Commentf("synth mempool rollback should delete staged outbounds"))
 
 	_, err = mgr.Keeper().GetSwapQueueItem(ctx, CreateMempoolRollbackTxID(tx.ID, 0), 0)
 	c.Assert(err, NotNil, Commentf("synth mempool rollback should settle the reverse swap inline"))
+
+	asgardBalance = mgr.Keeper().GetBalance(ctx, mgr.Keeper().GetModuleAccAddress(AsgardName))
+	c.Check(asgardBalance.AmountOf(common.ETHAsset.GetSyntheticAsset().Native()).IsZero(), Equals, true,
+		Commentf("rollback should consume the staged synth from Asgard"))
 
 	updatedSourcePool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)

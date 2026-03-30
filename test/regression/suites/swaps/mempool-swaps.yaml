@@ -306,7 +306,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "85850874"  # Actual swap output
+        - amount: "85852919"  # Actual swap output
           asset: "ETH.ETH"
           decimals: 8
       gas:

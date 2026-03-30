@@ -20,11 +20,6 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-// maxMempoolRevertActions is the maximum number of staged outbound actions that can
-// be reverted via reverse swaps. GetOriginalFromMempoolRevertTxID brute-forces
-// action indices during recovery, so this value caps the search space.
-const maxMempoolRevertActions = 16
-
 // CreateMempoolRollbackTxID creates a deterministic synthetic TxID for an
 // inline rollback swap from the original inbound TxID and action index.
 // The current inline design no longer needs to recover the original txid from
@@ -2826,6 +2821,8 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 		return fmt.Errorf("fail to cast TxOutStore to TxOutStorage")
 	}
 
+	finalActions := make([]TxOutItem, 0, len(finalizedOutbounds))
+
 	// Move each staged outbound to its final form.
 	for _, finalized := range finalizedOutbounds {
 		finalItem := finalized.item
@@ -2833,32 +2830,46 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 			continue
 		}
 
-		// Floor the scheduled height at current block if the scheduled time has passed
+		// Materialize the staged outbound through the finalized txout path so
+		// outbound fees and their accounting side effects are applied only now,
+		// not while the swap was still speculative in the mempool.
+		materializedOutputs, materializeErr := tos.finalizeStagedTxOutItem(ctx, mgr, finalItem, finalized.scheduledHeight)
+		if materializeErr != nil {
+			ctx.Logger().Error("fail to finalize staged outbound", "error", materializeErr, "inhash", finalItem.InHash)
+			return fmt.Errorf("fail to finalize staged outbound: %w", materializeErr)
+		}
+
+		// Replace the speculative gross action(s) with the finalized outputs so
+		// later outbound matching and slasher logic see the real net amounts.
+		finalActions = append(finalActions, materializedOutputs...)
+		if len(materializedOutputs) == 0 {
+			// Some staged outputs can disappear after final fee deduction or dust
+			// handling. In that case nothing remains to log or queue.
+			continue
+		}
+
 		targetHeight := finalized.scheduledHeight
 		if targetHeight < ctx.BlockHeight() {
 			targetHeight = ctx.BlockHeight()
 		}
 
 		if finalItem.Chain.IsTHORChain() {
-			if err = tos.nativeTxOut(ctx, mgr, finalItem); err != nil {
-				ctx.Logger().Error("fail to execute native outbound", "error", err, "inhash", finalItem.InHash)
-				return fmt.Errorf("fail to execute native outbound: %w", err)
-			}
 			ctx.Logger().Info("executed staged native outbound on finalization",
 				"inhash", finalItem.InHash,
-				"asset", finalItem.Coin.Asset,
-				"amount", finalItem.Coin.Amount)
+				"asset", materializedOutputs[0].Coin.Asset,
+				"amount", sumPreparedTxOutAmount(materializedOutputs))
 		} else {
-			// Add external outbound to real TxOut queue at the target height
-			if err = mgr.Keeper().AppendTxOut(ctx, targetHeight, finalItem); err != nil {
-				return fmt.Errorf("fail to move staged outbound to queue: %w", err)
-			}
 			ctx.Logger().Info("moved staged outbound to queue",
 				"inhash", finalItem.InHash,
 				"chain", finalItem.Chain,
 				"target_height", targetHeight,
 				"original_scheduled", finalized.scheduledHeight)
 		}
+	}
+
+	if len(voter.Actions) > 0 {
+		voter.Actions = finalActions
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	}
 
 	incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "staged_finalize")})

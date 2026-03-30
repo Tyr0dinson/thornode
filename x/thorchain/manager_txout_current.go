@@ -36,6 +36,26 @@ func newTxOutStorage(keeper keeper.Keeper, constAccessor constants.ConstantValue
 	}
 }
 
+// txOutPrepareOptions lets callers reuse outbound construction logic while
+// choosing whether fee deductions become user-visible outputs, durable
+// accounting side effects, and voter action state.
+type txOutPrepareOptions struct {
+	applyOutboundDeduction bool
+	commitOutboundEffects  bool
+	recordVoterActions     bool
+}
+
+// defaultTxOutPrepareOptions preserves the historical txout behavior: deduct
+// outbound fees, commit their accounting side effects, and record the prepared
+// outputs as voter actions.
+func defaultTxOutPrepareOptions() txOutPrepareOptions {
+	return txOutPrepareOptions{
+		applyOutboundDeduction: true,
+		commitOutboundEffects:  true,
+		recordVoterActions:     true,
+	}
+}
+
 func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	// update the max gas for all outbounds in this block. This can be useful
 	// if an outbound transaction was scheduled into the future, and the gas
@@ -188,11 +208,33 @@ func (tos *TxOutStorage) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi Tx
 			validationItem = adjustedItem
 		}
 
-		success, err := tos.cachedTryAddTxOutItem(validationCtx, mgr, validationItem, minOut)
-		if err != nil || !success {
-			return success, err
+		validationOutputs, _, err := tos.prepareTxOutItem(validationCtx, validationItem, txOutPrepareOptions{
+			applyOutboundDeduction: true,
+			commitOutboundEffects:  false,
+			recordVoterActions:     false,
+		})
+		if err != nil {
+			return false, fmt.Errorf("failed to prepare tx out item: %w", err)
 		}
-		minOut = cosmos.ZeroUint()
+
+		if err = validatePreparedTxOutMinOut(validationOutputs, minOut); err != nil {
+			return false, err
+		}
+
+		stagedOutputs, _, err := tos.prepareTxOutItem(cacheCtx, toi, txOutPrepareOptions{
+			applyOutboundDeduction: false,
+			commitOutboundEffects:  false,
+			recordVoterActions:     true,
+		})
+		if err != nil {
+			return false, fmt.Errorf("failed to prepare tx out item: %w", err)
+		}
+
+		success, err := tos.cachedTryAddPreparedTxOutItem(cacheCtx, mgr, toi, stagedOutputs, cosmos.ZeroUint(), cosmos.ZeroUint(), false)
+		if err == nil {
+			commit()
+		}
+		return success, err
 	} else {
 		adjustedItem, err := tos.getAffiliateFeeAdjustedTxOutItem(cacheCtx, mgr, toi)
 		if err != nil {
@@ -336,6 +378,29 @@ func (tos *TxOutStorage) shouldDeferAffiliateFeeForMempoolSwap(ctx cosmos.Contex
 	return tos.shouldStageForMempoolSwap(ctx, toi)
 }
 
+func sumPreparedTxOutAmount(outputs []TxOutItem) cosmos.Uint {
+	sumOut := cosmos.ZeroUint()
+	for _, output := range outputs {
+		sumOut = sumOut.Add(output.Coin.Amount)
+	}
+	return sumOut
+}
+
+func validatePreparedTxOutMinOut(outputs []TxOutItem, minOut cosmos.Uint) error {
+	if len(outputs) == 0 {
+		return ErrNotEnoughToPayFee
+	}
+
+	if sumOut := sumPreparedTxOutAmount(outputs); sumOut.LT(minOut) {
+		// **NOTE** this error string is utilized by the adv swap queue manager to
+		// catch the error. DO NOT change this error string without updating
+		// the adv swap queue manager as well
+		return fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
+	}
+
+	return nil
+}
+
 // escrowMempoolSecuredTarget rewrites native secured outputs to their
 // underlying layer1 asset while the inbound is still unfinalized. Finalization
 // later restores the secured asset and credits the user-facing balance.
@@ -350,23 +415,28 @@ func escrowMempoolSecuredTarget(item TxOutItem) TxOutItem {
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
 func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
-	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi)
+	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi, defaultTxOutPrepareOptions())
 	if err != nil {
 		return false, fmt.Errorf("failed to prepare tx out item: %w", err)
 	}
-	if len(outputs) == 0 {
-		return false, ErrNotEnoughToPayFee
-	}
+	return tos.cachedTryAddPreparedTxOutItem(ctx, mgr, toi, outputs, totalOutboundFeeRune, minOut, true)
+}
 
-	sumOut := cosmos.ZeroUint()
-	for _, o := range outputs {
-		sumOut = sumOut.Add(o.Coin.Amount)
-	}
-	if sumOut.LT(minOut) {
-		// **NOTE** this error string is utilized by the adv swap queue manager to
-		// catch the error. DO NOT change this error string without updating
-		// the adv swap queue manager as well
-		return false, fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
+// cachedTryAddPreparedTxOutItem handles the common "schedule these already
+// prepared outputs" flow. Callers can reuse it for both the normal path and
+// the mempool-specific variants that decide fee accounting separately from
+// output construction.
+func (tos *TxOutStorage) cachedTryAddPreparedTxOutItem(
+	ctx cosmos.Context,
+	mgr Manager,
+	toi TxOutItem,
+	outputs []TxOutItem,
+	totalOutboundFeeRune cosmos.Uint,
+	minOut cosmos.Uint,
+	recordOutboundFeeWithheld bool,
+) (bool, error) {
+	if err := validatePreparedTxOutMinOut(outputs, minOut); err != nil {
+		return false, err
 	}
 
 	// calculate the single block height to send all of these txout items,
@@ -414,10 +484,7 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 	}
 
 	// sum total output asset
-	sumOutput := cosmos.ZeroUint()
-	for _, output := range outputs {
-		sumOutput = sumOutput.Add(output.Coin.Amount)
-	}
+	sumOutput := sumPreparedTxOutAmount(outputs)
 
 	// add tx to block out
 	totalCloutShare := cosmos.ZeroUint()
@@ -437,13 +504,67 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 
 	// Add total outbound fee to the OutboundGasWithheldRune. totalOutboundFeeRune will be 0 if these are Migration outbounds
 	// Don't count outbounds on THORChain ($RUNE and Synths)
-	if !totalOutboundFeeRune.IsZero() && !toi.Chain.IsTHORChain() {
+	if recordOutboundFeeWithheld && !totalOutboundFeeRune.IsZero() && !toi.Chain.IsTHORChain() {
 		if err := mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, toi.Coin.Asset, totalOutboundFeeRune); err != nil {
 			ctx.Logger().Error("fail to add to outbound fee withheld rune", "outbound asset", toi.Coin.Asset, "error", err)
 		}
 	}
 
 	return true, nil
+}
+
+// addPreparedTxOutItemsAtHeight writes prepared outputs to their final native
+// execution path or external TxOut queue at one already-decided block height.
+func (tos *TxOutStorage) addPreparedTxOutItemsAtHeight(ctx cosmos.Context, mgr Manager, outputs []TxOutItem, outboundHeight int64) error {
+	for _, output := range outputs {
+		if err := tos.addToBlockOut(ctx, mgr, output, outboundHeight); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// finalizeStagedTxOutItem turns one staged mempool outbound into its finalized
+// form. This is where deferred outbound-fee accounting becomes real, so staged
+// mempool outputs can stay gross and rollback-safe until the inbound confirms.
+func (tos *TxOutStorage) finalizeStagedTxOutItem(ctx cosmos.Context, mgr Manager, item TxOutItem, scheduledHeight int64) ([]TxOutItem, error) {
+	// Re-run preparation with the full finalized behavior now that the inbound
+	// is confirmed. This applies the real outbound deduction and commits the
+	// associated pool / reserve / fee-event side effects exactly once.
+	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, item, txOutPrepareOptions{
+		applyOutboundDeduction: true,
+		commitOutboundEffects:  true,
+		recordVoterActions:     false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare finalized staged tx out item: %w", err)
+	}
+	if len(outputs) == 0 {
+		// A finalized staged outbound can still collapse to nothing after fees
+		// and dust handling. In that case there is nothing left to queue.
+		return nil, nil
+	}
+
+	targetHeight := scheduledHeight
+	if targetHeight < ctx.BlockHeight() {
+		targetHeight = ctx.BlockHeight()
+	}
+
+	// Queue or execute the finalized outputs without running the preparation
+	// logic a second time.
+	if err := tos.addPreparedTxOutItemsAtHeight(ctx, mgr, outputs, targetHeight); err != nil {
+		return nil, err
+	}
+
+	// Record the withheld outbound fee now that the outbound is real. The staged
+	// mempool path intentionally skipped this accounting.
+	if !totalOutboundFeeRune.IsZero() && !item.Chain.IsTHORChain() {
+		if err := mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, item.Coin.Asset, totalOutboundFeeRune); err != nil {
+			ctx.Logger().Error("fail to add to outbound fee withheld rune", "outbound asset", item.Coin.Asset, "error", err)
+		}
+	}
+
+	return outputs, nil
 }
 
 // UnSafeAddTxOutItem - blindly adds a tx out, skipping vault selection, transaction
@@ -792,9 +913,9 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 // prepareTxOutItem will do some data validation which include the following
 // 1. Make sure it has a legitimate memo
 // 2. choose an appropriate vault(s) to send from (active asgard, then retiring asgard)
-// 3. deduct transaction fee, keep in mind, only take transaction fee when active nodes are  more then minimumBFT
+// 3. optionally deduct outbound fees / gas costs and optionally commit the fee-side accounting
 // return list of outbound transactions
-func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]TxOutItem, sdkmath.Uint, error) {
+func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem, opts txOutPrepareOptions) ([]TxOutItem, sdkmath.Uint, error) {
 	var outputs []TxOutItem
 	var remaining cosmos.Uint
 
@@ -1000,7 +1121,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// Keep gas cost (instead of outbound fee) deduction within the not-THORChain conditional
 			// to never deduct for THORChain-outbound Ragnarok memos,
 			// as these are set by the withdraw handler for BlankTxID actions like POL withdrawals.
-			if !feeDeduction && outputs[i].Coin.Asset.IsGasAsset() {
+			if opts.applyOutboundDeduction && !feeDeduction && outputs[i].Coin.Asset.IsGasAsset() {
 				gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
 			}
@@ -1008,7 +1129,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 		// Deduct OutboundTransactionFee from TOI and add to Reserve.
 		// Migrate transaction coins remain in their pools and their gas costs are covered by the Reserve.
-		if feeDeduction && !memo.IsType(TxMigrate) && !toi.ToAddress.Equals(lendAddr) {
+		if opts.applyOutboundDeduction && feeDeduction && !memo.IsType(TxMigrate) && !toi.ToAddress.Equals(lendAddr) {
 			if outputs[i].Coin.Asset.IsRune() {
 				runeFee := transactionFeeAmount // Fee is the prescribed RUNE fee
 				if runeFee.GT(outputs[i].Coin.Amount) {
@@ -1016,8 +1137,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 				}
 				finalRuneFee = finalRuneFee.Add(runeFee)
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, runeFee)
-				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
-				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
+				if opts.commitOutboundEffects {
+					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
+					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
+				}
 			} else if !pool.GetPoolUnits().IsZero() { // if pool units is zero, no asset fee is taken
 				assetFee := transactionFeeAmount
 				if outputs[i].Coin.Amount.LTE(assetFee) {
@@ -1075,7 +1198,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 					// burn the native asset which used to pay for fee, that's only required when sending Synthetic/Derived assets from asgard
 					// (not for instance applicable for Trade/Secured Assets which are not (1-to-1) Cosmos-SDK coins transferred from the Pool Module)
 					// Only burn if assetFee > 0 (synths have zero fee, so skip for them)
-					if outputs[i].GetModuleName() == AsgardName && !assetFee.IsZero() {
+					if opts.commitOutboundEffects && outputs[i].GetModuleName() == AsgardName && !assetFee.IsZero() {
 						// Finding 4: Return errors from synth/derived fee burning to prevent supply accounting errors
 						if err := tos.keeper.SendFromModuleToModule(ctx,
 							AsgardName,
@@ -1102,8 +1225,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 					pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
 				}
 				pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeduct) // Deduct Rune from Pool
-				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
-				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
+				if opts.commitOutboundEffects {
+					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
+					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
+				}
 			}
 		}
 		// After applying all fees, check if the coin is still empty
@@ -1147,7 +1272,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, pool.Decimals)
 		}
 
-		if !outputs[i].InHash.Equals(common.BlankTxID) {
+		if opts.recordVoterActions && !outputs[i].InHash.Equals(common.BlankTxID) {
 			// increment out number of out tx for this in tx
 			voter, err := tos.keeper.GetObservedTxInVoter(ctx, outputs[i].InHash)
 			if err != nil {
@@ -1180,17 +1305,19 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 		finalOutput = append(finalOutput, outputs[i])
 	}
 
-	if !pool.IsEmpty() {
+	if opts.commitOutboundEffects && !pool.IsEmpty() {
 		if err := tos.keeper.SetPool(ctx, pool); err != nil { // Set Pool
 			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to save pool: %w", err)
 		}
 	}
-	for _, feeEvent := range feeEvents {
-		if err := tos.eventMgr.EmitFeeEvent(ctx, feeEvent); err != nil {
-			ctx.Logger().Error("fail to emit fee event", "error", err)
+	if opts.commitOutboundEffects {
+		for _, feeEvent := range feeEvents {
+			if err := tos.eventMgr.EmitFeeEvent(ctx, feeEvent); err != nil {
+				ctx.Logger().Error("fail to emit fee event", "error", err)
+			}
 		}
 	}
-	if !finalRuneFee.IsZero() {
+	if opts.commitOutboundEffects && !finalRuneFee.IsZero() {
 		if toi.Coin.IsRune() {
 			// If the source module is the Reserve, leave the fee in the Reserve without a transfer.
 			if toi.ModuleName != ReserveName {
