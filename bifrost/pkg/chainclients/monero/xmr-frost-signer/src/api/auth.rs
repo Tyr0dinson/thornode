@@ -8,7 +8,6 @@ use axum::{
     Extension,
 };
 use base64::Engine;
-use subtle::ConstantTimeEq;
 use tracing::warn;
 
 /// Authentication configuration.
@@ -101,15 +100,15 @@ fn constant_time_str_eq(a: &str, b: &str) -> bool {
     let a_bytes = a.as_bytes();
     let b_bytes = b.as_bytes();
     let max_len = a_bytes.len().max(b_bytes.len());
-    let mut diff = (a_bytes.len() ^ b_bytes.len()) as u8;
+    let mut diff = (a_bytes.len() as u64) ^ (b_bytes.len() as u64);
 
     for i in 0..max_len {
         let lhs = a_bytes.get(i).copied().unwrap_or_default();
         let rhs = b_bytes.get(i).copied().unwrap_or_default();
-        diff |= lhs ^ rhs;
+        diff |= u64::from(lhs ^ rhs);
     }
 
-    diff.ct_eq(&0).into()
+    diff == 0
 }
 
 #[cfg(test)]
@@ -176,6 +175,17 @@ mod tests {
         assert!(!constant_time_str_eq("short", "much-longer"));
         assert!(!constant_time_str_eq("much-longer", "short"));
         assert!(constant_time_str_eq("same-length", "same-length"));
+    }
+
+    #[test]
+    fn constant_time_str_eq_rejects_large_length_differences() {
+        let short = "a".repeat(44);
+        let long = "b".repeat(300);
+        let much_longer = "c".repeat(512);
+
+        assert!(!constant_time_str_eq(&short, &long));
+        assert!(!constant_time_str_eq(&long, &short));
+        assert!(!constant_time_str_eq("", &much_longer));
     }
 
     #[tokio::test]
