@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	dbm "github.com/cosmos/cosmos-db"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -707,6 +708,22 @@ func (p *AddLiquidityTestKeeper) SetLiquidityProvider(ctx cosmos.Context, lp Liq
 	p.store[string(key)] = lp
 }
 
+func (p *AddLiquidityTestKeeper) GetLiquidityProviderIterator(_ cosmos.Context, asset common.Asset) cosmos.Iterator {
+	db := dbm.NewMemDB()
+	for key, value := range p.store {
+		lp, ok := value.(LiquidityProvider)
+		if !ok || !lp.Asset.Equals(asset) {
+			continue
+		}
+		db.Set([]byte(key), p.Cdc().MustMarshal(&lp))
+	}
+	iter, err := db.Iterator(nil, nil)
+	if err != nil {
+		panic(err)
+	}
+	return iter
+}
+
 func (p *AddLiquidityTestKeeper) AddOwnership(ctx cosmos.Context, coin common.Coin, addr cosmos.AccAddress) error {
 	p.liquidityUnits = p.liquidityUnits.Add(coin.Amount)
 	return nil
@@ -1140,6 +1157,55 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityXMRUnknownSender(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(su.AssetAddress.Equals(xmrAddr3), Equals, true)
 	c.Check(su.Units.IsZero(), Equals, false)
+
+	ps = NewAddLiquidityTestKeeper()
+	ctx, _ = setupKeeperForTest(c)
+	h = NewAddLiquidityHandler(NewDummyMgrWithKeeper(ps))
+	c.Assert(ps.SetPool(ctx, Pool{
+		BalanceRune:         cosmos.NewUint(100 * common.One),
+		BalanceAsset:        cosmos.NewUint(100 * common.One),
+		Asset:               common.XMRAsset,
+		LPUnits:             cosmos.NewUint(100 * common.One),
+		SynthUnits:          cosmos.ZeroUint(),
+		PendingInboundAsset: cosmos.ZeroUint(),
+		PendingInboundRune:  cosmos.ZeroUint(),
+		Status:              PoolAvailable,
+	}), IsNil)
+
+	victimRuneAddr := GetRandomRUNEAddress()
+	victimAssetAddr, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	ps.SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.XMRAsset,
+		RuneAddress:       victimRuneAddr,
+		AssetAddress:      victimAssetAddr,
+		Units:             cosmos.NewUint(100 * common.One),
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		LastAddHeight:     ctx.BlockHeight(),
+	})
+
+	attackerRuneAddr := GetRandomRUNEAddress()
+	err = h.addLiquidity(
+		ctx,
+		common.XMRAsset,
+		cosmos.NewUint(10*common.One),
+		cosmos.ZeroUint(),
+		attackerRuneAddr,
+		victimAssetAddr,
+		GetRandomTxHash(),
+		true,
+		constAccessor,
+	)
+	c.Assert(err, Equals, errAddLiquidityMismatchAddr)
+
+	victimLP, err := ps.GetLiquidityProvider(ctx, common.XMRAsset, victimRuneAddr)
+	c.Assert(err, IsNil)
+	c.Check(victimLP.RuneAddress.Equals(victimRuneAddr), Equals, true)
+	c.Check(victimLP.AssetAddress.Equals(victimAssetAddr), Equals, true)
+	c.Check(victimLP.Units.Equal(cosmos.NewUint(100*common.One)), Equals, true)
 }
 
 func (HandlerAddLiquiditySuite) TestRuneOnlyFairMergeProvidedLiquidity(c *C) {

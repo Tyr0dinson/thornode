@@ -32,3 +32,12 @@ func TestShouldReportSolvency(t *testing.T) {
 		t.Fatal("should not report when fee is unknown")
 	}
 }
+
+func TestShouldReportSolvencyRequiresInitializedState(t *testing.T) {
+	c := &Client{
+		cfg: config.BifrostChainConfiguration{SolvencyBlocks: 10},
+	}
+	if c.ShouldReportSolvency(10) {
+		t.Fatal("should not report when scanner and solvency state are not initialized")
+	}
+}

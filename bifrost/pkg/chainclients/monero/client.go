@@ -121,8 +121,10 @@ type Client struct {
 	asgardMu                sync.RWMutex
 	asgardAddresses         []common.Address
 	lastAsgard              time.Time
+	consolidationInitMu     sync.Mutex
 	vaultLockMu             sync.Mutex
 	vaultLocks              map[string]*sync.Mutex
+	emptyVaultLock          sync.Mutex
 	consolidationStateMu    sync.Mutex
 	consolidationState      map[string]xmrConsolidationVaultState
 	consolidateInProgress   *atomic.Bool
@@ -258,29 +260,31 @@ func (c *Client) IsBlockScannerHealthy() bool {
 }
 
 func (c *Client) ensureConsolidationState() {
+	c.consolidationInitMu.Lock()
+	defer c.consolidationInitMu.Unlock()
+
 	if c.consolidateInProgress == nil {
 		c.consolidateInProgress = atomic.NewBool(false)
 	}
 	if c.lastConsolidationHeight == nil {
 		c.lastConsolidationHeight = atomic.NewInt64(0)
 	}
-	c.vaultLockMu.Lock()
+	if c.lastSolvencyCheckHeight == nil {
+		c.lastSolvencyCheckHeight = atomic.NewInt64(0)
+	}
 	if c.vaultLocks == nil {
 		c.vaultLocks = make(map[string]*sync.Mutex)
 	}
-	c.vaultLockMu.Unlock()
-	c.consolidationStateMu.Lock()
 	if c.consolidationState == nil {
 		c.consolidationState = make(map[string]xmrConsolidationVaultState)
 	}
-	c.consolidationStateMu.Unlock()
 }
 
 func (c *Client) GetVaultLock(vaultPubKey string) *sync.Mutex {
 	c.ensureConsolidationState()
 	key := strings.TrimSpace(vaultPubKey)
 	if key == "" {
-		return &sync.Mutex{}
+		return &c.emptyVaultLock
 	}
 
 	c.vaultLockMu.Lock()
@@ -417,10 +421,7 @@ func (c *Client) consolidateVault(
 
 	stateKey := vaultPubKey.String()
 	state := c.getConsolidationVaultState(stateKey)
-	effectiveCooldown := settings.CooldownBlocks
-	if state.ConsecutiveFails > 1 {
-		effectiveCooldown *= state.ConsecutiveFails
-	}
+	effectiveCooldown := scaledConsolidationCooldown(settings.CooldownBlocks, state.ConsecutiveFails)
 	if effectiveCooldown > 0 && state.LastAttemptHeight > 0 && thorchainHeight-state.LastAttemptHeight < effectiveCooldown {
 		c.logger.Debug().
 			Str("vault_pubkey", stateKey).
@@ -636,6 +637,19 @@ func bumpConsolidationReserve(currentReserve uint64, reserveBps int64) uint64 {
 		return ^uint64(0)
 	}
 	return currentReserve + step
+}
+
+func scaledConsolidationCooldown(baseCooldown, consecutiveFails int64) int64 {
+	if baseCooldown <= 0 {
+		return 0
+	}
+	if consecutiveFails <= 1 {
+		return baseCooldown
+	}
+	if consecutiveFails > math.MaxInt64/baseCooldown {
+		return math.MaxInt64
+	}
+	return baseCooldown * consecutiveFails
 }
 
 func isRetryableConsolidationErr(err error) bool {
@@ -1481,6 +1495,9 @@ func (c *Client) RollbackBlockScanner() error {
 }
 
 func (c *Client) ShouldReportSolvency(height int64) bool {
+	if c.lastSolvencyCheckHeight == nil || c.scanner == nil {
+		return false
+	}
 	if height <= c.lastSolvencyCheckHeight.Load() {
 		return false
 	}
@@ -1765,7 +1782,7 @@ func (c *Client) getVaultByPubKey(vaultPubKey common.PubKey) (ttypes.Vault, erro
 
 	vaults, asgardErr := c.thorchainBridge.GetAsgards()
 	if asgardErr != nil {
-		return ttypes.Vault{}, err
+		return ttypes.Vault{}, asgardErr
 	}
 	for _, item := range vaults {
 		if item.PubKeyEddsa.Equals(vaultPubKey) {

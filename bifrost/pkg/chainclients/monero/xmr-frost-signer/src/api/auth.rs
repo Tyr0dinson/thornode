@@ -98,10 +98,18 @@ pub async fn auth_middleware(
 
 /// Constant-time string comparison to prevent timing attacks.
 fn constant_time_str_eq(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let max_len = a_bytes.len().max(b_bytes.len());
+    let mut diff = (a_bytes.len() ^ b_bytes.len()) as u8;
+
+    for i in 0..max_len {
+        let lhs = a_bytes.get(i).copied().unwrap_or_default();
+        let rhs = b_bytes.get(i).copied().unwrap_or_default();
+        diff |= lhs ^ rhs;
     }
-    a.as_bytes().ct_eq(b.as_bytes()).into()
+
+    diff.ct_eq(&0).into()
 }
 
 #[cfg(test)]
@@ -161,6 +169,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn constant_time_str_eq_rejects_mismatched_lengths() {
+        assert!(!constant_time_str_eq("short", "much-longer"));
+        assert!(!constant_time_str_eq("much-longer", "short"));
+        assert!(constant_time_str_eq("same-length", "same-length"));
     }
 
     #[tokio::test]
