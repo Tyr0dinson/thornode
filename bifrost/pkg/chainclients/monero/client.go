@@ -1320,18 +1320,18 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		return types.CustomKeygenResult{}, fmt.Errorf("FROST keygen succeeded without a group key")
 	}
 
-		frostVaultPubKey, err := vaultPubKeyFromGroupKeyHex(groupKeyHex)
-		if err != nil {
-			return types.CustomKeygenResult{}, fmt.Errorf("fail to convert FROST group key to vault pubkey: %w", err)
-		}
-		if !frostVaultPubKey.Equals(vaultPubKey) {
-			c.logger.Info().
-				Str("requested_pool_pubkey_eddsa", vaultPubKey.String()).
-				Str("frost_pool_pubkey_eddsa", frostVaultPubKey.String()).
-				Msg("FROST keygen produced authoritative eddsa vault pubkey")
-		}
+	frostVaultPubKey, err := vaultPubKeyFromGroupKeyHex(groupKeyHex)
+	if err != nil {
+		return types.CustomKeygenResult{}, fmt.Errorf("fail to convert FROST group key to vault pubkey: %w", err)
+	}
+	if !frostVaultPubKey.Equals(vaultPubKey) {
+		c.logger.Info().
+			Str("requested_pool_pubkey_eddsa", vaultPubKey.String()).
+			Str("frost_pool_pubkey_eddsa", frostVaultPubKey.String()).
+			Msg("FROST keygen produced authoritative eddsa vault pubkey")
+	}
 
-		expectedAddress, err := frostVaultPubKey.GetAddress(common.XMRChain)
+	expectedAddress, err := frostVaultPubKey.GetAddress(common.XMRChain)
 	if err != nil {
 		return types.CustomKeygenResult{}, fmt.Errorf("fail to derive monero address from FROST group key %s: %w", groupKeyHex, err)
 	}

@@ -576,21 +576,21 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	if err != nil {
 		return ErrInternal(err, "fail to get liquidity provider")
 	}
-		if asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) &&
-			!effectiveRuneAddr.IsEmpty() &&
-			!effectiveAssetAddr.IsEmpty() {
-			// Once a real XMR asset address is known, do not allow a different RUNE
-			// address to bind against an existing LP record for that same asset-side
-			// address. Unknown-sender staging still works, but it cannot overwrite an
-			// established LP pairing.
-			//
-			// Keeper only indexes LPs by the canonical fetch address, so this is
-			// currently an O(n) scan across the asset LP set. That is acceptable for
-			// the low-cardinality XMR pool today; add a reverse index if LP counts
-			// grow enough for this guard to become hot.
-			iter := h.mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
-			defer iter.Close()
-			for ; iter.Valid(); iter.Next() {
+	if asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) &&
+		!effectiveRuneAddr.IsEmpty() &&
+		!effectiveAssetAddr.IsEmpty() {
+		// Once a real XMR asset address is known, do not allow a different RUNE
+		// address to bind against an existing LP record for that same asset-side
+		// address. Unknown-sender staging still works, but it cannot overwrite an
+		// established LP pairing.
+		//
+		// Keeper only indexes LPs by the canonical fetch address, so this is
+		// currently an O(n) scan across the asset LP set. That is acceptable for
+		// the low-cardinality XMR pool today; add a reverse index if LP counts
+		// grow enough for this guard to become hot.
+		iter := h.mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
 			var assetLP types.LiquidityProvider
 			if err = h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &assetLP); err != nil {
 				return ErrInternal(err, "fail to decode liquidity provider")
