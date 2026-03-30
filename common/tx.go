@@ -229,6 +229,9 @@ func (tx Tx) Valid() error {
 	if tx.Chain.IsEmpty() {
 		return errors.New("chain cannot be empty")
 	}
+	if IsXMRUnknownSenderAddress(tx.FromAddress) && !tx.Chain.Equals(XMRChain) {
+		return errors.New("xmr unknown sender marker is only valid on XMR chain")
+	}
 	if len(tx.Coins) == 0 {
 		return errors.New("must have at least 1 coin")
 	}

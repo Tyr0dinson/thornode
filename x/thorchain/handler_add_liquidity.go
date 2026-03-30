@@ -558,13 +558,12 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	if fetchAddr.IsEmpty() {
 		fetchAddr = assetAddr
 	}
-	su, err := h.mgr.Keeper().GetLiquidityProvider(ctx, asset, fetchAddr)
-	if err != nil {
-		return ErrInternal(err, "fail to get liquidity provider")
-	}
-
 	effectiveRuneAddr := runeAddr
 	effectiveAssetAddr := assetAddr
+	// addLiquidity is called both from handle(), which pre-normalizes XMR
+	// unknown senders to NoAddress, and from direct/unit-test paths that can
+	// still supply the raw xmrunknown marker. Re-resolve here so both entry
+	// points converge on the same staged-LP behavior.
 	effectiveAssetSender := common.ResolveObservedSender(asset.GetLayer1Asset().GetChain(), effectiveAssetAddr)
 	if asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) && effectiveAssetSender.RefundAddressRequired {
 		// Monero inbound observations cannot recover the sender address, so the
@@ -572,6 +571,31 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		// real address. Preserve the staged LP address instead of treating that as
 		// a mismatched counterparty.
 		effectiveAssetAddr = effectiveAssetSender.Address
+	}
+	su, err := h.mgr.Keeper().GetLiquidityProvider(ctx, asset, fetchAddr)
+	if err != nil {
+		return ErrInternal(err, "fail to get liquidity provider")
+	}
+	if asset.GetLayer1Asset().GetChain().Equals(common.XMRChain) &&
+		!effectiveRuneAddr.IsEmpty() &&
+		!effectiveAssetAddr.IsEmpty() {
+		// Once a real XMR asset address is known, do not allow a different RUNE
+		// address to bind against an existing LP record for that same asset-side
+		// address. Unknown-sender staging still works, but it cannot overwrite an
+		// established LP pairing.
+		iter := h.mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var assetLP types.LiquidityProvider
+			if err := h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &assetLP); err != nil {
+				return ErrInternal(err, "fail to decode liquidity provider")
+			}
+			if assetLP.AssetAddress.Equals(effectiveAssetAddr) &&
+				!assetLP.RuneAddress.IsEmpty() &&
+				!assetLP.RuneAddress.Equals(effectiveRuneAddr) {
+				return errAddLiquidityMismatchAddr
+			}
+		}
 	}
 
 	su.LastAddHeight = ctx.BlockHeight()

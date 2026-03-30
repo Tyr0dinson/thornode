@@ -188,6 +188,26 @@ func (s TxOutStoreSuite) TestEndBlock(c *C) {
 	c.Check(items[0].MaxGas[0].Amount.Uint64(), Equals, uint64(56250), Commentf("%d", items[0].MaxGas[0].Amount.Uint64()))
 }
 
+func (s TxOutStoreSuite) TestNativeTxOutWithoutActiveVaults(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, false)
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+
+	active, err := w.keeper.GetAsgardVaultsByStatus(w.ctx, ActiveVault)
+	c.Assert(err, IsNil)
+	c.Assert(active, HasLen, 0)
+
+	toi := TxOutItem{
+		Chain:     common.THORChain,
+		ToAddress: GetRandomRUNEAddress(),
+		InHash:    GetRandomTxHash(),
+		Coin:      common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+		Memo:      "RESERVE",
+	}
+
+	err = txOutStore.nativeTxOut(w.ctx, w.mgr, toi)
+	c.Assert(err, IsNil)
+}
+
 func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()

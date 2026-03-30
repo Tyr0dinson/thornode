@@ -397,7 +397,7 @@ func (GasManagerTestSuite) TestGetGasDetailsHighPrecisionAsset(c *C) {
 
 	fee, err := gasMgr.GetAssetOutboundFee(ctx, common.XMRAsset, false)
 	c.Assert(err, IsNil)
-	c.Assert(fee.Uint64(), Equals, uint64(5000))
+	c.Assert(fee.Uint64(), Equals, uint64(7500))
 }
 
 func (GasManagerTestSuite) TestGetGasDetailsLowDecimalAssetDoesNotRoundToZero(c *C) {
@@ -414,4 +414,35 @@ func (GasManagerTestSuite) TestGetGasDetailsLowDecimalAssetDoesNotRoundToZero(c 
 	c.Assert(maxGasCoin.Amount.Uint64(), Equals, uint64(15))
 	c.Assert(maxGasCoin.Decimals, Equals, int64(6))
 	c.Assert(gasRate, Equals, int64(15))
+}
+
+func (GasManagerTestSuite) TestGetAssetOutboundFeeLowDecimalGasChains(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	gasMgr := newGasMgr(constAccessor, k)
+
+	testCases := []struct {
+		chain common.Chain
+		asset common.Asset
+	}{
+		{chain: common.GAIAChain, asset: common.ATOMAsset},
+		{chain: common.NOBLEChain, asset: common.USDCAsset},
+	}
+
+	for _, tc := range testCases {
+		networkFee := NewNetworkFee(tc.chain, 1000, 127)
+		c.Assert(k.SaveNetworkFee(ctx, tc.chain, networkFee), IsNil)
+		c.Assert(k.SetPool(ctx, Pool{
+			BalanceRune:  cosmos.NewUint(100 * common.One),
+			BalanceAsset: cosmos.NewUint(100 * common.One),
+			Decimals:     tc.chain.GetGasAssetDecimal(),
+			Asset:        tc.asset,
+			Status:       PoolAvailable,
+		}), IsNil)
+		c.Assert(resetMultiplierForAsset(ctx, k, tc.asset, cosmos.NewUint(15_000)), IsNil)
+
+		fee, err := gasMgr.GetAssetOutboundFee(ctx, tc.asset, false)
+		c.Assert(err, IsNil)
+		c.Assert(fee.Uint64(), Equals, uint64(190500), Commentf("%s fee %d", tc.chain, fee.Uint64()))
+	}
 }

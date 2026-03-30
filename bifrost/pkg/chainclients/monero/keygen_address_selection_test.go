@@ -1,20 +1,20 @@
 package monero
 
 import (
+	"fmt"
+	"sync/atomic"
 	"testing"
-
-	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
+var testVaultAddressCounter atomic.Uint64
+
 func testVaultPubKeyAndAddress(t *testing.T) (common.PubKey, common.Address) {
 	t.Helper()
 
-	pubKey, err := common.NewPubKeyFromCrypto(cometed25519.GenPrivKey().PubKey())
-	if err != nil {
-		t.Fatalf("new pubkey: %v", err)
-	}
+	seed := fmt.Sprintf("vault-address:%s:%d", t.Name(), testVaultAddressCounter.Add(1))
+	pubKey := testVaultPubKey(t, seed)
 	address, err := pubKey.GetAddress(common.XMRChain)
 	if err != nil {
 		t.Fatalf("derive monero address: %v", err)

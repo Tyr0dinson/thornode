@@ -3,6 +3,7 @@ package monero
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -344,6 +345,31 @@ func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
 	}
 	if req.AmountAtomic == 0 {
 		t.Fatal("expected non-zero consolidation amount")
+	}
+}
+
+func TestEnsureConsolidationStateInitializesZeroValueClient(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+	client.ensureConsolidationState()
+	if client.consolidateInProgress == nil {
+		t.Fatal("expected consolidateInProgress to be initialized")
+	}
+	if client.lastConsolidationHeight == nil {
+		t.Fatal("expected lastConsolidationHeight to be initialized")
+	}
+	if client.lastSolvencyCheckHeight == nil {
+		t.Fatal("expected lastSolvencyCheckHeight to be initialized")
+	}
+	if client.vaultLocks == nil {
+		t.Fatal("expected vaultLocks to be initialized")
+	}
+	if client.consolidationState == nil {
+		t.Fatal("expected consolidationState to be initialized")
+	}
+	if client.GetVaultLock("") != client.GetVaultLock("") {
+		t.Fatal("expected empty vault lock lookups to share the same mutex")
 	}
 }
 
@@ -723,5 +749,135 @@ func TestRunConsolidationPassHoldsVaultLockDuringPrechecks(t *testing.T) {
 	}
 	if lockObservedUnlocked.Load() {
 		t.Fatalf("expected consolidation prechecks to run while the vault lock is held")
+	}
+}
+
+func TestRunConsolidationPassBacksOffAcrossPasses(t *testing.T) {
+	t.Parallel()
+
+	localNodePubKey, _ := testVaultPubKeyAndAddress(t)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		Status:      ttypes.VaultStatus_ActiveVault,
+		StatusSince: 1,
+		Membership:  []string{localNodePubKey.String()},
+		Chains:      []string{common.XMRChain.String()},
+	}
+
+	bridge := &consolidationBridge{
+		nodeStatus:  ttypes.NodeStatus_Active,
+		blockHeight: 20,
+		asgards:     ttypes.Vaults{vault},
+	}
+	tssServer := &consolidationTSS{
+		sequence: []consolidationTSSResponse{
+			{err: errors.New("insufficient funds while building tx")},
+		},
+	}
+	sidecar := &consolidationSidecar{
+		balanceByVault: map[string]xmrFrostBalanceResponse{
+			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
+		},
+		outputsByVault: map[string][]xmrFrostOutputEntry{
+			vaultPubKey.String(): unlockedOutputs(50, 4),
+		},
+		feeRate: 10,
+	}
+	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client.cfg.XMRConsolidationCheckIntervalBlocks = 1
+	client.cfg.XMRConsolidationCooldownBlocks = 2
+	client.cfg.XMRConsolidationMaxRetries = 1
+
+	if err := client.runConsolidationPass(); err != nil {
+		t.Fatalf("first runConsolidationPass failed: %v", err)
+	}
+	if tssServer.callCount() != 1 {
+		t.Fatalf("expected first pass to attempt signing once, got %d", tssServer.callCount())
+	}
+
+	bridge.blockHeight = 22
+	if err := client.runConsolidationPass(); err != nil {
+		t.Fatalf("second runConsolidationPass failed: %v", err)
+	}
+	if tssServer.callCount() != 2 {
+		t.Fatalf("expected second pass to retry after base cooldown, got %d calls", tssServer.callCount())
+	}
+
+	bridge.blockHeight = 24
+	if err := client.runConsolidationPass(); err != nil {
+		t.Fatalf("third runConsolidationPass failed: %v", err)
+	}
+	if tssServer.callCount() != 2 {
+		t.Fatalf("expected third pass to back off due to scaled cooldown, got %d calls", tssServer.callCount())
+	}
+}
+
+func TestRunConsolidationPassStopsOnNonRetryableError(t *testing.T) {
+	t.Parallel()
+
+	localNodePubKey, _ := testVaultPubKeyAndAddress(t)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		Status:      ttypes.VaultStatus_ActiveVault,
+		StatusSince: 1,
+		Membership:  []string{localNodePubKey.String()},
+		Chains:      []string{common.XMRChain.String()},
+	}
+
+	bridge := &consolidationBridge{
+		nodeStatus:  ttypes.NodeStatus_Active,
+		blockHeight: 20,
+		asgards:     ttypes.Vaults{vault},
+	}
+	tssServer := &consolidationTSS{
+		sequence: []consolidationTSSResponse{
+			{err: errors.New("invalid address supplied to keysign request")},
+			{resp: tssp.FrostKeySignResponse{Status: tsscommon.Success, TxHash: "x", TxHex: "deadbeef", MsgID: "should-not-run"}},
+		},
+	}
+	sidecar := &consolidationSidecar{
+		balanceByVault: map[string]xmrFrostBalanceResponse{
+			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
+		},
+		outputsByVault: map[string][]xmrFrostOutputEntry{
+			vaultPubKey.String(): unlockedOutputs(50, 4),
+		},
+		feeRate: 10,
+	}
+	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client.cfg.XMRConsolidationCheckIntervalBlocks = 1
+	client.cfg.XMRConsolidationMaxRetries = 3
+
+	if err := client.runConsolidationPass(); err != nil {
+		t.Fatalf("runConsolidationPass failed: %v", err)
+	}
+	if tssServer.callCount() != 1 {
+		t.Fatalf("expected non-retryable failure to stop after one attempt, got %d", tssServer.callCount())
+	}
+	if sidecar.broadcasts() != 0 {
+		t.Fatalf("expected no broadcast on non-retryable signing failure, got %d", sidecar.broadcasts())
+	}
+}
+
+func TestBumpConsolidationReserveSaturatesOnOverflow(t *testing.T) {
+	t.Parallel()
+
+	currentReserve := ^uint64(0) - defaultXMRConsolidationMinReserveAtomic + 1
+	nextReserve := bumpConsolidationReserve(currentReserve, defaultXMRConsolidationReserveBps)
+	if nextReserve != ^uint64(0) {
+		t.Fatalf("expected reserve to saturate at MaxUint64, got %d", nextReserve)
+	}
+}
+
+func TestScaledConsolidationCooldownCapsOnOverflow(t *testing.T) {
+	t.Parallel()
+
+	cooldown := scaledConsolidationCooldown(math.MaxInt64/2+1, 2)
+	if cooldown != math.MaxInt64 {
+		t.Fatalf("expected cooldown to saturate at MaxInt64, got %d", cooldown)
 	}
 }

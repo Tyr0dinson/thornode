@@ -212,7 +212,7 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 		pool, err := mgr.Keeper().GetPool(ctx, c.Asset.GetLayer1Asset())
 		if err != nil {
 			if pendingRagnarokOutboundsExplainGap(ctx, mgr, nil, c.Asset, originalAmount, walletCoin.Amount, pendingAmount) {
-				ctx.Logger().Info(
+				ctx.Logger().Error(
 					"missing pool solvency gap explained by pending ragnarok outbounds",
 					"asset", c.Asset.String(),
 					"original", originalAmount.String(),
@@ -232,7 +232,7 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 		// allow a real insolvency to go undetected.
 		if gapInRune.IsZero() && !gap.IsZero() {
 			if pendingRagnarokOutboundsExplainGap(ctx, mgr, &pool, c.Asset, originalAmount, walletCoin.Amount, pendingAmount) {
-				ctx.Logger().Info(
+				ctx.Logger().Error(
 					"unpriceable solvency gap explained by pending ragnarok outbounds",
 					"asset", c.Asset.String(),
 					"original", originalAmount.String(),

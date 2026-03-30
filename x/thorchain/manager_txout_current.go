@@ -1275,6 +1275,13 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 	observedPubKey := common.EmptyPubKey
 	if len(active) > 0 {
 		observedPubKey = active[0].PubKey
+	} else {
+		ctx.Logger().Error(
+			"native txout proceeding without active asgard vault",
+			"module", toi.ModuleName,
+			"to", toi.ToAddress.String(),
+			"memo", toi.GetMemo(),
+		)
 	}
 
 	observedTx := ObservedTx{
