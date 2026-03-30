@@ -24,8 +24,8 @@ type SolvencyCheckActor struct {
 var xmrSolvencyTolerance = cosmos.NewUint(25)
 
 const (
-	xmrSolvencyRetryAttempts = 36
-	xmrSolvencyRetryDelay    = 5 * time.Second
+	solvencyRetryAttempts = 36
+	solvencyRetryDelay    = 5 * time.Second
 )
 
 type solvencyMismatch struct {
@@ -84,7 +84,7 @@ func solvencyMismatchRetryable(mismatches []solvencyMismatch) bool {
 		return false
 	}
 	for _, mismatch := range mismatches {
-		if !mismatch.asset.Equals(common.XMRAsset) {
+		if !mismatch.asset.Equals(common.XMRAsset) && !mismatch.asset.Equals(common.SOLAsset) {
 			return false
 		}
 	}
@@ -115,7 +115,7 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 	}
 	defer user.Release()
 
-	for attempt := 1; attempt <= xmrSolvencyRetryAttempts; attempt++ {
+	for attempt := 1; attempt <= solvencyRetryAttempts; attempt++ {
 		// get all vaults
 		vaults, err := thornode.GetVaults()
 		if err != nil {
@@ -288,7 +288,7 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			}
 		}
 
-		retryable := attempt < xmrSolvencyRetryAttempts && solvencyMismatchRetryable(mismatches)
+		retryable := attempt < solvencyRetryAttempts && solvencyMismatchRetryable(mismatches)
 		for _, mismatch := range mismatches {
 			logMismatch := a.Log().Error
 			if retryable {
@@ -308,10 +308,10 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 		if retryable {
 			a.Log().Warn().
 				Int("attempt", attempt).
-				Int("max_attempts", xmrSolvencyRetryAttempts).
-				Dur("delay", xmrSolvencyRetryDelay).
-				Msg("retrying XMR solvency check after transient scanner lag")
-			time.Sleep(xmrSolvencyRetryDelay)
+				Int("max_attempts", solvencyRetryAttempts).
+				Dur("delay", solvencyRetryDelay).
+				Msg("retrying solvency check after transient scanner or finality lag")
+			time.Sleep(solvencyRetryDelay)
 			continue
 		}
 		return OpResult{
@@ -323,7 +323,7 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 
 	return OpResult{
 		Continue: false,
-		Error:    fmt.Errorf("xmr solvency retry loop exhausted"),
+		Error:    fmt.Errorf("solvency retry loop exhausted"),
 		Finish:   true,
 	}
 }

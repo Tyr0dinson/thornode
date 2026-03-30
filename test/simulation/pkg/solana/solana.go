@@ -38,7 +38,7 @@ var (
 	solanaBroadcastConfirmationAttempts     = 20
 	solanaBroadcastConfirmationPollInterval = time.Second
 	solanaBroadcastRebroadcastEvery         = 5
-	solanaAccountCommitment                 = "confirmed"
+	solanaAccountCommitment                 = "finalized"
 	solanaBroadcastConfirmationCommitment   = "finalized"
 )
 
