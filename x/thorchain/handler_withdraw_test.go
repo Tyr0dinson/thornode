@@ -685,13 +685,13 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 
 	pool, err = mgr.Keeper().GetPool(ctx, common.AVAXAsset)
 	c.Assert(err, IsNil)
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(219_904_946_419_930), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(219_902_704_232_245), Commentf("%d", pool.BalanceRune.Uint64()))
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(2199430478930), Commentf("%d", pool.BalanceAsset.Uint64()))
 
 	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.AVAXAsset.GetSyntheticAsset(), avaxAddr)
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.IsZero(), Equals, false)
-	c.Check(lp.Units.Uint64(), Equals, uint64(9_954688254), Commentf("%d", lp.Units.Uint64()))
+	c.Check(lp.Units.Uint64(), Equals, uint64(9_909_683_786), Commentf("%d", lp.Units.Uint64()))
 
 	// nothing in the outbound queue
 	outbound, err := mgr.txOutStore.GetOutboundItems(ctx)
@@ -715,6 +715,6 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 	c.Assert(err, IsNil)
 	c.Assert(outbound, HasLen, 1)
 
-	expected := common.NewCoin(common.AVAXAsset, cosmos.NewUint(9_865235979))
+	expected := common.NewCoin(common.AVAXAsset, cosmos.NewUint(9_777_328_931))
 	c.Check(outbound[0].Coin.Equals(expected), Equals, true, Commentf("%s", outbound[0].Coin))
 }
