@@ -587,7 +587,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		defer iter.Close()
 		for ; iter.Valid(); iter.Next() {
 			var assetLP types.LiquidityProvider
-			if err := h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &assetLP); err != nil {
+			if err = h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &assetLP); err != nil {
 				return ErrInternal(err, "fail to decode liquidity provider")
 			}
 			if assetLP.AssetAddress.Equals(effectiveAssetAddr) &&
