@@ -862,6 +862,37 @@ func (im *IntentMgr) RefundIntentSolves(ctx cosmos.Context, intent types.Intent)
 	})
 }
 
+// refundIntentSolve refunds one solve bid and removes it only after its refund
+// was accepted in the current context.
+func (im *IntentMgr) refundIntentSolve(ctx cosmos.Context, intentTxID common.TxID, solve types.IntentSolve, cleanupOnFailure bool, cleanupReason string) error {
+	toi := newRefundTxOutItem(solve.SolverAddress, solve.TargetCoin, solve.SolveTxID)
+	if err := tryScheduleRefundTxOut(
+		ctx,
+		im.mgr,
+		toi,
+		fmt.Sprintf("schedule solve refund for %s", solve.SolveTxID),
+		cleanupOnFailure,
+		cleanupReason,
+	); err != nil {
+		ctx.Logger().Error("fail to schedule intent solve refund",
+			"intent_txid", intentTxID,
+			"solve_txid", solve.SolveTxID,
+			"solver_address", solve.SolverAddress,
+			"amount", solve.TargetCoin.Amount,
+			"error", err,
+		)
+		return err
+	}
+
+	ctx.Logger().Info("refunded intent solve",
+		"intent_txid", intentTxID,
+		"solve_txid", solve.SolveTxID,
+		"amount", solve.TargetCoin.Amount,
+	)
+	im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
+	return nil
+}
+
 // refundIntentSolves refunds all solve bids for an intent while reloading them
 // inside the active cache context so retries operate on the latest state.
 func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent, cleanupOnFailure bool, cleanupReason string) error {
@@ -871,31 +902,9 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent, clean
 	}
 
 	for _, solve := range solves {
-		toi := newRefundTxOutItem(solve.SolverAddress, solve.TargetCoin, solve.SolveTxID)
-		if err := tryScheduleRefundTxOut(
-			ctx,
-			im.mgr,
-			toi,
-			fmt.Sprintf("schedule solve refund for %s", solve.SolveTxID),
-			cleanupOnFailure,
-			cleanupReason,
-		); err != nil {
-			ctx.Logger().Error("fail to schedule intent solve refund",
-				"intent_txid", intent.TxID,
-				"solve_txid", solve.SolveTxID,
-				"solver_address", solve.SolverAddress,
-				"amount", solve.TargetCoin.Amount,
-				"error", err,
-			)
+		if err := im.refundIntentSolve(ctx, intent.TxID, solve, cleanupOnFailure, cleanupReason); err != nil {
 			return err
 		}
-
-		ctx.Logger().Info("refunded intent solve",
-			"intent_txid", intent.TxID,
-			"solve_txid", solve.SolveTxID,
-			"amount", solve.TargetCoin.Amount,
-		)
-		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
 	}
 
 	return nil
@@ -1436,8 +1445,18 @@ func (im *IntentMgr) processTerminalSolveRefunds(ctx cosmos.Context) error {
 	}
 
 	for _, intent := range terminalIntents {
-		if err := im.RefundIntentSolves(ctx, intent); err != nil {
-			ctx.Logger().Error("fail to refund terminal intent solves", "intent_txid", intent.TxID, "error", err)
+		solves, err := im.mgr.Keeper().GetIntentSolvesByIntentID(ctx, intent.TxID)
+		if err != nil {
+			ctx.Logger().Error("fail to load terminal intent solves", "intent_txid", intent.TxID, "error", err)
+			continue
+		}
+
+		for _, solve := range solves {
+			if err := im.withCachedContext(ctx, func(cacheCtx cosmos.Context) error {
+				return im.refundIntentSolve(cacheCtx, intent.TxID, solve, false, "")
+			}); err != nil {
+				ctx.Logger().Error("fail to refund terminal intent solve", "intent_txid", intent.TxID, "solve_txid", solve.SolveTxID, "error", err)
+			}
 		}
 	}
 

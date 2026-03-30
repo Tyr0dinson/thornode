@@ -87,24 +87,6 @@ func (k KVStore) RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID)
 	store.Delete(k.GetKey(prefixActiveAuctionIndex, intentTxID.String()))
 }
 
-func (k KVStore) removeIntentAuctionBidsByIntentTxID(ctx cosmos.Context, intentTxID common.TxID) {
-	prefix := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String(), "/")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
-	var bidTxIDs []common.TxID
-	for ; iter.Valid(); iter.Next() {
-		bidTxIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
-		if len(bidTxIDSuffix) == 0 {
-			continue
-		}
-		bidTxIDs = append(bidTxIDs, common.TxID(string(bidTxIDSuffix)))
-	}
-	iter.Close()
-
-	for _, bidTxID := range bidTxIDs {
-		k.RemoveIntentAuctionBid(ctx, bidTxID)
-	}
-}
-
 // GetActiveAuctions retrieves all active intent auctions using prefix key iteration
 func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, error) {
 	activeTxIDs := k.GetActiveAuctionTxIDs(ctx)
@@ -247,9 +229,43 @@ func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
 	store.Delete(bidderIndexKey)
 }
 
-// removeIntentAuctionBidIndexEntriesByTxID is a corruption-recovery helper used
-// when the primary bid record cannot be unmarshaled. It scans the bid index
-// namespaces and removes any entry that still points at this bid txid.
+// removeIntentAuctionBidsByIntentTxID best-effort removes all bids referenced
+// by an auction's child index, even when typed iteration fails due to
+// corruption.
+func (k KVStore) removeIntentAuctionBidsByIntentTxID(ctx cosmos.Context, intentTxID common.TxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	prefix := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String(), "/")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
+	var bidTxIDs []common.TxID
+	for ; iter.Valid(); iter.Next() {
+		bidTxIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(bidTxIDSuffix) == 0 {
+			continue
+		}
+		bidTxIDs = append(bidTxIDs, common.TxID(string(bidTxIDSuffix)))
+	}
+	iter.Close()
+
+	for _, bidTxID := range bidTxIDs {
+		k.RemoveIntentAuctionBid(ctx, bidTxID)
+	}
+
+	// Delete any leftover auction-index entries for this parent after per-bid
+	// cleanup so parent removal cannot strand stale child references.
+	iter = k.getIterator(ctx, kvTypes.DbPrefix(prefix))
+	var staleKeys [][]byte
+	for ; iter.Valid(); iter.Next() {
+		staleKeys = append(staleKeys, append([]byte(nil), iter.Key()...))
+	}
+	iter.Close()
+	for _, key := range staleKeys {
+		store.Delete(key)
+	}
+}
+
+// removeIntentAuctionBidIndexEntriesByTxID best-effort sweeps bid index entries
+// by bid txid. This is used when the primary bid record is missing or
+// corrupted and its indexed fields can no longer be trusted.
 func (k KVStore) removeIntentAuctionBidIndexEntriesByTxID(ctx cosmos.Context, bidTxID common.TxID) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	bidTxIDSuffix := []byte("/" + strings.ToUpper(bidTxID.String()))

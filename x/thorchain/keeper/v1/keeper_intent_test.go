@@ -184,6 +184,48 @@ func (KeeperIntentSuite) TestIntent_TerminalSolveRefundIndex(c *C) {
 	c.Check(terminalIntents[0].TxID.Equals(intentTxID), Equals, true)
 }
 
+// A transient solve read error must not drop the terminal refund retry index,
+// otherwise the intent disappears from future retry scans permanently.
+func (KeeperIntentSuite) TestIntent_TerminalSolveRefundIndex_PreservesEntryOnReadError(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("TERMERR1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABC1")
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender1"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentCompleted,
+	}
+	k.SetIntent(ctx, intent)
+
+	solveTxID := common.TxID("TERMERRSOLVE1234567890ABCD1234567890ABCD1234567890ABCD12345678901")
+	solve := types.IntentSolve{
+		SolveTxID:     solveTxID,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver1"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   100,
+	}
+	k.SetIntentSolve(ctx, solve)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	retryKey := k.GetKey(prefixIntentSolveRefundIndex, intentTxID.String())
+	c.Check(store.Has(retryKey), Equals, true)
+
+	store.Set(k.GetKey(prefixIntentSolve, solveTxID.String()), []byte("corrupted"))
+
+	// Re-syncing terminal status should not drop the retry index on a transient
+	// solve read failure.
+	k.SetIntent(ctx, intent)
+	c.Check(store.Has(retryKey), Equals, true)
+
+	terminalIntents, err := k.GetTerminalSolveRefundIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 0)
+	c.Check(store.Has(retryKey), Equals, true)
+}
+
 func (KeeperIntentSuite) TestIntent_RemoveIntent(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
@@ -326,6 +368,56 @@ func (KeeperIntentSuite) TestIntent_RemoveIntentCascading(c *C) {
 	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
 	c.Assert(err, IsNil)
 	c.Check(len(bids), Equals, 0)
+}
+
+func (KeeperIntentSuite) TestIntent_RemoveIntentCleansCorruptedSolveChildren(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("CORRINT1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD12")
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender1"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent)
+
+	solveTxID := common.TxID("CORRSOLVE1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD")
+	matchHeight := int64(100)
+	solve := types.IntentSolve{
+		SolveTxID:     solveTxID,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver1"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   matchHeight,
+	}
+	k.SetIntentSolve(ctx, solve)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	solveKey := k.GetKey(prefixIntentSolve, solveTxID.String())
+	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, intentTxID.String(), "/"+solveTxID.String())
+	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, "100", "/"+solveTxID.String())
+
+	store.Set(solveKey, []byte("corrupt-solve"))
+	_, err := k.GetIntentSolvesByIntentID(ctx, intentTxID)
+	c.Assert(err, NotNil)
+
+	k.RemoveIntent(ctx, intentTxID)
+
+	c.Check(k.IntentExists(ctx, intentTxID), Equals, false)
+	c.Check(k.IntentSolveExists(ctx, solveTxID), Equals, false)
+	c.Check(store.Has(solveKey), Equals, false)
+	c.Check(store.Has(intentIndexKey), Equals, false)
+	c.Check(store.Has(matchHeightIndexKey), Equals, false)
+
+	solves, err := k.GetIntentSolvesByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+
+	solves, err = k.GetIntentSolvesByMatchHeight(ctx, matchHeight)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
 }
 
 func (KeeperIntentSuite) TestIntentSolve_SetAndGet(c *C) {

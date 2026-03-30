@@ -65,7 +65,11 @@ func setTestTxOutStore(c *C, mgr Manager, txOutStore TxOutStore) {
 func fundActiveVault(c *C, ctx cosmos.Context, k keeper.Keeper, coins common.Coins) {
 	vaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	c.Assert(err, IsNil)
-	c.Assert(len(vaults) > 0, Equals, true)
+	if len(vaults) == 0 {
+		vault := GetRandomVault()
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+		vaults = Vaults{vault}
+	}
 
 	vault := vaults[0]
 	vault.AddFunds(coins)
@@ -1021,10 +1025,6 @@ func (s *IntentMgrTestSuite) TestProcessMatches_CompletionRefundFailureLeavesTer
 	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
 	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
-	fundActiveVault(c, w.ctx, w.keeper, common.NewCoins(
-		common.NewCoin(common.BTCAsset, cosmos.NewUint(200*common.One)),
-		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
-	))
 
 	intentTx := GetRandomTx()
 	intent := Intent{
@@ -1065,7 +1065,7 @@ func (s *IntentMgrTestSuite) TestProcessMatches_CompletionRefundFailureLeavesTer
 	w.keeper.SetIntentSolve(w.ctx, losingSolve)
 
 	txOutStore := newScriptedTxOutStore(
-		w.mgr.TxOutStore(),
+		NewTxStoreDummy(),
 		txOutAttempt{ok: true, err: nil},
 		txOutAttempt{ok: true, err: nil},
 		txOutAttempt{ok: false, err: errKaboom},
@@ -1093,6 +1093,65 @@ func (s *IntentMgrTestSuite) TestProcessMatches_CompletionRefundFailureLeavesTer
 	terminalIntents, err = w.keeper.GetTerminalSolveRefundIntents(nextCtx)
 	c.Assert(err, IsNil)
 	c.Check(len(terminalIntents), Equals, 0)
+}
+
+// Terminal retry processing should make forward progress per solve instead of
+// aborting the whole intent when one sibling refund remains unschedulable.
+func (s *IntentMgrTestSuite) TestProcessTerminalSolveRefunds_FailureOfOneSolveDoesNotBlockSiblings(c *C) {
+	w := getHandlerTestWrapper(c, 100, true, true)
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomBTCAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+		TargetAsset:   common.ETHAsset,
+		TargetAddress: GetRandomETHAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 10,
+		Status:        IntentCompleted,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	failingSolveTxID := common.TxID("AAAA1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	failingSolve := IntentSolve{
+		SolveTxID:          failingSolveTxID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		SubmitHeight:       w.ctx.BlockHeight() - 2,
+		MatchHeight:        w.ctx.BlockHeight() - 1,
+	}
+	w.keeper.SetIntentSolve(w.ctx, failingSolve)
+
+	succeedingSolveTxID := common.TxID("BBBB1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	succeedingSolve := IntentSolve{
+		SolveTxID:          succeedingSolveTxID,
+		IntentTxID:         intentTx.ID,
+		SolverAddress:      GetRandomETHAddress(),
+		DestinationAddress: GetRandomBTCAddress(),
+		TargetCoin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		SubmitHeight:       w.ctx.BlockHeight() - 2,
+		MatchHeight:        w.ctx.BlockHeight() - 1,
+	}
+	w.keeper.SetIntentSolve(w.ctx, succeedingSolve)
+
+	setTestTxOutStore(c, w.mgr, NewTxOutStoreFailOnCallDummy(1))
+
+	intentMgr, ok := NewIntentManager(w.mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	c.Assert(intentMgr.processTerminalSolveRefunds(w.ctx), IsNil)
+
+	c.Check(w.keeper.IntentSolveExists(w.ctx, failingSolveTxID), Equals, true)
+	c.Check(w.keeper.IntentSolveExists(w.ctx, succeedingSolveTxID), Equals, false)
+
+	terminalIntents, err := w.keeper.GetTerminalSolveRefundIntents(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(terminalIntents), Equals, 1)
+	c.Check(terminalIntents[0].TxID.Equals(intentTx.ID), Equals, true)
 }
 
 // TestExecuteIntent_WithAffiliateFee tests that affiliate fee is charged at intent completion

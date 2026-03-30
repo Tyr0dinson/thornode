@@ -1340,6 +1340,16 @@
         "mode": "EndBlock",
         "remaining_amount": "90000000 ETH.TKN-0X0000000000000000000000000000000000001234",
         "type": "intent_auction_start"
+      },
+      {
+        "auction_amount": "10000000 ETH.TKN-0X0000000000000000000000000000000000001234",
+        "bid_asset": "ETH.ETH",
+        "expiry_height": "13",
+        "intent_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "min_bid": "19200000",
+        "mode": "EndBlock",
+        "remaining_amount": "90000000 ETH.TKN-0X0000000000000000000000000000000000001234",
+        "type": "intent_auction_start"
       }
     ],
     "txs": []

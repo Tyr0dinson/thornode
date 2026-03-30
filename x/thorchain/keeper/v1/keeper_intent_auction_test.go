@@ -191,6 +191,52 @@ func (KeeperIntentAuctionSuite) TestIntentAuction_RemoveIntentAuction(c *C) {
 	c.Check(len(activeAuctions), Equals, 0)
 }
 
+func (KeeperIntentAuctionSuite) TestIntentAuction_RemoveIntentAuctionCleansCorruptedBidChildren(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("CORRAUCT1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD")
+	auction := types.IntentAuction{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000)),
+		BidAsset:        common.BTCAsset,
+		Status:          types.IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    common.Address("thor1sender1"),
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	bidTxID := common.TxID("CORRBID1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD12")
+	bidder := common.Address("thor1bidder1")
+	bid := types.IntentAuctionBid{
+		BidTxID:       bidTxID,
+		IntentTxID:    intentTxID,
+		BidderAddress: bidder,
+		BidAmount:     common.NewCoin(common.RuneAsset(), cosmos.NewUint(12)),
+	}
+	k.SetIntentAuctionBid(ctx, bid)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	bidKey := k.GetKey(prefixIntentAuctionBid, bidTxID.String())
+	auctionIndexKey := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String(), "/"+bidTxID.String())
+	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, intentTxID.String(), "/"+bidder.String())
+
+	store.Set(bidKey, []byte("corrupt-bid"))
+	_, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
+	c.Assert(err, NotNil)
+
+	k.RemoveIntentAuction(ctx, intentTxID)
+
+	c.Check(k.IntentAuctionExists(ctx, intentTxID), Equals, false)
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID), Equals, false)
+	c.Check(store.Has(bidKey), Equals, false)
+	c.Check(store.Has(auctionIndexKey), Equals, false)
+	c.Check(store.Has(bidderIndexKey), Equals, false)
+
+	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(bids), Equals, 0)
+}
+
 func (KeeperIntentAuctionSuite) TestIntentAuctionBid_SetAndGet(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

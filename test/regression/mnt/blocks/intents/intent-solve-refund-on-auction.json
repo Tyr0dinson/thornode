@@ -1861,6 +1861,65 @@
         "mode": "EndBlock",
         "remaining_amount": "90000000 ETH.TKN-0X0000000000000000000000000000000000001234",
         "type": "intent_auction_start"
+      },
+      {
+        "coins": "7000 BTC.BTC",
+        "mode": "EndBlock",
+        "pool_deduct": "6999808",
+        "tx_id": "0000000000000000000000000000000000000000000000000000000000000002",
+        "type": "fee"
+      },
+      {
+        "amount": "6999808rune",
+        "mode": "EndBlock",
+        "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "6999808rune",
+        "mode": "EndBlock",
+        "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_received"
+      },
+      {
+        "amount": "6999808rune",
+        "mode": "EndBlock",
+        "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "transfer"
+      },
+      {
+        "mode": "EndBlock",
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "message"
+      },
+      {
+        "chain": "BTC",
+        "coin_amount": "4993000",
+        "coin_asset": "BTC.BTC",
+        "coin_decimals": "8",
+        "gas_rate": "10",
+        "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
+        "max_gas_amount_0": "10000",
+        "max_gas_asset_0": "BTC.BTC",
+        "max_gas_decimals_0": "8",
+        "memo": "",
+        "mode": "EndBlock",
+        "module_name": "",
+        "out_hash": "",
+        "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
+        "type": "scheduled_outbound",
+        "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+      },
+      {
+        "auction_amount": "10000000 ETH.TKN-0X0000000000000000000000000000000000001234",
+        "bid_asset": "ETH.ETH",
+        "expiry_height": "13",
+        "intent_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "min_bid": "19200000",
+        "mode": "EndBlock",
+        "remaining_amount": "90000000 ETH.TKN-0X0000000000000000000000000000000000001234",
+        "type": "intent_auction_start"
       }
     ],
     "txs": []
