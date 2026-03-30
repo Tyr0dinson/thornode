@@ -2,6 +2,34 @@
 ---
 {{ template "btc-eth-pool-state.yaml" }}
 ---
+# These mempool regressions still rely on pig/goat existing as funded THOR accounts,
+# but that funding now needs to live in the suite instead of the shared default template.
+type: state
+genesis:
+  app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_pig }}
+          pub_key: null
+          account_number: "9"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_goat }}
+          pub_key: null
+          account_number: "10"
+          sequence: "0"
+    bank:
+      balances:
+        - address: {{ addr_thor_pig }}
+          coins:
+            - amount: "2500000000000"
+              denom: rune
+        - address: {{ addr_thor_goat }}
+          coins:
+            - amount: "2500000000000"
+              denom: rune
+---
 type: create-blocks
 count: 1
 ---

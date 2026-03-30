@@ -155,16 +155,31 @@ func (tos *TxOutStorage) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi Tx
 
 	cacheCtx, commit := ctx.CacheContext()
 
-	// Deduct affiliate fee from outbound amount
-	amount, err := tos.takeAffiliateFee(cacheCtx, mgr, toi)
-	if err != nil {
-		ctx.Logger().Error("fail to take affiliate fee", "error", err)
-	} else if !toi.Coin.Asset.IsTradeAsset() && !toi.Coin.Asset.IsSecuredAsset() {
-		// For Trade and Secured Assets do not decrement the affiliate fee here,
-		// as the affiliate fee swap will take it from the user's balance after the outbound.
-		// (Since Trade/Secured Withdraw is done in the MsgSwap internal handler,
-		//  not the MsgDeposit external handler.)
-		toi.Coin.Amount = amount
+	if tos.shouldDeferAffiliateFeeForMempoolSwap(cacheCtx, toi) {
+		// Keep staged mempool outbounds gross until finalization, but validate
+		// against the same fee-adjusted item that finalization will use so
+		// minOut and outbound-preparation behavior stay unchanged.
+		validationCtx, _ := cacheCtx.CacheContext()
+		validationItem := toi
+		adjustedItem, err := tos.getAffiliateFeeAdjustedTxOutItem(validationCtx, mgr, toi)
+		if err != nil {
+			ctx.Logger().Error("fail to dry-run deferred affiliate fee", "error", err)
+		} else {
+			validationItem = adjustedItem
+		}
+
+		success, err := tos.cachedTryAddTxOutItem(validationCtx, mgr, validationItem, minOut)
+		if err != nil || !success {
+			return success, err
+		}
+		minOut = cosmos.ZeroUint()
+	} else {
+		adjustedItem, err := tos.getAffiliateFeeAdjustedTxOutItem(cacheCtx, mgr, toi)
+		if err != nil {
+			ctx.Logger().Error("fail to take affiliate fee", "error", err)
+		} else {
+			toi = adjustedItem
+		}
 	}
 
 	success, err := tos.cachedTryAddTxOutItem(cacheCtx, mgr, toi, minOut)
@@ -248,6 +263,67 @@ func (tos *TxOutStorage) takeAffiliateFee(ctx cosmos.Context, mgr Manager, toi T
 	}
 
 	return toi.Coin.Amount, nil
+}
+
+func (tos *TxOutStorage) getAffiliateFeeAdjustedTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (TxOutItem, error) {
+	adjusted := toi
+	amount, err := tos.takeAffiliateFee(ctx, mgr, toi)
+	if err != nil {
+		return adjusted, err
+	}
+	// For Trade and Secured Assets, keep the outbound amount as-is here.
+	// Their affiliate fee is taken later from the user's balance instead of
+	// reducing the outbound amount at this step.
+	asset := toi.Coin.Asset
+	if !asset.IsTradeAsset() && !asset.IsSecuredAsset() {
+		adjusted.Coin.Amount = amount
+	}
+	return adjusted, nil
+}
+
+// shouldStageForMempoolSwap reports whether an outbound belongs to an inbound
+// that has only been observed in the mempool so far. Only true speculative
+// swap outputs stage here, and only after the swap has reserved mempool TOR.
+func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOutItem) bool {
+	inHash := item.InHash
+	if inHash.IsEmpty() || inHash.Equals(common.BlankTxID) {
+		return false
+	}
+
+	voter, err := tos.keeper.GetObservedTxInVoter(ctx, inHash)
+	if err != nil {
+		return false
+	}
+	if voter.IsEmpty() || voter.UnfinalizedHeight == 0 {
+		return false
+	}
+	if voter.FinalisedHeight != 0 {
+		return false
+	}
+
+	activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
+	if err != nil || voter.HasFinalised(activeNodeAccounts) {
+		return false
+	}
+
+	return voter.HasReservedMempoolSwapTOR()
+}
+
+// shouldDeferAffiliateFeeForMempoolSwap identifies outbounds whose affiliate
+// side effects must wait until finalization so a mempool rollback can discard
+// the mempool swap without extra cleanup.
+func (tos *TxOutStorage) shouldDeferAffiliateFeeForMempoolSwap(ctx cosmos.Context, toi TxOutItem) bool {
+	return tos.shouldStageForMempoolSwap(ctx, toi)
+}
+
+// escrowMempoolSecuredTarget rewrites native secured outputs to their
+// underlying layer1 asset while the inbound is still unfinalized. Finalization
+// later restores the secured asset and credits the user-facing balance.
+func escrowMempoolSecuredTarget(item TxOutItem) TxOutItem {
+	if item.Chain.IsTHORChain() && item.Coin.Asset.IsSecuredAsset() {
+		item.Coin.Asset = item.Coin.Asset.GetLayer1Asset()
+	}
+	return item
 }
 
 // (cached)TryAddTxOutItem add an outbound tx to block
@@ -988,20 +1064,14 @@ func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxO
 
 	// For mempool swaps (inbound not finalized), stage the outbound instead of adding to real queue
 	// Check voter finalization status directly - queue membership is the source of truth
-	if !item.InHash.IsEmpty() && !item.InHash.Equals(common.BlankTxID) {
-		voter, err := tos.keeper.GetObservedTxInVoter(ctx, item.InHash)
-		if err == nil {
-			activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
-			if err == nil && !voter.HasFinalised(activeNodeAccounts) {
-				mempoolSwapCap := cosmos.NewUint(uint64(tos.keeper.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-				if !mempoolSwapCap.IsZero() {
-					ctx.Logger().Info("staging outbound for mempool swap",
-						"inhash", item.InHash, "chain", item.Chain, "asset", item.Coin.Asset,
-						"amount", item.Coin.Amount, "scheduled_height", outboundHeight)
-					return tos.keeper.SetStagedOutbound(ctx, item, outboundHeight)
-				}
-			}
-		}
+	if tos.shouldStageForMempoolSwap(ctx, item) {
+		// Native secured targets are staged as the underlying asset so rollback
+		// can reuse the same reverse-swap path as any other non-RUNE asset.
+		stagedItem := escrowMempoolSecuredTarget(item)
+		ctx.Logger().Info("staging outbound for mempool swap",
+			"inhash", stagedItem.InHash, "chain", stagedItem.Chain, "asset", stagedItem.Coin.Asset,
+			"amount", stagedItem.Coin.Amount, "scheduled_height", outboundHeight)
+		return tos.keeper.SetStagedOutbound(ctx, stagedItem, outboundHeight)
 	}
 
 	// if we're sending native assets, transfer them now and return

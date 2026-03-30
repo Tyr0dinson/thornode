@@ -2,10 +2,10 @@ package thorchain
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -23,56 +23,15 @@ import (
 // action indices during recovery, so this value caps the search space.
 const maxMempoolRevertActions = 16
 
-// CreateMempoolRevertTxID creates a deterministic reverse TxID from original TxID + action index.
-// The reverse TxID is created by reversing the hex string and XORing the last byte with the action index.
-// This allows the original TxID to be recovered without needing persistent storage.
-// actionIndex must be in [0, maxMempoolRevertActions).
-func CreateMempoolRevertTxID(originalTxID common.TxID, actionIndex int) common.TxID {
-	s := originalTxID.String()
-	if len(s) != 64 {
-		return originalTxID // fallback for invalid TxID
-	}
-	// Reverse the string
-	runes := []rune(s)
-	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-		runes[i], runes[j] = runes[j], runes[i]
-	}
-	// XOR last byte with action index to ensure uniqueness per action
-	lastByte, _ := strconv.ParseUint(string(runes[62:64]), 16, 8)
-	lastByte ^= uint64(actionIndex)
-	return common.TxID(string(runes[:62]) + fmt.Sprintf("%02X", lastByte))
-}
-
-// GetOriginalFromMempoolRevertTxID recovers the original TxID from a mempool revert TxID.
-// It tries action indices 0..maxMempoolRevertActions-1 and returns the first candidate with persisted voter data.
-func GetOriginalFromMempoolRevertTxID(ctx cosmos.Context, k keeper.Keeper, reverseTxID common.TxID) (common.TxID, bool) {
-	s := reverseTxID.String()
-	if len(s) != 64 {
-		return common.TxID(""), false
-	}
-	lastByte, err := strconv.ParseUint(s[62:64], 16, 8)
-	if err != nil {
-		return common.TxID(""), false
-	}
-
-	for actionIndex := 0; actionIndex < maxMempoolRevertActions; actionIndex++ {
-		// XOR to undo the action index encoding
-		originalLastByte := lastByte ^ uint64(actionIndex)
-		candidate := s[:62] + fmt.Sprintf("%02X", originalLastByte)
-
-		// Reverse the string
-		runes := []rune(candidate)
-		for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-			runes[i], runes[j] = runes[j], runes[i]
-		}
-		originalTxID := common.TxID(string(runes))
-
-		// Check if the candidate has actual persisted voter data.
-		if voter, err := k.GetObservedTxInVoter(ctx, originalTxID); err == nil && !voter.IsEmpty() {
-			return originalTxID, true
-		}
-	}
-	return common.TxID(""), false
+// CreateMempoolRollbackTxID creates a deterministic synthetic TxID for an
+// inline rollback swap from the original inbound TxID and action index.
+// The current inline design no longer needs to recover the original txid from
+// the rollback txid, so a simple namespaced hash is enough.
+func CreateMempoolRollbackTxID(originalTxID common.TxID, actionIndex int) common.TxID {
+	// Namespace the hash input so rollback txids cannot accidentally collide
+	// with other synthetic txid schemes that may reuse the same original txid.
+	sum := sha256.Sum256([]byte(fmt.Sprintf("mempool-rollback|%s|%d", originalTxID, actionIndex)))
+	return common.TxID(fmt.Sprintf("%X", sum))
 }
 
 // processTxInAttestation processes a single attestation for an observed tx.
@@ -220,35 +179,8 @@ func handleObservedTxInQuorum(
 	// all logic after this is upon consensus
 
 	if voter.Reverted {
-		// If a mempool swap was reverted (e.g. timeout) but the inbound later confirms
-		// on-chain, clear the reverted state and re-process as a fresh swap.
-		// The revert already undid all speculative state (pool accounting, staged outbounds,
-		// capacity), so re-executing is safe and prevents funds from being stranded in the vault.
-		if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
-			ctx.Logger().Info("reverted mempool swap confirmed on-chain, re-processing",
-				"hash", voter.TxID)
-			voter.Reverted = false
-			voter.MempoolSwapTOR = cosmos.ZeroUint() // capacity already released during revert
-			voter.Actions = nil                      // clear stale speculative actions
-
-			// Remove any stale reverse swaps queued during the timeout revert.
-			// These were created with deterministic TxIDs derived from the original,
-			// but only for non-THORChain actions, so indices may be sparse.
-			for i := 0; i < maxMempoolRevertActions; i++ {
-				revertTxID := CreateMempoolRevertTxID(voter.TxID, i)
-				if !mgr.Keeper().HasSwapQueueItem(ctx, revertTxID, 0) {
-					continue
-				}
-				mgr.Keeper().RemoveSwapQueueItem(ctx, revertTxID, 0)
-				ctx.Logger().Info("removed stale reverse swap from queue",
-					"original_hash", voter.TxID,
-					"revert_txid", revertTxID,
-					"action_index", i)
-			}
-		} else {
-			ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
-			return nil
-		}
+		ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
+		return nil
 	}
 
 	k := mgr.Keeper()
@@ -288,16 +220,6 @@ func handleObservedTxInQuorum(
 	memo, _ := ParseMemoWithTHORNames(ctx, k, voter.Tx.Tx.Memo)
 
 	hasFinalised := voter.HasFinalised(activeNodeAccounts)
-
-	// Allow swap execution at consensus (before finalization) for mempool swap optimization.
-	// Only streaming swaps (StreamQuantity == 0) can be executed from mempool.
-	// Outbounds won't be signed until the inbound finalizes.
-	mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-	isStreamingSwap := false
-	if swapMemo, ok := memo.(SwapMemo); ok {
-		isStreamingSwap = swapMemo.GetStreamQuantity() == 0
-	}
-	canProcessMempoolSwap := !mempoolSwapCap.IsZero() && memo.IsType(TxSwap) && isStreamingSwap
 
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
@@ -345,64 +267,63 @@ func handleObservedTxInQuorum(
 
 	mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
 
-	// Do not allow 0-conf swap execution to start from an inactive vault.
-	if !hasFinalised && canProcessMempoolSwap && vault.Status == InactiveVault {
-		ctx.Logger().Info("inactive vault cannot process mempool swap before finalization", "hash", voter.TxID)
-		return nil
-	}
+	// Allow eligible swaps to execute at consensus (before finalization) for the
+	// mempool swap optimization. Streaming swaps remain eligible whether
+	// streaming was requested explicitly in the memo or derived implicitly by
+	// the advanced queue. Outbounds still won't be signed until the inbound
+	// finalizes.
+	canProcessMempoolSwap := canUseMempoolSwap(ctx, mgr, voter.Tx.Tx, memo)
+	shouldHandleMempoolSwap := !hasFinalised && canProcessMempoolSwap
 
-	if !hasFinalised && !canProcessMempoolSwap {
+	if !shouldHandleMempoolSwap && !hasFinalised {
 		ctx.Logger().Info("transaction pending confirmation counting", "hash", voter.TxID)
 		return nil
 	}
 
-	if !hasFinalised && canProcessMempoolSwap {
-		// Check if there's capacity for this mempool swap
-		sourceAsset := voter.Tx.Tx.Coins[0].Asset
-		sourceAmount := voter.Tx.Tx.Coins[0].Amount
-		var torValue cosmos.Uint
-		var hasCapacity bool
-		torValue, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, sourceAsset, sourceAmount)
-		switch {
-		case err != nil:
-			ctx.Logger().Info("fail to check mempool swap capacity, waiting for finalization",
-				"error", err, "hash", voter.TxID)
-			canProcessMempoolSwap = false
-		case !hasCapacity:
-			ctx.Logger().Info("mempool swap cap exceeded, waiting for finalization",
-				"current_usage", k.GetMempoolSwapUsageTOR(ctx),
-				"swap_tor", torValue,
-				"cap", mempoolSwapCap,
-				"hash", voter.TxID)
-			canProcessMempoolSwap = false
-		default:
-			// Reserve capacity: add to usage and store TOR value on voter
-			newUsage := k.AddMempoolSwapUsageTOR(ctx, torValue)
-			voter.MempoolSwapTOR = torValue
+	if shouldHandleMempoolSwap {
+		if voter.UnfinalizedHeight == 0 {
+			voter.UnfinalizedHeight = ctx.BlockHeight()
 			k.SetObservedTxInVoter(ctx, voter)
-			ctx.Logger().Info("processing mempool swap before finalization",
-				"hash", voter.TxID,
-				"tor_value", torValue,
-				"new_usage", newUsage,
-				"cap", mempoolSwapCap,
-				"memo", tx.Tx.Memo)
 		}
 
-		// If we can't process as mempool swap, return and wait for finalization
-		if !canProcessMempoolSwap {
+		// Runtime admission for the mempool path starts here. Vault eligibility
+		// is still checked up front, but TOR capacity is reserved only once the
+		// inbound has parsed as a real swap and passed the later reject checks.
+		if vault.Status == InactiveVault {
+			incrMempoolSwapCounter("blocked_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
+			ctx.Logger().Info("inactive vault cannot process mempool swap before finalization", "hash", voter.TxID)
 			return nil
 		}
 	}
 
-	// If a mempool swap was executed before finalization but the inbound finalized
-	// on an inactive vault, revert the staged mempool swap first and then refund
-	// the inbound instead of releasing staged outbounds.
-	if hasFinalised && len(voter.Actions) > 0 && vault.Status == InactiveVault {
-		if err = revertMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
-			ctx.Logger().Error("fail to revert mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+	// If a mempool swap was executed before finalization but the inbound
+	// finalized on an inactive vault, roll back the speculative mempool state
+	// first and then refund the inbound instead of releasing staged outbounds.
+	if hasFinalised && vault.Status == InactiveVault {
+		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
+
+		hasCleanupState, cleanupStateErr := needsMempoolSwapRollback(ctx, k, voter)
+		if cleanupStateErr != nil {
+			ctx.Logger().Error("fail to inspect mempool swap rollback state", "error", cleanupStateErr, "hash", voter.TxID)
 			return nil
 		}
-		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
+		if hasCleanupState {
+			if err = rollbackMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
+				ctx.Logger().Error("fail to roll back mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+				return nil
+			}
+			incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
+
+			// Refresh the local copy so any code added below sees the normalized
+			// voter state that rollback already wrote to the store.
+			refreshedVoter, getErr := k.GetObservedTxInVoter(ctx, voter.TxID)
+			if getErr != nil {
+				ctx.Logger().Error("fail to refresh voter after mempool rollback", "error", getErr, "hash", voter.TxID)
+			} else {
+				voter = refreshedVoter
+			}
+		}
+
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
@@ -411,6 +332,8 @@ func handleObservedTxInQuorum(
 
 	// When a mempool swap finalizes, move staged outbounds to the real queue
 	// and return early - the swap was already executed from mempool, don't process it again.
+	// The error is intentionally not returned: propagating it would roll back the handler's
+	// cache context, rolling back voter state, chain height, and vault updates made above.
 	// finalizeOutboundsAtomic is internally transactional, so logging the error here does not leak
 	// partial staging/cap/queue side effects while preserving the voter, chain-height, and
 	// vault updates already made above.
@@ -433,14 +356,6 @@ func handleObservedTxInQuorum(
 		"observed_vault_pubkey", tx.ObservedPubKey.String(),
 	)
 
-	if vault.Status == InactiveVault {
-		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
-		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
-			ctx.Logger().Error("fail to refund", "error", newErr)
-		}
-		return nil
-	}
-
 	// Resolve reference memo if needed before processing
 	if len(tx.Tx.Coins) > 0 {
 		asset := tx.Tx.Coins[0].Asset
@@ -455,6 +370,12 @@ func handleObservedTxInQuorum(
 	m, txErr := processOneTxIn(ctx, k, voter.Tx, signer)
 	if txErr != nil {
 		ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
+		if shouldHandleMempoolSwap {
+			ctx.Logger().Info("deferring mempool refund decision until inbound finalization",
+				"hash", voter.TxID,
+				"reason", txErr.Error())
+			return nil
+		}
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
@@ -467,6 +388,10 @@ func handleObservedTxInQuorum(
 
 	if isSwap || isAddLiquidity {
 		if k.IsTradingHalt(ctx, m) || k.RagnarokInProgress(ctx) {
+			if shouldHandleMempoolSwap {
+				ctx.Logger().Info("deferring halted-trading refund until inbound finalization", "hash", voter.TxID)
+				return nil
+			}
 			if newErr := refundTx(ctx, tx, mgr, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
 				ctx.Logger().Error("fail to refund for halted trading", "error", newErr)
 			}
@@ -476,7 +401,51 @@ func handleObservedTxInQuorum(
 
 	// if its a swap, send it to our queue for processing later
 	if isSwap {
+		reservedMempoolSwapCapacity := false
+		if shouldHandleMempoolSwap && !voter.HasReservedMempoolSwapTOR() {
+			sourceAsset := voter.Tx.Tx.Coins[0].Asset
+			sourceAmount := voter.Tx.Tx.Coins[0].Amount
+			mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+			torValue, hasCapacity, capacityErr := checkMempoolSwapCapacity(ctx, k, sourceAsset, sourceAmount)
+			switch {
+			case capacityErr != nil:
+				incrMempoolSwapCounter("blocked_total", []metrics.Label{telemetry.NewLabel("reason", "capacity_error")})
+				ctx.Logger().Info("fail to check mempool swap capacity, waiting for finalization",
+					"error", capacityErr, "hash", voter.TxID)
+				return nil
+			case !hasCapacity:
+				incrMempoolSwapCounter("blocked_total", []metrics.Label{telemetry.NewLabel("reason", "capacity")})
+				ctx.Logger().Info("mempool swap cannot start before finalization",
+					"current_usage", k.GetMempoolSwapUsageTOR(ctx),
+					"swap_tor", torValue,
+					"cap", mempoolSwapCap,
+					"hash", voter.TxID)
+				return nil
+			}
+
+			newUsage := k.AddMempoolSwapUsageTOR(ctx, torValue)
+			voter.MempoolSwapTOR = torValue
+			k.SetObservedTxInVoter(ctx, voter)
+			ctx.Logger().Info("reserved mempool swap capacity at admission",
+				"hash", voter.TxID,
+				"tor_value", voter.MempoolSwapTOR,
+				"new_usage", newUsage,
+				"cap", mempoolSwapCap,
+				"memo", voter.Tx.Tx.Memo)
+			incrMempoolSwapCounter("admitted_total", nil)
+			reservedMempoolSwapCapacity = true
+		}
+
 		if err = addSwap(ctx, mgr, *swapMsg); err != nil {
+			if shouldHandleMempoolSwap {
+				if reservedMempoolSwapCapacity {
+					voter = releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released mempool swap capacity after queue admission failure")
+				}
+				ctx.Logger().Info("deferring swap queue rejection until inbound finalization",
+					"hash", voter.TxID,
+					"reason", err.Error())
+				return nil
+			}
 			if refundErr := refundTx(ctx, tx, mgr, CodeSwapFail, err.Error(), ""); refundErr != nil {
 				ctx.Logger().Error("fail to refund swap", "error", refundErr)
 				return fmt.Errorf("swap failed and refund also failed: %w, refund error: %v", err, refundErr)
@@ -1284,6 +1253,345 @@ func finalizeOutboundsAtomic(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	return nil
 }
 
+// needsMempoolSwapRollback reports whether this inbound still has
+// mempool-swap state that must be rolled back before finalized handling can
+// continue. This includes staged outbounds, queued swap work, emitted actions,
+// and reserved mempool capacity.
+func needsMempoolSwapRollback(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter) (bool, error) {
+	if len(voter.Actions) > 0 {
+		return true, nil
+	}
+	if voter.HasReservedMempoolSwapTOR() {
+		return true, nil
+	}
+	if k.HasSwapQueueItem(ctx, voter.TxID, 0) || k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
+		return true, nil
+	}
+	stagedItems, err := k.GetStagedOutbounds(ctx, voter.TxID)
+	if err != nil {
+		return false, fmt.Errorf("fail to get staged outbounds: %w", err)
+	}
+	return len(stagedItems) > 0, nil
+}
+
+// restoreFinalNativeMempoolTxOutItem maps a staged native mempool outbound
+// back to the final native action in voter.Actions. Secured targets are
+// restored from the escrowed underlying asset while other native targets must
+// still match the original staged asset.
+func restoreFinalNativeMempoolTxOutItem(voter ObservedTxVoter, index int, staged keeper.StagedOutbound) (TxOutItem, error) {
+	if index >= len(voter.Actions) {
+		return TxOutItem{}, fmt.Errorf("staged outbound index %d has no matching voter action", index)
+	}
+	action := voter.Actions[index]
+	if !action.Chain.IsTHORChain() {
+		return TxOutItem{}, fmt.Errorf("staged THOR outbound index %d maps to non-THOR action %s", index, action.Chain)
+	}
+	finalItem := staged.TxOutItem
+	if !action.Coin.Asset.IsSecuredAsset() {
+		if !staged.TxOutItem.Coin.Asset.Equals(action.Coin.Asset) {
+			return TxOutItem{}, fmt.Errorf("staged THOR outbound index %d asset mismatch: staged %s action %s", index, staged.TxOutItem.Coin.Asset, action.Coin.Asset)
+		}
+		return finalItem, nil
+	}
+	if !staged.TxOutItem.Coin.Asset.Equals(action.Coin.Asset.GetLayer1Asset()) {
+		return TxOutItem{}, fmt.Errorf("staged escrow asset mismatch at index %d: staged %s action %s", index, staged.TxOutItem.Coin.Asset, action.Coin.Asset)
+	}
+
+	// Keep the staged amount and metadata, but switch back to the final
+	// native asset before running the outbound.
+	finalItem.Coin.Asset = action.Coin.Asset
+	return finalItem, nil
+}
+
+// buildPendingMempoolRollbackAction rebuilds an output we can unwind from
+// advanced-swap queue state when part of the swap already ran but nothing
+// has been staged yet.
+func buildPendingMempoolRollbackAction(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter) (*TxOutItem, error) {
+	if !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
+		ctx.Logger().Debug("no partial advanced-queue output available for mempool rollback", "hash", voter.TxID)
+		return nil, nil
+	}
+
+	msg, err := k.GetAdvSwapQueueItem(ctx, voter.TxID, 0)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get pending adv swap item: %w", err)
+	}
+	if msg.State.Out.IsZero() {
+		ctx.Logger().Debug("advanced-queue mempool rollback has zero emitted output", "hash", voter.TxID)
+		return nil, nil
+	}
+
+	asset := msg.TargetAsset
+	// For native secured targets, rollback uses the escrowed underlying
+	// asset, not the final secured asset.
+	if asset.IsSecuredAsset() {
+		asset = asset.GetLayer1Asset()
+	}
+
+	action := TxOutItem{
+		Chain:  asset.GetChain(),
+		InHash: voter.TxID,
+		Coin:   common.NewCoin(asset, msg.State.Out),
+	}
+	return &action, nil
+}
+
+// clearPendingMempoolSwapQueueItems removes the primary queued swap work for a
+// mempool inbound after rollback.
+//
+// With the current production flow, the only queue entry that can still belong
+// to a mempool swap here is the main swap item at index 0:
+// - the swap may have been queued before the queue manager got a chance to run
+// - an advanced swap may have partially executed and still be stored at index 0
+//
+// Affiliate sidecars are deferred until finalization, so they should not exist
+// during this rollback cleanup path. Preferred-asset follow-up swaps use their
+// own synthetic txid, not the original inbound txid.
+//
+// Because of that current invariant, clearing index 0 is enough here. If the
+// mempool flow ever starts creating extra same-txid queue entries before
+// finalization, this helper must be widened again.
+func clearPendingMempoolSwapQueueItems(ctx cosmos.Context, k keeper.Keeper, txID common.TxID) error {
+	// Legacy/basic queue mempool swaps only use index 0 for the main swap item.
+	if k.HasSwapQueueItem(ctx, txID, 0) {
+		k.RemoveSwapQueueItem(ctx, txID, 0)
+	}
+
+	// Advanced queue mempool swaps also keep the main in-flight swap at index 0.
+	if k.HasAdvSwapQueueItem(ctx, txID, 0) {
+		if err := k.RemoveAdvSwapQueueItem(ctx, txID, 0); err != nil {
+			return fmt.Errorf("fail to remove adv swap queue item: %w", err)
+		}
+	}
+	return nil
+}
+
+// selectActiveVaultForChain finds an active Asgard vault that can actually
+// derive an address for the requested source chain.
+func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) (Vault, error) {
+	activeVaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return Vault{}, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	if len(activeVaults) == 0 {
+		return Vault{}, fmt.Errorf("no active vaults available for source chain %s", chain)
+	}
+
+	for _, vault := range activeVaults {
+		// The reverse swap needs both chain support metadata and a usable
+		// address derivation for the source chain.
+		if !chain.IsTHORChain() && !vault.GetChains().Has(chain) {
+			ctx.Logger().Debug("skipping active vault without source-chain support",
+				"source_chain", chain,
+				"vault", vault.PubKey)
+			continue
+		}
+		if _, err := vault.GetAddress(chain); err != nil {
+			ctx.Logger().Debug("skipping active vault without usable source-chain address",
+				"source_chain", chain,
+				"vault", vault.PubKey,
+				"error", err)
+			continue
+		}
+		return vault, nil
+	}
+
+	return Vault{}, fmt.Errorf("no active vault supports source chain %s", chain)
+}
+
+type mempoolRollbackAction struct {
+	item        TxOutItem
+	actionIndex int
+}
+
+type finalizedMempoolOutbound struct {
+	item            TxOutItem
+	scheduledHeight int64
+}
+
+// aggregateMempoolRollbackActions coalesces split external staged outbounds into
+// one reverse-swap input per asset. Native THOR outbounds stay separate because
+// they unwind through native accounting or native balance logic instead.
+func aggregateMempoolRollbackActions(actions []mempoolRollbackAction) []mempoolRollbackAction {
+	aggregated := make([]mempoolRollbackAction, 0, len(actions))
+	externalByAsset := make(map[string]int, len(actions))
+
+	for _, action := range actions {
+		if !action.item.Chain.IsTHORChain() {
+			key := action.item.Coin.Asset.String()
+			if idx, ok := externalByAsset[key]; ok {
+				aggregated[idx].item.Coin.Amount = aggregated[idx].item.Coin.Amount.Add(action.item.Coin.Amount)
+				continue
+			}
+			externalByAsset[key] = len(aggregated)
+		}
+		aggregated = append(aggregated, action)
+	}
+
+	return aggregated
+}
+
+// buildMempoolRollbackSwapMsg builds one unwind swap for a mempool rollback.
+// The reverse swap starts from the staged or escrowed output asset and donates
+// the recovered source asset back to the original source pool.
+func buildMempoolRollbackSwapMsg(
+	ctx cosmos.Context,
+	mgr Manager,
+	voter ObservedTxVoter,
+	sourceAsset common.Asset,
+	action TxOutItem,
+	actionIndex int,
+	vault Vault,
+) (MsgSwap, error) {
+	txID := CreateMempoolRollbackTxID(voter.TxID, actionIndex)
+
+	maxGasCoin, _, err := mgr.GasMgr().GetGasDetails(ctx, action.Chain)
+	if err != nil {
+		ctx.Logger().Error("failed to get gas details for mempool rollback swap", "chain", action.Chain, "error", err)
+	}
+	if err != nil || maxGasCoin.IsEmpty() {
+		maxGasCoin = common.NewCoin(action.Chain.GetGasAsset(), cosmos.OneUint())
+	}
+
+	sourceChain := sourceAsset.GetChain()
+	destAddress, err := vault.GetAddress(sourceChain)
+	if err != nil {
+		return MsgSwap{}, fmt.Errorf("fail to get vault address for source chain %s: %w", sourceChain, err)
+	}
+
+	vaultAddress, err := vault.GetAddress(common.THORChain)
+	if err != nil {
+		return MsgSwap{}, fmt.Errorf("fail to get vault address for THORChain: %w", err)
+	}
+
+	swapMemo := fmt.Sprintf("=:%s:%s", sourceAsset, destAddress)
+	postSwapMemo := fmt.Sprintf("DONATE:%s", sourceAsset.GetLayer1Asset())
+	rollbackFromAddress := vaultAddress
+	rollbackToAddress := vaultAddress
+	if action.Coin.IsNative() {
+		// Native rollback inputs already live in module balances,
+		// so route the synthetic internal tx through the Asgard module address
+		asgardAddress, addrErr := mgr.Keeper().GetModuleAddress(AsgardName)
+		if addrErr != nil {
+			return MsgSwap{}, fmt.Errorf("fail to get Asgard module address for native mempool rollback: %w", addrErr)
+		}
+		rollbackFromAddress = asgardAddress
+		rollbackToAddress = asgardAddress
+	}
+
+	msg := MsgSwap{
+		Tx: common.Tx{
+			ID:          txID,
+			Chain:       common.THORChain,
+			FromAddress: rollbackFromAddress,
+			ToAddress:   rollbackToAddress,
+			Coins:       common.Coins{action.Coin},
+			Gas:         common.Gas{maxGasCoin},
+			Memo:        swapMemo,
+		},
+		TargetAsset:             sourceAsset,
+		Destination:             destAddress,
+		AffiliateBasisPoints:    cosmos.ZeroUint(),
+		PostSwapMemo:            postSwapMemo,
+		TradeTarget:             cosmos.ZeroUint(),
+		AggregatorTargetAddress: "",
+		AggregatorTargetLimit:   nil,
+		Signer:                  mgr.Keeper().GetModuleAccAddress(AsgardName),
+	}
+
+	ctx.Logger().Info("built inline rollback swap for mempool rollback",
+		"txid", txID,
+		"from_asset", action.Coin.Asset,
+		"from_amount", action.Coin.Amount,
+		"to_asset", sourceAsset,
+		"memo", swapMemo,
+		"post_swap_memo", postSwapMemo)
+
+	return msg, nil
+}
+
+// deferredAffiliateGroupKey identifies mempool-staged outbounds that belong to
+// the same logical outbound. Mempool swaps defer affiliate side effects until
+// finalization, so the staged pieces must be regrouped here before those
+// deferred affiliate adjustments are applied once.
+func deferredAffiliateGroupKey(item TxOutItem) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s",
+		item.InHash,
+		item.Chain,
+		item.ToAddress,
+		item.Coin.Asset,
+		item.Memo,
+		item.ModuleName,
+	)
+}
+
+// applyDeferredAffiliateFees runs the affiliate-fee adjustments that mempool
+// swaps intentionally deferred while their outbounds were only staged. It
+// applies that logic once per logical outbound at finalization time, then
+// spreads any reduced net amount back across that outbound's split pieces.
+func applyDeferredAffiliateFees(ctx cosmos.Context, mgr Manager, outbounds []finalizedMempoolOutbound) ([]finalizedMempoolOutbound, error) {
+	tos, ok := mgr.TxOutStore().(*TxOutStorage)
+	if !ok {
+		return nil, fmt.Errorf("fail to cast TxOutStore to TxOutStorage")
+	}
+
+	grouped := make(map[string][]int, len(outbounds))
+	groupOrder := make([]string, 0, len(outbounds))
+	adjusted := make([]finalizedMempoolOutbound, len(outbounds))
+	copy(adjusted, outbounds)
+
+	for i, outbound := range adjusted {
+		key := deferredAffiliateGroupKey(outbound.item)
+		if _, ok := grouped[key]; !ok {
+			groupOrder = append(groupOrder, key)
+		}
+		grouped[key] = append(grouped[key], i)
+	}
+
+	for _, key := range groupOrder {
+		indices := grouped[key]
+		groupItem := adjusted[indices[0]].item
+		groupTotal := cosmos.ZeroUint()
+		for _, idx := range indices {
+			groupTotal = groupTotal.Add(adjusted[idx].item.Coin.Amount)
+		}
+
+		// Rebuild the full outbound amount first so the affiliate fee is
+		// calculated once on the total amount the swap produced.
+		groupItem.Coin.Amount = groupTotal
+
+		adjustedGroupItem, feeErr := tos.getAffiliateFeeAdjustedTxOutItem(ctx, mgr, groupItem)
+		if feeErr != nil {
+			ctx.Logger().Error("fail to take deferred affiliate fee", "error", feeErr, "inhash", groupItem.InHash)
+			continue
+		}
+
+		// For Trade and Secured Assets, keep the staged outbound amounts as-is.
+		// Their affiliate fee is taken later from the user's balance, so there
+		// is no reduced outbound amount to spread back here.
+		asset := groupItem.Coin.Asset
+		if asset.IsTradeAsset() || asset.IsSecuredAsset() {
+			continue
+		}
+
+		// Spread any reduced net amount back over the split pieces in order.
+		remaining := adjustedGroupItem.Coin.Amount
+		for _, idx := range indices {
+			amount := adjusted[idx].item.Coin.Amount
+			if remaining.GTE(amount) {
+				remaining = remaining.Sub(amount)
+				continue
+			}
+			adjusted[idx].item.Coin.Amount = remaining
+			remaining = cosmos.ZeroUint()
+		}
+	}
+
+	return adjusted, nil
+}
+
+// finalizeOutboundsCached moves staged outbounds into their final form when the
+// inbound confirms. Native outbounds run here, and external ones go to TxOut.
 func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID)
 
@@ -1300,13 +1608,7 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	}
 
 	// Release mempool swap capacity if this was a mempool swap
-	if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
-		newUsage := mgr.Keeper().SubMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
-		ctx.Logger().Info("released mempool swap capacity",
-			"hash", voter.TxID,
-			"tor_value", voter.MempoolSwapTOR,
-			"new_usage", newUsage)
-	}
+	voter = releaseMempoolSwapCapacityAndClear(ctx, mgr.Keeper(), voter, "released mempool swap capacity")
 
 	ctx.Logger().Info("found staged outbounds to finalize",
 		"hash", voter.TxID,
@@ -1317,72 +1619,125 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	// and any partial queue/native-outbound work.
 	mgr.Keeper().DeleteStagedOutbounds(ctx, voter.TxID)
 
-	// Move each staged outbound to the real queue
-	for _, staged := range stagedItems {
+	finalizedOutbounds := make([]finalizedMempoolOutbound, 0, len(stagedItems))
+	for i, staged := range stagedItems {
+		finalItem := staged.TxOutItem
+		if staged.TxOutItem.Chain.IsTHORChain() {
+			finalItem, err = restoreFinalNativeMempoolTxOutItem(voter, i, staged)
+			if err != nil {
+				return fmt.Errorf("fail to restore staged native outbound: %w", err)
+			}
+		}
+		finalizedOutbounds = append(finalizedOutbounds, finalizedMempoolOutbound{
+			item:            finalItem,
+			scheduledHeight: staged.ScheduledHeight,
+		})
+	}
+
+	finalizedOutbounds, err = applyDeferredAffiliateFees(ctx, mgr, finalizedOutbounds)
+	if err != nil {
+		return err
+	}
+
+	tos, ok := mgr.TxOutStore().(*TxOutStorage)
+	if !ok {
+		return fmt.Errorf("fail to cast TxOutStore to TxOutStorage")
+	}
+
+	// Move each staged outbound to its final form.
+	for _, finalized := range finalizedOutbounds {
+		finalItem := finalized.item
+		if finalItem.Coin.Amount.IsZero() {
+			continue
+		}
+
 		// Floor the scheduled height at current block if the scheduled time has passed
-		targetHeight := staged.ScheduledHeight
+		targetHeight := finalized.scheduledHeight
 		if targetHeight < ctx.BlockHeight() {
 			targetHeight = ctx.BlockHeight()
 		}
 
-		if staged.TxOutItem.Chain.IsTHORChain() {
-			// Execute native outbound immediately
-			tos, ok := mgr.TxOutStore().(*TxOutStorage)
-			if !ok {
-				return fmt.Errorf("fail to cast TxOutStore to TxOutStorage")
-			}
-			if err := tos.nativeTxOut(ctx, mgr, staged.TxOutItem); err != nil {
-				ctx.Logger().Error("fail to execute native outbound", "error", err, "inhash", staged.TxOutItem.InHash)
+		if finalItem.Chain.IsTHORChain() {
+			if err = tos.nativeTxOut(ctx, mgr, finalItem); err != nil {
+				ctx.Logger().Error("fail to execute native outbound", "error", err, "inhash", finalItem.InHash)
 				return fmt.Errorf("fail to execute native outbound: %w", err)
 			}
 			ctx.Logger().Info("executed staged native outbound on finalization",
-				"inhash", staged.TxOutItem.InHash,
-				"asset", staged.TxOutItem.Coin.Asset,
-				"amount", staged.TxOutItem.Coin.Amount)
+				"inhash", finalItem.InHash,
+				"asset", finalItem.Coin.Asset,
+				"amount", finalItem.Coin.Amount)
 		} else {
 			// Add external outbound to real TxOut queue at the target height
-			if err := mgr.Keeper().AppendTxOut(ctx, targetHeight, staged.TxOutItem); err != nil {
+			if err = mgr.Keeper().AppendTxOut(ctx, targetHeight, finalItem); err != nil {
 				return fmt.Errorf("fail to move staged outbound to queue: %w", err)
 			}
 			ctx.Logger().Info("moved staged outbound to queue",
-				"inhash", staged.TxOutItem.InHash,
-				"chain", staged.TxOutItem.Chain,
+				"inhash", finalItem.InHash,
+				"chain", finalItem.Chain,
 				"target_height", targetHeight,
-				"original_scheduled", staged.ScheduledHeight)
+				"original_scheduled", finalized.scheduledHeight)
 		}
 	}
+
+	incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "staged_finalize")})
+	return nil
+}
+
+// deductMempoolRollbackSourceAsset removes the source asset that was credited
+// speculatively when the mempool swap started but never actually arrived on
+// chain. Callers must do this exactly once per rolled-back inbound.
+func deductMempoolRollbackSourceAsset(ctx cosmos.Context, mgr Manager, sourceAsset common.Asset, sourceAmount cosmos.Uint) error {
+	pool, err := mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+	if err != nil {
+		return fmt.Errorf("fail to get pool for mempool rollback deduction: %w", err)
+	}
+
+	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
+	if err = mgr.Keeper().SetPool(ctx, pool); err != nil {
+		return fmt.Errorf("fail to set pool after mempool rollback deduction: %w", err)
+	}
+
+	emitPoolBalanceChangedEvent(ctx,
+		NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, sourceAmount, false),
+		"mempool swap rollback",
+		mgr)
 
 	return nil
 }
 
-// revertMempoolSwapAtomic reverts a mempool swap by creating a reverse swap back
-// to the original asset, then donating the result to the original source pool
-// using a chained memo. It runs in its own CacheContext and only commits if the
-// full revert flow succeeds, so partial staging/cap/pool/queue mutations are
-// discarded on error. This is called when a mempool transaction is dropped or
-// replaced before finalization. With the staged queue approach, outbounds are in
-// staging (not the real queue), so we just delete from staging and handle pool
-// accounting.
-func revertMempoolSwapAtomic(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
+// rollbackMempoolSwapAtomic rolls back mempool-swap execution by
+// executing the reverse swap inline against live pool state and donating the
+// recovered source asset back into the original source pool inside the same
+// cache context.
+func rollbackMempoolSwapAtomic(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
 	cacheCtx, commit := ctx.CacheContext()
-	if err := revertMempoolSwapCached(cacheCtx, keeper, mgr, voter); err != nil {
+	if err := rollbackMempoolSwapCached(cacheCtx, keeper, mgr, voter); err != nil {
 		return err
 	}
 	commit()
 	return nil
 }
 
-func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
-	ctx.Logger().Info("reverting mempool swap", "hash", voter.TxID)
+// clearMempoolRollbackState normalizes mempool-swap state after a
+// successful inline rollback so a later finalized inbound is processed like a
+// fresh swap.
+func clearMempoolRollbackState(voter ObservedTxVoter) ObservedTxVoter {
+	voter.Reverted = false
+	voter.MempoolSwapTOR = cosmos.ZeroUint()
+	voter.Actions = nil
+	return voter
+}
+
+// rollbackMempoolSwapCached performs the inline mempool rollback itself.
+// It gathers the staged or partially-executed outputs that need to be unwound,
+// executes any required reverse swaps inline, then clears staged state and
+// resets the voter only after the whole rollback succeeds in the current cache
+// context.
+func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
+	ctx.Logger().Info("rolling back mempool swap", "hash", voter.TxID)
 
 	// Release mempool swap capacity if this was a mempool swap
-	if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
-		newUsage := keeper.SubMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
-		ctx.Logger().Info("released mempool swap capacity on revert",
-			"hash", voter.TxID,
-			"tor_value", voter.MempoolSwapTOR,
-			"new_usage", newUsage)
-	}
+	voter = releaseMempoolSwapCapacityAndClear(ctx, keeper, voter, "released mempool swap capacity on rollback")
 
 	// Determine the original source asset from the inbound transaction
 	if voter.Tx.Tx.Coins.IsEmpty() {
@@ -1396,51 +1751,77 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 		return fmt.Errorf("fail to get staged outbounds: %w", err)
 	}
 
+	var actionsToRollback []mempoolRollbackAction
 	if len(stagedItems) == 0 {
-		ctx.Logger().Debug("no staged outbounds to revert", "hash", voter.TxID)
-		voter.Reverted = true
+		// Advanced swaps can build up executed output in queue state before
+		// any staged outbound exists. Recover that output so rollback still
+		// has something real to unwind.
+		var pendingAction *TxOutItem
+		pendingAction, err = buildPendingMempoolRollbackAction(ctx, keeper, voter)
+		if err != nil {
+			return err
+		}
+		if pendingAction != nil {
+			actionsToRollback = append(actionsToRollback, mempoolRollbackAction{
+				item:        *pendingAction,
+				actionIndex: 0,
+			})
+		}
+	} else {
+		actionsToRollback = make([]mempoolRollbackAction, 0, len(stagedItems))
+		for i, staged := range stagedItems {
+			actionsToRollback = append(actionsToRollback, mempoolRollbackAction{
+				item:        staged.TxOutItem,
+				actionIndex: i,
+			})
+		}
+	}
+	actionsToRollback = aggregateMempoolRollbackActions(actionsToRollback)
+
+	if len(actionsToRollback) == 0 {
+		ctx.Logger().Debug("no staged outbounds to roll back", "hash", voter.TxID)
+		// Even without staged outbounds, the primary swap item at queue index 0
+		// can still be hanging around. Clear it so a later queue pass cannot
+		// re-process this inbound.
+		if err = clearPendingMempoolSwapQueueItems(ctx, keeper, voter.TxID); err != nil {
+			return err
+		}
+		voter = clearMempoolRollbackState(voter)
 		keeper.SetObservedTxInVoter(ctx, voter)
 		return nil
 	}
 
-	ctx.Logger().Info("found staged outbounds to revert",
+	ctx.Logger().Info("found staged outbounds to roll back",
 		"hash", voter.TxID,
-		"count", len(stagedItems))
-
-	// Enforce the action-index ceiling so every reverse-swap TxID is recoverable
-	// by GetOriginalFromMempoolRevertTxID during post-swap settlement.
-	if len(stagedItems) > maxMempoolRevertActions {
-		return fmt.Errorf("staged outbound count %d exceeds max recoverable actions %d", len(stagedItems), maxMempoolRevertActions)
-	}
-
-	// Lazy-loaded active vault for reverse swaps (only needed for non-RUNE outputs).
-	var vault Vault
+		"count", len(actionsToRollback))
 
 	// Get the source amount from the voter's inbound transaction
 	// This is the asset that was credited to the pool on mempool observation
 	// but will never be received, so we need to remove it once (not per outbound)
 	sourceAmount := voter.Tx.Tx.Coins[0].Amount
 	assetRemovedFromPool := false
+	aggregateDonatedAmount := cosmos.ZeroUint()
+	var rollbackSwapVault Vault
 
-	// Handle pool accounting for each staged outbound
-	for i, staged := range stagedItems {
-		action := staged.TxOutItem
-
-		ctx.Logger().Info("reverting staged action",
+	// Handle pool accounting for each staged outbound, coalescing split
+	// external outbounds into one inline rollback swap per asset.
+	for _, rollbackAction := range actionsToRollback {
+		action := rollbackAction.item
+		ctx.Logger().Info("rolling back staged action",
 			"inhash", action.InHash,
 			"from_asset", action.Coin.Asset,
 			"from_amount", action.Coin.Amount,
 			"to_asset", sourceAsset)
 
-		// For RUNE outputs, directly adjust pool balances to reverse the swap.
-		// For non-RUNE native outputs (synths, trade, secured) and external chain outputs,
-		// create a reverse swap then donate — the emitted amount is denominated in a
-		// non-RUNE asset and cannot be added to BalanceRune.
+		// True native RUNE outputs can be unwound directly from pool accounting.
+		// All other staged outputs, including synths, unwind through rollback swaps.
 		if action.Coin.Asset.IsRune() {
-			// RUNE output - directly adjust pool balances to reverse the swap
-			pool, err := keeper.GetPool(ctx, sourceAsset.GetLayer1Asset())
+			// Native RUNE output - directly adjust pool balances to reverse the swap.
+			var pool Pool
+			deductedSource := false
+			pool, err = keeper.GetPool(ctx, sourceAsset.GetLayer1Asset())
 			if err != nil {
-				return fmt.Errorf("fail to get pool for native revert: %w", err)
+				return fmt.Errorf("fail to get pool for native rollback: %w", err)
 			}
 
 			// Add the RUNE back to the pool (restore RUNE that was emitted)
@@ -1451,103 +1832,91 @@ func revertMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manag
 			if !assetRemovedFromPool {
 				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
 				assetRemovedFromPool = true
-				ctx.Logger().Info("reverted RUNE mempool swap pool balances",
+				deductedSource = true
+				ctx.Logger().Info("rolled back native mempool swap pool balances",
 					"pool", sourceAsset.GetLayer1Asset(),
 					"rune_added", action.Coin.Amount,
 					"asset_removed", sourceAmount)
 			} else {
-				ctx.Logger().Info("reverted RUNE mempool swap (rune only)",
+				ctx.Logger().Info("rolled back native mempool swap (rune only)",
 					"pool", sourceAsset.GetLayer1Asset(),
 					"rune_added", action.Coin.Amount)
 			}
 
-			if err := keeper.SetPool(ctx, pool); err != nil {
-				return fmt.Errorf("fail to set pool after RUNE revert: %w", err)
+			if err = keeper.SetPool(ctx, pool); err != nil {
+				return fmt.Errorf("fail to set pool after native rollback: %w", err)
+			}
+			if deductedSource {
+				emitPoolBalanceChangedEvent(ctx,
+					NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, sourceAmount, false),
+					"mempool swap rollback",
+					mgr)
 			}
 			continue
 		}
 
-		// Non-RUNE output - create a reverse swap and attach the donate action
-		// via PostSwapMemo so Tx.Memo remains a normal swap memo and | passthrough
-		// semantics remain reserved for outbound memo data.
+		if action.Coin.Asset.IsSecuredAsset() {
+			// Native secured outputs should already be changed to their
+			// escrowed underlying asset before rollback sees them.
+			return fmt.Errorf("unsupported native mempool rollback target: %s", action.Coin.Asset)
+		}
 
-		// Lazy-load an active vault on the first non-RUNE iteration.
-		if vault.PubKey.IsEmpty() {
-			activeVaults, err := keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
-			if err != nil || len(activeVaults) == 0 {
-				return fmt.Errorf("fail to get active vaults: %w", err)
+		if rollbackSwapVault.IsEmpty() {
+			rollbackSwapVault, err = selectActiveVaultForChain(ctx, keeper, sourceAsset.GetChain())
+			if err != nil {
+				return err
 			}
-			vault = activeVaults[0]
 		}
 
-		txID := CreateMempoolRevertTxID(voter.TxID, i)
-
-		// Get max gas coin for the chain
-		maxGasCoin, _, err := mgr.GasMgr().GetGasDetails(ctx, action.Chain)
-		if err != nil {
-			ctx.Logger().Error("failed to get gas details for mempool revert swap", "chain", action.Chain, "error", err)
+		rollbackSwap, buildErr := buildMempoolRollbackSwapMsg(ctx, mgr, voter, sourceAsset, action, rollbackAction.actionIndex, rollbackSwapVault)
+		if buildErr != nil {
+			return buildErr
 		}
-		if err != nil || maxGasCoin.IsEmpty() {
-			maxGasCoin = common.NewCoin(action.Chain.GetGasAsset(), cosmos.OneUint())
+		if err = executeSwapWithoutOutboundsCached(ctx, mgr, &rollbackSwap); err != nil {
+			return fmt.Errorf("fail to execute inline rollback swap: %w", err)
 		}
-
-		// For the reverse swap, we need to get a vault address on the source asset's chain
-		sourceChain := sourceAsset.GetChain()
-		destAddress, err := vault.PubKey.GetAddress(sourceChain)
-		if err != nil {
-			return fmt.Errorf("fail to get vault address for source chain %s: %w", sourceChain, err)
+		if !assetRemovedFromPool {
+			// Deduct the phantom source asset only after the first rollback swap
+			// succeeds so a failed rollback does not leave pool accounting half-updated.
+			if err = deductMempoolRollbackSourceAsset(ctx, mgr, sourceAsset, sourceAmount); err != nil {
+				return err
+			}
+			assetRemovedFromPool = true
 		}
-
-		// Get THORChain vault address for the swap message
-		vaultAddress, err := vault.PubKey.GetAddress(common.THORChain)
-		if err != nil {
-			return fmt.Errorf("fail to get vault address for THORChain: %w", err)
+		if !rollbackSwap.State.Out.IsZero() {
+			aggregateDonatedAmount = aggregateDonatedAmount.Add(rollbackSwap.State.Out)
+			if err = executePostSwapMemoCached(ctx, mgr, rollbackSwap); err != nil {
+				return fmt.Errorf("fail to execute inline rollback swap post-swap memo: %w", err)
+			}
 		}
-
-		swapMemo := fmt.Sprintf("=:%s:%s", sourceAsset, destAddress)
-		postSwapMemo := fmt.Sprintf("DONATE:%s", sourceAsset.GetLayer1Asset())
-
-		msg := MsgSwap{
-			Tx: common.Tx{
-				ID:          txID,
-				Chain:       common.THORChain,
-				FromAddress: vaultAddress,
-				ToAddress:   vaultAddress,
-				Coins:       common.Coins{action.Coin},
-				Gas:         common.Gas{maxGasCoin},
-				Memo:        swapMemo,
-			},
-			TargetAsset:             sourceAsset,
-			Destination:             destAddress,
-			PostSwapMemo:            postSwapMemo,
-			TradeTarget:             cosmos.ZeroUint(),
-			AggregatorTargetAddress: "",
-			AggregatorTargetLimit:   nil,
-			Signer:                  mgr.Keeper().GetModuleAccAddress(AsgardName),
-		}
-
-		// Add the reverse swap to the swap queue
-		if err := mgr.Keeper().SetSwapQueueItem(ctx, msg, 0); err != nil {
-			return fmt.Errorf("fail to queue reverse swap: %w", err)
-		}
-
-		ctx.Logger().Info("queued reverse swap for mempool revert",
-			"txid", txID,
-			"from_asset", action.Coin.Asset,
-			"from_amount", action.Coin.Amount,
-			"to_asset", sourceAsset,
-			"memo", swapMemo,
-			"post_swap_memo", postSwapMemo)
 	}
 
 	// Delete all staged outbounds AFTER processing succeeds.
 	// This helper runs inside a CacheContext, so returning an error discards all prior pool,
 	// usage, and queue mutations and allows a clean retry.
 	keeper.DeleteStagedOutbounds(ctx, voter.TxID)
+	// Rollback may have started after the main queue item at index 0 was already
+	// written for this inbound. Clear that leftover work now that the inline
+	// rollback succeeded.
+	if err = clearPendingMempoolSwapQueueItems(ctx, keeper, voter.TxID); err != nil {
+		return err
+	}
 
-	// Mark the voter as reverted
-	voter.Reverted = true
+	// Reset the voter now that all mempool state has been undone.
+	voter = clearMempoolRollbackState(voter)
 	keeper.SetObservedTxInVoter(ctx, voter)
+	// Keep the legacy event name for wire compatibility even though the
+	// implementation now rolls back mempool execution inline.
+	mempoolRollbackEvent := NewEventMempoolSwapReverted(
+		voter.TxID,
+		ctx.BlockHeight(),
+		sourceAsset,
+		sourceAmount,
+		aggregateDonatedAmount,
+	)
+	if err = mgr.EventMgr().EmitEvent(ctx, mempoolRollbackEvent); err != nil {
+		ctx.Logger().Error("fail to emit mempool rollback event", "error", err)
+	}
 
 	return nil
 }

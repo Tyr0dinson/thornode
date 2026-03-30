@@ -338,12 +338,14 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						continue
 					}
 
-					// For mempool swaps that never finalized, revert the swap and donate to pool
+					// For mempool swaps that never finalized, roll back the speculative swap
+					// and donate the recovered output back to the source pool.
 					if voter.FinalisedHeight == 0 && voter.UnfinalizedHeight > 0 {
-						ctx.Logger().Info("reverting mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
-						if err = revertMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
-							ctx.Logger().Error("failed to revert mempool swap", "error", err, "hash", toi.InHash)
+						ctx.Logger().Info("rolling back mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
+						if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
+							ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)
 						} else {
+							incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "max_outbound_attempts")})
 							txs.TxArray[i].OutHash = common.BlankTxID
 						}
 						continue
@@ -519,7 +521,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling
 	if maxOutboundAttempts > 0 {
 		// Collect timed-out inHashes first, then process after closing iterator
-		// to avoid iterator invalidation when revertMempoolSwap deletes from store
+		// to avoid iterator invalidation when rollbackMempoolSwapAtomic deletes from store
 		var timedOutHashes []common.TxID
 		stagedIter := s.keeper.GetStagedOutboundIterator(ctx)
 		for ; stagedIter.Valid(); stagedIter.Next() {
@@ -553,9 +555,23 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Error("fail to get observed tx voter for staged outbound", "error", err)
 				continue
 			}
-			ctx.Logger().Info("reverting staged mempool swap due to timeout", "hash", inHash)
-			if err := revertMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
-				ctx.Logger().Error("fail to revert staged mempool swap", "error", err, "hash", inHash)
+
+			// If the inbound already finalized, the staged outbounds should be
+			// finalized on retry instead of being rolled back.
+			if voter.FinalisedHeight > 0 {
+				ctx.Logger().Info("retrying staged mempool swap finalization due to timeout", "hash", inHash)
+				incrMempoolSwapCounter("finalize_retry_total", nil)
+				if err := finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
+					ctx.Logger().Error("fail to finalize staged mempool swap on timeout retry", "error", err, "hash", inHash)
+				}
+				continue
+			}
+
+			ctx.Logger().Info("rolling back staged mempool swap due to timeout", "hash", inHash)
+			if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
+				ctx.Logger().Error("fail to roll back staged mempool swap", "error", err, "hash", inHash)
+			} else {
+				incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "timeout")})
 			}
 		}
 	}

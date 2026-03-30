@@ -19,7 +19,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "14"
+          "sequence": "20"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -39,11 +39,8 @@
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "10",
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
-          "pub_key": {
-            "@type": "/cosmos.crypto.secp256k1.PubKey",
-            "key": "AxM8YN2N3Rpv2za31hmhLGUnKldrnrZWjf7/n+IYXyMa"
-          },
-          "sequence": "1"
+          "pub_key": null,
+          "sequence": "0"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -92,8 +89,11 @@
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "7",
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "pub_key": null,
-          "sequence": "0"
+          "pub_key": {
+            "@type": "/cosmos.crypto.secp256k1.PubKey",
+            "key": "A79mmwQR0zNaJgvyBZyo1g3eKxUQTlINRlNJTUFCRxUj"
+          },
+          "sequence": "1"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -135,8 +135,12 @@
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "coins": [
             {
-              "amount": "56250000",
+              "amount": "63999999",
               "denom": "btc-btc"
+            },
+            {
+              "amount": "2500000000000",
+              "denom": "rune"
             }
           ]
         },
@@ -153,7 +157,11 @@
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "coins": [
             {
-              "amount": "14209320369",
+              "amount": "94498632",
+              "denom": "btc-btc"
+            },
+            {
+              "amount": "2509602011068",
               "denom": "rune"
             }
           ]
@@ -162,7 +170,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "159358946103",
+              "amount": "151366784324",
               "denom": "rune"
             }
           ]
@@ -171,7 +179,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999980483532",
+              "amount": "34999972275739",
               "denom": "rune"
             }
           ]
@@ -180,7 +188,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2525000399543",
+              "amount": "2525001198630",
               "denom": "rune"
             }
           ]
@@ -189,7 +197,7 @@
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "coins": [
             {
-              "amount": "2500000000000",
+              "amount": "2513100997347",
               "denom": "rune"
             }
           ]
@@ -198,7 +206,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5001450850453",
+              "amount": "5000956732892",
               "denom": "rune"
             }
           ]
@@ -212,11 +220,11 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "56250000",
+          "amount": "158498631",
           "denom": "btc-btc"
         },
         {
-          "amount": "50200000000000",
+          "amount": "55200000000000",
           "denom": "rune"
         }
       ]
@@ -236,7 +244,47 @@
         "rune_withdrawn": "0"
       },
       "THORNames": [],
-      "adv_swap_queue_items": [],
+      "adv_swap_queue_items": [
+        {
+          "affiliate_basis_points": "0",
+          "destination": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+          "initial_block_height": "43",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "state": {
+            "count": "1",
+            "deposit": "1000000000",
+            "in": "335009",
+            "last_height": "43",
+            "out": "51254171",
+            "quantity": "2985",
+            "withdrawn": "0"
+          },
+          "target_asset": "THOR.RUNE",
+          "trade_target": "0",
+          "tx": {
+            "chain": "BTC",
+            "coins": [
+              {
+                "amount": "1000000000",
+                "asset": "BTC.BTC",
+                "decimals": "8"
+              }
+            ],
+            "from_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
+            "gas": [
+              {
+                "amount": "10000",
+                "asset": "BTC.BTC",
+                "decimals": "8"
+              }
+            ],
+            "id": "0000000000000000000000000000000000000000000000000000000000000028",
+            "memo": "=:THOR.RUNE:tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+            "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
+          },
+          "version": 1
+        }
+      ],
       "affiliate_collectors": null,
       "bond_providers": [
         {
@@ -249,7 +297,7 @@
       "last_chain_heights": [
         {
           "chain": "BTC",
-          "height": "33"
+          "height": "60"
         }
       ],
       "liquidity_providers": [
@@ -282,6 +330,14 @@
           "value": "100000000"
         },
         {
+          "key": "ENABLEADVSWAPQUEUE",
+          "value": "1"
+        },
+        {
+          "key": "L1SLIPMINBPS",
+          "value": "10"
+        },
+        {
           "key": "MAXOUTBOUNDATTEMPTS",
           "value": "2"
         },
@@ -305,10 +361,10 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9681",
-        "NodeIncomeSplit": "319",
-        "bond_reward_rune": "1464850453",
-        "total_bond_units": "32"
+        "LPIncomeSplit": "9697",
+        "NodeIncomeSplit": "303",
+        "bond_reward_rune": "974732892",
+        "total_bond_units": "43"
       },
       "network_fees": [
         {
@@ -327,6 +383,16 @@
           "key": "DOLLARSPERRUNE",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "100000000"
+        },
+        {
+          "key": "ENABLEADVSWAPQUEUE",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "1"
+        },
+        {
+          "key": "L1SLIPMINBPS",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "10"
         },
         {
           "key": "MAXOUTBOUNDATTEMPTS",
@@ -360,7 +426,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999986000000",
+          "bond": "4999982000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -372,7 +438,76 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
-      "observed_tx_in_voters": null,
+      "observed_tx_in_voters": [
+        {
+          "actions": null,
+          "height": "43",
+          "mempool_swap_tor": "153299582582",
+          "out_txs": null,
+          "tx": {
+            "block_height": "80",
+            "finalise_height": "100",
+            "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+            "signers": [
+              "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+            ],
+            "tx": {
+              "chain": "BTC",
+              "coins": [
+                {
+                  "amount": "1000000000",
+                  "asset": "BTC.BTC",
+                  "decimals": "8"
+                }
+              ],
+              "from_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
+              "gas": [
+                {
+                  "amount": "10000",
+                  "asset": "BTC.BTC",
+                  "decimals": "8"
+                }
+              ],
+              "id": "0000000000000000000000000000000000000000000000000000000000000028",
+              "memo": "=:THOR.RUNE:tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+              "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
+            }
+          },
+          "tx_id": "0000000000000000000000000000000000000000000000000000000000000028",
+          "txs": [
+            {
+              "block_height": "80",
+              "finalise_height": "100",
+              "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "signers": [
+                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+              ],
+              "tx": {
+                "chain": "BTC",
+                "coins": [
+                  {
+                    "amount": "1000000000",
+                    "asset": "BTC.BTC",
+                    "decimals": "8"
+                  }
+                ],
+                "from_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
+                "gas": [
+                  {
+                    "amount": "10000",
+                    "asset": "BTC.BTC",
+                    "decimals": "8"
+                  }
+                ],
+                "id": "0000000000000000000000000000000000000000000000000000000000000028",
+                "memo": "=:THOR.RUNE:tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+                "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
+              }
+            }
+          ],
+          "unfinalized_height": "43"
+        }
+      ],
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
@@ -380,8 +515,8 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "338054888",
-          "balance_rune": "59342155875",
+          "balance_asset": "335315572",
+          "balance_rune": "51302201014",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -392,7 +527,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100016790228",
+          "balance_rune": "100013329139",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -412,7 +547,7 @@
       "secured_assets": [
         {
           "asset": "BTC-BTC",
-          "depth": "56250000"
+          "depth": "158498631"
         }
       ],
       "staged_outbounds": [],
@@ -422,49 +557,49 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "12500199771",
+          "score": "12500599315",
           "spent": "0"
         },
         {
           "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
           "reclaimed": "0",
-          "score": "6655897127",
+          "score": "2706391060",
           "spent": "0"
         },
         {
           "address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
           "reclaimed": "0",
-          "score": "1485090671",
+          "score": "407653050",
           "spent": "0"
         },
         {
           "address": "bcrt1qxkz88t875m7ms7wa6220estwwdlc86pqvavagk",
           "reclaimed": "0",
-          "score": "3120270844",
+          "score": "633620036",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "12500199772",
+          "score": "12500599315",
           "spent": "0"
         },
         {
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "reclaimed": "0",
-          "score": "6655897128",
+          "score": "2706391061",
           "spent": "0"
         },
         {
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "reclaimed": "0",
-          "score": "1485090671",
+          "score": "427505804",
           "spent": "0"
         },
         {
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "reclaimed": "0",
-          "score": "3137406205",
+          "score": "633620051",
           "spent": "0"
         }
       ],
@@ -473,16 +608,16 @@
       "trade_accounts": [
         {
           "asset": "BTC~BTC",
-          "last_add_height": "32",
-          "owner": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
-          "units": "5695112"
+          "last_add_height": "40",
+          "owner": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "units": "6520806"
         }
       ],
       "trade_units": [
         {
           "asset": "BTC~BTC",
-          "depth": "5695112",
-          "units": "5695112"
+          "depth": "6520806",
+          "units": "6520806"
         }
       ],
       "tx_outs": null,
@@ -501,7 +636,7 @@
           ],
           "coins": [
             {
-              "amount": "400000000",
+              "amount": "500000000",
               "asset": "BTC.BTC",
               "decimals": "8"
             },
@@ -511,7 +646,7 @@
               "decimals": "8"
             }
           ],
-          "inbound_tx_count": "5",
+          "inbound_tx_count": "7",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -570,5 +705,5 @@
       }
     }
   },
-  "initial_height": 33
+  "initial_height": 44
 }

@@ -1,0 +1,648 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+# These mempool regressions use pig/goat as local THOR recipients/affiliates.
+# Keep their funding local to the suite so the shared default template can stay minimal.
+type: state
+genesis:
+  app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_pig }}
+          pub_key: null
+          account_number: "9"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_goat }}
+          pub_key: null
+          account_number: "10"
+          sequence: "0"
+    bank:
+      balances:
+        - address: {{ addr_thor_pig }}
+          coins:
+            - amount: "2500000000000"
+              denom: rune
+        - address: {{ addr_thor_goat }}
+          coins:
+            - amount: "2500000000000"
+              denom: rune
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Synth-target mempool policy coverage.
+# - Non-streaming swaps to synth targets should NOT use the mempool path.
+# - Explicit streaming swaps to synth targets should use the mempool path and cover both
+#   ordering cases around inbound finalization.
+########################################################################################
+# Set DollarsPerRune so TOR capacity accounting has a deterministic price basis.
+type: tx-mimir
+key: DollarsPerRune
+value: 100000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Enable the mempool swap feature with a large cap so policy, not capacity,
+# decides whether the swap can start early.
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 100000000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Allow synth issuance well above this test's size so supply caps do not mask
+# the mempool-policy behavior under test.
+type: tx-mimir
+key: MaxSynthPerPoolDepth
+value: 6000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Remove synth slip gating so the regression focuses on mempool admission and
+# finalization behavior.
+type: tx-mimir
+key: SynthSlipMinBps
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Shorten outbound timing so the streaming swap scenarios finish inside the test.
+type: tx-mimir
+key: SigningTransactionPeriod
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Keep retries low so finalized streaming swaps settle quickly in regression.
+type: tx-mimir
+key: MaxOutboundAttempts
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Scenario 1: a non-streaming swap from BTC to ETH/ETH should NOT use the mempool path.
+########################################################################################
+# Cat starts with no synth balance, and total synth supply should also be zero.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+asserts:
+  - ([.supply[]|select(.denom == "eth/eth")]|length) == 0
+---
+# First observation stays unfinalized for 3 blocks, so a non-streaming swap to a
+# synth target must wait instead of entering staged or advanced swap queue state.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_cat }}"
+    block_height: 10
+    finalise_height: 13  # Finalizes later; this first observation is still unfinalized.
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Non-streaming swaps to synth targets should not create staged, outbound, or swap-queue state.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Nothing should reach the real outbound queue before finalization.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# Non-streaming swaps to synth targets should not create regular or advanced swap-queue work.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+# The recipient should still have no synth balance before finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Create blocks to reach the finalization height.
+type: create-blocks
+count: 2
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_cat }}"
+    block_height: 13
+    finalise_height: 13  # NOW finalized (block_height == finalise_height).
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify the synth has NOW been minted to the recipient.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom == "eth/eth")|.amount|tonumber > 0
+---
+# Verify total synth supply increased after finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+asserts:
+  - .supply[]|select(.denom == "eth/eth")|.amount|tonumber > 0
+---
+########################################################################################
+# Scenario 2a: an explicit streaming swap from BTC to ETH/ETH should use the mempool path,
+# appear in the advanced swap queue before finalization, settle into one staged
+# native outbound while still unfinalized, and then mint once the inbound
+# finalizes after the stream is already complete.
+########################################################################################
+# Verify goat has no synth balance initially.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Send an explicit 4-part streaming swap to ETH/ETH that stays unfinalized
+# until after the streaming swap has already completed.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: BTC
+      from_address: {{ addr_btc_goat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_goat }}:0/1/4"
+    block_height: 20
+    finalise_height: 100  # Keep it unfinalized until after the stream has finished.
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Before finalization, this streaming swap should exist only as advanced-queue state.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Nothing should reach the real outbound queue before finalization.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# The swap should be visible as an advanced-queue item.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 10 }}
+asserts:
+  - .status == "queued"
+  - .queue_type == "advanced"
+---
+# The recipient should still have no synth balance before finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Allow enough blocks for the 4-part streaming swap to finish while the inbound is
+# still unfinalized.
+type: create-blocks
+count: 3
+---
+# Once the streaming swap has settled, it should leave the advanced queue.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 10 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+# The completed but still-unfinalized streaming swap should now exist as one staged
+# native outbound for the synth asset on THORChain.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.chain == "THOR"
+  - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_thor_goat }}"
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 10 }}"
+  - .staged_outbound_items[0].tx_out_item.coin.asset == "ETH/ETH"
+  - .staged_outbound_items[0].scheduled_height|tonumber > 0
+  - .staged_outbound_items[0].staged_height|tonumber > 0
+---
+# Nothing should reach the real outbound queue before finalization.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# The recipient should still have no synth balance before finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Re-observe the same transaction as finalized.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: BTC
+      from_address: {{ addr_btc_goat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_goat }}:0/1/4"
+    block_height: 24
+    finalise_height: 24  # NOW finalized (block_height == finalise_height).
+    observed_pub_key: {{ pubkey_dog }}
+---
+# One block is enough for finalization to execute the staged native outbound.
+type: create-blocks
+count: 1
+---
+# Finalization should clear the staged native outbound.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Verify the synth has NOW been minted via the completed streaming swap.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+asserts:
+  - .balances[]|select(.denom == "eth/eth")|.amount|tonumber > 0
+---
+########################################################################################
+# Scenario 2b: an explicit streaming swap from BTC to ETH/ETH should stay in the advanced
+# swap queue after the inbound finalizes early, then mint directly without ever
+# using a staged native outbound.
+########################################################################################
+# Verify fox has no synth balance initially.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Send an explicit 4-part streaming swap to ETH/ETH that will finalize before
+# the last sub-swap is ready to settle.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 11 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_fox }}:0/1/4"
+    block_height: 30
+    finalise_height: 100  # Keep the first observation unfinalized for the mempool check.
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Before finalization, this streaming swap should exist only as advanced-queue state.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Nothing should reach the real outbound queue before finalization.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# The swap should be visible as an advanced-queue item.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 11 }}
+asserts:
+  - .status == "queued"
+  - .queue_type == "advanced"
+---
+# The recipient should still have no synth balance before finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Create one more block so the streaming swap is still active, then finalize the inbound.
+type: create-blocks
+count: 1
+---
+# Re-observe the same transaction as finalized before the streaming swap is done.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 11 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_fox }}:0/1/4"
+    block_height: 32
+    finalise_height: 32  # NOW finalized before the stream has settled.
+    observed_pub_key: {{ pubkey_dog }}
+---
+# The next block should keep the streaming swap in the advanced queue without staging it.
+type: create-blocks
+count: 1
+---
+# Finalization arrived before settlement, so there should still be no staged
+# native outbound.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Nothing should reach the real outbound queue while the streaming swap is still active.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# The streaming swap should still be visible as an advanced-queue item after finalization.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 11 }}
+asserts:
+  - .status == "queued"
+  - .queue_type == "advanced"
+---
+# The recipient should still have no synth balance until the last sub-swap completes.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# One more block is enough for the last sub-swap in the streaming swap to settle after finalization.
+type: create-blocks
+count: 1
+---
+# Once the streaming swap settles after finalization, it should leave the advanced queue directly.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 11 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+# Finalization happened first, so settlement should not use staged native outbounds.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Nothing should reach the real outbound queue for a THOR-native synth target.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# Verify the synth has NOW been minted directly after the completed streaming swap settles.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "eth/eth")|.amount|tonumber > 0
+---
+########################################################################################
+# Scenario 3: deferred affiliate side effects should stay deferred while the
+# streaming swap to a synth target is still unfinalized, then apply after finalization.
+########################################################################################
+# Record the affiliate's starting RUNE balance, and verify pig has no synth
+# balance initially.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${FOX_RUNE_BEFORE=2500000000000}"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# The affiliate fields at the end of the memo specify fox plus 500 bps. While
+# the inbound is still unfinalized, neither the affiliate RUNE payout nor the
+# synth mint should happen yet.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 20 }}"
+      chain: BTC
+      from_address: {{ addr_btc_pig }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_pig }}:0/1/10:{{ addr_thor_fox }}:500"
+    block_height: 40
+    finalise_height: 43  # Stay unfinalized for the deferral checks.
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Before finalization, this streaming swap should exist only as advanced-queue state.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Nothing should reach the real outbound queue before finalization.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# The swap should be visible as an advanced-queue item while still unfinalized.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 20 }}
+asserts:
+  - .status == "queued"
+  - .queue_type == "advanced"
+---
+# The recipient should still have no synth balance before finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Deferred affiliate side effects should leave the affiliate's RUNE unchanged for now.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${FOX_RUNE_BEFORE}"
+---
+# Allow enough blocks for the 10-part streaming swap to finish while the inbound is
+# still unfinalized.
+type: create-blocks
+count: 12
+---
+# Once the streaming swap has settled, it should leave the advanced queue.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 20 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+# The completed but still-unfinalized streaming swap should now exist as one staged
+# native outbound for the synth asset on THORChain.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.chain == "THOR"
+  - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_thor_pig }}"
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 20 }}"
+  - .staged_outbound_items[0].tx_out_item.coin.asset == "ETH/ETH"
+  - .staged_outbound_items[0].scheduled_height|tonumber > 0
+  - .staged_outbound_items[0].staged_height|tonumber > 0
+---
+# Nothing should reach the real outbound queue before finalization.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# The recipient should still have no synth balance before finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - ([.balances[]|select(.denom == "eth/eth")]|length) == 0
+---
+# Deferred affiliate side effects should still leave the affiliate's RUNE unchanged.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${FOX_RUNE_BEFORE}"
+---
+# Re-observe the same transaction as finalized so the deferred affiliate effects
+# and synth mint both apply.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 20 }}"
+      chain: BTC
+      from_address: {{ addr_btc_pig }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH/ETH:{{ addr_thor_pig }}:0/1/10:{{ addr_thor_fox }}:500"
+    block_height: 43
+    finalise_height: 43  # NOW finalized (block_height == finalise_height).
+    observed_pub_key: {{ pubkey_dog }}
+---
+# One block is enough for finalization to execute the staged native outbound.
+type: create-blocks
+count: 1
+---
+# Finalization should clear the staged native outbound.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Verify the synth has NOW been minted after finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances[]|select(.denom == "eth/eth")|.amount|tonumber > 0
+---
+# Verify the deferred affiliate RUNE only appears after finalization.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber > ${FOX_RUNE_BEFORE}

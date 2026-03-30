@@ -1123,10 +1123,19 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.OutboundDelaySeconds = outboundDelay * common.THORChain.ApproximateBlockMilliseconds() / 1000
 	}
 
-	// Calculate total swap time based on whether mempool swaps are enabled and have capacity.
-	// Mempool swaps only apply to non-streaming swaps (streamingQuantity == 0).
+	// Calculate total swap time based on whether this swap is eligible for the
+	// mempool optimization and whether there is capacity to use it.
 	canUseMempoolSwap := false
-	if streamingQuantity == 0 {
+	if isMempoolSwapEligible(
+		ctx,
+		qs.mgr,
+		fromAsset,
+		toAsset,
+		amount,
+		msg.SwapType,
+		streamingInterval,
+		streamingQuantity,
+	) {
 		_, hasCapacity, _ := checkMempoolSwapCapacity(ctx, qs.mgr.Keeper(), fromAsset, amount)
 		canUseMempoolSwap = hasCapacity
 	}

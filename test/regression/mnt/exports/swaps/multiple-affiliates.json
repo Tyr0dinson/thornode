@@ -398,7 +398,50 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
-      "observed_tx_in_voters": null,
+      "observed_tx_in_voters": [
+        {
+          "actions": null,
+          "finalised_height": "15",
+          "height": "15",
+          "mempool_swap_tor": "0",
+          "out_txs": null,
+          "tx": {
+            "tx": {
+              "chain": "THOR",
+              "coins": [
+                {
+                  "amount": "251145168",
+                  "asset": "THOR.RUNE"
+                }
+              ],
+              "from_address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
+              "gas": null,
+              "id": "D7041A9ECC85A08ED3BC50C2A627835C2D470C9FDDE42E6F1361F312381837C4",
+              "memo": "THOR-PREFERRED-ASSET-a",
+              "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+            }
+          },
+          "tx_id": "D7041A9ECC85A08ED3BC50C2A627835C2D470C9FDDE42E6F1361F312381837C4",
+          "txs": [
+            {
+              "tx": {
+                "chain": "THOR",
+                "coins": [
+                  {
+                    "amount": "251145168",
+                    "asset": "THOR.RUNE"
+                  }
+                ],
+                "from_address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
+                "gas": null,
+                "id": "D7041A9ECC85A08ED3BC50C2A627835C2D470C9FDDE42E6F1361F312381837C4",
+                "memo": "THOR-PREFERRED-ASSET-a",
+                "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+              }
+            }
+          ]
+        }
+      ],
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [
         {

@@ -347,19 +347,26 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
-	// Recompute mempool swap usage from voters that have both non-zero
-	// MempoolSwapTOR AND corresponding staged outbounds. This cross-validation
-	// prevents stale voter data from inflating the usage counter.
+	// Recompute mempool swap usage from voters that still have active exported
+	// mempool state. Cross-check against staged outbounds and queued swaps so
+	// stale voter records alone do not inflate the usage counter.
 	stagedInHashes := make(map[common.TxID]bool, len(data.StagedOutbounds))
 	for _, list := range data.StagedOutbounds {
 		stagedInHashes[list.InHash] = true
 	}
+	queuedInHashes := make(map[common.TxID]bool, len(data.AdvSwapQueueItems)+len(data.SwapQueueItems))
+	for _, msg := range data.AdvSwapQueueItems {
+		queuedInHashes[msg.Tx.ID] = true
+	}
+	for _, msg := range data.SwapQueueItems {
+		queuedInHashes[msg.Tx.ID] = true
+	}
 	totalUsage := cosmos.ZeroUint()
 	for _, voter := range data.ObservedTxInVoters {
-		if voter.MempoolSwapTOR.IsNil() || voter.MempoolSwapTOR.IsZero() {
+		if !voter.HasReservedMempoolSwapTOR() {
 			continue
 		}
-		if !stagedInHashes[voter.TxID] {
+		if !stagedInHashes[voter.TxID] && !queuedInHashes[voter.TxID] {
 			continue
 		}
 		totalUsage = totalUsage.Add(voter.MempoolSwapTOR)
@@ -827,6 +834,35 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		}
 		observedTxInVoters = append(observedTxInVoters, txInVoter)
 		voterSeen[list.InHash] = true
+	}
+
+	// Export voters for queued swaps that are still in flight but have not yet
+	// produced staged outbounds or pending TxOut entries. This is needed to keep
+	// mempool advanced/legacy queue state attributable during export checks and
+	// later import.
+	for _, msg := range swapMsgs {
+		if msg.Tx.ID.IsEmpty() || voterSeen[msg.Tx.ID] {
+			continue
+		}
+		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
+		if voterErr != nil {
+			ctx.Logger().Error("fail to get voter for advanced queue item", "error", voterErr, "hash", msg.Tx.ID)
+			continue
+		}
+		observedTxInVoters = append(observedTxInVoters, txInVoter)
+		voterSeen[msg.Tx.ID] = true
+	}
+	for _, msg := range swapQ {
+		if msg.Tx.ID.IsEmpty() || voterSeen[msg.Tx.ID] {
+			continue
+		}
+		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
+		if voterErr != nil {
+			ctx.Logger().Error("fail to get voter for legacy queue item", "error", voterErr, "hash", msg.Tx.ID)
+			continue
+		}
+		observedTxInVoters = append(observedTxInVoters, txInVoter)
+		voterSeen[msg.Tx.ID] = true
 	}
 
 	return GenesisState{

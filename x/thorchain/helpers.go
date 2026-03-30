@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -584,6 +585,49 @@ func telemInt(input cosmos.Int) float32 {
 	return float32(i) / 100000000
 }
 
+func incrMempoolSwapCounter(name string, labels []metrics.Label) {
+	telemetry.IncrCounterWithLabels([]string{"thornode", "mempool_swap", name}, float32(1), labels)
+}
+
+// emitMempoolSwapTelemetry emits end-block snapshot metrics for the mempool
+// swap path. These are current-state gauges, not lifecycle totals.
+func emitMempoolSwapTelemetry(ctx cosmos.Context, mgr Manager, runeUSDPrice float32) error {
+	mempoolSwapCap := mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)
+	capTOR := cosmos.ZeroUint()
+	if mempoolSwapCap > 0 {
+		capTOR = cosmos.NewUint(uint64(mempoolSwapCap))
+	}
+
+	usageTOR := mgr.Keeper().GetMempoolSwapUsageTOR(ctx)
+	telemetry.SetGauge(telem(capTOR), "thornode", "mempool_swap", "cap", "tor")
+	telemetry.SetGauge(telem(usageTOR), "thornode", "mempool_swap", "usage", "tor")
+
+	stagedRuneValue, _, err := mgr.Keeper().GetStagedOutboundValue(ctx)
+	if err != nil {
+		return err
+	}
+
+	var stagedInboundCount, stagedOutboundCount int64
+	stagedIter := mgr.Keeper().GetStagedOutboundIterator(ctx)
+	defer stagedIter.Close()
+	for ; stagedIter.Valid(); stagedIter.Next() {
+		var stagedList keeper.StagedOutboundList
+		if err := mgr.Keeper().Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
+			ctx.Logger().Error("fail to unmarshal staged outbound list while emitting mempool swap telemetry", "error", err)
+			continue
+		}
+		stagedInboundCount++
+		stagedOutboundCount += int64(len(stagedList.Items))
+	}
+
+	telemetry.SetGauge(float32(stagedInboundCount), "thornode", "mempool_swap", "staged_inbounds")
+	telemetry.SetGauge(float32(stagedOutboundCount), "thornode", "mempool_swap", "staged_outbounds")
+	telemetry.SetGauge(telem(stagedRuneValue), "thornode", "mempool_swap", "staged_value", "rune")
+	telemetry.SetGauge(telem(stagedRuneValue)*runeUSDPrice, "thornode", "mempool_swap", "staged_value", "usd")
+
+	return nil
+}
+
 func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	// capture panics
 	defer func() {
@@ -800,6 +844,10 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	telemetry.SetGauge(telem(cloutSpent)*runeUSDPrice, "thornode", "queue", "scheduled", "clout", "usd")
 	telemetry.SetGauge(telem(queueScheduledOutboundValue), "thornode", "queue", "scheduled", "value", "rune")
 	telemetry.SetGauge(telem(queueScheduledOutboundValue)*runeUSDPrice, "thornode", "queue", "scheduled", "value", "usd")
+
+	if err := emitMempoolSwapTelemetry(ctx, mgr, runeUSDPrice); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -1231,7 +1279,155 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 	return nil
 }
 
+// releaseMempoolSwapCapacityAndClear is the shared "release exactly once"
+// helper for mempool swaps. It decrements the global TOR reservation and clears
+// the matching per-voter marker together so later cleanup paths do not see a
+// stale mempool reservation.
+func releaseMempoolSwapCapacityAndClear(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, releaseLogMsg string) ObservedTxVoter {
+	if !voter.HasReservedMempoolSwapTOR() {
+		return voter
+	}
+
+	newUsage := k.SubMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+	ctx.Logger().Info(releaseLogMsg,
+		"hash", voter.TxID,
+		"tor_value", voter.MempoolSwapTOR,
+		"new_usage", newUsage)
+
+	voter.MempoolSwapTOR = cosmos.ZeroUint()
+	k.SetObservedTxInVoter(ctx, voter)
+	return voter
+}
+
+// releaseMempoolSwapCapacityAfterFinalizedSettlement frees a mempool-swap
+// reservation once advanced-queue settlement has finished and no staged
+// outbounds remain for the finalized inbound.
+func releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx cosmos.Context, mgr Manager, txID common.TxID) {
+	if txID.IsEmpty() || txID.Equals(common.BlankTxID) {
+		return
+	}
+
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, txID)
+	if err != nil {
+		return
+	}
+	if voter.FinalisedHeight == 0 {
+		return
+	}
+	if mgr.Keeper().HasStagedOutbound(ctx, txID) {
+		return
+	}
+
+	hadReservation := voter.HasReservedMempoolSwapTOR()
+	releaseMempoolSwapCapacityAndClear(ctx, mgr.Keeper(), voter, "released mempool swap capacity after finalized swap settlement")
+	if hadReservation {
+		incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "finalized_settlement")})
+	}
+}
+
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// First apply the already-computed settlement side effects (outbound,
+	// partial refund, post-swap memo handling) in the current cache context.
+	if err := settleSwapResultCached(ctx, mgr, msg, settleReason); err != nil {
+		return err
+	}
+
+	// A mempool swap can finish after the inbound has already finalized if the
+	// advanced queue is still working through a stream. In that case settlement
+	// now schedules direct outbounds instead of staged ones, so there may be no
+	// later finalizeOutbounds step to release the reservation. Release the
+	// mempool TOR accounting here once settlement is complete and no staged
+	// outbounds remain.
+	releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx, mgr, msg.Tx.ID)
+
+	// Remove from advanced swap queue index
+	if err := mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msg); err != nil {
+		// Log but don't fail - it might not exist in index
+		ctx.Logger().Debug("fail to remove swap from adv queue index", "error", err)
+	}
+
+	// Remove from advanced swap queue
+	if err := mgr.Keeper().RemoveAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)); err != nil {
+		// Log but don't fail
+		ctx.Logger().Debug("fail to remove swap from adv queue", "error", err)
+	}
+
+	// Emit streaming swap event if this was a streaming swap
+	if msg.IsStreaming() {
+		// Create a StreamingSwap struct from the MsgSwap state for the event
+		swp := StreamingSwap{
+			TxID:              msg.Tx.ID,
+			Interval:          msg.State.Interval,
+			Quantity:          msg.State.Quantity,
+			Count:             msg.State.Count,
+			LastHeight:        msg.State.LastHeight,
+			TradeTarget:       msg.TradeTarget,
+			Deposit:           msg.State.Deposit,
+			In:                msg.State.In,
+			Out:               msg.State.Out,
+			FailedSwaps:       msg.State.FailedSwaps,
+			FailedSwapReasons: msg.State.FailedSwapReasons,
+		}
+
+		evt := NewEventStreamingSwap(msg.Tx.Coins[0].Asset, msg.TargetAsset, swp)
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit streaming swap event", "error", err)
+		}
+	}
+
+	// Emit limit swap close event if this was a limit swap being closed
+	if msg.IsLimitSwap() {
+		evt := NewEventLimitSwapClose(msg.Tx.ID, settleReason, ctx.BlockHeight())
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit limit swap close event", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// executeSwapWithoutOutboundsCached runs swap math in the current cache context
+// while suppressing normal outbound scheduling. Callers use this when they need
+// to settle the result explicitly afterward, such as mempool-related flows and
+// legacy queue paths that must still honor native outbound staging/finalization.
+func executeSwapWithoutOutboundsCached(ctx cosmos.Context, mgr Manager, msg *MsgSwap) error {
+	swapCtx := ctx.WithValue(constants.CtxSkipSwapOutbounds, true)
+	swapHandler := NewSwapHandler(mgr)
+
+	_, emit, err := swapHandler.RunWithEmit(swapCtx, msg)
+	if err != nil {
+		return err
+	}
+
+	// initialize swap state if not already.
+	if msg.State == nil {
+		msg.State = &types.SwapState{}
+	}
+	if msg.State.Deposit.IsNil() {
+		msg.State.Deposit = cosmos.ZeroUint()
+	}
+	if msg.State.In.IsNil() {
+		msg.State.In = cosmos.ZeroUint()
+	}
+	if msg.State.Out.IsNil() {
+		msg.State.Out = cosmos.ZeroUint()
+	}
+	if msg.State.Deposit.IsZero() {
+		msg.State.Deposit = msg.Tx.Coins[0].Amount
+	}
+
+	// Update swap state with the results of the swap math execution.
+	msg.State.In = msg.State.In.Add(msg.Tx.Coins[0].Amount)
+	msg.State.Out = msg.State.Out.Add(emit)
+	msg.State.Count += 1
+	msg.State.LastHeight = ctx.BlockHeight()
+
+	return nil
+}
+
+// settleSwapResultCached applies the non-math side effects for a swap whose
+// execution already populated msg.State in the current cache context.
+func settleSwapResultCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
 	// Schedule outbound for what was already swapped
 	if !msg.State.Out.IsZero() {
 		// Parse memo to check if this is a savers add
@@ -1243,7 +1439,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 
 		// Check if we should process a post-swap memo instead of scheduling normal outbound.
-		// A non-empty post-swap memo is part of swap settlement and must parse successfully;
+		// A non-empty post-swap memo is part of swap settlement and must parse successfully,
 		// otherwise the settleSwap cache context should discard the settlement.
 		shouldProcessPostSwapMemo := false
 		if len(msg.PostSwapMemo) > 0 {
@@ -1303,102 +1499,9 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 				}
 			}
 		} else if shouldProcessPostSwapMemo {
-			// Post-swap memo execution is part of settlement. Fail closed here so the
-			// settleSwap cache context can discard the entire settlement on any required
-			// recovery/accounting error.
-			//
-			// Check if this is a mempool revert swap - if so, deduct source amount from
-			// the source pool atomically with the post-swap action.
-			originalTxID, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), msg.Tx.ID)
-			if !found {
-				return fmt.Errorf("fail to recover original txid for mempool revert post-swap: %s", msg.Tx.ID)
+			if err := executePostSwapMemoCached(ctx, mgr, msg); err != nil {
+				return err
 			}
-
-			voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, originalTxID)
-			if voterErr != nil {
-				return fmt.Errorf("fail to get original voter for mempool revert: %w", voterErr)
-			}
-			if voter.Tx.Tx.Coins.IsEmpty() {
-				return fmt.Errorf("original voter missing source coins for mempool revert: %s", originalTxID)
-			}
-
-			sourceAsset := voter.Tx.Tx.Coins[0].Asset
-			sourceAmount := voter.Tx.Tx.Coins[0].Amount
-
-			// Deduct phantom source amount from pool (asset that was never received)
-			pool, poolErr := mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
-			if poolErr != nil {
-				return fmt.Errorf("fail to get pool for mempool revert deduction: %w", poolErr)
-			}
-
-			pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
-			if setErr := mgr.Keeper().SetPool(ctx, pool); setErr != nil {
-				return fmt.Errorf("fail to set pool after mempool revert deduction: %w", setErr)
-			}
-
-			// Emit PoolBalanceChanged event for the deduction
-			emitPoolBalanceChangedEvent(ctx,
-				NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, sourceAmount, false),
-				"mempool swap revert",
-				mgr)
-
-			// Emit MempoolSwapReverted event with full details
-			// msg.State.Out is the donated amount (output of reverse swap)
-			mempoolRevertEvent := NewEventMempoolSwapReverted(
-				originalTxID,
-				ctx.BlockHeight(),
-				sourceAsset,
-				sourceAmount,
-				msg.State.Out,
-			)
-			if err := mgr.EventMgr().EmitEvent(ctx, mempoolRevertEvent); err != nil {
-				ctx.Logger().Error("fail to emit mempool revert event", "error", err)
-			}
-
-			ctx.Logger().Info("deducted phantom source asset from pool for mempool revert",
-				"pool", sourceAsset.GetLayer1Asset(),
-				"asset_removed", sourceAmount,
-				"donated_amount", msg.State.Out,
-				"original_txid", originalTxID)
-
-			// Process post-swap memo: create internal transaction with swap output
-			ctx.Logger().Info("processing post-swap memo", "memo", msg.PostSwapMemo, "output", msg.State.Out.String())
-
-			// Generate a deterministic transaction hash from original tx ID + block height + memo
-			hashInput := fmt.Sprintf("%s|%d|%s", msg.Tx.ID, ctx.BlockHeight(), msg.PostSwapMemo)
-			internalTxID, err := common.NewTxID(fmt.Sprintf("%X", sha256.Sum256([]byte(hashInput))))
-			if err != nil {
-				return fmt.Errorf("fail to generate internal tx ID for post-swap memo: %w", err)
-			}
-
-			// Create an ObservedTx with the swap output as input
-			swapOutputCoin := common.NewCoin(msg.TargetAsset, msg.State.Out)
-			internalTx := common.NewTx(
-				internalTxID,
-				msg.Destination, // From the original destination
-				common.NoAddress,
-				common.NewCoins(swapOutputCoin),
-				common.Gas{},
-				msg.PostSwapMemo,
-			)
-
-			observedTx := ObservedTx{
-				Tx: internalTx,
-			}
-
-			// Process the transaction to create the appropriate message
-			internalMsg, err := processOneTxIn(ctx, mgr.Keeper(), observedTx, mgr.Keeper().GetModuleAccAddress(AsgardName))
-			if err != nil {
-				return fmt.Errorf("fail to process post-swap memo: %w", err)
-			}
-
-			// Execute the message through the internal handler
-			handler := NewInternalHandler(mgr)
-			if _, err = handler(ctx, internalMsg); err != nil {
-				return fmt.Errorf("fail to execute post-swap memo transaction: %w", err)
-			}
-
-			ctx.Logger().Info("successfully executed post-swap memo", "memo", msg.PostSwapMemo)
 		}
 	}
 
@@ -1422,49 +1525,50 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 	}
 
-	// Remove from advanced swap queue index
-	if err := mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msg); err != nil {
-		// Log but don't fail - it might not exist in index
-		ctx.Logger().Debug("fail to remove swap from adv queue index", "error", err)
+	return nil
+}
+
+// executePostSwapMemoCached executes a parsed post-swap action in the current
+// cache context so the enclosing settlement can fail closed on any downstream
+// processing error.
+func executePostSwapMemoCached(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
+	ctx.Logger().Info("processing post-swap memo", "memo", msg.PostSwapMemo, "output", msg.State.Out.String())
+
+	// Generate a deterministic transaction hash from original tx ID + block height + memo
+	hashInput := fmt.Sprintf("%s|%d|%s", msg.Tx.ID, ctx.BlockHeight(), msg.PostSwapMemo)
+	internalTxID, err := common.NewTxID(fmt.Sprintf("%X", sha256.Sum256([]byte(hashInput))))
+	if err != nil {
+		return fmt.Errorf("fail to generate internal tx ID for post-swap memo: %w", err)
 	}
 
-	// Remove from advanced swap queue
-	if err := mgr.Keeper().RemoveAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)); err != nil {
-		// Log but don't fail
-		ctx.Logger().Debug("fail to remove swap from adv queue", "error", err)
+	// Create an ObservedTx with the swap output as input
+	swapOutputCoin := common.NewCoin(msg.TargetAsset, msg.State.Out)
+	internalTx := common.NewTx(
+		internalTxID,
+		msg.Destination, // From the original destination
+		msg.Destination,
+		common.NewCoins(swapOutputCoin),
+		common.Gas{common.NewCoin(msg.TargetAsset.GetChain().GetGasAsset(), cosmos.OneUint())},
+		msg.PostSwapMemo,
+	)
+
+	observedTx := ObservedTx{
+		Tx: internalTx,
 	}
 
-	// Emit streaming swap event if this was a streaming swap
-	if msg.IsStreaming() {
-		// Create a StreamingSwap struct from the MsgSwap state for the event
-		swp := StreamingSwap{
-			TxID:              msg.Tx.ID,
-			Interval:          msg.State.Interval,
-			Quantity:          msg.State.Quantity,
-			Count:             msg.State.Count,
-			LastHeight:        msg.State.LastHeight,
-			TradeTarget:       msg.TradeTarget,
-			Deposit:           msg.State.Deposit,
-			In:                msg.State.In,
-			Out:               msg.State.Out,
-			FailedSwaps:       msg.State.FailedSwaps,
-			FailedSwapReasons: msg.State.FailedSwapReasons,
-		}
-
-		evt := NewEventStreamingSwap(msg.Tx.Coins[0].Asset, msg.TargetAsset, swp)
-		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit streaming swap event", "error", err)
-		}
+	// Process the transaction to create the appropriate message
+	internalMsg, err := processOneTxIn(ctx, mgr.Keeper(), observedTx, mgr.Keeper().GetModuleAccAddress(AsgardName))
+	if err != nil {
+		return fmt.Errorf("fail to process post-swap memo: %w", err)
 	}
 
-	// Emit limit swap close event if this was a limit swap being closed
-	if msg.IsLimitSwap() {
-		evt := NewEventLimitSwapClose(msg.Tx.ID, settleReason, ctx.BlockHeight())
-		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit limit swap close event", "error", err)
-		}
+	// Execute the message through the internal handler
+	handler := NewInternalHandler(mgr)
+	if _, err = handler(ctx, internalMsg); err != nil {
+		return fmt.Errorf("fail to execute post-swap memo transaction: %w", err)
 	}
 
+	ctx.Logger().Info("successfully executed post-swap memo", "memo", msg.PostSwapMemo)
 	return nil
 }
 
@@ -1799,4 +1903,167 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, asset common.
 	currentUsage := k.GetMempoolSwapUsageTOR(ctx)
 	hasCapacity = currentUsage.Add(torValue).LTE(mempoolSwapCap)
 	return torValue, hasCapacity, nil
+}
+
+// isExplicitStreamingSwap returns true when the request explicitly asks for
+// streaming behavior.
+//
+// Market swaps use interval and quantity as streaming inputs, so either field
+// can make the request explicitly streaming.
+//
+// Limit swaps are different: quantity still means streaming, but interval is
+// reused as TTL in the advanced queue. A custom TTL alone must not be treated
+// as an explicit streaming request.
+func isExplicitStreamingSwap(swapType types.SwapType, streamInterval, streamQuantity uint64) bool {
+	if swapType == types.SwapType_limit {
+		return streamQuantity > 1
+	}
+	return streamInterval > 0 || streamQuantity > 1
+}
+
+// canUseMempoolSwap wraps the observed-tx memo parsing and swap field
+// extraction around the mempool-swap policy helper. It answers whether the
+// inbound is the kind of swap that may use the mempool path; live TOR-capacity
+// checks still happen separately at execution time.
+func canUseMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.Tx, memo mem.Memo) bool {
+	if !memo.IsType(TxSwap) {
+		return false
+	}
+
+	swapMemo, ok := memo.(SwapMemo)
+	if !ok || len(tx.Coins) == 0 {
+		return false
+	}
+
+	// Use the observed inbound coin because mempool admission depends on the
+	// real source asset and amount, not just the target encoded in the memo.
+	sourceCoin := tx.Coins[0]
+
+	return isMempoolSwapEligible(
+		ctx,
+		mgr,
+		sourceCoin.Asset,
+		swapMemo.GetAsset(),
+		sourceCoin.Amount,
+		swapMemo.GetSwapType(),
+		swapMemo.GetStreamInterval(),
+		swapMemo.GetStreamQuantity(),
+	)
+}
+
+// isMempoolSwapEligible returns whether a swap can use the mempool swap
+// optimization before inbound finalization.
+//
+// Policy summary:
+//   - All swaps that will execute as streaming are mempool-eligible. If
+//     streaming exists to reduce slip, there is no principled reason to
+//     exclude a swap from starting early just because the advanced queue
+//     derived its streaming quantity implicitly instead of the memo setting it
+//     explicitly.
+//   - For THOR-native targets, only streaming swaps get material value from the
+//     mempool path. Non-streaming THOR-target swaps gain at most marginal queue
+//     overlap, so they are excluded.
+//   - Trade targets are excluded entirely. Generic L1->trade is not supported
+//     in the swap path anyway, and THOR->trade has no inbound confirmation
+//     window to hide.
+//   - THOR-native inbounds are excluded because they are already effectively
+//     immediate/final, so there is no inbound confirmation delay to overlap.
+func isMempoolSwapEligible(
+	ctx cosmos.Context,
+	mgr Manager,
+	sourceAsset, targetAsset common.Asset,
+	amount cosmos.Uint,
+	swapType types.SwapType,
+	streamInterval, streamQuantity uint64,
+) bool {
+	// Native THORChain sources do not have an inbound confirmation delay to hide.
+	if sourceAsset.IsNative() {
+		return false
+	}
+
+	// Trade targets are never worth routing through the mempool path.
+	if targetAsset.IsTradeAsset() {
+		return false
+	}
+
+	// L1 targets still benefit from overlapping inbound confirmation
+	// with outbound scheduling/signing even when the swap is not streaming.
+	if !targetAsset.IsNative() {
+		return true
+	}
+
+	// THOR-native targets only keep the mempool path when the swap will execute
+	// as a real stream, whether requested explicitly or derived implicitly by the
+	// advanced queue from current pool depth and max-length rules.
+	return willSwapExecuteAsStreaming(
+		ctx,
+		mgr,
+		sourceAsset,
+		targetAsset,
+		amount,
+		swapType,
+		streamInterval,
+		streamQuantity,
+	)
+}
+
+// willSwapExecuteAsStreaming reports whether the swap will actually execute as
+// a multi-subswap stream for mempool eligibility purposes. Explicit
+// user-requested streaming always counts. When the advanced queue is enabled,
+// market swaps without explicit streaming fields can still be normalized into
+// multiple sub-swaps from the current pool state, so this mirrors that
+// quantity calculation before eligibility is decided.
+func willSwapExecuteAsStreaming(
+	ctx cosmos.Context,
+	mgr Manager,
+	sourceAsset, targetAsset common.Asset,
+	amount cosmos.Uint,
+	swapType types.SwapType,
+	streamInterval, streamQuantity uint64,
+) bool {
+	if isExplicitStreamingSwap(swapType, streamInterval, streamQuantity) {
+		return true
+	}
+	if amount.IsZero() || !mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		return false
+	}
+
+	// Build the same pre-normalized swap state that the advanced queue will see
+	// so implicit streaming eligibility matches actual queue behavior.
+	msg := MsgSwap{
+		Tx: common.Tx{
+			Coins: common.Coins{common.NewCoin(sourceAsset, amount)},
+		},
+		TargetAsset:    targetAsset,
+		SwapType:       swapType,
+		StreamInterval: streamInterval,
+		StreamQuantity: streamQuantity,
+		Version:        types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity:  streamQuantity,
+			Interval:  streamInterval,
+			Deposit:   amount,
+			Withdrawn: cosmos.ZeroUint(),
+			In:        cosmos.ZeroUint(),
+			Out:       cosmos.ZeroUint(),
+		},
+	}
+
+	maxSwapQuantity, err := newSwapQueueAdv(mgr.Keeper()).getMaxSwapQuantity(ctx, mgr, sourceAsset, targetAsset, msg)
+	if err != nil {
+		// Fail closed on prediction errors and fall back to the safer
+		// non-mempool path instead of guessing that the swap will stream.
+		return false
+	}
+
+	// Mirror the advanced queue's quantity normalization so mempool admission
+	// uses the same effective streaming decision as execution.
+	if msg.State.Quantity == 0 {
+		msg.State.Quantity = maxSwapQuantity
+	}
+	if msg.State.Quantity > maxSwapQuantity {
+		msg.State.Quantity = maxSwapQuantity
+	}
+
+	return msg.State.Quantity > 1
 }

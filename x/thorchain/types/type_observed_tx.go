@@ -48,7 +48,7 @@ func (m *ObservedTxVoter) IsEmpty() bool {
 		!m.Reverted &&
 		m.OutboundHeight == 0 &&
 		m.UnfinalizedHeight == 0 &&
-		(m.MempoolSwapTOR.IsNil() || m.MempoolSwapTOR.IsZero())
+		!m.HasReservedMempoolSwapTOR()
 }
 
 // Key is to get the txid
@@ -229,6 +229,10 @@ func (m *ObservedTxVoter) setStatus(toStatus common.Status) {
 // there are some situation , it doesn't have outbound , those will need to set manually
 func (m *ObservedTxVoter) SetDone() {
 	m.setStatus(common.Status_done)
+}
+
+func (m *ObservedTxVoter) HasReservedMempoolSwapTOR() bool {
+	return !m.MempoolSwapTOR.IsNil() && !m.MempoolSwapTOR.IsZero()
 }
 
 // Get consensus signers for slash point decrementation

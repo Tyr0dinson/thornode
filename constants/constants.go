@@ -65,10 +65,11 @@ const MaxMemoSizeUtxoExtended = MaxOpReturnDataSize - 1 + 8*20
 type contextKey string
 
 const (
-	CtxMetricLabels   contextKey = "metricLabels"
-	CtxObservedTx     contextKey = "observed-tx"
-	CtxSimulationMode contextKey = "simulation-mode"
-	CtxWASMQuery      contextKey = "wasm-query"
+	CtxMetricLabels      contextKey = "metricLabels"
+	CtxObservedTx        contextKey = "observed-tx"
+	CtxSimulationMode    contextKey = "simulation-mode"
+	CtxSkipSwapOutbounds contextKey = "skip-swap-outbounds"
+	CtxWASMQuery         contextKey = "wasm-query"
 )
 
 // Permitted characters in Mimirs

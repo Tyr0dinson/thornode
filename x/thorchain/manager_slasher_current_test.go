@@ -1389,7 +1389,7 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	ethPool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
 
-	// Test 1: Mempool swap that never finalized should be reverted after MaxOutboundAttempts
+	// Test 1: Mempool swap that never finalized should be rolled back after MaxOutboundAttempts
 	inTxID := GetRandomTxHash()
 
 	// Create mempool voter (unfinalized)
@@ -1406,7 +1406,7 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 			FinaliseHeight: 0, // Not finalized
 		},
 	})
-	voter.Tx = voter.Txs[0] // Set consolidated tx for revertMempoolSwap
+	voter.Tx = voter.Txs[0] // Set consolidated tx for mempool rollback
 	voter.UnfinalizedHeight = ctx.BlockHeight()
 	voter.FinalisedHeight = 0
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
@@ -1439,16 +1439,17 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	err := slasher.LackSigning(ctx, mgr)
 	c.Assert(err, IsNil)
 
-	// Verify the mempool swap was reverted
+	// Verify the mempool swap was rolled back
 	updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
 	c.Assert(err, IsNil)
 	c.Check(updatedTxOut.TxArray[0].OutHash, Equals, common.BlankTxID,
-		Commentf("Outbound should be marked as handled after reverting mempool swap"))
+		Commentf("Outbound should be marked as handled after rolling back the mempool swap"))
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
-	c.Check(updatedVoter.Reverted, Equals, true, Commentf("Voter should be marked as reverted"))
+	c.Check(updatedVoter.Reverted, Equals, false, Commentf("timeout rollback should leave voter.Reverted false"))
+	c.Check(updatedVoter.Actions, IsNil, Commentf("timeout rollback should clear actions"))
 
-	// Test 2: Finalized inbound (traditional flow) should NOT be reverted
+	// Test 2: Finalized inbound (traditional flow) should NOT be rolled back
 	finalizedTxID := GetRandomTxHash()
 	test2VoterHeight := ctx.BlockHeight()
 	test2LackSigningHeight := test2VoterHeight + (maxOutboundAttempts * signingTransPeriod) + 10
@@ -1489,13 +1490,90 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	err = slasher.LackSigning(ctx, mgr)
 	c.Assert(err, IsNil)
 
-	// Verify finalized outbound is NOT reverted (goes to treasury recovery instead)
+	// Verify finalized outbound is NOT rolled back (goes to treasury recovery instead)
 	updatedFinalizedTxOut, err := mgr.Keeper().GetTxOut(ctx, finalizedOutHeight)
 	c.Assert(err, IsNil)
 	c.Check(updatedFinalizedTxOut.TxArray[0].OutHash, Equals, common.BlankTxID,
-		Commentf("Finalized outbound should be handled by treasury recovery, not revert"))
+		Commentf("finalized outbound should be handled by treasury recovery, not mempool rollback"))
 	updatedFinalizedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, finalizedTxID)
 	c.Assert(err, IsNil)
 	c.Check(updatedFinalizedVoter.Reverted, Equals, false,
-		Commentf("Finalized inbound should NOT be marked as reverted"))
+		Commentf("finalized inbound should not set voter.Reverted"))
+}
+
+func (s *SlashingSuite) TestLackSigningRetriesFinalizedStagedMempoolSwap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	signingTransPeriod := int64(300)
+	maxOutboundAttempts := int64(3)
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), signingTransPeriod)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), maxOutboundAttempts)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	inTxID := GetRandomTxHash()
+	recipient := GetRandomTHORAddress()
+	stagedAmount := cosmos.NewUint(7 * common.One)
+	reservedTOR := cosmos.NewUint(123 * common.One)
+
+	// Build a finalized voter that still has staged native outbounds waiting to
+	// be finalized. This simulates a mempool swap that succeeded earlier but
+	// hit a finalize error and needs a later retry.
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{
+		ObservedTx{
+			Tx: common.Tx{
+				ID:    inTxID,
+				Chain: common.BTCChain,
+				Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+			},
+			Status:         common.Status_done,
+			BlockHeight:    ctx.BlockHeight(),
+			Signers:        []string{},
+			FinaliseHeight: ctx.BlockHeight(),
+		},
+	})
+	voter.Tx = voter.Txs[0]
+	voter.UnfinalizedHeight = ctx.BlockHeight() - 1
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = reservedTOR
+
+	nativeOutbound := TxOutItem{
+		Chain:       common.THORChain,
+		InHash:      inTxID,
+		ToAddress:   recipient,
+		VaultPubKey: vault.PubKey,
+		Coin:        common.NewCoin(common.RuneAsset(), stagedAmount),
+		Memo:        "OUT:" + inTxID.String(),
+	}
+	voter.Actions = []TxOutItem{nativeOutbound}
+
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeOutbound, ctx.BlockHeight()+10), IsNil)
+
+	timeoutHeight := ctx.BlockHeight() + (signingTransPeriod * maxOutboundAttempts)
+	ctx = ctx.WithBlockHeight(timeoutHeight)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	// The timeout worker should retry finalization, not roll back finalized
+	// mempool swaps.
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("finalized staged outbounds should be consumed by finalize retry"))
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("finalize retry should release the reserved mempool TOR value"))
+	c.Check(updatedVoter.Reverted, Equals, false, Commentf("finalize retry should not mark the voter as reverted"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("finalize retry should release global mempool swap usage"))
+
+	recipientAcc, err := recipient.AccAddress()
+	c.Assert(err, IsNil)
+	recipientBalance := mgr.Keeper().GetBalance(ctx, recipientAcc).AmountOf(common.RuneNative.Native())
+	c.Check(recipientBalance.Equal(cosmos.NewIntFromBigInt(stagedAmount.BigInt())), Equals, true, Commentf("native finalize retry should pay the staged outbound"))
 }

@@ -98,6 +98,7 @@ func (HelperAffiliateSuite) TestEnsureAffiliateFromAddressSecuredAsset(c *C) {
 
 	// External address should be rewritten for secured assets
 	externalAddr := common.Address("0xe140683571184092a252116918abd7c6f18451a1")
+	ownerAddr := GetRandomTHORAddress()
 	securedAsset, err := common.NewAsset("ETH-BTC")
 	c.Assert(err, IsNil)
 	c.Assert(securedAsset.IsSecuredAsset(), Equals, true)
@@ -105,21 +106,39 @@ func (HelperAffiliateSuite) TestEnsureAffiliateFromAddressSecuredAsset(c *C) {
 	tx := common.NewTx(
 		GetRandomTxHash(),
 		externalAddr,
-		GetRandomTHORAddress(),
+		ownerAddr,
 		common.NewCoins(common.NewCoin(securedAsset, cosmos.NewUint(100*common.One))),
 		common.Gas{},
 		"",
 	)
 
-	var asgard common.Address
-	asgard, err = mgr.Keeper().GetModuleAddress(AsgardName)
-	c.Assert(err, IsNil)
-
 	c.Assert(ensureAffiliateFromAddress(ctx, mgr, &tx), IsNil)
-	c.Assert(tx.FromAddress.String(), Equals, asgard.String())
+	c.Assert(tx.FromAddress.String(), Equals, ownerAddr.String())
 }
 
 func (HelperAffiliateSuite) TestEnsureAffiliateFromAddressTradeAsset(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	externalAddr := common.Address("0xe140683571184092a252116918abd7c6f18451a1")
+	ownerAddr := GetRandomTHORAddress()
+	tradeAsset, err := common.NewAsset("ETH~BTC")
+	c.Assert(err, IsNil)
+	c.Assert(tradeAsset.IsTradeAsset(), Equals, true)
+
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		externalAddr,
+		ownerAddr,
+		common.NewCoins(common.NewCoin(tradeAsset, cosmos.NewUint(100*common.One))),
+		common.Gas{},
+		"",
+	)
+
+	c.Assert(ensureAffiliateFromAddress(ctx, mgr, &tx), IsNil)
+	c.Assert(tx.FromAddress.String(), Equals, ownerAddr.String())
+}
+
+func (HelperAffiliateSuite) TestEnsureAffiliateFromAddressFallsBackToAsgardWithoutTHORDestination(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	externalAddr := common.Address("0xe140683571184092a252116918abd7c6f18451a1")
@@ -130,7 +149,7 @@ func (HelperAffiliateSuite) TestEnsureAffiliateFromAddressTradeAsset(c *C) {
 	tx := common.NewTx(
 		GetRandomTxHash(),
 		externalAddr,
-		GetRandomTHORAddress(),
+		GetRandomBTCAddress(),
 		common.NewCoins(common.NewCoin(tradeAsset, cosmos.NewUint(100*common.One))),
 		common.Gas{},
 		"",
