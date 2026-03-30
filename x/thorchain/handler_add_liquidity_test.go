@@ -715,7 +715,9 @@ func (p *AddLiquidityTestKeeper) GetLiquidityProviderIterator(_ cosmos.Context, 
 		if !ok || !lp.Asset.Equals(asset) {
 			continue
 		}
-		db.Set([]byte(key), p.Cdc().MustMarshal(&lp))
+		if err := db.Set([]byte(key), p.Cdc().MustMarshal(&lp)); err != nil {
+			panic(err)
+		}
 	}
 	iter, err := db.Iterator(nil, nil)
 	if err != nil {
