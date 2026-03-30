@@ -205,7 +205,8 @@ func (s TxOutStoreSuite) TestNativeTxOutWithoutActiveVaults(c *C) {
 	}
 
 	err = txOutStore.nativeTxOut(w.ctx, w.mgr, toi)
-	c.Assert(err, IsNil)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Equals, "dev error: no pubkey for native txn")
 }
 
 func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {

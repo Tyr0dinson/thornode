@@ -387,6 +387,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 
 	total := 0
 	var batchWG sync.WaitGroup
+	defer batchWG.Wait()
 	// Receive all batches
 	for {
 		// Read next message
