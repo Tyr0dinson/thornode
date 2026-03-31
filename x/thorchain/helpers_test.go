@@ -1746,7 +1746,6 @@ func (s *HelperSuite) TestGetMinSlipBpsStableOverride(c *C) {
 	c.Assert(result.Uint64(), Equals, uint64(10))
 }
 
-
 func (s *HelperSuite) TestGetAssetValueInTOR(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
