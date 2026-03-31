@@ -262,8 +262,11 @@ func pendingRagnarokOutboundsExplainGap(
 	walletAmount cosmos.Uint,
 	pendingAmount cosmos.Uint,
 ) bool {
-	if originalAmount.IsZero() || pendingAmount.IsZero() {
+	if originalAmount.IsNil() || originalAmount.IsZero() || pendingAmount.IsNil() || pendingAmount.IsZero() {
 		return false
+	}
+	if walletAmount.IsNil() {
+		walletAmount = cosmos.ZeroUint()
 	}
 	if !mgr.Keeper().IsRagnarok(ctx, []common.Asset{asset.GetLayer1Asset()}) {
 		return false
