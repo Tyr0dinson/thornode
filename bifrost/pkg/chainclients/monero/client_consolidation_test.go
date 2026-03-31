@@ -937,7 +937,7 @@ func TestInitialConsolidationReserveHandlesMultiplicationOverflow(t *testing.T) 
 	t.Parallel()
 
 	availableAtomic := ^uint64(0)
-	reserveBps := int64(defaultXMRConsolidationReserveBps)
+	reserveBps := defaultXMRConsolidationReserveBps
 
 	expected := new(big.Int).SetUint64(availableAtomic)
 	expected.Mul(expected, big.NewInt(reserveBps))
