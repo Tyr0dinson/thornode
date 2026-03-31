@@ -54,7 +54,7 @@ func (m *mockThorchainBridge) GetMimir(key string) (int64, error) {
 
 // Create a local gRPC server
 func createLocalGrpcServer(c *C, eb *ebifrost.EnshrinedBifrost, port int) (*grpc.Server, string) {
-	addr := fmt.Sprintf("localhost:%d", port)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	lis, err := net.Listen("tcp", addr)
 	c.Assert(err, IsNil)
 
@@ -80,7 +80,7 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 	for i := 0; i < 4; i++ {
 		ebs[i] = ebifrost.NewEnshrinedBifrost(s.bridge.GetContext().Codec, log.NewNopLogger(), ebifrost.EBifrostConfig{
 			Enable:  true,
-			Address: fmt.Sprintf("localhost:%d", 50061+i),
+			Address: fmt.Sprintf("127.0.0.1:%d", 50061+i),
 		})
 		grpcServers[i], grpcAddresses[i] = createLocalGrpcServer(c, ebs[i], 50061+i)
 	}
@@ -338,6 +338,8 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 	logger.Info().Msg("Remaining validators attested")
 
 	// Wait for all enshrined bifrosts to have the transaction ready
+	// CI can take noticeably longer to fan out the remaining attestations and
+	// reconcile the eBifrost injection queue across all validators.
 	pollForCondition(c, "all validators to have transaction ready", func() bool {
 		for i, eb := range ebs {
 			injectTxs, _ := eb.ProposalInjectTxs(sdk.Context{}, 10000000)
@@ -347,7 +349,7 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 			}
 		}
 		return true
-	}, 10*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, 100*time.Millisecond)
 
 	// for _, atg := range attestationGossips {
 	// 	atg.mu.Lock()
