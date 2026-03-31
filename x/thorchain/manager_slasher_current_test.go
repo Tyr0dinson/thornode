@@ -1420,3 +1420,106 @@ func (s *SlashingSuite) TestReverseSwapFallbackToTreasury(c *C) {
 	c.Assert(queuedSwap.Destination.Equals(common.TreasuryAddress), Equals, true,
 		Commentf("Treasury recovery should send to treasury address"))
 }
+
+func (s *SlashingSuite) TestReverseSwapXMRUnknownSenderFallsBackToTreasury(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = types2.VaultStatus_ActiveVault
+	vault.PubKey = na.PubKeySet.Secp256k1
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	inHash := GetRandomTxHash()
+	xmrVaultAddr, err := common.NewAddress(common.XMRChecksummedDummyAddress('4'))
+	c.Assert(err, IsNil)
+	xmrUnknownSender, err := common.NewAddress(common.XMRUnknownSenderAddress(inHash.String(), xmrVaultAddr.String()))
+	c.Assert(err, IsNil)
+	btcAddr := GetRandomBTCAddress()
+	swapMemo := fmt.Sprintf("=:BTC.BTC:%s", btcAddr.String())
+
+	originalTx := common.Tx{
+		ID:          inHash,
+		Chain:       common.XMRChain,
+		FromAddress: xmrUnknownSender,
+		ToAddress:   xmrVaultAddr,
+		Coins:       common.Coins{common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One))},
+		Memo:        swapMemo,
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+	}
+
+	observedTx := ObservedTx{
+		Tx:             originalTx,
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+		Signers:        []string{na.NodeAddress.String()},
+		ObservedPubKey: vault.PubKey,
+		FinaliseHeight: ctx.BlockHeight(),
+	}
+
+	voter := NewObservedTxVoter(inHash, []ObservedTx{observedTx})
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.Tx = observedTx
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	txOutItem := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		VaultPubKey: na.PubKeySet.Secp256k1,
+		ToAddress:   btcAddr,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Memo:        fmt.Sprintf("OUT:%s", inHash.String()),
+	}
+
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txOutItem.Memo)
+	c.Assert(err, IsNil)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	err = slasher.sendFailedOutboundToTreasury(ctx, mgr, txOutItem, vault, memo)
+	c.Assert(err, IsNil)
+
+	hasSwap := false
+	var queuedSwap MsgSwap
+
+	swapQueueItems := mgr.Keeper().GetSwapQueueIterator(ctx)
+	for ; swapQueueItems.Valid(); swapQueueItems.Next() {
+		var msg MsgSwap
+		if err := mgr.Keeper().Cdc().Unmarshal(swapQueueItems.Value(), &msg); err == nil {
+			hasSwap = true
+			queuedSwap = msg
+			break
+		}
+	}
+	swapQueueItems.Close()
+
+	if !hasSwap {
+		advSwapQueueItems := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		for ; advSwapQueueItems.Valid(); advSwapQueueItems.Next() {
+			var msg MsgSwap
+			if err := mgr.Keeper().Cdc().Unmarshal(advSwapQueueItems.Value(), &msg); err == nil {
+				hasSwap = true
+				queuedSwap = msg
+				break
+			}
+		}
+		advSwapQueueItems.Close()
+	}
+
+	c.Assert(hasSwap, Equals, true, Commentf("Expected treasury recovery swap to be queued"))
+	c.Assert(queuedSwap.TargetAsset.Equals(common.RuneAsset()), Equals, true,
+		Commentf("XMR unknown sender should skip reverse swap and fall back to treasury recovery"))
+	c.Assert(queuedSwap.Destination.Equals(common.TreasuryAddress), Equals, true,
+		Commentf("Treasury recovery should send to treasury address when XMR sender is unknown"))
+}

@@ -615,10 +615,7 @@ func initialConsolidationReserve(availableAtomic uint64, reserveBps int64) uint6
 	if reserveBps <= 0 {
 		reserveBps = defaultXMRConsolidationReserveBps
 	}
-	reserve := uint64(0)
-	if reserveBps > 0 {
-		reserve = availableAtomic * uint64(reserveBps) / 10_000
-	}
+	reserve := scaleUint64ByBasisPoints(availableAtomic, reserveBps)
 	if reserve < defaultXMRConsolidationMinReserveAtomic {
 		reserve = defaultXMRConsolidationMinReserveAtomic
 	}
@@ -628,7 +625,7 @@ func initialConsolidationReserve(availableAtomic uint64, reserveBps int64) uint6
 func bumpConsolidationReserve(currentReserve uint64, reserveBps int64) uint64 {
 	step := currentReserve / 2
 	if reserveBps > 0 {
-		extra := currentReserve * uint64(reserveBps) / 10_000
+		extra := scaleUint64ByBasisPoints(currentReserve, reserveBps)
 		if extra > step {
 			step = extra
 		}
@@ -640,6 +637,20 @@ func bumpConsolidationReserve(currentReserve uint64, reserveBps int64) uint64 {
 		return ^uint64(0)
 	}
 	return currentReserve + step
+}
+
+func scaleUint64ByBasisPoints(value uint64, bps int64) uint64 {
+	if value == 0 || bps <= 0 {
+		return 0
+	}
+
+	scaled := new(big.Int).SetUint64(value)
+	scaled.Mul(scaled, big.NewInt(bps))
+	scaled.Quo(scaled, big.NewInt(10_000))
+	if !scaled.IsUint64() {
+		return math.MaxUint64
+	}
+	return scaled.Uint64()
 }
 
 func scaledConsolidationCooldown(baseCooldown, consecutiveFails int64) int64 {
@@ -1705,13 +1716,18 @@ func (c *Client) setVaultAddressMapping(vaultPubKey common.PubKey, address commo
 		return
 	}
 
+	key := vaultPubKey.String()
 	c.vaultAddressMu.Lock()
-	c.vaultAddressMap[vaultPubKey.String()] = address
+	if existing, ok := c.vaultAddressMap[key]; ok && existing.Equals(address) {
+		c.vaultAddressMu.Unlock()
+		return
+	}
+	c.vaultAddressMap[key] = address
 	c.vaultAddressMu.Unlock()
 
 	if c.vaultAddressStore != nil {
-		if err := c.vaultAddressStore.Set(vaultPubKey.String(), address.String()); err != nil {
-			c.logger.Debug().Err(err).Str("vault_pubkey", vaultPubKey.String()).Msg("fail to persist monero vault address mapping")
+		if err := c.vaultAddressStore.Set(key, address.String()); err != nil {
+			c.logger.Debug().Err(err).Str("vault_pubkey", key).Msg("fail to persist monero vault address mapping")
 		}
 	}
 	if c.scanner != nil {
