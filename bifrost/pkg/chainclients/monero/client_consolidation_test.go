@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -929,6 +930,35 @@ func TestBumpConsolidationReserveSaturatesOnOverflow(t *testing.T) {
 	nextReserve := bumpConsolidationReserve(currentReserve, defaultXMRConsolidationReserveBps)
 	if nextReserve != ^uint64(0) {
 		t.Fatalf("expected reserve to saturate at MaxUint64, got %d", nextReserve)
+	}
+}
+
+func TestInitialConsolidationReserveHandlesMultiplicationOverflow(t *testing.T) {
+	t.Parallel()
+
+	availableAtomic := ^uint64(0)
+	reserveBps := int64(defaultXMRConsolidationReserveBps)
+
+	expected := new(big.Int).SetUint64(availableAtomic)
+	expected.Mul(expected, big.NewInt(reserveBps))
+	expected.Quo(expected, big.NewInt(10_000))
+	if !expected.IsUint64() {
+		t.Fatal("expected scaled reserve to fit in uint64 after division")
+	}
+
+	got := initialConsolidationReserve(availableAtomic, reserveBps)
+	if got != expected.Uint64() {
+		t.Fatalf("expected reserve %d, got %d", expected.Uint64(), got)
+	}
+}
+
+func TestBumpConsolidationReserveHandlesScaledStepOverflow(t *testing.T) {
+	t.Parallel()
+
+	currentReserve := uint64(9_500_000_000_000_000_000)
+	nextReserve := bumpConsolidationReserve(currentReserve, 10_000)
+	if nextReserve != ^uint64(0) {
+		t.Fatalf("expected scaled reserve bump to saturate at MaxUint64, got %d", nextReserve)
 	}
 }
 
