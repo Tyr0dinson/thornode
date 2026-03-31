@@ -104,7 +104,9 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	// to avoid clearing a solvency halt on partial data. This matches the legacy
 	// behavior where only the auto-unhalt runner could reach this path.
 	solvent := false
-	allVaultsProcessed := processedVaults == len(asgardVaults)
+	// Treat an empty Asgard set as an incomplete check so transient bridge/RPC
+	// glitches do not consume the next cadence window.
+	allVaultsProcessed := len(asgardVaults) > 0 && processedVaults == len(asgardVaults)
 	if from == fromRunner &&
 		!r.client.IsBlockScannerHealthy() &&
 		allVaultsProcessed &&
@@ -305,11 +307,14 @@ func (r *solvencyReporter) isVaultSolvent(account common.Account, vault types.Va
 	// thornode allow 10x of MaxGas as the gap
 	currentGasFee10x := currentGasFee.MulUint64(10)
 
-	// Compare against vault expectations (treat absent wallet asset as zero).
+	// Intentionally compare against vault expectations (treat absent wallet asset as zero).
 	// Legacy chain-specific code iterated wallet coins, which could miss vault-required
 	// assets that were absent in the wallet (effectively zero) and incorrectly appear
 	// solvent. This common reporter iterates vault coins (chain-filtered), so a vault
-	// asset missing from the wallet is treated as insolvent.
+	// asset missing from the wallet is treated as insolvent by design.
+	//
+	// This also intentionally keeps zero tolerance for non-gas assets: any shortfall is
+	// insolvent, while gas assets alone retain the historical 10x max-gas allowance.
 	for _, asgardCoin := range vault.Coins {
 		// Ignore assets from other chains
 		if !asgardCoin.Asset.Chain.Equals(chain) {

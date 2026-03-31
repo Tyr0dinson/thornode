@@ -122,15 +122,15 @@ func (mm *mimirMap) set(key string, value int64) {
 	if mm.mimir == nil {
 		mm.mimir = map[string]int64{}
 	}
-	lowerKey := strings.ToUpper(key)
-	mm.mimir[lowerKey] = value
+	upperKey := strings.ToUpper(key)
+	mm.mimir[upperKey] = value
 }
 
 func (mm *mimirMap) lookup(key string) (int64, bool) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
-	lowerKey := strings.ToUpper(key)
-	value, ok := mm.mimir[lowerKey]
+	upperKey := strings.ToUpper(key)
+	value, ok := mm.mimir[upperKey]
 	return value, ok
 }
 
@@ -1041,6 +1041,35 @@ func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnPartialFailure(c *C) {
 		},
 		accountErrors: map[string]error{
 			failingVault.PubKey.String(): fmt.Errorf("boom"),
+		},
+		chainHeight: 3,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromBlockScanner, 2)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 0)
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 3), Equals, true)
+}
+
+// TestCollectDoesNotAdvanceCadenceOnEmptyAsgards verifies an empty Asgard list
+// does not consume the next cadence window for height-gated chains.
+func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnEmptyAsgards(c *C) {
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.BTCChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 1,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 10,
+			},
 		},
 		chainHeight: 3,
 	}
