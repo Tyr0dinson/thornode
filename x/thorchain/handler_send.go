@@ -173,6 +173,11 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 	return ctx, deductNativeTxFeeFromAccount(ctx, k, msg.Amount, msg.GetSigners()[0], msg)
 }
 
+// deductNativeTxFeeFromAccount charges the tx fee during ante. When the signer
+// cannot cover the full alt-native fee but still has a non-zero balance in the
+// fee asset, this intentionally drains the remaining balance as anti-spam
+// protection. Because this runs in ante, a successful fee deduction persists
+// even if the message handler later fails.
 func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins cosmos.Coins, signer cosmos.AccAddress, m sdk.Msg) error {
 	nativeTxFee := k.GetNativeTxFee(ctx)
 	nativeTxFeeCoin := common.NewCoin(common.RuneNative, nativeTxFee)
@@ -181,6 +186,7 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 	if err != nil {
 		return fmt.Errorf("fail to convert native tx fee to sdk coins: %w", err)
 	}
+	// Prefer the standard RUNE fee path when the signer can pay it directly.
 	if k.HasCoins(ctx, signer, nativeTxFeeCoins) {
 		if nativeTxFee.IsZero() {
 			return nil
@@ -230,10 +236,11 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 		return se.ErrInsufficientFunds
 	}
 
-	requestedAmount := feeCoin.Amount
-	if balanceFeeCoin.LT(requestedAmount) {
+	// If the fee asset cannot cover the quoted fee, confiscate the remainder.
+	// This is the intentional anti-spam path: ante succeeds after draining the
+	// account so the tx cannot be replayed for free.
+	if balanceFeeCoin.LT(feeCoin.Amount) {
 		feeCoin.Amount = balanceFeeCoin
-		requestedAmount = balanceFeeCoin
 	}
 
 	collected, err := collectAltNativeTxFee(ctx, k, signer, feeCoin)
@@ -241,7 +248,9 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 		ctx.Logger().Error("failed to collect alt-native tx fee", "asset", asset, "error", err)
 		return se.ErrInsufficientFunds
 	}
-	if collected.IsZero() || collected.LT(requestedAmount) {
+	// A non-zero collection is required, and the collector must report that it
+	// confiscated at least the fee amount selected above.
+	if collected.IsZero() || collected.LT(feeCoin.Amount) {
 		return se.ErrInsufficientFunds
 	}
 
