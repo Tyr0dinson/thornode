@@ -2661,6 +2661,10 @@ func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signe
 		return cosmos.ZeroUint(), fmt.Errorf("secured asset balance unavailable")
 	}
 	// Determine how many share tokens correspond to the requested fee amount.
+	// GetSafeShare caps at shareBalance, so burnAmt can never exceed the user's
+	// entitlement. In the spam-drain path, fee.Amount >= assetAvailable collapses
+	// to burnAmt == shareBalance, meaning we intentionally burn the entire
+	// remaining position but never more than that.
 	burnAmt := common.GetSafeShare(fee.Amount, assetAvailable, shareBalance)
 	if burnAmt.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("secured asset fee below precision")
