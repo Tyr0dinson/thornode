@@ -1275,7 +1275,9 @@ func needsMempoolSwapRollback(ctx cosmos.Context, k keeper.Keeper, voter Observe
 // restoreFinalNativeMempoolTxOutItem maps a staged native mempool outbound
 // back to the final native action in voter.Actions. Secured targets are
 // restored from the escrowed underlying asset while other native targets must
-// still match the original staged asset.
+// still match the original staged asset. This relies on staged outbounds and
+// voter.Actions preserving the same prepared-output order; if that ordering
+// model changes in the future, this positional mapping must be revisited.
 func restoreFinalNativeMempoolTxOutItem(voter ObservedTxVoter, index int, staged keeper.StagedOutbound) (TxOutItem, error) {
 	if index >= len(voter.Actions) {
 		return TxOutItem{}, fmt.Errorf("staged outbound index %d has no matching voter action", index)
