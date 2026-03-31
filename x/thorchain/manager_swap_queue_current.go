@@ -157,12 +157,12 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		removeQueueItem := false
 		var handleErr error
 		var settleErr error
-		if handleErr == nil && isActualLegacyStreaming {
+		if isActualLegacyStreaming {
 			// Legacy streaming swaps keep their original queue-managed execution path.
 			// Other legacy queue items use the deferred settlement flow so outbound
 			// materialization still goes through the same mempool-aware staging rules.
 			_, handleErr = handler(ctx, &pick.msg)
-		} else if handleErr == nil {
+		} else {
 			handleErr, settleErr = vm.executeAndSettleSwapQueueItemCached(ctx, mgr, pick)
 		}
 		if handleErr != nil {
