@@ -378,6 +378,61 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	c.Assert(sorted[2].PubKey.Equals(vault1.PubKey), Equals, true)
 }
 
+func (s *KeeperVaultSuite) TestSortBySecurityIncludesStagedOutbounds(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(200 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.Bond = cosmos.NewUint(200 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault1.AddFunds(common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	})
+	vault1.Membership = []string{na1.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, vault1), IsNil)
+
+	vault2 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault2.AddFunds(common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	})
+	vault2.Membership = []string{na2.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, vault2), IsNil)
+
+	vault2Addr, err := vault2.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	staged := TxOutItem{
+		Chain:       common.ETHChain,
+		VaultPubKey: vault1.PubKey,
+		ToAddress:   vault2Addr,
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(25*common.One)),
+		InHash:      GetRandomTxHash(),
+	}
+	c.Assert(k.SetStagedOutbound(ctx, staged, ctx.BlockHeight()+10), IsNil)
+
+	results := k.getSortedVaultSecurity(ctx, Vaults{vault1, vault2}, 300)
+	c.Assert(results, HasLen, 2)
+
+	securityByVault := make(map[string]VaultSecurity, len(results))
+	for _, result := range results {
+		securityByVault[result.Vault.PubKey.String()] = result
+	}
+
+	c.Check(securityByVault[vault1.PubKey.String()].TotalValue.Equal(cosmos.NewUint(75*common.One)), Equals, true)
+	c.Check(securityByVault[vault2.PubKey.String()].TotalValue.Equal(cosmos.NewUint(125*common.One)), Equals, true)
+}
+
 func (s *KeeperVaultSuite) TestGetMostSecureStrict(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
