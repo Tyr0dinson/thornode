@@ -97,6 +97,8 @@ pub async fn auth_middleware(
 
 /// Constant-time string comparison to prevent timing attacks.
 fn constant_time_str_eq(a: &str, b: &str) -> bool {
+    use subtle::ConstantTimeEq;
+
     let a_bytes = a.as_bytes();
     let b_bytes = b.as_bytes();
     let max_len = a_bytes.len().max(b_bytes.len());
@@ -108,7 +110,7 @@ fn constant_time_str_eq(a: &str, b: &str) -> bool {
         diff |= u64::from(lhs ^ rhs);
     }
 
-    diff == 0
+    diff.ct_eq(&0).into()
 }
 
 #[cfg(test)]

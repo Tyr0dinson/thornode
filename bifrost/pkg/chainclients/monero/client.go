@@ -978,6 +978,9 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 	if !tx.ToAddress.IsChain(c.chain) {
 		return xmrValidatedSignRequest{}, fmt.Errorf("to address %s is not a valid %s address", tx.ToAddress.String(), c.chain.String())
 	}
+	// Mocknet still relies on wallet-compatible standard/subaddress destinations, but
+	// non-mocknet XMR signing intentionally requires featured+guaranteed addresses so
+	// payment-id / return-address semantics remain explicit and deterministic.
 	if common.CurrentChainNetwork == common.MockNet {
 		if common.IsXMRFeaturedAddress(tx.ToAddress.String()) {
 			return xmrValidatedSignRequest{}, fmt.Errorf(
@@ -1253,6 +1256,7 @@ func (c *Client) findVaultPubKeyByAddress(address string) (common.PubKey, bool) 
 	if address == "" {
 		return common.EmptyPubKey, false
 	}
+	// TODO: Add a reverse address->pubkey index if XMR vault cardinality grows materially.
 	c.vaultAddressMu.RLock()
 	defer c.vaultAddressMu.RUnlock()
 	for pubKeyStr, addr := range c.vaultAddressMap {
