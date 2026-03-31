@@ -127,10 +127,13 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	c.Assert(err, IsNil, Commentf("Should succeed when no staged outbounds exist"))
 }
 
+// TestFinalizeOutboundsRollbackOnError verifies that a finalize failure leaves
+// staged outbounds and mempool-capacity accounting untouched.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnError(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	dummyMgr := NewDummyMgrWithKeeper(mgr.Keeper())
 
+	// Seed one staged outbound plus some reserved mempool capacity.
 	inTxID := GetRandomTxHash()
 	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
 	voter.MempoolSwapTOR = cosmos.NewUint(123 * common.One)
@@ -144,9 +147,11 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnEr
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+5), IsNil)
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(999*common.One))
 
+	// Run finalize through a manager that cannot complete the cached flow.
 	err := finalizeOutboundsAtomic(ctx, dummyMgr, voter)
 	c.Assert(err, NotNil)
 
+	// The failed CacheContext commit must leave the outer store unchanged.
 	usage := mgr.Keeper().GetMempoolSwapUsageTOR(ctx)
 	c.Check(usage.Equal(cosmos.NewUint(999*common.One)), Equals, true, Commentf("mempool usage should roll back on finalize failure"))
 
@@ -155,36 +160,44 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnEr
 	c.Check(stagedItems, HasLen, 1, Commentf("staged outbounds should remain after finalize failure"))
 }
 
+// TestFinalizeOutboundsAppliesDeferredAffiliateFeesToNativeNonRuneTargets
+// checks that native synth, trade, and secured targets only apply deferred
+// affiliate work once the staged outbound finalizes.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDeferredAffiliateFeesToNativeNonRuneTargets(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
-
-	// Set up the shared chain state used by all native non-RUNE target cases.
-	na := GetRandomValidatorNode(NodeActive)
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
-
-	activeVault := GetRandomVault()
-	activeVault.Type = AsgardVault
-	activeVault.Status = ActiveVault
-	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
-
-	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
-		pool := NewPool()
-		pool.Asset = asset
-		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
-		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
-		pool.LPUnits = pool.BalanceRune
-		pool.Status = PoolAvailable
-		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-	}
-
 	affiliateBps := cosmos.NewUint(500)
 	outboundAmount := cosmos.NewUint(1000 * common.One)
 	affiliateAmount := cosmos.NewUint(50 * common.One)
 	netSynthAmount := outboundAmount.Sub(affiliateAmount)
 
-	// Reuse the same finalization flow for synth, trade, and secured targets.
-	runCase := func(name string, finalAsset, stagedAsset common.Asset, moduleName string, checkBalance func(cosmos.AccAddress)) {
+	setupCase := func() (cosmos.Context, *Mgrs, NodeAccount) {
+		ctx, mgr := setupManagerForTest(c)
+		mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+
+		// Give each sub-case an isolated validator, vault, and pool fixture.
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+		activeVault := GetRandomVault()
+		activeVault.Type = AsgardVault
+		activeVault.Status = ActiveVault
+		c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+		for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+			pool := NewPool()
+			pool.Asset = asset
+			pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+			pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+			pool.LPUnits = pool.BalanceRune
+			pool.Status = PoolAvailable
+			c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		}
+
+		return ctx, mgr, na
+	}
+
+	runCase := func(name string, finalAsset, stagedAsset common.Asset, moduleName string, checkBalance func(cosmos.Context, *Mgrs, cosmos.AccAddress)) {
+		ctx, mgr, na := setupCase()
+		// Build a finalized inbound and matching staged outbound for this asset flavor.
 		ownerAddr := GetRandomTHORAddress()
 		ownerAcc, err := ownerAddr.AccAddress()
 		c.Assert(err, IsNil, Commentf("case %s", name))
@@ -244,26 +257,29 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 		c.Check(affiliateSwap.Tx.Coins, DeepEquals, common.Coins{common.NewCoin(finalAsset, affiliateAmount)}, Commentf("case %s should queue the deferred affiliate input", name))
 		c.Check(affiliateSwap.TargetAsset.Equals(common.RuneAsset()), Equals, true, Commentf("case %s should swap the affiliate fee to RUNE", name))
 
-		// Each asset type should still leave the user's final balance in the expected state.
-		checkBalance(ownerAcc)
+		// Check the asset-specific end state after the staged outbound becomes real.
+		checkBalance(ctx, mgr, ownerAcc)
 	}
 
-	runCase("synth target", common.ETHAsset.GetSyntheticAsset(), common.ETHAsset.GetSyntheticAsset(), ModuleName, func(ownerAcc cosmos.AccAddress) {
+	runCase("synth target", common.ETHAsset.GetSyntheticAsset(), common.ETHAsset.GetSyntheticAsset(), ModuleName, func(ctx cosmos.Context, mgr *Mgrs, ownerAcc cosmos.AccAddress) {
 		balance := mgr.Keeper().GetBalance(ctx, ownerAcc)
 		c.Check(balance.AmountOf(common.ETHAsset.GetSyntheticAsset().Native()).Equal(cosmos.NewIntFromBigInt(netSynthAmount.BigInt())), Equals, true, Commentf("synth target should finalize net of affiliate fee"))
 	})
 
-	runCase("trade target", common.BTCAsset.GetTradeAsset(), common.BTCAsset.GetTradeAsset(), "", func(ownerAcc cosmos.AccAddress) {
+	runCase("trade target", common.BTCAsset.GetTradeAsset(), common.BTCAsset.GetTradeAsset(), "", func(ctx cosmos.Context, mgr *Mgrs, ownerAcc cosmos.AccAddress) {
 		balance := mgr.TradeAccountManager().BalanceOf(ctx, common.BTCAsset.GetTradeAsset(), ownerAcc)
 		c.Check(balance.Equal(outboundAmount), Equals, true, Commentf("trade target should keep the full user balance on finalization"))
 	})
 
-	runCase("secured target", common.ETHAsset.GetSecuredAsset(), common.ETHAsset, "", func(ownerAcc cosmos.AccAddress) {
+	runCase("secured target", common.ETHAsset.GetSecuredAsset(), common.ETHAsset, "", func(ctx cosmos.Context, mgr *Mgrs, ownerAcc cosmos.AccAddress) {
 		balance := mgr.SecuredAssetManager().BalanceOf(ctx, common.ETHAsset, ownerAcc)
 		c.Check(balance.Equal(outboundAmount), Equals, true, Commentf("secured target should keep the full user balance on finalization"))
 	})
 }
 
+// TestFinalizeOutboundsAppliesDeferredAffiliateFeesToRuneTarget verifies that
+// a native RUNE target pays the affiliate directly at finalization time rather
+// than spawning a deferred sidecar swap.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDeferredAffiliateFeesToRuneTarget(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
@@ -348,6 +364,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 		Commentf("RUNE target should transfer the deferred affiliate fee on finalization"))
 }
 
+// TestFinalizeOutboundsAppliesDeferredAffiliateFeesToExternalTarget verifies
+// that split external outbounds are regrouped at finalization, rewritten to
+// their net queued amounts, and paired with one deferred affiliate sidecar.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDeferredAffiliateFeesToExternalTarget(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
@@ -464,6 +483,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 	c.Check(affiliateSwap.TargetAsset.Equals(common.RuneAsset()), Equals, true)
 }
 
+// TestFinalizeOutboundsCommitsOutboundFeeAccountingAtFinalization verifies that
+// mempool staging keeps outbound-fee accounting speculative and only commits it
+// when the staged outbound is finalized into a real outbound.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsCommitsOutboundFeeAccountingAtFinalization(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -597,6 +619,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsCommitsOutbo
 		Commentf("finalization should rewrite the planned action to the net outbound amount"))
 }
 
+// TestRevertMempoolSwap exercises the main rollback variants: standard external
+// outbounds, already-signed/no-staged cases, native RUNE, and native synth
+// outputs that must all settle inline.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -819,12 +844,15 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 		Commentf("Synth rollback should consume the staged synth from Asgard"))
 }
 
+// TestRevertMempoolSwapRollbackOnError verifies that a rollback failure keeps
+// the original pools, staged outbounds, voter state, and mempool usage intact.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnError(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	// Use a keeper that fails during the rollback flow so we can check atomic rollback.
 	failKeeper := SettleSwapPostSwapSetPoolFailKeeper{Keeper: mgr.Keeper()}
 	dummyMgr := NewDummyMgrWithKeeper(failKeeper)
 
+	// Seed real pool, vault, voter, and staged-outbound state for the rollback path.
 	sourcePool := NewPool()
 	sourcePool.Asset = common.BTCAsset
 	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
@@ -887,6 +915,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnEr
 	err := rollbackMempoolSwapAtomic(ctx, failKeeper, dummyMgr, voter)
 	c.Assert(err, NotNil)
 
+	// Verify that no part of the failed rollback leaked out of the cache context.
 	usage := mgr.Keeper().GetMempoolSwapUsageTOR(ctx)
 	c.Check(usage.Equal(cosmos.NewUint(700*common.One)), Equals, true, Commentf("mempool usage should remain unchanged on rollback failure"))
 
@@ -904,6 +933,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnEr
 	c.Check(updatedPool.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true, Commentf("pool asset balance should remain unchanged on rollback failure"))
 }
 
+// TestMempoolSwapWithMimirEnabled verifies the runtime gate and capacity check
+// when mempool swaps are enabled.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
@@ -946,6 +977,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c
 	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("capacity check should return a TOR value for the inbound"))
 }
 
+// TestMempoolSwapWithMimirDisabled verifies that policy eligibility remains the
+// same while runtime capacity correctly reports mempool swaps as disabled.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
@@ -979,6 +1012,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(
 	c.Check(torValue.IsZero(), Equals, true, Commentf("disabled mempool swaps should not return a TOR value"))
 }
 
+// TestSecuredTargetMempoolSwapStagesUnderlyingAndRollsBack verifies that a
+// secured target stages the layer1 asset and uses that same underlying asset
+// when the speculative swap is rolled back inline.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetMempoolSwapStagesUnderlyingAndRollsBack(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1074,6 +1110,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetMempoolSwapStage
 	c.Assert(err, NotNil, Commentf("secured target rollback should settle inline instead of queueing a reverse swap"))
 }
 
+// TestSecuredTargetAdvQueuePartialRollbackExecutesInlineRollbackSwap verifies
+// that partial advanced-queue output is recovered from queue state and reversed
+// inline before any secured outbound has been staged.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialRollbackExecutesInlineRollbackSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1180,6 +1219,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialR
 	c.Assert(err, NotNil, Commentf("partial rollback should settle inline instead of queueing a reverse swap"))
 }
 
+// TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
+// mempool processing never starts when the source vault is inactive.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwapBeforeFinalization(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1231,6 +1272,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwap
 	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false, Commentf("inactive vault should not queue mempool swap"))
 }
 
+// TestTradingHaltSkipsMempoolProcessingUntilFinalization verifies that a
+// trading halt suppresses all speculative queueing, staging, and capacity use.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestTradingHaltSkipsMempoolProcessingUntilFinalization(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1290,6 +1333,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestTradingHaltSkipsMempoolProces
 	c.Check(outItems, HasLen, 0, Commentf("trading halt should not schedule refund outbounds before finalization"))
 }
 
+// TestInactiveVaultFinalizedMempoolSwapRevertsBeforeRefund verifies that once
+// the inbound is finalized, the handler first unwinds speculative state and
+// only then schedules the refund path.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempoolSwapRevertsBeforeRefund(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1520,6 +1566,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboun
 	c.Check(updatedTargetPool.BalanceRune.Equal(postSwapTargetPool.BalanceRune), Equals, false, Commentf("synth mempool rollback should unwind the target pool immediately"))
 }
 
+// TestRevertMempoolSwapSynthAffiliateTargetBuildsGrossRollbackSwap verifies
+// that deferred affiliate handling does not shrink a staged synth amount before
+// rollback, so the reverse swap still uses the full gross output.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthAffiliateTargetBuildsGrossRollbackSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1623,6 +1672,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthAffilia
 	c.Assert(err, NotNil, Commentf("rollback should not leave deferred affiliate sidecars queued"))
 }
 
+// TestSelectActiveVaultForChainPrefersUsableSourceChainVault verifies that the
+// rollback helper chooses an active vault that both advertises and can derive a
+// usable address for the inbound's source chain.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestSelectActiveVaultForChainPrefersUsableSourceChainVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
@@ -1701,6 +1753,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSelectActiveVaultForChainPref
 	c.Check(expectedReverse.Tx.Memo, Equals, fmt.Sprintf("=:%s:%s", common.SOLAsset, supportedSOLAddress))
 }
 
+// TestTimeoutRevertedMempoolSwapFinalizesNormallyWithoutResume verifies that a
+// timeout-style rollback only clears speculative state; a later confirmed
+// inbound should proceed through ordinary finalized swap handling.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestTimeoutRevertedMempoolSwapFinalizesNormallyWithoutResume(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1799,6 +1854,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestTimeoutRevertedMempoolSwapFin
 		Commentf("confirmed inbound should schedule real outbounds after timeout rollback"))
 }
 
+// TestRevertMempoolSwapAggregatesSplitExternalOutboundsByAsset verifies that
+// rollback collapses same-asset external pieces into one reverse action before
+// settling inline.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapAggregatesSplitExternalOutboundsByAsset(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1861,6 +1919,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapAggregatesSp
 	c.Assert(err, NotNil, Commentf("aggregated rollback should settle inline instead of leaving a reverse swap queued"))
 }
 
+// TestFinalizedAdvQueueSettlementReleasesMempoolSwapCapacity verifies that
+// advanced-queue settlement keeps the reservation during partial execution and
+// releases it only once the inbound is finalized and the swap completes.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementReleasesMempoolSwapCapacity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1963,6 +2024,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementRe
 	c.Check(outItems[0].InHash.Equals(inTxID), Equals, true)
 }
 
+// TestFinalizedLegacyQueueSettlementReleasesMempoolSwapCapacity verifies that
+// the legacy queue also clears per-voter and global mempool reservations once a
+// finalized inbound settles through the normal queue path.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedLegacyQueueSettlementReleasesMempoolSwapCapacity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -2017,12 +2081,14 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedLegacyQueueSettlemen
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
 
+	// Execute the legacy queue item in the same shape it would have once the inbound is confirmed.
 	msg := NewMsgSwap(inboundTx, common.ETHAsset, destination, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 1, types.SwapVersion_v1, GetRandomBech32Addr())
 	queue := newSwapQueue(mgr.Keeper())
 	handleErr, settleErr := queue.executeAndSettleSwapQueueItemCached(ctx, mgr, swapItem{msg: *msg, index: 0})
 	c.Assert(handleErr, IsNil)
 	c.Assert(settleErr, IsNil)
 
+	// Finalized settlement should release the reservation and schedule a real outbound.
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
 	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("legacy settlement after finalization should release the mempool swap reservation"))
