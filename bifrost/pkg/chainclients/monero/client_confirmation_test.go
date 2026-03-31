@@ -57,8 +57,14 @@ func TestGetConfirmationCountAppliesMaxConfirmationCap(t *testing.T) {
 		}},
 	}
 
-	if got := c.GetConfirmationCount(txIn); got != 3 {
-		t.Fatalf("expected max confirmation cap 3, got %d", got)
+	expected := int64(3)
+	if common.CurrentChainNetwork == common.MockNet {
+		// Mocknet hard-codes confirmation multiplier and cap to 1 in the shared UTXO helpers.
+		expected = 1
+	}
+
+	if got := c.GetConfirmationCount(txIn); got != expected {
+		t.Fatalf("expected max confirmation cap %d, got %d", expected, got)
 	}
 }
 
