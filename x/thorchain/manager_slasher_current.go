@@ -559,6 +559,25 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// If the inbound already finalized, the staged outbounds should be
 			// finalized on retry instead of being rolled back.
 			if voter.FinalisedHeight > 0 {
+				// Finalized staged mempool swaps normally retry finalization here.
+				// The exception is an inbound that finalized on an inactive vault:
+				// those staged outputs are speculative state that must be unwound
+				// and refunded, not finalized. This also gives LackSigning a
+				// periodic recovery path for any earlier best-effort cleanup that
+				// failed, logged and continued in the observed-tx flow.
+				if !voter.Tx.ObservedPubKey.IsEmpty() {
+					observedVault, vaultErr := s.keeper.GetVault(ctx, voter.Tx.ObservedPubKey)
+					if vaultErr != nil {
+						ctx.Logger().Error("fail to get observed vault for finalized staged mempool swap", "error", vaultErr, "hash", inHash)
+					} else if observedVault.Status == InactiveVault {
+						ctx.Logger().Info("retrying inactive-vault mempool rollback due to timeout", "hash", inHash)
+						if err := rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); err != nil {
+							ctx.Logger().Error("fail to roll back inactive-vault mempool swap on timeout retry", "error", err, "hash", inHash)
+						}
+						continue
+					}
+				}
+
 				ctx.Logger().Info("retrying staged mempool swap finalization due to timeout", "hash", inHash)
 				incrMempoolSwapCounter("finalize_retry_total", nil)
 				if err := finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
