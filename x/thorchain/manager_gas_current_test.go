@@ -397,7 +397,7 @@ func (GasManagerTestSuite) TestGetGasDetailsHighPrecisionAsset(c *C) {
 
 	fee, err := gasMgr.GetAssetOutboundFee(ctx, common.XMRAsset, false)
 	c.Assert(err, IsNil)
-	c.Assert(fee.Uint64(), Equals, uint64(5000))
+	c.Assert(fee.Uint64(), Equals, uint64(7500))
 }
 
 func (GasManagerTestSuite) TestGetGasDetailsLowDecimalAssetDoesNotRoundToZero(c *C) {
@@ -414,6 +414,22 @@ func (GasManagerTestSuite) TestGetGasDetailsLowDecimalAssetDoesNotRoundToZero(c 
 	c.Assert(maxGasCoin.Amount.Uint64(), Equals, uint64(15))
 	c.Assert(maxGasCoin.Decimals, Equals, int64(6))
 	c.Assert(gasRate, Equals, int64(15))
+}
+
+func (GasManagerTestSuite) TestGasAssetPrecisionFactor(c *C) {
+	testCases := []struct {
+		chain    common.Chain
+		expected uint64
+	}{
+		{chain: common.XRPChain, expected: 1_000_000},
+		{chain: common.BTCChain, expected: common.One},
+		{chain: common.SOLChain, expected: 1_000_000_000},
+		{chain: common.XMRChain, expected: 1_000_000_000_000},
+	}
+
+	for _, tc := range testCases {
+		c.Assert(gasAssetPrecisionFactor(tc.chain).Uint64(), Equals, tc.expected, Commentf("%s", tc.chain))
+	}
 }
 
 func (GasManagerTestSuite) TestGetAssetOutboundFeeLowDecimalGasChains(c *C) {

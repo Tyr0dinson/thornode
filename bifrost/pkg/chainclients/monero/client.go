@@ -121,7 +121,11 @@ type Client struct {
 	asgardMu                sync.RWMutex
 	asgardAddresses         []common.Address
 	lastAsgard              time.Time
-	consolidationInitMu     sync.Mutex
+	consolidationInitOnce   sync.Once
+	consolidationSettingsMu sync.RWMutex
+	consolidationSettings   xmrConsolidationSettings
+	lastConsolidationConfig time.Time
+	hasConsolidationConfig  bool
 	vaultLockMu             sync.Mutex
 	vaultLocks              map[string]*sync.Mutex
 	emptyVaultLock          sync.Mutex
@@ -260,24 +264,23 @@ func (c *Client) IsBlockScannerHealthy() bool {
 }
 
 func (c *Client) ensureConsolidationState() {
-	c.consolidationInitMu.Lock()
-	defer c.consolidationInitMu.Unlock()
-
-	if c.consolidateInProgress == nil {
-		c.consolidateInProgress = atomic.NewBool(false)
-	}
-	if c.lastConsolidationHeight == nil {
-		c.lastConsolidationHeight = atomic.NewInt64(0)
-	}
-	if c.lastSolvencyCheckHeight == nil {
-		c.lastSolvencyCheckHeight = atomic.NewInt64(0)
-	}
-	if c.vaultLocks == nil {
-		c.vaultLocks = make(map[string]*sync.Mutex)
-	}
-	if c.consolidationState == nil {
-		c.consolidationState = make(map[string]xmrConsolidationVaultState)
-	}
+	c.consolidationInitOnce.Do(func() {
+		if c.consolidateInProgress == nil {
+			c.consolidateInProgress = atomic.NewBool(false)
+		}
+		if c.lastConsolidationHeight == nil {
+			c.lastConsolidationHeight = atomic.NewInt64(0)
+		}
+		if c.lastSolvencyCheckHeight == nil {
+			c.lastSolvencyCheckHeight = atomic.NewInt64(0)
+		}
+		if c.vaultLocks == nil {
+			c.vaultLocks = make(map[string]*sync.Mutex)
+		}
+		if c.consolidationState == nil {
+			c.consolidationState = make(map[string]xmrConsolidationVaultState)
+		}
+	})
 }
 
 func (c *Client) GetVaultLock(vaultPubKey string) *sync.Mutex {
@@ -699,6 +702,20 @@ func (c *Client) setConsolidationVaultState(vaultPubKey string, state xmrConsoli
 }
 
 func (c *Client) loadConsolidationSettings() xmrConsolidationSettings {
+	c.consolidationSettingsMu.RLock()
+	if c.hasConsolidationConfig && time.Since(c.lastConsolidationConfig) < constants.ThorchainBlockTime {
+		settings := c.consolidationSettings
+		c.consolidationSettingsMu.RUnlock()
+		return settings
+	}
+	c.consolidationSettingsMu.RUnlock()
+
+	c.consolidationSettingsMu.Lock()
+	defer c.consolidationSettingsMu.Unlock()
+	if c.hasConsolidationConfig && time.Since(c.lastConsolidationConfig) < constants.ThorchainBlockTime {
+		return c.consolidationSettings
+	}
+
 	enabled := c.cfg.XMRConsolidationEnabled
 	if mimirEnabled, ok := c.getMimirValue(mimirXMRConsolidationEnabled); ok {
 		enabled = mimirEnabled > 0
@@ -738,6 +755,9 @@ func (c *Client) loadConsolidationSettings() xmrConsolidationSettings {
 	if settings.MaxRetries <= 0 {
 		settings.MaxRetries = defaultXMRConsolidationMaxRetries
 	}
+	c.consolidationSettings = settings
+	c.lastConsolidationConfig = time.Now()
+	c.hasConsolidationConfig = true
 	return settings
 }
 
@@ -1533,6 +1553,7 @@ func (c *Client) ReportSolvency(height int64) error {
 	currentGasFee := cosmos.NewUint(3 * c.scanner.lastFee.Load())
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
+	checkedVaults := 0
 	for i := range asgardVaults {
 		address := c.resolveVaultAddress(asgardVaults[i])
 		if address.IsEmpty() {
@@ -1544,6 +1565,7 @@ func (c *Client) ReportSolvency(height int64) error {
 			c.logger.Err(acctErr).Str("address", address.String()).Msg("fail to get monero account balance for solvency")
 			continue
 		}
+		checkedVaults++
 
 		msg := stypes.Solvency{
 			Height: height,
@@ -1559,7 +1581,7 @@ func (c *Client) ReportSolvency(height int64) error {
 		msgs = append(msgs, msg)
 	}
 
-	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+	if !c.IsBlockScannerHealthy() && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
 		msgs = solventMsgs
 	}
 
@@ -1593,6 +1615,12 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	}
 	c.asgardMu.RUnlock()
 
+	c.asgardMu.Lock()
+	defer c.asgardMu.Unlock()
+	if time.Since(c.lastAsgard) < constants.ThorchainBlockTime && len(c.asgardAddresses) > 0 {
+		return append([]common.Address(nil), c.asgardAddresses...), nil
+	}
+
 	vaults, err := c.thorchainBridge.GetAsgards()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get asgards: %w", err)
@@ -1618,11 +1646,9 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 		next = next[len(next)-maxAsgardAddresses:]
 	}
 
-	c.asgardMu.Lock()
 	c.asgardAddresses = next
 	c.lastAsgard = time.Now()
 	result := append([]common.Address(nil), c.asgardAddresses...)
-	c.asgardMu.Unlock()
 
 	return result, nil
 }

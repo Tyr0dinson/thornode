@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/blang/semver"
 	"github.com/rs/zerolog/log"
@@ -30,6 +31,9 @@ type consolidationBridge struct {
 	asgards     ttypes.Vaults
 	mimir       map[string]int64
 	constants   map[string]int64
+	mu          sync.Mutex
+	mimirCalls  int
+	asgardCalls int
 }
 
 func (b *consolidationBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
@@ -37,6 +41,9 @@ func (b *consolidationBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
 }
 
 func (b *consolidationBridge) GetAsgards() (ttypes.Vaults, error) {
+	b.mu.Lock()
+	b.asgardCalls++
+	b.mu.Unlock()
 	return b.asgards, nil
 }
 
@@ -45,6 +52,9 @@ func (b *consolidationBridge) GetBlockHeight() (int64, error) {
 }
 
 func (b *consolidationBridge) GetMimir(key string) (int64, error) {
+	b.mu.Lock()
+	b.mimirCalls++
+	b.mu.Unlock()
 	if b.mimir == nil {
 		return -1, nil
 	}
@@ -52,6 +62,12 @@ func (b *consolidationBridge) GetMimir(key string) (int64, error) {
 		return value, nil
 	}
 	return -1, nil
+}
+
+func (b *consolidationBridge) mimirCallCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.mimirCalls
 }
 
 func (b *consolidationBridge) GetConstants() (map[string]int64, error) {
@@ -276,6 +292,47 @@ func unlockedOutputs(height uint64, n int) []xmrFrostOutputEntry {
 		})
 	}
 	return out
+}
+
+func TestLoadConsolidationSettingsCachesMimirReads(t *testing.T) {
+	t.Parallel()
+
+	bridge := &consolidationBridge{
+		mimir: map[string]int64{
+			mimirXMRConsolidationEnabled:             1,
+			mimirXMRConsolidationCheckIntervalBlocks: 12,
+			mimirXMRConsolidationCooldownBlocks:      3,
+			mimirXMRConsolidationMinUnlockedOutputs:  4,
+			mimirXMRConsolidationTargetOutputs:       2,
+			mimirXMRConsolidationMinUnlockedAtomic:   42,
+			mimirXMRConsolidationReserveBps:          75,
+			mimirXMRConsolidationChurnLookahead:      8,
+			mimirXMRConsolidationMaxRetries:          5,
+		},
+	}
+	client := &Client{
+		cfg:             config.BifrostChainConfiguration{XMRConsolidationEnabled: true},
+		thorchainBridge: bridge,
+	}
+
+	first := client.loadConsolidationSettings()
+	second := client.loadConsolidationSettings()
+
+	if !first.Enabled || !second.Enabled {
+		t.Fatal("expected consolidation settings to remain enabled")
+	}
+	if bridge.mimirCallCount() != 9 {
+		t.Fatalf("expected one mimir fetch round (9 calls), got %d", bridge.mimirCallCount())
+	}
+
+	client.consolidationSettingsMu.Lock()
+	client.lastConsolidationConfig = time.Now().Add(-2 * constants.ThorchainBlockTime)
+	client.consolidationSettingsMu.Unlock()
+
+	_ = client.loadConsolidationSettings()
+	if bridge.mimirCallCount() != 18 {
+		t.Fatalf("expected cache refresh after ttl expiry, got %d mimir calls", bridge.mimirCallCount())
+	}
 }
 
 func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
