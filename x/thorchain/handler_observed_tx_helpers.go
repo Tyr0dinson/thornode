@@ -490,38 +490,8 @@ func handleObservedTxInQuorum(
 	// first and then refund the inbound instead of releasing staged outbounds.
 	if hasFinalised && vault.Status == InactiveVault {
 		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
-
-		hasCleanupState, cleanupStateErr := needsMempoolSwapRollback(ctx, k, voter)
-		if cleanupStateErr != nil {
-			ctx.Logger().Error("fail to inspect mempool swap rollback state", "error", cleanupStateErr, "hash", voter.TxID)
-			return nil
-		}
-		if hasCleanupState {
-			if err = rollbackMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
-				ctx.Logger().Error("fail to roll back mempool swap for inactive vault", "error", err, "hash", voter.TxID)
-				return nil
-			}
-			incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
-
-			// Refresh the local copy so any code added below sees the normalized
-			// voter state that rollback already wrote to the store.
-			refreshedVoter, getErr := k.GetObservedTxInVoter(ctx, voter.TxID)
-			if getErr != nil {
-				ctx.Logger().Error("fail to refresh voter after mempool rollback", "error", getErr, "hash", voter.TxID)
-			} else {
-				voter = refreshedVoter
-			}
-		}
-
-		telemetry.IncrCounterWithLabels(
-			[]string{"thornode", "inbound", "refund"}, 1,
-			[]metrics.Label{
-				telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
-				telemetry.NewLabel("reason", "inactive_vault"),
-			},
-		)
-		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
-			ctx.Logger().Error("fail to refund", "error", newErr)
+		if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
+			ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
 		}
 		return nil
 	}
@@ -830,6 +800,39 @@ func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
 	minReceived := item.Coin.Amount
 	maxReceived := item.Coin.Amount.Add(item.MaxGas.ToCoins().GetCoin(asset).Amount)
 	return !received.LT(minReceived) && !received.GT(maxReceived)
+}
+
+// rollbackAndRefundInactiveVaultMempoolSwap centralizes the inactive-vault
+// recovery sequence used in both the quorum handler and the timeout
+// reconciler. The observed-tx path intentionally keeps its existing
+// log-and-continue behavior, so refund scheduling failures are logged here
+// while rollback/inspection failures are returned to the caller for context.
+func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, voter ObservedTxVoter) error {
+	k := mgr.Keeper()
+
+	hasCleanupState, cleanupStateErr := needsMempoolSwapRollback(ctx, k, voter)
+	if cleanupStateErr != nil {
+		return fmt.Errorf("fail to inspect mempool swap rollback state: %w", cleanupStateErr)
+	}
+	if hasCleanupState {
+		if err := rollbackMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
+			return fmt.Errorf("fail to roll back mempool swap for inactive vault: %w", err)
+		}
+		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
+	}
+
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "inbound", "refund"}, 1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+			telemetry.NewLabel("reason", "inactive_vault"),
+		},
+	)
+	if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
+		ctx.Logger().Error("fail to refund", "error", newErr)
+	}
+
+	return nil
 }
 
 // processTxOutAttestation applies a single attestation for an observed tx and saves
