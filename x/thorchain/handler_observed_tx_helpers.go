@@ -308,7 +308,9 @@ func handleObservedTxInQuorum(
 	// cache context, rolling back voter state, chain height, and vault updates made above.
 	// finalizeOutboundsAtomic is internally transactional, so logging the error here does not leak
 	// partial staging/cap/queue side effects while preserving the voter, chain-height, and
-	// vault updates already made above.
+	// vault updates already made above. Any still-staged mempool outbounds will be
+	// retried later by LackSigning's timeout reconciler instead of needing an
+	// immediate hard failure here.
 	if hasFinalised && len(voter.Actions) > 0 {
 		if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
@@ -483,6 +485,10 @@ func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, 
 		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
 	}
 
+	// Keep refund scheduling best-effort here, matching the wider refundTx
+	// contract used throughout the handler paths. If we ever want refund
+	// scheduling failure to become fatal, that change should be made in the
+	// shared refund machinery rather than only in this inactive-vault branch.
 	if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
 		ctx.Logger().Error("fail to refund", "error", newErr)
 	}
@@ -1580,6 +1586,10 @@ func applyDeferredAffiliateFees(ctx cosmos.Context, mgr Manager, outbounds []fin
 		}
 
 		// Spread any reduced net amount back over the split pieces in order.
+		// We intentionally keep this deterministic left-to-right remainder
+		// assignment instead of rebalancing dust across pieces, because rollback
+		// and outbound matching only care about the total net amount and stable
+		// ordering is easier to reason about than trying to "smooth" the split.
 		remaining := adjustedGroupItem.Coin.Amount
 		for _, idx := range indices {
 			amount := adjusted[idx].item.Coin.Amount

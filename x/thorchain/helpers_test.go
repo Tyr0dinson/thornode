@@ -867,7 +867,7 @@ func (HandlerSuite) TestNewSwapMemo(c *C) {
 
 	addr = GetRandomTHORAddress()
 	memo = NewSwapMemo(ctx, mgr, common.RuneNative, addr, cosmos.NewUint(0), "", cosmos.NewUint(0))
-	c.Assert(memo, Equals, fmt.Sprintf("=:THOR.RUNE:%s:0::0", addr.String()))
+	c.Assert(memo, Equals, fmt.Sprintf("=:THOR.RUNE:%s:0", addr.String()))
 }
 
 func (HandlerSuite) TestIsPeriodLastBlock(c *C) {

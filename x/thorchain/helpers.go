@@ -1195,6 +1195,9 @@ func IsModuleAccAddress(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
 }
 
 func NewSwapMemo(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, destination common.Address, limit cosmos.Uint, affiliate string, affiliateBps cosmos.Uint) string {
+	if affiliate == "" && affiliateBps.IsZero() {
+		return fmt.Sprintf("=:%s:%s:%s", targetAsset, destination, limit.String())
+	}
 	return fmt.Sprintf("=:%s:%s:%s:%s:%s", targetAsset, destination, limit.String(), affiliate, affiliateBps.String())
 }
 

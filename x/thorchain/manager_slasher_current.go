@@ -582,6 +582,9 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 
 				ctx.Logger().Info("retrying staged mempool swap finalization due to timeout", "hash", inHash)
 				incrMempoolSwapCounter("finalize_retry_total", nil)
+				// A finalize failure here is not terminal: staged outbounds stay in
+				// place because finalizeOutboundsAtomic is transactional, so the next
+				// LackSigning pass can retry the same inbound again.
 				if err := finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 					ctx.Logger().Error("fail to finalize staged mempool swap on timeout retry", "error", err, "hash", inHash)
 				}
