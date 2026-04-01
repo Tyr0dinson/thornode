@@ -307,6 +307,9 @@ func bookCancelGasToPool(ctx cosmos.Context, mgr Manager, intentTxID common.TxID
 	minSlipBps := cosmos.ZeroUint()
 	emitRune, liquidityFee, _ := swapper.GetSwapCalc(X, x, Y, slipBps, minSlipBps)
 
+	if emitRune.IsZero() {
+		return fmt.Errorf("cancel gas booking emits zero RUNE")
+	}
 	if emitRune.GTE(Y) {
 		return fmt.Errorf("not enough RUNE in gas pool for cancel gas booking")
 	}
