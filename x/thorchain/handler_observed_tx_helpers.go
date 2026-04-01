@@ -1562,8 +1562,10 @@ func applyDeferredAffiliateFees(ctx cosmos.Context, mgr Manager, outbounds []fin
 
 		adjustedGroupItem, feeErr := tos.getAffiliateFeeAdjustedTxOutItem(ctx, mgr, groupItem)
 		if feeErr != nil {
-			ctx.Logger().Error("fail to take deferred affiliate fee", "error", feeErr, "inhash", groupItem.InHash)
-			continue
+			// Do not finalize the gross outbound if deferred affiliate handling
+			// fails. Let the surrounding CacheContext abort so staged outbounds
+			// and reserved mempool state remain intact for retry.
+			return nil, fmt.Errorf("fail to take deferred affiliate fee: %w", feeErr)
 		}
 
 		// For Trade and Secured Assets, keep the staged outbound amounts as-is.

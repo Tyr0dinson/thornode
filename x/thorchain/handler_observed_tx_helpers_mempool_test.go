@@ -160,6 +160,100 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnEr
 	c.Check(stagedItems, HasLen, 1, Commentf("staged outbounds should remain after finalize failure"))
 }
 
+// TestFinalizeOutboundsRollbackOnDeferredAffiliateFeeError verifies that a
+// deferred affiliate-fee failure aborts finalization instead of silently
+// materializing the gross outbound amount.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnDeferredAffiliateFeeError(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+
+	// Provide the normal pool and vault fixtures so the affiliate-fee failure is
+	// the only reason finalization aborts.
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.LPUnits = pool.BalanceRune
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	activeVault := GetRandomVault()
+	activeVault.Type = AsgardVault
+	activeVault.Status = ActiveVault
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	ownerAddr := GetRandomETHAddress()
+	affiliateAddr := GetRandomTHORAddress()
+	inTxID := GetRandomTxHash()
+	outboundAmount := cosmos.NewUint(1000 * common.One)
+	stagedHeight := ctx.BlockHeight() + 5
+	inboundMemo := NewSwapMemo(ctx, mgr, common.ETHAsset, ownerAddr, cosmos.ZeroUint(), affiliateAddr.String(), cosmos.NewUint(500))
+
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:          inTxID,
+			Chain:       common.BTCChain,
+			FromAddress: GetRandomBTCAddress(),
+			ToAddress:   GetRandomBTCAddress(),
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+			},
+			Memo: inboundMemo,
+		},
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+		FinaliseHeight: ctx.BlockHeight(),
+	}
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.Height = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	voter.Actions = []TxOutItem{{
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: activeVault.PubKey,
+		ToAddress:   ownerAddr,
+		Coin:        common.NewCoin(common.ETHAsset, outboundAmount),
+		Memo:        NewOutboundMemo(inTxID).String(),
+	}}
+
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(999*common.One))
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, voter.Actions[0], stagedHeight), IsNil)
+
+	// No active validators are registered in this fixture, so deferred
+	// affiliate-fee adjustment should fail before any finalization side effects
+	// are committed.
+	err := finalizeOutboundsAtomic(ctx, mgr, voter)
+	c.Assert(err, ErrorMatches, "fail to take deferred affiliate fee: dev err: no active node accounts")
+
+	usage := mgr.Keeper().GetMempoolSwapUsageTOR(ctx)
+	c.Check(usage.Equal(cosmos.NewUint(999*common.One)), Equals, true, Commentf("mempool usage should roll back on deferred affiliate failure"))
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("deferred affiliate failure should keep the voter mempool reservation"))
+	c.Assert(updatedVoter.Actions, HasLen, 1, Commentf("deferred affiliate failure should keep the speculative action intact"))
+	c.Check(updatedVoter.Actions[0].Coin.Amount.Equal(outboundAmount), Equals, true, Commentf("deferred affiliate failure should not rewrite the gross outbound amount"))
+
+	stagedItems, stagedErr := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(stagedErr, IsNil)
+	c.Assert(stagedItems, HasLen, 1, Commentf("staged outbounds should remain after deferred affiliate failure"))
+	c.Check(stagedItems[0].TxOutItem.Coin.Amount.Equal(outboundAmount), Equals, true, Commentf("staged outbounds should remain gross after deferred affiliate failure"))
+
+	txOut, err := mgr.Keeper().GetTxOut(ctx, stagedHeight)
+	c.Assert(err, IsNil)
+	c.Check(txOut.TxArray, HasLen, 0, Commentf("deferred affiliate failure should not queue any finalized outbound"))
+	c.Check(mgr.Keeper().HasSwapQueueItem(ctx, inTxID, 2), Equals, false, Commentf("deferred affiliate failure should not queue affiliate sidecars"))
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 2), Equals, false, Commentf("deferred affiliate failure should not queue advanced affiliate sidecars"))
+}
+
 // TestFinalizeOutboundsAppliesDeferredAffiliateFeesToNativeNonRuneTargets
 // checks that native synth, trade, and secured targets only apply deferred
 // affiliate work once the staged outbound finalizes.
