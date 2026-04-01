@@ -1316,6 +1316,9 @@ func buildPendingMempoolRollbackAction(ctx cosmos.Context, k keeper.Keeper, vote
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pending adv swap item: %w", err)
 	}
+	if msg.State == nil {
+		return nil, fmt.Errorf("pending adv swap item missing state")
+	}
 	if msg.State.Out.IsZero() {
 		ctx.Logger().Debug("advanced-queue mempool rollback has zero emitted output", "hash", voter.TxID)
 		return nil, nil
