@@ -437,6 +437,12 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetFailsWithoutGas(c *
 
 	// Use an ERC20 token on ETH chain (no pool, not a gas asset)
 	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, ethPool), IsNil)
 
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
@@ -477,6 +483,12 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonPoolAssetRespectsConfiguredM
 
 	erc20Asset := common.Asset{Chain: common.ETHChain, Symbol: "TKN-0XDEADBEEF", Ticker: "TKN"}
 	w.keeper.SetMimir(w.ctx, constants.IntentCancelMinGasMultiplier.String(), 2)
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, ethPool), IsNil)
 
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
@@ -619,7 +631,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_NonAvailableGasPoolFails(c *C) 
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
-	c.Check(err.Error(), Matches, ".*gas pool .* is not available.*")
+	c.Check(err.Error(), Matches, "(?s).*gas pool .* is not available.*")
 
 	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
 	c.Assert(err, IsNil)

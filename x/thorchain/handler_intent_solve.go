@@ -165,6 +165,9 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 	// This burns the coins/reduces units and decreases pool depth
 	// When the intent executes, the txout system will call Deposit() to send to user
 	// When refunding, the txout system will call Deposit() to restore to solver
+	// This is why TxIntentSolve skips the generic module transfer in handler_deposit.go:
+	// solve escrow must stay asset-specific and must fail without consuming native
+	// balances up front when validation rejects the solve.
 	switch {
 	case targetCoin.Asset.IsSecuredAsset():
 		solverAddr, err := msg.Tx.FromAddress.AccAddress()

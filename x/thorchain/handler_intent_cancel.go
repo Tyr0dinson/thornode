@@ -103,8 +103,18 @@ func (h IntentCancelHandler) allowedCancelAsset(ctx cosmos.Context, intent Inten
 	}
 
 	// Non-pool, non-native long-tail assets require prepaid chain gas to fund the
-	// outbound refund, so only the chain gas asset is accepted.
-	return intent.Source.Asset.GetChain().GetGasAsset(), nil
+	// outbound refund, so only accept the chain gas asset when that gas pool is
+	// available for booking.
+	gasAsset := intent.Source.Asset.GetChain().GetGasAsset()
+	gasPool, err := h.mgr.Keeper().GetPool(ctx, gasAsset)
+	if err != nil {
+		return common.EmptyAsset, fmt.Errorf("fail to get gas pool for cancel asset validation: %w", err)
+	}
+	if gasPool.IsEmpty() || gasPool.Status != PoolAvailable {
+		return common.EmptyAsset, fmt.Errorf("gas pool %s is not available", gasAsset)
+	}
+
+	return gasAsset, nil
 }
 
 func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) error {

@@ -190,8 +190,12 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 	}
 
 	coinsInMsg := msg.Coins
-	// TxIntentSolve skips the generic module transfer because solve escrow is
-	// performed by handler_intent_solve.go based on the target asset type.
+	// TxIntentSolve intentionally skips the generic account->module transfer here.
+	// Solve escrow is asset-specific in handler_intent_solve.go: secured/trade
+	// assets withdraw through their managers, native RUNE moves to Asgard there,
+	// and unsupported native non-RUNE assets are rejected. Keeping the transfer
+	// in the solve handler means failed solve validation does not consume the
+	// solver's native balance before escrow rules are applied.
 	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() && memo.GetType() != TxIntentSolve {
 		// send funds to target module
 		err = h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
