@@ -1691,3 +1691,124 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedMempoolSwapR
 	c.Check(outItems[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 	c.Check(updatedVoter.Actions[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 }
+
+// TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoolSwapRollback verifies
+// that LackSigning also recovers finalized inactive-vault mempool swaps that
+// are stranded only in queue state, without any staged outbound left to drive
+// the existing timeout retry path.
+func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoolSwapRollback(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	signingTransPeriod := int64(300)
+	maxOutboundAttempts := int64(3)
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), signingTransPeriod)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), maxOutboundAttempts)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain, common.THORChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	inactiveVault := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	inactiveVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	toAddr, err := inactiveVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	finalizedTx := NewObservedTx(inboundTx, 12, inactiveVault.PubKey, 12)
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{finalizedTx})
+	voter.Tx = finalizedTx
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+
+	// Build the queued-only orphaned state from the review note: the inbound
+	// already finalized on an inactive vault, part of the swap progressed into
+	// advanced-queue state, but no staged outbound remains to drive the
+	// existing timeout recovery path.
+	queuedSwap := NewMsgSwap(
+		inboundTx,
+		common.ETHAsset,
+		GetRandomETHAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types2.SwapVersion_v2,
+		na.NodeAddress,
+	)
+	queuedSwap.State.Out = cosmos.NewUint(3 * common.One)
+	queuedSwap.State.In = queuedSwap.Tx.Coins[0].Amount
+
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *queuedSwap), IsNil)
+	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false, Commentf("queued recovery fixture should not rely on staged outbounds"))
+
+	timeoutHeight := ctx.BlockHeight() + (signingTransPeriod * maxOutboundAttempts) + 10
+	ctx = ctx.WithBlockHeight(timeoutHeight)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	// The timeout reconciler should treat this the same as any other inactive-
+	// vault mempool cleanup: remove speculative queue state, release reserved
+	// capacity, and replace the temporary action with a real refund outbound.
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Assert(err, NotNil, Commentf("queued inactive-vault timeout recovery should remove the pending advanced-queue swap"))
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.Reverted, Equals, false, Commentf("queued inactive-vault timeout recovery should normalize the voter"))
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("queued inactive-vault timeout recovery should clear the voter mempool TOR value"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("queued inactive-vault timeout recovery should release mempool swap capacity"))
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1, Commentf("queued inactive-vault timeout recovery should schedule exactly one refund outbound"))
+	c.Assert(updatedVoter.Actions, HasLen, 1, Commentf("queued inactive-vault timeout recovery should replace queued speculative state with the scheduled refund action"))
+	c.Check(outItems[0].Coin.Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(outItems[0].Coin.Amount.GT(cosmos.ZeroUint()), Equals, true)
+	c.Check(outItems[0].Coin.Amount.LTE(cosmos.NewUint(1*common.One)), Equals, true)
+	c.Check(outItems[0].ToAddress.Equals(inboundTx.FromAddress), Equals, true)
+	c.Check(outItems[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
+	c.Check(updatedVoter.Actions[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
+}
