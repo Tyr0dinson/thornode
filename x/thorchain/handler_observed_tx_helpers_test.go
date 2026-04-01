@@ -2520,3 +2520,27 @@ func (s *HandlerObservedTxHelpersSuite) TestClearPendingMempoolSwapQueueItemsCle
 	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, otherTxID, 1)
 	c.Assert(err, IsNil)
 }
+
+// A malformed advanced-queue item with missing State should fail defensively
+// here instead of panicking during rollback recovery.
+func (s *HandlerObservedTxHelpersSuite) TestBuildPendingMempoolRollbackActionRejectsNilAdvSwapState(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	txID := GetRandomTxHash()
+	voter := NewObservedTxVoter(txID, ObservedTxs{})
+
+	advMsg := MsgSwap{
+		Tx: common.Tx{
+			ID:    txID,
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))),
+		},
+		TargetAsset: common.ETHAsset,
+		SwapType:    types.SwapType_market,
+		Index:       0,
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, advMsg), IsNil)
+
+	action, err := buildPendingMempoolRollbackAction(ctx, mgr.Keeper(), voter)
+	c.Assert(err, ErrorMatches, "pending adv swap item missing state")
+	c.Assert(action, IsNil)
+}
