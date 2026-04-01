@@ -858,6 +858,8 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	// Handle timeout for staged outbounds (mempool swaps waiting for inbound finalization)
 	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling
 	if maxOutboundAttempts > 0 {
+		timeoutAge := signingTransPeriod * maxOutboundAttempts
+
 		// Collect timed-out inHashes first, then process after closing iterator
 		// to avoid iterator invalidation when rollbackMempoolSwapAtomic deletes from store
 		var timedOutHashes []common.TxID
@@ -872,7 +874,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// Timeout if staged for longer than signingTransPeriod * maxOutboundAttempts
 			for _, staged := range stagedList.Items {
 				stagedAge := ctx.BlockHeight() - staged.StagedHeight
-				if stagedAge >= signingTransPeriod*maxOutboundAttempts {
+				if stagedAge >= timeoutAge {
 					ctx.Logger().Info("staged mempool swap timed out",
 						"hash", stagedList.InHash,
 						"staged_height", staged.StagedHeight,
@@ -931,9 +933,103 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "timeout")})
 			}
 		}
+
+		// Some finalized inactive-vault mempool swaps can still be stranded only
+		// in swap-queue state if cleanup previously failed before any staged
+		// outbound was written. Reconcile those queue-backed leftovers on the same
+		// timeout cadence as staged mempool recovery.
+		s.retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
 	}
 
 	return resultErr
+}
+
+// collectTimedOutInactiveVaultMempoolQueueHashes finds finalized inactive-vault
+// mempool swaps that are stranded only in swap-queue state. Those entries have
+// no staged outbounds left, so the normal staged timeout sweep cannot discover
+// them even though they still need rollback/refund cleanup.
+func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.Context, iter cosmos.Iterator, timeoutAge int64, seen map[string]struct{}, hashes *[]common.TxID) {
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		var msg MsgSwap
+		if err := s.keeper.Cdc().Unmarshal(iter.Value(), &msg); err != nil {
+			ctx.Logger().Error("fail to unmarshal mempool swap queue item during timeout recovery", "error", err)
+			continue
+		}
+
+		inHash := msg.Tx.ID
+		// If staged outbounds still exist, the normal staged timeout recovery
+		// path above will handle this inbound, so skip it here.
+		if inHash.IsEmpty() || s.keeper.HasStagedOutbound(ctx, inHash) {
+			continue
+		}
+
+		voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed tx voter for queued mempool swap", "error", err, "hash", inHash)
+			continue
+		}
+		if voter.UnfinalizedHeight == 0 || voter.FinalisedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
+			continue
+		}
+
+		age := ctx.BlockHeight() - max(voter.UnfinalizedHeight, voter.FinalisedHeight)
+		if age < timeoutAge {
+			continue
+		}
+
+		observedVault, err := s.keeper.GetVault(ctx, voter.Tx.ObservedPubKey)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed vault for queued mempool swap", "error", err, "hash", inHash)
+			continue
+		}
+		if observedVault.Status != InactiveVault {
+			continue
+		}
+
+		// Reuse the shared rollback predicate so this queue-only recovery path
+		// only retries inbounds that still have speculative mempool state to
+		// unwind.
+		hasCleanupState, err := needsMempoolSwapRollback(ctx, s.keeper, voter)
+		if err != nil {
+			ctx.Logger().Error("fail to inspect queued mempool swap cleanup state", "error", err, "hash", inHash)
+			continue
+		}
+		if !hasCleanupState {
+			continue
+		}
+
+		if _, ok := seen[inHash.String()]; ok {
+			continue
+		}
+		seen[inHash.String()] = struct{}{}
+		*hashes = append(*hashes, inHash)
+	}
+}
+
+// retryTimedOutInactiveVaultQueueBackedMempoolSwaps runs the queued-only retry
+// pass after the staged timeout sweep. It deduplicates hashes across the basic
+// and advanced swap queues, then reuses the same rollback+refund helper as the
+// observed-tx path so recovery behavior stays consistent.
+func (s *SlasherImpl) retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx cosmos.Context, mgr Manager, timeoutAge int64) {
+	seen := make(map[string]struct{})
+	var hashes []common.TxID
+	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetSwapQueueIterator(ctx), timeoutAge, seen, &hashes)
+	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+
+	for _, inHash := range hashes {
+		voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed tx voter for queued mempool retry", "error", err, "hash", inHash)
+			continue
+		}
+
+		ctx.Logger().Info("retrying inactive-vault mempool rollback due to queued-timeout", "hash", inHash)
+		if err := rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); err != nil {
+			ctx.Logger().Error("fail to roll back inactive-vault mempool swap from queued-timeout retry", "error", err, "hash", inHash)
+		}
+	}
 }
 
 // getOriginalSwapDetails retrieves the original swap transaction details for a failed outbound
