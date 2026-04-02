@@ -728,6 +728,22 @@ func (s *queryServer) Supply(c context.Context, req *types.QuerySupplyRequest) (
 	return s.querySupply(ctx, req)
 }
 
+func (s *queryServer) ContractInfo(c context.Context, req *types.QueryContractInfoRequest) (*types.QueryContractInfoResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryContractInfo(ctx, req)
+}
+
+func (s *queryServer) ContractInfos(c context.Context, req *types.QueryContractInfosRequest) (*types.QueryContractInfosResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryContractInfos(ctx, req)
+}
+
 func (s *queryServer) Intent(c context.Context, req *types.QueryIntentRequest) (*types.QueryIntentResponse, error) {
 	ctx := s.unwrapSdkContext(c)
 	return s.queryIntent(ctx, req)
