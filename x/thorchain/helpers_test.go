@@ -2981,3 +2981,67 @@ func (s *HelperSuite) TestProcessAltNativeFeeEscrowsRollbackOnReserveTransferFai
 	c.Assert(poolAfter.BalanceRune.Equal(poolBefore.BalanceRune), Equals, true)
 	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 }
+
+// TestProcessAltNativeFeeEscrowsHandlesMultipleAssetsIndependently verifies a
+// single sweep can process multiple escrow assets with mixed outcomes. One
+// escrow is forced to fail during the reserve transfer while the other still
+// settles and clears.
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHandlesMultipleAssetsIndependently(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	failAsset := common.NAMI
+	failEscrowAmount := cosmos.NewUint(1_000 * common.One)
+	successAsset := common.BTCAsset
+	successEscrowAmount := cosmos.NewUint(10 * common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 0)
+
+	seedPool := func(asset common.Asset) Pool {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+		pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		return pool
+	}
+
+	// Seed two escrow assets in the same block sweep: the large escrow will emit
+	// more than the helper's reserve-transfer threshold and fail, while the small
+	// escrow remains below that threshold and should settle successfully.
+	seedPool(failAsset)
+	seedPool(successAsset)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, failAsset, failEscrowAmount), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, successAsset, successEscrowAmount), IsNil)
+
+	failPoolBefore, err := mgr.Keeper().GetPool(ctx, failAsset)
+	c.Assert(err, IsNil)
+	successPoolBefore, err := mgr.Keeper().GetPool(ctx, successAsset)
+	c.Assert(err, IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	mgr.K = &altNativeEscrowKeeperHelper{
+		Keeper:                   mgr.Keeper(),
+		failReserveTransferAbove: cosmos.NewUint(10_000 * common.One),
+	}
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
+	// The failing asset should remain fully escrowed and leave its pool untouched.
+	failEscrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, failAsset)
+	c.Assert(exists, Equals, true)
+	c.Assert(failEscrow.Balance.Amount.Equal(failEscrowAmount), Equals, true)
+	failPoolAfter, err := mgr.Keeper().GetPool(ctx, failAsset)
+	c.Assert(err, IsNil)
+	c.Assert(failPoolAfter.BalanceAsset.Equal(failPoolBefore.BalanceAsset), Equals, true)
+	c.Assert(failPoolAfter.BalanceRune.Equal(failPoolBefore.BalanceRune), Equals, true)
+
+	// The successful asset should settle in the same sweep, clear its escrow, and
+	// move value from the pool into the Reserve.
+	_, exists = mgr.Keeper().GetAltNativeFeeEscrow(ctx, successAsset)
+	c.Assert(exists, Equals, false)
+	successPoolAfter, err := mgr.Keeper().GetPool(ctx, successAsset)
+	c.Assert(err, IsNil)
+	c.Assert(successPoolAfter.BalanceAsset.GT(successPoolBefore.BalanceAsset), Equals, true)
+	c.Assert(successPoolAfter.BalanceRune.LT(successPoolBefore.BalanceRune), Equals, true)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+}
