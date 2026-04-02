@@ -27,6 +27,41 @@ func GetSafeShare(part, total, allocation cosmos.Uint) cosmos.Uint {
 	return GetUncappedShare(part, total, allocation)
 }
 
+// GetSafeShareInverse returns the smallest part whose GetSafeShare(part, total,
+// allocation) is at least target. It preserves the existing round-half-up
+// forward mapping while avoiding under-collection when converting from an asset
+// amount back into discrete shares/units.
+func GetSafeShareInverse(target, total, allocation cosmos.Uint) cosmos.Uint {
+	if target.IsZero() || total.IsZero() || allocation.IsZero() {
+		return cosmos.ZeroUint()
+	}
+
+	// Solve for the minimal part satisfying:
+	// floor((allocation*part + floor(total/2)) / total) >= target
+	// => allocation*part + floor(total/2) >= target*total
+	// => part >= ceil((target*total - floor(total/2)) / allocation)
+	var tgt, tot, alloc big.Int
+	tgt.Set(target.BigInt())
+	tot.Set(total.BigInt())
+	alloc.Set(allocation.BigInt())
+
+	var num, half big.Int
+	num.Mul(&tgt, &tot)
+	half.Rsh(&tot, 1)
+	num.Sub(&num, &half)
+
+	var allocMinusOne big.Int
+	allocMinusOne.Sub(&alloc, big.NewInt(1))
+	num.Add(&num, &allocMinusOne)
+
+	var res big.Int
+	res.Quo(&num, &alloc)
+	if res.Cmp(total.BigInt()) > 0 {
+		return total
+	}
+	return cosmos.NewUintFromBigInt(&res)
+}
+
 // GetUncappedShare calculates the share using only big.Int stack values
 // and a single round-half-up at the final division for positive values.
 // It avoids intermediate cosmos.Uint allocations for better performance.

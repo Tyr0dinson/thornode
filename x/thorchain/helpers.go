@@ -2660,12 +2660,12 @@ func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signe
 	if assetAvailable.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("secured asset balance unavailable")
 	}
-	// Determine how many share tokens correspond to the requested fee amount.
-	// GetSafeShare caps at shareBalance, so burnAmt can never exceed the user's
-	// entitlement. In the spam-drain path, fee.Amount >= assetAvailable collapses
-	// to burnAmt == shareBalance, meaning we intentionally burn the entire
+	// Determine the smallest number of share tokens whose round-half-up
+	// conversion back to underlying collateral will cover the requested fee.
+	// In the spam-drain path, fee.Amount >= assetAvailable collapses to
+	// burnAmt == shareBalance, meaning we intentionally burn the entire
 	// remaining position but never more than that.
-	burnAmt := common.GetSafeShare(fee.Amount, assetAvailable, shareBalance)
+	burnAmt := common.GetSafeShareInverse(fee.Amount, shareBalance, assetAvailable)
 	if burnAmt.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("secured asset fee below precision")
 	}
@@ -2708,8 +2708,9 @@ func collectAltNativeTxFeeFromTrade(ctx cosmos.Context, k keeper.Keeper, signer 
 	if assetAvailable.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("trade asset balance unavailable")
 	}
-	// Determine how many trade units correspond to the requested fee amount.
-	unitsToClaim := common.GetSafeShare(fee.Amount, assetAvailable, tr.Units)
+	// Determine the smallest number of trade units whose round-half-up
+	// conversion back to underlying depth will cover the requested fee amount.
+	unitsToClaim := common.GetSafeShareInverse(fee.Amount, tr.Units, assetAvailable)
 	if unitsToClaim.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("trade asset fee below precision")
 	}

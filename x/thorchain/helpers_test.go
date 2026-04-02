@@ -2809,6 +2809,79 @@ func (s *HelperSuite) TestCsCoinsToCoinsNormalizesXPrefixedNativeDenoms(c *C) {
 	c.Assert(coins[0].Amount.Equal(cosmos.NewUint(123)), Equals, true)
 }
 
+// TestCollectAltNativeTxFeeFromSecuredRoundsInverseStepUp exercises the
+// coarse-grained secured-share case that used to under-collect. With 2 shares
+// backed by depth 6, a fee target of 4 must round the inverse step up to burn
+// both shares so the collected collateral still covers the fee.
+func (s *HelperSuite) TestCollectAltNativeTxFeeFromSecuredRoundsInverseStepUp(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	signer := GetRandomBech32Addr()
+	asset := common.BTCAsset.GetSecuredAsset()
+
+	// Set up a tiny secured position: 2 shares outstanding, backed by 6 asset.
+	pool := types.NewSecuredAsset(asset)
+	pool.Depth = cosmos.NewUint(6)
+	k.SetSecuredAsset(ctx, pool)
+	fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(2))
+
+	// Request a fee of 4 units. The inverse step must round up to both shares,
+	// which then map back to the full 6 units of backing collateral.
+	collected, err := collectAltNativeTxFee(ctx, k, signer, common.NewCoin(asset, cosmos.NewUint(4)))
+	c.Assert(err, IsNil)
+	c.Assert(collected.Equal(cosmos.NewUint(6)), Equals, true)
+
+	// The entire secured position should be consumed and escrowed as the
+	// corresponding L1 asset.
+	remainingShares := cosmos.NewUint(k.GetBalanceOf(ctx, signer, asset).Amount.Uint64())
+	c.Assert(remainingShares.IsZero(), Equals, true)
+	escrow, exists := k.GetAltNativeFeeEscrow(ctx, common.BTCAsset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(cosmos.NewUint(6)), Equals, true)
+}
+
+// TestCollectAltNativeTxFeeFromTradeRoundsInverseStepUp covers the analogous
+// trade-account case: 2 units over depth 6 with a fee target of 4 must round
+// the inverse step up to claim both units, avoiding under-collection.
+func (s *HelperSuite) TestCollectAltNativeTxFeeFromTradeRoundsInverseStepUp(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	signer := GetRandomBech32Addr()
+	asset := common.BTCAsset.GetTradeAsset()
+
+	// Seed a minimal trade account where each unit represents a coarse slice of
+	// the underlying depth.
+	k.SetTradeUnit(ctx, TradeUnit{
+		Asset: asset,
+		Units: cosmos.NewUint(2),
+		Depth: cosmos.NewUint(6),
+	})
+	k.SetTradeAccount(ctx, TradeAccount{
+		Asset: asset,
+		Units: cosmos.NewUint(2),
+		Owner: signer,
+	})
+
+	// A fee target of 4 should force the inverse step to consume both units,
+	// which then map back to the full 6 units of depth.
+	collected, err := collectAltNativeTxFee(ctx, k, signer, common.NewCoin(asset, cosmos.NewUint(4)))
+	c.Assert(err, IsNil)
+	c.Assert(collected.Equal(cosmos.NewUint(6)), Equals, true)
+
+	// The trade account and aggregate unit record should both be drained, and
+	// the collected depth should be reflected in the L1 escrow ledger.
+	tr, err := k.GetTradeAccount(ctx, signer, asset)
+	c.Assert(err, IsNil)
+	c.Assert(tr.Units.IsZero(), Equals, true)
+	tu, err := k.GetTradeUnit(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(tu.Units.IsZero(), Equals, true)
+	c.Assert(tu.Depth.IsZero(), Equals, true)
+	escrow, exists := k.GetAltNativeFeeEscrow(ctx, common.BTCAsset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(cosmos.NewUint(6)), Equals, true)
+}
+
 func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCreditsReserveAndClearsEscrow(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	asset := common.NAMI
