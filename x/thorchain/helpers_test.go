@@ -2799,6 +2799,16 @@ func (h *altNativeEscrowKeeperHelper) SendFromModuleToModule(ctx cosmos.Context,
 	return h.Keeper.SendFromModuleToModule(ctx, from, to, coins)
 }
 
+func (s *HelperSuite) TestCsCoinsToCoinsNormalizesXPrefixedNativeDenoms(c *C) {
+	csCoins := cosmos.NewCoins(cosmos.NewCoin("x/ruji", math.NewInt(123)))
+
+	coins := csCoinsToCoins(csCoins)
+
+	c.Assert(coins, HasLen, 1)
+	c.Assert(coins[0].Asset.Equals(common.RUJI), Equals, true)
+	c.Assert(coins[0].Amount.Equal(cosmos.NewUint(123)), Equals, true)
+}
+
 func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCreditsReserveAndClearsEscrow(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	asset := common.NAMI

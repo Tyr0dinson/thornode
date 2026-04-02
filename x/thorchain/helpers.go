@@ -2473,7 +2473,7 @@ func csCoinsToCoins(cosmosCoins cosmos.Coins) common.Coins {
 			// ignore zero coins
 			continue
 		}
-		asset, err := common.NewAsset(strings.ToUpper(csCoin.Denom))
+		asset, err := common.NewAsset(strings.ToUpper(strings.TrimPrefix(csCoin.Denom, "x/")))
 		if err != nil {
 			// ignore coins we don't understand
 			continue
