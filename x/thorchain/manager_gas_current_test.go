@@ -397,7 +397,8 @@ func (GasManagerTestSuite) TestGetGasDetailsHighPrecisionAsset(c *C) {
 
 	fee, err := gasMgr.GetAssetOutboundFee(ctx, common.XMRAsset, false)
 	c.Assert(err, IsNil)
-	c.Assert(fee.Uint64(), Equals, uint64(7500))
+	// Lazy-init of outbound-fee-withheld targets 1x multiplier, so fee equals the base fee.
+	c.Assert(fee.Uint64(), Equals, uint64(5000))
 }
 
 func (GasManagerTestSuite) TestGetGasDetailsLowDecimalAssetDoesNotRoundToZero(c *C) {
