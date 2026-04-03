@@ -325,7 +325,8 @@ func (tos *TxOutStorage) getAffiliateFeeAdjustedTxOutItem(ctx cosmos.Context, mg
 
 // shouldStageForMempoolSwap reports whether an outbound belongs to an inbound
 // that has only been observed in the mempool so far. Only true speculative
-// swap outputs stage here, and only after the swap has reserved mempool TOR.
+// swap outputs stage here, and only after the voter entered the mempool path
+// by reserving mempool TOR.
 func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOutItem) bool {
 	inHash := item.InHash
 	if inHash.IsEmpty() || inHash.Equals(common.BlankTxID) {
@@ -336,7 +337,7 @@ func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOu
 	if err != nil {
 		return false
 	}
-	if voter.IsEmpty() || voter.UnfinalizedHeight == 0 {
+	if voter.IsEmpty() || !voter.HasReservedMempoolSwapTOR() {
 		return false
 	}
 	if voter.FinalisedHeight != 0 {
@@ -347,8 +348,7 @@ func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOu
 	if err != nil || voter.HasFinalised(activeNodeAccounts) {
 		return false
 	}
-
-	return voter.HasReservedMempoolSwapTOR()
+	return true
 }
 
 // shouldDeferAffiliateFeeForMempoolSwap identifies outbounds whose affiliate
