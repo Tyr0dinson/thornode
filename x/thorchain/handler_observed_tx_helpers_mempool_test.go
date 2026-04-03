@@ -1538,6 +1538,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempool
 // direct-refund behavior even if mempool rollback-state inspection is broken.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedNonMempoolStillRefundsWhenRollbackInspectionFails(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	sourcePool := NewPool()
 	sourcePool.Asset = common.BTCAsset
