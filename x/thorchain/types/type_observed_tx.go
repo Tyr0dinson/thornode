@@ -333,6 +333,8 @@ func (m *ObservedTxVoter) SetDone() {
 	m.setStatus(common.Status_done)
 }
 
+// HasReservedMempoolSwapTOR reports whether this voter actually entered the
+// mempool swap path by reserving TOR capacity.
 func (m *ObservedTxVoter) HasReservedMempoolSwapTOR() bool {
 	return !m.MempoolSwapTOR.IsNil() && !m.MempoolSwapTOR.IsZero()
 }

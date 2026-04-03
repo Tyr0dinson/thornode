@@ -8,12 +8,21 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type HandlerObservedTxHelpersMempoolSuite struct{}
 
 var _ = Suite(&HandlerObservedTxHelpersMempoolSuite{})
+
+type failGetStagedOutboundsKeeper struct {
+	keeper.Keeper
+}
+
+func (k failGetStagedOutboundsKeeper) GetStagedOutbounds(_ cosmos.Context, _ common.TxID) ([]keeper.StagedOutbound, error) {
+	return nil, fmt.Errorf("fail to get staged outbounds")
+}
 
 func runSwapQueues(c *C, ctx cosmos.Context, mgr *Mgrs) {
 	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
@@ -1517,6 +1526,64 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempool
 	c.Assert(err, IsNil)
 	c.Assert(outItems, HasLen, 1, Commentf("inactive-vault finalization should schedule exactly one refund outbound"))
 	// Check the refund details.
+	c.Check(outItems[0].Coin.Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(outItems[0].Coin.Amount.GT(cosmos.ZeroUint()), Equals, true)
+	c.Check(outItems[0].Coin.Amount.LTE(cosmos.NewUint(1*common.One)), Equals, true)
+	c.Check(outItems[0].ToAddress.Equals(inboundTx.FromAddress), Equals, true)
+	c.Check(outItems[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
+}
+
+// TestInactiveVaultFinalizedNonMempoolStillRefundsWhenRollbackInspectionFails
+// verifies that plain finalized inactive-vault inbounds keep the historical
+// direct-refund behavior even if mempool rollback-state inspection is broken.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedNonMempoolStillRefundsWhenRollbackInspectionFails(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+
+	inactiveVault := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	inactiveVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
+
+	toAddr, err := inactiveVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	finalizedTx := NewObservedTx(inboundTx, 12, inactiveVault.PubKey, 12)
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{finalizedTx})
+	voter.Tx = finalizedTx
+	voter.Height = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	failKeeper := failGetStagedOutboundsKeeper{Keeper: mgr.Keeper()}
+	mgr.K = failKeeper
+	mgr.txOutStore = newTxOutStorage(failKeeper, mgr.GetConstants(), mgr.EventMgr(), mgr.GasMgr())
+
+	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), finalizedTx, voter, []cosmos.AccAddress{na.NodeAddress}, true)
+	c.Assert(err, IsNil)
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1, Commentf("plain inactive-vault finalization should still schedule a refund even if rollback inspection fails"))
 	c.Check(outItems[0].Coin.Asset.Equals(common.BTCAsset), Equals, true)
 	c.Check(outItems[0].Coin.Amount.GT(cosmos.ZeroUint()), Equals, true)
 	c.Check(outItems[0].Coin.Amount.LTE(cosmos.NewUint(1*common.One)), Equals, true)

@@ -586,9 +586,11 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							continue
 						}
 
-						// For mempool swaps that never finalized, roll back the speculative swap
-						// and donate the recovered output back to the source pool.
-						if voter.FinalisedHeight == 0 && voter.UnfinalizedHeight > 0 {
+						// A live TOR reservation means this inbound entered the mempool
+						// swap path. If it still never finalized, roll back the
+						// speculative swap and donate the recovered output back to the
+						// source pool.
+						if voter.FinalisedHeight == 0 && voter.HasReservedMempoolSwapTOR() {
 							ctx.Logger().Info("rolling back mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
 							if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
 								ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)

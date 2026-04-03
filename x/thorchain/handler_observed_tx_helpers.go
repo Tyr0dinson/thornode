@@ -485,13 +485,25 @@ func handleObservedTxInQuorum(
 		}
 	}
 
-	// If a mempool swap was executed before finalization but the inbound
-	// finalized on an inactive vault, roll back the speculative mempool state
-	// first and then refund the inbound instead of releasing staged outbounds.
+	// Finalized inbounds observed on an inactive vault keep the historical
+	// direct-refund behavior unless the voter already shows local mempool-swap
+	// participation. That avoids turning rollback-state inspection failures into
+	// missed refunds for plain finalized inbounds, while still forcing any real
+	// mempool cleanup through the atomic rollback path before refunding.
 	if hasFinalised && vault.Status == InactiveVault {
 		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
-		if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
-			ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+
+		// A live TOR reservation means this voter actually entered the
+		// mempool swap path, so it must roll back before refunding.
+		if voter.HasReservedMempoolSwapTOR() {
+			if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
+				ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+			}
+			return nil
+		}
+
+		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
+			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
 		return nil
 	}
@@ -502,8 +514,10 @@ func handleObservedTxInQuorum(
 	// cache context, rolling back voter state, chain height, and vault updates made above.
 	// finalizeOutboundsAtomic is internally transactional, so logging the error here does not leak
 	// partial staging/cap/queue side effects while preserving the voter, chain-height, and
-	// vault updates already made above. Any still-staged mempool outbounds will be
-	// retried later by LackSigning's timeout reconciler instead of needing an
+	// vault updates already made above. A failed finalize also intentionally keeps the
+	// mempool TOR reservation held alongside any still-staged outbounds until a later
+	// finalize retry or rollback clears the whole mempool-swap snapshot together.
+	// LackSigning's timeout reconciler provides that retry path instead of forcing an
 	// immediate hard failure here.
 	if hasFinalised && len(voter.Actions) > 0 {
 		if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
@@ -809,6 +823,19 @@ func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
 // reconciler. The observed-tx path intentionally keeps its existing
 // log-and-continue behavior, so refund scheduling failures are logged here
 // while rollback/inspection failures are returned to the caller for context.
+//
+// Callers should route only mempool-aware inactive-vault inbounds here. Plain
+// finalized inactive-vault inbounds keep the historical direct refund path so
+// their refund does not depend on rollback-state inspection.
+//
+// Design note: refund scheduling is intentionally gated on successful rollback.
+// rollbackMempoolSwapAtomic owns staged outbounds, queue cleanup, pool/accounting
+// reversal, and TOR-capacity release inside one CacheContext. If that atomic
+// cleanup fails, we must not schedule the user refund or release the reservation
+// out-of-band because speculative mempool-swap state is still live. Leaving that
+// state untouched preserves a consistent snapshot for LackSigning's timeout
+// reconciler to retry instead of risking double effects or undercounted in-flight
+// mempool work.
 func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, voter ObservedTxVoter) error {
 	k := mgr.Keeper()
 
@@ -832,9 +859,11 @@ func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, 
 	)
 
 	// Keep refund scheduling best-effort here, matching the wider refundTx
-	// contract used throughout the handler paths. If we ever want refund
-	// scheduling failure to become fatal, that change should be made in the
-	// shared refund machinery rather than only in this inactive-vault branch.
+	// contract used throughout the handler paths. This best-effort behavior
+	// starts only after rollback succeeds; otherwise the speculative mempool
+	// state remains intact for a clean retry. If we ever want refund scheduling
+	// failure to become fatal, that change should be made in the shared refund
+	// machinery rather than only in this inactive-vault branch.
 	if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
 		ctx.Logger().Error("fail to refund", "error", newErr)
 	}
