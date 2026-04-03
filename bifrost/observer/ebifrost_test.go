@@ -365,12 +365,31 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 	// 	atg.mu.Unlock()
 	// }
 
+	// Wait for the post-quorum 4th attestation to be merged into the eBifrost cache.
+	// Supermajority (3/4) triggers the initial quorum tx, but the 4th attestation
+	// arrives shortly after as a post-quorum update via a separate gRPC call.
+	pollForCondition(c, "all 4 attestations merged into inject cache", func() bool {
+		injectTxs, _ := ebs[0].ProposalInjectTxs(sdk.Context{}, 10000000)
+		if len(injectTxs) != 1 {
+			return false
+		}
+		msgs, err := ebs[0].GetInjectedMsgs(sdk.Context{}, injectTxs)
+		if err != nil || len(msgs) != 1 {
+			return false
+		}
+		quorum, ok := msgs[0].(*stypes.MsgObservedTxQuorum)
+		if !ok {
+			return false
+		}
+		return len(quorum.QuoTx.Attestations) == 4
+	}, 30*time.Second, 100*time.Millisecond)
+
 	// Now check that each validator's enshrined bifrost has the tx ready for injection
 	// Each validator should have the transaction ready since they all participated in attestation
 	var injectedTxQuorum *stypes.MsgObservedTxQuorum
 	for i, eb := range ebs {
 		injectTxs, _ := eb.ProposalInjectTxs(sdk.Context{}, 10000000)
-		c.Assert(len(injectTxs), Equals, 1, Commentf("Validator %d: Expected 1 tx to be ready for injection", i)) // fails here
+		c.Assert(len(injectTxs), Equals, 1, Commentf("Validator %d: Expected 1 tx to be ready for injection", i))
 		if i == 0 {
 			msgs, err := eb.GetInjectedMsgs(sdk.Context{}, injectTxs)
 			c.Assert(err, IsNil)
