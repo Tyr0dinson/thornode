@@ -292,24 +292,30 @@ func handleObservedTxInQuorum(
 	}
 
 	// Finalized inbounds observed on an inactive vault keep the historical
-	// direct-refund behavior unless the voter already shows local mempool-swap
-	// participation. That avoids turning rollback-state inspection failures into
-	// missed refunds for plain finalized inbounds, while still forcing any real
-	// mempool cleanup through the atomic rollback path before refunding.
+	// direct-refund behavior on advanced-queue systems unless the voter already
+	// shows local mempool-swap participation. Legacy queue mode keeps the older
+	// rollback+refund path for now.
 	if hasFinalised && vault.Status == InactiveVault {
 		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
 
-		// A live TOR reservation means this voter actually entered the
-		// mempool swap path, so it must roll back before refunding.
-		if voter.HasReservedMempoolSwapTOR() {
-			if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
-				ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+		if k.AdvSwapQueueEnabled(ctx) {
+			// A live TOR reservation means this voter actually entered the
+			// mempool swap path, so it must roll back before refunding.
+			if voter.HasReservedMempoolSwapTOR() {
+				if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
+					ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+				}
+				return nil
+			}
+
+			if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
+				ctx.Logger().Error("fail to refund", "error", newErr)
 			}
 			return nil
 		}
 
-		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
-			ctx.Logger().Error("fail to refund", "error", newErr)
+		if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
+			ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
 		}
 		return nil
 	}
@@ -486,9 +492,9 @@ func handleObservedTxInQuorum(
 // log-and-continue behavior, so refund scheduling failures are logged here
 // while rollback/inspection failures are returned to the caller for context.
 //
-// Callers should route only mempool-aware inactive-vault inbounds here. Plain
-// finalized inactive-vault inbounds keep the historical direct refund path so
-// their refund does not depend on rollback-state inspection.
+// Advanced-queue callers should route only mempool-aware inactive-vault
+// inbounds here. Legacy mode may still send all inactive-vault finalized swaps
+// through this helper until the v1 path is retired.
 //
 // Design note: refund scheduling is intentionally gated on successful rollback.
 // rollbackMempoolSwapAtomic owns staged outbounds, queue cleanup, pool/accounting

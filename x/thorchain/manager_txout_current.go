@@ -324,9 +324,9 @@ func (tos *TxOutStorage) getAffiliateFeeAdjustedTxOutItem(ctx cosmos.Context, mg
 }
 
 // shouldStageForMempoolSwap reports whether an outbound belongs to an inbound
-// that has only been observed in the mempool so far. Only true speculative
-// swap outputs stage here, and only after the voter entered the mempool path
-// by reserving mempool TOR.
+// that has only been observed in the mempool so far. Advanced-queue mempool
+// swaps require a live TOR reservation; legacy mode keeps the older
+// UnfinalizedHeight gate until the v1 path is retired.
 func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOutItem) bool {
 	inHash := item.InHash
 	if inHash.IsEmpty() || inHash.Equals(common.BlankTxID) {
@@ -337,7 +337,14 @@ func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOu
 	if err != nil {
 		return false
 	}
-	if voter.IsEmpty() || !voter.HasReservedMempoolSwapTOR() {
+	if voter.IsEmpty() {
+		return false
+	}
+	if tos.keeper.AdvSwapQueueEnabled(ctx) {
+		if !voter.HasReservedMempoolSwapTOR() {
+			return false
+		}
+	} else if voter.UnfinalizedHeight == 0 {
 		return false
 	}
 	if voter.FinalisedHeight != 0 {

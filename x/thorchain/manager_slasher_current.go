@@ -205,6 +205,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("invalid signing transaction period: %d", signingTransPeriod)
 	}
 	enableMemolessOutbound := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMemolessOutbound)
+	advSwapQueueEnabled := mgr.Keeper().AdvSwapQueueEnabled(ctx)
 
 	if signingTransPeriod <= 0 || ctx.BlockHeight() < signingTransPeriod {
 		return nil
@@ -338,11 +339,14 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						continue
 					}
 
-					// A live TOR reservation means this inbound entered the mempool
-					// swap path. If it still never finalized, roll back the
-					// speculative swap and donate the recovered output back to the
-					// source pool.
-					if voter.FinalisedHeight == 0 && voter.HasReservedMempoolSwapTOR() {
+					// Advanced-queue mempool swaps key off the TOR reservation. Legacy
+					// queue mode keeps the older UnfinalizedHeight predicate until the
+					// v1 path is retired.
+					enteredMempoolPath := voter.UnfinalizedHeight > 0
+					if advSwapQueueEnabled {
+						enteredMempoolPath = voter.HasReservedMempoolSwapTOR()
+					}
+					if voter.FinalisedHeight == 0 && enteredMempoolPath {
 						ctx.Logger().Info("rolling back mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
 						if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
 							ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)
