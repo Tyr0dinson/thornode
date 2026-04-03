@@ -49,7 +49,16 @@ count: 1
 # With 1 BTC ~ 1000 RUNE and DollarsPerRune = 1, 1 BTC = 1000 TOR
 type: tx-mimir
 key: MempoolSwapCapTOR
-value: 200000000000
+value: 300000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Enable advanced swap queue
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
 signer: {{ addr_thor_dog }}
 ---
 type: create-blocks
@@ -59,8 +68,9 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .MEMPOOLSWAPCAPTOR == 200000000000
+  - .MEMPOOLSWAPCAPTOR == 300000000000
   - .DOLLARSPERRUNE == 100000000
+  - .ENABLEADVSWAPQUEUE == 1
 ---
 # Verify initial mempool swap usage is 0
 type: check
@@ -244,7 +254,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "159359999"  # Actual swap output
+        - amount: "159360000"  # Actual swap output
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -312,7 +322,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "85852919"  # Actual swap output
+        - amount: "85852915"  # Actual swap output
           asset: "ETH.ETH"
           decimals: 8
       gas:
