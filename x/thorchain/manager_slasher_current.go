@@ -233,6 +233,10 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// With the staged queue design, unfinalized native outbounds are in the staged queue,
 			// not in TxOut. Any native outbound in TxOut should already be executed.
 			if toi.Chain.IsTHORChain() {
+				ctx.Logger().Info("skipping probably stale native THORChain outbound found in TxOut",
+					"hash", toi.InHash,
+					"to", toi.ToAddress,
+					"memo", toi.Memo)
 				continue // Skip signing-related logic for native outbounds
 			}
 
