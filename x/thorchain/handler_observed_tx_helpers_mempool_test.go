@@ -1063,7 +1063,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c
 	)
 	c.Check(canProcessMempoolSwap, Equals, true, Commentf("streaming limit swaps should also be admitted by the runtime mempool gate"))
 
-	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, mgr.Keeper(), common.BTCAsset, cosmos.NewUint(common.One))
+	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, mgr.Keeper(), common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One))
 	c.Assert(err, IsNil)
 	c.Check(hasCapacity, Equals, true, Commentf("eligible swap should have capacity with a large cap"))
 	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("capacity check should return a TOR value for the inbound"))
@@ -1098,7 +1098,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(
 	)
 	c.Check(canProcessMempoolSwap, Equals, true, Commentf("streaming limit swap policy eligibility should not depend on the runtime cap setting"))
 
-	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, mgr.Keeper(), common.BTCAsset, cosmos.NewUint(common.One))
+	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, mgr.Keeper(), common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One))
 	c.Assert(err, IsNil)
 	c.Check(hasCapacity, Equals, false, Commentf("disabled mempool swaps should report no runtime capacity"))
 	c.Check(torValue.IsZero(), Equals, true, Commentf("disabled mempool swaps should not return a TOR value"))

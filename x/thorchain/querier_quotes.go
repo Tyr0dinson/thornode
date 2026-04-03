@@ -1266,7 +1266,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		streamingInterval,
 		streamingQuantity,
 	) {
-		_, hasCapacity, _ := checkMempoolSwapCapacity(ctx, qs.mgr.Keeper(), fromAsset, amount)
+		_, hasCapacity, _ := checkMempoolSwapCapacity(ctx, qs.mgr.Keeper(), fromAsset, toAsset, amount)
 		canUseMempoolSwap = hasCapacity
 	}
 
