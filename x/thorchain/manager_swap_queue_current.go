@@ -165,8 +165,16 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		} else {
 			handleErr, settleErr = vm.executeAndSettleSwapQueueItemCached(ctx, mgr, pick)
 		}
-		if handleErr != nil {
-			ctx.Logger().Error("fail to swap", "msg", pick.msg.Tx.String(), "error", handleErr)
+
+		procErr := handleErr
+		if procErr != nil {
+			ctx.Logger().Error("fail to swap", "msg", pick.msg.Tx.String(), "error", procErr)
+		} else if settleErr != nil {
+			procErr = settleErr
+			ctx.Logger().Error("fail to settle swap", "msg", pick.msg.Tx.String(), "error", procErr)
+		}
+
+		if procErr != nil {
 
 			var refundErr error
 			triggerRefund = !isActualLegacyStreaming
@@ -214,19 +222,17 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				// Get the full ObservedTx from the TxID, for the vault ObservedPubKey to first try to refund from.
 				voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, pick.msg.Tx.ID)
 				if voterErr == nil && !voter.Tx.IsEmpty() {
-					refundErr = refundTx(ctx, ObservedTx{Tx: pick.msg.Tx, ObservedPubKey: voter.Tx.ObservedPubKey}, mgr, CodeSwapFail, handleErr.Error(), "")
+					refundErr = refundTx(ctx, ObservedTx{Tx: pick.msg.Tx, ObservedPubKey: voter.Tx.ObservedPubKey}, mgr, CodeSwapFail, procErr.Error(), "")
 				} else {
 					// If the full ObservedTx could not be retrieved, proceed with just the MsgSwap's Tx (no ObservedPubKey).
 					ctx.Logger().Error("fail to get non-empty observed tx", "error", voterErr)
-					refundErr = refundTx(ctx, ObservedTx{Tx: pick.msg.Tx}, mgr, CodeSwapFail, handleErr.Error(), "")
+					refundErr = refundTx(ctx, ObservedTx{Tx: pick.msg.Tx}, mgr, CodeSwapFail, procErr.Error(), "")
 				}
 
 				if refundErr != nil {
 					ctx.Logger().Error("fail to refund swap", "error", refundErr)
 				}
 			}
-		} else if settleErr != nil {
-			ctx.Logger().Error("fail to settle swap", "msg", pick.msg.Tx.String(), "error", settleErr)
 		}
 
 		// Only track streaming swap state for actual streaming swaps (not limit swaps)
