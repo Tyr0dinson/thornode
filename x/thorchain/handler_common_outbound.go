@@ -115,15 +115,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 		searchPeriod = signingTransPeriod * evmTokenSigningPeriodMultiplier
 	}
 	earliestHeight := ctx.BlockHeight() - searchPeriod
-	// For mempool swaps, use UnfinalizedHeight as the TxOutItem was created at mempool consensus,
-	// not at the finalization height (voter.Height gets updated when finalization happens).
-	voterSearchHeight := voter.Height
-	if voter.UnfinalizedHeight > 0 && voter.UnfinalizedHeight < voter.Height {
-		voterSearchHeight = voter.UnfinalizedHeight
-	}
-	if voterSearchHeight > earliestHeight {
-		earliestHeight = voterSearchHeight
-	}
+	earliestHeight = max(voter.Height, earliestHeight)
 
 	// A TxOutItem might be rescheduled (by LackSigning) rounded up to nearest multiple of RescheduleCoalesceBlocks,
 	// so check backwards from that future nearest multiple.

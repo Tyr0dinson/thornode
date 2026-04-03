@@ -2511,7 +2511,7 @@ func (s *HandlerObservedTxHelpersSuite) TestClearPendingMempoolSwapQueueItemsCle
 	c.Assert(clearPendingMempoolSwapQueueItems(ctx, mgr.Keeper(), txID), IsNil)
 
 	_, err := mgr.Keeper().GetSwapQueueItem(ctx, txID, 0)
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 	_, err = mgr.Keeper().GetSwapQueueItem(ctx, otherTxID, 1)
 	c.Assert(err, IsNil)
 

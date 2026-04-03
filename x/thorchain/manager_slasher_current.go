@@ -294,7 +294,6 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("invalid signing transaction period: %d", signingTransPeriod)
 	}
 	enableMemolessOutbound := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMemolessOutbound)
-	advSwapQueueEnabled := mgr.Keeper().AdvSwapQueueEnabled(ctx)
 
 	if signingTransPeriod <= 0 || ctx.BlockHeight() < signingTransPeriod {
 		return nil
@@ -570,9 +569,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 				if maxOutboundAttempts > 0 && !durableKeepVault {
-					// Use max of FinalisedHeight and UnfinalizedHeight to handle both traditional
-					// and mempool swap paths. For mempool swaps, UnfinalizedHeight is set first.
-					age := ctx.BlockHeight() - max(voter.UnfinalizedHeight, voter.FinalisedHeight)
+					age := ctx.BlockHeight() - voter.FinalisedHeight
 					attempts := age / itemSigningTransPeriod
 					if attempts >= maxOutboundAttempts {
 						// Skip treasury recovery if there's already an outbound associated or
@@ -587,14 +584,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							continue
 						}
 
-						// Advanced-queue mempool swaps key off the TOR reservation. Legacy
-						// queue mode keeps the older UnfinalizedHeight predicate until the
-						// v1 path is retired.
-						enteredMempoolPath := voter.UnfinalizedHeight > 0
-						if advSwapQueueEnabled {
-							enteredMempoolPath = voter.HasReservedMempoolSwapTOR()
-						}
-						if voter.FinalisedHeight == 0 && enteredMempoolPath {
+						if voter.FinalisedHeight == 0 && voter.HasReservedMempoolSwapTOR() {
 							ctx.Logger().Info("rolling back mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
 							if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
 								ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)

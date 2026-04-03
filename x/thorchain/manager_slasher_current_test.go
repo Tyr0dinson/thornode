@@ -2514,6 +2514,7 @@ func (s *SlashingSuite) TestLackSigningSurvivesOversizedObservation(c *C) {
 
 func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// Setup constants
@@ -2567,7 +2568,9 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	voter.Tx = voter.Txs[0] // Set consolidated tx for mempool rollback
 	voter.UnfinalizedHeight = ctx.BlockHeight()
 	voter.FinalisedHeight = 0
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
 
 	// Create unsigned outbound (mempool swap output).
 	// OutHash must be empty (not BlankTxID) for LackSigning to process it,

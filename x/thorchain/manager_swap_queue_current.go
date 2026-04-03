@@ -29,33 +29,6 @@ func newSwapQueue(k keeper.Keeper) *SwapQueueImpl {
 	}
 }
 
-// executeAndSettleSwapQueueItemCached uses the same deferred-settlement flow
-// that mempool tx handling relies on. We run swap math with direct outbound
-// scheduling disabled, then settle through settleSwapResultCached so native
-// outputs still go through the shared staging/finalization rules instead of
-// bypassing them from inside the swap handler.
-func (vm *SwapQueueImpl) executeAndSettleSwapQueueItemCached(
-	ctx cosmos.Context,
-	mgr Manager,
-	pick swapItem,
-) (handleErr, settleErr error) {
-	cacheCtx, commit := ctx.CacheContext()
-
-	handleErr = executeSwapWithoutOutboundsCached(cacheCtx, mgr, &pick.msg)
-	if handleErr != nil {
-		return handleErr, nil
-	}
-
-	settleErr = settleSwapResultCached(cacheCtx, mgr, pick.msg, "swap has been completed")
-	if settleErr == nil {
-		releaseMempoolSwapCapacityAfterFinalizedSettlement(cacheCtx, mgr, pick.msg.Tx.ID)
-		vm.k.RemoveSwapQueueItem(cacheCtx, pick.msg.Tx.ID, pick.index)
-		commit()
-	}
-
-	return handleErr, settleErr
-}
-
 // FetchQueue - grabs all swap queue items from the kvstore and returns them
 func (vm *SwapQueueImpl) FetchQueue(ctx cosmos.Context) (swapItems, error) { // nolint
 	items := make(swapItems, 0)
@@ -203,17 +176,7 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		swp := pick.msg.GetStreamingSwap()
 
 		triggerRefund := false
-		removeQueueItem := false
-		var handleErr error
-		var settleErr error
-		if isActualLegacyStreaming {
-			// Legacy streaming swaps keep their original queue-managed execution path.
-			// Other legacy queue items use the deferred settlement flow so outbound
-			// materialization still goes through the same mempool-aware staging rules.
-			_, handleErr = handler(ctx, &pick.msg)
-		} else {
-			handleErr, settleErr = vm.executeAndSettleSwapQueueItemCached(ctx, mgr, pick)
-		}
+		_, handleErr := handler(ctx, &pick.msg)
 
 		if handleErr != nil {
 			ctx.Logger().Error("fail to swap", "msg", pick.msg.Tx.String(), "error", handleErr)
@@ -283,8 +246,6 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					vm.k.RemoveStreamingSwap(ctx, pick.msg.Tx.ID)
 					vm.k.RemoveSwapQueueItem(ctx, pick.msg.Tx.ID, pick.index)
 				}
-			} else {
-				removeQueueItem = true
 			}
 
 			if triggerRefund {
@@ -312,8 +273,6 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 			}
-		} else if settleErr != nil {
-			ctx.Logger().Error("fail to settle swap", "msg", pick.msg.Tx.String(), "error", settleErr)
 		}
 
 		// Only track streaming swap state for actual streaming swaps (not limit swaps)
@@ -422,9 +381,8 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					ctx.Logger().Error("fail to emit streaming swap event", "error", err)
 				}
 
-				releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx, mgr, pick.msg.Tx.ID)
 			}
-		} else if removeQueueItem {
+		} else {
 			vm.k.RemoveSwapQueueItem(ctx, pick.msg.Tx.ID, pick.index)
 		}
 	}

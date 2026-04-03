@@ -344,9 +344,8 @@ func (tos *TxOutStorage) getAffiliateFeeAdjustedTxOutItem(ctx cosmos.Context, mg
 }
 
 // shouldStageForMempoolSwap reports whether an outbound belongs to an inbound
-// that has only been observed in the mempool so far. Advanced-queue mempool
-// swaps require a live TOR reservation; legacy mode keeps the older
-// UnfinalizedHeight gate until the v1 path is retired.
+// that has only been observed in the mempool so far. Only inbounds with a live
+// mempool TOR reservation stage here.
 func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOutItem) bool {
 	inHash := item.InHash
 	if inHash.IsEmpty() || inHash.Equals(common.BlankTxID) {
@@ -360,11 +359,7 @@ func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOu
 	if voter.IsEmpty() {
 		return false
 	}
-	if tos.keeper.AdvSwapQueueEnabled(ctx) {
-		if !voter.HasReservedMempoolSwapTOR() {
-			return false
-		}
-	} else if voter.UnfinalizedHeight == 0 {
+	if !voter.HasReservedMempoolSwapTOR() {
 		return false
 	}
 	if voter.FinalisedHeight != 0 {
@@ -1287,7 +1282,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem, opt
 			}
 
 			if voter.FinalisedHeight == 0 {
-				if voter.UnfinalizedHeight > 0 {
+				if voter.HasReservedMempoolSwapTOR() {
 					// Mempool swap: only set FinalisedHeight when actually finalized by validators,
 					// so it remains 0 until finalization to enable reversal.
 					activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
