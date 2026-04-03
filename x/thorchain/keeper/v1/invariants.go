@@ -86,7 +86,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		// Sum native coins in staged outbounds (mempool swaps waiting for inbound finalization)
 		// With the staged queue design, unfinalized native outbounds are in the staged queue,
 		// not in TxOut. Native outbounds in TxOut are finalized and execute immediately.
-		var txOutCoins common.Coins
+		var nativeStagedOutboundCoins common.Coins
 		stagedIter := k.GetStagedOutboundIterator(ctx)
 		defer stagedIter.Close()
 		for ; stagedIter.Valid(); stagedIter.Next() {
@@ -101,7 +101,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 				if item.Chain.IsTHORChain() && item.OutHash.IsEmpty() && item.Coin.IsNative() {
 					// Trade Assets and Secured Assets do not correspond to Module balance coins
 					if !item.Coin.Asset.IsTradeAsset() && !item.Coin.Asset.IsSecuredAsset() {
-						txOutCoins = txOutCoins.Add(item.Coin)
+						nativeStagedOutboundCoins = nativeStagedOutboundCoins.Add(item.Coin)
 					}
 				}
 			}
@@ -180,7 +180,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		asgardCoins := k.GetBalance(ctx, asgardAddr)
 
 		// asgard balance is expected to equal sum of pool, swap, and queued native outbound coins
-		allCoins := poolCoins.Add(append(append(swapCoins, advSwapCoins...), txOutCoins...)...)
+		allCoins := poolCoins.Add(append(append(swapCoins, advSwapCoins...), nativeStagedOutboundCoins...)...)
 		expNative, _ := allCoins.Native()
 
 		// note: coins must be sorted for SafeSub
