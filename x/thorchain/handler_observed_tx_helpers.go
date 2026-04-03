@@ -1922,6 +1922,16 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		}
 	}
 
+	// Roll back any clout spent during outbound scheduling for the staged
+	// mempool outbounds. Without this the swapper addresses would have
+	// artificially inflated Spent counters, reducing their Available clout
+	// for future swaps even though the outbound never actually went out.
+	if err = reclaimStagedClout(ctx, keeper, voter, stagedItems); err != nil {
+		ctx.Logger().Error("fail to reclaim staged clout on rollback", "error", err, "hash", voter.TxID)
+		// Non-fatal: clout auto-restores after CloutReset blocks, so a
+		// failure here should not abort the entire rollback.
+	}
+
 	// Delete all staged outbounds AFTER processing succeeds.
 	// This helper runs inside a CacheContext, so returning an error discards all prior pool,
 	// usage, and queue mutations and allows a clean retry.
@@ -1947,5 +1957,60 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		ctx.Logger().Error("fail to emit mempool rollback event", "error", err)
 	}
 
+	// Emit a security event so THORSec is notified of the rollback.
+	securityEvent := NewEventSecurity(voter.Tx.Tx, "mempool swap rolled back")
+	if err = mgr.EventMgr().EmitEvent(ctx, securityEvent); err != nil {
+		ctx.Logger().Error("fail to emit security event for mempool rollback", "error", err)
+	}
+
+	return nil
+}
+
+// reclaimStagedClout reverses the swapper-clout Spent increments that were
+// applied when staged mempool outbounds were originally scheduled. This mirrors
+// the reclaim logic in handler_common_outbound for observed outbounds, but is
+// triggered during rollback since the outbound never actually went out.
+func reclaimStagedClout(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, stagedItems []keeper.StagedOutbound) error {
+	fromAddr := voter.Tx.Tx.FromAddress
+
+	for _, staged := range stagedItems {
+		spent := staged.TxOutItem.CloutSpent
+		if spent == nil || spent.IsZero() {
+			continue
+		}
+
+		cloutIn, err := k.GetSwapperClout(ctx, fromAddr)
+		if err != nil {
+			return fmt.Errorf("fail to get swapper clout for sender %s: %w", fromAddr, err)
+		}
+		cloutOut, err := k.GetSwapperClout(ctx, staged.TxOutItem.ToAddress)
+		if err != nil {
+			return fmt.Errorf("fail to get swapper clout for recipient %s: %w", staged.TxOutItem.ToAddress, err)
+		}
+
+		clout1, clout2 := calcReclaim(cloutIn.Claimable(), cloutOut.Claimable(), *spent)
+
+		cloutIn.Reclaim(clout1)
+		cloutIn.LastReclaimHeight = ctx.BlockHeight()
+		if err = k.SetSwapperClout(ctx, cloutIn); err != nil {
+			return fmt.Errorf("fail to save sender clout: %w", err)
+		}
+
+		if cloutIn.Address.Equals(cloutOut.Address) {
+			// cloutOut is about to overwrite cloutIn, so reincrement with clout1.
+			cloutOut.Reclaim(clout1)
+		}
+		cloutOut.Reclaim(clout2)
+		cloutOut.LastReclaimHeight = ctx.BlockHeight()
+		if err = k.SetSwapperClout(ctx, cloutOut); err != nil {
+			return fmt.Errorf("fail to save recipient clout: %w", err)
+		}
+
+		ctx.Logger().Info("reclaimed staged clout on mempool rollback",
+			"hash", voter.TxID,
+			"spent", spent,
+			"reclaim_in", clout1,
+			"reclaim_out", clout2)
+	}
 	return nil
 }
