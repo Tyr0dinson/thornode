@@ -1054,3 +1054,37 @@ func (HandlerIntentSolveSuite) TestIntentSolve_UnsupportedNativeAsset(c *C) {
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*"+unsupportedIntentNativeAssetError(ibcAsset)+".*")
 }
+
+func (HandlerIntentSolveSuite) TestIntentSolve_HandleRejectsUnexpectedAssetClass(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Use a currently-unsupported THOR-native asset class to exercise the
+	// fail-closed escrow branch directly. Run() rejects this during validation,
+	// so call handle() to pin the escrow switch behavior itself.
+	unexpectedAsset := common.BTCAsset.GetSyntheticAsset()
+
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		TargetAsset:   unexpectedAsset,
+		TargetAddress: GetRandomTHORAddress(),
+		HighTarget:    cosmos.NewUint(200 * common.One),
+		LowTarget:     cosmos.NewUint(100 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentSolveHandler(mgr)
+
+	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomTHORAddress()
+	solveTx.Coins = common.Coins{common.NewCoin(unexpectedAsset, cosmos.NewUint(150*common.One))}
+
+	err := handler.handle(w.ctx, *NewMsgIntentSolve(solveTx, intentTx.ID, GetRandomBTCAddress(), w.activeNodeAccount.NodeAddress))
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*unsupported asset class for intent solve escrow.*")
+}
