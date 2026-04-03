@@ -1888,14 +1888,17 @@ func getAssetValueInTOR(ctx cosmos.Context, k keeper.Keeper, asset common.Asset,
 }
 
 // checkMempoolSwapCapacity checks if there is available capacity for a mempool swap.
+// The effective cap is scaled by the relative depth of the shallowest pool used
+// by the swap, so shallow pools cannot consume a disproportionate share of the
+// global MempoolSwapCapTOR budget.
 // Returns the TOR value of the swap, whether there is capacity, and any error.
-func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, asset common.Asset, amount cosmos.Uint) (torValue cosmos.Uint, hasCapacity bool, err error) {
+func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, targetAsset common.Asset, amount cosmos.Uint) (torValue cosmos.Uint, hasCapacity bool, err error) {
 	mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
 	if mempoolSwapCap.IsZero() {
 		return cosmos.ZeroUint(), false, nil
 	}
 
-	torValue, err = getAssetValueInTOR(ctx, k, asset, amount)
+	torValue, err = getAssetValueInTOR(ctx, k, sourceAsset, amount)
 	if err != nil {
 		return cosmos.ZeroUint(), false, err
 	}
@@ -1903,9 +1906,79 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, asset common.
 		return cosmos.ZeroUint(), false, nil
 	}
 
+	// Scale the global cap by the relative depth of the shallowest pool used
+	// by this swap.  This prevents shallow pools from losing a disproportionate
+	// share of their depth during a single mempool swap rollback cycle.
+	effectiveCap, capErr := poolRelativeMempoolSwapCap(ctx, k, mempoolSwapCap, sourceAsset, targetAsset)
+	if capErr != nil {
+		// If we cannot determine pool depths, fall back to the global cap so
+		// the feature degrades gracefully rather than blocking all swaps.
+		ctx.Logger().Error("fail to compute pool-relative mempool swap cap, using global cap", "error", capErr)
+		effectiveCap = mempoolSwapCap
+	}
+
 	currentUsage := k.GetMempoolSwapUsageTOR(ctx)
-	hasCapacity = currentUsage.Add(torValue).LTE(mempoolSwapCap)
+	hasCapacity = currentUsage.Add(torValue).LTE(effectiveCap)
 	return torValue, hasCapacity, nil
+}
+
+// poolRelativeMempoolSwapCap returns the global MempoolSwapCapTOR scaled by the
+// relative RUNE depth of the shallowest pool used by a swap.
+//
+//	effectiveCap = globalCap * minPoolRuneDepth / totalRuneDepth
+//
+// For single-pool swaps (e.g. BTC->RUNE) only that pool is considered.
+// For double swaps (e.g. BTC->ETH) the minimum depth of both pools is used.
+func poolRelativeMempoolSwapCap(ctx cosmos.Context, k keeper.Keeper, globalCap cosmos.Uint, sourceAsset, targetAsset common.Asset) (cosmos.Uint, error) {
+	pools, err := k.GetPools(ctx)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools: %w", err)
+	}
+
+	// Sum total RUNE depth across all available pools.
+	totalRuneDepth := cosmos.ZeroUint()
+	for _, pool := range pools {
+		if pool.Status == PoolAvailable && !pool.BalanceRune.IsZero() {
+			totalRuneDepth = totalRuneDepth.Add(pool.BalanceRune)
+		}
+	}
+	if totalRuneDepth.IsZero() {
+		return globalCap, nil
+	}
+
+	// Identify the RUNE depth of each pool used by the swap.
+	minPoolDepth := cosmos.ZeroUint()
+	swapPoolAssets := make([]common.Asset, 0, 2)
+	if !sourceAsset.IsRune() {
+		swapPoolAssets = append(swapPoolAssets, sourceAsset.GetLayer1Asset())
+	}
+	if !targetAsset.IsRune() {
+		l1 := targetAsset.GetLayer1Asset()
+		// Avoid double-counting when source and target use the same pool.
+		if len(swapPoolAssets) == 0 || !swapPoolAssets[0].Equals(l1) {
+			swapPoolAssets = append(swapPoolAssets, l1)
+		}
+	}
+	if len(swapPoolAssets) == 0 {
+		// Both sides are RUNE — no pool depth constraint applies.
+		return globalCap, nil
+	}
+
+	for _, poolAsset := range swapPoolAssets {
+		pool, poolErr := k.GetPool(ctx, poolAsset)
+		if poolErr != nil {
+			return cosmos.ZeroUint(), fmt.Errorf("fail to get pool %s: %w", poolAsset, poolErr)
+		}
+		if pool.IsEmpty() || pool.BalanceRune.IsZero() {
+			return cosmos.ZeroUint(), fmt.Errorf("pool %s has no depth", poolAsset)
+		}
+		if minPoolDepth.IsZero() || pool.BalanceRune.LT(minPoolDepth) {
+			minPoolDepth = pool.BalanceRune
+		}
+	}
+
+	// effectiveCap = globalCap * minPoolDepth / totalRuneDepth
+	return common.GetSafeShare(minPoolDepth, totalRuneDepth, globalCap), nil
 }
 
 // isExplicitStreamingSwap returns true when the request explicitly asks for

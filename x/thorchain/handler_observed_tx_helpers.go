@@ -380,7 +380,7 @@ func handleObservedTxInQuorum(
 			sourceAsset := voter.Tx.Tx.Coins[0].Asset
 			sourceAmount := voter.Tx.Tx.Coins[0].Amount
 			mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-			torValue, hasCapacity, capacityErr := checkMempoolSwapCapacity(ctx, k, sourceAsset, sourceAmount)
+			torValue, hasCapacity, capacityErr := checkMempoolSwapCapacity(ctx, k, sourceAsset, swapMsg.TargetAsset, sourceAmount)
 			switch {
 			case capacityErr != nil:
 				incrMempoolSwapCounter("blocked_total", []metrics.Label{telemetry.NewLabel("reason", "capacity_error")})
