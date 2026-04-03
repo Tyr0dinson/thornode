@@ -200,7 +200,6 @@ func (k KVStore) getPoolMemo(ctx cosmos.Context, store storetypes.KVStore, asset
 
 func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) []VaultSecurity {
 	vaultSecurity := make([]VaultSecurity, len(vaults))
-	stagedAdditions, stagedSubtractions := k.getStagedVaultSecurityDeltas(ctx, vaults)
 
 	// recent unsent txout items count towards each vault's value
 	h := ctx.BlockHeight() - signingTransPeriod
@@ -342,11 +341,6 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			}
 		}
 
-		// Fold in staged outbound effects that were precomputed once across all
-		// vaults, instead of rescanning the staged table for every vault.
-		totalValue = common.SafeSub(totalValue, stagedSubtractions[i])
-		totalValue = totalValue.Add(stagedAdditions[i])
-
 		if totalValue.GT(totalBond) {
 			diff := totalValue.Sub(totalBond).BigInt()
 			vaultSecurity[i] = VaultSecurity{
@@ -372,119 +366,6 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 	})
 
 	return vaultSecurity
-}
-
-// getStagedVaultSecurityDeltas precomputes the staged-outbound effects on vault
-// security for the current vault set. This avoids rescanning the full staged
-// outbound table once per vault during SortBySecurity.
-func (k KVStore) getStagedVaultSecurityDeltas(ctx cosmos.Context, vaults Vaults) ([]cosmos.Uint, []cosmos.Uint) {
-	additions := make([]cosmos.Uint, len(vaults))
-	subtractions := make([]cosmos.Uint, len(vaults))
-	for i := range additions {
-		additions[i] = cosmos.ZeroUint()
-		subtractions[i] = cosmos.ZeroUint()
-	}
-	if len(vaults) == 0 {
-		return additions, subtractions
-	}
-
-	vaultIndexByPubKey := make(map[string]int, len(vaults))
-	vaultIndexesByAddress := make(map[string][]int)
-	for i := range vaults {
-		vault := vaults[i]
-		vaultIndexByPubKey[vault.PubKey.String()] = i
-
-		// Index every vault address once so staged outbound destinations can be
-		// credited without recomputing addresses inside the staged scan.
-		seenAddresses := make(map[string]struct{})
-		for _, chain := range vault.GetChains() {
-			addr, err := vault.GetAddress(chain)
-			if err != nil {
-				ctx.Logger().Error("failed to get address of chain", "error", err)
-				continue
-			}
-			key := stagedVaultAddressKey(chain, addr)
-			if _, exists := seenAddresses[key]; exists {
-				continue
-			}
-			seenAddresses[key] = struct{}{}
-			vaultIndexesByAddress[key] = append(vaultIndexesByAddress[key], i)
-		}
-	}
-
-	// Cache pool lookups while translating staged asset amounts into rune value,
-	// since many staged items can share the same asset within one scan.
-	poolCache := make(map[common.Asset]Pool)
-	missingPools := make(map[common.Asset]struct{})
-	valueInRune := func(coin common.Coin) (cosmos.Uint, bool) {
-		if coin.IsRune() {
-			return coin.Amount, true
-		}
-
-		if pool, ok := poolCache[coin.Asset]; ok {
-			return pool.AssetValueInRune(coin.Amount), true
-		}
-		if _, missing := missingPools[coin.Asset]; missing {
-			return cosmos.ZeroUint(), false
-		}
-
-		pool, err := k.GetPool(ctx, coin.Asset)
-		if err != nil {
-			ctx.Logger().Error("failed to get pool", "error", err)
-			missingPools[coin.Asset] = struct{}{}
-			return cosmos.ZeroUint(), false
-		}
-		poolCache[coin.Asset] = pool
-		return pool.AssetValueInRune(coin.Amount), true
-	}
-
-	// Scan staged outbounds once and accumulate their effects into the
-	// precomputed per-vault delta buckets.
-	stagedIter := k.GetStagedOutboundIterator(ctx)
-	defer stagedIter.Close()
-	for ; stagedIter.Valid(); stagedIter.Next() {
-		var stagedList StagedOutboundList
-		if err := k.cdc.Unmarshal(stagedIter.Value(), &stagedList); err != nil {
-			ctx.Logger().Error("failed to unmarshal staged outbound list", "error", err)
-			continue
-		}
-		for _, staged := range stagedList.Items {
-			item := staged.TxOutItem
-			if !item.OutHash.IsEmpty() {
-				continue
-			}
-
-			// Convert the staged coin into the same rune-denominated value used by
-			// SortBySecurity so staged and live txouts affect vault security
-			// identically.
-			itemValue, ok := valueInRune(item.Coin)
-			if !ok {
-				continue
-			}
-
-			sourceIdx, hasSourceVault := vaultIndexByPubKey[item.VaultPubKey.String()]
-			if hasSourceVault {
-				subtractions[sourceIdx] = subtractions[sourceIdx].Add(itemValue)
-			}
-
-			// Credit any vault whose address matches the staged destination. Skip
-			// the source vault when the staged item loops back to its own address
-			// so self-sends do not cancel out the outbound deduction.
-			destinationKey := stagedVaultAddressKey(item.Coin.Asset.GetChain(), item.ToAddress)
-			for _, destinationIdx := range vaultIndexesByAddress[destinationKey] {
-				if hasSourceVault && destinationIdx == sourceIdx {
-					continue
-				}
-				additions[destinationIdx] = additions[destinationIdx].Add(itemValue)
-			}
-		}
-	}
-
-	return additions, subtractions
-}
-
-func stagedVaultAddressKey(chain common.Chain, addr common.Address) string {
-	return chain.String() + "|" + addr.String()
 }
 
 // GetPendingOutbounds selects txouts in the outbound and scheduled outbound queues (for deduction to leave only 'available' balances),
