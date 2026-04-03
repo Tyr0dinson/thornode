@@ -3119,8 +3119,6 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	// Reset the voter now that all mempool state has been undone.
 	voter = clearMempoolRollbackState(voter)
 	keeper.SetObservedTxInVoter(ctx, voter)
-	// Keep the legacy event name for wire compatibility even though the
-	// implementation now rolls back mempool execution inline.
 	mempoolRollbackEvent := NewEventMempoolSwapReverted(
 		voter.TxID,
 		ctx.BlockHeight(),
