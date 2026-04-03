@@ -1270,26 +1270,11 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		canUseMempoolSwap = hasCapacity
 	}
 
-	swapSeconds := res.OutboundDelaySeconds
-	// TODO: can outbound delay seconds be negative?
-	if res.StreamingSwapSeconds != 0 && res.OutboundDelaySeconds < res.StreamingSwapSeconds {
-		swapSeconds = res.StreamingSwapSeconds
-	}
-
-	var totalSeconds int64
+	totalSeconds := common.Max(res.OutboundDelaySeconds, res.StreamingSwapSeconds)
 	if canUseMempoolSwap {
-		// With mempool swap optimization, inbound confirmation happens in parallel with swap execution.
-		// Total time is the maximum of either path, not the sum.
-		totalSeconds = swapSeconds
-		if inboundConfirmations > 0 && res.InboundConfirmationSeconds > totalSeconds {
-			totalSeconds = res.InboundConfirmationSeconds
-		}
+		totalSeconds = common.Max(totalSeconds, res.InboundConfirmationSeconds)
 	} else {
-		// Traditional flow: inbound confirmation + swap execution (sequential)
-		totalSeconds = swapSeconds
-		if inboundConfirmations > 0 {
-			totalSeconds += res.InboundConfirmationSeconds
-		}
+		totalSeconds += res.InboundConfirmationSeconds
 	}
 	res.TotalSwapSeconds = totalSeconds
 
