@@ -31,8 +31,14 @@ func runSwapQueues(c *C, ctx cosmos.Context, mgr *Mgrs) {
 	}
 }
 
-func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
+func setupAdvancedMempoolManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	return ctx, mgr
+}
+
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// Setup vault
@@ -139,7 +145,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 // TestFinalizeOutboundsRollbackOnError verifies that a finalize failure leaves
 // staged outbounds and mempool-capacity accounting untouched.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnError(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	dummyMgr := NewDummyMgrWithKeeper(mgr.Keeper())
 
 	// Seed one staged outbound plus some reserved mempool capacity.
@@ -173,8 +179,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnEr
 // deferred affiliate-fee failure aborts finalization instead of silently
 // materializing the gross outbound amount.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnDeferredAffiliateFeeError(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	// Provide the normal pool and vault fixtures so the affiliate-fee failure is
 	// the only reason finalization aborts.
@@ -273,8 +279,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 	netSynthAmount := outboundAmount.Sub(affiliateAmount)
 
 	setupCase := func() (cosmos.Context, *Mgrs, NodeAccount) {
-		ctx, mgr := setupManagerForTest(c)
-		mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+		ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+		mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 		// Give each sub-case an isolated validator, vault, and pool fixture.
 		na := GetRandomValidatorNode(NodeActive)
@@ -344,7 +350,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 		stagedItem.Coin.Asset = stagedAsset
 		c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+5), IsNil, Commentf("case %s", name))
 
-		_, err = mgr.Keeper().GetSwapQueueItem(ctx, inTxID, 2)
+		_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 2)
 		c.Assert(err, NotNil, Commentf("case %s should not queue affiliate sidecars before finalization", name))
 
 		// Finalization should apply the deferred affiliate work exactly once.
@@ -355,7 +361,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 		c.Assert(stagedErr, IsNil, Commentf("case %s", name))
 		c.Check(stagedItems, HasLen, 0, Commentf("case %s should clear staged outbounds on finalization", name))
 
-		affiliateSwap, err := mgr.Keeper().GetSwapQueueItem(ctx, inTxID, 2)
+		affiliateSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 2)
 		c.Assert(err, IsNil, Commentf("case %s should queue affiliate sidecar on finalization", name))
 		c.Check(affiliateSwap.Tx.Coins, DeepEquals, common.Coins{common.NewCoin(finalAsset, affiliateAmount)}, Commentf("case %s should queue the deferred affiliate input", name))
 		c.Check(affiliateSwap.TargetAsset.Equals(common.RuneAsset()), Equals, true, Commentf("case %s should swap the affiliate fee to RUNE", name))
@@ -384,8 +390,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 // a native RUNE target pays the affiliate directly at finalization time rather
 // than spawning a deferred sidecar swap.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDeferredAffiliateFeesToRuneTarget(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	// This case checks the direct RUNE payout path.
 	na := GetRandomValidatorNode(NodeActive)
@@ -455,7 +461,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 	c.Assert(stagedErr, IsNil)
 	c.Check(stagedItems, HasLen, 0)
 
-	_, queueErr := mgr.Keeper().GetSwapQueueItem(ctx, inTxID, 2)
+	_, queueErr := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 2)
 	c.Assert(queueErr, NotNil, Commentf("RUNE target should not queue an affiliate sidecar on finalization"))
 
 	// The owner should get net RUNE and the affiliate should get the deferred fee.
@@ -471,8 +477,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 // that split external outbounds are regrouped at finalization, rewritten to
 // their net queued amounts, and paired with one deferred affiliate sidecar.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDeferredAffiliateFeesToExternalTarget(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	// This case checks split external outbounds that later go into TxOut.
 	na := GetRandomValidatorNode(NodeActive)
@@ -579,7 +585,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 	c.Check(finalActionTotal.Equal(expectedQueuedAmount), Equals, true,
 		Commentf("finalized actions should be rewritten to the net queued outputs"))
 
-	affiliateSwap, err := mgr.Keeper().GetSwapQueueItem(ctx, inTxID, 2)
+	affiliateSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 2)
 	c.Assert(err, IsNil)
 	c.Check(affiliateSwap.Tx.Coins, DeepEquals, common.Coins{common.NewCoin(common.ETHAsset, affiliateAmount)},
 		Commentf("external target should queue the deferred affiliate sidecar on finalization"))
@@ -590,9 +596,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 // mempool staging keeps outbound-fee accounting speculative and only commits it
 // when the staged outbound is finalized into a real outbound.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsCommitsOutboundFeeAccountingAtFinalization(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
@@ -727,7 +733,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsCommitsOutbo
 // outputs that must all settle inline.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	setupCase := func() (cosmos.Context, *Mgrs, Pool, Pool, Vault) {
-		ctx, mgr := setupManagerForTest(c)
+		ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 		mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 		mgr.Keeper().SetMimir(ctx, constants.TxOutDelayMax.String(), 17280)
 
@@ -948,7 +954,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 // TestRevertMempoolSwapRollbackOnError verifies that a rollback failure keeps
 // the original pools, staged outbounds, voter state, and mempool usage intact.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnError(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	// Use a keeper that fails during the rollback flow so we can check atomic rollback.
 	failKeeper := SettleSwapPostSwapSetPoolFailKeeper{Keeper: mgr.Keeper()}
 	dummyMgr := NewDummyMgrWithKeeper(failKeeper)
@@ -1037,7 +1043,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnEr
 // TestMempoolSwapWithMimirEnabled verifies the runtime gate and capacity check
 // when mempool swaps are enabled.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 
 	// Enable mempool swaps
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
@@ -1081,7 +1087,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c
 // TestMempoolSwapWithMimirDisabled verifies that policy eligibility remains the
 // same while runtime capacity correctly reports mempool swaps as disabled.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 
 	// Disable mempool swaps (cap = 0)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
@@ -1117,9 +1123,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(
 // secured target stages the layer1 asset and uses that same underlying asset
 // when the speculative swap is rolled back inline.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetMempoolSwapStagesUnderlyingAndRollsBack(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
 
 	// This test checks that a secured target is staged as the layer1 asset and reversed the same way.
@@ -1215,7 +1221,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetMempoolSwapStage
 // that partial advanced-queue output is recovered from queue state and reversed
 // inline before any secured outbound has been staged.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialRollbackExecutesInlineRollbackSwap(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
@@ -1323,7 +1329,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialR
 // TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
 // mempool processing never starts when the source vault is inactive.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwapBeforeFinalization(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// Before finalization, an inactive vault should block mempool execution completely.
@@ -1376,7 +1382,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwap
 // TestTradingHaltSkipsMempoolProcessingUntilFinalization verifies that a
 // trading halt suppresses all speculative queueing, staging, and capacity use.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestTradingHaltSkipsMempoolProcessingUntilFinalization(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 	mgr.Keeper().SetMimir(ctx, "HaltTrading", 1)
 
@@ -1438,7 +1444,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestTradingHaltSkipsMempoolProces
 // the inbound is finalized, the handler first unwinds speculative state and
 // only then schedules the refund path.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempoolSwapRevertsBeforeRefund(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// After finalization, the code should undo the mempool swap first and then refund the user.
@@ -1537,7 +1543,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempool
 // verifies that plain finalized inactive-vault inbounds keep the historical
 // direct-refund behavior even if mempool rollback-state inspection is broken.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedNonMempoolStillRefundsWhenRollbackInspectionFails(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	sourcePool := NewPool()
@@ -1596,9 +1602,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedNonMemp
 // synth outbounds use the same inline rollback-swap path as other reversible outputs
 // and settle inline during rollback.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboundExecutesInlineRollbackSwap(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(10_000_000 * common.One)
@@ -1658,10 +1664,10 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboun
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
 
-	// Reproduce the real legacy queue mempool path: execute the swap with direct
-	// outbound scheduling suppressed, then materialize the emitted synth through
-	// the shared staging logic. This keeps the minted synth in Asgard while the
-	// outbound remains speculative and staged.
+	// Reproduce the real advanced-queue mempool path: execute the swap with
+	// direct outbound scheduling suppressed, then materialize the emitted synth
+	// through the shared staging logic. This keeps the minted synth in Asgard
+	// while the outbound remains speculative and staged.
 	msg := MsgSwap{
 		Tx:                    tx,
 		TargetAsset:           common.ETHAsset.GetSyntheticAsset(),
@@ -1730,9 +1736,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboun
 // that deferred affiliate handling does not shrink a staged synth amount before
 // rollback, so the reverse swap still uses the full gross output.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthAffiliateTargetBuildsGrossRollbackSwap(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	// This test checks that synth staging keeps the full amount until finalization.
 	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), mgr.EventMgr(), mgr.GasMgr())
@@ -1804,7 +1810,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthAffilia
 	expectedReverse, err := buildMempoolRollbackSwapMsg(ctx, mgr, voter, common.BTCAsset, stagedItems[0].TxOutItem, 0, activeVault)
 	c.Assert(err, IsNil)
 
-	_, err = mgr.Keeper().GetSwapQueueItem(ctx, inTxID, 2)
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 2)
 	c.Assert(err, NotNil, Commentf("mempool staging should not create affiliate sidecars before finalization"))
 
 	// Mirror the forward swap's synth mint path so rollback can consume the
@@ -1828,7 +1834,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthAffilia
 	_, err = mgr.Keeper().GetSwapQueueItem(ctx, CreateMempoolRollbackTxID(inTxID, 0), 0)
 	c.Assert(err, NotNil, Commentf("rollback should settle the synth reverse swap inline"))
 
-	_, err = mgr.Keeper().GetSwapQueueItem(ctx, inTxID, 2)
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 2)
 	c.Assert(err, NotNil, Commentf("rollback should not leave deferred affiliate sidecars queued"))
 }
 
@@ -1836,7 +1842,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthAffilia
 // rollback helper chooses an active vault that both advertises and can derive a
 // usable address for the inbound's source chain.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestSelectActiveVaultForChainPrefersUsableSourceChainVault(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 
 	// Build one bad vault and one good vault for the source chain.
 	sourcePool := NewPool()
@@ -1917,9 +1923,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSelectActiveVaultForChainPref
 // timeout-style rollback only clears speculative state; a later confirmed
 // inbound should proceed through ordinary finalized swap handling.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestTimeoutRevertedMempoolSwapFinalizesNormallyWithoutResume(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	// This test checks a timeout-style rollback followed later by a real finalized inbound.
 	// Setup vault
@@ -2018,7 +2024,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestTimeoutRevertedMempoolSwapFin
 // rollback collapses same-asset external pieces into one reverse action before
 // settling inline.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapAggregatesSplitExternalOutboundsByAsset(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// This test checks that two same-asset external outbounds become one reverse action.
@@ -2083,7 +2089,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapAggregatesSp
 // advanced-queue settlement keeps the reservation during partial execution and
 // releases it only once the inbound is finalized and the swap completes.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementReleasesMempoolSwapCapacity(c *C) {
-	ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
@@ -2181,81 +2187,5 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementRe
 	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(outItems, HasLen, 1, Commentf("finalized settlement should queue the outbound immediately"))
-	c.Check(outItems[0].InHash.Equals(inTxID), Equals, true)
-}
-
-// TestFinalizedLegacyQueueSettlementReleasesMempoolSwapCapacity verifies that
-// the legacy queue also clears per-voter and global mempool reservations once a
-// finalized inbound settles through the normal queue path.
-func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedLegacyQueueSettlementReleasesMempoolSwapCapacity(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
-	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
-
-	sourcePool := NewPool()
-	sourcePool.Asset = common.BTCAsset
-	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
-	sourcePool.LPUnits = sourcePool.BalanceRune
-	sourcePool.Status = PoolAvailable
-	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
-
-	targetPool := NewPool()
-	targetPool.Asset = common.ETHAsset
-	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
-	targetPool.LPUnits = targetPool.BalanceRune
-	targetPool.Status = PoolAvailable
-	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
-
-	na := GetRandomValidatorNode(NodeActive)
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
-
-	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
-	activeVault.Coins = common.Coins{
-		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
-		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
-	}
-	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
-
-	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
-	c.Assert(err, IsNil)
-	destination := GetRandomETHAddress()
-
-	inTxID := GetRandomTxHash()
-	inboundTx := common.NewTx(
-		inTxID,
-		GetRandomBTCAddress(),
-		toAddr,
-		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
-		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
-		"SWAP:ETH.ETH:"+destination.String(),
-	)
-	observedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 15)
-	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
-	voter.Tx = observedTx
-	voter.UnfinalizedHeight = ctx.BlockHeight()
-	voter.FinalisedHeight = ctx.BlockHeight()
-	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
-	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
-
-	// Execute the legacy queue item in the same shape it would have once the inbound is confirmed.
-	msg := NewMsgSwap(inboundTx, common.ETHAsset, destination, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 1, types.SwapVersion_v1, GetRandomBech32Addr())
-	queue := newSwapQueue(mgr.Keeper())
-	handleErr, settleErr := queue.executeAndSettleSwapQueueItemCached(ctx, mgr, swapItem{msg: *msg, index: 0})
-	c.Assert(handleErr, IsNil)
-	c.Assert(settleErr, IsNil)
-
-	// Finalized settlement should release the reservation and schedule a real outbound.
-	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
-	c.Assert(err, IsNil)
-	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("legacy settlement after finalization should release the mempool swap reservation"))
-	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("legacy settlement after finalization should release global mempool swap usage"))
-
-	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
-	c.Assert(err, IsNil)
-	c.Assert(outItems, HasLen, 1, Commentf("legacy finalized settlement should queue the outbound immediately"))
 	c.Check(outItems[0].InHash.Equals(inTxID), Equals, true)
 }

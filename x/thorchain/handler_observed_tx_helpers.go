@@ -292,30 +292,22 @@ func handleObservedTxInQuorum(
 	}
 
 	// Finalized inbounds observed on an inactive vault keep the historical
-	// direct-refund behavior on advanced-queue systems unless the voter already
-	// shows local mempool-swap participation. Legacy queue mode keeps the older
-	// rollback+refund path for now.
+	// direct-refund behavior unless the voter already shows mempool-swap
+	// participation through a live TOR reservation.
 	if hasFinalised && vault.Status == InactiveVault {
 		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
 
-		if k.AdvSwapQueueEnabled(ctx) {
-			// A live TOR reservation means this voter actually entered the
-			// mempool swap path, so it must roll back before refunding.
-			if voter.HasReservedMempoolSwapTOR() {
-				if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
-					ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
-				}
-				return nil
-			}
-
-			if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
-				ctx.Logger().Error("fail to refund", "error", newErr)
+		// A live TOR reservation means this voter actually entered the
+		// mempool swap path, so it must roll back before refunding.
+		if voter.HasReservedMempoolSwapTOR() {
+			if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
+				ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
 			}
 			return nil
 		}
 
-		if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
-			ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
+		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
+			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
 		return nil
 	}
@@ -331,7 +323,7 @@ func handleObservedTxInQuorum(
 	// finalize retry or rollback clears the whole mempool-swap snapshot together.
 	// LackSigning's timeout reconciler provides that retry path instead of forcing an
 	// immediate hard failure here.
-	if hasFinalised && len(voter.Actions) > 0 {
+	if hasFinalised && voter.HasReservedMempoolSwapTOR() && len(voter.Actions) > 0 {
 		if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 		}
@@ -492,9 +484,7 @@ func handleObservedTxInQuorum(
 // log-and-continue behavior, so refund scheduling failures are logged here
 // while rollback/inspection failures are returned to the caller for context.
 //
-// Advanced-queue callers should route only mempool-aware inactive-vault
-// inbounds here. Legacy mode may still send all inactive-vault finalized swaps
-// through this helper until the v1 path is retired.
+// Callers should route only mempool-aware inactive-vault inbounds here.
 //
 // Design note: refund scheduling is intentionally gated on successful rollback.
 // rollbackMempoolSwapAtomic owns staged outbounds, queue cleanup, pool/accounting
@@ -1303,7 +1293,7 @@ func needsMempoolSwapRollback(ctx cosmos.Context, k keeper.Keeper, voter Observe
 	if voter.HasReservedMempoolSwapTOR() {
 		return true, nil
 	}
-	if k.HasSwapQueueItem(ctx, voter.TxID, 0) || k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
+	if k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
 		return true, nil
 	}
 	stagedItems, err := k.GetStagedOutbounds(ctx, voter.TxID)
@@ -1384,24 +1374,19 @@ func buildPendingMempoolRollbackAction(ctx cosmos.Context, k keeper.Keeper, vote
 // mempool inbound after rollback.
 //
 // With the current production flow, the only queue entry that can still belong
-// to a mempool swap here is the main swap item at index 0:
-// - the swap may have been queued before the queue manager got a chance to run
-// - an advanced swap may have partially executed and still be stored at index 0
+// to a mempool swap here is the advanced-queue main swap item at index 0:
+//   - the swap may have been queued before the advanced queue manager got a
+//     chance to run
+//   - an advanced swap may have partially executed and still be stored at index 0
 //
 // Affiliate sidecars are deferred until finalization, so they should not exist
 // during this rollback cleanup path. Preferred-asset follow-up swaps use their
 // own synthetic txid, not the original inbound txid.
 //
 // Because of that current invariant, clearing index 0 is enough here. If the
-// mempool flow ever starts creating extra same-txid queue entries before
-// finalization, this helper must be widened again.
+// mempool flow ever starts creating extra same-txid advanced-queue entries
+// before finalization, this helper must be widened again.
 func clearPendingMempoolSwapQueueItems(ctx cosmos.Context, k keeper.Keeper, txID common.TxID) error {
-	// Legacy/basic queue mempool swaps only use index 0 for the main swap item.
-	if k.HasSwapQueueItem(ctx, txID, 0) {
-		k.RemoveSwapQueueItem(ctx, txID, 0)
-	}
-
-	// Advanced queue mempool swaps also keep the main in-flight swap at index 0.
 	if k.HasAdvSwapQueueItem(ctx, txID, 0) {
 		if err := k.RemoveAdvSwapQueueItem(ctx, txID, 0); err != nil {
 			return fmt.Errorf("fail to remove adv swap queue item: %w", err)

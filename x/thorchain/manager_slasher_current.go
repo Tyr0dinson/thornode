@@ -205,8 +205,6 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("invalid signing transaction period: %d", signingTransPeriod)
 	}
 	enableMemolessOutbound := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMemolessOutbound)
-	advSwapQueueEnabled := mgr.Keeper().AdvSwapQueueEnabled(ctx)
-
 	if signingTransPeriod <= 0 || ctx.BlockHeight() < signingTransPeriod {
 		return nil
 	}
@@ -321,9 +319,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			}
 
 			if maxOutboundAttempts > 0 {
-				// Use max of FinalisedHeight and UnfinalizedHeight to handle both traditional
-				// and mempool swap paths. For mempool swaps, UnfinalizedHeight is set first.
-				age := ctx.BlockHeight() - max(voter.UnfinalizedHeight, voter.FinalisedHeight)
+				age := ctx.BlockHeight() - voter.FinalisedHeight
 				attempts := age / signingTransPeriod
 				if attempts >= maxOutboundAttempts {
 					// Skip treasury recovery if there's already an outbound associated or
@@ -339,14 +335,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						continue
 					}
 
-					// Advanced-queue mempool swaps key off the TOR reservation. Legacy
-					// queue mode keeps the older UnfinalizedHeight predicate until the
-					// v1 path is retired.
-					enteredMempoolPath := voter.UnfinalizedHeight > 0
-					if advSwapQueueEnabled {
-						enteredMempoolPath = voter.HasReservedMempoolSwapTOR()
-					}
-					if voter.FinalisedHeight == 0 && enteredMempoolPath {
+					if voter.FinalisedHeight == 0 && voter.HasReservedMempoolSwapTOR() {
 						ctx.Logger().Info("rolling back mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
 						if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
 							ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)
@@ -619,9 +608,10 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 // mempool swaps that are stranded only in swap-queue state. Those entries have
 // no staged outbounds left, so the normal staged timeout sweep cannot discover
 // them even though they still need rollback/refund cleanup.
-func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.Context, iter cosmos.Iterator, timeoutAge int64, seen map[string]struct{}, hashes *[]common.TxID) {
+func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.Context, iter cosmos.Iterator, timeoutAge int64) []common.TxID {
 	defer iter.Close()
 
+	var hashes []common.TxID
 	for ; iter.Valid(); iter.Next() {
 		var msg MsgSwap
 		if err := s.keeper.Cdc().Unmarshal(iter.Value(), &msg); err != nil {
@@ -641,11 +631,11 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 			ctx.Logger().Error("fail to get observed tx voter for queued mempool swap", "error", err, "hash", inHash)
 			continue
 		}
-		if voter.UnfinalizedHeight == 0 || voter.FinalisedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
+		if !voter.HasReservedMempoolSwapTOR() || voter.FinalisedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
 			continue
 		}
 
-		age := ctx.BlockHeight() - max(voter.UnfinalizedHeight, voter.FinalisedHeight)
+		age := ctx.BlockHeight() - voter.FinalisedHeight
 		if age < timeoutAge {
 			continue
 		}
@@ -671,23 +661,17 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 			continue
 		}
 
-		if _, ok := seen[inHash.String()]; ok {
-			continue
-		}
-		seen[inHash.String()] = struct{}{}
-		*hashes = append(*hashes, inHash)
+		hashes = append(hashes, inHash)
 	}
+
+	return hashes
 }
 
 // retryTimedOutInactiveVaultQueueBackedMempoolSwaps runs the queued-only retry
-// pass after the staged timeout sweep. It deduplicates hashes across the basic
-// and advanced swap queues, then reuses the same rollback+refund helper as the
-// observed-tx path so recovery behavior stays consistent.
+// pass after the staged timeout sweep. It reuses the same rollback+refund
+// helper as the observed-tx path so recovery behavior stays consistent.
 func (s *SlasherImpl) retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx cosmos.Context, mgr Manager, timeoutAge int64) {
-	seen := make(map[string]struct{})
-	var hashes []common.TxID
-	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetSwapQueueIterator(ctx), timeoutAge, seen, &hashes)
-	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	hashes := s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetAdvSwapQueueItemIterator(ctx), timeoutAge)
 
 	for _, inHash := range hashes {
 		voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)

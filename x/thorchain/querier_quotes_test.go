@@ -216,7 +216,6 @@ func (s *QuotesSuite) TestRapidStreamingSwapCalculation(c *C) {
 func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.L1SlipMinBps.String(), 10)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
 
 	// Setup test pool
 	pool := NewPool()
@@ -253,6 +252,7 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 	// Test 1: With mempool swaps disabled, timing stays sequential even when the
 	// route would otherwise be eligible.
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	c.Check(
 		totalSecondsFor(common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
 		Equals,
@@ -260,9 +260,20 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 		Commentf("disabled mempool swaps should keep timing sequential"),
 	)
 
-	// Test 2: Non-streaming swaps to external targets still get the mempool
-	// overlap benefit when the cap is enabled.
+	// Test 2: The advanced queue gate must also be on; without it, quote timing
+	// should remain sequential even if the cap is enabled.
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	c.Check(
+		totalSecondsFor(common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
+		Equals,
+		inboundConfSeconds+swapSeconds,
+		Commentf("legacy queue mode should keep quote timing sequential"),
+	)
+
+	// Test 3: Once the advanced queue is enabled, eligible routes regain the
+	// mempool overlap benefit.
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	c.Check(
 		totalSecondsFor(common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
 		Equals,
@@ -270,7 +281,7 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 		Commentf("eligible external-target swaps should use parallel timing"),
 	)
 
-	// Test 3: Explicit streaming swaps to native targets are also mempool-eligible.
+	// Test 4: Explicit streaming swaps to native targets are also mempool-eligible.
 	c.Check(
 		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), MarketSwap, 1, 1, inboundConfSeconds, swapSeconds, inboundConfBlocks),
 		Equals,
@@ -278,7 +289,7 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 		Commentf("streaming native-target swaps should use parallel timing"),
 	)
 
-	// Test 4: Non-streaming swaps to native targets should not use the mempool path.
+	// Test 5: Non-streaming swaps to native targets should not use the mempool path.
 	c.Check(
 		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
 		Equals,
@@ -298,9 +309,8 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 		Commentf("streaming limit swaps should still use parallel timing for native targets"),
 	)
 
-	// Test 5: Implicit streaming swap to native targets should also use the mempool path
+	// Test 6: Implicit streaming swap to native targets should also use the mempool path
 	// once the advanced queue is enabled and will split the swap.
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	c.Check(
 		totalSecondsFor(common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10*common.One), MarketSwap, 0, 0, inboundConfSeconds, swapSeconds, inboundConfBlocks),
 		Equals,
@@ -308,7 +318,7 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 		Commentf("implicit streaming native target swaps should use parallel timing"),
 	)
 
-	// Test 6: When the swap itself takes longer, the mempool path should still
+	// Test 7: When the swap itself takes longer, the mempool path should still
 	// use the slower of the two parallel branches.
 	swapSecondsLonger := int64(800)
 	inboundConfSecondsShort := int64(200)

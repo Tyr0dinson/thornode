@@ -222,7 +222,7 @@ func (s TxOutStoreSuite) TestTryAddTxOutItemDefersMempoolAffiliateSideEffects(c 
 	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
 
 	w.keeper.SetMimir(w.ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	w.keeper.SetMimir(w.ctx, constants.EnableAdvSwapQueue.String(), 0)
+	w.keeper.SetMimir(w.ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, w.activeNodeAccount), IsNil)
 
 	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
@@ -359,7 +359,7 @@ func (s TxOutStoreSuite) TestTryAddTxOutItemDeferredMempoolAffiliateFeeStillHono
 	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), mgr.EventMgr(), mgr.GasMgr())
 
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
@@ -433,7 +433,7 @@ func (s TxOutStoreSuite) TestTryAddTxOutItemStagesGrossExternalMempoolOutboundWi
 	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
 
 	w.keeper.SetMimir(w.ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	w.keeper.SetMimir(w.ctx, constants.EnableAdvSwapQueue.String(), 0)
+	w.keeper.SetMimir(w.ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, w.activeNodeAccount), IsNil)
 
 	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {

@@ -1391,8 +1391,8 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 
 // executeSwapWithoutOutboundsCached runs swap math in the current cache context
 // while suppressing normal outbound scheduling. Callers use this when they need
-// to settle the result explicitly afterward, such as mempool-related flows and
-// legacy queue paths that must still honor native outbound staging/finalization.
+// to settle the result explicitly afterward, such as mempool-related flows
+// that still honor native outbound staging/finalization.
 func executeSwapWithoutOutboundsCached(ctx cosmos.Context, mgr Manager, msg *MsgSwap) error {
 	swapCtx := ctx.WithValue(constants.CtxSkipSwapOutbounds, true)
 	swapHandler := NewSwapHandler(mgr)
@@ -2031,6 +2031,7 @@ func canUseMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.Tx, memo mem.M
 // optimization before inbound finalization.
 //
 // Policy summary:
+//   - Mempool swaps are only enabled for the advanced swap queue (v2).
 //   - All swaps that will execute as streaming are mempool-eligible. If
 //     streaming exists to reduce slip, there is no principled reason to
 //     exclude a swap from starting early just because the advanced queue
@@ -2052,6 +2053,11 @@ func isMempoolSwapEligible(
 	swapType types.SwapType,
 	streamInterval, streamQuantity uint64,
 ) bool {
+	// Mempool swaps are only enabled for the advanced swap queue.
+	if !mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		return false
+	}
+
 	// Native THORChain sources do not have an inbound confirmation delay to hide.
 	if sourceAsset.IsNative() {
 		return false

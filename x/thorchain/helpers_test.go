@@ -2046,7 +2046,18 @@ func (s *HelperSuite) TestIsMempoolSwapEligible(c *C) {
 	pool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	mgr.Keeper().SetMimir(ctx, constants.L1SlipMinBps.String(), 10)
+
+	// Mempool swaps are now v2-only, so disabling the advanced queue should
+	// fail closed even for routes that would otherwise be eligible.
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	c.Check(
+		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.ETHAsset, cosmos.NewUint(common.One), MarketSwap, 0, 0),
+		Equals,
+		false,
+		Commentf("legacy queue mode should disable mempool eligibility entirely"),
+	)
+
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 
 	c.Check(
 		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(common.One), MarketSwap, 1, 1),
@@ -2091,7 +2102,6 @@ func (s *HelperSuite) TestIsMempoolSwapEligible(c *C) {
 		Commentf("streaming limit swaps should still be mempool-eligible for THOR targets"),
 	)
 
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	c.Check(
 		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10*common.One), MarketSwap, 0, 0),
 		Equals,
