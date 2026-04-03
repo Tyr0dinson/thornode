@@ -132,7 +132,7 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	c.Assert(sorted[2].PubKey.Equals(vault1.PubKey), Equals, true)
 }
 
-func (s *KeeperVaultSuite) TestSortBySecurityIncludesStagedOutbounds(c *C) {
+func (s *KeeperVaultSuite) TestSortBySecurityExcludesStagedOutbounds(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	na1 := GetRandomValidatorNode(NodeActive)
@@ -183,8 +183,9 @@ func (s *KeeperVaultSuite) TestSortBySecurityIncludesStagedOutbounds(c *C) {
 		securityByVault[result.Vault.PubKey.String()] = result
 	}
 
-	c.Check(securityByVault[vault1.PubKey.String()].TotalValue.Equal(cosmos.NewUint(75*common.One)), Equals, true)
-	c.Check(securityByVault[vault2.PubKey.String()].TotalValue.Equal(cosmos.NewUint(125*common.One)), Equals, true)
+	// Staged outbounds should NOT affect vault security TotalValue.
+	c.Check(securityByVault[vault1.PubKey.String()].TotalValue.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Check(securityByVault[vault2.PubKey.String()].TotalValue.Equal(cosmos.NewUint(100*common.One)), Equals, true)
 }
 
 func (s *KeeperVaultSuite) TestGetMostSecureStrict(c *C) {
