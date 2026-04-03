@@ -97,6 +97,18 @@ txs:
 type: create-blocks
 count: 1
 ---
+# Verify mempool swap usage increased immediately (capacity reserved at observation).
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+# Allow one more block for the advanced swap queue to settle the swap and
+# stage the outbound.  The observation block reserves TOR and queues the swap;
+# the next EndBlock processes the sub-swap and settles the outbound.
+type: create-blocks
+count: 1
+---
 # With staged queue approach, outbounds are NOT in the queue until finalized
 # Verify queue is empty (outbound is staged, not in real queue)
 type: check
@@ -113,12 +125,6 @@ asserts:
   - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_eth_fox }}"
   - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
   - .staged_outbound_items[0].scheduled_height|tonumber > 0
----
-# Verify mempool swap usage increased (1 BTC ~ 1000 TOR with current pool ratios)
-type: check
-endpoint: http://localhost:1317/thorchain/network
-asserts:
-  - .mempool_swap_usage_tor|tonumber > 0
 ---
 ########################################################################################
 # Scenario 2: Cap Enforcement - Second Swap Should Wait When Cap Exceeded
