@@ -76,21 +76,33 @@ func (k KVStore) IntentAuctionExists(ctx cosmos.Context, intentTxID common.TxID)
 
 // RemoveIntentAuction removes an intent auction and all associated bids
 func (k KVStore) RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID) {
-	// Remove all associated bids
-	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
-	if err != nil {
-		ctx.Logger().Error("failed to load auction bids during auction removal", "intent_txid", intentTxID, "error", err)
-	} else {
-		for _, bid := range bids {
-			k.RemoveIntentAuctionBid(ctx, bid.BidTxID)
-		}
-	}
+	// Walk the raw auction index so parent cleanup still works even when one of
+	// the child bid records is corrupted and cannot be decoded.
+	k.removeIntentAuctionBidsByIntentTxID(ctx, intentTxID)
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntentAuction, intentTxID.String()))
 
 	// Remove from active auction index (O(1) with prefix keys)
 	store.Delete(k.GetKey(prefixActiveAuctionIndex, intentTxID.String()))
+}
+
+func (k KVStore) removeIntentAuctionBidsByIntentTxID(ctx cosmos.Context, intentTxID common.TxID) {
+	prefix := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String(), "/")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
+	var bidTxIDs []common.TxID
+	for ; iter.Valid(); iter.Next() {
+		bidTxIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(bidTxIDSuffix) == 0 {
+			continue
+		}
+		bidTxIDs = append(bidTxIDs, common.TxID(string(bidTxIDSuffix)))
+	}
+	iter.Close()
+
+	for _, bidTxID := range bidTxIDs {
+		k.RemoveIntentAuctionBid(ctx, bidTxID)
+	}
 }
 
 // GetActiveAuctions retrieves all active intent auctions using prefix key iteration
@@ -203,12 +215,13 @@ func (k KVStore) IntentAuctionBidExists(ctx cosmos.Context, bidTxID common.TxID)
 
 // RemoveIntentAuctionBid removes an intent auction bid and its indices
 func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID) {
-	// Check if the bid record exists before proceeding
-	if !k.IntentAuctionBidExists(ctx, bidTxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+
+	// Sweep stale indexes even when the primary bid record is already gone.
+	if !store.Has(k.GetKey(prefixIntentAuctionBid, bidTxID.String())) {
+		k.removeIntentAuctionBidIndexEntriesByTxID(ctx, bidTxID)
 		return
 	}
-
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Get the bid record to access its indices
 	bid, err := k.GetIntentAuctionBid(ctx, bidTxID)

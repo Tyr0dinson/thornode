@@ -424,6 +424,79 @@ func (KeeperIntentAuctionSuite) TestIntentAuctionBid_RemoveMultiple(c *C) {
 	c.Check(len(bids), Equals, 0)
 }
 
+func (KeeperIntentAuctionSuite) TestIntentAuction_RemoveWithCorruptedBid(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("INTENT77777777ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	bidder := common.Address("thor1bidder")
+	bidTxID := common.TxID("BID77777777770ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+
+	auction := types.IntentAuction{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000)),
+		BidAsset:        common.BTCAsset,
+		Status:          types.IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    common.Address("thor1sender1"),
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	bid := types.IntentAuctionBid{
+		BidTxID:       bidTxID,
+		IntentTxID:    intentTxID,
+		BidderAddress: bidder,
+		BidAmount:     common.NewCoin(common.BTCAsset, cosmos.NewUint(500)),
+	}
+	k.SetIntentAuctionBid(ctx, bid)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(k.GetKey(prefixIntentAuctionBid, bidTxID.String()), []byte("corrupted"))
+
+	k.RemoveIntentAuction(ctx, intentTxID)
+
+	c.Check(k.IntentAuctionExists(ctx, intentTxID), Equals, false)
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID), Equals, false)
+
+	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(bids), Equals, 0)
+
+	retrievedBid, err := k.GetBidderBidForAuction(ctx, intentTxID, bidder)
+	c.Assert(err, IsNil)
+	c.Check(retrievedBid.BidTxID.IsEmpty(), Equals, true)
+}
+
+func (KeeperIntentAuctionSuite) TestIntentAuctionBid_RemoveMissingPrimaryRecordSweepsIndexes(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("INTENT88888888ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	bidder := common.Address("thor1bidder")
+	bidTxID := common.TxID("BID88888888880ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+
+	bid := types.IntentAuctionBid{
+		BidTxID:       bidTxID,
+		IntentTxID:    intentTxID,
+		BidderAddress: bidder,
+		BidAmount:     common.NewCoin(common.BTCAsset, cosmos.NewUint(500)),
+	}
+	k.SetIntentAuctionBid(ctx, bid)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Delete(k.GetKey(prefixIntentAuctionBid, bidTxID.String()))
+
+	k.RemoveIntentAuctionBid(ctx, bidTxID)
+
+	c.Check(k.IntentAuctionBidExists(ctx, bidTxID), Equals, false)
+
+	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(bids), Equals, 0)
+
+	retrievedBid, err := k.GetBidderBidForAuction(ctx, intentTxID, bidder)
+	c.Assert(err, IsNil)
+	c.Check(retrievedBid.BidTxID.IsEmpty(), Equals, true)
+}
+
 func (KeeperIntentAuctionSuite) TestIntentAuctionBid_UpdateExisting(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

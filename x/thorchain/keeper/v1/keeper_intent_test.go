@@ -476,3 +476,76 @@ func (KeeperIntentSuite) TestIntentSolve_RemoveCorruptedRecord(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(len(solves), Equals, 0)
 }
+
+func (KeeperIntentSuite) TestIntent_RemoveIntentWithCorruptedSolve(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	intentTxID := common.TxID("INTENT77777777ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	matchHeight := int64(700)
+	intent := types.Intent{
+		TxID:          intentTxID,
+		SourceAddress: common.Address("thor1sender1"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent)
+
+	solveTxID := common.TxID("SOLVE777777770ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	solve := types.IntentSolve{
+		SolveTxID:     solveTxID,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   matchHeight,
+	}
+	k.SetIntentSolve(ctx, solve)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(k.GetKey(prefixIntentSolve, solveTxID.String()), []byte("corrupted"))
+
+	k.RemoveIntent(ctx, intentTxID)
+
+	c.Check(k.IntentExists(ctx, intentTxID), Equals, false)
+	c.Check(k.IntentSolveExists(ctx, solveTxID), Equals, false)
+
+	solves, err := k.GetIntentSolvesByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+
+	solves, err = k.GetIntentSolvesByMatchHeight(ctx, matchHeight)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+}
+
+func (KeeperIntentSuite) TestIntentSolve_RemoveMissingPrimaryRecordSweepsIndexes(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	solveTxID := common.TxID("SOLVE888888880ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	intentTxID := common.TxID("INTENT88888888ABCD1234567890ABCD1234567890ABCD1234567890ABCD123")
+	matchHeight := int64(800)
+
+	solve := types.IntentSolve{
+		SolveTxID:     solveTxID,
+		IntentTxID:    intentTxID,
+		SolverAddress: common.Address("thor1solver"),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(15)),
+		MatchHeight:   matchHeight,
+	}
+	k.SetIntentSolve(ctx, solve)
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Delete(k.GetKey(prefixIntentSolve, solveTxID.String()))
+
+	k.RemoveIntentSolve(ctx, solveTxID)
+
+	c.Check(k.IntentSolveExists(ctx, solveTxID), Equals, false)
+
+	solves, err := k.GetIntentSolvesByIntentID(ctx, intentTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+
+	solves, err = k.GetIntentSolvesByMatchHeight(ctx, matchHeight)
+	c.Assert(err, IsNil)
+	c.Check(len(solves), Equals, 0)
+}

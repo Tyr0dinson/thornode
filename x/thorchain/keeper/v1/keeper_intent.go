@@ -69,26 +69,37 @@ func (k KVStore) IntentExists(ctx cosmos.Context, txID common.TxID) bool {
 
 // RemoveIntent removes an intent and all associated child records (solves, auction, bids)
 func (k KVStore) RemoveIntent(ctx cosmos.Context, txID common.TxID) {
-	// Remove all associated solves
-	solves, err := k.GetIntentSolvesByIntentID(ctx, txID)
-	if err != nil {
-		ctx.Logger().Error("failed to load intent solves during intent removal", "txid", txID, "error", err)
-	} else {
-		for _, solve := range solves {
-			k.RemoveIntentSolve(ctx, solve.SolveTxID)
-		}
-	}
+	// Walk the raw solve index so parent cleanup still works even when one of the
+	// child solve records is corrupted and cannot be decoded.
+	k.removeIntentSolvesByIntentTxID(ctx, txID)
 
-	// Remove associated auction and its bids
-	if k.IntentAuctionExists(ctx, txID) {
-		k.RemoveIntentAuction(ctx, txID)
-	}
+	// Remove auction state and its bids even if the parent auction record is
+	// already missing; stale bid indexes are still scoped by the intent txid.
+	k.RemoveIntentAuction(ctx, txID)
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntent, txID.String()))
 
 	// Remove from active intent index (O(1) with prefix keys)
 	store.Delete(k.GetKey(prefixIntentStatusIndex, txID.String()))
+}
+
+func (k KVStore) removeIntentSolvesByIntentTxID(ctx cosmos.Context, intentTxID common.TxID) {
+	prefix := k.GetKey(prefixIntentSolveByIntent, intentTxID.String(), "/")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(prefix))
+	var solveTxIDs []common.TxID
+	for ; iter.Valid(); iter.Next() {
+		solveTxIDSuffix := keySuffixAfterPrefix(iter.Key(), prefix)
+		if len(solveTxIDSuffix) == 0 {
+			continue
+		}
+		solveTxIDs = append(solveTxIDs, common.TxID(string(solveTxIDSuffix)))
+	}
+	iter.Close()
+
+	for _, solveTxID := range solveTxIDs {
+		k.RemoveIntentSolve(ctx, solveTxID)
+	}
 }
 
 // GetIntentIterator returns an iterator for all intents
@@ -219,12 +230,13 @@ func (k KVStore) IntentSolveExists(ctx cosmos.Context, solveTxID common.TxID) bo
 
 // RemoveIntentSolve removes an intent solve bid and its indices
 func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
-	// Check if the solve record exists before proceeding
-	if !k.IntentSolveExists(ctx, solveTxID) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+
+	// Sweep stale indexes even when the primary solve record is already gone.
+	if !store.Has(k.GetKey(prefixIntentSolve, solveTxID.String())) {
+		k.removeIntentSolveIndexEntriesByTxID(ctx, solveTxID)
 		return
 	}
-
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Get the solve record to access its indices
 	solve, err := k.GetIntentSolve(ctx, solveTxID)
