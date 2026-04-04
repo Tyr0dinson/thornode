@@ -239,6 +239,17 @@ pub struct KeyExportResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct VaultKeysEntry {
+    pub vault_pub_key: String,
+    pub has_frost_keys: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListVaultKeysResponse {
+    pub vaults: Vec<VaultKeysEntry>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct FeeRateResponse {
     pub fee_rate_per_weight: u64,
 }

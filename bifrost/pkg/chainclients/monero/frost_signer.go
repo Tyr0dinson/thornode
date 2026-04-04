@@ -788,6 +788,22 @@ type xmrFrostOutboundMeta struct {
 	Memo        string
 }
 
+type xmrFrostVaultKeysEntry struct {
+	VaultPubKey  string `json:"vault_pub_key"`
+	HasFrostKeys bool   `json:"has_frost_keys"`
+}
+
+func (s *FrostSigner) ListVaultKeys() ([]xmrFrostVaultKeysEntry, error) {
+	var out struct {
+		Vaults []xmrFrostVaultKeysEntry `json:"vaults"`
+	}
+	err := s.callGet("/v1/monero/keys", &out)
+	if err != nil {
+		return nil, fmt.Errorf("fail to list vault keys: %w", err)
+	}
+	return out.Vaults, nil
+}
+
 func (s *FrostSigner) ExportFrostKeys(vaultPubKey string) (string, error) {
 	var out struct {
 		KeyBytesHex string `json:"key_bytes_hex"`

@@ -1274,15 +1274,47 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 	return item
 }
 
-func (c *Client) ExportFrostKeyshare(vaultPubKey common.PubKey) ([]byte, error) {
+func (c *Client) ExportFrostKeyshare(hintPubKey common.PubKey) ([]byte, error) {
 	if c.frostSigner == nil {
 		return nil, fmt.Errorf("frost signer not configured")
 	}
-	hexKey, err := c.frostSigner.ExportFrostKeys(vaultPubKey.String())
+	vaults, err := c.frostSigner.ListVaultKeys()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fail to list vault keys from sidecar: %w", err)
 	}
-	return []byte(hexKey), nil
+
+	hint := hintPubKey.String()
+	for _, v := range vaults {
+		if !v.HasFrostKeys {
+			continue
+		}
+		if v.VaultPubKey == hint {
+			hexKey, exportErr := c.frostSigner.ExportFrostKeys(v.VaultPubKey)
+			if exportErr != nil {
+				return nil, exportErr
+			}
+			return []byte(hexKey), nil
+		}
+	}
+
+	// Hint didn't match — the FROST DKG may have produced a different pubkey
+	// than the THORChain EdDSA key. Export the first vault that has FROST keys.
+	for _, v := range vaults {
+		if !v.HasFrostKeys {
+			continue
+		}
+		c.logger.Info().
+			Str("hint_pubkey", hint).
+			Str("frost_vault_pubkey", v.VaultPubKey).
+			Msg("FROST vault pubkey differs from hint, exporting by sidecar lookup")
+		hexKey, exportErr := c.frostSigner.ExportFrostKeys(v.VaultPubKey)
+		if exportErr != nil {
+			return nil, exportErr
+		}
+		return []byte(hexKey), nil
+	}
+
+	return nil, fmt.Errorf("no FROST keyshares found on sidecar (hint: %s, vaults: %d)", hint, len(vaults))
 }
 
 func (c *Client) RestoreFrostKeyshare(vaultPubKey common.PubKey, keyBytesHex string) error {
