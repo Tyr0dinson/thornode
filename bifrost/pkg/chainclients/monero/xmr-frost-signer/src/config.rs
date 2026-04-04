@@ -133,16 +133,11 @@ impl Config {
 
         let auth_username = read_non_empty_env("XMR_FROST_AUTH_USERNAME");
         let auth_password = read_non_empty_env("XMR_FROST_AUTH_PASSWORD");
-        let auth_bearer = read_non_empty_env("XMR_FROST_AUTH_BEARER");
 
         if auth_username.is_some() != auth_password.is_some() {
             return Err(ConfigError::InvalidAuthConfig(
                 "basic auth requires both XMR_FROST_AUTH_USERNAME and XMR_FROST_AUTH_PASSWORD",
             ));
-        }
-        let auth_enabled = auth_bearer.is_some() || auth_username.is_some();
-        if !auth_enabled {
-            return Err(ConfigError::MissingAuthConfig);
         }
 
         let seed_phrase = std::env::var("SIGNER_SEED_PHRASE")
@@ -151,6 +146,15 @@ impl Config {
             return Err(ConfigError::Missing("SIGNER_SEED_PHRASE"));
         }
         let store_secret = derive_store_secret_from_mnemonic(&seed_phrase);
+
+        // Derive bearer token from seed if not explicitly set.
+        let auth_bearer = read_non_empty_env("XMR_FROST_AUTH_BEARER")
+            .or_else(|| Some(derive_auth_bearer_from_mnemonic(&seed_phrase)));
+
+        let auth_enabled = auth_bearer.is_some() || auth_username.is_some();
+        if !auth_enabled {
+            return Err(ConfigError::MissingAuthConfig);
+        }
 
         Ok(Config {
             listen_addr,
@@ -293,6 +297,14 @@ fn derive_store_secret_from_mnemonic(seed_phrase: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(seed_phrase.as_bytes());
     hasher.update(b"xmr-frost-store");
+    hex::encode(hasher.finalize())
+}
+
+fn derive_auth_bearer_from_mnemonic(seed_phrase: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(seed_phrase.as_bytes());
+    hasher.update(b"xmr-frost-auth");
     hex::encode(hasher.finalize())
 }
 

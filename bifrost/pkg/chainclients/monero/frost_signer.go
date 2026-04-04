@@ -2,6 +2,8 @@ package monero
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -373,6 +376,11 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 	username := strings.TrimSpace(cfg.UserName)
 	password := strings.TrimSpace(cfg.Password)
 	bearer := strings.TrimSpace(cfg.AuthorizationBearer)
+	if bearer == "" {
+		if seed := strings.TrimSpace(os.Getenv("SIGNER_SEED_PHRASE")); seed != "" {
+			bearer = deriveAuthBearer(seed)
+		}
+	}
 	if (username == "") != (password == "") {
 		return nil, fmt.Errorf("frost signer requires both username and password when basic auth is configured")
 	}
@@ -763,6 +771,13 @@ func (s *FrostSigner) MarkOutputsSpent(vaultPubKey, txHash string, refs []xmrFro
 		return out, fmt.Errorf("fail to call frost mark-spent endpoint: %w", err)
 	}
 	return out, nil
+}
+
+func deriveAuthBearer(seedPhrase string) string {
+	h := sha256.New()
+	h.Write([]byte(seedPhrase))
+	h.Write([]byte("xmr-frost-auth"))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 type xmrFrostOutboundMeta struct {
