@@ -1,10 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
-use base64::{
-    engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD},
-    Engine as _,
-};
 use tracing::warn;
 
 const DEFAULT_DAEMON_MAX_RESPONSE_BYTES: usize = 50 * 1024 * 1024;
@@ -149,20 +145,12 @@ impl Config {
             return Err(ConfigError::MissingAuthConfig);
         }
 
-        let store_secret = std::env::var("XMR_FROST_STORE_SECRET")
-            .map_err(|_| ConfigError::Missing("XMR_FROST_STORE_SECRET"))?;
-        if store_secret.trim().is_empty() {
-            return Err(ConfigError::Missing("XMR_FROST_STORE_SECRET"));
+        let seed_phrase = std::env::var("SIGNER_SEED_PHRASE")
+            .map_err(|_| ConfigError::Missing("SIGNER_SEED_PHRASE"))?;
+        if seed_phrase.trim().is_empty() {
+            return Err(ConfigError::Missing("SIGNER_SEED_PHRASE"));
         }
-        let strong_store_secret = is_strong_store_secret(&store_secret);
-        if chain_network == ChainNetworkMode::Public && !strong_store_secret {
-            return Err(ConfigError::InvalidStoreSecretPublic);
-        }
-        if chain_network == ChainNetworkMode::Mocknet && !strong_store_secret {
-            warn!(
-                "XMR_FROST_STORE_SECRET is weak; this is permitted in mocknet only and must not be used in public mode"
-            );
-        }
+        let store_secret = derive_store_secret_from_mnemonic(&seed_phrase);
 
         Ok(Config {
             listen_addr,
@@ -300,28 +288,12 @@ fn should_default_to_http(raw: &str) -> bool {
     false
 }
 
-fn is_strong_store_secret(secret: &str) -> bool {
-    let trimmed = secret.trim();
-    if trimmed.len() == 64
-        && trimmed.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
-        && hex::decode(trimmed)
-            .map(|decoded| decoded.len() == 32)
-            .unwrap_or(false)
-    {
-        return true;
-    }
-
-    for engine in [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD] {
-        if engine
-            .decode(trimmed)
-            .map(|decoded| decoded.len() >= 32)
-            .unwrap_or(false)
-        {
-            return true;
-        }
-    }
-
-    false
+fn derive_store_secret_from_mnemonic(seed_phrase: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(seed_phrase.as_bytes());
+    hasher.update(b"xmr-frost-store");
+    hex::encode(hasher.finalize())
 }
 
 fn is_loopback_host(host: &str) -> bool {
@@ -442,10 +414,6 @@ pub enum ConfigError {
     InvalidAuthConfig(&'static str),
     #[error("invalid XMR_FROST_CHAIN_NETWORK value: {0} (expected mocknet|public)")]
     InvalidChainNetwork(String),
-    #[error(
-        "invalid XMR_FROST_STORE_SECRET for public mode: expected 64-char hex (32 bytes) or base64/base64url decoding to at least 32 bytes"
-    )]
-    InvalidStoreSecretPublic,
     #[error("XMR_FROST_AUTH_BEARER or basic auth credentials are required")]
     MissingAuthConfig,
     #[error("invalid daemon endpoint: {0}")]
@@ -488,7 +456,7 @@ mod tests {
             "XMR_FROST_AUTH_USERNAME",
             "XMR_FROST_AUTH_PASSWORD",
             "XMR_FROST_AUTH_BEARER",
-            "XMR_FROST_STORE_SECRET",
+            "SIGNER_SEED_PHRASE",
             "XMR_FROST_CHAIN_NETWORK",
             "XMR_SIM_HELPER_ENABLED",
             "XMR_SIM_HELPER_WALLET_RPC_URL",
@@ -500,8 +468,8 @@ mod tests {
     fn set_minimal_env() {
         std::env::set_var("XMR_FROST_DAEMON_URL", "http://localhost:18081");
         std::env::set_var(
-            "XMR_FROST_STORE_SECRET",
-            "abababababababababababababababababababababababababababababababab",
+            "SIGNER_SEED_PHRASE",
+            "test mocknet seed phrase for unit tests",
         );
         std::env::set_var("XMR_FROST_AUTH_BEARER", "token");
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "mocknet");
@@ -511,7 +479,7 @@ mod tests {
     fn test_config_missing_daemon_url() {
         let _guard = env_guard();
         reset_env();
-        std::env::set_var("XMR_FROST_STORE_SECRET", "test-secret");
+        std::env::set_var("SIGNER_SEED_PHRASE", "test seed phrase for mocknet");
         std::env::set_var("XMR_FROST_AUTH_BEARER", "token");
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "mocknet");
 
@@ -528,7 +496,7 @@ mod tests {
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "mocknet");
 
         let err = Config::from_env().unwrap_err();
-        assert!(err.to_string().contains("XMR_FROST_STORE_SECRET"));
+        assert!(err.to_string().contains("SIGNER_SEED_PHRASE"));
     }
 
     #[test]
@@ -536,7 +504,7 @@ mod tests {
         let _guard = env_guard();
         reset_env();
         std::env::set_var("XMR_FROST_DAEMON_URL", "http://localhost:18081");
-        std::env::set_var("XMR_FROST_STORE_SECRET", "test-secret");
+        std::env::set_var("SIGNER_SEED_PHRASE", "test seed phrase for mocknet");
         std::env::set_var("XMR_FROST_AUTH_BEARER", "token");
 
         let err = Config::from_env().unwrap_err();
@@ -587,53 +555,11 @@ mod tests {
     }
 
     #[test]
-    fn test_public_mode_rejects_weak_store_secret() {
+    fn test_public_mode_accepts_seed_phrase() {
         let _guard = env_guard();
         reset_env();
         set_minimal_env();
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-        std::env::set_var("XMR_FROST_STORE_SECRET", "weak-secret");
-
-        let result = Config::from_env();
-        assert!(matches!(result, Err(ConfigError::InvalidStoreSecretPublic)));
-    }
-
-    #[test]
-    fn test_public_mode_accepts_hex_store_secret() {
-        let _guard = env_guard();
-        reset_env();
-        set_minimal_env();
-        std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-        std::env::set_var(
-            "XMR_FROST_STORE_SECRET",
-            "abababababababababababababababababababababababababababababababab",
-        );
-
-        let result = Config::from_env();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_public_mode_accepts_base64_store_secret() {
-        let _guard = env_guard();
-        reset_env();
-        set_minimal_env();
-        std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-        let raw = vec![42u8; 32];
-        let secret = STANDARD.encode(raw);
-        std::env::set_var("XMR_FROST_STORE_SECRET", secret);
-
-        let result = Config::from_env();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_mocknet_allows_weak_store_secret() {
-        let _guard = env_guard();
-        reset_env();
-        set_minimal_env();
-        std::env::set_var("XMR_FROST_CHAIN_NETWORK", "mocknet");
-        std::env::set_var("XMR_FROST_STORE_SECRET", "weak-secret");
 
         let result = Config::from_env();
         assert!(result.is_ok());
@@ -644,7 +570,7 @@ mod tests {
         let _guard = env_guard();
         reset_env();
         std::env::set_var("XMR_FROST_DAEMON_URL", "http://localhost:18081");
-        std::env::set_var("XMR_FROST_STORE_SECRET", "test-secret");
+        std::env::set_var("SIGNER_SEED_PHRASE", "test seed phrase for mocknet");
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
 
         let result = Config::from_env();

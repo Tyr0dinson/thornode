@@ -12,7 +12,7 @@ use monero_wallet::rpc::Rpc;
 use rand::rngs::OsRng;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use super::types::*;
@@ -343,6 +343,7 @@ fn ensure_registered_vault_state(
     group_key: &str,
     address: &str,
     source: &str,
+    birthday: Option<u64>,
 ) -> Result<bool, String> {
     let registered = state
         .store
@@ -357,7 +358,7 @@ fn ensure_registered_vault_state(
         .store
         .load_scan_height(vault_pub_key)
         .map_err(|e| format!("failed to load vault scan height: {e}"))?
-        .unwrap_or(0);
+        .unwrap_or_else(|| birthday.unwrap_or(0));
 
     let mut scanner = state.scanner.lock();
     scanner
@@ -589,6 +590,7 @@ pub async fn register_vault(
         &group_key,
         &expected_address,
         source,
+        req.birthday,
     ) {
         Ok(registered) => (
             StatusCode::OK,
@@ -898,12 +900,19 @@ pub async fn sign_combine(
         .combine(&req.session_id, all_shares, &msg_id)
         .await
     {
-        Ok((tx_hash, tx_hex, fee_atomic)) => (
+        Ok((tx_hash, tx_hex, fee_atomic, output_refs)) => (
             StatusCode::OK,
             serde_json::to_value(SignCombineResponse {
                 tx_hash,
                 tx_hex,
                 fee_atomic,
+                spent_output_refs: output_refs
+                    .into_iter()
+                    .map(|r| crate::api::types::SpentOutputRef {
+                        tx_hash: r.tx_hash,
+                        output_index: r.output_index,
+                    })
+                    .collect(),
             })
             .unwrap(),
         ),
@@ -2013,6 +2022,202 @@ pub async fn get_outputs(
     )
 }
 
+pub async fn mark_outputs_spent(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<crate::api::types::MarkSpentRequest>,
+) -> impl IntoResponse {
+    let vault_pub_key = req.vault_pub_key.trim().to_string();
+    if vault_pub_key.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("vault_pub_key is required")),
+        );
+    }
+    let tx_hash = req.tx_hash.trim().to_ascii_lowercase();
+    if tx_hash.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("tx_hash is required")),
+        );
+    }
+    if req.spent_refs.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("spent_refs must not be empty")),
+        );
+    }
+
+    if !req.skip_verification {
+        match state.daemon.get_transactions(&[tx_hash.clone()]).await {
+            Ok(result) => {
+                let found = result
+                    .txs
+                    .as_ref()
+                    .map(|txs| {
+                        txs.iter()
+                            .any(|tx| tx.in_pool.unwrap_or(false) || tx.block_height.is_some())
+                    })
+                    .unwrap_or(false);
+                if !found {
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(error_json(format!(
+                            "transaction {tx_hash} not found in mempool or on-chain"
+                        ))),
+                    );
+                }
+            }
+            Err(e) => {
+                error!(error = %e, tx_hash, "failed to verify transaction for mark-spent");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(error_json(format!("failed to verify tx: {e}"))),
+                );
+            }
+        }
+    }
+
+    let refs: Vec<(String, u32)> = req
+        .spent_refs
+        .iter()
+        .map(|r| (r.tx_hash.clone(), r.output_index))
+        .collect();
+
+    {
+        let mut scanner = state.scanner.lock();
+        scanner.mark_spent_by_refs(&vault_pub_key, &refs);
+    }
+
+    let outputs_after = {
+        let scanner = state.scanner.lock();
+        scanner.get_all_outputs(&vault_pub_key)
+    };
+    let marked = refs.len();
+    let mut not_found = 0usize;
+    for (ref_tx, ref_idx) in &refs {
+        let found = outputs_after
+            .iter()
+            .any(|o| o.tx_hash == *ref_tx && o.output_index == *ref_idx && o.is_spent());
+        if !found {
+            not_found += 1;
+        }
+    }
+
+    if let Err(e) = state
+        .store
+        .merge_scanned_outputs(&vault_pub_key, &outputs_after)
+    {
+        error!(error = %e, vault = vault_pub_key, "failed to persist outputs after mark-spent");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(format!("failed to persist: {e}"))),
+        );
+    }
+
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::to_value(crate::api::types::MarkSpentResponse {
+                marked: marked - not_found,
+                not_found,
+            })
+            .unwrap(),
+        ),
+    )
+}
+
+pub async fn key_export(
+    State(state): State<Arc<AppState>>,
+    Path(vault_pub_key): Path<String>,
+) -> impl IntoResponse {
+    let vault_pub_key = vault_pub_key.trim().to_string();
+    if vault_pub_key.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("vault_pub_key is required")),
+        );
+    }
+    match state.store.load_frost_keys(&vault_pub_key) {
+        Ok(Some(raw_bytes)) => (
+            StatusCode::OK,
+            Json(
+                serde_json::to_value(crate::api::types::KeyExportResponse {
+                    key_bytes_hex: hex::encode(raw_bytes),
+                })
+                .unwrap(),
+            ),
+        ),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(error_json(format!(
+                "no FROST keys found for vault {vault_pub_key}"
+            ))),
+        ),
+        Err(e) => {
+            error!(error = %e, vault = vault_pub_key, "failed to load FROST keys for export");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!("failed to load keys: {e}"))),
+            )
+        }
+    }
+}
+
+pub async fn key_restore(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<crate::api::types::KeyRestoreRequest>,
+) -> impl IntoResponse {
+    let vault_pub_key = req.vault_pub_key.trim().to_string();
+    if vault_pub_key.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("vault_pub_key is required")),
+        );
+    }
+    let key_bytes = match hex::decode(req.key_bytes_hex.trim()) {
+        Ok(b) if !b.is_empty() => b,
+        Ok(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json("key_bytes_hex must not be empty")),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json(format!("invalid key_bytes_hex: {e}"))),
+            );
+        }
+    };
+
+    if let Ok(Some(_)) = state.store.load_frost_keys(&vault_pub_key) {
+        return (
+            StatusCode::OK,
+            Json(
+                serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: false })
+                    .unwrap(),
+            ),
+        );
+    }
+
+    if let Err(e) = state.store.save_frost_keys(&vault_pub_key, &key_bytes) {
+        error!(error = %e, vault = vault_pub_key, "failed to restore FROST keys");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(format!("failed to save restored keys: {e}"))),
+        );
+    }
+
+    info!(vault = vault_pub_key, "restored FROST keys from backup");
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: true })
+                .unwrap(),
+        ),
+    )
+}
+
 pub async fn get_fee_rate(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let rpc = match state.daemon.oxide_rpc().await {
         Ok(rpc) => rpc,
@@ -3094,6 +3299,7 @@ mod tests {
                 address,
                 source: Some("test".to_string()),
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
+                birthday: None,
             }),
         )
         .await

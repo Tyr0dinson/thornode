@@ -61,6 +61,8 @@ pub struct RegisterVaultRequest {
     pub address: String,
     pub source: Option<String>,
     pub spend_key_hex: Option<String>,
+    #[serde(default)]
+    pub birthday: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -110,10 +112,17 @@ pub struct SignCombineRequest {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SpentOutputRef {
+    pub tx_hash: String,
+    pub output_index: u32,
+}
+
+#[derive(Debug, Serialize)]
 pub struct SignCombineResponse {
     pub tx_hash: String,
     pub tx_hex: String,
     pub fee_atomic: u64,
+    pub spent_output_refs: Vec<SpentOutputRef>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -185,6 +194,43 @@ pub struct OutputEntry {
 #[derive(Debug, Serialize)]
 pub struct OutputsResponse {
     pub outputs: Vec<OutputEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MarkSpentRequest {
+    pub vault_pub_key: String,
+    pub tx_hash: String,
+    pub spent_refs: Vec<MarkSpentRef>,
+    #[serde(default)]
+    pub skip_verification: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MarkSpentRef {
+    pub tx_hash: String,
+    pub output_index: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MarkSpentResponse {
+    pub marked: usize,
+    pub not_found: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KeyRestoreRequest {
+    pub vault_pub_key: String,
+    pub key_bytes_hex: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct KeyRestoreResponse {
+    pub restored: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct KeyExportResponse {
+    pub key_bytes_hex: String,
 }
 
 #[derive(Debug, Serialize)]

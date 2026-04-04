@@ -498,13 +498,14 @@ func (c *FrostSignCoordinator) Execute(
 	}
 
 	return FrostKeySignResponse{
-		TxHash:      combineResp.TxHash,
-		TxHex:       combineResp.TxHex,
-		FeeAtomic:   combineResp.FeeAtomic,
-		MsgID:       c.msgID,
-		Eventuality: eventuality,
-		Status:      tcommon.Success,
-		Blame:       blame.Blame{},
+		TxHash:          combineResp.TxHash,
+		TxHex:           combineResp.TxHex,
+		FeeAtomic:       combineResp.FeeAtomic,
+		MsgID:           c.msgID,
+		Eventuality:     eventuality,
+		SpentOutputRefs: combineResp.SpentOutputRefs,
+		Status:          tcommon.Success,
+		Blame:           blame.Blame{},
 	}
 }
 

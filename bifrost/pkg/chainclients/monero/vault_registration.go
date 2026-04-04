@@ -53,6 +53,7 @@ func ensureFrostVaultRegistered(
 	vaultPubKey common.PubKey,
 	bootstrap *frostVaultBootstrap,
 	source string,
+	birthday int64,
 ) (common.Address, error) {
 	if signer == nil {
 		return common.NoAddress, fmt.Errorf("frost signer is not initialized")
@@ -79,6 +80,7 @@ func ensureFrostVaultRegistered(
 		GroupKey:    groupKeyHex,
 		Address:     address.String(),
 		Source:      source,
+		VaultCreationHeight: birthday,
 	}
 	if spendKeyHex, ok := bootstrap.spendKeyHexFor(vaultPubKey); ok {
 		req.SpendKeyHex = strings.TrimSpace(spendKeyHex)

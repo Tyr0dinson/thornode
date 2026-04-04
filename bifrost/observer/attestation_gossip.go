@@ -133,6 +133,7 @@ type AttestationGossip struct {
 	avMu       sync.Mutex
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx)
+	observerApplySpentOutputRefs      func(tx common.ObservedTx)
 
 	cachedKeySignParties map[common.PubKey]cachedKeySignParty
 	cachedKeySignMu      sync.Mutex
@@ -340,6 +341,10 @@ func (s *AttestationGossip) getKeysignParty(pubKey common.PubKey) (common.PubKey
 
 func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 	s.observerHandleObservedTxCommitted = o.handleObservedTxCommitted
+}
+
+func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.ObservedTx)) {
+	s.observerApplySpentOutputRefs = fn
 }
 
 // Handle a committed quorum transaction event

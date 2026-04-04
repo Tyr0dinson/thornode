@@ -554,7 +554,7 @@ impl SignCoordinator {
         session_id: &str,
         all_shares: HashMap<u16, Vec<u8>>,
         msg_id: &str,
-    ) -> Result<(String, String, u64)> {
+    ) -> Result<(String, String, u64, Vec<OutputRef>)> {
         let chain_height = self
             .daemon
             .get_height()
@@ -635,6 +635,14 @@ impl SignCoordinator {
         let tx_hash = hex::encode(tx.hash());
         let tx_hex = hex::encode(tx.serialize());
         let fee = unsigned_tx.fee;
+        let spent_output_refs: Vec<OutputRef> = unsigned_tx
+            .selected_inputs
+            .iter()
+            .map(|input| OutputRef {
+                tx_hash: input.tx_hash.clone(),
+                output_index: input.output_index,
+            })
+            .collect();
 
         self.store
             .bind_reservation_tx_hash(&vault_pub_key, session_id, msg_id, &tx_hash)
@@ -672,7 +680,7 @@ impl SignCoordinator {
         session.fee = Some(fee);
         session.phase = SignPhase::Complete;
 
-        Ok((tx_hash, tx_hex, fee))
+        Ok((tx_hash, tx_hex, fee, spent_output_refs))
     }
 
     pub fn cleanup_expired(&self) {

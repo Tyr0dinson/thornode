@@ -728,6 +728,10 @@ func (s *Scanner) refreshAsgardLookup() error {
 		if observedVault.IsEmpty() {
 			continue
 		}
+		creationHeight := vault.VaultCreationHeightXmr
+		if creationHeight == 0 {
+			creationHeight = vault.BlockHeight
+		}
 		derived, addrErr := ensureFrostVaultRegistered(
 			s.logger,
 			s.frostSigner,
@@ -735,6 +739,7 @@ func (s *Scanner) refreshAsgardLookup() error {
 			observedVault,
 			s.localVaultBootstrap,
 			"bifrost_scanner",
+			creationHeight,
 		)
 		if addrErr != nil || derived.IsEmpty() {
 			s.logger.Debug().Err(addrErr).Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with unregistered monero scanner state")

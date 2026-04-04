@@ -203,7 +203,7 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 		vaultPubKey: vaultPubKey,
 		spendKeyHex: expectedSpendKeyHex,
 	}
-	registeredAddress, err := ensureFrostVaultRegistered(log.Logger, signer, common.XMRChain, vaultPubKey, bootstrap, "test")
+	registeredAddress, err := ensureFrostVaultRegistered(log.Logger, signer, common.XMRChain, vaultPubKey, bootstrap, "test", 0)
 	if err != nil {
 		t.Fatalf("ensureFrostVaultRegistered failed: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestEnsureFrostVaultRegisteredOmitsBootstrapSpendKeyForOtherVault(t *testin
 		vaultPubKey: testVaultPubKey(t, "different-bootstrap-vault"),
 		spendKeyHex: strings.Repeat("cd", 32),
 	}
-	registeredAddress, err := ensureFrostVaultRegistered(log.Logger, signer, common.XMRChain, vaultPubKey, bootstrap, "test")
+	registeredAddress, err := ensureFrostVaultRegistered(log.Logger, signer, common.XMRChain, vaultPubKey, bootstrap, "test", 0)
 	if err != nil {
 		t.Fatalf("ensureFrostVaultRegistered failed: %v", err)
 	}
