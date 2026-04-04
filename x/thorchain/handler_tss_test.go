@@ -834,3 +834,26 @@ func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+func (s *HandlerTssSuite) TestVaultCreationHeightXmrSetOnVaultWithEddsaKey(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	eddsaPubKey := GetRandomPubKey()
+	vault := NewVaultV2(ctx.BlockHeight(), InitVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.RuneAsset().Chain}.Strings(), nil, eddsaPubKey)
+
+	c.Assert(vault.VaultCreationHeightXmr, Equals, int64(0))
+
+	if !eddsaPubKey.IsEmpty() {
+		vault.VaultCreationHeightXmr = ctx.BlockHeight()
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	stored, err := mgr.Keeper().GetVault(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(stored.VaultCreationHeightXmr, Equals, ctx.BlockHeight())
+
+	vaultNoEddsa := NewVaultV2(ctx.BlockHeight(), InitVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.RuneAsset().Chain}.Strings(), nil, common.EmptyPubKey)
+	c.Assert(vaultNoEddsa.VaultCreationHeightXmr, Equals, int64(0))
+}
