@@ -31,6 +31,7 @@ const (
 	prefixObservedTxOut           types.DbPrefix = "observed_tx_out/"
 	prefixObservedLink            types.DbPrefix = "ob_link/"
 	prefixPool                    types.DbPrefix = "pool/"
+	prefixPoolAvailableRuneDepth  types.DbPrefix = "pool_available_rune_depth/"
 	prefixPoolLUVI                types.DbPrefix = "luvi/"
 	prefixTxOut                   types.DbPrefix = "txout/"
 	prefixTotalLiquidityFee       types.DbPrefix = "total_liquidity_fee/"

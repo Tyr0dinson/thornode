@@ -108,6 +108,7 @@ type KeeperPool interface {
 	GetPoolIterator(ctx cosmos.Context) cosmos.Iterator
 	GetPool(ctx cosmos.Context, asset common.Asset) (Pool, error)
 	GetPools(ctx cosmos.Context) (Pools, error)
+	GetAvailablePoolRuneDepth(ctx cosmos.Context) (cosmos.Uint, error)
 	SetPool(ctx cosmos.Context, pool Pool) error
 	PoolExist(ctx cosmos.Context, asset common.Asset) bool
 	RemovePool(ctx cosmos.Context, asset common.Asset)

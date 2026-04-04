@@ -1927,17 +1927,9 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, 
 // For single-pool swaps (e.g. BTC->RUNE) only that pool is considered.
 // For double swaps (e.g. BTC->ETH) the minimum depth of both pools is used.
 func poolRelativeMempoolSwapCap(ctx cosmos.Context, k keeper.Keeper, globalCap cosmos.Uint, sourceAsset, targetAsset common.Asset) (cosmos.Uint, error) {
-	pools, err := k.GetPools(ctx)
+	totalRuneDepth, err := k.GetAvailablePoolRuneDepth(ctx)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools: %w", err)
-	}
-
-	// Sum total RUNE depth across all available pools.
-	totalRuneDepth := cosmos.ZeroUint()
-	for _, pool := range pools {
-		if pool.Status == PoolAvailable && !pool.BalanceRune.IsZero() {
-			totalRuneDepth = totalRuneDepth.Add(pool.BalanceRune)
-		}
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get available pool rune depth: %w", err)
 	}
 	if totalRuneDepth.IsZero() {
 		return globalCap, nil
