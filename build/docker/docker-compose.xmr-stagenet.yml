@@ -64,7 +64,7 @@ x-bifrost-env: &bifrost-env
   <<: *disabled-chains
   BIFROST_CHAINS_XMR_DISABLED: "false"
   BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
-  BIFROST_CHAINS_XMR_CHAIN_NETWORK: "public"
+  BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
 
 x-frost-env: &frost-env
@@ -72,7 +72,7 @@ x-frost-env: &frost-env
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
   XMR_FROST_DAEMON_DISABLE_TLS: "true"
   XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
-  XMR_FROST_CHAIN_NETWORK: "public"
+  XMR_FROST_CHAIN_NETWORK: "mocknet"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
   XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
   XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
