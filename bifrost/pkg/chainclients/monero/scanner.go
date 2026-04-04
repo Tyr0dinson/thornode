@@ -842,6 +842,9 @@ func (s *Scanner) transferToTxInItem(
 	if fee == 0 {
 		fee = s.lastFee.Load()
 	}
+	if fee == 0 {
+		fee = 1
+	}
 
 	height := int64(transfer.Height)
 	if height <= 0 {
