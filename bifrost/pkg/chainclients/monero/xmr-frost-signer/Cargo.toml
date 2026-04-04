@@ -6,6 +6,14 @@ description = "FROST threshold signing sidecar for THORNode Monero integration"
 license = "AGPL-3.0-only"
 publish = false
 
+[[bin]]
+name = "xmr-frost-signer"
+path = "src/main.rs"
+
+[[bin]]
+name = "frost-combine"
+path = "src/bin/frost_combine.rs"
+
 [dependencies]
 # Serai-derived crates are pinned to an auditable upstream revision so the
 # provenance of the Rust crypto/request stack is explicit in both source and CI.
