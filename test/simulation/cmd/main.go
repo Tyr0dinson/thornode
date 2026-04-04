@@ -89,6 +89,7 @@ func simulationStages() []simulationStage {
 		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
 		{name: "inactive-vault-refunds", defaultOn: false, constructor: features.InactiveVaultRefunds},
 		{name: "solvency", defaultOn: true, constructor: core.NewSolvencyCheckActor},
+		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
 		{name: "ragnarok", defaultOn: true, constructor: suites.Ragnarok},
 	}
