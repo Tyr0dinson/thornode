@@ -1192,12 +1192,17 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	}
 
 	if availableAtomic < requiredAtomic {
+		totalAtomic := balance.Balance
+		lockedAtomic := totalAtomic - availableAtomic
+		if lockedAtomic > 0 {
+			return fmt.Errorf(
+				"insufficient xmr balance for signing: available=%d required=%d (total=%d locked=%d, outputs may need 10 confirmations)",
+				availableAtomic, requiredAtomic, totalAtomic, lockedAtomic,
+			)
+		}
 		return fmt.Errorf(
 			"insufficient xmr balance for signing: available=%d required=%d (amount=%d max_gas=%d)",
-			availableAtomic,
-			requiredAtomic,
-			amountAtomic,
-			maxGasAtomic,
+			availableAtomic, requiredAtomic, amountAtomic, maxGasAtomic,
 		)
 	}
 
@@ -1270,47 +1275,15 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 	return item
 }
 
-func (c *Client) ExportFrostKeyshare(hintPubKey common.PubKey) ([]byte, error) {
+func (c *Client) ExportFrostKeyshare(groupKey common.PubKey) ([]byte, error) {
 	if c.frostSigner == nil {
 		return nil, fmt.Errorf("frost signer not configured")
 	}
-	vaults, err := c.frostSigner.ListVaultKeys()
+	hexKey, err := c.frostSigner.ExportFrostKeys(groupKey.String())
 	if err != nil {
-		return nil, fmt.Errorf("fail to list vault keys from sidecar: %w", err)
+		return nil, fmt.Errorf("fail to export frost keys for group key %s: %w", groupKey.String(), err)
 	}
-
-	hint := hintPubKey.String()
-	for _, v := range vaults {
-		if !v.HasFrostKeys {
-			continue
-		}
-		if v.VaultPubKey == hint {
-			hexKey, exportErr := c.frostSigner.ExportFrostKeys(v.VaultPubKey)
-			if exportErr != nil {
-				return nil, exportErr
-			}
-			return []byte(hexKey), nil
-		}
-	}
-
-	// Hint didn't match — the FROST DKG may have produced a different pubkey
-	// than the THORChain EdDSA key. Export the first vault that has FROST keys.
-	for _, v := range vaults {
-		if !v.HasFrostKeys {
-			continue
-		}
-		c.logger.Info().
-			Str("hint_pubkey", hint).
-			Str("frost_vault_pubkey", v.VaultPubKey).
-			Msg("FROST vault pubkey differs from hint, exporting by sidecar lookup")
-		hexKey, exportErr := c.frostSigner.ExportFrostKeys(v.VaultPubKey)
-		if exportErr != nil {
-			return nil, exportErr
-		}
-		return []byte(hexKey), nil
-	}
-
-	return nil, fmt.Errorf("no FROST keyshares found on sidecar (hint: %s, vaults: %d)", hint, len(vaults))
+	return []byte(hexKey), nil
 }
 
 func (c *Client) RestoreFrostKeyshare(vaultPubKey common.PubKey, keyBytesHex string) error {
@@ -1610,8 +1583,9 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 
 	c.setVaultAddressMapping(frostVaultPubKey, frostAddr)
 	return types.CustomKeygenResult{
-		Address:         frostAddr,
-		PoolPubKeyEddsa: frostVaultPubKey,
+		Address:          frostAddr,
+		PoolPubKeyEddsa:  frostVaultPubKey,
+		FrostKeyshareHex: frostResp.KeyBytesHex,
 	}, nil
 }
 
