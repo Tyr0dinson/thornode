@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -956,4 +957,150 @@ func TestConcurrentAttestationHandling(t *testing.T) {
 	state, exists := ag.observedTxs[key]
 	assert.True(t, exists)
 	assert.Equal(t, numAttestations, state.AttestationCount())
+}
+
+func TestXMRSpentOutputRefsCallback(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz []byte, signature []byte, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pk1", "pk2", "pk3"}, nil
+	}
+
+	t.Run("callback fires for XMR outbound with spent refs", func(t *testing.T) {
+		var callbackTx *common.ObservedTx
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+			callbackTx = &tx
+		})
+
+		refs := []*common.OutputRef{
+			{TxHash: "aaa111", OutputIndex: 0},
+			{TxHash: "bbb222", OutputIndex: 1},
+		}
+		tx := common.ObservedTx{
+			Tx:              common.Tx{ID: "xmr-out-1", Chain: common.XMRChain},
+			ObservedPubKey:  "pk1",
+			SpentOutputRefs: refs,
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:                  tx,
+			Inbound:                false,
+			AllowFutureObservation: true,
+			Attestation:            &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+
+		require.NotNil(t, callbackTx)
+		assert.Equal(t, 2, len(callbackTx.SpentOutputRefs))
+		assert.Equal(t, "aaa111", callbackTx.SpentOutputRefs[0].TxHash)
+	})
+
+	t.Run("callback does not fire for non-XMR chain", func(t *testing.T) {
+		var called bool
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+			called = true
+		})
+
+		tx := common.ObservedTx{
+			Tx:              common.Tx{ID: "btc-out-1", Chain: common.BTCChain},
+			ObservedPubKey:  "pk1",
+			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0}},
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:       tx,
+			Inbound:     false,
+			Attestation: &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, called)
+	})
+
+	t.Run("callback does not fire for inbound XMR", func(t *testing.T) {
+		var called bool
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+			called = true
+		})
+
+		tx := common.ObservedTx{
+			Tx:              common.Tx{ID: "xmr-in-1", Chain: common.XMRChain},
+			ObservedPubKey:  "pk1",
+			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0}},
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:       tx,
+			Inbound:     true,
+			Attestation: &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, called)
+	})
+
+	t.Run("callback does not fire when refs exceed cap", func(t *testing.T) {
+		var called bool
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+			called = true
+		})
+
+		refs := make([]*common.OutputRef, 33)
+		for i := range refs {
+			refs[i] = &common.OutputRef{TxHash: fmt.Sprintf("tx%d", i), OutputIndex: uint32(i)}
+		}
+		tx := common.ObservedTx{
+			Tx:              common.Tx{ID: "xmr-big-1", Chain: common.XMRChain},
+			ObservedPubKey:  "pk1",
+			SpentOutputRefs: refs,
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:       tx,
+			Inbound:     false,
+			Attestation: &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, called)
+	})
+}
+
+func TestGetSignablePayloadConsistency(t *testing.T) {
+	refs := []*common.OutputRef{
+		{TxHash: "aaa", OutputIndex: 0},
+		{TxHash: "bbb", OutputIndex: 1},
+	}
+	obsTx := common.ObservedTx{
+		Tx:              common.Tx{ID: "test-tx", Chain: common.XMRChain, Memo: "OUT:abc"},
+		SpentOutputRefs: refs,
+	}
+
+	payload1, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+
+	attestTx := common.AttestTx{ObsTx: obsTx}
+	payload2, err := attestTx.GetSignablePayload()
+	require.NoError(t, err)
+
+	assert.Equal(t, payload1, payload2, "ObservedTx and AttestTx signable payloads must match")
+
+	obsTxNoRefs := common.ObservedTx{
+		Tx: common.Tx{ID: "test-tx", Chain: common.XMRChain, Memo: "OUT:abc"},
+	}
+	payloadNoRefs, err := obsTxNoRefs.GetSignablePayload()
+	require.NoError(t, err)
+
+	assert.NotEqual(t, payload1, payloadNoRefs, "payload with refs should differ from without")
 }
