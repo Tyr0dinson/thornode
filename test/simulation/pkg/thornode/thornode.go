@@ -199,6 +199,40 @@ func GetTxDetails(txid string) (openapi.TxDetailsResponse, error) {
 	return details, err
 }
 
+type VaultXMRState struct {
+	VaultCreationHeightXmr int64 `json:"vault_creation_height_xmr"`
+	SpentOutputRefsXmr     []struct {
+		TxHash      string `json:"tx_hash"`
+		OutputIndex uint32 `json:"output_index"`
+	} `json:"spent_output_refs_xmr"`
+	PubKeyEddsa string `json:"pub_key_eddsa"`
+	Status      string `json:"status"`
+}
+
+func GetVaultXMRStates() ([]VaultXMRState, error) {
+	url := fmt.Sprintf("%s/thorchain/vaults/asgard", thornodeURL)
+	var vaults []VaultXMRState
+	err := Get(url, &vaults)
+	return vaults, err
+}
+
+type ObservedTxSpentRefs struct {
+	ObservedTx struct {
+		SpentOutputRefs []struct {
+			TxHash      string `json:"tx_hash"`
+			OutputIndex uint32 `json:"output_index"`
+		} `json:"spent_output_refs"`
+		Status string `json:"status"`
+	} `json:"observed_tx"`
+}
+
+func GetTxSpentRefs(txid string) (ObservedTxSpentRefs, error) {
+	url := fmt.Sprintf("%s/thorchain/tx/details/%s", thornodeURL, txid)
+	var result ObservedTxSpentRefs
+	err := Get(url, &result)
+	return result, err
+}
+
 func GetMimirs() (map[string]int64, error) {
 	url := fmt.Sprintf("%s/thorchain/mimir", thornodeURL)
 	var mimirs map[string]int64

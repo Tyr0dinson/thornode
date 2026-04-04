@@ -25,3 +25,9 @@ func XMRPostChurn(rng *rand.Rand) *Actor {
 	a.Append(core.NewXMRPostChurnActor(rng))
 	return a
 }
+
+func XMRSpentRefTracking(rng *rand.Rand) *Actor {
+	a := NewActor("XMRSpentRefTracking", rng)
+	a.Append(core.NewXMRSpentRefVerifyActor(rng))
+	return a
+}

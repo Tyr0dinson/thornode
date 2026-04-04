@@ -13,7 +13,7 @@ asserts:
   - .[0].status == "ActiveVault"
   - .[0].chains | index("XMR")
   - .[0].pub_key_eddsa == "{{ pubkey_dog_eddsa }}"
-  - .[0].vault_creation_height_xmr == 0
+  - (.[0].vault_creation_height_xmr // 0) == 0
   - (.[0].spent_output_refs_xmr // []) | length == 0
 ---
 # Deposit BTC to swap for XMR — this creates an outbound in the queue
