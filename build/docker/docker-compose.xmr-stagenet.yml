@@ -38,16 +38,15 @@ x-disabled-chains: &disabled-chains
   BIFROST_CHAINS_ZEC_DISABLED: "true"
 
 x-thorchain-env: &thorchain-env
+  NET: stagenet
   CHAIN_ID: thorchain
   SIGNER_NAME: thorchain
   SIGNER_PASSWD: password
   THORNODE_GRPC_ENABLE: "true"
   THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
   THOR_BLOCK_TIME: "6s"
-  HALT_CHURNING: 0
-  NUMBEROFNEWNODESPERCHURN: 3
-  CHURNRETRYINTERVAL: 90
-  SKIP_EVM_DEPLOY: "true"
+  FAUCET: "sthor1zf3gsk7edzwl9syyefvfhle37cjtql3585mpmq"
+  EXTRA_FUND_ACCOUNTS: "sthor1uuds8pd92qnnq0udw0rpg0szpgcslc9ph3j6kf sthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4e5fzhc"
   <<: *disabled-chains
 
 x-bifrost-env: &bifrost-env
@@ -64,7 +63,7 @@ x-bifrost-env: &bifrost-env
   <<: *disabled-chains
   BIFROST_CHAINS_XMR_DISABLED: "false"
   BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
-  BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
+  BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
 
 x-frost-env: &frost-env
@@ -72,7 +71,7 @@ x-frost-env: &frost-env
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
   XMR_FROST_DAEMON_DISABLE_TLS: "true"
   XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
-  XMR_FROST_CHAIN_NETWORK: "mocknet"
+  XMR_FROST_CHAIN_NETWORK: "public"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
   XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
   XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
@@ -167,7 +166,7 @@ services:
       context: ../../
       dockerfile: ./build/docker/Dockerfile
       args:
-        TAG: mocknet
+        TAG: stagenet
     image: thornode:xmr-stagenet
     restart: unless-stopped
     hostname: thornode
@@ -205,6 +204,7 @@ services:
       PEER: thornode
       SEED: thornode-cat
       SEEDS: thornode,thornode-fox
+      AUTO_BOND: "true"
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
     volumes:
       - "../scripts:/docker/scripts"
@@ -230,6 +230,7 @@ services:
       PEER: thornode
       SEED: thornode-fox
       SEEDS: thornode,thornode-cat
+      AUTO_BOND: "true"
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
     volumes:
       - "../scripts:/docker/scripts"
