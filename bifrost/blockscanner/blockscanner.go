@@ -355,9 +355,12 @@ func (b *BlockScanner) scanBlocks() {
 			ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
 
 			// determine how often we compare THORNode network fee to Bifrost network fee.
-			// General goal is about once per hour.
+			// General goal is about once per hour, but report immediately if
+			// THORChain has no fee for this chain yet (rate=0).
 			mod := ((60 * 60 * 1000) + ms - 1) / ms
 			if currentBlock%mod == 0 {
+				b.updateStaleNetworkFee(currentBlock)
+			} else if _, thorRate, _ := b.thorchainBridge.GetNetworkFee(b.cfg.ChainID); thorRate == 0 && !b.cfg.ChainID.Equals(common.THORChain) && b.healthy.Load() {
 				b.updateStaleNetworkFee(currentBlock)
 			}
 
