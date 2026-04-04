@@ -119,6 +119,7 @@ type Client struct {
 	signerCacheManager  *signercache.CacheManager
 	vaultAddressStore   *VaultAddressStore
 	vaultAddressMap     map[string]common.Address
+	vaultAddrToKey      map[string]string
 	vaultAddressMu      sync.RWMutex
 	globalSolvencyQueue chan stypes.Solvency
 
@@ -205,6 +206,7 @@ func NewClient(
 		lastConsolidationHeight: atomic.NewInt64(0),
 		signerCacheManager:      nil,
 		vaultAddressMap:         make(map[string]common.Address),
+		vaultAddrToKey:          make(map[string]string),
 		lastSolvencyCheckHeight: atomic.NewInt64(0),
 		wg:                      &sync.WaitGroup{},
 		stopchan:                make(chan struct{}),
@@ -323,7 +325,7 @@ func (c *Client) catchupSpentOutputRefs() {
 			}
 		}
 
-		result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey, "catchup", refs, true)
+		result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey, "catchup", refs, true, nil)
 		if markErr != nil {
 			c.logger.Err(markErr).
 				Str("vault", vaultPubKey).
@@ -1312,7 +1314,27 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 		}
 	}
 
-	result, err := c.frostSigner.MarkOutputsSpent(vaultPubKey, txHash, refs, false)
+	var outbound *xmrFrostOutboundMeta
+	if !tx.Tx.FromAddress.IsEmpty() && !tx.Tx.ToAddress.IsEmpty() {
+		var amount, fee uint64
+		xmrCoin := tx.Tx.Coins.GetCoin(common.XMRAsset)
+		if !xmrCoin.IsEmpty() {
+			amount, _ = xmrThorchainAmountToAtomic(xmrCoin.Amount)
+		}
+		gasCoin := tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
+		if !gasCoin.IsEmpty() {
+			fee, _ = xmrThorchainAmountToAtomic(gasCoin.Amount)
+		}
+		outbound = &xmrFrostOutboundMeta{
+			FromAddress: tx.Tx.FromAddress.String(),
+			ToAddress:   tx.Tx.ToAddress.String(),
+			Amount:      amount,
+			Fee:         fee,
+			Memo:        tx.Tx.Memo,
+		}
+	}
+
+	result, err := c.frostSigner.MarkOutputsSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
 		c.logger.Err(err).
 			Str("tx_hash", txHash).
@@ -1432,9 +1454,14 @@ func (c *Client) findVaultPubKeyByAddress(address string) (common.PubKey, bool) 
 	if address == "" {
 		return common.EmptyPubKey, false
 	}
-	// TODO: Add a reverse address->pubkey index if XMR vault cardinality grows materially.
 	c.vaultAddressMu.RLock()
 	defer c.vaultAddressMu.RUnlock()
+	if pubKeyStr, ok := c.vaultAddrToKey[strings.ToLower(address)]; ok {
+		pk, err := common.NewPubKey(pubKeyStr)
+		if err == nil {
+			return pk, true
+		}
+	}
 	for pubKeyStr, addr := range c.vaultAddressMap {
 		if strings.EqualFold(addr.String(), address) {
 			pk, err := common.NewPubKey(pubKeyStr)
@@ -1888,6 +1915,10 @@ func (c *Client) setVaultAddressMapping(vaultPubKey common.PubKey, address commo
 		return
 	}
 	c.vaultAddressMap[key] = address
+	if c.vaultAddrToKey == nil {
+		c.vaultAddrToKey = make(map[string]string)
+	}
+	c.vaultAddrToKey[strings.ToLower(address.String())] = key
 	c.vaultAddressMu.Unlock()
 
 	if c.vaultAddressStore != nil {

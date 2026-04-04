@@ -2024,6 +2024,51 @@ pub async fn mark_outputs_spent(
         );
     }
 
+    // If the caller provided outbound metadata, create an OutgoingTransferRecord
+    // so that get_transfers returns this outbound for non-signing nodes.
+    if let (Some(to_address), Some(amount), Some(fee)) =
+        (req.to_address.as_deref(), req.amount, req.fee)
+    {
+        let from_address = req
+            .from_address
+            .clone()
+            .unwrap_or_default();
+        let memo = req.memo.clone().unwrap_or_default();
+        let current_height = state.scanner.lock().current_height();
+
+        let record = crate::state::store::OutgoingTransferRecord {
+            tx_hash: tx_hash.clone(),
+            tx_hex: String::new(),
+            msg_id: format!("attestation:{tx_hash}"),
+            vault_pub_key: vault_pub_key.clone(),
+            from_address,
+            to_address: to_address.to_string(),
+            amount,
+            fee,
+            memo,
+            planned_height: current_height,
+            observed_height: None,
+            status: "attested_pending_observation".to_string(),
+            broadcasted_at: None,
+            observed_at: None,
+            created_at: chrono::Utc::now().timestamp(),
+        };
+        if let Err(e) = state.store.save_outgoing_transfer(&record) {
+            error!(
+                error = %e,
+                vault = vault_pub_key,
+                tx_hash,
+                "failed to persist outgoing transfer record from attestation"
+            );
+        } else {
+            info!(
+                vault = vault_pub_key,
+                tx_hash,
+                "created outgoing transfer record from attestation"
+            );
+        }
+    }
+
     (
         StatusCode::OK,
         Json(
