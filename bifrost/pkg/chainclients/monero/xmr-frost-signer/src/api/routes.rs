@@ -1185,6 +1185,30 @@ fn build_mempool_outgoing_entries(
     outgoing
 }
 
+fn outgoing_record_hashes(
+    records: &[crate::state::store::OutgoingTransferRecord],
+) -> HashSet<String> {
+    records
+        .iter()
+        .map(|record| normalize_tx_hash(&record.tx_hash))
+        .filter(|hash| !hash.is_empty())
+        .collect()
+}
+
+fn suppress_self_change_incoming(
+    entries: Vec<TransferEntry>,
+    outgoing_hashes: &HashSet<String>,
+) -> Vec<TransferEntry> {
+    if outgoing_hashes.is_empty() {
+        return entries;
+    }
+
+    entries
+        .into_iter()
+        .filter(|entry| !outgoing_hashes.contains(&normalize_tx_hash(&entry.txid)))
+        .collect()
+}
+
 fn promote_outgoing_records_observed_in_block(
     store: &crate::state::Store,
     vault_pub_key: &str,
@@ -1570,12 +1594,19 @@ pub async fn scanner_sync(
                     }
                 }
 
-                incoming.extend(transfer_entries_from_added_refs(
+                let mut vault_incoming = transfer_entries_from_added_refs(
                     &outputs,
                     &meta.added_outputs,
                     &vault.vault_pub_key,
                     effective_height,
-                ));
+                );
+                if let Ok(outbound) = state.store.load_outgoing_transfers(&vault.vault_pub_key) {
+                    vault_incoming = suppress_self_change_incoming(
+                        vault_incoming,
+                        &outgoing_record_hashes(&outbound),
+                    );
+                }
+                incoming.extend(vault_incoming);
             }
         } else {
             let block = match rpc.get_scannable_block_by_number(req.height as usize).await {
@@ -1709,42 +1740,50 @@ pub async fn scanner_sync(
                     "failed to prune scan block metadata after scanner sync"
                 );
             }
-            incoming.extend(
-                added_outputs
-                    .iter()
-                    .filter(|output| !output.is_spent())
-                    .map(|output| {
-                        transfer_entry_from_tracked_output(
-                            output,
-                            &vault.vault_pub_key,
-                            effective_height,
-                        )
-                    }),
-            );
+            let mut vault_incoming: Vec<TransferEntry> = added_outputs
+                .iter()
+                .filter(|output| !output.is_spent())
+                .map(|output| {
+                    transfer_entry_from_tracked_output(
+                        output,
+                        &vault.vault_pub_key,
+                        effective_height,
+                    )
+                })
+                .collect();
+            if let Ok(outbound) = state.store.load_outgoing_transfers(&vault.vault_pub_key) {
+                vault_incoming = suppress_self_change_incoming(
+                    vault_incoming,
+                    &outgoing_record_hashes(&outbound),
+                );
+            }
+            incoming.extend(vault_incoming);
         }
 
-        match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
-            Ok(outbound) => {
-                for tx in outbound.into_iter().filter(|tx| {
-                    is_observed_mined_record(tx) && outgoing_effective_height(tx) == req.height
-                }) {
-                    outgoing.push(transfer_entry_from_outgoing_record(
-                        &tx,
-                        effective_height,
-                        false,
-                    ));
+        if meta_matches {
+            match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
+                Ok(outbound) => {
+                    for tx in outbound.into_iter().filter(|tx| {
+                        is_observed_mined_record(tx) && outgoing_effective_height(tx) == req.height
+                    }) {
+                        outgoing.push(transfer_entry_from_outgoing_record(
+                            &tx,
+                            effective_height,
+                            false,
+                        ));
+                    }
                 }
-            }
-            Err(e) => {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    "failed to load outgoing transfers for scanner sync"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        vault = %vault.vault_pub_key,
+                        "failed to load outgoing transfers for scanner sync"
+                    );
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json(e.to_string())),
+                    );
+                }
             }
         }
     }
@@ -1781,11 +1820,19 @@ pub async fn get_transfers(
     let current_height = state.scanner.lock().current_height();
 
     for vault in &vaults {
+        let outgoing_records = state
+            .store
+            .load_outgoing_transfers(&vault.vault_pub_key)
+            .unwrap_or_default();
+        let outgoing_hashes = outgoing_record_hashes(&outgoing_records);
         let scanner = state.scanner.lock();
         let transfers = scanner.get_transfers(&vault.vault_pub_key, height);
         drop(scanner);
 
-        for t in transfers {
+        for t in transfers
+            .into_iter()
+            .filter(|t| !outgoing_hashes.contains(&normalize_tx_hash(&t.txid)))
+        {
             incoming.push(TransferEntry {
                 txid: t.txid,
                 address: t.address,
@@ -1800,16 +1847,15 @@ pub async fn get_transfers(
             });
         }
 
-        if let Ok(outbound) = state.store.load_outgoing_transfers(&vault.vault_pub_key) {
-            for tx in outbound.into_iter().filter(|tx| {
-                is_observed_mined_record(tx) && outgoing_effective_height(tx) >= height
-            }) {
-                outgoing.push(transfer_entry_from_outgoing_record(
-                    &tx,
-                    current_height,
-                    false,
-                ));
-            }
+        for tx in outgoing_records
+            .into_iter()
+            .filter(|tx| is_observed_mined_record(tx) && outgoing_effective_height(tx) >= height)
+        {
+            outgoing.push(transfer_entry_from_outgoing_record(
+                &tx,
+                current_height,
+                false,
+            ));
         }
     }
 
@@ -2854,6 +2900,48 @@ mod tests {
     }
 
     #[test]
+    fn suppress_self_change_incoming_drops_matching_outgoing_hashes_only() {
+        let entries = vec![
+            TransferEntry {
+                txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
+                address: "48vault".to_string(),
+                from_address: None,
+                vault_pub_key: Some(VALID_VAULT_PUB_KEY.to_string()),
+                amount: 10,
+                fee: 0,
+                height: 100,
+                confirmations: 12,
+                note: String::new(),
+                locked: false,
+            },
+            TransferEntry {
+                txid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    .to_string(),
+                address: "48vault".to_string(),
+                from_address: None,
+                vault_pub_key: Some(VALID_VAULT_PUB_KEY.to_string()),
+                amount: 20,
+                fee: 0,
+                height: 101,
+                confirmations: 11,
+                note: String::new(),
+                locked: false,
+            },
+        ];
+        let hashes = HashSet::from([normalize_tx_hash(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )]);
+
+        let filtered = suppress_self_change_incoming(entries, &hashes);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(
+            filtered[0].txid,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+    }
+
+    #[test]
     fn promote_outgoing_records_observed_in_block_marks_matching_pending_record_mined() {
         let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
         let mut record = sample_outgoing(
@@ -3189,6 +3277,87 @@ mod tests {
         assert_eq!(
             body["error"].as_str().unwrap_or_default(),
             "idempotency request already in progress for msg_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_transfers_suppresses_same_vault_change_for_known_outgoing_tx() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        state
+            .store
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                "48vault",
+                "test",
+            )
+            .expect("failed to register vault");
+
+        let outputs = vec![
+            sample_output(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                0,
+                OutputState::Unspent,
+            ),
+            sample_output(
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                1,
+                OutputState::Unspent,
+            ),
+        ];
+        {
+            let mut scanner = state.scanner.lock();
+            scanner
+                .register_vault(
+                    VALID_VAULT_PUB_KEY,
+                    &test_group_key_hex(),
+                    crate::config::ChainNetworkMode::Public,
+                    outputs,
+                    None,
+                )
+                .expect("failed to register scanner vault");
+            scanner.set_current_height(200);
+        }
+
+        state
+            .store
+            .save_outgoing_transfer(&sample_outgoing(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                VALID_VAULT_PUB_KEY,
+                "48from",
+                "48to",
+                1,
+            ))
+            .expect("failed to save outgoing transfer");
+
+        let response = get_transfers(
+            State(state),
+            Query(TransfersQuery {
+                height: Some(0),
+                mempool: Some(false),
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let incoming = body["incoming"]
+            .as_array()
+            .expect("incoming should be an array");
+        let outgoing = body["outgoing"]
+            .as_array()
+            .expect("outgoing should be an array");
+
+        assert_eq!(incoming.len(), 1);
+        assert_eq!(
+            incoming[0]["txid"].as_str().unwrap_or_default(),
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(
+            outgoing[0]["txid"].as_str().unwrap_or_default(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
     }
 
