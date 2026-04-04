@@ -973,6 +973,7 @@ func (s HandlerObservedTxInSuite) TestAddSwapDirectSkipsProcessedFinalizedSwap(c
 			TxID:            msg.Tx.ID,
 			Actions:         []TxOutItem{{}},
 			FinalisedHeight: 42,
+			MempoolSwapTOR:  cosmos.NewUint(100),
 		},
 	}
 
