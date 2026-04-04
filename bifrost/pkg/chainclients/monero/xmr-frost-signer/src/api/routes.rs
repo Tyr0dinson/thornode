@@ -2171,6 +2171,44 @@ pub async fn mark_outputs_spent(
     )
 }
 
+pub async fn list_vault_keys(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let vaults = match state.store.list_vaults() {
+        Ok(v) => v,
+        Err(e) => {
+            error!(error = %e, "failed to list vaults");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!("failed to list vaults: {e}"))),
+            );
+        }
+    };
+
+    let entries: Vec<crate::api::types::VaultKeysEntry> = vaults
+        .iter()
+        .map(|v| {
+            let has_keys = state
+                .store
+                .load_frost_keys(&v.vault_pub_key)
+                .map(|k| k.is_some())
+                .unwrap_or(false);
+            crate::api::types::VaultKeysEntry {
+                vault_pub_key: v.vault_pub_key.clone(),
+                has_frost_keys: has_keys,
+            }
+        })
+        .collect();
+
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::to_value(crate::api::types::ListVaultKeysResponse { vaults: entries })
+                .unwrap(),
+        ),
+    )
+}
+
 pub async fn key_export(
     State(state): State<Arc<AppState>>,
     Path(vault_pub_key): Path<String>,
