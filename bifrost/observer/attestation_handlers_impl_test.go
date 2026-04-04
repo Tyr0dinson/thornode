@@ -531,3 +531,209 @@ func TestRefactoredHandlersIntegration(t *testing.T) {
 		}
 	})
 }
+
+// TestXMRNonSignerCoAttestation verifies that a non-signing node automatically
+// co-attests to XMR outbound observations it receives from signing peers.
+// In a 2-of-3 threshold setup the two signers create attestations during
+// signing; the non-signer learns the observation via gossip and must add its
+// own vote so quorum can be reached.
+func TestXMRNonSignerCoAttestation(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "xmr-outbound-tx-1",
+			Chain: common.XMRChain,
+			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		SpentOutputRefs: []*common.OutputRef{
+			{TxHash: "aabb", OutputIndex: 0},
+			{TxHash: "ccdd", OutputIndex: 1},
+		},
+	}
+
+	// Simulate a signing peer sending its attestation to the non-signer.
+	signerKey := secp256k1.GenPrivKey()
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	signerSig, err := signerKey.Sign(signBz)
+	require.NoError(t, err)
+
+	peerAttestation := common.AttestTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: signerSig,
+		},
+	}
+
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+
+	// Give the async co-attestation goroutine time to run.
+	time.Sleep(200 * time.Millisecond)
+
+	k := txKey{
+		Chain:      obsTx.Tx.Chain,
+		ID:         obsTx.Tx.ID,
+		UniqueHash: obsTx.Tx.Hash(obsTx.BlockHeight),
+		Finalized:  obsTx.IsFinal(),
+		Inbound:    false,
+	}
+
+	ag.mu.Lock()
+	state, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+
+	require.True(t, exists, "attestation state should exist")
+
+	state.mu.Lock()
+	count := state.AttestationCount()
+	state.mu.Unlock()
+
+	assert.Equal(t, 2, count, "should have 2 attestations: signer + non-signer co-attestation")
+}
+
+// TestXMRCoAttestationSkipsNonXMR verifies that co-attestation only triggers
+// for XMR outbound transactions with SpentOutputRefs.
+func TestXMRCoAttestationSkipsNonXMR(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
+	}
+
+	// BTC outbound — should NOT trigger co-attestation.
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "btc-outbound-tx-1",
+			Chain: common.BTCChain,
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100000))),
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+	}
+
+	signerKey := secp256k1.GenPrivKey()
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	signerSig, err := signerKey.Sign(signBz)
+	require.NoError(t, err)
+
+	peerAttestation := common.AttestTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: signerSig,
+		},
+	}
+
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+	time.Sleep(200 * time.Millisecond)
+
+	k := txKey{
+		Chain:      obsTx.Tx.Chain,
+		ID:         obsTx.Tx.ID,
+		UniqueHash: obsTx.Tx.Hash(obsTx.BlockHeight),
+		Finalized:  obsTx.IsFinal(),
+		Inbound:    false,
+	}
+
+	ag.mu.Lock()
+	state, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+
+	require.True(t, exists)
+
+	state.mu.Lock()
+	count := state.AttestationCount()
+	state.mu.Unlock()
+
+	assert.Equal(t, 1, count, "only the peer attestation — no co-attestation for non-XMR chains")
+}
+
+// TestXMRCoAttestationIdempotent verifies that receiving the same XMR outbound
+// attestation twice does not produce duplicate co-attestations.
+func TestXMRCoAttestationIdempotent(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "xmr-outbound-dedup",
+			Chain: common.XMRChain,
+			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		SpentOutputRefs: []*common.OutputRef{
+			{TxHash: "aabb", OutputIndex: 0},
+		},
+	}
+
+	signerKey := secp256k1.GenPrivKey()
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	signerSig, err := signerKey.Sign(signBz)
+	require.NoError(t, err)
+
+	peerAttestation := common.AttestTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: signerSig,
+		},
+	}
+
+	// Send the same attestation twice.
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+	time.Sleep(200 * time.Millisecond)
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+	time.Sleep(200 * time.Millisecond)
+
+	k := txKey{
+		Chain:      obsTx.Tx.Chain,
+		ID:         obsTx.Tx.ID,
+		UniqueHash: obsTx.Tx.Hash(obsTx.BlockHeight),
+		Finalized:  obsTx.IsFinal(),
+		Inbound:    false,
+	}
+
+	ag.mu.Lock()
+	state, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+
+	require.True(t, exists)
+
+	state.mu.Lock()
+	count := state.AttestationCount()
+	state.mu.Unlock()
+
+	assert.Equal(t, 2, count, "should still be 2: signer + one co-attestation, no duplicates")
+}
