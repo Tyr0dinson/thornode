@@ -122,6 +122,7 @@ services:
       BIFROST_CHAINS_XRP_DISABLED: "true"
       BIFROST_CHAINS_TRON_DISABLED: "true"
       BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
     ports:
       - "26657:26657"
       - "26656:26656"
@@ -186,6 +187,7 @@ services:
       BIFROST_CHAINS_XRP_DISABLED: "true"
       BIFROST_CHAINS_TRON_DISABLED: "true"
       BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
 
       # enable XMR only
       BIFROST_CHAINS_XMR_DISABLED: "false"
