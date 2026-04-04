@@ -105,6 +105,7 @@ services:
       THORNODE_GRPC_ENABLE: "true"
       THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
       HALT_CHURNING: 1
+      SKIP_EVM_DEPLOY: "true"
       # disable all chains except XMR
       BIFROST_CHAINS_BTC_DISABLED: "true"
       BIFROST_CHAINS_BCH_DISABLED: "true"
