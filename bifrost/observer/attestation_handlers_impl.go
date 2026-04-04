@@ -45,8 +45,11 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	}
 
 	// Capture XMR spent refs for async application outside the lock.
+	// Cap at 256 refs to prevent memory abuse — Monero txs rarely have more than ~16 inputs.
+	const maxSpentOutputRefs = 256
 	var applySpentRefs *common.ObservedTx
-	if obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound && len(obsTx.SpentOutputRefs) > 0 {
+	if obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound &&
+		len(obsTx.SpentOutputRefs) > 0 && len(obsTx.SpentOutputRefs) <= maxSpentOutputRefs {
 		cp := obsTx
 		applySpentRefs = &cp
 	}

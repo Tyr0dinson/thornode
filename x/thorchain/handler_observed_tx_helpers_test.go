@@ -1278,3 +1278,44 @@ func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(
 	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(vaultBalanceBefore), Equals, true,
 		Commentf("vault balance should be unchanged when non-final re-observations are rejected"))
 }
+
+func (s *HandlerObservedTxHelpersSuite) TestSpentOutputRefsXmrAccumulation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVaultV2(1, ActiveVault, AsgardVault, vaultPubKey, []string{common.XMRChain.String()}, nil, vaultPubKey)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	ref1 := &common.OutputRef{TxHash: "aaa", OutputIndex: 0}
+	ref2 := &common.OutputRef{TxHash: "bbb", OutputIndex: 1}
+
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 0)
+
+	vault.SpentOutputRefsXmr = append(vault.SpentOutputRefsXmr, ref1)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 1)
+	c.Assert(vault.SpentOutputRefsXmr[0].TxHash, Equals, "aaa")
+
+	vault.SpentOutputRefsXmr = append(vault.SpentOutputRefsXmr, ref2)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 2)
+	c.Assert(vault.SpentOutputRefsXmr[1].TxHash, Equals, "bbb")
+
+	existing := make(map[string]struct{}, len(vault.SpentOutputRefsXmr))
+	for _, ref := range vault.SpentOutputRefsXmr {
+		key := ref.TxHash + ":" + cosmos.NewUint(uint64(ref.OutputIndex)).String()
+		existing[key] = struct{}{}
+	}
+	dupRef := &common.OutputRef{TxHash: "aaa", OutputIndex: 0}
+	dupKey := dupRef.TxHash + ":" + cosmos.NewUint(uint64(dupRef.OutputIndex)).String()
+	_, isDup := existing[dupKey]
+	c.Assert(isDup, Equals, true)
+}

@@ -328,7 +328,7 @@ func (a *AttestTx) GetAttestation() *Attestation {
 }
 
 func (a *AttestTx) GetSignablePayload() ([]byte, error) {
-	return a.ObsTx.Tx.Marshal()
+	return a.ObsTx.GetSignablePayload()
 }
 
 // Implement AttestMessage for AttestNetworkFee
