@@ -20,6 +20,7 @@ genesis_init() {
   VALIDATOR=$(thornode tendermint show-validator | thornode pubkey --bech cons)
   NODE_ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -a --keyring-backend file)
   NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -p --keyring-backend file | thornode pubkey)
+  NODE_PUB_KEY_ED25519=$(thornode ed25519)
   VERSION=$(fetch_version)
 
   NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
