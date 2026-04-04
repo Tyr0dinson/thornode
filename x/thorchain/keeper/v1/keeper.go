@@ -37,6 +37,7 @@ const (
 	prefixRefundCleanup             types.DbPrefix = "refund_cleanup/"
 	prefixRefundCleanupExpiry       types.DbPrefix = "refund_cleanup_expiry/"
 	prefixPool                      types.DbPrefix = "pool/"
+	prefixPoolAvailableRuneDepth    types.DbPrefix = "pool_available_rune_depth/"
 	prefixPoolLUVI                  types.DbPrefix = "luvi/"
 	prefixPoolLuviAccumulator       types.DbPrefix = "pool_luvi/"
 	prefixTxOut                     types.DbPrefix = "txout/"
