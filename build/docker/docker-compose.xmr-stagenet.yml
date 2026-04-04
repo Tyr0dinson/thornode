@@ -22,11 +22,9 @@ services:
     image: sethsimmons/simple-monerod:v0.18.3.4
     restart: unless-stopped
     command:
-      - monerod
       - --rpc-bind-ip=0.0.0.0
       - --rpc-bind-port=18081
       - --confirm-external-bind
-      - --non-interactive
       - --restricted-rpc
       - --prune-blockchain
       - --sync-pruned-blocks
@@ -48,10 +46,10 @@ services:
           '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}',
           "http://localhost:18081/json_rpc",
         ]
-      interval: 30s
+      interval: 60s
       timeout: 10s
-      retries: 120
-      start_period: 60s
+      retries: 9999
+      start_period: 120s
 
   # ------------------------------ XMR FROST signer ---------------------------------
 
