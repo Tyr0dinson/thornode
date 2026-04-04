@@ -100,7 +100,7 @@ genesis_init() {
   fi
 
   if [ "$NET" != "mocknet" ]; then
-    add_account "$NODE_ADDRESS" rune 100000000000
+    add_account_if_missing "$NODE_ADDRESS" rune 100000000000
   fi
 
   if [ -n "${ETH_CONTRACT+x}" ]; then
