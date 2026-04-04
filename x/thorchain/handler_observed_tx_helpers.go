@@ -770,7 +770,17 @@ func handleObservedTxOutQuorum(
 		}
 
 		if len(tx.SpentOutputRefs) > 0 {
-			vault.SpentOutputRefsXmr = append(vault.SpentOutputRefsXmr, tx.SpentOutputRefs...)
+			existing := make(map[string]struct{}, len(vault.SpentOutputRefsXmr))
+			for _, ref := range vault.SpentOutputRefsXmr {
+				existing[ref.TxHash+":"+fmt.Sprint(ref.OutputIndex)] = struct{}{}
+			}
+			for _, ref := range tx.SpentOutputRefs {
+				key := ref.TxHash + ":" + fmt.Sprint(ref.OutputIndex)
+				if _, ok := existing[key]; !ok {
+					vault.SpentOutputRefsXmr = append(vault.SpentOutputRefsXmr, ref)
+					existing[key] = struct{}{}
+				}
+			}
 		}
 
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {

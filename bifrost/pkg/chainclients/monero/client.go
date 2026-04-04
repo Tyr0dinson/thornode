@@ -252,7 +252,9 @@ func (c *Client) Start(
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 	c.wg.Add(1)
 	go c.consolidationRunner()
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		c.restoreFrostKeysFromRecoveryFiles()
 		c.catchupSpentOutputRefs()
 	}()

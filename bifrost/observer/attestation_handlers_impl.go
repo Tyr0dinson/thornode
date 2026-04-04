@@ -44,13 +44,11 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		return
 	}
 
-	// For XMR outbound attestations with spent output refs, notify the
-	// observer so non-signer nodes can mark those outputs as spent in
-	// their local sidecar.
+	// Capture XMR spent refs for async application outside the lock.
+	var applySpentRefs *common.ObservedTx
 	if obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound && len(obsTx.SpentOutputRefs) > 0 {
-		if s.observerApplySpentOutputRefs != nil {
-			s.observerApplySpentOutputRefs(obsTx)
-		}
+		cp := obsTx
+		applySpentRefs = &cp
 	}
 
 	// Determine the number of validators needed for attestation
@@ -76,6 +74,12 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	} else {
 		s.logger.Debug().Msgf("observed tx attestation received - %s, id: %s, inbound: %t, final: %t, quorum: %d/%d",
 			k.Chain, k.ID, k.Inbound, k.Finalized, state.AttestationCount(), total)
+	}
+
+	// Apply XMR spent output refs outside the lock to avoid holding the
+	// mutex during a blocking HTTP call to the sidecar.
+	if applySpentRefs != nil && s.observerApplySpentOutputRefs != nil {
+		go s.observerApplySpentOutputRefs(*applySpentRefs)
 	}
 }
 
