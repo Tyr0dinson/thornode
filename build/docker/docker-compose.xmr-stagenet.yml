@@ -66,7 +66,7 @@ services:
       XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
       XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
       XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
-      XMR_FROST_CHAIN_NETWORK: "mainnet"
+      XMR_FROST_CHAIN_NETWORK: "public"
       XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
       XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "100"
       XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "200"
@@ -187,7 +187,7 @@ services:
       # enable XMR only
       BIFROST_CHAINS_XMR_DISABLED: "false"
       BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
-      BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
+      BIFROST_CHAINS_XMR_CHAIN_NETWORK: "public"
       BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
     volumes:
