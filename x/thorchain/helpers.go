@@ -1911,10 +1911,7 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, 
 	// share of their depth during a single mempool swap rollback cycle.
 	effectiveCap, capErr := poolRelativeMempoolSwapCap(ctx, k, mempoolSwapCap, sourceAsset, targetAsset)
 	if capErr != nil {
-		// If we cannot determine pool depths, fall back to the global cap so
-		// the feature degrades gracefully rather than blocking all swaps.
-		ctx.Logger().Error("fail to compute pool-relative mempool swap cap, using global cap", "error", capErr)
-		effectiveCap = mempoolSwapCap
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to compute pool-relative mempool swap cap: %w", capErr)
 	}
 
 	currentUsage := k.GetMempoolSwapUsageTOR(ctx)
