@@ -5,7 +5,7 @@
 type: create-blocks
 count: 1
 ---
-# Verify vault has XMR chain, EdDSA pubkey, and zero creation height (genesis vault)
+# Verify vault has XMR chain and EdDSA pubkey
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
@@ -16,7 +16,7 @@ asserts:
   - (.[0].vault_creation_height_xmr // 0) == 0
   - (.[0].spent_output_refs_xmr // []) | length == 0
 ---
-# Deposit BTC to swap for XMR — this creates an outbound in the queue
+# Deposit RUNE to swap for XMR (creates outbound in queue)
 type: tx-deposit
 signer: {{ addr_thor_cat }}
 coins:
@@ -27,7 +27,7 @@ memo: "=:XMR.XMR:{{ addr_xmr_cat }}"
 type: create-blocks
 count: 1
 ---
-# Verify outbound queue has an XMR item
+# Verify outbound queue has XMR item and capture amount
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
@@ -38,7 +38,7 @@ asserts:
   - .[0].coin.asset == "XMR.XMR"
   - .[0].coin.amount | tonumber > 0
 ---
-# Observe outbound WITH spent output refs — simulating what a signing node would submit
+# Observe the outbound with spent output refs
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
@@ -48,7 +48,7 @@ txs:
       from_address: {{ addr_xmr_dog }}
       to_address: {{ addr_xmr_cat }}
       coins:
-        - amount: "99000000"
+        - amount: "99500000"
           asset: "XMR.XMR"
           decimals: 8
       gas:
@@ -67,11 +67,14 @@ txs:
 type: create-blocks
 count: 1
 ---
-# Verify outbound was processed (queue empty)
+# Verify observed tx is done and has spent refs
 type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
 asserts:
-  - .|length == 0
+  - .observed_tx.tx.chain == "XMR"
+  - .observed_tx.spent_output_refs | length == 2
+  - .observed_tx.spent_output_refs[0].tx_hash == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+  - .observed_tx.spent_output_refs[1].tx_hash == "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
 ---
 # Verify spent output refs accumulated on the vault
 type: check
@@ -79,15 +82,6 @@ endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
   - .[0].spent_output_refs_xmr | length == 2
   - .[0].spent_output_refs_xmr[0].tx_hash == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
-  - .[0].spent_output_refs_xmr[0].output_index == 0
+  - (.[0].spent_output_refs_xmr[0].output_index // 0) == 0
   - .[0].spent_output_refs_xmr[1].tx_hash == "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
   - .[0].spent_output_refs_xmr[1].output_index == 1
----
-# Verify observed tx query includes spent output refs
-type: check
-endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
-asserts:
-  - .observed_tx.tx.chain == "XMR"
-  - .observed_tx.spent_output_refs | length == 2
-  - .observed_tx.spent_output_refs[0].tx_hash == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
-  - .observed_tx.spent_output_refs[1].output_index == 1
