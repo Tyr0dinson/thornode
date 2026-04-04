@@ -53,6 +53,7 @@ func (k KVStore) GetPools(ctx cosmos.Context) (Pools, error) {
 				return nil, dbError(ctx, "Unmarsahl: pool", err)
 			}
 		}
+		pool.EnsureLiquidityBuckets()
 		pools = append(pools, pool)
 	}
 	return pools, nil
@@ -65,6 +66,7 @@ func (k KVStore) GetPools(ctx cosmos.Context) (Pools, error) {
 func (k KVStore) GetPool(ctx cosmos.Context, asset common.Asset) (Pool, error) {
 	record := NewPool()
 	_, err := k.getPool(ctx, k.GetKey(prefixPool, asset.String()), &record)
+	record.EnsureLiquidityBuckets()
 
 	return record, err
 }
@@ -74,6 +76,7 @@ func (k KVStore) SetPool(ctx cosmos.Context, pool Pool) error {
 	if pool.Asset.IsEmpty() {
 		return errors.New("cannot save a pool with an empty asset")
 	}
+	pool.EnsureLiquidityBuckets()
 	keeper.RecordLuviTouch(ctx, pool.Asset, k.luviCapture(ctx))
 	k.setPool(ctx, k.GetKey(prefixPool, pool.Asset.String()), pool)
 	return nil

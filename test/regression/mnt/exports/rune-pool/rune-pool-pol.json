@@ -152,7 +152,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "191574133108",
+              "amount": "194592970452",
               "denom": "rune"
             }
           ]
@@ -161,7 +161,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999845847955",
+              "amount": "34997779968851",
               "denom": "rune"
             }
           ]
@@ -170,7 +170,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2410954233311",
+              "amount": "2410001275071",
               "denom": "rune"
             }
           ]
@@ -219,7 +219,7 @@
     "thorchain": {
       "POL": {
         "rune_deposited": "3447925664",
-        "rune_withdrawn": "3063306816"
+        "rune_withdrawn": "44469472"
       },
       "THORNames": [],
       "adv_swap_queue_items": [],
@@ -238,11 +238,26 @@
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
+          "asset_deposit_value": "793807",
+          "last_add_height": "9",
+          "last_withdraw_height": "15",
+          "legacy_units": "0",
+          "pending_asset": "0",
+          "pending_rune": "0",
+          "plain_units": "1274765087",
+          "rune_address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+          "rune_deposit_value": "2748382949",
+          "units": "1274765087"
+        },
+        {
+          "asset": "BTC.BTC",
           "asset_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
           "asset_deposit_value": "100000000",
           "last_add_height": "1",
+          "legacy_units": "0",
           "pending_asset": "0",
           "pending_rune": "0",
+          "plain_units": "0",
           "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "rune_deposit_value": "100000000000",
           "units": "100000000000"
@@ -366,13 +381,19 @@
       "outbound_fee_withheld_rune": [],
       "pools": [
         {
-          "LP_units": "100000000000",
+          "LP_units": "101274765087",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "191574133108",
+          "balance_rune": "194592970452",
           "decimals": "8",
+          "legacy_balance_asset": "99754330",
+          "legacy_balance_rune": "191540203105",
+          "legacy_lp_units": "100000000000",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
+          "plain_balance_asset": "245670",
+          "plain_balance_rune": "3052767347",
+          "plain_lp_units": "1274765087",
           "status": "Available",
           "synth_units": "0"
         }
@@ -380,19 +401,19 @@
       "reference_memos": [],
       "reserve_contributors": null,
       "rune_pool": {
-        "pool_units": "0",
-        "reserve_units": "0",
-        "rune_deposited": "5151385770",
-        "rune_withdrawn": "4959809124"
+        "pool_units": "1719663673",
+        "reserve_units": "2111005431",
+        "rune_deposited": "5158991004",
+        "rune_withdrawn": "4014456118"
       },
       "rune_providers": [
         {
-          "deposit_amount": "5151385770",
+          "deposit_amount": "5158991004",
           "last_deposit_height": "8",
-          "last_withdraw_height": "15",
+          "last_withdraw_height": "10",
           "rune_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-          "units": "0",
-          "withdraw_amount": "4959809124"
+          "units": "1719663673",
+          "withdraw_amount": "4014456118"
         }
       ],
       "secured_assets": [],

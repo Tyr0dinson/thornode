@@ -1045,7 +1045,7 @@ func (vm *NetworkMgr) paySaverYield(ctx cosmos.Context, asset common.Asset, rune
 		maxSaversForSynthYield := cosmos.NewUint(uint64(max))
 		synthSupply := vm.k.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(synthSupply)
-		synthPerPoolDepth := common.GetUncappedShare(pool.SynthUnits, pool.GetPoolUnits(), cosmos.NewUint(10_000))
+		synthPerPoolDepth := pool.GetSynthUtilizationBasisPoints()
 		lostYield := common.GetUncappedShare(synthPerPoolDepth, maxSaversForSynthYield, cosmos.NewUint(uint64(basisPts)))
 		basisPts = common.SafeSub(cosmos.NewUint(uint64(basisPts)), lostYield).BigInt().Int64()
 	}
@@ -1057,7 +1057,7 @@ func (vm *NetworkMgr) paySaverYield(ctx cosmos.Context, asset common.Asset, rune
 	assetAmt := pool.RuneValueInAsset(runeAmt)
 	// get the portion of the assetAmt based on the pool depth (asset * 2) and
 	// the saver asset balance
-	earnings := common.GetSafeShare(saver.BalanceAsset, pool.BalanceAsset.MulUint64(2), assetAmt)
+	earnings := common.GetSafeShare(saver.BalanceAsset, pool.GetSynthBackingAssetBalance().MulUint64(2), assetAmt)
 	earnings = common.GetSafeShare(cosmos.NewUint(uint64(basisPts)), cosmos.NewUint(10_000), earnings)
 	if earnings.IsZero() {
 		return nil
@@ -1159,7 +1159,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(synthSupply)
-		synthPerPoolDepth := common.GetUncappedShare(pool.SynthUnits, pool.GetPoolUnits(), cosmos.NewUint(10_000))
+		synthPerPoolDepth := pool.GetSynthUtilizationBasisPoints()
 
 		// forced withdraw: val == 2 or pool not available — bypass buffer check
 		if val == 2 || pool.Status != PoolAvailable {
@@ -1442,12 +1442,25 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	}
 
 	// Most adds fail validation (e.g. paused deposits), so the rune pool value
-	// is read only once the deposit succeeds. The deposit runs in a cache
-	// context, so ctx still holds the pools, synth supply and POL position from
-	// before it; the reserve to asgard send above changes none of them.
+	// is read only once the deposit succeeds. The plain bucket bootstrap and the
+	// deposit run in a cache context, so ctx still holds the pools, synth supply
+	// and POL position from before them; the reserve to asgard send above
+	// changes none of them.
 	depositCtx, commitDeposit := ctx.CacheContext()
-	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-ADD")
-	msg := NewMsgAddLiquidity(tx, pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
+	addRuneAmt := runeAmt
+	addAssetAmt := cosmos.ZeroUint()
+	bootstrapSpent := cosmos.ZeroUint()
+	if pool.UsesLiquidityBuckets() && pool.GetPlainPoolUnits().IsZero() {
+		pool, addRuneAmt, addAssetAmt, bootstrapSpent, err = vm.bootstrapPOLPlainBucket(depositCtx, pool, runeAmt, mgr)
+		if err != nil {
+			_ = mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, coins)
+			return err
+		}
+	}
+
+	txCoins := common.NewCoins(common.NewCoin(common.RuneAsset(), addRuneAmt))
+	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, txCoins, nil, "THOR-POL-ADD")
+	msg := NewMsgAddLiquidity(tx, pool.Asset, addRuneAmt, addAssetAmt, polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
 	_, err = handler(depositCtx, msg)
 
 	// compute the new provider units
@@ -1471,6 +1484,17 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	commitDeposit()
 	polValue.reset()
 
+	if !bootstrapSpent.IsZero() {
+		polState, polErr := mgr.Keeper().GetPOL(ctx)
+		if polErr != nil {
+			return fmt.Errorf("fail to get POL: %s", polErr)
+		}
+		polState.RuneDeposited = polState.RuneDeposited.Add(bootstrapSpent)
+		if err = mgr.Keeper().SetPOL(ctx, polState); err != nil {
+			return fmt.Errorf("fail to set POL: %s", err)
+		}
+	}
+
 	// deposit was successful, update the rune pool units accordingly
 	runePool.ReserveUnits = runePool.ReserveUnits.Add(depositUnits)
 	mgr.Keeper().SetRUNEPool(ctx, runePool)
@@ -1481,6 +1505,64 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		return fmt.Errorf("fail to exit runepool: %s", err)
 	}
 	return nil
+}
+
+func (vm *NetworkMgr) bootstrapPOLPlainBucket(
+	ctx cosmos.Context,
+	pool Pool,
+	runeAmt cosmos.Uint,
+	mgr Manager,
+) (Pool, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+	if runeAmt.LTE(cosmos.OneUint()) {
+		return pool, runeAmt, cosmos.ZeroUint(), cosmos.ZeroUint(), nil
+	}
+
+	pool.EnsureLiquidityBuckets()
+	legacyRune := pool.GetLegacyBalanceRune()
+	legacyAsset := pool.GetLegacyBalanceAsset()
+	if legacyRune.IsZero() || legacyAsset.IsZero() {
+		return pool, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot bootstrap plain POL bucket for %s with empty legacy balances", pool.Asset)
+	}
+
+	_, liquidityUnits, err := calculatePoolUnits(pool.GetLegacyLPUnits(), legacyRune, legacyAsset, runeAmt, cosmos.ZeroUint())
+	if err != nil {
+		return pool, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot value plain POL bucket bootstrap for %s: %s", pool.Asset, err)
+	}
+	plainValue := common.GetSafeShare(liquidityUnits, pool.GetLegacyLPUnits().Add(liquidityUnits), legacyRune.Add(runeAmt)).MulUint64(2)
+	if plainValue.IsZero() {
+		return pool, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot bootstrap plain POL bucket for %s: zero plain value", pool.Asset)
+	}
+	if plainValue.GT(runeAmt) {
+		plainValue = runeAmt
+	}
+
+	slipRune := common.SafeSub(runeAmt, plainValue)
+	legacyRune = legacyRune.Add(slipRune)
+
+	swapRune := plainValue.QuoUint64(2)
+	if swapRune.IsZero() {
+		pool.LegacyBalanceRune = legacyRune
+		pool.SyncLiquidityTotals()
+		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+			return pool, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("fail to set pool during POL bootstrap: %s", err)
+		}
+		return pool, plainValue, cosmos.ZeroUint(), common.SafeSub(runeAmt, plainValue), nil
+	}
+
+	addRune := common.SafeSub(plainValue, swapRune)
+	addAsset := newSwapper().CalcAssetEmission(legacyRune, swapRune, legacyAsset)
+	if addAsset.IsZero() {
+		return pool, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot bootstrap plain POL bucket for %s: zero asset emission", pool.Asset)
+	}
+
+	pool.LegacyBalanceRune = legacyRune.Add(swapRune)
+	pool.LegacyBalanceAsset = common.SafeSub(legacyAsset, addAsset)
+	pool.SyncLiquidityTotals()
+	if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+		return pool, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("fail to set pool during POL bootstrap: %s", err)
+	}
+
+	return pool, addRune, addAsset, common.SafeSub(runeAmt, addRune), nil
 }
 
 func (vm *NetworkMgr) removePOLLiquidity(
@@ -1497,8 +1579,17 @@ func (vm *NetworkMgr) removePOLLiquidity(
 	if err != nil {
 		return err
 	}
-	if lp.Units.IsZero() {
-		// no LP position to withdraw
+	useLiquidityBuckets := pool.UsesLiquidityBuckets()
+	if useLiquidityBuckets {
+		lp.EnsureLiquidityBuckets()
+		if lp.HasMixedLiquidityBuckets() {
+			return fmt.Errorf("POL address cannot hold both legacy and plain liquidity units")
+		}
+		if lp.GetPlainUnits().IsZero() {
+			// no LP position to withdraw
+			return nil
+		}
+	} else if lp.Units.IsZero() {
 		return nil
 	}
 
@@ -1508,12 +1599,22 @@ func (vm *NetworkMgr) removePOLLiquidity(
 		move = maxMovement
 	}
 
-	runeAmt := common.GetSafeShare(move, cosmos.NewUint(1000_000), pool.BalanceRune)
+	poolRuneDepth := pool.BalanceRune
+	lpUnits := lp.Units
+	poolUnits := pool.LPUnits
+	if useLiquidityBuckets {
+		poolRuneDepth = pool.GetPlainBalanceRune()
+		lpUnits = lp.GetPlainUnits()
+		poolUnits = pool.GetPlainPoolUnits()
+	}
+
+	runeAmt := common.GetSafeShare(move, cosmos.NewUint(1000_000), poolRuneDepth)
 	if runeAmt.IsZero() {
 		return nil
 	}
+
 	maxBps := cosmos.NewUint(constants.MaxBasisPts)
-	lpRune := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune).MulUint64(2)
+	lpRune := common.GetSafeShare(lpUnits, poolUnits, poolRuneDepth).MulUint64(2)
 	basisPts := common.GetSafeShare(runeAmt, lpRune, maxBps)
 
 	// if the move is smaller than 1 basis point of the position, withdraw 1 basis point
@@ -2523,7 +2624,21 @@ func (vm *NetworkMgr) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.Ui
 		if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to asgard: %w", err)
 		}
-		pools[i].BalanceRune = pools[i].BalanceRune.Add(reward)
+		pools[i].EnsureLiquidityBuckets()
+		if pools[i].UsesLiquidityBuckets() {
+			totalRune := pools[i].GetLegacyBalanceRune().Add(pools[i].GetPlainBalanceRune())
+			if totalRune.IsZero() {
+				pools[i].LegacyBalanceRune = pools[i].GetLegacyBalanceRune().Add(reward)
+			} else {
+				legacyReward := common.GetSafeShare(pools[i].GetLegacyBalanceRune(), totalRune, reward)
+				plainReward := common.SafeSub(reward, legacyReward)
+				pools[i].LegacyBalanceRune = pools[i].GetLegacyBalanceRune().Add(legacyReward)
+				pools[i].PlainBalanceRune = pools[i].GetPlainBalanceRune().Add(plainReward)
+			}
+			pools[i].SyncLiquidityTotals()
+		} else {
+			pools[i].BalanceRune = pools[i].BalanceRune.Add(reward)
+		}
 		if err := vm.k.SetPool(ctx, pools[i]); err != nil {
 			return fmt.Errorf("fail to set pool: %w", err)
 		}

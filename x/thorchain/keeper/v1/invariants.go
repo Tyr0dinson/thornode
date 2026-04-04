@@ -293,7 +293,12 @@ func PoolsInvariant(k KVStore) common.Invariant {
 			for ; lpIter.Valid(); lpIter.Next() {
 				var lp LiquidityProvider
 				k.Cdc().MustUnmarshal(lpIter.Value(), &lp)
-				lpUnits = lpUnits.Add(lp.Units)
+				lp.EnsureLiquidityBuckets()
+				if lp.HasMixedLiquidityBuckets() {
+					msg = append(msg, fmt.Sprintf("%s invalid mixed liquidity position: %s", pool.Asset, lp.GetAddress()))
+					broken = true
+				}
+				lpUnits = lpUnits.Add(lp.GetTotalUnits())
 				lpPendingRune = lpPendingRune.Add(lp.PendingRune)
 				lpPendingAsset = lpPendingAsset.Add(lp.PendingAsset)
 			}
@@ -311,6 +316,7 @@ func PoolsInvariant(k KVStore) common.Invariant {
 				}
 			}
 
+			pool.EnsureLiquidityBuckets()
 			check(pool.LPUnits, lpUnits, "units")
 			check(pool.PendingInboundRune, lpPendingRune, "pending rune")
 			check(pool.PendingInboundAsset, lpPendingAsset, "pending asset")

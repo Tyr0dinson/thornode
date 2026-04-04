@@ -1022,10 +1022,23 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 					poolDeduct = pool.BalanceRune
 				}
 				finalRuneFee = finalRuneFee.Add(poolDeduct)
-				if !outputs[i].Coin.Asset.IsSyntheticAsset() {
-					pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
+				if pool.UsesLiquidityBuckets() {
+					pool.EnsureLiquidityBuckets()
+					if !outputs[i].Coin.Asset.IsSyntheticAsset() {
+						legacyAssetFee, plainAssetFee := splitBucketDelta(pool.GetLegacyBalanceAsset(), pool.BalanceAsset, assetFee)
+						pool.LegacyBalanceAsset = pool.LegacyBalanceAsset.Add(legacyAssetFee)
+						pool.PlainBalanceAsset = pool.PlainBalanceAsset.Add(plainAssetFee)
+					}
+					legacyRuneDeduct, plainRuneDeduct := splitBucketDelta(pool.GetLegacyBalanceRune(), pool.BalanceRune, poolDeduct)
+					pool.LegacyBalanceRune = common.SafeSub(pool.LegacyBalanceRune, legacyRuneDeduct)
+					pool.PlainBalanceRune = common.SafeSub(pool.PlainBalanceRune, plainRuneDeduct)
+					pool.SyncLiquidityTotals()
+				} else {
+					if !outputs[i].Coin.Asset.IsSyntheticAsset() {
+						pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
+					}
+					pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeduct) // Deduct Rune from Pool
 				}
-				pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeduct) // Deduct Rune from Pool
 				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
 				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 			}

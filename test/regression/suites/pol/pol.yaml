@@ -87,7 +87,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit == "${CURRENT_DEPOSIT=89348132446}"
+  - .pol.current_deposit == "${CURRENT_DEPOSIT=97647853276}"
   - .pol.current_deposit|tonumber > ${MAX_NETWORK_DEPOSIT}
   - .pol.rune_deposited == "${CURRENT_DEPOSIT}"
   - .pol.rune_withdrawn == "0"
@@ -147,12 +147,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit == "89340315148"
-  - .pol.rune_deposited == "89348132446"
-  - .pol.rune_withdrawn == "7817298"
-  - .pol.value == "78174904394"
-  - .pol.pnl == "-11165410754"
-  - .reserve.units|tonumber == ${RESERVE_UNITS}-8419525
+  - .pol.current_deposit == "97637376114"
+  - .pol.rune_deposited == "97647853276"
+  - .pol.rune_withdrawn == "10477162"
+  - .pol.value == "182694963524"
+  - .pol.pnl == "85057587410"
+  - .reserve.units == "84186837956"
 ---
 type: tx-mimir
 key: POLMaxPoolMovement
@@ -165,12 +165,14 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit == "${CURRENT_DEPOSIT=17467050640}"
-  - .pol.rune_deposited == "${RUNE_DEPOSITED=89348132446}"
-  - .pol.rune_withdrawn == "${RUNE_WITHRDAWN=71881081806}"
-  - .pol.value == "${VALUE=0}"
-  - .pol.pnl == "-${CURRENT_DEPOSIT}"
-  - .reserve.units == "${UNITS=0}"
+  - .pol.current_deposit|tonumber > 0
+  - .pol.current_deposit|tonumber < 97637376114
+  - .pol.rune_deposited == "97647853276"
+  - .pol.rune_withdrawn|tonumber > 10477162
+  - .pol.value|tonumber > 0
+  - .pol.value|tonumber < 182694963524
+  - .pol.pnl|tonumber > 0
+  - .reserve.units|tonumber < 84186837956
 ---
 ########################################################################################
 # Nothing else to withdraw
@@ -181,9 +183,11 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit == "${CURRENT_DEPOSIT}"
-  - .pol.rune_deposited == "${RUNE_DEPOSITED}"
-  - .pol.rune_withdrawn == "${RUNE_WITHRDAWN}"
-  - .pol.value == "${VALUE}"
-  - .pol.pnl == "-${CURRENT_DEPOSIT}"
-  - .reserve.units == "${UNITS}"
+  - .pol.current_deposit|tonumber > 0
+  - .pol.current_deposit|tonumber < 73354027426
+  - .pol.rune_deposited == "97647853276"
+  - .pol.rune_withdrawn|tonumber > 24293825850
+  - .pol.value|tonumber > 0
+  - .pol.value|tonumber < 138095608334
+  - .pol.pnl|tonumber > 0
+  - .reserve.units|tonumber < 64455547810

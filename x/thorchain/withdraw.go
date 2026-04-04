@@ -25,19 +25,26 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 	}
 	synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	pool.CalcUnits(synthSupply)
+	useLiquidityBuckets := !pool.Asset.IsSyntheticAsset() && pool.UsesLiquidityBuckets()
 
 	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, msg.Asset, msg.WithdrawAddress)
 	if err != nil {
 		ctx.Logger().Error("failed to find liquidity provider", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
+	if useLiquidityBuckets {
+		lp.EnsureLiquidityBuckets()
+	}
+	if useLiquidityBuckets && lp.HasMixedLiquidityBuckets() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("liquidity provider cannot hold both legacy and plain liquidity units")
+	}
 
 	withdrawToSecuredAsset := !msg.Asset.IsNative() && !lp.AssetAddress.IsEmpty() && lp.AssetAddress.Equals(lp.RuneAddress)
 
 	poolRune := pool.BalanceRune
 	poolAsset := pool.BalanceAsset
-	originalLiquidityProviderUnits := lp.Units
-	fLiquidityProviderUnit := lp.Units
+	originalLiquidityProviderUnits := lp.GetTotalUnits()
+	fLiquidityProviderUnit := lp.GetTotalUnits()
 	if lp.Units.IsZero() {
 		if !lp.PendingRune.IsZero() || !lp.PendingAsset.IsZero() {
 			mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
@@ -71,13 +78,56 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 		lp.AssetDepositValue = lp.AssetDepositValue.Add(common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceAsset))
 	}
 
+	withdrawFromLegacy := false
 	var withdrawRune, withDrawAsset, unitAfter cosmos.Uint
-	if pool.Asset.IsSyntheticAsset() {
+	switch {
+	case pool.Asset.IsSyntheticAsset():
 		withdrawRune, withDrawAsset, unitAfter = calculateVaultWithdraw(pool.GetPoolUnits(), poolAsset, originalLiquidityProviderUnits, msg.BasisPoints)
-	} else {
+	case useLiquidityBuckets:
+		withdrawFromLegacy = !lp.GetLegacyUnits().IsZero()
+		trancheUnits := lp.GetPlainUnits()
+		if withdrawFromLegacy {
+			trancheUnits = lp.GetLegacyUnits()
+		}
+
 		// Note, have to use msg.WithdrawAddress rather than msg.Signer,
 		// because the POL removePOLLiquidity signer is nodeAccounts[0].NodeAddress, not the ReserveName address.
-		withdrawRune, withDrawAsset, unitAfter, err = calculateWithdraw(ctx, mgr.Keeper(), pool.Asset, pool.GetPoolUnits(), poolRune, poolAsset, originalLiquidityProviderUnits, msg.BasisPoints, assetToWithdraw, msg.WithdrawAddress)
+		withdrawRune, withDrawAsset, unitAfter, err = calculateBucketedWithdraw(
+			ctx,
+			mgr.Keeper(),
+			&pool,
+			withdrawFromLegacy,
+			trancheUnits,
+			msg.BasisPoints,
+			assetToWithdraw,
+			msg.WithdrawAddress,
+		)
+		if err != nil {
+			ctx.Logger().Error("fail to withdraw", "error", err)
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+		}
+
+		if withdrawFromLegacy {
+			lp.LegacyUnits = unitAfter
+		} else {
+			lp.PlainUnits = unitAfter
+		}
+		lp.SyncUnits()
+	default:
+		// Note, have to use msg.WithdrawAddress rather than msg.Signer,
+		// because the POL removePOLLiquidity signer is nodeAccounts[0].NodeAddress, not the ReserveName address.
+		withdrawRune, withDrawAsset, unitAfter, err = calculateWithdraw(
+			ctx,
+			mgr.Keeper(),
+			pool.Asset,
+			pool.GetPoolUnits(),
+			poolRune,
+			poolAsset,
+			originalLiquidityProviderUnits,
+			msg.BasisPoints,
+			assetToWithdraw,
+			msg.WithdrawAddress,
+		)
 		if err != nil {
 			ctx.Logger().Error("fail to withdraw", "error", err)
 			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
@@ -133,14 +183,32 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 				gasAsset = withDrawAsset
 			}
 			withDrawAsset = common.SafeSub(withDrawAsset, gasAsset)
+			if useLiquidityBuckets {
+				if withdrawFromLegacy {
+					pool.LegacyBalanceAsset = common.SafeSub(pool.LegacyBalanceAsset, gasAsset)
+				} else {
+					pool.PlainBalanceAsset = common.SafeSub(pool.PlainBalanceAsset, gasAsset)
+				}
+			} else if !pool.Asset.IsSyntheticAsset() {
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, gasAsset)
+			}
 		}
 	}
 
 	ctx.Logger().Info("client withdraw", "RUNE", withdrawRune, "asset", withDrawAsset, "units left", unitAfter)
 	// update pool
-	pool.LPUnits = common.SafeSub(pool.LPUnits, common.SafeSub(fLiquidityProviderUnit, unitAfter))
-	pool.BalanceRune = common.SafeSub(poolRune, withdrawRune)
-	pool.BalanceAsset = common.SafeSub(poolAsset, withDrawAsset)
+	switch {
+	case pool.Asset.IsSyntheticAsset():
+		pool.LPUnits = common.SafeSub(pool.LPUnits, common.SafeSub(fLiquidityProviderUnit, unitAfter))
+		pool.BalanceRune = common.SafeSub(poolRune, withdrawRune)
+		pool.BalanceAsset = common.SafeSub(poolAsset, withDrawAsset)
+	case useLiquidityBuckets:
+		pool.SyncLiquidityTotals()
+	default:
+		pool.LPUnits = common.SafeSub(pool.LPUnits, common.SafeSub(fLiquidityProviderUnit, unitAfter))
+		pool.BalanceRune = common.SafeSub(poolRune, withdrawRune)
+		pool.BalanceAsset = common.SafeSub(poolAsset, withDrawAsset)
+	}
 
 	ctx.Logger().Info("pool after withdraw", "pool unit", pool.GetPoolUnits(), "balance RUNE", pool.BalanceRune, "balance asset", pool.BalanceAsset)
 
@@ -260,6 +328,113 @@ func calculateWithdraw(ctx cosmos.Context, keeper keeper.Keeper, poolAsset commo
 	// Waive any implicit slip fee for POL withdrawals, effectively an XYK constant-depths half-swap.
 	if isPOL {
 		outputAmount = outputAmount.Add(liqFee)
+	}
+
+	if withdrawalAsset.IsRune() {
+		return outputAmount, cosmos.ZeroUint(), unitAfter, nil
+	}
+	return cosmos.ZeroUint(), outputAmount, unitAfter, nil
+}
+
+func calculateBucketedWithdraw(
+	ctx cosmos.Context,
+	keeper keeper.Keeper,
+	pool *Pool,
+	withdrawFromLegacy bool,
+	lpUnits, withdrawBasisPoints cosmos.Uint,
+	withdrawalAsset common.Asset,
+	withdrawAddress common.Address,
+) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+	var poolUnits, poolRuneDepth, poolAssetDepth cosmos.Uint
+	if withdrawFromLegacy {
+		poolUnits = pool.GetLegacyPoolUnits()
+		poolRuneDepth = pool.GetLegacyBalanceRune()
+		poolAssetDepth = pool.GetLegacyBalanceAsset()
+	} else {
+		poolUnits = pool.GetPlainPoolUnits()
+		poolRuneDepth = pool.GetPlainBalanceRune()
+		poolAssetDepth = pool.GetPlainBalanceAsset()
+	}
+
+	if poolUnits.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("poolUnits can't be zero")
+	}
+	if poolRuneDepth.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("pool rune balance can't be zero")
+	}
+	if poolAssetDepth.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("pool asset balance can't be zero")
+	}
+	if lpUnits.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("liquidity provider unit can't be zero")
+	}
+	if withdrawBasisPoints.GT(cosmos.NewUint(MaxWithdrawBasisPoints)) {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("withdraw basis point %s is not valid", withdrawBasisPoints.String())
+	}
+
+	unitsToClaim := common.GetSafeShare(withdrawBasisPoints, cosmos.NewUint(MaxWithdrawBasisPoints), lpUnits)
+	unitAfter := common.SafeSub(lpUnits, unitsToClaim)
+	withdrawRune := common.GetSafeShare(unitsToClaim, poolUnits, poolRuneDepth)
+	withdrawAsset := common.GetSafeShare(unitsToClaim, poolUnits, poolAssetDepth)
+
+	if withdrawFromLegacy {
+		pool.LegacyLpUnits = common.SafeSub(pool.GetLegacyLPUnits(), unitsToClaim)
+		pool.LegacyBalanceRune = common.SafeSub(pool.GetLegacyBalanceRune(), withdrawRune)
+		pool.LegacyBalanceAsset = common.SafeSub(pool.GetLegacyBalanceAsset(), withdrawAsset)
+	} else {
+		pool.PlainLpUnits = common.SafeSub(pool.GetPlainLPUnits(), unitsToClaim)
+		pool.PlainBalanceRune = common.SafeSub(pool.GetPlainBalanceRune(), withdrawRune)
+		pool.PlainBalanceAsset = common.SafeSub(pool.GetPlainBalanceAsset(), withdrawAsset)
+	}
+	pool.SyncLiquidityTotals()
+
+	if withdrawalAsset.IsEmpty() {
+		return withdrawRune, withdrawAsset, unitAfter, nil
+	}
+
+	swapper, err := GetSwapper(keeper.GetVersion())
+	if err != nil {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
+	}
+
+	var x, X, Y, yAdd cosmos.Uint
+	var source, target common.Asset
+	isPOL := false
+	if withdrawalAsset.IsRune() {
+		polAddress, err := keeper.GetModuleAddress(ReserveName)
+		if err != nil {
+			ctx.Logger().Error("failed to get reserve module address", "error", err)
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		}
+		isPOL = withdrawAddress.Equals(polAddress)
+		x = withdrawAsset
+		X = pool.BalanceAsset
+		Y = pool.BalanceRune
+		yAdd = withdrawRune
+		source = pool.Asset
+		target = common.RuneAsset()
+	} else {
+		x = withdrawRune
+		X = pool.BalanceRune
+		Y = pool.BalanceAsset
+		yAdd = withdrawAsset
+		source = common.RuneAsset()
+		target = pool.Asset
+	}
+
+	swapOutput := cosmos.ZeroUint()
+	liquidityFee := cosmos.ZeroUint()
+	if !x.IsZero() && !X.IsZero() && !Y.IsZero() {
+		swapSlipBps := swapper.CalcSwapSlip(X, x)
+		minSlipBps := getMinSlipBps(ctx, keeper, pool.Asset, false)
+		swapOutput, liquidityFee, _ = swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
+	}
+	outputAmount := swapOutput.Add(yAdd)
+
+	applySwapBalanceDelta(pool, source, target, x, swapOutput)
+	if isPOL && !liquidityFee.IsZero() {
+		applySwapLiquidityFeeRune(pool, source, target, liquidityFee)
+		outputAmount = outputAmount.Add(liquidityFee)
 	}
 
 	if withdrawalAsset.IsRune() {

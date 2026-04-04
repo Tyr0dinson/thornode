@@ -791,11 +791,11 @@ func getSynthSupplyRemaining(ctx cosmos.Context, mgr Manager, asset common.Asset
 		return cosmos.ZeroUint(), ErrInternal(err, "fail to get pool")
 	}
 
-	if pool.BalanceAsset.IsZero() {
+	if pool.GetSynthBackingAssetBalance().IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("pool(%s) has zero asset balance", pool.Asset.String())
 	}
 
-	maxSynthSupply := cosmos.NewUint(uint64(maxSynths)).Mul(pool.BalanceAsset.MulUint64(2)).QuoUint64(MaxWithdrawBasisPoints)
+	maxSynthSupply := cosmos.NewUint(uint64(maxSynths)).Mul(pool.GetSynthBackingAssetBalance().MulUint64(2)).QuoUint64(MaxWithdrawBasisPoints)
 	if maxSynthSupply.LT(synthSupply) {
 		return cosmos.ZeroUint(), fmt.Errorf("synth supply over target (%d/%d)", synthSupply.Uint64(), maxSynthSupply.Uint64())
 	}
@@ -2251,7 +2251,20 @@ func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 		if err != nil {
 			return total, err
 		}
-		share := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune)
+		if pool.UsesLiquidityBuckets() {
+			lp.EnsureLiquidityBuckets()
+			if !lp.GetLegacyUnits().IsZero() {
+				legacyShare := common.GetSafeShare(lp.GetLegacyUnits(), pool.GetLegacyPoolUnits(), pool.GetLegacyBalanceRune())
+				total = total.Add(legacyShare.MulUint64(2))
+			}
+			if !lp.GetPlainUnits().IsZero() {
+				plainShare := common.GetSafeShare(lp.GetPlainUnits(), pool.GetPlainPoolUnits(), pool.GetPlainBalanceRune())
+				total = total.Add(plainShare.MulUint64(2))
+			}
+			continue
+		}
+
+		share := common.GetSafeShare(lp.Units, pool.LPUnits, pool.BalanceRune)
 		total = total.Add(share.MulUint64(2))
 	}
 

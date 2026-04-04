@@ -69,12 +69,18 @@ func (k KVStore) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, ad
 	if err != nil {
 		return record, err
 	}
+	if record.HasLiquidityBuckets() {
+		record.EnsureLiquidityBuckets()
+	}
 
 	return record, nil
 }
 
 // SetLiquidityProvider save the liquidity provider to kv store
 func (k KVStore) SetLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider) {
+	if lp.HasLiquidityBuckets() {
+		lp.EnsureLiquidityBuckets()
+	}
 	k.setLiquidityProvider(ctx, k.GetKey(prefixLiquidityProvider, lp.Key()), lp)
 }
 

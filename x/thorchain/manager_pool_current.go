@@ -727,7 +727,7 @@ func (pm *PoolMgr) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error
 			continue
 		}
 
-		maxSynth := common.GetUncappedShare(cosmos.NewUint(uint64(synthCap)), cosmos.NewUint(constants.MaxBasisPts), l1Pool.BalanceAsset.MulUint64(2))
+		maxSynth := common.GetUncappedShare(cosmos.NewUint(uint64(synthCap)), cosmos.NewUint(constants.MaxBasisPts), l1Pool.GetSynthBackingAssetBalance().MulUint64(2))
 		if synthSupply.GT(maxSynth) {
 			utilizationRatio := common.GetUncappedShare(synthSupply, maxSynth, sdkmath.NewUint(constants.MaxBasisPts))
 			if synthPool.IsEmpty() || utilizationRatio.GT(maxUtilizationRatio) {

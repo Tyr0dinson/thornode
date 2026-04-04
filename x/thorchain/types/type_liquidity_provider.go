@@ -38,17 +38,72 @@ func (lp LiquidityProvider) Key() string {
 	return fmt.Sprintf("%s/%s", lp.Asset.String(), lp.GetAddress().String())
 }
 
+func (lp LiquidityProvider) HasLiquidityBuckets() bool {
+	return !normalizeUint(lp.LegacyUnits).IsZero() || !normalizeUint(lp.PlainUnits).IsZero()
+}
+
+func (lp LiquidityProvider) HasMixedLiquidityBuckets() bool {
+	return !lp.GetLegacyUnits().IsZero() && !lp.GetPlainUnits().IsZero()
+}
+
+func (lp *LiquidityProvider) EnsureLiquidityBuckets() {
+	if lp.Asset.IsSyntheticAsset() {
+		return
+	}
+	lp.LegacyUnits = normalizeUint(lp.LegacyUnits)
+	lp.PlainUnits = normalizeUint(lp.PlainUnits)
+	if !lp.HasLiquidityBuckets() {
+		lp.LegacyUnits = lp.Units
+	} else if lp.GetPlainUnits().IsZero() {
+		lp.LegacyUnits = lp.Units
+	}
+	lp.SyncUnits()
+}
+
+func (lp *LiquidityProvider) SyncUnits() {
+	if lp.Asset.IsSyntheticAsset() {
+		return
+	}
+	lp.Units = lp.LegacyUnits.Add(lp.PlainUnits)
+}
+
+func (lp LiquidityProvider) GetLegacyUnits() cosmos.Uint {
+	if lp.Asset.IsSyntheticAsset() || !lp.HasLiquidityBuckets() || lp.GetPlainUnits().IsZero() {
+		return lp.Units
+	}
+	return normalizeUint(lp.LegacyUnits)
+}
+
+func (lp LiquidityProvider) GetPlainUnits() cosmos.Uint {
+	if lp.Asset.IsSyntheticAsset() || !lp.HasLiquidityBuckets() {
+		return cosmos.ZeroUint()
+	}
+	return normalizeUint(lp.PlainUnits)
+}
+
+func (lp LiquidityProvider) GetTotalUnits() cosmos.Uint {
+	if lp.Asset.IsSyntheticAsset() || !lp.HasLiquidityBuckets() || lp.GetPlainUnits().IsZero() {
+		return lp.Units
+	}
+	return lp.GetLegacyUnits().Add(lp.GetPlainUnits())
+}
+
 func (lp LiquidityProvider) GetRuneRedeemValue(pool Pool, synthSupply cosmos.Uint) (error, cosmos.Uint) {
 	if !lp.Asset.Equals(pool.Asset) {
 		return fmt.Errorf("LP and Pool assets do not match (%s, %s)", lp.Asset.String(), pool.Asset.String()), cosmos.ZeroUint()
+	}
+
+	pool.CalcUnits(synthSupply)
+	if pool.UsesLiquidityBuckets() {
+		runeValue := common.GetSafeShare(lp.GetLegacyUnits(), pool.GetLegacyPoolUnits(), pool.GetLegacyBalanceRune())
+		runeValue = runeValue.Add(common.GetSafeShare(lp.GetPlainUnits(), pool.GetPlainPoolUnits(), pool.GetPlainBalanceRune()))
+		return nil, runeValue
 	}
 
 	bigInt := &big.Int{}
 	lpUnits := lp.Units.BigInt()
 	poolRuneDepth := pool.BalanceRune.BigInt()
 	num := bigInt.Mul(lpUnits, poolRuneDepth)
-
-	pool.CalcUnits(synthSupply)
 	denom := pool.GetPoolUnits().BigInt()
 	if len(denom.Bits()) == 0 {
 		return nil, cosmos.ZeroUint()
@@ -62,12 +117,17 @@ func (lp LiquidityProvider) GetAssetRedeemValue(pool Pool, synthSupply cosmos.Ui
 		return fmt.Errorf("LP and Pool assets do not match (%s, %s)", lp.Asset.String(), pool.Asset.String()), cosmos.ZeroUint()
 	}
 
+	pool.CalcUnits(synthSupply)
+	if pool.UsesLiquidityBuckets() {
+		assetValue := common.GetSafeShare(lp.GetLegacyUnits(), pool.GetLegacyPoolUnits(), pool.GetLegacyBalanceAsset())
+		assetValue = assetValue.Add(common.GetSafeShare(lp.GetPlainUnits(), pool.GetPlainPoolUnits(), pool.GetPlainBalanceAsset()))
+		return nil, assetValue
+	}
+
 	bigInt := &big.Int{}
 	lpUnits := lp.Units.BigInt()
 	poolAssetDepth := pool.BalanceAsset.BigInt()
 	num := bigInt.Mul(lpUnits, poolAssetDepth)
-
-	pool.CalcUnits(synthSupply)
 	denom := pool.GetPoolUnits().BigInt()
 	if len(denom.Bits()) == 0 {
 		return nil, cosmos.ZeroUint()

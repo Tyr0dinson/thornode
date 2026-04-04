@@ -53,6 +53,12 @@ func NewPool() Pool {
 		BalanceAsset:        cosmos.ZeroUint(),
 		SynthUnits:          cosmos.ZeroUint(),
 		LPUnits:             cosmos.ZeroUint(),
+		LegacyBalanceRune:   cosmos.ZeroUint(),
+		LegacyBalanceAsset:  cosmos.ZeroUint(),
+		LegacyLpUnits:       cosmos.ZeroUint(),
+		PlainBalanceRune:    cosmos.ZeroUint(),
+		PlainBalanceAsset:   cosmos.ZeroUint(),
+		PlainLpUnits:        cosmos.ZeroUint(),
 		PendingInboundRune:  cosmos.ZeroUint(),
 		PendingInboundAsset: cosmos.ZeroUint(),
 		Status:              PoolStatus_Available,
@@ -67,23 +73,149 @@ func (m Pool) Valid() error {
 	return nil
 }
 
+func (m Pool) UsesLiquidityBuckets() bool {
+	return !m.Asset.IsSyntheticAsset() &&
+		!m.Asset.IsDerivedAsset() &&
+		(!normalizeUint(m.SynthUnits).IsZero() || m.HasLiquidityBuckets())
+}
+
+func normalizeUint(u cosmos.Uint) cosmos.Uint {
+	if u.IsNil() {
+		return cosmos.ZeroUint()
+	}
+	return u
+}
+
+func (m Pool) hasPlainLiquidityBucket() bool {
+	return !normalizeUint(m.PlainBalanceRune).IsZero() ||
+		!normalizeUint(m.PlainBalanceAsset).IsZero() ||
+		!normalizeUint(m.PlainLpUnits).IsZero()
+}
+
+func (m Pool) HasLiquidityBuckets() bool {
+	return !normalizeUint(m.LegacyBalanceRune).IsZero() ||
+		!normalizeUint(m.LegacyBalanceAsset).IsZero() ||
+		!normalizeUint(m.LegacyLpUnits).IsZero() ||
+		m.hasPlainLiquidityBucket()
+}
+
+func (m *Pool) EnsureLiquidityBuckets() {
+	if !m.UsesLiquidityBuckets() {
+		return
+	}
+	m.LegacyBalanceRune = normalizeUint(m.LegacyBalanceRune)
+	m.LegacyBalanceAsset = normalizeUint(m.LegacyBalanceAsset)
+	m.LegacyLpUnits = normalizeUint(m.LegacyLpUnits)
+	m.PlainBalanceRune = normalizeUint(m.PlainBalanceRune)
+	m.PlainBalanceAsset = normalizeUint(m.PlainBalanceAsset)
+	m.PlainLpUnits = normalizeUint(m.PlainLpUnits)
+	if !m.HasLiquidityBuckets() {
+		m.LegacyBalanceRune = m.BalanceRune
+		m.LegacyBalanceAsset = m.BalanceAsset
+		m.LegacyLpUnits = m.LPUnits
+	} else if !m.hasPlainLiquidityBucket() &&
+		(!m.LegacyBalanceRune.Equal(m.BalanceRune) ||
+			!m.LegacyBalanceAsset.Equal(m.BalanceAsset) ||
+			!m.LegacyLpUnits.Equal(m.LPUnits)) {
+		m.LegacyBalanceRune = m.BalanceRune
+		m.LegacyBalanceAsset = m.BalanceAsset
+		m.LegacyLpUnits = m.LPUnits
+	}
+	m.SyncLiquidityTotals()
+}
+
+func (m *Pool) SyncLiquidityTotals() {
+	if !m.UsesLiquidityBuckets() {
+		return
+	}
+	m.BalanceRune = normalizeUint(m.LegacyBalanceRune).Add(normalizeUint(m.PlainBalanceRune))
+	m.BalanceAsset = normalizeUint(m.LegacyBalanceAsset).Add(normalizeUint(m.PlainBalanceAsset))
+	m.LPUnits = normalizeUint(m.LegacyLpUnits).Add(normalizeUint(m.PlainLpUnits))
+}
+
+func (m Pool) GetLegacyBalanceRune() cosmos.Uint {
+	if !m.UsesLiquidityBuckets() || !m.HasLiquidityBuckets() {
+		return m.BalanceRune
+	}
+	return normalizeUint(m.LegacyBalanceRune)
+}
+
+func (m Pool) GetLegacyBalanceAsset() cosmos.Uint {
+	if !m.UsesLiquidityBuckets() || !m.HasLiquidityBuckets() {
+		return m.BalanceAsset
+	}
+	return normalizeUint(m.LegacyBalanceAsset)
+}
+
+func (m Pool) GetPlainBalanceRune() cosmos.Uint {
+	if !m.UsesLiquidityBuckets() || !m.HasLiquidityBuckets() {
+		return cosmos.ZeroUint()
+	}
+	return normalizeUint(m.PlainBalanceRune)
+}
+
+func (m Pool) GetPlainBalanceAsset() cosmos.Uint {
+	if !m.UsesLiquidityBuckets() || !m.HasLiquidityBuckets() {
+		return cosmos.ZeroUint()
+	}
+	return normalizeUint(m.PlainBalanceAsset)
+}
+
+func (m Pool) GetLegacyLPUnits() cosmos.Uint {
+	if !m.UsesLiquidityBuckets() || !m.HasLiquidityBuckets() {
+		return m.LPUnits
+	}
+	return normalizeUint(m.LegacyLpUnits)
+}
+
+func (m Pool) GetPlainLPUnits() cosmos.Uint {
+	if !m.UsesLiquidityBuckets() || !m.HasLiquidityBuckets() {
+		return cosmos.ZeroUint()
+	}
+	return normalizeUint(m.PlainLpUnits)
+}
+
+func (m Pool) GetLegacyPoolUnits() cosmos.Uint {
+	return m.GetLegacyLPUnits().Add(m.SynthUnits)
+}
+
+func (m Pool) GetPlainPoolUnits() cosmos.Uint {
+	return m.GetPlainLPUnits()
+}
+
+func (m Pool) GetSynthBackingAssetBalance() cosmos.Uint {
+	return m.GetLegacyBalanceAsset()
+}
+
+func (m Pool) GetSynthUtilizationBasisPoints() cosmos.Uint {
+	return common.GetUncappedShare(m.SynthUnits, m.GetLegacyPoolUnits(), cosmos.NewUint(10_000))
+}
+
 func (m *Pool) GetPoolUnits() cosmos.Uint {
+	if m.UsesLiquidityBuckets() {
+		return m.GetLegacyPoolUnits().Add(m.GetPlainPoolUnits())
+	}
 	return m.LPUnits.Add(m.SynthUnits)
 }
 
 func (m *Pool) CalcUnits(s cosmos.Uint) cosmos.Uint {
+	m.EnsureLiquidityBuckets()
+
 	// Calculate synth units
 	// (L*S)/(2*A-S)
 	// S := k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
 	if m.BalanceAsset.IsZero() || m.Asset.IsSyntheticAsset() {
 		m.SynthUnits = cosmos.ZeroUint()
 	} else {
-		numerator := m.LPUnits.Mul(s)
-		denominator := common.SafeSub(m.BalanceAsset.MulUint64(2), s)
+		numerator := m.GetLegacyLPUnits().Mul(s)
+		denominator := common.SafeSub(m.GetLegacyBalanceAsset().MulUint64(2), s)
 		if denominator.IsZero() {
 			denominator = cosmos.OneUint()
 		}
 		m.SynthUnits = numerator.Quo(denominator)
+	}
+	if m.UsesLiquidityBuckets() {
+		m.EnsureLiquidityBuckets()
 	}
 	return m.GetPoolUnits()
 }
@@ -111,6 +243,12 @@ func (m Pool) String() string {
 	sb.WriteString(fmt.Sprintln("asset: " + m.Asset.String()))
 	sb.WriteString(fmt.Sprintln("synth-units: " + m.SynthUnits.String()))
 	sb.WriteString(fmt.Sprintln("lp-units: " + m.LPUnits.String()))
+	sb.WriteString(fmt.Sprintln("legacy-rune-balance: " + m.LegacyBalanceRune.String()))
+	sb.WriteString(fmt.Sprintln("legacy-asset-balance: " + m.LegacyBalanceAsset.String()))
+	sb.WriteString(fmt.Sprintln("legacy-lp-units: " + m.LegacyLpUnits.String()))
+	sb.WriteString(fmt.Sprintln("plain-rune-balance: " + m.PlainBalanceRune.String()))
+	sb.WriteString(fmt.Sprintln("plain-asset-balance: " + m.PlainBalanceAsset.String()))
+	sb.WriteString(fmt.Sprintln("plain-lp-units: " + m.PlainLpUnits.String()))
 	sb.WriteString(fmt.Sprintln("pending-inbound-rune: " + m.PendingInboundRune.String()))
 	sb.WriteString(fmt.Sprintln("pending-inbound-asset: " + m.PendingInboundAsset.String()))
 	sb.WriteString(fmt.Sprintln("status: " + m.Status.String()))

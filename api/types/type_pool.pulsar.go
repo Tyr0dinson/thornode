@@ -26,6 +26,12 @@ var (
 	fd_Pool_synth_units           protoreflect.FieldDescriptor
 	fd_Pool_pending_inbound_rune  protoreflect.FieldDescriptor
 	fd_Pool_pending_inbound_asset protoreflect.FieldDescriptor
+	fd_Pool_legacy_balance_rune   protoreflect.FieldDescriptor
+	fd_Pool_legacy_balance_asset  protoreflect.FieldDescriptor
+	fd_Pool_legacy_lp_units       protoreflect.FieldDescriptor
+	fd_Pool_plain_balance_rune    protoreflect.FieldDescriptor
+	fd_Pool_plain_balance_asset   protoreflect.FieldDescriptor
+	fd_Pool_plain_lp_units        protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -41,6 +47,12 @@ func init() {
 	fd_Pool_synth_units = md_Pool.Fields().ByName("synth_units")
 	fd_Pool_pending_inbound_rune = md_Pool.Fields().ByName("pending_inbound_rune")
 	fd_Pool_pending_inbound_asset = md_Pool.Fields().ByName("pending_inbound_asset")
+	fd_Pool_legacy_balance_rune = md_Pool.Fields().ByName("legacy_balance_rune")
+	fd_Pool_legacy_balance_asset = md_Pool.Fields().ByName("legacy_balance_asset")
+	fd_Pool_legacy_lp_units = md_Pool.Fields().ByName("legacy_lp_units")
+	fd_Pool_plain_balance_rune = md_Pool.Fields().ByName("plain_balance_rune")
+	fd_Pool_plain_balance_asset = md_Pool.Fields().ByName("plain_balance_asset")
+	fd_Pool_plain_lp_units = md_Pool.Fields().ByName("plain_lp_units")
 }
 
 var _ protoreflect.Message = (*fastReflection_Pool)(nil)
@@ -168,6 +180,42 @@ func (x *fastReflection_Pool) Range(f func(protoreflect.FieldDescriptor, protore
 			return
 		}
 	}
+	if x.LegacyBalanceRune != "" {
+		value := protoreflect.ValueOfString(x.LegacyBalanceRune)
+		if !f(fd_Pool_legacy_balance_rune, value) {
+			return
+		}
+	}
+	if x.LegacyBalanceAsset != "" {
+		value := protoreflect.ValueOfString(x.LegacyBalanceAsset)
+		if !f(fd_Pool_legacy_balance_asset, value) {
+			return
+		}
+	}
+	if x.LegacyLpUnits != "" {
+		value := protoreflect.ValueOfString(x.LegacyLpUnits)
+		if !f(fd_Pool_legacy_lp_units, value) {
+			return
+		}
+	}
+	if x.PlainBalanceRune != "" {
+		value := protoreflect.ValueOfString(x.PlainBalanceRune)
+		if !f(fd_Pool_plain_balance_rune, value) {
+			return
+		}
+	}
+	if x.PlainBalanceAsset != "" {
+		value := protoreflect.ValueOfString(x.PlainBalanceAsset)
+		if !f(fd_Pool_plain_balance_asset, value) {
+			return
+		}
+	}
+	if x.PlainLpUnits != "" {
+		value := protoreflect.ValueOfString(x.PlainLpUnits)
+		if !f(fd_Pool_plain_lp_units, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -203,6 +251,18 @@ func (x *fastReflection_Pool) Has(fd protoreflect.FieldDescriptor) bool {
 		return x.PendingInboundRune != ""
 	case "types.Pool.pending_inbound_asset":
 		return x.PendingInboundAsset != ""
+	case "types.Pool.legacy_balance_rune":
+		return x.LegacyBalanceRune != ""
+	case "types.Pool.legacy_balance_asset":
+		return x.LegacyBalanceAsset != ""
+	case "types.Pool.legacy_lp_units":
+		return x.LegacyLpUnits != ""
+	case "types.Pool.plain_balance_rune":
+		return x.PlainBalanceRune != ""
+	case "types.Pool.plain_balance_asset":
+		return x.PlainBalanceAsset != ""
+	case "types.Pool.plain_lp_units":
+		return x.PlainLpUnits != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Pool"))
@@ -239,6 +299,18 @@ func (x *fastReflection_Pool) Clear(fd protoreflect.FieldDescriptor) {
 		x.PendingInboundRune = ""
 	case "types.Pool.pending_inbound_asset":
 		x.PendingInboundAsset = ""
+	case "types.Pool.legacy_balance_rune":
+		x.LegacyBalanceRune = ""
+	case "types.Pool.legacy_balance_asset":
+		x.LegacyBalanceAsset = ""
+	case "types.Pool.legacy_lp_units":
+		x.LegacyLpUnits = ""
+	case "types.Pool.plain_balance_rune":
+		x.PlainBalanceRune = ""
+	case "types.Pool.plain_balance_asset":
+		x.PlainBalanceAsset = ""
+	case "types.Pool.plain_lp_units":
+		x.PlainLpUnits = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Pool"))
@@ -285,6 +357,24 @@ func (x *fastReflection_Pool) Get(descriptor protoreflect.FieldDescriptor) proto
 	case "types.Pool.pending_inbound_asset":
 		value := x.PendingInboundAsset
 		return protoreflect.ValueOfString(value)
+	case "types.Pool.legacy_balance_rune":
+		value := x.LegacyBalanceRune
+		return protoreflect.ValueOfString(value)
+	case "types.Pool.legacy_balance_asset":
+		value := x.LegacyBalanceAsset
+		return protoreflect.ValueOfString(value)
+	case "types.Pool.legacy_lp_units":
+		value := x.LegacyLpUnits
+		return protoreflect.ValueOfString(value)
+	case "types.Pool.plain_balance_rune":
+		value := x.PlainBalanceRune
+		return protoreflect.ValueOfString(value)
+	case "types.Pool.plain_balance_asset":
+		value := x.PlainBalanceAsset
+		return protoreflect.ValueOfString(value)
+	case "types.Pool.plain_lp_units":
+		value := x.PlainLpUnits
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Pool"))
@@ -325,6 +415,18 @@ func (x *fastReflection_Pool) Set(fd protoreflect.FieldDescriptor, value protore
 		x.PendingInboundRune = value.Interface().(string)
 	case "types.Pool.pending_inbound_asset":
 		x.PendingInboundAsset = value.Interface().(string)
+	case "types.Pool.legacy_balance_rune":
+		x.LegacyBalanceRune = value.Interface().(string)
+	case "types.Pool.legacy_balance_asset":
+		x.LegacyBalanceAsset = value.Interface().(string)
+	case "types.Pool.legacy_lp_units":
+		x.LegacyLpUnits = value.Interface().(string)
+	case "types.Pool.plain_balance_rune":
+		x.PlainBalanceRune = value.Interface().(string)
+	case "types.Pool.plain_balance_asset":
+		x.PlainBalanceAsset = value.Interface().(string)
+	case "types.Pool.plain_lp_units":
+		x.PlainLpUnits = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Pool"))
@@ -368,6 +470,18 @@ func (x *fastReflection_Pool) Mutable(fd protoreflect.FieldDescriptor) protorefl
 		panic(fmt.Errorf("field pending_inbound_rune of message types.Pool is not mutable"))
 	case "types.Pool.pending_inbound_asset":
 		panic(fmt.Errorf("field pending_inbound_asset of message types.Pool is not mutable"))
+	case "types.Pool.legacy_balance_rune":
+		panic(fmt.Errorf("field legacy_balance_rune of message types.Pool is not mutable"))
+	case "types.Pool.legacy_balance_asset":
+		panic(fmt.Errorf("field legacy_balance_asset of message types.Pool is not mutable"))
+	case "types.Pool.legacy_lp_units":
+		panic(fmt.Errorf("field legacy_lp_units of message types.Pool is not mutable"))
+	case "types.Pool.plain_balance_rune":
+		panic(fmt.Errorf("field plain_balance_rune of message types.Pool is not mutable"))
+	case "types.Pool.plain_balance_asset":
+		panic(fmt.Errorf("field plain_balance_asset of message types.Pool is not mutable"))
+	case "types.Pool.plain_lp_units":
+		panic(fmt.Errorf("field plain_lp_units of message types.Pool is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Pool"))
@@ -401,6 +515,18 @@ func (x *fastReflection_Pool) NewField(fd protoreflect.FieldDescriptor) protoref
 	case "types.Pool.pending_inbound_rune":
 		return protoreflect.ValueOfString("")
 	case "types.Pool.pending_inbound_asset":
+		return protoreflect.ValueOfString("")
+	case "types.Pool.legacy_balance_rune":
+		return protoreflect.ValueOfString("")
+	case "types.Pool.legacy_balance_asset":
+		return protoreflect.ValueOfString("")
+	case "types.Pool.legacy_lp_units":
+		return protoreflect.ValueOfString("")
+	case "types.Pool.plain_balance_rune":
+		return protoreflect.ValueOfString("")
+	case "types.Pool.plain_balance_asset":
+		return protoreflect.ValueOfString("")
+	case "types.Pool.plain_lp_units":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -508,6 +634,30 @@ func (x *fastReflection_Pool) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.LegacyBalanceRune)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LegacyBalanceAsset)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LegacyLpUnits)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.PlainBalanceRune)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.PlainBalanceAsset)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.PlainLpUnits)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -536,6 +686,50 @@ func (x *fastReflection_Pool) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.PlainLpUnits) > 0 {
+			i -= len(x.PlainLpUnits)
+			copy(dAtA[i:], x.PlainLpUnits)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PlainLpUnits)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x82
+		}
+		if len(x.PlainBalanceAsset) > 0 {
+			i -= len(x.PlainBalanceAsset)
+			copy(dAtA[i:], x.PlainBalanceAsset)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PlainBalanceAsset)))
+			i--
+			dAtA[i] = 0x7a
+		}
+		if len(x.PlainBalanceRune) > 0 {
+			i -= len(x.PlainBalanceRune)
+			copy(dAtA[i:], x.PlainBalanceRune)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PlainBalanceRune)))
+			i--
+			dAtA[i] = 0x72
+		}
+		if len(x.LegacyLpUnits) > 0 {
+			i -= len(x.LegacyLpUnits)
+			copy(dAtA[i:], x.LegacyLpUnits)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LegacyLpUnits)))
+			i--
+			dAtA[i] = 0x6a
+		}
+		if len(x.LegacyBalanceAsset) > 0 {
+			i -= len(x.LegacyBalanceAsset)
+			copy(dAtA[i:], x.LegacyBalanceAsset)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LegacyBalanceAsset)))
+			i--
+			dAtA[i] = 0x62
+		}
+		if len(x.LegacyBalanceRune) > 0 {
+			i -= len(x.LegacyBalanceRune)
+			copy(dAtA[i:], x.LegacyBalanceRune)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LegacyBalanceRune)))
+			i--
+			dAtA[i] = 0x5a
 		}
 		if x.StatusSince != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.StatusSince))
@@ -942,6 +1136,198 @@ func (x *fastReflection_Pool) ProtoMethods() *protoiface.Methods {
 				}
 				x.PendingInboundAsset = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
+			case 11:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LegacyBalanceRune", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LegacyBalanceRune = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 12:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LegacyBalanceAsset", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LegacyBalanceAsset = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 13:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LegacyLpUnits", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LegacyLpUnits = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 14:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PlainBalanceRune", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PlainBalanceRune = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 15:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PlainBalanceAsset", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PlainBalanceAsset = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 16:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PlainLpUnits", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PlainLpUnits = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -1062,6 +1448,12 @@ type Pool struct {
 	SynthUnits          string        `protobuf:"bytes,7,opt,name=synth_units,json=synthUnits,proto3" json:"synth_units,omitempty"`
 	PendingInboundRune  string        `protobuf:"bytes,8,opt,name=pending_inbound_rune,json=pendingInboundRune,proto3" json:"pending_inbound_rune,omitempty"`
 	PendingInboundAsset string        `protobuf:"bytes,9,opt,name=pending_inbound_asset,json=pendingInboundAsset,proto3" json:"pending_inbound_asset,omitempty"`
+	LegacyBalanceRune   string        `protobuf:"bytes,11,opt,name=legacy_balance_rune,json=legacyBalanceRune,proto3" json:"legacy_balance_rune,omitempty"`
+	LegacyBalanceAsset  string        `protobuf:"bytes,12,opt,name=legacy_balance_asset,json=legacyBalanceAsset,proto3" json:"legacy_balance_asset,omitempty"`
+	LegacyLpUnits       string        `protobuf:"bytes,13,opt,name=legacy_lp_units,json=legacyLpUnits,proto3" json:"legacy_lp_units,omitempty"`
+	PlainBalanceRune    string        `protobuf:"bytes,14,opt,name=plain_balance_rune,json=plainBalanceRune,proto3" json:"plain_balance_rune,omitempty"`
+	PlainBalanceAsset   string        `protobuf:"bytes,15,opt,name=plain_balance_asset,json=plainBalanceAsset,proto3" json:"plain_balance_asset,omitempty"`
+	PlainLpUnits        string        `protobuf:"bytes,16,opt,name=plain_lp_units,json=plainLpUnits,proto3" json:"plain_lp_units,omitempty"`
 }
 
 func (x *Pool) Reset() {
@@ -1154,6 +1546,48 @@ func (x *Pool) GetPendingInboundAsset() string {
 	return ""
 }
 
+func (x *Pool) GetLegacyBalanceRune() string {
+	if x != nil {
+		return x.LegacyBalanceRune
+	}
+	return ""
+}
+
+func (x *Pool) GetLegacyBalanceAsset() string {
+	if x != nil {
+		return x.LegacyBalanceAsset
+	}
+	return ""
+}
+
+func (x *Pool) GetLegacyLpUnits() string {
+	if x != nil {
+		return x.LegacyLpUnits
+	}
+	return ""
+}
+
+func (x *Pool) GetPlainBalanceRune() string {
+	if x != nil {
+		return x.PlainBalanceRune
+	}
+	return ""
+}
+
+func (x *Pool) GetPlainBalanceAsset() string {
+	if x != nil {
+		return x.PlainBalanceAsset
+	}
+	return ""
+}
+
+func (x *Pool) GetPlainLpUnits() string {
+	if x != nil {
+		return x.PlainLpUnits
+	}
+	return ""
+}
+
 var File_types_type_pool_proto protoreflect.FileDescriptor
 
 var file_types_type_pool_proto_rawDesc = []byte{
@@ -1161,7 +1595,7 @@ var file_types_type_pool_proto_rawDesc = []byte{
 	0x6c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x13,
 	0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67,
-	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xf6, 0x04, 0x0a, 0x04, 0x50, 0x6f,
+	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xc4, 0x08, 0x0a, 0x04, 0x50, 0x6f,
 	0x6f, 0x6c, 0x12, 0x41, 0x0a, 0x0c, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x5f, 0x72, 0x75,
 	0x6e, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde,
 	0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d,
@@ -1201,21 +1635,49 @@ var file_types_type_pool_proto_rawDesc = []byte{
 	0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b,
 	0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x13, 0x70,
 	0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x73, 0x73,
-	0x65, 0x74, 0x2a, 0x4d, 0x0a, 0x0a, 0x50, 0x6f, 0x6f, 0x6c, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73,
-	0x12, 0x15, 0x0a, 0x11, 0x55, 0x6e, 0x6b, 0x6e, 0x6f, 0x77, 0x6e, 0x50, 0x6f, 0x6f, 0x6c, 0x53,
-	0x74, 0x61, 0x74, 0x75, 0x73, 0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09, 0x41, 0x76, 0x61, 0x69, 0x6c,
-	0x61, 0x62, 0x6c, 0x65, 0x10, 0x01, 0x12, 0x0a, 0x0a, 0x06, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64,
-	0x10, 0x02, 0x12, 0x0d, 0x0a, 0x09, 0x53, 0x75, 0x73, 0x70, 0x65, 0x6e, 0x64, 0x65, 0x64, 0x10,
-	0x03, 0x42, 0x86, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42,
-	0x0d, 0x54, 0x79, 0x70, 0x65, 0x50, 0x6f, 0x6f, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01,
-	0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f,
-	0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54,
-	0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70,
-	0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
-	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1,
-	0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x33,
+	0x65, 0x74, 0x12, 0x4e, 0x0a, 0x13, 0x6c, 0x65, 0x67, 0x61, 0x63, 0x79, 0x5f, 0x62, 0x61, 0x6c,
+	0x61, 0x6e, 0x63, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x09, 0x42,
+	0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73,
+	0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52,
+	0x11, 0x6c, 0x65, 0x67, 0x61, 0x63, 0x79, 0x42, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x52, 0x75,
+	0x6e, 0x65, 0x12, 0x50, 0x0a, 0x14, 0x6c, 0x65, 0x67, 0x61, 0x63, 0x79, 0x5f, 0x62, 0x61, 0x6c,
+	0x61, 0x6e, 0x63, 0x65, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09,
+	0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
+	0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74,
+	0x52, 0x12, 0x6c, 0x65, 0x67, 0x61, 0x63, 0x79, 0x42, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x41,
+	0x73, 0x73, 0x65, 0x74, 0x12, 0x46, 0x0a, 0x0f, 0x6c, 0x65, 0x67, 0x61, 0x63, 0x79, 0x5f, 0x6c,
+	0x70, 0x5f, 0x75, 0x6e, 0x69, 0x74, 0x73, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8,
+	0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b,
+	0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0d, 0x6c,
+	0x65, 0x67, 0x61, 0x63, 0x79, 0x4c, 0x70, 0x55, 0x6e, 0x69, 0x74, 0x73, 0x12, 0x4c, 0x0a, 0x12,
+	0x70, 0x6c, 0x61, 0x69, 0x6e, 0x5f, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x5f, 0x72, 0x75,
+	0x6e, 0x65, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde,
+	0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d,
+	0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x10, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x42,
+	0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x4e, 0x0a, 0x13, 0x70, 0x6c,
+	0x61, 0x69, 0x6e, 0x5f, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x5f, 0x61, 0x73, 0x73, 0x65,
+	0x74, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f,
+	0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61,
+	0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x11, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x42, 0x61,
+	0x6c, 0x61, 0x6e, 0x63, 0x65, 0x41, 0x73, 0x73, 0x65, 0x74, 0x12, 0x44, 0x0a, 0x0e, 0x70, 0x6c,
+	0x61, 0x69, 0x6e, 0x5f, 0x6c, 0x70, 0x5f, 0x75, 0x6e, 0x69, 0x74, 0x73, 0x18, 0x10, 0x20, 0x01,
+	0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d,
+	0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69,
+	0x6e, 0x74, 0x52, 0x0c, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x4c, 0x70, 0x55, 0x6e, 0x69, 0x74, 0x73,
+	0x2a, 0x4d, 0x0a, 0x0a, 0x50, 0x6f, 0x6f, 0x6c, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x15,
+	0x0a, 0x11, 0x55, 0x6e, 0x6b, 0x6e, 0x6f, 0x77, 0x6e, 0x50, 0x6f, 0x6f, 0x6c, 0x53, 0x74, 0x61,
+	0x74, 0x75, 0x73, 0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62,
+	0x6c, 0x65, 0x10, 0x01, 0x12, 0x0a, 0x0a, 0x06, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64, 0x10, 0x02,
+	0x12, 0x0d, 0x0a, 0x09, 0x53, 0x75, 0x73, 0x70, 0x65, 0x6e, 0x64, 0x65, 0x64, 0x10, 0x03, 0x42,
+	0x86, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0d, 0x54,
+	0x79, 0x70, 0x65, 0x50, 0x6f, 0x6f, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a,
+	0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63,
+	0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33,
+	0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58,
+	0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61,
+	0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00,
+	0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

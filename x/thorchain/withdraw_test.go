@@ -884,6 +884,68 @@ func (WithdrawSuite) TestWithdrawSynth(c *C) {
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(150*common.One), Commentf("%d", pool.LPUnits.Uint64())) // LP units did decreased
 }
 
+func (WithdrawSuite) TestWithdrawPlainBucketLeavesLegacyUntouched(c *C) {
+	accountAddr := GetRandomValidatorNode(NodeActive).NodeAddress
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(20_000)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(150 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(150 * common.One)
+	pool.LPUnits = cosmos.NewUint(150 * common.One)
+	pool.SynthUnits = cosmos.NewUint(10 * common.One)
+	pool.LegacyBalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LegacyBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LegacyLpUnits = cosmos.NewUint(100 * common.One)
+	pool.PlainBalanceRune = cosmos.NewUint(50 * common.One)
+	pool.PlainBalanceAsset = cosmos.NewUint(50 * common.One)
+	pool.PlainLpUnits = cosmos.NewUint(50 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	lpAddr := GetRandomTHORAddress()
+	lp := LiquidityProvider{
+		Asset:              common.ETHAsset,
+		RuneAddress:        lpAddr,
+		AssetAddress:       GetRandomETHAddress(),
+		LastAddHeight:      1,
+		LastWithdrawHeight: 0,
+		Units:              cosmos.NewUint(50 * common.One),
+		PlainUnits:         cosmos.NewUint(50 * common.One),
+		PendingRune:        cosmos.ZeroUint(),
+		PendingAsset:       cosmos.ZeroUint(),
+		PendingTxID:        "",
+		RuneDepositValue:   cosmos.NewUint(50 * common.One),
+		AssetDepositValue:  cosmos.NewUint(50 * common.One),
+	}
+	mgr.Keeper().SetLiquidityProvider(ctx, lp)
+
+	msg := MsgWithdrawLiquidity{
+		WithdrawAddress: lpAddr,
+		BasisPoints:     cosmos.NewUint(MaxWithdrawBasisPoints),
+		Asset:           common.ETHAsset,
+		Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
+		WithdrawalAsset: common.EmptyAsset,
+		Signer:          accountAddr,
+	}
+	runeAmt, assetAmt, unitsClaimed, gas, err := withdraw(ctx, msg, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(runeAmt.Equal(cosmos.NewUint(50*common.One)), Equals, true, Commentf("%d", runeAmt.Uint64()))
+	c.Assert(assetAmt.Equal(cosmos.NewUint(50*common.One)), Equals, true, Commentf("%d", assetAmt.Uint64()))
+	c.Assert(unitsClaimed.Equal(cosmos.NewUint(50*common.One)), Equals, true, Commentf("%d", unitsClaimed.Uint64()))
+	c.Assert(gas.IsZero(), Equals, true)
+
+	pool, err = mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.GetLegacyBalanceRune().Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(pool.GetLegacyBalanceAsset().Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(pool.GetLegacyLPUnits().Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(pool.GetPlainBalanceRune().IsZero(), Equals, true)
+	c.Assert(pool.GetPlainBalanceAsset().IsZero(), Equals, true)
+	c.Assert(pool.GetPlainLPUnits().IsZero(), Equals, true)
+}
+
 func (WithdrawSuite) TestWithdrawSynthSingleLP(c *C) {
 	accountAddr := GetRandomValidatorNode(NodeActive).NodeAddress
 	ctx, mgr := setupManagerForTest(c)

@@ -422,18 +422,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 
 	// Use pool fields here rather than X and Y as synthVirtualDepthMult could affect X and Y.
 	// Only alter BalanceAsset when the non-RUNE asset isn't a synth.
-	if source.IsRune() {
-		pool.BalanceRune = pool.BalanceRune.Add(x)
-		if !target.IsSyntheticAsset() {
-			pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, emitAssets)
-		}
-	} else {
-		// The target should be RUNE.
-		pool.BalanceRune = common.SafeSub(pool.BalanceRune, emitAssets)
-		if !source.IsSyntheticAsset() {
-			pool.BalanceAsset = pool.BalanceAsset.Add(x)
-		}
-	}
+	applySwapBalanceDelta(&pool, source, target, x, emitAssets)
 	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
 		synthSupply = keeper.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(synthSupply)
@@ -455,7 +444,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		// Deduct LiquidityFeeInRune from the pool's RUNE depth and send it to the Reserve Module to be system income.
 		// (So that the liquidity fee isn't used for later swaps in the same block.)
 		if !swapEvt.LiquidityFeeInRune.IsZero() {
-			pool.BalanceRune = common.SafeSub(pool.BalanceRune, swapEvt.LiquidityFeeInRune)
+			applySwapLiquidityFeeRune(&pool, source, target, swapEvt.LiquidityFeeInRune)
 			liqFeeCoin := common.NewCoin(common.RuneAsset(), swapEvt.LiquidityFeeInRune)
 
 			targetModule := ReserveName
@@ -515,7 +504,6 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	}
 
 	ctx.Logger().Info("post swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits, "emit asset", emitAssets)
-
 	// Even for a Derived Asset pool, set the pool so the txout manager's GetFee for toi.Coin.Asset uses updated balances.
 	if err := keeper.SetPool(ctx, pool); err != nil {
 		return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to set pool")
@@ -559,6 +547,92 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	}
 
 	return emitAssets, input, swapEvt, nil
+}
+
+func splitBucketDelta(legacyBalance, totalBalance, delta cosmos.Uint) (cosmos.Uint, cosmos.Uint) {
+	if delta.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint()
+	}
+	if totalBalance.IsZero() {
+		return delta, cosmos.ZeroUint()
+	}
+	legacyDelta := common.GetSafeShare(legacyBalance, totalBalance, delta)
+	return legacyDelta, common.SafeSub(delta, legacyDelta)
+}
+
+func applySwapBalanceDelta(pool *Pool, source, target common.Asset, inputAmt, emitAssets cosmos.Uint) {
+	if !pool.UsesLiquidityBuckets() {
+		if source.IsRune() {
+			pool.BalanceRune = pool.BalanceRune.Add(inputAmt)
+			if !target.IsSyntheticAsset() {
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, emitAssets)
+			}
+		} else {
+			pool.BalanceRune = common.SafeSub(pool.BalanceRune, emitAssets)
+			if !source.IsSyntheticAsset() {
+				pool.BalanceAsset = pool.BalanceAsset.Add(inputAmt)
+			}
+		}
+		return
+	}
+
+	pool.EnsureLiquidityBuckets()
+	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
+		if source.IsRune() {
+			pool.LegacyBalanceRune = pool.LegacyBalanceRune.Add(inputAmt)
+			if !target.IsSyntheticAsset() {
+				pool.LegacyBalanceAsset = common.SafeSub(pool.LegacyBalanceAsset, emitAssets)
+			}
+		} else {
+			pool.LegacyBalanceRune = common.SafeSub(pool.LegacyBalanceRune, emitAssets)
+			if !source.IsSyntheticAsset() {
+				pool.LegacyBalanceAsset = pool.LegacyBalanceAsset.Add(inputAmt)
+			}
+		}
+		pool.SyncLiquidityTotals()
+		return
+	}
+
+	totalRune := pool.BalanceRune
+	totalAsset := pool.BalanceAsset
+	if source.IsRune() {
+		legacyRuneIn, plainRuneIn := splitBucketDelta(pool.GetLegacyBalanceRune(), totalRune, inputAmt)
+		legacyAssetOut, plainAssetOut := splitBucketDelta(pool.GetLegacyBalanceAsset(), totalAsset, emitAssets)
+		pool.LegacyBalanceRune = pool.LegacyBalanceRune.Add(legacyRuneIn)
+		pool.PlainBalanceRune = pool.PlainBalanceRune.Add(plainRuneIn)
+		pool.LegacyBalanceAsset = common.SafeSub(pool.LegacyBalanceAsset, legacyAssetOut)
+		pool.PlainBalanceAsset = common.SafeSub(pool.PlainBalanceAsset, plainAssetOut)
+	} else {
+		legacyRuneOut, plainRuneOut := splitBucketDelta(pool.GetLegacyBalanceRune(), totalRune, emitAssets)
+		legacyAssetIn, plainAssetIn := splitBucketDelta(pool.GetLegacyBalanceAsset(), totalAsset, inputAmt)
+		pool.LegacyBalanceRune = common.SafeSub(pool.LegacyBalanceRune, legacyRuneOut)
+		pool.PlainBalanceRune = common.SafeSub(pool.PlainBalanceRune, plainRuneOut)
+		pool.LegacyBalanceAsset = pool.LegacyBalanceAsset.Add(legacyAssetIn)
+		pool.PlainBalanceAsset = pool.PlainBalanceAsset.Add(plainAssetIn)
+	}
+	pool.SyncLiquidityTotals()
+}
+
+func applySwapLiquidityFeeRune(pool *Pool, source, target common.Asset, liquidityFeeInRune cosmos.Uint) {
+	if liquidityFeeInRune.IsZero() {
+		return
+	}
+	if !pool.UsesLiquidityBuckets() {
+		pool.BalanceRune = common.SafeSub(pool.BalanceRune, liquidityFeeInRune)
+		return
+	}
+
+	pool.EnsureLiquidityBuckets()
+	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
+		pool.LegacyBalanceRune = common.SafeSub(pool.LegacyBalanceRune, liquidityFeeInRune)
+		pool.SyncLiquidityTotals()
+		return
+	}
+
+	legacyFee, plainFee := splitBucketDelta(pool.GetLegacyBalanceRune(), pool.BalanceRune, liquidityFeeInRune)
+	pool.LegacyBalanceRune = common.SafeSub(pool.LegacyBalanceRune, legacyFee)
+	pool.PlainBalanceRune = common.SafeSub(pool.PlainBalanceRune, plainFee)
+	pool.SyncLiquidityTotals()
 }
 
 // calculate the number of assets sent to the address (includes liquidity fee)

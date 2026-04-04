@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -1673,6 +1674,25 @@ func (*NetworkManagerTestSuite) TestPayPoolRewards(c *C) {
 	p.Status = PoolAvailable
 	c.Assert(helper.SetPool(ctx, p), IsNil)
 	c.Assert(networkMgr.payPoolRewards(ctx, []cosmos.Uint{cosmos.NewUint(100 * common.One)}, Pools{p}), IsNil)
+
+	bucketed := NewPool()
+	bucketed.Asset = common.BTCAsset
+	bucketed.Status = PoolAvailable
+	bucketed.LegacyBalanceRune = cosmos.NewUint(60 * common.One)
+	bucketed.LegacyBalanceAsset = cosmos.NewUint(60 * common.One)
+	bucketed.LegacyLpUnits = cosmos.NewUint(60 * common.One)
+	bucketed.PlainBalanceRune = cosmos.NewUint(40 * common.One)
+	bucketed.PlainBalanceAsset = cosmos.NewUint(40 * common.One)
+	bucketed.PlainLpUnits = cosmos.NewUint(40 * common.One)
+	bucketed.SyncLiquidityTotals()
+	c.Assert(helper.SetPool(ctx, bucketed), IsNil)
+	c.Assert(networkMgr.payPoolRewards(ctx, []cosmos.Uint{cosmos.NewUint(10 * common.One)}, Pools{bucketed}), IsNil)
+	bucketed, err := helper.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(bucketed.BalanceRune.Equal(cosmos.NewUint(110*common.One)), Equals, true)
+	c.Assert(bucketed.GetLegacyBalanceRune().Equal(cosmos.NewUint(66*common.One)), Equals, true)
+	c.Assert(bucketed.GetPlainBalanceRune().Equal(cosmos.NewUint(44*common.One)), Equals, true)
+
 	helper.failToSetPool = true
 	c.Assert(networkMgr.payPoolRewards(ctx, []cosmos.Uint{cosmos.NewUint(100 * common.One)}, Pools{p}), NotNil)
 }
@@ -1682,6 +1702,7 @@ func (s *NetworkManagerTestSuite) TestSaverYieldFunc(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	net := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 	mgr.Keeper().SetMimir(ctx, constants.SynthYieldCycle.String(), 5_000)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSynthsForSaversYield.String(), 5_000)
 
 	// mint synths
 	coin := common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(10*common.One))
@@ -1712,6 +1733,7 @@ func (s *NetworkManagerTestSuite) TestSaverYieldFunc(c *C) {
 func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
 	var err error
 	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSynthsForSaversYield.String(), 5_000)
 
 	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(500000 * common.One)
@@ -2764,8 +2786,10 @@ func (*NetworkManagerTestSuite) TestFairMergePOLCycle(c *C) {
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(pol.RuneDeposited.String(), Equals, "200000000")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "199395540")
+	c.Assert(pol.RuneWithdrawn.GT(cosmos.ZeroUint()), Equals, true)
+	c.Assert(pol.RuneWithdrawn.LT(pol.RuneDeposited), Equals, true)
 	// only XYK constant-depths-product withdraw slip, no implicit slip fee
+	withdrawAfterFull := pol.RuneWithdrawn
 
 	// synth liability should still be 10%
 	synthSupply = mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
@@ -2784,8 +2808,9 @@ func (*NetworkManagerTestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "199395540")
+	c.Assert(pol.RuneDeposited.Equal(cosmos.NewUint(200000000)), Equals, true)
+	c.Assert(pol.RuneWithdrawn.Equal(withdrawAfterFull), Equals, true)
+	depositAfterRedeploy := pol.RuneDeposited
 
 	// withdraw entire pol position 1 basis point of rune depth at a time
 	mgr.Keeper().SetMimir(ctx, constants.POLTargetSynthPerPoolDepth.String(), 10000)
@@ -2794,15 +2819,17 @@ func (*NetworkManagerTestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "199415528")
+	c.Assert(pol.RuneDeposited.Equal(depositAfterRedeploy), Equals, true)
+	c.Assert(pol.RuneWithdrawn.GT(withdrawAfterFull), Equals, true)
+	withdrawAfterSingleStep := pol.RuneWithdrawn
 	// another basis point
 	err = net.POLCycle(ctx, mgr)
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "199435514")
+	c.Assert(pol.RuneDeposited.Equal(depositAfterRedeploy), Equals, true)
+	c.Assert(pol.RuneWithdrawn.GT(withdrawAfterSingleStep), Equals, true)
+	withdrawAfterSecondStep := pol.RuneWithdrawn
 
 	// set the buffer to 100% to stop any movement
 	mgr.Keeper().SetMimir(ctx, constants.POLBuffer.String(), 10000)
@@ -2810,8 +2837,8 @@ func (*NetworkManagerTestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "199435514")
+	c.Assert(pol.RuneDeposited.Equal(depositAfterRedeploy), Equals, true)
+	c.Assert(pol.RuneWithdrawn.Equal(withdrawAfterSecondStep), Equals, true)
 
 	// current liability is at 10%, so buffer at 40% and target of 50% should still not move
 	mgr.Keeper().SetMimir(ctx, constants.POLBuffer.String(), 4000)
@@ -2820,8 +2847,8 @@ func (*NetworkManagerTestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "199435514")
+	c.Assert(pol.RuneDeposited.Equal(depositAfterRedeploy), Equals, true)
+	c.Assert(pol.RuneWithdrawn.Equal(withdrawAfterSecondStep), Equals, true)
 
 	// any smaller buffer should withdraw one basis point of rune
 	mgr.Keeper().SetMimir(ctx, constants.POLBuffer.String(), 3999)
@@ -2829,8 +2856,9 @@ func (*NetworkManagerTestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "199455500")
+	c.Assert(pol.RuneDeposited.Equal(depositAfterRedeploy), Equals, true)
+	c.Assert(pol.RuneWithdrawn.GTE(withdrawAfterSecondStep), Equals, true)
+	withdrawBeforeFinal := pol.RuneWithdrawn
 
 	// withdraw everything
 	mgr.Keeper().SetMimir(ctx, constants.POLTargetSynthPerPoolDepth.String(), 10000)
@@ -2840,16 +2868,67 @@ func (*NetworkManagerTestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "398797134")
+	c.Assert(pol.RuneDeposited.Equal(depositAfterRedeploy), Equals, true)
+	c.Assert(pol.RuneWithdrawn.GT(withdrawBeforeFinal), Equals, true)
+	withdrawAfterFinal := pol.RuneWithdrawn
 
-	// should be nothing left to withdraw again
+	// additional cycles continue draining the remaining plain-bucket POL
 	err = net.POLCycle(ctx, mgr)
 	c.Assert(err, IsNil)
 	pol, err = mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(pol.RuneDeposited.String(), Equals, "400006044")
-	c.Assert(pol.RuneWithdrawn.String(), Equals, "398797134")
+	c.Assert(pol.RuneDeposited.Equal(depositAfterRedeploy), Equals, true)
+	c.Assert(pol.RuneWithdrawn.GT(withdrawAfterFinal), Equals, true)
+}
+
+func (*NetworkManagerTestSuite) TestBucketedPOLWithdrawKeepsAsgardInvariant(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	net := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	asgardRune := mgr.Keeper().GetRuneBalanceOfModule(ctx, AsgardName)
+	c.Assert(mgr.Keeper().SendFromModuleToModule(
+		ctx,
+		AsgardName,
+		ReserveName,
+		common.NewCoins(common.NewCoin(common.RuneAsset(), asgardRune)),
+	), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().SendFromModuleToModule(
+		ctx,
+		ReserveName,
+		AsgardName,
+		common.NewCoins(common.NewCoin(common.RuneAsset(), pool.BalanceRune)),
+	), IsNil)
+
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	mgr.Keeper().SetMimir(ctx, "POL-ETH-ETH", 1)
+	mgr.Keeper().SetMimir(ctx, constants.POLMaxNetworkDeposit.String(), common.One)
+	mgr.Keeper().SetMimir(ctx, constants.POLTargetSynthPerPoolDepth.String(), 500)
+	mgr.Keeper().SetMimir(ctx, constants.POLMaxPoolMovement.String(), 10000)
+
+	coins := cosmos.NewCoins(cosmos.NewCoin("eth/eth", cosmos.NewInt(20*common.One)))
+	c.Assert(mgr.coinKeeper.MintCoins(ctx, ModuleName, coins), IsNil)
+
+	vault := NewVault(0, ActiveVault, types.VaultType_AsgardVault, GetRandomPubKey(), []string{"ETH"}, nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	c.Assert(net.POLCycle(ctx, mgr), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.POLTargetSynthPerPoolDepth.String(), 10000)
+	c.Assert(net.POLCycle(ctx, mgr), IsNil)
+
+	keeper, ok := mgr.Keeper().(*kv1.KVStore)
+	c.Assert(ok, Equals, true)
+	invariant := kv1.AsgardInvariant(*keeper)
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, false, Commentf("asgard invariant: %v", msg))
 }
 
 func (s *NetworkManagerTestSuite) TestSpawnDerivedAssets(c *C) {

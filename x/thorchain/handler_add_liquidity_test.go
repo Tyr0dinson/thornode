@@ -1268,6 +1268,78 @@ func (HandlerAddLiquiditySuite) TestAssetOnlyFairMergeProvidedLiquidity(c *C) {
 	c.Assert(pool.LPUnits.Uint64(), Equals, uint64(13333333333), Commentf("%d", pool.LPUnits.Uint64()))
 }
 
+func (HandlerAddLiquiditySuite) TestBucketedPoolNewLPMintsPlainUnits(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	pool.LegacyBalanceRune = pool.BalanceRune
+	pool.LegacyBalanceAsset = pool.BalanceAsset
+	pool.LegacyLpUnits = pool.LPUnits
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	runeAddr := GetRandomRUNEAddress()
+	assetAddr := GetRandomBTCAddress()
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
+	err := h.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), runeAddr, assetAddr, GetRandomTxHash(), false, constAccessor)
+	c.Assert(err, IsNil)
+
+	su, err := k.GetLiquidityProvider(ctx, common.BTCAsset, runeAddr)
+	c.Assert(err, IsNil)
+	su.EnsureLiquidityBuckets()
+	c.Assert(su.GetLegacyUnits().IsZero(), Equals, true)
+	c.Assert(su.GetPlainUnits().GT(cosmos.ZeroUint()), Equals, true)
+	c.Assert(su.Units.Equal(su.GetPlainUnits()), Equals, true)
+
+	pool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.GetLegacyLPUnits().Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(pool.GetPlainLPUnits().GT(cosmos.ZeroUint()), Equals, true)
+	c.Assert(pool.PlainBalanceRune.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(pool.PlainBalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+}
+
+func (HandlerAddLiquiditySuite) TestBucketedPoolRejectsMixedLPBuckets(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	pool.LegacyBalanceRune = pool.BalanceRune
+	pool.LegacyBalanceAsset = pool.BalanceAsset
+	pool.LegacyLpUnits = pool.LPUnits
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	runeAddr := GetRandomRUNEAddress()
+	assetAddr := GetRandomBTCAddress()
+	k.SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:              common.BTCAsset,
+		RuneAddress:        runeAddr,
+		AssetAddress:       assetAddr,
+		LastAddHeight:      1,
+		Units:              cosmos.NewUint(20 * common.One),
+		LegacyUnits:        cosmos.NewUint(10 * common.One),
+		PlainUnits:         cosmos.NewUint(10 * common.One),
+		PendingRune:        cosmos.ZeroUint(),
+		PendingAsset:       cosmos.ZeroUint(),
+		RuneDepositValue:   cosmos.NewUint(20 * common.One),
+		AssetDepositValue:  cosmos.NewUint(20 * common.One),
+		LastWithdrawHeight: 0,
+	})
+
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
+	err := h.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(common.One), cosmos.NewUint(common.One), runeAddr, assetAddr, GetRandomTxHash(), false, constAccessor)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, "(?s).*both legacy and plain liquidity units.*")
+}
+
 func (HandlerAddLiquiditySuite) TestSynthValidate(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

@@ -574,6 +574,55 @@ func checkPoolUnitsRange(oldPoolUnits, poolRune, poolAsset, addRune, addAsset co
 	return nil
 }
 
+func bootstrapFirstPlainBucketAdd(pool *Pool, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
+	if addRune.IsZero() == addAsset.IsZero() {
+		return addRune, addAsset, nil
+	}
+
+	pool.EnsureLiquidityBuckets()
+	if !pool.GetPlainPoolUnits().IsZero() {
+		return addRune, addAsset, nil
+	}
+
+	legacyRune := pool.GetLegacyBalanceRune()
+	legacyAsset := pool.GetLegacyBalanceAsset()
+	if legacyRune.IsZero() || legacyAsset.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot bootstrap plain bucket for %s with empty legacy balances", pool.Asset)
+	}
+
+	if !addRune.IsZero() {
+		swapRune := addRune.QuoUint64(2)
+		if swapRune.IsZero() {
+			return addRune, cosmos.ZeroUint(), nil
+		}
+
+		addAsset = newSwapper().CalcAssetEmission(legacyRune, swapRune, legacyAsset)
+		if addAsset.IsZero() {
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot bootstrap plain bucket for %s: zero asset emission", pool.Asset)
+		}
+
+		pool.LegacyBalanceRune = legacyRune.Add(swapRune)
+		pool.LegacyBalanceAsset = common.SafeSub(legacyAsset, addAsset)
+		pool.SyncLiquidityTotals()
+		return common.SafeSub(addRune, swapRune), addAsset, nil
+	}
+
+	swapAsset := addAsset.QuoUint64(2)
+	if swapAsset.IsZero() {
+		return cosmos.ZeroUint(), addAsset, nil
+	}
+
+	addRune = newSwapper().CalcAssetEmission(legacyAsset, swapAsset, legacyRune)
+	if addRune.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot bootstrap plain bucket for %s: zero rune emission", pool.Asset)
+	}
+
+	pool.LegacyBalanceAsset = legacyAsset.Add(swapAsset)
+	pool.LegacyBalanceRune = common.SafeSub(legacyRune, addRune)
+	pool.SyncLiquidityTotals()
+	return addRune, common.SafeSub(addAsset, swapAsset), nil
+}
+
 func calculateVaultUnits(oldPoolUnits, poolAmt, addAmt cosmos.Uint) (cosmos.Uint, cosmos.Uint) {
 	if oldPoolUnits.IsZero() {
 		return addAmt, addAmt
@@ -658,6 +707,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	if !asset.IsSyntheticAsset() && isLUVIOverhangGuarded(ctx, h.mgr.Keeper(), pool, synthSupply) {
 		return fmt.Errorf("%w: %s", errAddLiquidityPoolOverhang, asset)
 	}
+	useLiquidityBuckets := !asset.IsSyntheticAsset() && pool.UsesLiquidityBuckets()
 
 	fetchAddr := runeAddr
 	if fetchAddr.IsEmpty() {
@@ -706,6 +756,12 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 				return errAddLiquidityMismatchAddr
 			}
 		}
+	}
+	if useLiquidityBuckets {
+		su.EnsureLiquidityBuckets()
+	}
+	if useLiquidityBuckets && su.HasMixedLiquidityBuckets() {
+		return ErrInternal(nil, "liquidity provider cannot hold both legacy and plain liquidity units")
 	}
 
 	su.LastAddHeight = ctx.BlockHeight()
@@ -816,16 +872,37 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 
 	balanceRune := pool.BalanceRune
 	balanceAsset := pool.BalanceAsset
+	targetLegacyBucket := useLiquidityBuckets && !su.GetLegacyUnits().IsZero()
 
 	oldPoolUnits := pool.GetPoolUnits()
 	var newPoolUnits, liquidityUnits cosmos.Uint
-	if asset.IsSyntheticAsset() {
+	switch {
+	case asset.IsSyntheticAsset():
 		pendingRuneAmt = cosmos.ZeroUint() // sanity check
 		if balanceAsset.IsZero() && !oldPoolUnits.IsZero() {
 			return fmt.Errorf("cannot add liquidity: pool has non-zero units with zero asset balance")
 		}
 		newPoolUnits, liquidityUnits = calculateVaultUnits(oldPoolUnits, balanceAsset, pendingAssetAmt)
-	} else {
+	case useLiquidityBuckets:
+		pool.EnsureLiquidityBuckets()
+		if targetLegacyBucket {
+			balanceRune = pool.GetLegacyBalanceRune()
+			balanceAsset = pool.GetLegacyBalanceAsset()
+			oldPoolUnits = pool.GetLegacyLPUnits()
+		} else {
+			pendingRuneAmt, pendingAssetAmt, err = bootstrapFirstPlainBucketAdd(&pool, pendingRuneAmt, pendingAssetAmt)
+			if err != nil {
+				return ErrInternal(err, "fail to bootstrap plain liquidity bucket")
+			}
+			balanceRune = pool.GetPlainBalanceRune()
+			balanceAsset = pool.GetPlainBalanceAsset()
+			oldPoolUnits = pool.GetPlainPoolUnits()
+		}
+		newPoolUnits, liquidityUnits, err = calculatePoolUnits(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
+		if err != nil {
+			return ErrInternal(err, "fail to calculate pool unit")
+		}
+	default:
 		newPoolUnits, liquidityUnits, err = calculatePoolUnits(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
 		if err != nil {
 			return ErrInternal(err, "fail to calculate pool unit")
@@ -843,9 +920,27 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	// Therefore, explicit balance verification here is unnecessary as it would be redundant.
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
-	pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
-	pool.BalanceRune = poolRune
-	pool.BalanceAsset = poolAsset
+	switch {
+	case asset.IsSyntheticAsset():
+		pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
+		pool.BalanceRune = poolRune
+		pool.BalanceAsset = poolAsset
+	case useLiquidityBuckets:
+		if targetLegacyBucket {
+			pool.LegacyLpUnits = newPoolUnits
+			pool.LegacyBalanceRune = poolRune
+			pool.LegacyBalanceAsset = poolAsset
+		} else {
+			pool.PlainLpUnits = newPoolUnits
+			pool.PlainBalanceRune = poolRune
+			pool.PlainBalanceAsset = poolAsset
+		}
+		pool.SyncLiquidityTotals()
+	default:
+		pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
+		pool.BalanceRune = poolRune
+		pool.BalanceAsset = poolAsset
+	}
 	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
 	if (pool.BalanceRune.IsZero() && !asset.IsSyntheticAsset()) || pool.BalanceAsset.IsZero() {
 		return ErrInternal(nil, "pool cannot have zero rune or asset balance")
@@ -870,7 +965,19 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		}
 	}
 
-	su.Units = su.Units.Add(liquidityUnits)
+	switch {
+	case asset.IsSyntheticAsset():
+		su.Units = su.Units.Add(liquidityUnits)
+	case useLiquidityBuckets:
+		if targetLegacyBucket {
+			su.LegacyUnits = su.GetLegacyUnits().Add(liquidityUnits)
+		} else {
+			su.PlainUnits = su.GetPlainUnits().Add(liquidityUnits)
+		}
+		su.SyncUnits()
+	default:
+		su.Units = su.Units.Add(liquidityUnits)
+	}
 	if pool.Status == PoolAvailable {
 		if su.AssetDepositValue.IsZero() && su.RuneDepositValue.IsZero() {
 			su.RuneDepositValue = common.GetSafeShare(su.Units, pool.GetPoolUnits(), pool.BalanceRune)
