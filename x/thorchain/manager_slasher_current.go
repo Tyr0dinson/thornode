@@ -602,8 +602,11 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		// Some finalized inactive-vault mempool swaps can still be stranded only
 		// in swap-queue state if cleanup previously failed before any staged
 		// outbound was written. Reconcile those queue-backed leftovers on the same
-		// timeout cadence as staged mempool recovery.
-		s.retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
+		// timeout cadence as staged mempool recovery, but only scan the advanced
+		// queue once per signing transaction period to avoid a full per-block walk.
+		if ctx.BlockHeight()%signingTransPeriod == 0 {
+			s.retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
+		}
 	}
 
 	return resultErr

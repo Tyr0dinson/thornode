@@ -1787,6 +1787,9 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoo
 	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false, Commentf("queued recovery fixture should not rely on staged outbounds"))
 
 	timeoutHeight := ctx.BlockHeight() + (signingTransPeriod * maxOutboundAttempts) + 10
+	if rem := timeoutHeight % signingTransPeriod; rem != 0 {
+		timeoutHeight += signingTransPeriod - rem
+	}
 	ctx = ctx.WithBlockHeight(timeoutHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
