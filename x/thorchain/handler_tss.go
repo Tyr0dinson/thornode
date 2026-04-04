@@ -86,7 +86,7 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 		}
 	}
 
-	newMsg, err := NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa, msg.KeysharesBackupEddsa, nil)
+	newMsg, err := NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa, msg.KeysharesBackupEddsa, nil, common.EmptyPubKey)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -436,9 +436,14 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			vaultType := AsgardVault
 			chains := voter.ConsensusChains()
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), voter.PoolPubKeyEddsa)
+			vault.PubKeyFrost = msg.PoolPubKeyFrost
 			vault.Membership = voter.PubKeys
 			if vault.GetChains().Has(common.XMRChain) {
-				vault.VaultCreationHeightXmr = ctx.BlockHeight()
+				xmrHeight, _ := h.mgr.Keeper().GetLastChainHeight(ctx, common.XMRChain)
+				if xmrHeight <= 0 {
+					ctx.Logger().Error("XMR vault birthday: no observed chain height available at keygen, vault scanner will use chain tip")
+				}
+				vault.VaultCreationHeightXmr = xmrHeight
 			}
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
