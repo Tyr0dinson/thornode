@@ -54,9 +54,11 @@ x-thorchain-env: &thorchain-env
   <<: *disabled-chains
 
 x-bifrost-env: &bifrost-env
+  NET: chainnet
   CHAIN_ID: thorchain
   SIGNER_NAME: thorchain
   SIGNER_PASSWD: password
+  THOR_SEED_NODES_ENDPOINT: ""
   THOR_BLOCK_TIME: "6s"
   BLOCK_SCANNER_BACKOFF: "5s"
   BIFROST_METRICS_PPROF_ENABLED: "true"
