@@ -533,8 +533,14 @@ func (s *Scanner) GetHeight() (int64, error) {
 	return height, nil
 }
 
+const defaultXMRFeeRate = 20000 // ~0.0002 XMR typical mainnet fee in thorchain units
+
 func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return 1, s.lastFee.Load()
+	fee := s.lastFee.Load()
+	if fee == 0 {
+		fee = defaultXMRFeeRate
+	}
+	return 1, fee
 }
 
 func averageNetworkFeeFromBlock(reward uint64, txCount int) uint64 {
@@ -843,7 +849,7 @@ func (s *Scanner) transferToTxInItem(
 		fee = s.lastFee.Load()
 	}
 	if fee == 0 {
-		fee = 1
+		fee = defaultXMRFeeRate
 	}
 
 	height := int64(transfer.Height)
