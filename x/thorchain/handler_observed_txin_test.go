@@ -1749,6 +1749,71 @@ func (s HandlerObservedTxInSuite) TestAddSwapDoesNotEmitLimitEventWhenQueueInser
 	c.Assert(countEvents(types.LimitSwapEventType), Equals, limitSwapEventsBefore)
 }
 
+func (s HandlerObservedTxInSuite) TestAddSwapDirectSkipsProcessedMempoolSwap(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+
+	msg := MsgSwap{
+		Tx: common.Tx{
+			ID:    common.TxID("mempool-processed"),
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.OneUint())),
+		},
+	}
+
+	keeper := &TestObservedTxInHandleKeeper{
+		voter: ObservedTxVoter{
+			TxID:           msg.Tx.ID,
+			Actions:        []TxOutItem{{}},
+			MempoolSwapTOR: cosmos.OneUint(),
+		},
+	}
+
+	c.Assert(addSwapDirect(ctx, keeper, msg), IsNil)
+	c.Check(keeper.msg.Tx.ID.IsEmpty(), Equals, true)
+}
+
+func (s HandlerObservedTxInSuite) TestAddSwapDirectSkipsProcessedFinalizedSwap(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+
+	msg := MsgSwap{
+		Tx: common.Tx{
+			ID:    common.TxID("finalized-processed"),
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.OneUint())),
+		},
+	}
+
+	keeper := &TestObservedTxInHandleKeeper{
+		voter: ObservedTxVoter{
+			TxID:            msg.Tx.ID,
+			Actions:         []TxOutItem{{}},
+			FinalisedHeight: 42,
+		},
+	}
+
+	c.Assert(addSwapDirect(ctx, keeper, msg), IsNil)
+	c.Check(keeper.msg.Tx.ID.IsEmpty(), Equals, true)
+}
+
+func (s HandlerObservedTxInSuite) TestAddSwapDirectQueuesWhenActionsExistWithoutProcessedState(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+
+	msg := MsgSwap{
+		Tx: common.Tx{
+			ID:    common.TxID("actions-without-processed-state"),
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.OneUint())),
+		},
+	}
+
+	keeper := &TestObservedTxInHandleKeeper{
+		voter: ObservedTxVoter{
+			TxID:    msg.Tx.ID,
+			Actions: []TxOutItem{{}},
+		},
+	}
+
+	c.Assert(addSwapDirect(ctx, keeper, msg), IsNil)
+	c.Check(keeper.msg.Tx.ID.Equals(msg.Tx.ID), Equals, true)
+}
+
 func (s *HandlerObservedTxInSuite) TestVaultStatus(c *C) {
 	testCases := []struct {
 		name                 string

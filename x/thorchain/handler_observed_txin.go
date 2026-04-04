@@ -132,11 +132,20 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
 		ctx.Logger().Debug("swap already exists in queue, skipping duplicate", "txid", msg.Tx.ID)
 		return nil
 	}
-	// Check if swap already has actions (outbounds) to prevent duplicates from mempool swap finalization.
-	// When a mempool swap is re-observed as finalized, it already has actions and shouldn't be queued again.
 	voter, err := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
-	if err == nil && len(voter.Actions) > 0 {
-		ctx.Logger().Debug("swap already processed (has actions), skipping duplicate", "txid", msg.Tx.ID, "actions", len(voter.Actions))
+	if err != nil {
+		ctx.Logger().Error("fail to get observed tx in voter", "error", err, "txid", msg.Tx.ID)
+		return err
+	}
+	// A finalized re-observation of a mempool swap can arrive after speculative
+	// execution already populated voter.Actions. In that case skip re-queueing
+	// the legacy swap path and let the mempool finalization flow reconcile it.
+	if len(voter.Actions) > 0 && voter.HasReservedMempoolSwapTOR() {
+		ctx.Logger().Debug("swap already processed, skipping duplicate",
+			"txid", msg.Tx.ID,
+			"actions", len(voter.Actions),
+			"finalised_height", voter.FinalisedHeight,
+			"mempool_swap", voter.HasReservedMempoolSwapTOR())
 		return nil
 	}
 	// Queue the main swap
