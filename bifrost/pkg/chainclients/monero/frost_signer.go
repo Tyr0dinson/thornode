@@ -178,6 +178,11 @@ type xmrFrostMarkSpentRequest struct {
 	TxHash           string              `json:"tx_hash"`
 	SpentRefs        []xmrFrostOutputRef `json:"spent_refs"`
 	SkipVerification bool                `json:"skip_verification,omitempty"`
+	FromAddress      string              `json:"from_address,omitempty"`
+	ToAddress        string              `json:"to_address,omitempty"`
+	Amount           uint64              `json:"amount,omitempty"`
+	Fee              uint64              `json:"fee,omitempty"`
+	Memo             string              `json:"memo,omitempty"`
 }
 
 type xmrFrostMarkSpentResponse struct {
@@ -738,7 +743,7 @@ func (s *FrostSigner) TxExists(txHash string) (bool, error) {
 	return out.Exists, nil
 }
 
-func (s *FrostSigner) MarkOutputsSpent(vaultPubKey, txHash string, refs []xmrFrostOutputRef, skipVerification bool) (xmrFrostMarkSpentResponse, error) {
+func (s *FrostSigner) MarkOutputsSpent(vaultPubKey, txHash string, refs []xmrFrostOutputRef, skipVerification bool, outbound *xmrFrostOutboundMeta) (xmrFrostMarkSpentResponse, error) {
 	var out xmrFrostMarkSpentResponse
 	req := xmrFrostMarkSpentRequest{
 		VaultPubKey:      vaultPubKey,
@@ -746,11 +751,26 @@ func (s *FrostSigner) MarkOutputsSpent(vaultPubKey, txHash string, refs []xmrFro
 		SpentRefs:        refs,
 		SkipVerification: skipVerification,
 	}
+	if outbound != nil {
+		req.FromAddress = outbound.FromAddress
+		req.ToAddress = outbound.ToAddress
+		req.Amount = outbound.Amount
+		req.Fee = outbound.Fee
+		req.Memo = outbound.Memo
+	}
 	err := s.call(http.MethodPost, "/v1/monero/outputs/mark-spent", req, &out)
 	if err != nil {
 		return out, fmt.Errorf("fail to call frost mark-spent endpoint: %w", err)
 	}
 	return out, nil
+}
+
+type xmrFrostOutboundMeta struct {
+	FromAddress string
+	ToAddress   string
+	Amount      uint64
+	Fee         uint64
+	Memo        string
 }
 
 func (s *FrostSigner) ExportFrostKeys(vaultPubKey string) (string, error) {

@@ -203,6 +203,11 @@ pub struct MarkSpentRequest {
     pub spent_refs: Vec<MarkSpentRef>,
     #[serde(default)]
     pub skip_verification: bool,
+    pub from_address: Option<String>,
+    pub to_address: Option<String>,
+    pub amount: Option<u64>,
+    pub fee: Option<u64>,
+    pub memo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
