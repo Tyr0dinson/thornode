@@ -370,6 +370,29 @@ impl Store {
         Ok(store)
     }
 
+    pub fn open_lenient(data_dir: &Path, store_secret: &str) -> Result<Self> {
+        std::fs::create_dir_all(data_dir)
+            .with_context(|| format!("failed to create data dir: {}", data_dir.display()))?;
+
+        let db_path = data_dir.join("sled_db");
+        let db = sled::open(&db_path)
+            .with_context(|| format!("failed to open sled DB at {}", db_path.display()))?;
+
+        let metadata_path = Self::kdf_metadata_path(data_dir);
+        let encryption_key = if metadata_path.exists() {
+            let metadata = Self::read_kdf_metadata(&metadata_path)?;
+            metadata.derive_key(store_secret)?
+        } else {
+            anyhow::bail!("no KDF metadata found at {}", metadata_path.display());
+        };
+
+        Ok(Store {
+            db,
+            data_dir: data_dir.to_path_buf(),
+            encryption_key: Zeroizing::new(encryption_key),
+        })
+    }
+
     fn kdf_metadata_path(data_dir: &Path) -> PathBuf {
         data_dir.join(STORE_KDF_METADATA_FILENAME)
     }

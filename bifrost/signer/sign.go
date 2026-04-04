@@ -430,8 +430,9 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 
 		// Give chain clients with custom keygen logic a chance to initialize chain-specific
 		// signer state (for example Monero multisig address mapping) before keygen is finalized.
+		var frostPubKey common.PubKey
 		if !pubKey.Secp256k1.IsEmpty() {
-			pubKey.Ed25519, err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519)
+			pubKey.Ed25519, frostPubKey, err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519)
 			if err != nil {
 				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
@@ -446,7 +447,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		// generate a verification signature to ensure we can sign with the new key
 		secp256k1Sig := s.secp256k1VerificationSignature(pubKey.Secp256k1)
 
-		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, secp256k1Sig, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime, pubKey.Ed25519); err != nil {
+		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, secp256k1Sig, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime, pubKey.Ed25519, frostPubKey); err != nil {
 			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
 			s.logger.Error().Err(err).Msg("fail to broadcast keygen")
 		}
@@ -469,7 +470,7 @@ func (s *Signer) runCustomKeygenHooks(
 	blockHeight int64,
 	poolPubKey common.PubKey,
 	poolPubKeyEddsa common.PubKey,
-) (common.PubKey, error) {
+) (common.PubKey, common.PubKey, error) {
 	version := ""
 	if v, err := s.thorchainBridge.GetThorchainVersion(); err != nil {
 		s.logger.Debug().Err(err).Msg("fail to fetch thorchain version for custom keygen")
@@ -479,6 +480,7 @@ func (s *Signer) runCustomKeygenHooks(
 
 	var customHookErr error
 	effectivePoolPubKeyEddsa := poolPubKeyEddsa
+	var frostPoolPubKey common.PubKey
 	for chainID, chainClient := range s.chains {
 		custom, ok := chainClient.(chainclients.CustomKeygenChainClient)
 		if !ok || !custom.CustomKeygen() {
@@ -505,11 +507,13 @@ func (s *Signer) runCustomKeygenHooks(
 			continue
 		}
 		if !result.PoolPubKeyEddsa.IsEmpty() && !result.PoolPubKeyEddsa.Equals(effectivePoolPubKeyEddsa) {
+			frostPoolPubKey = result.PoolPubKeyEddsa
 			effectivePoolPubKeyEddsa = result.PoolPubKeyEddsa
 			s.logger.Info().
 				Str("chain", chainID.String()).
 				Str("pool_pubkey_eddsa", result.PoolPubKeyEddsa.String()).
-				Msg("custom keygen updated eddsa vault pubkey")
+				Str("pool_pubkey_frost", frostPoolPubKey.String()).
+				Msg("custom keygen updated eddsa vault pubkey (FROST group key)")
 		}
 		if !result.Address.IsEmpty() {
 			s.logger.Info().
@@ -518,7 +522,7 @@ func (s *Signer) runCustomKeygenHooks(
 				Msg("custom keygen produced chain address")
 		}
 	}
-	return effectivePoolPubKeyEddsa, customHookErr
+	return effectivePoolPubKeyEddsa, frostPoolPubKey, customHookErr
 }
 
 // secp256k1VerificationSignature will make a best effort to sign the public key with
@@ -568,7 +572,7 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 	return sigBytes
 }
 
-func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame []ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64, poolPubKeyEddsa common.PubKey) error {
+func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame []ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64, poolPubKeyEddsa common.PubKey, poolPubKeyFrost common.PubKey) error {
 	// collect supported chains in the configuration
 	chains := common.Chains{
 		common.THORChain,
@@ -610,13 +614,13 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 	}
 
 	var keysharesFrost []byte
-	if s.cfg.Signer.BackupKeyshares && !poolPubKeyEddsa.IsEmpty() {
+	if s.cfg.Signer.BackupKeyshares && !poolPubKeyFrost.IsEmpty() {
 		if xmrClient, ok := s.chains[common.XMRChain]; ok {
 			type frostKeyExporter interface {
 				ExportFrostKeyshare(vaultPubKey common.PubKey) ([]byte, error)
 			}
 			if exporter, ok := xmrClient.(frostKeyExporter); ok {
-				rawKey, exportErr := exporter.ExportFrostKeyshare(poolPubKeyEddsa)
+				rawKey, exportErr := exporter.ExportFrostKeyshare(poolPubKeyFrost)
 				if exportErr != nil {
 					s.logger.Error().Err(exportErr).Msg("fail to export frost keyshare for backup")
 				} else if len(rawKey) > 0 {
@@ -629,7 +633,7 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 		}
 	}
 
-	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, keysharesEddsa, keysharesFrost)
+	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, keysharesEddsa, keysharesFrost, poolPubKeyFrost)
 	if err != nil {
 		return fmt.Errorf("fail to get keygen id: %w", err)
 	}
