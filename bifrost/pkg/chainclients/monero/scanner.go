@@ -734,12 +734,16 @@ func (s *Scanner) refreshAsgardLookup() error {
 		if observedVault.IsEmpty() {
 			continue
 		}
+		frostKey := vault.PubKeyFrost
+		if frostKey.IsEmpty() {
+			frostKey = observedVault
+		}
 		creationHeight := vault.VaultCreationHeightXmr
 		derived, addrErr := ensureFrostVaultRegistered(
 			s.logger,
 			s.frostSigner,
 			s.chain,
-			observedVault,
+			frostKey,
 			s.localVaultBootstrap,
 			"bifrost_scanner",
 			creationHeight,

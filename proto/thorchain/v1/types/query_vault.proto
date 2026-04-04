@@ -36,6 +36,7 @@ message QueryVaultResponse {
   string pub_key_eddsa = 15 [ (gogoproto.nullable) = true ];
   int64 vault_creation_height_xmr = 16;
   repeated common.OutputRef spent_output_refs_xmr = 17;
+  string pub_key_frost = 18 [ (gogoproto.nullable) = true ];
 }
 
 message QueryAsgardVaultsRequest { string height = 1; }
