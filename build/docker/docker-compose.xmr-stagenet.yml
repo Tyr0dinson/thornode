@@ -106,6 +106,7 @@ services:
       - --restricted-rpc
       - --prune-blockchain
       - --sync-pruned-blocks
+      - --bootstrap-daemon-address=nodes.hashvault.pro:18081
       - --log-level=0
     volumes:
       - monero-daemon:/home/monero/.bitmonero
