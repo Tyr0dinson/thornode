@@ -1049,13 +1049,20 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
 
-	// Create pool
+	// Create pools (both source and target pools must exist for pool-relative cap)
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
 	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
 	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
 	pool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(2000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(2000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
 
 	// Verify swap memo is recognized as admissible before finalization
 	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), "=:ETH.ETH:"+GetRandomETHAddress().String()+":0/1/1")
