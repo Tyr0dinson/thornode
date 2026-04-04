@@ -299,3 +299,50 @@ ps -p <make-pid> -o pid,ppid,stat,etime,command
 - Sidecar scanner + store:
   - `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/tx/scanner.rs`
   - `bifrost/pkg/chainclients/monero/xmr-frost-signer/src/state/store.rs`
+
+## Monero User Flows — Privacy Chain Considerations
+
+### Unknown Sender Model
+
+Monero's ring signatures make it impossible to identify the real sender of a transaction from chain data alone. When Bifrost observes an XMR inbound, the sender is recorded as a deterministic marker address (`xmrunknown1...`) derived from the transaction hash and destination address. This marker signals to THORChain that the real sender is unknowable.
+
+Consequence: **refunds cannot go back to the sender automatically** (unlike BTC/ETH where the sender is visible on-chain). Users must provide an explicit refund address in their memo.
+
+### Swap Memo — Refund Address
+
+The standard swap memo format supports an optional refund address after the destination, separated by `/`:
+
+```
+=:ASSET:DEST_ADDR/REFUND_ADDR:LIMIT:AFFILIATE:FEE
+```
+
+For XMR inbound swaps, the refund address is **required**. Without it, a failed swap has no valid address to return funds to (the `xmrunknown` marker is not a real address).
+
+Example — swap XMR to BTC with refund address:
+```
+=:BTC.BTC:bc1q.../4refundXmrAddr...:0
+```
+
+If the swap fails, funds are returned to `4refundXmrAddr...`. If no refund address is provided and the swap fails, the funds are donated to the pool (unrecoverable).
+
+### Dual-Sided Liquidity (Add Liquidity)
+
+For dual-sided LP with XMR, the order of operations matters for security:
+
+**Recommended: add XMR first, then RUNE.**
+
+1. Send XMR to the vault with memo `+:XMR.XMR:<your_thor_address>`
+2. Wait for THORChain to observe the inbound
+3. Send RUNE from `<your_thor_address>` with memo `+:XMR.XMR:<your_xmr_address>`
+
+The RUNE side is authenticated by the THOR address signature — only the private key holder can send it. The XMR side is **not authenticated** (unknown sender). If RUNE is added first, an attacker who monitors pending asymmetric LPs could race to send XMR to the vault with a memo referencing their own THOR address, attempting to claim the match.
+
+By adding XMR first, the pending LP waits for the authenticated RUNE side, which cannot be front-run.
+
+**Anti-pattern: add RUNE first, then XMR.**
+
+This exposes the RUNE deposit to a front-running attack where an attacker sends XMR with a memo referencing their own THOR address to claim the match. The attacker's THOR transaction would then complete the dual LP, binding the victim's RUNE to the attacker's address.
+
+### Withdraw Liquidity
+
+Withdraw works normally. The withdraw memo is sent as a RUNE transaction (authenticated), and the XMR portion is returned to the LP's recorded XMR address.
