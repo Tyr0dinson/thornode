@@ -17,8 +17,15 @@ const (
 	featuredGuaranteedSubaddressVector    = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v4Pyz8bD"
 	xmrFixtureSpendHex                    = "b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1"
 	xmrFixtureMockAddress                 = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7"
-	xmrFixturePublicAddress               = "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDk2s55z7Nbx"
+	xmrFixturePublicAddress               = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7"
 )
+
+func expectedStandardXMRNetwork() ChainNetwork {
+	if CurrentChainNetwork == MockNet {
+		return MockNet
+	}
+	return CurrentChainNetwork
+}
 
 func makeTestXMRAddr(networkByte byte, spend, view [32]byte) string {
 	payload := make([]byte, 0, 69)
@@ -68,14 +75,14 @@ func (s *XMRAddressSuite) TestXMRAddressHandling(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(primary.IsChain(XMRChain), Equals, true)
 	c.Check(primary.GetChain(), Equals, XMRChain)
-	c.Check(primary.GetNetwork(XMRChain), Equals, MockNet)
+	c.Check(primary.GetNetwork(XMRChain), Equals, expectedStandardXMRNetwork())
 
 	subAddr := XMRChecksummedDummyAddress('8')
 	addr8, err := NewAddress(subAddr)
 	c.Assert(err, IsNil)
 	c.Check(addr8.IsChain(XMRChain), Equals, true)
 	c.Check(addr8.GetChain(), Equals, XMRChain)
-	c.Check(addr8.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(addr8.GetNetwork(XMRChain), Equals, expectedStandardXMRNetwork())
 
 	featuredAddr := XMRChecksummedDummyAddress('C')
 	addrC, err := NewAddress(featuredAddr)
@@ -248,11 +255,11 @@ func (s *XMRAddressSuite) TestXMRGetNetwork(c *C) {
 	var spend, view [32]byte
 	primaryAddr := makeTestXMRAddr(xmrPrimaryNetworkByte, spend, view)
 	addr := Address(primaryAddr)
-	c.Check(addr.GetNetwork(XMRChain), Equals, MockNet)
+	c.Check(addr.GetNetwork(XMRChain), Equals, expectedStandardXMRNetwork())
 
 	subAddr := makeTestXMRAddr(xmrSubaddressNetworkByte, spend, view)
 	addr = Address(subAddr)
-	c.Check(addr.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(addr.GetNetwork(XMRChain), Equals, expectedStandardXMRNetwork())
 
 	featuredMock := makeTestXMRFeaturedAddr(
 		xmrFeaturedMainnetNetworkByte,
@@ -416,9 +423,9 @@ func (s *XMRAddressSuite) TestXMRMocknetUsesWalletCompatibleStandardAddress(c *C
 
 	public, err := deriveXMRAddressFromSpendPubKey(spend, MainNet)
 	c.Assert(err, IsNil)
-	c.Check(len(public), Equals, 97)
-	c.Check(strings.HasPrefix(public, "C"), Equals, true)
-	c.Check(IsXMRFeaturedGuaranteedAddress(public), Equals, true)
+	c.Check(len(public), Equals, 95)
+	c.Check(strings.HasPrefix(public, "4"), Equals, true)
+	c.Check(IsXMRFeaturedGuaranteedAddress(public), Equals, false)
 }
 
 func (s *XMRAddressSuite) TestXMRUnknownSenderAddress(c *C) {
@@ -445,5 +452,5 @@ func (s *XMRAddressSuite) TestXMRIntegratedAddressNetwork(c *C) {
 	c.Check(len(intAddr), Equals, 106)
 	c.Check(intAddr[0], Equals, byte('4'))
 	addr := Address(intAddr)
-	c.Check(addr.GetNetwork(XMRChain), Equals, MockNet)
+	c.Check(addr.GetNetwork(XMRChain), Equals, expectedStandardXMRNetwork())
 }

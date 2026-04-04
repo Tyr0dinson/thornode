@@ -21,7 +21,7 @@ use crate::frost::dkg::DkgCoordinator;
 use crate::frost::keys::ThresholdKeyShare;
 use crate::frost::sign::SignCoordinator;
 use crate::state::store::{
-    IdempotencyClaimResult, OutputRef, OutputState, ScanBlockMeta, TrackedOutput,
+    CreditedOutput, IdempotencyClaimResult, OutputRef, OutputState, ScanBlockMeta, TrackedOutput,
 };
 use crate::tx::builder;
 use crate::tx::daemon::DaemonClient;
@@ -349,10 +349,10 @@ fn ensure_registered_vault_state(
         .register_vault(vault_pub_key, group_key, address, source)
         .map_err(|e| format!("failed to register vault mapping: {e}"))?;
 
-    let outputs = state
+    let tracked_state = state
         .store
-        .load_outputs(vault_pub_key)
-        .map_err(|e| format!("failed to load vault outputs: {e}"))?;
+        .load_vault_tracked_state(vault_pub_key)
+        .map_err(|e| format!("failed to load vault tracked state: {e}"))?;
     let scan_height = state
         .store
         .load_scan_height(vault_pub_key)
@@ -365,11 +365,12 @@ fn ensure_registered_vault_state(
             vault_pub_key,
             group_key,
             state.chain_network,
-            outputs.clone(),
+            tracked_state.outputs.clone(),
+            tracked_state.collision_records.clone(),
             Some(scan_height),
         )
         .map_err(|e| format!("failed to initialize vault scanner state: {e}"))?;
-    scanner.merge_output_states(vault_pub_key, &outputs);
+    scanner.merge_output_states(vault_pub_key, &tracked_state.outputs);
 
     Ok(registered)
 }
@@ -1250,6 +1251,7 @@ fn transfer_entry_from_tracked_output(
     output: &TrackedOutput,
     vault_pub_key: &str,
     current_height: u64,
+    amount: u64,
 ) -> TransferEntry {
     let confirmations = current_height.saturating_sub(output.height);
     TransferEntry {
@@ -1257,7 +1259,7 @@ fn transfer_entry_from_tracked_output(
         address: output.address.clone().unwrap_or_default(),
         from_address: None,
         vault_pub_key: Some(vault_pub_key.to_string()),
-        amount: output.amount,
+        amount,
         fee: 0,
         height: output.height,
         confirmations,
@@ -1266,9 +1268,9 @@ fn transfer_entry_from_tracked_output(
     }
 }
 
-fn transfer_entries_from_added_refs(
+fn transfer_entries_from_credited_outputs(
     outputs: &[TrackedOutput],
-    refs: &[OutputRef],
+    credited_outputs: &[CreditedOutput],
     vault_pub_key: &str,
     current_height: u64,
 ) -> Vec<TransferEntry> {
@@ -1276,10 +1278,17 @@ fn transfer_entries_from_added_refs(
         .iter()
         .map(|output| ((output.tx_hash.clone(), output.output_index), output))
         .collect();
-    refs.iter()
-        .filter_map(|r| by_ref.get(&(r.tx_hash.clone(), r.output_index)))
-        .filter(|output| !output.is_spent())
-        .map(|output| transfer_entry_from_tracked_output(output, vault_pub_key, current_height))
+    credited_outputs
+        .iter()
+        .filter_map(|credited| {
+            by_ref
+                .get(&(credited.tx_hash.clone(), credited.output_index))
+                .map(|output| (*output, credited.amount))
+        })
+        .filter(|(output, _)| !output.is_spent())
+        .map(|(output, amount)| {
+            transfer_entry_from_tracked_output(output, vault_pub_key, current_height, amount)
+        })
         .collect()
 }
 
@@ -1416,13 +1425,13 @@ pub async fn scanner_sync(
     };
 
     for vault in &vaults {
-        let mut outputs = match state.store.load_outputs(&vault.vault_pub_key) {
-            Ok(outputs) => outputs,
+        let mut tracked_state = match state.store.load_vault_tracked_state(&vault.vault_pub_key) {
+            Ok(tracked_state) => tracked_state,
             Err(e) => {
                 error!(
                     error = %e,
                     vault = %vault.vault_pub_key,
-                    "failed to load outputs for scanner sync"
+                    "failed to load tracked state for scanner sync"
                 );
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -1450,7 +1459,8 @@ pub async fn scanner_sync(
             &vault.vault_pub_key,
             &vault.group_key,
             state.chain_network,
-            outputs.clone(),
+            tracked_state.outputs.clone(),
+            tracked_state.collision_records.clone(),
             Some(scan_height),
         ) {
             error!(
@@ -1508,13 +1518,13 @@ pub async fn scanner_sync(
                     Json(error_json(e.to_string())),
                 );
             }
-            outputs = match state.store.load_outputs(&vault.vault_pub_key) {
-                Ok(outputs) => outputs,
+            tracked_state = match state.store.load_vault_tracked_state(&vault.vault_pub_key) {
+                Ok(tracked_state) => tracked_state,
                 Err(e) => {
                     error!(
                         error = %e,
                         vault = %vault.vault_pub_key,
-                        "failed to reload outputs after scanner rollback"
+                        "failed to reload tracked state after scanner rollback"
                     );
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1541,7 +1551,8 @@ pub async fn scanner_sync(
                 &vault.vault_pub_key,
                 &vault.group_key,
                 state.chain_network,
-                outputs.clone(),
+                tracked_state.outputs.clone(),
+                tracked_state.collision_records.clone(),
                 Some(scan_height),
             ) {
                 error!(
@@ -1558,7 +1569,11 @@ pub async fn scanner_sync(
 
         if meta_matches {
             if let Some(mut meta) = stored_meta {
-                let discovered_refs = output_refs_at_height(&outputs, req.height);
+                let discovered_refs = output_refs_at_height(&tracked_state.outputs, req.height);
+                let discovered_credited = state
+                    .scanner
+                    .lock()
+                    .get_credited_outputs_at_height(&vault.vault_pub_key, req.height);
                 let known_refs: HashSet<(String, u32)> = meta
                     .added_outputs
                     .iter()
@@ -1568,8 +1583,10 @@ pub async fn scanner_sync(
                     .into_iter()
                     .filter(|r| !known_refs.contains(&(r.tx_hash.clone(), r.output_index)))
                     .collect();
+                let recovered_credited =
+                    meta.credited_outputs.is_empty() && !discovered_credited.is_empty();
 
-                if !recovered_refs.is_empty() {
+                if !recovered_refs.is_empty() || recovered_credited {
                     warn!(
                         vault = %vault.vault_pub_key,
                         height = req.height,
@@ -1577,6 +1594,9 @@ pub async fn scanner_sync(
                         "scanner sync recovered missing added outputs from persisted state"
                     );
                     meta.added_outputs.extend(recovered_refs);
+                    if recovered_credited {
+                        meta.credited_outputs = discovered_credited;
+                    }
                     if let Err(e) = state
                         .store
                         .save_scan_block_meta(&vault.vault_pub_key, &meta)
@@ -1594,9 +1614,9 @@ pub async fn scanner_sync(
                     }
                 }
 
-                let mut vault_incoming = transfer_entries_from_added_refs(
-                    &outputs,
-                    &meta.added_outputs,
+                let mut vault_incoming = transfer_entries_from_credited_outputs(
+                    &tracked_state.outputs,
+                    &meta.credited_outputs,
                     &vault.vault_pub_key,
                     effective_height,
                 );
@@ -1652,7 +1672,7 @@ pub async fn scanner_sync(
                 );
             }
 
-            let added_outputs = match state.scanner.lock().scan_block_for_vault_with_added(
+            let scan_outcome = match state.scanner.lock().scan_block_for_vault_with_added(
                 &vault.vault_pub_key,
                 req.height,
                 block,
@@ -1672,10 +1692,15 @@ pub async fn scanner_sync(
                 }
             };
             let outputs_after_scan = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
-            if let Err(e) = state
-                .store
-                .merge_scanned_outputs(&vault.vault_pub_key, &outputs_after_scan)
-            {
+            let collision_records_after_scan = state
+                .scanner
+                .lock()
+                .get_collision_records(&vault.vault_pub_key);
+            if let Err(e) = state.store.merge_scanned_scan_state(
+                &vault.vault_pub_key,
+                &outputs_after_scan,
+                &collision_records_after_scan,
+            ) {
                 error!(
                     error = %e,
                     vault = %vault.vault_pub_key,
@@ -1686,7 +1711,8 @@ pub async fn scanner_sync(
                     Json(error_json(e.to_string())),
                 );
             }
-            let added_refs: Vec<OutputRef> = added_outputs
+            let added_refs: Vec<OutputRef> = scan_outcome
+                .added_outputs
                 .iter()
                 .map(|output| OutputRef {
                     tx_hash: output.tx_hash.clone(),
@@ -1700,6 +1726,7 @@ pub async fn scanner_sync(
                     block_hash: req.block_hash.trim().to_string(),
                     parent_hash: req.parent_hash.trim().to_string(),
                     added_outputs: added_refs.clone(),
+                    credited_outputs: scan_outcome.credited_outputs.clone(),
                 },
             ) {
                 error!(
@@ -1740,24 +1767,41 @@ pub async fn scanner_sync(
                     "failed to prune scan block metadata after scanner sync"
                 );
             }
-            let mut vault_incoming: Vec<TransferEntry> = added_outputs
-                .iter()
-                .filter(|output| !output.is_spent())
-                .map(|output| {
-                    transfer_entry_from_tracked_output(
-                        output,
-                        &vault.vault_pub_key,
-                        effective_height,
-                    )
-                })
-                .collect();
-            if let Ok(outbound) = state.store.load_outgoing_transfers(&vault.vault_pub_key) {
-                vault_incoming = suppress_self_change_incoming(
-                    vault_incoming,
-                    &outgoing_record_hashes(&outbound),
-                );
+            let mut vault_incoming = transfer_entries_from_credited_outputs(
+                &outputs_after_scan,
+                &scan_outcome.credited_outputs,
+                &vault.vault_pub_key,
+                effective_height,
+            );
+            match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
+                Ok(outbound) => {
+                    vault_incoming = suppress_self_change_incoming(
+                        vault_incoming,
+                        &outgoing_record_hashes(&outbound),
+                    );
+                    incoming.extend(vault_incoming);
+                    for tx in outbound.into_iter().filter(|tx| {
+                        is_observed_mined_record(tx) && outgoing_effective_height(tx) == req.height
+                    }) {
+                        outgoing.push(transfer_entry_from_outgoing_record(
+                            &tx,
+                            effective_height,
+                            false,
+                        ));
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        vault = %vault.vault_pub_key,
+                        "failed to load outgoing transfers for scanner sync"
+                    );
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json(e.to_string())),
+                    );
+                }
             }
-            incoming.extend(vault_incoming);
         }
 
         if meta_matches {
@@ -2216,10 +2260,10 @@ async fn sync_sim_account(state: &AppState, account: &SimAccount) -> Result<(), 
         )
         .map_err(|e| format!("failed to register sim account: {e}"))?;
 
-    let mut outputs = state
+    let mut tracked_state = state
         .store
-        .load_outputs(&account.account_id)
-        .map_err(|e| format!("failed to load sim account outputs: {e}"))?;
+        .load_vault_tracked_state(&account.account_id)
+        .map_err(|e| format!("failed to load sim account tracked state: {e}"))?;
     let mut scan_height = state
         .store
         .load_scan_height(&account.account_id)
@@ -2243,10 +2287,10 @@ async fn sync_sim_account(state: &AppState, account: &SimAccount) -> Result<(), 
             .store
             .rollback_scan_state_from_height(&account.account_id, 1)
             .map_err(|e| format!("failed to reset sim account scan state: {e}"))?;
-        outputs = state
+        tracked_state = state
             .store
-            .load_outputs(&account.account_id)
-            .map_err(|e| format!("failed to reload sim account outputs: {e}"))?;
+            .load_vault_tracked_state(&account.account_id)
+            .map_err(|e| format!("failed to reload sim account tracked state: {e}"))?;
         scan_height = state
             .store
             .load_scan_height(&account.account_id)
@@ -2262,12 +2306,13 @@ async fn sync_sim_account(state: &AppState, account: &SimAccount) -> Result<(), 
                     &account.account_id,
                     &account.group_key_hex,
                     state.chain_network,
-                    outputs.clone(),
+                    tracked_state.outputs.clone(),
+                    tracked_state.collision_records.clone(),
                     Some(scan_height),
                 )
                 .map_err(|e| format!("failed to initialize sim account scanner: {e}"))?;
         }
-        scanner.merge_output_states(&account.account_id, &outputs);
+        scanner.merge_output_states(&account.account_id, &tracked_state.outputs);
         scanner.set_current_height(scan_height);
     }
 
@@ -2295,10 +2340,14 @@ async fn sync_sim_account(state: &AppState, account: &SimAccount) -> Result<(), 
     }
 
     let outputs = state.scanner.lock().get_all_outputs(&account.account_id);
+    let collision_records = state
+        .scanner
+        .lock()
+        .get_collision_records(&account.account_id);
     state
         .store
-        .merge_scanned_outputs(&account.account_id, &outputs)
-        .map_err(|e| format!("failed to persist sim account outputs: {e}"))?;
+        .merge_scanned_scan_state(&account.account_id, &outputs, &collision_records)
+        .map_err(|e| format!("failed to persist sim account scan state: {e}"))?;
     state
         .store
         .save_scan_height(&account.account_id, tip_height)
@@ -2708,6 +2757,7 @@ mod tests {
             output_index: 0,
             amount: 1_000_000_000,
             height: 100,
+            one_time_key: Some("one-time-key-0".to_string()),
             key_image: Some("key-image-0".to_string()),
             state: OutputState::Reserved,
             reservation: Some(crate::state::store::OutputReservation {
@@ -2731,6 +2781,7 @@ mod tests {
             output_index,
             amount: 1_000_000_000,
             height: 100,
+            one_time_key: Some(format!("one-time-key-{output_index}")),
             key_image: Some(format!("key-image-{output_index}")),
             state,
             reservation: None,
@@ -2763,6 +2814,7 @@ mod tests {
                 &test_group_key_hex(),
                 crate::config::ChainNetworkMode::Public,
                 outputs,
+                Vec::new(),
                 None,
             )
             .expect("failed to register test vault");
@@ -3313,6 +3365,7 @@ mod tests {
                     &test_group_key_hex(),
                     crate::config::ChainNetworkMode::Public,
                     outputs,
+                    Vec::new(),
                     None,
                 )
                 .expect("failed to register scanner vault");
@@ -3712,6 +3765,7 @@ mod tests {
             output_index: 0,
             amount: 500,
             height: 100,
+            one_time_key: Some("one-time-key-aa".to_string()),
             key_image: None,
             state: OutputState::Unspent,
             reservation: None,
@@ -3745,6 +3799,11 @@ mod tests {
                     added_outputs: vec![OutputRef {
                         tx_hash: output.tx_hash.clone(),
                         output_index: output.output_index,
+                    }],
+                    credited_outputs: vec![CreditedOutput {
+                        tx_hash: output.tx_hash.clone(),
+                        output_index: output.output_index,
+                        amount: output.amount,
                     }],
                 },
             )
@@ -3821,6 +3880,7 @@ mod tests {
             output_index: 1,
             amount: 321,
             height: 120,
+            one_time_key: Some("one-time-key-cc".to_string()),
             key_image: None,
             state: OutputState::Unspent,
             reservation: None,
@@ -3852,6 +3912,7 @@ mod tests {
                     block_hash: "hash120".to_string(),
                     parent_hash: "hash119".to_string(),
                     added_outputs: vec![],
+                    credited_outputs: vec![],
                 },
             )
             .expect("failed to seed scan block metadata");
@@ -3951,6 +4012,7 @@ mod tests {
             output_index: 0,
             amount: 777,
             height: 105,
+            one_time_key: Some("one-time-key-bb".to_string()),
             key_image: None,
             state: OutputState::Unspent,
             reservation: None,
@@ -3982,6 +4044,7 @@ mod tests {
                     block_hash: "hash109".to_string(),
                     parent_hash: "hash108".to_string(),
                     added_outputs: vec![],
+                    credited_outputs: vec![],
                 },
             )
             .expect("failed to seed scan metadata for height 109");
@@ -3994,6 +4057,7 @@ mod tests {
                     block_hash: "hash115".to_string(),
                     parent_hash: "hash114".to_string(),
                     added_outputs: vec![],
+                    credited_outputs: vec![],
                 },
             )
             .expect("failed to seed scan metadata for height 115");

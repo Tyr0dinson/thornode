@@ -142,6 +142,58 @@ pub struct OutputRef {
     pub output_index: u32,
 }
 
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+pub struct DepositRoute {
+    pub subaddress_major: u32,
+    pub subaddress_minor: u32,
+}
+
+impl DepositRoute {
+    pub fn new(subaddress_major: u32, subaddress_minor: u32) -> Self {
+        Self {
+            subaddress_major,
+            subaddress_minor,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CollisionRecord {
+    pub one_time_key: String,
+    pub route: DepositRoute,
+    pub canonical_ref: Option<OutputRef>,
+    pub credited_amount: u64,
+    #[serde(default)]
+    pub shadowed_refs: Vec<OutputRef>,
+    #[serde(default)]
+    pub quarantined_refs: Vec<OutputRef>,
+    pub resolved_spent_ref: Option<OutputRef>,
+}
+
+impl CollisionRecord {
+    pub fn is_resolved(&self) -> bool {
+        self.resolved_spent_ref.is_some()
+    }
+
+    pub fn contains_ref(&self, output_ref: &OutputRef) -> bool {
+        self.canonical_ref
+            .as_ref()
+            .is_some_and(|current| current == output_ref)
+            || self
+                .shadowed_refs
+                .iter()
+                .any(|shadowed| shadowed == output_ref)
+            || self
+                .quarantined_refs
+                .iter()
+                .any(|quarantined| quarantined == output_ref)
+            || self
+                .resolved_spent_ref
+                .as_ref()
+                .is_some_and(|resolved| resolved == output_ref)
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OutputReservation {
     pub session_id: String,
@@ -158,6 +210,8 @@ pub struct TrackedOutput {
     pub output_index: u32,
     pub amount: u64,
     pub height: u64,
+    #[serde(default)]
+    pub one_time_key: Option<String>,
     pub key_image: Option<String>,
     pub state: OutputState,
     pub reservation: Option<OutputReservation>,
@@ -166,6 +220,13 @@ pub struct TrackedOutput {
     pub wallet_output_hex: Option<String>,
     pub address: Option<String>,
     pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CreditedOutput {
+    pub tx_hash: String,
+    pub output_index: u32,
+    pub amount: u64,
 }
 
 impl TrackedOutput {
@@ -234,6 +295,202 @@ impl TrackedOutput {
     pub fn is_spent(&self) -> bool {
         self.state == OutputState::Spent
     }
+}
+
+fn compare_collision_candidates(lhs: &TrackedOutput, rhs: &TrackedOutput) -> std::cmp::Ordering {
+    rhs.amount
+        .cmp(&lhs.amount)
+        .then_with(|| lhs.height.cmp(&rhs.height))
+        .then_with(|| lhs.tx_hash.cmp(&rhs.tx_hash))
+        .then_with(|| lhs.output_index.cmp(&rhs.output_index))
+}
+
+fn push_unique_ref(refs: &mut Vec<OutputRef>, output_ref: OutputRef) {
+    if refs.iter().any(|existing| existing == &output_ref) {
+        return;
+    }
+    refs.push(output_ref);
+}
+
+fn output_route(output: &TrackedOutput) -> DepositRoute {
+    DepositRoute::new(output.subaddress_major, output.subaddress_minor)
+}
+
+fn output_ref_key(output: &TrackedOutput) -> OutputRef {
+    output.ref_key()
+}
+
+fn outputs_by_ref(outputs: &[TrackedOutput]) -> HashMap<(String, u32), &TrackedOutput> {
+    outputs
+        .iter()
+        .map(|output| ((output.tx_hash.clone(), output.output_index), output))
+        .collect()
+}
+
+fn output_lookup<'a>(
+    by_ref: &'a HashMap<(String, u32), &'a TrackedOutput>,
+    output_ref: &OutputRef,
+) -> Option<&'a TrackedOutput> {
+    by_ref
+        .get(&(output_ref.tx_hash.clone(), output_ref.output_index))
+        .copied()
+}
+
+fn adopt_canonical_ref(
+    record: &mut CollisionRecord,
+    outputs: &[TrackedOutput],
+    output_ref: &OutputRef,
+) {
+    if let Some(previous) = record.canonical_ref.replace(output_ref.clone()) {
+        if previous != *output_ref {
+            push_unique_ref(&mut record.shadowed_refs, previous);
+        }
+    }
+    if let Some(output) = outputs
+        .iter()
+        .find(|candidate| candidate.ref_key() == *output_ref)
+    {
+        record.credited_amount = output.amount;
+    }
+}
+
+pub fn sync_collision_records_after_output_state_change(
+    records: &mut Vec<CollisionRecord>,
+    outputs: &[TrackedOutput],
+) {
+    let by_ref = outputs_by_ref(outputs);
+    records.retain_mut(|record| {
+        record.shadowed_refs.retain(|output_ref| {
+            output_lookup(&by_ref, output_ref)
+                .is_some_and(|output| output_route(output) == record.route)
+        });
+        record
+            .quarantined_refs
+            .retain(|output_ref| output_lookup(&by_ref, output_ref).is_some());
+
+        if let Some(canonical_ref) = record.canonical_ref.clone() {
+            let canonical_valid = output_lookup(&by_ref, &canonical_ref)
+                .is_some_and(|output| output_route(output) == record.route);
+            if !canonical_valid {
+                record.canonical_ref = None;
+            }
+        }
+
+        let spent_candidate = record
+            .canonical_ref
+            .iter()
+            .chain(record.shadowed_refs.iter())
+            .chain(record.quarantined_refs.iter())
+            .find_map(|output_ref| {
+                output_lookup(&by_ref, output_ref)
+                    .filter(|output| output.is_spent())
+                    .map(|_| output_ref.clone())
+            });
+
+        match spent_candidate {
+            Some(spent_ref) => {
+                record.resolved_spent_ref = Some(spent_ref);
+            }
+            None => {
+                record.resolved_spent_ref = None;
+            }
+        }
+
+        if record.canonical_ref.is_none() {
+            let mut same_route_candidates = record
+                .shadowed_refs
+                .iter()
+                .filter_map(|output_ref| {
+                    output_lookup(&by_ref, output_ref).map(|output| (output_ref, output))
+                })
+                .filter(|(_, output)| output_route(output) == record.route)
+                .collect::<Vec<_>>();
+            same_route_candidates
+                .sort_by(|(_, lhs), (_, rhs)| compare_collision_candidates(lhs, rhs));
+            if let Some((winner_ref, _)) = same_route_candidates.first() {
+                let winner_ref = (*winner_ref).clone();
+                record
+                    .shadowed_refs
+                    .retain(|output_ref| output_ref != &winner_ref);
+                adopt_canonical_ref(record, outputs, &winner_ref);
+            } else {
+                record.credited_amount = 0;
+            }
+        } else if let Some(canonical_ref) = record.canonical_ref.as_ref() {
+            if let Some(output) = output_lookup(&by_ref, canonical_ref) {
+                record.credited_amount = output.amount;
+            } else {
+                record.credited_amount = 0;
+            }
+        }
+
+        record.canonical_ref.is_some()
+            || !record.shadowed_refs.is_empty()
+            || !record.quarantined_refs.is_empty()
+            || record.resolved_spent_ref.is_some()
+    });
+}
+
+pub fn rebuild_collision_records(outputs: &[TrackedOutput]) -> Vec<CollisionRecord> {
+    let mut sorted = outputs.iter().cloned().collect::<Vec<_>>();
+    sorted.sort_by(|lhs, rhs| {
+        lhs.height
+            .cmp(&rhs.height)
+            .then_with(|| lhs.tx_hash.cmp(&rhs.tx_hash))
+            .then_with(|| lhs.output_index.cmp(&rhs.output_index))
+    });
+
+    let mut records = Vec::<CollisionRecord>::new();
+    for output in sorted {
+        let Some(one_time_key) = output.one_time_key.clone() else {
+            continue;
+        };
+        let output_ref = output_ref_key(&output);
+        let route = output_route(&output);
+        if let Some(record) = records
+            .iter_mut()
+            .find(|record| record.one_time_key == one_time_key)
+        {
+            if record.route != route {
+                push_unique_ref(&mut record.quarantined_refs, output_ref);
+                continue;
+            }
+            if record.is_resolved() {
+                push_unique_ref(&mut record.shadowed_refs, output_ref);
+                continue;
+            }
+            let current = record.canonical_ref.as_ref().and_then(|canonical_ref| {
+                outputs
+                    .iter()
+                    .find(|candidate| candidate.ref_key() == *canonical_ref)
+            });
+            if current.is_none() {
+                adopt_canonical_ref(record, outputs, &output_ref);
+                continue;
+            }
+            if compare_collision_candidates(&output, current.expect("checked is_some"))
+                == std::cmp::Ordering::Less
+            {
+                adopt_canonical_ref(record, outputs, &output_ref);
+                continue;
+            }
+            push_unique_ref(&mut record.shadowed_refs, output_ref);
+            continue;
+        }
+
+        records.push(CollisionRecord {
+            one_time_key,
+            route,
+            canonical_ref: Some(output_ref),
+            credited_amount: output.amount,
+            shadowed_refs: Vec::new(),
+            quarantined_refs: Vec::new(),
+            resolved_spent_ref: None,
+        });
+    }
+
+    sync_collision_records_after_output_state_change(&mut records, outputs);
+    records
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -321,6 +578,16 @@ pub struct ScanBlockMeta {
     pub block_hash: String,
     pub parent_hash: String,
     pub added_outputs: Vec<OutputRef>,
+    #[serde(default)]
+    pub credited_outputs: Vec<CreditedOutput>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct VaultTrackedState {
+    #[serde(default)]
+    pub outputs: Vec<TrackedOutput>,
+    #[serde(default)]
+    pub collision_records: Vec<CollisionRecord>,
 }
 
 impl Store {
@@ -604,34 +871,34 @@ impl Store {
 
     // ---- UTXO tracking ----
 
-    fn decode_outputs(raw: Option<&[u8]>) -> Result<Vec<TrackedOutput>> {
+    fn decode_vault_tracked_state(raw: Option<&[u8]>) -> Result<VaultTrackedState> {
         match raw {
             Some(bytes) => {
-                let outputs: Vec<TrackedOutput> = serde_json::from_slice(bytes)?;
-                for output in &outputs {
+                let state: VaultTrackedState = serde_json::from_slice(bytes)?;
+                for output in &state.outputs {
                     output.validate()?;
                 }
-                Ok(outputs)
+                Ok(state)
             }
-            None => Ok(Vec::new()),
+            None => Ok(VaultTrackedState::default()),
         }
     }
 
-    fn cas_update_outputs<T, F>(&self, vault_pub_key: &str, mut mutate: F) -> Result<T>
+    fn cas_update_vault_tracked_state<T, F>(&self, vault_pub_key: &str, mut mutate: F) -> Result<T>
     where
-        F: FnMut(&mut Vec<TrackedOutput>) -> Result<T>,
+        F: FnMut(&mut VaultTrackedState) -> Result<T>,
     {
         let tree = self.db.open_tree("outputs")?;
         let key = vault_pub_key.as_bytes();
 
         loop {
             let current = tree.get(key)?;
-            let mut outputs = Self::decode_outputs(current.as_deref())?;
-            let result = mutate(&mut outputs)?;
-            for output in &outputs {
+            let mut state = Self::decode_vault_tracked_state(current.as_deref())?;
+            let result = mutate(&mut state)?;
+            for output in &state.outputs {
                 output.validate()?;
             }
-            let value = serde_json::to_vec(&outputs)?;
+            let value = serde_json::to_vec(&state)?;
             match tree.compare_and_swap(
                 key,
                 current.as_ref().map(|v| v.as_ref()),
@@ -652,33 +919,68 @@ impl Store {
         }
     }
 
-    /// Save tracked outputs for a vault.
-    pub fn save_outputs(&self, vault_pub_key: &str, outputs: &[TrackedOutput]) -> Result<()> {
+    fn cas_update_outputs<T, F>(&self, vault_pub_key: &str, mut mutate: F) -> Result<T>
+    where
+        F: FnMut(&mut Vec<TrackedOutput>) -> Result<T>,
+    {
+        self.cas_update_vault_tracked_state(vault_pub_key, |state| {
+            let result = mutate(&mut state.outputs)?;
+            sync_collision_records_after_output_state_change(
+                &mut state.collision_records,
+                &state.outputs,
+            );
+            Ok(result)
+        })
+    }
+
+    pub fn save_vault_tracked_state(
+        &self,
+        vault_pub_key: &str,
+        state: &VaultTrackedState,
+    ) -> Result<()> {
         let tree = self.db.open_tree("outputs")?;
-        for output in outputs {
+        for output in &state.outputs {
             output.validate()?;
         }
-        let value = serde_json::to_vec(outputs)?;
+        let value = serde_json::to_vec(state)?;
         tree.insert(vault_pub_key.as_bytes(), value)?;
         tree.flush()?;
         Ok(())
+    }
+
+    pub fn load_vault_tracked_state(&self, vault_pub_key: &str) -> Result<VaultTrackedState> {
+        let tree = self.db.open_tree("outputs")?;
+        let current = tree.get(vault_pub_key.as_bytes())?;
+        Self::decode_vault_tracked_state(current.as_deref())
+    }
+
+    /// Save tracked outputs for a vault.
+    pub fn save_outputs(&self, vault_pub_key: &str, outputs: &[TrackedOutput]) -> Result<()> {
+        self.save_vault_tracked_state(
+            vault_pub_key,
+            &VaultTrackedState {
+                outputs: outputs.to_vec(),
+                collision_records: rebuild_collision_records(outputs),
+            },
+        )
     }
 
     /// Merge scanner-produced outputs into the store, preserving any
     /// reservation or spent state set by the signing flow.  Uses CAS to
     /// prevent a concurrent scanner write from clobbering in-flight
     /// output reservations.
-    pub fn merge_scanned_outputs(
+    pub fn merge_scanned_scan_state(
         &self,
         vault_pub_key: &str,
         scanned: &[TrackedOutput],
+        collision_records: &[CollisionRecord],
     ) -> Result<()> {
-        self.cas_update_outputs(vault_pub_key, |existing| {
+        self.cas_update_vault_tracked_state(vault_pub_key, |existing| {
             // Index existing outputs whose lifecycle state must survive the
             // scanner persistence (reserved or spent).
             let mut protected: HashMap<(String, u32), (OutputState, Option<OutputReservation>)> =
                 HashMap::new();
-            for output in existing.iter() {
+            for output in existing.outputs.iter() {
                 if output.state == OutputState::Reserved || output.state == OutputState::Spent {
                     protected.insert(
                         (output.tx_hash.clone(), output.output_index),
@@ -689,7 +991,7 @@ impl Store {
 
             // Replace the output list with the scanned set, re-applying any
             // protected reservation/spent state from the store.
-            existing.clear();
+            existing.outputs.clear();
             for scanned_output in scanned {
                 let mut output = scanned_output.clone();
                 let key = (output.tx_hash.clone(), output.output_index);
@@ -697,17 +999,20 @@ impl Store {
                     output.state = *state;
                     output.reservation = reservation.clone();
                 }
-                existing.push(output);
+                existing.outputs.push(output);
             }
+            existing.collision_records = collision_records.to_vec();
+            sync_collision_records_after_output_state_change(
+                &mut existing.collision_records,
+                &existing.outputs,
+            );
             Ok(())
         })
     }
 
     /// Load tracked outputs for a vault.
     pub fn load_outputs(&self, vault_pub_key: &str) -> Result<Vec<TrackedOutput>> {
-        let tree = self.db.open_tree("outputs")?;
-        let current = tree.get(vault_pub_key.as_bytes())?;
-        Self::decode_outputs(current.as_deref())
+        Ok(self.load_vault_tracked_state(vault_pub_key)?.outputs)
     }
 
     pub fn save_outgoing_transfer(&self, record: &OutgoingTransferRecord) -> Result<()> {
@@ -1367,10 +1672,11 @@ impl Store {
         // Use CAS to remove rolled-back outputs without clobbering
         // concurrent reservation state changes.
         if !refs_to_remove.is_empty() {
-            self.cas_update_outputs(vault_pub_key, |outputs| {
-                outputs.retain(|output| {
+            self.cas_update_vault_tracked_state(vault_pub_key, |state| {
+                state.outputs.retain(|output| {
                     !refs_to_remove.contains(&(output.tx_hash.clone(), output.output_index))
                 });
+                state.collision_records = rebuild_collision_records(&state.outputs);
                 Ok(())
             })?;
         }
@@ -1659,8 +1965,11 @@ mod tests {
             .load_outputs("vault-old")
             .expect_err("pre-cutover output shape should fail strict decode")
             .to_string();
-        assert!(err.contains("missing field"));
-        assert!(err.contains("state"));
+        assert!(
+            err.contains("VaultTrackedState")
+                || err.contains("missing field")
+                || err.contains("invalid type")
+        );
     }
 
     #[test]
@@ -1729,6 +2038,7 @@ mod tests {
             output_index: 0,
             amount: 42,
             height: 100,
+            one_time_key: Some("one-time-key".to_string()),
             key_image: Some("key-image".to_string()),
             state: OutputState::Reserved,
             reservation: Some(OutputReservation {
@@ -2192,6 +2502,7 @@ mod tests {
             output_index: 0,
             amount: 10,
             height: 10,
+            one_time_key: Some("one-time-key-a".to_string()),
             key_image: None,
             state: OutputState::Unspent,
             reservation: None,
@@ -2206,6 +2517,7 @@ mod tests {
             output_index: 1,
             amount: 20,
             height: 11,
+            one_time_key: Some("one-time-key-b".to_string()),
             key_image: None,
             state: OutputState::Unspent,
             reservation: None,
@@ -2230,6 +2542,11 @@ mod tests {
                         tx_hash: output_a.tx_hash.clone(),
                         output_index: output_a.output_index,
                     }],
+                    credited_outputs: vec![CreditedOutput {
+                        tx_hash: output_a.tx_hash.clone(),
+                        output_index: output_a.output_index,
+                        amount: output_a.amount,
+                    }],
                 },
             )
             .unwrap();
@@ -2243,6 +2560,11 @@ mod tests {
                     added_outputs: vec![OutputRef {
                         tx_hash: output_b.tx_hash.clone(),
                         output_index: output_b.output_index,
+                    }],
+                    credited_outputs: vec![CreditedOutput {
+                        tx_hash: output_b.tx_hash.clone(),
+                        output_index: output_b.output_index,
+                        amount: output_b.amount,
                     }],
                 },
             )
@@ -2273,6 +2595,7 @@ mod tests {
                         block_hash: format!("h{height}"),
                         parent_hash: format!("h{}", height.saturating_sub(1)),
                         added_outputs: Vec::new(),
+                        credited_outputs: Vec::new(),
                     },
                 )
                 .unwrap();

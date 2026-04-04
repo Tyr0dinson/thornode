@@ -54,9 +54,9 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(DOGEChain.AddressPrefix(MockNet), Equals, dogchaincfg.RegressionNetParams.Bech32HRPSegwit)
 	c.Assert(DOGEChain.AddressPrefix(MainNet), Equals, dogchaincfg.MainNetParams.Bech32HRPSegwit)
 	c.Assert(DOGEChain.AddressPrefix(StageNet), Equals, dogchaincfg.MainNetParams.Bech32HRPSegwit)
-	c.Assert(XMRChain.AddressPrefix(MockNet), Equals, "C")
-	c.Assert(XMRChain.AddressPrefix(MainNet), Equals, "C")
-	c.Assert(XMRChain.AddressPrefix(StageNet), Equals, "C")
+	c.Assert(XMRChain.AddressPrefix(MockNet), Equals, "4")
+	c.Assert(XMRChain.AddressPrefix(MainNet), Equals, "4")
+	c.Assert(XMRChain.AddressPrefix(StageNet), Equals, "4")
 
 	// Noble chain tests
 	c.Assert(NOBLEChain.AddressPrefix(MockNet), Equals, "noble")

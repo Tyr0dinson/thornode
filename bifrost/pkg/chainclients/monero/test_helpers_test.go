@@ -25,5 +25,5 @@ func testOutboundXMRDestination() common.Address {
 	if common.CurrentChainNetwork == common.MockNet {
 		return common.Address(common.XMRChecksummedDummyAddress('8'))
 	}
-	return common.Address(common.XMRChecksummedDummyAddress('C'))
+	return common.Address(common.XMRChecksummedDummyAddress('4'))
 }

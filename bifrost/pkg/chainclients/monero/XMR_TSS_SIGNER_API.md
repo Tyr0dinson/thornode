@@ -129,7 +129,7 @@ Response:
 
 ```json
 {
-  "address": "C...",
+  "address": "4...",
   "group_key": "..."
 }
 ```
@@ -145,7 +145,7 @@ Request:
 {
   "session_id": "dkg:...",
   "group_key": "...",
-  "address": "C..."
+  "address": "4..."
 }
 ```
 
@@ -165,7 +165,7 @@ Request:
 {
   "msg_id": "<idempotency-key>",
   "vault_pub_key": "thorpub1...",
-  "to_address": "C...",
+  "to_address": "4...",
   "amount_atomic": 1000000000000,
   "memo": "OUT:...",
   "fee_rate": 0,
@@ -291,13 +291,13 @@ GET /v1/monero/outputs/{vault_pub_key}?view=all
 
 ```json
 {
-  "from_address": "C...",
+  "from_address": "4...",
   "vault_pub_key": "thorpub1..."
 }
 ```
 
-`to_address` is strictly enforced as a valid Featured+Guaranteed Monero address.
-Standard (`4...`/`8...`) and non-guaranteed featured destinations are rejected.
+`to_address` is strictly enforced as a wallet-compatible standard/subaddress Monero address.
+Featured destinations are rejected.
 
 `POST /v1/monero/scanner/sync` is the canonical Bifrost-driven block scan API. Bifrost sends
 the requested height, tip height, canonical block hash/parent hash, and reorg window. The sidecar

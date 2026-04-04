@@ -467,7 +467,11 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 				}
 				return MockNet
 			}
-			if info.networkByte == xmrSubaddressNetworkByte {
+			switch info.networkByte {
+			case xmrPrimaryNetworkByte, xmrIntegratedNetworkByte, xmrSubaddressNetworkByte:
+				if currentNetwork == MockNet {
+					return MockNet
+				}
 				return mainNetPredicate()
 			}
 			return MockNet

@@ -6,8 +6,8 @@ use curve25519_dalek::{
     Scalar,
 };
 use monero_wallet::{
-    address::{AddressType, MoneroAddress, Network},
-    GuaranteedViewPair, ViewPair,
+    address::{MoneroAddress, Network},
+    ViewPair,
 };
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
@@ -76,38 +76,14 @@ pub fn view_pair_from_group_key_hex(group_key_hex: &str) -> Result<ViewPair> {
     ViewPair::new(spend, view).map_err(|e| anyhow::anyhow!("failed to construct view pair: {}", e))
 }
 
-pub fn guaranteed_view_pair_from_group_key_hex(group_key_hex: &str) -> Result<GuaranteedViewPair> {
-    let spend = spend_point_from_group_key_hex(group_key_hex)?;
-    let view = Zeroizing::new(additional_view_scalar());
-    GuaranteedViewPair::new(spend, view)
-        .map_err(|e| anyhow::anyhow!("failed to construct guaranteed view pair: {}", e))
-}
-
 pub fn derive_vault_address(
     group_key_hex: &str,
     chain_network: ChainNetworkMode,
 ) -> Result<String> {
-    match chain_network {
-        ChainNetworkMode::Mocknet => Ok(view_pair_from_group_key_hex(group_key_hex)?
-            .legacy_address(Network::Mainnet)
-            .to_string()),
-        ChainNetworkMode::Public => {
-            let spend = spend_point_from_group_key_hex(group_key_hex)?;
-            let view_scalar = additional_view_scalar();
-            let view = &view_scalar * ED25519_BASEPOINT_TABLE;
-            Ok(MoneroAddress::new(
-                Network::Mainnet,
-                AddressType::Featured {
-                    subaddress: true,
-                    payment_id: None,
-                    guaranteed: true,
-                },
-                spend,
-                view,
-            )
-            .to_string())
-        }
-    }
+    let _ = chain_network;
+    Ok(view_pair_from_group_key_hex(group_key_hex)?
+        .legacy_address(Network::Mainnet)
+        .to_string())
 }
 
 #[cfg(test)]
@@ -119,7 +95,7 @@ mod tests {
     const CROSS_STACK_MOCK_ADDRESS: &str =
         "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7";
     const CROSS_STACK_PUBLIC_ADDRESS: &str =
-        "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDk2s55z7Nbx";
+        "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7";
 
     #[test]
     fn derive_address_uses_expected_mode_prefix() {
@@ -129,17 +105,17 @@ mod tests {
         let public = derive_vault_address(&group_key_hex, ChainNetworkMode::Public).unwrap();
 
         assert!(mocknet.starts_with('4'));
-        assert!(public.starts_with('C'));
+        assert!(public.starts_with('4'));
         assert_eq!(mocknet.len(), 95);
-        assert_eq!(public.len(), 97);
-        assert_ne!(mocknet, public);
+        assert_eq!(public.len(), 95);
+        assert_eq!(mocknet, public);
 
         let mocknet_parsed = MoneroAddress::from_str_with_unchecked_network(&mocknet).unwrap();
         let public_parsed = MoneroAddress::from_str_with_unchecked_network(&public).unwrap();
         assert!(!mocknet_parsed.is_guaranteed());
-        assert!(public_parsed.is_guaranteed());
+        assert!(!public_parsed.is_guaranteed());
         assert!(!mocknet_parsed.is_subaddress());
-        assert!(public_parsed.is_subaddress());
+        assert!(!public_parsed.is_subaddress());
     }
 
     #[test]

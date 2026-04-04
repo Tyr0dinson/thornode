@@ -93,13 +93,14 @@ async fn main() -> anyhow::Result<()> {
     let mut scanner = Scanner::new();
     let vaults = store.list_vaults()?;
     for vault in &vaults {
-        let outputs = store.load_outputs(&vault.vault_pub_key)?;
+        let tracked_state = store.load_vault_tracked_state(&vault.vault_pub_key)?;
         let height = store.load_scan_height(&vault.vault_pub_key)?;
         if let Err(e) = scanner.register_vault(
             &vault.vault_pub_key,
             &vault.group_key,
             config.chain_network,
-            outputs,
+            tracked_state.outputs,
+            tracked_state.collision_records,
             height,
         ) {
             warn!(vault = %vault.vault_pub_key, error = %e, "failed to initialize scanner state");

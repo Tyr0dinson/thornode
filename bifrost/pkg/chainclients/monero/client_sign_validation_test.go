@@ -67,17 +67,14 @@ func TestValidateXMRSignTxRejectsCheckpoint(t *testing.T) {
 	}
 }
 
-func TestValidateXMRSignTxRejectsStandardDestination(t *testing.T) {
+func TestValidateXMRSignTxRejectsFeaturedDestination(t *testing.T) {
 	t.Parallel()
-	if common.CurrentChainNetwork == common.MockNet {
-		t.Skip("mocknet accepts wallet-compatible standard/subaddress destinations")
-	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
-		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('8')),
+		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
 		Coins: common.Coins{
@@ -88,18 +85,15 @@ func TestValidateXMRSignTxRejectsStandardDestination(t *testing.T) {
 
 	_, err := c.validateXMRSignTx(tx, 100, true)
 	if err == nil {
-		t.Fatalf("expected featured+guaranteed destination validation error")
+		t.Fatalf("expected wallet-compatible destination validation error")
 	}
-	if !strings.Contains(err.Error(), "featured+guaranteed") {
+	if !strings.Contains(err.Error(), "wallet-compatible standard/subaddress") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) {
 	t.Parallel()
-	if common.CurrentChainNetwork == common.MockNet {
-		t.Skip("mocknet uses wallet-compatible standard/subaddress destinations")
-	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
@@ -116,9 +110,9 @@ func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) 
 
 	_, err := c.validateXMRSignTx(tx, 100, true)
 	if err == nil {
-		t.Fatalf("expected featured+guaranteed destination validation error")
+		t.Fatalf("expected wallet-compatible destination validation error")
 	}
-	if !strings.Contains(err.Error(), "featured+guaranteed") {
+	if !strings.Contains(err.Error(), "wallet-compatible standard/subaddress") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

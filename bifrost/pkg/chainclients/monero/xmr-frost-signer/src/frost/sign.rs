@@ -948,6 +948,7 @@ mod tests {
             output_index,
             amount: 100,
             height: 42,
+            one_time_key: Some(format!("one-time-key-{output_index}")),
             key_image: Some(format!("key-image-{output_index}")),
             state: crate::state::store::OutputState::Reserved,
             reservation: Some(crate::state::store::OutputReservation {
