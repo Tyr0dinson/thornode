@@ -1,22 +1,100 @@
 ########################################################################################
-# Private THORChain + real Monero mainnet
+# Private THORChain 2-of-3 cluster + real Monero mainnet
 #
 # Usage:
 #   docker compose -f docker-compose.xmr-stagenet.yml up --build -d
 #
-# This runs a single-validator private THORChain with only XMR enabled,
-# connected to a real monerod syncing Monero mainnet.
+# Three validators (dog/cat/fox) with FROST threshold signing against a real
+# monerod syncing Monero mainnet. Dog is genesis, cat and fox join via validator.sh.
 ########################################################################################
 
 volumes:
   thornode:
+  thornode-cat:
+  thornode-fox:
   bifrost:
+  bifrost-cat:
+  bifrost-fox:
   monero-daemon:
   xmr-frost-data:
+  xmr-frost-data-cat:
+  xmr-frost-data-fox:
+
+x-disabled-chains: &disabled-chains
+  BIFROST_CHAINS_BTC_DISABLED: "true"
+  BIFROST_CHAINS_BCH_DISABLED: "true"
+  BIFROST_CHAINS_LTC_DISABLED: "true"
+  BIFROST_CHAINS_DOGE_DISABLED: "true"
+  BIFROST_CHAINS_ETH_DISABLED: "true"
+  BIFROST_CHAINS_AVAX_DISABLED: "true"
+  BIFROST_CHAINS_BSC_DISABLED: "true"
+  BIFROST_CHAINS_BASE_DISABLED: "true"
+  BIFROST_CHAINS_GAIA_DISABLED: "true"
+  BIFROST_CHAINS_NOBLE_DISABLED: "true"
+  BIFROST_CHAINS_SOL_DISABLED: "true"
+  BIFROST_CHAINS_XRP_DISABLED: "true"
+  BIFROST_CHAINS_TRON_DISABLED: "true"
+  BIFROST_CHAINS_POL_DISABLED: "true"
+  BIFROST_CHAINS_ZEC_DISABLED: "true"
+
+x-thorchain-env: &thorchain-env
+  CHAIN_ID: thorchain
+  SIGNER_NAME: thorchain
+  SIGNER_PASSWD: password
+  THORNODE_GRPC_ENABLE: "true"
+  THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+  THOR_BLOCK_TIME: "6s"
+  HALT_CHURNING: 0
+  NUMBEROFNEWNODESPERCHURN: 3
+  CHURNRETRYINTERVAL: 90
+  SKIP_EVM_DEPLOY: "true"
+  <<: *disabled-chains
+
+x-bifrost-env: &bifrost-env
+  CHAIN_ID: thorchain
+  SIGNER_NAME: thorchain
+  SIGNER_PASSWD: password
+  THOR_BLOCK_TIME: "6s"
+  BLOCK_SCANNER_BACKOFF: "5s"
+  BIFROST_METRICS_PPROF_ENABLED: "true"
+  BIFROST_SIGNER_BACKUP_KEYSHARES: "true"
+  BIFROST_SIGNER_AUTO_OBSERVE: "false"
+  BIFROST_SIGNER_KEYGEN_TIMEOUT: "8s"
+  BIFROST_SIGNER_KEYSIGN_TIMEOUT: "8s"
+  <<: *disabled-chains
+  BIFROST_CHAINS_XMR_DISABLED: "false"
+  BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
+  BIFROST_CHAINS_XMR_CHAIN_NETWORK: "public"
+  BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
+
+x-frost-env: &frost-env
+  XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
+  XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
+  XMR_FROST_DAEMON_DISABLE_TLS: "true"
+  XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
+  XMR_FROST_CHAIN_NETWORK: "public"
+  XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
+  XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
+  XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
+  XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
+  XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
+
+x-frost-healthcheck: &frost-healthcheck
+  test: ["CMD", "curl", "-sf", "http://localhost:8283/health"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 10s
+
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "256m"
+    max-file: "3"
 
 services:
 
-  # ------------------------------ Monero mainnet daemon ----------------------------
+  # ================================ Monero mainnet ================================
 
   monero-daemon:
     image: sethsimmons/simple-monerod:v0.18.3.4
@@ -33,27 +111,18 @@ services:
       - monero-daemon:/home/monero/.bitmonero
     ports:
       - "18081:18081"
-      - "18080:18080"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-sf",
-          "-H",
-          "Content-Type: application/json",
-          "-d",
-          '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}',
-          "http://localhost:18081/json_rpc",
-        ]
+      test: ["CMD", "curl", "-sf", "-H", "Content-Type: application/json",
+             "-d", '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}',
+             "http://localhost:18081/json_rpc"]
       interval: 60s
       timeout: 10s
       retries: 9999
       start_period: 120s
 
-  # ------------------------------ XMR FROST signer ---------------------------------
+  # ================================ FROST signers =================================
 
-  xmr-frost-signer:
+  xmr-frost-signer: &frost-signer
     build:
       context: ../../
       dockerfile: build/docker/xmr-frost-signer/Dockerfile
@@ -63,29 +132,34 @@ services:
       monero-daemon:
         condition: service_healthy
     environment:
-      XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
-      XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
-      XMR_FROST_DAEMON_DISABLE_TLS: "true"
-      XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
-      XMR_FROST_CHAIN_NETWORK: "public"
-      XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
-      XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "100"
-      XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "200"
-      XMR_FROST_RATE_LIMIT_PER_IP_RPS: "50"
-      XMR_FROST_RATE_LIMIT_PER_IP_BURST: "100"
-      SIGNER_SEED_PHRASE: "${SIGNER_SEED_PHRASE}"
+      <<: *frost-env
+      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
     volumes:
       - xmr-frost-data:/var/lib/xmr-frost
     ports:
       - "8283:8283"
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8283/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
+    healthcheck: *frost-healthcheck
+    logging: *logging
 
-  # ------------------------------ THORNode (genesis) --------------------------------
+  xmr-frost-signer-cat:
+    <<: *frost-signer
+    environment:
+      <<: *frost-env
+      SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+    volumes:
+      - xmr-frost-data-cat:/var/lib/xmr-frost
+    ports: []
+
+  xmr-frost-signer-fox:
+    <<: *frost-signer
+    environment:
+      <<: *frost-env
+      SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+    volumes:
+      - xmr-frost-data-fox:/var/lib/xmr-frost
+    ports: []
+
+  # ================================ THORNodes =====================================
 
   thornode:
     build:
@@ -97,56 +171,80 @@ services:
     restart: unless-stopped
     hostname: thornode
     environment:
-      CHAIN_ID: thorchain
-      SIGNER_NAME: thorchain
-      SIGNER_PASSWD: password
+      <<: *thorchain-env
       SEED: thornode
-      SIGNER_SEED_PHRASE: "${SIGNER_SEED_PHRASE}"
-      THOR_BLOCK_TIME: "6s"
-      THORNODE_GRPC_ENABLE: "true"
-      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
-      HALT_CHURNING: 1
-      SKIP_EVM_DEPLOY: "true"
-      # disable all chains except XMR
-      BIFROST_CHAINS_BTC_DISABLED: "true"
-      BIFROST_CHAINS_BCH_DISABLED: "true"
-      BIFROST_CHAINS_LTC_DISABLED: "true"
-      BIFROST_CHAINS_DOGE_DISABLED: "true"
-      BIFROST_CHAINS_ETH_DISABLED: "true"
-      BIFROST_CHAINS_AVAX_DISABLED: "true"
-      BIFROST_CHAINS_BSC_DISABLED: "true"
-      BIFROST_CHAINS_BASE_DISABLED: "true"
-      BIFROST_CHAINS_GAIA_DISABLED: "true"
-      BIFROST_CHAINS_NOBLE_DISABLED: "true"
-      BIFROST_CHAINS_SOL_DISABLED: "true"
-      BIFROST_CHAINS_XRP_DISABLED: "true"
-      BIFROST_CHAINS_TRON_DISABLED: "true"
-      BIFROST_CHAINS_POL_DISABLED: "true"
-      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
     ports:
       - "26657:26657"
-      - "26656:26656"
       - "1317:1317"
-      - "6060:6060"
       - "50051:50051"
       - "9090:9090"
     volumes:
       - "../scripts:/docker/scripts"
       - thornode:/root/.thornode
     entrypoint: /docker/scripts/genesis.sh
-    command:
-      - thornode
-      - start
+    command: ["thornode", "start"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:26657/health"]
       interval: 10s
       timeout: 10s
       retries: 10
       start_period: 60s
+    logging: *logging
 
-  # ------------------------------ Bifrost -------------------------------------------
+  thornode-cat:
+    image: thornode:xmr-stagenet
+    restart: unless-stopped
+    hostname: thornode-cat
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-cat
+      SEEDS: thornode,thornode-fox
+      SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-cat:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:26657/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
 
-  bifrost:
+  thornode-fox:
+    image: thornode:xmr-stagenet
+    restart: unless-stopped
+    hostname: thornode-fox
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-fox
+      SEEDS: thornode,thornode-cat
+      SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-fox:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:26657/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  # ================================ Bifrosts ======================================
+
+  bifrost: &bifrost
     image: thornode:xmr-stagenet
     restart: unless-stopped
     depends_on:
@@ -157,53 +255,62 @@ services:
       xmr-frost-signer:
         condition: service_healthy
     environment:
-      CHAIN_ID: thorchain
-      SIGNER_NAME: thorchain
-      SIGNER_PASSWD: password
-      SIGNER_SEED_PHRASE: "${SIGNER_SEED_PHRASE}"
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
       CHAIN_API: thornode:1317
       CHAIN_RPC: thornode:26657
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode:50051
-      THOR_BLOCK_TIME: "6s"
-      BLOCK_SCANNER_BACKOFF: "5s"
-      BIFROST_METRICS_PPROF_ENABLED: "true"
-      BIFROST_SIGNER_BACKUP_KEYSHARES: "true"
-      BIFROST_SIGNER_AUTO_OBSERVE: "false"
-      BIFROST_SIGNER_KEYGEN_TIMEOUT: "8s"
-      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "8s"
-
-      # disable all chains
-      BIFROST_CHAINS_BTC_DISABLED: "true"
-      BIFROST_CHAINS_BCH_DISABLED: "true"
-      BIFROST_CHAINS_LTC_DISABLED: "true"
-      BIFROST_CHAINS_DOGE_DISABLED: "true"
-      BIFROST_CHAINS_ETH_DISABLED: "true"
-      BIFROST_CHAINS_AVAX_DISABLED: "true"
-      BIFROST_CHAINS_BSC_DISABLED: "true"
-      BIFROST_CHAINS_BASE_DISABLED: "true"
-      BIFROST_CHAINS_GAIA_DISABLED: "true"
-      BIFROST_CHAINS_NOBLE_DISABLED: "true"
-      BIFROST_CHAINS_SOL_DISABLED: "true"
-      BIFROST_CHAINS_XRP_DISABLED: "true"
-      BIFROST_CHAINS_TRON_DISABLED: "true"
-      BIFROST_CHAINS_POL_DISABLED: "true"
-      BIFROST_CHAINS_ZEC_DISABLED: "true"
-
-      # enable XMR only
-      BIFROST_CHAINS_XMR_DISABLED: "false"
-      BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
-      BIFROST_CHAINS_XMR_CHAIN_NETWORK: "public"
-      BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
     volumes:
       - "../scripts:/docker/scripts"
       - bifrost:/var/data/bifrost
+      - thornode:/root/.thornode
     entrypoint: /docker/scripts/bifrost.sh
-    command:
-      - bifrost
-      - -p
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "256m"
-        max-file: "3"
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-cat:
+    <<: *bifrost
+    depends_on:
+      thornode-cat:
+        condition: service_healthy
+      monero-daemon:
+        condition: service_healthy
+      xmr-frost-signer-cat:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+      PEER: bifrost
+      CHAIN_API: thornode-cat:1317
+      CHAIN_RPC: thornode-cat:26657
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-cat:50051
+      BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-cat:8283"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - bifrost-cat:/var/data/bifrost
+      - thornode-cat:/root/.thornode
+    command: ["bifrost"]
+
+  bifrost-fox:
+    <<: *bifrost
+    depends_on:
+      thornode-fox:
+        condition: service_healthy
+      monero-daemon:
+        condition: service_healthy
+      xmr-frost-signer-fox:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+      PEER: bifrost
+      CHAIN_API: thornode-fox:1317
+      CHAIN_RPC: thornode-fox:26657
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-fox:50051
+      BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-fox:8283"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - bifrost-fox:/var/data/bifrost
+      - thornode-fox:/root/.thornode
+    command: ["bifrost"]
