@@ -34,6 +34,8 @@ message QueryVaultResponse {
   repeated VaultAddress addresses = 13 [ (gogoproto.jsontag) = "addresses" ];
   repeated string frozen = 14;
   string pub_key_eddsa = 15 [ (gogoproto.nullable) = true ];
+  int64 vault_creation_height_xmr = 16;
+  repeated common.OutputRef spent_output_refs_xmr = 17;
 }
 
 message QueryAsgardVaultsRequest { string height = 1; }
