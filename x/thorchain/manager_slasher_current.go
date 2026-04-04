@@ -909,6 +909,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					observedVault, vaultErr := s.keeper.GetVault(ctx, voter.Tx.ObservedPubKey)
 					if vaultErr != nil {
 						ctx.Logger().Error("fail to get observed vault for finalized staged mempool swap", "error", vaultErr, "hash", inHash)
+						continue
 					} else if observedVault.Status == InactiveVault {
 						ctx.Logger().Info("retrying inactive-vault mempool rollback due to timeout", "hash", inHash)
 						if err := rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); err != nil {
