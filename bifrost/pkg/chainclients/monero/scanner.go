@@ -735,9 +735,6 @@ func (s *Scanner) refreshAsgardLookup() error {
 			continue
 		}
 		creationHeight := vault.VaultCreationHeightXmr
-		if creationHeight == 0 {
-			creationHeight = vault.BlockHeight
-		}
 		derived, addrErr := ensureFrostVaultRegistered(
 			s.logger,
 			s.frostSigner,

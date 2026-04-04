@@ -358,7 +358,14 @@ fn ensure_registered_vault_state(
         .store
         .load_scan_height(vault_pub_key)
         .map_err(|e| format!("failed to load vault scan height: {e}"))?
-        .unwrap_or_else(|| birthday.unwrap_or(0));
+        .unwrap_or_else(|| {
+            let b = birthday.unwrap_or(0);
+            if b > 0 {
+                b
+            } else {
+                state.scanner.lock().current_height()
+            }
+        });
 
     let mut scanner = state.scanner.lock();
     scanner
