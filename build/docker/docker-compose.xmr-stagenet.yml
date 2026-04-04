@@ -47,7 +47,8 @@ x-thorchain-env: &thorchain-env
   THOR_BLOCK_TIME: "6s"
   THOR_SEED_NODES_ENDPOINT: ""
   FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
-  EXTRA_FUND_ACCOUNTS: "cthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p0cdl2t cthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4pak8t6"
+  EXTRA_FUND_ACCOUNT_1: "cthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p0cdl2t"
+  EXTRA_FUND_ACCOUNT_2: "cthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4pak8t6"
   <<: *disabled-chains
 
 x-bifrost-env: &bifrost-env
