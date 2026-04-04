@@ -34,4 +34,5 @@ message MsgTssPool {
     (gogoproto.nullable) = true
   ];
   bytes keyshares_backup_eddsa = 13 [ (gogoproto.nullable) = true ];
+  bytes keyshares_backup_frost = 14 [ (gogoproto.nullable) = true ];
 }

@@ -609,7 +609,27 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 		}
 	}
 
-	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, keysharesEddsa)
+	var keysharesFrost []byte
+	if s.cfg.Signer.BackupKeyshares && !poolPubKeyEddsa.IsEmpty() {
+		if xmrClient, ok := s.chains[common.XMRChain]; ok {
+			type frostKeyExporter interface {
+				ExportFrostKeyshare(vaultPubKey common.PubKey) ([]byte, error)
+			}
+			if exporter, ok := xmrClient.(frostKeyExporter); ok {
+				rawKey, exportErr := exporter.ExportFrostKeyshare(poolPubKeyEddsa)
+				if exportErr != nil {
+					s.logger.Error().Err(exportErr).Msg("fail to export frost keyshare for backup")
+				} else if len(rawKey) > 0 {
+					keysharesFrost, err = tss.EncryptRawKeyshares(rawKey, os.Getenv("SIGNER_SEED_PHRASE"))
+					if err != nil {
+						s.logger.Error().Err(err).Msg("fail to encrypt frost keyshare")
+					}
+				}
+			}
+		}
+	}
+
+	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, keysharesEddsa, keysharesFrost)
 	if err != nil {
 		return fmt.Errorf("fail to get keygen id: %w", err)
 	}

@@ -3426,6 +3426,7 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		Aggregator:            observedTx.Aggregator,
 		AggregatorTarget:      observedTx.AggregatorTarget,
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
+		SpentOutputRefs:       observedTx.SpentOutputRefs,
 	}
 }
 

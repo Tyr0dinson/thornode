@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
+	"gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
@@ -64,12 +67,13 @@ const (
 var ErrFrostNotConfigured = errors.New("xmr frost signing requires signer_endpoint or api_host configuration")
 
 type signedTxPayload struct {
-	TxHash      string                `json:"tx_hash"`
-	TxMetadata  string                `json:"tx_metadata"`
-	FeeAtomic   uint64                `json:"fee_atomic"`
-	MsgID       string                `json:"msg_id,omitempty"`
-	Eventuality tssp.FrostEventuality `json:"eventuality,omitempty"`
-	Broadcasted bool                  `json:"broadcasted,omitempty"`
+	TxHash          string                `json:"tx_hash"`
+	TxMetadata      string                `json:"tx_metadata"`
+	FeeAtomic       uint64                `json:"fee_atomic"`
+	MsgID           string                `json:"msg_id,omitempty"`
+	Eventuality     tssp.FrostEventuality `json:"eventuality,omitempty"`
+	Broadcasted     bool                  `json:"broadcasted,omitempty"`
+	SpentOutputRefs []xmrFrostOutputRef   `json:"spent_output_refs,omitempty"`
 }
 
 type xmrValidatedSignRequest struct {
@@ -248,6 +252,89 @@ func (c *Client) Start(
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 	c.wg.Add(1)
 	go c.consolidationRunner()
+	go func() {
+		c.restoreFrostKeysFromRecoveryFiles()
+		c.catchupSpentOutputRefs()
+	}()
+}
+
+func (c *Client) restoreFrostKeysFromRecoveryFiles() {
+	if c.frostSigner == nil {
+		return
+	}
+	pattern := filepath.Join(app.DefaultNodeHome, "frost-recovery-*.hex")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return
+	}
+	for _, path := range matches {
+		base := filepath.Base(path)
+		vaultPubKeyStr := strings.TrimPrefix(base, "frost-recovery-")
+		vaultPubKeyStr = strings.TrimSuffix(vaultPubKeyStr, ".hex")
+
+		vaultPubKey, parseErr := common.NewPubKey(vaultPubKeyStr)
+		if parseErr != nil {
+			c.logger.Err(parseErr).Str("file", base).Msg("xmr recovery: invalid vault pubkey in filename")
+			continue
+		}
+
+		keyHex, readErr := os.ReadFile(path)
+		if readErr != nil {
+			c.logger.Err(readErr).Str("file", base).Msg("xmr recovery: failed to read recovery file")
+			continue
+		}
+
+		restoreErr := c.RestoreFrostKeyshare(vaultPubKey, string(keyHex))
+		if restoreErr != nil {
+			c.logger.Err(restoreErr).Str("vault", vaultPubKeyStr).Msg("xmr recovery: failed to restore frost keyshare")
+			continue
+		}
+
+		_ = os.Remove(path)
+		c.logger.Info().Str("vault", vaultPubKeyStr).Msg("xmr recovery: frost keyshare restored and recovery file removed")
+	}
+}
+
+func (c *Client) catchupSpentOutputRefs() {
+	if c.thorchainBridge == nil || c.frostSigner == nil {
+		return
+	}
+	vaults, err := c.thorchainBridge.GetAsgards()
+	if err != nil {
+		c.logger.Err(err).Msg("xmr catchup: failed to get asgard vaults")
+		return
+	}
+	for _, vault := range vaults {
+		if vault.PubKeyEddsa.IsEmpty() {
+			continue
+		}
+		if len(vault.SpentOutputRefsXmr) == 0 {
+			continue
+		}
+		vaultPubKey := vault.PubKeyEddsa.String()
+
+		refs := make([]xmrFrostOutputRef, len(vault.SpentOutputRefsXmr))
+		for i, ref := range vault.SpentOutputRefsXmr {
+			refs[i] = xmrFrostOutputRef{
+				TxHash:      ref.TxHash,
+				OutputIndex: ref.OutputIndex,
+			}
+		}
+
+		result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey, "catchup", refs, true)
+		if markErr != nil {
+			c.logger.Err(markErr).
+				Str("vault", vaultPubKey).
+				Int("refs", len(refs)).
+				Msg("xmr catchup: failed to apply spent output refs")
+			continue
+		}
+		c.logger.Info().
+			Str("vault", vaultPubKey).
+			Int("marked", result.Marked).
+			Int("not_found", result.NotFound).
+			Msg("xmr catchup: applied spent output refs from thorchain")
+	}
 }
 
 func (c *Client) Stop() {
@@ -966,19 +1053,27 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("invalid FROST eventuality: %w", validateErr)
 	}
 
+	var localSpentRefs []xmrFrostOutputRef
+	for _, ref := range resp.SpentOutputRefs {
+		localSpentRefs = append(localSpentRefs, xmrFrostOutputRef{
+			TxHash:      ref.TxHash,
+			OutputIndex: ref.OutputIndex,
+		})
+	}
 	payload := signedTxPayload{
-		TxHash:      resp.TxHash,
-		TxMetadata:  resp.TxHex,
-		FeeAtomic:   resp.FeeAtomic,
-		MsgID:       msgID,
-		Eventuality: resp.Eventuality,
-		Broadcasted: false,
+		TxHash:          resp.TxHash,
+		TxMetadata:      resp.TxHex,
+		FeeAtomic:       resp.FeeAtomic,
+		MsgID:           msgID,
+		Eventuality:     resp.Eventuality,
+		Broadcasted:     false,
+		SpentOutputRefs: localSpentRefs,
 	}
 	signedTx, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to encode FROST signed tx payload: %w", err)
 	}
-	observation := c.buildOutboundObservation(tx, resp.TxHash, resp.FeeAtomic)
+	observation := c.buildOutboundObservation(tx, resp.TxHash, resp.FeeAtomic, localSpentRefs)
 	return signedTx, nil, observation, nil
 }
 
@@ -1134,7 +1229,7 @@ func xmrMaxGasToAtomic(maxGas common.Gas) (uint64, error) {
 	return xmrThorchainAmountToAtomic(xmrGasCoin.Amount)
 }
 
-func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, feeAtomic uint64) *stypes.TxInItem {
+func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, feeAtomic uint64, spentRefs []xmrFrostOutputRef) *stypes.TxInItem {
 	vaultPubKey := txVaultPubKey(tx)
 	from := c.getVaultAddress(vaultPubKey)
 	height := int64(0)
@@ -1149,7 +1244,7 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 	if fee == 0 && c.scanner != nil {
 		_, fee = c.scanner.GetNetworkFee()
 	}
-	return stypes.NewTxInItem(
+	item := stypes.NewTxInItem(
 		height,
 		txHash,
 		tx.GetMemo(),
@@ -1162,6 +1257,74 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 		"",
 		nil,
 	)
+	if item != nil && len(spentRefs) > 0 {
+		refs := make([]*common.OutputRef, len(spentRefs))
+		for i, ref := range spentRefs {
+			refs[i] = &common.OutputRef{
+				TxHash:      ref.TxHash,
+				OutputIndex: ref.OutputIndex,
+			}
+		}
+		item.SpentOutputRefs = refs
+	}
+	return item
+}
+
+func (c *Client) ExportFrostKeyshare(vaultPubKey common.PubKey) ([]byte, error) {
+	if c.frostSigner == nil {
+		return nil, fmt.Errorf("frost signer not configured")
+	}
+	hexKey, err := c.frostSigner.ExportFrostKeys(vaultPubKey.String())
+	if err != nil {
+		return nil, err
+	}
+	return []byte(hexKey), nil
+}
+
+func (c *Client) RestoreFrostKeyshare(vaultPubKey common.PubKey, keyBytesHex string) error {
+	if c.frostSigner == nil {
+		return fmt.Errorf("frost signer not configured")
+	}
+	restored, err := c.frostSigner.RestoreFrostKeys(vaultPubKey.String(), keyBytesHex)
+	if err != nil {
+		return err
+	}
+	if restored {
+		c.logger.Info().Str("vault", vaultPubKey.String()).Msg("restored FROST keyshare from on-chain backup")
+	}
+	return nil
+}
+
+func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
+	if c.frostSigner == nil || len(tx.SpentOutputRefs) == 0 {
+		return
+	}
+	vaultPubKey := tx.ObservedPubKey.String()
+	txHash := tx.Tx.ID.String()
+
+	refs := make([]xmrFrostOutputRef, len(tx.SpentOutputRefs))
+	for i, ref := range tx.SpentOutputRefs {
+		refs[i] = xmrFrostOutputRef{
+			TxHash:      ref.TxHash,
+			OutputIndex: ref.OutputIndex,
+		}
+	}
+
+	result, err := c.frostSigner.MarkOutputsSpent(vaultPubKey, txHash, refs, false)
+	if err != nil {
+		c.logger.Err(err).
+			Str("tx_hash", txHash).
+			Str("vault", vaultPubKey).
+			Int("refs", len(refs)).
+			Msg("failed to apply spent output refs from attestation")
+		return
+	}
+	c.logger.Info().
+		Str("tx_hash", txHash).
+		Str("vault", vaultPubKey).
+		Int("marked", result.Marked).
+		Int("not_found", result.NotFound).
+		Msg("applied spent output refs from attestation")
 }
 
 func (c *Client) postKeysignFailure(tx stypes.TxOutItem, height int64, signErr error) error {
@@ -1673,7 +1836,7 @@ func (c *Client) ensureFrostVaultRegistration(vaultPubKey common.PubKey) error {
 		return nil
 	}
 
-	address, err := ensureFrostVaultRegistered(c.logger, c.frostSigner, c.chain, vaultPubKey, c.localVaultBootstrap, "bifrost")
+	address, err := ensureFrostVaultRegistered(c.logger, c.frostSigner, c.chain, vaultPubKey, c.localVaultBootstrap, "bifrost", 0)
 	if err != nil {
 		return err
 	}

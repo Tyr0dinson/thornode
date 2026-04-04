@@ -59,6 +59,7 @@ const (
 	THORNameEndpoint            = "/thorchain/thorname/%s"
 	ReferenceMemoEndpoint       = "/thorchain/memo/%s/%s"
 	ReferenceMemoByHashEndpoint = "/thorchain/memo/%s"
+	TxDetailEndpoint            = "/thorchain/tx/details/%s"
 )
 
 // thorchainBridge will be used to send tx to THORChain
@@ -87,7 +88,7 @@ type ThorchainBridge interface {
 	GetContext() client.Context
 	GetContractAddress() ([]PubKeyContractAddressPair, error)
 	GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg
-	GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error)
+	GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa, keysharesBackupFrost []byte) (sdk.Msg, error)
 	GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error)
 	GetMimir(key string) (int64, error)
 	GetMimirWithRef(template, ref string) (int64, error)
@@ -117,6 +118,7 @@ type ThorchainBridge interface {
 	GetKeygenBlock(int64, string) (stypes.KeygenBlock, error)
 	GetReferenceMemo(chain common.Chain, ref string) (string, error)
 	GetReferenceMemoByTxHash(hash string) (string, error)
+	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -342,13 +344,13 @@ func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKe
 }
 
 // GetKeygenStdTx get keygen tx from params
-func (b *thorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) {
+func (b *thorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa, keysharesBackupFrost []byte) (sdk.Msg, error) {
 	signerAddr, err := b.keys.GetSignerInfo().GetAddress()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get signer address: %w", err)
 	}
 
-	return stypes.NewMsgTssPoolV2(inputPks.Strings(), poolPubKey, secp256k1Signature, keysharesBackup, keygenType, height, blame, chains.Strings(), signerAddr, keygenTime, poolPubKeyEddsa, keysharesBackupEddsa)
+	return stypes.NewMsgTssPoolV2(inputPks.Strings(), poolPubKey, secp256k1Signature, keysharesBackup, keygenType, height, blame, chains.Strings(), signerAddr, keygenTime, poolPubKeyEddsa, keysharesBackupEddsa, keysharesBackupFrost)
 }
 
 // GetInboundOutbound separate the txs into inbound and outbound
@@ -636,6 +638,22 @@ func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 		return stypes.Vault{}, fmt.Errorf("fail to unmarshal vault from json: %w", err)
 	}
 	return vault, nil
+}
+
+func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := b.getWithPath(fmt.Sprintf(TxDetailEndpoint, txID))
+	if err != nil {
+		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d for tx %s", s, txID)
+	}
+	var voter stypes.QueryObservedTxVoter
+	err = json.Unmarshal(buf, &voter)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unmarshal observed tx voter: %w", err)
+	}
+	return &voter, nil
 }
 
 func (b *thorchainBridge) getVaultPubkeys() ([]byte, error) {

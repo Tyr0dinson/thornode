@@ -769,6 +769,10 @@ func handleObservedTxOutQuorum(
 			vault.OutboundTxCount++
 		}
 
+		if len(tx.SpentOutputRefs) > 0 {
+			vault.SpentOutputRefsXmr = append(vault.SpentOutputRefsXmr, tx.SpentOutputRefs...)
+		}
+
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
 			// only remove the block height that had been specified in the memo
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())

@@ -41,6 +41,7 @@ func TestBuildOutboundObservationUsesOriginalMemo(t *testing.T) {
 		},
 		txHash,
 		0,
+		nil,
 	)
 	if observation == nil {
 		t.Fatal("expected outbound observation")

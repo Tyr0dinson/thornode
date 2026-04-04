@@ -144,7 +144,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/monero/transfers", get(api::routes::get_transfers))
         .route(ADDRESSES_ROUTE, get(api::routes::get_addresses))
         .route(OUTPUTS_ROUTE, get(api::routes::get_outputs))
+        .route(
+            "/v1/monero/outputs/mark-spent",
+            post(api::routes::mark_outputs_spent),
+        )
         .route("/v1/monero/scanner/sync", post(api::routes::scanner_sync))
+        .route(
+            "/v1/monero/keys/:vault_pub_key/export",
+            get(api::routes::key_export),
+        )
+        .route("/v1/monero/keys/restore", post(api::routes::key_restore))
         .route("/v1/monero/fee-rate", get(api::routes::get_fee_rate))
         .route(
             "/v1/monero/chain/height",

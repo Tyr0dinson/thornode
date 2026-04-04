@@ -66,10 +66,18 @@ func (a *frostSignerAdapter) FrostSignCombine(req tssp.FrostSidecarCombineReq) (
 	if err != nil {
 		return tssp.FrostSidecarCombineResp{}, err
 	}
+	var spentRefs []tssp.FrostSpentOutputRef
+	for _, ref := range resp.SpentOutputRefs {
+		spentRefs = append(spentRefs, tssp.FrostSpentOutputRef{
+			TxHash:      ref.TxHash,
+			OutputIndex: ref.OutputIndex,
+		})
+	}
 	return tssp.FrostSidecarCombineResp{
-		TxHash:    resp.TxHash,
-		TxHex:     resp.TxHex,
-		FeeAtomic: resp.FeeAtomic,
+		TxHash:          resp.TxHash,
+		TxHex:           resp.TxHex,
+		FeeAtomic:       resp.FeeAtomic,
+		SpentOutputRefs: spentRefs,
 	}, nil
 }
 

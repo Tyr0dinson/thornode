@@ -26,13 +26,14 @@ type FrostKeySignRequest struct {
 
 // FrostKeySignResponse is the result of a FROST signing ceremony.
 type FrostKeySignResponse struct {
-	TxHash      string
-	TxHex       string
-	FeeAtomic   uint64
-	MsgID       string
-	Eventuality FrostEventuality
-	Status      tcommon.Status
-	Blame       blame.Blame
+	TxHash          string
+	TxHex           string
+	FeeAtomic       uint64
+	MsgID           string
+	Eventuality     FrostEventuality
+	SpentOutputRefs []FrostSpentOutputRef
+	Status          tcommon.Status
+	Blame           blame.Blame
 }
 
 type FrostEventuality struct {
@@ -148,9 +149,15 @@ type FrostSidecarCombineReq struct {
 }
 
 type FrostSidecarCombineResp struct {
-	TxHash    string `json:"tx_hash"`
-	TxHex     string `json:"tx_hex"`
-	FeeAtomic uint64 `json:"fee_atomic"`
+	TxHash          string               `json:"tx_hash"`
+	TxHex           string               `json:"tx_hex"`
+	FeeAtomic       uint64               `json:"fee_atomic"`
+	SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs,omitempty"`
+}
+
+type FrostSpentOutputRef struct {
+	TxHash      string `json:"tx_hash"`
+	OutputIndex uint32 `json:"output_index"`
 }
 
 type FrostPreprocessPayload struct {

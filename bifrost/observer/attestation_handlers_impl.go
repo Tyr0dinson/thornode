@@ -44,6 +44,15 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		return
 	}
 
+	// For XMR outbound attestations with spent output refs, notify the
+	// observer so non-signer nodes can mark those outputs as spent in
+	// their local sidecar.
+	if obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound && len(obsTx.SpentOutputRefs) > 0 {
+		if s.observerApplySpentOutputRefs != nil {
+			s.observerApplySpentOutputRefs(obsTx)
+		}
+	}
+
 	// Determine the number of validators needed for attestation
 	var total int
 	if k.AllowFutureObservation {

@@ -162,9 +162,27 @@ type xmrFrostSignCombineRequest struct {
 }
 
 type xmrFrostSignCombineResponse struct {
-	TxHash    string `json:"tx_hash"`
-	TxHex     string `json:"tx_hex"`
-	FeeAtomic uint64 `json:"fee_atomic"`
+	TxHash          string                `json:"tx_hash"`
+	TxHex           string                `json:"tx_hex"`
+	FeeAtomic       uint64                `json:"fee_atomic"`
+	SpentOutputRefs []xmrFrostOutputRef   `json:"spent_output_refs,omitempty"`
+}
+
+type xmrFrostOutputRef struct {
+	TxHash      string `json:"tx_hash"`
+	OutputIndex uint32 `json:"output_index"`
+}
+
+type xmrFrostMarkSpentRequest struct {
+	VaultPubKey      string              `json:"vault_pub_key"`
+	TxHash           string              `json:"tx_hash"`
+	SpentRefs        []xmrFrostOutputRef `json:"spent_refs"`
+	SkipVerification bool                `json:"skip_verification,omitempty"`
+}
+
+type xmrFrostMarkSpentResponse struct {
+	Marked   int `json:"marked"`
+	NotFound int `json:"not_found"`
 }
 
 type xmrFrostBroadcastRequest struct {
@@ -191,6 +209,7 @@ type xmrFrostRegisterVaultRequest struct {
 	Address     string `json:"address"`
 	SpendKeyHex string `json:"spend_key_hex,omitempty"`
 	Source      string `json:"source,omitempty"`
+	VaultCreationHeight int64 `json:"birthday,omitempty"`
 }
 
 type xmrFrostRegisterVaultResponse struct {
@@ -717,6 +736,51 @@ func (s *FrostSigner) TxExists(txHash string) (bool, error) {
 		return false, fmt.Errorf("fail to call frost chain tx-exists endpoint: %w", err)
 	}
 	return out.Exists, nil
+}
+
+func (s *FrostSigner) MarkOutputsSpent(vaultPubKey, txHash string, refs []xmrFrostOutputRef, skipVerification bool) (xmrFrostMarkSpentResponse, error) {
+	var out xmrFrostMarkSpentResponse
+	req := xmrFrostMarkSpentRequest{
+		VaultPubKey:      vaultPubKey,
+		TxHash:           txHash,
+		SpentRefs:        refs,
+		SkipVerification: skipVerification,
+	}
+	err := s.call(http.MethodPost, "/v1/monero/outputs/mark-spent", req, &out)
+	if err != nil {
+		return out, fmt.Errorf("fail to call frost mark-spent endpoint: %w", err)
+	}
+	return out, nil
+}
+
+func (s *FrostSigner) ExportFrostKeys(vaultPubKey string) (string, error) {
+	var out struct {
+		KeyBytesHex string `json:"key_bytes_hex"`
+	}
+	path := fmt.Sprintf("/v1/monero/keys/%s/export", url.PathEscape(vaultPubKey))
+	err := s.callGet(path, &out)
+	if err != nil {
+		return "", fmt.Errorf("fail to export frost keys: %w", err)
+	}
+	return out.KeyBytesHex, nil
+}
+
+func (s *FrostSigner) RestoreFrostKeys(vaultPubKey, keyBytesHex string) (bool, error) {
+	var out struct {
+		Restored bool `json:"restored"`
+	}
+	req := struct {
+		VaultPubKey string `json:"vault_pub_key"`
+		KeyBytesHex string `json:"key_bytes_hex"`
+	}{
+		VaultPubKey: vaultPubKey,
+		KeyBytesHex: keyBytesHex,
+	}
+	err := s.call(http.MethodPost, "/v1/monero/keys/restore", req, &out)
+	if err != nil {
+		return false, fmt.Errorf("fail to restore frost keys: %w", err)
+	}
+	return out.Restored, nil
 }
 
 // --- HTTP helpers ---

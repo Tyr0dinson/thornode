@@ -15,9 +15,27 @@ func (o *ObservedTx) IsValid() bool {
 	return o != nil
 }
 
-// GetSignablePayload returns the data that is signed for verification
+// GetSignablePayload returns the data that is signed for verification.
+// When spent output refs are present (XMR outbound), they are appended
+// to the signed payload so all attestors commit to the same set.
 func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
-	return o.Tx.Marshal()
+	txBz, err := o.Tx.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	if len(o.SpentOutputRefs) == 0 {
+		return txBz, nil
+	}
+	buf := make([]byte, 0, len(txBz)+len(o.SpentOutputRefs)*36)
+	buf = append(buf, txBz...)
+	for _, ref := range o.SpentOutputRefs {
+		refBz, marshalErr := ref.Marshal()
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		buf = append(buf, refBz...)
+	}
+	return buf, nil
 }
 
 // Equals compares two Attestation and returns true iff they are equal

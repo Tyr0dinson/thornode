@@ -21,6 +21,7 @@ func NewMsgTssPoolV2(
 	keygenTime int64,
 	poolPubKeyEddsa common.PubKey,
 	keysharesBackupEddsa []byte,
+	keysharesBackupFrost []byte,
 ) (*MsgTssPool, error) {
 	id, err := getTssID(pks, poolpk, height, bl)
 	if err != nil {
@@ -39,6 +40,7 @@ func NewMsgTssPoolV2(
 		KeygenTime:           keygenTime,
 		KeysharesBackup:      keysharesBackup,
 		KeysharesBackupEddsa: keysharesBackupEddsa,
+		KeysharesBackupFrost: keysharesBackupFrost,
 		Secp256K1Signature:   secp256k1Signature,
 	}, nil
 }
