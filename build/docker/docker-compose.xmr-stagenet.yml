@@ -65,6 +65,7 @@ services:
     environment:
       XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
       XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
+      XMR_FROST_DAEMON_DISABLE_TLS: "true"
       XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
       XMR_FROST_CHAIN_NETWORK: "public"
       XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
