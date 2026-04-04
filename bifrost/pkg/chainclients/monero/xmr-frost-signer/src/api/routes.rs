@@ -2105,14 +2105,23 @@ pub async fn list_vault_keys(
     let entries: Vec<crate::api::types::VaultKeysEntry> = vaults
         .iter()
         .map(|v| {
-            let has_keys = state
+            let has_keys_by_pubkey = state
                 .store
                 .load_frost_keys(&v.vault_pub_key)
                 .map(|k| k.is_some())
                 .unwrap_or(false);
+            let has_keys_by_group = if !has_keys_by_pubkey {
+                state
+                    .store
+                    .load_frost_keys(&v.group_key)
+                    .map(|k| k.is_some())
+                    .unwrap_or(false)
+            } else {
+                true
+            };
             crate::api::types::VaultKeysEntry {
                 vault_pub_key: v.vault_pub_key.clone(),
-                has_frost_keys: has_keys,
+                has_frost_keys: has_keys_by_group,
             }
         })
         .collect();
@@ -2137,8 +2146,18 @@ pub async fn key_export(
             Json(error_json("vault_pub_key is required")),
         );
     }
-    match state.store.load_frost_keys(&vault_pub_key) {
-        Ok(Some(raw_bytes)) => (
+    let frost_bytes = state.store.load_frost_keys(&vault_pub_key).ok().flatten()
+        .or_else(|| {
+            // Try looking up by group_key if the vault_pub_key didn't match
+            state.store.list_vaults().ok()
+                .and_then(|vaults| {
+                    vaults.iter()
+                        .find(|v| v.vault_pub_key == vault_pub_key)
+                        .and_then(|v| state.store.load_frost_keys(&v.group_key).ok().flatten())
+                })
+        });
+    match frost_bytes {
+        Some(raw_bytes) => (
             StatusCode::OK,
             Json(
                 serde_json::to_value(crate::api::types::KeyExportResponse {
@@ -2147,19 +2166,12 @@ pub async fn key_export(
                 .unwrap(),
             ),
         ),
-        Ok(None) => (
+        None => (
             StatusCode::NOT_FOUND,
             Json(error_json(format!(
                 "no FROST keys found for vault {vault_pub_key}"
             ))),
         ),
-        Err(e) => {
-            error!(error = %e, vault = vault_pub_key, "failed to load FROST keys for export");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to load keys: {e}"))),
-            )
-        }
     }
 }
 
