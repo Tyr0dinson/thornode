@@ -437,7 +437,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			chains := voter.ConsensusChains()
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), voter.PoolPubKeyEddsa)
 			vault.Membership = voter.PubKeys
-			if !voter.PoolPubKeyEddsa.IsEmpty() {
+			if vault.GetChains().Has(common.XMRChain) {
 				vault.VaultCreationHeightXmr = ctx.BlockHeight()
 			}
 

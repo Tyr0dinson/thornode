@@ -835,25 +835,25 @@ func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
 
-func (s *HandlerTssSuite) TestVaultCreationHeightXmrSetOnVaultWithEddsaKey(c *C) {
+func (s *HandlerTssSuite) TestVaultCreationHeightXmrSetForXMRChain(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	eddsaPubKey := GetRandomPubKey()
-	vault := NewVaultV2(ctx.BlockHeight(), InitVault, AsgardVault, GetRandomPubKey(),
-		common.Chains{common.RuneAsset().Chain}.Strings(), nil, eddsaPubKey)
+	xmrVault := NewVaultV2(ctx.BlockHeight(), InitVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.XMRChain}.Strings(), nil, GetRandomPubKey())
 
-	c.Assert(vault.VaultCreationHeightXmr, Equals, int64(0))
+	c.Assert(xmrVault.VaultCreationHeightXmr, Equals, int64(0))
 
-	if !eddsaPubKey.IsEmpty() {
-		vault.VaultCreationHeightXmr = ctx.BlockHeight()
+	if xmrVault.GetChains().Has(common.XMRChain) {
+		xmrVault.VaultCreationHeightXmr = ctx.BlockHeight()
 	}
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, xmrVault), IsNil)
 
-	stored, err := mgr.Keeper().GetVault(ctx, vault.PubKey)
+	stored, err := mgr.Keeper().GetVault(ctx, xmrVault.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(stored.VaultCreationHeightXmr, Equals, ctx.BlockHeight())
 
-	vaultNoEddsa := NewVaultV2(ctx.BlockHeight(), InitVault, AsgardVault, GetRandomPubKey(),
-		common.Chains{common.RuneAsset().Chain}.Strings(), nil, common.EmptyPubKey)
-	c.Assert(vaultNoEddsa.VaultCreationHeightXmr, Equals, int64(0))
+	nonXmrVault := NewVaultV2(ctx.BlockHeight(), InitVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), nil, GetRandomPubKey())
+	c.Assert(nonXmrVault.GetChains().Has(common.XMRChain), Equals, false)
+	c.Assert(nonXmrVault.VaultCreationHeightXmr, Equals, int64(0))
 }
