@@ -38,15 +38,15 @@ x-disabled-chains: &disabled-chains
   BIFROST_CHAINS_ZEC_DISABLED: "true"
 
 x-thorchain-env: &thorchain-env
-  NET: stagenet
+  NET: chainnet
   CHAIN_ID: thorchain
   SIGNER_NAME: thorchain
   SIGNER_PASSWD: password
   THORNODE_GRPC_ENABLE: "true"
   THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
   THOR_BLOCK_TIME: "6s"
-  FAUCET: "sthor1zf3gsk7edzwl9syyefvfhle37cjtql3585mpmq"
-  EXTRA_FUND_ACCOUNTS: "sthor1uuds8pd92qnnq0udw0rpg0szpgcslc9ph3j6kf sthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4e5fzhc"
+  FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+  EXTRA_FUND_ACCOUNTS: "cthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p0cdl2t cthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4pak8t6"
   <<: *disabled-chains
 
 x-bifrost-env: &bifrost-env
@@ -166,7 +166,7 @@ services:
       context: ../../
       dockerfile: ./build/docker/Dockerfile
       args:
-        TAG: stagenet
+        TAG: chainnet
     image: thornode:xmr-stagenet
     restart: unless-stopped
     hostname: thornode
