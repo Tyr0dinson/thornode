@@ -46,6 +46,10 @@ var (
 	xmrViewPubKey     [32]byte
 	xmrViewPubKeyErr  error
 
+	xmrViewScalarOnce sync.Once
+	xmrViewScalarHex  string
+	xmrViewScalarErr  error
+
 	// Reverse lookups populated by init().
 	xmrBase58CharMap  [256]int // byte value → alphabet index (-1 = invalid)
 	xmrDecodedBlockSz [12]int  // encoded block length → raw block length
@@ -136,6 +140,26 @@ func deriveXMRViewPubKey() ([32]byte, error) {
 		copy(xmrViewPubKey[:], point.Bytes())
 	})
 	return xmrViewPubKey, xmrViewPubKeyErr
+}
+
+func XMRViewKeyHex() (string, error) {
+	xmrViewScalarOnce.Do(func() {
+		var k [8]byte
+		binary.LittleEndian.PutUint64(k[:], 0)
+
+		hasher := sha512.New()
+		hasher.Write([]byte("THORChain View Key"))
+		hasher.Write(k[:])
+		sum := hasher.Sum(nil)
+
+		scalar, err := new(edwards25519.Scalar).SetUniformBytes(sum)
+		if err != nil {
+			xmrViewScalarErr = fmt.Errorf("fail to derive monero view scalar: %w", err)
+			return
+		}
+		xmrViewScalarHex = fmt.Sprintf("%x", scalar.Bytes())
+	})
+	return xmrViewScalarHex, xmrViewScalarErr
 }
 
 // ---------------------------------------------------------------------------
