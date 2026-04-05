@@ -52,6 +52,7 @@ pub struct DkgFinalizeRequest {
 #[derive(Debug, Serialize)]
 pub struct DkgFinalizeResponse {
     pub success: bool,
+    pub key_bytes_hex: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
