@@ -14,13 +14,11 @@ use zeroize::Zeroizing;
 
 use crate::config::ChainNetworkMode;
 
-const SERAI_ADDITIONAL_KEY_DOMAIN: &[u8] = b"Serai DEX Additional Key";
-const SERAI_MONERO_CONTEXT: &[u8] = b"Monero";
+const VIEW_KEY_DOMAIN: &[u8] = b"THORChain View Key";
 
 pub fn additional_view_scalar() -> Scalar {
     let mut hasher = Sha512::new();
-    hasher.update(SERAI_ADDITIONAL_KEY_DOMAIN);
-    hasher.update(SERAI_MONERO_CONTEXT);
+    hasher.update(VIEW_KEY_DOMAIN);
     hasher.update(0u64.to_le_bytes());
     let digest: [u8; 64] = hasher.finalize().into();
 
@@ -117,9 +115,9 @@ mod tests {
     const CROSS_STACK_GROUP_KEY_HEX: &str =
         "b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1";
     const CROSS_STACK_MOCK_ADDRESS: &str =
-        "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7";
+        "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGbm9KqB";
     const CROSS_STACK_PUBLIC_ADDRESS: &str =
-        "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDk2s55z7Nbx";
+        "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiq2BjPq9hME";
 
     #[test]
     fn derive_address_uses_expected_mode_prefix() {
