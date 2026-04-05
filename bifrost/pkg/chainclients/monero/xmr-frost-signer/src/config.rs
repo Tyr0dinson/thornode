@@ -20,7 +20,7 @@ pub enum ChainNetworkMode {
 impl ChainNetworkMode {
     fn parse(value: &str) -> Result<Self, ConfigError> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "mocknet" => Ok(ChainNetworkMode::Mocknet),
+            "mocknet" | "chainnet" => Ok(ChainNetworkMode::Mocknet),
             "public" => Ok(ChainNetworkMode::Public),
             other => Err(ConfigError::InvalidChainNetwork(other.to_string())),
         }

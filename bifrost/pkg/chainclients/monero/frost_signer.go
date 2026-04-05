@@ -502,7 +502,8 @@ func allowInsecureFrostSignerHTTP(cfg config.BifrostChainConfiguration) bool {
 	if strings.EqualFold(chainNetwork, "mocknet") {
 		return true
 	}
-	return common.CurrentChainNetwork == common.MockNet
+	net := common.CurrentChainNetwork
+	return net == common.MockNet || net == common.ChainNet
 }
 
 // --- FROST DKG methods ---
