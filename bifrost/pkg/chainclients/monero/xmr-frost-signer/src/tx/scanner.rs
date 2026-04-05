@@ -267,11 +267,21 @@ impl Scanner {
             known.insert((output.tx_hash.clone(), output.output_index));
         }
 
+        let block_tx_count = block.block.transactions.len();
         let scanned = state
             .wallet_scanner
             .scan(block)
             .map_err(|e| anyhow::anyhow!("scan failure for vault {}: {}", vault_pub_key, e))?
             .ignore_additional_timelock();
+
+        info!(
+            vault = vault_pub_key,
+            height,
+            block_txs = block_tx_count,
+            wallet_scanner_outputs = scanned.len(),
+            known_outputs = known.len(),
+            "scan_block_for_vault_with_added debug"
+        );
 
         let mut added = 0usize;
         let mut added_outputs = Vec::new();
