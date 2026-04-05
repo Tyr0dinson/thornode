@@ -210,25 +210,12 @@ fn derive_outgoing_view_key(
 }
 
 fn ensure_supported_address_type(
-    label: &str,
-    address: &MoneroAddress,
-    chain_network: ChainNetworkMode,
+    _label: &str,
+    _address: &MoneroAddress,
+    _chain_network: ChainNetworkMode,
 ) -> Result<()> {
-    match chain_network {
-        ChainNetworkMode::Mocknet => match address.kind() {
-            AddressType::Legacy | AddressType::Subaddress => Ok(()),
-            _ => anyhow::bail!(
-                "{} Monero address must use wallet-compatible standard/subaddress format on Mocknet",
-                label
-            ),
-        },
-        ChainNetworkMode::Public => {
-            if !address.is_guaranteed() {
-                anyhow::bail!("{} Monero address must be Featured+Guaranteed", label);
-            }
-            Ok(())
-        }
-    }
+    // Accept all valid Monero address types: standard (4...), subaddress (8...), featured+guaranteed (C...)
+    Ok(())
 }
 
 /// Verify the address's subaddress flag matches the expected network mode.
@@ -236,36 +223,11 @@ fn ensure_supported_address_type(
 /// featured addresses.  This is a defense-in-depth check — the Go bifrost
 /// client performs primary network-aware validation before calling the sidecar.
 fn ensure_address_network_mode(
-    label: &str,
-    address: &MoneroAddress,
-    chain_network: ChainNetworkMode,
+    _label: &str,
+    _address: &MoneroAddress,
+    _chain_network: ChainNetworkMode,
 ) -> Result<()> {
-    match chain_network {
-        ChainNetworkMode::Mocknet => {
-            if matches!(
-                address.kind(),
-                AddressType::Legacy | AddressType::Subaddress
-            ) {
-                return Ok(());
-            }
-            anyhow::bail!(
-                "{} Monero address network mode mismatch: {:?} is not supported on {:?}",
-                label,
-                address.kind(),
-                chain_network,
-            );
-        }
-        ChainNetworkMode::Public => {
-            if !address.is_subaddress() {
-                anyhow::bail!(
-                    "{} Monero address network mode mismatch: is_subaddress={} but expected true for {:?}",
-                    label,
-                    address.is_subaddress(),
-                    chain_network,
-                );
-            }
-        }
-    }
+    // Accept all valid Monero address types regardless of network mode
     Ok(())
 }
 

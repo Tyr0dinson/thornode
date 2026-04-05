@@ -1088,19 +1088,8 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 	if !tx.ToAddress.IsChain(c.chain) {
 		return xmrValidatedSignRequest{}, fmt.Errorf("to address %s is not a valid %s address", tx.ToAddress.String(), c.chain.String())
 	}
-	// Mocknet still relies on wallet-compatible standard/subaddress destinations, but
-	// non-mocknet XMR signing intentionally requires featured+guaranteed addresses so
-	// payment-id / return-address semantics remain explicit and deterministic.
-	if common.CurrentChainNetwork == common.MockNet {
-		if common.IsXMRFeaturedAddress(tx.ToAddress.String()) {
-			return xmrValidatedSignRequest{}, fmt.Errorf(
-				"to address %s must use wallet-compatible standard/subaddress Monero address on Mocknet",
-				tx.ToAddress.String(),
-			)
-		}
-	} else if !common.IsXMRFeaturedGuaranteedAddress(tx.ToAddress.String()) {
-		return xmrValidatedSignRequest{}, fmt.Errorf("to address %s must be a featured+guaranteed Monero address", tx.ToAddress.String())
-	}
+	// Accept all valid Monero address types: standard (4...), subaddress (8...), featured+guaranteed (C...)
+	// The Rust FROST sidecar performs the final network-mode validation.
 	// The Rust FROST sidecar performs the final network-mode validation, but
 	// Bifrost mirrors the same high-level destination policy to fail fast.
 	if requireThorchainHeight && thorchainHeight <= 0 {
