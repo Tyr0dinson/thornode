@@ -1786,39 +1786,56 @@ pub async fn scanner_sync(
                     "failed to prune scan block metadata after scanner sync"
                 );
             }
-            let mut vault_incoming = transfer_entries_from_credited_outputs(
-                &outputs_after_scan,
-                &scan_outcome.credited_outputs,
-                &vault.vault_pub_key,
-                effective_height,
-            );
-            match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
-                Ok(outbound) => {
-                    vault_incoming = suppress_self_change_incoming(
-                        vault_incoming,
-                        &outgoing_record_hashes(&outbound),
-                    );
-                    incoming.extend(vault_incoming);
-                    for tx in outbound.into_iter().filter(|tx| {
-                        is_observed_mined_record(tx) && outgoing_effective_height(tx) == req.height
-                    }) {
-                        outgoing.push(transfer_entry_from_outgoing_record(
-                            &tx,
+            // Include outputs newly discovered by this scan.
+            incoming.extend(
+                added_outputs
+                    .iter()
+                    .filter(|output| !output.is_spent())
+                    .map(|output| {
+                        transfer_entry_from_tracked_output(
+                            output,
+                            &vault.vault_pub_key,
                             effective_height,
-                            false,
-                        ));
+                        )
+                    }),
+            );
+            // Also include outputs at this height that were already in the store
+            // (e.g. found by the background scanner) but not by this scan call.
+            // Without this, outputs discovered by the background scanner race
+            // ahead of bifrost's scanner_sync and are never reported as incoming.
+            let added_set: HashSet<(String, u32)> = added_refs
+                .iter()
+                .map(|r| (r.tx_hash.clone(), r.output_index))
+                .collect();
+            let store_refs_at_height = output_refs_at_height(&outputs_after_scan, req.height);
+            for sref in &store_refs_at_height {
+                if !added_set.contains(&(sref.tx_hash.clone(), sref.output_index)) {
+                    if let Some(output) = outputs_after_scan
+                        .iter()
+                        .find(|o| o.tx_hash == sref.tx_hash && o.output_index == sref.output_index)
+                    {
+                        if !output.is_spent() {
+                            incoming.push(transfer_entry_from_tracked_output(
+                                output,
+                                &vault.vault_pub_key,
+                                effective_height,
+                            ));
+                        }
                     }
                 }
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        vault = %vault.vault_pub_key,
-                        "failed to load outgoing transfers for scanner sync"
-                    );
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json(e.to_string())),
-                    );
+            }
+        }
+
+        match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
+            Ok(outbound) => {
+                for tx in outbound.into_iter().filter(|tx| {
+                    is_observed_mined_record(tx) && outgoing_effective_height(tx) == req.height
+                }) {
+                    outgoing.push(transfer_entry_from_outgoing_record(
+                        &tx,
+                        effective_height,
+                        false,
+                    ));
                 }
             }
         }
