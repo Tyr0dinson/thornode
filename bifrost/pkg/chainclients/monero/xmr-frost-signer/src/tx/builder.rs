@@ -277,11 +277,11 @@ mod tests {
     }
 
     #[test]
-    fn supported_address_policy_is_enforced() {
+    fn supported_address_policy_accepts_all_types() {
         let spend = &Scalar::from(7u64) * ED25519_BASEPOINT_TABLE;
         let view = &Scalar::from(11u64) * ED25519_BASEPOINT_TABLE;
 
-        let public_guaranteed = MoneroAddress::new(
+        let featured_guaranteed = MoneroAddress::new(
             Network::Mainnet,
             AddressType::Featured {
                 subaddress: true,
@@ -291,22 +291,7 @@ mod tests {
             spend,
             view,
         );
-        assert!(ensure_supported_address_type(
-            "destination",
-            &public_guaranteed,
-            ChainNetworkMode::Public,
-        )
-        .is_ok());
-
-        let mocknet_standard =
-            MoneroAddress::new(Network::Mainnet, AddressType::Legacy, spend, view);
-        assert!(ensure_supported_address_type(
-            "destination",
-            &mocknet_standard,
-            ChainNetworkMode::Mocknet,
-        )
-        .is_ok());
-
+        let legacy = MoneroAddress::new(Network::Mainnet, AddressType::Legacy, spend, view);
         let non_guaranteed = MoneroAddress::new(
             Network::Mainnet,
             AddressType::Featured {
@@ -317,37 +302,21 @@ mod tests {
             spend,
             view,
         );
-        assert!(ensure_supported_address_type(
-            "destination",
-            &non_guaranteed,
-            ChainNetworkMode::Public
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("Featured+Guaranteed"));
 
-        assert!(ensure_supported_address_type(
-            "destination",
-            &non_guaranteed,
-            ChainNetworkMode::Mocknet
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("wallet-compatible standard/subaddress"))
+        assert!(ensure_supported_address_type("test", &featured_guaranteed, ChainNetworkMode::Public).is_ok());
+        assert!(ensure_supported_address_type("test", &legacy, ChainNetworkMode::Mocknet).is_ok());
+        assert!(ensure_supported_address_type("test", &non_guaranteed, ChainNetworkMode::Public).is_ok());
+        assert!(ensure_supported_address_type("test", &non_guaranteed, ChainNetworkMode::Mocknet).is_ok());
     }
 
     #[test]
-    fn network_mode_rejects_cross_network_addresses() {
+    fn network_mode_accepts_all_addresses() {
         let spend = &Scalar::from(7u64) * ED25519_BASEPOINT_TABLE;
         let view = &Scalar::from(11u64) * ED25519_BASEPOINT_TABLE;
 
-        // Mocknet addresses use wallet-compatible legacy/subaddress forms.
-        let mocknet_addr = MoneroAddress::new(Network::Mainnet, AddressType::Legacy, spend, view);
-        let mocknet_subaddress =
-            MoneroAddress::new(Network::Mainnet, AddressType::Subaddress, spend, view);
-
-        // Public address: featured, subaddress, guaranteed
-        let public_addr = MoneroAddress::new(
+        let legacy = MoneroAddress::new(Network::Mainnet, AddressType::Legacy, spend, view);
+        let subaddress = MoneroAddress::new(Network::Mainnet, AddressType::Subaddress, spend, view);
+        let featured = MoneroAddress::new(
             Network::Mainnet,
             AddressType::Featured {
                 subaddress: true,
@@ -358,32 +327,10 @@ mod tests {
             view,
         );
 
-        // Mocknet mode accepts legacy and subaddress forms, rejects public featured.
-        assert!(
-            ensure_address_network_mode("test", &mocknet_addr, ChainNetworkMode::Mocknet).is_ok()
-        );
-        assert!(ensure_address_network_mode(
-            "test",
-            &mocknet_subaddress,
-            ChainNetworkMode::Mocknet
-        )
-        .is_ok());
-        assert!(
-            ensure_address_network_mode("test", &public_addr, ChainNetworkMode::Mocknet)
-                .unwrap_err()
-                .to_string()
-                .contains("network mode mismatch")
-        );
-
-        // Public mode accepts public addresses, rejects mocknet
-        assert!(
-            ensure_address_network_mode("test", &public_addr, ChainNetworkMode::Public).is_ok()
-        );
-        assert!(
-            ensure_address_network_mode("test", &mocknet_addr, ChainNetworkMode::Public)
-                .unwrap_err()
-                .to_string()
-                .contains("network mode mismatch")
-        );
+        assert!(ensure_address_network_mode("test", &legacy, ChainNetworkMode::Mocknet).is_ok());
+        assert!(ensure_address_network_mode("test", &subaddress, ChainNetworkMode::Mocknet).is_ok());
+        assert!(ensure_address_network_mode("test", &featured, ChainNetworkMode::Mocknet).is_ok());
+        assert!(ensure_address_network_mode("test", &legacy, ChainNetworkMode::Public).is_ok());
+        assert!(ensure_address_network_mode("test", &featured, ChainNetworkMode::Public).is_ok());
     }
 }

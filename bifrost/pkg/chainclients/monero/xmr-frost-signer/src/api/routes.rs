@@ -645,12 +645,21 @@ pub async fn sign_prepare(
     match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency conflict: msg_id reused with different payload",
-                )),
+            info!(
+                msg_id,
+                "sign_prepare idempotency conflict: superseding stale record for retry"
             );
+            if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale idempotency record");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+            }
+            match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
+                Ok(IdempotencyCheck::Fresh) => {}
+                other => {
+                    error!(msg_id, result = ?other, "unexpected idempotency state after clear");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json("idempotency reset failed")));
+                }
+            }
         }
         Ok(IdempotencyCheck::InProgress) => {
             return (
@@ -787,12 +796,21 @@ pub async fn sign_partial(
     match check_idempotency(&state, "sign_partial", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency conflict: msg_id reused with different payload",
-                )),
+            info!(
+                msg_id,
+                "sign_partial idempotency conflict: superseding stale record for retry"
             );
+            if let Err(e) = state.store.clear_idempotency("sign_partial", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale sign_partial idempotency record");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+            }
+            match check_idempotency(&state, "sign_partial", &msg_id, &payload_hashes) {
+                Ok(IdempotencyCheck::Fresh) => {}
+                other => {
+                    error!(msg_id, result = ?other, "unexpected sign_partial idempotency state after clear");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json("idempotency reset failed")));
+                }
+            }
         }
         Ok(IdempotencyCheck::InProgress) => {
             return (
@@ -867,12 +885,21 @@ pub async fn sign_combine(
     match check_idempotency(&state, "sign_combine", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency conflict: msg_id reused with different payload",
-                )),
+            info!(
+                msg_id,
+                "sign_combine idempotency conflict: superseding stale record for retry"
             );
+            if let Err(e) = state.store.clear_idempotency("sign_combine", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale sign_combine idempotency record");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+            }
+            match check_idempotency(&state, "sign_combine", &msg_id, &payload_hashes) {
+                Ok(IdempotencyCheck::Fresh) => {}
+                other => {
+                    error!(msg_id, result = ?other, "unexpected sign_combine idempotency state after clear");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json("idempotency reset failed")));
+                }
+            }
         }
         Ok(IdempotencyCheck::InProgress) => {
             return (
