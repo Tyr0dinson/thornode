@@ -230,7 +230,7 @@ impl Scanner {
             .wallet_scanner
             .scan(block)
             .map_err(|e| anyhow::anyhow!("scan failure for vault {}: {}", vault_pub_key, e))?
-            .not_additionally_locked();
+            .ignore_additional_timelock();
 
         let mut added_outputs = Vec::new();
         for wallet_output in scanned {
