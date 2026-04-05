@@ -208,7 +208,7 @@ fn valid_vault_pub_key(value: &str) -> bool {
     let Ok((hrp, data, _)) = bech32_decode(trimmed) else {
         return false;
     };
-    if hrp != "thorpub" && hrp != "tthorpub" {
+    if hrp != "thorpub" && hrp != "tthorpub" && hrp != "cthorpub" && hrp != "sthorpub" {
         return false;
     }
     !data.is_empty()
