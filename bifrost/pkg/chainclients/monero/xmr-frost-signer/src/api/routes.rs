@@ -1821,6 +1821,25 @@ pub async fn scanner_sync(
         }
     }
 
+    // Persist scanner in-memory outputs to store for ALL vaults.
+    // The meta_matches path skips merge_scanned_outputs, so outputs
+    // found by the wallet scanner during register_vault stay in memory
+    // but never reach the persistent store. This sync ensures the
+    // output store stays consistent across all nodes.
+    for vault in &vaults {
+        let all_outputs = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
+        if let Err(e) = state
+            .store
+            .merge_scanned_outputs(&vault.vault_pub_key, &all_outputs)
+        {
+            warn!(
+                error = %e,
+                vault = %vault.vault_pub_key,
+                "failed to persist scanner outputs at end of scanner_sync"
+            );
+        }
+    }
+
     (
         StatusCode::OK,
         Json(serde_json::to_value(TransfersResponse { incoming, outgoing }).unwrap()),
