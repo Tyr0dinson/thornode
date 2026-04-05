@@ -16,8 +16,8 @@ const (
 	featuredNonGuaranteedSubaddressVector = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v3wfMHCy"
 	featuredGuaranteedSubaddressVector    = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v4Pyz8bD"
 	xmrFixtureSpendHex                    = "b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1"
-	xmrFixtureMockAddress                 = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7"
-	xmrFixturePublicAddress               = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRWGe4A7"
+	xmrFixtureMockAddress                 = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGbm9KqB"
+	xmrFixturePublicAddress               = "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiq2BjPq9hME"
 )
 
 func expectedStandardXMRNetwork() ChainNetwork {

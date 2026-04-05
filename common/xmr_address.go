@@ -89,7 +89,7 @@ func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, chainNetwork ChainNetwo
 	}
 	_ = chainNetwork
 
-	viewPubKey, err := seraiMoneroViewPubKey()
+	viewPubKey, err := deriveXMRViewPubKey()
 	if err != nil {
 		return "", err
 	}
@@ -105,22 +105,19 @@ func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, chainNetwork ChainNetwo
 	return xmrBase58Encode(payload)
 }
 
-func seraiMoneroViewPubKey() ([32]byte, error) {
+func deriveXMRViewPubKey() ([32]byte, error) {
 	xmrViewPubKeyOnce.Do(func() {
-		// Ported from Serai:
-		// additional_key::<Monero>(0) = hash_to_F("Serai DEX Additional Key", "Monero" || 0_u64_le)
 		var k [8]byte
 		binary.LittleEndian.PutUint64(k[:], 0)
 
 		hasher := sha512.New()
-		hasher.Write([]byte("Serai DEX Additional Key"))
-		hasher.Write([]byte("Monero"))
+		hasher.Write([]byte("THORChain View Key"))
 		hasher.Write(k[:])
 		sum := hasher.Sum(nil)
 
 		scalar, err := new(edwards25519.Scalar).SetUniformBytes(sum)
 		if err != nil {
-			xmrViewPubKeyErr = fmt.Errorf("fail to derive serai monero additional scalar: %w", err)
+			xmrViewPubKeyErr = fmt.Errorf("fail to derive monero additional view scalar: %w", err)
 			return
 		}
 		point := new(edwards25519.Point).ScalarBaseMult(scalar)

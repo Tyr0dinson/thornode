@@ -160,7 +160,7 @@ func TestSignAndBroadcastTxUsesHelperTransferContract(t *testing.T) {
 
 	signed, err := client.SignTx(SimTx{
 		Chain:     common.XMRChain,
-		ToAddress: common.Address("Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWd4WG9y4GYbJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDk2s55z7Nbx"),
+		ToAddress: common.Address("Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiq2BjPq9hME"),
 		Coin:      common.NewCoin(common.XMRAsset, swapAmount),
 		Memo:      "=:BTC.BTC:bc1qexample",
 	})
