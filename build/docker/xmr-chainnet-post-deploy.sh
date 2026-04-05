@@ -94,12 +94,26 @@ mimir ChurnRetryInterval 10
 mimir MinimumBondInRune 1
 
 echo ""
-echo "[3/6] Waiting for cat/fox thornodes..."
+echo "[3/8] Waiting for dog bifrost to report XMR fee + chain tip (sole active node = 1 attestation quorum)..."
+for i in $(seq 1 60); do
+  fee_rate=$(curl -s localhost:1317/thorchain/inbound_addresses 2>/dev/null | jq -r '.[] | select(.chain=="XMR") | .observed_fee_rate' 2>/dev/null)
+  last_observed=$(curl -s localhost:1317/thorchain/lastblock 2>/dev/null | jq -r '.[] | select(.chain=="XMR") | .last_observed_in' 2>/dev/null)
+  if [ -n "$fee_rate" ] && [ "$fee_rate" != "0" ] && [ "$fee_rate" != "null" ] && [ -n "$last_observed" ] && [ "$last_observed" != "0" ] && [ "$last_observed" != "null" ]; then
+    echo "  XMR fee=$fee_rate chain_tip=$last_observed OK (${i}x10s)"
+    break
+  fi
+  echo -n "  [$i] fee=$fee_rate tip=$last_observed"
+  echo " waiting..."
+  sleep 10
+done
+
+echo ""
+echo "[4/8] Waiting for cat/fox thornodes..."
 wait_for_health docker-thornode-cat-1 120
 wait_for_health docker-thornode-fox-1 120
 
 echo ""
-echo "[4/6] Setting node keys, IPs, versions for cat and fox..."
+echo "[5/8] Setting node keys, IPs, versions for cat and fox..."
 set_node_keys docker-thornode-cat-1 "$CAT_SEED" "$CAT_RPC"
 set_ip docker-thornode-cat-1 "$CAT_RPC"
 set_version docker-thornode-cat-1 "$CAT_RPC"
@@ -110,12 +124,12 @@ sleep 7
 set_version docker-thornode-fox-1 "$FOX_RPC"
 
 echo ""
-echo "[5/6] Equalizing dog bond..."
+echo "[6/8] Equalizing dog bond..."
 echo "  bonding 70T RUNE to dog"
 tx docker-thornode-1 "deposit 70000000000000 THOR.RUNE BOND:$DOG_NODE_ADDR --node $DOG_RPC --gas auto" | grep -E "code:|txhash:" || true
 
 echo ""
-echo "[6/6] Monitoring for churn + keygen..."
+echo "[7/8] Monitoring for churn + keygen..."
 echo "  Nodes should move: Whitelisted -> Standby -> Ready -> Active"
 echo "  Keygen triggers once all 3 are Active (check every 30s, timeout 10min)"
 
