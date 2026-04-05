@@ -144,7 +144,7 @@ func TestXMRScannerInboundDeferredReferenceMemoAttribution(t *testing.T) {
 	defer frostServer.Close()
 
 	var err error
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
@@ -153,7 +153,7 @@ func TestXMRScannerInboundDeferredReferenceMemoAttribution(t *testing.T) {
 	bridge := &scannerMemoBridge{
 		memoByTx: map[string]string{txID: expectedMemo},
 		errByTx:  make(map[string]error),
-		asgards:  ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+		asgards:  ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}},
 	}
 	scanner := NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 72)
 
@@ -193,7 +193,7 @@ func TestXMRScannerInboundMemolessDeferredAttribution(t *testing.T) {
 	defer frostServer.Close()
 
 	var err error
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
@@ -202,7 +202,7 @@ func TestXMRScannerInboundMemolessDeferredAttribution(t *testing.T) {
 	bridge := &scannerMemoBridge{
 		memoByTx: make(map[string]string),
 		errByTx:  map[string]error{txID: errors.New("reference memo not available yet")},
-		asgards:  ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+		asgards:  ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}},
 	}
 	scanner := NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 72)
 
@@ -250,7 +250,7 @@ func TestXMRScannerOutgoingMemolessDeferredAttribution(t *testing.T) {
 	defer frostServer.Close()
 
 	var err error
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
@@ -259,7 +259,7 @@ func TestXMRScannerOutgoingMemolessDeferredAttribution(t *testing.T) {
 	bridge := &scannerMemoBridge{
 		memoByTx: make(map[string]string),
 		errByTx:  map[string]error{txID: errors.New("reference memo not available yet")},
-		asgards:  ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+		asgards:  ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}},
 	}
 	scanner := NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 72)
 
@@ -329,7 +329,7 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 	balanceServer := newFrostBalanceServer(t, balanceByPK)
 	defer balanceServer.Close()
 
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)

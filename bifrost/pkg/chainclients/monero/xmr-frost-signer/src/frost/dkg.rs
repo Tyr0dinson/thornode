@@ -330,7 +330,7 @@ impl DkgCoordinator {
         session_id: &str,
         expected_group_key: &str,
         expected_address: &str,
-    ) -> Result<()> {
+    ) -> Result<Vec<u8>> {
         let mut sessions = self.sessions.lock();
 
         let session = sessions
@@ -413,7 +413,7 @@ impl DkgCoordinator {
             "DKG finalize complete: key share persisted"
         );
 
-        Ok(())
+        Ok(key_share_bytes)
     }
 
     /// Clean up expired DKG sessions.
@@ -444,7 +444,7 @@ mod tests {
     /// Helper: create a DkgCoordinator backed by a temp store.
     fn make_coordinator() -> (DkgCoordinator, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         (
             DkgCoordinator::new(store, ChainNetworkMode::Mocknet, 64),
             dir,
@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn test_session_capacity_rejected() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let coord = DkgCoordinator::new(store, ChainNetworkMode::Mocknet, 1);
 
         coord
@@ -755,6 +755,35 @@ mod tests {
         assert!(
             key.is_none(),
             "expired unfinalized session must not persist key material"
+        );
+    }
+
+    #[test]
+    fn test_finalize_returns_key_share_bytes() {
+        let (coord, _dir) = make_coordinator();
+        let session_id = "sess-return";
+        coord
+            .round1(session_id, "thorpub1vaultreturn", 1, 1, 1, "ctx")
+            .unwrap();
+        coord.round2(session_id, HashMap::new()).unwrap();
+        let (address, group_key) = coord.round3(session_id, HashMap::new()).unwrap();
+
+        let returned_bytes = coord
+            .finalize(session_id, &group_key, &address)
+            .expect("finalize should succeed");
+        assert!(
+            !returned_bytes.is_empty(),
+            "finalize must return non-empty key share bytes"
+        );
+
+        let stored_bytes = coord
+            .store
+            .load_frost_keys(&group_key)
+            .unwrap()
+            .expect("key material must be persisted after finalize");
+        assert_eq!(
+            returned_bytes, stored_bytes,
+            "finalize return value must match persisted key material"
         );
     }
 }

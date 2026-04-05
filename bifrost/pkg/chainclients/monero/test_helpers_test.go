@@ -9,8 +9,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-const testSignerStoreSecret = "test-xmr-store-secret" // #nosec G101 -- test fixture only
-
 func testVaultPubKey(t *testing.T, seed string) common.PubKey {
 	t.Helper()
 	h := sha256.Sum256([]byte(seed))

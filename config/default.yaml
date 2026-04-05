@@ -108,7 +108,6 @@ bifrost:
       wallet_authorization_bearer: ""
       signer_backend: ""
       signer_endpoint: ""
-      signer_store_secret: ""
       xmr_consolidation_enabled: false
       xmr_consolidation_check_interval_blocks: 0
       xmr_consolidation_cooldown_blocks: 0
@@ -462,7 +461,6 @@ bifrost:
       chain_id: XMR
       signer_backend: "tss" # monero signer backend
       signer_endpoint: "http://127.0.0.1:8283" # this node's xmr tss signer endpoint
-      signer_store_secret: "" # shared secret used for signer store encryption
       xmr_consolidation_enabled: true
       xmr_consolidation_check_interval_blocks: 10
       xmr_consolidation_cooldown_blocks: 30

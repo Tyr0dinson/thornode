@@ -506,9 +506,12 @@ pub async fn dkg_finalize(
         .dkg
         .finalize(&req.session_id, &req.group_key, &req.address)
     {
-        Ok(()) => (
+        Ok(key_share_bytes) => (
             StatusCode::OK,
-            Json(serde_json::to_value(DkgFinalizeResponse { success: true }).unwrap()),
+            Json(serde_json::to_value(DkgFinalizeResponse {
+                success: true,
+                key_bytes_hex: hex::encode(&key_share_bytes),
+            }).unwrap()),
         ),
         Err(e) => {
             error!(error = %e, "DKG finalize failed");
@@ -2292,7 +2295,15 @@ pub async fn key_restore(
         }
     };
 
-    if let Ok(Some(_)) = state.store.load_frost_keys(&vault_pub_key) {
+    let save_key = state.store.list_vaults().ok()
+        .and_then(|vaults| {
+            vaults.iter()
+                .find(|v| v.vault_pub_key == vault_pub_key)
+                .map(|v| v.group_key.clone())
+        })
+        .unwrap_or_else(|| vault_pub_key.clone());
+
+    if let Ok(Some(_)) = state.store.load_frost_keys(&save_key) {
         return (
             StatusCode::OK,
             Json(
@@ -2302,15 +2313,15 @@ pub async fn key_restore(
         );
     }
 
-    if let Err(e) = state.store.save_frost_keys(&vault_pub_key, &key_bytes) {
-        error!(error = %e, vault = vault_pub_key, "failed to restore FROST keys");
+    if let Err(e) = state.store.save_frost_keys(&save_key, &key_bytes) {
+        error!(error = %e, vault = vault_pub_key, save_key, "failed to restore FROST keys");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(format!("failed to save restored keys: {e}"))),
         );
     }
 
-    info!(vault = vault_pub_key, "restored FROST keys from backup");
+    info!(vault = vault_pub_key, save_key, "restored FROST keys from backup");
     (
         StatusCode::OK,
         Json(
@@ -3110,7 +3121,7 @@ mod tests {
     ) -> (Arc<AppState>, tempfile::TempDir, String) {
         let data_dir = tempfile::tempdir().expect("failed to create tempdir");
         let store = Arc::new(
-            crate::state::Store::open(data_dir.path(), "test-store-secret")
+            crate::state::Store::open(data_dir.path())
                 .expect("failed to open test store"),
         );
         let mut scanner = Scanner::new();
@@ -3170,7 +3181,7 @@ mod tests {
     fn chain_test_state(daemon_url: &str) -> (Arc<AppState>, TempDir) {
         let data_dir = tempfile::tempdir().expect("failed to create tempdir");
         let store = Arc::new(
-            crate::state::Store::open(data_dir.path(), "test-store-secret")
+            crate::state::Store::open(data_dir.path())
                 .expect("failed to open test store"),
         );
         let daemon = DaemonClient::new(daemon_url, 1024 * 1024);

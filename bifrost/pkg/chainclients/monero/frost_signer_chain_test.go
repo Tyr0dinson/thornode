@@ -25,7 +25,7 @@ func TestFrostSignerGetChainHeight(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -81,7 +81,6 @@ func TestFrostSignerGetChainHeightUsesDaemonRPCWhenConfigured(t *testing.T) {
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
 			RPCHost:           daemon.URL,
-			SignerStoreSecret: testSignerStoreSecret,
 		},
 		sidecar.URL,
 	)
@@ -111,7 +110,7 @@ func TestFrostSignerGetChainBlockMapsConflictToUnavailable(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -177,7 +176,6 @@ func TestFrostSignerGetChainBlockUsesDaemonRPCWhenConfigured(t *testing.T) {
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
 			RPCHost:           daemon.URL,
-			SignerStoreSecret: testSignerStoreSecret,
 		},
 		sidecar.URL,
 	)
@@ -220,7 +218,6 @@ func TestFrostSignerGetChainHeightFallsBackToSidecarWhenDaemonRPCFails(t *testin
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
 			RPCHost:           daemon.URL,
-			SignerStoreSecret: testSignerStoreSecret,
 		},
 		sidecar.URL,
 	)
@@ -272,7 +269,6 @@ func TestFrostSignerGetChainBlockMapsDaemonTipToUnavailable(t *testing.T) {
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
 			RPCHost:           daemon.URL,
-			SignerStoreSecret: testSignerStoreSecret,
 		},
 		sidecar.URL,
 	)
@@ -300,7 +296,7 @@ func TestFrostSignerTxExists(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -325,7 +321,7 @@ func TestFrostSignerTxExistsHTTPError(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -347,8 +343,7 @@ func TestFrostSignerAllowsAuthenticatedMocknetHTTPServiceEndpoint(t *testing.T) 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
 			ChainNetwork:        "mocknet",
-			AuthorizationBearer: "token",
-			SignerStoreSecret:   testSignerStoreSecret,
+			AuthorizationBearer: "test-token",
 		},
 		"http://xmr-frost-signer:8283",
 	)

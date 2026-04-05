@@ -48,7 +48,7 @@ func newTestFrostSigner(t *testing.T) *FrostSigner {
 	t.Cleanup(server.Close)
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -81,9 +81,10 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	}
 	tssServer := &mockFrostKeygenTSS{
 		resp: tssp.FrostKeygenResponse{
-			Address:  expectedAddress.String(),
-			GroupKey: groupKey,
-			Status:   tsscommon.Success,
+			Address:     expectedAddress.String(),
+			GroupKey:    groupKey,
+			KeyBytesHex: "cafebabe",
+			Status:      tsscommon.Success,
 		},
 	}
 	store := newTestVaultAddressStore(t)
@@ -113,6 +114,9 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	}
 	if !result.PoolPubKeyEddsa.Equals(frostVaultPubKey) {
 		t.Fatalf("expected eddsa pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyEddsa)
+	}
+	if result.FrostKeyshareHex != "cafebabe" {
+		t.Fatalf("expected frost keyshare hex cafebabe, got %s", result.FrostKeyshareHex)
 	}
 
 	if tssServer.calls != 1 {

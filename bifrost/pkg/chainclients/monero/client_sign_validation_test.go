@@ -140,7 +140,7 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 	}))
 	defer balanceServer.Close()
 
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
@@ -198,7 +198,7 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	}))
 	defer balanceServer.Close()
 
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
@@ -245,7 +245,7 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 	})
 	defer balanceServer.Close()
 
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)

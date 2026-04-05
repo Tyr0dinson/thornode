@@ -50,7 +50,7 @@ func TestFetchTxsAggregatesDuplicateIncomingTxIDs(t *testing.T) {
 	defer frostServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestFetchTxsAggregatesDuplicateIncomingTxIDs(t *testing.T) {
 		log.Logger,
 		frostSigner,
 		&scannerMemoBridge{
-			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}},
 		},
 		common.XMRChain,
 		common.EmptyPubKey,
@@ -112,7 +112,7 @@ func TestFetchTxsSkipsIncomingTransfersWithMismatchedExplicitVaultAttribution(t 
 	defer frostServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestFetchTxsSkipsIncomingTransfersWithMismatchedExplicitVaultAttribution(t 
 		log.Logger,
 		frostSigner,
 		&scannerMemoBridge{
-			asgards: ttypes.Vaults{{PubKeyEddsa: currentVaultPubKey, PubKey: currentVaultPubKey}},
+			asgards: ttypes.Vaults{{PubKeyEddsa: currentVaultPubKey, PubKey: currentVaultPubKey, PubKeyFrost: currentVaultPubKey}},
 		},
 		common.XMRChain,
 		common.EmptyPubKey,
@@ -179,7 +179,7 @@ func TestFetchTxsSkipsIncomingChangeForKnownOutgoingSameVault(t *testing.T) {
 	defer frostServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
 	if err != nil {
@@ -189,7 +189,7 @@ func TestFetchTxsSkipsIncomingChangeForKnownOutgoingSameVault(t *testing.T) {
 		log.Logger,
 		frostSigner,
 		&scannerMemoBridge{
-			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}},
 		},
 		common.XMRChain,
 		common.EmptyPubKey,
@@ -250,7 +250,7 @@ func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *test
 	defer frostServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
 	if err != nil {
@@ -261,8 +261,8 @@ func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *test
 		frostSigner,
 		&scannerMemoBridge{
 			asgards: ttypes.Vaults{
-				{PubKeyEddsa: sourceVaultPubKey, PubKey: sourceVaultPubKey},
-				{PubKeyEddsa: destVaultPubKey, PubKey: destVaultPubKey},
+				{PubKeyEddsa: sourceVaultPubKey, PubKey: sourceVaultPubKey, PubKeyFrost: sourceVaultPubKey},
+				{PubKeyEddsa: destVaultPubKey, PubKey: destVaultPubKey, PubKeyFrost: destVaultPubKey},
 			},
 		},
 		common.XMRChain,
@@ -369,7 +369,7 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 	defer frostServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
 	if err != nil {
@@ -379,7 +379,7 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 		log.Logger,
 		frostSigner,
 		&scannerMemoBridge{
-			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+			asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}},
 		},
 		common.XMRChain,
 		common.EmptyPubKey,
@@ -434,7 +434,7 @@ func TestFetchTxsFailsClosedOnReorgProcessingError(t *testing.T) {
 	defer frostServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
 	if err != nil {

@@ -61,7 +61,7 @@ func TestReportSolvencyAutoUnhaltUsesCheckedVaultCount(t *testing.T) {
 	defer balanceServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		balanceServer.URL,
 	)
 	if err != nil {

@@ -36,13 +36,13 @@ func TestFetchMemPoolEmitsOutboundAndDedupesUntilConfirmed(t *testing.T) {
 	)
 	defer frostServer.Close()
 
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 	bridge := &scannerMemoBridge{
-		asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey}},
+		asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}},
 	}
 
 	scanner := NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 72)
@@ -135,7 +135,7 @@ func TestFetchMemPoolSkipsInvalidOrUnattributedOutgoing(t *testing.T) {
 	)
 	defer frostServer.Close()
 
-	cfg := config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}
+	cfg := config.BifrostChainConfiguration{}
 	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)

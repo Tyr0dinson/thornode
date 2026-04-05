@@ -1,8 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
-use tracing::warn;
-
 const DEFAULT_DAEMON_MAX_RESPONSE_BYTES: usize = 50 * 1024 * 1024;
 const DEFAULT_MAX_DKG_SESSIONS: usize = 128;
 const DEFAULT_MAX_SIGN_SESSIONS: usize = 256;
@@ -49,7 +47,6 @@ pub struct Config {
     pub auth_username: Option<String>,
     pub auth_password: Option<String>,
     pub auth_bearer: Option<String>,
-    pub store_secret: String,
     pub chain_network: ChainNetworkMode,
     pub sim_helper_enabled: bool,
     pub sim_helper_wallet_rpc_url: Option<String>,
@@ -145,16 +142,8 @@ impl Config {
         if seed_phrase.trim().is_empty() {
             return Err(ConfigError::Missing("SIGNER_SEED_PHRASE"));
         }
-        let store_secret = derive_store_secret_from_mnemonic(&seed_phrase);
-
-        // Derive bearer token from seed if not explicitly set.
         let auth_bearer = read_non_empty_env("XMR_FROST_AUTH_BEARER")
-            .or_else(|| Some(derive_auth_bearer_from_mnemonic(&seed_phrase)));
-
-        let auth_enabled = auth_bearer.is_some() || auth_username.is_some();
-        if !auth_enabled {
-            return Err(ConfigError::MissingAuthConfig);
-        }
+            .or_else(|| Some(seed_phrase.trim().to_string()));
 
         Ok(Config {
             listen_addr,
@@ -173,7 +162,6 @@ impl Config {
             auth_username,
             auth_password,
             auth_bearer,
-            store_secret,
             chain_network,
             sim_helper_enabled,
             sim_helper_wallet_rpc_url,
@@ -290,22 +278,6 @@ fn should_default_to_http(raw: &str) -> bool {
         }
     }
     false
-}
-
-fn derive_store_secret_from_mnemonic(seed_phrase: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(seed_phrase.as_bytes());
-    hasher.update(b"xmr-frost-store");
-    hex::encode(hasher.finalize())
-}
-
-fn derive_auth_bearer_from_mnemonic(seed_phrase: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(seed_phrase.as_bytes());
-    hasher.update(b"xmr-frost-auth");
-    hex::encode(hasher.finalize())
 }
 
 fn is_loopback_host(host: &str) -> bool {
@@ -426,8 +398,6 @@ pub enum ConfigError {
     InvalidAuthConfig(&'static str),
     #[error("invalid XMR_FROST_CHAIN_NETWORK value: {0} (expected mocknet|public)")]
     InvalidChainNetwork(String),
-    #[error("XMR_FROST_AUTH_BEARER or basic auth credentials are required")]
-    MissingAuthConfig,
     #[error("invalid daemon endpoint: {0}")]
     InvalidDaemonEndpoint(String),
     #[error("insecure daemon endpoint: {0}")]
@@ -483,7 +453,6 @@ mod tests {
             "SIGNER_SEED_PHRASE",
             "test mocknet seed phrase for unit tests",
         );
-        std::env::set_var("XMR_FROST_AUTH_BEARER", "token");
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "mocknet");
     }
 
@@ -492,7 +461,6 @@ mod tests {
         let _guard = env_guard();
         reset_env();
         std::env::set_var("SIGNER_SEED_PHRASE", "test seed phrase for mocknet");
-        std::env::set_var("XMR_FROST_AUTH_BEARER", "token");
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "mocknet");
 
         let err = Config::from_env().unwrap_err();
@@ -500,11 +468,10 @@ mod tests {
     }
 
     #[test]
-    fn test_config_missing_store_secret() {
+    fn test_config_missing_seed_phrase() {
         let _guard = env_guard();
         reset_env();
         std::env::set_var("XMR_FROST_DAEMON_URL", "http://localhost:18081");
-        std::env::set_var("XMR_FROST_AUTH_BEARER", "token");
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "mocknet");
 
         let err = Config::from_env().unwrap_err();
@@ -517,7 +484,6 @@ mod tests {
         reset_env();
         std::env::set_var("XMR_FROST_DAEMON_URL", "http://localhost:18081");
         std::env::set_var("SIGNER_SEED_PHRASE", "test seed phrase for mocknet");
-        std::env::set_var("XMR_FROST_AUTH_BEARER", "token");
 
         let err = Config::from_env().unwrap_err();
         assert!(err.to_string().contains("XMR_FROST_CHAIN_NETWORK"));
@@ -562,7 +528,10 @@ mod tests {
         );
         assert_eq!(config.data_dir, PathBuf::from("/var/lib/xmr-frost"));
         assert!(config.auth_username.is_none());
-        assert_eq!(config.auth_bearer.as_deref(), Some("token"));
+        assert_eq!(
+            config.auth_bearer.as_deref(),
+            Some("test mocknet seed phrase for unit tests")
+        );
         assert_eq!(config.chain_network, ChainNetworkMode::Mocknet);
     }
 
@@ -578,23 +547,10 @@ mod tests {
     }
 
     #[test]
-    fn test_config_requires_auth_even_on_loopback() {
-        let _guard = env_guard();
-        reset_env();
-        std::env::set_var("XMR_FROST_DAEMON_URL", "http://localhost:18081");
-        std::env::set_var("SIGNER_SEED_PHRASE", "test seed phrase for mocknet");
-        std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-
-        let result = Config::from_env();
-        assert!(matches!(result, Err(ConfigError::MissingAuthConfig)));
-    }
-
-    #[test]
     fn test_config_rejects_partial_basic_auth() {
         let _guard = env_guard();
         reset_env();
         set_minimal_env();
-        std::env::remove_var("XMR_FROST_AUTH_BEARER");
         std::env::set_var("XMR_FROST_AUTH_USERNAME", "user");
 
         let result = Config::from_env();

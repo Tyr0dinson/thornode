@@ -36,7 +36,7 @@ func TestFrostSignerGetOutputs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestFrostSignerGetOutputsHTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}

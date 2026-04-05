@@ -2,22 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use argon2::{Algorithm, Argon2, Params, Version};
 use dalek_ff_group::Ed25519 as FrostEd25519;
 use dkg_pedpop::ThresholdKeys as PedPoPThresholdKeys;
 use tracing::{info, warn};
-use zeroize::Zeroizing;
 
-const STORE_ENVELOPE_V2_HEADER: &[u8; 4] = b"XFS2";
-const STORE_KDF_METADATA_FILENAME: &str = "store_kdf.json";
-const STORE_KEY_LEN: usize = 32;
-const STORE_V2_NONCE_LEN: usize = 24;
-const STORE_KDF_VERSION: u8 = 1;
-const STORE_KDF_ARGON2ID: &str = "argon2id";
-const STORE_KDF_ARGON2_SALT_LEN: usize = 16;
-const STORE_KDF_ARGON2_MEM_KIB: u32 = 65_536;
-const STORE_KDF_ARGON2_TIME_COST: u32 = 3;
-const STORE_KDF_ARGON2_PARALLELISM: u32 = 1;
 const PRIVATE_DIR_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 pub const IDEMPOTENCY_RETENTION_SECS: i64 = 86_400;
@@ -38,78 +26,9 @@ fn is_idempotency_pending_stale(created_at: i64, now_ts: i64) -> bool {
         .unwrap_or(false)
 }
 
-struct DecryptedPayload {
-    plaintext: Vec<u8>,
-}
-
-/// Encrypted persistent store for FROST keys, UTXOs, and vault metadata.
-/// Uses sled for embedded KV storage with Argon2id-derived encryption keys.
 pub struct Store {
     db: sled::Db,
     data_dir: PathBuf,
-    encryption_key: Zeroizing<[u8; STORE_KEY_LEN]>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct StoreKdfMetadata {
-    version: u8,
-    kdf: String,
-    salt_hex: String,
-    mem_kib: u32,
-    time_cost: u32,
-    parallelism: u32,
-}
-
-impl StoreKdfMetadata {
-    fn new_argon2id() -> Self {
-        let mut salt = [0u8; STORE_KDF_ARGON2_SALT_LEN];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
-        StoreKdfMetadata {
-            version: STORE_KDF_VERSION,
-            kdf: STORE_KDF_ARGON2ID.to_string(),
-            salt_hex: hex::encode(salt),
-            mem_kib: STORE_KDF_ARGON2_MEM_KIB,
-            time_cost: STORE_KDF_ARGON2_TIME_COST,
-            parallelism: STORE_KDF_ARGON2_PARALLELISM,
-        }
-    }
-
-    fn derive_key(&self, store_secret: &str) -> Result<[u8; STORE_KEY_LEN]> {
-        if self.version != STORE_KDF_VERSION {
-            anyhow::bail!(
-                "unsupported store KDF metadata version: {} (expected {})",
-                self.version,
-                STORE_KDF_VERSION
-            );
-        }
-        if self.kdf.trim().to_ascii_lowercase() != STORE_KDF_ARGON2ID {
-            anyhow::bail!("unsupported store KDF algorithm: {}", self.kdf);
-        }
-        let salt = hex::decode(self.salt_hex.trim())
-            .map_err(|e| anyhow::anyhow!("invalid store KDF salt_hex: {}", e))?;
-        if salt.len() < STORE_KDF_ARGON2_SALT_LEN {
-            anyhow::bail!(
-                "store KDF salt must be at least {} bytes, got {}",
-                STORE_KDF_ARGON2_SALT_LEN,
-                salt.len()
-            );
-        }
-        let params = Params::new(
-            self.mem_kib,
-            self.time_cost,
-            self.parallelism,
-            Some(STORE_KEY_LEN),
-        )
-        .map_err(|e| anyhow::anyhow!("invalid Argon2 params in store KDF metadata: {}", e))?;
-        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let mut output = [0u8; STORE_KEY_LEN];
-        argon2
-            .hash_password_into(store_secret.as_bytes(), &salt, &mut output)
-            .map_err(|e| {
-                anyhow::anyhow!("failed to derive store encryption key via Argon2id: {}", e)
-            })?;
-        Ok(output)
-    }
 }
 
 /// A registered vault with its group key and scanning metadata.
@@ -591,8 +510,7 @@ pub struct VaultTrackedState {
 }
 
 impl Store {
-    /// Open or create the store at the given data directory.
-    pub fn open(data_dir: &Path, store_secret: &str) -> Result<Self> {
+    pub fn open(data_dir: &Path) -> Result<Self> {
         std::fs::create_dir_all(data_dir)
             .with_context(|| format!("failed to create data dir: {}", data_dir.display()))?;
         enforce_private_dir_permissions(data_dir)?;
@@ -601,96 +519,19 @@ impl Store {
         let db = sled::open(&db_path)
             .with_context(|| format!("failed to open sled DB at {}", db_path.display()))?;
 
-        let metadata_path = Self::kdf_metadata_path(data_dir);
-        let encryption_key = if metadata_path.exists() {
-            let metadata = Self::read_kdf_metadata(&metadata_path)?;
-            metadata.derive_key(store_secret)?
-        } else {
-            let key_files = Self::list_key_file_paths(data_dir)?;
-            if !key_files.is_empty() {
-                anyhow::bail!(
-                    "unsupported store format: missing {} with existing key material",
-                    STORE_KDF_METADATA_FILENAME
-                );
-            }
-
-            let metadata = StoreKdfMetadata::new_argon2id();
-            let key = metadata.derive_key(store_secret)?;
-            Self::write_kdf_metadata(&metadata_path, &metadata)?;
-            key
-        };
-
         let store = Store {
             db,
             data_dir: data_dir.to_path_buf(),
-            encryption_key: Zeroizing::new(encryption_key),
         };
         let verified_key_files = store.verify_key_files_on_startup()?;
 
         info!(
             path = %data_dir.display(),
-            kdf = STORE_KDF_ARGON2ID,
             verified_key_files,
             "store opened"
         );
 
         Ok(store)
-    }
-
-    pub fn open_lenient(data_dir: &Path, store_secret: &str) -> Result<Self> {
-        std::fs::create_dir_all(data_dir)
-            .with_context(|| format!("failed to create data dir: {}", data_dir.display()))?;
-
-        let db_path = data_dir.join("sled_db");
-        let db = sled::open(&db_path)
-            .with_context(|| format!("failed to open sled DB at {}", db_path.display()))?;
-
-        let metadata_path = Self::kdf_metadata_path(data_dir);
-        let encryption_key = if metadata_path.exists() {
-            let metadata = Self::read_kdf_metadata(&metadata_path)?;
-            metadata.derive_key(store_secret)?
-        } else {
-            anyhow::bail!("no KDF metadata found at {}", metadata_path.display());
-        };
-
-        Ok(Store {
-            db,
-            data_dir: data_dir.to_path_buf(),
-            encryption_key: Zeroizing::new(encryption_key),
-        })
-    }
-
-    fn kdf_metadata_path(data_dir: &Path) -> PathBuf {
-        data_dir.join(STORE_KDF_METADATA_FILENAME)
-    }
-
-    fn read_kdf_metadata(path: &Path) -> Result<StoreKdfMetadata> {
-        let raw = std::fs::read(path)
-            .with_context(|| format!("failed to read store KDF metadata: {}", path.display()))?;
-        let metadata: StoreKdfMetadata = serde_json::from_slice(&raw)
-            .with_context(|| format!("failed to parse store KDF metadata: {}", path.display()))?;
-        Ok(metadata)
-    }
-
-    fn write_kdf_metadata(path: &Path, metadata: &StoreKdfMetadata) -> Result<()> {
-        let tmp_path = path.with_extension("tmp");
-        let encoded =
-            serde_json::to_vec(metadata).context("failed to encode store KDF metadata")?;
-        std::fs::write(&tmp_path, encoded).with_context(|| {
-            format!(
-                "failed to write tmp store KDF metadata: {}",
-                tmp_path.display()
-            )
-        })?;
-        enforce_private_file_permissions(&tmp_path)?;
-        std::fs::rename(&tmp_path, path).with_context(|| {
-            format!(
-                "failed to atomically replace store KDF metadata: {}",
-                path.display()
-            )
-        })?;
-        enforce_private_file_permissions(path)?;
-        Ok(())
     }
 
     fn list_key_file_paths(data_dir: &Path) -> Result<Vec<PathBuf>> {
@@ -747,12 +588,9 @@ impl Store {
     fn verify_key_files_on_startup(&self) -> Result<usize> {
         let key_paths = Self::list_key_file_paths(&self.data_dir)?;
         for path in &key_paths {
-            let encrypted = std::fs::read(path)
+            let data = std::fs::read(path)
                 .with_context(|| format!("failed to read key file: {}", path.display()))?;
-            let decrypted = self
-                .decrypt(&encrypted)
-                .with_context(|| format!("failed to decrypt key file: {}", path.display()))?;
-            Self::validate_threshold_key_payload(&decrypted.plaintext).with_context(|| {
+            Self::validate_threshold_key_payload(&data).with_context(|| {
                 format!(
                     "invalid threshold key material in key file: {}",
                     path.display()
@@ -764,23 +602,18 @@ impl Store {
 
     // ---- FROST key persistence ----
 
-    /// Save serialized FROST threshold keys for a vault.
-    /// Writes atomically (write-tmp + rename) and encrypts with store-derived key.
     pub fn save_frost_keys(&self, vault_pub_key: &str, serialized_keys: &[u8]) -> Result<()> {
         let keys_dir = self.data_dir.join("keys");
         std::fs::create_dir_all(&keys_dir)?;
         enforce_private_dir_permissions(&keys_dir)?;
 
-        let encrypted = self.encrypt(serialized_keys)?;
-
         let final_path = keys_dir.join(format!("{}.frost", vault_pub_key));
-        Self::write_key_file_atomic(&final_path, &encrypted)?;
+        Self::write_key_file_atomic(&final_path, serialized_keys)?;
 
         info!(vault = vault_pub_key, "saved FROST keys");
         Ok(())
     }
 
-    /// Load serialized FROST threshold keys for a vault.
     pub fn load_frost_keys(&self, vault_pub_key: &str) -> Result<Option<Vec<u8>>> {
         let path = self
             .data_dir
@@ -790,11 +623,9 @@ impl Store {
             return Ok(None);
         }
 
-        let encrypted = std::fs::read(&path)
+        let data = std::fs::read(&path)
             .with_context(|| format!("failed to read key file: {}", path.display()))?;
-
-        let decrypted = self.decrypt(&encrypted)?;
-        Ok(Some(decrypted.plaintext))
+        Ok(Some(data))
     }
 
     // ---- Vault registry ----
@@ -1731,71 +1562,6 @@ impl Store {
         Ok(to_delete.len())
     }
 
-    // ---- Encryption helpers ----
-    // format: "XFS2" || 24-byte nonce || ciphertext||tag (XChaCha20-Poly1305 AEAD)
-
-    fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        Self::encrypt_with_key(&self.encryption_key, plaintext)
-    }
-
-    fn encrypt_with_key(key: &[u8; STORE_KEY_LEN], plaintext: &[u8]) -> Result<Vec<u8>> {
-        use chacha20poly1305::{
-            aead::{Aead, KeyInit},
-            XChaCha20Poly1305, XNonce,
-        };
-
-        let mut nonce_bytes = [0u8; STORE_V2_NONCE_LEN];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce_bytes);
-
-        let cipher = XChaCha20Poly1305::new(key.into());
-        let ciphertext = cipher
-            .encrypt(XNonce::from_slice(&nonce_bytes), plaintext)
-            .map_err(|_| anyhow::anyhow!("failed to encrypt store payload"))?;
-
-        let mut result = Vec::with_capacity(
-            STORE_ENVELOPE_V2_HEADER.len() + STORE_V2_NONCE_LEN + ciphertext.len(),
-        );
-        result.extend_from_slice(STORE_ENVELOPE_V2_HEADER);
-        result.extend_from_slice(&nonce_bytes);
-        result.extend_from_slice(&ciphertext);
-        Ok(result)
-    }
-
-    fn decrypt(&self, data: &[u8]) -> Result<DecryptedPayload> {
-        Self::decrypt_with_key(&self.encryption_key, data)
-    }
-
-    fn decrypt_with_key(key: &[u8; STORE_KEY_LEN], data: &[u8]) -> Result<DecryptedPayload> {
-        if !data.starts_with(STORE_ENVELOPE_V2_HEADER) {
-            anyhow::bail!(
-                "unsupported store envelope: expected {} header",
-                String::from_utf8_lossy(STORE_ENVELOPE_V2_HEADER)
-            );
-        }
-        Self::decrypt_v2_with_key(key, data)
-    }
-
-    fn decrypt_v2_with_key(key: &[u8; STORE_KEY_LEN], data: &[u8]) -> Result<DecryptedPayload> {
-        use chacha20poly1305::{
-            aead::{Aead, KeyInit},
-            XChaCha20Poly1305, XNonce,
-        };
-
-        if data.len() < STORE_ENVELOPE_V2_HEADER.len() + STORE_V2_NONCE_LEN {
-            anyhow::bail!("v2 encrypted data too short");
-        }
-        let payload = &data[STORE_ENVELOPE_V2_HEADER.len()..];
-        let (nonce_bytes, ciphertext) = payload.split_at(STORE_V2_NONCE_LEN);
-
-        let cipher = XChaCha20Poly1305::new(key.into());
-        let plaintext = cipher
-            .decrypt(XNonce::from_slice(nonce_bytes), ciphertext)
-            .map_err(|_| {
-                anyhow::anyhow!("store decrypt authentication tag mismatch (possible tampering)")
-            })?;
-
-        Ok(DecryptedPayload { plaintext })
-    }
 
     /// Save the last scanned height for a vault.
     pub fn save_scan_height(&self, vault_pub_key: &str, height: u64) -> Result<()> {
@@ -1848,9 +1614,9 @@ mod tests {
     }
 
     #[test]
-    fn save_and_load_frost_keys_roundtrip_v2() {
+    fn save_and_load_frost_keys_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let plaintext = b"frost-key-bytes";
 
         store.save_frost_keys("vault-a", plaintext).unwrap();
@@ -1858,7 +1624,7 @@ mod tests {
         assert_eq!(loaded, plaintext);
 
         let raw = std::fs::read(dir.path().join("keys").join("vault-a.frost")).unwrap();
-        assert!(raw.starts_with(STORE_ENVELOPE_V2_HEADER));
+        assert_eq!(raw, plaintext);
     }
 
     #[cfg(unix)]
@@ -1867,7 +1633,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         store.save_frost_keys("vault-perm", b"secret").unwrap();
 
         let data_mode = std::fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777;
@@ -1883,52 +1649,36 @@ mod tests {
     }
 
     #[test]
-    fn tampered_v2_ciphertext_fails_authentication() {
+    fn startup_sweep_rejects_invalid_payload() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
-
-        store.save_frost_keys("vault-b", b"secret").unwrap();
-        let path = dir.path().join("keys").join("vault-b.frost");
-        let mut raw = std::fs::read(&path).unwrap();
-        let last = raw.len() - 1;
-        raw[last] ^= 0x01;
-        std::fs::write(&path, raw).unwrap();
-
-        let err = store.load_frost_keys("vault-b").unwrap_err().to_string();
-        assert!(err.contains("authentication tag mismatch"));
-    }
-
-    #[test]
-    fn startup_sweep_rejects_non_v2_payload() {
-        let dir = tempfile::tempdir().unwrap();
-        let _store = Store::open(dir.path(), "store-secret").unwrap();
+        let _store = Store::open(dir.path()).unwrap();
 
         let key_dir = dir.path().join("keys");
         std::fs::create_dir_all(&key_dir).unwrap();
         std::fs::write(key_dir.join("vault-c.frost"), [0u8; 32]).unwrap();
 
-        let reopened = Store::open(dir.path(), "store-secret");
+        let reopened = Store::open(dir.path());
         assert!(reopened.is_err());
     }
 
     #[test]
     fn startup_sweep_passes_for_valid_v2_key_files() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let valid_payload = generate_valid_threshold_key_payload();
         store
             .save_frost_keys("vault-valid", &valid_payload)
             .unwrap();
         drop(store);
 
-        let reopened = Store::open(dir.path(), "store-secret");
+        let reopened = Store::open(dir.path());
         assert!(reopened.is_ok());
     }
 
     #[test]
     fn startup_sweep_fails_on_tampered_v2_key_file() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let valid_payload = generate_valid_threshold_key_payload();
         store
             .save_frost_keys("vault-tamper", &valid_payload)
@@ -1941,29 +1691,14 @@ mod tests {
         raw[last] ^= 0x01;
         std::fs::write(&path, raw).unwrap();
 
-        let reopened = Store::open(dir.path(), "store-secret");
+        let reopened = Store::open(dir.path());
         assert!(reopened.is_err());
-    }
-
-    #[test]
-    fn open_fails_when_metadata_missing_with_existing_key_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let keys_dir = dir.path().join("keys");
-        std::fs::create_dir_all(&keys_dir).unwrap();
-        std::fs::write(keys_dir.join("vault-orphan.frost"), [0u8; 64]).unwrap();
-
-        let err = match Store::open(dir.path(), "store-secret") {
-            Ok(_) => panic!("expected metadata validation to fail"),
-            Err(err) => err.to_string(),
-        };
-        assert!(err.contains("unsupported store format"));
-        assert!(err.contains(STORE_KDF_METADATA_FILENAME));
     }
 
     #[test]
     fn load_outputs_rejects_pre_cutover_records_without_state_and_wallet_output_payload() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
 
         let pre_cutover_json = serde_json::json!([{
             "tx_hash": "txhash",
@@ -1998,7 +1733,7 @@ mod tests {
     #[test]
     fn outgoing_transfer_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let record = OutgoingTransferRecord {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
@@ -2082,7 +1817,7 @@ mod tests {
     #[test]
     fn release_reservations_for_session_releases_only_matching_bindings() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
 
         let mut matching = sample_reserved_output("msg-1", None);
         matching.tx_hash = "matching".to_string();
@@ -2120,7 +1855,7 @@ mod tests {
     #[test]
     fn release_reservations_for_session_requires_non_empty_identity_fields() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
 
         let err = store
             .release_reservations_for_session(" ", "session-1", "msg-1")
@@ -2144,7 +1879,7 @@ mod tests {
     #[test]
     fn finalize_reserved_for_msg_requires_non_empty_tx_hash() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let err = store
             .finalize_reserved_for_msg("vault", "msg-1", "   ")
             .unwrap_err()
@@ -2155,7 +1890,7 @@ mod tests {
     #[test]
     fn finalize_reserved_for_msg_does_not_finalize_missing_candidate() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         store
             .save_outputs("vault", &[sample_reserved_output("msg-1", None)])
             .unwrap();
@@ -2176,7 +1911,7 @@ mod tests {
     #[test]
     fn finalize_reserved_for_msg_does_not_finalize_candidate_mismatch() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         store
             .save_outputs(
                 "vault",
@@ -2200,7 +1935,7 @@ mod tests {
     #[test]
     fn idempotency_claim_lifecycle_transitions() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let now_ts = 1_000_000_i64;
         let route = "sign_prepare";
         let msg_id = "msg-1";
@@ -2250,7 +1985,7 @@ mod tests {
     #[test]
     fn concurrent_claims_different_payloads_are_not_both_fresh() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "store-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let barrier = Arc::new(Barrier::new(2));
         let now_ts = 2_000_000_i64;
 
@@ -2292,7 +2027,7 @@ mod tests {
     #[test]
     fn pending_claim_younger_than_reclaim_window_returns_in_progress() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let now_ts = 3_000_000_i64;
         let route = "sign_partial";
         let msg_id = "msg-pending-young";
@@ -2317,7 +2052,7 @@ mod tests {
     #[test]
     fn stale_pending_claim_is_reclaimed_and_reclaimed_claim_is_fresh() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let now_ts = 4_000_000_i64;
         let route = "sign_prepare";
         let msg_id = "msg-pending-stale";
@@ -2346,7 +2081,7 @@ mod tests {
     #[test]
     fn concurrent_stale_pending_reclaim_allows_single_fresh_winner() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "store-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let route = "sign_combine";
         let msg_id = "msg-stale-race";
         let payload_hash = "payload-race";
@@ -2397,7 +2132,7 @@ mod tests {
     #[test]
     fn get_idempotency_evicts_expired_record() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let now_ts = 1_000_000i64;
         let record = sample_idempotency_record(
             "sign_prepare",
@@ -2422,7 +2157,7 @@ mod tests {
     #[test]
     fn get_idempotency_returns_unexpired_record() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let now_ts = 1_000_000i64;
         let record = sample_idempotency_record(
             "sign_prepare",
@@ -2443,7 +2178,7 @@ mod tests {
     #[test]
     fn prune_expired_idempotency_removes_only_stale_entries() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let now_ts = 1_000_000i64;
         let expired_a = sample_idempotency_record(
             "sign_prepare",
@@ -2486,7 +2221,7 @@ mod tests {
     #[test]
     fn prune_expired_idempotency_removes_stale_pending_and_keeps_fresh_complete() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let now_ts = 6_000_000_i64;
         let stale_pending = sample_pending_idempotency_record(
             "sign_prepare",
@@ -2517,7 +2252,7 @@ mod tests {
     #[test]
     fn rollback_scan_state_from_height_removes_outputs_and_metadata() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let vault = "thorpub1vault";
 
         let output_a = TrackedOutput {
@@ -2606,7 +2341,7 @@ mod tests {
     #[test]
     fn prune_scan_block_meta_before_removes_only_older_entries() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path(), "store-secret").unwrap();
+        let store = Store::open(dir.path()).unwrap();
         let vault = "thorpub1vault";
 
         for height in [9u64, 10, 11] {

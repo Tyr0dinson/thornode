@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Initialize components
-    let store = Arc::new(Store::open(&config.data_dir, &config.store_secret)?);
+    let store = Arc::new(Store::open(&config.data_dir)?);
     let daemon = DaemonClient::new(&config.daemon_url, config.daemon_max_response_bytes);
 
     // Initialize scanner and load registered vaults

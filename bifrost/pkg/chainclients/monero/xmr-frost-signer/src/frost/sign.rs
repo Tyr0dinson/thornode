@@ -977,7 +977,7 @@ mod tests {
     #[test]
     fn cleanup_expired_releases_preprocessed_session_reservations() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = make_signer(store.clone());
         let session_id = "session-preprocessed-expired";
         let msg_id = "msg-preprocessed-expired";
@@ -1006,7 +1006,7 @@ mod tests {
     #[test]
     fn cleanup_expired_releases_partial_signed_session_reservations() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = make_signer(store.clone());
         let session_id = "session-partial-expired";
         let msg_id = "msg-partial-expired";
@@ -1040,7 +1040,7 @@ mod tests {
     #[test]
     fn cleanup_expired_does_not_release_complete_session_reservations() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = make_signer(store.clone());
         let session_id = "session-complete-expired";
         let msg_id = "msg-complete-expired";
@@ -1074,7 +1074,7 @@ mod tests {
     #[test]
     fn cleanup_expired_retains_session_for_retry_on_release_failure() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = make_signer(store.clone());
         let session_id = "session-release-fail";
         let msg_id = " ";
@@ -1105,7 +1105,7 @@ mod tests {
     #[test]
     fn abandon_session_releases_reservations_and_removes_session() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = make_signer(store.clone());
         let session_id = "session-abandon";
         let msg_id = "msg-abandon";
@@ -1154,7 +1154,7 @@ mod tests {
     #[test]
     fn resolve_group_key_prefers_registry_mapping() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         store
             .register_vault("thorpub1vault", "deadbeefgroupkey", "48address", "test")
             .unwrap();
@@ -1167,7 +1167,7 @@ mod tests {
     #[test]
     fn resolve_group_key_requires_registry_mapping() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = make_signer(store);
         let err = signer
             .resolve_group_key_for_vault("thorpub1missing")
@@ -1182,7 +1182,7 @@ mod tests {
     #[tokio::test]
     async fn prepare_rejects_when_session_capacity_reached() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = SignCoordinator::new(
             store,
             DaemonClient::new("http://127.0.0.1:18081", 1024 * 1024),
@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn reserve_prepare_slot_releases_on_drop() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = SignCoordinator::new(
             store,
             DaemonClient::new("http://127.0.0.1:18081", 1024 * 1024),
@@ -1243,7 +1243,7 @@ mod tests {
     #[test]
     fn reserve_prepare_slot_enforces_capacity_across_threads() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = Arc::new(SignCoordinator::new(
             store,
             DaemonClient::new("http://127.0.0.1:18081", 1024 * 1024),
@@ -1279,7 +1279,7 @@ mod tests {
     #[test]
     fn claim_prepare_msg_id_enforces_single_flight_under_concurrency() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open(dir.path(), "test-secret").unwrap());
+        let store = Arc::new(Store::open(dir.path()).unwrap());
         let signer = Arc::new(SignCoordinator::new(
             store,
             DaemonClient::new("http://127.0.0.1:18081", 1024 * 1024),
