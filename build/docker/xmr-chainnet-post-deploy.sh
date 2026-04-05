@@ -89,6 +89,7 @@ mimir P2PGateDisabled 1
 mimir MinimumNodesForBFT 2
 mimir DesiredValidatorSet 3
 mimir NumberOfNewNodesPerChurn 3
+mimir ChurnInterval 10
 mimir ChurnRetryInterval 10
 mimir MinimumBondInRune 1
 
