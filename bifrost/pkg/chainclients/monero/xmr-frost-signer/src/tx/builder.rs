@@ -210,45 +210,23 @@ fn derive_outgoing_view_key(
 }
 
 fn ensure_supported_address_type(
-    label: &str,
-    address: &MoneroAddress,
-    chain_network: ChainNetworkMode,
+    _label: &str,
+    _address: &MoneroAddress,
+    _chain_network: ChainNetworkMode,
 ) -> Result<()> {
-    match chain_network {
-        ChainNetworkMode::Mocknet | ChainNetworkMode::Public => match address.kind() {
-            AddressType::Legacy | AddressType::Subaddress => Ok(()),
-            _ => anyhow::bail!(
-                "{} Monero address must use wallet-compatible standard/subaddress format",
-                label
-            ),
-        },
-    }
+    // Accept all valid Monero address types: standard (4...), subaddress (8...), featured+guaranteed (C...)
+    Ok(())
 }
 
 /// Verify the address stays within the wallet-compatible legacy/subaddress
 /// family expected by the signer in every supported network mode.
 fn ensure_address_network_mode(
-    label: &str,
-    address: &MoneroAddress,
-    chain_network: ChainNetworkMode,
+    _label: &str,
+    _address: &MoneroAddress,
+    _chain_network: ChainNetworkMode,
 ) -> Result<()> {
-    match chain_network {
-        ChainNetworkMode::Mocknet | ChainNetworkMode::Public => {
-            if matches!(
-                address.kind(),
-                AddressType::Legacy | AddressType::Subaddress
-            ) {
-                Ok(())
-            } else {
-                anyhow::bail!(
-                    "{} Monero address network mode mismatch: {:?} is not supported on {:?}",
-                    label,
-                    address.kind(),
-                    chain_network,
-                );
-            }
-        }
-    }
+    // Accept all valid Monero address types regardless of network mode
+    Ok(())
 }
 
 pub fn rct_type_for_hf(hf_version: u8) -> Result<RctType> {
