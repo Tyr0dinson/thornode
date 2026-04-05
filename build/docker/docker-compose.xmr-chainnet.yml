@@ -14,6 +14,15 @@
 #   docker volume rm docker_thornode docker_thornode-cat docker_thornode-fox \
 #     docker_bifrost docker_bifrost-cat docker_bifrost-fox \
 #     docker_xmr-frost-data docker_xmr-frost-data-cat docker_xmr-frost-data-fox
+#
+# Required mimirs (set by xmr-chainnet-post-deploy.sh, NOT env vars):
+#   P2PGateDisabled=1        - let cat/fox bifrosts peer before Active
+#   MinimumNodesForBFT=2     - default is 4, we only have 3 nodes
+#   DesiredValidatorSet=3    - match our node count
+#   NumberOfNewNodesPerChurn=3 - churn all 3 in at once
+#   ChurnInterval=10         - chainnet default is 43200 (3 days), too slow for testing
+#   ChurnRetryInterval=10    - retry churn every 10 blocks
+#   MinimumBondInRune=1      - prevent "low bond" churn-out noise
 ########################################################################################
 
 volumes:
