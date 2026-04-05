@@ -93,7 +93,7 @@ func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, chainNetwork ChainNetwo
 		return "", err
 	}
 
-	if chainNetwork == MockNet {
+	if chainNetwork == MockNet || chainNetwork == ChainNet {
 		payload := make([]byte, 0, 1+32+32+4)
 		payload = append(payload, xmrPrimaryNetworkByte)
 		payload = append(payload, spendPubKey...)
