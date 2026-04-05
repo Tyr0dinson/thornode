@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog/log"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 
@@ -38,12 +39,15 @@ func (m *mockFrostKeygenTSS) FrostKeygen(req tssp.FrostKeygenRequest, sidecar ts
 func newTestFrostSigner(t *testing.T) *FrostSigner {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/monero/vaults/register" {
-			w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/monero/vaults/register":
 			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
-			return
+		case "/v1/monero/chain/height":
+			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 100})
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	t.Cleanup(server.Close)
 
@@ -89,10 +93,12 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	}
 	store := newTestVaultAddressStore(t)
 
+	frostSigner := newTestFrostSigner(t)
 	c := &Client{
 		chain:             common.XMRChain,
-		frostSigner:       newTestFrostSigner(t),
+		frostSigner:       frostSigner,
 		tssServer:         tssServer,
+		scanner:           NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72),
 		vaultAddressMap:   make(map[string]common.Address),
 		vaultAddressStore: store,
 	}
@@ -177,10 +183,12 @@ func TestClientKeygenFailsWhenFrostAddressMismatchesDerivedAddress(t *testing.T)
 	}
 	store := newTestVaultAddressStore(t)
 
+	frostSigner := newTestFrostSigner(t)
 	c := &Client{
 		chain:             common.XMRChain,
-		frostSigner:       newTestFrostSigner(t),
+		frostSigner:       frostSigner,
 		tssServer:         tssServer,
+		scanner:           NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72),
 		vaultAddressMap:   make(map[string]common.Address),
 		vaultAddressStore: store,
 	}

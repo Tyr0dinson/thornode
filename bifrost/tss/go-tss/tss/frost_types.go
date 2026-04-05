@@ -61,10 +61,12 @@ type FrostKeygenRequest struct {
 
 // FrostKeygenResponse is the result of a FROST DKG ceremony.
 type FrostKeygenResponse struct {
-	Address  string
-	GroupKey string
-	Status   tcommon.Status
-	Blame    blame.Blame
+	Address              string
+	GroupKey             string
+	KeyBytesHex          string
+	ObservedMoneroHeight int64
+	Status               tcommon.Status
+	Blame                blame.Blame
 }
 
 // FrostSidecarKeygenClient is the local sidecar API used by the DKG coordinator.
@@ -73,6 +75,7 @@ type FrostSidecarKeygenClient interface {
 	FrostDKGRound2(req FrostSidecarDKGRound2Req) (FrostSidecarDKGRound2Resp, error)
 	FrostDKGRound3(req FrostSidecarDKGRound3Req) (FrostSidecarDKGRound3Resp, error)
 	FrostDKGFinalize(req FrostSidecarDKGFinalizeReq) (FrostSidecarDKGFinalizeResp, error)
+	GetChainHeight() (int64, error)
 }
 
 type FrostSidecarDKGRound1Req struct {
@@ -114,7 +117,8 @@ type FrostSidecarDKGFinalizeReq struct {
 }
 
 type FrostSidecarDKGFinalizeResp struct {
-	Success bool `json:"success"`
+	Success     bool   `json:"success"`
+	KeyBytesHex string `json:"key_bytes_hex"`
 }
 
 type FrostSidecarPrepareReq struct {
@@ -208,10 +212,11 @@ type FrostDKGRound2Payload struct {
 }
 
 type FrostDKGRound3Payload struct {
-	SenderPubKey     string `json:"sender_pub_key"`
-	ParticipantIndex uint32 `json:"participant_index"`
-	Address          string `json:"address"`
-	GroupKey         string `json:"group_key"`
+	SenderPubKey         string `json:"sender_pub_key"`
+	ParticipantIndex     uint32 `json:"participant_index"`
+	Address              string `json:"address"`
+	GroupKey             string `json:"group_key"`
+	ObservedMoneroHeight int64  `json:"observed_monero_height,omitempty"`
 }
 
 type FrostDKGResultPayload struct {
@@ -220,10 +225,11 @@ type FrostDKGResultPayload struct {
 }
 
 type FrostDKGResult struct {
-	Address  string      `json:"address,omitempty"`
-	GroupKey string      `json:"group_key,omitempty"`
-	Status   uint8       `json:"status"`
-	Blame    blame.Blame `json:"blame"`
+	Address              string      `json:"address,omitempty"`
+	GroupKey             string      `json:"group_key,omitempty"`
+	ObservedMoneroHeight int64       `json:"observed_monero_height,omitempty"`
+	Status               uint8       `json:"status"`
+	Blame                blame.Blame `json:"blame"`
 }
 
 func FrostTranscriptPreprocessHash(msgID string, payload FrostPreprocessPayload) (string, error) {

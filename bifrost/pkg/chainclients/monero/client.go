@@ -1502,6 +1502,11 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		return types.CustomKeygenResult{}, fmt.Errorf("tss server is not initialized")
 	}
 
+	xmrHeight, heightErr := c.GetHeight()
+	if heightErr != nil || xmrHeight <= 0 {
+		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires synced monero node (height: %d): %w", xmrHeight, heightErr)
+	}
+
 	members := make([]string, 0, len(req.Members))
 	for _, member := range req.Members {
 		member = strings.TrimSpace(member)
@@ -1587,9 +1592,10 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 
 	c.setVaultAddressMapping(frostVaultPubKey, frostAddr)
 	return types.CustomKeygenResult{
-		Address:          frostAddr,
-		PoolPubKeyEddsa:  frostVaultPubKey,
-		FrostKeyshareHex: frostResp.KeyBytesHex,
+		Address:              frostAddr,
+		PoolPubKeyEddsa:      frostVaultPubKey,
+		FrostKeyshareHex:     frostResp.KeyBytesHex,
+		ObservedMoneroHeight: frostResp.ObservedMoneroHeight,
 	}, nil
 }
 

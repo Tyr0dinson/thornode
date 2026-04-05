@@ -374,15 +374,23 @@ func (c *FrostKeygenCoordinator) Execute(
 		}
 	}
 
-	address, groupKey, failResp := c.exchangeRound3(
+	var localMoneroHeight int64
+	if h, hErr := c.sidecar.GetChainHeight(); hErr != nil {
+		c.logger.Warn().Err(hErr).Msg("failed to query local Monero chain height for DKG birthday")
+	} else {
+		localMoneroHeight = h
+	}
+
+	address, groupKey, minMoneroHeight, failResp := c.exchangeRound3(
 		activeSet,
 		participantIndexMap,
 		activePeerIDs,
 		FrostDKGRound3Payload{
-			SenderPubKey:     c.localPubKey,
-			ParticipantIndex: localIndex,
-			Address:          round3Resp.Address,
-			GroupKey:         round3Resp.GroupKey,
+			SenderPubKey:         c.localPubKey,
+			ParticipantIndex:     localIndex,
+			Address:              round3Resp.Address,
+			GroupKey:             round3Resp.GroupKey,
+			ObservedMoneroHeight: localMoneroHeight,
 		},
 	)
 	if failResp != nil {
@@ -416,10 +424,12 @@ func (c *FrostKeygenCoordinator) Execute(
 	}
 
 	return FrostKeygenResponse{
-		Address:  address,
-		GroupKey: groupKey,
-		Status:   tcommon.Success,
-		Blame:    blame.Blame{},
+		Address:              address,
+		GroupKey:             groupKey,
+		KeyBytesHex:          finalizeResp.KeyBytesHex,
+		ObservedMoneroHeight: minMoneroHeight,
+		Status:               tcommon.Success,
+		Blame:                blame.Blame{},
 	}
 }
 
@@ -747,48 +757,49 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 	participantIndexMap map[string]uint32,
 	activePeerIDs []peer.ID,
 	local FrostDKGRound3Payload,
-) (string, string, *FrostKeygenResponse) {
+) (string, string, int64, *FrostKeygenResponse) {
 	payload, err := json.Marshal(local)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to marshal round3 payload: %v", err), frostDKGRound3, nil)
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	if err := c.broadcast(messages.TSSFrostDKGRound3Msg, payload, activePeerIDs); err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast round3 payload: %v", err), frostDKGRound3, nil)
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 
 	groupAddress := strings.TrimSpace(local.Address)
 	groupKey := strings.TrimSpace(local.GroupKey)
+	minMoneroHeight := local.ObservedMoneroHeight
 	if groupAddress == "" || groupKey == "" {
 		resp := c.failForPubKeys("empty address/group key in local round3 payload", frostDKGRound3, []string{local.SenderPubKey})
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	if strings.TrimSpace(groupAddress) == "" {
 		resp := c.failForPubKeys("empty DKG address", frostDKGRound3, []string{local.SenderPubKey})
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	localHash, err := FrostTranscriptDKGRound3Hash(c.msgID, local)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local round3 payload: %v", err), frostDKGRound3, []string{local.SenderPubKey})
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	verifier, err := newFrostTranscriptVerifier(frostDKGRound3, activeSet, participantIndexMap)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to initialize round3 transcript verifier: %v", err), frostDKGRound3, nil)
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	if _, failure := verifier.recordPayload(local.SenderPubKey, local.ParticipantIndex, localHash); failure != nil {
 		resp := c.failForPubKeys(failure.reason, frostDKGRound3, failure.blamePubKey)
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	if err := c.broadcastTranscriptVerification(frostDKGRound3, local.SenderPubKey, local.ParticipantIndex, localHash, activePeerIDs); err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast round3 verification: %v", err), frostDKGRound3, nil)
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	if _, failure := verifier.recordVerification(c.localPubKey, local.SenderPubKey, local.ParticipantIndex, localHash); failure != nil {
 		resp := c.failForPubKeys(failure.reason, frostDKGRound3, failure.blamePubKey)
-		return "", "", &resp
+		return "", "", 0, &resp
 	}
 	timer := time.NewTimer(c.timeout)
 	defer timer.Stop()
@@ -808,67 +819,70 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 				var incoming FrostDKGRound3Payload
 				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
 					resp := c.failForMalformed(msg.PeerID, "invalid round3 payload", frostDKGRound3)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				senderNorm := normalizePubKey(incoming.SenderPubKey)
 				if senderNorm == "" {
 					resp := c.failForMalformed(msg.PeerID, "empty sender pubkey in round3 payload", frostDKGRound3)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if _, ok := activeSet.originalByNormalized[senderNorm]; !ok {
 					resp := c.failForPubKeys("round3 sender is not in active participant set", frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if err := c.validateSenderPeerBinding(msg.PeerID, incoming.SenderPubKey); err != nil {
 					resp := c.failForPubKeys(err.Error(), frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				expectedIndex := participantIndexMap[senderNorm]
 				if incoming.ParticipantIndex != expectedIndex {
 					resp := c.failForPubKeys("participant index mismatch in round3 payload", frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 
 				inAddress := strings.TrimSpace(incoming.Address)
 				inGroupKey := strings.TrimSpace(incoming.GroupKey)
 				if inAddress == "" || inGroupKey == "" {
 					resp := c.failForPubKeys("empty address/group key in round3 payload", frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if groupAddress != inAddress {
 					resp := c.failForPubKeys("DKG address mismatch across participants", frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if !strings.EqualFold(groupKey, inGroupKey) {
 					resp := c.failForPubKeys("DKG group key mismatch across participants", frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
+				}
+				if h := incoming.ObservedMoneroHeight; h > 0 && (minMoneroHeight <= 0 || h < minMoneroHeight) {
+					minMoneroHeight = h
 				}
 				payloadHash, err := FrostTranscriptDKGRound3Hash(c.msgID, incoming)
 				if err != nil {
 					resp := c.failForPubKeys(fmt.Sprintf("failed to hash round3 payload: %v", err), frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				isNewPayload, failure := verifier.recordPayload(incoming.SenderPubKey, incoming.ParticipantIndex, payloadHash)
 				if failure != nil {
 					resp := c.failForPubKeys(failure.reason, frostDKGRound3, failure.blamePubKey)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if !isNewPayload {
 					continue
 				}
 				if err := c.broadcastTranscriptVerification(frostDKGRound3, incoming.SenderPubKey, incoming.ParticipantIndex, payloadHash, activePeerIDs); err != nil {
 					resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast round3 verification: %v", err), frostDKGRound3, nil)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if _, failure := verifier.recordVerification(c.localPubKey, incoming.SenderPubKey, incoming.ParticipantIndex, payloadHash); failure != nil {
 					resp := c.failForPubKeys(failure.reason, frostDKGRound3, failure.blamePubKey)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 			case messages.TSSFrostVerifyMsg:
 				var incoming FrostVerifyPayload
 				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
 					resp := c.failForMalformed(msg.PeerID, "invalid transcript verification payload", frostDKGRound3)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if strings.TrimSpace(incoming.Round) != frostDKGRound3 {
 					continue
@@ -876,15 +890,15 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 				attesterNorm := normalizePubKey(incoming.SenderPubKey)
 				if attesterNorm == "" {
 					resp := c.failForMalformed(msg.PeerID, "empty sender pubkey in transcript verification payload", frostDKGRound3)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if _, ok := activeSet.originalByNormalized[attesterNorm]; !ok {
 					resp := c.failForPubKeys("verification attester is not in active participant set", frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if err := c.validateSenderPeerBinding(msg.PeerID, incoming.SenderPubKey); err != nil {
 					resp := c.failForPubKeys(err.Error(), frostDKGRound3, []string{incoming.SenderPubKey})
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 				if _, failure := verifier.recordVerification(
 					incoming.SenderPubKey,
@@ -893,7 +907,7 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 					incoming.PayloadHash,
 				); failure != nil {
 					resp := c.failForPubKeys(failure.reason, frostDKGRound3, failure.blamePubKey)
-					return "", "", &resp
+					return "", "", 0, &resp
 				}
 			}
 		case <-timer.C:
@@ -905,11 +919,11 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 				frostDKGRound3,
 				missing,
 			)
-			return "", "", &resp
+			return "", "", 0, &resp
 		}
 	}
 
-	return groupAddress, groupKey, nil
+	return groupAddress, groupKey, minMoneroHeight, nil
 }
 
 func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quorum int, timeout time.Duration) (FrostKeygenResponse, error) {
@@ -990,10 +1004,11 @@ func (c *FrostKeygenCoordinator) BroadcastResult(resp FrostKeygenResponse, peers
 	result := FrostDKGResultPayload{
 		SenderPubKey: c.localPubKey,
 		Response: FrostDKGResult{
-			Address:  resp.Address,
-			GroupKey: resp.GroupKey,
-			Status:   uint8(resp.Status),
-			Blame:    resp.Blame,
+			Address:              resp.Address,
+			GroupKey:             resp.GroupKey,
+			ObservedMoneroHeight: resp.ObservedMoneroHeight,
+			Status:               uint8(resp.Status),
+			Blame:                resp.Blame,
 		},
 	}
 	payload, err := json.Marshal(result)
@@ -1091,6 +1106,7 @@ func normalizeDKGResultPayload(result FrostDKGResult) (FrostKeygenResponse, stri
 		}
 		normalized.Address = address
 		normalized.GroupKey = strings.ToLower(groupKey)
+		normalized.ObservedMoneroHeight = result.ObservedMoneroHeight
 	case tcommon.Fail:
 		normalizedBlame, err := normalizeBlameForResult(result.Blame)
 		if err != nil {
