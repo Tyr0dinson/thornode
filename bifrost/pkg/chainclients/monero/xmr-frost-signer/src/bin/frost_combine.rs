@@ -99,6 +99,18 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("{}", hex::encode(full_secret.to_repr().as_ref()));
+    println!("spend_key: {}", hex::encode(full_secret.to_repr().as_ref()));
+
+    let view_scalar = {
+        use sha2::{Sha512, Digest};
+        let mut hasher = Sha512::new();
+        hasher.update(b"THORChain View Key");
+        hasher.update(0u64.to_le_bytes());
+        let digest: [u8; 64] = hasher.finalize().into();
+        use curve25519_dalek::scalar::Scalar as DalekScalar;
+        DalekScalar::from_bytes_mod_order_wide(&digest)
+    };
+    println!("view_key:  {}", hex::encode(view_scalar.as_bytes()));
+
     Ok(())
 }
