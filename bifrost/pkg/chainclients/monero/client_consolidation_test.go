@@ -257,7 +257,7 @@ func newConsolidationClient(
 	server := httptest.NewServer(http.HandlerFunc(sidecar.handler))
 	t.Cleanup(server.Close)
 
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}

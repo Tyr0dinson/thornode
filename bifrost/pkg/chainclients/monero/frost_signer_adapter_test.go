@@ -52,7 +52,7 @@ func TestFrostSignerAdapterTranslation(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -118,5 +118,56 @@ func TestFrostSignerAdapterTranslation(t *testing.T) {
 	}
 	if gotCombine.SessionID != combineReq.SessionID || !reflect.DeepEqual(gotCombine.AllShares, combineReq.AllShares) {
 		t.Fatalf("combine request translation mismatch: %+v", gotCombine)
+	}
+}
+
+func TestFrostSignerAdapterDKGFinalizePassesKeyBytesHex(t *testing.T) {
+	t.Parallel()
+
+	var gotFinalize xmrFrostDKGFinalizeRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/monero/dkg/finalize":
+			if err := json.NewDecoder(r.Body).Decode(&gotFinalize); err != nil {
+				t.Fatalf("decode finalize request: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostDKGFinalizeResponse{
+				Success:     true,
+				KeyBytesHex: "deadbeef0123",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		server.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	adapter := newFrostSignerAdapter(signer)
+
+	finalizeReq := tssp.FrostSidecarDKGFinalizeReq{
+		SessionID: "sess-1",
+		GroupKey:  "aabbccdd",
+		Address:   "4Addr",
+	}
+	finalizeResp, err := adapter.FrostDKGFinalize(finalizeReq)
+	if err != nil {
+		t.Fatalf("adapter finalize: %v", err)
+	}
+	if !finalizeResp.Success {
+		t.Fatalf("expected success=true")
+	}
+	if finalizeResp.KeyBytesHex != "deadbeef0123" {
+		t.Fatalf("expected key_bytes_hex=deadbeef0123, got %s", finalizeResp.KeyBytesHex)
+	}
+	if gotFinalize.SessionID != "sess-1" || gotFinalize.GroupKey != "aabbccdd" || gotFinalize.Address != "4Addr" {
+		t.Fatalf("finalize request translation mismatch: %+v", gotFinalize)
 	}
 }

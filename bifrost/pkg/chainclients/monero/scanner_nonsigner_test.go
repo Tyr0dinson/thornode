@@ -197,7 +197,7 @@ func countOutboundsFrom(items []*stypes.TxInItem, sender string) int {
 func newTestScanner(t *testing.T, frostURL string, vaultPubKey common.PubKey) *Scanner {
 	t.Helper()
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostURL,
 	)
 	if err != nil {

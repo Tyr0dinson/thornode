@@ -217,10 +217,6 @@ func Init() {
 		"XMR_SIGNER_ENDPOINT",
 	))
 	assert(viper.BindEnv(
-		"bifrost.chains.XMR.signer_store_secret",
-		"XMR_SIGNER_STORE_SECRET",
-	))
-	assert(viper.BindEnv(
 		"bifrost.chains.XMR.xmr_consolidation_enabled",
 		"XMR_CONSOLIDATION_ENABLED",
 	))
@@ -840,9 +836,6 @@ type BifrostChainConfiguration struct {
 	// SignerEndpoint configures an optional endpoint for remote signer backends.
 	// The XMR TSS signer uses this endpoint when configured.
 	SignerEndpoint string `mapstructure:"signer_endpoint"`
-
-	// SignerStoreSecret configures the secret used by Monero signer storage encryption.
-	SignerStoreSecret string `mapstructure:"signer_store_secret"`
 
 	// XMRConsolidationEnabled toggles periodic Monero output consolidation.
 	XMRConsolidationEnabled bool `mapstructure:"xmr_consolidation_enabled"`

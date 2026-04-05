@@ -142,7 +142,7 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 		},
 	})
 	defer balanceServer.Close()
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, balanceServer.URL)
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 		},
 	})
 	defer balanceServer.Close()
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, balanceServer.URL)
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}

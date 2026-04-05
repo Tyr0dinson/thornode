@@ -2,8 +2,6 @@ package monero
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,7 +127,8 @@ type xmrFrostDKGFinalizeRequest struct {
 }
 
 type xmrFrostDKGFinalizeResponse struct {
-	Success bool `json:"success"`
+	Success     bool   `json:"success"`
+	KeyBytesHex string `json:"key_bytes_hex"`
 }
 
 // FROST Signing request/response types
@@ -774,10 +773,7 @@ func (s *FrostSigner) MarkOutputsSpent(vaultPubKey, txHash string, refs []xmrFro
 }
 
 func deriveAuthBearer(seedPhrase string) string {
-	h := sha256.New()
-	h.Write([]byte(seedPhrase))
-	h.Write([]byte("xmr-frost-auth"))
-	return hex.EncodeToString(h.Sum(nil))
+	return strings.TrimSpace(seedPhrase)
 }
 
 type xmrFrostOutboundMeta struct {

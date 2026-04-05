@@ -61,7 +61,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	defer frostServer.Close()
 
 	frostSigner, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
 	if err != nil {

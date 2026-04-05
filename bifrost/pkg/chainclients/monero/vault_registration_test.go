@@ -118,9 +118,7 @@ func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{
-		SignerStoreSecret: testSignerStoreSecret,
-	}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -192,9 +190,7 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{
-		SignerStoreSecret: testSignerStoreSecret,
-	}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -242,9 +238,7 @@ func TestEnsureFrostVaultRegisteredOmitsBootstrapSpendKeyForOtherVault(t *testin
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{
-		SignerStoreSecret: testSignerStoreSecret,
-	}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -300,9 +294,7 @@ func TestGetAccountByAddressRegistersVaultBeforeBalanceQuery(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{
-		SignerStoreSecret: testSignerStoreSecret,
-	}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -352,9 +344,7 @@ func TestGetAccountByAddressUsesSpendableBalanceWhenProvided(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{
-		SignerStoreSecret: testSignerStoreSecret,
-	}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}

@@ -34,7 +34,7 @@ func TestFrostSignerGetOversizedResponseReturnsSizeError(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -68,7 +68,7 @@ func TestFrostSignerPostOversizedResponseReturnsSizeError(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestFrostSignerResponseAtLimitStillParses(t *testing.T) {
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(
-		config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret},
+		config.BifrostChainConfiguration{},
 		server.URL,
 	)
 	if err != nil {

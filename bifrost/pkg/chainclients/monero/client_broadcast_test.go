@@ -38,7 +38,7 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestBroadcastTxRequiresMsgID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestBroadcastTxRequiresEddsaVaultPubKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestBroadcastTxBroadcastedFlagStillRequiresTxMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{SignerStoreSecret: testSignerStoreSecret}, server.URL)
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
