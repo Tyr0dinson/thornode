@@ -644,6 +644,11 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			}
 		}
 
+		var viewKey string
+		if chain == common.XMRChain {
+			viewKey, _ = common.XMRViewKeyHex()
+		}
+
 		addr := types.QueryInboundAddressResponse{
 			Chain:                chain.String(),
 			PubKey:               pubKey.String(),
@@ -659,6 +664,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			OutboundTxSize:       cosmos.NewUint(networkFeeInfo.TransactionSize).String(),
 			OutboundFee:          outboundFee.String(),
 			DustThreshold:        chain.DustThreshold().String(),
+			ViewKey:              viewKey,
 		}
 
 		resp = append(resp, &addr)

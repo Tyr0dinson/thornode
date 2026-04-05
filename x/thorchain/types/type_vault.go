@@ -313,6 +313,9 @@ func (m *Vault) AlgoPubKey(chain common.Chain) (common.PubKey, error) {
 	case common.SigningAlgoSecp256k1:
 		return m.PubKey, nil
 	case common.SigningAlgoEd25519:
+		if chain == common.XMRChain && !m.PubKeyFrost.IsEmpty() {
+			return m.PubKeyFrost, nil
+		}
 		if m.PubKeyEddsa.IsEmpty() {
 			return "", fmt.Errorf("vault has no eddsa public key")
 		}
