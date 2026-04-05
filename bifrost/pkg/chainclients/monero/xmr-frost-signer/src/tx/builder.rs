@@ -64,7 +64,13 @@ pub async fn build_unsigned_transaction(
     ensure_address_network_mode("change", &change, chain_network)?;
 
     let mut candidates = decode_candidate_outputs(available_outputs, excluded_inputs)?;
-    candidates.sort_by(|a, b| b.0.amount.cmp(&a.0.amount));
+    // Fully deterministic sort: amount DESC, then tx_hash ASC, then output_index ASC.
+    // All nodes must select the same UTXOs for threshold signing to produce matching TXs.
+    candidates.sort_by(|a, b| {
+        b.0.amount.cmp(&a.0.amount)
+            .then_with(|| a.0.tx_hash.cmp(&b.0.tx_hash))
+            .then_with(|| a.0.output_index.cmp(&b.0.output_index))
+    });
 
     if candidates.is_empty() {
         anyhow::bail!("no spendable outputs with serialized wallet payload were available");
