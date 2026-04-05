@@ -1323,6 +1323,14 @@ impl Store {
         }
     }
 
+    pub fn clear_idempotency(&self, route: &str, msg_id: &str) -> Result<()> {
+        let tree = self.db.open_tree("idempotency")?;
+        let key = format!("{}:{}", route, msg_id);
+        tree.remove(key.as_bytes())?;
+        tree.flush()?;
+        Ok(())
+    }
+
     pub fn complete_idempotency(
         &self,
         route: &str,
