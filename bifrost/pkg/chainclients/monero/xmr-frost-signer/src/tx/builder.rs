@@ -64,10 +64,12 @@ pub async fn build_unsigned_transaction(
     ensure_address_network_mode("change", &change, chain_network)?;
 
     let mut candidates = decode_candidate_outputs(available_outputs, excluded_inputs)?;
-    // Fully deterministic sort: amount DESC, then tx_hash ASC, then output_index ASC.
-    // All nodes must select the same UTXOs for threshold signing to produce matching TXs.
+    // Fully deterministic sort: height ASC (oldest first), then tx_hash ASC.
+    // Matches BTC UTXO selection (most confirmations first, then TxID).
+    // All nodes must select the same outputs for threshold signing to produce matching TXs.
     candidates.sort_by(|a, b| {
-        b.0.amount.cmp(&a.0.amount)
+        a.0.height
+            .cmp(&b.0.height)
             .then_with(|| a.0.tx_hash.cmp(&b.0.tx_hash))
             .then_with(|| a.0.output_index.cmp(&b.0.output_index))
     });
