@@ -46,3 +46,28 @@ func NewMsgTssPoolV2(
 		Secp256K1Signature:   secp256k1Signature,
 	}, nil
 }
+
+func NewMsgTssPoolV3(
+	pks []string,
+	poolpk common.PubKey,
+	secp256k1Signature,
+	keysharesBackup []byte,
+	keygenType KeygenType,
+	height int64,
+	bl []Blame,
+	chains []string,
+	signer cosmos.AccAddress,
+	keygenTime int64,
+	poolPubKeyEddsa common.PubKey,
+	keysharesBackupEddsa []byte,
+	keysharesBackupFrost []byte,
+	poolPubKeyFrost common.PubKey,
+	observedMoneroHeight int64,
+) (*MsgTssPool, error) {
+	msg, err := NewMsgTssPoolV2(pks, poolpk, secp256k1Signature, keysharesBackup, keygenType, height, bl, chains, signer, keygenTime, poolPubKeyEddsa, keysharesBackupEddsa, keysharesBackupFrost, poolPubKeyFrost)
+	if err != nil {
+		return nil, err
+	}
+	msg.ObservedMoneroHeight = observedMoneroHeight
+	return msg, nil
+}

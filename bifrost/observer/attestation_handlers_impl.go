@@ -49,11 +49,13 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	// Capture XMR spent refs for async application outside the lock.
 	// Cap at 32 refs — these are vault outputs consumed as real inputs (not ring decoys).
 	// Typical outbound: 2-4, consolidation: up to 16.
+	// Only apply once per tx — multiple peers may attest to the same outbound.
 	const maxSpentOutputRefs = 32
 	var applySpentRefs *common.ObservedTx
 	isXMROutboundWithRefs := obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound &&
 		len(obsTx.SpentOutputRefs) > 0 && len(obsTx.SpentOutputRefs) <= maxSpentOutputRefs
-	if isXMROutboundWithRefs {
+	if isXMROutboundWithRefs && !state.spentRefsApplied {
+		state.spentRefsApplied = true
 		cp := obsTx
 		applySpentRefs = &cp
 	}
@@ -112,6 +114,10 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	// By co-attesting here, the non-signer adds its own signed vote to the
 	// quorum using the full observation (including SpentOutputRefs) received
 	// from the signing peer.
+	//
+	// Lock safety: this goroutine launches after state.mu is released (deferred
+	// above). attestObservedTxWithFutureFlag re-acquires s.mu → state.mu in
+	// the correct order via handleObservedTxAttestation, so no deadlock.
 	if shouldCoAttest {
 		cp := obsTx
 		go func() {

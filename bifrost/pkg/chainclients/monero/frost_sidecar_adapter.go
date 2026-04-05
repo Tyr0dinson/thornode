@@ -142,5 +142,12 @@ func (a *frostSignerAdapter) FrostDKGFinalize(req tssp.FrostSidecarDKGFinalizeRe
 	if err != nil {
 		return tssp.FrostSidecarDKGFinalizeResp{}, err
 	}
-	return tssp.FrostSidecarDKGFinalizeResp{Success: resp.Success}, nil
+	return tssp.FrostSidecarDKGFinalizeResp{Success: resp.Success, KeyBytesHex: resp.KeyBytesHex}, nil
+}
+
+func (a *frostSignerAdapter) GetChainHeight() (int64, error) {
+	if a == nil || a.signer == nil {
+		return 0, fmt.Errorf("frost signer adapter is not initialized")
+	}
+	return a.signer.GetChainHeight()
 }

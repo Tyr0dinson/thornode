@@ -446,7 +446,10 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			vault.Membership = voter.PubKeys
 			if vault.GetChains().Has(common.XMRChain) {
 				xmrHeight, _ := h.mgr.Keeper().GetLastChainHeight(ctx, common.XMRChain)
-				if xmrHeight <= 0 {
+				if xmrHeight <= 0 && msg.ObservedMoneroHeight > 0 {
+					xmrHeight = msg.ObservedMoneroHeight
+					ctx.Logger().Info("XMR vault birthday: using node-observed Monero height from keygen", "height", xmrHeight)
+				} else if xmrHeight <= 0 {
 					ctx.Logger().Error("XMR vault birthday: no observed chain height available at keygen, vault scanner will use chain tip")
 				}
 				vault.VaultCreationHeightXmr = xmrHeight

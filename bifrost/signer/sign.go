@@ -2,6 +2,7 @@ package signer
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -431,8 +432,10 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		// Give chain clients with custom keygen logic a chance to initialize chain-specific
 		// signer state (for example Monero multisig address mapping) before keygen is finalized.
 		var frostPubKey common.PubKey
+		var frostKeyshareHex string
+		var observedMoneroHeight int64
 		if !pubKey.Secp256k1.IsEmpty() {
-			pubKey.Ed25519, frostPubKey, err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519)
+			pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519)
 			if err != nil {
 				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
@@ -447,7 +450,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		// generate a verification signature to ensure we can sign with the new key
 		secp256k1Sig := s.secp256k1VerificationSignature(pubKey.Secp256k1)
 
-		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, secp256k1Sig, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime, pubKey.Ed25519, frostPubKey); err != nil {
+		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, secp256k1Sig, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime, pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight); err != nil {
 			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
 			s.logger.Error().Err(err).Msg("fail to broadcast keygen")
 		}
@@ -470,7 +473,7 @@ func (s *Signer) runCustomKeygenHooks(
 	blockHeight int64,
 	poolPubKey common.PubKey,
 	poolPubKeyEddsa common.PubKey,
-) (common.PubKey, common.PubKey, error) {
+) (common.PubKey, common.PubKey, string, int64, error) {
 	version := ""
 	if v, err := s.thorchainBridge.GetThorchainVersion(); err != nil {
 		s.logger.Debug().Err(err).Msg("fail to fetch thorchain version for custom keygen")
@@ -481,6 +484,8 @@ func (s *Signer) runCustomKeygenHooks(
 	var customHookErr error
 	effectivePoolPubKeyEddsa := poolPubKeyEddsa
 	var frostPoolPubKey common.PubKey
+	var frostKeyshareHex string
+	var observedMoneroHeight int64
 	for chainID, chainClient := range s.chains {
 		custom, ok := chainClient.(chainclients.CustomKeygenChainClient)
 		if !ok || !custom.CustomKeygen() {
@@ -506,6 +511,12 @@ func (s *Signer) runCustomKeygenHooks(
 			customHookErr = errors.Join(customHookErr, fmt.Errorf("custom keygen failed for %s: %w", chainID.String(), err))
 			continue
 		}
+		if result.FrostKeyshareHex != "" {
+			frostKeyshareHex = result.FrostKeyshareHex
+		}
+		if result.ObservedMoneroHeight > 0 {
+			observedMoneroHeight = result.ObservedMoneroHeight
+		}
 		if !result.PoolPubKeyEddsa.IsEmpty() && !result.PoolPubKeyEddsa.Equals(effectivePoolPubKeyEddsa) {
 			frostPoolPubKey = result.PoolPubKeyEddsa
 			effectivePoolPubKeyEddsa = result.PoolPubKeyEddsa
@@ -522,7 +533,7 @@ func (s *Signer) runCustomKeygenHooks(
 				Msg("custom keygen produced chain address")
 		}
 	}
-	return effectivePoolPubKeyEddsa, frostPoolPubKey, customHookErr
+	return effectivePoolPubKeyEddsa, frostPoolPubKey, frostKeyshareHex, observedMoneroHeight, customHookErr
 }
 
 // secp256k1VerificationSignature will make a best effort to sign the public key with
@@ -572,7 +583,7 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 	return sigBytes
 }
 
-func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame []ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64, poolPubKeyEddsa common.PubKey, poolPubKeyFrost common.PubKey) error {
+func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame []ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64, poolPubKeyEddsa common.PubKey, poolPubKeyFrost common.PubKey, frostKeyshareHex string, observedMoneroHeight int64) error {
 	// collect supported chains in the configuration
 	chains := common.Chains{
 		common.THORChain,
@@ -614,26 +625,19 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 	}
 
 	var keysharesFrost []byte
-	if s.cfg.Signer.BackupKeyshares && !poolPubKeyFrost.IsEmpty() {
-		if xmrClient, ok := s.chains[common.XMRChain]; ok {
-			type frostKeyExporter interface {
-				ExportFrostKeyshare(vaultPubKey common.PubKey) ([]byte, error)
-			}
-			if exporter, ok := xmrClient.(frostKeyExporter); ok {
-				rawKey, exportErr := exporter.ExportFrostKeyshare(poolPubKeyFrost)
-				if exportErr != nil {
-					s.logger.Error().Err(exportErr).Msg("fail to export frost keyshare for backup")
-				} else if len(rawKey) > 0 {
-					keysharesFrost, err = tss.EncryptRawKeyshares(rawKey, os.Getenv("SIGNER_SEED_PHRASE"))
-					if err != nil {
-						s.logger.Error().Err(err).Msg("fail to encrypt frost keyshare")
-					}
-				}
+	if s.cfg.Signer.BackupKeyshares && frostKeyshareHex != "" {
+		rawKey, decodeErr := hex.DecodeString(frostKeyshareHex)
+		if decodeErr != nil {
+			s.logger.Error().Err(decodeErr).Msg("fail to decode frost keyshare hex")
+		} else {
+			keysharesFrost, err = tss.EncryptRawKeyshares(rawKey, os.Getenv("SIGNER_SEED_PHRASE"))
+			if err != nil {
+				s.logger.Error().Err(err).Msg("fail to encrypt frost keyshare")
 			}
 		}
 	}
 
-	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, keysharesEddsa, keysharesFrost, poolPubKeyFrost)
+	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, keysharesEddsa, keysharesFrost, poolPubKeyFrost, observedMoneroHeight)
 	if err != nil {
 		return fmt.Errorf("fail to get keygen id: %w", err)
 	}
@@ -906,6 +910,19 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
 		return s.signAndBroadcast(item)
 	})
+
+	// Apply spent output refs from the signing observation before handling
+	// errors. The observation is populated during FROST signing and contains
+	// the real inputs consumed. Applying immediately ensures the sidecar
+	// marks outputs spent even when broadcast fails (another signer may have
+	// broadcast the same tx successfully).
+	// Fall back to the stored observation from a prior signing attempt.
+	obsForRefs := obs
+	if obsForRefs == nil {
+		obsForRefs = item.Observation
+	}
+	s.applySpentOutputRefsFromObs(item.TxOutItem, obsForRefs)
+
 	if err != nil {
 		// Always store the checkpoint of the built tx if we have one. This ensures the same
 		// vault will never attempt multiple txs for an outbound, as further protection
@@ -951,4 +968,40 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	if err = s.storage.Remove(item); err != nil {
 		s.logger.Error().Err(err).Msg("fail to update tx out store item")
 	}
+}
+
+func (s *Signer) applySpentOutputRefsFromObs(tx types.TxOutItem, obs *types.TxInItem) {
+	if obs == nil || len(obs.SpentOutputRefs) == 0 {
+		return
+	}
+	chain, ok := s.chains[tx.Chain]
+	if !ok {
+		return
+	}
+	type spentRefApplier interface {
+		ApplySpentOutputRefs(common.ObservedTx)
+	}
+	applier, ok := chain.(spentRefApplier)
+	if !ok {
+		return
+	}
+	obsTx := common.NewObservedTx(
+		common.NewTx(
+			common.TxID(obs.Tx),
+			common.Address(obs.Sender),
+			common.Address(obs.To),
+			obs.Coins,
+			obs.Gas,
+			obs.Memo,
+		),
+		obs.BlockHeight,
+		obs.ObservedVaultPubKey,
+		0,
+	)
+	obsTx.SpentOutputRefs = obs.SpentOutputRefs
+	s.logger.Info().
+		Str("tx_hash", obs.Tx).
+		Int("refs", len(obs.SpentOutputRefs)).
+		Msg("applying spent output refs from signing observation")
+	applier.ApplySpentOutputRefs(obsTx)
 }

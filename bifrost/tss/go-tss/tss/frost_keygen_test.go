@@ -62,6 +62,10 @@ func (m *mockFrostSidecarKeygen) FrostDKGFinalize(req FrostSidecarDKGFinalizeReq
 	return m.finalizeResp, nil
 }
 
+func (m *mockFrostSidecarKeygen) GetChainHeight() (int64, error) {
+	return 0, nil
+}
+
 func newTestFrostKeygenCoordinator(localPubKey, msgID string, msgChan chan *p2p.Message, timeout time.Duration) *FrostKeygenCoordinator {
 	return &FrostKeygenCoordinator{
 		p2pCommunication: &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
@@ -316,7 +320,7 @@ func TestFrostKeygenRound3RejectsResultMismatch(t *testing.T) {
 	})
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
-	_, _, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
+	_, _, _, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
 		Address:          "48addr",

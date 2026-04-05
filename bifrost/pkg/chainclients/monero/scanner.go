@@ -736,7 +736,8 @@ func (s *Scanner) refreshAsgardLookup() error {
 		}
 		frostKey := vault.PubKeyFrost
 		if frostKey.IsEmpty() {
-			frostKey = observedVault
+			s.logger.Debug().Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault without PubKeyFrost")
+			continue
 		}
 		creationHeight := vault.VaultCreationHeightXmr
 		derived, addrErr := ensureFrostVaultRegistered(

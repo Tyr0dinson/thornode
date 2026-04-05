@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -1289,33 +1291,33 @@ func (s *HandlerObservedTxHelpersSuite) TestSpentOutputRefsXmrAccumulation(c *C)
 	ref1 := &common.OutputRef{TxHash: "aaa", OutputIndex: 0}
 	ref2 := &common.OutputRef{TxHash: "bbb", OutputIndex: 1}
 
+	applySpentRefs := func(refs []*common.OutputRef) {
+		v, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+		c.Assert(err, IsNil)
+		existing := make(map[string]struct{}, len(v.SpentOutputRefsXmr))
+		for _, ref := range v.SpentOutputRefsXmr {
+			existing[ref.TxHash+":"+fmt.Sprint(ref.OutputIndex)] = struct{}{}
+		}
+		for _, ref := range refs {
+			key := ref.TxHash + ":" + fmt.Sprint(ref.OutputIndex)
+			if _, ok := existing[key]; !ok {
+				v.SpentOutputRefsXmr = append(v.SpentOutputRefsXmr, ref)
+				existing[key] = struct{}{}
+			}
+		}
+		c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
+	}
+
+	applySpentRefs([]*common.OutputRef{ref1, ref2})
 	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
 	c.Assert(err, IsNil)
-	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 0)
-
-	vault.SpentOutputRefsXmr = append(vault.SpentOutputRefsXmr, ref1)
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-
-	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
-	c.Assert(err, IsNil)
-	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 1)
-	c.Assert(vault.SpentOutputRefsXmr[0].TxHash, Equals, "aaa")
-
-	vault.SpentOutputRefsXmr = append(vault.SpentOutputRefsXmr, ref2)
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-
-	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
-	c.Assert(err, IsNil)
 	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 2)
+	c.Assert(vault.SpentOutputRefsXmr[0].TxHash, Equals, "aaa")
 	c.Assert(vault.SpentOutputRefsXmr[1].TxHash, Equals, "bbb")
 
-	existing := make(map[string]struct{}, len(vault.SpentOutputRefsXmr))
-	for _, ref := range vault.SpentOutputRefsXmr {
-		key := ref.TxHash + ":" + cosmos.NewUint(uint64(ref.OutputIndex)).String()
-		existing[key] = struct{}{}
-	}
-	dupRef := &common.OutputRef{TxHash: "aaa", OutputIndex: 0}
-	dupKey := dupRef.TxHash + ":" + cosmos.NewUint(uint64(dupRef.OutputIndex)).String()
-	_, isDup := existing[dupKey]
-	c.Assert(isDup, Equals, true)
+	applySpentRefs([]*common.OutputRef{{TxHash: "aaa", OutputIndex: 0}, {TxHash: "ccc", OutputIndex: 2}})
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 3, Commentf("duplicate ref should be deduped"))
+	c.Assert(vault.SpentOutputRefsXmr[2].TxHash, Equals, "ccc")
 }

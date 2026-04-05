@@ -39,4 +39,5 @@ message MsgTssPool {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
     (gogoproto.nullable) = true
   ];
+  int64 observed_monero_height = 16;
 }

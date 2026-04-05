@@ -81,9 +81,11 @@ type CustomKeygenRequest struct {
 // hook, including the finalized EdDSA pool pubkey when the chain derives it
 // from its own keygen transcript rather than reusing the generic THORChain one.
 type CustomKeygenResult struct {
-	Address         common.Address
-	PoolPubKeyEddsa common.PubKey
-	Blame           []ttypes.Blame
+	Address              common.Address
+	PoolPubKeyEddsa      common.PubKey
+	FrostKeyshareHex     string
+	ObservedMoneroHeight int64
+	Blame                []ttypes.Blame
 }
 
 // CustomKeygenChainClient is an optional extension for chains which require
