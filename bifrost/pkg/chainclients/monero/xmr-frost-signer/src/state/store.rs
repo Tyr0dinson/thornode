@@ -407,10 +407,17 @@ impl Store {
                 if same_mapping {
                     Ok(false)
                 } else {
-                    anyhow::bail!(
-                        "vault {} is already registered with a different mapping",
-                        vault_pub_key
-                    )
+                    // Tolerate re-registration with a different mapping by overwriting.
+                    // This handles the case where the bifrost re-registers the same
+                    // vault_pub_key with an updated group_key/address (e.g. after a
+                    // FROST/EDDSA key transition).
+                    info!(
+                        vault = vault_pub_key,
+                        "overwriting existing vault mapping with new group_key/address"
+                    );
+                    tree.insert(key, value.as_slice())?;
+                    tree.flush()?;
+                    Ok(true)
                 }
             }
             Err(e) => Err(anyhow::anyhow!(
