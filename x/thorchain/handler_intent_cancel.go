@@ -15,6 +15,12 @@ type IntentCancelHandler struct {
 	mgr Manager
 }
 
+type cancelFundingMode struct {
+	allowedAsset       common.Asset
+	requiresPrepaidGas bool
+	gasAsset           common.Asset
+}
+
 // NewIntentCancelHandler creates a new instance of IntentCancelHandler
 func NewIntentCancelHandler(mgr Manager) IntentCancelHandler {
 	return IntentCancelHandler{
@@ -68,15 +74,15 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 		return se.ErrUnauthorized.Wrap("only the intent creator can cancel it")
 	}
 
-	allowedAsset, err := h.allowedCancelAsset(ctx, intent)
+	mode, err := h.getCancelFundingMode(ctx, intent)
 	if err != nil {
-		return ErrInternal(err, "fail to determine allowed cancel asset")
+		return ErrInternal(err, "fail to determine cancel funding mode")
 	}
 	for _, coin := range msg.Tx.Coins {
-		if !coin.Asset.Equals(allowedAsset) {
+		if !coin.Asset.Equals(mode.allowedAsset) {
 			return se.ErrInvalidRequest.Wrapf(
 				"cancel tx must only send %s for this intent, got %s",
-				allowedAsset, coin.Asset,
+				mode.allowedAsset, coin.Asset,
 			)
 		}
 	}
@@ -84,22 +90,22 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 	return nil
 }
 
-// allowedCancelAsset returns the only asset type a cancel transaction may carry
-// for the current intent shape.
-func (h IntentCancelHandler) allowedCancelAsset(ctx cosmos.Context, intent Intent) (common.Asset, error) {
+// getCancelFundingMode determines which asset a cancel tx may carry and whether
+// the cancel must prepay chain gas for the outbound refund.
+func (h IntentCancelHandler) getCancelFundingMode(ctx cosmos.Context, intent Intent) (cancelFundingMode, error) {
 	// Native sources and assets with an available pool refund directly, so only
 	// permit the source asset to avoid trapping unrelated coins in Asgard.
 	if intent.Source.Asset.IsNative() || intent.Source.Asset.IsGasAsset() {
-		return intent.Source.Asset, nil
+		return cancelFundingMode{allowedAsset: intent.Source.Asset}, nil
 	}
 
 	sourcePool, err := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
 	if err != nil {
-		return common.EmptyAsset, fmt.Errorf("fail to get pool for cancel asset validation: %w", err)
+		return cancelFundingMode{}, fmt.Errorf("fail to get pool for cancel funding mode: %w", err)
 	}
 	hasActivePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 	if hasActivePool {
-		return intent.Source.Asset, nil
+		return cancelFundingMode{allowedAsset: intent.Source.Asset}, nil
 	}
 
 	// Non-pool, non-native long-tail assets require prepaid chain gas to fund the
@@ -108,13 +114,91 @@ func (h IntentCancelHandler) allowedCancelAsset(ctx cosmos.Context, intent Inten
 	gasAsset := intent.Source.Asset.GetChain().GetGasAsset()
 	gasPool, err := h.mgr.Keeper().GetPool(ctx, gasAsset)
 	if err != nil {
-		return common.EmptyAsset, fmt.Errorf("fail to get gas pool for cancel asset validation: %w", err)
+		return cancelFundingMode{}, fmt.Errorf("fail to get gas pool for cancel funding mode: %w", err)
 	}
 	if gasPool.IsEmpty() || gasPool.Status != PoolAvailable {
-		return common.EmptyAsset, fmt.Errorf("gas pool %s is not available", gasAsset)
+		return cancelFundingMode{}, fmt.Errorf("gas pool %s is not available", gasAsset)
 	}
 
-	return gasAsset, nil
+	return cancelFundingMode{
+		allowedAsset:       gasAsset,
+		requiresPrepaidGas: true,
+		gasAsset:           gasAsset,
+	}, nil
+}
+
+func (h IntentCancelHandler) bookCancelGasIfNeeded(ctx cosmos.Context, msg MsgIntentCancel, intent Intent, mode cancelFundingMode) error {
+	if !mode.requiresPrepaidGas {
+		return nil
+	}
+
+	chain := intent.Source.Asset.GetChain()
+	maxGasCoin, err := h.mgr.GasMgr().GetMaxGas(ctx, chain)
+	if err != nil {
+		return fmt.Errorf("fail to get max gas for %s: %w", chain, err)
+	}
+
+	gasFromCancel := cosmos.ZeroUint()
+	for _, coin := range msg.Tx.Coins {
+		if coin.Asset.Equals(mode.gasAsset) {
+			gasFromCancel = gasFromCancel.Add(coin.Amount)
+		}
+	}
+
+	minGasMultiplier := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentCancelMinGasMultiplier)
+	if minGasMultiplier <= 0 {
+		minGasMultiplier = 1
+	}
+	retainGasMultiplier := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentCancelRetainGasMultiplier)
+	if retainGasMultiplier < 3 {
+		retainGasMultiplier = 3
+	}
+	if retainGasMultiplier < minGasMultiplier {
+		retainGasMultiplier = minGasMultiplier
+	}
+
+	minRequired := maxGasCoin.Amount.MulUint64(uint64(minGasMultiplier))
+	if gasFromCancel.LT(minRequired) {
+		return se.ErrInsufficientFunds.Wrapf(
+			"cancel of non-pool asset requires gas: need %s %s, got %s",
+			minRequired, mode.gasAsset, gasFromCancel,
+		)
+	}
+
+	// Cap retained gas using the configured multiplier. If the user overpaid,
+	// refund the excess immediately so they recover the obvious surplus.
+	// Excess refund failure is fatal for the cancel so the whole operation
+	// can roll back cleanly.
+	retainCap := maxGasCoin.Amount.MulUint64(uint64(retainGasMultiplier))
+	retained := gasFromCancel
+	if gasFromCancel.GT(retainCap) {
+		excess := common.SafeSub(gasFromCancel, retainCap)
+		retained = retainCap
+
+		excessToi := TxOutItem{
+			Chain:     chain,
+			ToAddress: intent.SourceAddress,
+			Coin:      common.NewCoin(mode.gasAsset, excess),
+			Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
+			InHash:    intent.TxID,
+		}
+		excessOk, excessErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, excessToi, cosmos.ZeroUint())
+		if excessErr != nil {
+			return fmt.Errorf("fail to schedule excess cancel gas refund: %w", excessErr)
+		}
+		if !excessOk {
+			return fmt.Errorf("fail to schedule excess cancel gas refund")
+		}
+	}
+
+	// Revalidate gas-pool availability at mutation time inside bookCancelGasToPool.
+	// That keeps the decision logic centralized here while preserving the final
+	// execution-time guard around pool mutation.
+	if err := bookCancelGasToPool(ctx, h.mgr, intent.TxID, mode.gasAsset, retained); err != nil {
+		return fmt.Errorf("fail to book cancel gas to pool: %w", err)
+	}
+
+	return nil
 }
 
 func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) error {
@@ -129,84 +213,17 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		return fmt.Errorf("intent %s is no longer active, status: %s", msg.IntentTxID, intent.Status.String())
 	}
 
-	// For non-native, non-pool, non-gas-asset sources, require gas tokens in the cancel tx.
-	// The user-provided gas is booked into the chain gas pool immediately (similar to
-	// processWinningBid), so the standard outbound gas reimbursement path works unchanged.
-	if !intent.Source.Asset.IsNative() {
-		var sourcePool Pool
-		sourcePool, err = h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
-		if err != nil {
-			return fmt.Errorf("fail to get pool for cancel gas check: %w", err)
-		}
-		hasActivePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
-		if !hasActivePool && !intent.Source.Asset.IsGasAsset() {
-			chain := intent.Source.Asset.GetChain()
-			var maxGasCoin common.Coin
-			maxGasCoin, err = h.mgr.GasMgr().GetMaxGas(ctx, chain)
-			if err != nil {
-				return fmt.Errorf("fail to get max gas for %s: %w", chain, err)
-			}
-			gasAsset := chain.GetGasAsset()
-			gasFromCancel := cosmos.ZeroUint()
-			for _, coin := range msg.Tx.Coins {
-				if coin.Asset.Equals(gasAsset) {
-					gasFromCancel = gasFromCancel.Add(coin.Amount)
-				}
-			}
+	mode, err := h.getCancelFundingMode(ctx, intent)
+	if err != nil {
+		return fmt.Errorf("fail to determine cancel funding mode: %w", err)
+	}
 
-			minGasMultiplier := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentCancelMinGasMultiplier)
-			if minGasMultiplier <= 0 {
-				minGasMultiplier = 1
-			}
-			retainGasMultiplier := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentCancelRetainGasMultiplier)
-			if retainGasMultiplier < 3 {
-				retainGasMultiplier = 3
-			}
-			if retainGasMultiplier < minGasMultiplier {
-				retainGasMultiplier = minGasMultiplier
-			}
-
-			minRequired := maxGasCoin.Amount.MulUint64(uint64(minGasMultiplier))
-			if gasFromCancel.LT(minRequired) {
-				return se.ErrInsufficientFunds.Wrapf(
-					"cancel of non-pool asset requires gas: need %s %s, got %s",
-					minRequired, gasAsset, gasFromCancel,
-				)
-			}
-
-			// Cap retained gas using the configured multiplier. If the user overpaid,
-			// refund the excess immediately so they recover the obvious surplus.
-			// Excess refund failure is fatal for the cancel so the whole operation
-			// can roll back cleanly.
-			retainCap := maxGasCoin.Amount.MulUint64(uint64(retainGasMultiplier))
-			retained := gasFromCancel
-			if gasFromCancel.GT(retainCap) {
-				excess := common.SafeSub(gasFromCancel, retainCap)
-				retained = retainCap
-
-				excessToi := TxOutItem{
-					Chain:     chain,
-					ToAddress: intent.SourceAddress,
-					Coin:      common.NewCoin(gasAsset, excess),
-					Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
-					InHash:    intent.TxID,
-				}
-				excessOk, excessErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, excessToi, cosmos.ZeroUint())
-				if excessErr != nil {
-					return fmt.Errorf("fail to schedule excess cancel gas refund: %w", excessErr)
-				}
-				if !excessOk {
-					return fmt.Errorf("fail to schedule excess cancel gas refund")
-				}
-			}
-
-			// Book the retained gas into the chain gas pool and convert to RUNE for
-			// reserve. After this, the pool has been credited, so the normal observed-
-			// outbound gas path can charge it without any special-casing.
-			if bookErr := bookCancelGasToPool(ctx, h.mgr, intent.TxID, gasAsset, retained); bookErr != nil {
-				return fmt.Errorf("fail to book cancel gas to pool: %w", bookErr)
-			}
-		}
+	// For non-native, non-pool, non-gas-asset sources, require gas tokens in the
+	// cancel tx. The user-provided gas is booked into the chain gas pool
+	// immediately (similar to processWinningBid), so the standard outbound gas
+	// reimbursement path works unchanged.
+	if err := h.bookCancelGasIfNeeded(ctx, msg, intent, mode); err != nil {
+		return err
 	}
 
 	// Refund the source asset back to the source address.
