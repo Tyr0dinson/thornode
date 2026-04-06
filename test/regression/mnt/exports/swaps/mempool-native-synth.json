@@ -185,11 +185,11 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "76357778",
+              "amount": "76357777",
               "denom": "eth/eth"
             },
             {
-              "amount": "2500400767159",
+              "amount": "2500400769289",
               "denom": "rune"
             }
           ]
@@ -211,7 +211,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000599500522",
+              "amount": "5000597551657",
               "denom": "rune"
             }
           ]
@@ -225,7 +225,7 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "440101709",
+          "amount": "440101702",
           "denom": "eth/eth"
         },
         {
@@ -307,6 +307,9 @@
           "value": "100000000000000"
         },
         {
+          "key": "MEMPOOLSWAPPOOLCAPBPS"
+        },
+        {
           "key": "SIGNINGTRANSACTIONPERIOD",
           "value": "3"
         },
@@ -317,8 +320,8 @@
       "network": {
         "LPIncomeSplit": "9602",
         "NodeIncomeSplit": "398",
-        "bond_reward_rune": "611500522",
-        "total_bond_units": "34"
+        "bond_reward_rune": "611551657",
+        "total_bond_units": "35"
       },
       "network_fees": [
         {
@@ -354,6 +357,10 @@
           "value": "100000000000000"
         },
         {
+          "key": "MEMPOOLSWAPPOOLCAPBPS",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        },
+        {
           "key": "SIGNINGTRANSACTIONPERIOD",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "3"
@@ -366,7 +373,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999988000000",
+          "bond": "4999986000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -387,7 +394,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "300000000",
-          "balance_rune": "40082109188",
+          "balance_rune": "40082321070",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -398,12 +405,12 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "158943358298",
+          "balance_rune": "158944202996",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
-          "synth_units": "28213487477"
+          "synth_units": "28213486902"
         }
       ],
       "reference_memos": [],
@@ -423,49 +430,49 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "380619178",
+          "score": "380621192",
           "spent": "0"
         },
         {
           "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
           "reclaimed": "0",
-          "score": "82993994",
+          "score": "82994354",
           "spent": "0"
         },
         {
           "address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
           "reclaimed": "0",
-          "score": "6778138785",
+          "score": "6778174892",
           "spent": "0"
         },
         {
           "address": "bcrt1qxkz88t875m7ms7wa6220estwwdlc86pqvavagk",
           "reclaimed": "0",
-          "score": "848078519",
+          "score": "848083014",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "380871811",
+          "score": "380873829",
           "spent": "0"
         },
         {
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "reclaimed": "0",
-          "score": "82741375",
+          "score": "82741734",
           "spent": "0"
         },
         {
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "reclaimed": "0",
-          "score": "6778138786",
+          "score": "6778174892",
           "spent": "0"
         },
         {
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "reclaimed": "0",
-          "score": "848078526",
+          "score": "848083020",
           "spent": "0"
         }
       ],
@@ -558,5 +565,5 @@
       }
     }
   },
-  "initial_height": 35
+  "initial_height": 36
 }
