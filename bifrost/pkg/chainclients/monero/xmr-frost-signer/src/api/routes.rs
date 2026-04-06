@@ -1111,8 +1111,55 @@ pub async fn broadcast(
                     )
                 }
             } else {
-                let msg = resp.reason.unwrap_or_else(|| resp.status);
-                (StatusCode::BAD_REQUEST, error_json(msg))
+                let reason = resp.reason.unwrap_or_else(|| resp.status.clone());
+                let is_double_spend = resp.double_spend.unwrap_or(false);
+                let status_lower = resp.status.to_ascii_lowercase();
+                let reason_lower = reason.to_ascii_lowercase();
+                let already_known = is_double_spend
+                    || status_lower.contains("already")
+                    || reason_lower.contains("already")
+                    || reason_lower.contains("double spend");
+
+                if already_known {
+                    let caller_tx_hash = req.tx_hash.trim();
+                    if !caller_tx_hash.is_empty() {
+                        info!(
+                            msg_id,
+                            caller_tx_hash,
+                            reason = %reason,
+                            "broadcast rejected as already known — treating as success"
+                        );
+                        if let Err(e) = state.signer.finalize_broadcast(
+                            &vault_pub_key_canonical,
+                            &msg_id,
+                            caller_tx_hash,
+                        ) {
+                            error!(error = %e, msg_id, "failed to finalize reserved outputs after already-known broadcast");
+                        }
+                        if let Err(e) = state.store.update_outgoing_transfer_status(
+                            &vault_pub_key_canonical,
+                            caller_tx_hash,
+                            OUTGOING_STATUS_MEMPOOL,
+                            None,
+                            Some(chrono::Utc::now().timestamp()),
+                            Some(chrono::Utc::now().timestamp()),
+                        ) {
+                            error!(error = %e, "failed to update outgoing transfer status after already-known broadcast");
+                        }
+                        (
+                            StatusCode::OK,
+                            serde_json::to_value(BroadcastResponse {
+                                tx_hash: caller_tx_hash.to_string(),
+                            })
+                            .unwrap(),
+                        )
+                    } else {
+                        warn!(msg_id, reason = %reason, "broadcast rejected as already known but no caller tx_hash to fall back on");
+                        (StatusCode::BAD_REQUEST, error_json(reason))
+                    }
+                } else {
+                    (StatusCode::BAD_REQUEST, error_json(reason))
+                }
             }
         }
         Err(e) => {
