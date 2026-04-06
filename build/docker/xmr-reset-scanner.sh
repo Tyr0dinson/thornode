@@ -1,19 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resets XMR scanner on all signer nodes, rescanning from vault birthday heights.
-# Run from server: bash xmr-reset-scanner.sh
+# Resets XMR scanner on all signer nodes and restarts bifrosts to rescan from
+# the earliest vault birthday height. This performs a full rescan — the sidecar
+# rediscovers all outputs and the bifrost re-observes all transactions to
+# thorchain, exactly as if it were a first-time startup.
 #
-# This fetches vault data from thorchain, then calls the sidecar reset endpoint
-# on each signer. After reset, the bifrost's scanner_sync will rescan from
-# birthday heights, rediscovering all outputs.
+# Steps:
+#   1. Fetch XMR asgard vaults from thorchain (pub_key_frost, birthday)
+#   2. Call sidecar /v1/monero/scanner/reset for each vault on each signer
+#   3. Restart bifrosts with XMR_START_BLOCK_HEIGHT=<earliest_birthday>
+#
+# The bifrost reads XMR_START_BLOCK_HEIGHT at startup and overrides the
+# persisted scan position. On the NEXT restart (without the env var), it
+# resumes from wherever the rescan reached.
+#
+# Auth: the sidecar bearer token is the raw SIGNER_SEED_PHRASE.
+#
+# Usage:
+#   bash xmr-reset-scanner.sh                    # docker-compose deployment
+#   bash xmr-reset-scanner.sh --dry-run          # print what would happen
+#   COMPOSE_FILE=path/to/compose.yml bash xmr-reset-scanner.sh
+
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=true
+  echo "[DRY RUN] No changes will be made."
+  echo ""
+fi
 
 API="http://localhost:1317"
+EARLIEST_BIRTHDAY=0
+
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1)
+BIFROSTS=(docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1)
 
 echo "Fetching vaults from thorchain..."
 VAULTS=$(curl -s "$API/thorchain/vaults/asgard")
 VAULT_COUNT=$(echo "$VAULTS" | jq length)
 echo "Found $VAULT_COUNT vaults"
+
+# --- Step 1: Reset sidecar for each XMR vault ---
 
 for i in $(seq 0 $((VAULT_COUNT - 1))); do
   VAULT=$(echo "$VAULTS" | jq ".[$i]")
@@ -22,23 +49,35 @@ for i in $(seq 0 $((VAULT_COUNT - 1))); do
     continue
   fi
 
-  VAULT_PK=$(echo "$VAULT" | jq -r '.pub_key_eddsa')
+  VAULT_PK=$(echo "$VAULT" | jq -r '.pub_key_frost // .pub_key_eddsa')
   BIRTHDAY=$(echo "$VAULT" | jq -r '.vault_creation_height_xmr // 0')
+
+  if [ "$BIRTHDAY" -le 0 ] 2>/dev/null; then
+    echo "Vault $VAULT_PK: SKIP (no birthday)"
+    continue
+  fi
+
+  if [ "$EARLIEST_BIRTHDAY" -eq 0 ] || [ "$BIRTHDAY" -lt "$EARLIEST_BIRTHDAY" ]; then
+    EARLIEST_BIRTHDAY=$BIRTHDAY
+  fi
+
   echo ""
   echo "Vault: $VAULT_PK"
   echo "Birthday: $BIRTHDAY"
 
-  for signer in docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1; do
-    # Derive auth token from the signer's seed phrase
+  for signer in "${SIGNERS[@]}"; do
     SEED=$(docker exec "$signer" printenv SIGNER_SEED_PHRASE 2>/dev/null || echo "")
     if [ -z "$SEED" ]; then
-      echo "  $signer: SKIP (no seed)"
+      echo "  $signer: SKIP (not found or no seed)"
       continue
     fi
-    TOKEN=$(echo -n "${SEED}xmr-frost-auth" | sha256sum | cut -d" " -f1)
+    TOKEN=$(echo -n "$SEED" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-    # Find the signer's port (only dog exposes 8283 on host)
-    # Use docker exec to call from within the container
+    if $DRY_RUN; then
+      echo "  $signer: would reset to height $BIRTHDAY"
+      continue
+    fi
+
     RESULT=$(docker exec "$signer" curl -s -X POST \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
@@ -48,6 +87,48 @@ for i in $(seq 0 $((VAULT_COUNT - 1))); do
   done
 done
 
+if [ "$EARLIEST_BIRTHDAY" -eq 0 ]; then
+  echo ""
+  echo "No XMR vaults with birthdays found. Nothing to do."
+  exit 0
+fi
+
 echo ""
-echo "Reset complete. Bifrosts will rescan from birthday heights on next scanner_sync cycle."
-echo "Monitor output counts: check /v1/monero/outputs/<vault_pub_key> on each signer."
+echo "Earliest birthday: $EARLIEST_BIRTHDAY"
+
+# --- Step 2: Restart bifrosts with XMR_START_BLOCK_HEIGHT ---
+
+echo ""
+echo "Restarting bifrosts with XMR_START_BLOCK_HEIGHT=$EARLIEST_BIRTHDAY ..."
+
+for bifrost in "${BIFROSTS[@]}"; do
+  if ! docker inspect "$bifrost" &>/dev/null; then
+    echo "  $bifrost: SKIP (not found)"
+    continue
+  fi
+
+  if $DRY_RUN; then
+    echo "  $bifrost: would restart with XMR_START_BLOCK_HEIGHT=$EARLIEST_BIRTHDAY"
+    continue
+  fi
+
+  docker stop "$bifrost" 2>/dev/null || true
+  echo "  $bifrost: stopped"
+done
+
+if ! $DRY_RUN; then
+  echo ""
+  echo "Starting bifrosts..."
+  XMR_START_BLOCK_HEIGHT=$EARLIEST_BIRTHDAY docker compose up -d bifrost bifrost-cat bifrost-fox 2>/dev/null || {
+    echo ""
+    echo "docker compose failed. Start manually:"
+    echo "  XMR_START_BLOCK_HEIGHT=$EARLIEST_BIRTHDAY docker compose up -d bifrost bifrost-cat bifrost-fox"
+  }
+fi
+
+echo ""
+echo "Done. Sidecars reset, bifrosts restarting from XMR height $EARLIEST_BIRTHDAY."
+echo ""
+echo "The bifrost reads XMR_START_BLOCK_HEIGHT once at startup. After the rescan"
+echo "completes, restart normally without the env var — the scanner resumes from"
+echo "its new position."
