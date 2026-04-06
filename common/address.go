@@ -457,8 +457,13 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 	case SOLChain, SUIChain:
 		return currentNetwork
 	case XMRChain:
-		if _, ok := xmrAddressInfoFromString(addr.String()); ok {
-			return mainNetPredicate()
+		if info, ok := xmrAddressInfoFromString(addr.String()); ok {
+			switch info.networkByte {
+			case xmrPrimaryNetworkByte, xmrSubaddressNetworkByte, xmrIntegratedNetworkByte, xmrFeaturedMainnetNetworkByte:
+				return mainNetPredicate()
+			default:
+				return MockNet
+			}
 		}
 	case ZECChain:
 		// Determine network based on address prefix
