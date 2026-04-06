@@ -8530,6 +8530,7 @@ components:
           amount: "100000"
           decimals: 6
           asset: BTC.BTC
+        original_expiry_height: 14500
         remaining_amount:
           amount: "100000"
           decimals: 6
@@ -8584,6 +8585,12 @@ components:
           description: the transaction ID of the winning bid
           example: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
           type: string
+        original_expiry_height:
+          description: "the original expiry height set at auction creation (immutable,\
+            \ used to anchor overtime cap)"
+          example: 14500
+          format: int64
+          type: integer
       required:
       - auction_amount
       - bid_asset
@@ -8656,6 +8663,7 @@ components:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          original_expiry_height: 14500
           remaining_amount:
             amount: "100000"
             decimals: 6
@@ -8703,6 +8711,7 @@ components:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          original_expiry_height: 14500
           remaining_amount:
             amount: "100000"
             decimals: 6
@@ -8751,6 +8760,7 @@ components:
               amount: "100000"
               decimals: 6
               asset: BTC.BTC
+            original_expiry_height: 14500
             remaining_amount:
               amount: "100000"
               decimals: 6
@@ -8785,6 +8795,7 @@ components:
               amount: "100000"
               decimals: 6
               asset: BTC.BTC
+            original_expiry_height: 14500
             remaining_amount:
               amount: "100000"
               decimals: 6

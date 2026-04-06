@@ -213,7 +213,8 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		return fmt.Errorf("intent %s is no longer active, status: %s", msg.IntentTxID, intent.Status.String())
 	}
 
-	mode, err := h.getCancelFundingMode(ctx, intent)
+	var mode cancelFundingMode
+	mode, err = h.getCancelFundingMode(ctx, intent)
 	if err != nil {
 		return fmt.Errorf("fail to determine cancel funding mode: %w", err)
 	}
@@ -222,7 +223,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	// cancel tx. The user-provided gas is booked into the chain gas pool
 	// immediately (similar to processWinningBid), so the standard outbound gas
 	// reimbursement path works unchanged.
-	if err := h.bookCancelGasIfNeeded(ctx, msg, intent, mode); err != nil {
+	if err = h.bookCancelGasIfNeeded(ctx, msg, intent, mode); err != nil {
 		return err
 	}
 
@@ -257,7 +258,8 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		ModuleName: moduleName,
 	}
 
-	ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
+	var ok bool
+	ok, err = h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
 	if err != nil {
 		return fmt.Errorf("fail to add outbound tx: %w", err)
 	}
@@ -275,7 +277,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	// Refund any pending solves for this intent.
 	// Return the error to trigger CacheContext rollback and retry next block,
 	// preventing solve records from being deleted without successful refunds.
-	if err := h.mgr.IntentMgr().RefundIntentSolves(ctx, intent); err != nil {
+	if err = h.mgr.IntentMgr().RefundIntentSolves(ctx, intent); err != nil {
 		return fmt.Errorf("fail to refund intent solves on cancel: %w", err)
 	}
 

@@ -99,6 +99,18 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 		return se.ErrInvalidRequest.Wrapf("solve asset %s does not match intent target asset %s", msg.Tx.Coins[0].Asset, intent.TargetAsset)
 	}
 
+	// Supported THOR-native target assets are escrowed from a THOR account in
+	// handle(), so require the solver's from address to parse as one up front.
+	if isSupportedIntentNativeAsset(intent.TargetAsset) {
+		if _, err := msg.Tx.FromAddress.AccAddress(); err != nil {
+			return se.ErrInvalidAddress.Wrapf(
+				"solver from address %s must be a THORChain address for target asset %s",
+				msg.Tx.FromAddress,
+				intent.TargetAsset,
+			)
+		}
+	}
+
 	// Prevent self-solving: the intent creator cannot solve their own intent
 	if intent.SourceAddress.Equals(msg.Tx.FromAddress) {
 		return se.ErrUnauthorized.Wrap("intent creator cannot solve their own intent")

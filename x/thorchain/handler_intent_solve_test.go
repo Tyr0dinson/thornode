@@ -351,6 +351,21 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 			},
 			expectedErr: se.ErrInvalidRequest,
 		},
+		{
+			name: "RUNE target with non-THOR solver address should fail",
+			setupMsg: func() *MsgIntentSolve {
+				runeIntent := intent
+				runeIntent.TargetAsset = common.RuneAsset()
+				runeIntent.TargetAddress = GetRandomTHORAddress()
+				w.keeper.SetIntent(w.ctx, runeIntent)
+
+				runeTx := GetRandomTx()
+				runeTx.FromAddress = GetRandomDOGEAddress()
+				runeTx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(15*common.One))}
+				return NewMsgIntentSolve(runeTx, intentTx.ID, GetRandomDOGEAddress(), w.activeNodeAccount.NodeAddress)
+			},
+			expectedErr: se.ErrInvalidAddress,
+		},
 	}
 
 	for _, tc := range testCases {

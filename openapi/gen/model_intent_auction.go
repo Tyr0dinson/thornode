@@ -34,7 +34,7 @@ type IntentAuction struct {
 	OwnerAddress *string `json:"owner_address,omitempty"`
 	// the transaction ID of the winning bid
 	WinningBidTxId *string `json:"winning_bid_tx_id,omitempty"`
-	// the original expiry height set at auction creation (immutable)
+	// the original expiry height set at auction creation (immutable, used to anchor overtime cap)
 	OriginalExpiryHeight *int64 `json:"original_expiry_height,omitempty"`
 }
 
@@ -319,6 +319,38 @@ func (o *IntentAuction) SetWinningBidTxId(v string) {
 	o.WinningBidTxId = &v
 }
 
+// GetOriginalExpiryHeight returns the OriginalExpiryHeight field value if set, zero value otherwise.
+func (o *IntentAuction) GetOriginalExpiryHeight() int64 {
+	if o == nil || o.OriginalExpiryHeight == nil {
+		var ret int64
+		return ret
+	}
+	return *o.OriginalExpiryHeight
+}
+
+// GetOriginalExpiryHeightOk returns a tuple with the OriginalExpiryHeight field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *IntentAuction) GetOriginalExpiryHeightOk() (*int64, bool) {
+	if o == nil || o.OriginalExpiryHeight == nil {
+		return nil, false
+	}
+	return o.OriginalExpiryHeight, true
+}
+
+// HasOriginalExpiryHeight returns a boolean if a field has been set.
+func (o *IntentAuction) HasOriginalExpiryHeight() bool {
+	if o != nil && o.OriginalExpiryHeight != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetOriginalExpiryHeight gets a reference to the given int64 and assigns it to the OriginalExpiryHeight field.
+func (o *IntentAuction) SetOriginalExpiryHeight(v int64) {
+	o.OriginalExpiryHeight = &v
+}
+
 func (o IntentAuction) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -350,6 +382,9 @@ func (o IntentAuction) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.WinningBidTxId != nil {
 		toSerialize["winning_bid_tx_id"] = o.WinningBidTxId
+	}
+	if o.OriginalExpiryHeight != nil {
+		toSerialize["original_expiry_height"] = o.OriginalExpiryHeight
 	}
 	return json.Marshal(toSerialize)
 }

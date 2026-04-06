@@ -14,6 +14,7 @@ Name | Type | Description | Notes
 **Status** | **string** | the status of the auction | 
 **OwnerAddress** | Pointer to **string** | the owner address (original intent creator) | [optional] 
 **WinningBidTxId** | Pointer to **string** | the transaction ID of the winning bid | [optional] 
+**OriginalExpiryHeight** | Pointer to **int64** | the original expiry height set at auction creation (immutable, used to anchor overtime cap) | [optional] 
 
 ## Methods
 
@@ -243,6 +244,31 @@ SetWinningBidTxId sets WinningBidTxId field to given value.
 `func (o *IntentAuction) HasWinningBidTxId() bool`
 
 HasWinningBidTxId returns a boolean if a field has been set.
+
+### GetOriginalExpiryHeight
+
+`func (o *IntentAuction) GetOriginalExpiryHeight() int64`
+
+GetOriginalExpiryHeight returns the OriginalExpiryHeight field if non-nil, zero value otherwise.
+
+### GetOriginalExpiryHeightOk
+
+`func (o *IntentAuction) GetOriginalExpiryHeightOk() (*int64, bool)`
+
+GetOriginalExpiryHeightOk returns a tuple with the OriginalExpiryHeight field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetOriginalExpiryHeight
+
+`func (o *IntentAuction) SetOriginalExpiryHeight(v int64)`
+
+SetOriginalExpiryHeight sets OriginalExpiryHeight field to given value.
+
+### HasOriginalExpiryHeight
+
+`func (o *IntentAuction) HasOriginalExpiryHeight() bool`
+
+HasOriginalExpiryHeight returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
