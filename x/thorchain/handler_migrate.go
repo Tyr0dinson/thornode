@@ -67,7 +67,11 @@ func (h MigrateHandler) handle(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Resu
 		case common.SigningAlgoSecp256k1:
 			fromAddress, addrErr = tx.VaultPubKey.GetAddress(tx.Chain)
 		case common.SigningAlgoEd25519:
-			fromAddress, addrErr = tx.VaultPubKeyEddsa.GetAddress(tx.Chain)
+			key := tx.VaultPubKeyEddsa
+			if tx.Chain == common.XMRChain && !tx.VaultPubKeyFrost.IsEmpty() {
+				key = tx.VaultPubKeyFrost
+			}
+			fromAddress, addrErr = key.GetAddress(tx.Chain)
 		default:
 			ctx.Logger().Error("unknown signing algo", "signing_algo", tx.Chain.GetSigningAlgo())
 			continue

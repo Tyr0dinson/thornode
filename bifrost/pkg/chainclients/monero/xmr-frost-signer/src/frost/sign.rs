@@ -26,8 +26,8 @@ use crate::tx::fee;
 use crate::xmr;
 
 /// TTL for signing sessions before cleanup.
-const SIGN_SESSION_TTL: Duration = Duration::from_secs(300); // 5 minutes
-const RESERVATION_TTL: Duration = Duration::from_secs(1800); // 30 minutes
+const SIGN_SESSION_TTL: Duration = Duration::from_secs(120); // 2 minutes
+const RESERVATION_TTL: Duration = Duration::from_secs(120); // 2 minutes
 const RESERVATION_MAX_RETRIES: usize = 3;
 const PREPARE_SPIN_RETRIES: usize = 64;
 const PREPARE_YIELD_RETRIES: usize = 64;
@@ -213,6 +213,10 @@ impl SignCoordinator {
             daemon,
             chain_network,
         }
+    }
+
+    pub fn session_exists(&self, session_id: &str) -> bool {
+        self.sessions.lock().contains_key(session_id)
     }
 
     pub async fn prepare(

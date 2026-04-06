@@ -640,7 +640,37 @@ pub async fn sign_prepare(
         }
     };
     match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
-        Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
+        Ok(IdempotencyCheck::Replay(status, response)) => {
+            // Verify the cached session_id still exists in memory. If the
+            // sidecar restarted, the in-memory session is gone but the
+            // idempotency cache survives in sled. Detect this and clear
+            // the stale cache so a fresh session can be created.
+            let cached_session_id = response
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let session_valid = cached_session_id
+                .as_ref()
+                .map(|sid| state.signer.session_exists(sid))
+                .unwrap_or(true); // No session_id in response (e.g. error) — return as-is.
+            if session_valid {
+                return (status, Json(response));
+            }
+            info!(
+                msg_id,
+                cached_session_id = ?cached_session_id,
+                "sign_prepare cached session not found in memory, clearing stale idempotency"
+            );
+            if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale sign_prepare idempotency record");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
+            }
+        }
         Ok(IdempotencyCheck::Conflict) => {
             info!(
                 msg_id,
@@ -1136,8 +1166,94 @@ pub async fn broadcast(
                     )
                 }
             } else {
-                let msg = resp.reason.unwrap_or_else(|| resp.status);
-                (StatusCode::BAD_REQUEST, error_json(msg))
+                let reason = resp.reason.unwrap_or_else(|| resp.status.clone());
+                let is_double_spend = resp.double_spend.unwrap_or(false);
+                let status_lower = resp.status.to_ascii_lowercase();
+                let reason_lower = reason.to_ascii_lowercase();
+                let mut already_known = is_double_spend
+                    || status_lower.contains("already")
+                    || reason_lower.contains("already")
+                    || reason_lower.contains("double spend")
+                    || reason_lower.contains("not relayed");
+
+                // Positive lookup fallback: when monerod returns Failed with
+                // an empty/ambiguous reason for an already-known tx, query the
+                // pool/chain by the caller-supplied tx hash. This makes the
+                // broadcast endpoint robust to monerod's inconsistent reason
+                // strings and prevents false 400s on idempotent retries.
+                let caller_tx_hash_for_lookup = req.tx_hash.trim();
+                if !already_known && !caller_tx_hash_for_lookup.is_empty() {
+                    match state
+                        .daemon
+                        .get_transactions(&[caller_tx_hash_for_lookup.to_ascii_lowercase()])
+                        .await
+                    {
+                        Ok(result) => {
+                            let found = result
+                                .txs
+                                .as_ref()
+                                .map(|txs| {
+                                    txs.iter().any(|tx| {
+                                        tx.in_pool.unwrap_or(false) || tx.block_height.is_some()
+                                    })
+                                })
+                                .unwrap_or(false);
+                            if found {
+                                info!(
+                                    msg_id,
+                                    caller_tx_hash = caller_tx_hash_for_lookup,
+                                    reason = %reason,
+                                    "broadcast rejected but tx already in pool/chain — treating as success"
+                                );
+                                already_known = true;
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, caller_tx_hash = caller_tx_hash_for_lookup, "post-broadcast tx lookup failed");
+                        }
+                    }
+                }
+
+                if already_known {
+                    let caller_tx_hash = req.tx_hash.trim();
+                    if !caller_tx_hash.is_empty() {
+                        info!(
+                            msg_id,
+                            caller_tx_hash,
+                            reason = %reason,
+                            "broadcast rejected as already known — treating as success"
+                        );
+                        if let Err(e) = state.signer.finalize_broadcast(
+                            &vault_pub_key_canonical,
+                            &msg_id,
+                            caller_tx_hash,
+                        ) {
+                            error!(error = %e, msg_id, "failed to finalize reserved outputs after already-known broadcast");
+                        }
+                        if let Err(e) = state.store.update_outgoing_transfer_status(
+                            &vault_pub_key_canonical,
+                            caller_tx_hash,
+                            OUTGOING_STATUS_MEMPOOL,
+                            None,
+                            Some(chrono::Utc::now().timestamp()),
+                            Some(chrono::Utc::now().timestamp()),
+                        ) {
+                            error!(error = %e, "failed to update outgoing transfer status after already-known broadcast");
+                        }
+                        (
+                            StatusCode::OK,
+                            serde_json::to_value(BroadcastResponse {
+                                tx_hash: caller_tx_hash.to_string(),
+                            })
+                            .unwrap(),
+                        )
+                    } else {
+                        warn!(msg_id, reason = %reason, "broadcast rejected as already known but no caller tx_hash to fall back on");
+                        (StatusCode::BAD_REQUEST, error_json(reason))
+                    }
+                } else {
+                    (StatusCode::BAD_REQUEST, error_json(reason))
+                }
             }
         }
         Err(e) => {
@@ -1145,14 +1261,23 @@ pub async fn broadcast(
             (StatusCode::INTERNAL_SERVER_ERROR, error_json(e.to_string()))
         }
     };
-    persist_idempotency(
-        &state,
-        "broadcast",
-        &msg_id,
-        &payload_hashes.canonical,
-        status,
-        &response_json,
-    );
+    // Only cache successful broadcast responses. Caching failures causes the
+    // bifrost to retry the same broadcast forever and always get the cached
+    // failure back, even after the underlying issue is resolved.
+    // On failure, clear the pending claim so retries can proceed immediately
+    // instead of being blocked by the in-progress lock for 10 minutes.
+    if status == StatusCode::OK {
+        persist_idempotency(
+            &state,
+            "broadcast",
+            &msg_id,
+            &payload_hashes.canonical,
+            status,
+            &response_json,
+        );
+    } else if let Err(e) = state.store.clear_idempotency("broadcast", &msg_id) {
+        warn!(msg_id, error = %e, "failed to clear pending broadcast idempotency after failure");
+    }
     (status, Json(response_json))
 }
 
@@ -1637,7 +1762,7 @@ pub async fn scanner_sync(
             continue;
         }
 
-        let stored_meta = match state
+        let mut stored_meta = match state
             .store
             .load_scan_block_meta(&vault.vault_pub_key, req.height)
         {
@@ -1655,6 +1780,36 @@ pub async fn scanner_sync(
                 );
             }
         };
+
+        // When no ScanBlockMeta exists but outputs exist at this height (e.g.
+        // from a rescan that saved outputs without saving meta), synthesize
+        // meta from the existing outputs so the recovery path reports them.
+        if stored_meta.is_none() && scan_height >= req.height {
+            let existing_refs = output_refs_at_height(&tracked_state.outputs, req.height);
+            let existing_credited = state
+                .scanner
+                .lock()
+                .get_credited_outputs_at_height(&vault.vault_pub_key, req.height);
+            if !existing_refs.is_empty() {
+                info!(
+                    vault = %vault.vault_pub_key,
+                    height = req.height,
+                    outputs = existing_refs.len(),
+                    "synthesizing scan block meta from rescan outputs"
+                );
+                let synthesized = ScanBlockMeta {
+                    height: req.height,
+                    block_hash: req.block_hash.trim().to_string(),
+                    parent_hash: req.parent_hash.trim().to_string(),
+                    added_outputs: existing_refs,
+                    credited_outputs: existing_credited,
+                };
+                let _ = state
+                    .store
+                    .save_scan_block_meta(&vault.vault_pub_key, &synthesized);
+                stored_meta = Some(synthesized);
+            }
+        }
 
         let meta_matches = stored_meta.as_ref().is_some_and(|meta| {
             hash_matches(&meta.block_hash, &req.block_hash)
@@ -2388,32 +2543,46 @@ pub async fn mark_outputs_spent(
     }
 
     if !req.skip_verification {
-        match state.daemon.get_transactions(&[tx_hash.clone()]).await {
-            Ok(result) => {
-                let found = result
-                    .txs
-                    .as_ref()
-                    .map(|txs| {
-                        txs.iter()
-                            .any(|tx| tx.in_pool.unwrap_or(false) || tx.block_height.is_some())
-                    })
-                    .unwrap_or(false);
-                if !found {
+        // Race window: bifrost calls mark-spent immediately after broadcast,
+        // but monerod may take a few hundred ms to expose the tx via
+        // get_transactions. Retry briefly before giving up.
+        let mut attempts = 0u8;
+        let found = loop {
+            attempts += 1;
+            match state.daemon.get_transactions(&[tx_hash.clone()]).await {
+                Ok(result) => {
+                    let hit = result
+                        .txs
+                        .as_ref()
+                        .map(|txs| {
+                            txs.iter()
+                                .any(|tx| tx.in_pool.unwrap_or(false) || tx.block_height.is_some())
+                        })
+                        .unwrap_or(false);
+                    if hit {
+                        break true;
+                    }
+                    if attempts >= 4 {
+                        break false;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                Err(e) => {
+                    error!(error = %e, tx_hash, "failed to verify transaction for mark-spent");
                     return (
-                        StatusCode::NOT_FOUND,
-                        Json(error_json(format!(
-                            "transaction {tx_hash} not found in mempool or on-chain"
-                        ))),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(error_json(format!("failed to verify tx: {e}"))),
                     );
                 }
             }
-            Err(e) => {
-                error!(error = %e, tx_hash, "failed to verify transaction for mark-spent");
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(error_json(format!("failed to verify tx: {e}"))),
-                );
-            }
+        };
+        if !found {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(error_json(format!(
+                    "transaction {tx_hash} not found in mempool or on-chain"
+                ))),
+            );
         }
     }
 
@@ -4603,6 +4772,111 @@ mod tests {
         assert_eq!(healed.added_outputs.len(), 1);
         assert_eq!(healed.added_outputs[0].tx_hash, output.tx_hash);
         assert_eq!(healed.added_outputs[0].output_index, output.output_index);
+    }
+
+    #[tokio::test]
+    async fn scanner_sync_reports_rescan_outputs_without_block_meta() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/json_rpc",
+                axum::routing::post(|Json(req): Json<serde_json::Value>| async move {
+                    let method = req
+                        .get("method")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    match method {
+                        "get_block_header_by_height" => (
+                            StatusCode::OK,
+                            Json(serde_json::json!({
+                                "result": {
+                                    "block_header": {
+                                        "height": 120,
+                                        "hash": "hash120",
+                                        "prev_hash": "hash119",
+                                        "timestamp": 1,
+                                        "major_version": 16,
+                                        "minor_version": 16,
+                                        "nonce": 1,
+                                        "reward": 1,
+                                        "num_txes": 0
+                                    }
+                                }
+                            })),
+                        ),
+                        _ => (
+                            StatusCode::NOT_FOUND,
+                            Json(serde_json::json!({"error": "unsupported method"})),
+                        ),
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let output = TrackedOutput {
+            tx_hash: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd".to_string(),
+            output_index: 0,
+            amount: 500,
+            height: 120,
+            one_time_key: Some("one-time-key-dd".to_string()),
+            key_image: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("dd".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        state
+            .store
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                "48vault",
+                "test",
+            )
+            .expect("register vault");
+
+        // Simulate rescan: output in store, scan_height advanced, but NO ScanBlockMeta.
+        state
+            .store
+            .save_outputs(VALID_VAULT_PUB_KEY, std::slice::from_ref(&output))
+            .expect("save outputs");
+        state
+            .store
+            .save_scan_height(VALID_VAULT_PUB_KEY, 120)
+            .expect("save scan height");
+        // Intentionally NOT saving ScanBlockMeta — this is what rescan omits.
+
+        let req = ScannerSyncRequest {
+            height: 120,
+            tip_height: 9_999,
+            block_hash: "hash120".to_string(),
+            parent_hash: "hash119".to_string(),
+            reorg_window: 120,
+        };
+        let response = scanner_sync(State(state.clone()), Json(req))
+            .await
+            .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let incoming = body["incoming"]
+            .as_array()
+            .expect("incoming should be an array");
+        assert_eq!(
+            incoming.len(),
+            1,
+            "rescan-added output should appear as incoming even without ScanBlockMeta; got: {incoming:?}"
+        );
+        assert_eq!(incoming[0]["txid"], serde_json::json!(output.tx_hash));
+        assert_eq!(incoming[0]["amount"], serde_json::json!(output.amount));
     }
 
     #[tokio::test]

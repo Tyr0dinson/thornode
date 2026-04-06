@@ -265,8 +265,8 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	}
 	s.pruneObservedOutgoing(fetchHeight)
 	if err := s.refreshAsgardLookup(); err != nil {
-		s.logger.Debug().Err(err).Msg("fail to refresh asgard lookup")
-		return nil, nil
+		s.logger.Err(err).Msg("fail to refresh asgard lookup, retrying next block")
+		return nil, btypes.ErrUnavailableBlock
 	}
 
 	resp, err := s.frostSigner.SyncTransfersByHeight(fetchHeight, chainHeight, blockHash, parentHash, s.maxReorgRescan)
@@ -730,7 +730,10 @@ func (s *Scanner) refreshAsgardLookup() error {
 
 	lookup := make(map[string]common.PubKey)
 	for _, vault := range vaults {
-		observedVault := vault.PubKeyEddsa
+		observedVault := vault.PubKeyFrost
+		if observedVault.IsEmpty() {
+			observedVault = vault.PubKeyEddsa
+		}
 		if observedVault.IsEmpty() {
 			continue
 		}
@@ -744,8 +747,11 @@ func (s *Scanner) refreshAsgardLookup() error {
 			"bifrost_scanner",
 			creationHeight,
 		)
-		if addrErr != nil || derived.IsEmpty() {
-			s.logger.Debug().Err(addrErr).Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with unregistered monero scanner state")
+		if addrErr != nil {
+			return fmt.Errorf("fail to register vault %s: %w", observedVault.String(), addrErr)
+		}
+		if derived.IsEmpty() {
+			s.logger.Debug().Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with empty derived address")
 			continue
 		}
 		lookup[derived.String()] = observedVault

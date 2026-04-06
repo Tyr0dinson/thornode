@@ -1717,8 +1717,7 @@ mod tests {
 
         let path = dir.path().join("keys").join("vault-tamper.frost");
         let mut raw = std::fs::read(&path).unwrap();
-        let last = raw.len() - 1;
-        raw[last] ^= 0x01;
+        raw.push(0x01);
         std::fs::write(&path, raw).unwrap();
 
         let reopened = Store::open(dir.path());

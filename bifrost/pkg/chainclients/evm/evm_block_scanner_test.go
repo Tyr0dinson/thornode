@@ -741,6 +741,8 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 		switch req.RequestURI {
 		case thorclient.PubKeysEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
+		case thorclient.AsgardVault:
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
 		default:
 			body, err := io.ReadAll(req.Body)
 			c.Assert(err, IsNil)

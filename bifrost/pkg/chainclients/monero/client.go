@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -332,13 +333,16 @@ func (c *Client) catchupSpentOutputRefs() {
 		return
 	}
 	for _, vault := range vaults {
-		if vault.PubKeyEddsa.IsEmpty() {
+		vaultPubKey := vault.PubKeyFrost
+		if vaultPubKey.IsEmpty() {
+			vaultPubKey = vault.PubKeyEddsa
+		}
+		if vaultPubKey.IsEmpty() {
 			continue
 		}
 		if len(vault.SpentOutputRefsXmr) == 0 {
 			continue
 		}
-		vaultPubKey := vault.PubKeyEddsa.String()
 
 		refs := make([]xmrFrostOutputRef, len(vault.SpentOutputRefsXmr))
 		for i, ref := range vault.SpentOutputRefsXmr {
@@ -348,16 +352,16 @@ func (c *Client) catchupSpentOutputRefs() {
 			}
 		}
 
-		result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey, "catchup", refs, true, nil)
+		result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey.String(), "catchup", refs, true, nil)
 		if markErr != nil {
 			c.logger.Err(markErr).
-				Str("vault", vaultPubKey).
+				Str("vault", vaultPubKey.String()).
 				Int("refs", len(refs)).
 				Msg("xmr catchup: failed to apply spent output refs")
 			continue
 		}
 		c.logger.Info().
-			Str("vault", vaultPubKey).
+			Str("vault", vaultPubKey.String()).
 			Int("marked", result.Marked).
 			Int("not_found", result.NotFound).
 			Msg("xmr catchup: applied spent output refs from thorchain")
@@ -531,6 +535,7 @@ func (c *Client) consolidateVault(
 	vaultPubKey := txVaultPubKey(stypes.TxOutItem{
 		VaultPubKey:      vault.PubKey,
 		VaultPubKeyEddsa: vault.PubKeyEddsa,
+		VaultPubKeyFrost: vault.PubKeyFrost,
 	})
 	if vaultPubKey.IsEmpty() {
 		return
@@ -646,6 +651,7 @@ func (c *Client) consolidateVault(
 			ToAddress:        vaultAddress,
 			VaultPubKey:      vault.PubKey,
 			VaultPubKeyEddsa: vault.PubKeyEddsa,
+			VaultPubKeyFrost: vault.PubKeyFrost,
 			Coins: common.Coins{
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(amountThorchain)),
 			},
@@ -1388,6 +1394,17 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 
 	result, err := c.frostSigner.MarkOutputsSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
+		// 404 indicates the sidecar's get_transactions race window — the
+		// catchup loop reconciles this on the next iteration, so log warn
+		// instead of error to avoid alarm noise.
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			c.logger.Warn().
+				Str("tx_hash", txHash).
+				Str("vault", vaultPubKey).
+				Int("refs", len(refs)).
+				Msg("mark-spent transient 404 (will be reconciled by catchup)")
+			return
+		}
 		c.logger.Err(err).
 			Str("tx_hash", txHash).
 			Str("vault", vaultPubKey).
@@ -1947,7 +1964,10 @@ func (c *Client) getVaultAddress(vaultPubKey common.PubKey) string {
 }
 
 func (c *Client) resolveVaultAddress(vault ttypes.Vault) common.Address {
-	vaultPubKey := vault.PubKeyEddsa
+	vaultPubKey := vault.PubKeyFrost
+	if vaultPubKey.IsEmpty() {
+		vaultPubKey = vault.PubKeyEddsa
+	}
 	if vaultPubKey.IsEmpty() {
 		return common.NoAddress
 	}
@@ -1956,8 +1976,8 @@ func (c *Client) resolveVaultAddress(vault ttypes.Vault) common.Address {
 	if err != nil || addr.IsEmpty() {
 		return common.NoAddress
 	}
-	if !vault.PubKeyEddsa.IsEmpty() {
-		c.setVaultAddressMapping(vault.PubKeyEddsa, addr)
+	if !vault.PubKeyFrost.IsEmpty() {
+		c.setVaultAddressMapping(vault.PubKeyFrost, addr)
 	}
 	return addr
 }
@@ -2008,6 +2028,11 @@ func (c *Client) loadVaultAddressMap() error {
 	if c.vaultAddressStore == nil {
 		return nil
 	}
+	// Purge any v1 entries — the v1 store held stale eddsa-key mappings from a
+	// prior bug that caused double registration on the sidecar.
+	if err := c.vaultAddressStore.PurgeLegacyEntries(); err != nil {
+		c.logger.Warn().Err(err).Msg("fail to purge legacy vault address store entries")
+	}
 	stored, err := c.vaultAddressStore.List()
 	if err != nil {
 		return err
@@ -2042,6 +2067,9 @@ func (c *Client) loadVaultAddressMap() error {
 }
 
 func txVaultPubKey(tx stypes.TxOutItem) common.PubKey {
+	if !tx.VaultPubKeyFrost.IsEmpty() {
+		return tx.VaultPubKeyFrost
+	}
 	return tx.VaultPubKeyEddsa
 }
 

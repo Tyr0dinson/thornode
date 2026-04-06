@@ -1,0 +1,192 @@
+package monero
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
+)
+
+func testLogger() zerolog.Logger {
+	return zerolog.Nop()
+}
+
+// Test 2: buildOutboundObservation includes SpentOutputRefs in the TxInItem.
+func TestBuildOutboundObservationIncludesSpentRefs(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "test-vault-spent-refs-obs")
+	vaultAddr, err := vaultPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain: common.XMRChain,
+	}
+	c.vaultAddressMap = map[string]common.Address{
+		vaultPubKey.String(): vaultAddr,
+	}
+	c.vaultAddrToKey = map[string]string{}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        testOutboundXMRDestination(),
+		VaultPubKeyFrost: vaultPubKey,
+		Coins:            common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100))),
+		Memo:             "OUT:inhash",
+	}
+
+	spentRefs := []xmrFrostOutputRef{
+		{TxHash: "aaa111", OutputIndex: 0},
+		{TxHash: "bbb222", OutputIndex: 1},
+		{TxHash: "ccc333", OutputIndex: 2},
+	}
+
+	obs := c.buildOutboundObservation(tx, "txhash123", 5000000, spentRefs)
+	require.NotNil(t, obs, "observation should not be nil")
+	require.Equal(t, 3, len(obs.SpentOutputRefs), "observation should carry all spent refs")
+
+	assert.Equal(t, "aaa111", obs.SpentOutputRefs[0].TxHash)
+	assert.Equal(t, uint32(0), obs.SpentOutputRefs[0].OutputIndex)
+	assert.Equal(t, "bbb222", obs.SpentOutputRefs[1].TxHash)
+	assert.Equal(t, uint32(1), obs.SpentOutputRefs[1].OutputIndex)
+	assert.Equal(t, "ccc333", obs.SpentOutputRefs[2].TxHash)
+	assert.Equal(t, uint32(2), obs.SpentOutputRefs[2].OutputIndex)
+
+	assert.Equal(t, vaultPubKey, obs.ObservedVaultPubKey, "observation vault pubkey should be the frost key")
+}
+
+// Test 2b: buildOutboundObservation with empty spent refs produces no refs.
+func TestBuildOutboundObservationNoSpentRefs(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "test-vault-no-spent-refs")
+	vaultAddr, err := vaultPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain: common.XMRChain,
+	}
+	c.vaultAddressMap = map[string]common.Address{
+		vaultPubKey.String(): vaultAddr,
+	}
+	c.vaultAddrToKey = map[string]string{}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        testOutboundXMRDestination(),
+		VaultPubKeyFrost: vaultPubKey,
+		Coins:            common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100))),
+		Memo:             "OUT:inhash",
+	}
+
+	obs := c.buildOutboundObservation(tx, "txhash456", 5000000, nil)
+	require.NotNil(t, obs)
+	assert.Empty(t, obs.SpentOutputRefs)
+}
+
+// Test 3b: ApplySpentOutputRefs calls MarkOutputsSpent on the sidecar with
+// the correct vault pubkey and refs from the observed tx.
+func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "test-vault-apply-spent")
+
+	var mu sync.Mutex
+	var capturedVault string
+	var capturedTxHash string
+	var capturedRefs []xmrFrostOutputRef
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/monero/outputs/mark-spent" {
+			var req xmrFrostMarkSpentRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			mu.Lock()
+			capturedVault = req.VaultPubKey
+			capturedTxHash = req.TxHash
+			capturedRefs = req.SpentRefs
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: len(req.SpentRefs)})
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	refs := []*common.OutputRef{
+		{TxHash: "spent_a", OutputIndex: 0},
+		{TxHash: "spent_b", OutputIndex: 3},
+	}
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          "XMRTX99",
+			Chain:       common.XMRChain,
+			FromAddress: common.Address("from"),
+			ToAddress:   common.Address("to"),
+			Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50))),
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		},
+		100,
+		vaultPubKey,
+		100,
+	)
+	obsTx.SpentOutputRefs = refs
+
+	c.ApplySpentOutputRefs(obsTx)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Equal(t, vaultPubKey.String(), capturedVault, "sidecar should receive the vault pubkey from ObservedPubKey")
+	assert.Equal(t, "XMRTX99", capturedTxHash)
+	require.Equal(t, 2, len(capturedRefs))
+	assert.Equal(t, "spent_a", capturedRefs[0].TxHash)
+	assert.Equal(t, uint32(0), capturedRefs[0].OutputIndex)
+	assert.Equal(t, "spent_b", capturedRefs[1].TxHash)
+	assert.Equal(t, uint32(3), capturedRefs[1].OutputIndex)
+}
+
+// Test 2c: txVaultPubKey returns frost key when set, else eddsa.
+func TestTxVaultPubKeyPreference(t *testing.T) {
+	t.Parallel()
+
+	frost := testVaultPubKey(t, "frost-key")
+	eddsa := testVaultPubKey(t, "eddsa-key")
+	ecdsa := testVaultPubKey(t, "ecdsa-key")
+
+	tx := stypes.TxOutItem{
+		VaultPubKey:      ecdsa,
+		VaultPubKeyEddsa: eddsa,
+		VaultPubKeyFrost: frost,
+	}
+	assert.Equal(t, frost, txVaultPubKey(tx), "should prefer frost key")
+
+	txNoFrost := stypes.TxOutItem{
+		VaultPubKey:      ecdsa,
+		VaultPubKeyEddsa: eddsa,
+	}
+	assert.Equal(t, eddsa, txVaultPubKey(txNoFrost), "should fall back to eddsa")
+
+	txOnlyEcdsa := stypes.TxOutItem{
+		VaultPubKey: ecdsa,
+	}
+	assert.True(t, txVaultPubKey(txOnlyEcdsa).IsEmpty(), "should be empty when only ecdsa set")
+}
