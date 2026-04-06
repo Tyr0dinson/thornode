@@ -805,16 +805,18 @@ func (im *IntentMgr) StartIntentAuction(ctx cosmos.Context, intent Intent) error
 	}
 
 	// Create the auction
+	originalExpiry := ctx.BlockHeight() + auctionDuration
 	auction := IntentAuction{
-		IntentTxID:      intent.TxID,
-		AuctionAmount:   common.NewCoin(intent.Source.Asset, auctionAmount),
-		RemainingAmount: common.NewCoin(intent.Source.Asset, remainingAmount),
-		BidAsset:        bidAsset,
-		MinBid:          minBid,
-		StartHeight:     ctx.BlockHeight(),
-		ExpiryHeight:    ctx.BlockHeight() + auctionDuration,
-		Status:          IntentAuctionStatus_AuctionActive,
-		OwnerAddress:    intent.SourceAddress,
+		IntentTxID:           intent.TxID,
+		AuctionAmount:        common.NewCoin(intent.Source.Asset, auctionAmount),
+		RemainingAmount:      common.NewCoin(intent.Source.Asset, remainingAmount),
+		BidAsset:             bidAsset,
+		MinBid:               minBid,
+		StartHeight:          ctx.BlockHeight(),
+		ExpiryHeight:         originalExpiry,
+		OriginalExpiryHeight: originalExpiry,
+		Status:               IntentAuctionStatus_AuctionActive,
+		OwnerAddress:         intent.SourceAddress,
 	}
 
 	// Save the auction

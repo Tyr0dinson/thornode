@@ -401,7 +401,8 @@ type IntentAuction struct {
 	ExpiryHeight    int64                                           `protobuf:"varint,7,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
 	Status          IntentAuctionStatus                             `protobuf:"varint,8,opt,name=status,proto3,enum=types.IntentAuctionStatus" json:"status,omitempty"`
 	OwnerAddress    gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,9,opt,name=owner_address,json=ownerAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"owner_address,omitempty"`
-	WinningBidTxID  gitlab_com_thorchain_thornode_v3_common.TxID    `protobuf:"bytes,10,opt,name=winning_bid_tx_id,json=winningBidTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"winning_bid_tx_id,omitempty"`
+	WinningBidTxID       gitlab_com_thorchain_thornode_v3_common.TxID `protobuf:"bytes,10,opt,name=winning_bid_tx_id,json=winningBidTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"winning_bid_tx_id,omitempty"`
+	OriginalExpiryHeight int64                                       `protobuf:"varint,11,opt,name=original_expiry_height,json=originalExpiryHeight,proto3" json:"original_expiry_height,omitempty"`
 }
 
 func (m *IntentAuction) Reset()         { *m = IntentAuction{} }
@@ -491,6 +492,13 @@ func (m *IntentAuction) GetWinningBidTxID() gitlab_com_thorchain_thornode_v3_com
 		return m.WinningBidTxID
 	}
 	return ""
+}
+
+func (m *IntentAuction) GetOriginalExpiryHeight() int64 {
+	if m != nil {
+		return m.OriginalExpiryHeight
+	}
+	return 0
 }
 
 // IntentAuctionBid represents a bid on an intent auction
@@ -1018,6 +1026,11 @@ func (m *IntentAuction) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.OriginalExpiryHeight != 0 {
+		i = encodeVarintTypeIntent(dAtA, i, uint64(m.OriginalExpiryHeight))
+		i--
+		dAtA[i] = 0x58
+	}
 	if len(m.WinningBidTxID) > 0 {
 		i -= len(m.WinningBidTxID)
 		copy(dAtA[i:], m.WinningBidTxID)
@@ -1376,6 +1389,9 @@ func (m *IntentAuction) Size() (n int) {
 	l = len(m.WinningBidTxID)
 	if l > 0 {
 		n += 1 + l + sovTypeIntent(uint64(l))
+	}
+	if m.OriginalExpiryHeight != 0 {
+		n += 1 + sovTypeIntent(uint64(m.OriginalExpiryHeight))
 	}
 	return n
 }
@@ -2577,6 +2593,25 @@ func (m *IntentAuction) Unmarshal(dAtA []byte) error {
 			}
 			m.WinningBidTxID = gitlab_com_thorchain_thornode_v3_common.TxID(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 11:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OriginalExpiryHeight", wireType)
+			}
+			m.OriginalExpiryHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.OriginalExpiryHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipTypeIntent(dAtA[iNdEx:])

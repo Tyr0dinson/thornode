@@ -217,14 +217,15 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeExtension(c *C)
 	// Using currentHeight + 99 satisfies all conditions.
 	auctionExpiry := currentHeight + 99
 	auction := IntentAuction{
-		IntentTxID:      intentTx.ID,
-		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
-		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
-		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
-		MinBid:          cosmos.NewUint(1000),
-		StartHeight:     currentHeight - 100,
-		ExpiryHeight:    auctionExpiry,
-		Status:          IntentAuctionStatus_AuctionActive,
+		IntentTxID:           intentTx.ID,
+		AuctionAmount:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:             common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:               cosmos.NewUint(1000),
+		StartHeight:          currentHeight - 100,
+		ExpiryHeight:         auctionExpiry,
+		OriginalExpiryHeight: auctionExpiry,
+		Status:               IntentAuctionStatus_AuctionActive,
 	}
 	w.keeper.SetIntentAuction(w.ctx, auction)
 
@@ -720,14 +721,15 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeBidRejection(c 
 	// - ExpiryHeight > currentHeight (not expired)
 	auctionExpiry := currentHeight + 99
 	auction := IntentAuction{
-		IntentTxID:      intentTx.ID,
-		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
-		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
-		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
-		MinBid:          cosmos.NewUint(1000),
-		StartHeight:     currentHeight - 100,
-		ExpiryHeight:    auctionExpiry,
-		Status:          IntentAuctionStatus_AuctionActive,
+		IntentTxID:           intentTx.ID,
+		AuctionAmount:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:             common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:               cosmos.NewUint(1000),
+		StartHeight:          currentHeight - 100,
+		ExpiryHeight:         auctionExpiry,
+		OriginalExpiryHeight: auctionExpiry,
+		Status:               IntentAuctionStatus_AuctionActive,
 	}
 	w.keeper.SetIntentAuction(w.ctx, auction)
 
@@ -888,14 +890,15 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_NetworkFeeFailure(c *C)
 	// Create an auction in overtime window (currentHeight + 99).
 	auctionExpiry := currentHeight + 99
 	auction := IntentAuction{
-		IntentTxID:      intentTx.ID,
-		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
-		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
-		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
-		MinBid:          cosmos.NewUint(1000),
-		StartHeight:     currentHeight - 100,
-		ExpiryHeight:    auctionExpiry,
-		Status:          IntentAuctionStatus_AuctionActive,
+		IntentTxID:           intentTx.ID,
+		AuctionAmount:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:             common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:               cosmos.NewUint(1000),
+		StartHeight:          currentHeight - 100,
+		ExpiryHeight:         auctionExpiry,
+		OriginalExpiryHeight: auctionExpiry,
+		Status:               IntentAuctionStatus_AuctionActive,
 	}
 	w.keeper.SetIntentAuction(w.ctx, auction)
 

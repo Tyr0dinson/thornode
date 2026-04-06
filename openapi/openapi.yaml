@@ -5661,6 +5661,11 @@ components:
           type: string
           description: the transaction ID of the winning bid
           example: "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890"
+        original_expiry_height:
+          type: integer
+          format: int64
+          description: the original expiry height set at auction creation (immutable, used to anchor overtime cap)
+          example: 14500
 
     IntentAuctionBid:
       type: object

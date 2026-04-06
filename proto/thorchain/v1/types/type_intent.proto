@@ -117,6 +117,7 @@ message IntentAuction {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
     (gogoproto.customname) = "WinningBidTxID"
   ];
+  int64 original_expiry_height = 11;
 }
 
 // IntentAuctionBid represents a bid on an intent auction

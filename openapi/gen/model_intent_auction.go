@@ -34,6 +34,8 @@ type IntentAuction struct {
 	OwnerAddress *string `json:"owner_address,omitempty"`
 	// the transaction ID of the winning bid
 	WinningBidTxId *string `json:"winning_bid_tx_id,omitempty"`
+	// the original expiry height set at auction creation (immutable)
+	OriginalExpiryHeight *int64 `json:"original_expiry_height,omitempty"`
 }
 
 // NewIntentAuction instantiates a new IntentAuction object

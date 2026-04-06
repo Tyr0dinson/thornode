@@ -228,9 +228,15 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 			// Enforce hard cap on total overtime to prevent indefinite stalling
 			maxOvertimeBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionMaxOvertimeBlocks)
 			if maxOvertimeBlocks > 0 {
-				// Get the original auction duration to calculate max allowed expiry
-				auctionDuration := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionDurationBlocks)
-				maxExpiry := auction.StartHeight + auctionDuration + maxOvertimeBlocks
+				// Use the immutable original expiry to anchor the cap, so mid-auction
+				// mimir changes to IntentAuctionDurationBlocks cannot shift the ceiling.
+				originalExpiry := auction.OriginalExpiryHeight
+				if originalExpiry == 0 {
+					// Backward compatibility for auctions created before this field existed.
+					auctionDuration := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionDurationBlocks)
+					originalExpiry = auction.StartHeight + auctionDuration
+				}
+				maxExpiry := originalExpiry + maxOvertimeBlocks
 				if newExpiry > maxExpiry {
 					newExpiry = maxExpiry
 				}

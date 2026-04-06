@@ -2910,7 +2910,8 @@ var (
 	fd_IntentAuction_expiry_height     protoreflect.FieldDescriptor
 	fd_IntentAuction_status            protoreflect.FieldDescriptor
 	fd_IntentAuction_owner_address     protoreflect.FieldDescriptor
-	fd_IntentAuction_winning_bid_tx_id protoreflect.FieldDescriptor
+	fd_IntentAuction_winning_bid_tx_id      protoreflect.FieldDescriptor
+	fd_IntentAuction_original_expiry_height protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -2926,6 +2927,7 @@ func init() {
 	fd_IntentAuction_status = md_IntentAuction.Fields().ByName("status")
 	fd_IntentAuction_owner_address = md_IntentAuction.Fields().ByName("owner_address")
 	fd_IntentAuction_winning_bid_tx_id = md_IntentAuction.Fields().ByName("winning_bid_tx_id")
+	fd_IntentAuction_original_expiry_height = md_IntentAuction.Fields().ByName("original_expiry_height")
 }
 
 var _ protoreflect.Message = (*fastReflection_IntentAuction)(nil)
@@ -3053,6 +3055,12 @@ func (x *fastReflection_IntentAuction) Range(f func(protoreflect.FieldDescriptor
 			return
 		}
 	}
+	if x.OriginalExpiryHeight != int64(0) {
+		value := protoreflect.ValueOfInt64(x.OriginalExpiryHeight)
+		if !f(fd_IntentAuction_original_expiry_height, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3088,6 +3096,8 @@ func (x *fastReflection_IntentAuction) Has(fd protoreflect.FieldDescriptor) bool
 		return x.OwnerAddress != ""
 	case "types.IntentAuction.winning_bid_tx_id":
 		return x.WinningBidTxId != ""
+	case "types.IntentAuction.original_expiry_height":
+		return x.OriginalExpiryHeight != int64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.IntentAuction"))
@@ -3124,6 +3134,8 @@ func (x *fastReflection_IntentAuction) Clear(fd protoreflect.FieldDescriptor) {
 		x.OwnerAddress = ""
 	case "types.IntentAuction.winning_bid_tx_id":
 		x.WinningBidTxId = ""
+	case "types.IntentAuction.original_expiry_height":
+		x.OriginalExpiryHeight = int64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.IntentAuction"))
@@ -3170,6 +3182,9 @@ func (x *fastReflection_IntentAuction) Get(descriptor protoreflect.FieldDescript
 	case "types.IntentAuction.winning_bid_tx_id":
 		value := x.WinningBidTxId
 		return protoreflect.ValueOfString(value)
+	case "types.IntentAuction.original_expiry_height":
+		value := x.OriginalExpiryHeight
+		return protoreflect.ValueOfInt64(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.IntentAuction"))
@@ -3210,6 +3225,8 @@ func (x *fastReflection_IntentAuction) Set(fd protoreflect.FieldDescriptor, valu
 		x.OwnerAddress = value.Interface().(string)
 	case "types.IntentAuction.winning_bid_tx_id":
 		x.WinningBidTxId = value.Interface().(string)
+	case "types.IntentAuction.original_expiry_height":
+		x.OriginalExpiryHeight = value.Int()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.IntentAuction"))
@@ -3259,6 +3276,8 @@ func (x *fastReflection_IntentAuction) Mutable(fd protoreflect.FieldDescriptor) 
 		panic(fmt.Errorf("field owner_address of message types.IntentAuction is not mutable"))
 	case "types.IntentAuction.winning_bid_tx_id":
 		panic(fmt.Errorf("field winning_bid_tx_id of message types.IntentAuction is not mutable"))
+	case "types.IntentAuction.original_expiry_height":
+		panic(fmt.Errorf("field original_expiry_height of message types.IntentAuction is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.IntentAuction"))
@@ -3295,6 +3314,8 @@ func (x *fastReflection_IntentAuction) NewField(fd protoreflect.FieldDescriptor)
 		return protoreflect.ValueOfString("")
 	case "types.IntentAuction.winning_bid_tx_id":
 		return protoreflect.ValueOfString("")
+	case "types.IntentAuction.original_expiry_height":
+		return protoreflect.ValueOfInt64(int64(0))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.IntentAuction"))
@@ -5946,7 +5967,8 @@ type IntentAuction struct {
 	ExpiryHeight    int64               `protobuf:"varint,7,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
 	Status          IntentAuctionStatus `protobuf:"varint,8,opt,name=status,proto3,enum=types.IntentAuctionStatus" json:"status,omitempty"`
 	OwnerAddress    string              `protobuf:"bytes,9,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
-	WinningBidTxId  string              `protobuf:"bytes,10,opt,name=winning_bid_tx_id,json=winningBidTxId,proto3" json:"winning_bid_tx_id,omitempty"`
+	WinningBidTxId       string              `protobuf:"bytes,10,opt,name=winning_bid_tx_id,json=winningBidTxId,proto3" json:"winning_bid_tx_id,omitempty"`
+	OriginalExpiryHeight int64               `protobuf:"varint,11,opt,name=original_expiry_height,json=originalExpiryHeight,proto3" json:"original_expiry_height,omitempty"`
 }
 
 func (x *IntentAuction) Reset() {
@@ -6037,6 +6059,13 @@ func (x *IntentAuction) GetWinningBidTxId() string {
 		return x.WinningBidTxId
 	}
 	return ""
+}
+
+func (x *IntentAuction) GetOriginalExpiryHeight() int64 {
+	if x != nil {
+		return x.OriginalExpiryHeight
+	}
+	return 0
 }
 
 // IntentAuctionBid represents a bid on an intent auction
