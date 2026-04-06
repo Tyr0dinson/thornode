@@ -2,6 +2,8 @@ package monero
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -164,10 +166,10 @@ type xmrFrostSignCombineRequest struct {
 }
 
 type xmrFrostSignCombineResponse struct {
-	TxHash          string                `json:"tx_hash"`
-	TxHex           string                `json:"tx_hex"`
-	FeeAtomic       uint64                `json:"fee_atomic"`
-	SpentOutputRefs []xmrFrostOutputRef   `json:"spent_output_refs,omitempty"`
+	TxHash          string              `json:"tx_hash"`
+	TxHex           string              `json:"tx_hex"`
+	FeeAtomic       uint64              `json:"fee_atomic"`
+	SpentOutputRefs []xmrFrostOutputRef `json:"spent_output_refs,omitempty"`
 }
 
 type xmrFrostOutputRef struct {
@@ -211,12 +213,12 @@ type xmrFrostBalanceResponse struct {
 }
 
 type xmrFrostRegisterVaultRequest struct {
-	VaultPubKey string `json:"vault_pub_key"`
-	GroupKey    string `json:"group_key"`
-	Address     string `json:"address"`
-	SpendKeyHex string `json:"spend_key_hex,omitempty"`
-	Source      string `json:"source,omitempty"`
-	VaultCreationHeight int64 `json:"birthday,omitempty"`
+	VaultPubKey         string `json:"vault_pub_key"`
+	GroupKey            string `json:"group_key"`
+	Address             string `json:"address"`
+	SpendKeyHex         string `json:"spend_key_hex,omitempty"`
+	Source              string `json:"source,omitempty"`
+	VaultCreationHeight int64  `json:"birthday,omitempty"`
 }
 
 type xmrFrostRegisterVaultResponse struct {

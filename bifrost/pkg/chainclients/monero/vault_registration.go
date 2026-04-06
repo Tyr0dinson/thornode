@@ -76,10 +76,10 @@ func ensureFrostVaultRegistered(
 	}
 
 	req := xmrFrostRegisterVaultRequest{
-		VaultPubKey: vaultPubKey.String(),
-		GroupKey:    groupKeyHex,
-		Address:     address.String(),
-		Source:      source,
+		VaultPubKey:         vaultPubKey.String(),
+		GroupKey:            groupKeyHex,
+		Address:             address.String(),
+		Source:              source,
 		VaultCreationHeight: birthday,
 	}
 	if spendKeyHex, ok := bootstrap.spendKeyHexFor(vaultPubKey); ok {

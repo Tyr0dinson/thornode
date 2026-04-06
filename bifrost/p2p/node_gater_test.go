@@ -197,6 +197,7 @@ func (m *MockThorchainBridge) GetReferenceMemoByTxHash(hash string) (string, err
 func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*types.QueryObservedTxVoter, error) {
 	return nil, nil
 }
+
 func (m *MockThorchainBridge) GetBlockTimestamp(height int64) (time.Time, error) {
 	return time.Time{}, nil
 }

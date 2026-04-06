@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMPOSE_FILE="docker-compose.xmr-stagenet.yml"
 CHAIN_ID="thorchain"
 KEYRING="file"
 PASSWORD="password"
@@ -14,17 +13,14 @@ CAT_SEED="cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat ca
 FOX_SEED="fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
 
 tx() {
-  local container="$1"; shift
+  local container="$1"
+  shift
   docker exec "$container" bash -c "printf '${PASSWORD}\n${PASSWORD}\n' | thornode tx thorchain $* --from thorchain --keyring-backend $KEYRING --chain-id $CHAIN_ID --yes" 2>&1
 }
 
-tx_env() {
-  local container="$1"; local env_key="$2"; local env_val="$3"; shift 3
-  docker exec -e "${env_key}=${env_val}" "$container" bash -c "printf '${PASSWORD}\n${PASSWORD}\n' | thornode tx thorchain $* --from thorchain --keyring-backend $KEYRING --chain-id $CHAIN_ID --yes" 2>&1
-}
-
 mimir() {
-  local key="$1"; local val="$2"
+  local key="$1"
+  local val="$2"
   echo "  mimir $key = $val"
   tx docker-thornode-1 "mimir $key $val --node $DOG_RPC" | grep -E "code:|txhash:" || true
   sleep 7
@@ -156,7 +152,8 @@ for i in $(seq 1 20); do
 
     echo ""
     echo "REMINDER: Export keyshares now!"
-    echo "  mkdir -p ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)"
+    # shellcheck disable=SC2016
+    echo '  mkdir -p ~/frost-keyshares/xmr-stagenet/$(date +%Y%m%d)'
     echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-1:/var/lib/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/dog.tar.gz"
     echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-cat-1:/var/lib/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/cat.tar.gz"
     echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-fox-1:/var/lib/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/fox.tar.gz"

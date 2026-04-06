@@ -9,16 +9,16 @@
 ########################################################################################
 
 volumes:
-  thornode:
-  thornode-cat:
-  thornode-fox:
-  bifrost:
-  bifrost-cat:
-  bifrost-fox:
-  monero-daemon:
-  xmr-frost-data:
-  xmr-frost-data-cat:
-  xmr-frost-data-fox:
+  thornode: {}
+  thornode-cat: {}
+  thornode-fox: {}
+  bifrost: {}
+  bifrost-cat: {}
+  bifrost-fox: {}
+  monero-daemon: {}
+  xmr-frost-data: {}
+  xmr-frost-data-cat: {}
+  xmr-frost-data-fox: {}
 
 x-disabled-chains: &disabled-chains
   BIFROST_CHAINS_BTC_DISABLED: "true"
@@ -98,7 +98,6 @@ x-logging: &logging
     max-file: "3"
 
 services:
-
   # ================================ Monero mainnet ================================
 
   monero-daemon:
@@ -118,9 +117,17 @@ services:
     ports:
       - "18081:18081"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "-H", "Content-Type: application/json",
-             "-d", '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}',
-             "http://localhost:18081/json_rpc"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-H",
+          "Content-Type: application/json",
+          "-d",
+          '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}',
+          "http://localhost:18081/json_rpc",
+        ]
       interval: 60s
       timeout: 10s
       retries: 9999

@@ -80,7 +80,7 @@ func TestFrostSignerGetChainHeightUsesDaemonRPCWhenConfigured(t *testing.T) {
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)
@@ -175,7 +175,7 @@ func TestFrostSignerGetChainBlockUsesDaemonRPCWhenConfigured(t *testing.T) {
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)
@@ -217,7 +217,7 @@ func TestFrostSignerGetChainHeightFallsBackToSidecarWhenDaemonRPCFails(t *testin
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)
@@ -268,7 +268,7 @@ func TestFrostSignerGetChainBlockMapsDaemonTipToUnavailable(t *testing.T) {
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)

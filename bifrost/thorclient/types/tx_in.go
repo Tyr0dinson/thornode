@@ -23,19 +23,19 @@ type TxIn struct {
 }
 
 type TxInItem struct {
-	BlockHeight           int64              `json:"block_height"`
-	Tx                    string             `json:"tx"`
-	Memo                  string             `json:"memo"`
-	Sender                string             `json:"sender"`
-	To                    string             `json:"to"` // to address
-	Coins                 common.Coins       `json:"coins"`
-	Gas                   common.Gas         `json:"gas"`
-	ObservedVaultPubKey   common.PubKey      `json:"observed_vault_pub_key"`
-	Aggregator            string             `json:"aggregator"`
-	AggregatorTarget      string             `json:"aggregator_target"`
-	AggregatorTargetLimit *cosmos.Uint       `json:"aggregator_target_limit"`
+	BlockHeight           int64               `json:"block_height"`
+	Tx                    string              `json:"tx"`
+	Memo                  string              `json:"memo"`
+	Sender                string              `json:"sender"`
+	To                    string              `json:"to"` // to address
+	Coins                 common.Coins        `json:"coins"`
+	Gas                   common.Gas          `json:"gas"`
+	ObservedVaultPubKey   common.PubKey       `json:"observed_vault_pub_key"`
+	Aggregator            string              `json:"aggregator"`
+	AggregatorTarget      string              `json:"aggregator_target"`
+	AggregatorTargetLimit *cosmos.Uint        `json:"aggregator_target_limit"`
 	SpentOutputRefs       []*common.OutputRef `json:"spent_output_refs,omitempty"`
-	CommittedUnFinalised  bool               `json:"committed_pre_final"`
+	CommittedUnFinalised  bool                `json:"committed_pre_final"`
 }
 type TxInStatus byte
 

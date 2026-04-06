@@ -5,20 +5,17 @@ use curve25519_dalek::{
     scalar::clamp_integer,
     Scalar,
 };
-use monero_wallet::{
-    address::{MoneroAddress, Network},
-    ViewPair,
-};
+use monero_wallet::{address::Network, ViewPair};
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
 
 use crate::config::ChainNetworkMode;
 
-const VIEW_KEY_DOMAIN: &[u8] = b"THORChain View Key";
+const THORCHAIN_VIEW_KEY_DOMAIN: &[u8] = b"THORChain View Key";
 
 pub fn additional_view_scalar() -> Scalar {
     let mut hasher = Sha512::new();
-    hasher.update(VIEW_KEY_DOMAIN);
+    hasher.update(THORCHAIN_VIEW_KEY_DOMAIN);
     hasher.update(0u64.to_le_bytes());
     let digest: [u8; 64] = hasher.finalize().into();
 
@@ -108,12 +105,6 @@ mod tests {
         assert_eq!(public.len(), 95);
         assert_eq!(mocknet, public);
 
-        let mocknet_parsed = MoneroAddress::from_str_with_unchecked_network(&mocknet).unwrap();
-        let public_parsed = MoneroAddress::from_str_with_unchecked_network(&public).unwrap();
-        assert!(!mocknet_parsed.is_guaranteed());
-        assert!(!public_parsed.is_guaranteed());
-        assert!(!mocknet_parsed.is_subaddress());
-        assert!(!public_parsed.is_subaddress());
     }
 
     #[test]

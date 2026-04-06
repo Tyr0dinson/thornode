@@ -312,14 +312,15 @@ Consequence: **refunds cannot go back to the sender automatically** (unlike BTC/
 
 The standard swap memo format supports an optional refund address after the destination, separated by `/`:
 
-```
+```text
 =:ASSET:DEST_ADDR/REFUND_ADDR:LIMIT:AFFILIATE:FEE
 ```
 
 For XMR inbound swaps, the refund address is **required**. Without it, a failed swap has no valid address to return funds to (the `xmrunknown` marker is not a real address).
 
 Example — swap XMR to BTC with refund address:
-```
+
+```text
 =:BTC.BTC:bc1q.../4refundXmrAddr...:0
 ```
 

@@ -372,6 +372,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -2564,6 +2565,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -2886,6 +2888,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -5808,6 +5811,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -6252,6 +6256,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -7153,6 +7158,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -7186,6 +7192,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -7519,6 +7526,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -9625,6 +9633,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -9996,6 +10005,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -10375,6 +10385,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "spent_output_refs": [],
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",

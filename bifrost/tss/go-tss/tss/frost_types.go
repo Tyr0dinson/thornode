@@ -153,9 +153,9 @@ type FrostSidecarCombineReq struct {
 }
 
 type FrostSidecarCombineResp struct {
-	TxHash          string               `json:"tx_hash"`
-	TxHex           string               `json:"tx_hex"`
-	FeeAtomic       uint64               `json:"fee_atomic"`
+	TxHash          string                `json:"tx_hash"`
+	TxHex           string                `json:"tx_hex"`
+	FeeAtomic       uint64                `json:"fee_atomic"`
 	SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs,omitempty"`
 }
 

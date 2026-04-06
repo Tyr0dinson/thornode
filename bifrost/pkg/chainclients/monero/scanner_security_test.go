@@ -145,6 +145,58 @@ func TestFetchTxsSkipsIncomingTransfersWithMismatchedExplicitVaultAttribution(t 
 	}
 }
 
+func TestFetchTxsAcceptsCurrentAsgardWithoutPubKeyFrost(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("d", 64)
+	currentVaultPubKey, currentVaultAddr := testVaultPubKeyAndAddress(t)
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     currentVaultAddr.String(),
+				VaultPubKey: currentVaultPubKey.String(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "MIGRATE:100",
+			},
+		},
+		nil,
+		[]string{currentVaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{PubKeyEddsa: currentVaultPubKey, PubKey: currentVaultPubKey}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected current asgard transfer to survive without PubKeyFrost, got %d items", len(txIn.TxArray))
+	}
+	if !txIn.TxArray[0].ObservedVaultPubKey.Equals(currentVaultPubKey) {
+		t.Fatalf("expected current asgard vault pubkey %s, got %s", currentVaultPubKey, txIn.TxArray[0].ObservedVaultPubKey)
+	}
+}
+
 func TestFetchTxsSkipsIncomingChangeForKnownOutgoingSameVault(t *testing.T) {
 	t.Parallel()
 

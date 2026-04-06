@@ -210,7 +210,12 @@
         }
       ],
       "chain_contracts": [],
-      "last_chain_heights": [],
+      "last_chain_heights": [
+        {
+          "chain": "BTC",
+          "height": "1"
+        }
+      ],
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
