@@ -643,7 +643,32 @@ pub async fn sign_prepare(
         }
     };
     match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
-        Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
+        Ok(IdempotencyCheck::Replay(status, response)) => {
+            // Verify the cached session_id still exists in memory. If the
+            // sidecar restarted, the in-memory session is gone but the
+            // idempotency cache survives in sled. Detect this and clear
+            // the stale cache so a fresh session can be created.
+            let cached_session_id = response
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let session_valid = cached_session_id
+                .as_ref()
+                .map(|sid| state.signer.session_exists(sid))
+                .unwrap_or(true); // No session_id in response (e.g. error) — return as-is.
+            if session_valid {
+                return (status, Json(response));
+            }
+            info!(
+                msg_id,
+                cached_session_id = ?cached_session_id,
+                "sign_prepare cached session not found in memory, clearing stale idempotency"
+            );
+            if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale sign_prepare idempotency record");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+            }
+        }
         Ok(IdempotencyCheck::Conflict) => {
             info!(
                 msg_id,
