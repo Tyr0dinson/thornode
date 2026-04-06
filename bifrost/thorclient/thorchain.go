@@ -60,6 +60,7 @@ const (
 	ReferenceMemoEndpoint       = "/thorchain/memo/%s/%s"
 	ReferenceMemoByHashEndpoint = "/thorchain/memo/%s"
 	TxDetailEndpoint            = "/thorchain/tx/details/%s"
+	OutboundQueueEndpoint       = "/thorchain/queue/outbound"
 )
 
 // thorchainBridge will be used to send tx to THORChain
@@ -113,6 +114,7 @@ type ThorchainBridge interface {
 	Broadcast(msgs ...sdk.Msg) (common.TxID, error)
 	BroadcastWithBlocking(msgs ...sdk.Msg) (common.TxID, error)
 	GetKeysign(blockHeight int64, pk string) (types.TxOut, error)
+	GetOutboundQueue() ([]types.TxArrayItem, error)
 	GetNodeAccount(string) (*stypes.NodeAccount, error)
 	GetNodeAccounts() ([]*stypes.QueryNodeResponse, error)
 	GetKeygenBlock(int64, string) (stypes.KeygenBlock, error)
@@ -638,6 +640,29 @@ func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 		return stypes.Vault{}, fmt.Errorf("fail to unmarshal vault from json: %w", err)
 	}
 	return vault, nil
+}
+
+// GetOutboundQueue returns ALL pending outbounds across every vault and
+// chain in a single call. Used by chain-specific batching logic to find
+// sibling outbounds for the same vault regardless of scheduled height.
+//
+// Note: items in this queue have NOT yet been signed (OutHash empty by
+// design). The thornode endpoint returns them as a flat JSON array of
+// TxOutItem entries. We unmarshal directly into TxArrayItem (which is the
+// canonical bifrost-side TxOutItem shape).
+func (b *thorchainBridge) GetOutboundQueue() ([]types.TxArrayItem, error) {
+	buf, s, err := b.getWithPath(OutboundQueueEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get outbound queue: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", s)
+	}
+	var items []types.TxArrayItem
+	if err = json.Unmarshal(buf, &items); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal outbound queue from json: %w", err)
+	}
+	return items, nil
 }
 
 func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {

@@ -1187,16 +1187,21 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	return signedTx, ckptBytes, observation, nil
 }
 
-// discoverXMRBatchedRecipients queries THORChain for all queued outbounds at
-// the given height for the same vault and chain (XMR) and returns a
-// deterministically-sorted recipients list. The current tx is always
-// included. If no other pending outbounds exist for the vault at this height
-// (the common case), it returns an empty Recipients list, signaling the
-// sidecar to use the legacy single-recipient path.
+// discoverXMRBatchedRecipients queries THORChain for ALL pending outbounds
+// across every chain and vault, then filters to siblings: same vault, same
+// chain (XMR), not yet signed, not the current tx, not already in the local
+// signer cache. If any siblings exist, returns a deterministically-sorted
+// recipients list (current tx + siblings) so the sidecar builds a single
+// Monero tx with N outputs. Otherwise returns nil to use the legacy
+// single-recipient path.
 //
-// Determinism is critical: all 3 vault members must compute the EXACT same
-// recipients list and order so that they all derive the same FROST msg_id /
-// plan_hash and join the same sign session. We sort by InHash ASC.
+// Trigger: ANY other pending XMR outbound for the same vault. There is no
+// scheduled-height window — siblings can be at any height in the queue.
+//
+// Determinism: all 3 vault members must compute the EXACT same recipients
+// list and order so they all derive the same FROST msg_id / plan_hash and
+// join the same sign session. We use the global outbound queue endpoint
+// (stable across nodes at the same chain height) and sort by InHash ASC.
 func (c *Client) discoverXMRBatchedRecipients(
 	currentTx stypes.TxOutItem,
 	signReqCtx xmrValidatedSignRequest,
@@ -1208,18 +1213,14 @@ func (c *Client) discoverXMRBatchedRecipients(
 		return nil, nil
 	}
 
-	txOut, err := c.thorchainBridge.GetKeysign(height, signReqCtx.vaultPubKey.String())
+	queue, err := c.thorchainBridge.GetOutboundQueue()
 	if err != nil {
 		c.logger.Debug().Err(err).
-			Int64("height", height).
 			Str("vault", signReqCtx.vaultPubKey.String()).
-			Msg("fail to fetch keysign queue for batching; falling back to single-recipient")
+			Msg("fail to fetch outbound queue for batching; falling back to single-recipient")
 		return nil, nil
 	}
 
-	// Collect all queued items for this vault on XMR chain that haven't been
-	// signed yet AND aren't the current tx (we'll add the current tx
-	// separately to ensure it's always present).
 	currentInHashStr := strings.ToUpper(currentTx.InHash.String())
 	type batchEntry struct {
 		inHashUpper string
@@ -1228,17 +1229,16 @@ func (c *Client) discoverXMRBatchedRecipients(
 		raw         stypes.TxArrayItem
 		isCurrent   bool
 	}
-	var entries []batchEntry
+	entries := []batchEntry{
+		{
+			inHashUpper: currentInHashStr,
+			toAddr:      signReqCtx.toAddress,
+			amount:      signReqCtx.amountAtomic,
+			isCurrent:   true,
+		},
+	}
 
-	// Add current tx first
-	entries = append(entries, batchEntry{
-		inHashUpper: currentInHashStr,
-		toAddr:      signReqCtx.toAddress,
-		amount:      signReqCtx.amountAtomic,
-		isCurrent:   true,
-	})
-
-	for _, item := range txOut.TxArray {
+	for _, item := range queue {
 		if !item.Chain.Equals(c.chain) {
 			continue
 		}
@@ -1253,12 +1253,9 @@ func (c *Client) discoverXMRBatchedRecipients(
 		}
 		itemInHash := strings.ToUpper(item.InHash.String())
 		if itemInHash == currentInHashStr {
-			continue // current tx already added
-		}
-		if item.ToAddress.IsEmpty() {
 			continue
 		}
-		if item.Coin.Amount.IsZero() {
+		if item.ToAddress.IsEmpty() || item.Coin.Amount.IsZero() {
 			continue
 		}
 		// Skip if already covered in cache (a previous SignTx call may have
@@ -1283,12 +1280,12 @@ func (c *Client) discoverXMRBatchedRecipients(
 	}
 
 	if len(entries) <= 1 {
-		return nil, nil // no siblings — use single-recipient legacy path
+		return nil, nil // no siblings — single-recipient legacy path
 	}
 
 	// Deterministic sort by InHash ASC. All 3 nodes will produce the same
-	// order since GetKeysign returns the same canonical TxOut at the given
-	// height across nodes.
+	// order since GetOutboundQueue returns the same canonical state across
+	// nodes at the same chain height.
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].inHashUpper < entries[j].inHashUpper
 	})
