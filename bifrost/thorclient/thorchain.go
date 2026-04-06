@@ -88,7 +88,7 @@ type ThorchainBridge interface {
 	GetContext() client.Context
 	GetContractAddress() ([]PubKeyContractAddressPair, error)
 	GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg
-	GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa, keysharesBackupFrost []byte, poolPubKeyFrost common.PubKey, observedMoneroHeight int64) (sdk.Msg, error)
+	GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdk.Msg, error)
 	GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error)
 	GetMimir(key string) (int64, error)
 	GetMimirWithRef(template, ref string) (int64, error)
@@ -344,10 +344,33 @@ func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKe
 }
 
 // GetKeygenStdTx get keygen tx from params
-func (b *thorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa, keysharesBackupFrost []byte, poolPubKeyFrost common.PubKey, observedMoneroHeight int64) (sdk.Msg, error) {
+func (b *thorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdk.Msg, error) {
 	signerAddr, err := b.keys.GetSignerInfo().GetAddress()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get signer address: %w", err)
+	}
+
+	var keysharesBackupFrost []byte
+	poolPubKeyFrost := common.EmptyPubKey
+	var observedMoneroHeight int64
+	switch len(frostExtras) {
+	case 0:
+	case 3:
+		var ok bool
+		keysharesBackupFrost, ok = frostExtras[0].([]byte)
+		if !ok && frostExtras[0] != nil {
+			return nil, fmt.Errorf("invalid frost keyshares backup type %T", frostExtras[0])
+		}
+		poolPubKeyFrost, ok = frostExtras[1].(common.PubKey)
+		if !ok {
+			return nil, fmt.Errorf("invalid frost pubkey type %T", frostExtras[1])
+		}
+		observedMoneroHeight, ok = frostExtras[2].(int64)
+		if !ok {
+			return nil, fmt.Errorf("invalid observed monero height type %T", frostExtras[2])
+		}
+	default:
+		return nil, fmt.Errorf("expected 0 or 3 frost extras, got %d", len(frostExtras))
 	}
 
 	return stypes.NewMsgTssPoolV3(inputPks.Strings(), poolPubKey, secp256k1Signature, keysharesBackup, keygenType, height, blame, chains.Strings(), signerAddr, keygenTime, poolPubKeyEddsa, keysharesBackupEddsa, keysharesBackupFrost, poolPubKeyFrost, observedMoneroHeight)
