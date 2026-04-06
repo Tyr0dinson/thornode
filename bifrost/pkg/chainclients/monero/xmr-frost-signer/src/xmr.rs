@@ -6,8 +6,8 @@ use curve25519_dalek::{
     Scalar,
 };
 use monero_wallet::{
-    address::{AddressType, MoneroAddress, Network},
-    GuaranteedViewPair, ViewPair,
+    address::Network,
+    ViewPair,
 };
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
@@ -74,38 +74,13 @@ pub fn view_pair_from_group_key_hex(group_key_hex: &str) -> Result<ViewPair> {
     ViewPair::new(spend, view).map_err(|e| anyhow::anyhow!("failed to construct view pair: {}", e))
 }
 
-pub fn guaranteed_view_pair_from_group_key_hex(group_key_hex: &str) -> Result<GuaranteedViewPair> {
-    let spend = spend_point_from_group_key_hex(group_key_hex)?;
-    let view = Zeroizing::new(additional_view_scalar());
-    GuaranteedViewPair::new(spend, view)
-        .map_err(|e| anyhow::anyhow!("failed to construct guaranteed view pair: {}", e))
-}
-
 pub fn derive_vault_address(
     group_key_hex: &str,
-    chain_network: ChainNetworkMode,
+    _chain_network: ChainNetworkMode,
 ) -> Result<String> {
-    match chain_network {
-        ChainNetworkMode::Mocknet => Ok(view_pair_from_group_key_hex(group_key_hex)?
-            .legacy_address(Network::Mainnet)
-            .to_string()),
-        ChainNetworkMode::Public => {
-            let spend = spend_point_from_group_key_hex(group_key_hex)?;
-            let view_scalar = additional_view_scalar();
-            let view = &view_scalar * ED25519_BASEPOINT_TABLE;
-            Ok(MoneroAddress::new(
-                Network::Mainnet,
-                AddressType::Featured {
-                    subaddress: true,
-                    payment_id: None,
-                    guaranteed: true,
-                },
-                spend,
-                view,
-            )
-            .to_string())
-        }
-    }
+    Ok(view_pair_from_group_key_hex(group_key_hex)?
+        .legacy_address(Network::Mainnet)
+        .to_string())
 }
 
 #[cfg(test)]
@@ -114,41 +89,23 @@ mod tests {
 
     const CROSS_STACK_GROUP_KEY_HEX: &str =
         "b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1";
-    const CROSS_STACK_MOCK_ADDRESS: &str =
+    const CROSS_STACK_ADDRESS: &str =
         "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGbm9KqB";
-    const CROSS_STACK_PUBLIC_ADDRESS: &str =
-        "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiq2BjPq9hME";
 
     #[test]
-    fn derive_address_uses_expected_mode_prefix() {
+    fn derive_address_always_produces_legacy() {
         let base = Scalar::from(7u64);
         let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
-        let mocknet = derive_vault_address(&group_key_hex, ChainNetworkMode::Mocknet).unwrap();
-        let public = derive_vault_address(&group_key_hex, ChainNetworkMode::Public).unwrap();
-
-        assert!(mocknet.starts_with('4'));
-        assert!(public.starts_with('C'));
-        assert_eq!(mocknet.len(), 95);
-        assert_eq!(public.len(), 97);
-        assert_ne!(mocknet, public);
-
-        let mocknet_parsed = MoneroAddress::from_str_with_unchecked_network(&mocknet).unwrap();
-        let public_parsed = MoneroAddress::from_str_with_unchecked_network(&public).unwrap();
-        assert!(!mocknet_parsed.is_guaranteed());
-        assert!(public_parsed.is_guaranteed());
-        assert!(!mocknet_parsed.is_subaddress());
-        assert!(public_parsed.is_subaddress());
+        let addr = derive_vault_address(&group_key_hex, ChainNetworkMode::Mocknet).unwrap();
+        assert!(addr.starts_with('4'));
+        assert_eq!(addr.len(), 95);
     }
 
     #[test]
     fn derive_address_matches_cross_stack_fixture() {
-        let mocknet =
+        let addr =
             derive_vault_address(CROSS_STACK_GROUP_KEY_HEX, ChainNetworkMode::Mocknet).unwrap();
-        let public =
-            derive_vault_address(CROSS_STACK_GROUP_KEY_HEX, ChainNetworkMode::Public).unwrap();
-
-        assert_eq!(mocknet, CROSS_STACK_MOCK_ADDRESS);
-        assert_eq!(public, CROSS_STACK_PUBLIC_ADDRESS);
+        assert_eq!(addr, CROSS_STACK_ADDRESS);
     }
 
     #[test]

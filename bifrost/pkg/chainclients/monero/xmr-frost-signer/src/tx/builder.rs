@@ -390,9 +390,9 @@ mod tests {
             view,
         );
 
-        assert!(ensure_supported_address_type("test", &featured_guaranteed, ChainNetworkMode::Public).is_ok());
+        assert!(ensure_supported_address_type("test", &featured_guaranteed, ChainNetworkMode::Mocknet).is_ok());
         assert!(ensure_supported_address_type("test", &legacy, ChainNetworkMode::Mocknet).is_ok());
-        assert!(ensure_supported_address_type("test", &non_guaranteed, ChainNetworkMode::Public).is_ok());
+        assert!(ensure_supported_address_type("test", &non_guaranteed, ChainNetworkMode::Mocknet).is_ok());
         assert!(ensure_supported_address_type("test", &non_guaranteed, ChainNetworkMode::Mocknet).is_ok());
     }
 
@@ -417,7 +417,7 @@ mod tests {
         assert!(ensure_address_network_mode("test", &legacy, ChainNetworkMode::Mocknet).is_ok());
         assert!(ensure_address_network_mode("test", &subaddress, ChainNetworkMode::Mocknet).is_ok());
         assert!(ensure_address_network_mode("test", &featured, ChainNetworkMode::Mocknet).is_ok());
-        assert!(ensure_address_network_mode("test", &legacy, ChainNetworkMode::Public).is_ok());
-        assert!(ensure_address_network_mode("test", &featured, ChainNetworkMode::Public).is_ok());
+        assert!(ensure_address_network_mode("test", &legacy, ChainNetworkMode::Mocknet).is_ok());
+        assert!(ensure_address_network_mode("test", &featured, ChainNetworkMode::Mocknet).is_ok());
     }
 }

@@ -39,6 +39,10 @@ pub struct VaultRecord {
     pub address: String,
     pub source: String,
     pub registered_at: i64,
+    #[serde(default)]
+    pub rescan: bool,
+    #[serde(default)]
+    pub birthday: u64,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -454,6 +458,24 @@ impl Store {
             vaults.push(record);
         }
         Ok(vaults)
+    }
+
+    pub fn set_vault_rescan(&self, vault_pub_key: &str, rescan: bool, birthday: u64) -> Result<()> {
+        let key = format!("vault:{vault_pub_key}");
+        let raw = self
+            .db
+            .get(key.as_bytes())
+            .map_err(|e| anyhow::anyhow!("failed to read vault record: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("vault {} not found", vault_pub_key))?;
+        let mut record: VaultRecord = serde_json::from_slice(&raw)?;
+        record.rescan = rescan;
+        record.birthday = birthday;
+        let encoded = serde_json::to_vec(&record)?;
+        self.db
+            .insert(key.as_bytes(), encoded)
+            .map_err(|e| anyhow::anyhow!("failed to update vault rescan flag: {e}"))?;
+        self.db.flush().ok();
+        Ok(())
     }
 
     // ---- UTXO tracking ----

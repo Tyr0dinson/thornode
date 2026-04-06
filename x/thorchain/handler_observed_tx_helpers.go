@@ -879,7 +879,7 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 				continue
 			}
 			// Check both regular and EdDSA vault pubkeys (same as handler_common_outbound.go)
-			if !item.VaultPubKey.Equals(tx.ObservedPubKey) && !item.VaultPubKeyEddsa.Equals(tx.ObservedPubKey) {
+			if !item.VaultPubKey.Equals(tx.ObservedPubKey) && !item.VaultPubKeyEddsa.Equals(tx.ObservedPubKey) && !item.VaultPubKeyFrost.Equals(tx.ObservedPubKey) {
 				continue
 			}
 			if !item.Coin.Asset.Equals(tx.Tx.Coins[0].Asset) {

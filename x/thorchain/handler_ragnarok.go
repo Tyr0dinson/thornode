@@ -86,10 +86,14 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 			case common.SigningAlgoSecp256k1:
 				fromAddress, err = tx.VaultPubKey.GetAddress(tx.Chain)
 			case common.SigningAlgoEd25519:
-				if tx.VaultPubKeyEddsa.IsEmpty() {
-					err = fmt.Errorf("vault pubkey eddsa is empty")
+				key := tx.VaultPubKeyEddsa
+				if tx.Chain == common.XMRChain && !tx.VaultPubKeyFrost.IsEmpty() {
+					key = tx.VaultPubKeyFrost
+				}
+				if key.IsEmpty() {
+					err = fmt.Errorf("vault pubkey for ed25519 chain is empty")
 				} else {
-					fromAddress, err = tx.VaultPubKeyEddsa.GetAddress(tx.Chain)
+					fromAddress, err = key.GetAddress(tx.Chain)
 				}
 			default:
 				err = fmt.Errorf("unknown signing algorithm: %s", tx.Chain.GetSigningAlgo())

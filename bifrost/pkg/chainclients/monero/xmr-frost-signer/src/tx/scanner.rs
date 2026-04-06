@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use monero_wallet::{
     address::{Network, SubaddressIndex},
     rpc::ScannableBlock,
-    GuaranteedScanner as GuaranteedWalletScanner, Scanner as StandardWalletScanner, Timelocked,
+    Scanner as StandardWalletScanner, Timelocked,
     WalletOutput,
 };
 use tracing::{debug, info};
@@ -50,32 +50,12 @@ pub enum TransferDirection {
 }
 
 struct VaultScanState {
-    wallet_scanner: WalletScanner,
+    wallet_scanner: StandardWalletScanner,
     outputs: Vec<TrackedOutput>,
     last_height: u64,
     addresses: VaultAddresses,
 }
 
-enum WalletScanner {
-    Standard(StandardWalletScanner),
-    Guaranteed(GuaranteedWalletScanner),
-}
-
-impl WalletScanner {
-    fn register_subaddress(&mut self, index: SubaddressIndex) {
-        match self {
-            WalletScanner::Standard(scanner) => scanner.register_subaddress(index),
-            WalletScanner::Guaranteed(scanner) => scanner.register_subaddress(index),
-        }
-    }
-
-    fn scan(&mut self, block: ScannableBlock) -> Result<Timelocked, monero_wallet::ScanError> {
-        match self {
-            WalletScanner::Standard(scanner) => scanner.scan(block),
-            WalletScanner::Guaranteed(scanner) => scanner.scan(block),
-        }
-    }
-}
 
 #[derive(Clone)]
 struct VaultAddresses {
@@ -133,82 +113,33 @@ impl Scanner {
         outputs: Vec<TrackedOutput>,
         last_height: Option<u64>,
     ) -> Result<()> {
-        let (mut wallet_scanner, addresses) = match chain_network {
-            ChainNetworkMode::Mocknet => {
-                let view_pair =
-                    xmr::view_pair_from_group_key_hex(group_key).with_context(|| {
-                        format!(
-                            "failed to derive standard scanner view pair for vault {}",
-                            vault_pub_key
-                        )
-                    })?;
-                let base_address = xmr::derive_vault_address(group_key, chain_network)?;
-                let branch_address =
-                    SubaddressIndex::new(subaddress::BRANCH.0, subaddress::BRANCH.1)
-                        .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
-                        .unwrap_or_else(|| base_address.clone());
-                let change_address =
-                    SubaddressIndex::new(subaddress::CHANGE.0, subaddress::CHANGE.1)
-                        .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
-                        .unwrap_or_else(|| base_address.clone());
-                let forward_address =
-                    SubaddressIndex::new(subaddress::FORWARD.0, subaddress::FORWARD.1)
-                        .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
-                        .unwrap_or_else(|| base_address.clone());
-                (
-                    WalletScanner::Standard(StandardWalletScanner::new(view_pair)),
-                    VaultAddresses::new(
-                        base_address,
-                        branch_address,
-                        change_address,
-                        forward_address,
-                    ),
+        let view_pair =
+            xmr::view_pair_from_group_key_hex(group_key).with_context(|| {
+                format!(
+                    "failed to derive scanner view pair for vault {}",
+                    vault_pub_key
                 )
-            }
-            ChainNetworkMode::Public => {
-                let guaranteed_view_pair = xmr::guaranteed_view_pair_from_group_key_hex(group_key)
-                    .with_context(|| {
-                        format!(
-                            "failed to derive guaranteed scanner view pair for vault {}",
-                            vault_pub_key
-                        )
-                    })?;
-                let base_address = xmr::derive_vault_address(group_key, chain_network)?;
-                let branch_address =
-                    SubaddressIndex::new(subaddress::BRANCH.0, subaddress::BRANCH.1)
-                        .map(|index| {
-                            guaranteed_view_pair
-                                .address(Network::Mainnet, Some(index), None)
-                                .to_string()
-                        })
-                        .unwrap_or_else(|| base_address.clone());
-                let change_address =
-                    SubaddressIndex::new(subaddress::CHANGE.0, subaddress::CHANGE.1)
-                        .map(|index| {
-                            guaranteed_view_pair
-                                .address(Network::Mainnet, Some(index), None)
-                                .to_string()
-                        })
-                        .unwrap_or_else(|| base_address.clone());
-                let forward_address =
-                    SubaddressIndex::new(subaddress::FORWARD.0, subaddress::FORWARD.1)
-                        .map(|index| {
-                            guaranteed_view_pair
-                                .address(Network::Mainnet, Some(index), None)
-                                .to_string()
-                        })
-                        .unwrap_or_else(|| base_address.clone());
-                (
-                    WalletScanner::Guaranteed(GuaranteedWalletScanner::new(guaranteed_view_pair)),
-                    VaultAddresses::new(
-                        base_address,
-                        branch_address,
-                        change_address,
-                        forward_address,
-                    ),
-                )
-            }
-        };
+            })?;
+        let base_address = xmr::derive_vault_address(group_key, chain_network)?;
+        let branch_address =
+            SubaddressIndex::new(subaddress::BRANCH.0, subaddress::BRANCH.1)
+                .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
+                .unwrap_or_else(|| base_address.clone());
+        let change_address =
+            SubaddressIndex::new(subaddress::CHANGE.0, subaddress::CHANGE.1)
+                .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
+                .unwrap_or_else(|| base_address.clone());
+        let forward_address =
+            SubaddressIndex::new(subaddress::FORWARD.0, subaddress::FORWARD.1)
+                .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
+                .unwrap_or_else(|| base_address.clone());
+        let mut wallet_scanner = StandardWalletScanner::new(view_pair);
+        let addresses = VaultAddresses::new(
+            base_address,
+            branch_address,
+            change_address,
+            forward_address,
+        );
 
         for (major, minor) in [
             subaddress::EXTERNAL,
@@ -524,7 +455,7 @@ mod tests {
             .register_vault(
                 "thorpub1vault",
                 &group_key_hex,
-                ChainNetworkMode::Public,
+                ChainNetworkMode::Mocknet,
                 Vec::new(),
                 None,
             )
@@ -557,12 +488,9 @@ mod tests {
         );
 
         let base = MoneroAddress::from_str_with_unchecked_network(&state.addresses.base).unwrap();
-        assert!(base.is_guaranteed());
-        assert!(base.is_subaddress());
-        for address in &state.addresses.all {
-            let parsed = MoneroAddress::from_str_with_unchecked_network(address).unwrap();
-            assert!(parsed.is_guaranteed());
-        }
+        assert!(!base.is_guaranteed());
+        assert!(!base.is_subaddress());
+        assert!(state.addresses.base.starts_with('4'));
     }
 
     #[test]

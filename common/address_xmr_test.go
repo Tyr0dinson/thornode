@@ -16,8 +16,7 @@ const (
 	featuredNonGuaranteedSubaddressVector = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v3wfMHCy"
 	featuredGuaranteedSubaddressVector    = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v4Pyz8bD"
 	xmrFixtureSpendHex                    = "b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1"
-	xmrFixtureMockAddress                 = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGbm9KqB"
-	xmrFixturePublicAddress               = "Cq5MKQVvbmV43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiq2BjPq9hME"
+	xmrFixtureAddress = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGbm9KqB"
 )
 
 func makeTestXMRAddr(networkByte byte, spend, view [32]byte) string {
@@ -68,7 +67,7 @@ func (s *XMRAddressSuite) TestXMRAddressHandling(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(primary.IsChain(XMRChain), Equals, true)
 	c.Check(primary.GetChain(), Equals, XMRChain)
-	c.Check(primary.GetNetwork(XMRChain), Equals, MockNet)
+	c.Check(primary.GetNetwork(XMRChain) == MockNet, Equals, false)
 
 	subAddr := XMRChecksummedDummyAddress('8')
 	addr8, err := NewAddress(subAddr)
@@ -246,33 +245,21 @@ func (s *XMRAddressSuite) TestXMRChecksummedDummyAddress(c *C) {
 
 func (s *XMRAddressSuite) TestXMRGetNetwork(c *C) {
 	var spend, view [32]byte
+
 	primaryAddr := makeTestXMRAddr(xmrPrimaryNetworkByte, spend, view)
-	addr := Address(primaryAddr)
-	c.Check(addr.GetNetwork(XMRChain), Equals, MockNet)
+	c.Check(Address(primaryAddr).GetNetwork(XMRChain) == MockNet, Equals, false)
 
 	subAddr := makeTestXMRAddr(xmrSubaddressNetworkByte, spend, view)
-	addr = Address(subAddr)
-	c.Check(addr.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(Address(subAddr).GetNetwork(XMRChain) == MockNet, Equals, false)
 
-	featuredMock := makeTestXMRFeaturedAddr(
-		xmrFeaturedMainnetNetworkByte,
-		spend,
-		view,
-		xmrFeaturedGuaranteedBit,
-		nil,
-	)
-	addr = Address(featuredMock)
-	c.Check(addr.GetNetwork(XMRChain), Equals, MockNet)
-
-	featuredPublic := makeTestXMRFeaturedAddr(
+	featuredAddr := makeTestXMRFeaturedAddr(
 		xmrFeaturedMainnetNetworkByte,
 		spend,
 		view,
 		xmrFeaturedSubaddressBit|xmrFeaturedGuaranteedBit,
 		nil,
 	)
-	addr = Address(featuredPublic)
-	c.Check(addr.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(Address(featuredAddr).GetNetwork(XMRChain) == MockNet, Equals, false)
 }
 
 func (s *XMRAddressSuite) TestXMRFeaturedNetworkByteGating(c *C) {
@@ -396,29 +383,25 @@ func (s *XMRAddressSuite) TestXMRCrossStackDeterminismFixture(c *C) {
 
 	mock, err := deriveXMRAddressFromSpendPubKey(spend, MockNet)
 	c.Assert(err, IsNil)
-	c.Check(mock, Equals, xmrFixtureMockAddress)
+	c.Check(mock, Equals, xmrFixtureAddress)
 
-	public, err := deriveXMRAddressFromSpendPubKey(spend, MainNet)
+	mainnet, err := deriveXMRAddressFromSpendPubKey(spend, MainNet)
 	c.Assert(err, IsNil)
-	c.Check(public, Equals, xmrFixturePublicAddress)
+	c.Check(mainnet, Equals, xmrFixtureAddress)
 }
 
-func (s *XMRAddressSuite) TestXMRMocknetUsesWalletCompatibleStandardAddress(c *C) {
+func (s *XMRAddressSuite) TestXMRAlwaysDerivesLegacyAddress(c *C) {
 	spend, err := hex.DecodeString(xmrFixtureSpendHex)
 	c.Assert(err, IsNil)
 	c.Assert(len(spend), Equals, 32)
 
-	mock, err := deriveXMRAddressFromSpendPubKey(spend, MockNet)
-	c.Assert(err, IsNil)
-	c.Check(len(mock), Equals, 95)
-	c.Check(strings.HasPrefix(mock, "4"), Equals, true)
-	c.Check(IsXMRFeaturedGuaranteedAddress(mock), Equals, false)
-
-	public, err := deriveXMRAddressFromSpendPubKey(spend, MainNet)
-	c.Assert(err, IsNil)
-	c.Check(len(public), Equals, 97)
-	c.Check(strings.HasPrefix(public, "C"), Equals, true)
-	c.Check(IsXMRFeaturedGuaranteedAddress(public), Equals, true)
+	for _, net := range []ChainNetwork{MockNet, MainNet, StageNet, ChainNet} {
+		addr, err := deriveXMRAddressFromSpendPubKey(spend, net)
+		c.Assert(err, IsNil)
+		c.Check(len(addr), Equals, 95)
+		c.Check(strings.HasPrefix(addr, "4"), Equals, true)
+		c.Check(IsXMRFeaturedGuaranteedAddress(addr), Equals, false)
+	}
 }
 
 func (s *XMRAddressSuite) TestXMRUnknownSenderAddress(c *C) {

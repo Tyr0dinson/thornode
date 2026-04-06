@@ -14,14 +14,12 @@ const DEFAULT_RATE_LIMIT_MAX_TRACKED_IPS: usize = 8192;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChainNetworkMode {
     Mocknet,
-    Public,
 }
 
 impl ChainNetworkMode {
     fn parse(value: &str) -> Result<Self, ConfigError> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "mocknet" | "chainnet" => Ok(ChainNetworkMode::Mocknet),
-            "public" => Ok(ChainNetworkMode::Public),
+            "mocknet" | "chainnet" | "public" => Ok(ChainNetworkMode::Mocknet),
             other => Err(ConfigError::InvalidChainNetwork(other.to_string())),
         }
     }
@@ -216,21 +214,6 @@ fn normalize_and_validate_daemon_url(
     parsed.set_query(None);
     parsed.set_fragment(None);
 
-    if chain_network == ChainNetworkMode::Public && !is_loopback_host(&host) {
-        if parsed.scheme() == "http" && !daemon_disable_tls {
-            return Err(ConfigError::InsecureDaemonEndpoint(format!(
-                "non-loopback daemon endpoint {} must use https unless XMR_FROST_DAEMON_DISABLE_TLS=true",
-                endpoint_for_message(&parsed)
-            )));
-        }
-        if !daemon_disable_tls && parsed.username().trim().is_empty() {
-            return Err(ConfigError::InsecureDaemonEndpoint(format!(
-                "non-loopback daemon endpoint {} requires URL userinfo credentials when TLS is enforced",
-                endpoint_for_message(&parsed)
-            )));
-        }
-    }
-
     Ok(parsed.to_string().trim_end_matches('/').to_string())
 }
 
@@ -400,8 +383,6 @@ pub enum ConfigError {
     InvalidChainNetwork(String),
     #[error("invalid daemon endpoint: {0}")]
     InvalidDaemonEndpoint(String),
-    #[error("insecure daemon endpoint: {0}")]
-    InsecureDaemonEndpoint(String),
     #[error("invalid environment variable {name}: {reason}")]
     InvalidEnv { name: &'static str, reason: String },
     #[error("invalid sim helper configuration: {0}")]
@@ -581,63 +562,14 @@ mod tests {
     }
 
     #[test]
-    fn test_daemon_policy_rejects_non_loopback_http_in_public_mode() {
+    fn test_public_network_maps_to_mocknet() {
         let _guard = env_guard();
         reset_env();
         set_minimal_env();
         std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-        std::env::set_var("XMR_FROST_DAEMON_URL", "http://example.com:18081");
-
-        let err = Config::from_env().unwrap_err();
-        assert!(matches!(err, ConfigError::InsecureDaemonEndpoint(_)));
-    }
-
-    #[test]
-    fn test_daemon_policy_error_redacts_userinfo() {
-        let _guard = env_guard();
-        reset_env();
-        set_minimal_env();
-        std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-        std::env::set_var(
-            "XMR_FROST_DAEMON_URL",
-            "http://monero:oxide@example.com:18081/json_rpc",
-        );
-
-        let err = Config::from_env().unwrap_err();
-        match err {
-            ConfigError::InsecureDaemonEndpoint(message) => {
-                assert!(message.contains("REDACTED"));
-                assert!(!message.contains("monero:oxide"));
-            }
-            other => panic!("unexpected error: {other}"),
-        }
-    }
-
-    #[test]
-    fn test_daemon_policy_rejects_missing_userinfo_when_tls_required() {
-        let _guard = env_guard();
-        reset_env();
-        set_minimal_env();
-        std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-        std::env::set_var("XMR_FROST_DAEMON_URL", "https://example.com:18081");
-
-        let err = Config::from_env().unwrap_err();
-        assert!(matches!(err, ConfigError::InsecureDaemonEndpoint(_)));
-    }
-
-    #[test]
-    fn test_daemon_policy_accepts_non_loopback_with_https_and_userinfo() {
-        let _guard = env_guard();
-        reset_env();
-        set_minimal_env();
-        std::env::set_var("XMR_FROST_CHAIN_NETWORK", "public");
-        std::env::set_var(
-            "XMR_FROST_DAEMON_URL",
-            "https://monero:oxide@example.com:18081/json_rpc",
-        );
 
         let config = Config::from_env().unwrap();
-        assert_eq!(config.daemon_url, "https://monero:oxide@example.com:18081");
+        assert_eq!(config.chain_network, ChainNetworkMode::Mocknet);
     }
 
     #[test]

@@ -87,7 +87,7 @@ func init() {
 	}
 }
 
-func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, chainNetwork ChainNetwork) (string, error) {
+func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, _ ChainNetwork) (string, error) {
 	if len(spendPubKey) != ed25519.PublicKeySize {
 		return "", fmt.Errorf("invalid monero spend pubkey length: %d", len(spendPubKey))
 	}
@@ -97,24 +97,10 @@ func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, chainNetwork ChainNetwo
 		return "", err
 	}
 
-	if chainNetwork == MockNet || chainNetwork == ChainNet {
-		payload := make([]byte, 0, 1+32+32+4)
-		payload = append(payload, xmrPrimaryNetworkByte)
-		payload = append(payload, spendPubKey...)
-		payload = append(payload, viewPubKey[:]...)
-
-		checksum := eth.Keccak256(payload)
-		payload = append(payload, checksum[:4]...)
-
-		return xmrBase58Encode(payload)
-	}
-
-	payload := make([]byte, 0, 1+32+32+1+4)
-	payload = append(payload, xmrFeaturedMainnetNetworkByte)
+	payload := make([]byte, 0, 1+32+32+4)
+	payload = append(payload, xmrPrimaryNetworkByte)
 	payload = append(payload, spendPubKey...)
 	payload = append(payload, viewPubKey[:]...)
-	features := xmrFeaturedSubaddressBit | xmrFeaturedGuaranteedBit
-	payload = xmrAppendVarint(payload, features)
 
 	checksum := eth.Keccak256(payload)
 	payload = append(payload, checksum[:4]...)

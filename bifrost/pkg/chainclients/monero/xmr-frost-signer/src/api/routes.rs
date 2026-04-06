@@ -1448,6 +1448,80 @@ pub async fn scanner_sync(
     };
 
     for vault in &vaults {
+        // If vault is in rescan mode, self-scan from stored height to chain tip
+        if vault.rescan {
+            let vault_scan_height = state
+                .store
+                .load_scan_height(&vault.vault_pub_key)
+                .ok()
+                .flatten()
+                .unwrap_or(vault.birthday);
+            let tip = effective_height;
+            if vault_scan_height < tip {
+                let batch_limit = 50u64; // scan up to 50 blocks per scanner_sync call
+                let end = std::cmp::min(vault_scan_height + batch_limit, tip);
+                info!(
+                    vault = %vault.vault_pub_key,
+                    from = vault_scan_height + 1,
+                    to = end,
+                    tip,
+                    "rescan: scanning blocks for vault"
+                );
+                for h in (vault_scan_height + 1)..=end {
+                    let rescan_block = match rpc.get_scannable_block_by_number(h as usize).await {
+                        Ok(b) => b,
+                        Err(e) => {
+                            warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: failed to fetch block, stopping batch");
+                            break;
+                        }
+                    };
+                    let added = match state.scanner.lock().scan_block_for_vault_with_added(
+                        &vault.vault_pub_key,
+                        h,
+                        rescan_block,
+                    ) {
+                        Ok(a) => a,
+                        Err(e) => {
+                            warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: scan failed, stopping batch");
+                            break;
+                        }
+                    };
+                    if !added.is_empty() {
+                        info!(vault = %vault.vault_pub_key, height = h, added = added.len(), "rescan: found outputs");
+                        for output in &added {
+                            if !output.is_spent() {
+                                incoming.push(transfer_entry_from_tracked_output(
+                                    output,
+                                    &vault.vault_pub_key,
+                                    effective_height,
+                                ));
+                            }
+                        }
+                    }
+                    // Persist after each block
+                    let all_outputs = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
+                    let _ = state.store.merge_scanned_outputs(&vault.vault_pub_key, &all_outputs);
+                    let _ = state.store.save_scan_height(&vault.vault_pub_key, h);
+                }
+                // Check if caught up
+                let new_height = state
+                    .store
+                    .load_scan_height(&vault.vault_pub_key)
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0);
+                if new_height >= tip {
+                    info!(vault = %vault.vault_pub_key, "rescan complete — caught up to chain tip");
+                    let _ = state.store.set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                }
+            } else {
+                info!(vault = %vault.vault_pub_key, "rescan complete — already at chain tip");
+                let _ = state.store.set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+            }
+            // Skip normal scan for this vault during rescan
+            continue;
+        }
+
         let mut outputs = match state.store.load_outputs(&vault.vault_pub_key) {
             Ok(outputs) => outputs,
             Err(e) => {
@@ -1904,14 +1978,21 @@ pub async fn scanner_reset(
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
     }
 
-    info!(vault = %vault_pub_key, birthday, "scanner reset complete");
+    // Set rescan flag so scanner_sync will self-scan from birthday
+    if let Err(e) = state.store.set_vault_rescan(&vault_pub_key, true, birthday) {
+        error!(error = %e, vault = %vault_pub_key, "failed to set rescan flag during scanner reset");
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+    }
+
+    info!(vault = %vault_pub_key, birthday, "scanner reset complete — rescan enabled from birthday");
 
     (
         StatusCode::OK,
         Json(serde_json::json!({
             "vault_pub_key": vault_pub_key,
             "birthday_height": birthday,
-            "status": "reset"
+            "status": "reset",
+            "rescan": true
         })),
     )
 }
@@ -3177,7 +3258,7 @@ mod tests {
             .register_vault(
                 &vault_pub_key,
                 &test_group_key_hex(),
-                crate::config::ChainNetworkMode::Public,
+                crate::config::ChainNetworkMode::Mocknet,
                 outputs,
                 None,
             )
@@ -3186,17 +3267,17 @@ mod tests {
 
         let daemon = DaemonClient::new("http://127.0.0.1:18081", 1024 * 1024);
         let app_state = Arc::new(AppState {
-            dkg: DkgCoordinator::new(store.clone(), crate::config::ChainNetworkMode::Public, 4),
+            dkg: DkgCoordinator::new(store.clone(), crate::config::ChainNetworkMode::Mocknet, 4),
             signer: SignCoordinator::new(
                 store.clone(),
                 daemon.clone(),
-                crate::config::ChainNetworkMode::Public,
+                crate::config::ChainNetworkMode::Mocknet,
                 4,
             ),
             scanner: parking_lot::Mutex::new(scanner),
             daemon,
             store,
-            chain_network: crate::config::ChainNetworkMode::Public,
+            chain_network: crate::config::ChainNetworkMode::Mocknet,
             max_sign_scan_lag_blocks: 3,
             sim_helper_enabled: false,
             sim_helper_wallet_rpc_url: None,
@@ -3232,17 +3313,17 @@ mod tests {
         );
         let daemon = DaemonClient::new(daemon_url, 1024 * 1024);
         let app_state = Arc::new(AppState {
-            dkg: DkgCoordinator::new(store.clone(), crate::config::ChainNetworkMode::Public, 4),
+            dkg: DkgCoordinator::new(store.clone(), crate::config::ChainNetworkMode::Mocknet, 4),
             signer: SignCoordinator::new(
                 store.clone(),
                 daemon.clone(),
-                crate::config::ChainNetworkMode::Public,
+                crate::config::ChainNetworkMode::Mocknet,
                 4,
             ),
             scanner: parking_lot::Mutex::new(Scanner::new()),
             daemon,
             store,
-            chain_network: crate::config::ChainNetworkMode::Public,
+            chain_network: crate::config::ChainNetworkMode::Mocknet,
             max_sign_scan_lag_blocks: 3,
             sim_helper_enabled: false,
             sim_helper_wallet_rpc_url: None,

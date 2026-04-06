@@ -2019,6 +2019,9 @@ func (c *Client) loadVaultAddressMap() error {
 }
 
 func txVaultPubKey(tx stypes.TxOutItem) common.PubKey {
+	if !tx.VaultPubKeyFrost.IsEmpty() {
+		return tx.VaultPubKeyFrost
+	}
 	return tx.VaultPubKeyEddsa
 }
 

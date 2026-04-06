@@ -202,7 +202,7 @@ func (s *Signer) Start() error {
 }
 
 func (s *Signer) shouldSign(tx types.TxOutItem) bool {
-	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa)
+	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyFrost)
 }
 
 func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
@@ -435,7 +435,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		var frostKeyshareHex string
 		var observedMoneroHeight int64
 		if !pubKey.Secp256k1.IsEmpty() {
-			pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519)
+			_, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(keygenReq.GetMembers().Strings(), keygenBlock.Height, pubKey.Secp256k1, pubKey.Ed25519)
 			if err != nil {
 				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
@@ -461,6 +461,9 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		}
 		if !pubKey.Ed25519.IsEmpty() {
 			s.pubkeyMgr.AddPubKey(pubKey.Ed25519, true, common.SigningAlgoEd25519)
+		}
+		if !frostPubKey.IsEmpty() {
+			s.pubkeyMgr.AddPubKey(frostPubKey, true, common.SigningAlgoEd25519)
 		}
 		for _, pk := range keygenReq.GetMembers() {
 			s.pubkeyMgr.AddPubKey(pk, false, common.SigningAlgoSecp256k1)
