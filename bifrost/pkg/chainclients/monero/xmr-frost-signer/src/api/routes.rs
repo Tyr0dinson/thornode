@@ -1617,7 +1617,7 @@ pub async fn scanner_sync(
             );
         }
 
-        let stored_meta = match state
+        let mut stored_meta = match state
             .store
             .load_scan_block_meta(&vault.vault_pub_key, req.height)
         {
@@ -1635,6 +1635,29 @@ pub async fn scanner_sync(
                 );
             }
         };
+
+        // When no ScanBlockMeta exists but outputs exist at this height (e.g.
+        // from a rescan that saved outputs without saving meta), synthesize
+        // meta from the existing outputs so the recovery path reports them.
+        if stored_meta.is_none() && scan_height >= req.height {
+            let existing_refs = output_refs_at_height(&outputs, req.height);
+            if !existing_refs.is_empty() {
+                info!(
+                    vault = %vault.vault_pub_key,
+                    height = req.height,
+                    outputs = existing_refs.len(),
+                    "synthesizing scan block meta from rescan outputs"
+                );
+                let synthesized = ScanBlockMeta {
+                    height: req.height,
+                    block_hash: req.block_hash.trim().to_string(),
+                    parent_hash: req.parent_hash.trim().to_string(),
+                    added_outputs: existing_refs,
+                };
+                let _ = state.store.save_scan_block_meta(&vault.vault_pub_key, &synthesized);
+                stored_meta = Some(synthesized);
+            }
+        }
 
         let meta_matches = stored_meta.as_ref().is_some_and(|meta| {
             hash_matches(&meta.block_hash, &req.block_hash)
@@ -4313,6 +4336,110 @@ mod tests {
         assert_eq!(healed.added_outputs.len(), 1);
         assert_eq!(healed.added_outputs[0].tx_hash, output.tx_hash);
         assert_eq!(healed.added_outputs[0].output_index, output.output_index);
+    }
+
+    #[tokio::test]
+    async fn scanner_sync_reports_rescan_outputs_without_block_meta() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/json_rpc",
+                axum::routing::post(|Json(req): Json<serde_json::Value>| async move {
+                    let method = req
+                        .get("method")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    match method {
+                        "get_block_header_by_height" => (
+                            StatusCode::OK,
+                            Json(serde_json::json!({
+                                "result": {
+                                    "block_header": {
+                                        "height": 120,
+                                        "hash": "hash120",
+                                        "prev_hash": "hash119",
+                                        "timestamp": 1,
+                                        "major_version": 16,
+                                        "minor_version": 16,
+                                        "nonce": 1,
+                                        "reward": 1,
+                                        "num_txes": 0
+                                    }
+                                }
+                            })),
+                        ),
+                        _ => (
+                            StatusCode::NOT_FOUND,
+                            Json(serde_json::json!({"error": "unsupported method"})),
+                        ),
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let output = TrackedOutput {
+            tx_hash: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd".to_string(),
+            output_index: 0,
+            amount: 500,
+            height: 120,
+            key_image: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("dd".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        state
+            .store
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                "48vault",
+                "test",
+            )
+            .expect("register vault");
+
+        // Simulate rescan: output in store, scan_height advanced, but NO ScanBlockMeta.
+        state
+            .store
+            .save_outputs(VALID_VAULT_PUB_KEY, std::slice::from_ref(&output))
+            .expect("save outputs");
+        state
+            .store
+            .save_scan_height(VALID_VAULT_PUB_KEY, 120)
+            .expect("save scan height");
+        // Intentionally NOT saving ScanBlockMeta — this is what rescan omits.
+
+        let req = ScannerSyncRequest {
+            height: 120,
+            tip_height: 9_999,
+            block_hash: "hash120".to_string(),
+            parent_hash: "hash119".to_string(),
+            reorg_window: 120,
+        };
+        let response = scanner_sync(State(state.clone()), Json(req))
+            .await
+            .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let incoming = body["incoming"]
+            .as_array()
+            .expect("incoming should be an array");
+        assert_eq!(
+            incoming.len(),
+            1,
+            "rescan-added output should appear as incoming even without ScanBlockMeta; got: {incoming:?}"
+        );
+        assert_eq!(incoming[0]["txid"], serde_json::json!(output.tx_hash));
+        assert_eq!(incoming[0]["amount"], serde_json::json!(output.amount));
     }
 
     #[tokio::test]
