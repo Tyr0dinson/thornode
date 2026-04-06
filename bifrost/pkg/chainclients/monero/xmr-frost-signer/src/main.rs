@@ -150,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
             post(api::routes::mark_outputs_spent),
         )
         .route("/v1/monero/scanner/sync", post(api::routes::scanner_sync))
+        .route("/v1/monero/scanner/reset", post(api::routes::scanner_reset))
         .route("/v1/monero/keys", get(api::routes::list_vault_keys))
         .route(
             "/v1/monero/keys/:vault_pub_key/export",

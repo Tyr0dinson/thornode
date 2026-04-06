@@ -76,6 +76,10 @@ type signedTxPayload struct {
 	SpentOutputRefs []xmrFrostOutputRef   `json:"spent_output_refs,omitempty"`
 }
 
+type xmrSignCheckpoint struct {
+	SpentOutputRefs []xmrFrostOutputRef `json:"spent_output_refs"`
+}
+
 type xmrValidatedSignRequest struct {
 	vaultPubKey  common.PubKey
 	fromAddress  string
@@ -255,10 +259,11 @@ func (c *Client) Start(
 	c.wg.Add(1)
 	go c.consolidationRunner()
 	c.wg.Add(1)
+	go c.spentOutputRefsSyncRunner()
+	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
 		c.restoreFrostKeysFromRecoveryFiles()
-		c.catchupSpentOutputRefs()
 	}()
 }
 
@@ -296,6 +301,24 @@ func (c *Client) restoreFrostKeysFromRecoveryFiles() {
 
 		_ = os.Remove(path)
 		c.logger.Info().Str("vault", vaultPubKeyStr).Msg("xmr recovery: frost keyshare restored and recovery file removed")
+	}
+}
+
+func (c *Client) spentOutputRefsSyncRunner() {
+	defer c.wg.Done()
+
+	c.catchupSpentOutputRefs()
+
+	ticker := time.NewTicker(constants.ThorchainBlockTime * 10)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopchan:
+			return
+		case <-ticker.C:
+			c.catchupSpentOutputRefs()
+		}
 	}
 }
 
@@ -1020,17 +1043,52 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if tx.GasRate > 0 {
 		feeRate = uint64(tx.GasRate)
 	}
+	maxInputs := int64(15)
+	func() {
+		defer func() {
+			if recover() != nil {
+				maxInputs = 15
+			}
+		}()
+		if c.thorchainBridge == nil {
+			return
+		}
+		m, _ := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
+		if m > 0 {
+			maxInputs = m
+		}
+	}()
+	dustThreshold := common.XMRChain.DustThreshold().Uint64()
+
+	var requiredInputs []tssp.FrostSpentOutputRef
+	if len(tx.Checkpoint) > 0 {
+		var ckpt xmrSignCheckpoint
+		ckptErr := json.Unmarshal(tx.Checkpoint, &ckpt)
+		if ckptErr != nil {
+			return nil, nil, nil, fmt.Errorf("fail to unmarshal xmr sign checkpoint: %w", ckptErr)
+		}
+		for _, ref := range ckpt.SpentOutputRefs {
+			requiredInputs = append(requiredInputs, tssp.FrostSpentOutputRef{
+				TxHash:      ref.TxHash,
+				OutputIndex: ref.OutputIndex,
+			})
+		}
+		c.logger.Info().Int("required_inputs", len(requiredInputs)).Msg("using checkpointed inputs for xmr signing retry")
+	}
 	frostReq := tssp.FrostKeySignRequest{
-		VaultPubKey:   signReqCtx.vaultPubKey.String(),
-		ToAddress:     signReqCtx.toAddress,
-		AmountAtomic:  signReqCtx.amountAtomic,
-		Memo:          tx.Memo,
-		FeeRate:       feeRate,
-		SignerPubKeys: members,
-		BlockHeight:   height,
-		Version:       version.String(),
-		TxInHash:      txInHash,
-		RequestID:     tx.SigningID,
+		VaultPubKey:    signReqCtx.vaultPubKey.String(),
+		ToAddress:      signReqCtx.toAddress,
+		AmountAtomic:   signReqCtx.amountAtomic,
+		Memo:           tx.Memo,
+		FeeRate:        feeRate,
+		SignerPubKeys:  members,
+		BlockHeight:    height,
+		Version:        version.String(),
+		TxInHash:       txInHash,
+		RequestID:      tx.SigningID,
+		RequiredInputs: requiredInputs,
+		MaxInputs:      maxInputs,
+		DustThreshold:  dustThreshold,
 	}
 	resp, err := c.tssServer.FrostKeySign(frostReq, newFrostSignerAdapter(c.frostSigner))
 	if err != nil {
@@ -1077,8 +1135,12 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to encode FROST signed tx payload: %w", err)
 	}
+	ckptBytes, ckptErr := json.Marshal(xmrSignCheckpoint{SpentOutputRefs: localSpentRefs})
+	if ckptErr != nil {
+		c.logger.Error().Err(ckptErr).Msg("fail to marshal xmr sign checkpoint")
+	}
 	observation := c.buildOutboundObservation(tx, resp.TxHash, resp.FeeAtomic, localSpentRefs)
-	return signedTx, nil, observation, nil
+	return signedTx, ckptBytes, observation, nil
 }
 
 func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, requireThorchainHeight bool) (xmrValidatedSignRequest, error) {
@@ -1093,9 +1155,6 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 	// Bifrost mirrors the same high-level destination policy to fail fast.
 	if requireThorchainHeight && thorchainHeight <= 0 {
 		return xmrValidatedSignRequest{}, fmt.Errorf("thorchain height must be greater than zero")
-	}
-	if len(tx.Checkpoint) > 0 {
-		return xmrValidatedSignRequest{}, fmt.Errorf("xmr signing does not support checkpoints")
 	}
 
 	memoForParsing := tx.GetMemo()

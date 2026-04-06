@@ -49,7 +49,14 @@ fn main() -> Result<()> {
                 let gk = keys.group_key();
                 let gk_hex = hex::encode(gk.to_bytes().as_ref());
 
-                eprintln!("loaded: {} participant={} t={} n={} group_key={}", vault_id, idx, params.t(), params.n(), gk_hex);
+                eprintln!(
+                    "loaded: {} participant={} t={} n={} group_key={}",
+                    vault_id,
+                    idx,
+                    params.t(),
+                    params.n(),
+                    gk_hex
+                );
 
                 if params.t() == 1 && params.n() == 1 {
                     eprintln!("  (1-of-1 bootstrap key, skipping)");
@@ -76,12 +83,17 @@ fn main() -> Result<()> {
 
     eprintln!("interpolating {} shares...", shares.len());
 
-    let xs: Vec<Scalar> = shares.iter().map(|(i, _)| Scalar::from(u64::from(*i))).collect();
+    let xs: Vec<Scalar> = shares
+        .iter()
+        .map(|(i, _)| Scalar::from(u64::from(*i)))
+        .collect();
     let mut full_secret = Scalar::ZERO;
     for (i, (_, si)) in shares.iter().enumerate() {
         let mut coeff = Scalar::ONE;
         for (j, _) in shares.iter().enumerate() {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let inv: Scalar = Option::from((xs[i] - xs[j]).invert()).context("duplicate index")?;
             coeff = coeff * (-xs[j]) * inv;
         }
@@ -94,7 +106,10 @@ fn main() -> Result<()> {
             eprintln!("verified: reconstructed key matches group key");
         } else {
             eprintln!("WARNING: key mismatch!");
-            eprintln!("  got:      {}", hex::encode(reconstructed.to_bytes().as_ref()));
+            eprintln!(
+                "  got:      {}",
+                hex::encode(reconstructed.to_bytes().as_ref())
+            );
             eprintln!("  expected: {}", hex::encode(expected));
         }
     }
@@ -102,7 +117,7 @@ fn main() -> Result<()> {
     println!("spend_key: {}", hex::encode(full_secret.to_repr().as_ref()));
 
     let view_scalar = {
-        use sha2::{Sha512, Digest};
+        use sha2::{Digest, Sha512};
         let mut hasher = Sha512::new();
         hasher.update(b"THORChain View Key");
         hasher.update(0u64.to_le_bytes());

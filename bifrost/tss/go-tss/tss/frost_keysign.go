@@ -423,13 +423,16 @@ func (c *FrostSignCoordinator) Execute(
 	}
 
 	prepareResp, err := c.sidecar.FrostSignPrepare(FrostSidecarPrepareReq{
-		MsgID:        c.msgID,
-		VaultPubKey:  req.VaultPubKey,
-		ToAddress:    req.ToAddress,
-		AmountAtomic: req.AmountAtomic,
-		Memo:         req.Memo,
-		FeeRate:      req.FeeRate,
-		DecoyContext: decoyContext,
+		MsgID:          c.msgID,
+		VaultPubKey:    req.VaultPubKey,
+		ToAddress:      req.ToAddress,
+		AmountAtomic:   req.AmountAtomic,
+		Memo:           req.Memo,
+		FeeRate:        req.FeeRate,
+		DecoyContext:   decoyContext,
+		RequiredInputs: req.RequiredInputs,
+		MaxInputs:      req.MaxInputs,
+		DustThreshold:  req.DustThreshold,
 	})
 	if err != nil {
 		return FrostKeySignResponse{

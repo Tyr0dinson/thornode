@@ -20,13 +20,16 @@ func (a *frostSignerAdapter) FrostSignPrepare(req tssp.FrostSidecarPrepareReq) (
 		return tssp.FrostSidecarPrepareResp{}, fmt.Errorf("frost signer adapter is not initialized")
 	}
 	resp, err := a.signer.FrostSignPrepare(xmrFrostSignPrepareRequest{
-		MsgID:        req.MsgID,
-		VaultPubKey:  req.VaultPubKey,
-		ToAddress:    req.ToAddress,
-		AmountAtomic: req.AmountAtomic,
-		Memo:         req.Memo,
-		FeeRate:      req.FeeRate,
-		DecoyContext: req.DecoyContext,
+		MsgID:          req.MsgID,
+		VaultPubKey:    req.VaultPubKey,
+		ToAddress:      req.ToAddress,
+		AmountAtomic:   req.AmountAtomic,
+		Memo:           req.Memo,
+		FeeRate:        req.FeeRate,
+		DecoyContext:   req.DecoyContext,
+		RequiredInputs: frostOutputRefsToSigner(req.RequiredInputs),
+		MaxInputs:      req.MaxInputs,
+		DustThreshold:  req.DustThreshold,
 	})
 	if err != nil {
 		return tssp.FrostSidecarPrepareResp{}, err
@@ -35,6 +38,20 @@ func (a *frostSignerAdapter) FrostSignPrepare(req tssp.FrostSidecarPrepareReq) (
 		SessionID:  resp.SessionID,
 		Preprocess: resp.Preprocess,
 	}, nil
+}
+
+func frostOutputRefsToSigner(refs []tssp.FrostSpentOutputRef) []xmrFrostOutputRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]xmrFrostOutputRef, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, xmrFrostOutputRef{
+			TxHash:      ref.TxHash,
+			OutputIndex: ref.OutputIndex,
+		})
+	}
+	return out
 }
 
 func (a *frostSignerAdapter) FrostSignPartial(req tssp.FrostSidecarPartialReq) (tssp.FrostSidecarPartialResp, error) {

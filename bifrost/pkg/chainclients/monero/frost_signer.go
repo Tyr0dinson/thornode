@@ -135,13 +135,16 @@ type xmrFrostDKGFinalizeResponse struct {
 
 // FROST Signing request/response types
 type xmrFrostSignPrepareRequest struct {
-	MsgID        string `json:"msg_id"`
-	VaultPubKey  string `json:"vault_pub_key"`
-	ToAddress    string `json:"to_address"`
-	AmountAtomic uint64 `json:"amount_atomic"`
-	Memo         string `json:"memo,omitempty"`
-	FeeRate      uint64 `json:"fee_rate,omitempty"`
-	DecoyContext string `json:"decoy_context"`
+	MsgID          string              `json:"msg_id"`
+	VaultPubKey    string              `json:"vault_pub_key"`
+	ToAddress      string              `json:"to_address"`
+	AmountAtomic   uint64              `json:"amount_atomic"`
+	Memo           string              `json:"memo,omitempty"`
+	FeeRate        uint64              `json:"fee_rate,omitempty"`
+	DecoyContext   string              `json:"decoy_context"`
+	RequiredInputs []xmrFrostOutputRef `json:"required_inputs,omitempty"`
+	MaxInputs      int64               `json:"max_inputs,omitempty"`
+	DustThreshold  uint64              `json:"dust_threshold,omitempty"`
 }
 
 type xmrFrostSignPrepareResponse struct {
@@ -686,6 +689,14 @@ func (s *FrostSigner) GetFeeRate() (uint64, error) {
 		return 0, fmt.Errorf("fail to call frost fee-rate endpoint: %w", err)
 	}
 	return out.FeeRatePerWeight, nil
+}
+
+func (s *FrostSigner) ResetScanner(vaultPubKey string, birthdayHeight int64) error {
+	req := struct {
+		VaultPubKey    string `json:"vault_pub_key"`
+		BirthdayHeight int64  `json:"birthday_height"`
+	}{vaultPubKey, birthdayHeight}
+	return s.call(http.MethodPost, "/v1/monero/scanner/reset", req, nil)
 }
 
 func (s *FrostSigner) GetChainHeight() (int64, error) {

@@ -396,8 +396,7 @@ func (c Chain) DustThreshold() cosmos.Uint {
 	case ADAChain:
 		return cosmos.NewUint(10_000_000)
 	case XMRChain:
-		// XMR has no concept of dust equivalent to UTXO chains.
-		return cosmos.ZeroUint()
+		return cosmos.NewUint(10_000)
 	default:
 		return cosmos.ZeroUint()
 	}

@@ -39,6 +39,10 @@ pub struct VaultRecord {
     pub address: String,
     pub source: String,
     pub registered_at: i64,
+    #[serde(default)]
+    pub rescan: bool,
+    #[serde(default)]
+    pub birthday: u64,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -646,6 +650,8 @@ impl Store {
             address: address.to_string(),
             source: source.to_string(),
             registered_at: chrono::Utc::now().timestamp(),
+            rescan: false,
+            birthday: 0,
         };
         let value = serde_json::to_vec(&record)?;
         let key = vault_pub_key.as_bytes();
@@ -721,6 +727,23 @@ impl Store {
             vaults.push(record);
         }
         Ok(vaults)
+    }
+
+    pub fn set_vault_rescan(&self, vault_pub_key: &str, rescan: bool, birthday: u64) -> Result<()> {
+        let tree = self.db.open_tree("vaults")?;
+        let key = vault_pub_key.as_bytes();
+        let raw = tree
+            .get(key)
+            .map_err(|e| anyhow::anyhow!("failed to read vault record: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("vault {} not found", vault_pub_key))?;
+        let mut record: VaultRecord = serde_json::from_slice(&raw)?;
+        record.rescan = rescan;
+        record.birthday = birthday;
+        let encoded = serde_json::to_vec(&record)?;
+        tree.insert(key, encoded)
+            .map_err(|e| anyhow::anyhow!("failed to update vault rescan flag: {e}"))?;
+        tree.flush().ok();
+        Ok(())
     }
 
     // ---- UTXO tracking ----
@@ -1569,7 +1592,6 @@ impl Store {
         tree.flush()?;
         Ok(to_delete.len())
     }
-
 
     /// Save the last scanned height for a vault.
     pub fn save_scan_height(&self, vault_pub_key: &str, height: u64) -> Result<()> {

@@ -104,7 +104,6 @@ mod tests {
         assert_eq!(mocknet.len(), 95);
         assert_eq!(public.len(), 95);
         assert_eq!(mocknet, public);
-
     }
 
     #[test]

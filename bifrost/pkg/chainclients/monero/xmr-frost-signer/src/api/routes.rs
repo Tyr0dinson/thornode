@@ -358,14 +358,7 @@ fn ensure_registered_vault_state(
         .store
         .load_scan_height(vault_pub_key)
         .map_err(|e| format!("failed to load vault scan height: {e}"))?
-        .unwrap_or_else(|| {
-            let b = birthday.unwrap_or(0);
-            if b > 0 {
-                b
-            } else {
-                state.scanner.lock().current_height()
-            }
-        });
+        .unwrap_or_else(|| birthday.unwrap_or(0));
 
     let mut scanner = state.scanner.lock();
     scanner
@@ -508,10 +501,13 @@ pub async fn dkg_finalize(
     {
         Ok(key_share_bytes) => (
             StatusCode::OK,
-            Json(serde_json::to_value(DkgFinalizeResponse {
-                success: true,
-                key_bytes_hex: hex::encode(&key_share_bytes),
-            }).unwrap()),
+            Json(
+                serde_json::to_value(DkgFinalizeResponse {
+                    success: true,
+                    key_bytes_hex: hex::encode(&key_share_bytes),
+                })
+                .unwrap(),
+            ),
         ),
         Err(e) => {
             error!(error = %e, "DKG finalize failed");
@@ -646,12 +642,29 @@ pub async fn sign_prepare(
     match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency conflict: msg_id reused with different payload",
-                )),
+            info!(
+                msg_id,
+                "sign_prepare idempotency conflict: superseding stale record for retry"
             );
+            if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale idempotency record");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
+            }
+            match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
+                Ok(IdempotencyCheck::Fresh) => {}
+                other => {
+                    error!(msg_id, result = ?other, "unexpected idempotency state after clear");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json("idempotency reset failed")),
+                    );
+                }
+            }
         }
         Ok(IdempotencyCheck::InProgress) => {
             return (
@@ -725,6 +738,17 @@ pub async fn sign_prepare(
         return (StatusCode::SERVICE_UNAVAILABLE, Json(response));
     }
 
+    let required_refs: Option<Vec<crate::state::store::OutputRef>> =
+        req.required_inputs.as_ref().map(|inputs| {
+            inputs
+                .iter()
+                .map(|i| crate::state::store::OutputRef {
+                    tx_hash: i.tx_hash.clone(),
+                    output_index: i.output_index,
+                })
+                .collect()
+        });
+
     let (status, response_json) = match state
         .signer
         .prepare(
@@ -735,6 +759,9 @@ pub async fn sign_prepare(
             req.fee_rate,
             &req.decoy_context,
             &msg_id,
+            required_refs.as_deref(),
+            req.max_inputs,
+            req.dust_threshold,
         )
         .await
     {
@@ -788,12 +815,29 @@ pub async fn sign_partial(
     match check_idempotency(&state, "sign_partial", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency conflict: msg_id reused with different payload",
-                )),
+            info!(
+                msg_id,
+                "sign_partial idempotency conflict: superseding stale record for retry"
             );
+            if let Err(e) = state.store.clear_idempotency("sign_partial", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale sign_partial idempotency record");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
+            }
+            match check_idempotency(&state, "sign_partial", &msg_id, &payload_hashes) {
+                Ok(IdempotencyCheck::Fresh) => {}
+                other => {
+                    error!(msg_id, result = ?other, "unexpected sign_partial idempotency state after clear");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json("idempotency reset failed")),
+                    );
+                }
+            }
         }
         Ok(IdempotencyCheck::InProgress) => {
             return (
@@ -868,12 +912,29 @@ pub async fn sign_combine(
     match check_idempotency(&state, "sign_combine", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
-            return (
-                StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency conflict: msg_id reused with different payload",
-                )),
+            info!(
+                msg_id,
+                "sign_combine idempotency conflict: superseding stale record for retry"
             );
+            if let Err(e) = state.store.clear_idempotency("sign_combine", &msg_id) {
+                error!(msg_id, error = %e, "failed to clear stale sign_combine idempotency record");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
+            }
+            match check_idempotency(&state, "sign_combine", &msg_id, &payload_hashes) {
+                Ok(IdempotencyCheck::Fresh) => {}
+                other => {
+                    error!(msg_id, result = ?other, "unexpected sign_combine idempotency state after clear");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json("idempotency reset failed")),
+                    );
+                }
+            }
         }
         Ok(IdempotencyCheck::InProgress) => {
             return (
@@ -1493,6 +1554,89 @@ pub async fn scanner_sync(
             );
         }
 
+        if vault.rescan {
+            let vault_scan_height = scan_height.max(vault.birthday);
+            let tip = effective_height;
+            if vault_scan_height < tip {
+                let batch_limit = 50u64;
+                let end = std::cmp::min(vault_scan_height + batch_limit, tip);
+                info!(
+                    vault = %vault.vault_pub_key,
+                    from = vault_scan_height + 1,
+                    to = end,
+                    tip,
+                    "rescan: scanning blocks for vault"
+                );
+                for h in (vault_scan_height + 1)..=end {
+                    let rescan_block = match rpc.get_scannable_block_by_number(h as usize).await {
+                        Ok(block) => block,
+                        Err(e) => {
+                            warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: failed to fetch block, stopping batch");
+                            break;
+                        }
+                    };
+                    let scan_outcome = match state.scanner.lock().scan_block_for_vault_with_added(
+                        &vault.vault_pub_key,
+                        h,
+                        rescan_block,
+                    ) {
+                        Ok(outcome) => outcome,
+                        Err(e) => {
+                            warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: scan failed, stopping batch");
+                            break;
+                        }
+                    };
+                    let outputs_after_scan =
+                        state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
+                    let collision_records_after_scan = state
+                        .scanner
+                        .lock()
+                        .get_collision_records(&vault.vault_pub_key);
+                    if let Err(e) = state.store.merge_scanned_scan_state(
+                        &vault.vault_pub_key,
+                        &outputs_after_scan,
+                        &collision_records_after_scan,
+                    ) {
+                        warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: failed to persist scanned outputs, stopping batch");
+                        break;
+                    }
+                    if let Err(e) = state.store.save_scan_height(&vault.vault_pub_key, h) {
+                        warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: failed to persist scan height, stopping batch");
+                        break;
+                    }
+                    if !scan_outcome.credited_outputs.is_empty() {
+                        incoming.extend(transfer_entries_from_credited_outputs(
+                            &outputs_after_scan,
+                            &scan_outcome.credited_outputs,
+                            &vault.vault_pub_key,
+                            effective_height,
+                        ));
+                    }
+                }
+                let new_height = match state.store.load_scan_height(&vault.vault_pub_key) {
+                    Ok(Some(height)) => height,
+                    Ok(None) => 0,
+                    Err(e) => {
+                        warn!(error = %e, vault = %vault.vault_pub_key, "rescan: failed to reload persisted scan height");
+                        0
+                    }
+                };
+                if new_height >= tip {
+                    info!(vault = %vault.vault_pub_key, "rescan complete — caught up to chain tip");
+                    let _ =
+                        state
+                            .store
+                            .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                }
+            } else {
+                info!(vault = %vault.vault_pub_key, "rescan complete — already at chain tip");
+                let _ = state
+                    .store
+                    .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+            }
+            continue;
+        }
+
         let stored_meta = match state
             .store
             .load_scan_block_meta(&vault.vault_pub_key, req.height)
@@ -1738,6 +1882,32 @@ pub async fn scanner_sync(
                     output_index: output.output_index,
                 })
                 .collect();
+            let mut known_added_refs: HashSet<(String, u32)> = added_refs
+                .iter()
+                .map(|output| (output.tx_hash.clone(), output.output_index))
+                .collect();
+            for output_ref in output_refs_at_height(&outputs_after_scan, req.height) {
+                if known_added_refs.insert((output_ref.tx_hash.clone(), output_ref.output_index)) {
+                    added_refs.push(output_ref);
+                }
+            }
+            let mut credited_outputs = scan_outcome.credited_outputs.clone();
+            let mut known_credited_refs: HashSet<(String, u32)> = credited_outputs
+                .iter()
+                .map(|output| (output.tx_hash.clone(), output.output_index))
+                .collect();
+            for credited_output in state
+                .scanner
+                .lock()
+                .get_credited_outputs_at_height(&vault.vault_pub_key, req.height)
+            {
+                if known_credited_refs.insert((
+                    credited_output.tx_hash.clone(),
+                    credited_output.output_index,
+                )) {
+                    credited_outputs.push(credited_output);
+                }
+            }
             if let Err(e) = state.store.save_scan_block_meta(
                 &vault.vault_pub_key,
                 &ScanBlockMeta {
@@ -1869,16 +2039,21 @@ pub async fn scanner_sync(
     }
 
     // Persist scanner in-memory outputs to store for ALL vaults.
-    // The meta_matches path skips merge_scanned_outputs, so outputs
+    // The meta_matches path skips merge_scanned_scan_state, so outputs
     // found by the wallet scanner during register_vault stay in memory
     // but never reach the persistent store. This sync ensures the
     // output store stays consistent across all nodes.
     for vault in &vaults {
         let all_outputs = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
-        if let Err(e) = state
-            .store
-            .merge_scanned_outputs(&vault.vault_pub_key, &all_outputs)
-        {
+        let collision_records = state
+            .scanner
+            .lock()
+            .get_collision_records(&vault.vault_pub_key);
+        if let Err(e) = state.store.merge_scanned_scan_state(
+            &vault.vault_pub_key,
+            &all_outputs,
+            &collision_records,
+        ) {
             warn!(
                 error = %e,
                 vault = %vault.vault_pub_key,
@@ -1961,6 +2136,125 @@ pub async fn get_transfers(
     (
         StatusCode::OK,
         Json(serde_json::to_value(TransfersResponse { incoming, outgoing }).unwrap()),
+    )
+}
+
+pub async fn scanner_reset(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<crate::api::types::ScannerResetRequest>,
+) -> impl IntoResponse {
+    let vault_pub_key = req.vault_pub_key.trim().to_string();
+    if vault_pub_key.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("vault_pub_key is required")),
+        );
+    }
+
+    let vault = match state.store.list_vaults() {
+        Ok(vaults) => vaults
+            .into_iter()
+            .find(|v| v.vault_pub_key == vault_pub_key),
+        Err(e) => {
+            error!(error = %e, "failed to list vaults for scanner reset");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(e.to_string())),
+            );
+        }
+    };
+    let vault = match vault {
+        Some(v) => v,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(error_json(format!("vault {} not found", vault_pub_key))),
+            );
+        }
+    };
+
+    if let Err(e) = state.store.save_outputs(&vault_pub_key, &[]) {
+        error!(
+            error = %e,
+            vault = %vault_pub_key,
+            "failed to clear outputs during scanner reset"
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
+    }
+
+    if let Err(e) = state
+        .store
+        .rollback_scan_state_from_height(&vault_pub_key, 0)
+    {
+        error!(
+            error = %e,
+            vault = %vault_pub_key,
+            "failed to rollback scan state during scanner reset"
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
+    }
+
+    let birthday = req.birthday_height;
+    if let Err(e) = state.store.save_scan_height(&vault_pub_key, birthday) {
+        error!(
+            error = %e,
+            vault = %vault_pub_key,
+            birthday,
+            "failed to set scan height during scanner reset"
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
+    }
+
+    if let Err(e) = state.store.set_vault_rescan(&vault_pub_key, true, birthday) {
+        error!(
+            error = %e,
+            vault = %vault_pub_key,
+            birthday,
+            "failed to mark vault for rescan during scanner reset"
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
+    }
+
+    if let Err(e) = state.scanner.lock().register_vault(
+        &vault_pub_key,
+        &vault.group_key,
+        state.chain_network,
+        vec![],
+        vec![],
+        Some(birthday),
+    ) {
+        error!(
+            error = %e,
+            vault = %vault_pub_key,
+            "failed to re-register vault during scanner reset"
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
+    }
+
+    info!(vault = %vault_pub_key, birthday, "scanner reset complete");
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "vault_pub_key": vault_pub_key,
+            "birthday_height": birthday,
+            "status": "reset"
+        })),
     )
 }
 
@@ -2149,9 +2443,10 @@ pub async fn mark_outputs_spent(
         }
     }
 
-    if let Err(e) = state
-        .store
-        .merge_scanned_outputs(&vault_pub_key, &outputs_after)
+    if let Err(e) =
+        state
+            .store
+            .merge_scanned_scan_state(&vault_pub_key, &outputs_after, &collision_records)
     {
         error!(error = %e, vault = vault_pub_key, "failed to persist outputs after mark-spent");
         return (
@@ -2199,8 +2494,7 @@ pub async fn mark_outputs_spent(
         } else {
             info!(
                 vault = vault_pub_key,
-                tx_hash,
-                "created outgoing transfer record from attestation"
+                tx_hash, "created outgoing transfer record from attestation"
             );
         }
     }
@@ -2357,12 +2651,14 @@ pub async fn key_restore(
         );
     }
 
-    info!(vault = vault_pub_key, save_key, "restored FROST keys from backup");
+    info!(
+        vault = vault_pub_key,
+        save_key, "restored FROST keys from backup"
+    );
     (
         StatusCode::OK,
         Json(
-            serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: true })
-                .unwrap(),
+            serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: true }).unwrap(),
         ),
     )
 }
@@ -2871,6 +3167,8 @@ pub async fn sim_transfer(
         Some(&account.address),
         &HashSet::new(),
         state.chain_network,
+        None,
+        None,
     )
     .await
     {
@@ -3157,8 +3455,7 @@ mod tests {
     ) -> (Arc<AppState>, tempfile::TempDir, String) {
         let data_dir = tempfile::tempdir().expect("failed to create tempdir");
         let store = Arc::new(
-            crate::state::Store::open(data_dir.path())
-                .expect("failed to open test store"),
+            crate::state::Store::open(data_dir.path()).expect("failed to open test store"),
         );
         let mut scanner = Scanner::new();
         let vault_pub_key = "thorpub1vaulttest".to_string();
@@ -3217,8 +3514,7 @@ mod tests {
     fn chain_test_state(daemon_url: &str) -> (Arc<AppState>, TempDir) {
         let data_dir = tempfile::tempdir().expect("failed to create tempdir");
         let store = Arc::new(
-            crate::state::Store::open(data_dir.path())
-                .expect("failed to open test store"),
+            crate::state::Store::open(data_dir.path()).expect("failed to open test store"),
         );
         let daemon = DaemonClient::new(daemon_url, 1024 * 1024);
         let app_state = Arc::new(AppState {
@@ -3579,6 +3875,9 @@ mod tests {
             memo: Some("OUT:TEST".to_string()),
             fee_rate: Some(10),
             decoy_context: "ctx".to_string(),
+            required_inputs: None,
+            max_inputs: None,
+            dust_threshold: None,
         };
         let req_b = SignPrepareRequest {
             msg_id: "msg-prepare-1".to_string(),

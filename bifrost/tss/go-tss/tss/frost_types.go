@@ -12,16 +12,19 @@ import (
 
 // FrostKeySignRequest is the canonical request context for a FROST signing ceremony.
 type FrostKeySignRequest struct {
-	VaultPubKey   string
-	ToAddress     string
-	AmountAtomic  uint64
-	Memo          string
-	FeeRate       uint64
-	SignerPubKeys []string
-	BlockHeight   int64
-	Version       string
-	TxInHash      string
-	RequestID     string
+	VaultPubKey    string
+	ToAddress      string
+	AmountAtomic   uint64
+	Memo           string
+	FeeRate        uint64
+	SignerPubKeys  []string
+	BlockHeight    int64
+	Version        string
+	TxInHash       string
+	RequestID      string
+	RequiredInputs []FrostSpentOutputRef
+	MaxInputs      int64
+	DustThreshold  uint64
 }
 
 // FrostKeySignResponse is the result of a FROST signing ceremony.
@@ -122,13 +125,16 @@ type FrostSidecarDKGFinalizeResp struct {
 }
 
 type FrostSidecarPrepareReq struct {
-	MsgID        string `json:"msg_id"`
-	VaultPubKey  string `json:"vault_pub_key"`
-	ToAddress    string `json:"to_address"`
-	AmountAtomic uint64 `json:"amount_atomic"`
-	Memo         string `json:"memo,omitempty"`
-	FeeRate      uint64 `json:"fee_rate,omitempty"`
-	DecoyContext string `json:"decoy_context"`
+	MsgID          string                `json:"msg_id"`
+	VaultPubKey    string                `json:"vault_pub_key"`
+	ToAddress      string                `json:"to_address"`
+	AmountAtomic   uint64                `json:"amount_atomic"`
+	Memo           string                `json:"memo,omitempty"`
+	FeeRate        uint64                `json:"fee_rate,omitempty"`
+	DecoyContext   string                `json:"decoy_context"`
+	RequiredInputs []FrostSpentOutputRef `json:"required_inputs,omitempty"`
+	MaxInputs      int64                 `json:"max_inputs,omitempty"`
+	DustThreshold  uint64                `json:"dust_threshold,omitempty"`
 }
 
 type FrostSidecarPrepareResp struct {

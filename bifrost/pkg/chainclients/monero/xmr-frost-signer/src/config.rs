@@ -143,7 +143,7 @@ impl Config {
             return Err(ConfigError::Missing("SIGNER_SEED_PHRASE"));
         }
         let auth_bearer = read_non_empty_env("XMR_FROST_AUTH_BEARER")
-            .or_else(|| Some(seed_phrase.trim().to_string()));
+            .or_else(|| Some(derive_auth_bearer(&seed_phrase)));
 
         Ok(Config {
             listen_addr,
@@ -528,9 +528,10 @@ mod tests {
         );
         assert_eq!(config.data_dir, PathBuf::from("/var/lib/xmr-frost"));
         assert!(config.auth_username.is_none());
+        let expected_bearer = derive_auth_bearer("test mocknet seed phrase for unit tests");
         assert_eq!(
             config.auth_bearer.as_deref(),
-            Some("test mocknet seed phrase for unit tests")
+            Some(expected_bearer.as_str())
         );
         assert_eq!(config.chain_network, ChainNetworkMode::Mocknet);
     }
