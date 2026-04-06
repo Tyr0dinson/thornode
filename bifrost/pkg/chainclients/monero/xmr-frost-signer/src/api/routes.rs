@@ -1167,14 +1167,19 @@ pub async fn broadcast(
             (StatusCode::INTERNAL_SERVER_ERROR, error_json(e.to_string()))
         }
     };
-    persist_idempotency(
-        &state,
-        "broadcast",
-        &msg_id,
-        &payload_hashes.canonical,
-        status,
-        &response_json,
-    );
+    // Only cache successful broadcast responses. Caching failures causes the
+    // bifrost to retry the same broadcast forever and always get the cached
+    // failure back, even after the underlying issue is resolved.
+    if status == StatusCode::OK {
+        persist_idempotency(
+            &state,
+            "broadcast",
+            &msg_id,
+            &payload_hashes.canonical,
+            status,
+            &response_json,
+        );
+    }
     (status, Json(response_json))
 }
 
