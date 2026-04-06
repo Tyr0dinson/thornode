@@ -362,6 +362,8 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 			_ = json.NewEncoder(w).Encode(resp)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/addresses/"):
 			_ = json.NewEncoder(w).Encode(xmrFrostAddressesResponse{Addresses: []string{vaultAddress}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
 		default:
 			http.NotFound(w, r)
 		}

@@ -274,10 +274,6 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 		if isFrostScannerHashMismatchErr(err) {
 			return nil, btypes.ErrUnavailableBlock
 		}
-		if isFrostRescanInProgressErr(err) {
-			s.logger.Info().Int64("height", fetchHeight).Msg("sidecar rescan in progress, parking bifrost scanner")
-			return nil, btypes.ErrUnavailableBlock
-		}
 		return nil, fmt.Errorf("fail to get monero transfers at %d: %w", fetchHeight, err)
 	}
 	if len(resp.Incoming)+len(resp.Outgoing) == 0 {
@@ -753,8 +749,11 @@ func (s *Scanner) refreshAsgardLookup() error {
 			"bifrost_scanner",
 			creationHeight,
 		)
-		if addrErr != nil || derived.IsEmpty() {
-			s.logger.Debug().Err(addrErr).Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with unregistered monero scanner state")
+		if addrErr != nil {
+			return fmt.Errorf("fail to register vault %s: %w", frostKey.String(), addrErr)
+		}
+		if derived.IsEmpty() {
+			s.logger.Debug().Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with empty derived address")
 			continue
 		}
 		lookup[derived.String()] = observedVault
@@ -995,9 +994,3 @@ func isFrostScannerHashMismatchErr(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "scanner sync hash mismatch")
 }
 
-func isFrostRescanInProgressErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	return isFrostHTTPStatus(err, 503) && strings.Contains(err.Error(), "rescan in progress")
-}

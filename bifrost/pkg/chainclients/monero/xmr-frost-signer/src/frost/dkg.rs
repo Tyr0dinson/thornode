@@ -367,37 +367,16 @@ impl DkgCoordinator {
             anyhow::bail!("finalize address mismatch");
         }
 
-        let mapping_created = self
-            .store
-            .register_vault(
-                &session.vault_pub_key,
-                &pending_group_key,
-                &pending_address,
-                "dkg",
-            )
-            .context("failed to register vault mapping during finalize")?;
-        if let Err(e) = self
-            .store
+        // Vault registration is owned by the bifrost, which calls the
+        // /v1/monero/vaults/register endpoint after keygen completes using
+        // the frost-derived vault pubkey. DKG finalize only persists the
+        // key share material (keyed by group_key). Registering here would
+        // use session.vault_pub_key (the bifrost-provided identifier, which
+        // is the scheduled eddsa pubkey from thornode) and create a stale
+        // vault entry that diverges from the bifrost's frost-keyed registration.
+        self.store
             .save_frost_keys(&pending_group_key, &key_share_bytes)
-        {
-            if mapping_created {
-                if let Err(remove_err) = self.store.remove_vault_if_mapping_matches(
-                    &session.vault_pub_key,
-                    &pending_group_key,
-                    &pending_address,
-                ) {
-                    warn!(
-                        session_id,
-                        vault_pub_key = %session.vault_pub_key,
-                        group_key = %pending_group_key,
-                        address = %pending_address,
-                        error = %remove_err,
-                        "failed to rollback vault mapping after finalize persistence failure"
-                    );
-                }
-            }
-            return Err(e).context("failed to persist FROST key share during finalize");
-        }
+            .context("failed to persist FROST key share during finalize")?;
 
         session.group_key_hex = Some(pending_group_key.clone());
         session.address = Some(pending_address.clone());
@@ -663,33 +642,9 @@ mod tests {
     }
 
     #[test]
-    fn test_finalize_vault_mapping_conflict_does_not_persist_key_file() {
-        let (coord, _dir) = make_coordinator();
-        let session_id = "sess-conflict";
-        let vault_pub_key = "thorpub1vaulttest";
-        let (address, group_key) =
-            run_single_participant_until_finalize(&coord, session_id, vault_pub_key);
-
-        coord
-            .store
-            .register_vault(vault_pub_key, "other-group-key", "other-address", "test")
-            .expect("pre-seeding conflicting mapping should succeed");
-
-        let err = coord
-            .finalize(session_id, &group_key, &address)
-            .expect_err("finalize should fail on vault mapping conflict")
-            .to_string();
-        assert!(err.contains("failed to register vault mapping during finalize"));
-        assert!(
-            coord.store.load_frost_keys(&group_key).unwrap().is_none(),
-            "mapping conflict must not persist key material"
-        );
-    }
-
-    #[test]
-    fn test_finalize_rolls_back_mapping_when_key_save_fails() {
+    fn test_finalize_fails_when_key_save_fails() {
         let (coord, dir) = make_coordinator();
-        let session_id = "sess-rollback";
+        let session_id = "sess-save-fail";
         let vault_pub_key = "thorpub1vaulttest";
         let (address, group_key) =
             run_single_participant_until_finalize(&coord, session_id, vault_pub_key);
@@ -703,10 +658,6 @@ mod tests {
             .to_string();
         assert!(err.contains("failed to persist FROST key share"));
 
-        assert!(
-            coord.store.get_vault(vault_pub_key).unwrap().is_none(),
-            "new mapping should be rolled back if key persistence fails"
-        );
         assert!(
             coord.store.load_frost_keys(&group_key).unwrap().is_none(),
             "failed finalize must not leave persisted key file"
@@ -784,6 +735,47 @@ mod tests {
         assert_eq!(
             returned_bytes, stored_bytes,
             "finalize return value must match persisted key material"
+        );
+    }
+
+    /// The bifrost passes the scheduled thornode pool pubkey (eddsa) as
+    /// vault_pub_key when initiating DKG. After DKG completes, the FROST
+    /// group key produces a DIFFERENT vault pubkey (derived from the group
+    /// key bytes). The bifrost then explicitly registers the vault under
+    /// the FROST-derived pubkey via the /v1/monero/vaults/register endpoint.
+    ///
+    /// Bug: finalize currently registers the vault under the bifrost-provided
+    /// (eddsa) vault_pub_key. Combined with the bifrost's explicit frost-key
+    /// registration, this creates TWO vault entries in the store for a single
+    /// keygen — one under the eddsa key and one under the frost key.
+    ///
+    /// Fix: finalize must NOT register a vault. The bifrost owns vault
+    /// registration post-keygen using the frost-derived key.
+    #[test]
+    fn test_finalize_does_not_register_vault_under_bifrost_provided_pubkey() {
+        let (coord, _dir) = make_coordinator();
+        let session_id = "sess-no-register";
+        // Simulates the eddsa key passed by the bifrost during keygen.
+        let bifrost_provided_vault_pub_key = "thorpub1eddsakeyfrombifrost";
+        let (address, group_key) = run_single_participant_until_finalize(
+            &coord,
+            session_id,
+            bifrost_provided_vault_pub_key,
+        );
+
+        coord
+            .finalize(session_id, &group_key, &address)
+            .expect("finalize should succeed");
+
+        let stored_vault = coord
+            .store
+            .get_vault(bifrost_provided_vault_pub_key)
+            .expect("store lookup should succeed");
+        assert!(
+            stored_vault.is_none(),
+            "finalize must NOT register a vault under the bifrost-provided vault_pub_key. \
+             Registration is owned by the bifrost (via the register-vault HTTP endpoint) \
+             and must use the frost-derived pubkey, not the eddsa key from DKG round1."
         );
     }
 }
