@@ -224,6 +224,9 @@ impl SignCoordinator {
         fee_rate_override: Option<u64>,
         decoy_context: &str,
         msg_id: &str,
+        required_inputs: Option<&[OutputRef]>,
+        max_inputs: Option<u64>,
+        dust_threshold: Option<u64>,
     ) -> Result<(String, Vec<u8>)> {
         info!(
             vault = vault_pub_key,
@@ -251,10 +254,36 @@ impl SignCoordinator {
         let from_address = xmr::derive_vault_address(&group_key_hex, self.chain_network)
             .context("failed to derive vault address from signing key")?;
 
-        let outputs = self
+        let all_outputs = self
             .store
             .load_outputs(vault_pub_key)
             .context("failed to load tracked outputs for signing")?;
+
+        let outputs = if let Some(refs) = required_inputs {
+            let ref_set: HashSet<(String, u32)> = refs
+                .iter()
+                .map(|r| (r.tx_hash.clone(), r.output_index))
+                .collect();
+            let filtered: Vec<_> = all_outputs
+                .into_iter()
+                .filter(|o| ref_set.contains(&(o.tx_hash.clone(), o.output_index)))
+                .collect();
+            if filtered.len() != ref_set.len() {
+                anyhow::bail!(
+                    "checkpoint required {} inputs but only {} found in store",
+                    ref_set.len(),
+                    filtered.len(),
+                );
+            }
+            info!(
+                vault = vault_pub_key,
+                required_count = filtered.len(),
+                "using checkpointed inputs for signing"
+            );
+            filtered
+        } else {
+            all_outputs
+        };
 
         let oxide_rpc = self
             .daemon
@@ -285,6 +314,8 @@ impl SignCoordinator {
                 Some(&from_address),
                 &excluded_inputs,
                 self.chain_network,
+                max_inputs,
+                dust_threshold,
             )
             .await
             .context("failed to build real signable transaction")?;
@@ -1210,7 +1241,7 @@ mod tests {
         );
 
         let err = signer
-            .prepare("thorpub1vault", "48to", 1, "", None, "ctx", "msg-2")
+            .prepare("thorpub1vault", "48to", 1, "", None, "ctx", "msg-2", None, None, None)
             .await
             .unwrap_err();
         assert!(err.to_string().contains("capacity exceeded"));

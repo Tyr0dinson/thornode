@@ -83,6 +83,18 @@ pub struct SignPrepareRequest {
     pub memo: Option<String>,
     pub fee_rate: Option<u64>,
     pub decoy_context: String,
+    #[serde(default)]
+    pub required_inputs: Option<Vec<RequiredInput>>,
+    #[serde(default)]
+    pub max_inputs: Option<u64>,
+    #[serde(default)]
+    pub dust_threshold: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct RequiredInput {
+    pub tx_hash: String,
+    pub output_index: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -227,6 +239,12 @@ pub struct MarkSpentResponse {
 pub struct KeyRestoreRequest {
     pub vault_pub_key: String,
     pub key_bytes_hex: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScannerResetRequest {
+    pub vault_pub_key: String,
+    pub birthday_height: u64,
 }
 
 #[derive(Debug, Serialize)]

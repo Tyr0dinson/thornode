@@ -733,6 +733,13 @@ pub async fn sign_prepare(
         return (StatusCode::SERVICE_UNAVAILABLE, Json(response));
     }
 
+    let required_refs: Option<Vec<crate::state::store::OutputRef>> = req.required_inputs.as_ref().map(|inputs| {
+        inputs.iter().map(|i| crate::state::store::OutputRef {
+            tx_hash: i.tx_hash.clone(),
+            output_index: i.output_index,
+        }).collect()
+    });
+
     let (status, response_json) = match state
         .signer
         .prepare(
@@ -743,6 +750,9 @@ pub async fn sign_prepare(
             req.fee_rate,
             &req.decoy_context,
             &msg_id,
+            required_refs.as_deref(),
+            req.max_inputs,
+            req.dust_threshold,
         )
         .await
     {
@@ -1846,6 +1856,66 @@ pub async fn scanner_sync(
     )
 }
 
+pub async fn scanner_reset(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<crate::api::types::ScannerResetRequest>,
+) -> impl IntoResponse {
+    let vault_pub_key = req.vault_pub_key.trim().to_string();
+    if vault_pub_key.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(error_json("vault_pub_key is required")));
+    }
+
+    let vault = match state.store.list_vaults() {
+        Ok(vaults) => vaults.into_iter().find(|v| v.vault_pub_key == vault_pub_key),
+        Err(e) => {
+            error!(error = %e, "failed to list vaults for scanner reset");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+        }
+    };
+    let vault = match vault {
+        Some(v) => v,
+        None => return (StatusCode::NOT_FOUND, Json(error_json(format!("vault {} not found", vault_pub_key)))),
+    };
+
+    if let Err(e) = state.store.save_outputs(&vault_pub_key, &[]) {
+        error!(error = %e, vault = %vault_pub_key, "failed to clear outputs during scanner reset");
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+    }
+
+    if let Err(e) = state.store.rollback_scan_state_from_height(&vault_pub_key, 0) {
+        error!(error = %e, vault = %vault_pub_key, "failed to rollback scan state during scanner reset");
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+    }
+
+    let birthday = req.birthday_height;
+    if let Err(e) = state.store.save_scan_height(&vault_pub_key, birthday) {
+        error!(error = %e, vault = %vault_pub_key, birthday, "failed to set scan height during scanner reset");
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+    }
+
+    if let Err(e) = state.scanner.lock().register_vault(
+        &vault_pub_key,
+        &vault.group_key,
+        state.chain_network,
+        vec![],
+        Some(birthday),
+    ) {
+        error!(error = %e, vault = %vault_pub_key, "failed to re-register vault during scanner reset");
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+    }
+
+    info!(vault = %vault_pub_key, birthday, "scanner reset complete");
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "vault_pub_key": vault_pub_key,
+            "birthday_height": birthday,
+            "status": "reset"
+        })),
+    )
+}
+
 pub async fn get_transfers(
     State(state): State<Arc<AppState>>,
     Query(query): Query<TransfersQuery>,
@@ -2812,6 +2882,8 @@ pub async fn sim_transfer(
         Some(&account.address),
         &HashSet::new(),
         state.chain_network,
+        None,
+        None,
     )
     .await
     {
@@ -3475,6 +3547,9 @@ mod tests {
             memo: Some("OUT:TEST".to_string()),
             fee_rate: Some(10),
             decoy_context: "ctx".to_string(),
+            required_inputs: None,
+            max_inputs: None,
+            dust_threshold: None,
         };
         let req_b = SignPrepareRequest {
             msg_id: "msg-prepare-1".to_string(),

@@ -19,14 +19,22 @@ func (a *frostSignerAdapter) FrostSignPrepare(req tssp.FrostSidecarPrepareReq) (
 	if a == nil || a.signer == nil {
 		return tssp.FrostSidecarPrepareResp{}, fmt.Errorf("frost signer adapter is not initialized")
 	}
+	var requiredInputs []xmrFrostOutputRef
+	for _, ref := range req.RequiredInputs {
+		requiredInputs = append(requiredInputs, xmrFrostOutputRef{
+			TxHash:      ref.TxHash,
+			OutputIndex: ref.OutputIndex,
+		})
+	}
 	resp, err := a.signer.FrostSignPrepare(xmrFrostSignPrepareRequest{
-		MsgID:        req.MsgID,
-		VaultPubKey:  req.VaultPubKey,
-		ToAddress:    req.ToAddress,
-		AmountAtomic: req.AmountAtomic,
-		Memo:         req.Memo,
-		FeeRate:      req.FeeRate,
-		DecoyContext: req.DecoyContext,
+		MsgID:          req.MsgID,
+		VaultPubKey:    req.VaultPubKey,
+		ToAddress:      req.ToAddress,
+		AmountAtomic:   req.AmountAtomic,
+		Memo:           req.Memo,
+		FeeRate:        req.FeeRate,
+		DecoyContext:   req.DecoyContext,
+		RequiredInputs: requiredInputs,
 	})
 	if err != nil {
 		return tssp.FrostSidecarPrepareResp{}, err

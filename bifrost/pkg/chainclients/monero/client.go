@@ -76,6 +76,10 @@ type signedTxPayload struct {
 	SpentOutputRefs []xmrFrostOutputRef   `json:"spent_output_refs,omitempty"`
 }
 
+type xmrSignCheckpoint struct {
+	SpentOutputRefs []xmrFrostOutputRef `json:"spent_output_refs"`
+}
+
 type xmrValidatedSignRequest struct {
 	vaultPubKey  common.PubKey
 	fromAddress  string
@@ -1020,17 +1024,42 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if tx.GasRate > 0 {
 		feeRate = uint64(tx.GasRate)
 	}
+	maxInputs, _ := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
+	if maxInputs <= 0 {
+		maxInputs = 15
+	}
+	dustThreshold := common.XMRChain.DustThreshold().Uint64()
+
+	var requiredInputs []tssp.FrostSpentOutputRef
+	if len(tx.Checkpoint) > 0 {
+		var ckpt xmrSignCheckpoint
+		ckptErr := json.Unmarshal(tx.Checkpoint, &ckpt)
+		if ckptErr != nil {
+			return nil, nil, nil, fmt.Errorf("fail to unmarshal xmr sign checkpoint: %w", ckptErr)
+		}
+		for _, ref := range ckpt.SpentOutputRefs {
+			requiredInputs = append(requiredInputs, tssp.FrostSpentOutputRef{
+				TxHash:      ref.TxHash,
+				OutputIndex: ref.OutputIndex,
+			})
+		}
+		c.logger.Info().Int("required_inputs", len(requiredInputs)).Msg("using checkpointed inputs for xmr signing retry")
+	}
+
 	frostReq := tssp.FrostKeySignRequest{
-		VaultPubKey:   signReqCtx.vaultPubKey.String(),
-		ToAddress:     signReqCtx.toAddress,
-		AmountAtomic:  signReqCtx.amountAtomic,
-		Memo:          tx.Memo,
-		FeeRate:       feeRate,
-		SignerPubKeys: members,
-		BlockHeight:   height,
-		Version:       version.String(),
-		TxInHash:      txInHash,
-		RequestID:     tx.SigningID,
+		VaultPubKey:    signReqCtx.vaultPubKey.String(),
+		ToAddress:      signReqCtx.toAddress,
+		AmountAtomic:   signReqCtx.amountAtomic,
+		Memo:           tx.Memo,
+		FeeRate:        feeRate,
+		SignerPubKeys:  members,
+		BlockHeight:    height,
+		Version:        version.String(),
+		TxInHash:       txInHash,
+		RequestID:      tx.SigningID,
+		MaxInputs:      maxInputs,
+		DustThreshold:  dustThreshold,
+		RequiredInputs: requiredInputs,
 	}
 	resp, err := c.tssServer.FrostKeySign(frostReq, newFrostSignerAdapter(c.frostSigner))
 	if err != nil {
@@ -1077,8 +1106,12 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to encode FROST signed tx payload: %w", err)
 	}
+	ckptBytes, ckptErr := json.Marshal(xmrSignCheckpoint{SpentOutputRefs: localSpentRefs})
+	if ckptErr != nil {
+		c.logger.Error().Err(ckptErr).Msg("fail to marshal xmr sign checkpoint")
+	}
 	observation := c.buildOutboundObservation(tx, resp.TxHash, resp.FeeAtomic, localSpentRefs)
-	return signedTx, nil, observation, nil
+	return signedTx, ckptBytes, observation, nil
 }
 
 func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, requireThorchainHeight bool) (xmrValidatedSignRequest, error) {
@@ -1095,9 +1128,8 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 	if requireThorchainHeight && thorchainHeight <= 0 {
 		return xmrValidatedSignRequest{}, fmt.Errorf("thorchain height must be greater than zero")
 	}
-	if len(tx.Checkpoint) > 0 {
-		return xmrValidatedSignRequest{}, fmt.Errorf("xmr signing does not support checkpoints")
-	}
+	// Checkpoints are supported — they carry the output refs from a previous
+	// signing attempt so that retries use the same inputs deterministically.
 
 	memoForParsing := tx.GetMemo()
 	if memoForParsing != "" {

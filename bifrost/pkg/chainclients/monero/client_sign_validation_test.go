@@ -41,11 +41,14 @@ func TestValidateXMRSignTxRejectsInboundMemo(t *testing.T) {
 	}
 }
 
-func TestValidateXMRSignTxRejectsCheckpoint(t *testing.T) {
+func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
+	ckpt, _ := json.Marshal(xmrSignCheckpoint{
+		SpentOutputRefs: []xmrFrostOutputRef{{TxHash: "aabb", OutputIndex: 0}},
+	})
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
 		ToAddress:        testOutboundXMRDestination(),
@@ -55,15 +58,12 @@ func TestValidateXMRSignTxRejectsCheckpoint(t *testing.T) {
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
 		Memo:       "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
-		Checkpoint: []byte("nonce"),
+		Checkpoint: ckpt,
 	}
 
 	_, err := c.validateXMRSignTx(tx, 100, true)
-	if err == nil {
-		t.Fatalf("expected checkpoint validation error")
-	}
-	if !strings.Contains(err.Error(), "does not support checkpoints") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("checkpoint should be accepted: %v", err)
 	}
 }
 

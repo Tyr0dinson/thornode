@@ -48,6 +48,8 @@ pub async fn build_unsigned_transaction(
     change_address: Option<&str>,
     excluded_inputs: &HashSet<(String, u32)>,
     chain_network: ChainNetworkMode,
+    max_inputs: Option<u64>,
+    dust_threshold: Option<u64>,
 ) -> Result<UnsignedTransaction> {
     let to = MoneroAddress::from_str_with_unchecked_network(to_address)
         .with_context(|| format!("invalid destination Monero address: {to_address}"))?;
@@ -63,10 +65,16 @@ pub async fn build_unsigned_transaction(
     ensure_supported_address_type("change", &change, chain_network)?;
     ensure_address_network_mode("change", &change, chain_network)?;
 
+    let dust = dust_threshold.unwrap_or(0);
+    let max = max_inputs.unwrap_or(15) as usize;
+
     let mut candidates = decode_candidate_outputs(available_outputs, excluded_inputs)?;
-    // Fully deterministic sort: height ASC (oldest first), then tx_hash ASC.
+    // Filter sub-dust outputs.
+    if dust > 0 {
+        candidates.retain(|(tracked, _)| tracked.amount >= dust);
+    }
+    // Deterministic sort: height ASC (oldest first), then tx_hash ASC.
     // Matches BTC UTXO selection (most confirmations first, then TxID).
-    // All nodes must select the same outputs for threshold signing to produce matching TXs.
     candidates.sort_by(|a, b| {
         a.0.height
             .cmp(&b.0.height)
@@ -76,6 +84,31 @@ pub async fn build_unsigned_transaction(
 
     if candidates.is_empty() {
         anyhow::bail!("no spendable outputs with serialized wallet payload were available");
+    }
+
+    // Greedy accumulation: grab outputs in sort order until sum >= amount,
+    // capped at max_inputs. Matches BTC UTXO selection strategy.
+    let mut selected: Vec<&(TrackedOutput, WalletOutput)> = Vec::new();
+    let mut selected_total: u128 = 0;
+    for candidate in &candidates {
+        if selected.len() >= max {
+            break;
+        }
+        selected.push(candidate);
+        selected_total += u128::from(candidate.0.amount);
+        if selected_total >= u128::from(amount) {
+            break;
+        }
+    }
+
+    if selected_total < u128::from(amount) {
+        anyhow::bail!(
+            "insufficient funds: need {} but only {} available from {} outputs (max_inputs={})",
+            amount,
+            selected_total,
+            candidates.len(),
+            max
+        );
     }
 
     let rct_type = rct_type_for_hf(hard_fork_version).with_context(|| {
@@ -88,17 +121,59 @@ pub async fn build_unsigned_transaction(
         vec![memo.as_bytes().to_vec()]
     };
 
-    let mut saw_not_enough_funds = false;
+    let mut inputs = Vec::with_capacity(selected.len());
+    for (i, (_, wallet_output)) in selected.iter().enumerate() {
+        let input = decoy::select_output_with_decoys(
+            rpc,
+            decoy_context,
+            wallet_output,
+            hard_fork_version,
+            tip_height,
+            i,
+        )
+        .await
+        .with_context(|| format!("failed to select decoys for input {}", i + 1))?;
+        inputs.push(input);
+    }
 
-    for selected_count in 1..=candidates.len() {
-        let selected = &candidates[..selected_count];
-        let selected_total: u128 = selected
-            .iter()
-            .map(|(tracked, _)| u128::from(tracked.amount))
-            .sum();
+    let signable = SignableTransaction::new(
+        rct_type,
+        outgoing_view_key.clone(),
+        inputs,
+        vec![(to, amount)],
+        Change::fingerprintable(Some(change)),
+        data.clone(),
+        fee_rate,
+    )
+    .map_err(|e| anyhow::anyhow!("failed to construct signable transaction: {}", e))?;
 
-        let mut inputs = Vec::with_capacity(selected_count);
-        for (i, (_, wallet_output)) in selected.iter().enumerate() {
+    let fee = signable.necessary_fee();
+    let needed = u128::from(amount) + u128::from(fee);
+
+    // If greedy selection wasn't enough to cover amount + fee, try adding more outputs.
+    if selected_total < needed {
+        let mut extended = selected.clone();
+        let mut extended_total = selected_total;
+        for candidate in &candidates {
+            if extended.len() >= max {
+                break;
+            }
+            if extended.iter().any(|s| std::ptr::eq(*s, candidate)) {
+                continue;
+            }
+            extended.push(candidate);
+            extended_total += u128::from(candidate.0.amount);
+            if extended_total >= needed {
+                break;
+            }
+        }
+
+        if extended_total < needed {
+            anyhow::bail!("insufficient funds to cover amount ({}) + fee ({})", amount, fee);
+        }
+
+        let mut inputs = Vec::with_capacity(extended.len());
+        for (i, (_, wallet_output)) in extended.iter().enumerate() {
             let input = decoy::select_output_with_decoys(
                 rpc,
                 decoy_context,
@@ -108,66 +183,70 @@ pub async fn build_unsigned_transaction(
                 i,
             )
             .await
-            .with_context(|| format!("failed to select decoys for input {}", i + 1))?;
+            .with_context(|| format!("failed to select decoys for extended input {}", i + 1))?;
             inputs.push(input);
         }
 
         let signable = SignableTransaction::new(
             rct_type,
-            outgoing_view_key.clone(),
+            outgoing_view_key,
             inputs,
             vec![(to, amount)],
             Change::fingerprintable(Some(change)),
-            data.clone(),
+            data,
             fee_rate,
+        )
+        .map_err(|e| anyhow::anyhow!("failed to construct extended signable transaction: {}", e))?;
+
+        let fee = signable.necessary_fee();
+        let selected_refs = extended
+            .iter()
+            .map(|(tracked, _)| SelectedInputRef {
+                tx_hash: tracked.tx_hash.clone(),
+                output_index: tracked.output_index,
+                key_image: tracked.key_image.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        info!(
+            selected_inputs = selected_refs.len(),
+            fee, extended_total, "constructed Monero signable transaction (extended for fee)"
         );
 
-        match signable {
-            Ok(signable) => {
-                let fee = signable.necessary_fee();
-                let needed = u128::from(amount) + u128::from(fee);
-                if selected_total < needed {
-                    continue;
-                }
-
-                let selected_refs = selected
-                    .iter()
-                    .map(|(tracked, _)| SelectedInputRef {
-                        tx_hash: tracked.tx_hash.clone(),
-                        output_index: tracked.output_index,
-                        key_image: tracked.key_image.clone(),
-                    })
-                    .collect::<Vec<_>>();
-
-                info!(
-                    selected_inputs = selected_refs.len(),
-                    fee, selected_total, "constructed real Monero signable transaction"
-                );
-
-                return Ok(UnsignedTransaction {
-                    serialized_signable: signable.serialize(),
-                    signable,
-                    selected_inputs: selected_refs,
-                    to_address: to_address.to_string(),
-                    amount,
-                    fee,
-                    memo: memo.to_string(),
-                });
-            }
-            Err(SendError::NotEnoughFunds { .. }) => {
-                saw_not_enough_funds = true;
-                continue;
-            }
-            Err(e) => {
-                anyhow::bail!("failed to construct signable transaction: {}", e);
-            }
-        }
+        return Ok(UnsignedTransaction {
+            serialized_signable: signable.serialize(),
+            signable,
+            selected_inputs: selected_refs,
+            to_address: to_address.to_string(),
+            amount,
+            fee,
+            memo: memo.to_string(),
+        });
     }
 
-    if saw_not_enough_funds {
-        anyhow::bail!("insufficient funds to construct signable transaction");
-    }
-    anyhow::bail!("unable to construct signable transaction from available outputs");
+    let selected_refs = selected
+        .iter()
+        .map(|(tracked, _)| SelectedInputRef {
+            tx_hash: tracked.tx_hash.clone(),
+            output_index: tracked.output_index,
+            key_image: tracked.key_image.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    info!(
+        selected_inputs = selected_refs.len(),
+        fee, selected_total, "constructed Monero signable transaction"
+    );
+
+    Ok(UnsignedTransaction {
+        serialized_signable: signable.serialize(),
+        signable,
+        selected_inputs: selected_refs,
+        to_address: to_address.to_string(),
+        amount,
+        fee,
+        memo: memo.to_string(),
+    })
 }
 
 fn decode_candidate_outputs(
