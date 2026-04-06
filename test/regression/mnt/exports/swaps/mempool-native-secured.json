@@ -19,7 +19,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "13"
+          "sequence": "14"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -154,7 +154,7 @@
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "coins": [
             {
-              "amount": "51096841",
+              "amount": "51096839",
               "denom": "eth-eth"
             },
             {
@@ -167,7 +167,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "198243384188",
+              "amount": "198244433611",
               "denom": "rune"
             }
           ]
@@ -176,7 +176,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999973374137",
+              "amount": "34999974264293",
               "denom": "rune"
             }
           ]
@@ -185,11 +185,11 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "48091638",
+              "amount": "48091637",
               "denom": "eth-eth"
             },
             {
-              "amount": "2500654492500",
+              "amount": "2500654495964",
               "denom": "rune"
             }
           ]
@@ -198,7 +198,7 @@
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "coins": [
             {
-              "amount": "82978231",
+              "amount": "82978227",
               "denom": "eth-eth"
             },
             {
