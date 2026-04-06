@@ -2941,6 +2941,9 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacity(c *C) {
 	btcPool.Decimals = 8
 	c.Assert(k.SetPool(ctx, btcPool), IsNil)
 
+	// Disable per-pool BPS cap so these tests exercise the global cap only.
+	k.SetMimir(ctx, constants.MempoolSwapPoolCapBPS.String(), 0)
+
 	// Test 1: Mempool swap cap is disabled (zero)
 	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1*common.One))
 	c.Assert(err, IsNil)
@@ -3001,8 +3004,9 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityWithRUNE(c *C) {
 	btcPool.Decimals = 8
 	c.Assert(k.SetPool(ctx, btcPool), IsNil)
 
-	// Enable mempool swap cap
+	// Enable mempool swap cap, disable per-pool BPS cap for this test.
 	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000*common.One) // $100,000 cap
+	k.SetMimir(ctx, constants.MempoolSwapPoolCapBPS.String(), 0)
 
 	// Test with RUNE directly (no pool lookup needed for TOR value)
 	runeAmount := cosmos.NewUint(10 * common.One) // 10 RUNE = $100
@@ -3012,10 +3016,10 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityWithRUNE(c *C) {
 	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("TOR value should be > 0"))
 }
 
-func (s *HelperSuite) TestCheckMempoolSwapCapacityPoolRelative(c *C) {
+func (s *HelperSuite) TestCheckMempoolSwapCapacityPoolDepthBPS(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	// Setup TOR anchor pool (BUSD) for price calculation
+	// Setup TOR anchor pool (BUSD) for price calculation: $10 per RUNE
 	k.SetMimir(ctx, "TorAnchor-ETH-BUSD-BD1", 1)
 	busd, err := common.NewAsset("ETH.BUSD-BD1")
 	c.Assert(err, IsNil)
@@ -3027,7 +3031,7 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityPoolRelative(c *C) {
 	busdPool.Decimals = 8
 	c.Assert(k.SetPool(ctx, busdPool), IsNil)
 
-	// Deep BTC pool: 10,000 RUNE
+	// Deep BTC pool: 10,000 RUNE = $100,000 TOR
 	btcPool := NewPool()
 	btcPool.Asset = common.BTCAsset
 	btcPool.Status = PoolAvailable
@@ -3036,7 +3040,7 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityPoolRelative(c *C) {
 	btcPool.Decimals = 8
 	c.Assert(k.SetPool(ctx, btcPool), IsNil)
 
-	// Shallow ETH pool: 100 RUNE
+	// Shallow ETH pool: 100 RUNE = $1,000 TOR
 	ethPool := NewPool()
 	ethPool.Asset = common.ETHAsset
 	ethPool.Status = PoolAvailable
@@ -3045,42 +3049,48 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityPoolRelative(c *C) {
 	ethPool.Decimals = 18
 	c.Assert(k.SetPool(ctx, ethPool), IsNil)
 
-	// Total RUNE depth: 100 (BUSD) + 10000 (BTC) + 100 (ETH) = 10200
-	// Global cap: $10,000
-	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 10000*common.One)
+	// Global cap: $100,000.  Per-pool BPS: 50 (0.5%).
+	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000*common.One)
+	k.SetMimir(ctx, constants.MempoolSwapPoolCapBPS.String(), 50)
 
-	// BTC->RUNE: uses BTC pool only.
-	// Effective cap = $10,000 * 10000/10200 ≈ $9803
-	// 1 BTC = 100 RUNE @ $10/RUNE = $1000 TOR — fits under $9803
+	// BTC->RUNE: deep pool cap = $100,000 * 50/10000 = $500
+	// 1 BTC = 100 RUNE @ $10/RUNE = $1,000 TOR — exceeds per-pool cap of $500
 	_, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1*common.One))
 	c.Assert(err, IsNil)
-	c.Check(hasCapacity, Equals, true, Commentf("deep pool swap should have capacity"))
+	c.Check(hasCapacity, Equals, false, Commentf("swap exceeding per-pool BPS cap should be rejected"))
 
-	// ETH->RUNE: uses ETH pool only.
-	// Effective cap = $10,000 * 100/10200 ≈ $98
-	// 1 ETH = 10 RUNE @ $10/RUNE = $100 TOR — exceeds $98
+	// BTC->RUNE: 0.04 BTC = 4 RUNE = $40 TOR — fits under $500
+	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(4*common.One/100))
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, true, Commentf("small swap in deep pool should fit under per-pool BPS cap"))
+
+	// ETH->RUNE: shallow pool cap = $1,000 * 50/10000 = $5
+	// 1 ETH = 10 RUNE @ $10/RUNE = $100 TOR — exceeds per-pool cap of $5
 	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(1*common.One))
 	c.Assert(err, IsNil)
-	c.Check(hasCapacity, Equals, false, Commentf("shallow pool swap should be capped by relative depth"))
+	c.Check(hasCapacity, Equals, false, Commentf("shallow pool swap should be tightly capped by BPS"))
 
-	// ETH->RUNE: smaller amount should fit under the relative cap
-	// 0.5 ETH = 5 RUNE @ $10/RUNE = $50 TOR — fits under $98
-	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(common.One/2))
+	// ETH->RUNE: 0.01 ETH = 0.1 RUNE = $1 TOR — fits under $5
+	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(common.One/100))
 	c.Assert(err, IsNil)
-	c.Check(hasCapacity, Equals, true, Commentf("small swap in shallow pool should fit under relative cap"))
+	c.Check(hasCapacity, Equals, true, Commentf("tiny swap in shallow pool should fit under BPS cap"))
 
-	// Double swap ETH->BTC: uses both ETH (shallow) and BTC (deep) pools.
-	// Min pool depth = 100 RUNE (ETH). Effective cap = $10,000 * 100/10200 ≈ $98
-	// 0.5 ETH = $50 TOR — fits under $98
-	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.ETHAsset, common.BTCAsset, cosmos.NewUint(common.One/2))
+	// Double swap ETH->BTC: shallowest pool is ETH (100 RUNE), cap = $5
+	// 0.01 ETH = $1 TOR — fits under $5
+	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.ETHAsset, common.BTCAsset, cosmos.NewUint(common.One/100))
 	c.Assert(err, IsNil)
-	c.Check(hasCapacity, Equals, true, Commentf("small double swap should fit under shallow pool relative cap"))
+	c.Check(hasCapacity, Equals, true, Commentf("small double swap should fit under shallow pool BPS cap"))
 
-	// Double swap ETH->BTC: larger amount should exceed the relative cap
-	// 1 ETH = $100 TOR — exceeds $98
+	// Double swap ETH->BTC: 1 ETH = $100 TOR — exceeds $5
 	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.ETHAsset, common.BTCAsset, cosmos.NewUint(1*common.One))
 	c.Assert(err, IsNil)
-	c.Check(hasCapacity, Equals, false, Commentf("large double swap should be capped by shallow pool"))
+	c.Check(hasCapacity, Equals, false, Commentf("large double swap should be capped by shallow pool BPS"))
+
+	// BPS disabled: per-pool cap should not apply, only global cap.
+	k.SetMimir(ctx, constants.MempoolSwapPoolCapBPS.String(), 0)
+	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1*common.One))
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, true, Commentf("with BPS disabled, global cap should apply (swap fits)"))
 }
 
 func (s *HelperSuite) TestCheckMempoolSwapCapacityErrorCases(c *C) {
@@ -3098,8 +3108,9 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityErrorCases(c *C) {
 	busdPool.Decimals = 8
 	c.Assert(k.SetPool(ctx, busdPool), IsNil)
 
-	// Enable mempool swap cap
+	// Enable mempool swap cap and per-pool BPS cap
 	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000*common.One)
+	k.SetMimir(ctx, constants.MempoolSwapPoolCapBPS.String(), 50)
 
 	// Test with asset that has no pool
 	_, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(1*common.One))
