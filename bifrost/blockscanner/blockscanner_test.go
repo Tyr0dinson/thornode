@@ -95,6 +95,25 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 	c.Check(err, IsNil)
 }
 
+func (s *BlockScannerTestSuite) TestStartBlockHeightOverridesPersistedPosition(c *C) {
+	mss := NewMockScannerStorage()
+	_ = mss.SetScanPos(9999)
+
+	cbs, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight: 5000,
+	}, mss, m, s.bridge, DummyFetcher{})
+	c.Assert(err, IsNil)
+	c.Assert(cbs, NotNil)
+
+	txsQueue := make(chan types.TxIn, 1)
+	feeQueue := make(chan common.NetworkFee, 1)
+	cbs.Start(txsQueue, feeQueue)
+
+	c.Check(cbs.previousBlock, Equals, int64(5000))
+
+	cbs.Stop()
+}
+
 const (
 	blockBadResult  = `{ "jsonrpc": "2.0", "id": "", "result": { "block_meta": { "block_id": { "hash": "D063E5F1562F93D46FD4F01CA24813DD60B919D1C39CC34EF1DBB0EA07D0F7F8"1EB49C7042E5622189EDD4FA" } } } }`
 	lastBlockResult = `[ { "chain": "ETH", "last_observed_in": 1, "last_signed_out": 1, "thorchain": 3 }]`
