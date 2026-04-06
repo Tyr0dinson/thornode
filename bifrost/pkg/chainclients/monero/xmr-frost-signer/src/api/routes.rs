@@ -1195,6 +1195,8 @@ pub async fn broadcast(
     // Only cache successful broadcast responses. Caching failures causes the
     // bifrost to retry the same broadcast forever and always get the cached
     // failure back, even after the underlying issue is resolved.
+    // On failure, clear the pending claim so retries can proceed immediately
+    // instead of being blocked by the in-progress lock for 10 minutes.
     if status == StatusCode::OK {
         persist_idempotency(
             &state,
@@ -1204,6 +1206,8 @@ pub async fn broadcast(
             status,
             &response_json,
         );
+    } else if let Err(e) = state.store.clear_idempotency("broadcast", &msg_id) {
+        warn!(msg_id, error = %e, "failed to clear pending broadcast idempotency after failure");
     }
     (status, Json(response_json))
 }
