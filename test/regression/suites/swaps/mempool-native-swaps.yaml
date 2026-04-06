@@ -58,6 +58,17 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
+# Disable the per-pool BPS depth cap so the large global cap above applies
+# unconditionally. The default 50 bps (0.5%) would reject swaps against the
+# small regression test pool.
+type: tx-mimir
+key: MempoolSwapPoolCapBPS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
 # Shorten outbound timing so the streaming swap scenarios finish inside the test.
 type: tx-mimir
 key: SigningTransactionPeriod
