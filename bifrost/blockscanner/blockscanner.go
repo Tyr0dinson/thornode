@@ -167,8 +167,16 @@ func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, globalNetworkFeeQue
 	b.globalNetworkFeeQueue = globalNetworkFeeQueue
 	// Only use persisted scan position if no explicit start height was configured.
 	// When StartBlockHeight is set, it should always take precedence so operators
-	// can force a rescan from a specific height.
-	if b.cfg.StartBlockHeight <= 0 {
+	// can force a rescan from a specific height. Also purge stale block metadata
+	// at or above that height so the scanner re-processes those blocks.
+	if b.cfg.StartBlockHeight > 0 {
+		removed, err := b.scannerStorage.PurgeFromHeight(b.cfg.StartBlockHeight)
+		if err != nil {
+			b.logger.Error().Err(err).Int64("height", b.cfg.StartBlockHeight).Msg("fail to purge block metadata from start height")
+		} else if removed > 0 {
+			b.logger.Info().Int64("height", b.cfg.StartBlockHeight).Int("removed", removed).Msg("purged stale block metadata for rescan")
+		}
+	} else {
 		currentPos, err := b.scannerStorage.GetScanPos()
 		if err != nil {
 			b.logger.Error().Err(err).Msgf("fail to get current block scan pos, %s will start from %d", b.cfg.ChainID, b.previousBlock)
