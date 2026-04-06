@@ -369,6 +369,13 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		}
 	}
 
+	if s.observerApplySpentOutputRefs != nil &&
+		!qtx.Inbound &&
+		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
+		len(qtx.ObsTx.SpentOutputRefs) > 0 {
+		go s.observerApplySpentOutputRefs(qtx.ObsTx)
+	}
+
 	k := txKey{
 		Chain:                  qtx.ObsTx.Tx.Chain,
 		ID:                     qtx.ObsTx.Tx.ID,

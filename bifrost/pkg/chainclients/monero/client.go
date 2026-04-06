@@ -259,10 +259,11 @@ func (c *Client) Start(
 	c.wg.Add(1)
 	go c.consolidationRunner()
 	c.wg.Add(1)
+	go c.spentOutputRefsSyncRunner()
+	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
 		c.restoreFrostKeysFromRecoveryFiles()
-		c.catchupSpentOutputRefs()
 	}()
 }
 
@@ -300,6 +301,24 @@ func (c *Client) restoreFrostKeysFromRecoveryFiles() {
 
 		_ = os.Remove(path)
 		c.logger.Info().Str("vault", vaultPubKeyStr).Msg("xmr recovery: frost keyshare restored and recovery file removed")
+	}
+}
+
+func (c *Client) spentOutputRefsSyncRunner() {
+	defer c.wg.Done()
+
+	c.catchupSpentOutputRefs()
+
+	ticker := time.NewTicker(constants.ThorchainBlockTime * 10)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopchan:
+			return
+		case <-ticker.C:
+			c.catchupSpentOutputRefs()
+		}
 	}
 }
 

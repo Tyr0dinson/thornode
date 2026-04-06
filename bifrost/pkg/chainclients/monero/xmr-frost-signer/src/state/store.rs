@@ -383,6 +383,8 @@ impl Store {
             address: address.to_string(),
             source: source.to_string(),
             registered_at: chrono::Utc::now().timestamp(),
+            rescan: false,
+            birthday: 0,
         };
         let value = serde_json::to_vec(&record)?;
         let key = vault_pub_key.as_bytes();
@@ -461,20 +463,19 @@ impl Store {
     }
 
     pub fn set_vault_rescan(&self, vault_pub_key: &str, rescan: bool, birthday: u64) -> Result<()> {
-        let key = format!("vault:{vault_pub_key}");
-        let raw = self
-            .db
-            .get(key.as_bytes())
+        let tree = self.db.open_tree("vaults")?;
+        let key = vault_pub_key.as_bytes();
+        let raw = tree
+            .get(key)
             .map_err(|e| anyhow::anyhow!("failed to read vault record: {e}"))?
             .ok_or_else(|| anyhow::anyhow!("vault {} not found", vault_pub_key))?;
         let mut record: VaultRecord = serde_json::from_slice(&raw)?;
         record.rescan = rescan;
         record.birthday = birthday;
         let encoded = serde_json::to_vec(&record)?;
-        self.db
-            .insert(key.as_bytes(), encoded)
+        tree.insert(key, encoded)
             .map_err(|e| anyhow::anyhow!("failed to update vault rescan flag: {e}"))?;
-        self.db.flush().ok();
+        tree.flush().ok();
         Ok(())
     }
 
