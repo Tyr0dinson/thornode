@@ -1140,11 +1140,50 @@ pub async fn broadcast(
                 let is_double_spend = resp.double_spend.unwrap_or(false);
                 let status_lower = resp.status.to_ascii_lowercase();
                 let reason_lower = reason.to_ascii_lowercase();
-                let already_known = is_double_spend
+                let mut already_known = is_double_spend
                     || status_lower.contains("already")
                     || reason_lower.contains("already")
                     || reason_lower.contains("double spend")
                     || reason_lower.contains("not relayed");
+
+                // Positive lookup fallback: when monerod returns Failed with
+                // an empty/ambiguous reason for an already-known tx, query the
+                // pool/chain by the caller-supplied tx hash. This makes the
+                // broadcast endpoint robust to monerod's inconsistent reason
+                // strings and prevents false 400s on idempotent retries.
+                let caller_tx_hash_for_lookup = req.tx_hash.trim();
+                if !already_known && !caller_tx_hash_for_lookup.is_empty() {
+                    match state
+                        .daemon
+                        .get_transactions(&[caller_tx_hash_for_lookup.to_ascii_lowercase()])
+                        .await
+                    {
+                        Ok(result) => {
+                            let found = result
+                                .txs
+                                .as_ref()
+                                .map(|txs| {
+                                    txs.iter().any(|tx| {
+                                        tx.in_pool.unwrap_or(false)
+                                            || tx.block_height.is_some()
+                                    })
+                                })
+                                .unwrap_or(false);
+                            if found {
+                                info!(
+                                    msg_id,
+                                    caller_tx_hash = caller_tx_hash_for_lookup,
+                                    reason = %reason,
+                                    "broadcast rejected but tx already in pool/chain — treating as success"
+                                );
+                                already_known = true;
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, caller_tx_hash = caller_tx_hash_for_lookup, "post-broadcast tx lookup failed");
+                        }
+                    }
+                }
 
                 if already_known {
                     let caller_tx_hash = req.tx_hash.trim();
@@ -2296,32 +2335,47 @@ pub async fn mark_outputs_spent(
     }
 
     if !req.skip_verification {
-        match state.daemon.get_transactions(&[tx_hash.clone()]).await {
-            Ok(result) => {
-                let found = result
-                    .txs
-                    .as_ref()
-                    .map(|txs| {
-                        txs.iter()
-                            .any(|tx| tx.in_pool.unwrap_or(false) || tx.block_height.is_some())
-                    })
-                    .unwrap_or(false);
-                if !found {
+        // Race window: bifrost calls mark-spent immediately after broadcast,
+        // but monerod may take a few hundred ms to expose the tx via
+        // get_transactions. Retry briefly before giving up.
+        let mut attempts = 0u8;
+        let found = loop {
+            attempts += 1;
+            match state.daemon.get_transactions(&[tx_hash.clone()]).await {
+                Ok(result) => {
+                    let hit = result
+                        .txs
+                        .as_ref()
+                        .map(|txs| {
+                            txs.iter().any(|tx| {
+                                tx.in_pool.unwrap_or(false) || tx.block_height.is_some()
+                            })
+                        })
+                        .unwrap_or(false);
+                    if hit {
+                        break true;
+                    }
+                    if attempts >= 4 {
+                        break false;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                Err(e) => {
+                    error!(error = %e, tx_hash, "failed to verify transaction for mark-spent");
                     return (
-                        StatusCode::NOT_FOUND,
-                        Json(error_json(format!(
-                            "transaction {tx_hash} not found in mempool or on-chain"
-                        ))),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(error_json(format!("failed to verify tx: {e}"))),
                     );
                 }
             }
-            Err(e) => {
-                error!(error = %e, tx_hash, "failed to verify transaction for mark-spent");
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(error_json(format!("failed to verify tx: {e}"))),
-                );
-            }
+        };
+        if !found {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(error_json(format!(
+                    "transaction {tx_hash} not found in mempool or on-chain"
+                ))),
+            );
         }
     }
 

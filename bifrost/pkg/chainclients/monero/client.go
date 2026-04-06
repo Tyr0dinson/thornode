@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1389,6 +1390,17 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 
 	result, err := c.frostSigner.MarkOutputsSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
+		// 404 indicates the sidecar's get_transactions race window — the
+		// catchup loop reconciles this on the next iteration, so log warn
+		// instead of error to avoid alarm noise.
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			c.logger.Warn().
+				Str("tx_hash", txHash).
+				Str("vault", vaultPubKey).
+				Int("refs", len(refs)).
+				Msg("mark-spent transient 404 (will be reconciled by catchup)")
+			return
+		}
 		c.logger.Err(err).
 			Str("tx_hash", txHash).
 			Str("vault", vaultPubKey).
