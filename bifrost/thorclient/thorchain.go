@@ -748,16 +748,12 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 			if alreadyAdded {
 				continue
 			}
-			membership := []common.PubKey{}
-			for _, item := range vault.Membership {
-				membership = append(membership, item)
-			}
 			kp := PubKeyContractAddressPair{
 				PubKey:     frostKey,
 				Contracts:  make(map[common.Chain]common.Address),
 				Algo:       common.SigningAlgoEd25519,
-				Membership: membership,
-				Inactive:   vault.Status != stypes.ActiveVault,
+				Membership: vault.GetMembership(),
+				Inactive:   vault.Status != stypes.VaultStatus_ActiveVault,
 			}
 			for _, r := range vault.Routers {
 				kp.Contracts[r.Chain] = r.Router
