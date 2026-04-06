@@ -259,10 +259,7 @@ func (k KVStoreDummy) EnableAPool(_ cosmos.Context) {}
 func (k KVStoreDummy) GetPool(_ cosmos.Context, _ common.Asset) (Pool, error) {
 	return Pool{}, kaboom
 }
-func (k KVStoreDummy) GetPools(_ cosmos.Context) (Pools, error) { return nil, kaboom }
-func (k KVStoreDummy) GetAvailablePoolRuneDepth(_ cosmos.Context) (cosmos.Uint, error) {
-	return cosmos.ZeroUint(), kaboom
-}
+func (k KVStoreDummy) GetPools(_ cosmos.Context) (Pools, error)        { return nil, kaboom }
 func (k KVStoreDummy) SetPool(_ cosmos.Context, _ Pool) error          { return kaboom }
 func (k KVStoreDummy) PoolExist(_ cosmos.Context, _ common.Asset) bool { return false }
 func (k KVStoreDummy) RemovePool(_ cosmos.Context, _ common.Asset)     {}

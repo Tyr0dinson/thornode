@@ -71,6 +71,7 @@ func NewConstantValue() *ConstantVals {
 			StreamingSwapMaxLengthNative:        14400 * 365,        // max number of blocks native streaming swaps can trade over
 			StreamingLimitSwapMaxAge:            43200,              // max number of blocks a streaming limit swap can exist before completing (3 days)
 			MempoolSwapCapTOR:                   0,                  // cap on total mempool swap liquidity in TOR (0=disabled)
+			MempoolSwapPoolCapBPS:               50,                 // per-pool mempool swap cap as basis points of pool depth (50 = 0.5%)
 			MinCR:                               10_000,             // Minimum collateralization ratio (basis pts)
 			MaxCR:                               60_000,             // Maximum collateralization ratio (basis pts)
 			LendingLever:                        3333,               // This controls (in basis points) how much lending is allowed relative to rune supply

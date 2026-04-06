@@ -5,7 +5,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type KeeperPoolSuite struct{}
@@ -45,68 +44,4 @@ func (s *KeeperPoolSuite) TestPoolLUVI(c *C) {
 	luvi2, err := k.GetPoolLUVI(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 	c.Assert(luvi.Uint64(), Equals, luvi2.Uint64())
-}
-
-func (s *KeeperPoolSuite) TestAvailablePoolRuneDepth(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	btcPool := NewPool()
-	btcPool.Asset = common.BTCAsset
-	btcPool.Status = types.PoolStatus_Available
-	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
-	c.Assert(k.SetPool(ctx, btcPool), IsNil)
-
-	ethPool := NewPool()
-	ethPool.Asset = common.ETHAsset
-	ethPool.Status = types.PoolStatus_Available
-	ethPool.BalanceRune = cosmos.NewUint(50 * common.One)
-	c.Assert(k.SetPool(ctx, ethPool), IsNil)
-
-	totalRuneDepth, err := k.GetAvailablePoolRuneDepth(ctx)
-	c.Assert(err, IsNil)
-	c.Check(totalRuneDepth.Equal(cosmos.NewUint(150*common.One)), Equals, true)
-
-	ethPool.BalanceRune = cosmos.NewUint(80 * common.One)
-	c.Assert(k.SetPool(ctx, ethPool), IsNil)
-
-	totalRuneDepth, err = k.GetAvailablePoolRuneDepth(ctx)
-	c.Assert(err, IsNil)
-	c.Check(totalRuneDepth.Equal(cosmos.NewUint(180*common.One)), Equals, true)
-
-	ethPool.Status = types.PoolStatus_Suspended
-	c.Assert(k.SetPool(ctx, ethPool), IsNil)
-
-	totalRuneDepth, err = k.GetAvailablePoolRuneDepth(ctx)
-	c.Assert(err, IsNil)
-	c.Check(totalRuneDepth.Equal(cosmos.NewUint(100*common.One)), Equals, true)
-
-	k.RemovePool(ctx, btcPool.Asset)
-	totalRuneDepth, err = k.GetAvailablePoolRuneDepth(ctx)
-	c.Assert(err, IsNil)
-	c.Check(totalRuneDepth.IsZero(), Equals, true)
-}
-
-func (s *KeeperPoolSuite) TestAvailablePoolRuneDepthBackfillsMissingAggregate(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	btcPool := NewPool()
-	btcPool.Asset = common.BTCAsset
-	btcPool.Status = types.PoolStatus_Available
-	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
-	k.setPool(ctx, k.GetKey(prefixPool, btcPool.Asset.String()), btcPool)
-
-	ethPool := NewPool()
-	ethPool.Asset = common.ETHAsset
-	ethPool.Status = types.PoolStatus_Available
-	ethPool.BalanceRune = cosmos.NewUint(50 * common.One)
-	k.setPool(ctx, k.GetKey(prefixPool, ethPool.Asset.String()), ethPool)
-
-	totalRuneDepth, err := k.GetAvailablePoolRuneDepth(ctx)
-	c.Assert(err, IsNil)
-	c.Check(totalRuneDepth.Equal(cosmos.NewUint(150*common.One)), Equals, true)
-
-	cachedDepth, ok, err := k.getAvailablePoolRuneDepth(ctx)
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
-	c.Check(cachedDepth.Equal(totalRuneDepth), Equals, true)
 }

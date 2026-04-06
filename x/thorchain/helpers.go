@@ -1888,13 +1888,14 @@ func getAssetValueInTOR(ctx cosmos.Context, k keeper.Keeper, asset common.Asset,
 }
 
 // checkMempoolSwapCapacity checks if there is available capacity for a mempool swap.
-// The effective cap is scaled by the relative depth of the shallowest pool used
-// by the swap, so shallow pools cannot consume a disproportionate share of the
-// global MempoolSwapCapTOR budget.
+// The effective cap is the minimum of the global MempoolSwapCapTOR and a per-pool
+// cap derived from the shallowest pool's depth (MempoolSwapPoolCapBPS basis points).
+// This prevents shallow pools from losing a disproportionate share of their depth
+// during a single mempool swap rollback cycle.
 // Returns the TOR value of the swap, whether there is capacity, and any error.
 func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, targetAsset common.Asset, amount cosmos.Uint) (torValue cosmos.Uint, hasCapacity bool, err error) {
-	mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-	if mempoolSwapCap.IsZero() {
+	globalCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	if globalCap.IsZero() {
 		return cosmos.ZeroUint(), false, nil
 	}
 
@@ -1906,12 +1907,9 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, 
 		return cosmos.ZeroUint(), false, nil
 	}
 
-	// Scale the global cap by the relative depth of the shallowest pool used
-	// by this swap.  This prevents shallow pools from losing a disproportionate
-	// share of their depth during a single mempool swap rollback cycle.
-	effectiveCap, capErr := poolRelativeMempoolSwapCap(ctx, k, mempoolSwapCap, sourceAsset, targetAsset)
+	effectiveCap, capErr := poolDepthMempoolSwapCap(ctx, k, globalCap, sourceAsset, targetAsset)
 	if capErr != nil {
-		return cosmos.ZeroUint(), false, fmt.Errorf("fail to compute pool-relative mempool swap cap: %w", capErr)
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to compute pool-depth mempool swap cap: %w", capErr)
 	}
 
 	currentUsage := k.GetMempoolSwapUsageTOR(ctx)
@@ -1919,19 +1917,20 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, 
 	return torValue, hasCapacity, nil
 }
 
-// poolRelativeMempoolSwapCap returns the global MempoolSwapCapTOR scaled by the
-// relative RUNE depth of the shallowest pool used by a swap.
+// poolDepthMempoolSwapCap returns the effective mempool swap cap as the minimum
+// of the global MempoolSwapCapTOR and a per-pool cap based on the shallowest
+// pool's RUNE depth expressed in TOR, scaled by MempoolSwapPoolCapBPS.
 //
-//	effectiveCap = globalCap * minPoolRuneDepth / totalRuneDepth
+//	perPoolCap = shallowestPoolDepthInTOR * MempoolSwapPoolCapBPS / 10_000
+//	effectiveCap = min(globalCap, perPoolCap)
 //
 // For single-pool swaps (e.g. BTC->RUNE) only that pool is considered.
 // For double swaps (e.g. BTC->ETH) the minimum depth of both pools is used.
-func poolRelativeMempoolSwapCap(ctx cosmos.Context, k keeper.Keeper, globalCap cosmos.Uint, sourceAsset, targetAsset common.Asset) (cosmos.Uint, error) {
-	totalRuneDepth, err := k.GetAvailablePoolRuneDepth(ctx)
-	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to get available pool rune depth: %w", err)
-	}
-	if totalRuneDepth.IsZero() {
+// If MempoolSwapPoolCapBPS is zero the per-pool cap is skipped and the global
+// cap is returned as-is.
+func poolDepthMempoolSwapCap(ctx cosmos.Context, k keeper.Keeper, globalCap cosmos.Uint, sourceAsset, targetAsset common.Asset) (cosmos.Uint, error) {
+	bps := k.GetConfigInt64(ctx, constants.MempoolSwapPoolCapBPS)
+	if bps <= 0 {
 		return globalCap, nil
 	}
 
@@ -1966,8 +1965,20 @@ func poolRelativeMempoolSwapCap(ctx cosmos.Context, k keeper.Keeper, globalCap c
 		}
 	}
 
-	// effectiveCap = globalCap * minPoolDepth / totalRuneDepth
-	return common.GetSafeShare(minPoolDepth, totalRuneDepth, globalCap), nil
+	// Convert shallowest pool's RUNE depth to TOR.
+	dollarsPerRune := k.DollarsPerRune(ctx)
+	if dollarsPerRune.IsZero() {
+		return globalCap, nil
+	}
+	poolDepthTOR := common.GetUncappedShare(minPoolDepth, cosmos.NewUint(common.One), dollarsPerRune)
+
+	// perPoolCap = poolDepthTOR * bps / 10_000
+	perPoolCap := common.GetSafeShare(cosmos.NewUint(uint64(bps)), cosmos.NewUint(10_000), poolDepthTOR)
+
+	if perPoolCap.LT(globalCap) {
+		return perPoolCap, nil
+	}
+	return globalCap, nil
 }
 
 // isExplicitStreamingSwap returns true when the request explicitly asks for
