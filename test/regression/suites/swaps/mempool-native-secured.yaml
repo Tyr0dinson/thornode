@@ -58,6 +58,17 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
+# Disable the per-pool BPS depth cap so the large global cap above applies
+# unconditionally. The default 50 bps (0.5%) would reject swaps against the
+# small regression test pool.
+type: tx-mimir
+key: MempoolSwapPoolCapBPS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
 # Remove secured-asset slip gating so the regression exercises mempool policy
 # and staging behavior rather than failing closed on slip protection.
 type: tx-mimir
