@@ -21,6 +21,12 @@ import (
 const (
 	// Monero uses 1e12 atomic units and THORChain uses 1e8 decimals.
 	moneroAtomicToThorchain = 10000
+
+	// typicalVaultOutboundWeight is the conservative estimate of a vault FROST
+	// outbound's tx weight in Monero weight units. Real observed value is
+	// ~1600-2000 for a 2-input 2-output ringct tx. We use a slightly inflated
+	// value to give margin for larger txs.
+	typicalVaultOutboundWeight = 2500
 )
 
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
@@ -213,7 +219,19 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	}
 
 	s.currentBlockHeight.Store(fetchHeight)
-	if feeRate := averageNetworkFeeFromBlock(block.Reward, len(block.TxHashes)); feeRate > 0 {
+	// Estimate vault outbound fee from monerod's per-weight fee rate × typical
+	// vault tx weight. Avoid block-coinbase averaging — that mixes complex user
+	// txs (multi-input/multisig) and gives ~10-20× overestimate vs what a
+	// simple 2-in 2-out vault outbound actually pays, causing small swaps to
+	// refund unnecessarily.
+	if perWeight, perWeightErr := s.frostSigner.GetFeeRate(); perWeightErr == nil && perWeight > 0 {
+		feeAtomic := perWeight * typicalVaultOutboundWeight
+		feeThorchain := feeAtomic / moneroAtomicToThorchain
+		if feeThorchain > 0 {
+			s.lastFee.Store(feeThorchain)
+		}
+	} else if feeRate := averageNetworkFeeFromBlock(block.Reward, len(block.TxHashes)); feeRate > 0 {
+		// Fallback to block-coinbase computation only if sidecar fee query fails
 		s.lastFee.Store(feeRate)
 	}
 
