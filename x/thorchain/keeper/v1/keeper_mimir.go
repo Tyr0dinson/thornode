@@ -120,6 +120,7 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		constants.P2PGateDisabled.String(),
 		constants.EnableMemolessOutbound.String(),
 		constants.MempoolSwapCapTOR.String(),
+		constants.MempoolSwapPoolCapBPS.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
