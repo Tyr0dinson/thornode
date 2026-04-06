@@ -765,12 +765,28 @@ pub async fn sign_prepare(
         }).collect()
     });
 
+    // Resolve recipients: prefer the new `recipients` array (batched
+    // multi-output) when present and non-empty. Fall back to the legacy
+    // single-recipient `to_address`/`amount_atomic` fields otherwise.
+    let recipients: Vec<crate::tx::builder::Recipient> = match req.recipients.as_ref() {
+        Some(rs) if !rs.is_empty() => rs
+            .iter()
+            .map(|r| crate::tx::builder::Recipient {
+                address: r.to_address.trim().to_string(),
+                amount: r.amount_atomic,
+            })
+            .collect(),
+        _ => vec![crate::tx::builder::Recipient {
+            address: req.to_address.trim().to_string(),
+            amount: req.amount_atomic,
+        }],
+    };
+
     let (status, response_json) = match state
         .signer
         .prepare(
             &vault_pub_key_canonical,
-            &req.to_address,
-            req.amount_atomic,
+            &recipients,
             &req.memo.unwrap_or_default(),
             req.fee_rate,
             &req.decoy_context,
@@ -3109,10 +3125,13 @@ pub async fn sim_transfer(
         }
     };
     let available_outputs = state.scanner.lock().get_outputs(&account.account_id);
+    let recipients = vec![builder::Recipient {
+        address: req.to_address.trim().to_string(),
+        amount: req.amount_atomic,
+    }];
     let unsigned = match builder::build_unsigned_transaction(
         &rpc,
-        req.to_address.trim(),
-        req.amount_atomic,
+        &recipients,
         req.memo.as_deref().unwrap_or_default(),
         fee_rate,
         &format!("sim-helper:{}", Uuid::new_v4()),

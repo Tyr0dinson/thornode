@@ -74,12 +74,29 @@ pub struct RegisterVaultResponse {
 // ---- Signing Request/Response types ----
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct SignRecipient {
+    pub to_address: String,
+    pub amount_atomic: u64,
+}
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct SignPrepareRequest {
     #[serde(default)]
     pub msg_id: String,
     pub vault_pub_key: String,
+    /// Backward-compatible single-recipient fields. When `recipients` is also
+    /// supplied (multi-output batched outbounds), these fields are ignored.
+    #[serde(default)]
     pub to_address: String,
+    #[serde(default)]
     pub amount_atomic: u64,
+    /// Multi-recipient batched outbounds. When present (and non-empty),
+    /// supersedes `to_address`/`amount_atomic` and builds a single Monero tx
+    /// with one output per recipient. The on-chain tx has no per-recipient
+    /// memo; THORChain matches each batched output to its scheduled outbound
+    /// via findOriginalMemoForOutbound (memoless flow).
+    #[serde(default)]
+    pub recipients: Option<Vec<SignRecipient>>,
     pub memo: Option<String>,
     pub fee_rate: Option<u64>,
     pub decoy_context: String,

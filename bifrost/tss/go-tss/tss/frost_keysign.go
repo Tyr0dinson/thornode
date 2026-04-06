@@ -67,13 +67,31 @@ func NewFrostSignCoordinator(
 	}
 }
 
+// frostRecipientsHash returns a deterministic hash binding a multi-recipient
+// batch to the signing ceremony. Order is preserved (the bifrost client must
+// pre-sort recipients before calling FrostKeySign so all participants compute
+// the same hash).
+func frostRecipientsHash(recipients []FrostSidecarRecipient) (string, error) {
+	parts := make([]string, 0, len(recipients))
+	for _, r := range recipients {
+		parts = append(parts, fmt.Sprintf("%s|%d", strings.TrimSpace(r.ToAddress), r.AmountAtomic))
+	}
+	return tcommon.MsgToHashString([]byte(strings.Join(parts, "\n")))
+}
+
 func FrostKeySignMsgID(req FrostKeySignRequest) (string, error) {
 	vault := strings.TrimSpace(req.VaultPubKey)
-	toAddr := strings.TrimSpace(req.ToAddress)
 	if vault == "" {
 		return "", fmt.Errorf("vault pubkey is required")
 	}
-	if toAddr == "" {
+	// For batched multi-recipient outbounds, the canonical identity is the
+	// sorted recipients list — independent of which TxOutItem triggered the
+	// batch. Different nodes may pick different "current" items first, but
+	// they will all compute the same recipients_hash and therefore the same
+	// msg_id (joining the same sign session).
+	batched := len(req.Recipients) > 0
+	toAddr := strings.TrimSpace(req.ToAddress)
+	if !batched && toAddr == "" {
 		return "", fmt.Errorf("to address is required")
 	}
 
@@ -91,15 +109,42 @@ func FrostKeySignMsgID(req FrostKeySignRequest) (string, error) {
 		}
 	}
 
-	canonical := strings.Join([]string{
-		"domain=" + frostMsgIDDomain,
-		"vault_pub_key=" + vault,
-		"to_address=" + toAddr,
-		"amount_atomic=" + strconv.FormatUint(req.AmountAtomic, 10),
-		"memo=" + req.Memo,
-		"anchor=" + anchor,
-		"members_hash=" + membersHash,
-	}, "\n")
+	recipientsHash := ""
+	if batched {
+		recipientsHash, err = frostRecipientsHash(req.Recipients)
+		if err != nil {
+			return "", fmt.Errorf("fail to hash recipients: %w", err)
+		}
+		// For batched signing, anchor is also derived from the recipients
+		// list rather than per-item TxInHash, so all nodes (which may have
+		// different "current" items) compute the same anchor.
+		anchor = "batched:" + recipientsHash
+	}
+
+	// When batched, we deliberately exclude the per-item to_address /
+	// amount_atomic from the canonical bytes since they are non-deterministic
+	// across nodes. recipients_hash already binds the entire batch.
+	var canonical string
+	if batched {
+		canonical = strings.Join([]string{
+			"domain=" + frostMsgIDDomain,
+			"vault_pub_key=" + vault,
+			"recipients_hash=" + recipientsHash,
+			"memo=" + req.Memo,
+			"anchor=" + anchor,
+			"members_hash=" + membersHash,
+		}, "\n")
+	} else {
+		canonical = strings.Join([]string{
+			"domain=" + frostMsgIDDomain,
+			"vault_pub_key=" + vault,
+			"to_address=" + toAddr,
+			"amount_atomic=" + strconv.FormatUint(req.AmountAtomic, 10),
+			"memo=" + req.Memo,
+			"anchor=" + anchor,
+			"members_hash=" + membersHash,
+		}, "\n")
+	}
 	return tcommon.MsgToHashString([]byte(canonical))
 }
 
@@ -136,15 +181,32 @@ func FrostPlanHash(req FrostKeySignRequest, msgID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fail to hash signer membership: %w", err)
 	}
-	canonical := strings.Join([]string{
-		"domain=" + frostPlanHashDomain,
-		"msg_id=" + msgID,
-		"vault_pub_key=" + vault,
-		"to_address=" + toAddress,
-		"amount_atomic=" + strconv.FormatUint(req.AmountAtomic, 10),
-		"memo=" + req.Memo,
-		"signer_set_hash=" + signerSetHash,
-	}, "\n")
+	batched := len(req.Recipients) > 0
+	var canonical string
+	if batched {
+		recipientsHash, hErr := frostRecipientsHash(req.Recipients)
+		if hErr != nil {
+			return "", fmt.Errorf("fail to hash recipients: %w", hErr)
+		}
+		canonical = strings.Join([]string{
+			"domain=" + frostPlanHashDomain,
+			"msg_id=" + msgID,
+			"vault_pub_key=" + vault,
+			"recipients_hash=" + recipientsHash,
+			"memo=" + req.Memo,
+			"signer_set_hash=" + signerSetHash,
+		}, "\n")
+	} else {
+		canonical = strings.Join([]string{
+			"domain=" + frostPlanHashDomain,
+			"msg_id=" + msgID,
+			"vault_pub_key=" + vault,
+			"to_address=" + toAddress,
+			"amount_atomic=" + strconv.FormatUint(req.AmountAtomic, 10),
+			"memo=" + req.Memo,
+			"signer_set_hash=" + signerSetHash,
+		}, "\n")
+	}
 	return tcommon.MsgToHashString([]byte(canonical))
 }
 
@@ -427,6 +489,7 @@ func (c *FrostSignCoordinator) Execute(
 		VaultPubKey:    req.VaultPubKey,
 		ToAddress:      req.ToAddress,
 		AmountAtomic:   req.AmountAtomic,
+		Recipients:     req.Recipients,
 		Memo:           req.Memo,
 		FeeRate:        req.FeeRate,
 		DecoyContext:   decoyContext,

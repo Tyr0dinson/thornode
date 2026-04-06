@@ -26,11 +26,19 @@ func (a *frostSignerAdapter) FrostSignPrepare(req tssp.FrostSidecarPrepareReq) (
 			OutputIndex: ref.OutputIndex,
 		})
 	}
+	var recipients []xmrFrostSignRecipient
+	for _, r := range req.Recipients {
+		recipients = append(recipients, xmrFrostSignRecipient{
+			ToAddress:    r.ToAddress,
+			AmountAtomic: r.AmountAtomic,
+		})
+	}
 	resp, err := a.signer.FrostSignPrepare(xmrFrostSignPrepareRequest{
 		MsgID:          req.MsgID,
 		VaultPubKey:    req.VaultPubKey,
 		ToAddress:      req.ToAddress,
 		AmountAtomic:   req.AmountAtomic,
+		Recipients:     recipients,
 		Memo:           req.Memo,
 		FeeRate:        req.FeeRate,
 		DecoyContext:   req.DecoyContext,

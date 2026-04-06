@@ -132,15 +132,32 @@ type xmrFrostDKGFinalizeResponse struct {
 }
 
 // FROST Signing request/response types
+
+// xmrFrostSignRecipient is one (address, amount) pair for a batched
+// multi-recipient outbound. The sidecar builds a single Monero tx with one
+// output per recipient when more than one is supplied.
+type xmrFrostSignRecipient struct {
+	ToAddress    string `json:"to_address"`
+	AmountAtomic uint64 `json:"amount_atomic"`
+}
+
 type xmrFrostSignPrepareRequest struct {
-	MsgID          string              `json:"msg_id"`
-	VaultPubKey    string              `json:"vault_pub_key"`
-	ToAddress      string              `json:"to_address"`
-	AmountAtomic   uint64              `json:"amount_atomic"`
-	Memo           string              `json:"memo,omitempty"`
-	FeeRate        uint64              `json:"fee_rate,omitempty"`
-	DecoyContext   string              `json:"decoy_context"`
-	RequiredInputs []xmrFrostOutputRef `json:"required_inputs,omitempty"`
+	MsgID       string `json:"msg_id"`
+	VaultPubKey string `json:"vault_pub_key"`
+	// Single-recipient legacy fields. When `Recipients` is non-empty these
+	// are ignored by the sidecar.
+	ToAddress    string `json:"to_address"`
+	AmountAtomic uint64 `json:"amount_atomic"`
+	// Multi-recipient batched outbounds. When non-empty, the sidecar builds
+	// a single Monero tx with one output per recipient. The on-chain tx has
+	// no per-recipient memo; THORChain's findOriginalMemoForOutbound matches
+	// each output to its scheduled outbound by (chain, ToAddress, vault,
+	// asset, amount).
+	Recipients     []xmrFrostSignRecipient `json:"recipients,omitempty"`
+	Memo           string                  `json:"memo,omitempty"`
+	FeeRate        uint64                  `json:"fee_rate,omitempty"`
+	DecoyContext   string                  `json:"decoy_context"`
+	RequiredInputs []xmrFrostOutputRef     `json:"required_inputs,omitempty"`
 }
 
 type xmrFrostSignPrepareResponse struct {

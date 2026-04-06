@@ -12,9 +12,15 @@ import (
 
 // FrostKeySignRequest is the canonical request context for a FROST signing ceremony.
 type FrostKeySignRequest struct {
-	VaultPubKey    string
-	ToAddress      string
-	AmountAtomic   uint64
+	VaultPubKey   string
+	ToAddress     string
+	AmountAtomic  uint64
+	// Recipients, when non-empty, requests a single batched Monero tx with
+	// one output per recipient. ToAddress / AmountAtomic are ignored when
+	// Recipients is set; the bifrost client should still populate them with
+	// the FIRST recipient's values for backward-compatible logging and any
+	// per-tx hashing that depends on them.
+	Recipients     []FrostSidecarRecipient
 	Memo           string
 	FeeRate        uint64
 	SignerPubKeys  []string
@@ -124,17 +130,31 @@ type FrostSidecarDKGFinalizeResp struct {
 	KeyBytesHex string `json:"key_bytes_hex"`
 }
 
+// FrostSidecarRecipient is one (address, amount) pair for a batched
+// multi-recipient outbound. Used by FrostSidecarPrepareReq.Recipients to
+// request a single Monero tx with N outputs.
+type FrostSidecarRecipient struct {
+	ToAddress    string `json:"to_address"`
+	AmountAtomic uint64 `json:"amount_atomic"`
+}
+
 type FrostSidecarPrepareReq struct {
-	MsgID          string                `json:"msg_id"`
-	VaultPubKey    string                `json:"vault_pub_key"`
-	ToAddress      string                `json:"to_address"`
-	AmountAtomic   uint64                `json:"amount_atomic"`
-	Memo           string                `json:"memo,omitempty"`
-	FeeRate        uint64                `json:"fee_rate,omitempty"`
-	DecoyContext   string                `json:"decoy_context"`
-	RequiredInputs []FrostSpentOutputRef `json:"required_inputs,omitempty"`
-	MaxInputs      int64                 `json:"max_inputs,omitempty"`
-	DustThreshold  uint64                `json:"dust_threshold,omitempty"`
+	MsgID       string `json:"msg_id"`
+	VaultPubKey string `json:"vault_pub_key"`
+	// Single-recipient legacy fields. Ignored when `Recipients` is non-empty.
+	ToAddress    string `json:"to_address"`
+	AmountAtomic uint64 `json:"amount_atomic"`
+	// Multi-recipient batched outbounds. When non-empty, the sidecar builds
+	// a single Monero tx with one output per recipient. Each output has no
+	// memo; THORChain matches outputs to scheduled outbounds by destination
+	// address + amount via findOriginalMemoForOutbound.
+	Recipients     []FrostSidecarRecipient `json:"recipients,omitempty"`
+	Memo           string                  `json:"memo,omitempty"`
+	FeeRate        uint64                  `json:"fee_rate,omitempty"`
+	DecoyContext   string                  `json:"decoy_context"`
+	RequiredInputs []FrostSpentOutputRef   `json:"required_inputs,omitempty"`
+	MaxInputs      int64                   `json:"max_inputs,omitempty"`
+	DustThreshold  uint64                  `json:"dust_threshold,omitempty"`
 }
 
 type FrostSidecarPrepareResp struct {

@@ -24,21 +24,35 @@ pub struct SelectedInputRef {
     pub key_image: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+pub struct Recipient {
+    pub address: String,
+    pub amount: u64,
+}
+
 #[derive(Clone)]
 pub struct UnsignedTransaction {
     pub signable: SignableTransaction,
     pub serialized_signable: Vec<u8>,
     pub selected_inputs: Vec<SelectedInputRef>,
-    pub to_address: String,
-    pub amount: u64,
+    /// All recipients for this tx. For single-output (the common case) this is
+    /// a 1-element vec. For batched outbounds this contains N recipients, each
+    /// with its own address and amount.
+    pub recipients: Vec<Recipient>,
     pub fee: u64,
     pub memo: String,
 }
 
+impl UnsignedTransaction {
+    /// Total amount across all recipients (excluding fee).
+    pub fn total_amount(&self) -> u64 {
+        self.recipients.iter().map(|r| r.amount).sum()
+    }
+}
+
 pub async fn build_unsigned_transaction(
     rpc: &OxideRpc,
-    to_address: &str,
-    amount: u64,
+    recipients: &[Recipient],
     memo: &str,
     fee_rate: FeeRate,
     decoy_context: &str,
@@ -51,10 +65,30 @@ pub async fn build_unsigned_transaction(
     max_inputs: Option<u64>,
     dust_threshold: Option<u64>,
 ) -> Result<UnsignedTransaction> {
-    let to = MoneroAddress::from_str_with_unchecked_network(to_address)
-        .with_context(|| format!("invalid destination Monero address: {to_address}"))?;
-    ensure_supported_address_type("destination", &to, chain_network)?;
-    ensure_address_network_mode("destination", &to, chain_network)?;
+    if recipients.is_empty() {
+        anyhow::bail!("recipients list is empty");
+    }
+
+    // Parse and validate every recipient address up front. Collect them as
+    // (parsed, amount) pairs so the multi-output Monero tx builder can take
+    // them directly.
+    let mut parsed_recipients: Vec<(MoneroAddress, u64)> = Vec::with_capacity(recipients.len());
+    for r in recipients.iter() {
+        if r.amount == 0 {
+            anyhow::bail!("recipient {} has zero amount", r.address);
+        }
+        let addr = MoneroAddress::from_str_with_unchecked_network(&r.address)
+            .with_context(|| format!("invalid destination Monero address: {}", r.address))?;
+        ensure_supported_address_type("destination", &addr, chain_network)?;
+        ensure_address_network_mode("destination", &addr, chain_network)?;
+        parsed_recipients.push((addr, r.amount));
+    }
+    let total_amount: u128 = recipients.iter().map(|r| u128::from(r.amount)).sum();
+    if total_amount > u128::from(u64::MAX) {
+        anyhow::bail!("aggregate recipient amount overflows u64");
+    }
+    let total_amount_u64 = total_amount as u64;
+
     let change_address = change_address.ok_or_else(|| {
         anyhow::anyhow!("change address is required for Monero send construction")
     })?;
@@ -86,7 +120,7 @@ pub async fn build_unsigned_transaction(
         anyhow::bail!("no spendable outputs with serialized wallet payload were available");
     }
 
-    // Greedy accumulation: grab outputs in sort order until sum >= amount,
+    // Greedy accumulation: grab outputs in sort order until sum >= total_amount,
     // capped at max_inputs. Matches BTC UTXO selection strategy.
     let mut selected: Vec<&(TrackedOutput, WalletOutput)> = Vec::new();
     let mut selected_total: u128 = 0;
@@ -96,15 +130,15 @@ pub async fn build_unsigned_transaction(
         }
         selected.push(candidate);
         selected_total += u128::from(candidate.0.amount);
-        if selected_total >= u128::from(amount) {
+        if selected_total >= total_amount {
             break;
         }
     }
 
-    if selected_total < u128::from(amount) {
+    if selected_total < total_amount {
         anyhow::bail!(
             "insufficient funds: need {} but only {} available from {} outputs (max_inputs={})",
-            amount,
+            total_amount_u64,
             selected_total,
             candidates.len(),
             max
@@ -114,7 +148,15 @@ pub async fn build_unsigned_transaction(
     let rct_type = rct_type_for_hf(hard_fork_version).with_context(|| {
         format!("cannot construct transaction for hard fork version {hard_fork_version}")
     })?;
-    let outgoing_view_key = derive_outgoing_view_key(decoy_context, to_address, amount, memo);
+    // Derive a deterministic outgoing view key from the FIRST recipient's
+    // (address, amount) plus memo. The vault's actual view key remains the
+    // shared deterministic constant; this is just per-tx randomness binding.
+    let outgoing_view_key = derive_outgoing_view_key(
+        decoy_context,
+        &recipients[0].address,
+        recipients[0].amount,
+        memo,
+    );
     let data = if memo.trim().is_empty() {
         Vec::new()
     } else {
@@ -140,7 +182,7 @@ pub async fn build_unsigned_transaction(
         rct_type,
         outgoing_view_key.clone(),
         inputs,
-        vec![(to, amount)],
+        parsed_recipients.clone(),
         Change::fingerprintable(Some(change)),
         data.clone(),
         fee_rate,
@@ -148,9 +190,10 @@ pub async fn build_unsigned_transaction(
     .map_err(|e| anyhow::anyhow!("failed to construct signable transaction: {}", e))?;
 
     let fee = signable.necessary_fee();
-    let needed = u128::from(amount) + u128::from(fee);
+    let needed = total_amount + u128::from(fee);
 
-    // If greedy selection wasn't enough to cover amount + fee, try adding more outputs.
+    // If greedy selection wasn't enough to cover total_amount + fee, try
+    // adding more outputs.
     if selected_total < needed {
         let mut extended = selected.clone();
         let mut extended_total = selected_total;
@@ -169,7 +212,11 @@ pub async fn build_unsigned_transaction(
         }
 
         if extended_total < needed {
-            anyhow::bail!("insufficient funds to cover amount ({}) + fee ({})", amount, fee);
+            anyhow::bail!(
+                "insufficient funds to cover amount ({}) + fee ({})",
+                total_amount_u64,
+                fee
+            );
         }
 
         let mut inputs = Vec::with_capacity(extended.len());
@@ -191,7 +238,7 @@ pub async fn build_unsigned_transaction(
             rct_type,
             outgoing_view_key,
             inputs,
-            vec![(to, amount)],
+            parsed_recipients,
             Change::fingerprintable(Some(change)),
             data,
             fee_rate,
@@ -210,15 +257,17 @@ pub async fn build_unsigned_transaction(
 
         info!(
             selected_inputs = selected_refs.len(),
-            fee, extended_total, "constructed Monero signable transaction (extended for fee)"
+            recipients = recipients.len(),
+            fee,
+            extended_total,
+            "constructed Monero signable transaction (extended for fee)"
         );
 
         return Ok(UnsignedTransaction {
             serialized_signable: signable.serialize(),
             signable,
             selected_inputs: selected_refs,
-            to_address: to_address.to_string(),
-            amount,
+            recipients: recipients.to_vec(),
             fee,
             memo: memo.to_string(),
         });
@@ -235,15 +284,17 @@ pub async fn build_unsigned_transaction(
 
     info!(
         selected_inputs = selected_refs.len(),
-        fee, selected_total, "constructed Monero signable transaction"
+        recipients = recipients.len(),
+        fee,
+        selected_total,
+        "constructed Monero signable transaction"
     );
 
     Ok(UnsignedTransaction {
         serialized_signable: signable.serialize(),
         signable,
         selected_inputs: selected_refs,
-        to_address: to_address.to_string(),
-        amount,
+        recipients: recipients.to_vec(),
         fee,
         memo: memo.to_string(),
     })

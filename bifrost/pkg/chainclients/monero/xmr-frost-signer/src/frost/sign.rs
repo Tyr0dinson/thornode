@@ -222,8 +222,7 @@ impl SignCoordinator {
     pub async fn prepare(
         &self,
         vault_pub_key: &str,
-        to_address: &str,
-        amount: u64,
+        recipients: &[builder::Recipient],
         memo: &str,
         fee_rate_override: Option<u64>,
         decoy_context: &str,
@@ -232,9 +231,16 @@ impl SignCoordinator {
         max_inputs: Option<u64>,
         dust_threshold: Option<u64>,
     ) -> Result<(String, Vec<u8>)> {
+        if recipients.is_empty() {
+            anyhow::bail!("at least one recipient is required to prepare a sign session");
+        }
+        let total: u128 = recipients.iter().map(|r| u128::from(r.amount)).sum();
         info!(
             vault = vault_pub_key,
-            to_address, amount, memo, "preparing real FROST signing session"
+            recipients = recipients.len(),
+            total_amount = total as u64,
+            memo,
+            "preparing real FROST signing session"
         );
         let _prepare_slot = self.reserve_prepare_slot()?;
         let _msg_id_claim = self.claim_prepare_msg_id(msg_id)?;
@@ -307,8 +313,7 @@ impl SignCoordinator {
         for attempt in 0..RESERVATION_MAX_RETRIES {
             let built = builder::build_unsigned_transaction(
                 &oxide_rpc,
-                to_address,
-                amount,
+                recipients,
                 memo,
                 fee_rate,
                 decoy_context,
@@ -683,25 +688,45 @@ impl SignCoordinator {
             .bind_reservation_tx_hash(&vault_pub_key, session_id, msg_id, &tx_hash)
             .context("failed to bind reservation tx hash")?;
 
-        self.store
-            .save_outgoing_transfer(&OutgoingTransferRecord {
-                tx_hash: tx_hash.clone(),
-                tx_hex: tx_hex.clone(),
-                msg_id: session_msg_id,
-                vault_pub_key: vault_pub_key.clone(),
-                from_address,
-                to_address: unsigned_tx.to_address.clone(),
-                amount: unsigned_tx.amount,
-                fee,
-                memo: unsigned_tx.memo.clone(),
-                planned_height: chain_height,
-                observed_height: None,
-                status: "signed_pending_observation".to_string(),
-                broadcasted_at: None,
-                observed_at: None,
-                created_at: chrono::Utc::now().timestamp(),
-            })
-            .context("failed to persist outgoing transfer attribution")?;
+        // Save one OutgoingTransferRecord per recipient. For single-recipient
+        // outbounds (the common case) this is identical to the previous
+        // behavior. For batched multi-recipient outbounds, the real Monero tx
+        // fee is split evenly across recipients (with rounding remainder
+        // attached to the first record), so the sum of attributed fees equals
+        // the actual on-chain fee. THORChain's findOriginalMemoForOutbound
+        // matches each emitted observation to its scheduled TxOutItem
+        // independently by (chain, ToAddress, VaultPubKey, asset, amount).
+        let recipients = unsigned_tx.recipients.clone();
+        let n = recipients.len() as u64;
+        let per_recipient_fee = if n > 0 { fee / n } else { fee };
+        let remainder = fee.saturating_sub(per_recipient_fee.saturating_mul(n));
+        let now_ts = chrono::Utc::now().timestamp();
+        for (idx, r) in recipients.iter().enumerate() {
+            let attributed_fee = if idx == 0 {
+                per_recipient_fee.saturating_add(remainder)
+            } else {
+                per_recipient_fee
+            };
+            self.store
+                .save_outgoing_transfer(&OutgoingTransferRecord {
+                    tx_hash: tx_hash.clone(),
+                    tx_hex: tx_hex.clone(),
+                    msg_id: session_msg_id.clone(),
+                    vault_pub_key: vault_pub_key.clone(),
+                    from_address: from_address.clone(),
+                    to_address: r.address.clone(),
+                    amount: r.amount,
+                    fee: attributed_fee,
+                    memo: unsigned_tx.memo.clone(),
+                    planned_height: chain_height,
+                    observed_height: None,
+                    status: "signed_pending_observation".to_string(),
+                    broadcasted_at: None,
+                    observed_at: None,
+                    created_at: now_ts,
+                })
+                .context("failed to persist outgoing transfer attribution")?;
+        }
 
         let mut sessions = self.sessions.lock();
         let session = sessions.get_mut(session_id).ok_or_else(|| {

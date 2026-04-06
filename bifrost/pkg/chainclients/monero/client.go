@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1074,10 +1075,17 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		c.logger.Info().Int("required_inputs", len(requiredInputs)).Msg("using checkpointed inputs for xmr signing retry")
 	}
 
+	// Discover sibling pending outbounds for the same vault and assemble a
+	// deterministic recipients list. All 3 nodes query the same THORChain
+	// state at the same scheduled height, so they all compute the same
+	// sorted batch and join the same FROST sign session.
+	batchedRecipients, batchedSiblings := c.discoverXMRBatchedRecipients(tx, signReqCtx, height)
+
 	frostReq := tssp.FrostKeySignRequest{
 		VaultPubKey:    signReqCtx.vaultPubKey.String(),
 		ToAddress:      signReqCtx.toAddress,
 		AmountAtomic:   signReqCtx.amountAtomic,
+		Recipients:     batchedRecipients,
 		Memo:           tx.Memo,
 		FeeRate:        feeRate,
 		SignerPubKeys:  members,
@@ -1088,6 +1096,13 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		MaxInputs:      maxInputs,
 		DustThreshold:  dustThreshold,
 		RequiredInputs: requiredInputs,
+	}
+	if len(batchedRecipients) > 1 {
+		c.logger.Info().
+			Int("recipients", len(batchedRecipients)).
+			Int("siblings", len(batchedSiblings)).
+			Str("vault", signReqCtx.vaultPubKey.String()).
+			Msg("XMR outbound: batching multiple thornode outbounds into single Monero tx")
 	}
 	resp, err := c.tssServer.FrostKeySign(frostReq, newFrostSignerAdapter(c.frostSigner))
 	if err != nil {
@@ -1138,8 +1153,162 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if ckptErr != nil {
 		c.logger.Error().Err(ckptErr).Msg("fail to marshal xmr sign checkpoint")
 	}
-	observation := c.buildOutboundObservation(tx, resp.TxHash, resp.FeeAtomic, localSpentRefs)
+
+	// For batched outbounds, divide the real Monero tx fee evenly across
+	// all batched recipients. The fast-path observation hint we return here
+	// uses the per-item attributed fee for the current tx; the canonical
+	// observations for sibling outbounds arrive later via the scanner from
+	// the sidecar's per-recipient OutgoingTransferRecord entries.
+	perItemFee := resp.FeeAtomic
+	if n := uint64(len(batchedRecipients)); n > 1 {
+		perItemFee = resp.FeeAtomic / n
+	}
+	observation := c.buildOutboundObservation(tx, resp.TxHash, perItemFee, localSpentRefs)
+
+	// Mark all sibling TxOutItems as signed in the local signer cache so the
+	// signer pipeline does not pick them up again — they are covered by the
+	// same Monero tx hash. THORChain will independently observe each output
+	// and complete each scheduled outbound via findOriginalMemoForOutbound.
+	for _, sib := range batchedSiblings {
+		sibItem := sib.TxOutItem(height)
+		if cacheErr := c.signerCacheManager.SetSigned(sibItem.CacheHash(), txCacheVault(sibItem, c.GetChain()), resp.TxHash); cacheErr != nil {
+			c.logger.Err(cacheErr).
+				Str("sibling_in_hash", sibItem.InHash.String()).
+				Str("batch_tx_hash", resp.TxHash).
+				Msg("fail to mark batched sibling as signed in cache")
+		} else {
+			c.logger.Debug().
+				Str("sibling_in_hash", sibItem.InHash.String()).
+				Str("batch_tx_hash", resp.TxHash).
+				Msg("marked batched sibling as signed")
+		}
+	}
+
 	return signedTx, ckptBytes, observation, nil
+}
+
+// discoverXMRBatchedRecipients queries THORChain for all queued outbounds at
+// the given height for the same vault and chain (XMR) and returns a
+// deterministically-sorted recipients list. The current tx is always
+// included. If no other pending outbounds exist for the vault at this height
+// (the common case), it returns an empty Recipients list, signaling the
+// sidecar to use the legacy single-recipient path.
+//
+// Determinism is critical: all 3 vault members must compute the EXACT same
+// recipients list and order so that they all derive the same FROST msg_id /
+// plan_hash and join the same sign session. We sort by InHash ASC.
+func (c *Client) discoverXMRBatchedRecipients(
+	currentTx stypes.TxOutItem,
+	signReqCtx xmrValidatedSignRequest,
+	height int64,
+) ([]tssp.FrostSidecarRecipient, []stypes.TxArrayItem) {
+	const maxBatchSize = 8
+
+	if c.thorchainBridge == nil {
+		return nil, nil
+	}
+
+	txOut, err := c.thorchainBridge.GetKeysign(height, signReqCtx.vaultPubKey.String())
+	if err != nil {
+		c.logger.Debug().Err(err).
+			Int64("height", height).
+			Str("vault", signReqCtx.vaultPubKey.String()).
+			Msg("fail to fetch keysign queue for batching; falling back to single-recipient")
+		return nil, nil
+	}
+
+	// Collect all queued items for this vault on XMR chain that haven't been
+	// signed yet AND aren't the current tx (we'll add the current tx
+	// separately to ensure it's always present).
+	currentInHashStr := strings.ToUpper(currentTx.InHash.String())
+	type batchEntry struct {
+		inHashUpper string
+		toAddr      string
+		amount      uint64
+		raw         stypes.TxArrayItem
+		isCurrent   bool
+	}
+	var entries []batchEntry
+
+	// Add current tx first
+	entries = append(entries, batchEntry{
+		inHashUpper: currentInHashStr,
+		toAddr:      signReqCtx.toAddress,
+		amount:      signReqCtx.amountAtomic,
+		isCurrent:   true,
+	})
+
+	for _, item := range txOut.TxArray {
+		if !item.Chain.Equals(c.chain) {
+			continue
+		}
+		if !item.OutHash.IsEmpty() {
+			continue
+		}
+		// Match this vault by FROST pubkey (or eddsa, or regular).
+		if !item.VaultPubKeyFrost.Equals(signReqCtx.vaultPubKey) &&
+			!item.VaultPubKeyEddsa.Equals(signReqCtx.vaultPubKey) &&
+			!item.VaultPubKey.Equals(signReqCtx.vaultPubKey) {
+			continue
+		}
+		itemInHash := strings.ToUpper(item.InHash.String())
+		if itemInHash == currentInHashStr {
+			continue // current tx already added
+		}
+		if item.ToAddress.IsEmpty() {
+			continue
+		}
+		if item.Coin.Amount.IsZero() {
+			continue
+		}
+		// Skip if already covered in cache (a previous SignTx call may have
+		// already batched this sibling under a different tx hash).
+		sibTx := item.TxOutItem(height)
+		if c.signerCacheManager.HasSigned(sibTx.CacheHash()) {
+			continue
+		}
+		amountAtomic, convErr := xmrThorchainAmountToAtomic(item.Coin.Amount)
+		if convErr != nil {
+			c.logger.Debug().Err(convErr).
+				Str("in_hash", itemInHash).
+				Msg("skip sibling: amount conversion failed")
+			continue
+		}
+		entries = append(entries, batchEntry{
+			inHashUpper: itemInHash,
+			toAddr:      item.ToAddress.String(),
+			amount:      amountAtomic,
+			raw:         item,
+		})
+	}
+
+	if len(entries) <= 1 {
+		return nil, nil // no siblings — use single-recipient legacy path
+	}
+
+	// Deterministic sort by InHash ASC. All 3 nodes will produce the same
+	// order since GetKeysign returns the same canonical TxOut at the given
+	// height across nodes.
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].inHashUpper < entries[j].inHashUpper
+	})
+
+	if len(entries) > maxBatchSize {
+		entries = entries[:maxBatchSize]
+	}
+
+	recipients := make([]tssp.FrostSidecarRecipient, 0, len(entries))
+	siblings := make([]stypes.TxArrayItem, 0, len(entries)-1)
+	for _, e := range entries {
+		recipients = append(recipients, tssp.FrostSidecarRecipient{
+			ToAddress:    e.toAddr,
+			AmountAtomic: e.amount,
+		})
+		if !e.isCurrent {
+			siblings = append(siblings, e.raw)
+		}
+	}
+	return recipients, siblings
 }
 
 func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, requireThorchainHeight bool) (xmrValidatedSignRequest, error) {
