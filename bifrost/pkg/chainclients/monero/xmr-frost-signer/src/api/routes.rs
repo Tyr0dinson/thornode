@@ -1143,7 +1143,8 @@ pub async fn broadcast(
                 let already_known = is_double_spend
                     || status_lower.contains("already")
                     || reason_lower.contains("already")
-                    || reason_lower.contains("double spend");
+                    || reason_lower.contains("double spend")
+                    || reason_lower.contains("not relayed");
 
                 if already_known {
                     let caller_tx_hash = req.tx_hash.trim();
