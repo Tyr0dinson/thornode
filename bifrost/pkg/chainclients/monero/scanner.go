@@ -265,13 +265,17 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	}
 	s.pruneObservedOutgoing(fetchHeight)
 	if err := s.refreshAsgardLookup(); err != nil {
-		s.logger.Debug().Err(err).Msg("fail to refresh asgard lookup")
-		return nil, nil
+		s.logger.Err(err).Msg("fail to refresh asgard lookup, retrying next block")
+		return nil, btypes.ErrUnavailableBlock
 	}
 
 	resp, err := s.frostSigner.SyncTransfersByHeight(fetchHeight, chainHeight, blockHash, parentHash, s.maxReorgRescan)
 	if err != nil {
 		if isFrostScannerHashMismatchErr(err) {
+			return nil, btypes.ErrUnavailableBlock
+		}
+		if isFrostRescanInProgressErr(err) {
+			s.logger.Info().Int64("height", fetchHeight).Msg("sidecar rescan in progress, parking bifrost scanner")
 			return nil, btypes.ErrUnavailableBlock
 		}
 		return nil, fmt.Errorf("fail to get monero transfers at %d: %w", fetchHeight, err)
@@ -730,13 +734,13 @@ func (s *Scanner) refreshAsgardLookup() error {
 
 	lookup := make(map[string]common.PubKey)
 	for _, vault := range vaults {
-		observedVault := vault.PubKeyEddsa
-		if observedVault.IsEmpty() {
-			continue
-		}
 		frostKey := vault.PubKeyFrost
 		if frostKey.IsEmpty() {
-			s.logger.Debug().Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault without PubKeyFrost")
+			s.logger.Debug().Str("vault_pubkey", vault.PubKeyEddsa.String()).Msg("skip asgard vault without PubKeyFrost")
+			continue
+		}
+		observedVault := frostKey
+		if observedVault.IsEmpty() {
 			continue
 		}
 		creationHeight := vault.VaultCreationHeightXmr
@@ -989,4 +993,11 @@ func isFrostScannerHashMismatchErr(err error) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "scanner sync hash mismatch")
+}
+
+func isFrostRescanInProgressErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return isFrostHTTPStatus(err, 503) && strings.Contains(err.Error(), "rescan in progress")
 }
