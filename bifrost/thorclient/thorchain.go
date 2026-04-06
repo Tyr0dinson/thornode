@@ -792,17 +792,6 @@ func (b *thorchainBridge) GetAsgardPubKeys() ([]PubKeyContractAddressPair, error
 			}
 			addressPairs = append(addressPairs, kp)
 		}
-		if v.PubKeyFrost != nil && *v.PubKeyFrost != "" {
-			kp := PubKeyContractAddressPair{
-				PubKey:    common.PubKey(*v.PubKeyFrost),
-				Contracts: make(map[common.Chain]common.Address),
-				Algo:      common.SigningAlgoEd25519,
-			}
-			for _, item := range v.Routers {
-				kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
-			}
-			addressPairs = append(addressPairs, kp)
-		}
 		kp := PubKeyContractAddressPair{
 			PubKey:    common.PubKey(v.PubKey),
 			Contracts: make(map[common.Chain]common.Address),
