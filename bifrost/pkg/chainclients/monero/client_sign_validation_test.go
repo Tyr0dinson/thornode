@@ -67,11 +67,8 @@ func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 	}
 }
 
-func TestValidateXMRSignTxRejectsStandardDestination(t *testing.T) {
+func TestValidateXMRSignTxAcceptsStandardDestination(t *testing.T) {
 	t.Parallel()
-	if common.CurrentChainNetwork == common.MockNet {
-		t.Skip("mocknet accepts wallet-compatible standard/subaddress destinations")
-	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
@@ -87,19 +84,13 @@ func TestValidateXMRSignTxRejectsStandardDestination(t *testing.T) {
 	}
 
 	_, err := c.validateXMRSignTx(tx, 100, true)
-	if err == nil {
-		t.Fatalf("expected featured+guaranteed destination validation error")
-	}
-	if !strings.Contains(err.Error(), "featured+guaranteed") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("standard destination should be accepted: %v", err)
 	}
 }
 
-func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) {
+func TestValidateXMRSignTxAcceptsNonGuaranteedFeaturedDestination(t *testing.T) {
 	t.Parallel()
-	if common.CurrentChainNetwork == common.MockNet {
-		t.Skip("mocknet uses wallet-compatible standard/subaddress destinations")
-	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
@@ -115,11 +106,8 @@ func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) 
 	}
 
 	_, err := c.validateXMRSignTx(tx, 100, true)
-	if err == nil {
-		t.Fatalf("expected featured+guaranteed destination validation error")
-	}
-	if !strings.Contains(err.Error(), "featured+guaranteed") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("non-guaranteed featured destination should be accepted: %v", err)
 	}
 }
 

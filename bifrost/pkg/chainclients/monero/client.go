@@ -1024,9 +1024,12 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if tx.GasRate > 0 {
 		feeRate = uint64(tx.GasRate)
 	}
-	maxInputs, _ := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
-	if maxInputs <= 0 {
-		maxInputs = 15
+	var maxInputs int64 = 15
+	if c.thorchainBridge != nil {
+		m, _ := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
+		if m > 0 {
+			maxInputs = m
+		}
 	}
 	dustThreshold := common.XMRChain.DustThreshold().Uint64()
 

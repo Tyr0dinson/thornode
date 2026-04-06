@@ -61,6 +61,10 @@ func (b *keysignFailureBridge) GetThorchainVersion() (semver.Version, error) {
 	return semver.MustParse("1.134.0"), nil
 }
 
+func (b *keysignFailureBridge) GetMimir(_ string) (int64, error) {
+	return -1, nil
+}
+
 func (b *keysignFailureBridge) PostKeysignFailure(
 	blame ttypes.Blame,
 	height int64,
