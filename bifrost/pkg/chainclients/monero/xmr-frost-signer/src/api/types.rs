@@ -264,6 +264,38 @@ pub struct ScannerResetRequest {
     pub birthday_height: u64,
 }
 
+/// One per-recipient row to inject into the sidecar's outgoing_transfers
+/// store. Used by the operator-rescue endpoint POST /v1/monero/transfers/import
+/// when a batched broadcast left the sidecar with fewer outgoing records than
+/// it should have (e.g. the sled key collision bug pre-fix). Operators
+/// reconstruct the missing rows from out-of-band sources (recipient wallet
+/// view, bifrost queue snapshots, monerod tx outputs decoded with view key)
+/// and POST them so the sidecar's transfers endpoint returns the full set
+/// on the next bifrost scanner_sync.
+#[derive(Debug, Deserialize)]
+pub struct ImportTransferEntry {
+    pub tx_hash: String,
+    pub to_address: String,
+    pub from_address: String,
+    pub amount: u64,
+    pub fee: u64,
+    pub memo: String,
+    pub planned_height: u64,
+    pub msg_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportTransfersRequest {
+    pub vault_pub_key: String,
+    pub records: Vec<ImportTransferEntry>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportTransfersResponse {
+    pub imported: usize,
+    pub status: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct KeyRestoreResponse {
     pub restored: bool,

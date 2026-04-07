@@ -2178,6 +2178,86 @@ pub async fn clear_sessions(
     )
 }
 
+/// Operator-rescue endpoint: import per-recipient OutgoingTransferRecord rows
+/// into the sidecar's sled store. Used to reconstruct records lost to the
+/// pre-fix sled-key-collision bug on batched multi-recipient broadcasts —
+/// the sidecar would only save 1 of N recipient records per Monero tx, and
+/// the missing N-1 siblings need to be reinjected so thornode can observe
+/// them.
+///
+/// The operator builds the records from out-of-band sources:
+///   - the recipient's wallet view (which received the on-chain outputs and
+///     knows the per-output amounts)
+///   - bifrost queue snapshots / batch_test logs (which give the OUT:HASH
+///     memos and original amounts)
+///
+/// After import, calling POST /v1/monero/scanner/reset on the same vault
+/// makes the bifrost scanner re-walk past blocks; promote_outgoing_records_observed_in_block
+/// will then promote the imported pending records to "mined" and emit them
+/// in the scanner_sync transfers response. Bifrost picks them up, posts
+/// MsgObservedTxOut to thornode, and vault.coins[XMR] reconciles.
+///
+/// Records are saved with status="signed_pending_observation" and
+/// observed_height=None so the next scan promotes them naturally.
+pub async fn import_transfers(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<crate::api::types::ImportTransfersRequest>,
+) -> impl IntoResponse {
+    let vault_pub_key = req.vault_pub_key.trim().to_string();
+    if vault_pub_key.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(error_json("vault_pub_key is required")));
+    }
+    if req.records.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(error_json("records list is empty")));
+    }
+
+    let now_ts = chrono::Utc::now().timestamp();
+    let mut imported = 0usize;
+    for r in req.records.iter() {
+        if r.tx_hash.trim().is_empty() {
+            return (StatusCode::BAD_REQUEST, Json(error_json("tx_hash is required")));
+        }
+        if r.to_address.trim().is_empty() {
+            return (StatusCode::BAD_REQUEST, Json(error_json("to_address is required")));
+        }
+        let record = crate::state::store::OutgoingTransferRecord {
+            tx_hash: r.tx_hash.clone(),
+            tx_hex: String::new(),
+            msg_id: if r.msg_id.is_empty() {
+                format!("import-{}-{}", r.tx_hash, r.to_address)
+            } else {
+                r.msg_id.clone()
+            },
+            vault_pub_key: vault_pub_key.clone(),
+            from_address: r.from_address.clone(),
+            to_address: r.to_address.clone(),
+            amount: r.amount,
+            fee: r.fee,
+            memo: r.memo.clone(),
+            planned_height: r.planned_height,
+            observed_height: None,
+            status: "signed_pending_observation".to_string(),
+            broadcasted_at: Some(now_ts),
+            observed_at: None,
+            created_at: now_ts,
+        };
+        if let Err(e) = state.store.save_outgoing_transfer(&record) {
+            error!(error = %e, vault = %vault_pub_key, tx_hash = %r.tx_hash, "import_transfers: failed to save record");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to save record: {e}"))));
+        }
+        imported += 1;
+    }
+
+    info!(vault = %vault_pub_key, imported, "imported outgoing transfer records via rescue endpoint");
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "imported": imported,
+            "status": "ok"
+        })),
+    )
+}
+
 pub async fn get_transfers(
     State(state): State<Arc<AppState>>,
     Query(query): Query<TransfersQuery>,
