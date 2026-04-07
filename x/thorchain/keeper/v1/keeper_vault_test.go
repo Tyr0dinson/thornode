@@ -92,7 +92,7 @@ func (s *KeeperVaultSuite) TestVaultFrostIndex(c *C) {
 	c.Assert(vByEddsa.PubKey.Equals(pubKey), Equals, true)
 }
 
-func (s *KeeperVaultSuite) TestVaultFrostIndexLazyMigration(c *C) {
+func (s *KeeperVaultSuite) TestVaultFrostIndexCreatedBySetVault(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	pubKey := GetRandomPubKey()
@@ -106,7 +106,10 @@ func (s *KeeperVaultSuite) TestVaultFrostIndexLazyMigration(c *C) {
 	// Frost lookup should fail since no frost key was set yet.
 	c.Check(k.VaultExists(ctx, frostPubKey), Equals, false)
 
-	// Now upgrade the vault to add the frost key (simulates keygen completing).
+	// Now upgrade the vault to add the frost key. The next SetVault call
+	// (which happens on every vault update — outbound observations, churn,
+	// status changes) creates the frost index. There is no lazy migration
+	// in GetVault to avoid non-deterministic state writes during read paths.
 	asgard.PubKeyFrost = frostPubKey
 	c.Assert(k.SetVault(ctx, asgard), IsNil)
 
