@@ -776,10 +776,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    build:
-      context: ../../
-      dockerfile: build/docker/xmr-frost-signer/Dockerfile
-    image: thornode-xmr-frost-signer:latest
+    image: registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:latest
     restart: unless-stopped
     depends_on:
       monero-daemon:
@@ -835,7 +832,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: thornode-xmr-frost-signer:latest
+    image: registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:latest
     restart: unless-stopped
     depends_on:
       monero-daemon:

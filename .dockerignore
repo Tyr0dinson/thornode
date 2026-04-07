@@ -30,8 +30,6 @@ README.md
 
 # Build / CI directories
 build/docker
-!build/docker/xmr-frost-signer
-!build/docker/xmr-frost-signer/entrypoint.sh
 ci
 chain
 midgard
@@ -61,15 +59,6 @@ node_modules
 thornode-image-original
 thornode-linux-arm64
 
-# Keep the XMR sidecar Docker context source-only. The local Rust target tree can
-# grow into multi-GB artifacts, but the image build only needs Cargo metadata and src.
-bifrost/pkg/chainclients/monero/xmr-frost-signer/*
-!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock
-!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml
-!bifrost/pkg/chainclients/monero/xmr-frost-signer/LICENSE
-!bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md
-!bifrost/pkg/chainclients/monero/xmr-frost-signer/src
-!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**
 
 # Tools (exclude all, then re-include needed)
 tools

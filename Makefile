@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build build-xmr-frost-signer test test-xmr-frost test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
+.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -161,12 +161,6 @@ docs-dev: docs-init
 
 build:
 	go build ${BUILD_FLAGS} ${BINARIES}
-
-build-xmr-frost-signer:
-	cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo build --release
-
-test-xmr-frost:
-	cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo test
 
 test-xmr-frost-e2e:
 	GOTOOLCHAIN=go1.23.10 go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'

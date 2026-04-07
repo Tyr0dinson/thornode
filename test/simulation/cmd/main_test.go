@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -588,119 +587,12 @@ func TestSimulationStageOrder(t *testing.T) {
 	assertStageOrder(t, stageNames, "xmr-post-churn", "ragnarok")
 }
 
-func TestXMRFrostSignerDockerBuilderSupportsCargoLockfile(t *testing.T) {
-	cargoLock := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock")
-	if !strings.Contains(cargoLock, "\nversion = 4\n") {
-		t.Fatal("expected xmr-frost-signer/Cargo.lock to use lockfile version 4")
-	}
-
-	dockerfile := readRepoFile(t, "build/docker/xmr-frost-signer/Dockerfile")
-	match := regexp.MustCompile(`(?m)^FROM rust:(\d+)\.(\d+)-`).FindStringSubmatch(dockerfile)
-	if len(match) != 3 {
-		t.Fatal("failed to parse Rust builder version from xmr-frost-signer Dockerfile")
-	}
-
-	major, err := strconv.Atoi(match[1])
-	if err != nil {
-		t.Fatalf("failed to parse Rust major version: %v", err)
-	}
-	minor, err := strconv.Atoi(match[2])
-	if err != nil {
-		t.Fatalf("failed to parse Rust minor version: %v", err)
-	}
-
-	// Rust 2024 stabilized in Rust 1.85, and the current resolved dependency graph
-	// includes manifests that require edition2024 support during docker builds.
-	if major < 1 || (major == 1 && minor < 85) {
-		t.Fatalf("xmr-frost-signer Docker builder rust:%d.%d is too old for the current Cargo dependency graph", major, minor)
-	}
-}
-
-func TestXMRFrostSignerCargoPinsSeraiGitDependencies(t *testing.T) {
-	cargoToml := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml")
-	for _, snippet := range []string{
-		`dkg-pedpop = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
-		`dalek-ff-group = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
-		`ciphersuite = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391", features = [`,
-		`simple-request = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
-	} {
-		if !strings.Contains(cargoToml, snippet) {
-			t.Fatalf("expected xmr-frost-signer/Cargo.toml to contain %q", snippet)
-		}
-	}
-
-	cargoLock := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock")
-	if !strings.Contains(cargoLock, `source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"`) {
-		t.Fatal("expected xmr-frost-signer/Cargo.lock to pin Serai crates to the documented git revision")
-	}
-
-	compose := readRepoFile(t, "build/docker/docker-compose.yml")
-	if strings.Contains(compose, "additional_contexts:") || strings.Contains(compose, "serai: ../../../serai") {
-		t.Fatal("xmr-frost-signer docker compose build should no longer rely on a sibling serai checkout build context")
-	}
-
-	dockerfile := readRepoFile(t, "build/docker/xmr-frost-signer/Dockerfile")
-	if strings.Contains(dockerfile, "COPY --from=serai . /serai") {
-		t.Fatal("xmr-frost-signer Dockerfile should no longer vendor a sibling serai checkout into the build context")
-	}
-}
-
-func TestXMRFrostSignerDockerRuntimePreparesWritableDataVolume(t *testing.T) {
-	compose := readRepoFile(t, "build/docker/docker-compose.yml")
-	for _, volumeRef := range []string{
-		"- xmr-frost-data:/var/lib/xmr-frost",
-		"- xmr-sim-data:/var/lib/xmr-sim",
-	} {
-		if !strings.Contains(compose, volumeRef) {
-			t.Fatalf("expected compose to mount %s for xmr services", volumeRef)
-		}
-	}
-
-	dockerfile := readRepoFile(t, "build/docker/xmr-frost-signer/Dockerfile")
-	if !strings.Contains(dockerfile, "COPY build/docker/xmr-frost-signer/entrypoint.sh /usr/local/bin/xmr-frost-entrypoint") {
-		t.Fatal("xmr-frost-signer Dockerfile must install a startup wrapper that prepares named-volume data dirs before dropping privileges")
-	}
-	if !strings.Contains(dockerfile, `ENTRYPOINT ["xmr-frost-entrypoint"]`) {
-		t.Fatal("xmr-frost-signer Dockerfile must start through xmr-frost-entrypoint so mounted data dirs are prepared before the signer starts")
-	}
-
-	entrypoint := readRepoFile(t, "build/docker/xmr-frost-signer/entrypoint.sh")
-	for _, snippet := range []string{
-		`data_dir="${XMR_FROST_DATA_DIR:-/var/lib/xmr-frost}"`,
-		`mkdir -p "$data_dir"`,
-		`chown -R frost:frost "$data_dir"`,
-		`chmod 700 "$data_dir"`,
-		`exec runuser -u frost -- /usr/local/bin/xmr-frost-signer "$@"`,
-	} {
-		if !strings.Contains(entrypoint, snippet) {
-			t.Fatalf("xmr-frost-signer entrypoint must contain %q", snippet)
-		}
-	}
-}
-
-func TestDockerignoreKeepsXMRFrostEntrypointInBuildContext(t *testing.T) {
-	dockerignore := readRepoFile(t, ".dockerignore")
-	if !strings.Contains(dockerignore, "build/docker") {
-		t.Fatal("expected .dockerignore to exclude build/docker by default")
-	}
-	if !strings.Contains(dockerignore, "!build/docker/xmr-frost-signer/entrypoint.sh") {
-		t.Fatal("expected .dockerignore to re-include the xmr-frost-signer entrypoint script so docker builds can copy it")
-	}
-}
-
 func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {
 	dockerignore := readRepoFile(t, "ci/Dockerfile.simtest.dockerignore")
 
 	for _, snippet := range []string{
 		".git",
 		"thornode",
-		"bifrost/pkg/chainclients/monero/xmr-frost-signer/*",
-		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock",
-		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml",
-		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/LICENSE",
-		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md",
-		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src",
-		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**",
 		"**/target",
 	} {
 		if !strings.Contains(dockerignore, snippet) {

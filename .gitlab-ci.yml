@@ -273,18 +273,6 @@ go-tss:
   script:
     - make test-go-tss
 
-xmr-frost-signer:
-  rules:
-    - changes:
-        paths:
-          - bifrost/pkg/chainclients/monero/xmr-frost-signer/**/*
-  stage: test
-  image: rust:1.90.0
-  before_script:
-    - apt-get update && apt-get install -y git pkg-config libssl-dev
-  script:
-    - cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo test
-
 pages:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
