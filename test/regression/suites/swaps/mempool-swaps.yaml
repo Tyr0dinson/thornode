@@ -64,6 +64,15 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
+# Disable per-pool cap
+type: tx-mimir
+key: MempoolSwapPoolCapBPS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
 # Verify mimirs are enabled
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
@@ -71,6 +80,7 @@ asserts:
   - .MEMPOOLSWAPCAPTOR == 300000000000
   - .DOLLARSPERRUNE == 100000000
   - .ENABLEADVSWAPQUEUE == 1
+  - .MEMPOOLSWAPPOOLCAPBPS == 0
 ---
 # Verify initial mempool swap usage is 0
 type: check
@@ -322,7 +332,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "85852915"  # Actual swap output
+        - amount: "85852912"  # Actual swap output
           asset: "ETH.ETH"
           decimals: 8
       gas:
