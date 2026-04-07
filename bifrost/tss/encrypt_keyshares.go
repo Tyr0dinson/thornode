@@ -203,9 +203,12 @@ func EncryptRawKeyshares(raw []byte, passphrase string) ([]byte, error) {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot create encrypt writer: %w", err)
 	}
 	cmpEnc := lzma.NewWriterLevel(enc, lzma.BestCompression)
-	_, err = cmpEnc.Write(raw)
+	n, err := cmpEnc.Write(raw)
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot compress raw bytes: %w", err)
+	}
+	if n != len(raw) {
+		return nil, fmt.Errorf("failed keyshare encrypt - failed to write all bytes")
 	}
 	err = cmpEnc.Close()
 	if err != nil {
@@ -227,6 +230,15 @@ func EncryptRawKeyshares(raw []byte, passphrase string) ([]byte, error) {
 	tripleEncrypted, err := encryptAEAD(chaCha, doubleEncrypted)
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot chacha encrypt: %w", err)
+	}
+
+	// round-trip verification: decrypt and compare to ensure recoverability
+	decrypted, err := DecryptRawKeyshares(tripleEncrypted, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - round-trip verify failed: %w", err)
+	}
+	if !bytes.Equal(raw, decrypted) {
+		return nil, errors.New("failed keyshare encrypt - round-trip mismatch")
 	}
 
 	return tripleEncrypted, nil
