@@ -565,6 +565,10 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 	}
 
 	// build the signature
+	if len(sigBytes) < 64 {
+		s.logger.Error().Int("len", len(sigBytes)).Msg("unexpected sigBytes length")
+		return nil
+	}
 	r := new(big.Int).SetBytes(sigBytes[:32])
 	ss := new(big.Int).SetBytes(sigBytes[32:])
 	signature := &btcec.Signature{R: r, S: ss}
@@ -573,6 +577,7 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 	spk, err := pk.Secp256K1()
 	if err != nil {
 		s.logger.Error().Err(err).Msg("fail to get secp256k1 pubkey")
+		return nil
 	}
 	if !signature.Verify(data, spk) {
 		s.logger.Error().Msg("secp256k1 check signature verification failed")
