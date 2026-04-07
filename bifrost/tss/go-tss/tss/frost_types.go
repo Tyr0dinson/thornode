@@ -196,13 +196,14 @@ type FrostResultPayload struct {
 }
 
 type FrostResult struct {
-	MsgID       string           `json:"msg_id"`
-	TxHash      string           `json:"tx_hash,omitempty"`
-	TxHex       string           `json:"tx_hex,omitempty"`
-	FeeAtomic   uint64           `json:"fee_atomic,omitempty"`
-	Eventuality FrostEventuality `json:"eventuality"`
-	Status      uint8            `json:"status"`
-	Blame       blame.Blame      `json:"blame"`
+	MsgID           string                `json:"msg_id"`
+	TxHash          string                `json:"tx_hash,omitempty"`
+	TxHex           string                `json:"tx_hex,omitempty"`
+	FeeAtomic       uint64                `json:"fee_atomic,omitempty"`
+	Eventuality     FrostEventuality      `json:"eventuality"`
+	SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs,omitempty"`
+	Status          uint8                 `json:"status"`
+	Blame           blame.Blame           `json:"blame"`
 }
 
 type FrostDKGRound1Payload struct {

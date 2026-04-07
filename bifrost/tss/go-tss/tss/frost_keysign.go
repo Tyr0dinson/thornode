@@ -916,13 +916,14 @@ func (c *FrostSignCoordinator) BroadcastResult(resp FrostKeySignResponse, peers 
 	result := FrostResultPayload{
 		SenderPubKey: c.localPubKey,
 		Response: FrostResult{
-			MsgID:       resp.MsgID,
-			TxHash:      resp.TxHash,
-			TxHex:       resp.TxHex,
-			FeeAtomic:   resp.FeeAtomic,
-			Eventuality: resp.Eventuality,
-			Status:      uint8(resp.Status),
-			Blame:       resp.Blame,
+			MsgID:           resp.MsgID,
+			TxHash:          resp.TxHash,
+			TxHex:           resp.TxHex,
+			FeeAtomic:       resp.FeeAtomic,
+			Eventuality:     resp.Eventuality,
+			SpentOutputRefs: resp.SpentOutputRefs,
+			Status:          uint8(resp.Status),
+			Blame:           resp.Blame,
 		},
 	}
 	payload, err := json.Marshal(result)
@@ -1079,10 +1080,18 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 		if eventuality.EventualityID != strings.ToLower(expectedEventualityID) {
 			return FrostKeySignResponse{}, "", fmt.Errorf("frost success result eventuality_id mismatch")
 		}
+		normalizedRefs := make([]FrostSpentOutputRef, len(result.SpentOutputRefs))
+		for i, ref := range result.SpentOutputRefs {
+			normalizedRefs[i] = FrostSpentOutputRef{
+				TxHash:      strings.ToLower(strings.TrimSpace(ref.TxHash)),
+				OutputIndex: ref.OutputIndex,
+			}
+		}
 		normalized.MsgID = payloadMsgID
 		normalized.TxHash = txHash
 		normalized.TxHex = txHex
 		normalized.Eventuality = eventuality
+		normalized.SpentOutputRefs = normalizedRefs
 	case tcommon.Fail:
 		payloadMsgID := strings.TrimSpace(result.MsgID)
 		if payloadMsgID != "" && expectedMsgID != "" && payloadMsgID != expectedMsgID {
@@ -1096,21 +1105,23 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 	}
 
 	keyBytes, err := json.Marshal(struct {
-		Status      tcommon.Status   `json:"status"`
-		MsgID       string           `json:"msg_id"`
-		TxHash      string           `json:"tx_hash"`
-		TxHex       string           `json:"tx_hex"`
-		FeeAtomic   uint64           `json:"fee_atomic"`
-		Eventuality FrostEventuality `json:"eventuality"`
-		Blame       blame.Blame      `json:"blame"`
+		Status          tcommon.Status        `json:"status"`
+		MsgID           string                `json:"msg_id"`
+		TxHash          string                `json:"tx_hash"`
+		TxHex           string                `json:"tx_hex"`
+		FeeAtomic       uint64                `json:"fee_atomic"`
+		Eventuality     FrostEventuality      `json:"eventuality"`
+		SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs"`
+		Blame           blame.Blame           `json:"blame"`
 	}{
-		Status:      normalized.Status,
-		MsgID:       normalized.MsgID,
-		TxHash:      normalized.TxHash,
-		TxHex:       normalized.TxHex,
-		FeeAtomic:   normalized.FeeAtomic,
-		Eventuality: normalized.Eventuality,
-		Blame:       normalized.Blame,
+		Status:          normalized.Status,
+		MsgID:           normalized.MsgID,
+		TxHash:          normalized.TxHash,
+		TxHex:           normalized.TxHex,
+		FeeAtomic:       normalized.FeeAtomic,
+		Eventuality:     normalized.Eventuality,
+		SpentOutputRefs: normalized.SpentOutputRefs,
+		Blame:           normalized.Blame,
 	})
 	if err != nil {
 		return FrostKeySignResponse{}, "", fmt.Errorf("failed to encode frost result comparison key")
