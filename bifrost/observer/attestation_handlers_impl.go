@@ -13,6 +13,10 @@ import (
 
 const priceFeedsUpdateDelay = time.Millisecond * 100
 
+// maxSpentOutputRefs caps the number of spent output references accepted per
+// XMR outbound. Typical outbound: 2-4, consolidation: up to 16.
+const maxSpentOutputRefs = 32
+
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
 	obsTx := tx.ObsTx
@@ -47,10 +51,7 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	}
 
 	// Capture XMR spent refs for async application outside the lock.
-	// Cap at 32 refs — these are vault outputs consumed as real inputs (not ring decoys).
-	// Typical outbound: 2-4, consolidation: up to 16.
 	// Only apply once per tx — multiple peers may attest to the same outbound.
-	const maxSpentOutputRefs = 32
 	var applySpentRefs *common.ObservedTx
 	isXMROutboundWithRefs := obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound &&
 		len(obsTx.SpentOutputRefs) > 0 && len(obsTx.SpentOutputRefs) <= maxSpentOutputRefs
