@@ -351,8 +351,12 @@ func encryptAEAD(aead cipher.AEAD, data []byte) ([]byte, error) {
 
 // decryptAEAD decrypts the provided data using the nonce from the prefix.
 func decryptAEAD(aead cipher.AEAD, data []byte) ([]byte, error) {
-	// extract the nonce
 	nonceSize := aead.NonceSize()
+	if len(data) < nonceSize+aead.Overhead() {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	// extract the nonce
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 
 	// decrypt the data
