@@ -460,7 +460,12 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if info, ok := xmrAddressInfoFromString(addr.String()); ok {
 			switch info.networkByte {
 			case xmrPrimaryNetworkByte, xmrSubaddressNetworkByte, xmrIntegratedNetworkByte, xmrFeaturedMainnetNetworkByte:
-				return mainNetPredicate()
+				// Monero "4"/"8"/featured-mainnet prefixes are network-agnostic
+				// at the encoding level. The host network (mainnet/mocknet/testnet)
+				// is determined by the monerod the bifrost connects to. Return
+				// currentNetwork so IsValidAddress accepts these addresses on
+				// mocknet builds where vaults derive "4"-prefix addresses.
+				return currentNetwork
 			default:
 				return MockNet
 			}

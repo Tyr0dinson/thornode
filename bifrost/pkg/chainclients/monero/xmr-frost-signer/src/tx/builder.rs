@@ -163,64 +163,21 @@ pub async fn build_unsigned_transaction(
         vec![memo.as_bytes().to_vec()]
     };
 
-    let mut inputs = Vec::with_capacity(selected.len());
-    for (i, (_, wallet_output)) in selected.iter().enumerate() {
-        let input = decoy::select_output_with_decoys(
-            rpc,
-            decoy_context,
-            wallet_output,
-            hard_fork_version,
-            tip_height,
-            i,
-        )
-        .await
-        .with_context(|| format!("failed to select decoys for input {}", i + 1))?;
-        inputs.push(input);
-    }
+    // Iteratively grow the input set until fee + amount fits within selected_total.
+    // Adding more inputs increases the tx weight, which increases the fee, which
+    // may require yet more inputs — loop until convergence or exhaustion.
+    //
+    // Dedup uses content-based identity (tx_hash, output_index) rather than
+    // pointer equality so the logic is robust to candidate cloning or rebuilding.
+    use std::collections::HashSet;
+    let mut selected_keys: HashSet<(String, u32)> = selected
+        .iter()
+        .map(|(t, _)| (t.tx_hash.clone(), t.output_index))
+        .collect();
 
-    let signable = SignableTransaction::new(
-        rct_type,
-        outgoing_view_key.clone(),
-        inputs,
-        parsed_recipients.clone(),
-        Change::fingerprintable(Some(change)),
-        data.clone(),
-        fee_rate,
-    )
-    .map_err(|e| anyhow::anyhow!("failed to construct signable transaction: {}", e))?;
-
-    let fee = signable.necessary_fee();
-    let needed = total_amount + u128::from(fee);
-
-    // If greedy selection wasn't enough to cover total_amount + fee, try
-    // adding more outputs.
-    if selected_total < needed {
-        let mut extended = selected.clone();
-        let mut extended_total = selected_total;
-        for candidate in &candidates {
-            if extended.len() >= max {
-                break;
-            }
-            if extended.iter().any(|s| std::ptr::eq(*s, candidate)) {
-                continue;
-            }
-            extended.push(candidate);
-            extended_total += u128::from(candidate.0.amount);
-            if extended_total >= needed {
-                break;
-            }
-        }
-
-        if extended_total < needed {
-            anyhow::bail!(
-                "insufficient funds to cover amount ({}) + fee ({})",
-                total_amount_u64,
-                fee
-            );
-        }
-
-        let mut inputs = Vec::with_capacity(extended.len());
-        for (i, (_, wallet_output)) in extended.iter().enumerate() {
+    let signable = loop {
+        let mut inputs = Vec::with_capacity(selected.len());
+        for (i, (_, wallet_output)) in selected.iter().enumerate() {
             let input = decoy::select_output_with_decoys(
                 rpc,
                 decoy_context,
@@ -230,48 +187,61 @@ pub async fn build_unsigned_transaction(
                 i,
             )
             .await
-            .with_context(|| format!("failed to select decoys for extended input {}", i + 1))?;
+            .with_context(|| format!("failed to select decoys for input {}", i + 1))?;
             inputs.push(input);
         }
 
         let signable = SignableTransaction::new(
             rct_type,
-            outgoing_view_key,
+            outgoing_view_key.clone(),
             inputs,
-            parsed_recipients,
+            parsed_recipients.clone(),
             Change::fingerprintable(Some(change)),
-            data,
+            data.clone(),
             fee_rate,
         )
-        .map_err(|e| anyhow::anyhow!("failed to construct extended signable transaction: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("failed to construct signable transaction: {}", e))?;
 
         let fee = signable.necessary_fee();
-        let selected_refs = extended
-            .iter()
-            .map(|(tracked, _)| SelectedInputRef {
-                tx_hash: tracked.tx_hash.clone(),
-                output_index: tracked.output_index,
-                key_image: tracked.key_image.clone(),
-            })
-            .collect::<Vec<_>>();
+        let needed = total_amount + u128::from(fee);
 
-        info!(
-            selected_inputs = selected_refs.len(),
-            recipients = recipients.len(),
-            fee,
-            extended_total,
-            "constructed Monero signable transaction (extended for fee)"
-        );
+        if selected_total >= needed {
+            break signable;
+        }
 
-        return Ok(UnsignedTransaction {
-            serialized_signable: signable.serialize(),
-            signable,
-            selected_inputs: selected_refs,
-            recipients: recipients.to_vec(),
-            fee,
-            memo: memo.to_string(),
-        });
-    }
+        // Add the next un-selected candidate(s) until we cover the new fee.
+        let prev_len = selected.len();
+        for candidate in &candidates {
+            if selected.len() >= max {
+                break;
+            }
+            let key = (candidate.0.tx_hash.clone(), candidate.0.output_index);
+            if selected_keys.contains(&key) {
+                continue;
+            }
+            selected.push(candidate);
+            selected_keys.insert(key);
+            selected_total += u128::from(candidate.0.amount);
+            if selected_total >= needed {
+                break;
+            }
+        }
+
+        if selected.len() == prev_len {
+            // No more candidates available — either max_inputs reached or
+            // candidates exhausted. Selected_total cannot grow.
+            anyhow::bail!(
+                "insufficient funds to cover amount ({}) + fee ({}): selected {} of max {} inputs, total {}",
+                total_amount_u64,
+                fee,
+                selected.len(),
+                max,
+                selected_total,
+            );
+        }
+    };
+
+    let fee = signable.necessary_fee();
 
     let selected_refs = selected
         .iter()

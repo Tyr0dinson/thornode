@@ -67,14 +67,18 @@ func (s *XMRAddressSuite) TestXMRAddressHandling(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(primary.IsChain(XMRChain), Equals, true)
 	c.Check(primary.GetChain(), Equals, XMRChain)
-	c.Check(primary.GetNetwork(XMRChain) == MockNet, Equals, false)
+	// Primary "4"-prefix addresses are network-agnostic at the encoding level;
+	// GetNetwork returns the host network, which is whichever build we're on.
+	c.Check(primary.GetNetwork(XMRChain), Equals, CurrentChainNetwork)
+	c.Check(XMRChain.IsValidAddress(primary), Equals, true)
 
 	subAddr := XMRChecksummedDummyAddress('8')
 	addr8, err := NewAddress(subAddr)
 	c.Assert(err, IsNil)
 	c.Check(addr8.IsChain(XMRChain), Equals, true)
 	c.Check(addr8.GetChain(), Equals, XMRChain)
-	c.Check(addr8.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(addr8.GetNetwork(XMRChain), Equals, CurrentChainNetwork)
+	c.Check(XMRChain.IsValidAddress(addr8), Equals, true)
 
 	featuredAddr := XMRChecksummedDummyAddress('C')
 	addrC, err := NewAddress(featuredAddr)
@@ -246,11 +250,14 @@ func (s *XMRAddressSuite) TestXMRChecksummedDummyAddress(c *C) {
 func (s *XMRAddressSuite) TestXMRGetNetwork(c *C) {
 	var spend, view [32]byte
 
+	// Primary "4", subaddress "8", and featured-mainnet addresses are all
+	// network-agnostic at the encoding level. GetNetwork returns the host
+	// network of the build (mocknet/mainnet/etc).
 	primaryAddr := makeTestXMRAddr(xmrPrimaryNetworkByte, spend, view)
-	c.Check(Address(primaryAddr).GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(Address(primaryAddr).GetNetwork(XMRChain), Equals, CurrentChainNetwork)
 
 	subAddr := makeTestXMRAddr(xmrSubaddressNetworkByte, spend, view)
-	c.Check(Address(subAddr).GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(Address(subAddr).GetNetwork(XMRChain), Equals, CurrentChainNetwork)
 
 	featuredAddr := makeTestXMRFeaturedAddr(
 		xmrFeaturedMainnetNetworkByte,
@@ -259,7 +266,7 @@ func (s *XMRAddressSuite) TestXMRGetNetwork(c *C) {
 		xmrFeaturedSubaddressBit|xmrFeaturedGuaranteedBit,
 		nil,
 	)
-	c.Check(Address(featuredAddr).GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(Address(featuredAddr).GetNetwork(XMRChain), Equals, CurrentChainNetwork)
 }
 
 func (s *XMRAddressSuite) TestXMRFeaturedNetworkByteGating(c *C) {
@@ -295,7 +302,7 @@ func (s *XMRAddressSuite) TestXMRFeaturedNetworkByteGating(c *C) {
 		nil,
 	)
 	addr = Address(featuredMainnet)
-	c.Check(addr.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(addr.GetNetwork(XMRChain), Equals, CurrentChainNetwork)
 	c.Check(XMRChain.IsValidAddress(addr), Equals, true)
 
 	featuredGuaranteedOnly := makeTestXMRFeaturedAddr(
@@ -306,7 +313,7 @@ func (s *XMRAddressSuite) TestXMRFeaturedNetworkByteGating(c *C) {
 		nil,
 	)
 	addr = Address(featuredGuaranteedOnly)
-	c.Check(addr.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(addr.GetNetwork(XMRChain), Equals, CurrentChainNetwork)
 	c.Check(XMRChain.IsValidAddress(addr), Equals, true)
 }
 
@@ -426,5 +433,5 @@ func (s *XMRAddressSuite) TestXMRIntegratedAddressNetwork(c *C) {
 	c.Check(len(intAddr), Equals, 106)
 	c.Check(intAddr[0], Equals, byte('4'))
 	addr := Address(intAddr)
-	c.Check(addr.GetNetwork(XMRChain) == MockNet, Equals, false)
+	c.Check(addr.GetNetwork(XMRChain), Equals, CurrentChainNetwork)
 }
