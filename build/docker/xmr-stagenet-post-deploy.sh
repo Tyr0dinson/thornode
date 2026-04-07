@@ -154,9 +154,9 @@ for i in $(seq 1 20); do
     echo "REMINDER: Export keyshares now!"
     # shellcheck disable=SC2016
     echo '  mkdir -p ~/frost-keyshares/xmr-stagenet/$(date +%Y%m%d)'
-    echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-1:/var/lib/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/dog.tar.gz"
-    echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-cat-1:/var/lib/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/cat.tar.gz"
-    echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-fox-1:/var/lib/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/fox.tar.gz"
+    echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-1:/home/serai/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/dog.tar.gz"
+    echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-cat-1:/home/serai/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/cat.tar.gz"
+    echo "  ssh root@\$(hostname -I | awk '{print \$1}') 'docker cp docker-xmr-frost-signer-fox-1:/home/serai/xmr-frost - | gzip' > ~/frost-keyshares/xmr-stagenet/\$(date +%Y%m%d)/fox.tar.gz"
     exit 0
   fi
 done

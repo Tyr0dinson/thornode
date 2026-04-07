@@ -99,7 +99,7 @@ x-frost-env: &frost-env
   XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
   XMR_FROST_DAEMON_DISABLE_TLS: "true"
-  XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
+  XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
   XMR_FROST_CHAIN_NETWORK: "chainnet"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
   XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
@@ -108,7 +108,7 @@ x-frost-env: &frost-env
   XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
 
 x-frost-healthcheck: &frost-healthcheck
-  test: ["CMD", "curl", "-sf", "http://localhost:8283/health"]
+  test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8283'"]
   interval: 5s
   timeout: 5s
   retries: 30
@@ -168,7 +168,7 @@ services:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
     volumes:
-      - xmr-frost-data:/var/lib/xmr-frost
+      - xmr-frost-data:/home/serai/xmr-frost
     ports:
       - "8283:8283"
     healthcheck: *frost-healthcheck
@@ -180,7 +180,7 @@ services:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
     volumes:
-      - xmr-frost-data-cat:/var/lib/xmr-frost
+      - xmr-frost-data-cat:/home/serai/xmr-frost
     ports: []
 
   xmr-frost-signer-fox:
@@ -189,7 +189,7 @@ services:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
     volumes:
-      - xmr-frost-data-fox:/var/lib/xmr-frost
+      - xmr-frost-data-fox:/home/serai/xmr-frost
     ports: []
 
   # ================================ THORNodes =====================================

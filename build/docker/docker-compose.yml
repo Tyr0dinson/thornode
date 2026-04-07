@@ -784,7 +784,7 @@ services:
     environment:
       XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
       XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
-      XMR_FROST_DATA_DIR: "/var/lib/xmr-frost"
+      XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
       XMR_FROST_CHAIN_NETWORK: "mocknet"
       XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
       XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
@@ -794,11 +794,11 @@ services:
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
       XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
     volumes:
-      - xmr-frost-data:/var/lib/xmr-frost
+      - xmr-frost-data:/home/serai/xmr-frost
     ports:
       - 8283:8283
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8283/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8283'"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -809,7 +809,7 @@ services:
     profiles:
       - mocknet-cluster
     volumes:
-      - xmr-frost-data-cat:/var/lib/xmr-frost
+      - xmr-frost-data-cat:/home/serai/xmr-frost
     ports: []
 
   xmr-frost-signer-fox:
@@ -817,7 +817,7 @@ services:
     profiles:
       - mocknet-cluster
     volumes:
-      - xmr-frost-data-fox:/var/lib/xmr-frost
+      - xmr-frost-data-fox:/home/serai/xmr-frost
     ports: []
 
   xmr-frost-signer-pig:
@@ -825,7 +825,7 @@ services:
     profiles:
       - mocknet-cluster
     volumes:
-      - xmr-frost-data-pig:/var/lib/xmr-frost
+      - xmr-frost-data-pig:/home/serai/xmr-frost
     ports: []
 
   xmr-sim-helper:
@@ -844,7 +844,7 @@ services:
     environment:
       XMR_FROST_LISTEN_ADDR: "0.0.0.0:8284"
       XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
-      XMR_FROST_DATA_DIR: "/var/lib/xmr-sim"
+      XMR_FROST_DATA_DIR: "/home/serai/xmr-sim"
       XMR_FROST_CHAIN_NETWORK: "mocknet"
       XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
       XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
@@ -856,11 +856,11 @@ services:
       XMR_SIM_HELPER_ENABLED: "true"
       XMR_SIM_HELPER_WALLET_RPC_URL: "http://monero-wallet-rpc:18082"
     volumes:
-      - xmr-sim-data:/var/lib/xmr-sim
+      - xmr-sim-data:/home/serai/xmr-sim
     ports:
       - 8284:8284
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8284/health"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8284'"]
       interval: 5s
       timeout: 5s
       retries: 30
