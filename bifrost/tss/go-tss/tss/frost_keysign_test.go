@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
@@ -351,7 +353,7 @@ func TestFrostWaitForResultRejectsConflictingSuccessPayloads(t *testing.T) {
 	}
 }
 
-func TestFrostWaitForResultRejectsPeerBindingMismatch(t *testing.T) {
+func TestFrostWaitForResultSkipsPeerBindingMismatch(t *testing.T) {
 	ensureBech32Prefix()
 
 	msgChan := make(chan *p2p.Message, 1)
@@ -360,7 +362,8 @@ func TestFrostWaitForResultRejectsPeerBindingMismatch(t *testing.T) {
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
 		msgChan:          msgChan,
-		timeout:          time.Second,
+		timeout:          100 * time.Millisecond,
+		logger:           zerolog.Nop(),
 	}
 
 	senderPubKey := testPubKeys[1]
@@ -369,19 +372,13 @@ func TestFrostWaitForResultRejectsPeerBindingMismatch(t *testing.T) {
 		Response:     mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('e'), "deadbeef", 10),
 	})
 
-	resp, err := coord.WaitForResult([]string{testPubKeys[0], senderPubKey, testPubKeys[2]}, 2, time.Second)
-	if err != nil {
-		t.Fatalf("wait for result: %v", err)
-	}
-	if resp.Status != tcommon.Fail {
-		t.Fatalf("expected fail status, got %d", resp.Status)
-	}
-	if len(resp.Blame.BlameNodes) != 1 || resp.Blame.BlameNodes[0].Pubkey != senderPubKey {
-		t.Fatalf("expected sender pubkey blame node, got %+v", resp.Blame.BlameNodes)
+	_, err := coord.WaitForResult([]string{testPubKeys[0], senderPubKey, testPubKeys[2]}, 2, 100*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("expected timeout after skipping invalid message, got: %v", err)
 	}
 }
 
-func TestFrostWaitForResultRejectsSenderOutsideActiveSet(t *testing.T) {
+func TestFrostWaitForResultSkipsSenderOutsideActiveSet(t *testing.T) {
 	ensureBech32Prefix()
 
 	msgChan := make(chan *p2p.Message, 1)
@@ -390,7 +387,8 @@ func TestFrostWaitForResultRejectsSenderOutsideActiveSet(t *testing.T) {
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
 		msgChan:          msgChan,
-		timeout:          time.Second,
+		timeout:          100 * time.Millisecond,
+		logger:           zerolog.Nop(),
 	}
 
 	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[3], testPubKeys[3], FrostResultPayload{
@@ -398,15 +396,9 @@ func TestFrostWaitForResultRejectsSenderOutsideActiveSet(t *testing.T) {
 		Response:     mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('f'), "deadbeef", 10),
 	})
 
-	resp, err := coord.WaitForResult([]string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}, 2, time.Second)
-	if err != nil {
-		t.Fatalf("wait for result: %v", err)
-	}
-	if resp.Status != tcommon.Fail {
-		t.Fatalf("expected fail status, got %d", resp.Status)
-	}
-	if len(resp.Blame.BlameNodes) != 1 || resp.Blame.BlameNodes[0].Pubkey != testPubKeys[3] {
-		t.Fatalf("expected out-of-set sender blame node, got %+v", resp.Blame.BlameNodes)
+	_, err := coord.WaitForResult([]string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}, 2, 100*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("expected timeout after skipping invalid message, got: %v", err)
 	}
 }
 

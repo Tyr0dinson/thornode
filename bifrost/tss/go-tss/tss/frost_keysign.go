@@ -871,21 +871,21 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 			}
 			var payload FrostResultPayload
 			if err := json.Unmarshal(wrapped.Payload, &payload); err != nil {
-				resp := c.failForMalformed(msg.PeerID, "invalid frost result payload", frostRoundResult)
-				return resp, nil
+				c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("skipping malformed frost result payload")
+				continue
 			}
 			senderNorm := normalizePubKey(payload.SenderPubKey)
 			if senderNorm == "" {
-				resp := c.failForMalformed(msg.PeerID, "empty sender pubkey in frost result", frostRoundResult)
-				return resp, nil
+				c.logger.Warn().Str("peer", msg.PeerID.String()).Msg("skipping frost result with empty sender pubkey")
+				continue
 			}
 			if _, ok := activeByNormalized[senderNorm]; !ok {
-				resp := c.failForPubKeys("result sender is not in active signer set", frostRoundResult, []string{payload.SenderPubKey})
-				return resp, nil
+				c.logger.Warn().Str("sender", payload.SenderPubKey).Msg("skipping frost result from non-active signer")
+				continue
 			}
 			if err := c.validateSenderPeerBinding(msg.PeerID, payload.SenderPubKey); err != nil {
-				resp := c.failForPubKeys(err.Error(), frostRoundResult, []string{payload.SenderPubKey})
-				return resp, nil
+				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping frost result with peer binding mismatch")
+				continue
 			}
 
 			normalized, matchKey, err := normalizeResultPayload(payload.Response, c.msgID, c.expectedPlanHash)
