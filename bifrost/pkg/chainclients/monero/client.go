@@ -1698,9 +1698,14 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get monero wallet balance for %s: %w", address, err)
 	}
-	// Account/solvency reporting must reflect what can actually be spent, not
-	// the wallet's total tracked balance including locked or reserved outputs.
-	amount := cosmos.NewUint(spendableBalanceAtomic(balance) / moneroAtomicToThorchain)
+	// Account reporting (used by solvency comparison vs thornode's vault.coins)
+	// must use the TOTAL on-chain balance — locked + unlocked. Locked outputs
+	// (those in the 10-conf maturity window) DO exist on chain and must count
+	// toward the wallet's view of "what we own", otherwise every fresh inbound
+	// triggers a false-positive insolvency report during normal operation.
+	// Spendability for sign-time input selection is a separate concern handled
+	// by ensureXMRVaultBalance which uses spendableBalanceAtomic.
+	amount := cosmos.NewUint(balance.Balance / moneroAtomicToThorchain)
 	return common.Account{
 		Sequence:      0,
 		AccountNumber: 0,
