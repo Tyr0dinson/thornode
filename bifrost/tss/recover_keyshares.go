@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
@@ -77,7 +78,8 @@ func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge)
 	var vaultEddsa common.PubKey
 	cdc := thorclient.MakeCodec()
 	dec := ebifrost.TxDecoder(cdc, tx.DefaultTxDecoder(cdc))
-	for i := lastVaultHeight; i > lastVaultHeight-conf.TSS.MaxKeyshareRecoverScanBlocks; i-- {
+	scanLowerBound := recoverScanLowerBound(lastVaultHeight, conf.TSS.MaxKeyshareRecoverScanBlocks)
+	for i := lastVaultHeight; i > scanLowerBound; i-- {
 		if i%1000 == 0 {
 			log.Info().Msgf("scanning block %d for TssPool message to recover key shares", i)
 		}
@@ -113,25 +115,23 @@ func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge)
 		}
 	}
 
+	if keysharesEncBytes == nil {
+		return fmt.Errorf(
+			"TssPool message from %s not found within %d blocks of vault height %d",
+			na.NodeAddress,
+			conf.TSS.MaxKeyshareRecoverScanBlocks,
+			lastVaultHeight,
+		)
+	}
+
 finish:
-	// open ecdsa key shares file
-	f, err := os.OpenFile(keysharesPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	seedPhrase, err := recoverySeedPhrase()
 	if err != nil {
-		return fmt.Errorf("failed to open keyshares file: %w", err)
+		return err
 	}
-	defer f.Close()
 
-	seedPhrase := os.Getenv("SIGNER_SEED_PHRASE")
-
-	// decrypt and decompress into place
-	var decrypted []byte
-	decrypted, err = DecryptKeyshares(keysharesEncBytes, seedPhrase)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt key shares: %w", err)
-	}
-	cmpDec := lzma.NewReader(bytes.NewReader(decrypted))
-	if _, err = io.Copy(f, cmpDec); err != nil {
-		return fmt.Errorf("failed to decompress key shares: %w", err)
+	if err = writeRecoveredDecompressedKeyshares(keysharesPath, keysharesEncBytes, seedPhrase); err != nil {
+		return fmt.Errorf("failed to recover ecdsa key shares: %w", err)
 	}
 
 	// success
@@ -158,21 +158,8 @@ finish:
 		return nil
 	}
 
-	// open eddsa key shares file
-	f, err = os.OpenFile(keysharesPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to open keyshares file: %w", err)
-	}
-	defer f.Close()
-
-	// decrypt and decompress into place
-	decrypted, err = DecryptKeyshares(keysharesEncBytesEddsa, seedPhrase)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt key shares: %w", err)
-	}
-	cmpDec = lzma.NewReader(bytes.NewReader(decrypted))
-	if _, err = io.Copy(f, cmpDec); err != nil {
-		return fmt.Errorf("failed to decompress key shares: %w", err)
+	if err = writeRecoveredDecompressedKeyshares(keysharesPath, keysharesEncBytesEddsa, seedPhrase); err != nil {
+		return fmt.Errorf("failed to recover eddsa key shares: %w", err)
 	}
 
 	// success
@@ -184,19 +171,99 @@ finish:
 	if len(keysharesEncBytesFrost) > 0 && !vaultEddsa.IsEmpty() {
 		frostRecoveryPath := filepath.Join(app.DefaultNodeHome, fmt.Sprintf("frost-recovery-%s.hex", vaultEddsa))
 		if _, statErr := os.Stat(frostRecoveryPath); os.IsNotExist(statErr) {
-			rawKeyHex, frostErr := DecryptRawKeyshares(keysharesEncBytesFrost, seedPhrase)
+			frostErr := writeRecoveredRawKeyshares(frostRecoveryPath, keysharesEncBytesFrost, seedPhrase)
 			if frostErr != nil {
-				log.Error().Err(frostErr).Msg("failed to decrypt frost keyshare backup")
+				log.Error().Err(frostErr).Str("path", frostRecoveryPath).Msg("failed to recover frost keyshare backup")
 			} else {
-				frostErr = os.WriteFile(frostRecoveryPath, rawKeyHex, 0o600)
-				if frostErr != nil {
-					log.Error().Err(frostErr).Str("path", frostRecoveryPath).Msg("failed to write frost recovery file")
-				} else {
-					log.Info().Str("path", frostRecoveryPath).Msgf("recovered frost key shares for %s", vaultEddsa)
-				}
+				log.Info().Str("path", frostRecoveryPath).Msgf("recovered frost key shares for %s", vaultEddsa)
 			}
 		}
 	}
 
+	return nil
+}
+
+func recoverScanLowerBound(lastVaultHeight, maxScanBlocks int64) int64 {
+	if lastVaultHeight <= 0 {
+		return 0
+	}
+	lowerBound := lastVaultHeight - maxScanBlocks
+	if lowerBound < 0 {
+		return 0
+	}
+	return lowerBound
+}
+
+func recoverySeedPhrase() (string, error) {
+	seedPhrase := strings.TrimSpace(os.Getenv("SIGNER_SEED_PHRASE"))
+	if seedPhrase == "" {
+		return "", fmt.Errorf("SIGNER_SEED_PHRASE environment variable is not set")
+	}
+	return seedPhrase, nil
+}
+
+func writeRecoveredDecompressedKeyshares(path string, encrypted []byte, seedPhrase string) error {
+	if len(encrypted) == 0 {
+		return fmt.Errorf("encrypted key shares backup is empty")
+	}
+
+	decrypted, err := DecryptKeyshares(encrypted, seedPhrase)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt key shares: %w", err)
+	}
+
+	rawKeyshares, err := io.ReadAll(lzma.NewReader(bytes.NewReader(decrypted)))
+	if err != nil {
+		return fmt.Errorf("failed to decompress key shares: %w", err)
+	}
+
+	return writeRecoveredBytes(path, rawKeyshares)
+}
+
+func writeRecoveredRawKeyshares(path string, encrypted []byte, seedPhrase string) error {
+	if len(encrypted) == 0 {
+		return fmt.Errorf("encrypted raw key shares backup is empty")
+	}
+
+	rawKeyshares, err := DecryptRawKeyshares(encrypted, seedPhrase)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt raw key shares: %w", err)
+	}
+
+	return writeRecoveredBytes(path, rawKeyshares)
+}
+
+func writeRecoveredBytes(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to open recovery temp file: %w", err)
+	}
+
+	tmpPath := tmp.Name()
+	success := false
+	defer func() {
+		_ = tmp.Close()
+		if !success {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		return fmt.Errorf("failed to set recovery temp file permissions: %w", err)
+	}
+
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("failed to write recovery temp file: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close recovery temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("failed to move recovery file into place: %w", err)
+	}
+
+	success = true
 	return nil
 }
