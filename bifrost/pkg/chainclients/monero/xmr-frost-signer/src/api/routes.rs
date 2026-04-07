@@ -2235,10 +2235,15 @@ pub async fn import_transfers(
             fee: r.fee,
             memo: r.memo.clone(),
             planned_height: r.planned_height,
-            observed_height: None,
-            status: "signed_pending_observation".to_string(),
+            // Set as already-mined so get_transfers's status="mined" filter
+            // includes us on the next bifrost scan. observed_height = planned
+            // height makes the record appear in scanner_sync responses for
+            // that specific block. Without this, the record sits in sled
+            // unread.
+            observed_height: Some(r.planned_height),
+            status: "mined".to_string(),
             broadcasted_at: Some(now_ts),
-            observed_at: None,
+            observed_at: Some(now_ts),
             created_at: now_ts,
         };
         if let Err(e) = state.store.save_outgoing_transfer(&record) {
