@@ -164,6 +164,8 @@ pub struct OutgoingTransferRecord {
     pub tx_hash: String,
     pub tx_hex: String,
     pub msg_id: String,
+    #[serde(default)]
+    pub recipient_index: u32,
     pub vault_pub_key: String,
     pub from_address: String,
     pub to_address: String,
@@ -602,21 +604,18 @@ impl Store {
             anyhow::bail!("outgoing transfer status must not be empty");
         }
         let tree = self.db.open_tree("outgoing_transfers")?;
-        // Key format: {vault}:{tx_hash}:{to_address}:{amount}. The amount
-        // suffix is REQUIRED because multiple recipients of a batched
-        // multi-recipient Monero tx can target the same to_address (very
-        // common when the operator routes many small swaps to a single
-        // user wallet). Without amount in the key, sibling records still
-        // overwrite each other. With it, each recipient gets a unique row
-        // even when they share both tx_hash and address.
-        // (Two recipients of the EXACT same amount to the same address in
-        // the same batch is extremely unlikely in practice; if it ever
-        // happens, the latter still overwrites the former — that's an
-        // accepted limitation since the two payments are economically
-        // identical.)
+        // Key format: {vault}:{tx_hash}:{to_address}:{amount}:{recipient_index}.
+        // recipient_index is the per-recipient tiebreaker for batched
+        // multi-recipient Monero txs, including cases where siblings share
+        // both address and amount. Prefix scans by {vault}:{tx_hash}: still
+        // catch every sibling row for status updates and observation replay.
         let key = format!(
-            "{}:{}:{}:{}",
-            record.vault_pub_key, record.tx_hash, record.to_address, record.amount
+            "{}:{}:{}:{}:{}",
+            record.vault_pub_key,
+            record.tx_hash,
+            record.to_address,
+            record.amount,
+            record.recipient_index,
         );
         let value = serde_json::to_vec(record)?;
         tree.insert(key.as_bytes(), value)?;
@@ -1330,7 +1329,6 @@ impl Store {
         Ok(to_delete.len())
     }
 
-
     /// Save the last scanned height for a vault.
     pub fn save_scan_height(&self, vault_pub_key: &str, height: u64) -> Result<()> {
         let tree = self.db.open_tree("scan_heights")?;
@@ -1503,6 +1501,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             msg_id: "msg1".to_string(),
+            recipient_index: 0,
             vault_pub_key: "thorpub1vault".to_string(),
             from_address: "48from".to_string(),
             to_address: "48to".to_string(),
@@ -1531,8 +1530,8 @@ mod tests {
     /// thornode only observed 1 of N recipients per broadcast, leaving N-1
     /// scheduled outbounds queued forever and the vault accounting drifting
     /// by the unobserved amounts. The fix uses
-    /// `{vault}:{tx_hash}:{to_address}:{amount}` so each recipient has a
-    /// unique key.
+    /// `{vault}:{tx_hash}:{to_address}:{amount}:{recipient_index}` so each
+    /// recipient has a unique key even when siblings share address+amount.
     #[test]
     fn outgoing_transfer_batched_recipients_all_persist() {
         let dir = tempfile::tempdir().unwrap();
@@ -1553,6 +1552,7 @@ mod tests {
                 tx_hash: tx_hash.to_string(),
                 tx_hex: "deadbeef".to_string(),
                 msg_id: format!("msg-{}", i),
+                recipient_index: i as u32,
                 vault_pub_key: vault.to_string(),
                 from_address: from.to_string(),
                 to_address: to.clone(),
@@ -1578,8 +1578,7 @@ mod tests {
         );
 
         // Verify every recipient + amount round-trips correctly.
-        let mut seen: std::collections::HashSet<(String, u64)> =
-            std::collections::HashSet::new();
+        let mut seen: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
         for record in &loaded {
             assert_eq!(record.tx_hash, tx_hash);
             assert_eq!(record.vault_pub_key, vault);
@@ -1598,7 +1597,47 @@ mod tests {
         // tx — it's a "first match" lookup. Callers wanting all rows must use
         // load_outgoing_transfers (plural).
         let single = store.load_outgoing_transfer(vault, tx_hash).unwrap();
-        assert!(single.is_some(), "singular lookup must return at least one row");
+        assert!(
+            single.is_some(),
+            "singular lookup must return at least one row"
+        );
+    }
+
+    #[test]
+    fn outgoing_transfer_same_address_same_amount_siblings_use_recipient_index_tiebreaker() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        let vault = "thorpub1vaultdupe";
+        let tx_hash = "batched_dupe_tx";
+        let to = "48sameaddress";
+
+        for i in 0..2 {
+            let record = OutgoingTransferRecord {
+                tx_hash: tx_hash.to_string(),
+                tx_hex: "deadbeef".to_string(),
+                msg_id: "shared-msg-id".to_string(),
+                recipient_index: i,
+                vault_pub_key: vault.to_string(),
+                from_address: "48from".to_string(),
+                to_address: to.to_string(),
+                amount: 777_000,
+                fee: 10,
+                memo: "OUT:shared".to_string(),
+                planned_height: 88,
+                observed_height: None,
+                status: "broadcasted".to_string(),
+                broadcasted_at: None,
+                observed_at: None,
+                created_at: 100 + i as i64,
+            };
+            store.save_outgoing_transfer(&record).unwrap();
+        }
+
+        let loaded = store.load_outgoing_transfers(vault).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].recipient_index, 0);
+        assert_eq!(loaded[1].recipient_index, 1);
     }
 
     /// Regression: when an outbound is broadcasted then mined, the
@@ -1619,6 +1658,7 @@ mod tests {
                 tx_hash: tx_hash.to_string(),
                 tx_hex: "ff".to_string(),
                 msg_id: format!("msg-{}", i),
+                recipient_index: i as u32,
                 vault_pub_key: vault.to_string(),
                 from_address: "48from".to_string(),
                 to_address: format!("48to_{}", i),

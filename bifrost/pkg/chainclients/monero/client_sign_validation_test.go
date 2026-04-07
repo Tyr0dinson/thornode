@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -294,6 +295,81 @@ func TestValidateXMRSignTxAcceptsValidRequest(t *testing.T) {
 	}
 	if req.amountAtomic == 0 || req.fromAddress == "" || req.toAddress == "" || req.vaultPubKey.IsEmpty() {
 		t.Fatalf("expected fully populated validated sign request")
+	}
+}
+
+func TestFilterAffordableXMRBatchEntriesKeepsCurrentAndTrimsOversizedSiblings(t *testing.T) {
+	t.Parallel()
+
+	siblingA := stypes.TxArrayItem{InHash: common.TxID("A")}
+	siblingB := stypes.TxArrayItem{InHash: common.TxID("B")}
+	entries := []xmrBatchEntry{
+		{
+			inHashUpper: "A",
+			recipient: tssp.FrostSidecarRecipient{
+				ToAddress:    "48a",
+				AmountAtomic: 2,
+			},
+			raw: &siblingA,
+		},
+		{
+			inHashUpper: "C",
+			recipient: tssp.FrostSidecarRecipient{
+				ToAddress:    "48current",
+				AmountAtomic: 3,
+			},
+			isCurrent: true,
+		},
+		{
+			inHashUpper: "B",
+			recipient: tssp.FrostSidecarRecipient{
+				ToAddress:    "48b",
+				AmountAtomic: 4,
+			},
+			raw: &siblingB,
+		},
+	}
+
+	filtered := filterAffordableXMRBatchEntries(entries, 5)
+	if len(filtered) != 2 {
+		t.Fatalf("expected current plus one affordable sibling, got %d entries", len(filtered))
+	}
+	if filtered[0].recipient.ToAddress != "48a" {
+		t.Fatalf("expected earliest affordable sibling to survive trimming, got %s", filtered[0].recipient.ToAddress)
+	}
+	if !filtered[1].isCurrent {
+		t.Fatalf("expected current entry to remain in filtered batch")
+	}
+}
+
+func TestFilterAffordableXMRBatchEntriesFallsBackToHeadOnly(t *testing.T) {
+	t.Parallel()
+
+	entries := []xmrBatchEntry{
+		{
+			inHashUpper: "A",
+			recipient: tssp.FrostSidecarRecipient{
+				ToAddress:    "48sibling",
+				AmountAtomic: 4,
+			},
+			raw: &stypes.TxArrayItem{InHash: common.TxID("A")},
+		},
+		{
+			inHashUpper: "B",
+			recipient: tssp.FrostSidecarRecipient{
+				ToAddress:    "48current",
+				AmountAtomic: 3,
+			},
+			isCurrent: true,
+		},
+	}
+
+	filtered := filterAffordableXMRBatchEntries(entries, 3)
+	if len(filtered) != 1 {
+		t.Fatalf("expected head-only fallback, got %d entries", len(filtered))
+	}
+	if !filtered[0].isCurrent {
+		t.Fatalf("expected only current entry to remain after fallback")
 	}
 }
 

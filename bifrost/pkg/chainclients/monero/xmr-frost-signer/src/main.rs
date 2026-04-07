@@ -137,8 +137,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/monero/sign/prepare", post(api::routes::sign_prepare))
         .route("/v1/monero/sign/partial", post(api::routes::sign_partial))
         .route("/v1/monero/sign/combine", post(api::routes::sign_combine))
-        .route("/v1/monero/sessions/clear", post(api::routes::clear_sessions))
-        .route("/v1/monero/transfers/import", post(api::routes::import_transfers))
+        .route(
+            "/v1/monero/sessions/clear",
+            post(api::routes::clear_sessions),
+        )
+        .route(
+            "/v1/monero/transfers/import",
+            post(api::routes::import_transfers),
+        )
         .route("/v1/monero/broadcast", post(api::routes::broadcast))
         // Scanner / Balance
         .route(REGISTER_VAULT_ROUTE, post(api::routes::register_vault))

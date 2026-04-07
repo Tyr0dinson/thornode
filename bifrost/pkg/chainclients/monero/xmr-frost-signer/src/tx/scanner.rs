@@ -4,8 +4,7 @@ use anyhow::{Context, Result};
 use monero_wallet::{
     address::{Network, SubaddressIndex},
     rpc::ScannableBlock,
-    Scanner as StandardWalletScanner, Timelocked,
-    WalletOutput,
+    Scanner as StandardWalletScanner, Timelocked, WalletOutput,
 };
 use tracing::{debug, info};
 
@@ -55,7 +54,6 @@ struct VaultScanState {
     last_height: u64,
     addresses: VaultAddresses,
 }
-
 
 #[derive(Clone)]
 struct VaultAddresses {
@@ -113,26 +111,22 @@ impl Scanner {
         outputs: Vec<TrackedOutput>,
         last_height: Option<u64>,
     ) -> Result<()> {
-        let view_pair =
-            xmr::view_pair_from_group_key_hex(group_key).with_context(|| {
-                format!(
-                    "failed to derive scanner view pair for vault {}",
-                    vault_pub_key
-                )
-            })?;
+        let view_pair = xmr::view_pair_from_group_key_hex(group_key).with_context(|| {
+            format!(
+                "failed to derive scanner view pair for vault {}",
+                vault_pub_key
+            )
+        })?;
         let base_address = xmr::derive_vault_address(group_key, chain_network)?;
-        let branch_address =
-            SubaddressIndex::new(subaddress::BRANCH.0, subaddress::BRANCH.1)
-                .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
-                .unwrap_or_else(|| base_address.clone());
-        let change_address =
-            SubaddressIndex::new(subaddress::CHANGE.0, subaddress::CHANGE.1)
-                .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
-                .unwrap_or_else(|| base_address.clone());
-        let forward_address =
-            SubaddressIndex::new(subaddress::FORWARD.0, subaddress::FORWARD.1)
-                .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
-                .unwrap_or_else(|| base_address.clone());
+        let branch_address = SubaddressIndex::new(subaddress::BRANCH.0, subaddress::BRANCH.1)
+            .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
+            .unwrap_or_else(|| base_address.clone());
+        let change_address = SubaddressIndex::new(subaddress::CHANGE.0, subaddress::CHANGE.1)
+            .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
+            .unwrap_or_else(|| base_address.clone());
+        let forward_address = SubaddressIndex::new(subaddress::FORWARD.0, subaddress::FORWARD.1)
+            .map(|index| view_pair.subaddress(Network::Mainnet, index).to_string())
+            .unwrap_or_else(|| base_address.clone());
         let mut wallet_scanner = StandardWalletScanner::new(view_pair);
         let addresses = VaultAddresses::new(
             base_address,

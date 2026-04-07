@@ -6,7 +6,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func TestUnknownSenderAddress(t *testing.T) {
@@ -120,5 +122,32 @@ func TestResolveOutgoingSenderRejectsSenderVaultMismatch(t *testing.T) {
 	})
 	if sender != "" || !pk.IsEmpty() {
 		t.Fatalf("expected sender/vault mismatch to fail closed, got sender=%q pk=%s", sender, pk.String())
+	}
+}
+
+func TestDedupeTxInItemsByTxIDKeepsDistinctRecipientsByAmountOrMemo(t *testing.T) {
+	pk := common.PubKey("thorpub1testvault")
+	newItem := func(amount uint64, memo string) *stypes.TxInItem {
+		return &stypes.TxInItem{
+			Tx:                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Memo:                memo,
+			Sender:              "48from",
+			To:                  "48to",
+			Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(amount))),
+			Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			ObservedVaultPubKey: pk,
+		}
+	}
+
+	s := &Scanner{}
+	items := []*stypes.TxInItem{
+		newItem(10, ""),
+		newItem(20, ""),
+		newItem(20, "OUT:distinct"),
+	}
+
+	deduped := s.dedupeTxInItemsByTxID(items)
+	if len(deduped) != 3 {
+		t.Fatalf("expected 3 distinct observations to survive dedupe, got %d", len(deduped))
 	}
 }

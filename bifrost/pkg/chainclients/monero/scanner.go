@@ -984,6 +984,8 @@ func txInItemObservationKey(item *stypes.TxInItem) string {
 		strings.TrimSpace(item.Sender),
 		strings.TrimSpace(item.To),
 		item.ObservedVaultPubKey.String(),
+		item.Coins.String(),
+		strings.TrimSpace(item.Memo),
 	}, "|")
 }
 
@@ -1034,4 +1036,3 @@ func isFrostScannerHashMismatchErr(err error) bool {
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "scanner sync hash mismatch")
 }
-

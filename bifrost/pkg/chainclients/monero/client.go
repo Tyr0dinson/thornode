@@ -89,6 +89,13 @@ type xmrValidatedSignRequest struct {
 	amountAtomic uint64
 }
 
+type xmrBatchEntry struct {
+	inHashUpper string
+	recipient   tssp.FrostSidecarRecipient
+	raw         *stypes.TxArrayItem
+	isCurrent   bool
+}
+
 type xmrConsolidationSettings struct {
 	Enabled             bool
 	CheckIntervalBlocks int64
@@ -1098,7 +1105,24 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	// deterministic recipients list. All 3 nodes query the same THORChain
 	// state at the same scheduled height, so they all compute the same
 	// sorted batch and join the same FROST sign session.
-	batchedRecipients, batchedSiblings := c.discoverXMRBatchedRecipients(tx, signReqCtx, height)
+	batchEntries := c.discoverXMRBatchedRecipients(tx, signReqCtx, height)
+	if len(batchEntries) > 1 {
+		spendableBudget, _, budgetErr := c.xmrSpendableBudget(signReqCtx.vaultPubKey, tx.MaxGas)
+		if budgetErr != nil {
+			return nil, nil, nil, budgetErr
+		}
+		filtered := filterAffordableXMRBatchEntries(batchEntries, spendableBudget)
+		if len(filtered) < len(batchEntries) {
+			c.logger.Info().
+				Int("requested_recipients", len(batchEntries)).
+				Int("trimmed_recipients", len(filtered)).
+				Str("vault", signReqCtx.vaultPubKey.String()).
+				Uint64("spendable_budget_atomic", spendableBudget).
+				Msg("trimmed XMR batch to fit spendable balance")
+		}
+		batchEntries = filtered
+	}
+	batchedRecipients, batchedSiblings := xmrBatchRecipients(batchEntries)
 
 	frostReq := tssp.FrostKeySignRequest{
 		VaultPubKey:    signReqCtx.vaultPubKey.String(),
@@ -1225,11 +1249,11 @@ func (c *Client) discoverXMRBatchedRecipients(
 	currentTx stypes.TxOutItem,
 	signReqCtx xmrValidatedSignRequest,
 	height int64,
-) ([]tssp.FrostSidecarRecipient, []stypes.TxArrayItem) {
+) []xmrBatchEntry {
 	const maxBatchSize = 20
 
 	if c.thorchainBridge == nil {
-		return nil, nil
+		return nil
 	}
 
 	queue, err := c.thorchainBridge.GetOutboundQueue()
@@ -1237,7 +1261,7 @@ func (c *Client) discoverXMRBatchedRecipients(
 		c.logger.Debug().Err(err).
 			Str("vault", signReqCtx.vaultPubKey.String()).
 			Msg("fail to fetch outbound queue for batching; falling back to single-recipient")
-		return nil, nil
+		return nil
 	}
 
 	// The /thorchain/queue/outbound endpoint does not populate
@@ -1246,19 +1270,14 @@ func (c *Client) discoverXMRBatchedRecipients(
 	// the queue payload — equating siblings via FROST alone never matches.
 	currentEddsa := currentTx.VaultPubKeyEddsa
 	currentInHashStr := strings.ToUpper(currentTx.InHash.String())
-	type batchEntry struct {
-		inHashUpper string
-		toAddr      string
-		amount      uint64
-		raw         stypes.TxArrayItem
-		isCurrent   bool
-	}
-	entries := []batchEntry{
+	entries := []xmrBatchEntry{
 		{
 			inHashUpper: currentInHashStr,
-			toAddr:      signReqCtx.toAddress,
-			amount:      signReqCtx.amountAtomic,
-			isCurrent:   true,
+			recipient: tssp.FrostSidecarRecipient{
+				ToAddress:    signReqCtx.toAddress,
+				AmountAtomic: signReqCtx.amountAtomic,
+			},
+			isCurrent: true,
 		},
 	}
 
@@ -1302,16 +1321,19 @@ func (c *Client) discoverXMRBatchedRecipients(
 				Msg("skip sibling: amount conversion failed")
 			continue
 		}
-		entries = append(entries, batchEntry{
+		raw := item
+		entries = append(entries, xmrBatchEntry{
 			inHashUpper: itemInHash,
-			toAddr:      item.ToAddress.String(),
-			amount:      amountAtomic,
-			raw:         item,
+			recipient: tssp.FrostSidecarRecipient{
+				ToAddress:    item.ToAddress.String(),
+				AmountAtomic: amountAtomic,
+			},
+			raw: &raw,
 		})
 	}
 
 	if len(entries) <= 1 {
-		return nil, nil // no siblings — single-recipient legacy path
+		return nil // no siblings — single-recipient legacy path
 	}
 
 	// Deterministic sort by InHash ASC. All 3 nodes will produce the same
@@ -1325,18 +1347,63 @@ func (c *Client) discoverXMRBatchedRecipients(
 		entries = entries[:maxBatchSize]
 	}
 
+	return entries
+}
+
+func xmrBatchRecipients(entries []xmrBatchEntry) ([]tssp.FrostSidecarRecipient, []stypes.TxArrayItem) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	if len(entries) == 1 && entries[0].isCurrent {
+		return nil, nil
+	}
+
 	recipients := make([]tssp.FrostSidecarRecipient, 0, len(entries))
 	siblings := make([]stypes.TxArrayItem, 0, len(entries)-1)
-	for _, e := range entries {
-		recipients = append(recipients, tssp.FrostSidecarRecipient{
-			ToAddress:    e.toAddr,
-			AmountAtomic: e.amount,
-		})
-		if !e.isCurrent {
-			siblings = append(siblings, e.raw)
+	for _, entry := range entries {
+		recipients = append(recipients, entry.recipient)
+		if entry.raw != nil {
+			siblings = append(siblings, *entry.raw)
 		}
 	}
 	return recipients, siblings
+}
+
+func filterAffordableXMRBatchEntries(entries []xmrBatchEntry, spendableBudget uint64) []xmrBatchEntry {
+	if len(entries) <= 1 {
+		return entries
+	}
+
+	currentRequired := uint64(0)
+	for _, entry := range entries {
+		if entry.isCurrent {
+			currentRequired = entry.recipient.AmountAtomic
+			break
+		}
+	}
+	if currentRequired == 0 || currentRequired > spendableBudget {
+		for _, entry := range entries {
+			if entry.isCurrent {
+				return []xmrBatchEntry{entry}
+			}
+		}
+		return entries[:1]
+	}
+
+	remaining := spendableBudget - currentRequired
+	filtered := make([]xmrBatchEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.isCurrent {
+			filtered = append(filtered, entry)
+			continue
+		}
+		if entry.recipient.AmountAtomic > remaining {
+			continue
+		}
+		filtered = append(filtered, entry)
+		remaining -= entry.recipient.AmountAtomic
+	}
+	return filtered
 }
 
 func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, requireThorchainHeight bool) (xmrValidatedSignRequest, error) {
@@ -1414,36 +1481,22 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 }
 
 func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic uint64, maxGas common.Gas) error {
-	if c.frostSigner == nil {
-		return nil
-	}
-
-	if err := c.ensureFrostVaultRegistration(vaultPubKey); err != nil {
+	spendableBudget, balance, err := c.xmrSpendableBudget(vaultPubKey, maxGas)
+	if err != nil {
 		return err
 	}
-
-	balance, err := c.frostSigner.GetBalance(vaultPubKey.String())
-	if err != nil {
-		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
-	}
-	availableAtomic := spendableBalanceAtomic(balance)
-
-	maxGasAtomic, err := xmrMaxGasToAtomic(maxGas)
-	if err != nil {
-		return fmt.Errorf("fail to convert xmr max gas for balance guard: %w", err)
-	}
-
-	requiredAtomic := amountAtomic
-	if maxGasAtomic > 0 {
-		if requiredAtomic > (^uint64(0) - maxGasAtomic) {
+	if spendableBudget < amountAtomic {
+		totalAtomic := balance.Balance
+		availableAtomic := spendableBalanceAtomic(balance)
+		lockedAtomic := totalAtomic - availableAtomic
+		maxGasAtomic, gasErr := xmrMaxGasToAtomic(maxGas)
+		if gasErr != nil {
+			return fmt.Errorf("fail to convert xmr max gas for balance guard: %w", gasErr)
+		}
+		if amountAtomic > (^uint64(0) - maxGasAtomic) {
 			return fmt.Errorf("xmr outbound amount overflows uint64 when max gas is applied")
 		}
-		requiredAtomic += maxGasAtomic
-	}
-
-	if availableAtomic < requiredAtomic {
-		totalAtomic := balance.Balance
-		lockedAtomic := totalAtomic - availableAtomic
+		requiredAtomic := amountAtomic + maxGasAtomic
 		if lockedAtomic > 0 {
 			return fmt.Errorf(
 				"insufficient xmr balance for signing: available=%d required=%d (total=%d locked=%d, outputs may need 10 confirmations)",
@@ -1455,8 +1508,32 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 			availableAtomic, requiredAtomic, amountAtomic, maxGasAtomic,
 		)
 	}
-
 	return nil
+}
+
+func (c *Client) xmrSpendableBudget(vaultPubKey common.PubKey, maxGas common.Gas) (uint64, xmrFrostBalanceResponse, error) {
+	if c.frostSigner == nil {
+		return math.MaxUint64, xmrFrostBalanceResponse{}, nil
+	}
+
+	if err := c.ensureFrostVaultRegistration(vaultPubKey); err != nil {
+		return 0, xmrFrostBalanceResponse{}, err
+	}
+
+	balance, err := c.frostSigner.GetBalance(vaultPubKey.String())
+	if err != nil {
+		return 0, xmrFrostBalanceResponse{}, fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
+	}
+	availableAtomic := spendableBalanceAtomic(balance)
+
+	maxGasAtomic, err := xmrMaxGasToAtomic(maxGas)
+	if err != nil {
+		return 0, xmrFrostBalanceResponse{}, fmt.Errorf("fail to convert xmr max gas for balance guard: %w", err)
+	}
+	if availableAtomic < maxGasAtomic {
+		return 0, balance, nil
+	}
+	return availableAtomic - maxGasAtomic, balance, nil
 }
 
 func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {

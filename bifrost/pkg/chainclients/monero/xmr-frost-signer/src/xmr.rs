@@ -5,10 +5,7 @@ use curve25519_dalek::{
     scalar::clamp_integer,
     Scalar,
 };
-use monero_wallet::{
-    address::Network,
-    ViewPair,
-};
+use monero_wallet::{address::Network, ViewPair};
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
 

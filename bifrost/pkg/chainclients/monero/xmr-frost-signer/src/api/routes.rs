@@ -507,10 +507,13 @@ pub async fn dkg_finalize(
     {
         Ok(key_share_bytes) => (
             StatusCode::OK,
-            Json(serde_json::to_value(DkgFinalizeResponse {
-                success: true,
-                key_bytes_hex: hex::encode(&key_share_bytes),
-            }).unwrap()),
+            Json(
+                serde_json::to_value(DkgFinalizeResponse {
+                    success: true,
+                    key_bytes_hex: hex::encode(&key_share_bytes),
+                })
+                .unwrap(),
+            ),
         ),
         Err(e) => {
             error!(error = %e, "DKG finalize failed");
@@ -666,7 +669,12 @@ pub async fn sign_prepare(
             );
             if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale sign_prepare idempotency record");
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
             }
         }
         Ok(IdempotencyCheck::Conflict) => {
@@ -676,13 +684,21 @@ pub async fn sign_prepare(
             );
             if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale idempotency record");
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
             }
             match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
                 Ok(IdempotencyCheck::Fresh) => {}
                 other => {
                     error!(msg_id, result = ?other, "unexpected idempotency state after clear");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json("idempotency reset failed")));
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json("idempotency reset failed")),
+                    );
                 }
             }
         }
@@ -758,12 +774,16 @@ pub async fn sign_prepare(
         return (StatusCode::SERVICE_UNAVAILABLE, Json(response));
     }
 
-    let required_refs: Option<Vec<crate::state::store::OutputRef>> = req.required_inputs.as_ref().map(|inputs| {
-        inputs.iter().map(|i| crate::state::store::OutputRef {
-            tx_hash: i.tx_hash.clone(),
-            output_index: i.output_index,
-        }).collect()
-    });
+    let required_refs: Option<Vec<crate::state::store::OutputRef>> =
+        req.required_inputs.as_ref().map(|inputs| {
+            inputs
+                .iter()
+                .map(|i| crate::state::store::OutputRef {
+                    tx_hash: i.tx_hash.clone(),
+                    output_index: i.output_index,
+                })
+                .collect()
+        });
 
     // Resolve recipients: prefer the new `recipients` array (batched
     // multi-output) when present and non-empty. Fall back to the legacy
@@ -856,13 +876,21 @@ pub async fn sign_partial(
             );
             if let Err(e) = state.store.clear_idempotency("sign_partial", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale sign_partial idempotency record");
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
             }
             match check_idempotency(&state, "sign_partial", &msg_id, &payload_hashes) {
                 Ok(IdempotencyCheck::Fresh) => {}
                 other => {
                     error!(msg_id, result = ?other, "unexpected sign_partial idempotency state after clear");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json("idempotency reset failed")));
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json("idempotency reset failed")),
+                    );
                 }
             }
         }
@@ -945,13 +973,21 @@ pub async fn sign_combine(
             );
             if let Err(e) = state.store.clear_idempotency("sign_combine", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale sign_combine idempotency record");
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to clear stale idempotency: {e}"))));
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ))),
+                );
             }
             match check_idempotency(&state, "sign_combine", &msg_id, &payload_hashes) {
                 Ok(IdempotencyCheck::Fresh) => {}
                 other => {
                     error!(msg_id, result = ?other, "unexpected sign_combine idempotency state after clear");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json("idempotency reset failed")));
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json("idempotency reset failed")),
+                    );
                 }
             }
         }
@@ -1183,8 +1219,7 @@ pub async fn broadcast(
                                 .as_ref()
                                 .map(|txs| {
                                     txs.iter().any(|tx| {
-                                        tx.in_pool.unwrap_or(false)
-                                            || tx.block_height.is_some()
+                                        tx.in_pool.unwrap_or(false) || tx.block_height.is_some()
                                     })
                                 })
                                 .unwrap_or(false);
@@ -1640,7 +1675,9 @@ pub async fn scanner_sync(
                     }
                     // Persist after each block
                     let all_outputs = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
-                    let _ = state.store.merge_scanned_outputs(&vault.vault_pub_key, &all_outputs);
+                    let _ = state
+                        .store
+                        .merge_scanned_outputs(&vault.vault_pub_key, &all_outputs);
                     let _ = state.store.save_scan_height(&vault.vault_pub_key, h);
                 }
                 // Check if caught up
@@ -1652,11 +1689,16 @@ pub async fn scanner_sync(
                     .unwrap_or(0);
                 if new_height >= tip {
                     info!(vault = %vault.vault_pub_key, "rescan complete — caught up to chain tip");
-                    let _ = state.store.set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                    let _ =
+                        state
+                            .store
+                            .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
                 }
             } else {
                 info!(vault = %vault.vault_pub_key, "rescan complete — already at chain tip");
-                let _ = state.store.set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                let _ = state
+                    .store
+                    .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
             }
             // Skip normal scan for this vault during rescan
             continue;
@@ -1747,7 +1789,9 @@ pub async fn scanner_sync(
                     parent_hash: req.parent_hash.trim().to_string(),
                     added_outputs: existing_refs,
                 };
-                let _ = state.store.save_scan_block_meta(&vault.vault_pub_key, &synthesized);
+                let _ = state
+                    .store
+                    .save_scan_block_meta(&vault.vault_pub_key, &synthesized);
                 stored_meta = Some(synthesized);
             }
         }
@@ -2099,35 +2143,60 @@ pub async fn scanner_reset(
 ) -> impl IntoResponse {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(error_json("vault_pub_key is required")));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("vault_pub_key is required")),
+        );
     }
 
     let vault = match state.store.list_vaults() {
-        Ok(vaults) => vaults.into_iter().find(|v| v.vault_pub_key == vault_pub_key),
+        Ok(vaults) => vaults
+            .into_iter()
+            .find(|v| v.vault_pub_key == vault_pub_key),
         Err(e) => {
             error!(error = %e, "failed to list vaults for scanner reset");
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(e.to_string())),
+            );
         }
     };
     let vault = match vault {
         Some(v) => v,
-        None => return (StatusCode::NOT_FOUND, Json(error_json(format!("vault {} not found", vault_pub_key)))),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(error_json(format!("vault {} not found", vault_pub_key))),
+            )
+        }
     };
 
     if let Err(e) = state.store.save_outputs(&vault_pub_key, &[]) {
         error!(error = %e, vault = %vault_pub_key, "failed to clear outputs during scanner reset");
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
     }
 
-    if let Err(e) = state.store.rollback_scan_state_from_height(&vault_pub_key, 0) {
+    if let Err(e) = state
+        .store
+        .rollback_scan_state_from_height(&vault_pub_key, 0)
+    {
         error!(error = %e, vault = %vault_pub_key, "failed to rollback scan state during scanner reset");
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
     }
 
     let birthday = req.birthday_height;
     if let Err(e) = state.store.save_scan_height(&vault_pub_key, birthday) {
         error!(error = %e, vault = %vault_pub_key, birthday, "failed to set scan height during scanner reset");
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
     }
 
     if let Err(e) = state.scanner.lock().register_vault(
@@ -2138,13 +2207,19 @@ pub async fn scanner_reset(
         Some(birthday),
     ) {
         error!(error = %e, vault = %vault_pub_key, "failed to re-register vault during scanner reset");
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
     }
 
     // Set rescan flag so scanner_sync will self-scan from birthday
     if let Err(e) = state.store.set_vault_rescan(&vault_pub_key, true, birthday) {
         error!(error = %e, vault = %vault_pub_key, "failed to set rescan flag during scanner reset");
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e.to_string())));
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(e.to_string())),
+        );
     }
 
     info!(vault = %vault_pub_key, birthday, "scanner reset complete — rescan enabled from birthday");
@@ -2165,9 +2240,7 @@ pub async fn scanner_reset(
 /// sessions left behind by the previous bifrost lifecycle. Does NOT touch
 /// keyshares or sled state — only the in-memory session map + idempotency
 /// claims + inflight prepare counter. Returns the count of cleared sessions.
-pub async fn clear_sessions(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn clear_sessions(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let cleared = state.signer.clear_all_sessions();
     (
         StatusCode::OK,
@@ -2205,20 +2278,32 @@ pub async fn import_transfers(
 ) -> impl IntoResponse {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(error_json("vault_pub_key is required")));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("vault_pub_key is required")),
+        );
     }
     if req.records.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(error_json("records list is empty")));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("records list is empty")),
+        );
     }
 
     let now_ts = chrono::Utc::now().timestamp();
     let mut imported = 0usize;
-    for r in req.records.iter() {
+    for (idx, r) in req.records.iter().enumerate() {
         if r.tx_hash.trim().is_empty() {
-            return (StatusCode::BAD_REQUEST, Json(error_json("tx_hash is required")));
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json("tx_hash is required")),
+            );
         }
         if r.to_address.trim().is_empty() {
-            return (StatusCode::BAD_REQUEST, Json(error_json("to_address is required")));
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json("to_address is required")),
+            );
         }
         let record = crate::state::store::OutgoingTransferRecord {
             tx_hash: r.tx_hash.clone(),
@@ -2228,6 +2313,7 @@ pub async fn import_transfers(
             } else {
                 r.msg_id.clone()
             },
+            recipient_index: idx as u32,
             vault_pub_key: vault_pub_key.clone(),
             from_address: r.from_address.clone(),
             to_address: r.to_address.clone(),
@@ -2248,7 +2334,10 @@ pub async fn import_transfers(
         };
         if let Err(e) = state.store.save_outgoing_transfer(&record) {
             error!(error = %e, vault = %vault_pub_key, tx_hash = %r.tx_hash, "import_transfers: failed to save record");
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(format!("failed to save record: {e}"))));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!("failed to save record: {e}"))),
+            );
         }
         imported += 1;
     }
@@ -2469,9 +2558,8 @@ pub async fn mark_outputs_spent(
                         .txs
                         .as_ref()
                         .map(|txs| {
-                            txs.iter().any(|tx| {
-                                tx.in_pool.unwrap_or(false) || tx.block_height.is_some()
-                            })
+                            txs.iter()
+                                .any(|tx| tx.in_pool.unwrap_or(false) || tx.block_height.is_some())
                         })
                         .unwrap_or(false);
                     if hit {
@@ -2543,10 +2631,7 @@ pub async fn mark_outputs_spent(
     if let (Some(to_address), Some(amount), Some(fee)) =
         (req.to_address.as_deref(), req.amount, req.fee)
     {
-        let from_address = req
-            .from_address
-            .clone()
-            .unwrap_or_default();
+        let from_address = req.from_address.clone().unwrap_or_default();
         let memo = req.memo.clone().unwrap_or_default();
         let current_height = state.scanner.lock().current_height();
 
@@ -2554,6 +2639,7 @@ pub async fn mark_outputs_spent(
             tx_hash: tx_hash.clone(),
             tx_hex: String::new(),
             msg_id: format!("attestation:{tx_hash}"),
+            recipient_index: 0,
             vault_pub_key: vault_pub_key.clone(),
             from_address,
             to_address: to_address.to_string(),
@@ -2577,8 +2663,7 @@ pub async fn mark_outputs_spent(
         } else {
             info!(
                 vault = vault_pub_key,
-                tx_hash,
-                "created outgoing transfer record from attestation"
+                tx_hash, "created outgoing transfer record from attestation"
             );
         }
     }
@@ -2595,9 +2680,7 @@ pub async fn mark_outputs_spent(
     )
 }
 
-pub async fn list_vault_keys(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn list_vault_keys(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let vaults = match state.store.list_vaults() {
         Ok(v) => v,
         Err(e) => {
@@ -2653,15 +2736,19 @@ pub async fn key_export(
             Json(error_json("vault_pub_key is required")),
         );
     }
-    let frost_bytes = state.store.load_frost_keys(&vault_pub_key).ok().flatten()
+    let frost_bytes = state
+        .store
+        .load_frost_keys(&vault_pub_key)
+        .ok()
+        .flatten()
         .or_else(|| {
             // Try looking up by group_key if the vault_pub_key didn't match
-            state.store.list_vaults().ok()
-                .and_then(|vaults| {
-                    vaults.iter()
-                        .find(|v| v.vault_pub_key == vault_pub_key)
-                        .and_then(|v| state.store.load_frost_keys(&v.group_key).ok().flatten())
-                })
+            state.store.list_vaults().ok().and_then(|vaults| {
+                vaults
+                    .iter()
+                    .find(|v| v.vault_pub_key == vault_pub_key)
+                    .and_then(|v| state.store.load_frost_keys(&v.group_key).ok().flatten())
+            })
         });
     match frost_bytes {
         Some(raw_bytes) => (
@@ -2709,9 +2796,13 @@ pub async fn key_restore(
         }
     };
 
-    let save_key = state.store.list_vaults().ok()
+    let save_key = state
+        .store
+        .list_vaults()
+        .ok()
         .and_then(|vaults| {
-            vaults.iter()
+            vaults
+                .iter()
                 .find(|v| v.vault_pub_key == vault_pub_key)
                 .map(|v| v.group_key.clone())
         })
@@ -2735,12 +2826,14 @@ pub async fn key_restore(
         );
     }
 
-    info!(vault = vault_pub_key, save_key, "restored FROST keys from backup");
+    info!(
+        vault = vault_pub_key,
+        save_key, "restored FROST keys from backup"
+    );
     (
         StatusCode::OK,
         Json(
-            serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: true })
-                .unwrap(),
+            serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: true }).unwrap(),
         ),
     )
 }
@@ -3468,6 +3561,7 @@ mod tests {
             tx_hash: tx_hash.to_string(),
             tx_hex: "deadbeef".to_string(),
             msg_id: "msg-id".to_string(),
+            recipient_index: 0,
             vault_pub_key: vault_pub_key.to_string(),
             from_address: from.to_string(),
             to_address: to.to_string(),
@@ -3533,8 +3627,7 @@ mod tests {
     ) -> (Arc<AppState>, tempfile::TempDir, String) {
         let data_dir = tempfile::tempdir().expect("failed to create tempdir");
         let store = Arc::new(
-            crate::state::Store::open(data_dir.path())
-                .expect("failed to open test store"),
+            crate::state::Store::open(data_dir.path()).expect("failed to open test store"),
         );
         let mut scanner = Scanner::new();
         let vault_pub_key = "thorpub1vaulttest".to_string();
@@ -3592,8 +3685,7 @@ mod tests {
     fn chain_test_state(daemon_url: &str) -> (Arc<AppState>, TempDir) {
         let data_dir = tempfile::tempdir().expect("failed to create tempdir");
         let store = Arc::new(
-            crate::state::Store::open(data_dir.path())
-                .expect("failed to open test store"),
+            crate::state::Store::open(data_dir.path()).expect("failed to open test store"),
         );
         let daemon = DaemonClient::new(daemon_url, 1024 * 1024);
         let app_state = Arc::new(AppState {

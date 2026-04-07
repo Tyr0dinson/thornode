@@ -753,6 +753,7 @@ impl SignCoordinator {
                     tx_hash: tx_hash.clone(),
                     tx_hex: tx_hex.clone(),
                     msg_id: session_msg_id.clone(),
+                    recipient_index: idx as u32,
                     vault_pub_key: vault_pub_key.clone(),
                     from_address: from_address.clone(),
                     to_address: r.address.clone(),
