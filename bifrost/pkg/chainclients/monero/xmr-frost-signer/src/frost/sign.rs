@@ -1310,8 +1310,22 @@ mod tests {
             },
         );
 
+        let recipients = vec![builder::Recipient {
+            address: "48to".to_string(),
+            amount: 1,
+        }];
         let err = signer
-            .prepare("thorpub1vault", "48to", 1, "", None, "ctx", "msg-2", None, None, None)
+            .prepare(
+                "thorpub1vault",
+                &recipients,
+                "",
+                None,
+                "ctx",
+                "msg-2",
+                None,
+                None,
+                None,
+            )
             .await
             .unwrap_err();
         assert!(err.to_string().contains("capacity exceeded"));

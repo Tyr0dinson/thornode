@@ -3909,6 +3909,7 @@ mod tests {
             vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
             to_address: "44Affq5kSiGBoZ...".to_string(),
             amount_atomic: 42,
+            recipients: None,
             memo: Some("OUT:TEST".to_string()),
             fee_rate: Some(10),
             decoy_context: "ctx".to_string(),

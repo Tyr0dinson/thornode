@@ -1524,6 +1524,137 @@ mod tests {
         assert_eq!(loaded[0].from_address, "48from");
     }
 
+    /// Regression: a single Monero tx that pays N recipients (batched
+    /// multi-recipient outbound) must persist N distinct OutgoingTransferRecord
+    /// rows. The previous key format `{vault}:{tx_hash}` collided across
+    /// sibling recipients and silently overwrote all but the last. Result:
+    /// thornode only observed 1 of N recipients per broadcast, leaving N-1
+    /// scheduled outbounds queued forever and the vault accounting drifting
+    /// by the unobserved amounts. The fix uses
+    /// `{vault}:{tx_hash}:{to_address}:{amount}` so each recipient has a
+    /// unique key.
+    #[test]
+    fn outgoing_transfer_batched_recipients_all_persist() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        let vault = "thorpub1vaultbatch";
+        let tx_hash = "batched_tx_hash";
+        let from = "48fromvault";
+
+        // Simulate 14 sibling recipients of one batched Monero tx — same
+        // tx_hash, distinct (to_address, amount) pairs.
+        let recipients: Vec<(String, u64)> = (0..14)
+            .map(|i| (format!("48recipient_{:02}", i), 100_000 + i as u64))
+            .collect();
+
+        for (i, (to, amount)) in recipients.iter().enumerate() {
+            let record = OutgoingTransferRecord {
+                tx_hash: tx_hash.to_string(),
+                tx_hex: "deadbeef".to_string(),
+                msg_id: format!("msg-{}", i),
+                vault_pub_key: vault.to_string(),
+                from_address: from.to_string(),
+                to_address: to.clone(),
+                amount: *amount,
+                fee: 1000,
+                memo: format!("OUT:tx{}", i),
+                planned_height: 100,
+                observed_height: None,
+                status: "broadcasted".to_string(),
+                broadcasted_at: Some(1_000 + i as i64),
+                observed_at: None,
+                created_at: 1_000 + i as i64,
+            };
+            store.save_outgoing_transfer(&record).unwrap();
+        }
+
+        // All 14 must survive — none silently overwritten.
+        let loaded = store.load_outgoing_transfers(vault).unwrap();
+        assert_eq!(
+            loaded.len(),
+            14,
+            "all 14 sibling recipients must persist; the bug overwrote all but the last"
+        );
+
+        // Verify every recipient + amount round-trips correctly.
+        let mut seen: std::collections::HashSet<(String, u64)> =
+            std::collections::HashSet::new();
+        for record in &loaded {
+            assert_eq!(record.tx_hash, tx_hash);
+            assert_eq!(record.vault_pub_key, vault);
+            seen.insert((record.to_address.clone(), record.amount));
+        }
+        for (to, amount) in &recipients {
+            assert!(
+                seen.contains(&(to.clone(), *amount)),
+                "recipient {}:{} must be present in the loaded set",
+                to,
+                amount
+            );
+        }
+
+        // load_outgoing_transfer (singular) returns one of the rows for the
+        // tx — it's a "first match" lookup. Callers wanting all rows must use
+        // load_outgoing_transfers (plural).
+        let single = store.load_outgoing_transfer(vault, tx_hash).unwrap();
+        assert!(single.is_some(), "singular lookup must return at least one row");
+    }
+
+    /// Regression: when an outbound is broadcasted then mined, the
+    /// status/observed_height update must apply to ALL sibling recipient
+    /// rows of a batched tx, not just one. update_outgoing_transfer_status
+    /// uses a prefix scan over `{vault}:{tx_hash}:` so all per-recipient
+    /// rows for the same tx_hash get updated.
+    #[test]
+    fn outgoing_transfer_status_update_applies_to_all_recipients() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        let vault = "thorpub1vaultbatchupdate";
+        let tx_hash = "batched_update_tx";
+
+        for i in 0..5 {
+            let record = OutgoingTransferRecord {
+                tx_hash: tx_hash.to_string(),
+                tx_hex: "ff".to_string(),
+                msg_id: format!("msg-{}", i),
+                vault_pub_key: vault.to_string(),
+                from_address: "48from".to_string(),
+                to_address: format!("48to_{}", i),
+                amount: 100 + i as u64,
+                fee: 1,
+                memo: "OUT:abc".to_string(),
+                planned_height: 50,
+                observed_height: None,
+                status: "broadcasted".to_string(),
+                broadcasted_at: Some(10),
+                observed_at: None,
+                created_at: 10 + i as i64,
+            };
+            store.save_outgoing_transfer(&record).unwrap();
+        }
+
+        store
+            .update_outgoing_transfer_status(
+                vault,
+                tx_hash,
+                "observed_mined",
+                Some(75),
+                Some(80),
+                None,
+            )
+            .unwrap();
+
+        let loaded = store.load_outgoing_transfers(vault).unwrap();
+        assert_eq!(loaded.len(), 5);
+        for record in &loaded {
+            assert_eq!(record.status, "observed_mined");
+            assert_eq!(record.observed_height, Some(75));
+            assert_eq!(record.observed_at, Some(80));
+        }
+    }
+
     fn sample_idempotency_record(route: &str, msg_id: &str, created_at: i64) -> IdempotencyRecord {
         IdempotencyRecord {
             route: route.to_string(),
