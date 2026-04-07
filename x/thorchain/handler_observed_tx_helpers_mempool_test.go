@@ -1970,6 +1970,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestTimeoutRevertedMempoolSwapFin
 			FromAddress: fromAddr,
 			ToAddress:   GetRandomBTCAddress(),
 			Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+			Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(10_000))},
 			Memo:        fmt.Sprintf("=:ETH.ETH:%s", ethDestination),
 		},
 		ObservedPubKey: vault.PubKey,
@@ -2014,17 +2015,16 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestTimeoutRevertedMempoolSwapFin
 	updatedVoter.FinalisedHeight = ctx.BlockHeight()
 	mgr.Keeper().SetObservedTxInVoter(ctx, updatedVoter)
 
-	// Then process the real finalized inbound and make sure normal swap handling starts again.
+	// Then process the real finalized inbound and make sure normal finalized
+	// handling re-queues the swap toward the original ETH destination.
 	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, nas, NewInternalHandler(mgr), finalizedTx, updatedVoter, []cosmos.AccAddress{na.NodeAddress}, true)
 	c.Assert(err, IsNil)
-	postFinalVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	queuedSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
 	c.Assert(err, IsNil)
-	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
-	c.Assert(err, IsNil)
-	c.Check(len(postFinalVoter.Actions) > 0, Equals, true,
-		Commentf("confirmed inbound should repopulate actions for the real finalized swap after timeout rollback"))
-	c.Check(len(outItems) > 0, Equals, true,
-		Commentf("confirmed inbound should schedule real outbounds after timeout rollback"))
+	c.Check(queuedSwap.TargetAsset.Equals(common.ETHAsset), Equals, true,
+		Commentf("confirmed inbound should re-queue a BTC->ETH swap after timeout rollback"))
+	c.Check(queuedSwap.Destination.Equals(ethDestination), Equals, true,
+		Commentf("confirmed inbound should preserve the memo destination when it re-queues after timeout rollback"))
 }
 
 // TestRevertMempoolSwapAggregatesSplitExternalOutboundsByAsset verifies that
