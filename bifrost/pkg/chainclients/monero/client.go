@@ -1207,7 +1207,7 @@ func (c *Client) discoverXMRBatchedRecipients(
 	signReqCtx xmrValidatedSignRequest,
 	height int64,
 ) ([]tssp.FrostSidecarRecipient, []stypes.TxArrayItem) {
-	const maxBatchSize = 8
+	const maxBatchSize = 20
 
 	if c.thorchainBridge == nil {
 		return nil, nil
