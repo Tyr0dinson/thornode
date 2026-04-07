@@ -134,6 +134,10 @@ type AttestationGossip struct {
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx)
 	observerApplySpentOutputRefs      func(tx common.ObservedTx)
+	// applySpentRefsSem bounds concurrent calls to observerApplySpentOutputRefs
+	// so a slow or unresponsive sidecar cannot cause goroutine accumulation
+	// under sustained XMR outbound load.
+	applySpentRefsSem chan struct{}
 
 	cachedKeySignParties map[common.PubKey]cachedKeySignParty
 	cachedKeySignMu      sync.Mutex
@@ -218,6 +222,9 @@ func NewAttestationGossip(
 		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
 
 		batcher: batcher,
+
+		// Cap concurrent spent-refs sidecar calls so a slow sidecar can't leak goroutines.
+		applySpentRefsSem: make(chan struct{}, 16),
 	}
 	batcher.setActiveValGetter(s.getActiveValidators)
 	// Register event handlers
@@ -347,6 +354,27 @@ func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.Ob
 	s.observerApplySpentOutputRefs = fn
 }
 
+// applySpentRefsAsync invokes the spent-refs sidecar callback in a goroutine
+// bounded by applySpentRefsSem. If the semaphore is full (sidecar is slow or
+// hung), the call is dropped and logged — non-signing nodes will catch up via
+// the periodic catchupSpentOutputRefs runner.
+func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx) {
+	if s.observerApplySpentOutputRefs == nil {
+		return
+	}
+	select {
+	case s.applySpentRefsSem <- struct{}{}:
+		go func() {
+			defer func() { <-s.applySpentRefsSem }()
+			s.observerApplySpentOutputRefs(tx)
+		}()
+	default:
+		s.logger.Warn().
+			Str("tx_id", tx.Tx.ID.String()).
+			Msg("apply spent refs queue full, dropping (will be caught by periodic catchup)")
+	}
+}
+
 // Handle a committed quorum transaction event
 func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotification) {
 	s.logger.Debug().Msg("handling quorum tx committed event")
@@ -373,7 +401,7 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		!qtx.Inbound &&
 		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
 		len(qtx.ObsTx.SpentOutputRefs) > 0 {
-		go s.observerApplySpentOutputRefs(qtx.ObsTx)
+		s.applySpentRefsAsync(qtx.ObsTx)
 	}
 
 	k := txKey{

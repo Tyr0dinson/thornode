@@ -105,7 +105,7 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	// Apply XMR spent output refs outside the lock to avoid holding the
 	// mutex during a blocking HTTP call to the sidecar.
 	if applySpentRefs != nil && s.observerApplySpentOutputRefs != nil {
-		go s.observerApplySpentOutputRefs(*applySpentRefs)
+		s.applySpentRefsAsync(*applySpentRefs)
 	}
 
 	// Co-attest to XMR outbounds that this node did not sign. The sidecar
