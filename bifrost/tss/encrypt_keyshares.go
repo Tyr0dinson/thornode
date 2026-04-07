@@ -258,8 +258,12 @@ func DecryptRawKeyshares(encrypted []byte, passphrase string) ([]byte, error) {
 	return raw, nil
 }
 
-// EncryptKeyshares decrypts the provided encrypted keyshares using the passphrase.
+// DecryptKeyshares decrypts the provided encrypted keyshares using the passphrase.
 func DecryptKeyshares(encrypted []byte, passphrase string) ([]byte, error) {
+	if passphrase == "" {
+		return nil, errors.New("failed keyshare decrypt: passphrase is empty")
+	}
+
 	// decrypt third pass (twofish)
 	chaCha, err := chacha20poly1305.NewX(saltAndHash(passphrase, SaltChaCha))
 	if err != nil {
