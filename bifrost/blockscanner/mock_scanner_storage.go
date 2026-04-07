@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -78,7 +79,7 @@ func (mss *MockScannerStorage) PurgeFromHeight(height int64) (int, error) {
 	mss.store[ScanPosKey] = buf[:n]
 	var removed int
 	for key, val := range mss.store {
-		if len(key) > 21 && key[:21] == "block-process-status-" {
+		if strings.HasPrefix(key, blockStatusKeyPrefix) {
 			var item BlockStatusItem
 			if err := json.Unmarshal(val, &item); err == nil && item.Block.Height >= height {
 				delete(mss.store, key)
