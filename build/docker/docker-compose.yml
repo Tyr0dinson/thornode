@@ -776,7 +776,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:latest
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:boonew-xmr-wallet2-replay}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -837,7 +837,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:latest
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:boonew-xmr-wallet2-replay}
     restart: unless-stopped
     user: root
     entrypoint:
