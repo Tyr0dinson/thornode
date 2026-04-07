@@ -602,7 +602,15 @@ impl Store {
             anyhow::bail!("outgoing transfer status must not be empty");
         }
         let tree = self.db.open_tree("outgoing_transfers")?;
-        let key = format!("{}:{}", record.vault_pub_key, record.tx_hash);
+        // Key format: {vault}:{tx_hash}:{to_address}. Including the recipient
+        // address makes the key unique per output of a batched multi-recipient
+        // Monero tx (where N recipients share one tx_hash). Without this, the
+        // sibling records overwrite each other and only the last save survives,
+        // causing thornode to observe just one of N batched outbounds.
+        let key = format!(
+            "{}:{}:{}",
+            record.vault_pub_key, record.tx_hash, record.to_address
+        );
         let value = serde_json::to_vec(record)?;
         tree.insert(key.as_bytes(), value)?;
         tree.flush()?;
@@ -630,12 +638,16 @@ impl Store {
         tx_hash: &str,
     ) -> Result<Option<OutgoingTransferRecord>> {
         let tree = self.db.open_tree("outgoing_transfers")?;
-        let key = format!("{}:{}", vault_pub_key, tx_hash);
-        let Some(raw) = tree.get(key.as_bytes())? else {
-            return Ok(None);
-        };
-        let record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
-        Ok(Some(record))
+        // Prefix scan to find the first per-recipient row for this tx_hash.
+        // For batched multi-recipient txs there are N rows; this returns the
+        // first one — callers wanting all rows should use load_outgoing_transfers.
+        let prefix = format!("{}:{}:", vault_pub_key, tx_hash);
+        for item in tree.scan_prefix(prefix.as_bytes()) {
+            let (_, raw) = item?;
+            let record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
+            return Ok(Some(record));
+        }
+        Ok(None)
     }
 
     pub fn update_outgoing_transfer_status(
@@ -648,22 +660,32 @@ impl Store {
         broadcasted_at: Option<i64>,
     ) -> Result<()> {
         let tree = self.db.open_tree("outgoing_transfers")?;
-        let key = format!("{}:{}", vault_pub_key, tx_hash);
-        let Some(raw) = tree.get(key.as_bytes())? else {
+        // Prefix scan {vault}:{tx_hash}: catches every per-recipient row of
+        // a batched multi-recipient Monero tx. Update each one in place so
+        // a "broadcasted" / "observed" status applies to all siblings.
+        let prefix = format!("{}:{}:", vault_pub_key, tx_hash);
+        let mut to_write: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        for item in tree.scan_prefix(prefix.as_bytes()) {
+            let (key, raw) = item?;
+            let mut record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
+            record.status = status.to_string();
+            if observed_height.is_some() {
+                record.observed_height = observed_height;
+            }
+            if observed_at.is_some() {
+                record.observed_at = observed_at;
+            }
+            if broadcasted_at.is_some() {
+                record.broadcasted_at = broadcasted_at;
+            }
+            to_write.push((key.to_vec(), serde_json::to_vec(&record)?));
+        }
+        if to_write.is_empty() {
             return Ok(());
-        };
-        let mut record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
-        record.status = status.to_string();
-        if observed_height.is_some() {
-            record.observed_height = observed_height;
         }
-        if observed_at.is_some() {
-            record.observed_at = observed_at;
+        for (key, value) in to_write {
+            tree.insert(key, value)?;
         }
-        if broadcasted_at.is_some() {
-            record.broadcasted_at = broadcasted_at;
-        }
-        tree.insert(key.as_bytes(), serde_json::to_vec(&record)?)?;
         tree.flush()?;
         Ok(())
     }
