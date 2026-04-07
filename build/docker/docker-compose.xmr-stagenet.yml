@@ -138,6 +138,11 @@ services:
   xmr-frost-signer: &frost-signer
     image: registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:latest
     restart: unless-stopped
+    user: root
+    entrypoint:
+      - /bin/sh
+      - -c
+      - chown -R serai:serai /home/serai/xmr-frost && exec runuser -u serai -- /bin/service
     depends_on:
       monero-daemon:
         condition: service_healthy
