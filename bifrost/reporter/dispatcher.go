@@ -248,13 +248,30 @@ func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, hei
 		allMsgs = append(allMsgs, reportedMsgs...)
 	}
 	if len(allMsgs) > 0 {
+		// Use an explicit timer so the timeout can be cleaned up immediately when
+		// the batch is enqueued or shutdown wins the race.
+		timer := time.NewTimer(constants.ThorchainBlockTime)
+		defer func() {
+			// Stop the timer on the non-timeout paths. If Stop returns false, the
+			// timer has already fired, so best-effort drain the tick if it is still
+			// pending on the channel.
+			if timer.Stop() {
+				return
+			}
+
+			select {
+			case <-timer.C:
+			default:
+			}
+		}()
+
 		select {
 		case d.reportQueue <- allMsgs:
 			// Successfully sent the batch
 		case <-d.stopper:
 			logger.Debug().Msg("dispatcher stopped, dropping report batch")
 			return
-		case <-time.After(constants.ThorchainBlockTime):
+		case <-timer.C:
 			if d.errCounter != nil {
 				d.errCounter.WithLabelValues("fail_to_enqueue_report_batch", "").Inc()
 			}
