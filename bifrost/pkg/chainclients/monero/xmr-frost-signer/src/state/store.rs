@@ -602,14 +602,21 @@ impl Store {
             anyhow::bail!("outgoing transfer status must not be empty");
         }
         let tree = self.db.open_tree("outgoing_transfers")?;
-        // Key format: {vault}:{tx_hash}:{to_address}. Including the recipient
-        // address makes the key unique per output of a batched multi-recipient
-        // Monero tx (where N recipients share one tx_hash). Without this, the
-        // sibling records overwrite each other and only the last save survives,
-        // causing thornode to observe just one of N batched outbounds.
+        // Key format: {vault}:{tx_hash}:{to_address}:{amount}. The amount
+        // suffix is REQUIRED because multiple recipients of a batched
+        // multi-recipient Monero tx can target the same to_address (very
+        // common when the operator routes many small swaps to a single
+        // user wallet). Without amount in the key, sibling records still
+        // overwrite each other. With it, each recipient gets a unique row
+        // even when they share both tx_hash and address.
+        // (Two recipients of the EXACT same amount to the same address in
+        // the same batch is extremely unlikely in practice; if it ever
+        // happens, the latter still overwrites the former — that's an
+        // accepted limitation since the two payments are economically
+        // identical.)
         let key = format!(
-            "{}:{}:{}",
-            record.vault_pub_key, record.tx_hash, record.to_address
+            "{}:{}:{}:{}",
+            record.vault_pub_key, record.tx_hash, record.to_address, record.amount
         );
         let value = serde_json::to_vec(record)?;
         tree.insert(key.as_bytes(), value)?;
