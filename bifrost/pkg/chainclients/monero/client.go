@@ -1221,6 +1221,11 @@ func (c *Client) discoverXMRBatchedRecipients(
 		return nil, nil
 	}
 
+	// The /thorchain/queue/outbound endpoint does not populate
+	// vault_pub_key_frost on TxArrayItem (only vault_pub_key + eddsa). Match
+	// siblings against the EDDSA pubkey of the current tx since that IS in
+	// the queue payload — equating siblings via FROST alone never matches.
+	currentEddsa := currentTx.VaultPubKeyEddsa
 	currentInHashStr := strings.ToUpper(currentTx.InHash.String())
 	type batchEntry struct {
 		inHashUpper string
@@ -1245,10 +1250,17 @@ func (c *Client) discoverXMRBatchedRecipients(
 		if !item.OutHash.IsEmpty() {
 			continue
 		}
-		// Match this vault by FROST pubkey (or eddsa, or regular).
-		if !item.VaultPubKeyFrost.Equals(signReqCtx.vaultPubKey) &&
-			!item.VaultPubKeyEddsa.Equals(signReqCtx.vaultPubKey) &&
-			!item.VaultPubKey.Equals(signReqCtx.vaultPubKey) {
+		// Match by EDDSA primarily (queue payload always populates this for
+		// FROST vaults), fall back to FROST/regular pubkey for completeness.
+		matched := false
+		if !currentEddsa.IsEmpty() && item.VaultPubKeyEddsa.Equals(currentEddsa) {
+			matched = true
+		} else if item.VaultPubKeyFrost.Equals(signReqCtx.vaultPubKey) ||
+			item.VaultPubKeyEddsa.Equals(signReqCtx.vaultPubKey) ||
+			item.VaultPubKey.Equals(signReqCtx.vaultPubKey) {
+			matched = true
+		}
+		if !matched {
 			continue
 		}
 		itemInHash := strings.ToUpper(item.InHash.String())
