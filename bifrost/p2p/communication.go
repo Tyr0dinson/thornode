@@ -288,15 +288,6 @@ func (c *Communication) getPeers() addr.AddrList {
 	return bootstrapPeers
 }
 
-func (c *Communication) bootstrapConnectivityRequired() bool {
-	cfgBootstrapPeers, err := c.config.GetBootstrapPeers()
-	if err != nil {
-		c.logger.Error().Err(err).Msg("fail to get bootstrap peers from config")
-		return true
-	}
-	return len(cfgBootstrapPeers) > 0
-}
-
 func (c *Communication) bootStrapConnectivityCheck() error {
 	bootstrapPeers := c.getPeers()
 
@@ -392,7 +383,6 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		return fmt.Errorf("fail to bootstrap DHT: %w", err)
 	}
 
-	requireBootstrapConnectivity := c.bootstrapConnectivityRequired()
 	var connectionErr error
 	for i := 0; i < c.bootstrapRetryAttempts(); i++ {
 		connectionErr = c.connectToBootstrapPeers()
@@ -403,14 +393,14 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		time.Sleep(bootstrapRetryInterval)
 	}
 	if connectionErr != nil {
-		if requireBootstrapConnectivity {
-			return fmt.Errorf("fail to connect to bootstrap peer: %w", connectionErr)
-		}
-		// If this node has no configured bootstrap peers and is only trying
-		// stale peers from address_book.seed, do not hard-fail startup. This
-		// lets the bootstrap bifrost come up after a simultaneous restart; the
-		// other bifrosts still fail-fast because they do have configured peers.
-		c.logger.Warn().Err(connectionErr).Msg("saved bootstrap peers unreachable at startup, continuing")
+		// Do not hard-fail Start() when no bootstrap peer is reachable.
+		// Without this, restarting all bifrosts simultaneously deadlocks: the
+		// first bifrost (e.g. dog) tries to dial peers from address_book.seed,
+		// they're not up yet (refused), it hard-fails, never starts its HTTP
+		// server, and the others hang at "curl /p2pid" in the entrypoint
+		// script. Returning a warning here lets the HTTP server start; peers
+		// will be discovered later via DHT and retried connections.
+		c.logger.Warn().Err(connectionErr).Msg("no bootstrap peer reachable at startup, continuing - will discover via DHT")
 	}
 
 	// We use a rendezvous point "meet me here" to announce our location.
@@ -418,10 +408,8 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
 	discovery.Advertise(ctx, routingDiscovery, c.config.GetRendezvous())
 	if err = c.bootStrapConnectivityCheck(); err != nil {
-		if requireBootstrapConnectivity {
-			return err
-		}
-		c.logger.Warn().Err(err).Msg("saved bootstrap connectivity check failed, continuing")
+		// Same reasoning as above: do not block Start() on connectivity check.
+		c.logger.Warn().Err(err).Msg("bootstrap connectivity check failed, continuing")
 	}
 
 	c.logger.Info().Msg("Successfully announced!")
