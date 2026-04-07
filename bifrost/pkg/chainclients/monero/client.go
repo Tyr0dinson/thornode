@@ -173,6 +173,11 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create FROST signer: %w", err)
 	}
+	if cleared, clearErr := frostSigner.ClearSessions(); clearErr != nil {
+		logger.Warn().Err(clearErr).Msg("fail to clear FROST sidecar sessions on bifrost startup; sidecar may carry stale state")
+	} else if cleared > 0 {
+		logger.Info().Int("cleared", cleared).Msg("cleared stale FROST sidecar sessions on bifrost startup")
+	}
 
 	localNodePubKey := common.EmptyPubKey
 	if thorKeys != nil {
@@ -238,6 +243,13 @@ func NewClient(
 	}
 	c.vaultAddressStore = NewVaultAddressStore(c.storage.GetInternalDb())
 	c.scanner.SetReorgStore(NewReorgStore(c.storage.GetInternalDb()))
+	// Wire solvency reporting to the per-block scan loop. Without this, the
+	// chain client's ReportSolvency only fires from the auto-unhalt
+	// SolvencyCheckRunner — which itself is gated on the chain being already
+	// halted, so vault drift is never detected during normal operation.
+	// Match the XRP / Solana wiring pattern (their scanners take a
+	// SolvencyReporter callback in their constructors).
+	c.scanner.SetSolvencyReporter(c.ReportSolvency)
 	if err := c.loadVaultAddressMap(); err != nil {
 		c.logger.Warn().Err(err).Msg("fail to load persisted monero vault addresses")
 	}
@@ -1505,9 +1517,14 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get monero wallet balance for %s: %w", address, err)
 	}
-	// Account/solvency reporting must reflect what can actually be spent, not
-	// the wallet's total tracked balance including locked or reserved outputs.
-	amount := cosmos.NewUint(spendableBalanceAtomic(balance) / moneroAtomicToThorchain)
+	// Account reporting (used by solvency comparison vs thornode's vault.coins)
+	// must use the TOTAL on-chain balance — locked + unlocked. Locked outputs
+	// (those in the 10-conf maturity window) DO exist on chain and must count
+	// toward the wallet's view of "what we own", otherwise every fresh inbound
+	// triggers a false-positive insolvency report during normal operation.
+	// Spendability for sign-time input selection is a separate concern handled
+	// by ensureXMRVaultBalance which uses spendableBalanceAtomic.
+	amount := cosmos.NewUint(balance.Balance / moneroAtomicToThorchain)
 	return common.Account{
 		Sequence:      0,
 		AccountNumber: 0,

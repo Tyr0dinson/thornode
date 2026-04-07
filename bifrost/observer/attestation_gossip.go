@@ -134,6 +134,7 @@ type AttestationGossip struct {
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx)
 	observerApplySpentOutputRefs      func(tx common.ObservedTx)
+	applySpentRefsSem                 chan struct{}
 
 	cachedKeySignParties map[common.PubKey]cachedKeySignParty
 	cachedKeySignMu      sync.Mutex
@@ -218,6 +219,9 @@ func NewAttestationGossip(
 		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
 
 		batcher: batcher,
+
+		// Bound concurrent sidecar mark-spent calls so a slow signer does not leak goroutines.
+		applySpentRefsSem: make(chan struct{}, 16),
 	}
 	batcher.setActiveValGetter(s.getActiveValidators)
 	// Register event handlers
@@ -347,6 +351,27 @@ func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.Ob
 	s.observerApplySpentOutputRefs = fn
 }
 
+func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx) {
+	if s.observerApplySpentOutputRefs == nil {
+		return
+	}
+	if s.applySpentRefsSem == nil {
+		go s.observerApplySpentOutputRefs(tx)
+		return
+	}
+	select {
+	case s.applySpentRefsSem <- struct{}{}:
+		go func() {
+			defer func() { <-s.applySpentRefsSem }()
+			s.observerApplySpentOutputRefs(tx)
+		}()
+	default:
+		s.logger.Warn().
+			Str("tx_id", tx.Tx.ID.String()).
+			Msg("apply spent refs queue full, dropping (will be caught by periodic catchup)")
+	}
+}
+
 // Handle a committed quorum transaction event
 func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotification) {
 	s.logger.Debug().Msg("handling quorum tx committed event")
@@ -373,7 +398,7 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		!qtx.Inbound &&
 		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
 		len(qtx.ObsTx.SpentOutputRefs) > 0 {
-		go s.observerApplySpentOutputRefs(qtx.ObsTx)
+		s.applySpentRefsAsync(qtx.ObsTx)
 	}
 
 	k := txKey{

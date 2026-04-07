@@ -318,7 +318,7 @@ func TestGetAccountByAddressRegistersVaultBeforeBalanceQuery(t *testing.T) {
 	}
 }
 
-func TestGetAccountByAddressUsesSpendableBalanceWhenProvided(t *testing.T) {
+func TestGetAccountByAddressUsesTotalBalanceWhenSpendableAlsoProvided(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey := testVaultPubKey(t, "account-query-uses-spendable-balance")
@@ -363,7 +363,7 @@ func TestGetAccountByAddressUsesSpendableBalanceWhenProvided(t *testing.T) {
 	}
 
 	coin := account.Coins.GetCoin(common.XMRAsset)
-	if coin.Amount.Uint64() != 3 {
-		t.Fatalf("expected spendable 3 XMR units, got %s", coin.Amount.String())
+	if coin.Amount.Uint64() != 9 {
+		t.Fatalf("expected total 9 XMR units, got %s", coin.Amount.String())
 	}
 }

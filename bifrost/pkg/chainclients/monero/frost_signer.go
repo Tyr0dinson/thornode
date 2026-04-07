@@ -30,24 +30,25 @@ type FrostSigner struct {
 
 	daemonEndpoint string
 
-	dkgRound1Path   string
-	dkgRound2Path   string
-	dkgRound3Path   string
-	dkgFinalizePath string
-	signPreparePath string
-	signPartialPath string
-	signCombinePath string
-	broadcastPath   string
-	balancePath     string
-	transfersPath   string
-	scannerSyncPath string
-	addressesPath   string
-	outputsPath     string
-	registerPath    string
-	feeRatePath     string
-	chainHeightPath string
-	chainBlockPath  string
-	chainTxPath     string
+	dkgRound1Path     string
+	dkgRound2Path     string
+	dkgRound3Path     string
+	dkgFinalizePath   string
+	signPreparePath   string
+	signPartialPath   string
+	signCombinePath   string
+	clearSessionsPath string
+	broadcastPath     string
+	balancePath       string
+	transfersPath     string
+	scannerSyncPath   string
+	addressesPath     string
+	outputsPath       string
+	registerPath      string
+	feeRatePath       string
+	chainHeightPath   string
+	chainBlockPath    string
+	chainTxPath       string
 
 	client       *http.Client
 	daemonClient *http.Client
@@ -412,24 +413,25 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 		endpoint:       endpoint,
 		daemonEndpoint: daemonEndpoint,
 
-		dkgRound1Path:   "/v1/monero/dkg/round1",
-		dkgRound2Path:   "/v1/monero/dkg/round2",
-		dkgRound3Path:   "/v1/monero/dkg/round3",
-		dkgFinalizePath: "/v1/monero/dkg/finalize",
-		signPreparePath: "/v1/monero/sign/prepare",
-		signPartialPath: "/v1/monero/sign/partial",
-		signCombinePath: "/v1/monero/sign/combine",
-		broadcastPath:   "/v1/monero/broadcast",
-		balancePath:     "/v1/monero/balance",
-		transfersPath:   "/v1/monero/transfers",
-		scannerSyncPath: "/v1/monero/scanner/sync",
-		addressesPath:   "/v1/monero/addresses",
-		outputsPath:     "/v1/monero/outputs",
-		registerPath:    "/v1/monero/vaults/register",
-		feeRatePath:     "/v1/monero/fee-rate",
-		chainHeightPath: "/v1/monero/chain/height",
-		chainBlockPath:  "/v1/monero/chain/block",
-		chainTxPath:     "/v1/monero/chain/tx",
+		dkgRound1Path:     "/v1/monero/dkg/round1",
+		dkgRound2Path:     "/v1/monero/dkg/round2",
+		dkgRound3Path:     "/v1/monero/dkg/round3",
+		dkgFinalizePath:   "/v1/monero/dkg/finalize",
+		signPreparePath:   "/v1/monero/sign/prepare",
+		signPartialPath:   "/v1/monero/sign/partial",
+		signCombinePath:   "/v1/monero/sign/combine",
+		clearSessionsPath: "/v1/monero/sessions/clear",
+		broadcastPath:     "/v1/monero/broadcast",
+		balancePath:       "/v1/monero/balance",
+		transfersPath:     "/v1/monero/transfers",
+		scannerSyncPath:   "/v1/monero/scanner/sync",
+		addressesPath:     "/v1/monero/addresses",
+		outputsPath:       "/v1/monero/outputs",
+		registerPath:      "/v1/monero/vaults/register",
+		feeRatePath:       "/v1/monero/fee-rate",
+		chainHeightPath:   "/v1/monero/chain/height",
+		chainBlockPath:    "/v1/monero/chain/block",
+		chainTxPath:       "/v1/monero/chain/tx",
 
 		client:       &http.Client{Timeout: timeout},
 		daemonClient: &http.Client{Timeout: timeout},
@@ -593,6 +595,20 @@ func (s *FrostSigner) FrostSignCombine(req xmrFrostSignCombineRequest) (xmrFrost
 		return xmrFrostSignCombineResponse{}, fmt.Errorf("frost sign combine endpoint returned empty tx_hash")
 	}
 	return out, nil
+}
+
+func (s *FrostSigner) ClearSessions() (int, error) {
+	if s == nil || strings.TrimSpace(s.clearSessionsPath) == "" {
+		return 0, nil
+	}
+	var out struct {
+		ClearedSessions int    `json:"cleared_sessions"`
+		Status          string `json:"status"`
+	}
+	if err := s.call(http.MethodPost, s.clearSessionsPath, struct{}{}, &out); err != nil {
+		return 0, fmt.Errorf("fail to call frost sessions clear endpoint: %w", err)
+	}
+	return out.ClearedSessions, nil
 }
 
 func (s *FrostSigner) FrostBroadcast(req xmrFrostBroadcastRequest) (xmrFrostBroadcastResponse, error) {

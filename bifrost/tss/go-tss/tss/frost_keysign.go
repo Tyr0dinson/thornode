@@ -300,6 +300,7 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 			Blame:  blame.NewBlame(errJoinParty.Error(), nil),
 		}, nil
 	}
+	t.persistPeerAddressBook()
 
 	activeParticipants, err := conversion.GetPubKeysFromPeerIDs(peerIDsToStrings(onlinePeers))
 	if err != nil {

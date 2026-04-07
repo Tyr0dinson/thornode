@@ -327,13 +327,6 @@ func (k KVStore) GetVault(ctx cosmos.Context, pk common.PubKey) (Vault, error) {
 	if record.BlockHeight == 0 {
 		record.BlockHeight = ctx.BlockHeight()
 	}
-	// Lazily create the frost index for vaults that existed before the index was added.
-	if !record.PubKeyFrost.IsEmpty() {
-		existing, _ := k.getAsgardFrostIndex(ctx, record.PubKeyFrost)
-		if existing.IsEmpty() {
-			_ = k.addAsgardFrostIndex(ctx, record.PubKeyFrost, record.PubKey)
-		}
-	}
 	return record, err
 }
 

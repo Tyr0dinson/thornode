@@ -32,6 +32,12 @@ type Scanner struct {
 	localNodePubKey     common.PubKey
 	localVaultBootstrap *frostVaultBootstrap
 	reorgStore          *ReorgStore
+	// solvencyReporter is invoked once per scanned block so that wallet vs
+	// thornode vault accounting drift is reported to thornode promptly.
+	// Without this hook, Client.ReportSolvency only fires from the
+	// auto-unhalt SolvencyCheckRunner which is gated on the chain being
+	// already halted — meaning vaults can drift indefinitely undetected.
+	solvencyReporter func(int64) error
 
 	currentBlockHeight *atomic.Int64
 	lastFee            *atomic.Uint64
@@ -79,6 +85,12 @@ func NewScanner(
 		observedOutgoingByTxID: make(map[string]observedOutgoingTx),
 		mempoolSeen:            make(map[string]struct{}),
 	}
+}
+
+// SetSolvencyReporter wires the solvency reporter callback used by the
+// per-block scan loop. Pass Client.ReportSolvency from the chain client.
+func (s *Scanner) SetSolvencyReporter(fn func(int64) error) {
+	s.solvencyReporter = fn
 }
 
 func (s *Scanner) SetVaultAddress(vaultPubKey common.PubKey, address string) {
@@ -256,6 +268,17 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 			}
 		}
 	}
+
+	// Report solvency once per scanned block. Without this hook, the chain
+	// client's ReportSolvency only fires from the auto-unhalt runner which
+	// requires the chain to be already halted — leaving normal operation
+	// blind to vault accounting drift. Match the XRP / Solana wiring pattern.
+	if s.solvencyReporter != nil {
+		if solErr := s.solvencyReporter(fetchHeight); solErr != nil {
+			s.logger.Err(solErr).Int64("height", fetchHeight).Msg("fail to report monero solvency")
+		}
+	}
+
 	return txIn, nil
 }
 

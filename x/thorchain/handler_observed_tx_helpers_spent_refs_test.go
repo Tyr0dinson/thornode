@@ -139,9 +139,11 @@ func (s *SpentOutputRefsFlowSuite) TestSpentRefsCatchupFromVaultState(c *C) {
 	}
 }
 
-// Verify that the frost index is lazily created when GetVault loads a vault
-// that has PubKeyFrost but was stored before the index existed.
-func (s *SpentOutputRefsFlowSuite) TestFrostIndexLazyCreation(c *C) {
+// Verify that the frost index is created when SetVault is called with a
+// vault that has PubKeyFrost set. There is no lazy migration in GetVault to
+// avoid non-deterministic state writes during read paths — the index is
+// created the next time SetVault is called for the vault.
+func (s *SpentOutputRefsFlowSuite) TestFrostIndexCreatedBySetVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 

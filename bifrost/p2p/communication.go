@@ -275,6 +275,15 @@ func (c *Communication) getPeers() addr.AddrList {
 	return bootstrapPeers
 }
 
+func (c *Communication) bootstrapConnectivityRequired() bool {
+	cfgBootstrapPeers, err := c.config.GetBootstrapPeers()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to get bootstrap peers from config")
+		return true
+	}
+	return len(cfgBootstrapPeers) > 0
+}
+
 func (c *Communication) bootStrapConnectivityCheck() error {
 	bootstrapPeers := c.getPeers()
 
@@ -369,26 +378,36 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		return fmt.Errorf("fail to bootstrap DHT: %w", err)
 	}
 
+	requireBootstrapConnectivity := c.bootstrapConnectivityRequired()
 	var connectionErr error
 	for i := 0; i < 5; i++ {
 		connectionErr = c.connectToBootstrapPeers()
 		if connectionErr == nil {
 			break
 		}
-		c.logger.Error().Msg("cannot connect to any bootstrap node, retry in 5 seconds")
+		c.logger.Warn().Err(connectionErr).Msg("cannot connect to any bootstrap node, retry in 5 seconds")
 		time.Sleep(time.Second * 5)
 	}
 	if connectionErr != nil {
-		return fmt.Errorf("fail to connect to bootstrap peer: %w", connectionErr)
+		if requireBootstrapConnectivity {
+			return fmt.Errorf("fail to connect to bootstrap peer: %w", connectionErr)
+		}
+		// If this node has no configured bootstrap peers and is only trying
+		// stale peers from address_book.seed, do not hard-fail startup. This
+		// lets the bootstrap bifrost come up after a simultaneous restart; the
+		// other bifrosts still fail-fast because they do have configured peers.
+		c.logger.Warn().Err(connectionErr).Msg("saved bootstrap peers unreachable at startup, continuing")
 	}
 
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
 	discovery.Advertise(ctx, routingDiscovery, c.config.GetRendezvous())
-	err = c.bootStrapConnectivityCheck()
-	if err != nil {
-		return err
+	if err = c.bootStrapConnectivityCheck(); err != nil {
+		if requireBootstrapConnectivity {
+			return err
+		}
+		c.logger.Warn().Err(err).Msg("saved bootstrap connectivity check failed, continuing")
 	}
 
 	c.logger.Info().Msg("Successfully announced!")
@@ -421,6 +440,7 @@ func (c *Communication) connectToBootstrapPeers() error {
 	}
 	var wg sync.WaitGroup
 	connRet := make(chan bool, len(bootstrapPeers))
+	dialAttempts := 0
 	for _, peerAddr := range bootstrapPeers {
 		pi, err := peer.AddrInfoFromP2pAddr(peerAddr)
 		if err != nil {
@@ -431,6 +451,7 @@ func (c *Communication) connectToBootstrapPeers() error {
 			c.logger.Debug().Msgf("skipping connection to self: %s", pi.ID)
 			continue
 		}
+		dialAttempts++
 		wg.Add(1)
 		go func(connRet chan bool) {
 			defer wg.Done()
@@ -446,7 +467,13 @@ func (c *Communication) connectToBootstrapPeers() error {
 		}(connRet)
 	}
 	wg.Wait()
-	for i := 0; i < len(bootstrapPeers); i++ {
+	// Read exactly dialAttempts results, not len(bootstrapPeers). Self entries
+	// are skipped above without spawning a goroutine, so reading more than
+	// dialAttempts blocks forever waiting for sends that never come.
+	if dialAttempts == 0 {
+		return nil
+	}
+	for i := 0; i < dialAttempts; i++ {
 		if <-connRet {
 			return nil
 		}

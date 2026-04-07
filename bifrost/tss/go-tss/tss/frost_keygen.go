@@ -138,6 +138,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 			Blame:  blame.NewBlame(errJoinParty.Error(), nil),
 		}, nil
 	}
+	t.persistPeerAddressBook()
 
 	activeParticipants, err := conversion.GetPubKeysFromPeerIDs(peerIDsToStrings(onlinePeers))
 	if err != nil {
