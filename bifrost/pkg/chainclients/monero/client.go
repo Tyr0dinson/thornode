@@ -251,6 +251,13 @@ func NewClient(
 	}
 	c.vaultAddressStore = NewVaultAddressStore(c.storage.GetInternalDb())
 	c.scanner.SetReorgStore(NewReorgStore(c.storage.GetInternalDb()))
+	// Wire solvency reporting to the per-block scan loop. Without this, the
+	// chain client's ReportSolvency only fires from the auto-unhalt
+	// SolvencyCheckRunner — which itself is gated on the chain being already
+	// halted, so vault drift is never detected during normal operation.
+	// Match the XRP / Solana wiring pattern (their scanners take a
+	// SolvencyReporter callback in their constructors).
+	c.scanner.SetSolvencyReporter(c.ReportSolvency)
 	if err := c.loadVaultAddressMap(); err != nil {
 		c.logger.Warn().Err(err).Msg("fail to load persisted monero vault addresses")
 	}
