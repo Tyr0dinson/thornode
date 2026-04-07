@@ -806,8 +806,11 @@ pub async fn sign_prepare(
             .unwrap(),
         ),
         Err(e) => {
-            error!(error = %e, msg_id, "sign prepare failed");
-            let msg = e.to_string();
+            // Use Debug formatter (`{:?}`) so anyhow includes the full error
+            // chain — Display only shows the topmost message which collapses
+            // useful root cause for builder failures.
+            error!(error = ?e, msg_id, "sign prepare failed");
+            let msg = format!("{e:#}");
             let status = if is_capacity_error(&msg) {
                 StatusCode::SERVICE_UNAVAILABLE
             } else {
