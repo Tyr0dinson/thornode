@@ -631,10 +631,17 @@ impl Store {
         let tree = self.db.open_tree("outgoing_transfers")?;
         let mut records: Vec<OutgoingTransferRecord> = Vec::new();
         let prefix = format!("{}:", vault_pub_key);
+        let mut total_keys = 0usize;
         for item in tree.scan_prefix(prefix.as_bytes()) {
             let (_, value) = item?;
+            total_keys += 1;
             records.push(serde_json::from_slice(&value)?);
         }
+        tracing::debug!(
+            vault = %vault_pub_key,
+            scanned = total_keys,
+            "load_outgoing_transfers prefix scan"
+        );
         records.sort_by_key(|r| r.created_at);
         Ok(records)
     }
