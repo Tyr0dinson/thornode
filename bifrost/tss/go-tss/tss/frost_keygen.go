@@ -138,7 +138,6 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 			Blame:  blame.NewBlame(errJoinParty.Error(), nil),
 		}, nil
 	}
-	t.persistPeerAddressBook()
 
 	activeParticipants, err := conversion.GetPubKeysFromPeerIDs(peerIDsToStrings(onlinePeers))
 	if err != nil {
@@ -202,11 +201,15 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 				Blame:  blame.NewBlame(waitErr.Error(), nil),
 			}, nil
 		}
+		if waitResp.Status == tcommon.Success {
+			t.persistPeerAddressBook()
+		}
 		return waitResp, nil
 	}
 
 	resp := coordinator.Execute(req, activeSet, onlinePeers)
 	if resp.Status == tcommon.Success {
+		t.persistPeerAddressBook()
 		if err := coordinator.BroadcastResult(resp, allPeerIDs); err != nil {
 			t.logger.Warn().Err(err).Msg("fail to broadcast frost keygen result")
 		}
@@ -215,6 +218,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 
 	waitResp, waitErr := coordinator.WaitForResult(activeParticipants, quorum, t.conf.KeyGenTimeout+5*time.Second)
 	if waitErr == nil && waitResp.Status == tcommon.Success {
+		t.persistPeerAddressBook()
 		return waitResp, nil
 	}
 	if err := coordinator.BroadcastResult(resp, allPeerIDs); err != nil {
