@@ -28,14 +28,15 @@ type FrostSigner struct {
 
 	daemonEndpoint string
 
-	dkgRound1Path   string
-	dkgRound2Path   string
-	dkgRound3Path   string
-	dkgFinalizePath string
-	signPreparePath string
-	signPartialPath string
-	signCombinePath string
-	broadcastPath   string
+	dkgRound1Path     string
+	dkgRound2Path     string
+	dkgRound3Path     string
+	dkgFinalizePath   string
+	signPreparePath   string
+	signPartialPath   string
+	signCombinePath   string
+	clearSessionsPath string
+	broadcastPath     string
 	balancePath     string
 	transfersPath   string
 	scannerSyncPath string
@@ -425,14 +426,15 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 		endpoint:       endpoint,
 		daemonEndpoint: daemonEndpoint,
 
-		dkgRound1Path:   "/v1/monero/dkg/round1",
-		dkgRound2Path:   "/v1/monero/dkg/round2",
-		dkgRound3Path:   "/v1/monero/dkg/round3",
-		dkgFinalizePath: "/v1/monero/dkg/finalize",
-		signPreparePath: "/v1/monero/sign/prepare",
-		signPartialPath: "/v1/monero/sign/partial",
-		signCombinePath: "/v1/monero/sign/combine",
-		broadcastPath:   "/v1/monero/broadcast",
+		dkgRound1Path:    "/v1/monero/dkg/round1",
+		dkgRound2Path:    "/v1/monero/dkg/round2",
+		dkgRound3Path:    "/v1/monero/dkg/round3",
+		dkgFinalizePath:  "/v1/monero/dkg/finalize",
+		signPreparePath:  "/v1/monero/sign/prepare",
+		signPartialPath:  "/v1/monero/sign/partial",
+		signCombinePath:  "/v1/monero/sign/combine",
+		clearSessionsPath: "/v1/monero/sessions/clear",
+		broadcastPath:    "/v1/monero/broadcast",
 		balancePath:     "/v1/monero/balance",
 		transfersPath:   "/v1/monero/transfers",
 		scannerSyncPath: "/v1/monero/scanner/sync",
@@ -606,6 +608,29 @@ func (s *FrostSigner) FrostSignCombine(req xmrFrostSignCombineRequest) (xmrFrost
 		return xmrFrostSignCombineResponse{}, fmt.Errorf("frost sign combine endpoint returned empty tx_hash")
 	}
 	return out, nil
+}
+
+// ClearSessions tells the sidecar to drop ALL in-memory FROST signing
+// sessions. Called once at bifrost startup so a fresh bifrost lifecycle
+// never inherits half-completed sessions left behind by a previous
+// bifrost lifecycle (which can cause "leader not reachable" / "result
+// sender not in active signer set" sign failures).
+//
+// Sidecar guarantees: only the in-memory session map + idempotency claims
+// + inflight prepare counter are touched. Persistent keyshares and the
+// sled vault state are NOT modified.
+func (s *FrostSigner) ClearSessions() (int, error) {
+	if s == nil || strings.TrimSpace(s.clearSessionsPath) == "" {
+		return 0, nil
+	}
+	var out struct {
+		ClearedSessions int    `json:"cleared_sessions"`
+		Status          string `json:"status"`
+	}
+	if err := s.call(http.MethodPost, s.clearSessionsPath, struct{}{}, &out); err != nil {
+		return 0, fmt.Errorf("fail to call frost sessions clear endpoint: %w", err)
+	}
+	return out.ClearedSessions, nil
 }
 
 func (s *FrostSigner) FrostBroadcast(req xmrFrostBroadcastRequest) (xmrFrostBroadcastResponse, error) {

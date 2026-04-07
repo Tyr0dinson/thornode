@@ -219,6 +219,47 @@ impl SignCoordinator {
         self.sessions.lock().contains_key(session_id)
     }
 
+    /// Drop ALL in-memory FROST signing state. Used at bifrost startup so a
+    /// fresh bifrost lifecycle never inherits stale half-finished sessions
+    /// from the previous lifecycle. Releases any output reservations held by
+    /// the dropped sessions back to the sidecar's UTXO tracker. Does NOT
+    /// touch persistent keyshares or sled state — keys are preserved.
+    /// Returns the number of sessions cleared.
+    pub fn clear_all_sessions(&self) -> usize {
+        let mut sessions = self.sessions.lock();
+        let mut released_total = 0usize;
+        for (id, session) in sessions.iter() {
+            match session.phase {
+                SignPhase::Preprocessed | SignPhase::PartialSigned => {
+                    match self.store.release_reservations_for_session(
+                        &session.vault_pub_key,
+                        id,
+                        &session.msg_id,
+                    ) {
+                        Ok(n) => released_total += n,
+                        Err(e) => warn!(
+                            error = %e,
+                            session_id = %id,
+                            "clear_all_sessions: failed to release reservations; sled may carry stale claim"
+                        ),
+                    }
+                }
+                SignPhase::Complete => {}
+            }
+        }
+        let cleared = sessions.len();
+        sessions.clear();
+        drop(sessions);
+        self.preparing_msg_ids.lock().clear();
+        self.inflight_prepares.store(0, Ordering::Release);
+        warn!(
+            cleared,
+            released_reservations = released_total,
+            "cleared all in-memory FROST signing sessions on bifrost-initiated reset"
+        );
+        cleared
+    }
+
     pub async fn prepare(
         &self,
         vault_pub_key: &str,

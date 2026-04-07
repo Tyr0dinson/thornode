@@ -2157,6 +2157,24 @@ pub async fn scanner_reset(
     )
 }
 
+/// Drop ALL in-memory FROST signing sessions. Called by the bifrost on its
+/// own startup so a fresh bifrost lifecycle never inherits half-completed
+/// sessions left behind by the previous bifrost lifecycle. Does NOT touch
+/// keyshares or sled state — only the in-memory session map + idempotency
+/// claims + inflight prepare counter. Returns the count of cleared sessions.
+pub async fn clear_sessions(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let cleared = state.signer.clear_all_sessions();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "cleared_sessions": cleared,
+            "status": "ok"
+        })),
+    )
+}
+
 pub async fn get_transfers(
     State(state): State<Arc<AppState>>,
     Query(query): Query<TransfersQuery>,

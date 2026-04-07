@@ -174,6 +174,18 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create FROST signer: %w", err)
 	}
+	// Bifrost owns the sidecar's in-memory session lifecycle: every time we
+	// start fresh, drop any half-finished FROST sign sessions the sidecar
+	// inherited from a previous bifrost lifecycle. Without this, a bifrost
+	// recreate without a sidecar restart leaves stale sessions that cause
+	// "leader not reachable" / "missing blame nodes" sign failures.
+	// Best-effort — log and continue if the sidecar isn't reachable yet
+	// (the chain client startup will retry signing later anyway).
+	if cleared, clearErr := frostSigner.ClearSessions(); clearErr != nil {
+		logger.Warn().Err(clearErr).Msg("fail to clear FROST sidecar sessions on bifrost startup; sidecar may carry stale state")
+	} else if cleared > 0 {
+		logger.Info().Int("cleared", cleared).Msg("cleared stale FROST sidecar sessions on bifrost startup")
+	}
 
 	localNodePubKey := common.EmptyPubKey
 	if thorKeys != nil {
