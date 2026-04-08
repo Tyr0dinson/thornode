@@ -3480,7 +3480,7 @@ func (s *ObserveExtraSuite) TestFilterObservationsCancelTx(c *C) {
 }
 
 // ---------------------------------------------------------------------------
-// processNetworkFeeQueue / processSolvencyQueue / processPriceFeedQueue - stop paths
+// processNetworkFeeQueue / processPriceFeedQueue - stop paths
 // ---------------------------------------------------------------------------
 
 func (s *ObserveExtraSuite) TestProcessQueueStopPaths(c *C) {
@@ -3491,7 +3491,6 @@ func (s *ObserveExtraSuite) TestProcessQueueStopPaths(c *C) {
 		lock:                  &sync.Mutex{},
 		stopChan:              make(chan struct{}),
 		globalNetworkFeeQueue: make(chan common.NetworkFee, 1),
-		globalSolvencyQueue:   make(chan types.Solvency, 1),
 		globalPriceFeedQueue:  make(chan common.PriceFeed, 1),
 		m:                     s.m,
 		errCounter:            s.m.GetCounterVec(metrics.ObserverError),

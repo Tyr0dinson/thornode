@@ -856,7 +856,7 @@ func (s *BlockScannerExtraSuite) TestStartStopWithMempoolDisabled(c *C) {
 
 	globalChan := make(chan types.TxIn)
 	nfChan := make(chan common.NetworkFee)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 	waitForPauseChecks(c, bridge, 2)
 	scanner.Stop()
 }
@@ -904,7 +904,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksProcessesTxs(c *C) {
 
 	globalChan := make(chan types.TxIn, 20)
 	nfChan := make(chan common.NetworkFee, 5)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 
 	// Wait for the scanner to process some blocks. Poll instead of sleeping a fixed
 	// 2s: under -race on a loaded CI runner that budget expired before the first
@@ -959,7 +959,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksWithPrefetch(c *C) {
 
 	globalChan := make(chan types.TxIn, 20)
 	nfChan := make(chan common.NetworkFee, 5)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 	waitForScanner(c, func() bool { return scanner.PreviousHeight() >= 10 }, "scan to the chain tip")
 	scanner.Stop()
 
@@ -1004,7 +1004,7 @@ func (s *BlockScannerExtraSuite) TestScanMempoolEnabled(c *C) {
 
 	globalChan := make(chan types.TxIn, 10)
 	nfChan := make(chan common.NetworkFee, 5)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 	waitForScanner(c, func() bool { return len(globalChan) > 0 }, "a queued mempool tx")
 	scanner.Stop()
 
@@ -1044,7 +1044,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksUnhealthy(c *C) {
 
 	globalChan := make(chan types.TxIn, 100)
 	nfChan := make(chan common.NetworkFee, 5)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 	// health is set on every scanned block
 	waitForScanner(c, func() bool { return scanner.PreviousHeight() > 1 }, "a scanned block")
 	scanner.Stop()
@@ -1171,7 +1171,7 @@ func (s *BlockScannerExtraSuite) TestStartWithPersistedPos(c *C) {
 
 	globalChan := make(chan types.TxIn, 10)
 	nfChan := make(chan common.NetworkFee, 5)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 	time.Sleep(300 * time.Millisecond)
 	scanner.Stop()
 }
@@ -1204,7 +1204,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksFetchError(c *C) {
 
 	globalChan := make(chan types.TxIn, 20)
 	nfChan := make(chan common.NetworkFee, 5)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 	// a second fetch means the first failure was handled and backed off
 	waitForScanner(c, func() bool { return fetcher.fetches.Load() >= 2 }, "a retried fetch")
 	scanner.Stop()
