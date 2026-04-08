@@ -39,8 +39,6 @@ const (
 )
 
 type Client struct {
-	chain     common.Chain
-	keys      *thorclient.Keys
 	localKm   *keymanager.KeyManager
 	rpcClient *rpc.Client
 }
@@ -53,7 +51,7 @@ func NewConstructor(host string) LiteChainClientConstructor {
 	}
 }
 
-func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChainClient, error) {
+func NewClient(_ common.Chain, host string, keys *thorclient.Keys) (LiteChainClient, error) {
 	// extract the private key
 	privKey, err := keys.GetPrivateKey()
 	if err != nil {
@@ -71,8 +69,6 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	rpcClient.NetworkID = 1234
 
 	return &Client{
-		chain:     chain,
-		keys:      keys,
 		localKm:   localKm,
 		rpcClient: rpcClient,
 	}, nil
@@ -137,18 +133,6 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		memo = &m
 	}
 	return c.signPaymentTx(tx, memo)
-}
-
-// SignTxWithMemoTypeOnly builds a valid XRP Payment that includes a memo entry
-// without MemoData. This is used by simulation-only scanner-blind flows.
-func (c *Client) SignTxWithMemoTypeOnly(tx SimTx, memoType string) ([]byte, error) {
-	if memoType == "" {
-		memoType = "novault"
-	}
-	m := txtypes.Memo{
-		MemoType: hex.EncodeToString([]byte(memoType)),
-	}
-	return c.signPaymentTx(tx, &m)
 }
 
 func (c *Client) signPaymentTx(tx SimTx, memo *txtypes.Memo) ([]byte, error) {

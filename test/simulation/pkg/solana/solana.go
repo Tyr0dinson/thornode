@@ -24,9 +24,7 @@ type Client struct {
 	chain common.Chain
 	rpc   *rpc.SolRPC
 
-	keys    *thorclient.Keys
 	signer  btypes.Account
-	pubKey  common.PubKey
 	address common.Address
 }
 
@@ -82,8 +80,6 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	return &Client{
 		chain:   chain,
 		rpc:     rpc,
-		keys:    keys,
-		pubKey:  pubKey,
 		address: address,
 		signer:  account,
 	}, nil
@@ -155,98 +151,6 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	}
 
 	return signedTx, nil
-}
-
-// SignTxWithExtraTransfer signs a simulation-only SOL tx with a primary transfer
-// to tx.ToAddress and an additional transfer to extraTo.
-// This builder requires three distinct writable accounts: sender, tx.ToAddress,
-// and extraTo. Reusing any of them can fail Solana simulation with
-// "Account loaded twice".
-func (c *Client) SignTxWithExtraTransfer(tx SimTx, extraTo common.Address, extraAmount cosmos.Uint) ([]byte, error) {
-	if extraAmount.IsZero() {
-		return nil, fmt.Errorf("extra transfer amount cannot be zero")
-	}
-	if c.address.Equals(tx.ToAddress) || c.address.Equals(extraTo) || tx.ToAddress.Equals(extraTo) {
-		return nil, fmt.Errorf("sender, primary destination, and extra destination must be distinct")
-	}
-
-	// get latest blockhash
-	blockhash, err := c.rpc.GetLatestBlockhash()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get latest blockhash: %w", err)
-	}
-
-	// public keys
-	fromPubKey := stypes.MustPublicKeyFromString(c.address.String())
-	toPubKey := stypes.MustPublicKeyFromString(tx.ToAddress.String())
-	extraToPubKey := stypes.MustPublicKeyFromString(extraTo.String())
-
-	transaction := newTransferTransactionWithExtraTransfer(
-		fromPubKey,
-		toPubKey,
-		extraToPubKey,
-		tx.Coin.Amount.Uint64(),
-		extraAmount.Uint64(),
-		tx.Memo,
-		blockhash,
-	)
-	rawMessage, err := transaction.Message.Serialize()
-	if err != nil {
-		return nil, fmt.Errorf("fail to serialize transaction: %w", err)
-	}
-
-	signature, err := c.sign(rawMessage)
-	if err != nil {
-		return nil, fmt.Errorf("fail to sign transaction: %w", err)
-	}
-	err = transaction.AddSignature(signature)
-	if err != nil {
-		return nil, fmt.Errorf("fail to add signature: %w", err)
-	}
-	signedTx, err := transaction.Serialize()
-	if err != nil {
-		return nil, fmt.Errorf("fail to serialize signed transaction: %w", err)
-	}
-
-	return signedTx, nil
-}
-
-func newTransferTransactionWithExtraTransfer(
-	from, to, extraTo stypes.PublicKey,
-	amount, extraAmount uint64,
-	memo, recentBlockHash string,
-) stypes.Transaction {
-	// Keep three distinct writable account keys for transfer instructions:
-	// [0]=from, [1]=primary to, [2]=extra to.
-	accountKeys := []stypes.PublicKey{from, to, extraTo, stypes.SystemProgramID, stypes.MemoProgramID}
-
-	// Program index is 4 (MemoProgramID) and account index 0 is signer.
-	memoInstruction := stypes.NewCompiledInstruction(4, []int{0}, []byte(memo))
-
-	// THORChain 1e8 units -> lamports 1e9.
-	solValue := amount * 10
-	extraSolValue := extraAmount * 10
-
-	// Program index is 3 (SystemProgramID), from=0, to=1/2.
-	primaryTransferInstruction := stypes.NewCompiledTransferInstruction(3, 0, 1, solValue)
-	extraTransferInstruction := stypes.NewCompiledTransferInstruction(3, 0, 2, extraSolValue)
-
-	header := stypes.MessageHeader{
-		NumRequireSignatures:        1,
-		NumReadonlySignedAccounts:   0,
-		NumReadonlyUnsignedAccounts: 2,
-	}
-	message := stypes.NewMessage(
-		header,
-		accountKeys,
-		recentBlockHash,
-		[]stypes.CompiledInstruction{
-			primaryTransferInstruction,
-			extraTransferInstruction,
-			memoInstruction,
-		},
-	)
-	return stypes.NewTransaction(message)
 }
 
 func (c *Client) sign(msg []byte) ([]byte, error) {
