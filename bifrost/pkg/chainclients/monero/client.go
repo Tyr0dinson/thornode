@@ -1011,12 +1011,11 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 		return "", fmt.Errorf("fail to broadcast FROST tx: %w", err)
 	}
 
+	// Use the FROST-validated tx hash; never allow the sidecar to override it.
 	txHash := payload.TxHash
-	if strings.TrimSpace(resp.TxHash) != "" {
-		txHash = resp.TxHash
-	}
-	if strings.TrimSpace(txHash) == "" {
-		return "", fmt.Errorf("FROST broadcast returned empty tx hash")
+	if sidecarHash := strings.TrimSpace(resp.TxHash); sidecarHash != "" && sidecarHash != txHash {
+		c.logger.Warn().Str("frost_hash", txHash).Str("sidecar_hash", sidecarHash).
+			Msg("sidecar broadcast returned different tx hash than FROST-validated hash; using FROST hash")
 	}
 
 	if err := c.signerCacheManager.SetSigned(tx.CacheHash(), txCacheVault(tx, c.GetChain()), txHash); err != nil {

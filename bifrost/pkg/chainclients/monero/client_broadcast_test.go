@@ -82,7 +82,7 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 	}
 }
 
-func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
+func TestBroadcastTxIgnoresSidecarHashOverride(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -102,6 +102,7 @@ func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
 		mu.Lock()
 		gotReq = req
 		mu.Unlock()
+		// Sidecar returns a different hash than FROST-validated one.
 		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
 	}))
 	defer server.Close()
@@ -131,8 +132,9 @@ func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
 	if err != nil {
 		t.Fatalf("broadcast tx: %v", err)
 	}
-	if txHash != "daemon-hash" {
-		t.Fatalf("expected daemon tx hash override, got %q", txHash)
+	// FROST-validated hash must be preserved; sidecar override must be ignored.
+	if txHash != payload.TxHash {
+		t.Fatalf("expected FROST-validated hash %q, got %q (sidecar override should be ignored)", payload.TxHash, txHash)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -287,8 +289,9 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("broadcast tx: %v", err)
 	}
-	if txHash != "daemon-hash" {
-		t.Fatalf("expected daemon tx hash override, got %q", txHash)
+	// FROST-validated hash must be preserved regardless of Broadcasted flag.
+	if txHash != payload.TxHash {
+		t.Fatalf("expected FROST-validated hash %q, got %q", payload.TxHash, txHash)
 	}
 	if got := atomic.LoadInt32(&sidecarCalls); got != 1 {
 		t.Fatalf("expected exactly one sidecar broadcast call, got %d", got)
