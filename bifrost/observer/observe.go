@@ -457,32 +457,6 @@ func (o *Observer) Start(ctx context.Context) error {
 	return nil
 }
 
-// func (o *Observer) processSolvencyQueue(ctx context.Context) {
-// 	for {
-// 		select {
-// 		case <-o.stopChan:
-// 			return
-// 		case solvencyItem, more := <-o.globalSolvencyQueue:
-// 			if !more {
-// 				return
-// 			}
-// 			if solvencyItem.Chain.IsEmpty() || solvencyItem.Coins.IsEmpty() || solvencyItem.PubKey.IsEmpty() {
-// 				continue
-// 			}
-// 			o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
-// 			if err := o.attestationGossip.AttestSolvency(ctx, common.Solvency{
-// 				Chain:  solvencyItem.Chain,
-// 				Height: solvencyItem.Height,
-// 				PubKey: solvencyItem.PubKey,
-// 				Coins:  solvencyItem.Coins,
-// 			}); err != nil {
-// 				o.errCounter.WithLabelValues("fail_to_broadcast_solvency", "").Inc()
-// 				o.logger.Error().Err(err).Msg("fail to broadcast solvency tx")
-// 			}
-// 		}
-// 	}
-// }
-
 // Observations passed to this method with 'allowFutureObservation' false will be cached in memory and skipped if they are later observed in the mempool or block.
 func (o *Observer) ObserveSigned(txIn types.TxIn) {
 	if !txIn.AllowFutureObservation {

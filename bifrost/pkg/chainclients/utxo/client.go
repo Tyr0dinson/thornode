@@ -726,7 +726,11 @@ func (c *Client) updateCurrentBlockHeight(height int64) {
 
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
-	return cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate.Load())
+	txSize := c.cfg.UTXO.EstimatedAverageTxSize
+	if c.GetChain() == common.ZECChain {
+		txSize = 1 // ZEC lastFeeRate is already the full ZIP-317 fee, not a per-byte rate
+	}
+	return cosmos.NewUint(3 * txSize * c.lastFeeRate.Load())
 }
 
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
