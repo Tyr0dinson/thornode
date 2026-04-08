@@ -1818,3 +1818,92 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoo
 	c.Check(outItems[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 	c.Check(updatedVoter.Actions[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 }
+
+// TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupesSameInbound verifies
+// the queued-timeout collector only returns one retry hash even if multiple
+// advanced-queue rows share the same inbound txid.
+func (s *SlashingSuite) TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupesSameInbound(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	timeoutAge := int64(50)
+
+	inactiveVault := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	inactiveVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	toAddr, err := inactiveVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	finalizedTx := NewObservedTx(inboundTx, 12, inactiveVault.PubKey, 12)
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{finalizedTx})
+	voter.Tx = finalizedTx
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	queuedSwap0 := NewMsgSwap(
+		inboundTx,
+		common.ETHAsset,
+		GetRandomETHAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types2.SwapVersion_v2,
+		na.NodeAddress,
+	)
+	queuedSwap0.State.Out = cosmos.NewUint(3 * common.One)
+	queuedSwap0.State.In = queuedSwap0.Tx.Coins[0].Amount
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *queuedSwap0), IsNil)
+
+	queuedSwap1 := NewMsgSwap(
+		inboundTx,
+		common.ETHAsset,
+		GetRandomETHAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types2.SwapVersion_v2,
+		na.NodeAddress,
+	)
+	queuedSwap1.Index = 1
+	queuedSwap1.State.Out = cosmos.NewUint(1 * common.One)
+	queuedSwap1.State.In = queuedSwap1.Tx.Coins[0].Amount
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *queuedSwap1), IsNil)
+
+	ctx = ctx.WithBlockHeight(voter.FinalisedHeight + timeoutAge + 1)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	hashes := slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge)
+
+	c.Assert(hashes, HasLen, 1)
+	c.Check(hashes[0].Equals(inTxID), Equals, true)
+}

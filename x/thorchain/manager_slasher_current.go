@@ -625,6 +625,9 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 	defer iter.Close()
 
 	var hashes []common.TxID
+	// The advanced queue is keyed by txid+index, so a single inbound can appear
+	// more than once if multiple queued items survive for the same txid.
+	seen := make(map[common.TxID]struct{})
 	for ; iter.Valid(); iter.Next() {
 		var msg MsgSwap
 		if err := s.keeper.Cdc().Unmarshal(iter.Value(), &msg); err != nil {
@@ -674,6 +677,10 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 			continue
 		}
 
+		if _, ok := seen[inHash]; ok {
+			continue
+		}
+		seen[inHash] = struct{}{}
 		hashes = append(hashes, inHash)
 	}
 
