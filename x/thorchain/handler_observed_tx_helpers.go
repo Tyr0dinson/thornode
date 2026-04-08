@@ -3097,12 +3097,14 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			if err = keeper.SetPool(ctx, pool); err != nil {
 				return fmt.Errorf("fail to set pool after native rollback: %w", err)
 			}
+			eventAssetAmount := cosmos.ZeroUint()
 			if deductedSource {
-				emitPoolBalanceChangedEvent(ctx,
-					NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, sourceAmount, false),
-					"mempool swap rollback",
-					mgr)
+				eventAssetAmount = sourceAmount
 			}
+			emitPoolBalanceChangedEvent(ctx,
+				NewPoolMod(sourceAsset.GetLayer1Asset(), action.Coin.Amount, true, eventAssetAmount, false),
+				"mempool swap rollback",
+				mgr)
 			continue
 		}
 

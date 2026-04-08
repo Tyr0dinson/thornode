@@ -951,6 +951,71 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	}
 }
 
+// TestRevertMempoolSwapNativeRuneEmitsPoolBalanceChanged verifies native-RUNE
+// rollback reports the rune-side pool mutation in the emitted pool-balance
+// event, not just the source-asset deduction.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapNativeRuneEmitsPoolBalanceChanged(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	ctx = ctx.WithEventManager(cosmos.NewEventManager())
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.TxOutDelayMax.String(), 17280)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	runeTxID := GetRandomTxHash()
+	runeObservedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:    runeTxID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		},
+	}
+	runeVoter := NewObservedTxVoter(runeTxID, ObservedTxs{runeObservedTx})
+	runeVoter.Tx = runeObservedTx
+	runeVoter.UnfinalizedHeight = ctx.BlockHeight()
+
+	nativeTxOutItem := TxOutItem{
+		Chain:     common.THORChain,
+		InHash:    runeTxID,
+		ToAddress: GetRandomRUNEAddress(),
+		Coin:      common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)),
+	}
+	runeVoter.Actions = []TxOutItem{nativeTxOutItem}
+	mgr.Keeper().SetObservedTxInVoter(ctx, runeVoter)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeTxOutItem, ctx.BlockHeight()+15), IsNil)
+
+	err := rollbackMempoolSwapCached(ctx, mgr.Keeper(), mgr, runeVoter)
+	c.Assert(err, IsNil)
+
+	found := false
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type != types.PoolBalanceChangeEventType {
+			continue
+		}
+
+		attrs := make(map[string]string, len(evt.Attributes))
+		for _, attr := range evt.Attributes {
+			attrs[attr.Key] = attr.Value
+		}
+		if attrs["reason"] != "mempool swap rollback" {
+			continue
+		}
+
+		found = true
+		c.Check(attrs["asset"], Equals, common.BTCAsset.String())
+		c.Check(attrs["rune_amt"], Equals, cosmos.NewUint(5*common.One).String())
+		c.Check(attrs["rune_add"], Equals, "true")
+		c.Check(attrs["asset_amt"], Equals, cosmos.NewUint(1*common.One).String())
+		c.Check(attrs["asset_add"], Equals, "false")
+	}
+	c.Assert(found, Equals, true)
+}
+
 // TestRevertMempoolSwapRollbackOnError verifies that a rollback failure keeps
 // the original pools, staged outbounds, voter state, and mempool usage intact.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnError(c *C) {
