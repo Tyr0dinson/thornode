@@ -506,20 +506,37 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
-	// When a mempool swap finalizes, move staged outbounds to the real queue
-	// and return early - the swap was already executed from mempool, don't process it again.
-	// The error is intentionally not returned: propagating it would roll back the handler's
-	// cache context, rolling back voter state, chain height, and vault updates made above.
-	// finalizeOutboundsAtomic is internally transactional, so logging the error here does not leak
-	// partial staging/cap/queue side effects while preserving the voter, chain-height, and
-	// vault updates already made above. A failed finalize also intentionally keeps the
-	// mempool TOR reservation held alongside any still-staged outbounds until a later
+	// When a mempool swap finalizes, do not fall back into the legacy finalized
+	// swap/refund path while speculative mempool state is still live.
+	//
+	// If Actions already exist, move the staged outbounds to the real queue and
+	// return early; the swap was already executed from mempool, so don't process
+	// it again here.
+	//
+	// If Actions are still empty, this inbound can still have queue-backed
+	// mempool state (for example an advanced swap that has partially executed but
+	// not scheduled any outbounds yet). In that case return early as well and let
+	// advanced-queue settlement or timeout recovery finish the mempool snapshot
+	// instead of running the finalized refund checks below against a still-live
+	// queue item.
+	//
+	// The error is intentionally not returned: propagating it would roll back the
+	// handler's cache context, including voter state, chain height, and vault
+	// updates made above. finalizeOutboundsAtomic is internally transactional, so
+	// logging the error here does not leak partial staging/cap/queue side effects
+	// while preserving the voter, chain-height, and vault updates already made
+	// above. A failed finalize also intentionally keeps the mempool TOR
+	// reservation held alongside any still-staged outbounds until a later
 	// finalize retry or rollback clears the whole mempool-swap snapshot together.
-	// LackSigning's timeout reconciler provides that retry path instead of forcing an
-	// immediate hard failure here.
-	if hasFinalised && voter.HasReservedMempoolSwapTOR() && len(voter.Actions) > 0 {
-		if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
-			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
+	// LackSigning's timeout reconciler provides that retry path instead of
+	// forcing an immediate hard failure here.
+	if hasFinalised && voter.HasReservedMempoolSwapTOR() {
+		if len(voter.Actions) > 0 {
+			if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
+				ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
+			}
+		} else {
+			ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
 		}
 		return nil
 	}
