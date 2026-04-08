@@ -1963,6 +1963,10 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	// mempool outbounds. Without this the swapper addresses would have
 	// artificially inflated Spent counters, reducing their Available clout
 	// for future swaps even though the outbound never actually went out.
+	//
+	// The len(stagedItems) == 0 path above only reconstructs partial
+	// advanced-queue output from queue state before TryAddTxOutItem runs, so
+	// there is no outbound scheduling or clout spend to reclaim in that case.
 	if err = reclaimStagedClout(ctx, keeper, voter, stagedItems); err != nil {
 		ctx.Logger().Error("fail to reclaim staged clout on rollback", "error", err, "hash", voter.TxID)
 		// Non-fatal: clout auto-restores after CloutReset blocks, so a

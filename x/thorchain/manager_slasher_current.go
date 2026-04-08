@@ -339,11 +339,16 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						continue
 					}
 
-					if voter.FinalisedHeight == 0 && voter.HasReservedMempoolSwapTOR() {
-						ctx.Logger().Info("rolling back mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
-						if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
-							ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)
-						} else {
+						// Mempool swaps normally recover through the staged-outbound or
+						// queue-timeout paths, not through standard TxOut retry logic.
+						// If one still reaches LackSigning with no finalized height, treat
+						// it as queued mempool cleanup and roll it back instead of sending
+						// it through treasury recovery / normal outbound handling.
+						if voter.FinalisedHeight == 0 && voter.HasReservedMempoolSwapTOR() {
+							ctx.Logger().Info("rolling back queued mempool swap during LackSigning cleanup", "hash", toi.InHash, "attempts", attempts)
+							if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
+								ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)
+							} else {
 							incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "max_outbound_attempts")})
 							txs.TxArray[i].OutHash = common.BlankTxID
 						}
