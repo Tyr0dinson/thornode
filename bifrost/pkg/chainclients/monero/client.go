@@ -1062,9 +1062,9 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	}
 	maxInputs := int64(15)
 	if c.thorchainBridge != nil {
-		m, err := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get MaxUTXOsToSpend")
+		m, mErr := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
+		if mErr != nil {
+			c.logger.Err(mErr).Msg("fail to get MaxUTXOsToSpend")
 		}
 		if m > 0 {
 			maxInputs = m
