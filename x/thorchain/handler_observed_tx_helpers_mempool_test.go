@@ -2196,3 +2196,111 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementRe
 	c.Assert(outItems, HasLen, 1, Commentf("finalized settlement should queue the outbound immediately"))
 	c.Check(outItems[0].InHash.Equals(inTxID), Equals, true)
 }
+
+// TestFinalizedPendingQueueMempoolSwapSkipsRefundChecks verifies that a
+// finalized mempool swap with only queue-backed speculative state does not run
+// the legacy finalized refund path while the advanced queue still owns the
+// swap.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolSwapSkipsRefundChecks(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.LPUnits = sourcePool.BalanceRune
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.LPUnits = targetPool.BalanceRune
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	destination := GetRandomETHAddress()
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+destination.String(),
+	)
+	observedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 15)
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), observedTx, voter, []cosmos.AccAddress{na.NodeAddress}, true)
+	c.Assert(err, IsNil)
+
+	queuedSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(queuedSwap.State, NotNil)
+
+	queuedSwap.State.Quantity = 2
+	queuedSwap.State.Interval = 1
+	queuedSwap.State.Deposit = queuedSwap.Tx.Coins[0].Amount
+	queuedSwap.State.In = cosmos.ZeroUint()
+	queuedSwap.State.Out = cosmos.ZeroUint()
+	queuedSwap.State.Count = 0
+	queuedSwap.State.LastHeight = ctx.BlockHeight() - 1
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, queuedSwap), IsNil)
+
+	// Run one partial step so the finalized inbound still has only queue-backed
+	// mempool state and no staged Actions yet.
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+
+	partialVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(partialVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("partial execution should still hold mempool swap capacity"))
+	c.Check(partialVoter.Actions, HasLen, 0, Commentf("partial execution should not have scheduled finalized actions yet"))
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true, Commentf("partial execution should leave the advanced queue item live"))
+
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	mgr.Keeper().SetMimir(ctx, "HaltTrading", 1)
+
+	finalizedTx := NewObservedTx(inboundTx, 15, activeVault.PubKey, 15)
+	partialVoter.Tx = finalizedTx
+	partialVoter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxInVoter(ctx, partialVoter)
+
+	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), finalizedTx, partialVoter, []cosmos.AccAddress{na.NodeAddress}, true)
+	c.Assert(err, IsNil)
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("finalized queue-backed mempool swap should keep its reservation while settlement is pending"))
+	c.Check(updatedVoter.Actions, HasLen, 0, Commentf("finalized queue-backed mempool swap should not fabricate finalized actions"))
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true, Commentf("handler should leave the advanced queue item for later settlement or rollback"))
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("queue-backed finalized mempool swap should not create staged outbounds"))
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(outItems, HasLen, 0, Commentf("queue-backed finalized mempool swap should not schedule a refund while queue state is still live"))
+}
