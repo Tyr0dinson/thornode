@@ -86,6 +86,14 @@ func ensureFrostVaultRegistered(
 		req.SpendKeyHex = strings.TrimSpace(spendKeyHex)
 	}
 
+	// Non-member nodes lack a spend key but can still independently scan for
+	// incoming stealth outputs using the deterministic view key.
+	if req.SpendKeyHex == "" {
+		if vk, err := common.XMRViewKeyHex(); err == nil {
+			req.ViewKeyHex = vk
+		}
+	}
+
 	if _, err = signer.RegisterVault(req); err != nil {
 		logger.Debug().
 			Err(err).

@@ -221,6 +221,7 @@ type xmrFrostRegisterVaultRequest struct {
 	GroupKey            string `json:"group_key"`
 	Address             string `json:"address"`
 	SpendKeyHex         string `json:"spend_key_hex,omitempty"`
+	ViewKeyHex          string `json:"view_key_hex,omitempty"`
 	Source              string `json:"source,omitempty"`
 	VaultCreationHeight int64  `json:"birthday,omitempty"`
 }
