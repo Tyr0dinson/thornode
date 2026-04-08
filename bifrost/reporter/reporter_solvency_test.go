@@ -1370,11 +1370,7 @@ func (s *SolvencySuite) TestProcessInternalReturnsOnStopWhenReportQueueBackedUp(
 
 	done := make(chan struct{})
 	go func() {
-	done := make(chan struct{})
-	go func() {
 		d.processInternal(common.ETHChain, fromBlockScanner, 120)
-		close(done)
-	}()
 		close(done)
 	}()
 
