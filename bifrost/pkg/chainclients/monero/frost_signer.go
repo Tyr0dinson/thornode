@@ -1016,12 +1016,8 @@ func (s *FrostSigner) callGet(path string, out any) error {
 		return fmt.Errorf("frost endpoint %s returned empty response body", path)
 	}
 
-	if err = json.Unmarshal(respBody, out); err == nil {
-		return nil
-	}
-
 	var envelope xmrTSSResponseEnvelope
-	if envErr := json.Unmarshal(respBody, &envelope); envErr != nil {
+	if err = json.Unmarshal(respBody, &envelope); err != nil {
 		return fmt.Errorf("fail to unmarshal frost response: %w", err)
 	}
 	if envelope.Error != "" || envelope.Message != "" {
@@ -1031,13 +1027,10 @@ func (s *FrostSigner) callGet(path string, out any) error {
 		}
 		return fmt.Errorf("frost endpoint %s error: %s", path, msg)
 	}
-	if len(envelope.Result) == 0 {
-		return fmt.Errorf("frost endpoint %s returned empty result", path)
+	if len(envelope.Result) > 0 {
+		return json.Unmarshal(envelope.Result, out)
 	}
-	if err = json.Unmarshal(envelope.Result, out); err != nil {
-		return fmt.Errorf("fail to unmarshal frost result: %w", err)
-	}
-	return nil
+	return json.Unmarshal(respBody, out)
 }
 
 func (s *FrostSigner) call(method, path string, payload any, out any) error {
@@ -1086,13 +1079,11 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 		return fmt.Errorf("frost endpoint %s returned empty response body", path)
 	}
 
-	// Accept both direct payload responses and envelope-style responses.
-	if err = json.Unmarshal(respBody, out); err == nil {
-		return nil
-	}
-
+	// Try envelope first: json.Unmarshal succeeds on any valid JSON regardless
+	// of field matches, so we cannot rely on direct-unmarshal failure to detect
+	// envelope-style responses.
 	var envelope xmrTSSResponseEnvelope
-	if envErr := json.Unmarshal(respBody, &envelope); envErr != nil {
+	if err = json.Unmarshal(respBody, &envelope); err != nil {
 		return fmt.Errorf("fail to unmarshal frost response: %w", err)
 	}
 	if envelope.Error != "" || envelope.Message != "" {
@@ -1102,11 +1093,8 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 		}
 		return fmt.Errorf("frost endpoint %s error: %s", path, msg)
 	}
-	if len(envelope.Result) == 0 {
-		return fmt.Errorf("frost endpoint %s returned empty result", path)
+	if len(envelope.Result) > 0 {
+		return json.Unmarshal(envelope.Result, out)
 	}
-	if err = json.Unmarshal(envelope.Result, out); err != nil {
-		return fmt.Errorf("fail to unmarshal frost result: %w", err)
-	}
-	return nil
+	return json.Unmarshal(respBody, out)
 }
