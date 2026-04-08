@@ -2584,6 +2584,17 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 				itemAmount := math.NewIntFromBigInt(item.Coin.Amount.BigInt())
 				assetAmounts[item.Coin.Asset] = assetAmounts[item.Coin.Asset].Sub(itemAmount)
 			}
+			// Also subtract MaxGas for staged outbounds. The vault will spend gas
+			// once the staged outbound is materialized and signed.
+			for _, gasCoin := range item.MaxGas {
+				if gasCoin.Asset.IsNative() || gasCoin.IsEmpty() {
+					continue
+				}
+				if _, ok := assetAmounts[gasCoin.Asset]; ok {
+					gasAmount := math.NewIntFromBigInt(gasCoin.Amount.BigInt())
+					assetAmounts[gasCoin.Asset] = assetAmounts[gasCoin.Asset].Sub(gasAmount)
+				}
+			}
 		}
 	}
 

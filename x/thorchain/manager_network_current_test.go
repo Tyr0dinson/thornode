@@ -2424,6 +2424,7 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 	stagedItem := TxOutItem{
 		Chain:       common.BTCChain,
 		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(25*common.One)),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One))},
 		ToAddress:   GetRandomBTCAddress(),
 		VaultPubKey: vault.PubKey,
 		InHash:      inHash,
@@ -2435,9 +2436,9 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(solvency), Equals, 1)
 
-	// Vault has 150, pool needs 100, staged outbound 25
-	// Expected: 150 - 100 - 25 = 25 over-solvent
-	expectedSolvency := math.NewInt(25 * common.One)
+	// Vault has 150, pool needs 100, staged outbound 25, staged MaxGas 2
+	// Expected: 150 - 100 - 25 - 2 = 23 over-solvent
+	expectedSolvency := math.NewInt(23 * common.One)
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
 		Commentf("expected %s, got %s", expectedSolvency, solvency[0].Amount))
 
@@ -2453,8 +2454,8 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
-	// Vault 150 - Pool 100 - Staged 25 - Staged 10 = 15 over-solvent
-	expectedSolvency = math.NewInt(15 * common.One)
+	// Vault 150 - Pool 100 - Staged 25 - Staged gas 2 - Staged 10 = 13 over-solvent
+	expectedSolvency = math.NewInt(13 * common.One)
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
 		Commentf("expected %s, got %s", expectedSolvency, solvency[0].Amount))
 
@@ -2475,7 +2476,7 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
-	// Should still be 15 - inactive vault staged outbound is skipped
+	// Should still be 13 - inactive vault staged outbound is skipped
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
 		Commentf("inactive vault staged outbound should be skipped: expected %s, got %s", expectedSolvency, solvency[0].Amount))
 
@@ -2491,7 +2492,7 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
-	// Should still be 15 - native outbounds don't affect external vault solvency
+	// Should still be 13 - native outbounds don't affect external vault solvency
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
 		Commentf("native staged outbound should be skipped: expected %s, got %s", expectedSolvency, solvency[0].Amount))
 }
