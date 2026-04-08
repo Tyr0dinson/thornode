@@ -324,7 +324,7 @@ func (r *solvencyReporter) isVaultSolvent(account common.Account, vault types.Va
 		walletAmt := cosmos.ZeroUint()
 		walletCoin := account.Coins.GetCoin(asgardCoin.Asset)
 		if walletCoin.IsEmpty() {
-			r.logger.Info().Stringer("asset", asgardCoin.Asset).Stringer("amount", asgardCoin.Amount).Msg("asset exist in vault , but not in wallet, insolvent")
+			r.logger.Info().Stringer("asset", asgardCoin.Asset).Stringer("amount", asgardCoin.Amount).Msg("asset exists in vault but not in wallet, insolvent")
 		} else {
 			walletAmt = walletCoin.Amount
 		}
