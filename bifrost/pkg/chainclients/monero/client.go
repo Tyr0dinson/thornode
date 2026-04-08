@@ -2132,7 +2132,7 @@ func (c *Client) getVaultByPubKey(vaultPubKey common.PubKey) (ttypes.Vault, erro
 		return ttypes.Vault{}, asgardErr
 	}
 	for _, item := range vaults {
-		if item.PubKeyEddsa.Equals(vaultPubKey) {
+		if item.PubKeyEddsa.Equals(vaultPubKey) || item.PubKeyFrost.Equals(vaultPubKey) {
 			return item, nil
 		}
 	}
