@@ -1062,20 +1062,15 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		feeRate = uint64(tx.GasRate)
 	}
 	maxInputs := int64(15)
-	func() {
-		defer func() {
-			if recover() != nil {
-				maxInputs = 15
-			}
-		}()
-		if c.thorchainBridge == nil {
-			return
+	if c.thorchainBridge != nil {
+		m, err := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
+		if err != nil {
+			c.logger.Err(err).Msg("fail to get MaxUTXOsToSpend")
 		}
-		m, _ := c.thorchainBridge.GetMimir("MaxUTXOsToSpend")
 		if m > 0 {
 			maxInputs = m
 		}
-	}()
+	}
 	dustThreshold := common.XMRChain.DustThreshold().Uint64()
 
 	var requiredInputs []tssp.FrostSpentOutputRef
