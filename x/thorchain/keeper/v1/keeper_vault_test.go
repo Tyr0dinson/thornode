@@ -134,6 +134,7 @@ func (s *KeeperVaultSuite) TestVaultFrostIndexMissingForNonFrostVault(c *C) {
 	stranger := GetRandomPubKey()
 	c.Check(k.VaultExists(ctx, stranger), Equals, false)
 }
+
 func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

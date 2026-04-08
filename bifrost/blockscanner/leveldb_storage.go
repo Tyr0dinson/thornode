@@ -15,8 +15,8 @@ type LevelDBScannerStorage struct {
 }
 
 const (
-	ScanPosKey            = "blockscanpos"
-	blockStatusKeyPrefix  = "block-process-status-"
+	ScanPosKey           = "blockscanpos"
+	blockStatusKeyPrefix = "block-process-status-"
 )
 
 // BlockStatusItem indicate the status of a block
