@@ -34,6 +34,11 @@ func (vm *NetworkMgrDummy) TriggerKeygen(_ cosmos.Context, nas NodeAccounts) err
 	return nil
 }
 
+func (vm *NetworkMgrDummy) TriggerXMRKeygen(_ cosmos.Context, nas NodeAccounts) error {
+	vm.nas = nas
+	return nil
+}
+
 func (vm *NetworkMgrDummy) RotateVault(ctx cosmos.Context, vault Vault) error {
 	vm.vault = vault
 	return nil

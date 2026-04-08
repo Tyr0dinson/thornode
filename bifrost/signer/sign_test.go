@@ -776,7 +776,7 @@ func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
 
 	poolPK := types2.GetRandomPubKey()
 	poolED := common.EmptyPubKey
-	updatedPoolED, _, _, _, err := sign.runCustomKeygenHooks([]string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	updatedPoolED, _, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.ETHChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
 	c.Assert(err, IsNil)
 
 	c.Assert(custom.called, Equals, true)
@@ -806,7 +806,7 @@ func (s *SignSuite) TestRunCustomKeygenHooksAppliesPoolPubKeyOverride(c *C) {
 
 	poolPK := types2.GetRandomPubKey()
 	poolED := common.EmptyPubKey
-	updatedPoolED, _, _, _, err := sign.runCustomKeygenHooks([]string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	updatedPoolED, _, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.ETHChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
 	c.Assert(err, IsNil)
 	c.Assert(updatedPoolED.Equals(override), Equals, true)
 }
@@ -829,7 +829,7 @@ func (s *SignSuite) TestRunCustomKeygenHooksFailClosed(c *C) {
 	poolPK := types2.GetRandomPubKey()
 	poolED := common.EmptyPubKey
 
-	_, _, _, _, err := sign.runCustomKeygenHooks([]string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	_, _, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.ETHChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "custom keygen failed for ETH"), Equals, true)
 }

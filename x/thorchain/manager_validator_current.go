@@ -85,11 +85,11 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	if asgardSize <= 0 {
 		return nil
 	}
-	expectedActiveVaults := int64(len(nas)) / asgardSize
-	if int64(len(nas))%asgardSize > 0 {
+	expectedActiveVaults := splitAsgardGroupCount(len(nas), asgardSize)
+	if shouldMaintainXMRMonovault(vaults, expectedActiveVaults) {
 		expectedActiveVaults++
 	}
-	incompleteChurnCheck := int64(len(vaults)) != expectedActiveVaults
+	incompleteChurnCheck := len(vaults) != expectedActiveVaults
 	oldVaultCheck := ctx.BlockHeight()-lastChurnHeight > churnInterval
 	retryChurn := (oldVaultCheck || incompleteChurnCheck) && onChurnTick
 
@@ -188,8 +188,18 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		return err
 	}
 	if ok {
-		for _, nodeAccSet := range vm.splitNext(ctx, next, asgardSize) {
+		splitGroups := vm.splitNext(ctx, next, asgardSize)
+		for _, nodeAccSet := range splitGroups {
 			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
+				return err
+			}
+		}
+		activeVaults, activeErr := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+		if activeErr != nil {
+			return activeErr
+		}
+		if shouldMaintainXMRMonovault(activeVaults, len(splitGroups)) {
+			if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
 				return err
 			}
 		}

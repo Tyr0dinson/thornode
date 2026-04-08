@@ -40,6 +40,10 @@ func (m Vault) GetChains() common.Chains {
 	return chains
 }
 
+func (m Vault) HasChain(chain common.Chain) bool {
+	return m.GetChains().Has(chain)
+}
+
 func (m Vault) GetMembership() common.PubKeys {
 	pubkeys := make(common.PubKeys, 0)
 	for _, pk := range m.Membership {
@@ -60,6 +64,24 @@ func (m Vault) IsType(vtype VaultType) bool {
 // IsAsgard check whether the vault is Asgard vault, it returns true when it is an asgard vault
 func (m Vault) IsAsgard() bool {
 	return m.IsType(VaultType_AsgardVault)
+}
+
+// IsXMRMonovault returns true for the dedicated XMR vault family, which only
+// serves THOR+XMR instead of the regular split-Asgard chain set.
+func (m Vault) IsXMRMonovault() bool {
+	if !m.IsAsgard() {
+		return false
+	}
+	chains := m.GetChains().Distinct()
+	if !chains.Has(common.XMRChain) {
+		return false
+	}
+	for _, chain := range chains {
+		if !chain.Equals(common.THORChain) && !chain.Equals(common.XMRChain) {
+			return false
+		}
+	}
+	return true
 }
 
 // IsActive return true when the vault is in active status

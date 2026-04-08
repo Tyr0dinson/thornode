@@ -593,11 +593,11 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		ctx.Logger().Error("keeper is nil, can't fulfill query")
 		return nil, errors.New("keeper is nil, can't fulfill query")
 	}
-	// select vault that is most secure
-	vault := k.GetMostSecure(ctx, active, signingTransactionPeriod)
-
-	chains := vault.GetChains()
-
+	chains := make(common.Chains, 0)
+	for _, vault := range active {
+		chains = append(chains, vault.GetChains()...)
+	}
+	chains = chains.Distinct()
 	if len(chains) == 0 {
 		chains = common.Chains{common.RuneAsset().Chain}
 	}
@@ -613,6 +613,11 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		isChainTradingPaused := k.IsChainTradingHalted(ctx, chain)
 		isChainLpPaused := k.IsLPPaused(ctx, chain)
 
+		vault, err := selectActiveVaultForChain(ctx, k, active, chain, signingTransactionPeriod)
+		if err != nil {
+			ctx.Logger().Error("fail to select active vault for chain", "chain", chain.String(), "error", err)
+			return nil, fmt.Errorf("fail to select active vault for chain %s: %w", chain, err)
+		}
 		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)

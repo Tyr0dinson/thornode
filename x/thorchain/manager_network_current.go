@@ -88,10 +88,21 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
 	} else {
-		// Trigger a keygen ceremony
+		// Trigger the regular split-Asgard keygen ceremony and, when the network
+		// has multiple split groups, the dedicated XMR monovault keygen as well.
+		// TODO(XMR monovault): this still assumes an explicit vault-genesis style
+		// bootstrap for the first dedicated XMR monovault so the network can
+		// start from a known monovault family on day zero.
 		err := vm.TriggerKeygen(ctx, active)
 		if err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
+		}
+		asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
+		splitGroupCount := splitAsgardGroupCount(len(active), asgardSize)
+		if shouldMaintainXMRMonovault(vaults, splitGroupCount) {
+			if err := vm.TriggerXMRKeygen(ctx, active); err != nil {
+				return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
+			}
 		}
 	}
 	return nil
@@ -221,7 +232,11 @@ func (vm *NetworkMgr) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) error 
 
 	// get assets to create derived pools
 	layer1Assets := []common.Asset{common.TOR}
-	for _, chain := range active[0].GetChains() {
+	activeChains := make(common.Chains, 0)
+	for _, vault := range active {
+		activeChains = append(activeChains, vault.GetChains()...)
+	}
+	for _, chain := range activeChains.Distinct() {
 		// no derived asset for thorchain
 		if chain.IsTHORChain() {
 			continue
@@ -611,12 +626,17 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					continue
 				}
 
-				targetVaults := active
+				chain := coin.Asset.GetChain()
+				targetVaults := filterVaultsByChain(active, chain)
+				if len(targetVaults) == 0 {
+					ctx.Logger().Error("no active target vault for migration chain", "chain", chain.String())
+					continue
+				}
 
 				// Only prioritise migration to unreceived ActiveVaults for gas assets.
 				if coin.Asset.IsGasAsset() {
 					var filteredVaults Vaults
-					for _, activeVault := range active {
+					for _, activeVault := range targetVaults {
 						// Do not use HasAsset function so as to use zero-amount Coins to mark scheduled migrations,
 						// without double-counting outbound item migration amounts.
 						hasAsset := false
@@ -692,8 +712,6 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					amt = amt.QuoUint64(uint64(1 + migrationRounds - nth)) // as nth < migrationRounds, the denominator is never zero
 				}
 				amt = cosmos.RoundToDecimal(amt, coin.Decimals)
-
-				chain := coin.Asset.GetChain()
 
 				// minus gas costs for our transactions
 				gasAsset := chain.GetGasAsset()
@@ -1225,6 +1243,14 @@ func (vm *NetworkMgr) removePOLLiquidity(
 
 // TriggerKeygen generate a record to instruct signer kick off keygen process
 func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error {
+	return vm.triggerKeygen(ctx, nas, AsgardKeygen)
+}
+
+func (vm *NetworkMgr) TriggerXMRKeygen(ctx cosmos.Context, nas NodeAccounts) error {
+	return vm.triggerKeygen(ctx, nas, XMRMonovaultKeygen)
+}
+
+func (vm *NetworkMgr) triggerKeygen(ctx cosmos.Context, nas NodeAccounts, keygenType types.KeygenType) error {
 	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
 	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
@@ -1234,7 +1260,7 @@ func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 	for i := range nas {
 		members = append(members, nas[i].PubKeySet.Secp256k1.String())
 	}
-	keygen, err := NewKeygen(ctx.BlockHeight(), members, AsgardKeygen)
+	keygen, err := NewKeygen(ctx.BlockHeight(), members, keygenType)
 	if err != nil {
 		return fmt.Errorf("fail to create a new keygen: %w", err)
 	}
@@ -1254,7 +1280,16 @@ func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 		return fmt.Errorf("fail to get active vaults: %w", err)
 	}
 	for _, vault := range active {
-		if vault.MembershipEquals(keygen.GetMembers()) {
+		if !vault.MembershipEquals(keygen.GetMembers()) {
+			continue
+		}
+		if keygenType == XMRMonovaultKeygen && !vault.IsXMRMonovault() {
+			continue
+		}
+		if keygenType == AsgardKeygen && vault.IsXMRMonovault() {
+			continue
+		}
+		if vault.Status == ActiveVault {
 			ctx.Logger().Info("skip keygen due to vault already existing")
 			return nil
 		}
@@ -1288,19 +1323,24 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 
 	// find vaults the new vault conflicts with, mark them as inactive
 	for _, asgard := range active {
-		for _, member := range asgard.GetMembership() {
-			if vault.Contains(member) {
-				asgard.UpdateStatus(RetiringVault, ctx.BlockHeight())
-				if err := vm.k.SetVault(ctx, asgard); err != nil {
-					return err
-				}
-
-				ctx.EventManager().EmitEvent(
-					cosmos.NewEvent(EventTypeInactiveVault,
-						cosmos.NewAttribute("set asgard vault to inactive", asgard.PubKey.String())))
-				break
-			}
+		conflicts := false
+		switch {
+		case vault.IsXMRMonovault():
+			conflicts = asgard.HasChain(common.XMRChain)
+		default:
+			conflicts = !asgard.IsXMRMonovault()
 		}
+		if !conflicts {
+			continue
+		}
+		asgard.UpdateStatus(RetiringVault, ctx.BlockHeight())
+		if err := vm.k.SetVault(ctx, asgard); err != nil {
+			return err
+		}
+
+		ctx.EventManager().EmitEvent(
+			cosmos.NewEvent(EventTypeInactiveVault,
+				cosmos.NewAttribute("set asgard vault to inactive", asgard.PubKey.String())))
 	}
 
 	// Update Node account membership
@@ -1310,6 +1350,9 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 			return err
 		}
 		na.TryAddSignerPubKey(vault.PubKey)
+		if !vault.PubKeyFrost.IsEmpty() && !vault.PubKeyFrost.Equals(vault.PubKey) {
+			na.TryAddSignerPubKey(vault.PubKeyFrost)
+		}
 		if err := vm.k.SetNodeAccount(ctx, na); err != nil {
 			return err
 		}

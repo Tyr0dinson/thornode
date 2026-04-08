@@ -1297,7 +1297,13 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 		)
 		return err
 	}
-	observedPubKey := active[0].PubKey
+	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	activeVault, err := selectActiveVaultForChain(ctx, tos.keeper, active, common.THORChain, signingTransactionPeriod)
+	if err != nil {
+		ctx.Logger().Error("fail to select active vault for native txn", "err", err)
+		return err
+	}
+	observedPubKey := activeVault.PubKey
 
 	observedTx := ObservedTx{
 		ObservedPubKey: observedPubKey,

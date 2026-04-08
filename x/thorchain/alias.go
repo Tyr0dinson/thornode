@@ -54,11 +54,12 @@ const (
 	NodeTypeVault     = types.NodeType_TypeVault
 
 	// Bond type
-	BondPaid     = types.BondType_bond_paid
-	BondReturned = types.BondType_bond_returned
-	BondCost     = types.BondType_bond_cost
-	BondReward   = types.BondType_bond_reward
-	AsgardKeygen = types.KeygenType_AsgardKeygen
+	BondPaid           = types.BondType_bond_paid
+	BondReturned       = types.BondType_bond_returned
+	BondCost           = types.BondType_bond_cost
+	BondReward         = types.BondType_bond_reward
+	AsgardKeygen       = types.KeygenType_AsgardKeygen
+	XMRMonovaultKeygen = types.KeygenType_XMRMonovaultKeygen
 
 	// Bond type
 	AddPendingLiquidity      = types.PendingLiquidityType_add

@@ -366,7 +366,6 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		address = common.NoAddress
 		router = common.NoAddress
 	} else {
-		// get the most secure vault for inbound
 		var active Vaults
 		active, err = mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 		if err != nil {
@@ -374,7 +373,10 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		}
 		constAccessor := mgr.GetConstants()
 		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-		vault := mgr.Keeper().GetMostSecure(ctx, active, signingTransactionPeriod)
+		vault, err := selectActiveVaultForChain(ctx, mgr.Keeper(), active, chain, signingTransactionPeriod)
+		if err != nil {
+			return common.NoAddress, common.NoAddress, 0, err
+		}
 		address, err = vault.GetAddress(chain)
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err

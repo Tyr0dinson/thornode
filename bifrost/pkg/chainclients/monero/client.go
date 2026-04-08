@@ -1,6 +1,8 @@
 package monero
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1567,9 +1570,6 @@ func (c *Client) CustomKeygen() bool {
 
 func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult, error) {
 	vaultPubKey := req.PoolPubKeyEddsa
-	if vaultPubKey.IsEmpty() {
-		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires a non-empty eddsa vault pubkey")
-	}
 	if c.frostSigner == nil {
 		return types.CustomKeygenResult{}, fmt.Errorf("%w: signer engine is not initialized", ErrFrostNotConfigured)
 	}
@@ -1592,6 +1592,10 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	if len(members) == 0 {
 		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires non-empty member set")
 	}
+	requestedVaultKey := strings.TrimSpace(vaultPubKey.String())
+	if requestedVaultKey == "" {
+		requestedVaultKey = xmrMonovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
+	}
 	version := strings.TrimSpace(req.ThorchainVersion)
 	if version == "" && c.thorchainBridge != nil {
 		chainVersion, versionErr := c.thorchainBridge.GetThorchainVersion()
@@ -1601,7 +1605,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	}
 
 	frostResp, err := c.tssServer.FrostKeygen(tssp.FrostKeygenRequest{
-		VaultPubKey:   vaultPubKey.String(),
+		VaultPubKey:   requestedVaultKey,
 		SignerPubKeys: members,
 		BlockHeight:   req.BlockHeight,
 		Version:       version,
@@ -1636,7 +1640,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	if err != nil {
 		return types.CustomKeygenResult{}, fmt.Errorf("fail to convert FROST group key to vault pubkey: %w", err)
 	}
-	if !frostVaultPubKey.Equals(vaultPubKey) {
+	if !vaultPubKey.IsEmpty() && !frostVaultPubKey.Equals(vaultPubKey) {
 		c.logger.Info().
 			Str("requested_pool_pubkey_eddsa", vaultPubKey.String()).
 			Str("frost_pool_pubkey_eddsa", frostVaultPubKey.String()).
@@ -1672,6 +1676,25 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		FrostKeyshareHex:     frostResp.KeyBytesHex,
 		ObservedMoneroHeight: frostResp.ObservedMoneroHeight,
 	}, nil
+}
+
+func xmrMonovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members []string) string {
+	var canonicalMembers []string
+	for _, member := range members {
+		member = strings.TrimSpace(member)
+		if member != "" {
+			canonicalMembers = append(canonicalMembers, member)
+		}
+	}
+	sort.Strings(canonicalMembers)
+	labelInput := fmt.Sprintf(
+		"thorchain-xmr-monovault-keygen\nheight=%d\npool=%s\nmembers=%s",
+		blockHeight,
+		strings.TrimSpace(poolPubKey.String()),
+		strings.Join(canonicalMembers, ","),
+	)
+	sum := sha256.Sum256([]byte(labelInput))
+	return "xmr-monovault-" + hex.EncodeToString(sum[:])
 }
 
 func (c *Client) vaultSigningMembers(vaultPubKey common.PubKey) ([]string, error) {

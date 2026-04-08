@@ -27,18 +27,21 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type KeygenType int32
 
 const (
-	KeygenType_UnknownKeygen KeygenType = 0
-	KeygenType_AsgardKeygen  KeygenType = 1
+	KeygenType_UnknownKeygen      KeygenType = 0
+	KeygenType_AsgardKeygen       KeygenType = 1
+	KeygenType_XMRMonovaultKeygen KeygenType = 2
 )
 
 var KeygenType_name = map[int32]string{
 	0: "UnknownKeygen",
 	1: "AsgardKeygen",
+	2: "XMRMonovaultKeygen",
 }
 
 var KeygenType_value = map[string]int32{
-	"UnknownKeygen": 0,
-	"AsgardKeygen":  1,
+	"UnknownKeygen":      0,
+	"AsgardKeygen":       1,
+	"XMRMonovaultKeygen": 2,
 }
 
 func (x KeygenType) String() string {

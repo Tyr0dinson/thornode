@@ -83,8 +83,8 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 		return err
 	}
 
-	if msg.KeygenType != AsgardKeygen {
-		return fmt.Errorf("only asgard vaults allowed for tss")
+	if msg.KeygenType != AsgardKeygen && msg.KeygenType != XMRMonovaultKeygen {
+		return fmt.Errorf("only asgard or xmr monovault keygens allowed for tss")
 	}
 
 	if !msg.PoolPubKeyEddsa.IsEmpty() {
@@ -418,21 +418,23 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				"pubkey", msg.PoolPubKey,
 			)
 
-			// we must also have quorum on the check signature
-			consensusSig, ok := voter.ConsensusCheckSignature()
-			if !ok {
-				ctx.Logger().Error("keygen rejected due to lacking check signature quorum")
-				return nil
-			}
+			if msg.KeygenType == AsgardKeygen {
+				// we must also have quorum on the check signature
+				consensusSig, ok := voter.ConsensusCheckSignature()
+				if !ok {
+					ctx.Logger().Error("keygen rejected due to lacking check signature quorum")
+					return nil
+				}
 
-			// log an error if any bad nodes submitted a mismatched check signature
-			for _, sig := range voter.Secp256K1Signatures {
-				if sig != consensusSig {
-					ctx.Logger().Error(
-						"mismatched check signature detected",
-						"expected", base64.StdEncoding.EncodeToString([]byte(consensusSig)),
-						"found", base64.StdEncoding.EncodeToString([]byte(sig)),
-					)
+				// log an error if any bad nodes submitted a mismatched check signature
+				for _, sig := range voter.Secp256K1Signatures {
+					if sig != consensusSig {
+						ctx.Logger().Error(
+							"mismatched check signature detected",
+							"expected", base64.StdEncoding.EncodeToString([]byte(consensusSig)),
+							"found", base64.StdEncoding.EncodeToString([]byte(sig)),
+						)
+					}
 				}
 			}
 
@@ -442,8 +444,18 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 			vaultType := AsgardVault
 			chains := voter.ConsensusChains()
-			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), voter.PoolPubKeyEddsa)
+			if msg.KeygenType == XMRMonovaultKeygen {
+				chains = xmrMonovaultChains()
+			}
+			vaultPubKeyEddsa := voter.PoolPubKeyEddsa
+			if vaultPubKeyEddsa.IsEmpty() && msg.KeygenType == XMRMonovaultKeygen {
+				vaultPubKeyEddsa = msg.PoolPubKeyFrost
+			}
+			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), vaultPubKeyEddsa)
 			vault.PubKeyFrost = msg.PoolPubKeyFrost
+			if vault.PubKeyFrost.IsEmpty() && msg.KeygenType == XMRMonovaultKeygen {
+				vault.PubKeyFrost = voter.PoolPubKey
+			}
 			vault.Membership = voter.PubKeys
 			if vault.GetChains().Has(common.XMRChain) {
 				xmrHeight, _ := h.mgr.Keeper().GetLastChainHeight(ctx, common.XMRChain)

@@ -212,3 +212,53 @@ func TestClientKeygenFailsWhenFrostAddressMismatchesDerivedAddress(t *testing.T)
 		t.Fatalf("expected no persisted mapping on mismatched result")
 	}
 }
+
+func TestClientKeygenAllowsMonovaultRequestWithoutPreseededEddsaKey(t *testing.T) {
+	t.Parallel()
+
+	frostVaultPubKey, expectedAddress := testVaultPubKeyAndAddress(t)
+	groupKey, err := groupKeyHexFromVaultPubKey(frostVaultPubKey)
+	if err != nil {
+		t.Fatalf("group key: %v", err)
+	}
+	tssServer := &mockFrostKeygenTSS{
+		resp: tssp.FrostKeygenResponse{
+			Address:     expectedAddress.String(),
+			GroupKey:    groupKey,
+			KeyBytesHex: "c001d00d",
+			Status:      tsscommon.Success,
+		},
+	}
+	store := newTestVaultAddressStore(t)
+
+	frostSigner := newTestFrostSigner(t)
+	c := &Client{
+		chain:             common.XMRChain,
+		frostSigner:       frostSigner,
+		tssServer:         tssServer,
+		scanner:           NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72),
+		vaultAddressMap:   make(map[string]common.Address),
+		vaultAddressStore: store,
+	}
+
+	result, err := c.Keygen(chainclienttypes.CustomKeygenRequest{
+		Members:          []string{"member-b", "member-a"},
+		BlockHeight:      202,
+		ThorchainVersion: "1.134.0",
+	})
+	if err != nil {
+		t.Fatalf("Keygen failed: %v", err)
+	}
+	if !result.PoolPubKeyEddsa.Equals(frostVaultPubKey) {
+		t.Fatalf("expected eddsa pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyEddsa)
+	}
+	if tssServer.lastReq.VaultPubKey == "" {
+		t.Fatalf("expected deterministic non-empty vault key label")
+	}
+	if tssServer.lastReq.VaultPubKey == frostVaultPubKey.String() {
+		t.Fatalf("expected synthetic monovault key label, got final vault pubkey")
+	}
+	if !strings.HasPrefix(tssServer.lastReq.VaultPubKey, "xmr-monovault-") {
+		t.Fatalf("unexpected monovault key label: %s", tssServer.lastReq.VaultPubKey)
+	}
+}
