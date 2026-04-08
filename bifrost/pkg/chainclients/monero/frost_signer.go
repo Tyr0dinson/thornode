@@ -873,7 +873,7 @@ func (s *FrostSigner) getDaemonChainHeight() (int64, error) {
 		return 0, err
 	}
 	if out.Height <= 0 {
-		return 0, nil
+		return 0, fmt.Errorf("daemon returned invalid height %d", out.Height)
 	}
 	return out.Height - 1, nil
 }
