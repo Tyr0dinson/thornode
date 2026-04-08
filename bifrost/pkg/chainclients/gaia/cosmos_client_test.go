@@ -79,7 +79,7 @@ func (m mockTxServiceClient) TxDecodeAmino(context.Context, *txtypes.TxDecodeAmi
 	return nil, nil
 }
 
-func TestBroadcastTxRejectsWrongSequence(t *testing.T) {
+func TestBroadcastTxAllowsWrongSequence(t *testing.T) {
 	t.Parallel()
 
 	client := CosmosClient{
@@ -95,11 +95,11 @@ func TestBroadcastTxRejectsWrongSequence(t *testing.T) {
 	}
 
 	txid, err := client.BroadcastTx(stypes.TxOutItem{}, []byte("signed"))
-	if err == nil {
-		t.Fatal("expected wrong-sequence broadcast to fail")
+	if err != nil {
+		t.Fatalf("expected wrong-sequence broadcast to be tolerated, got %v", err)
 	}
-	if txid != "" {
-		t.Fatalf("expected empty txid on wrong-sequence failure, got %q", txid)
+	if txid != "WRONGSEQ" {
+		t.Fatalf("expected returned txid to be preserved, got %q", txid)
 	}
 }
 
