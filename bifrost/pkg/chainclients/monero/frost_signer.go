@@ -929,9 +929,6 @@ func (s *FrostSigner) callDaemonJSONRPC(method string, params any, out any) erro
 		return fmt.Errorf("fail to create monero daemon request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if s.bearer != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bearer))
-	}
 	if s.username != "" {
 		req.SetBasicAuth(s.username, s.password)
 	}
