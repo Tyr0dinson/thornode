@@ -907,7 +907,7 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
 	c.Assert(e.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "somesig"), IsNil)
-	result, _, _, err = e.SignTx(txOut, 1)
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, IsNil) // suppressed by signer cache
 }
@@ -1024,7 +1024,7 @@ func (s *SolTestSuite) TestBroadcastTxLandedDespiteError(c *C) {
 	// Override the broadcast lookup delay so the test doesn't sleep.
 	broadcastLookupDelay = 0
 
-	rawTx, _, _, err := e.SignTx(txOut, 1)
+	rawTx, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(rawTx, NotNil)
 

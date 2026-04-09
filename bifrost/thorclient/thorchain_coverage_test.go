@@ -311,7 +311,7 @@ func (s *CoverageSuite) TestPostKeysignFailure(c *C) {
 	coins := common.Coins{
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(100)),
 	}
-	txID, err := s.bridge.PostKeysignFailure(blame, 1024, "memo", coins, pk)
+	txID, err := s.bridge.PostKeysignFailure(blame, "memo", coins, pk)
 	c.Assert(err, IsNil)
 	c.Assert(txID.IsEmpty(), Equals, false)
 }
@@ -322,7 +322,7 @@ func (s *CoverageSuite) TestPostKeysignFailure_EmptyBlame(c *C) {
 	coins := common.Coins{
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(100)),
 	}
-	txID, err := s.bridge.PostKeysignFailure(blame, 1024, "memo", coins, pk)
+	txID, err := s.bridge.PostKeysignFailure(blame, "memo", coins, pk)
 	c.Assert(err, IsNil)
 	c.Assert(txID.IsEmpty(), Equals, false)
 }

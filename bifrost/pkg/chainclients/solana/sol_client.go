@@ -815,7 +815,7 @@ func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, mem
 		// in the same slash/freeze handling as the secp256k1 signer paths.
 		var keysignError tss.KeysignError
 		if errors.As(err, &keysignError) && len(keysignError.Blame.BlameNodes) > 0 {
-			txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, tx.GetMemo(), tx.Coins, tx.VaultPubKeyEddsa)
+			txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, tx.GetMemo(), tx.Coins, tx.VaultPubKeyEddsa)
 			if errPostKeysignFail != nil {
 				return checkPointBytes, nil, nil, multierror.Append(err, errPostKeysignFail)
 			}

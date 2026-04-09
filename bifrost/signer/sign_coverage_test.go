@@ -161,7 +161,7 @@ type MockRound7ErrorChainClient struct {
 	MockChainClient
 }
 
-func (b *MockRound7ErrorChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+func (b *MockRound7ErrorChainClient) SignTx(tai []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
 	return nil, nil, nil, tss.NewKeysignError(ttypes.Blame{
 		FailReason: "round 7 failure",
 		Round:      "SignRound7Message",
@@ -186,7 +186,7 @@ type MockSignErrorChainClient struct {
 	checkpoint []byte
 }
 
-func (b *MockSignErrorChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+func (b *MockSignErrorChainClient) SignTx(tai []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
 	return nil, b.checkpoint, nil, b.signErr
 }
 
@@ -198,7 +198,7 @@ type MockSuccessChainClient struct {
 	broadcastTxs int
 }
 
-func (b *MockSuccessChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+func (b *MockSuccessChainClient) SignTx(tai []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
 	return []byte("signed-tx"), nil, nil, nil
 }
 
@@ -287,17 +287,17 @@ func (s *SignCoverageSuite) TestIsTssKeysign(c *C) {
 
 func (s *SignCoverageSuite) TestRunWithContext_Success(c *C) {
 	ctx := context.Background()
-	checkpoint, txIn, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
-		return []byte("checkpoint"), &types.TxInItem{Memo: "test"}, nil
+	checkpoint, txIns, err := runWithContext(ctx, func() ([]byte, []*types.TxInItem, error) {
+		return []byte("checkpoint"), []*types.TxInItem{{Memo: "test"}}, nil
 	})
 	c.Assert(err, IsNil)
 	c.Assert(string(checkpoint), Equals, "checkpoint")
-	c.Assert(txIn.Memo, Equals, "test")
+	c.Assert(txIns[0].Memo, Equals, "test")
 }
 
 func (s *SignCoverageSuite) TestRunWithContext_Error(c *C) {
 	ctx := context.Background()
-	checkpoint, txIn, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
+	checkpoint, txIn, err := runWithContext(ctx, func() ([]byte, []*types.TxInItem, error) {
 		return nil, nil, fmt.Errorf("sign failed")
 	})
 	c.Assert(err, NotNil)
@@ -310,7 +310,7 @@ func (s *SignCoverageSuite) TestRunWithContext_Timeout(c *C) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	_, _, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
+	_, _, err := runWithContext(ctx, func() ([]byte, []*types.TxInItem, error) {
 		time.Sleep(500 * time.Millisecond)
 		return nil, nil, nil
 	})
