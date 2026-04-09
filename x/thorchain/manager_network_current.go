@@ -62,6 +62,8 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 		return errors.New("no active accounts,cannot proceed")
 	}
 	if len(active) == 1 {
+		// Single-node genesis keeps one shared vault. The dedicated XMR monovault
+		// is only meaningful once multiple active validators exist.
 		supportChains := common.Chains{
 			common.THORChain,
 			common.BTCChain,
@@ -88,16 +90,15 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
 	} else {
-		// Trigger the regular split-Asgard keygen ceremony. The dedicated XMR
-		// monovault is scheduled separately after the regular vault family
-		// materializes, so FROST keygen does not contend with the normal churn
-		// keygen in the same block.
-		// TODO(XMR monovault): this still assumes an explicit vault-genesis style
-		// bootstrap for the first dedicated XMR monovault so the network can
-		// start from a known monovault family on day zero.
+		// Multi-node genesis should schedule both the regular split-Asgard churn
+		// family and the dedicated XMR monovault family so the first monovault is
+		// born with the initial vault set instead of waiting for a later churn.
 		err := vm.TriggerKeygen(ctx, active)
 		if err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
+		}
+		if err := vm.TriggerXMRKeygen(ctx, active); err != nil {
+			return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
 		}
 	}
 	return nil

@@ -46,11 +46,9 @@ func hasActiveOrInitXMRMonovault(vaults Vaults) bool {
 }
 
 func shouldMaintainXMRMonovault(vaults Vaults, validatorCount int) bool {
-	// TODO(XMR monovault): add an explicit vault-genesis/bootstrap path for the
-	// first dedicated XMR monovault. This helper governs steady-state
-	// maintenance, but the initial monovault still needs a deliberate kick-off
-	// during genesis/upgrade so the dedicated family exists before churn logic
-	// can preserve it.
+	// Multi-node genesis and steady-state churn both schedule the dedicated XMR
+	// monovault family. Keep maintaining it whenever validators exist or an
+	// existing dedicated family is already present in vault state.
 	return validatorCount > 0 || hasDedicatedXMRMonovault(vaults)
 }
 

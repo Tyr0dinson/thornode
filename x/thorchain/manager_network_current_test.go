@@ -532,6 +532,38 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	ctx = ctx.WithBlockHeight(1)
 	mgr.K = helper
 	networkMgr = newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	nodeAccountA := GetRandomValidatorNode(NodeActive)
+	nodeAccountB := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccountA), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccountB), IsNil)
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+
+	vaults, err = mgr.Keeper().GetAsgardVaults(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 0)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 2)
+
+	var sawRegular, sawXMRMonovault bool
+	for _, keygen := range keygenBlock.Keygens {
+		switch keygen.Type {
+		case AsgardKeygen:
+			sawRegular = true
+		case XMRMonovaultKeygen:
+			sawXMRMonovault = true
+		}
+	}
+	c.Assert(sawRegular, Equals, true)
+	c.Assert(sawXMRMonovault, Equals, true)
+
+	ctx, mgr = setupManagerForTest(c)
+	helper = NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	ctx = ctx.WithBlockHeight(1)
+	mgr.K = helper
+	networkMgr = newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
 	c.Assert(networkMgr.EndBlock(ctx, mgr), NotNil)
 	helper.failToListActiveAccounts = false
