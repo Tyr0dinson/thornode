@@ -462,7 +462,7 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 				if !isSupportedFeaturedNetworkByte(info.networkByte) {
 					return MockNet
 				}
-				if info.featuredSubaddress {
+				if info.featuredSubaddress || (!info.featuredSubaddress && !info.featuredIntegrated && !info.featuredGuaranteed) {
 					return mainNetPredicate()
 				}
 				return MockNet

@@ -67,7 +67,7 @@ func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 	}
 }
 
-func TestValidateXMRSignTxRejectsFeaturedDestination(t *testing.T) {
+func TestValidateXMRSignTxAcceptsFeaturedDestination(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
@@ -83,16 +83,14 @@ func TestValidateXMRSignTxRejectsFeaturedDestination(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
+	// Featured addresses are valid destinations; validation should succeed.
 	_, err := c.validateXMRSignTx(tx, 100, true)
-	if err == nil {
-		t.Fatalf("expected wallet-compatible destination validation error")
-	}
-	if !strings.Contains(err.Error(), "wallet-compatible standard/subaddress") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("featured addresses should be accepted as valid destinations: %v", err)
 	}
 }
 
-func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) {
+func TestValidateXMRSignTxAcceptsNonGuaranteedFeaturedDestination(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
@@ -108,12 +106,10 @@ func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) 
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
+	// Non-guaranteed featured addresses are valid destinations; validation should succeed.
 	_, err := c.validateXMRSignTx(tx, 100, true)
-	if err == nil {
-		t.Fatalf("expected wallet-compatible destination validation error")
-	}
-	if !strings.Contains(err.Error(), "wallet-compatible standard/subaddress") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("non-guaranteed featured addresses should be accepted as valid destinations: %v", err)
 	}
 }
 

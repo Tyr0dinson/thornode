@@ -69,7 +69,7 @@ func (m *mockBridgeForKeysign) GetContractAddress() ([]thorclient.PubKeyContract
 	return nil, nil
 }
 func (m *mockBridgeForKeysign) GetErrataMsg(common.TxID, common.Chain) sdk.Msg { return nil }
-func (m *mockBridgeForKeysign) GetKeygenStdTx(common.PubKey, []byte, []byte, []stypes.Blame, common.PubKeys, stypes.KeygenType, common.Chains, int64, int64, common.PubKey, []byte) (sdk.Msg, error) {
+func (m *mockBridgeForKeysign) GetKeygenStdTx(common.PubKey, []byte, []byte, []stypes.Blame, common.PubKeys, stypes.KeygenType, common.Chains, int64, int64, common.PubKey, []byte, ...any) (sdk.Msg, error) {
 	return nil, nil
 }
 
@@ -115,7 +115,10 @@ func (m *mockBridgeForKeysign) PostNetworkFee(int64, common.Chain, uint64, uint6
 	return "", nil
 }
 func (m *mockBridgeForKeysign) RagnarokInProgress() (bool, error) { return false, nil }
-func (m *mockBridgeForKeysign) WaitToCatchUp() error              { return nil }
+func (m *mockBridgeForKeysign) GetObservedTxVoter(string) (*stypes.QueryObservedTxVoter, error) {
+	return nil, nil
+}
+func (m *mockBridgeForKeysign) WaitToCatchUp() error { return nil }
 func (m *mockBridgeForKeysign) GetBlockHeight() (int64, error) {
 	return m.blockHeight, m.blockErr
 }
