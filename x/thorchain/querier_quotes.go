@@ -373,7 +373,8 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		}
 		constAccessor := mgr.GetConstants()
 		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-		vault, err := selectActiveVaultForChain(ctx, mgr.Keeper(), active, chain, signingTransactionPeriod)
+		var vault Vault
+		vault, err = selectActiveVaultForChain(ctx, mgr.Keeper(), active, chain, signingTransactionPeriod)
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err
 		}

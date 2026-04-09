@@ -76,6 +76,7 @@ func processTxInAttestation(
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
+			voter.Tx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
@@ -103,6 +104,7 @@ func processTxInAttestation(
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
+			voter.Tx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
@@ -436,6 +438,7 @@ func processTxOutAttestation(
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
+			voter.Tx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
@@ -450,6 +453,7 @@ func processTxOutAttestation(
 		// nodes agree on the corrected gas to update vault accounting.
 		if voter.FinalisedHeight > 0 &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
+			voter.Tx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
 			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
 			voter.Tx.Tx.EqualsExIgnoreGas(tx.Tx) {
 			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
@@ -479,6 +483,7 @@ func processTxOutAttestation(
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
+			voter.Tx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
@@ -490,6 +495,7 @@ func processTxOutAttestation(
 
 		// Gas correction for re-org re-observations (non-finalized consensus path).
 		if voter.Height > 0 &&
+			voter.Tx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
 			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
 			voter.Tx.Tx.EqualsExIgnoreGas(tx.Tx) {
 			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
@@ -512,6 +518,9 @@ func countMatchingSigners(voter ObservedTxVoter, tx ObservedTx, nas NodeAccounts
 	signers := make(map[string]struct{})
 	for _, otherTx := range voter.Txs {
 		if otherTx.IsFinal() != tx.IsFinal() {
+			continue
+		}
+		if !otherTx.ObservedPubKey.Equals(tx.ObservedPubKey) {
 			continue
 		}
 		if !otherTx.Tx.EqualsEx(tx.Tx) {

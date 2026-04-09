@@ -597,6 +597,16 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 	for _, vault := range active {
 		chains = append(chains, vault.GetChains()...)
 	}
+	if !chains.Has(common.XMRChain) {
+		retiring, retiringErr := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+		if retiringErr != nil {
+			ctx.Logger().Error("fail to get retiring vaults", "error", retiringErr)
+			return nil, fmt.Errorf("fail to get retiring vaults: %w", retiringErr)
+		}
+		if len(filterVaultsByChain(retiring, common.XMRChain)) > 0 {
+			chains = append(chains, common.XMRChain)
+		}
+	}
 	chains = chains.Distinct()
 	if len(chains) == 0 {
 		chains = common.Chains{common.RuneAsset().Chain}

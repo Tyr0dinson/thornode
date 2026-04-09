@@ -639,3 +639,145 @@ func (TypeObservedTxSuite) TestNewGetConsensusTx(c *C) {
 	c.Assert(txGood.IsEmpty(), Equals, false)
 	c.Assert(txGood.Equals(obTx3), Equals, true)
 }
+
+func (TypeObservedTxSuite) TestGetConsensusTxDoesNotMixObservedVaults(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+	acc4 := GetRandomBech32Addr()
+
+	accConsPub1 := GetRandomBech32ConsensusPubKey()
+	accConsPub2 := GetRandomBech32ConsensusPubKey()
+	accConsPub3 := GetRandomBech32ConsensusPubKey()
+	accConsPub4 := GetRandomBech32ConsensusPubKey()
+
+	accPubKeySet1 := GetRandomPubKeySet()
+	accPubKeySet2 := GetRandomPubKeySet()
+	accPubKeySet3 := GetRandomPubKeySet()
+	accPubKeySet4 := GetRandomPubKeySet()
+
+	trusts4 := NodeAccounts{
+		{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+		{
+			NodeAddress:         acc3,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet3,
+			ValidatorConsPubKey: accConsPub3,
+		},
+		{
+			NodeAddress:         acc4,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet4,
+			ValidatorConsPubKey: accConsPub4,
+		},
+	}
+
+	tx := GetRandomTx()
+	tx.ID = txID
+	tx.Memo = "MIGRATE:2750"
+
+	observePoolAddr1 := GetRandomPubKey()
+	observePoolAddr2 := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	obTx1 := common.NewObservedTx(tx, 1, observePoolAddr1, 2)
+	obTx2 := common.NewObservedTx(tx, 1, observePoolAddr2, 2)
+
+	c.Assert(voter.Add(obTx1, acc1), Equals, true)
+	c.Assert(voter.Add(obTx1, acc2), Equals, true)
+	c.Assert(voter.Add(obTx2, acc3), Equals, true)
+	c.Assert(voter.Add(obTx2, acc4), Equals, true)
+
+	c.Assert(voter.HasConsensus(trusts4), Equals, false)
+	c.Assert(voter.GetTx(trusts4).IsEmpty(), Equals, true)
+}
+
+func (TypeObservedTxSuite) TestGetConsensusSignersStayScopedToObservedVault(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+	acc4 := GetRandomBech32Addr()
+
+	accConsPub1 := GetRandomBech32ConsensusPubKey()
+	accConsPub2 := GetRandomBech32ConsensusPubKey()
+	accConsPub3 := GetRandomBech32ConsensusPubKey()
+	accConsPub4 := GetRandomBech32ConsensusPubKey()
+
+	accPubKeySet1 := GetRandomPubKeySet()
+	accPubKeySet2 := GetRandomPubKeySet()
+	accPubKeySet3 := GetRandomPubKeySet()
+	accPubKeySet4 := GetRandomPubKeySet()
+
+	trusts4 := NodeAccounts{
+		{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+		{
+			NodeAddress:         acc3,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet3,
+			ValidatorConsPubKey: accConsPub3,
+		},
+		{
+			NodeAddress:         acc4,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet4,
+			ValidatorConsPubKey: accConsPub4,
+		},
+	}
+
+	tx := GetRandomTx()
+	tx.ID = txID
+	tx.Memo = "MIGRATE:2750"
+
+	observePoolAddr1 := GetRandomPubKey()
+	observePoolAddr2 := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	obTx1 := common.NewObservedTx(tx, 1, observePoolAddr1, 2)
+	obTx2 := common.NewObservedTx(tx, 1, observePoolAddr2, 2)
+
+	c.Assert(voter.Add(obTx1, acc1), Equals, true)
+	c.Assert(voter.Add(obTx1, acc2), Equals, true)
+	c.Assert(voter.Add(obTx1, acc3), Equals, true)
+	c.Assert(voter.Add(obTx2, acc4), Equals, true)
+
+	txGood := voter.GetTx(trusts4)
+	c.Assert(txGood.IsEmpty(), Equals, false)
+	c.Assert(txGood.ObservedPubKey.Equals(observePoolAddr1), Equals, true)
+
+	voter.Tx = *txGood
+	signers := voter.GetConsensusSigners()
+	c.Assert(signers, HasLen, 3)
+
+	signerSet := make(map[string]bool, len(signers))
+	for _, signer := range signers {
+		signerSet[signer.String()] = true
+	}
+	c.Assert(signerSet[acc1.String()], Equals, true)
+	c.Assert(signerSet[acc2.String()], Equals, true)
+	c.Assert(signerSet[acc3.String()], Equals, true)
+	c.Assert(signerSet[acc4.String()], Equals, false)
+}

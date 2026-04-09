@@ -409,8 +409,20 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 		// those who haven't agreed with a consensus success message incur FailKeygenSlashPoints until agreement.
 		judgeLateSigner(ctx, h.mgr, msg, voter)
 
-		// Do the below only for a success message upon complete consensus.
-		if voter.HasCompleteConsensus() {
+		shouldFinalizeVault := voter.HasCompleteConsensus()
+		if msg.KeygenType == AsgardKeygen && voter.HasConsensus() && !asgardKeygenRequiresCompleteConsensus(ctx, h.mgr.Keeper(), voter) {
+			shouldFinalizeVault = true
+		}
+		if msg.KeygenType == XMRMonovaultKeygen && voter.HasConsensus() && !h.mgr.Keeper().VaultExists(ctx, voter.PoolPubKey) {
+			shouldFinalizeVault = true
+		}
+
+		// Regular Asgard keygens still require complete consensus when all members
+		// are already active. During churn, when ready nodes are being promoted
+		// into the new vault, finalize on first supermajority so one delayed
+		// ready-node observation does not stall rotation forever. The dedicated
+		// XMR monovault also finalizes on first supermajority.
+		if shouldFinalizeVault {
 			ctx.Logger().Info(
 				"tss keygen results success",
 				"height", msg.Height,
@@ -475,11 +487,6 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			if err != nil {
 				return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
 			}
-			initVaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
-			if err != nil {
-				return fmt.Errorf("fail to get init vaults: %w", err)
-			}
-
 			var metric *keeper.TssKeygenMetric
 			metric, err = h.mgr.Keeper().GetTssKeygenMetric(ctx, msg.PoolPubKey)
 			if err != nil {
@@ -495,15 +502,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				}
 			}
 
-			if len(initVaults) == len(keygenBlock.Keygens) {
-				ctx.Logger().Info("tss keygen results churn", "asgards", len(initVaults))
-				for _, v := range initVaults {
-					if err = h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
-						return fmt.Errorf("fail to rotate vault: %w", err)
-					}
-				}
-			} else {
-				ctx.Logger().Info("not enough keygen yet", "expecting", len(keygenBlock.Keygens), "current", len(initVaults))
+			if err := h.rotateReadyKeygenVaultFamilies(ctx, keygenBlock); err != nil {
+				return err
 			}
 
 			addrs, err := vault.GetMembership().Addresses()
@@ -518,6 +518,82 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 					ctx.Logger().Error("fail to emit keygen success event")
 				}
 			}
+		}
+	}
+
+	return nil
+}
+
+func asgardKeygenRequiresCompleteConsensus(ctx cosmos.Context, k keeper.Keeper, voter TssVoter) bool {
+	for _, memberPubKey := range voter.GetPubKeys() {
+		nodeAccount, err := k.GetNodeAccountByPubKey(ctx, memberPubKey)
+		if err != nil {
+			return true
+		}
+		if nodeAccount.Status != NodeActive {
+			return false
+		}
+	}
+	return true
+}
+
+func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlock KeygenBlock) error {
+	activeVaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	initVaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
+	if err != nil {
+		return fmt.Errorf("fail to get init vaults: %w", err)
+	}
+
+	readyVaults := append(append(Vaults(nil), activeVaults...), initVaults...)
+	if keygenBlockHasType(keygenBlock, AsgardKeygen) {
+		regularInitVaults := filterVaultsByKeygenType(initVaults, keygenBlock, AsgardKeygen)
+		if keygenTypeReady(keygenBlock, readyVaults, AsgardKeygen) {
+			if len(regularInitVaults) > 0 {
+				ctx.Logger().Info("tss keygen results churn", "asgards", len(regularInitVaults))
+				for _, v := range regularInitVaults {
+					if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
+						return fmt.Errorf("fail to rotate regular vault: %w", err)
+					}
+				}
+				activeVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+				if err != nil {
+					return fmt.Errorf("fail to refresh active vaults: %w", err)
+				}
+				initVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
+				if err != nil {
+					return fmt.Errorf("fail to refresh init vaults: %w", err)
+				}
+				readyVaults = append(append(Vaults(nil), activeVaults...), initVaults...)
+			}
+		} else {
+			ctx.Logger().Info("not enough regular keygen yet")
+		}
+	}
+
+	if keygenBlockHasType(keygenBlock, XMRMonovaultKeygen) {
+		xmrInitVaults := filterVaultsByKeygenType(initVaults, keygenBlock, XMRMonovaultKeygen)
+		if keygenTypeReady(keygenBlock, readyVaults, XMRMonovaultKeygen) {
+			if len(xmrInitVaults) > 0 {
+				regularFamilyActive := hasActiveNonXMRAsgardFamily(activeVaults)
+				if keygenBlockHasType(keygenBlock, AsgardKeygen) {
+					regularFamilyActive = keygenTypeReady(keygenBlock, activeVaults, AsgardKeygen)
+				}
+				if !regularFamilyActive {
+					ctx.Logger().Info("waiting for regular vault rotation before activating xmr monovault")
+					return nil
+				}
+				ctx.Logger().Info("tss keygen results xmr monovault", "vaults", len(xmrInitVaults))
+				for _, v := range xmrInitVaults {
+					if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
+						return fmt.Errorf("fail to rotate xmr monovault: %w", err)
+					}
+				}
+			}
+		} else {
+			ctx.Logger().Info("not enough xmr keygen yet")
 		}
 	}
 

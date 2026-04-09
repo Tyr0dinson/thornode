@@ -918,6 +918,12 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 		case <-timer.C:
 			missingPayloads := verifier.missingPayloadPubKeys()
 			missingVerifiers := verifier.missingVerifierPubKeys()
+			if len(missingPayloads) == 0 && len(missingVerifiers) > 0 {
+				c.logger.Warn().
+					Strs("missing_verifiers", missingVerifiers).
+					Msg("accepting matching round3 payloads after transcript verification timeout")
+				return groupAddress, groupKey, minMoneroHeight, nil
+			}
 			missing := mergePubKeyLists(missingPayloads, missingVerifiers)
 			resp := c.failForPubKeys(
 				transcriptTimeoutReason("round3 results", missingPayloads, missingVerifiers),

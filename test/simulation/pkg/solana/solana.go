@@ -35,7 +35,10 @@ var _ LiteChainClient = &Client{}
 // Wait for finalized Solana confirmation so simulation actors do not proceed on
 // signatures that later disappear before Bifrost can observe the inbound.
 var (
-	solanaBroadcastConfirmationAttempts     = 20
+	// Mocknet Solana finalization can take materially longer on container-heavy
+	// local ARM setups. Keep the finalized commitment, but give setup and actor
+	// funding broadcasts more time before declaring the tx lost.
+	solanaBroadcastConfirmationAttempts     = 60
 	solanaBroadcastConfirmationPollInterval = time.Second
 	solanaBroadcastRebroadcastEvery         = 5
 	solanaAccountCommitment                 = "finalized"
@@ -100,6 +103,11 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to get balance: %w", err)
 	}
+	tokenAccountLamports, err := c.rpc.GetOwnedTokenAccountLamports(address.String(), solanaAccountCommitment)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get owned token account lamports: %w", err)
+	}
+	lamportsBalance = lamportsBalance.Add(lamportsBalance, tokenAccountLamports)
 
 	// get amount
 	amount := cosmos.NewUintFromBigInt(lamportsBalance)

@@ -61,6 +61,22 @@ type TransactionResult struct {
 	Transaction RPCTxnData `json:"transaction"`
 }
 
+type GetSignatureStatusesResponse struct {
+	Jsonrpc string `json:"jsonrpc"`
+	Id      int    `json:"id"`
+	Result  struct {
+		Value []*SignatureStatusResult `json:"value"`
+	} `json:"result"`
+	Error *RPCError `json:"error"`
+}
+
+type SignatureStatusResult struct {
+	Slot               uint64  `json:"slot"`
+	Confirmations      *uint64 `json:"confirmations"`
+	Err                any     `json:"err"`
+	ConfirmationStatus string  `json:"confirmationStatus"`
+}
+
 // GetTransactionWithCommitment makes a getTransaction RPC call to the Solana RPC
 // with the requested commitment level.
 func (s *SolRPC) GetTransactionWithCommitment(signature, commitment string) (*TransactionResult, error) {
@@ -97,4 +113,30 @@ func (s *SolRPC) GetTransaction(signature string) (*TransactionResult, error) {
 // Use this when you need to verify a just-broadcast transaction quickly.
 func (s *SolRPC) GetTransactionConfirmed(signature string) (*TransactionResult, error) {
 	return s.GetTransactionWithCommitment(signature, "confirmed")
+}
+
+// GetSignatureStatus checks whether the given signature is still known to the
+// cluster, even if getTransaction is temporarily returning null before the
+// transaction reaches confirmed/finalized visibility.
+func (s *SolRPC) GetSignatureStatus(signature string) (*SignatureStatusResult, error) {
+	params := []interface{}{
+		[]string{signature},
+		map[string]interface{}{
+			"searchTransactionHistory": true,
+		},
+	}
+
+	var response GetSignatureStatusesResponse
+	if err := s.post("getSignatureStatuses", params, &response); err != nil {
+		return nil, fmt.Errorf("failed to call getSignatureStatuses: %w", err)
+	}
+
+	if response.Error != nil && response.Error.Code != 0 {
+		return nil, fmt.Errorf("RPC Error %d: %s", response.Error.Code, response.Error.Message)
+	}
+	if len(response.Result.Value) == 0 || response.Result.Value[0] == nil {
+		return nil, nil
+	}
+
+	return response.Result.Value[0], nil
 }

@@ -258,7 +258,7 @@ func TestClientKeygenAllowsMonovaultRequestWithoutPreseededEddsaKey(t *testing.T
 	if tssServer.lastReq.VaultPubKey == frostVaultPubKey.String() {
 		t.Fatalf("expected synthetic monovault key label, got final vault pubkey")
 	}
-	if !strings.HasPrefix(tssServer.lastReq.VaultPubKey, "xmr-monovault-") {
+	if !strings.HasPrefix(tssServer.lastReq.VaultPubKey, "tthorpub1") {
 		t.Fatalf("unexpected monovault key label: %s", tssServer.lastReq.VaultPubKey)
 	}
 }

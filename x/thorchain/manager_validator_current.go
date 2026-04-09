@@ -86,7 +86,12 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		return nil
 	}
 	expectedActiveVaults := splitAsgardGroupCount(len(nas), asgardSize)
-	if shouldMaintainXMRMonovault(vaults, expectedActiveVaults) {
+	// Do not treat the dedicated XMR monovault as a missing active vault until
+	// it actually exists in the active set. Counting a future monovault here
+	// causes regular churn retries to overlap a still-settling Asgard keygen,
+	// which can keep the delayed successful round from ever becoming the lone
+	// init-vault set that RotateVault expects.
+	if hasDedicatedXMRMonovault(vaults) {
 		expectedActiveVaults++
 	}
 	incompleteChurnCheck := len(vaults) != expectedActiveVaults
@@ -194,11 +199,15 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 				return err
 			}
 		}
-		activeVaults, activeErr := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
-		if activeErr != nil {
-			return activeErr
+		allVaults, err := vm.k.GetAsgardVaults(ctx)
+		if err != nil {
+			return err
 		}
-		if shouldMaintainXMRMonovault(activeVaults, len(splitGroups)) {
+		if shouldMaintainXMRMonovault(allVaults, len(next)) && !hasActiveOrInitXMRMonovault(allVaults) {
+			// Keep the dedicated XMR monovault in the same keygen block as the
+			// regular churn so both vault families are ready together at rotation
+			// time. Delaying the monovault to the next block leaves the retiring
+			// XMR-bearing vault without an active migration target and stalls churn.
 			if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
 				return err
 			}

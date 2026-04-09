@@ -935,7 +935,10 @@ services:
     environment:
       TRON_NODE_TYPE: mocknet-supernode
     healthcheck:
-      # Wait for supernode to produce several blocks before fullnode connects.
+      # Wait for the supernode to produce several blocks before fullnode
+      # connects. On slower local Docker hosts, especially under amd64
+      # emulation, block production can lag long enough that a block-10 check
+      # trips false negatives even though the node is healthy and advancing.
       test:
         [
           "CMD",
@@ -946,13 +949,13 @@ services:
           "-H",
           "Content-Type: application/json",
           "-d",
-          '{"num":10}',
+          '{"num":5}',
           "http://localhost:8090/wallet/getblockbynum",
         ]
       interval: 3s
       timeout: 5s
-      retries: 30
-      start_period: 10s
+      retries: 120
+      start_period: 20s
 
   tron-fullnode:
     profiles:

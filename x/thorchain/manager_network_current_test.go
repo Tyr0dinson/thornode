@@ -19,6 +19,57 @@ func (s *NetworkManagerTestSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
+func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesActive(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	oldRegularA := GetRandomVault()
+	oldRegularA.Status = ActiveVault
+	oldRegularA.Type = AsgardVault
+	oldRegularA.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+	oldRegularA.Membership = common.PubKeys{GetRandomPubKey(), GetRandomPubKey()}.Strings()
+
+	oldRegularB := GetRandomVault()
+	oldRegularB.Status = ActiveVault
+	oldRegularB.Type = AsgardVault
+	oldRegularB.Chains = common.Chains{common.THORChain, common.ETHChain}.Strings()
+	oldRegularB.Membership = common.PubKeys{GetRandomPubKey(), GetRandomPubKey()}.Strings()
+
+	activeXMR := GetRandomVault()
+	activeXMR.Status = ActiveVault
+	activeXMR.Type = AsgardVault
+	activeXMR.Chains = xmrMonovaultChains().Strings()
+	activeXMR.Membership = common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}.Strings()
+
+	newRegularA := GetRandomVault()
+	newRegularA.Status = InitVault
+	newRegularA.Type = AsgardVault
+	newRegularA.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+	newRegularA.Membership = append([]string(nil), oldRegularA.Membership...)
+
+	for _, vault := range []Vault{oldRegularA, oldRegularB, activeXMR, newRegularA} {
+		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	}
+
+	c.Assert(networkMgr.RotateVault(ctx, newRegularA), IsNil)
+
+	oldRegularAAfter, err := mgr.Keeper().GetVault(ctx, oldRegularA.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(oldRegularAAfter.Status, Equals, RetiringVault)
+
+	oldRegularBAfter, err := mgr.Keeper().GetVault(ctx, oldRegularB.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(oldRegularBAfter.Status, Equals, ActiveVault)
+
+	activeXMRAfter, err := mgr.Keeper().GetVault(ctx, activeXMR.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(activeXMRAfter.Status, Equals, ActiveVault)
+
+	newRegularAAfter, err := mgr.Keeper().GetVault(ctx, newRegularA.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(newRegularAAfter.Status, Equals, ActiveVault)
+}
+
 func (s *NetworkManagerTestSuite) TestUpdateNetwork(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ver := GetCurrentVersion()
@@ -497,6 +548,134 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = true
 	c.Assert(networkMgr.migrateFunds(ctx, mgr), NotNil)
 	helper.failGetActiveAsgardVault = false
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingOnNonMigratePendingActivity(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XMRChain, NetworkFee{
+		Chain:              common.XMRChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1,
+	}), IsNil)
+
+	targetKey := GetRandomEd25519PubKey()
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
+	target.PubKeyFrost = targetKey
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	retiringKey := GetRandomEd25519PubKey()
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, xmrMonovaultChains().Strings(), nil, retiringKey)
+	retiring.PubKeyFrost = retiringKey
+	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One))))
+	retiring.PendingTxBlockHeights = []int64{ctx.BlockHeight()}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.XMRChain), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+	targetAddr, err := target.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	c.Assert(items[0].ToAddress.Equals(targetAddr), Equals, true)
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XMRChain, NetworkFee{
+		Chain:              common.XMRChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1,
+	}), IsNil)
+
+	targetKey := GetRandomEd25519PubKey()
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
+	target.PubKeyFrost = targetKey
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	retiringKey := GetRandomEd25519PubKey()
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, xmrMonovaultChains().Strings(), nil, retiringKey)
+	retiring.PubKeyFrost = retiringKey
+	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	toAddress, err := target.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	txOut := &TxOut{
+		Height: ctx.BlockHeight(),
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XMRChain,
+				ToAddress:   toAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(ctx.BlockHeight() - 1).String(),
+			},
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 0)
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsLeavesXMRDustBufferForFinalRound(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 2)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XMRChain, NetworkFee{
+		Chain:              common.XMRChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 30000,
+	}), IsNil)
+
+	targetKey := GetRandomEd25519PubKey()
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
+	target.PubKeyFrost = targetKey
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	retiringKey := GetRandomEd25519PubKey()
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, xmrMonovaultChains().Strings(), nil, retiringKey)
+	retiring.PubKeyFrost = retiringKey
+	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.XMRChain), Equals, true)
+	maxGas, err := mgr.GasMgr().GetMaxGas(ctx, common.XMRChain)
+	c.Assert(err, IsNil)
+	gas := maxGas.Amount
+	expected := common.SafeSub(
+		common.SafeSub(retiring.Coins.GetCoin(common.XMRAsset).Amount, gas),
+		common.XMRChain.DustThreshold(),
+	)
+	c.Assert(
+		items[0].Coin.Amount.Equal(expected),
+		Equals,
+		true,
+		Commentf("amount=%s gas=%s expected=%s", items[0].Coin.Amount.String(), gas.String(), expected.String()),
+	)
 }
 
 func (*NetworkManagerTestSuite) TestGetAvailablePoolsRune(c *C) {

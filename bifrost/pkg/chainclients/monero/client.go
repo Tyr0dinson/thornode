@@ -2,7 +2,6 @@ package monero
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	"github.com/btcsuite/btcutil/bech32"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
@@ -1694,7 +1694,21 @@ func xmrMonovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, member
 		strings.Join(canonicalMembers, ","),
 	)
 	sum := sha256.Sum256([]byte(labelInput))
-	return "xmr-monovault-" + hex.EncodeToString(sum[:])
+	hrp := "tthorpub"
+	trimmedPoolPubKey := strings.TrimSpace(poolPubKey.String())
+	if strings.HasPrefix(trimmedPoolPubKey, "thorpub1") {
+		hrp = "thorpub"
+	}
+
+	converted, err := bech32.ConvertBits(sum[:20], 8, 5, true)
+	if err != nil {
+		return hrp + "1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+	}
+	placeholder, err := bech32.Encode(hrp, converted)
+	if err != nil {
+		return hrp + "1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+	}
+	return placeholder
 }
 
 func (c *Client) vaultSigningMembers(vaultPubKey common.PubKey) ([]string, error) {

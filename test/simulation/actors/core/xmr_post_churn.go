@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math/big"
 	rand "math/rand/v2"
 	"time"
 
@@ -26,7 +27,7 @@ const (
 	// XMR/FROST keygen routinely takes longer than the mocknet churn retry window.
 	// Expand the retry interval before triggering churn so THORNode still accepts
 	// the resulting keygen tx instead of treating it as stale.
-	xmrPostChurnChurnRetryInterval = int64(90)
+	xmrPostChurnChurnRetryInterval = int64(240)
 )
 
 func NewXMRPostChurnActor(rng *rand.Rand) *Actor {
@@ -124,12 +125,6 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 }
 
 func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
-	network, err := thornode.GetNetwork()
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to get network")
-		return OpResult{Continue: false}
-	}
-
 	nodes, err := thornode.GetNodes()
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get nodes")
@@ -157,12 +152,14 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	if !xmrVaultRotationReady(network, a.inboundBefore, inboundAddress, activeNodes) {
-		a.Log().Info().Stringer("inbound_address", inboundAddress).Msg("waiting for active XMR vault funding")
+	vaults, err := thornode.GetVaults()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get asgard vaults")
 		return OpResult{Continue: false}
 	}
-	if network.VaultsMigrating {
-		a.Log().Info().Stringer("inbound_address", inboundAddress).Msg("XMR active vault rotated and funded; continuing despite pending migrations")
+	if !xmrVaultRotationReady(vaults, a.inboundBefore, inboundAddress, activeNodes) {
+		a.Log().Info().Stringer("inbound_address", inboundAddress).Msg("waiting for active XMR vault funding")
+		return OpResult{Continue: false}
 	}
 
 	a.inboundAfter = inboundAddress
@@ -173,14 +170,46 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
-func xmrVaultRotationReady(network openapi.NetworkResponse, inboundBefore, inboundAfter common.Address, activeNodes int) bool {
+func xmrVaultRotationReady(vaults []openapi.Vault, inboundBefore, inboundAfter common.Address, activeNodes int) bool {
 	if activeNodes <= 1 {
 		return false
 	}
 	if inboundAfter.IsEmpty() || inboundAfter.Equals(inboundBefore) {
 		return false
 	}
-	return network.XmrActiveVaultReady
+	for _, vault := range vaults {
+		if vault.Status != thorchain.ActiveVault.String() {
+			continue
+		}
+		if !vaultHasAddress(vault, common.XMRChain, inboundAfter) {
+			continue
+		}
+		if !vaultHasPositiveCoin(vault, common.XMRAsset) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func vaultHasAddress(vault openapi.Vault, chain common.Chain, address common.Address) bool {
+	for _, vaultAddress := range vault.Addresses {
+		if vaultAddress.Chain == chain.String() && common.Address(vaultAddress.Address).Equals(address) {
+			return true
+		}
+	}
+	return false
+}
+
+func vaultHasPositiveCoin(vault openapi.Vault, asset common.Asset) bool {
+	for _, coin := range vault.Coins {
+		if coin.Asset != asset.String() {
+			continue
+		}
+		amount, ok := new(big.Int).SetString(coin.Amount, 10)
+		return ok && amount.Sign() > 0
+	}
+	return false
 }
 
 func (a *XMRPostChurnActor) broadcastMimir(node *User, accAddr cosmos.AccAddress, key string, value int64) (common.TxID, error) {

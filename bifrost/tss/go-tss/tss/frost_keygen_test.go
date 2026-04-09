@@ -337,6 +337,56 @@ func TestFrostKeygenRound3RejectsResultMismatch(t *testing.T) {
 	}
 }
 
+func TestFrostKeygenRound3AcceptsMatchingPayloadsWithoutVerifications(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+	peerIDs, err := conversion.GetPeerIDsFromPubKeys(members)
+	if err != nil {
+		t.Fatalf("peer ids: %v", err)
+	}
+
+	groupAddress := "48addr"
+	groupKey := strings.Repeat("ab", 32)
+	msgChan := make(chan *p2p.Message, 2)
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound3Msg, "msg-id", testPubKeys[1], FrostDKGRound3Payload{
+		SenderPubKey:         testPubKeys[1],
+		ParticipantIndex:     participantIndexMap[normalizePubKey(testPubKeys[1])],
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 123,
+	})
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
+	address, gotGroupKey, birthday, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
+		SenderPubKey:         testPubKeys[0],
+		ParticipantIndex:     participantIndexMap[normalizePubKey(testPubKeys[0])],
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+	})
+	if failResp != nil {
+		t.Fatalf("expected round3 timeout fallback success, got %+v", failResp)
+	}
+	if address != groupAddress {
+		t.Fatalf("expected address %s, got %s", groupAddress, address)
+	}
+	if gotGroupKey != groupKey {
+		t.Fatalf("expected group key %s, got %s", groupKey, gotGroupKey)
+	}
+	if birthday != 123 {
+		t.Fatalf("expected min birthday 123, got %d", birthday)
+	}
+}
+
 func TestFrostKeygenRound1AcceptsTranscriptVerification(t *testing.T) {
 	ensureBech32Prefix()
 

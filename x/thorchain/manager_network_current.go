@@ -88,21 +88,16 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
 	} else {
-		// Trigger the regular split-Asgard keygen ceremony and, when the network
-		// has multiple split groups, the dedicated XMR monovault keygen as well.
+		// Trigger the regular split-Asgard keygen ceremony. The dedicated XMR
+		// monovault is scheduled separately after the regular vault family
+		// materializes, so FROST keygen does not contend with the normal churn
+		// keygen in the same block.
 		// TODO(XMR monovault): this still assumes an explicit vault-genesis style
 		// bootstrap for the first dedicated XMR monovault so the network can
 		// start from a known monovault family on day zero.
 		err := vm.TriggerKeygen(ctx, active)
 		if err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
-		}
-		asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
-		splitGroupCount := splitAsgardGroupCount(len(active), asgardSize)
-		if shouldMaintainXMRMonovault(vaults, splitGroupCount) {
-			if err := vm.TriggerXMRKeygen(ctx, active); err != nil {
-				return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
-			}
 		}
 	}
 	return nil
@@ -538,13 +533,8 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	vaultsAvailableCoins := map[common.PubKey]common.Coins{}
+	vaultsWithPendingMigrate := map[common.PubKey]bool{}
 	for _, vault := range retiring {
-		if vault.LenPendingTxBlockHeights(ctx.BlockHeight(), mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)) > 0 {
-			ctx.Logger().Info("Skipping the migration of funds while transactions are still pending")
-			// This refers to migrate TxOutItems only.
-			return nil
-		}
-
 		// Copy the RetiringVault Coins for deduction.
 		vaultsAvailableCoins[vault.PubKey] = common.NewCoins(vault.Coins...)
 	}
@@ -584,6 +574,9 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				// This isn't one of the RetiringVaults.
 				continue
 			}
+			if memo, memoErr := ParseMemo(mgr.GetVersion(), toi.Memo); memoErr == nil && memo.IsType(TxMigrate) {
+				vaultsWithPendingMigrate[toi.VaultPubKey] = true
+			}
 			// Deduct from the available Coins all pending outbounds and their MaxGas.
 			for _, coin := range append(common.Coins{toi.Coin}, toi.MaxGas...) {
 				availableCoins = availableCoins.SafeSub(coin)
@@ -608,6 +601,10 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			ctx.Logger().Error("RetiringVault Coins not found in map", "vault_pubkey", vault.PubKey)
 			continue
 		}
+		if vaultsWithPendingMigrate[vault.PubKey] {
+			ctx.Logger().Info("Skipping migration scheduling while migrate transactions are still pending", "vault_pubkey", vault.PubKey)
+			continue
+		}
 
 		// move partial funds every 30 minutes
 		if (ctx.BlockHeight()-vault.StatusSince)%migrateInterval == 0 {
@@ -628,6 +625,17 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 
 				chain := coin.Asset.GetChain()
 				targetVaults := filterVaultsByChain(active, chain)
+				if len(targetVaults) == 0 && !chain.Equals(common.XMRChain) {
+					// Some churn/bootstrap paths still materialize regular Asgards without a
+					// fully populated external-chain list. In that case, keep migration on
+					// the regular Asgard family rather than stalling or ever targeting the
+					// dedicated XMR monovault.
+					for _, activeVault := range active {
+						if !activeVault.IsXMRMonovault() {
+							targetVaults = append(targetVaults, activeVault)
+						}
+					}
+				}
 				if len(targetVaults) == 0 {
 					ctx.Logger().Error("no active target vault for migration chain", "chain", chain.String())
 					continue
@@ -734,6 +742,13 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 
 					// burn the remainder if amount after deducting gas is below dust threshold
 					dustThreshold := chain.DustThreshold()
+					if chain.Equals(common.XMRChain) && amt.GT(dustThreshold) {
+						// THORChain tracks XMR at 8 decimals while the signer spends at 12.
+						// Leave a dust-sized buffer so final-round migrations do not fail on
+						// small spendable-balance deltas after atomic conversion and output
+						// accounting.
+						amt = common.SafeSub(amt, dustThreshold)
+					}
 
 					if amt.LTE(dustThreshold) && nth > migrationRounds {
 						// No migration should be attempted, but only burn dust if there are no pending outbounds.
@@ -1328,7 +1343,16 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 		case vault.IsXMRMonovault():
 			conflicts = asgard.HasChain(common.XMRChain)
 		default:
-			conflicts = !asgard.IsXMRMonovault()
+			if asgard.IsXMRMonovault() {
+				conflicts = false
+				break
+			}
+			for _, member := range asgard.GetMembership() {
+				if vault.Contains(member) {
+					conflicts = true
+					break
+				}
+			}
 		}
 		if !conflicts {
 			continue

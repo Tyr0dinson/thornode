@@ -1206,6 +1206,44 @@ func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSigners(c *C) {
 	c.Assert(count, Equals, 2)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersScopesByObservedVault(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	txID := GetRandomTxHash()
+	gas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(23061))}
+	baseTx := common.Tx{
+		ID:          txID,
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(305570))),
+		Gas:         gas,
+		Memo:        "OUT:xyz",
+	}
+
+	vaultPubKeyA := GetRandomPubKey()
+	vaultPubKeyB := GetRandomPubKey()
+
+	obsTxA := common.NewObservedTx(baseTx, 100, vaultPubKeyA, 100)
+	obsTxA.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String()}
+
+	obsTxB := common.NewObservedTx(baseTx, 100, vaultPubKeyB, 100)
+	obsTxB.Signers = []string{nas[2].NodeAddress.String(), nas[3].NodeAddress.String()}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{obsTxA, obsTxB})
+
+	countA := countMatchingSigners(voter, obsTxA, nas)
+	c.Assert(countA, Equals, 2)
+
+	countB := countMatchingSigners(voter, obsTxB, nas)
+	c.Assert(countB, Equals, 2)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100)

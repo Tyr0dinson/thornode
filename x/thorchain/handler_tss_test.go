@@ -716,6 +716,379 @@ func (s *HandlerTssSuite) TestKeygenSuccessHandler(c *C) {
 	}
 }
 
+func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{
+		Type:    XMRMonovaultKeygen,
+		Members: helper.members.Strings(),
+	}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	frostPubKey := GetRandomPubKey()
+	keygenTime := int64(1024)
+	msg, err := NewMsgTssPoolV2(
+		helper.members.Strings(),
+		poolPubKey,
+		nil,
+		nil,
+		XMRMonovaultKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		xmrMonovaultChains().Strings(),
+		helper.signer,
+		keygenTime,
+		common.EmptyPubKey,
+		nil,
+		[]byte("backup"),
+		frostPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	voter := NewTssVoter(msg.ID, helper.members.Strings(), poolPubKey, common.EmptyPubKey)
+	for _, member := range helper.members[1:6] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	updatedVoter, err := helper.keeper.GetTssVoter(helper.ctx, msg.ID)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVoter.HasConsensus(), Equals, true)
+	c.Assert(updatedVoter.HasCompleteConsensus(), Equals, false)
+
+	vault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Status, Equals, InitVault)
+	c.Assert(vault.IsXMRMonovault(), Equals, true)
+	c.Assert(vault.PubKeyFrost.Equals(frostPubKey), Equals, true)
+}
+
+func setKeygenMemberNodeAccount(c *C, helper tssHandlerTestHelper, member common.PubKey, status NodeStatus) {
+	na := GetRandomValidatorNode(status)
+	na.NodeAddress, _ = member.GetThorAddress()
+	na.PubKeySet.Secp256k1 = member
+	na.Bond = cosmos.NewUint(1000000 * common.One)
+	c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
+}
+
+func (s *HandlerTssSuite) TestAsgardKeygenWithReadyMembersFinalizesOnSuperMajority(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	members := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{
+		Type:    AsgardKeygen,
+		Members: members.Strings(),
+	}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	keygenTime := int64(1024)
+	msg, err := NewMsgTssPoolV2(
+		members.Strings(),
+		poolPubKey,
+		nil,
+		nil,
+		AsgardKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		common.Chains{common.RuneAsset().Chain}.Strings(),
+		helper.signer,
+		keygenTime,
+		poolEddsaPubKey,
+		[]byte("backup"),
+		nil,
+		common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	setKeygenMemberNodeAccount(c, helper, members[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, members[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[3], NodeReady)
+
+	voter := NewTssVoter(msg.ID, members.Strings(), poolPubKey, poolEddsaPubKey)
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	updatedVoter, err := helper.keeper.GetTssVoter(helper.ctx, msg.ID)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVoter.HasConsensus(), Equals, true)
+	c.Assert(updatedVoter.HasCompleteConsensus(), Equals, false)
+
+	vault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Status, Equals, InitVault)
+}
+
+func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitingForXMR(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	members := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{
+			Type:    AsgardKeygen,
+			Members: members.Strings(),
+		},
+		{
+			Type:    XMRMonovaultKeygen,
+			Members: members.Strings(),
+		},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	keygenTime := int64(1024)
+	msg, err := NewMsgTssPoolV2(
+		members.Strings(),
+		poolPubKey,
+		nil,
+		nil,
+		AsgardKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		common.Chains{common.RuneAsset().Chain}.Strings(),
+		helper.signer,
+		keygenTime,
+		poolEddsaPubKey,
+		[]byte("backup"),
+		nil,
+		common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	setKeygenMemberNodeAccount(c, helper, members[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, members[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[3], NodeReady)
+
+	voter := NewTssVoter(msg.ID, members.Strings(), poolPubKey, poolEddsaPubKey)
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	regularVault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(regularVault.Status, Equals, ActiveVault)
+	c.Assert(regularVault.IsXMRMonovault(), Equals, false)
+}
+
+func (s *HandlerTssSuite) TestXMRMonovaultWaitsForRegularVaultRotation(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	members := helper.members[:4]
+
+	oldRegular := NewVaultV2(
+		helper.ctx.BlockHeight()-10,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain, common.XMRChain}.Strings(),
+		nil,
+		GetRandomEd25519PubKey(),
+	)
+	oldRegular.Membership = members.Strings()
+	oldRegular.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+	})
+	c.Assert(helper.keeper.SetVault(helper.ctx, oldRegular), IsNil)
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{
+			Type:    AsgardKeygen,
+			Members: members.Strings(),
+		},
+		{
+			Type:    XMRMonovaultKeygen,
+			Members: members.Strings(),
+		},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	setKeygenMemberNodeAccount(c, helper, members[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, members[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[3], NodeReady)
+
+	keygenTime := int64(1024)
+	xmrPoolPubKey := GetRandomPubKey()
+	xmrFrostPubKey := GetRandomPubKey()
+	xmrMsg, err := NewMsgTssPoolV2(
+		members.Strings(),
+		xmrPoolPubKey,
+		nil,
+		nil,
+		XMRMonovaultKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		xmrMonovaultChains().Strings(),
+		helper.signer,
+		keygenTime,
+		common.EmptyPubKey,
+		nil,
+		[]byte("backup"),
+		xmrFrostPubKey,
+	)
+	c.Assert(err, IsNil)
+	xmrVoter := NewTssVoter(xmrMsg.ID, members.Strings(), xmrPoolPubKey, common.EmptyPubKey)
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		xmrVoter.Signers = append(xmrVoter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, xmrVoter)
+
+	_, err = handler.Run(helper.ctx, xmrMsg)
+	c.Assert(err, IsNil)
+
+	xmrVault, err := helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(xmrVault.Status, Equals, InitVault)
+	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
+
+	oldRegular, err = helper.keeper.GetVault(helper.ctx, oldRegular.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(oldRegular.Status, Equals, ActiveVault)
+
+	regularPoolPubKey := GetRandomPubKey()
+	regularEddsaPubKey := GetRandomPubKey()
+	regularMsg, err := NewMsgTssPoolV2(
+		members.Strings(),
+		regularPoolPubKey,
+		nil,
+		nil,
+		AsgardKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		common.Chains{common.RuneAsset().Chain}.Strings(),
+		helper.signer,
+		keygenTime,
+		regularEddsaPubKey,
+		[]byte("backup"),
+		nil,
+		common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+	regularVoter := NewTssVoter(regularMsg.ID, members.Strings(), regularPoolPubKey, regularEddsaPubKey)
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		regularVoter.Signers = append(regularVoter.Signers, addr.String())
+	}
+	regularVoter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
+	helper.keeper.SetTssVoter(helper.ctx, regularVoter)
+
+	_, err = handler.Run(helper.ctx, regularMsg)
+	c.Assert(err, IsNil)
+
+	regularVault, err := helper.keeper.GetVault(helper.ctx, regularPoolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(regularVault.Status, Equals, ActiveVault)
+	c.Assert(regularVault.HasChain(common.XMRChain), Equals, false)
+
+	xmrVault, err = helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(xmrVault.Status, Equals, ActiveVault)
+	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
+
+	oldRegular, err = helper.keeper.GetVault(helper.ctx, oldRegular.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(oldRegular.Status, Equals, RetiringVault)
+}
+
+func (s *HandlerTssSuite) TestAsgardKeygenAllActiveStillWaitsForCompleteConsensus(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	members := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{
+		Type:    AsgardKeygen,
+		Members: members.Strings(),
+	}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	keygenTime := int64(1024)
+	msg, err := NewMsgTssPoolV2(
+		members.Strings(),
+		poolPubKey,
+		nil,
+		nil,
+		AsgardKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		common.Chains{common.RuneAsset().Chain}.Strings(),
+		helper.signer,
+		keygenTime,
+		poolEddsaPubKey,
+		[]byte("backup"),
+		nil,
+		common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	for _, member := range members {
+		setKeygenMemberNodeAccount(c, helper, member, NodeActive)
+	}
+
+	voter := NewTssVoter(msg.ID, members.Strings(), poolPubKey, poolEddsaPubKey)
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	updatedVoter, err := helper.keeper.GetTssVoter(helper.ctx, msg.ID)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVoter.HasConsensus(), Equals, true)
+	c.Assert(updatedVoter.HasCompleteConsensus(), Equals, false)
+	c.Assert(helper.keeper.VaultExists(helper.ctx, poolPubKey), Equals, false)
+}
+
 func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	height := int64(1024)

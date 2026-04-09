@@ -250,6 +250,11 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get balance: %w", err)
 	}
+	tokenAccountLamports, err := c.rpcClient.GetOwnedTokenAccountLamports(addr, "finalized")
+	if err != nil {
+		return common.Account{}, fmt.Errorf("fail to get owned token account lamports: %w", err)
+	}
+	lamportsBalance = lamportsBalance.Add(lamportsBalance, tokenAccountLamports)
 
 	// get amount
 	amount := cosmos.NewUintFromBigInt(lamportsBalance)
@@ -369,8 +374,43 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	}
 
 	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-		c.logger.Info().Interface("tx", tx).Msg("transaction signed before, ignore")
-		return nil, nil, nil, nil
+		prevTxID, err := c.signerCacheManager.GetTransactionHash(tx.CacheHash())
+		if err != nil {
+			c.logger.Warn().
+				Err(err).
+				Interface("tx", tx).
+				Msg("signed tx cache missing txid mapping, re-signing tx")
+		} else {
+			prevTx, txErr := c.rpcClient.GetTransactionConfirmed(prevTxID)
+			switch {
+			case txErr != nil:
+				return nil, nil, nil, fmt.Errorf("failed to check signed tx on chain: %w", txErr)
+			case prevTx != nil && prevTx.Slot > 0:
+				c.logger.Info().
+					Str("txid", prevTxID).
+					Interface("tx", tx).
+					Msg("transaction already signed and confirmed on chain, ignoring")
+				return nil, nil, nil, nil
+			default:
+				status, statusErr := c.rpcClient.GetSignatureStatus(prevTxID)
+				if statusErr != nil {
+					return nil, nil, nil, fmt.Errorf("failed to check signed tx signature status: %w", statusErr)
+				}
+				if status != nil && status.Err == nil {
+					c.logger.Info().
+						Str("txid", prevTxID).
+						Str("confirmation_status", status.ConfirmationStatus).
+						Interface("tx", tx).
+						Msg("transaction already signed and still pending on chain, ignoring")
+					return nil, nil, nil, nil
+				}
+				c.logger.Warn().
+					Str("txid", prevTxID).
+					Interface("tx", tx).
+					Msg("cached signed tx missing from chain and signature status, re-signing tx")
+				c.signerCacheManager.RemoveSigned(prevTxID)
+			}
+		}
 	}
 
 	// GetMemo returns OriginalMemo for memoless outbounds

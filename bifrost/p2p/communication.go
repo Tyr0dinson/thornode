@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	peerstorecore "github.com/libp2p/go-libp2p-core/peerstore"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -43,7 +44,8 @@ var (
 
 const (
 	// TimeoutConnecting maximum time for wait for peers to connect
-	TimeoutConnecting = time.Second * 20
+	TimeoutConnecting      = time.Second * 20
+	bootstrapRetryInterval = time.Second * 5
 
 	StreamUnknown = "UNKNOWN"
 	StreamMsgDone = "done"
@@ -71,6 +73,11 @@ type Communication struct {
 	externalAddr     maddr.Multiaddr
 	streamMgr        *StreamMgr
 	nodeGater        *NodeGater // gater to restrict connections to allowed nodes only
+	peerFinder       peerFinder
+}
+
+type peerFinder interface {
+	FindPeer(context.Context, peer.ID) (peer.AddrInfo, error)
 }
 
 type P2PConfig interface {
@@ -373,6 +380,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	if err != nil {
 		return fmt.Errorf("fail to create DHT: %w", err)
 	}
+	c.peerFinder = kademliaDHT
 	c.logger.Debug().Msg("Bootstrapping the DHT")
 	if err = kademliaDHT.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("fail to bootstrap DHT: %w", err)
@@ -380,13 +388,13 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 
 	requireBootstrapConnectivity := c.bootstrapConnectivityRequired()
 	var connectionErr error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < c.bootstrapRetryAttempts(); i++ {
 		connectionErr = c.connectToBootstrapPeers()
 		if connectionErr == nil {
 			break
 		}
-		c.logger.Warn().Err(connectionErr).Msg("cannot connect to any bootstrap node, retry in 5 seconds")
-		time.Sleep(time.Second * 5)
+		c.logger.Warn().Err(connectionErr).Msgf("cannot connect to any bootstrap node, retry in %s", bootstrapRetryInterval)
+		time.Sleep(bootstrapRetryInterval)
 	}
 	if connectionErr != nil {
 		if requireBootstrapConnectivity {
@@ -414,6 +422,22 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	return nil
 }
 
+func (c *Communication) bootstrapRetryAttempts() int {
+	attempts := 5
+	if c == nil || c.nodeGater == nil || c.nodeGater.refreshInterval <= 0 {
+		return attempts
+	}
+
+	// Give bootstrap peers at least one full node-gater refresh window plus a
+	// little extra time so simultaneous bifrost restarts do not fail before the
+	// bootstrap node has refreshed its allowlist to include the other nodes.
+	gaterAttempts := int(c.nodeGater.refreshInterval/bootstrapRetryInterval) + 2
+	if gaterAttempts > attempts {
+		return gaterAttempts
+	}
+	return attempts
+}
+
 func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	c.logger.Debug().Msgf("peer:%s,current:%s", pID, c.host.ID())
 	// dont connect to itself
@@ -423,11 +447,42 @@ func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	c.logger.Debug().Msgf("connect to peer : %s", pID.String())
 	ctx, cancel := context.WithTimeout(context.Background(), TimeoutConnecting)
 	defer cancel()
+	if len(c.host.Peerstore().Addrs(pID)) == 0 {
+		if err := c.discoverPeer(ctx, pID); err != nil {
+			c.logger.Debug().Err(err).Msg("fail to discover peer before opening stream")
+		}
+	}
 	stream, err := c.host.NewStream(ctx, pID, TSSProtocolID)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create new stream to peer: %s, %w", pID, err)
 	}
 	return stream, nil
+}
+
+func (c *Communication) discoverPeer(ctx context.Context, pID peer.ID) error {
+	if c == nil || c.host == nil {
+		return errors.New("communication host is not initialized")
+	}
+	if len(c.host.Peerstore().Addrs(pID)) > 0 {
+		return nil
+	}
+	if c.peerFinder == nil {
+		return errors.New("peer discovery is not initialized")
+	}
+
+	info, err := c.peerFinder.FindPeer(ctx, pID)
+	if err != nil {
+		return err
+	}
+	if info.ID != pID {
+		return fmt.Errorf("discovered unexpected peer %s while looking for %s", info.ID, pID)
+	}
+	if len(info.Addrs) == 0 {
+		return fmt.Errorf("discovered peer %s without addresses", pID)
+	}
+
+	c.host.Peerstore().AddAddrs(info.ID, info.Addrs, peerstorecore.TempAddrTTL)
+	return nil
 }
 
 func (c *Communication) connectToBootstrapPeers() error {

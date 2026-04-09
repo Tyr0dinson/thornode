@@ -202,9 +202,9 @@ coverage-report: test-coverage
 	@go tool cover -html=coverage.txt
 
 test-coverage-sum: test-network-specific
-	@go run gotest.tools/gotestsum --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
+	@go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
 	sed -i '/\.pb\.go:/d' coverage.txt
-	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura < coverage.txt > coverage.xml
+	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura@v1.4.0 < coverage.txt > coverage.xml
 	@go tool cover -func=coverage.txt
 	@go tool cover -html=coverage.txt -o coverage.html
 
@@ -432,6 +432,10 @@ reset-mocknet-fork-%: stop-mocknet
 run-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
 		--profile midgard up -d
+	@# Compose can leave dependent validator thornodes in Created under detached
+	@# startup when the primary thornode healthcheck is not yet satisfied.
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
+		--profile midgard up -d thornode-cat thornode-fox thornode-pig
 
 stop-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard down -v

@@ -167,7 +167,12 @@ func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) *common.ObservedTx {
 	return &m.Tx
 }
 
+func sameConsensusObservation(lhs, rhs common.ObservedTx) bool {
+	return lhs.ObservedPubKey.Equals(rhs.ObservedPubKey) && lhs.Tx.EqualsEx(rhs.Tx)
+}
+
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) common.ObservedTx {
+	var consensus common.ObservedTx
 	for _, txFinal := range m.Txs {
 		voters := make(map[string]bool)
 		if txFinal.IsFinal() != final {
@@ -177,7 +182,7 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) comm
 			if txIn.IsFinal() != final {
 				continue
 			}
-			if !txFinal.Tx.EqualsEx(txIn.Tx) {
+			if !sameConsensusObservation(txFinal, txIn) {
 				continue
 			}
 			for _, signer := range txIn.GetSigners() {
@@ -188,10 +193,16 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) comm
 			}
 		}
 		if HasSuperMajority(len(voters), len(accounts)) {
-			return txFinal
+			if consensus.IsEmpty() {
+				consensus = txFinal
+				continue
+			}
+			if !sameConsensusObservation(consensus, txFinal) {
+				return common.ObservedTx{}
+			}
 		}
 	}
-	return common.ObservedTx{}
+	return consensus
 }
 
 // SetReverted set all the tx status to `Reverted` , only when a relevant errata tx had been processed
@@ -230,7 +241,7 @@ func (m *ObservedTxVoter) GetConsensusSigners() []cosmos.AccAddress {
 		if tx.IsFinal() != final {
 			continue
 		}
-		if !tx.Tx.EqualsEx(m.Tx.Tx) {
+		if !sameConsensusObservation(tx, m.Tx) {
 			continue
 		}
 

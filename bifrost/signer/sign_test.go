@@ -22,6 +22,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog/log"
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
@@ -48,6 +49,8 @@ import (
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
+const testSignerMnemonic = "profit used piece repeat real curtain endorse tennis tenant sentence include glass return learn upgrade apple crane polar attend before ripple doctor decrease depend"
+
 func TestShouldAutoObserve(t *testing.T) {
 	signer := &Signer{}
 
@@ -73,6 +76,16 @@ func TestShouldAutoObserve(t *testing.T) {
 
 type fakeBridge struct {
 	thorclient.ThorchainBridge
+}
+
+type batchingKeygenBridge struct {
+	fakeBridge
+	batchSizes []int
+}
+
+type timingKeygenBridge struct {
+	batchingKeygenBridge
+	buildDelay time.Duration
 }
 
 func (b fakeBridge) GetBlockHeight() (int64, error) {
@@ -117,6 +130,16 @@ func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
 		PubKey: pk,
 		Status: types2.VaultStatus_ActiveVault,
 	}, nil
+}
+
+func (b *batchingKeygenBridge) Broadcast(msgs ...sdktypes.Msg) (common.TxID, error) {
+	b.batchSizes = append(b.batchSizes, len(msgs))
+	return common.TxID("batched-keygen-tx"), nil
+}
+
+func (b *timingKeygenBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types2.Blame, inputPks common.PubKeys, keygenType types2.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdktypes.Msg, error) {
+	time.Sleep(b.buildDelay)
+	return &types2.MsgTssPool{}, nil
 }
 
 // -------------------------------- tss ---------------------------------
@@ -832,4 +855,168 @@ func (s *SignSuite) TestRunCustomKeygenHooksFailClosed(c *C) {
 	_, _, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.ETHChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "custom keygen failed for ETH"), Equals, true)
+}
+
+func (s *SignSuite) TestFlushPendingKeygenBroadcastsBatchesBlock(c *C) {
+	bridge := &batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}}
+	sign := &Signer{
+		thorchainBridge: bridge,
+		pubkeyMgr:       pubkeymanager.NewMockPoolAddressValidator(),
+		logger:          log.With().Str("module", "signer").Logger(),
+		errCounter:      s.metrics.GetCounterVec(metrics.SignerError),
+	}
+
+	memberA := types2.GetRandomPubKey()
+	memberB := types2.GetRandomPubKey()
+	asgardPK := types2.GetRandomPubKey()
+	asgardED := types2.GetRandomPubKey()
+	xmrPK := types2.GetRandomPubKey()
+
+	sign.flushPendingKeygenBroadcasts([]pendingKeygenBroadcast{
+		{
+			height:          2700,
+			poolPk:          asgardPK,
+			input:           common.PubKeys{memberA, memberB},
+			keygenType:      types2.KeygenType_AsgardKeygen,
+			chains:          common.Chains{common.THORChain, common.BTCChain},
+			keygenTime:      1,
+			poolPubKeyEddsa: asgardED,
+		},
+		{
+			height:               2700,
+			poolPk:               xmrPK,
+			input:                common.PubKeys{memberA, memberB},
+			keygenType:           types2.KeygenType_XMRMonovaultKeygen,
+			chains:               common.Chains{common.THORChain, common.XMRChain},
+			keygenTime:           1,
+			poolPubKeyEddsa:      xmrPK,
+			poolPubKeyFrost:      xmrPK,
+			observedMoneroHeight: 12345,
+		},
+	})
+
+	c.Assert(bridge.batchSizes, HasLen, 1)
+	c.Assert(bridge.batchSizes[0], Equals, 2)
+}
+
+func (s *SignSuite) TestBuildKeygenBackupsRunsEncryptionsInParallel(c *C) {
+	tmpDir := c.MkDir()
+	secpPath := filepath.Join(tmpDir, "secp.json")
+	eddsaPath := filepath.Join(tmpDir, "eddsa.json")
+	c.Assert(os.WriteFile(secpPath, []byte("{}"), 0o600), IsNil)
+	c.Assert(os.WriteFile(eddsaPath, []byte("{}"), 0o600), IsNil)
+
+	originalSeed, hadSeed := os.LookupEnv("SIGNER_SEED_PHRASE")
+	c.Assert(os.Setenv("SIGNER_SEED_PHRASE", testSignerMnemonic), IsNil)
+	defer func() {
+		if hadSeed {
+			_ = os.Setenv("SIGNER_SEED_PHRASE", originalSeed)
+		} else {
+			_ = os.Unsetenv("SIGNER_SEED_PHRASE")
+		}
+	}()
+
+	origEncryptKeyshares := encryptKeysharesFn
+	origEncryptRawKeyshares := encryptRawKeysharesFn
+	defer func() {
+		encryptKeysharesFn = origEncryptKeyshares
+		encryptRawKeysharesFn = origEncryptRawKeyshares
+	}()
+
+	encryptKeysharesFn = func(path, passphrase string) ([]byte, error) {
+		time.Sleep(200 * time.Millisecond)
+		return []byte(filepath.Base(path)), nil
+	}
+	encryptRawKeysharesFn = func(raw []byte, passphrase string) ([]byte, error) {
+		time.Sleep(200 * time.Millisecond)
+		return append([]byte(nil), raw...), nil
+	}
+
+	sign := &Signer{
+		cfg:    config.Bifrost{Signer: config.BifrostSignerConfiguration{BackupKeyshares: true}},
+		logger: log.With().Str("module", "signer").Logger(),
+	}
+
+	start := time.Now()
+	backups := sign.buildKeygenBackups(secpPath, eddsaPath, "abcd")
+	elapsed := time.Since(start)
+
+	c.Assert(string(backups.keyshares), Equals, filepath.Base(secpPath))
+	c.Assert(string(backups.keysharesEddsa), Equals, filepath.Base(eddsaPath))
+	c.Assert(backups.keysharesFrost, DeepEquals, []byte{0xab, 0xcd})
+	c.Assert(elapsed < 400*time.Millisecond, Equals, true)
+}
+
+func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesInParallel(c *C) {
+	originalSeed, hadSeed := os.LookupEnv("SIGNER_SEED_PHRASE")
+	c.Assert(os.Setenv("SIGNER_SEED_PHRASE", testSignerMnemonic), IsNil)
+	defer func() {
+		if hadSeed {
+			_ = os.Setenv("SIGNER_SEED_PHRASE", originalSeed)
+		} else {
+			_ = os.Unsetenv("SIGNER_SEED_PHRASE")
+		}
+	}()
+
+	origEncryptKeyshares := encryptKeysharesFn
+	origEncryptRawKeyshares := encryptRawKeysharesFn
+	defer func() {
+		encryptKeysharesFn = origEncryptKeyshares
+		encryptRawKeysharesFn = origEncryptRawKeyshares
+	}()
+
+	encryptKeysharesFn = func(path, passphrase string) ([]byte, error) {
+		time.Sleep(200 * time.Millisecond)
+		return []byte("ecdsa"), nil
+	}
+	encryptRawKeysharesFn = func(raw []byte, passphrase string) ([]byte, error) {
+		time.Sleep(200 * time.Millisecond)
+		return append([]byte(nil), raw...), nil
+	}
+
+	bridge := &timingKeygenBridge{
+		batchingKeygenBridge: batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}},
+	}
+	sign := &Signer{
+		cfg:             config.Bifrost{Signer: config.BifrostSignerConfiguration{BackupKeyshares: true}},
+		thorchainBridge: bridge,
+		pubkeyMgr:       pubkeymanager.NewMockPoolAddressValidator(),
+		logger:          log.With().Str("module", "signer").Logger(),
+		errCounter:      s.metrics.GetCounterVec(metrics.SignerError),
+	}
+
+	memberA := types2.GetRandomPubKey()
+	memberB := types2.GetRandomPubKey()
+	asgardPK := types2.GetRandomPubKey()
+	xmrPK := types2.GetRandomPubKey()
+
+	start := time.Now()
+	sign.flushPendingKeygenBroadcasts([]pendingKeygenBroadcast{
+		{
+			height:      2700,
+			poolPk:      asgardPK,
+			input:       common.PubKeys{memberA, memberB},
+			keygenType:  types2.KeygenType_AsgardKeygen,
+			chains:      common.Chains{common.THORChain, common.BTCChain},
+			keygenTime:  1,
+			poolPubKeyFrost: common.EmptyPubKey,
+		},
+		{
+			height:               2700,
+			poolPk:               xmrPK,
+			input:                common.PubKeys{memberA, memberB},
+			keygenType:           types2.KeygenType_XMRMonovaultKeygen,
+			chains:               common.Chains{common.THORChain, common.XMRChain},
+			keygenTime:           1,
+			poolPubKeyEddsa:      xmrPK,
+			poolPubKeyFrost:      xmrPK,
+			frostKeyshareHex:     "abcd",
+			observedMoneroHeight: 12345,
+		},
+	})
+	elapsed := time.Since(start)
+
+	c.Assert(bridge.batchSizes, HasLen, 1)
+	c.Assert(bridge.batchSizes[0], Equals, 2)
+	c.Assert(elapsed < 325*time.Millisecond, Equals, true)
 }

@@ -1150,6 +1150,43 @@ func (s *QuerierSuite) TestQueryInboundAddressesUsesChainSpecificVaultSelection(
 	c.Assert(xmrPubKey, Equals, xmrFrostKey.String())
 }
 
+func (s *QuerierSuite) TestQueryInboundAddressesFallsBackToRetiringXMRVaultDuringMonovaultCutover(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	regularPubKey := GetRandomPubKey()
+	regular := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, regularPubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, regular), IsNil)
+
+	retiringXMRPubKey := GetRandomEd25519PubKey()
+	retiringXMR := NewVaultV2(
+		ctx.BlockHeight()-2,
+		RetiringVault,
+		AsgardVault,
+		retiringXMRPubKey,
+		common.Chains{common.THORChain, common.XMRChain}.Strings(),
+		nil,
+		retiringXMRPubKey,
+	)
+	retiringXMR.PubKeyFrost = retiringXMRPubKey
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringXMR), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+	queryInboundAddrResp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+
+	var xmrPubKey string
+	for _, inbound := range queryInboundAddrResp.InboundAddresses {
+		if inbound.Chain == common.XMRChain.String() {
+			xmrPubKey = inbound.PubKey
+			break
+		}
+	}
+
+	c.Assert(xmrPubKey, Equals, retiringXMRPubKey.String())
+}
+
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	_, mgr := setupManagerForTest(c)
