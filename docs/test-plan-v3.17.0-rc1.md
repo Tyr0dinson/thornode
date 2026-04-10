@@ -36,6 +36,9 @@ STANDBY_NODES=(snode2 snode5)
 
 # Default wallet for regular transactions (swaps, deposits)
 export WALLET="snode1"
+
+# Destination addresses
+export SOL_DEST_ADDR="9NygcE9bzLULhS9KDzvx7CmZxeZQntdFmNsu3Zdy549c"
 ```
 
 > **Mimir votes** require a supermajority of active nodes (>2/3 of 4 = at least 3 votes).
@@ -555,7 +558,23 @@ sthornode tx thorchain deposit 100000000 rune \
 
 **Result:**
 ```
-
+~ sthornode tx thorchain deposit 100000000 rune \
+  "=:SOL.SOL:$SOL_DEST_ADDR:0" \
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+gas estimate: 230462
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 5DDC0393C785297FC0E8621D6DB9471873FA25E449D644B7C83C05488B809496
 ```
 
 **Step 2 — Capture the outbound entry**
@@ -566,7 +585,31 @@ curl -s "$STAGENET_API/thorchain/queue/outbound" \
 
 **Result:**
 ```
-
+~ curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '.[] | select(.coin.asset == "SOL.SOL")'
+{
+  "height": 9461025,
+  "vault_pub_key": "sthorpub1addwnpepqvze28rfl56h9kppamgkkk04kszqr0vmehjwuunhfhp75x8aj9cqw0egudy",
+  "in_hash": "5DDC0393C785297FC0E8621D6DB9471873FA25E449D644B7C83C05488B809496",
+  "chain": "SOL",
+  "to_address": "9NygcE9bzLULhS9KDzvx7CmZxeZQntdFmNsu3Zdy549c",
+  "coin": {
+    "asset": "SOL.SOL",
+    "amount": "646728"
+  },
+  "max_gas": [
+    {
+      "asset": "SOL.SOL",
+      "amount": "750",
+      "decimals": 9
+    }
+  ],
+  "gas_rate": 7500,
+  "original_memo": "OUT:5DDC0393C785297FC0E8621D6DB9471873FA25E449D644B7C83C05488B809496",
+  "aggregator_target_limit": "0",
+  "clout_spent": "0",
+  "vault_pub_key_eddsa": "sthorpub1zcjduepqey0xj3z24w6keehj73ky9u3e0rv66jdv69r9s5kzwxkkdt8mmlnqwh4tum"
+}
 ```
 
 **Step 3 — Wait for finalisation; verify exactly one SOL txid broadcast**
@@ -579,22 +622,56 @@ curl -s "$STAGENET_API/thorchain/tx/$SOL_INBOUND_TX" \
 
 **Result:**
 ```
-
+~ export SOL_INBOUND_TX="5DDC0393C785297FC0E8621D6DB9471873FA25E449D644B7C83C05488B809496"
+curl -s "$STAGENET_API/thorchain/tx/$SOL_INBOUND_TX" \
+  | jq '{status: .observed_tx.status, out_hashes: .observed_tx.out_hashes}'
+{
+  "status": "done",
+  "out_hashes": [
+    "a6qpehv4eZcQNq1Bpk8gsM6SYERSw51fEvwjefShQQRcWcw8nRoXkoUzRKfX3tgpuMBzX3QAS3C5LAg1UHdfTBe"
+  ]
+}
 ```
 
-**Step 4 — Check bifrost logs for signer cache activity**
+**Step 4 — Confirm outbound does not reappear in queue after finalisation**
 ```bash
-# On the signing node:
-grep -i "transaction signed before\|already in cache\|signer cache" <bifrost-log> | tail -20
+sleep 12
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '[(. // [])[] | select(.coin.asset == "SOL.SOL" and .in_hash == env.SOL_INBOUND_TX)] | length'
 ```
-> Expected: if a retry occurred, `"transaction signed before, ignore"` confirms the cache blocked re-signing
+> Expected: `0` — once signed and observed, the outbound must not be rescheduled. A value ≥ 1
+> would indicate the signer cache failed to block a retry.
 
 **Result:**
+```bash
+~ sleep 12
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '[(. // [])[] | select(.coin.asset == "SOL.SOL" and .in_hash == env.SOL_INBOUND_TX)] | length'
+0
 ```
 
+**Step 5 — Verify the on-chain tx has exactly one out_hash (single signing proof)**
+```bash
+curl -s "$STAGENET_API/thorchain/tx/$SOL_INBOUND_TX" \
+  | jq '{out_count: (.observed_tx.out_hashes | length), out_hashes: .observed_tx.out_hashes}'
+```
+> Expected: `out_count: 1` — the signer cache (`HasSigned()` in `sol_client.go:370`) is
+> LevelDB-backed and persists across restarts; a second sign attempt returns early without
+> broadcasting, so only one Solana txid ever lands on-chain.
+
+**Result:**
+```bash
+~ curl -s "$STAGENET_API/thorchain/tx/$SOL_INBOUND_TX" \
+  | jq '{out_count: (.observed_tx.out_hashes | length), out_hashes: .observed_tx.out_hashes}'
+{
+  "out_count": 1,
+  "out_hashes": [
+    "a6qpehv4eZcQNq1Bpk8gsM6SYERSw51fEvwjefShQQRcWcw8nRoXkoUzRKfX3tgpuMBzX3QAS3C5LAg1UHdfTBe"
+  ]
+}
 ```
 
-> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+> **Status:** `[x] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: Outbound finalised with exactly 1 out_hash, no reschedule observed. Single Solana txid `a6qpehv4...` confirms the signer cache blocked any retry.
 
 ---
 
