@@ -22,8 +22,6 @@ func responseAtLimit(height int64) string {
 }
 
 func TestFrostSignerGetOversizedResponseReturnsSizeError(t *testing.T) {
-	t.Parallel()
-
 	payload := responseAtLimit(123) + "x"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/chain/height" {
@@ -52,8 +50,6 @@ func TestFrostSignerGetOversizedResponseReturnsSizeError(t *testing.T) {
 }
 
 func TestFrostSignerPostOversizedResponseReturnsSizeError(t *testing.T) {
-	t.Parallel()
-
 	prefix := `{"session_id":"sess-1","preprocess":"aa","pad":"`
 	suffix := `"}`
 	padLen := (maxFrostResponseBytes - len(prefix) - len(suffix)) + 1
@@ -92,8 +88,6 @@ func TestFrostSignerPostOversizedResponseReturnsSizeError(t *testing.T) {
 }
 
 func TestFrostSignerResponseAtLimitStillParses(t *testing.T) {
-	t.Parallel()
-
 	payload := responseAtLimit(456)
 	if len(payload) != maxFrostResponseBytes {
 		t.Fatalf("invalid fixture size: got %d want %d", len(payload), maxFrostResponseBytes)

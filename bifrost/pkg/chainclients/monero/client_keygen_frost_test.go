@@ -238,8 +238,8 @@ func TestClientKeygenRegistersObservedMoneroHeightAsBirthday(t *testing.T) {
 		switch r.URL.Path {
 		case "/v1/monero/vaults/register":
 			var req xmrFrostRegisterVaultRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode register request: %v", err)
+			if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+				t.Fatalf("decode register request: %v", decodeErr)
 			}
 			registerReqCh <- req
 			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})

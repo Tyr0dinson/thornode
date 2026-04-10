@@ -402,3 +402,20 @@ func TestFrostSignerAllowsAuthenticatedMocknetHTTPServiceEndpoint(t *testing.T) 
 		t.Fatalf("expected signer endpoint to be preserved, got %q", signer.endpoint)
 	}
 }
+
+func TestFrostSignerRejectsSeedPhraseAsImplicitBearerForNonLoopback(t *testing.T) {
+	t.Setenv("SIGNER_SEED_PHRASE", "test mocknet signer seed phrase")
+
+	_, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{
+			ChainNetwork: "mocknet",
+		},
+		"http://xmr-frost-signer:8283",
+	)
+	if err == nil {
+		t.Fatal("expected non-loopback endpoint without explicit auth to be rejected")
+	}
+	if !strings.Contains(err.Error(), "requires authorization_bearer or username/password") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
