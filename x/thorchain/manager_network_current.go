@@ -809,6 +809,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					ToAddress:        addr,
 					VaultPubKey:      vault.PubKey,
 					VaultPubKeyEddsa: vault.PubKeyEddsa,
+					VaultPubKeyFrost: vault.PubKeyFrost,
 					Coin: common.Coin{
 						Asset:  coin.Asset,
 						Amount: amt,

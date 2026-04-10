@@ -267,6 +267,84 @@ func (s *SlashingSuite) TestInactiveVaultDrainedReroute(c *C) {
 	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
 }
 
+func (s *SlashingSuite) TestInactiveXMRVaultDrainedRerouteUsesMonovault(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	txOutStore := NewTxStoreDummy()
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	ctx = ctx.WithBlockHeight(2 * signingTransactionPeriod)
+
+	na := GetRandomValidatorNode(NodeActive)
+	inTxID := common.BlankTxID
+	xmrVaultAddr, err := common.NewAddress(common.XMRChecksummedDummyAddress('4'))
+	c.Assert(err, IsNil)
+
+	inactiveVault := GetRandomVault()
+	inactiveVault.Type = AsgardVault
+	inactiveVault.Status = InactiveVault
+	inactiveVault.Chains = common.Chains{common.THORChain, common.XMRChain}.Strings()
+	inactiveVault.Coins = common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.ZeroUint()),
+	}
+
+	regularVault := GetRandomVault()
+	regularVault.Type = AsgardVault
+	regularVault.Status = ActiveVault
+	regularVault.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+	regularVault.Coins = common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(50*common.One)),
+	}
+
+	xmrVault := GetRandomVault()
+	xmrVault.Type = AsgardVault
+	xmrVault.Status = ActiveVault
+	xmrVault.Chains = common.Chains{common.THORChain, common.XMRChain}.Strings()
+	xmrVault.PubKeyFrost = GetRandomPubKey()
+	xmrVault.Coins = common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(50*common.One)),
+	}
+
+	txOutItem := TxOutItem{
+		Chain:            common.XMRChain,
+		InHash:           inTxID,
+		VaultPubKey:      inactiveVault.PubKey,
+		ToAddress:        xmrVaultAddr,
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+		MaxGas:           common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		Memo:             "REFUND:" + GetRandomTxHash().String(),
+		VaultPubKeyFrost: inactiveVault.PubKeyFrost,
+	}
+
+	txOut := NewTxOut(3)
+	txOut.TxArray = append(txOut.TxArray, txOutItem)
+
+	keeper := &TestSlashingLackKeeper{
+		txOut:  txOut,
+		na:     na,
+		vaults: Vaults{inactiveVault, regularVault, xmrVault},
+		voter: ObservedTxVoter{
+			Actions:         []TxOutItem{txOutItem},
+			FinalisedHeight: 1,
+		},
+		slashPts: make(map[string]int64),
+	}
+
+	mgr := NewDummyMgr()
+	mgr.txOutStore = txOutStore
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	outItems, err := txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1)
+	c.Assert(outItems[0].VaultPubKey.Equals(xmrVault.PubKey), Equals, true)
+	c.Assert(outItems[0].VaultPubKeyFrost.Equals(xmrVault.PubKeyFrost), Equals, true)
+	c.Assert(keeper.voter.Actions[0].VaultPubKey.Equals(xmrVault.PubKey), Equals, true)
+	c.Assert(keeper.voter.Actions[0].VaultPubKeyFrost.Equals(xmrVault.PubKeyFrost), Equals, true)
+	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
+}
+
 func (s *SlashingSuite) TestNewSlasher(c *C) {
 	nas := NodeAccounts{
 		GetRandomValidatorNode(NodeActive),
@@ -929,6 +1007,51 @@ func (s *SlashingSuite) TestNeedsNewVaultEdDSA(c *C) {
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 
 	// Confirm it still returns false at later block heights.
+	ctx = ctx.WithBlockHeight(999999999)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+}
+
+func (s *SlashingSuite) TestNeedsNewVaultFrost(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	inhash := GetRandomTxHash()
+	outhash := GetRandomTxHash()
+	pk1 := GetRandomPubKey()
+	pk2 := GetRandomPubKey()
+	pk3 := GetRandomPubKey()
+	sig1, _ := pk1.GetThorAddress()
+	sig2, _ := pk2.GetThorAddress()
+	sig3, _ := pk3.GetThorAddress()
+
+	secpPK := GetRandomPubKey()
+	frostPK := GetRandomPubKey()
+
+	tx := GetRandomTx()
+	tx.ID = outhash
+	obs := NewObservedTx(tx, 0, frostPK, 0)
+	obs.ObservedPubKey = frostPK
+	obs.Signers = []string{sig1.String(), sig2.String(), sig3.String()}
+
+	vault := GetRandomVault()
+	vault.Membership = []string{pk1.String(), pk2.String(), pk3.String()}
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+	c.Assert(len(tx.Coins), Equals, 1)
+	toi := TxOutItem{
+		InHash:           inhash,
+		Coin:             tx.Coins[0],
+		VaultPubKey:      secpPK,
+		VaultPubKeyFrost: frostPK,
+	}
+
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, true)
+
+	voter := NewObservedTxVoter(outhash, []common.ObservedTx{obs})
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	mgr.Keeper().SetObservedLink(ctx, inhash, outhash)
+
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 	ctx = ctx.WithBlockHeight(999999999)
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 }

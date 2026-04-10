@@ -228,7 +228,9 @@ func (s *Signer) Start() error {
 }
 
 func (s *Signer) shouldSign(tx types.TxOutItem) bool {
-	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa)
+	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) ||
+		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa) ||
+		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyFrost)
 }
 
 func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {

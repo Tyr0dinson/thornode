@@ -374,6 +374,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
 				}
+				active = filterActiveVaultsForOutboundChain(active, toi.Chain)
 				// Deduct the asset's pending outbound funds to represent only the available funds.
 				pendingOutbounds := mgr.Keeper().GetPendingOutbounds(ctx, toi.Coin.Asset)
 				for i := range active {
@@ -453,6 +454,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						if action.Equals(toi) {
 							voter.Actions[i].VaultPubKey = vault.PubKey
 							voter.Actions[i].VaultPubKeyEddsa = vault.PubKeyEddsa
+							voter.Actions[i].VaultPubKeyFrost = vault.PubKeyFrost
 							if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
 								ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", toi.InHash)
 
@@ -474,6 +476,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				// Save the toi to as a new toi, select Asgard to send it this time.
 				toi.VaultPubKey = vault.PubKey
 				toi.VaultPubKeyEddsa = vault.PubKeyEddsa
+				toi.VaultPubKeyFrost = vault.PubKeyFrost
 
 				// update max gas - update voter first, only update txOut if voter succeeds
 				if !maxGasCoin.IsEmpty() {
@@ -991,7 +994,9 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 		// focus on the matching pubkey and asset
 		signers := make(map[string]bool)
 		for _, tx1 := range voter.Txs {
-			if (!tx1.ObservedPubKey.Equals(toi.VaultPubKey) && !tx1.ObservedPubKey.Equals(toi.VaultPubKeyEddsa)) ||
+			if (!tx1.ObservedPubKey.Equals(toi.VaultPubKey) &&
+				!tx1.ObservedPubKey.Equals(toi.VaultPubKeyEddsa) &&
+				!tx1.ObservedPubKey.Equals(toi.VaultPubKeyFrost)) ||
 				len(tx1.Tx.Coins) != 1 ||
 				!tx1.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) {
 				continue

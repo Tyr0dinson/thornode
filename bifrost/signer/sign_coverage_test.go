@@ -220,6 +220,9 @@ func (s *SignCoverageSuite) TestShouldSign(c *C) {
 
 	// Should sign - eddsa pub key matches
 	c.Assert(sign.shouldSign(types.TxOutItem{VaultPubKeyEddsa: vaultPubKey}), Equals, true)
+
+	// Should sign - frost pub key matches
+	c.Assert(sign.shouldSign(types.TxOutItem{VaultPubKeyFrost: vaultPubKey}), Equals, true)
 }
 
 func (s *SignCoverageSuite) TestIsTssKeysign(c *C) {

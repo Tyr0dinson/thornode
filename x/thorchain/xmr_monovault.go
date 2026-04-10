@@ -62,6 +62,27 @@ func filterVaultsByChain(vaults Vaults, chain common.Chain) Vaults {
 	return filtered
 }
 
+func filterActiveVaultsForOutboundChain(vaults Vaults, chain common.Chain) Vaults {
+	if chain.Equals(common.XMRChain) {
+		if filtered := filterVaultsByChain(vaults, chain); len(filtered) > 0 {
+			return filtered
+		}
+		return vaults
+	}
+
+	filtered := make(Vaults, 0, len(vaults))
+	for _, vault := range vaults {
+		if vault.IsXMRMonovault() {
+			continue
+		}
+		filtered = append(filtered, vault)
+	}
+	if len(filtered) > 0 {
+		return filtered
+	}
+	return vaults
+}
+
 func keygenBlockHasType(keygenBlock KeygenBlock, keygenType types.KeygenType) bool {
 	for _, keygen := range keygenBlock.Keygens {
 		if keygen.Type == keygenType {
