@@ -27,9 +27,12 @@ export STAGENET_API="https://stagenet-thornode.ninerealms.com"
 export STAGENET_RPC="https://stagenet-rpc.ninerealms.com:443"
 export STAGENET_MIDGARD="https://stagenet-midgard.ninerealms.com"
 
-# Node wallets — 4 active, 2 standby
-export ACTIVE_NODES="snode1 snode3 snode4 snode6"
-export STANDBY_NODES="snode2 snode5"
+# Chain ID (derived from the node)
+export CHAIN_ID=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.node_info.network')
+
+# Node wallets — 4 active, 2 standby (defined as arrays for zsh compatibility)
+ACTIVE_NODES=(snode1 snode3 snode4 snode6)
+STANDBY_NODES=(snode2 snode5)
 
 # Default wallet for regular transactions (swaps, deposits)
 export WALLET="snode1"
@@ -50,7 +53,10 @@ curl -s "$STAGENET_API/thorchain/nodes" | jq '[.[] | select(.status == "Active")
 
 **Result:**
 ```bash
-
+~ curl -s "$STAGENET_API/thorchain/nodes" | jq '[.[] | select(.status == "Active") | .version] | unique'
+[
+  "3.17.0"
+]
 ```
 
 ---
@@ -63,7 +69,12 @@ curl -s "$STAGENET_API/thorchain/version" | jq '{current, next, querier}'
 
 **Result:**
 ```bash
-
+~ curl -s "$STAGENET_API/thorchain/version" | jq '{current, next, querier}'
+{
+  "current": "3.17.0",
+  "next": "3.17.0",
+  "querier": "3.17.0"
+}
 ```
 
 ---
@@ -76,7 +87,47 @@ curl -s "$STAGENET_API/thorchain/mimir" | jq 'to_entries[] | select(.key | start
 
 **Result:**
 ```bash
-
+~ curl -s "$STAGENET_API/thorchain/mimir" | jq 'to_entries[] | select(.key | startswith("HALT"))'
+{
+  "key": "HALTBASETRADING",
+  "value": 0
+}
+{
+  "key": "HALTBSCTRADING",
+  "value": 0
+}
+{
+  "key": "HALTCHAINGLOBAL",
+  "value": 0
+}
+{
+  "key": "HALTCHURNING",
+  "value": 0
+}
+{
+  "key": "HALTETHTRADING",
+  "value": 0
+}
+{
+  "key": "HALTMEMOLESS",
+  "value": 0
+}
+{
+  "key": "HALTSIGNING",
+  "value": 0
+}
+{
+  "key": "HALTSIGNINGBSC",
+  "value": 0
+}
+{
+  "key": "HALTTCYTRADING",
+  "value": 0
+}
+{
+  "key": "HALTTRADING",
+  "value": 0
+}
 ```
 
 ---
@@ -89,7 +140,11 @@ curl -s "$STAGENET_API/thorchain/queue" | jq '{outbound: .outbound | length, sch
 
 **Result:**
 ```bash
-
+~ curl -s "$STAGENET_API/thorchain/queue" | jq '{outbound: .outbound | length, scheduled: .scheduled | length}'
+{
+  "outbound": 0,
+  "scheduled": 0
+}
 ```
 
 ---
@@ -105,7 +160,11 @@ echo "Before: $H1 | After: $H2 | Delta: $((H2 - H1))"
 
 **Result:**
 ```bash
-
+~ H1=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'); \
+sleep 10; \
+H2=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'); \
+echo "Before: $H1 | After: $H2 | Delta: $((H2 - H1))"
+Before: 9460643 | After: 9460645 | Delta: 2
 ```
 
 ---
@@ -129,27 +188,92 @@ This gives `{100:2, 200:1, 300:1}` — the exact problematic map state (two tied
 ```bash
 for snode in snode1 snode3; do
   sthornode tx thorchain mimir ConsensusTest \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 100
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 100
+  sleep 2
 done
 ```
 
 **Result:**
 ```
-
+~ for snode in snode1 snode3; do
+  sthornode tx thorchain mimir ConsensusTest \
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 100
+  sleep 2
+done
+gas estimate: 782351
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 93F41763FCBF023181F8F3507124EE80FE236DF92518DF1DDA4CC0EFB6903320
+gas estimate: 746138
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: CCA08DFD582A9FBEFB690065F7BB5938BB693610FBDF3691B9D6C9CA39126AB9
 ```
 
 **Step 2 — Submit loser votes (snode4 → 200, snode6 → 300)**
 ```bash
 sthornode tx thorchain mimir ConsensusTest \
-  --from snode4 --node "$STAGENET_RPC" --yes --gas auto -- 200
+  --from snode4 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 200
 
 sthornode tx thorchain mimir ConsensusTest \
-  --from snode6 --node "$STAGENET_RPC" --yes --gas auto -- 300
+  --from snode6 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 300
 ```
 
 **Result:**
 ```
+~ sthornode tx thorchain mimir ConsensusTest \
+  --from snode4 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 200
+gas estimate: 838228
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: BC79E31449596DBA0C9F151115DB5DF5CB616E7F8279C593A337CC63D1622392
 
+~ sthornode tx thorchain mimir ConsensusTest \
+  --from snode6 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 300
+gas estimate: 623943
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: F3A2A23109225304329C309AAC5935D76F51A28486210EE8E6A6AB5224D23898
 ```
 
 **Step 3 — Wait 2 blocks, then confirm chain is still producing blocks**
@@ -161,7 +285,12 @@ curl -s "$STAGENET_RPC/status" | jq '.result.sync_info | {height: .latest_block_
 
 **Result:**
 ```
-
+~ sleep 12
+curl -s "$STAGENET_RPC/status" | jq '.result.sync_info | {height: .latest_block_height, catching_up}'
+{
+  "height": "9460687",
+  "catching_up": false
+}
 ```
 
 **Step 4 — Monitor 20 blocks; height must keep advancing**
@@ -175,21 +304,143 @@ echo "Blocks produced: $((AFTER - BEFORE))"
 
 **Result:**
 ```
-
+~ BEFORE=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+sleep 120
+AFTER=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+echo "Blocks produced: $((AFTER - BEFORE))"
+Blocks produced: 22
 ```
 
-**Step 5 — Confirm all nodes agree on the mimir value (not -1)**
+**Step 5 — Confirm no value was set (no supermajority reached)**
 ```bash
 curl -s "$STAGENET_API/thorchain/mimir" | jq '.CONSENSUSTEST'
 ```
-> Expected: `100` — the clear winner. A value of `null` or `-1` would indicate divergence.
+> Expected: `null` — no value reached the supermajority threshold (3 of 4 votes). The vote
+> distribution `{100:2, 200:1, 300:1}` is intentionally split to trigger the problematic map
+> state; the real pass criterion is that the chain did **not halt** (Steps 3–4), not that a
+> value was set.
 
 **Result:**
 ```
-
+~ curl -s "$STAGENET_API/thorchain/mimir" | jq '.CONSENSUSTEST'
+null
 ```
 
-> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+**Step 6 — Have snode4 also vote 100 to reach supermajority (3 of 4)**
+```bash
+sthornode tx thorchain mimir ConsensusTest \
+  --from snode4 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 100
+```
+
+**Result:**
+```bash
+~ sthornode tx thorchain mimir ConsensusTest \
+  --from snode4 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 100
+gas estimate: 842483
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 658AF1B60745301E179C4D8DD0B55CFFFEA7037C45AC291D1A0DEA389D997FFB
+```
+
+**Step 7 — Wait 2 blocks, then verify CONSENSUSTEST is now set to 100**
+```bash
+sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.CONSENSUSTEST'
+```
+> Expected: `100` — supermajority (3 of 4 nodes) now agrees on the winning value.
+
+**Result:**
+```bash
+~ sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.CONSENSUSTEST'
+100
+```
+
+**Step 8 — Clean up: reset all votes**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir ConsensusTest \
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- -1
+  sleep 2
+done
+```
+
+**Result:**
+```bash
+~ for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir ConsensusTest \
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- -1
+  sleep 2
+done
+gas estimate: 786214
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 021B934EE8A686820056C465E1F4585776D72951F6281CA1594E3C0F387EA9A0
+gas estimate: 750001
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: A274BB4E948893EE1BE638E51521916487FC37C6C976D8AA90EA8640EB51D50B
+gas estimate: 836671
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: BA8F4ECCE86A338D8B3B223C8FDA3315BADA3A64139B79A99B20BE2C0AB4434B
+gas estimate: 620841
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 020284CED08C33F4A819337DBBE2781C675EAA399FD3217AFBDE867F79A31C5D
+```
+
+> **Status:** `[x] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: Chain produced 22 blocks over 120s with no halt. Supermajority (3/4) correctly set value to 100 in Step 7. Voting `-1` withdraws votes but retains the last consensus value — `CONSENSUSTEST` is a test-only key with no protocol impact.
 
 ---
 
@@ -319,7 +570,7 @@ observation; the tx was rescheduled to the same vault; and the Solana client was
 ```bash
 sthornode tx thorchain deposit 100000000 rune \
   "=:SOL.SOL:$SOL_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -394,7 +645,7 @@ curl -s "$STAGENET_API/thorchain/nodes" \
 ```bash
 sthornode tx thorchain deposit 100000000 rune \
   "=:BTC.BTC:$BTC_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -458,7 +709,7 @@ curl -s "$STAGENET_API/thorchain/constants" | jq '.int_64_values.ModifyLimitSwap
 for i in $(seq 1 110); do
   sthornode tx thorchain deposit 100000000 rune \
     "=<:BTC.BTC:$BTC_DEST_ADDR:450000000/0/0" \
-    --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+    --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
   sleep 1
 done
 ```
@@ -483,11 +734,11 @@ curl -s "$STAGENET_API/thorchain/swap/queue" | jq 'length'
 ```bash
 sthornode tx thorchain deposit 100000000 rune \
   "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:450000000/0/0" \
-  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 
 sthornode tx thorchain deposit 100000000 rune \
   "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:445000000/0/0" \
-  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 > Expected: second tx fails with `"swap index too large, exceeded max iterations (100)"`
 
@@ -500,7 +751,8 @@ sthornode tx thorchain deposit 100000000 rune \
 ```bash
 for snode in $ACTIVE_NODES; do
   sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 200
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 200
+  sleep 2
 done
 sleep 12
 curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXIMITERATIONS'
@@ -516,7 +768,7 @@ curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXIMITERATIONS'
 ```bash
 sthornode tx thorchain deposit 100000000 rune \
   "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:445000000/0/0" \
-  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 > Expected: tx succeeds
 
@@ -529,7 +781,8 @@ sthornode tx thorchain deposit 100000000 rune \
 ```bash
 for snode in $ACTIVE_NODES; do
   sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- -1
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- -1
+  sleep 2
 done
 ```
 
@@ -588,7 +841,8 @@ curl -s "$STAGENET_API/thorchain/nodes" \
 ```bash
 for snode in $STANDBY_NODES $ACTIVE_NODES; do
   sthornode tx thorchain mimir BondAccTest \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 1
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 1
+  sleep 2
 done
 sleep 12
 ```
@@ -665,7 +919,7 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 ```bash
 sthornode tx thorchain deposit 1000000000 rune \
   "=:GAIA.ATOM:$ATOM_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -727,7 +981,7 @@ curl -s "$STAGENET_API/thorchain/block" \
 ```bash
 sthornode tx thorchain deposit 1000000000 rune \
   "=:ETH.ETH:$ETH_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -777,7 +1031,7 @@ curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'
 ```bash
 sthornode tx thorchain deposit 1000000000 rune \
   "=<:BTC.BTC:$BTC_DEST_ADDR:999999999999/5/0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -863,11 +1117,11 @@ and persist would lose the payload, forcing a fresh sign on restart.
 ```bash
 sthornode tx thorchain deposit 500000000 rune \
   "=:BTC.BTC:$BTC_DEST_ADDR_1:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 
 sthornode tx thorchain deposit 500000000 rune \
   "=:BTC.BTC:$BTC_DEST_ADDR_2:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -950,7 +1204,7 @@ curl -s "$STAGENET_API/thorchain/lastblock" | jq '.'
 ```bash
 sthornode tx thorchain deposit 5000000000 rune \
   "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:$ETH_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -1034,7 +1288,7 @@ curl -s "$STAGENET_API/thorchain/pool/BTC.BTC" | jq '{balance_rune, balance_asse
 ```bash
 sthornode tx thorchain deposit 5000000000 rune \
   "=:BTC.BTC:$BTC_DEST_ADDR:0/1/5" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -1100,7 +1354,7 @@ curl -s "$STAGENET_API/thorchain/isvalid?address=$LTC_TAPROOT_ADDR&chain=LTC" | 
 ```bash
 sthornode tx thorchain deposit 1000000000 rune \
   "=:LTC.LTC:$LTC_TAPROOT_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -1170,7 +1424,8 @@ curl -s "$STAGENET_API/thorchain/quote/swap?from_asset=ETH.USDC-0XA0B86991C6218B
 ```bash
 for snode in $ACTIVE_NODES; do
   sthornode tx thorchain mimir StableSlipMinBps \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 5
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 5
+  sleep 2
 done
 sleep 12
 curl -s "$STAGENET_API/thorchain/mimir" | jq '.STABLESLIPMINBPS'
@@ -1198,7 +1453,7 @@ curl -s "$STAGENET_API/thorchain/quote/swap?from_asset=ETH.USDC-0XA0B86991C6218B
 ```bash
 sthornode tx thorchain deposit 10000000000 rune \
   "=:ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7:$ETH_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 sleep 6
 curl -s "$STAGENET_API/thorchain/block" \
   | jq '.[] | select(.type == "swap") | {slip, liquidity_fee_in_rune}'
@@ -1214,7 +1469,8 @@ curl -s "$STAGENET_API/thorchain/block" \
 ```bash
 for snode in $ACTIVE_NODES; do
   sthornode tx thorchain mimir StableSlipMinBps \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- -1
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- -1
+  sleep 2
 done
 ```
 
@@ -1238,7 +1494,7 @@ positional parameter of the `~` memo. Per-affiliate threshold overrides the glob
 ```bash
 sthornode tx thorchain deposit 2000000000 rune \
   "~:testaffiliate:THOR:$(sthornode keys show $WALLET -a):$(sthornode keys show $WALLET -a):0::0:500" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -1262,7 +1518,7 @@ curl -s "$STAGENET_API/thorchain/thorname/testaffiliate" \
 ```bash
 sthornode tx thorchain deposit 100000000 rune \
   "=:BTC.BTC:$BTC_DEST_ADDR::testaffiliate:100" \
-  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 sleep 6
 curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$(sthornode keys show $WALLET -a)" \
   | jq '.balances[] | select(.denom == "rune") | .amount'
@@ -1279,7 +1535,7 @@ curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$(sthornode keys show $WALLE
 for i in $(seq 1 20); do
   sthornode tx thorchain deposit 1000000000 rune \
     "=:BTC.BTC:$BTC_DEST_ADDR::testaffiliate:100" \
-    --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+    --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
   sleep 6
 done
 ```
@@ -1305,7 +1561,7 @@ curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$(sthornode keys show $WALLE
 ```bash
 sthornode tx thorchain deposit 2000000000 rune \
   "~:testaffiliate:THOR:$(sthornode keys show $WALLET -a):$(sthornode keys show $WALLET -a):0::0:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 sleep 6
 curl -s "$STAGENET_API/thorchain/thorname/testaffiliate" \
   | jq '.preferred_asset_outbound_fee_multiplier'
@@ -1463,13 +1719,14 @@ curl -s "$STAGENET_API/thorchain/mimir" | jq '{
 ```bash
 for snode in $ACTIVE_NODES; do
   sthornode tx thorchain mimir MaxGasETH \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 80000
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 80000
+  sleep 2
 done
 sleep 12
 
 sthornode tx thorchain deposit 2000000000 rune \
   "=:ETH.ETH:$ETH_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
@@ -1493,7 +1750,8 @@ curl -s "$STAGENET_API/thorchain/queue/outbound" \
 ```bash
 for snode in $ACTIVE_NODES; do
   sthornode tx thorchain mimir MaxGasETH \
-    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- -1
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- -1
+  sleep 2
 done
 ```
 
@@ -1506,7 +1764,7 @@ done
 ```bash
 sthornode tx thorchain deposit 2000000000 rune \
   "=:AVAX.AVAX:$AVAX_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 sleep 6
 curl -s "$STAGENET_API/thorchain/queue/outbound" \
   | jq '.[] | select(.coin.asset == "AVAX.AVAX") | .max_gas'
@@ -1582,7 +1840,7 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 ```bash
 sthornode tx thorchain deposit 500000000 rune \
   "=:ZEC.ZEC:$ZEC_DEST_ADDR:0" \
-  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
