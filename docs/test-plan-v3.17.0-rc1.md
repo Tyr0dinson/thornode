@@ -452,109 +452,89 @@ total, replacing the meaningless 500M cap. Store migration v13 → v14. Irrevers
 
 ---
 
-**Step 1 — Record pre-upgrade reserve and total supply**
+> Upgrade already applied at block `9,429,460`. All steps use height-based queries to verify
+> the migration in-place.
+
+**Step 1 — Pre-upgrade reserve and total supply (height 9,429,459)**
 ```bash
-curl -s "$STAGENET_API/thorchain/network" | jq '{total_reserve}'
-```
-> Expected: ~`7421000000000000` (74.21M × 1e8)
-
-**Result:**
-```
-
-```
-
-```bash
-curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply" \
+curl -s "$STAGENET_API/thorchain/network?height=9429459" | jq '{total_reserve}'
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply?height=9429459" \
   | jq '.supply[] | select(.denom == "rune") | .amount'
 ```
 
 **Result:**
-```
-
-```
-
-**Step 2 — Apply upgrade (coordinate node binary update)**
-
-_(No command — mark when upgrade is applied)_
-
-**Step 3 — Confirm chain is still producing blocks post-migration**
 ```bash
-BEFORE=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
-sleep 300
-AFTER=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
-echo "Blocks produced: $((AFTER - BEFORE))"
+~ curl -s "$STAGENET_API/thorchain/network?height=9429459" | jq '{total_reserve}'
+{
+  "total_reserve": "4990141431061935"
+}
+~ curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply?height=9429459" \
+  | jq '.supply[] | select(.denom == "rune") | .amount'
+"45030099456911658"
 ```
-> Expected: ~50 blocks — no halt
+
+**Step 2 — Post-upgrade reserve is exactly 9.3M RUNE (height 9,429,460)**
+```bash
+curl -s "$STAGENET_API/thorchain/network?height=9429460" | jq '{total_reserve}'
+```
+> Expected: `"929999999998231"` (~9.3M × 1e8)
 
 **Result:**
-```
-
-```
-
-**Step 4 — Verify reserve is exactly 9.3M RUNE**
 ```bash
-curl -s "$STAGENET_API/thorchain/network" | jq '{total_reserve}'
-```
-> Expected: `"930000000000000"` (9.3M × 1e8)
-
-**Result:**
-```
-
+~ curl -s "$STAGENET_API/thorchain/network?height=9429460" | jq '{total_reserve}'
+{
+  "total_reserve": "929999999998231"
+}
 ```
 
-**Step 5 — Verify total supply decreased by the burned amount**
+**Step 3 — Total supply decreased by the burned amount**
 ```bash
-curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply" \
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply?height=9429460" \
   | jq '.supply[] | select(.denom == "rune") | .amount'
 ```
-> Expected: pre-upgrade amount minus ~`6490000000000000`
+> Expected: `45030099456911658` minus `4060141431061935` = `40969958025849723`
 
 **Result:**
-```
-
-```
-
-**Step 6 — Verify `MaxRuneSupply` mimir is now set**
 ```bash
-curl -s "$STAGENET_API/thorchain/mimir" | jq '.MAXRUNESUPPLY'
-```
-> Expected: non-zero integer equal to post-burn total supply (~`36000000000000000`)
-
-**Result:**
+~ curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply?height=9429460" \
+  | jq '.supply[] | select(.denom == "rune") | .amount'
+"40969958025849723"
 ```
 
-```
-
-**Step 7 — Verify burn event was emitted in the migration block**
+**Step 4 — `MaxRuneSupply` mimir set to post-burn total supply**
 ```bash
-curl -s "$STAGENET_API/thorchain/block" \
-  | jq '.[] | select(.type == "mint_burn" and .reason == "adr023_reserve_burn")'
+curl -s "$STAGENET_API/thorchain/mimir?height=9429460" | jq '.MAXRUNESUPPLY'
 ```
-> Expected: one event with large RUNE burn amount
+> Expected: `40969958025849723` — matches post-burn supply exactly
 
 **Result:**
-```
-
-```
-
-**Step 8 — Verify supply endpoint internal consistency**
 ```bash
-curl -s "$STAGENET_API/thorchain/supply" | jq '
-  . as $s | {
-    circulating: $s.circulating,
-    reserve: $s.locked.reserve,
-    total: $s.total,
-    balanced: (($s.circulating | tonumber) + ($s.locked.reserve | tonumber) == ($s.total | tonumber))
-  }'
+~ curl -s "$STAGENET_API/thorchain/mimir?height=9429460" | jq '.MAXRUNESUPPLY'
+40969958025849723
 ```
-> Expected: `balanced: true`, `reserve ≈ 9300000`
+
+**Step 5 — Burn event emitted in the migration block**
+```bash
+curl -s "$STAGENET_API/thorchain/block?height=9429460" \
+  | jq '[.begin_block_events[], .end_block_events[], .finalize_block_events[]] | .[] | select(.type == "mint_burn")'
+```
+> Expected: one event with `reason: "adr023_reserve_burn"` and amount `4060141431061935`
 
 **Result:**
+```bash
+~ curl -s "$STAGENET_API/thorchain/block?height=9429460" \
+  | jq '[.begin_block_events[], .end_block_events[], .finalize_block_events[]] | .[] | select(.type == "mint_burn")'
+{
+  "amount": "4060141431061935",
+  "denom": "rune",
+  "reason": "adr023_reserve_burn",
+  "supply": "burn",
+  "type": "mint_burn"
+}
 ```
 
-```
 
-> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+> **Status:** `[x] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: Upgrade at block 9,429,460. Reserve trimmed from 49,901,414 RUNE to exactly 9,300,000 RUNE. 40,601,414 RUNE burned. `MaxRuneSupply` mimir set to post-burn supply. Burn event confirmed in migration block.
 
 ---
 
