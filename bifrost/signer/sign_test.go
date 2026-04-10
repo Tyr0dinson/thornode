@@ -993,12 +993,12 @@ func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesInParallel(c *
 	start := time.Now()
 	sign.flushPendingKeygenBroadcasts([]pendingKeygenBroadcast{
 		{
-			height:      2700,
-			poolPk:      asgardPK,
-			input:       common.PubKeys{memberA, memberB},
-			keygenType:  types2.KeygenType_AsgardKeygen,
-			chains:      common.Chains{common.THORChain, common.BTCChain},
-			keygenTime:  1,
+			height:          2700,
+			poolPk:          asgardPK,
+			input:           common.PubKeys{memberA, memberB},
+			keygenType:      types2.KeygenType_AsgardKeygen,
+			chains:          common.Chains{common.THORChain, common.BTCChain},
+			keygenTime:      1,
 			poolPubKeyFrost: common.EmptyPubKey,
 		},
 		{

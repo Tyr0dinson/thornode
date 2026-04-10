@@ -172,7 +172,6 @@ func sameConsensusObservation(lhs, rhs common.ObservedTx) bool {
 }
 
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) common.ObservedTx {
-	var consensus common.ObservedTx
 	for _, txFinal := range m.Txs {
 		voters := make(map[string]bool)
 		if txFinal.IsFinal() != final {
@@ -193,16 +192,10 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) comm
 			}
 		}
 		if HasSuperMajority(len(voters), len(accounts)) {
-			if consensus.IsEmpty() {
-				consensus = txFinal
-				continue
-			}
-			if !sameConsensusObservation(consensus, txFinal) {
-				return common.ObservedTx{}
-			}
+			return txFinal
 		}
 	}
-	return consensus
+	return common.ObservedTx{}
 }
 
 // SetReverted set all the tx status to `Reverted` , only when a relevant errata tx had been processed

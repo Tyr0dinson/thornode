@@ -9,6 +9,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	simtypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -182,6 +183,37 @@ func TestAcquireUserForAmountTracksSpendableGasBalance(t *testing.T) {
 	err := actor.updateSwapAmount(sdkmath.NewUint(95_000_000), "recommended minimum inbound amount")
 	if err == nil {
 		t.Fatal("expected quoted amount above spendable balance to fail")
+	}
+}
+
+func TestOutboundAmountPlusGasPrefersActualGas(t *testing.T) {
+	t.Parallel()
+
+	out := openapi.Tx{
+		Coins: []openapi.Coin{{
+			Asset:  common.XMRAsset.String(),
+			Amount: "81593453",
+		}},
+		Gas: []openapi.Coin{{
+			Asset:  common.XMRAsset.String(),
+			Amount: "2250993",
+		}},
+	}
+	action := openapi.TxOutItem{
+		MaxGas: []openapi.Coin{{
+			Asset:  common.XMRAsset.String(),
+			Amount: "14897377",
+		}},
+	}
+
+	got, err := outboundAmountPlusGas(out, action, common.XMRAsset)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	want := sdkmath.NewUint(83_844_446)
+	if !got.Equal(want) {
+		t.Fatalf("expected outbound amount plus gas %s, got %s", want, got)
 	}
 }
 

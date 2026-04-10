@@ -190,6 +190,30 @@ func setQuoteExpectations(a *SwapActor, quote openapi.QuoteSwapResponse) {
 	a.maxExpected = quoteOut.Add(tolerance)
 }
 
+func outboundAmountPlusGas(out openapi.Tx, action openapi.TxOutItem, to common.Asset) (sdkmath.Uint, error) {
+	outAmountPlusGas := cosmos.NewUintFromString(out.Coins[0].Amount)
+
+	gasCoins := out.Gas
+	if len(gasCoins) == 0 {
+		gasCoins = action.MaxGas
+	}
+
+	for _, gasCoin := range gasCoins {
+		if gasCoin.Asset == to.String() {
+			outAmountPlusGas = outAmountPlusGas.Add(cosmos.NewUintFromString(gasCoin.Amount))
+			continue
+		}
+
+		gasAssetValue, err := thornode.ConvertAssetAmount(gasCoin, to.String())
+		if err != nil {
+			return sdkmath.ZeroUint(), err
+		}
+		outAmountPlusGas = outAmountPlusGas.Add(gasAssetValue)
+	}
+
+	return outAmountPlusGas, nil
+}
+
 func (a *SwapActor) updateSwapAmount(next sdkmath.Uint, reason string) error {
 	if next.GT(a.fromBalance) {
 		return fmt.Errorf("%s %s exceeds user balance %s", reason, next, a.fromBalance)
@@ -634,20 +658,12 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	// verify outbound amount + max gas within expected range
 	action := details.Actions[0]
 	out := details.OutTxs[0]
-	outAmountPlusMaxGas := cosmos.NewUintFromString(out.Coins[0].Amount)
-	maxGas := action.MaxGas[0]
-	if maxGas.Asset == a.to.String() {
-		outAmountPlusMaxGas = outAmountPlusMaxGas.Add(cosmos.NewUintFromString(maxGas.Amount))
-	} else {
-		var maxGasAssetValue sdkmath.Uint
-		maxGasAssetValue, err = thornode.ConvertAssetAmount(maxGas, a.to.String())
-		if err != nil {
-			a.Log().Warn().Err(err).Msg("failed to convert asset")
-			return OpResult{
-				Continue: false,
-			}
+	outAmountPlusGas, err := outboundAmountPlusGas(out, action, a.to)
+	if err != nil {
+		a.Log().Warn().Err(err).Msg("failed to convert asset")
+		return OpResult{
+			Continue: false,
 		}
-		outAmountPlusMaxGas = outAmountPlusMaxGas.Add(maxGasAssetValue)
 	}
 
 	// retrieve L1 balance
@@ -665,13 +681,13 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	a.Log().Info().
 		Stringer("received", received).
 		Stringer("currentToBalance", currentToBalance).
-		Stringer("outAmountPlusMaxGas", outAmountPlusMaxGas).
+		Stringer("outAmountPlusGas", outAmountPlusGas).
 		Stringer("minExpected", a.minExpected).
 		Stringer("maxExpected", a.maxExpected).
 		Msg("swap complete")
 
 	// fail if received amount is outside expected range
-	if outAmountPlusMaxGas.LT(a.minExpected) || outAmountPlusMaxGas.GT(a.maxExpected) {
+	if outAmountPlusGas.LT(a.minExpected) || outAmountPlusGas.GT(a.maxExpected) {
 		err = fmt.Errorf("out amount plus gas outside tolerance")
 	}
 

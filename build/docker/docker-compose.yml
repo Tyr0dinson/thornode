@@ -2,25 +2,23 @@
 # Config
 ########################################################################################
 
-# trunk-ignore-all(yamllint/empty-values)
-
 volumes:
-  cli:
-  thornode:
-  thornode-cat:
-  thornode-fox:
-  thornode-pig:
-  bifrost:
-  bifrost-cat:
-  bifrost-fox:
-  bifrost-pig:
-  monero-daemon:
-  monero-wallet:
-  xmr-frost-data:
-  xmr-frost-data-cat:
-  xmr-frost-data-fox:
-  xmr-frost-data-pig:
-  xmr-sim-data:
+  cli: {}
+  thornode: {}
+  thornode-cat: {}
+  thornode-fox: {}
+  thornode-pig: {}
+  bifrost: {}
+  bifrost-cat: {}
+  bifrost-fox: {}
+  bifrost-pig: {}
+  monero-daemon: {}
+  monero-wallet: {}
+  xmr-frost-data: {}
+  xmr-frost-data-cat: {}
+  xmr-frost-data-fox: {}
+  xmr-frost-data-pig: {}
+  xmr-sim-data: {}
 
 ########################################################################################
 # Services

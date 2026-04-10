@@ -113,8 +113,13 @@ openapi:
 		openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
-	@find ./openapi/gen -type f | xargs sed -i '/^[- ]*API version.*$(shell cat version)/d;/APIClient.*$(shell cat version)/d'
-	@find ./openapi/gen -type f | grep model | xargs sed -i 's/MarshalJSON(/MarshalJSON_deprecated(/'
+	@find ./openapi/gen -type f -print0 | xargs -0 sed -i.bak \
+		-e '/^[- ]*API version.*$(shell cat version)/d' \
+		-e '/APIClient.*$(shell cat version)/d'
+	@find ./openapi/gen -type f -name '*.bak' -delete
+	@find ./openapi/gen -type f -name '*model*' -print0 | xargs -0 sed -i.bak \
+		-e 's/MarshalJSON(/MarshalJSON_deprecated(/'
+	@find ./openapi/gen -type f -name '*.bak' -delete
 
 protoVer=0.13.2
 protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
@@ -196,14 +201,16 @@ lint-ci:
 
 test-coverage: test-network-specific
 	@go test ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
-	sed -i '/\.pb\.go:/d' coverage.txt
+	sed -i.bak '/\.pb\.go:/d' coverage.txt
+	@rm -f coverage.txt.bak
 
 coverage-report: test-coverage
 	@go tool cover -html=coverage.txt
 
 test-coverage-sum: test-network-specific
 	@go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
-	sed -i '/\.pb\.go:/d' coverage.txt
+	sed -i.bak '/\.pb\.go:/d' coverage.txt
+	@rm -f coverage.txt.bak
 	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura@v1.4.0 < coverage.txt > coverage.xml
 	@go tool cover -func=coverage.txt
 	@go tool cover -html=coverage.txt -o coverage.html

@@ -765,6 +765,27 @@ func (s *Signer) buildKeygenMsg(height int64, poolPk common.PubKey, secp256k1Sig
 	return keygenMsg, nil
 }
 
+func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame []ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64, poolPubKeyEddsa common.PubKey, poolPubKeyFrost common.PubKey, frostKeyshareHex string, observedMoneroHeight int64) error {
+	chains := s.keygenChainsForType(keygenType)
+	keygenMsg, err := s.buildKeygenMsg(height, poolPk, secp256k1Signature, blame, input, keygenType, chains, keygenTime, poolPubKeyEddsa, poolPubKeyFrost, frostKeyshareHex, observedMoneroHeight)
+	if err != nil {
+		return err
+	}
+
+	txID, err := s.broadcastKeygenMsgs(height, keygenMsg)
+	if err != nil {
+		return err
+	}
+
+	s.logger.Info().
+		Stringer("txid", txID).
+		Int64("block", height).
+		Str("keygen_type", keygenType.String()).
+		Msg("sent keygen tx to thorchain")
+
+	return nil
+}
+
 func (s *Signer) buildKeygenBackups(secpKeysharePath, eddsaKeysharePath, frostKeyshareHex string) keygenBackups {
 	if !s.cfg.Signer.BackupKeyshares {
 		return keygenBackups{}
@@ -863,15 +884,6 @@ func (s *Signer) broadcastKeygenMsgs(height int64, msgs ...sdktypes.Msg) (common
 		return nil
 	}, bf)
 	return txID, err
-}
-
-func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame []ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, chains common.Chains, keygenTime int64, poolPubKeyEddsa common.PubKey, poolPubKeyFrost common.PubKey, frostKeyshareHex string, observedMoneroHeight int64) error {
-	keygenMsg, err := s.buildKeygenMsg(height, poolPk, secp256k1Signature, blame, input, keygenType, chains, keygenTime, poolPubKeyEddsa, poolPubKeyFrost, frostKeyshareHex, observedMoneroHeight)
-	if err != nil {
-		return err
-	}
-	_, err = s.broadcastKeygenMsgs(height, keygenMsg)
-	return err
 }
 
 // signAndBroadcast will sign the tx and broadcast it to the corresponding chain. On

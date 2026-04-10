@@ -782,7 +782,7 @@ func setKeygenMemberNodeAccount(c *C, helper tssHandlerTestHelper, member common
 func (s *HandlerTssSuite) TestAsgardKeygenWithReadyMembersFinalizesOnSuperMajority(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
-	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
 	members := helper.members[:4]
 
 	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
@@ -807,7 +807,7 @@ func (s *HandlerTssSuite) TestAsgardKeygenWithReadyMembersFinalizesOnSuperMajori
 		helper.signer,
 		keygenTime,
 		poolEddsaPubKey,
-		[]byte("backup"),
+		nil,
 		nil,
 		common.EmptyPubKey,
 	)
@@ -845,7 +845,7 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 	mgr := NewDummyMgrWithKeeper(helper.keeper)
 	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
 	handler := NewTssHandler(mgr)
-	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
 	members := helper.members[:4]
 
 	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
@@ -876,7 +876,7 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 		helper.signer,
 		keygenTime,
 		poolEddsaPubKey,
-		[]byte("backup"),
+		nil,
 		nil,
 		common.EmptyPubKey,
 	)
@@ -910,7 +910,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultWaitsForRegularVaultRotation(c *C) {
 	mgr := NewDummyMgrWithKeeper(helper.keeper)
 	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
 	handler := NewTssHandler(mgr)
-	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
 	members := helper.members[:4]
 
 	oldRegular := NewVaultV2(
@@ -1000,7 +1000,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultWaitsForRegularVaultRotation(c *C) {
 		helper.signer,
 		keygenTime,
 		regularEddsaPubKey,
-		[]byte("backup"),
+		nil,
 		nil,
 		common.EmptyPubKey,
 	)
@@ -1035,7 +1035,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultWaitsForRegularVaultRotation(c *C) {
 func (s *HandlerTssSuite) TestAsgardKeygenAllActiveStillWaitsForCompleteConsensus(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
-	helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
 	members := helper.members[:4]
 
 	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
@@ -1060,7 +1060,7 @@ func (s *HandlerTssSuite) TestAsgardKeygenAllActiveStillWaitsForCompleteConsensu
 		helper.signer,
 		keygenTime,
 		poolEddsaPubKey,
-		[]byte("backup"),
+		nil,
 		nil,
 		common.EmptyPubKey,
 	)

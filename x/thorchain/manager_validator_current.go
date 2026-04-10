@@ -490,8 +490,16 @@ func (vm *ValidatorMgr) getChangedNodes(ctx cosmos.Context, activeNodes NodeAcco
 		return newActive, removedNodes, errors.New("no active vault")
 	}
 	var membership common.PubKeys
+	seenMembers := make(map[string]struct{})
 	for _, vault := range activeVaults {
-		membership = append(membership, vault.GetMembership()...)
+		for _, member := range vault.GetMembership() {
+			memberKey := member.String()
+			if _, exists := seenMembers[memberKey]; exists {
+				continue
+			}
+			seenMembers[memberKey] = struct{}{}
+			membership = append(membership, member)
+		}
 	}
 
 	// find active node accounts that are no longer active

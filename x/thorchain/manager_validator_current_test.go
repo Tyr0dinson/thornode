@@ -430,6 +430,34 @@ func (vts *ValidatorMgrTestSuite) TestGetChangedNodes(c *C) {
 	c.Assert(removedNodes, HasLen, 1)
 }
 
+func (vts *ValidatorMgrTestSuite) TestGetChangedNodesDedupesSharedXMRMonovaultMembership(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(1)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
+
+	readyNode := GetRandomValidatorNode(NodeReady)
+	readyNode.Bond = cosmos.NewUint(100)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, readyNode), IsNil)
+
+	regularVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	regularVault.Membership = append(regularVault.Membership, readyNode.PubKeySet.Secp256k1.String())
+	c.Assert(mgr.Keeper().SetVault(ctx, regularVault), IsNil)
+
+	xmrMonovault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), []ChainContract{})
+	xmrMonovault.PubKeyFrost = GetRandomPubKey()
+	xmrMonovault.Membership = append(xmrMonovault.Membership, readyNode.PubKeySet.Secp256k1.String())
+	c.Assert(mgr.Keeper().SetVault(ctx, xmrMonovault), IsNil)
+
+	newNodes, removedNodes, err := networkMgr.getChangedNodes(ctx, NodeAccounts{})
+	c.Assert(err, IsNil)
+	c.Assert(newNodes, HasLen, 1)
+	c.Assert(newNodes[0].NodeAddress.Equals(readyNode.NodeAddress), Equals, true)
+	c.Assert(removedNodes, HasLen, 0)
+}
+
 func (vts *ValidatorMgrTestSuite) TestSplitNext(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgr()

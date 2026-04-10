@@ -502,8 +502,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				}
 			}
 
-			if err := h.rotateReadyKeygenVaultFamilies(ctx, keygenBlock); err != nil {
-				return err
+			if rotateErr := h.rotateReadyKeygenVaultFamilies(ctx, keygenBlock); rotateErr != nil {
+				return rotateErr
 			}
 
 			addrs, err := vault.GetMembership().Addresses()
@@ -554,8 +554,8 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 			if len(regularInitVaults) > 0 {
 				ctx.Logger().Info("tss keygen results churn", "asgards", len(regularInitVaults))
 				for _, v := range regularInitVaults {
-					if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
-						return fmt.Errorf("fail to rotate regular vault: %w", err)
+					if rotateErr := h.mgr.NetworkMgr().RotateVault(ctx, v); rotateErr != nil {
+						return fmt.Errorf("fail to rotate regular vault: %w", rotateErr)
 					}
 				}
 				activeVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -587,8 +587,8 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 				}
 				ctx.Logger().Info("tss keygen results xmr monovault", "vaults", len(xmrInitVaults))
 				for _, v := range xmrInitVaults {
-					if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
-						return fmt.Errorf("fail to rotate xmr monovault: %w", err)
+					if rotateErr := h.mgr.NetworkMgr().RotateVault(ctx, v); rotateErr != nil {
+						return fmt.Errorf("fail to rotate xmr monovault: %w", rotateErr)
 					}
 				}
 			}

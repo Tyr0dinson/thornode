@@ -2,6 +2,7 @@ FROM rust:1.80-bookworm AS build
 
 ARG AGAVE_TAG=v2.3.8
 
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
   git \
   clang \
@@ -25,6 +26,7 @@ RUN git clone --depth=1 --branch="$AGAVE_TAG" https://github.com/anza-xyz/agave.
 
 FROM debian:bookworm-slim AS runtime
 
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   libssl3 \
