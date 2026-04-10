@@ -54,6 +54,17 @@ func (tx TxOutItem) CacheVault(chain common.Chain) string {
 	return BroadcastCacheKey(tx.VaultPubKey.String(), chain.String())
 }
 
+func (tx TxOutItem) GetVaultPubKey() common.PubKey {
+	switch tx.Chain.GetSigningAlgo() {
+	case common.SigningAlgoSecp256k1:
+		return tx.VaultPubKey
+	case common.SigningAlgoEd25519:
+		return tx.VaultPubKeyEddsa
+	default:
+		return common.EmptyPubKey
+	}
+}
+
 // Equals returns true when the TxOutItems are equal.
 //
 // NOTE: The height field should NOT be compared. This is necessary to pass through on

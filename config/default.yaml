@@ -35,6 +35,7 @@ bifrost:
       - POL
       - ZEC
       - TAO
+      - DOT
   thorchain:
     chain_id: thorchain
     chain_host: localhost:1317
@@ -540,7 +541,24 @@ bifrost:
         chain_id: TAO
         observation_flexibility_blocks: 1
         gas_cache_blocks: 100
-        gas_price_resolution: 1000 # 1000 rao
+        gas_price_resolution: 100000 # 0.0001 TAO
+        max_gas_limit: 0
+        max_contract_tx_logs: 0
+      mempool_tx_id_cache_size: 0
+      scanner_leveldb: *default-leveldb
+      solvency_blocks: 50
+
+    dot:
+      <<: *default-chain
+      chain_id: DOT
+      block_scanner:
+        <<: *default-block-scanner
+        block_height_discover_back_off: 1s
+        max_reorg_rescan_blocks: 0 # DOT finalized blocks
+        chain_id: DOT
+        observation_flexibility_blocks: 1
+        gas_cache_blocks: 100
+        gas_price_resolution: 10000000 # 0.001 DOT
         max_gas_limit: 0
         max_contract_tx_logs: 0
       mempool_tx_id_cache_size: 0

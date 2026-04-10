@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -44,15 +45,15 @@ type Extrinsic struct {
 // palletIndex: the pallet index for Balances
 // callIndex: the call index for transfer_keep_alive within Balances
 // dest: 32-byte destination account ID
-// amount: transfer amount in rao
-func BalanceTransferKeepAlive(palletIndex, callIndex byte, dest []byte, amount uint64) []byte {
+// amount: transfer amount in native units (rao for TAO, planck for DOT)
+func BalanceTransferKeepAlive(palletIndex, callIndex byte, dest []byte, amount cosmos.Uint) []byte {
 	data := []byte{palletIndex, callIndex}
 	// MultiAddress::Id variant
 	data = append(data, MultiAddressID)
 	// 32-byte account ID
 	data = append(data, dest...)
 	// Compact-encoded amount
-	data = append(data, EncodeCompact(amount)...)
+	data = append(data, EncodeCompactUint(amount)...)
 	return data
 }
 
@@ -81,7 +82,8 @@ func BatchAll(palletIndex, callIndex byte, calls [][]byte) []byte {
 }
 
 // SigningPayload constructs the payload to be signed for a Substrate extrinsic.
-// The payload matches Bittensor's TransactionExtensions order:
+// The payload follows the standard Substrate TransactionExtensions order
+// (for runtimes including CheckMetadataHash per RFC-0078):
 //
 //	Encoded extensions: era | compact(nonce) | compact(tip) | metadata_mode
 //	Implicit data:      spec_version | tx_version | genesis_hash | block_hash | Option<Hash>::None

@@ -5,14 +5,12 @@ import (
 	"fmt"
 )
 
-// Known event data sizes for Bittensor runtime.
-// Balance events encode amounts as u64 (8 bytes). Substrate's AccountData
-// stores balances as u128, but event fields use the pallet's configured
-// Balance type, which is u64 on Bittensor.
+// Known event data sizes for Substrate runtimes.
+// Balance event field sizes depend on the pallet's configured Balance type,
+// (u64 = 8 bytes on TAO, u128 = 16 bytes on DOT), passed via EventPalletConfig.BalanceSize.
 // AccountId = 32 bytes, Hash = 32 bytes.
 const (
 	sizeAccountID = 32
-	sizeBalance   = 8 // u64 on Bittensor
 	sizeHash      = 32
 )
 
@@ -51,6 +49,7 @@ type EventPalletConfig struct {
 	BalancesPalletIndex           byte
 	UtilityPalletIndex            byte
 	TransactionPaymentPalletIndex byte
+	BalanceSize                   int
 }
 
 // ParseExtrinsicResults parses SCALE-encoded System::Events and returns a map of
@@ -61,7 +60,7 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 		return nil, nil, nil
 	}
 
-	numEvents, consumed, err := DecodeCompact(data)
+	numEvents, consumed, err := DecodeCompactToInt(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to decode events count: %w", err)
 	}
@@ -70,7 +69,7 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 	results := make(map[uint32]bool)
 	fees := make(map[uint32]uint64)
 
-	for i := uint64(0); i < numEvents; i++ {
+	for i := 0; i < numEvents; i++ {
 		if pos >= len(data) {
 			break
 		}
@@ -99,7 +98,8 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 		pos += 2
 
 		// Determine event data size based on pallet and event
-		dataSize, err := eventDataSize(palletIdx, eventIdx, data[pos:], pallets)
+		var dataSize int
+		dataSize, err = eventDataSize(palletIdx, eventIdx, data[pos:], pallets)
 		if err != nil {
 			// Unknown event — stop parsing. Return what we have.
 			return results, fees, nil
@@ -118,6 +118,8 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 			}
 		}
 
+		sizeBalance := pallets.BalanceSize
+
 		// Extract actual fee from TransactionPayment::TransactionFeePaid
 		if isApplyExtrinsic && palletIdx == pallets.TransactionPaymentPalletIndex && eventIdx == 0x00 {
 			if dataSize >= sizeAccountID+sizeBalance {
@@ -131,12 +133,14 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 		if pos >= len(data) {
 			return results, fees, fmt.Errorf("events data too short for topics at event %d", i)
 		}
-		topicCount, tl, err := DecodeCompact(data[pos:])
+
+		var topicCount int
+		topicCount, consumed, err = DecodeCompactToInt(data[pos:])
 		if err != nil {
 			return results, fees, nil
 		}
-		pos += tl
-		if topicCount > uint64(len(data)-pos)/sizeHash {
+		pos += consumed
+		if topicCount > (len(data)-pos)/sizeHash {
 			return results, fees, fmt.Errorf("events data too short for topic data at event %d", i)
 		}
 		pos += int(topicCount) * sizeHash
@@ -152,21 +156,20 @@ func eventDataSize(palletIdx, eventIdx byte, remaining []byte, pallets EventPall
 	case pallets.SystemPalletIndex:
 		return systemEventDataSize(eventIdx, remaining)
 	case pallets.BalancesPalletIndex:
-		return balancesEventDataSize(eventIdx)
+		return balancesEventDataSize(eventIdx, pallets.BalanceSize)
 	case pallets.UtilityPalletIndex:
 		return utilityEventDataSize(eventIdx, remaining)
 	case pallets.TransactionPaymentPalletIndex:
-		return txPaymentEventDataSize(eventIdx)
+		return txPaymentEventDataSize(eventIdx, pallets.BalanceSize)
 	default:
 		return 0, fmt.Errorf("unknown pallet %d", palletIdx)
 	}
 }
 
 // decodeDispatchInfoSize reads the DispatchInfo from remaining bytes and returns
-// the total byte size consumed. Bittensor's Weight uses compact-encoded fields:
+// the total byte size consumed. Substrate Weight v2 uses compact-encoded fields:
 //
 //	Weight { ref_time: Compact<u64>, proof_size: Compact<u64> }
-//	DispatchClass (1 byte), Pays (1 byte)
 func decodeDispatchInfoSize(remaining []byte) (int, error) {
 	if len(remaining) < 4 {
 		return 0, fmt.Errorf("insufficient data for DispatchInfo")
@@ -242,8 +245,8 @@ func systemEventDataSize(eventIdx byte, remaining []byte) (int, error) {
 }
 
 // balancesEventDataSize returns event data size for Balances pallet events.
-// Bittensor uses Balance = u64 (8 bytes).
-func balancesEventDataSize(eventIdx byte) (int, error) {
+// sizeBalance reflects the chain's Balance type (8 for u64, 16 for u128).
+func balancesEventDataSize(eventIdx byte, sizeBalance int) (int, error) {
 	switch eventIdx {
 	case 0: // Endowed { account, free_balance }
 		return sizeAccountID + sizeBalance, nil
@@ -338,7 +341,7 @@ func utilityEventDataSize(eventIdx byte, remaining []byte) (int, error) {
 }
 
 // txPaymentEventDataSize returns event data size for TransactionPayment pallet events.
-func txPaymentEventDataSize(eventIdx byte) (int, error) {
+func txPaymentEventDataSize(eventIdx byte, sizeBalance int) (int, error) {
 	switch eventIdx {
 	case 0: // TransactionFeePaid { who: AccountId, actual_fee: Balance, tip: Balance }
 		return sizeAccountID + sizeBalance + sizeBalance, nil
@@ -350,8 +353,9 @@ func txPaymentEventDataSize(eventIdx byte) (int, error) {
 // ScanExtrinsicResults performs a pattern-based scan of raw event data to find
 // System::ExtrinsicSuccess and System::ExtrinsicFailed events. This is a fallback
 // for when the linear parser stops at unknown events from unrecognized pallets
-// (e.g., Bittensor's SubtensorModule). It searches for byte patterns matching
-// these System events and validates them by decoding compact DispatchInfo fields.
+// (e.g., chain-specific pallets like SubtensorModule on TAO, or Staking on DOT).
+// It searches for byte patterns matching these System events and validates
+// them by decoding compact DispatchInfo fields.
 func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics int) map[uint32]bool {
 	results := make(map[uint32]bool)
 	if len(data) == 0 || numExtrinsics <= 0 {

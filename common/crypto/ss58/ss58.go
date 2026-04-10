@@ -8,9 +8,6 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
-// PrefixTAO is the SS58 network prefix for Bittensor (generic Substrate = 42).
-const PrefixTAO = 42
-
 var ss58Prefix = []byte("SS58PRE")
 
 // Encode encodes a public key into an SS58 address with the given network prefix.

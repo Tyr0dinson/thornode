@@ -1,4 +1,4 @@
-package bittensor
+package substrate
 
 import (
 	"strings"

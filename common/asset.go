@@ -47,6 +47,9 @@ var (
 	SUIAsset = Asset{Chain: SUIChain, Symbol: "SUI", Ticker: "SUI", Synth: false}
 	// TAOAsset TAO
 	TAOAsset = Asset{Chain: TAOChain, Symbol: "TAO", Ticker: "TAO", Synth: false}
+	// DOTAsset DOT
+	DOTAsset = Asset{Chain: DOTChain, Symbol: "DOT", Ticker: "DOT", Synth: false}
+
 	// RuneNative RUNE on thorchain
 	RuneNative = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
 	TCY        = Asset{Chain: THORChain, Symbol: "TCY", Ticker: "TCY", Synth: false}
@@ -343,6 +346,8 @@ func (a Asset) ShortCode() string {
 		return "p"
 	case "SUI.SUI":
 		return "u"
+	case "DOT.DOT":
+		return "do"
 	default:
 		return ""
 	}

@@ -1,4 +1,4 @@
-package bittensor
+package substrate
 
 import (
 	"crypto/ed25519"
@@ -12,47 +12,38 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/generic"
 	"golang.org/x/crypto/blake2b"
 
-	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
-	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	taorpc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/bittensor/rpc"
-	taotypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/bittensor/types"
+	tcmetrics "gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	ttypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
-	"gitlab.com/thorchain/thornode/v3/config"
+	tcconfig "gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-// mortalEraPeriod is the number of blocks a mortal era transaction is valid for.
-// 64 blocks ≈ 12.8 minutes at 12s block time.
-const mortalEraPeriod = 64
-
-// TAOClient is a client for the Bittensor (TAO) blockchain.
-type TAOClient struct {
+// Client is a generic client for Substrate blockchains.
+type Client struct {
+	*generic.Client
 	logger              zerolog.Logger
-	cfg                 config.BifrostChainConfiguration
-	localPubKey         string // SS58 encoded local Ed25519 public key
-	k                   *cosmoscryptoed25519.PrivKey
-	taoScanner          *TAOScanner
+	config              tcconfig.BifrostChainConfiguration
 	bridge              thorclient.ThorchainBridge
-	poolMgr             thorclient.PoolManager
-	tssKeyManager       tss.ThorchainKeyManager
 	storage             *blockscanner.BlockScannerStorage
 	blockScanner        *blockscanner.BlockScanner
-	signerCacheManager  *signercache.CacheManager
-	rpcClient           *taorpc.Client
-	globalSolvencyQueue chan stypes.Solvency
+	chainScanner        *Scanner
+	rpcClient           *rpc.Client
+	globalSolvencyQueue chan ttypes.Solvency
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 	signMu              sync.Mutex               // protects nonce reservation in SignTx
@@ -65,198 +56,164 @@ type nonceMetadata struct {
 	BlockHeight int64  `json:"BlockHeight"`
 }
 
-// NewTAOClient creates a new instance of TAOClient.
-func NewTAOClient(
+// NewClient creates a new instance of Client.
+func NewClient(
 	thorKeys *thorclient.Keys,
-	cfg config.BifrostChainConfiguration,
+	config tcconfig.BifrostChainConfiguration,
 	server *tssp.TssServer,
 	bridge thorclient.ThorchainBridge,
-	m *metrics.Metrics,
+	metrics *tcmetrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
-	poolMgr thorclient.PoolManager,
-) (*TAOClient, error) {
-	if thorKeys == nil {
-		return nil, errors.New("thor keys empty")
-	}
+) (*Client, error) {
 	if bridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
 	}
-	if pubkeyMgr == nil {
-		return nil, errors.New("pubkey manager is nil")
-	}
-	if poolMgr == nil {
-		return nil, errors.New("pool manager is nil")
-	}
 
-	tssKm, err := tss.NewKeySign(server, bridge)
-	if err != nil {
-		return nil, fmt.Errorf("fail to create tss signer: %w", err)
-	}
+	logger := log.With().
+		Str("module", "substrate").
+		Stringer("chain", config.ChainID).
+		Logger()
 
-	priv, err := thorKeys.GetPrivateKeyEDDSA()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get Ed25519 private key: %w", err)
+	c := &Client{
+		logger:   logger,
+		config:   config,
+		bridge:   bridge,
+		wg:       &sync.WaitGroup{},
+		stopchan: make(chan struct{}),
+		nonces:   make(map[string]nonceMetadata),
 	}
 
-	pub, ok := priv.PubKey().(*cosmoscryptoed25519.PubKey)
-	if !ok {
-		return nil, errors.New("fail to cast pubkey to ed25519")
-	}
+	var err error
 
-	// Format public key as SS58 address for local signing comparison
-	localAddr, err := ss58.Encode(ss58.PrefixTAO, pub.Bytes())
-	if err != nil {
-		return nil, fmt.Errorf("fail to encode local pubkey as SS58: %w", err)
-	}
-
-	rpcClient := taorpc.NewClient(cfg.RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
-
-	c := &TAOClient{
-		logger:        log.With().Str("module", "tao").Stringer("chain", cfg.ChainID).Logger(),
-		cfg:           cfg,
-		localPubKey:   localAddr,
-		k:             priv,
-		bridge:        bridge,
-		poolMgr:       poolMgr,
-		tssKeyManager: tssKm,
-		rpcClient:     rpcClient,
-		wg:            &sync.WaitGroup{},
-		stopchan:      make(chan struct{}),
-		nonces:        make(map[string]nonceMetadata),
-	}
-
-	// Initialize storage
 	var path string
-	if len(c.cfg.BlockScanner.DBPath) > 0 {
-		path = fmt.Sprintf("%s/%s", c.cfg.BlockScanner.DBPath, c.cfg.BlockScanner.ChainID)
+	if len(c.config.BlockScanner.DBPath) > 0 {
+		path = fmt.Sprintf("%s/%s", c.config.BlockScanner.DBPath, c.config.BlockScanner.ChainID)
 	}
-	c.storage, err = blockscanner.NewBlockScannerStorage(path, c.cfg.ScannerLevelDB)
+	c.storage, err = blockscanner.NewBlockScannerStorage(path, c.config.ScannerLevelDB)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create scan storage: %w", err)
+		return nil, fmt.Errorf("failed to create scan storage: %w", err)
 	}
 
-	c.taoScanner, err = NewTAOScanner(
-		c.cfg.BlockScanner,
+	c.Client, err = generic.NewClient(
+		c.logger, thorKeys, config, server, bridge, c.storage.GetInternalDb(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client: %w", err)
+	}
+
+	rpcClient := rpc.NewClient(
+		config.RPCHost,
+		config.BlockScanner.HTTPRequestTimeout,
+	)
+
+	c.chainScanner, err = NewScanner(
+		c.config.BlockScanner,
 		c.ReportSolvency,
 		rpcClient,
 	)
 	if err != nil {
-		return c, fmt.Errorf("fail to create tao scanner: %w", err)
+		return c, fmt.Errorf("failed to create chain scanner: %w", err)
 	}
 
-	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, c.storage, m, bridge, c.taoScanner)
+	c.blockScanner, err = blockscanner.NewBlockScanner(
+		c.config.BlockScanner,
+		c.storage,
+		metrics,
+		bridge,
+		c.chainScanner,
+	)
 	if err != nil {
-		return c, fmt.Errorf("fail to create block scanner: %w", err)
+		return c, fmt.Errorf("failed to create block scanner: %w", err)
 	}
-
-	signerCacheManager, err := signercache.NewSignerCacheManager(c.storage.GetInternalDb())
-	if err != nil {
-		return nil, fmt.Errorf("fail to create signer cache manager: %w", err)
-	}
-	c.signerCacheManager = signerCacheManager
 
 	return c, nil
 }
 
-// Start starts the TAO chain client.
-func (c *TAOClient) Start(
-	globalTxsQueue chan stypes.TxIn,
-	globalErrataQueue chan stypes.ErrataBlock,
-	globalSolvencyQueue chan stypes.Solvency,
+// Start starts the Substrate chain client.
+func (c *Client) Start(
+	globalTxsQueue chan ttypes.TxIn,
+	globalErrataQueue chan ttypes.ErrataBlock,
+	globalSolvencyQueue chan ttypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
 	c.globalSolvencyQueue = globalSolvencyQueue
-	c.taoScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
-	c.tssKeyManager.Start()
+	c.chainScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
-// Stop stops the TAO chain client.
-func (c *TAOClient) Stop() {
-	c.tssKeyManager.Stop()
+// Stop stops the Substrate chain client.
+func (c *Client) Stop() {
+	c.Client.Stop()
 	c.blockScanner.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
 }
 
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
-func (c *TAOClient) IsBlockScannerHealthy() bool {
+func (c *Client) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
 }
 
 // GetConfig returns the chain configuration.
-func (c *TAOClient) GetConfig() config.BifrostChainConfiguration {
-	return c.cfg
+func (c *Client) GetConfig() tcconfig.BifrostChainConfiguration {
+	return c.config
 }
 
 // GetChain returns the chain.
-func (c *TAOClient) GetChain() common.Chain {
-	return common.TAOChain
+func (c *Client) GetChain() common.Chain {
+	return c.config.ChainID
 }
 
 // GetHeight returns the current block height.
-func (c *TAOClient) GetHeight() (int64, error) {
-	return c.taoScanner.GetHeight()
+func (c *Client) GetHeight() (int64, error) {
+	return c.chainScanner.GetHeight()
 }
 
 // GetBlockScannerHeight returns blockscanner height.
-func (c *TAOClient) GetBlockScannerHeight() (int64, error) {
+func (c *Client) GetBlockScannerHeight() (int64, error) {
 	return c.blockScanner.PreviousHeight(), nil
 }
 
 // RollbackBlockScanner rolls back the block scanner.
-func (c *TAOClient) RollbackBlockScanner() error {
+func (c *Client) RollbackBlockScanner() error {
 	return c.blockScanner.RollbackToLastObserved()
 }
 
-// GetLatestTxForVault returns last observed and broadcasted tx for a vault.
-func (c *TAOClient) GetLatestTxForVault(vault string) (string, string, error) {
-	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(stypes.InboundCacheKey(vault, c.GetChain().String()))
-	if err != nil {
-		return "", "", err
-	}
-	lastBroadCasted, err := c.signerCacheManager.GetLatestRecordedTx(stypes.BroadcastCacheKey(vault, c.GetChain().String()))
-	return lastObserved, lastBroadCasted, err
-}
-
 // GetAddress returns the address for the given public key.
-func (c *TAOClient) GetAddress(poolPubKey common.PubKey) string {
-	addr, err := poolPubKey.GetAddress(c.cfg.ChainID)
+func (c *Client) GetAddress(pubkey common.PubKey) string {
+	addr, err := pubkey.GetAddress(c.config.ChainID)
 	if err != nil {
-		c.logger.Err(err).Str("pool_pub_key", poolPubKey.String()).Msg("fail to get pool address")
+		c.logger.Err(err).Str("pub_key", pubkey.String()).Msg("failed to get pool address")
 		return ""
 	}
 	return addr.String()
 }
 
 // GetAccount returns the balance of the provided pubkey.
-func (c *TAOClient) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
-	addr, err := pk.GetAddress(common.TAOChain)
+func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
+	addr, err := pk.GetAddress(c.GetChain())
 	if err != nil {
-		return common.Account{}, fmt.Errorf("fail to get address from pubkey(%s): %w", pk, err)
+		return common.Account{}, fmt.Errorf("failed to get address from pubkey(%s): %w", pk, err)
 	}
 	return c.GetAccountByAddress(addr.String(), height)
 }
 
 // GetAccountByAddress returns account information.
-func (c *TAOClient) GetAccountByAddress(addr string, height *big.Int) (common.Account, error) {
+func (c *Client) GetAccountByAddress(addr string, height *big.Int) (common.Account, error) {
 	balance, err := c.rpcClient.GetBalance(addr, "")
 	if err != nil {
-		return common.Account{}, fmt.Errorf("fail to get balance: %w", err)
+		return common.Account{}, fmt.Errorf("failed to get balance: %w", err)
 	}
-
-	amount := convertRaoToThorchain(balance)
 
 	nonce, err := c.rpcClient.GetNonce(addr)
 	if err != nil {
-		return common.Account{}, fmt.Errorf("fail to get nonce: %w", err)
+		return common.Account{}, fmt.Errorf("failed to get nonce: %w", err)
 	}
 
-	taoCoin := common.NewCoin(common.TAOAsset, amount)
-	taoCoin.Decimals = 9
-	coins := common.Coins{taoCoin}
+	coin := c.GetChain().NativeGasToThorCoin(balance)
+	coins := common.Coins{coin}
 
 	return common.Account{
 		Sequence: int64(nonce),
@@ -264,17 +221,10 @@ func (c *TAOClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 	}, nil
 }
 
-// --------------------------------- solvency ---------------------------------
-
-// ShouldReportSolvency returns true if the given height is a solvency report height.
-func (c *TAOClient) ShouldReportSolvency(height int64) bool {
-	return c.cfg.SolvencyBlocks > 0 && height%c.cfg.SolvencyBlocks == 0
-}
-
 // ReportSolvency reports solvency once per configured solvency blocks.
 // Follows the same insolvent-first pattern as XRP/SOL/ETH: reports only insolvent
 // vaults during normal operation, or all-solvent when the scanner is halted.
-func (c *TAOClient) ReportSolvency(height int64) error {
+func (c *Client) ReportSolvency(height int64) error {
 	if !c.ShouldReportSolvency(height) {
 		return nil
 	}
@@ -288,19 +238,16 @@ func (c *TAOClient) ReportSolvency(height int64) error {
 
 	asgardVaults, err := c.bridge.GetAsgards()
 	if err != nil {
-		return fmt.Errorf("fail to get asgards: %w", err)
+		return fmt.Errorf("failed to get asgards: %w", err)
 	}
 
 	// 1x estimated gas cost breathing room, converted to THORChain (1e8) units.
-	fee := c.taoScanner.averageFee()
-	if fee == 0 {
-		fee = defaultFeeRao
-	}
-	currentGasFee := c.cfg.ChainID.NativeGasToThorchain(cosmos.NewUint(fee))
+	_, fee := c.chainScanner.GetNetworkFee()
+	currentGasFee := c.config.ChainID.NativeGasToThorchain(cosmos.NewUint(fee))
 
 	// Separate insolvent from solvent vaults.
-	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
+	msgs := make([]ttypes.Solvency, 0, len(asgardVaults))
+	solventMsgs := make([]ttypes.Solvency, 0, len(asgardVaults))
 	checkedVaults := 0
 	for i := range asgardVaults {
 		if asgardVaults[i].PubKeyEddsa.IsEmpty() {
@@ -311,13 +258,13 @@ func (c *TAOClient) ReportSolvency(height int64) error {
 
 		acct, err := c.GetAccount(asgardVaults[i].PubKeyEddsa, nil)
 		if err != nil {
-			c.logger.Err(err).Stringer("asgard", asgardVaults[i].PubKey).Msg("fail to get account balance for solvency")
+			c.logger.Err(err).Stringer("asgard", asgardVaults[i].PubKey).Msg("failed to get account balance for solvency")
 			continue
 		}
 
-		msg := stypes.Solvency{
+		msg := ttypes.Solvency{
 			Height: height,
-			Chain:  c.cfg.ChainID,
+			Chain:  c.config.ChainID,
 			PubKey: asgardVaults[i].PubKey,
 			Coins:  acct.Coins,
 		}
@@ -331,7 +278,7 @@ func (c *TAOClient) ReportSolvency(height int64) error {
 
 	// Only report all-solvent when the scanner is unhealthy (solvency-halted)
 	// and every checked vault is solvent. Compare against checkedVaults (not
-	// len(asgardVaults)) because vaults without EdDSA keys can't hold TAO
+	// len(asgardVaults)) because vaults without EdDSA keys can't hold assets
 	// and should not block auto-unhalting.
 	solvent := false
 	if !c.IsBlockScannerHealthy() && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
@@ -349,17 +296,15 @@ func (c *TAOClient) ReportSolvency(height int64) error {
 		select {
 		case c.globalSolvencyQueue <- msgs[i]:
 		case <-time.After(constants.ThorchainBlockTime):
-			c.logger.Info().Msg("fail to send solvency info to thorchain, timeout")
+			c.logger.Info().Msg("failed to send solvency info to thorchain, timeout")
 		}
 	}
 
 	return nil
 }
 
-// --------------------------------- sign ---------------------------------
-
 // SignTx returns the signed transaction.
-func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *stypes.TxInItem, err error) {
+func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *ttypes.TxInItem, err error) {
 	defer func() {
 		if err != nil {
 			var keysignError tss.KeysignError
@@ -371,7 +316,7 @@ func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx
 				var txID common.TxID
 				txID, err = c.bridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, tx.Memo, tx.Coins, tx.VaultPubKeyEddsa)
 				if err != nil {
-					c.logger.Err(err).Msg("fail to post keysign failure to THORChain")
+					c.logger.Err(err).Msg("failed to post keysign failure to THORChain")
 					return
 				}
 				c.logger.Info().Str("tx_id", txID.String()).Msg("post keysign failure to thorchain")
@@ -379,8 +324,8 @@ func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx
 		}
 	}()
 
-	if tx.Chain != common.TAOChain {
-		return nil, nil, nil, errors.New("tx chain is not TAO")
+	if tx.Chain != c.GetChain() {
+		return nil, nil, nil, errors.New("tx chain not supported")
 	}
 	if tx.ToAddress.IsEmpty() {
 		return nil, nil, nil, errors.New("to address is empty")
@@ -389,7 +334,7 @@ func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx
 		return nil, nil, nil, errors.New("vault Ed25519 public key is empty")
 	}
 
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
+	if c.HasSigned(tx) {
 		c.logger.Info().Interface("tx", tx).Msg("transaction already signed, ignoring...")
 		return nil, nil, nil, nil
 	}
@@ -402,7 +347,7 @@ func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx
 	} else {
 		memoObj, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to parse memo(%s): %w", memoForParsing, err)
+			return nil, nil, nil, fmt.Errorf("failed to parse memo(%s): %w", memoForParsing, err)
 		}
 		if memoObj.IsInbound() {
 			return nil, nil, nil, errors.New("inbound memo should not be used for outbound tx")
@@ -414,14 +359,14 @@ func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx
 	}
 
 	// Get vault address
-	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(common.TAOChain)
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get vault address: %w", err)
 	}
 
 	// Read block hash + height atomically — used for both nonce management and
 	// mortal era construction (era phase must match the block hash).
-	latestBlockHash, currentHeight := c.taoScanner.getLatestBlock()
+	latestBlockHash, currentHeight := c.chainScanner.getLatestBlock()
 
 	// Reserve nonce under lock to prevent concurrent SignTx calls from getting the same nonce
 	reservedNonce, checkpointBytes, err := c.reserveNonce(tx, vaultAddr.String(), currentHeight)
@@ -437,33 +382,32 @@ func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx
 		// scanner is running) the nonce will be freshly fetched from the chain. Returning
 		// a stale checkpoint here would cause the retry to use a potentially wrong nonce.
 		if latestBlockHash == "" {
-			return nil, nil, nil, fmt.Errorf("fail to create and sign extrinsic: %w", err)
+			checkpointBytes = nil
 		}
-		return nil, checkpointBytes, nil, fmt.Errorf("fail to create and sign extrinsic: %w", err)
+		return nil, checkpointBytes, nil, fmt.Errorf("failed to create and sign extrinsic: %w", err)
 	}
 
 	// Compute extrinsic hash (Blake2b-256 of the raw encoded extrinsic) — matches scanner
-	txHash := taotypes.ExtrinsicHash(rawTx)
+	txHash := stypes.ExtrinsicHash(rawTx)
 
 	// Create instant observation TxInItem
 	if tx.GasRate < 0 {
 		return nil, nil, nil, fmt.Errorf("negative gas rate: %d", tx.GasRate)
 	}
-	gasRate := c.cfg.ChainID.NativeGasToThorchain(cosmos.NewUint(uint64(tx.GasRate)))
-	if gasRate.IsZero() {
-		gasRate = cosmos.OneUint()
-	}
-	gasCoin := common.NewCoin(common.TAOAsset, gasRate)
-	gasCoin.Decimals = 9
 
-	txIn := stypes.NewTxInItem(
+	gasCoin := c.GetChain().NativeGasToThorCoin(cosmos.NewUint(uint64(tx.GasRate)))
+	if gasCoin.Amount.IsZero() {
+		gasCoin.Amount = cosmos.OneUint()
+	}
+
+	txIn := ttypes.NewTxInItem(
 		currentHeight,
 		txHash,
 		tx.Memo,
 		vaultAddr.String(),
 		tx.ToAddress.String(),
 		tx.Coins,
-		common.Gas([]common.Coin{gasCoin}),
+		[]common.Coin{gasCoin},
 		tx.VaultPubKeyEddsa,
 		"",
 		"",
@@ -471,32 +415,35 @@ func (c *TAOClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx
 	)
 
 	// Return checkpoint so the signer can retry with the same nonce if broadcast
-	// fails. This is important because TAO extrinsics use mortal era (64 blocks)
-	// and the signer pipeline stores SignedTx for broadcast retry without re-signing.
-	// Returning the checkpoint ensures re-signing with a fresh mortal era on retry.
+	// fails. Substrate extrinsics use a mortal era (configured per chain via
+	// MortalEraPeriod) and the signer pipeline stores SignedTx for broadcast retry.
+	// Once the era expires, the checkpoint allows re-signing with the same nonce
+	// against a fresh mortal era.
 	return rawTx, checkpointBytes, txIn, nil
 }
 
 // createAndSignExtrinsic builds and signs a Substrate extrinsic.
 // latestBlockHash and latestBlockHeight must come from a single atomic read
 // (via getLatestBlock) to ensure the mortal era phase matches the block hash.
-func (c *TAOClient) createAndSignExtrinsic(tx stypes.TxOutItem, vaultAddr string, nonce uint32, latestBlockHash string, latestBlockHeight int64) ([]byte, error) {
+func (c *Client) createAndSignExtrinsic(
+	tx ttypes.TxOutItem,
+	vaultAddr string,
+	nonce uint32,
+	latestBlockHash string,
+	latestBlockHeight int64,
+) ([]byte, error) {
 	// Decode destination address
 	_, destPubkey, err := ss58.Decode(tx.ToAddress.String())
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode destination address: %w", err)
+		return nil, fmt.Errorf("failed to decode destination address: %w", err)
 	}
 
-	// Convert amount to rao (1e8 * 10 = 1e9) with overflow check
-	amount, err := convertToRao(tx.Coins[0].Amount)
-	if err != nil {
-		return nil, fmt.Errorf("fail to convert amount to rao: %w", err)
-	}
+	amount := c.GetChain().ThorchainToNativeGas(tx.Coins[0].Amount)
 
 	// Build call data
-	transferCall := taotypes.BalanceTransferKeepAlive(
-		c.taoScanner.balancesPalletIndex,
-		c.taoScanner.transferCallIndex,
+	transferCall := stypes.BalanceTransferKeepAlive(
+		c.chainScanner.params.BalancesPallet,
+		c.chainScanner.params.BalancesKeepAliveCall,
 		destPubkey,
 		amount,
 	)
@@ -504,14 +451,14 @@ func (c *TAOClient) createAndSignExtrinsic(tx stypes.TxOutItem, vaultAddr string
 	var callData []byte
 	if tx.Memo != "" {
 		// Batch transfer + remark for memo
-		remarkCall := taotypes.SystemRemark(
-			c.taoScanner.systemPalletIndex,
-			c.taoScanner.remarkCallIndex,
+		remarkCall := stypes.SystemRemark(
+			c.chainScanner.params.SystemPallet,
+			c.chainScanner.params.SystemRemarkCall,
 			[]byte(tx.Memo),
 		)
-		callData = taotypes.BatchAll(
-			c.taoScanner.utilityPalletIndex,
-			c.taoScanner.batchAllCallIndex,
+		callData = stypes.BatchAll(
+			c.chainScanner.params.UtilityPallet,
+			c.chainScanner.params.UtilityBatchAllCall,
 			[][]byte{transferCall, remarkCall},
 		)
 	} else {
@@ -519,37 +466,38 @@ func (c *TAOClient) createAndSignExtrinsic(tx stypes.TxOutItem, vaultAddr string
 	}
 
 	// Get signing parameters
-	genesisHashBytes, err := taotypes.HexDecode(c.taoScanner.getGenesisHash())
+	genesisHashBytes, err := stypes.HexDecode(c.chainScanner.getGenesisHash())
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode genesis hash: %w", err)
+		return nil, fmt.Errorf("failed to decode genesis hash: %w", err)
 	}
 
 	// Use the caller-provided block hash + height for mortal era.
 	// Both come from a single atomic read, preventing era/hash mismatch
 	// that would cause the Substrate runtime to reject the transaction.
 	blockHash := latestBlockHash
-	eraBlockHeight := latestBlockHeight
+	eraBlockHeight := uint64(latestBlockHeight)
 	if blockHash == "" {
 		return nil, fmt.Errorf("scanner has not observed any blocks, cannot construct mortal era")
 	}
-	blockHashBytes, err := taotypes.HexDecode(blockHash)
+	blockHashBytes, err := stypes.HexDecode(blockHash)
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode block hash: %w", err)
+		return nil, fmt.Errorf("failed to decode block hash: %w", err)
 	}
 
 	// Use mortal era so the transaction expires (prevents replay)
-	era := taotypes.MortalEra(mortalEraPeriod, uint64(eraBlockHeight))
+	period := uint64(c.chainScanner.params.MortalEraPeriod)
+	era := stypes.MortalEra(period, eraBlockHeight)
 
 	// Read spec + tx version atomically (both change together on runtime upgrades)
-	specVersion, txVersion := c.taoScanner.getRuntimeVersion()
+	specVersion, txVersion := c.chainScanner.getRuntimeVersion()
 
 	// Construct signing payload
-	payload := taotypes.SigningPayload(
+	payload := stypes.SigningPayload(
 		callData,
 		era,
 		uint64(nonce),
 		0, // tip = 0
-		taotypes.MetadataModeDisabled,
+		stypes.MetadataModeDisabled,
 		specVersion,
 		txVersion,
 		genesisHashBytes,
@@ -569,22 +517,10 @@ func (c *TAOClient) createAndSignExtrinsic(tx stypes.TxOutItem, vaultAddr string
 	// Get vault public key bytes for the signer field
 	_, vaultPubkeyBytes, err := ss58.Decode(vaultAddr)
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode vault address: %w", err)
+		return nil, fmt.Errorf("failed to decode vault address: %w", err)
 	}
 
-	if vaultAddr == c.localPubKey {
-		// Local signing
-		sig, err = c.k.Sign(signingData)
-		if err != nil {
-			return nil, fmt.Errorf("fail to sign locally: %w", err)
-		}
-	} else {
-		// TSS signing
-		sig, _, err = c.tssKeyManager.RemoteSign(signingData, common.SigningAlgoEd25519, tx.VaultPubKeyEddsa.String())
-		if err != nil {
-			return nil, fmt.Errorf("fail to sign via TSS: %w", err)
-		}
-	}
+	sig, err = c.Sign(signingData, tx)
 
 	// Verify signature
 	if !ed25519.Verify(vaultPubkeyBytes, signingData, sig) {
@@ -592,28 +528,28 @@ func (c *TAOClient) createAndSignExtrinsic(tx stypes.TxOutItem, vaultAddr string
 	}
 
 	// Assemble the signed extrinsic
-	ext := &taotypes.Extrinsic{
+	ext := &stypes.Extrinsic{
 		Signer:        vaultPubkeyBytes,
-		SignatureType: taotypes.SignatureTypeEd25519,
+		SignatureType: stypes.SignatureTypeEd25519,
 		Signature:     sig,
 		Era:           era,
 		Nonce:         uint64(nonce),
 		Tip:           0,
-		MetadataMode:  taotypes.MetadataModeDisabled,
+		MetadataMode:  stypes.MetadataModeDisabled,
 		CallData:      callData,
 	}
 
-	return taotypes.EncodeSignedExtrinsic(ext), nil
+	return stypes.EncodeSignedExtrinsic(ext), nil
 }
 
 // --------------------------------- broadcast ---------------------------------
 
 // BroadcastTx broadcasts the transaction and returns the transaction hash.
-func (c *TAOClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (string, error) {
+func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, error) {
 	// Compute hash locally for consistency with the scanner's extrinsicHash.
-	txHash := taotypes.ExtrinsicHash(rawTx)
+	txHash := stypes.ExtrinsicHash(rawTx)
 
-	hexTx := taotypes.HexEncode(rawTx)
+	hexTx := stypes.HexEncode(rawTx)
 	nodeHash, err := c.rpcClient.SubmitExtrinsic(hexTx)
 	if err != nil {
 		errMsg := err.Error()
@@ -629,7 +565,7 @@ func (c *TAOClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 			c.logger.Info().Str("txid", txHash).Msg("extrinsic has stale nonce (already confirmed), treating as success")
 
 		default:
-			return "", fmt.Errorf("fail to broadcast tx: %w", err)
+			return "", fmt.Errorf("failed to broadcast tx: %w", err)
 		}
 	}
 
@@ -638,41 +574,19 @@ func (c *TAOClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 	}
 	c.logger.Info().Str("memo", txOutItem.Memo).Str("txid", txHash).Msg("broadcast tx")
 
-	if err := c.signerCacheManager.SetSigned(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txHash); err != nil {
-		c.logger.Err(err).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
-	}
+	c.SetSigned(txOutItem, txHash)
 
 	return txHash, nil
 }
 
-// --------------------------------- observe ---------------------------------
-
-// OnObservedTxIn is called when a new observed tx is received.
-func (c *TAOClient) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
-	m, err := mem.ParseMemo(common.LatestVersion, txIn.Memo)
-	if err != nil {
-		c.logger.Debug().Err(err).Str("memo", txIn.Memo).Msg("fail to parse memo")
-		return
-	}
-	if !m.IsOutbound() {
-		return
-	}
-	if m.GetTxID().IsEmpty() {
-		return
-	}
-	if err = c.signerCacheManager.SetSigned(txIn.CacheHash(c.GetChain(), m.GetTxID().String()), txIn.CacheVault(c.GetChain()), txIn.Tx); err != nil {
-		c.logger.Err(err).Msg("fail to update signer cache")
-	}
-}
-
 // GetConfirmationCount returns the confirmation count for the given tx.
-func (c *TAOClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
-	// Bittensor has finality once block is finalized
+func (c *Client) GetConfirmationCount(txIn ttypes.TxIn) int64 {
+	// Substrate chains have deterministic finality once a block is finalized
 	return 0
 }
 
 // ConfirmationCountReady returns true if the confirmation count is ready.
-func (c *TAOClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
+func (c *Client) ConfirmationCountReady(txIn ttypes.TxIn) bool {
 	return true
 }
 
@@ -680,13 +594,13 @@ func (c *TAOClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
 
 // reserveNonce atomically reads, reserves, and pre-increments a nonce for the
 // given vault. Returns the reserved nonce and its JSON checkpoint.
-func (c *TAOClient) reserveNonce(tx stypes.TxOutItem, vaultAddr string, currentHeight int64) (uint32, []byte, error) {
+func (c *Client) reserveNonce(tx ttypes.TxOutItem, vaultAddr string, currentHeight int64) (uint32, []byte, error) {
 	// If this is a retry (checkpoint present), use the checkpoint nonce directly
 	// without pre-incrementing — the nonce was already incremented on the first attempt.
 	if tx.Checkpoint != nil {
 		var meta nonceMetadata
 		if err := json.Unmarshal(tx.Checkpoint, &meta); err != nil {
-			return 0, nil, fmt.Errorf("fail to unmarshal checkpoint: %w", err)
+			return 0, nil, fmt.Errorf("failed to unmarshal checkpoint: %w", err)
 		}
 		c.logger.Debug().
 			Str("vault", vaultAddr).
@@ -706,7 +620,7 @@ func (c *TAOClient) reserveNonce(tx stypes.TxOutItem, vaultAddr string, currentH
 		c.logger.Debug().Str("vault", vaultAddr).Int64("height", currentHeight).Msg("fetching on-chain nonce")
 		nonce, err := c.rpcClient.GetNonce(vaultAddr)
 		if err != nil {
-			return 0, nil, fmt.Errorf("fail to get nonce: %w", err)
+			return 0, nil, fmt.Errorf("failed to get nonce: %w", err)
 		}
 		onChainNonce = nonce
 		fetchedOnChain = true
@@ -714,6 +628,8 @@ func (c *TAOClient) reserveNonce(tx stypes.TxOutItem, vaultAddr string, currentH
 
 	c.signMu.Lock()
 	defer c.signMu.Unlock()
+
+	period := int64(c.chainScanner.params.MortalEraPeriod)
 
 	meta := c.nonces[vaultAddr]
 	if fetchedOnChain && meta.Nonce <= onChainNonce {
@@ -728,7 +644,7 @@ func (c *TAOClient) reserveNonce(tx stypes.TxOutItem, vaultAddr string, currentH
 			Nonce:       onChainNonce,
 			BlockHeight: currentHeight,
 		}
-	} else if fetchedOnChain && meta.Nonce > onChainNonce && currentHeight >= meta.BlockHeight+mortalEraPeriod {
+	} else if fetchedOnChain && meta.Nonce > onChainNonce && currentHeight >= meta.BlockHeight+period {
 		// If cached nonce is ahead of on-chain and mortalEraPeriod blocks have passed,
 		// any pending transactions must have expired. Reset to on-chain nonce to recover
 		// from broadcast failures that left the cache stuck ahead.
@@ -748,7 +664,7 @@ func (c *TAOClient) reserveNonce(tx stypes.TxOutItem, vaultAddr string, currentH
 	reservedNonce := meta.Nonce
 	checkpoint, err := json.Marshal(meta)
 	if err != nil {
-		return 0, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
+		return 0, nil, fmt.Errorf("failed to marshal checkpoint: %w", err)
 	}
 
 	// Pre-increment so the next concurrent call gets a different nonce
@@ -766,22 +682,8 @@ func (c *TAOClient) reserveNonce(tx stypes.TxOutItem, vaultAddr string, currentH
 }
 
 // getCachedNonce returns the cached nonce metadata for a vault address.
-func (c *TAOClient) getCachedNonce(vaultAddr string) nonceMetadata {
+func (c *Client) getCachedNonce(vaultAddr string) nonceMetadata {
 	c.signMu.Lock()
 	defer c.signMu.Unlock()
 	return c.nonces[vaultAddr]
-}
-
-// convertToRao converts THORChain amount (1e8) to rao (1e9) with overflow check.
-func convertToRao(amount cosmos.Uint) (uint64, error) {
-	bi := amount.BigInt()
-	if !bi.IsUint64() {
-		return 0, fmt.Errorf("amount overflow converting to rao: %s", amount)
-	}
-	v := bi.Uint64()
-	result := v * 10
-	if result/10 != v {
-		return 0, fmt.Errorf("amount overflow converting to rao: %s", amount)
-	}
-	return result, nil
 }

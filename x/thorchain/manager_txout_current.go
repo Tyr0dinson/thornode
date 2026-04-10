@@ -507,12 +507,13 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 
 		// Chains with account reserve requirements (existential deposit / base reserve)
 		// must keep a minimum balance in the wallet to prevent account deletion.
-		// XRP: base reserve of 1 XRP. TAO: existential deposit enforced by transfer_keep_alive.
-		if toi.Coin.Asset.Equals(common.XRPAsset) {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.XRPChain.DustThreshold())
-		}
-		if toi.Coin.Asset.Equals(common.TAOAsset) {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.TAOChain.DustThreshold())
+		// XRP: base reserve of 1 XRP.
+		// TAO, DOT: existential deposit enforced by transfer_keep_alive.
+		var dustAmount cosmos.Uint
+		switch toi.Coin.Asset {
+		case common.XRPAsset, common.TAOAsset, common.DOTAsset:
+			dustAmount = toi.Coin.Asset.Chain.DustThreshold()
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, dustAmount)
 		}
 
 		toi.VaultPubKey = vault.PubKey

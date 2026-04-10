@@ -81,8 +81,11 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
-	// Check is tao address (SS58 with prefix 42)
 	if IsValidTAOAddress(address) {
+		return Address(address), nil
+	}
+
+	if IsValidDOTAddress(address) {
 		return Address(address), nil
 	}
 
@@ -124,7 +127,15 @@ func IsValidTAOAddress(address string) bool {
 	if err != nil {
 		return false
 	}
-	return prefix == ss58.PrefixTAO
+	return prefix == TAOChain.SS58Prefix()
+}
+
+func IsValidDOTAddress(address string) bool {
+	prefix, _, err := ss58.Decode(address)
+	if err != nil {
+		return false
+	}
+	return prefix == DOTChain.SS58Prefix()
 }
 
 func IsValidZECAddress(address string) bool {
@@ -315,6 +326,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return IsValidSOLAddress(addr.String())
 	case TAOChain:
 		return IsValidTAOAddress(addr.String())
+	case DOTChain:
+		return IsValidDOTAddress(addr.String())
 	case ZECChain:
 		return IsValidZECAddress(addr.String())
 	case SUIChain:
@@ -327,7 +340,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain, TAOChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain, TAOChain, DOTChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -436,7 +449,7 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if err == nil {
 			return MockNet
 		}
-	case SOLChain, SUIChain, TAOChain:
+	case SOLChain, SUIChain, TAOChain, DOTChain:
 		return currentNetwork
 	case ZECChain:
 		// Determine network based on address prefix

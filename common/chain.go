@@ -33,6 +33,7 @@ const (
 	POLChain   = Chain("POL")
 	SUIChain   = Chain("SUI")
 	TAOChain   = Chain("TAO")
+	DOTChain   = Chain("DOT")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -56,6 +57,7 @@ var AllChains = [...]Chain{
 	ZECChain,
 	POLChain,
 	TAOChain,
+	DOTChain,
 }
 
 type SigningAlgo string
@@ -93,6 +95,16 @@ func NewChain(chainID string) (Chain, error) {
 // Equals compare two chain to see whether they represent the same chain
 func (c Chain) Equals(c2 Chain) bool {
 	return strings.EqualFold(c.String(), c2.String())
+}
+
+func (c Chain) OneOf(chains ...Chain) bool {
+	for _, chain := range chains {
+		if chain.Equals(c) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (c Chain) IsTHORChain() bool {
@@ -154,7 +166,7 @@ func (c Chain) String() string {
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
 	switch c {
-	case SOLChain, SUIChain, TAOChain:
+	case SOLChain, SUIChain, TAOChain, DOTChain:
 		return SigningAlgoEd25519
 	default:
 		return SigningAlgoSecp256k1
@@ -201,6 +213,8 @@ func (c Chain) GetGasAsset() Asset {
 		return POLAsset
 	case SUIChain:
 		return SUIAsset
+	case DOTChain:
+		return DOTAsset
 	default:
 		return EmptyAsset
 	}
@@ -235,6 +249,8 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "mist", cosmos.NewUint(1e9)
 	case TAOChain:
 		return "rao", cosmos.NewUint(1e9)
+	case DOTChain:
+		return "planck", cosmos.NewUint(1e10)
 	default:
 		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}
@@ -252,6 +268,13 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 	return thorchain.Mul(gasRateUnitsPerOne).QuoUint64(One)
 }
 
+// NativeGasToThorchain converts native gas units to THORChain units (1e8).
+func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
+	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchain(native))
+	coin.Decimals = c.GetGasAssetDecimal()
+	return coin
+}
+
 // GetGasAssetDecimal returns decimals for the gas asset of the given chain. Currently
 // Gaia is 1e6 and all others are 1e8. If an external chain's gas asset is larger than
 // 1e8, just return cosmos.DefaultCoinDecimals.
@@ -263,6 +286,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 6
 	case SOLChain, SUIChain, TAOChain:
 		return 9
+	case DOTChain:
+		return 10
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
@@ -368,6 +393,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(10_000_000)
 	case SUIChain:
 		return cosmos.NewUint(1_000_000)
+	case DOTChain:
+		return cosmos.NewUint(One) // 1 DOT
 	default:
 		return cosmos.ZeroUint()
 	}
@@ -430,6 +457,18 @@ func (c Chain) DefaultCoinbase() float64 {
 	}
 }
 
+// SS58Prefix returns the SS58 prefix for Substrate chains
+func (c Chain) SS58Prefix() byte {
+	switch c {
+	case TAOChain:
+		return 42
+	case DOTChain:
+		return 0
+	default:
+		return 0
+	}
+}
+
 func (c Chain) ApproximateBlockMilliseconds() int64 {
 	switch c {
 	case BTCChain:
@@ -462,6 +501,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 400
 	case TAOChain:
 		return 12_000
+	case DOTChain:
+		return 6_000
 	case ZECChain:
 		return 75_000
 	case POLChain:
@@ -485,8 +526,8 @@ func (c Chain) InboundNotes() string {
 		return "Broadcast a MsgDeposit to the THORChain network with the appropriate memo. Do not use multi-in, multi-out transactions."
 	case XRPChain:
 		return "Transfer the inbound_address the asset with the memo. Only a single memo is supported and only MemoData is used."
-	case TAOChain:
-		return "Transfer TAO to the inbound_address using Balances::transfer_keep_alive or transfer_allow_death. Include the memo as a System.remark call in a batch_all extrinsic. Do not use transfer_all."
+	case TAOChain, DOTChain:
+		return "Transfer the asset to the inbound_address using Balances::transfer_keep_alive or transfer_allow_death. Include the memo as a System.remark call in a batch_all extrinsic. Do not use transfer_all."
 	default:
 		return ""
 	}

@@ -1,4 +1,4 @@
-package bittensor
+package substrate
 
 import (
 	"fmt"
@@ -6,45 +6,29 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-
-	taorpc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/bittensor/rpc"
-	taotypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/bittensor/types"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
+	ttypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 const (
-	// defaultFeeRao is the approximate base fee in rao (0.0001 TAO).
-	defaultFeeRao = 100_000
-
-	// transferKeepAliveCallIndex is the call index for Balances::transfer_keep_alive.
-	transferKeepAliveCallIndex = 3
-	// transferAllowDeathCallIndex is the call index for Balances::transfer_allow_death
-	// (index 0 in current Substrate, formerly named "transfer").
-	transferAllowDeathCallIndex = 0
-	// runtimeVersionRefreshInterval is how often (in blocks) to refresh runtime version.
-	runtimeVersionRefreshInterval = 100
-
-	// feeCacheSize is the number of fee samples in the rolling window.
-	feeCacheSize = 200
-	// feeUpdatePeriodBlocks is how often (in blocks) to report the averaged fee.
-	feeUpdatePeriodBlocks = 100
-
-	// expectedSpecName is the expected Substrate runtime specName for Bittensor.
-	// Used at startup to warn if connected to a different chain.
-	expectedSpecName = "node-subtensor-runtime"
+	FeeCacheSize         = 200
+	FeeUpdatePeriod      = 20
+	VersionRefreshPeriod = 20
 )
 
-// TAOScanner is a block scanner for the Bittensor (TAO) chain.
-type TAOScanner struct {
+// Scanner is a generic block scanner for Substrate chains.
+type Scanner struct {
 	cfg              config.BifrostBlockScannerConfiguration
 	logger           zerolog.Logger
-	rpcClient        *taorpc.Client
+	rpcClient        *rpc.Client
 	solvencyReporter types.SolvencyReporter
 
 	globalNetworkFeeQueue chan common.NetworkFee
@@ -52,82 +36,72 @@ type TAOScanner struct {
 	// Set once at construction, immutable thereafter.
 	genesisHash string
 
+	params Params
+
 	// Cached runtime metadata (protected by mu)
 	mu                sync.RWMutex
 	specVersion       uint32
 	txVersion         uint32
 	latestBlockHash   string
 	latestBlockHeight int64
-	feeCache          []uint64 // rolling window of observed fees (rao)
-	lastReportedFee   uint64   // last fee sent to THORChain (rao)
-
-	// Bittensor pallet indices (set once at construction, immutable thereafter)
-	balancesPalletIndex           byte
-	transferCallIndex             byte
-	systemPalletIndex             byte
-	remarkCallIndex               byte
-	utilityPalletIndex            byte
-	batchAllCallIndex             byte
-	transactionPaymentPalletIndex byte
+	feeCache          []uint64
+	currentFee        uint64
 }
 
-// NewTAOScanner creates a new TAO block scanner.
-func NewTAOScanner(
+// NewScanner creates a new generic Substrate block scanner.
+func NewScanner(
 	cfg config.BifrostBlockScannerConfiguration,
 	solvencyReporter types.SolvencyReporter,
-	rpcClient *taorpc.Client,
-) (*TAOScanner, error) {
-	scanner := &TAOScanner{
-		cfg:              cfg,
-		logger:           log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
-		rpcClient:        rpcClient,
-		solvencyReporter: solvencyReporter,
-		// Default pallet indices for Bittensor
-		balancesPalletIndex:           5,
-		transferCallIndex:             transferKeepAliveCallIndex,
-		systemPalletIndex:             0,
-		remarkCallIndex:               0,
-		utilityPalletIndex:            11,
-		batchAllCallIndex:             2,
-		transactionPaymentPalletIndex: 6,
+	rpcClient *rpc.Client,
+) (*Scanner, error) {
+	params, found := ChainParams[cfg.ChainID]
+	if !found {
+		return nil, fmt.Errorf("no params found for %s", cfg.ChainID)
 	}
 
-	// Fetch genesis hash and runtime version
-	genesisHash, err := rpcClient.GetGenesisHash()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get genesis hash: %w", err)
+	s := &Scanner{
+		cfg:              cfg,
+		logger:           log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
+		params:           params,
+		rpcClient:        rpcClient,
+		solvencyReporter: solvencyReporter,
 	}
-	scanner.genesisHash = genesisHash
 
 	rv, err := rpcClient.GetRuntimeVersion("")
 	if err != nil {
 		return nil, fmt.Errorf("fail to get runtime version: %w", err)
 	}
-	scanner.specVersion = rv.SpecVersion
-	scanner.txVersion = rv.TransactionVersion
 
-	// Validate we're connected to a Bittensor node, not another Substrate chain.
-	// Pallet indices are hardcoded for Bittensor's runtime; a different runtime
+	// Validate we're connected to the correct node, not another Substrate chain.
+	// Pallet indices are hardcoded for the chain runtime; a different runtime
 	// would have different pallet ordering, causing silent misattribution of events.
-	if rv.SpecName != expectedSpecName {
-		scanner.logger.Warn().
-			Str("expected", expectedSpecName).
+	if rv.SpecName != s.params.SpecName {
+		s.logger.Warn().
+			Str("expected", s.params.SpecName).
 			Str("got", rv.SpecName).
 			Msg("runtime specName mismatch — pallet indices may be incorrect")
 	}
 
-	scanner.logger.Info().
+	s.specVersion = rv.SpecVersion
+	s.txVersion = rv.TransactionVersion
+
+	s.genesisHash, err = rpcClient.GetGenesisHash()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get genesis hash: %w", err)
+	}
+
+	s.logger.Info().
 		Str("spec_name", rv.SpecName).
 		Uint32("spec_version", rv.SpecVersion).
 		Uint32("tx_version", rv.TransactionVersion).
-		Str("genesis_hash", genesisHash).
-		Msg("TAO scanner initialized")
+		Str("genesis_hash", s.genesisHash).
+		Msg("scanner initialized")
 
-	return scanner, nil
+	return s, nil
 }
 
 // GetHeight returns the current finalized block height.
-func (s *TAOScanner) GetHeight() (int64, error) {
+func (s *Scanner) GetHeight() (int64, error) {
 	hash, err := s.rpcClient.GetFinalizedHead()
 	if err != nil {
 		return -1, fmt.Errorf("fail to get finalized head: %w", err)
@@ -147,9 +121,13 @@ func (s *TAOScanner) GetHeight() (int64, error) {
 }
 
 // FetchTxs is called by the standard block scanner for each block.
-func (s *TAOScanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
-	txIn := stypes.TxIn{
+func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (ttypes.TxIn, error) {
+	txIn := ttypes.TxIn{
 		Chain: s.cfg.ChainID,
+	}
+
+	if fetchHeight <= 0 {
+		return txIn, fmt.Errorf("invalid fetch height: %d", fetchHeight)
 	}
 
 	height := uint64(fetchHeight)
@@ -163,7 +141,7 @@ func (s *TAOScanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, erro
 		return txIn, fmt.Errorf("fail to get block at height %d: %w", fetchHeight, err)
 	}
 
-	txIn.TxArray = make([]*stypes.TxInItem, 0, len(block.Extrinsics))
+	txIn.TxArray = make([]*ttypes.TxInItem, 0, len(block.Extrinsics))
 
 	// Fetch events and determine which extrinsics succeeded
 	successMap, feeMap, err := s.getExtrinsicResults(blockHash, len(block.Extrinsics))
@@ -175,7 +153,7 @@ func (s *TAOScanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, erro
 	s.setLatestBlock(blockHash, fetchHeight)
 
 	// Refresh runtime version periodically
-	if fetchHeight > 0 && fetchHeight%runtimeVersionRefreshInterval == 0 {
+	if fetchHeight%VersionRefreshPeriod == 0 {
 		s.refreshRuntimeVersion(blockHash)
 	}
 
@@ -210,8 +188,8 @@ func (s *TAOScanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, erro
 	}
 
 	// Report network fee periodically
-	if fetchHeight > 0 && fetchHeight%feeUpdatePeriodBlocks == 0 {
-		s.reportNetworkFee(fetchHeight)
+	if fetchHeight%FeeUpdatePeriod == 0 {
+		s.updateNetworkFee(fetchHeight)
 	}
 
 	// Report solvency
@@ -224,42 +202,40 @@ func (s *TAOScanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, erro
 	return txIn, nil
 }
 
-// FetchMemPool is not used for TAO.
-func (s *TAOScanner) FetchMemPool(height int64) (stypes.TxIn, error) {
-	return stypes.TxIn{}, nil
+// FetchMemPool is not used for Substrate chains.
+func (s *Scanner) FetchMemPool(height int64) (ttypes.TxIn, error) {
+	return ttypes.TxIn{}, nil
 }
 
 // GetNetworkFee returns the current network fee estimate.
-func (s *TAOScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	fee := s.averageFee()
-	if fee == 0 {
-		fee = defaultFeeRao
-	}
-	// Transaction size = 1 (we use a single gas amount)
-	return 1, fee
+func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return 1, s.currentFee
 }
 
 // getExtrinsicResults queries System::Events and determines which extrinsics succeeded.
 // numExtrinsics is the number of extrinsics in the block, used to validate scan results.
-func (s *TAOScanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[uint32]bool, map[uint32]uint64, error) {
+func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[uint32]bool, map[uint32]uint64, error) {
 	eventsHex, err := s.rpcClient.GetEventsStorage(blockHash)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to get events storage: %w", err)
 	}
 
-	eventsData, err := taotypes.HexDecode(eventsHex)
+	eventsData, err := stypes.HexDecode(eventsHex)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to decode events hex: %w", err)
 	}
 
-	palletConfig := taotypes.EventPalletConfig{
-		SystemPalletIndex:             s.systemPalletIndex,
-		BalancesPalletIndex:           s.balancesPalletIndex,
-		UtilityPalletIndex:            s.utilityPalletIndex,
-		TransactionPaymentPalletIndex: s.transactionPaymentPalletIndex,
+	palletConfig := stypes.EventPalletConfig{
+		SystemPalletIndex:             s.params.SystemPallet,
+		BalancesPalletIndex:           s.params.BalancesPallet,
+		UtilityPalletIndex:            s.params.UtilityPallet,
+		TransactionPaymentPalletIndex: s.params.TxPaymentPallet,
+		BalanceSize:                   s.params.BalanceSize,
 	}
 
-	results, fees, err := taotypes.ParseExtrinsicResults(eventsData, palletConfig)
+	results, fees, err := stypes.ParseExtrinsicResults(eventsData, palletConfig)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("events parsing encountered error, using partial results")
 	}
@@ -279,9 +255,9 @@ func (s *TAOScanner) getExtrinsicResults(blockHash string, numExtrinsics int) (m
 			Int("num_extrinsics", numExtrinsics).
 			Int("determined", len(results)).
 			Int("events_data_len", len(eventsData)).
-			Str("events_hex_head", taotypes.HexEncodeHead(eventsData, 200)).
+			Str("events_hex_head", stypes.HexEncodeHead(eventsData, 200)).
 			Msg("using scan-based event fallback for undetermined extrinsics")
-		scanResults := taotypes.ScanExtrinsicResults(eventsData, palletConfig, numExtrinsics)
+		scanResults := stypes.ScanExtrinsicResults(eventsData, palletConfig, numExtrinsics)
 		for idx, success := range scanResults {
 			if _, ok := results[idx]; !ok {
 				results[idx] = success
@@ -293,7 +269,7 @@ func (s *TAOScanner) getExtrinsicResults(blockHash string, numExtrinsics int) (m
 }
 
 // refreshRuntimeVersion re-fetches the runtime version from the node.
-func (s *TAOScanner) refreshRuntimeVersion(blockHash string) {
+func (s *Scanner) refreshRuntimeVersion(blockHash string) {
 	rv, err := s.rpcClient.GetRuntimeVersion(blockHash)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("fail to refresh runtime version")
@@ -313,17 +289,17 @@ func (s *TAOScanner) refreshRuntimeVersion(blockHash string) {
 }
 
 // updateFeeCache adds a fee to the rolling window, truncating if over feeCacheSize.
-func (s *TAOScanner) updateFeeCache(fee uint64) {
+func (s *Scanner) updateFeeCache(fee uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.feeCache = append(s.feeCache, fee)
-	if len(s.feeCache) > feeCacheSize {
-		s.feeCache = s.feeCache[len(s.feeCache)-feeCacheSize:]
+	if len(s.feeCache) > FeeCacheSize {
+		s.feeCache = s.feeCache[len(s.feeCache)-FeeCacheSize:]
 	}
 }
 
 // averageFee returns the mean of cached fees, or 0 if the cache is empty.
-func (s *TAOScanner) averageFee() uint64 {
+func (s *Scanner) averageFee() uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if len(s.feeCache) == 0 {
@@ -338,17 +314,17 @@ func (s *TAOScanner) averageFee() uint64 {
 
 // processExtrinsic parses a hex-encoded extrinsic and returns a TxInItem if it's
 // a relevant transfer to a vault address.
-func (s *TAOScanner) processExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*stypes.TxInItem, error) {
-	raw, err := taotypes.HexDecode(extHex)
+func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
+	raw, err := stypes.HexDecode(extHex)
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode extrinsic hex: %w", err)
 	}
 
 	// Compute extrinsic hash (Blake2b-256 of the raw encoded extrinsic)
-	txHash := taotypes.ExtrinsicHash(raw)
+	txHash := stypes.ExtrinsicHash(raw)
 
 	// Decode the length prefix
-	_, consumed, err := taotypes.DecodeCompact(raw)
+	_, consumed, err := stypes.DecodeCompact(raw)
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode extrinsic length: %w", err)
 	}
@@ -377,7 +353,7 @@ func (s *TAOScanner) processExtrinsic(extHex string, blockHeight int64, actualFe
 	signerType := body[pos]
 	pos++
 
-	if signerType != taotypes.MultiAddressID {
+	if signerType != stypes.MultiAddressID {
 		return nil, fmt.Errorf("unsupported signer type: %d", signerType)
 	}
 
@@ -421,20 +397,22 @@ func (s *TAOScanner) processExtrinsic(extHex string, blockHeight int64, actualFe
 	}
 
 	// Nonce (compact)
-	_, nonceLen, err := taotypes.DecodeCompact(body[pos:])
+	_, nonceLen, err := stypes.DecodeCompact(body[pos:])
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode nonce: %w", err)
 	}
 	pos += nonceLen
 
 	// Tip (compact)
-	_, tipLen, err := taotypes.DecodeCompact(body[pos:])
+	_, tipLen, err := stypes.DecodeCompact(body[pos:])
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode tip: %w", err)
 	}
 	pos += tipLen
 
-	// CheckMetadataHash mode byte (part of Bittensor's TransactionExtensions)
+	// CheckMetadataHash mode byte (RFC-0078, present in DOT/KSM/TAO runtimes).
+	// Chains without this extension would not have this byte — see Params if
+	// this needs to become conditional.
 	if pos >= len(body) {
 		return nil, fmt.Errorf("extrinsic too short for metadata mode byte")
 	}
@@ -447,7 +425,7 @@ func (s *TAOScanner) processExtrinsic(extHex string, blockHeight int64, actualFe
 	}
 
 	// Get sender SS58 address
-	senderAddr, err := ss58.Encode(ss58.PrefixTAO, signerPubkey)
+	senderAddr, err := ss58.Encode(s.cfg.ChainID.SS58Prefix(), signerPubkey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to encode sender address: %w", err)
 	}
@@ -455,12 +433,12 @@ func (s *TAOScanner) processExtrinsic(extHex string, blockHeight int64, actualFe
 	palletIdx := callData[0]
 	callIdx := callData[1]
 
-	var txItem *stypes.TxInItem
+	var txItem *ttypes.TxInItem
 	switch {
-	case palletIdx == s.balancesPalletIndex && isTransferCall(callIdx):
+	case palletIdx == s.params.BalancesPallet && s.isTransferCall(callIdx):
 		txItem, err = s.parseTransfer(callData[2:], senderAddr, txHash, blockHeight, "", actualFee)
 
-	case palletIdx == s.utilityPalletIndex && callIdx == s.batchAllCallIndex:
+	case palletIdx == s.params.UtilityPallet && callIdx == s.params.UtilityBatchAllCall:
 		txItem, err = s.parseBatchAll(callData[2:], senderAddr, txHash, blockHeight, actualFee)
 
 	default:
@@ -479,7 +457,7 @@ func (s *TAOScanner) processExtrinsic(extHex string, blockHeight int64, actualFe
 }
 
 // parseTransfer parses a balance transfer call and returns a TxInItem.
-func (s *TAOScanner) parseTransfer(data []byte, sender, txHash string, blockHeight int64, memo string, actualFee uint64) (*stypes.TxInItem, error) {
+func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight int64, memo string, actualFee uint64) (*ttypes.TxInItem, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty transfer data")
 	}
@@ -493,7 +471,7 @@ func (s *TAOScanner) parseTransfer(data []byte, sender, txHash string, blockHeig
 	addrType := data[pos]
 	pos++
 
-	if addrType != taotypes.MultiAddressID {
+	if addrType != stypes.MultiAddressID {
 		return nil, fmt.Errorf("unsupported destination address type: %d", addrType)
 	}
 
@@ -503,50 +481,47 @@ func (s *TAOScanner) parseTransfer(data []byte, sender, txHash string, blockHeig
 	destPubkey := data[pos : pos+32]
 	pos += 32
 
-	destAddr, err := ss58.Encode(ss58.PrefixTAO, destPubkey)
+	destAddr, err := ss58.Encode(s.cfg.ChainID.SS58Prefix(), destPubkey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to encode destination address: %w", err)
 	}
 
 	// Amount (compact)
-	amount, _, err := taotypes.DecodeCompact(data[pos:])
+	amount, _, err := stypes.DecodeCompact(data[pos:])
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode transfer amount: %w", err)
 	}
 
-	amountThorchain := convertRaoToThorchain(amount)
-	if amountThorchain.IsZero() {
+	coin := s.cfg.ChainID.NativeGasToThorCoin(amount)
+	if coin.Amount.IsZero() {
 		return nil, nil // dust amount, ignore
 	}
 
-	taoCoin := common.NewCoin(common.TAOAsset, amountThorchain)
-	taoCoin.Decimals = 9
-
-	feeRao := actualFee
-	if feeRao == 0 {
-		feeRao = defaultFeeRao
+	fee := actualFee
+	if fee == 0 {
+		fee = s.params.DefaultFee
 	}
-	gasCoin := common.NewCoin(common.TAOAsset, convertRaoToThorchain(feeRao))
-	gasCoin.Decimals = 9
 
-	return &stypes.TxInItem{
+	gasCoin := s.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(fee))
+
+	return &ttypes.TxInItem{
 		BlockHeight: blockHeight,
 		Tx:          txHash,
 		Memo:        memo,
 		Sender:      sender,
 		To:          destAddr,
-		Coins:       []common.Coin{taoCoin},
+		Coins:       []common.Coin{coin},
 		Gas:         common.Gas{gasCoin},
 	}, nil
 }
 
 // parseBatchAll parses a batch_all call looking for transfer + remark.
-func (s *TAOScanner) parseBatchAll(data []byte, sender, txHash string, blockHeight int64, actualFee uint64) (*stypes.TxInItem, error) {
+func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty batch data")
 	}
 
-	numCalls, consumed, err := taotypes.DecodeCompact(data)
+	numCalls, consumed, err := stypes.DecodeCompactToInt(data)
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode batch call count: %w", err)
 	}
@@ -556,32 +531,37 @@ func (s *TAOScanner) parseBatchAll(data []byte, sender, txHash string, blockHeig
 	var transferData []byte
 	var hasTransfer bool
 
-	for i := uint64(0); i < numCalls; i++ {
+	for i := 0; i < numCalls; i++ {
 		if pos+2 > len(data) {
 			break
 		}
 
-		callPalletIdx := data[pos]
-		callCallIdx := data[pos+1]
+		pallet := data[pos]
+		call := data[pos+1]
 		pos += 2
 
-		if callPalletIdx == s.systemPalletIndex && callCallIdx == s.remarkCallIndex {
+		if pallet == s.params.SystemPallet && call == s.params.SystemRemarkCall {
 			if memo != "" {
 				// Reject batches with multiple remarks to prevent memo confusion attacks.
 				return nil, fmt.Errorf("batch_all contains multiple remark calls")
 			}
-			remarkLen, rl, decErr := taotypes.DecodeCompact(data[pos:])
-			if decErr != nil {
-				return nil, fmt.Errorf("fail to decode remark length: %w", decErr)
+
+			var remarkLength int
+			remarkLength, consumed, err = stypes.DecodeCompactToInt(data[pos:])
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode remark length: %w", err)
 			}
-			pos += rl
-			if remarkLen > uint64(len(data)-pos) {
+
+			pos += consumed
+
+			if remarkLength > len(data)-pos {
 				return nil, fmt.Errorf("remark data exceeds bounds")
 			}
-			rlInt := int(remarkLen)
-			memo = string(data[pos : pos+rlInt])
-			pos += rlInt
-		} else if callPalletIdx == s.balancesPalletIndex && isTransferCall(callCallIdx) {
+
+			memo = string(data[pos : pos+remarkLength])
+
+			pos += remarkLength
+		} else if pallet == s.params.BalancesPallet && s.isTransferCall(call) {
 			// Reject batches with multiple transfers to prevent ambiguity about
 			// which transfer the memo applies to.
 			if hasTransfer {
@@ -594,7 +574,7 @@ func (s *TAOScanner) parseBatchAll(data []byte, sender, txHash string, blockHeig
 			if pos >= len(data) {
 				return nil, fmt.Errorf("transfer data too short for address type")
 			}
-			if data[pos] != taotypes.MultiAddressID {
+			if data[pos] != stypes.MultiAddressID {
 				return nil, fmt.Errorf("unsupported MultiAddress variant in batch transfer: %d", data[pos])
 			}
 			// Advance past MultiAddress::Id (1 byte variant + 32 bytes pubkey)
@@ -603,19 +583,19 @@ func (s *TAOScanner) parseBatchAll(data []byte, sender, txHash string, blockHeig
 			}
 			pos += 1 + 32
 			// Skip compact amount
-			_, al, decErr := taotypes.DecodeCompact(data[pos:])
-			if decErr != nil {
-				return nil, fmt.Errorf("fail to skip transfer amount: %w", decErr)
+			_, consumed, err = stypes.DecodeCompact(data[pos:])
+			if err != nil {
+				return nil, fmt.Errorf("fail to skip transfer amount: %w", err)
 			}
-			pos += al
+			pos += consumed
 		} else {
 			// Unknown call in batch — we can't determine its size, so stop parsing.
 			// Any transfer + memo already captured will still be used.
 			s.logger.Warn().
-				Uint64("call_index", i).
-				Uint64("total_calls", numCalls).
-				Uint8("pallet", callPalletIdx).
-				Uint8("call", callCallIdx).
+				Int("call_index", i).
+				Int("total_calls", numCalls).
+				Uint8("pallet", pallet).
+				Uint8("call", call).
 				Bool("has_transfer", hasTransfer).
 				Msg("batch_all contains unknown call, stopping parse early")
 			break
@@ -629,9 +609,9 @@ func (s *TAOScanner) parseBatchAll(data []byte, sender, txHash string, blockHeig
 	return s.parseTransfer(transferData, sender, txHash, blockHeight, memo, actualFee)
 }
 
-// reportNetworkFee sends a network fee update to THORChain.
+// updateNetworkFee sends a network fee update to THORChain.
 // Rounds to GasPriceResolution and skips if unchanged (like XRP).
-func (s *TAOScanner) reportNetworkFee(height int64) {
+func (s *Scanner) updateNetworkFee(height int64) {
 	if s.globalNetworkFeeQueue == nil {
 		return
 	}
@@ -648,16 +628,16 @@ func (s *TAOScanner) reportNetworkFee(height int64) {
 		}
 		fee = sum / uint64(cacheLen)
 	}
-	lastReported := s.lastReportedFee
+	currentFee := s.currentFee
 	s.mu.RUnlock()
 
 	// Wait for a full cache before reporting to avoid noisy early estimates.
-	if cacheLen < feeCacheSize {
+	if cacheLen < FeeCacheSize {
 		return
 	}
 
 	if fee == 0 {
-		fee = defaultFeeRao
+		fee = s.params.DefaultFee
 	}
 
 	// Round up to GasPriceResolution
@@ -666,19 +646,19 @@ func (s *TAOScanner) reportNetworkFee(height int64) {
 		fee = ((fee + resolution - 1) / resolution) * resolution
 	}
 
-	if fee == lastReported {
+	if fee == currentFee {
 		return
 	}
 
 	s.globalNetworkFeeQueue <- common.NetworkFee{
-		Chain:           common.TAOChain,
+		Chain:           s.cfg.ChainID,
 		Height:          height,
 		TransactionSize: 1,
 		TransactionRate: fee,
 	}
 
 	s.mu.Lock()
-	s.lastReportedFee = fee
+	s.currentFee = fee
 	s.mu.Unlock()
 
 	s.logger.Info().
@@ -690,7 +670,7 @@ func (s *TAOScanner) reportNetworkFee(height int64) {
 // --------------------------------- thread-safe getters/setters ---------------------------------
 
 // setLatestBlock stores the latest block hash and height (thread-safe).
-func (s *TAOScanner) setLatestBlock(hash string, height int64) {
+func (s *Scanner) setLatestBlock(hash string, height int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.latestBlockHash = hash
@@ -698,14 +678,14 @@ func (s *TAOScanner) setLatestBlock(hash string, height int64) {
 }
 
 // getGenesisHash returns the genesis hash (immutable after construction).
-func (s *TAOScanner) getGenesisHash() string {
+func (s *Scanner) getGenesisHash() string {
 	return s.genesisHash
 }
 
 // getLatestBlock returns the latest observed block hash and height atomically.
 // Both values come from the same block, which is critical for mortal era
 // construction — the era phase must match the block hash in the signing payload.
-func (s *TAOScanner) getLatestBlock() (string, int64) {
+func (s *Scanner) getLatestBlock() (string, int64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.latestBlockHash, s.latestBlockHeight
@@ -714,7 +694,7 @@ func (s *TAOScanner) getLatestBlock() (string, int64) {
 // getRuntimeVersion returns the cached spec and transaction versions atomically.
 // Both are updated together during runtime upgrades, so reading them under a
 // single lock prevents the signing payload from mixing old and new versions.
-func (s *TAOScanner) getRuntimeVersion() (specVersion, txVersion uint32) {
+func (s *Scanner) getRuntimeVersion() (specVersion, txVersion uint32) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.specVersion, s.txVersion
@@ -727,12 +707,7 @@ func (s *TAOScanner) getRuntimeVersion() (specVersion, txVersion uint32) {
 // Note: transfer_all (4) is intentionally excluded — it has no amount field,
 // requiring event correlation to determine the transferred amount.
 // Note: call index 7 is force_set_balance (governance-only), NOT a transfer.
-func isTransferCall(callIdx byte) bool {
-	return callIdx == transferAllowDeathCallIndex ||
-		callIdx == transferKeepAliveCallIndex
-}
-
-// convertRaoToThorchain converts rao (1e9) to THORChain units (1e8).
-func convertRaoToThorchain(rao uint64) cosmos.Uint {
-	return cosmos.NewUint(rao / 10)
+func (s *Scanner) isTransferCall(callIdx byte) bool {
+	return callIdx == s.params.BalancesAllowDeathCall ||
+		callIdx == s.params.BalancesKeepAliveCall
 }
