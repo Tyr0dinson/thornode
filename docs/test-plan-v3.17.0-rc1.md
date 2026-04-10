@@ -1,0 +1,1646 @@
+# v3.17.0-rc1 Stagenet Test Plan
+
+**Release:** https://gitlab.com/thorchain/thornode/-/releases/v3.17.0-rc1  
+**Milestone:** Release-3.17.0  
+**Tag commit:** `79e0dda91532b09123ed99fb25f85e7b161a3dcb`
+
+---
+
+## Prioritization Rationale
+
+Tests in **Tier 1** map to MRs explicitly labeled **Priority 0**, **Priority 1**, or **[Security]** in GitLab.
+All other MRs are ranked by failure impact (fund loss > insolvency > outbound delay > UX).
+
+| Priority | MRs |
+| -------- | --- |
+| P0       | !4565, !4687, !4704 |
+| P1       | !4568, !4569, !4574, !4697 |
+| [Security] label only | !4644 |
+
+---
+
+## Environment Setup
+
+```bash
+# Endpoints
+export STAGENET_API="https://stagenet-thornode.ninerealms.com"
+export STAGENET_RPC="https://stagenet-rpc.ninerealms.com:443"
+export STAGENET_MIDGARD="https://stagenet-midgard.ninerealms.com"
+
+# Node wallets — 4 active, 2 standby
+export ACTIVE_NODES="snode1 snode3 snode4 snode6"
+export STANDBY_NODES="snode2 snode5"
+
+# Default wallet for regular transactions (swaps, deposits)
+export WALLET="snode1"
+```
+
+> **Mimir votes** require a supermajority of active nodes (>2/3 of 4 = at least 3 votes).
+> All mimir tests below loop through all 4 active nodes to guarantee the threshold is met.
+
+**Pre-flight checks — confirm stagenet is healthy before starting:**
+
+---
+
+> All active nodes are on the target version.
+
+```bash
+curl -s "$STAGENET_API/thorchain/nodes" | jq '[.[] | select(.status == "Active") | .version] | unique'
+```
+
+**Result:**
+```bash
+
+```
+
+---
+
+> Network consensus version — `current`, `next`, and `querier` should all match the release version.
+
+```bash
+curl -s "$STAGENET_API/thorchain/version" | jq '{current, next, querier}'
+```
+
+**Result:**
+```bash
+
+```
+
+---
+
+> No chains are halted — any key starting with `HALT` and set to `1` would block testing.
+
+```bash
+curl -s "$STAGENET_API/thorchain/mimir" | jq 'to_entries[] | select(.key | startswith("HALT"))'
+```
+
+**Result:**
+```bash
+
+```
+
+---
+
+> No backlog of pending outbounds or scheduled transactions that could interfere with tests.
+
+```bash
+curl -s "$STAGENET_API/thorchain/queue" | jq '{outbound: .outbound | length, scheduled: .scheduled | length}'
+```
+
+**Result:**
+```bash
+
+```
+
+---
+
+> Chain is actively producing blocks — delta should be ≥ 1 over 10 seconds.
+
+```bash
+H1=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'); \
+sleep 10; \
+H2=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'); \
+echo "Before: $H1 | After: $H2 | Delta: $((H2 - H1))"
+```
+
+**Result:**
+```bash
+
+```
+
+---
+
+## Tier 1 — Critical (Priority 0, Priority 1, and [Security])
+
+---
+
+### T1.1 — Non-deterministic Consensus · P0 · !4565
+
+**Root cause:** The `tie` flag in `ValueOfOperational` was never reset when a clear winner was
+found after tied losers during Go map iteration (random per call). Different validators could
+evaluate the same `MsgMimir` and produce different state → apphash mismatch → chain halt.
+
+**Vote distribution:** snode1+snode3 → `100` (winner, 2 votes) · snode4 → `200` · snode6 → `300`
+This gives `{100:2, 200:1, 300:1}` — the exact problematic map state (two tied losers).
+
+---
+
+**Step 1 — Submit winner votes (snode1 + snode3 → value 100)**
+```bash
+for snode in snode1 snode3; do
+  sthornode tx thorchain mimir ConsensusTest \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 100
+done
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Submit loser votes (snode4 → 200, snode6 → 300)**
+```bash
+sthornode tx thorchain mimir ConsensusTest \
+  --from snode4 --node "$STAGENET_RPC" --yes --gas auto -- 200
+
+sthornode tx thorchain mimir ConsensusTest \
+  --from snode6 --node "$STAGENET_RPC" --yes --gas auto -- 300
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Wait 2 blocks, then confirm chain is still producing blocks**
+```bash
+sleep 12
+curl -s "$STAGENET_RPC/status" | jq '.result.sync_info | {height: .latest_block_height, catching_up}'
+```
+> Expected: `catching_up: false`, height advancing
+
+**Result:**
+```
+
+```
+
+**Step 4 — Monitor 20 blocks; height must keep advancing**
+```bash
+BEFORE=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+sleep 120
+AFTER=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+echo "Blocks produced: $((AFTER - BEFORE))"
+```
+> Expected: ~20 blocks — if the chain halted this would be 0
+
+**Result:**
+```
+
+```
+
+**Step 5 — Confirm all nodes agree on the mimir value (not -1)**
+```bash
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.CONSENSUSTEST'
+```
+> Expected: `100` — the clear winner. A value of `null` or `-1` would indicate divergence.
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T1.2 — ADR-023: RUNE Supply Restructure · P0 · !4687
+
+**Root cause:** The Reserve held ~74.21M RUNE created at genesis that never circulated. ADR-023
+burns ~64.9M RUNE (leaving exactly 9.3M), then sets `MaxRuneSupply` via mimir to the post-burn
+total, replacing the meaningless 500M cap. Store migration v13 → v14. Irreversible on mainnet.
+
+---
+
+**Step 1 — Record pre-upgrade reserve and total supply**
+```bash
+curl -s "$STAGENET_API/thorchain/network" | jq '{total_reserve}'
+```
+> Expected: ~`7421000000000000` (74.21M × 1e8)
+
+**Result:**
+```
+
+```
+
+```bash
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply" \
+  | jq '.supply[] | select(.denom == "rune") | .amount'
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Apply upgrade (coordinate node binary update)**
+
+_(No command — mark when upgrade is applied)_
+
+**Step 3 — Confirm chain is still producing blocks post-migration**
+```bash
+BEFORE=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+sleep 300
+AFTER=$(curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+echo "Blocks produced: $((AFTER - BEFORE))"
+```
+> Expected: ~50 blocks — no halt
+
+**Result:**
+```
+
+```
+
+**Step 4 — Verify reserve is exactly 9.3M RUNE**
+```bash
+curl -s "$STAGENET_API/thorchain/network" | jq '{total_reserve}'
+```
+> Expected: `"930000000000000"` (9.3M × 1e8)
+
+**Result:**
+```
+
+```
+
+**Step 5 — Verify total supply decreased by the burned amount**
+```bash
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/supply" \
+  | jq '.supply[] | select(.denom == "rune") | .amount'
+```
+> Expected: pre-upgrade amount minus ~`6490000000000000`
+
+**Result:**
+```
+
+```
+
+**Step 6 — Verify `MaxRuneSupply` mimir is now set**
+```bash
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.MAXRUNESUPPLY'
+```
+> Expected: non-zero integer equal to post-burn total supply (~`36000000000000000`)
+
+**Result:**
+```
+
+```
+
+**Step 7 — Verify burn event was emitted in the migration block**
+```bash
+curl -s "$STAGENET_API/thorchain/block" \
+  | jq '.[] | select(.type == "mint_burn" and .reason == "adr023_reserve_burn")'
+```
+> Expected: one event with large RUNE burn amount
+
+**Result:**
+```
+
+```
+
+**Step 8 — Verify supply endpoint internal consistency**
+```bash
+curl -s "$STAGENET_API/thorchain/supply" | jq '
+  . as $s | {
+    circulating: $s.circulating,
+    reserve: $s.locked.reserve,
+    total: $s.total,
+    balanced: (($s.circulating | tonumber) + ($s.locked.reserve | tonumber) == ($s.total | tonumber))
+  }'
+```
+> Expected: `balanced: true`, `reserve ≈ 9300000`
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T1.3 — Solana Double-Spend Prevention · P0 · !4704
+
+**Root cause:** A real mainnet double-spend occurred. Lagging Solana scanners caused a missed
+observation; the tx was rescheduled to the same vault; and the Solana client was not calling
+`HasSigned()` before signing — unlike every other chain client.
+
+---
+
+**Step 1 — Submit a SOL outbound**
+```bash
+sthornode tx thorchain deposit 100000000 rune \
+  "=:SOL.SOL:$SOL_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Capture the outbound entry**
+```bash
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '.[] | select(.coin.asset == "SOL.SOL")'
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Wait for finalisation; verify exactly one SOL txid broadcast**
+```bash
+export SOL_INBOUND_TX="<in_hash from step 2>"
+curl -s "$STAGENET_API/thorchain/tx/$SOL_INBOUND_TX" \
+  | jq '{status: .observed_tx.status, out_hashes: .observed_tx.out_hashes}'
+```
+> Expected: `status: "done"`, `out_hashes` has exactly 1 entry
+
+**Result:**
+```
+
+```
+
+**Step 4 — Check bifrost logs for signer cache activity**
+```bash
+# On the signing node:
+grep -i "transaction signed before\|already in cache\|signer cache" <bifrost-log> | tail -20
+```
+> Expected: if a retry occurred, `"transaction signed before, ignore"` confirms the cache blocked re-signing
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T1.4 — DoS via Unbounded Attestation · P1 · !4568
+
+**Root cause:** Gas-exempt quorum messages had no attestation deduplication or count cap.
+A malicious block proposer could include thousands of duplicate attestations per pubkey,
+causing unbounded signature verification at zero gas cost.
+
+> **Note:** Fully reproducing the attack requires block proposer control. This test verifies
+> the fix does not break normal quorum behavior and block times stay within bounds.
+
+---
+
+**Step 1 — Confirm active validator count (deduplication cap = this value)**
+```bash
+curl -s "$STAGENET_API/thorchain/nodes" \
+  | jq '[.[] | select(.status == "Active")] | length'
+```
+> Expected: `4`
+
+**Result:**
+```
+
+```
+
+**Step 2 — Submit a swap to verify quorum processing still works**
+```bash
+sthornode tx thorchain deposit 100000000 rune \
+  "=:BTC.BTC:$BTC_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Confirm the swap reached quorum and outbound was created**
+```bash
+sleep 30
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '.[] | select(.coin.asset == "BTC.BTC")'
+```
+> Expected: outbound entry exists — quorum was reached normally
+
+**Result:**
+```
+
+```
+
+**Step 4 — Monitor 10 blocks for consistent ~6s intervals (no DoS spikes)**
+```bash
+for i in $(seq 1 10); do
+  curl -s "$STAGENET_RPC/status" \
+    | jq -r '[.result.sync_info.latest_block_height, .result.sync_info.latest_block_time] | @csv'
+  sleep 6
+done
+```
+> Expected: consistent height increments, no multi-second gaps
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T1.5 — DoS via Unbounded Limit Swap Iteration · P1 · !4569
+
+**Root cause:** `ModifyLimitSwap` iterated all entries in a shared price-ratio bucket with no
+cap. An attacker fills the bucket, causing the victim's cancel/modify to do O(N) KV reads.
+Fix: `ModifyLimitSwapMaxIterations` (default 100), mimir-overridable for operator rescue.
+
+---
+
+**Step 1 — Verify the iteration cap constant**
+```bash
+curl -s "$STAGENET_API/thorchain/constants" | jq '.int_64_values.ModifyLimitSwapMaxIterations'
+```
+> Expected: `100`
+
+**Result:**
+```
+
+```
+
+**Step 2 — Fill the price-ratio bucket with 110 attacker swaps**
+```bash
+for i in $(seq 1 110); do
+  sthornode tx thorchain deposit 100000000 rune \
+    "=<:BTC.BTC:$BTC_DEST_ADDR:450000000/0/0" \
+    --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+  sleep 1
+done
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Verify 110 swaps are queued**
+```bash
+curl -s "$STAGENET_API/thorchain/swap/queue" | jq 'length'
+```
+> Expected: ≥110
+
+**Result:**
+```
+
+```
+
+**Step 4 — Submit victim swap at position 101+ and attempt to modify it**
+```bash
+sthornode tx thorchain deposit 100000000 rune \
+  "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:450000000/0/0" \
+  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+
+sthornode tx thorchain deposit 100000000 rune \
+  "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:445000000/0/0" \
+  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+```
+> Expected: second tx fails with `"swap index too large, exceeded max iterations (100)"`
+
+**Result:**
+```
+
+```
+
+**Step 5 — Raise the limit via mimir to rescue the victim's swap**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 200
+done
+sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXIMITERATIONS'
+```
+> Expected: `200`
+
+**Result:**
+```
+
+```
+
+**Step 6 — Retry victim modification — should now succeed**
+```bash
+sthornode tx thorchain deposit 100000000 rune \
+  "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:445000000/0/0" \
+  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+```
+> Expected: tx succeeds
+
+**Result:**
+```
+
+```
+
+**Step 7 — Reset mimir**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- -1
+done
+```
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T1.6 — Bond Module Accounting · P1 · !4574
+
+**Root cause:** `SendFromModuleToModule` transferred the full `cost` even when `cost > bond`,
+causing the bond module balance to diverge from the sum of individual node bonds.
+Standby nodes (snode2, snode5) are most likely to trigger this path with a low bond.
+
+---
+
+**Step 1 — Check standby node bonds**
+```bash
+curl -s "$STAGENET_API/thorchain/nodes" \
+  | jq '.[] | select(.status == "Standby") | {node_address, total_bond, status}'
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Snapshot bond module balance**
+```bash
+MODULE_ADDR="thor17gw75axcnr8747pkanbe2ven74se88f52yfzpz"
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$MODULE_ADDR" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Snapshot sum of all node bonds**
+```bash
+curl -s "$STAGENET_API/thorchain/nodes" \
+  | jq '[.[] | .total_bond | tonumber] | add'
+```
+
+**Result:**
+```
+
+```
+
+**Step 4 — Submit mimir votes from standby nodes first, then active nodes**
+```bash
+for snode in $STANDBY_NODES $ACTIVE_NODES; do
+  sthornode tx thorchain mimir BondAccTest \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 1
+done
+sleep 12
+```
+
+**Result:**
+```
+
+```
+
+**Step 5 — Re-snapshot bond module balance**
+```bash
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$MODULE_ADDR" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+```
+
+**Result:**
+```
+
+```
+
+**Step 6 — Re-snapshot sum of all node bonds**
+```bash
+curl -s "$STAGENET_API/thorchain/nodes" \
+  | jq '[.[] | .total_bond | tonumber] | add'
+```
+
+**Result:**
+```
+
+```
+
+**Step 7 — Assert module balance ≥ sum of bonds**
+```bash
+python3 -c "
+module=<paste step 5>; bonds=<paste step 6>
+diff = module - bonds
+print(f'Difference: {diff}')
+print('PASS' if diff >= 0 else 'FAIL: module deficit detected')
+"
+```
+> Expected: `PASS` — no deficit
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T1.7 — Gaia Stuck Outbounds & Gas Insolvency · P1 · !4697
+
+**Root cause (3 bugs):** (1) Failed ATOM outbounds silently skipped — gas never reported →
+vault insolvency. (2) Balance check skipped on same-block retry → on-chain failure → Bug 1.
+(3) Failed EVM outbound memo used lowercase txhash → slash instead of gas deduction.
+
+---
+
+#### Bug 1 & 2 — Gaia failed outbound observation
+
+**Step 1 — Record GAIA vault balance before test**
+```bash
+curl -s "$STAGENET_API/thorchain/vaults/asgard" \
+  | jq '.[] | select(.coins[].asset == "GAIA.ATOM") | .coins[] | select(.asset == "GAIA.ATOM") | .amount'
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Submit RUNE → ATOM swap**
+```bash
+sthornode tx thorchain deposit 1000000000 rune \
+  "=:GAIA.ATOM:$ATOM_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Wait for the outbound to finalise**
+```bash
+export GAIA_TX=$(curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq -r '.[] | select(.coin.asset == "GAIA.ATOM") | .in_hash')
+watch -n 6 "curl -s $STAGENET_API/thorchain/tx/$GAIA_TX | jq '.observed_tx.status'"
+```
+> Expected: `"done"`
+
+**Result:**
+```
+
+```
+
+**Step 4 — Verify vault balance decreased by outbound + gas only**
+```bash
+curl -s "$STAGENET_API/thorchain/vaults/asgard" \
+  | jq '.[] | select(.coins[].asset == "GAIA.ATOM") | .coins[] | select(.asset == "GAIA.ATOM") | .amount'
+```
+> Expected: decreased by swap amount + gas, not more
+
+**Result:**
+```
+
+```
+
+**Step 5 — Confirm GAIA is not halted**
+```bash
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.HALTGAIACHAINACTIVITY // "not set (good)"'
+```
+> Expected: `"not set (good)"`
+
+**Result:**
+```
+
+```
+
+**Step 6 — Check no insolvency events emitted**
+```bash
+curl -s "$STAGENET_API/thorchain/block" \
+  | jq '[.[] | select(.type == "security")] | length'
+```
+> Expected: `0`
+
+**Result:**
+```
+
+```
+
+#### Bug 3 — EVM failed outbound produces no slash
+
+**Step 7 — Submit an ETH outbound**
+```bash
+sthornode tx thorchain deposit 1000000000 rune \
+  "=:ETH.ETH:$ETH_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 8 — After finalisation, verify no slash events**
+```bash
+export ETH_TX=$(curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq -r '.[] | select(.coin.asset == "ETH.ETH") | .in_hash')
+curl -s "$STAGENET_API/thorchain/block" \
+  | jq '[.[] | select(.type == "slash")] | length'
+```
+> Expected: `0`
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T1.8 — Limit Swap Expiry — No Fund Lock · [Security] · !4644
+
+**Root cause:** When `settleSwap` failed at TTL expiry, the TTL entry was deleted
+unconditionally, orphaning the swap forever. Partial state from a failed settlement
+(outbound scheduled before failure) was not rolled back, causing duplicate outbounds on retry.
+**Fix:** `CacheContext` wraps `settleSwap` (atomic rollback). Failed swaps are re-added to TTL
+at `currentHeight + 1`. Test uses TTL=5 blocks with unreachable price to force expiry path.
+
+---
+
+**Step 1 — Get current block height**
+```bash
+curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Submit limit swap with TTL=5 and unreachable price**
+```bash
+sthornode tx thorchain deposit 1000000000 rune \
+  "=<:BTC.BTC:$BTC_DEST_ADDR:999999999999/5/0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Capture tx hash and confirm swap is in queue**
+```bash
+export LIMIT_TX=$(curl -s "$STAGENET_API/thorchain/queue/scheduled" \
+  | jq -r '.[0].in_hash')
+echo "Limit TX: $LIMIT_TX"
+curl -s "$STAGENET_API/thorchain/swap/queue" \
+  | jq '[.[] | select(.tx.id == env.LIMIT_TX)] | length'
+```
+> Expected: `1` — swap is in queue
+
+**Result:**
+```
+
+```
+
+**Step 4 — Wait ~5 blocks for TTL to expire**
+```bash
+echo "Waiting for TTL expiry (~36s)..."
+sleep 36
+```
+
+**Step 5 — Verify swap is no longer in queue (refunded at expiry)**
+```bash
+curl -s "$STAGENET_API/thorchain/swap/queue" \
+  | jq '[.[] | select(.tx.id == env.LIMIT_TX)] | length'
+```
+> Expected: `0` — swap was processed at expiry, not stuck forever
+
+**Result:**
+```
+
+```
+
+**Step 6 — Verify exactly ONE refund outbound (no duplicates)**
+```bash
+curl -s "$STAGENET_API/thorchain/tx/$LIMIT_TX" \
+  | jq '{out_hashes: .observed_tx.out_hashes, out_count: (.observed_tx.out_hashes | length)}'
+```
+> Expected: `out_count: 1`
+
+**Result:**
+```
+
+```
+
+**Step 7 — Confirm RUNE was returned to sender**
+```bash
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$(sthornode keys show $WALLET -a)" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+```
+> Expected: balance recovered ~1000000000 (refund minus gas)
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+## Tier 2 — Bifrost Reliability
+
+---
+
+### T2.1 — UTXO Vault Lock Through Broadcast · !4596 + !4595
+
+**Root cause (!4596):** Vault lock released before broadcast — two goroutines could select the
+same UTXOs and both broadcast → double-spend.
+**Root cause (!4595):** Signed tx only persisted after broadcast failure — crash between sign
+and persist would lose the payload, forcing a fresh sign on restart.
+
+---
+
+**Step 1 — Trigger two BTC outbounds in close succession**
+```bash
+sthornode tx thorchain deposit 500000000 rune \
+  "=:BTC.BTC:$BTC_DEST_ADDR_1:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+
+sthornode tx thorchain deposit 500000000 rune \
+  "=:BTC.BTC:$BTC_DEST_ADDR_2:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Confirm both outbounds appear in queue**
+```bash
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '[.[] | select(.coin.asset == "BTC.BTC")] | length'
+```
+> Expected: `2`
+
+**Result:**
+```
+
+```
+
+**Step 3 — After finalisation, collect both BTC txids**
+```bash
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '[.[] | select(.coin.asset == "BTC.BTC") | .out_hash]'
+```
+> Expected: two distinct txids — verify on BTC explorer that no UTXO inputs are shared
+
+**Result:**
+```
+
+```
+
+**Step 4 — Verify BTC vault remains solvent**
+```bash
+curl -s "$STAGENET_API/thorchain/vaults/asgard" \
+  | jq '.[] | {pub_key, btc: [.coins[] | select(.asset == "BTC.BTC")]}'
+```
+
+**Result:**
+```
+
+```
+
+**Step 5 — Check bifrost logs for signed tx persistence**
+```bash
+grep -i "persisted signed tx\|fail to persist" <bifrost-log> | tail -10
+```
+> Expected: `"persisted signed tx"` appears before broadcast lines
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T2.2 — EVM Outbound Race After Approval · !4656
+
+**Root cause:** After broadcasting a token `approve()` tx, bifrost immediately called
+`eth_estimateGas`. If the approval wasn't mined yet, the estimate reverted and the outbound
+was rescheduled 3+ blocks. Fix: sleep of `3 × blockTime` after approval before estimating.
+
+> **When to test:** Most visible immediately after a churn — new vault has no token allowances,
+> so every first ERC-20 outbound triggers the approval path.
+
+---
+
+**Step 1 — Confirm churn happened recently**
+```bash
+curl -s "$STAGENET_API/thorchain/lastblock" | jq '.'
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Submit RUNE → ERC-20 token swap**
+```bash
+sthornode tx thorchain deposit 5000000000 rune \
+  "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:$ETH_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Monitor queue for 60s — scheduled count must not increase**
+```bash
+for i in $(seq 1 10); do
+  curl -s "$STAGENET_API/thorchain/queue" \
+    | jq '{outbound: .outbound | length, scheduled: .scheduled | length}'
+  sleep 6
+done
+```
+> Expected: `scheduled` count stays constant — no reschedule
+
+**Result:**
+```
+
+```
+
+**Step 4 — Verify the outbound finalised**
+```bash
+export EVM_TX=$(curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq -r '.[] | select(.coin.asset | startswith("ETH.USDC")) | .in_hash')
+curl -s "$STAGENET_API/thorchain/tx/$EVM_TX" | jq '.observed_tx.status'
+```
+> Expected: `"done"`
+
+**Result:**
+```
+
+```
+
+**Step 5 — Check bifrost logs for approval sleep**
+```bash
+grep -i "waiting for approval transaction to be mined" <bifrost-log> | tail -5
+```
+> Expected: one log line per approval — confirms the fix path was exercised
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T2.3 — Rapid Swap Correctness · !4522
+
+**Root causes:** Pool balances fetched once before loop (stale on iterations 2+). Direction-
+skipped swaps consumed budget slots. Quote API had no warning for streaming estimates.
+
+---
+
+**Step 1 — Check quote API warning field for streaming swaps**
+```bash
+curl -s "$STAGENET_API/thorchain/quote/swap?from_asset=THOR.RUNE&to_asset=BTC.BTC&amount=5000000000&streaming_interval=1&streaming_quantity=5" \
+  | jq '{expected_amount_out, warning}'
+```
+> Expected: `warning` field present with text about best-case estimate
+
+**Result:**
+```
+
+```
+
+**Step 2 — Record pool depths before the rapid swap**
+```bash
+curl -s "$STAGENET_API/thorchain/pool/BTC.BTC" | jq '{balance_rune, balance_asset}'
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Submit rapid swap (interval=1, quantity=5)**
+```bash
+sthornode tx thorchain deposit 5000000000 rune \
+  "=:BTC.BTC:$BTC_DEST_ADDR:0/1/5" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 4 — Monitor sub-swap execution over 7 blocks**
+```bash
+export RAPID_TX=$(curl -s "$STAGENET_API/thorchain/block" \
+  | jq -r '.[] | select(.type == "swap") | .in_tx_id' | head -1)
+for i in $(seq 1 7); do
+  sleep 6
+  curl -s "$STAGENET_API/thorchain/tx/$RAPID_TX" \
+    | jq '{status: .observed_tx.status, out_count: (.observed_tx.out_hashes | length)}'
+done
+```
+> Expected: status transitions to `"done"` after all sub-swaps
+
+**Result:**
+```
+
+```
+
+**Step 5 — Verify pool depths changed (stale data fix)**
+```bash
+curl -s "$STAGENET_API/thorchain/pool/BTC.BTC" | jq '{balance_rune, balance_asset}'
+```
+> Expected: depths differ from step 2 — all 5 sub-swaps were applied
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+## Tier 3 — New Features
+
+---
+
+### T3.1 — LTC Taproot (bech32m) Address Support · !4615
+
+**Root cause:** `ltcutil.DecodeAddress` did not support witness v1 taproot addresses (`ltc1p...`).
+Outbounds to taproot addresses would error on decode and never be built — stuck forever.
+
+---
+
+**Step 1 — Validate taproot address is now recognised**
+```bash
+curl -s "$STAGENET_API/thorchain/isvalid?address=$LTC_TAPROOT_ADDR&chain=LTC" | jq '.'
+```
+> Expected: `{"is_valid": true}`
+
+**Result:**
+```
+
+```
+
+**Step 2 — Submit RUNE → LTC swap to a taproot address**
+```bash
+sthornode tx thorchain deposit 1000000000 rune \
+  "=:LTC.LTC:$LTC_TAPROOT_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Confirm outbound is created with the taproot destination**
+```bash
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '.[] | select(.coin.asset == "LTC.LTC") | {in_hash, to_address: .coin}'
+```
+> Expected: outbound exists and `to_address` is the `ltc1p...` taproot address
+
+**Result:**
+```
+
+```
+
+**Step 4 — Confirm finalisation**
+```bash
+export LTC_TX=$(curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq -r '.[] | select(.coin.asset == "LTC.LTC") | .in_hash')
+watch -n 6 "curl -s $STAGENET_API/thorchain/tx/$LTC_TX | jq '.observed_tx.status'"
+```
+> Expected: `"done"`
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T3.2 — StableSlipMinBps Mimir · !4686
+
+**What was added:** `StableSlipMinBps` overrides the swap fee floor for swaps where both
+source and target L1 assets are TOR anchors (e.g., USDC → USDT). Default `0` = disabled.
+
+---
+
+**Step 1 — Confirm default value is 0 (disabled)**
+```bash
+curl -s "$STAGENET_API/thorchain/constants" | jq '.int_64_values.StableSlipMinBps'
+```
+> Expected: `0`
+
+**Result:**
+```
+
+```
+
+**Step 2 — Baseline quote — record current slippage**
+```bash
+curl -s "$STAGENET_API/thorchain/quote/swap?from_asset=ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48&to_asset=ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7&amount=10000000000" \
+  | jq '{slippage_bps, fees}'
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — All 4 active nodes vote to set StableSlipMinBps = 5**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir StableSlipMinBps \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 5
+done
+sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.STABLESLIPMINBPS'
+```
+> Expected: `5`
+
+**Result:**
+```
+
+```
+
+**Step 4 — Re-query quote — slippage should reflect the 5 bps floor**
+```bash
+curl -s "$STAGENET_API/thorchain/quote/swap?from_asset=ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48&to_asset=ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7&amount=10000000000" \
+  | jq '{slippage_bps, fees}'
+```
+> Expected: `slippage_bps` ≥ 5
+
+**Result:**
+```
+
+```
+
+**Step 5 — Check swap event slip after executing**
+```bash
+sthornode tx thorchain deposit 10000000000 rune \
+  "=:ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7:$ETH_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+sleep 6
+curl -s "$STAGENET_API/thorchain/block" \
+  | jq '.[] | select(.type == "swap") | {slip, liquidity_fee_in_rune}'
+```
+> Expected: slip reflects StableSlipMinBps floor
+
+**Result:**
+```
+
+```
+
+**Step 6 — Reset mimir**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir StableSlipMinBps \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- -1
+done
+```
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T3.3 — Custom Affiliate Payout Threshold · !4263
+
+**What was added:** `PreferredAssetOutboundFeeMultiplier` field on THORName. Set via the 8th
+positional parameter of the `~` memo. Per-affiliate threshold overrides the global mimir.
+
+---
+
+**Step 1 — Register THORName with custom multiplier of 500**
+```bash
+sthornode tx thorchain deposit 2000000000 rune \
+  "~:testaffiliate:THOR:$(sthornode keys show $WALLET -a):$(sthornode keys show $WALLET -a):0::0:500" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Verify the custom multiplier is stored**
+```bash
+curl -s "$STAGENET_API/thorchain/thorname/testaffiliate" \
+  | jq '{name, preferred_asset_outbound_fee_multiplier}'
+```
+> Expected: `preferred_asset_outbound_fee_multiplier: 500`
+
+**Result:**
+```
+
+```
+
+**Step 3 — Submit a small swap with affiliate (accumulates BELOW threshold)**
+```bash
+sthornode tx thorchain deposit 100000000 rune \
+  "=:BTC.BTC:$BTC_DEST_ADDR::testaffiliate:100" \
+  --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+sleep 6
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$(sthornode keys show $WALLET -a)" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+```
+> Expected: balance not yet increased (fee accumulated, not paid out)
+
+**Result:**
+```
+
+```
+
+**Step 4 — Submit more swaps until threshold is crossed**
+```bash
+for i in $(seq 1 20); do
+  sthornode tx thorchain deposit 1000000000 rune \
+    "=:BTC.BTC:$BTC_DEST_ADDR::testaffiliate:100" \
+    --from snode3 --node "$STAGENET_RPC" --yes --gas auto
+  sleep 6
+done
+```
+
+**Result:**
+```
+
+```
+
+**Step 5 — Confirm lump payout was triggered**
+```bash
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$(sthornode keys show $WALLET -a)" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+```
+> Expected: balance increased by all accumulated fees in one payout
+
+**Result:**
+```
+
+```
+
+**Step 6 — Reset multiplier to global default**
+```bash
+sthornode tx thorchain deposit 2000000000 rune \
+  "~:testaffiliate:THOR:$(sthornode keys show $WALLET -a):$(sthornode keys show $WALLET -a):0::0:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+sleep 6
+curl -s "$STAGENET_API/thorchain/thorname/testaffiliate" \
+  | jq '.preferred_asset_outbound_fee_multiplier'
+```
+> Expected: `0`
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T3.4 — RUNE Supply API Endpoints · !4666
+
+**What was added:** New `GET /thorchain/supply` endpoint with `{circulating, locked: {reserve}, total}`.
+Also a CMC-compatible plain-text endpoint `GET /thorchain/supply/cmc`.
+
+---
+
+**Step 1 — Query supply endpoint and verify structure**
+```bash
+curl -s "$STAGENET_API/thorchain/supply" | jq '.'
+```
+> Expected: `{circulating, locked: {reserve}, total}` — all non-zero whole RUNE values
+
+**Result:**
+```
+
+```
+
+**Step 2 — Verify total = circulating + reserve**
+```bash
+curl -s "$STAGENET_API/thorchain/supply" | jq '
+  . as $s | {
+    circulating: $s.circulating,
+    reserve: $s.locked.reserve,
+    total: $s.total,
+    balanced: (($s.circulating | tonumber) + ($s.locked.reserve | tonumber) == ($s.total | tonumber))
+  }'
+```
+> Expected: `balanced: true`
+
+**Result:**
+```
+
+```
+
+**Step 3 — CMC plain-text circulating supply**
+```bash
+curl -s "$STAGENET_API/thorchain/supply/cmc"
+```
+> Expected: plain integer (no JSON)
+
+**Result:**
+```
+
+```
+
+**Step 4 — TCY supply endpoint**
+```bash
+curl -s "$STAGENET_API/thorchain/supply/cmc?asset=tcy&type=circulating"
+```
+> Expected: plain integer for TCY circulating supply
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+## Tier 4 — Infrastructure Verification
+
+---
+
+### T4.1 — Dev Fund Address Migration · !4698/!4699
+
+**What changed:** `DevFundAddress` updated from `thor1d8c0wv4y72kmlytegjmgx825xwumt9qt5xe07k`
+(9R sole custody) to `thor1sgnuptp32y2fht3258vlx68mq8wsk2uz4wrshu` (2-of-3 multisig) per ADR-025.
+
+---
+
+**Step 1 — Confirm new dev fund address is in the network response**
+```bash
+curl -s "$STAGENET_API/thorchain/network" | jq '.dev_fund_address'
+```
+> Expected: `"thor1sgnuptp32y2fht3258vlx68mq8wsk2uz4wrshu"`
+
+**Result:**
+```
+
+```
+
+**Step 2 — Verify block events show reward transfers going to the new address**
+```bash
+curl -s "$STAGENET_API/thorchain/block" \
+  | jq '.[] | select(.type == "transfer" and .recipient == "thor1sgnuptp32y2fht3258vlx68mq8wsk2uz4wrshu")'
+```
+> Expected: at least one transfer event to the new address
+
+**Result:**
+```
+
+```
+
+**Step 3 — Confirm old address receives no new funds**
+```bash
+OLD_DEV="thor1d8c0wv4y72kmlytegjmgx825xwumt9qt5xe07k"
+BEFORE=$(curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$OLD_DEV" \
+  | jq -r '.balances[] | select(.denom == "rune") | .amount // "0"')
+sleep 60
+AFTER=$(curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$OLD_DEV" \
+  | jq -r '.balances[] | select(.denom == "rune") | .amount // "0"')
+echo "Old address balance change: $((AFTER - BEFORE))"
+```
+> Expected: `0`
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T4.2 — MaxGas EVM Cap · !4614
+
+**Root cause:** The absolute gas cap check protecting bifrost from incorrect slashing existed
+only for ETH. AVAX, BSC, BASE, POL were unprotected. AVAX used the wrong constant (50M instead
+of 100e8), making the cap meaningless for AVAX.
+
+---
+
+**Step 1 — Verify per-chain mimir keys (unset = hardcoded defaults apply)**
+```bash
+curl -s "$STAGENET_API/thorchain/mimir" | jq '{
+  "MaxGas-ETH": .["MAXGAS-ETH"] // "default: 50000000",
+  "MaxGas-AVAX": .["MAXGAS-AVAX"] // "default: 10000000000",
+  "MaxGas-BSC": .["MAXGAS-BSC"] // "default: 50000000"
+}'
+```
+
+**Result:**
+```
+
+```
+
+**Step 2 — Set low ETH cap via mimir and submit an ETH outbound**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir MaxGasETH \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- 80000
+done
+sleep 12
+
+sthornode tx thorchain deposit 2000000000 rune \
+  "=:ETH.ETH:$ETH_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 3 — Verify outbound max_gas is capped**
+```bash
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '.[] | select(.coin.asset == "ETH.ETH") | .max_gas'
+```
+> Expected: max_gas amount ≤ 80000
+
+**Result:**
+```
+
+```
+
+**Step 4 — Reset ETH mimir**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir MaxGasETH \
+    --from "$snode" --node "$STAGENET_RPC" --yes --gas auto -- -1
+done
+```
+
+**Result:**
+```
+
+```
+
+**Step 5 — Submit AVAX outbound and verify it can use the higher AVAX cap**
+```bash
+sthornode tx thorchain deposit 2000000000 rune \
+  "=:AVAX.AVAX:$AVAX_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+sleep 6
+curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq '.[] | select(.coin.asset == "AVAX.AVAX") | .max_gas'
+```
+> Expected: max_gas can be up to `10000000000` (100e8) — not incorrectly capped at `50000000`
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+### T4.3 — ZEC Gas Reporting & Solvency · !4701
+
+**Root cause (Bug 1):** ZEC `vsize` is always 0 — an early return in `sendNetworkFeeFromBlock`
+was hit before the ZIP-317 fee branch, so ZEC `gas_rate` was always stale/zero.
+**Root cause (Bug 2):** Solvency gas buffer computed as `3 × 10000 × lastFeeRate` but ZEC's
+`lastFeeRate` is already the full flat fee — inflated by ~10,000x, masking real insolvencies.
+
+---
+
+**Step 1 — Confirm ZEC is not halted and gas_rate is non-zero**
+```bash
+curl -s "$STAGENET_API/thorchain/inbound_addresses" \
+  | jq '.[] | select(.chain == "ZEC") | {chain, halted, gas_rate}'
+```
+> Expected: `halted: false`, `gas_rate` is non-zero (was always 0 before Bug 1 fix)
+
+**Result:**
+```
+
+```
+
+**Step 2 — Verify ZEC network fee is reporting and updating**
+```bash
+curl -s "$STAGENET_API/thorchain/network_fees" \
+  | jq '.[] | select(.chain == "ZEC")'
+```
+> Expected: `transaction_fee_rate > 0`
+
+**Result:**
+```
+
+```
+
+```bash
+sleep 90
+curl -s "$STAGENET_API/thorchain/network_fees" \
+  | jq '.[] | select(.chain == "ZEC") | .transaction_fee_rate'
+```
+> Expected: same or updated non-zero value
+
+**Result:**
+```
+
+```
+
+**Step 3 — Record ZEC vault balance before outbound**
+```bash
+curl -s "$STAGENET_API/thorchain/vaults/asgard" \
+  | jq '.[] | select(.coins[].asset == "ZEC.ZEC") | .coins[] | select(.asset == "ZEC.ZEC") | .amount'
+```
+
+**Result:**
+```
+
+```
+
+**Step 4 — Submit ZEC outbound**
+```bash
+sthornode tx thorchain deposit 500000000 rune \
+  "=:ZEC.ZEC:$ZEC_DEST_ADDR:0" \
+  --from "$WALLET" --node "$STAGENET_RPC" --yes --gas auto
+```
+
+**Result:**
+```
+
+```
+
+**Step 5 — After finalisation, verify gas deducted is reasonable (not 10,000x inflated)**
+```bash
+export ZEC_TX=$(curl -s "$STAGENET_API/thorchain/queue/outbound" \
+  | jq -r '.[] | select(.coin.asset == "ZEC.ZEC") | .in_hash')
+watch -n 6 "curl -s $STAGENET_API/thorchain/tx/$ZEC_TX | jq '.observed_tx.status'"
+
+curl -s "$STAGENET_API/thorchain/vaults/asgard" \
+  | jq '.[] | select(.coins[].asset == "ZEC.ZEC") | .coins[] | select(.asset == "ZEC.ZEC") | .amount'
+```
+> Expected: vault decreased by outbound + a few thousand sats gas (not millions)
+
+**Result:**
+```
+
+```
+
+> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+
+---
+
+## Execution Checklist
+
+| #    | Test                                   | Tier     | Priority   | Status |
+| ---- | -------------------------------------- | -------- | ---------- | ------ |
+| T1.1 | Non-deterministic consensus            | Critical | P0         | [ ]    |
+| T1.2 | RUNE supply restructure migration      | Critical | P0         | [ ]    |
+| T1.3 | Solana double-spend prevention         | Critical | P0         | [ ]    |
+| T1.4 | DoS via unbounded attestation          | Critical | P1         | [ ]    |
+| T1.5 | Limit swap DoS + rescue via mimir      | Critical | P1         | [ ]    |
+| T1.6 | Bond module accounting                 | Critical | P1         | [ ]    |
+| T1.7 | Gaia stuck outbounds (3 bugs)          | Critical | P1         | [ ]    |
+| T1.8 | Limit swap expiry — no fund lock       | Critical | [Security] | [ ]    |
+| T2.1 | UTXO vault lock through broadcast      | Bifrost  |            | [ ]    |
+| T2.2 | EVM outbound race after approval       | Bifrost  |            | [ ]    |
+| T2.3 | Rapid swap correctness + quote warning | Bifrost  |            | [ ]    |
+| T3.1 | LTC taproot address support            | Feature  |            | [ ]    |
+| T3.2 | StableSlipMinBps mimir + swap event    | Feature  |            | [ ]    |
+| T3.3 | Custom affiliate payout threshold      | Feature  |            | [ ]    |
+| T3.4 | RUNE supply API + CMC endpoint         | Feature  |            | [ ]    |
+| T4.1 | Dev fund address migration             | Infra    |            | [ ]    |
+| T4.2 | MaxGas EVM cap (ETH + AVAX)            | Infra    |            | [ ]    |
+| T4.3 | ZEC gas reporting & solvency           | Infra    |            | [ ]    |
+
+---
+
+## Go/No-Go Criteria
+
+| Gate       | Requirement                                                                   |
+| ---------- | ----------------------------------------------------------------------------- |
+| Consensus  | No divergence across nodes; 50+ consecutive blocks without timeout            |
+| P0 / P1    | All Tier 1 tests (T1.1–T1.8) pass                                             |
+| Migration  | Reserve = exactly 9.3M RUNE post-ADR-023; MaxRuneSupply mimir set; no halt    |
+| Bifrost    | Zero double-spends; no stuck outbounds on BTC, ETH, ATOM, SOL, LTC           |
+| Features   | LTC taproot, affiliate threshold, and supply endpoint return expected results  |
