@@ -41,7 +41,7 @@ func TestTransferToTxInItemUsesFeeFallback(t *testing.T) {
 	s := &Scanner{
 		logger:             log.Logger,
 		currentBlockHeight: atomic.NewInt64(0),
-		lastFee:            atomic.NewUint64(123),
+		lastFee:            atomic.NewUint64(123 * moneroAtomicToThorchain),
 	}
 	item, ok := s.transferToTxInItem(xmrFrostTransferEntry{
 		TxID:   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -74,6 +74,41 @@ func TestResolveOutgoingSenderPrefersExplicitMetadata(t *testing.T) {
 	}
 	if !pk.Equals(vaultPubKey) {
 		t.Fatalf("expected explicit vault pubkey %s, got %s", vaultPubKey, pk)
+	}
+}
+
+func TestGetNetworkFeeUsesTypicalWeightAndPerWeightRate(t *testing.T) {
+	s := &Scanner{
+		logger:             log.Logger,
+		currentBlockHeight: atomic.NewInt64(0),
+		lastFee:            atomic.NewUint64(45_000_000),
+	}
+
+	txSize, feeRate := s.GetNetworkFee()
+	if txSize != typicalVaultOutboundWeight {
+		t.Fatalf("expected tx size %d, got %d", typicalVaultOutboundWeight, txSize)
+	}
+	if feeRate != 3 {
+		t.Fatalf("expected fee rate 3 thorchain-units/weight, got %d", feeRate)
+	}
+}
+
+func TestGetNetworkFeeConvertsPiconeroToThorchainUnits(t *testing.T) {
+	s := &Scanner{
+		logger:             log.Logger,
+		currentBlockHeight: atomic.NewInt64(0),
+		lastFee:            atomic.NewUint64(120_000 * typicalVaultOutboundWeight),
+	}
+
+	txSize, feeRate := s.GetNetworkFee()
+	if txSize != typicalVaultOutboundWeight {
+		t.Fatalf("expected tx size %d, got %d", typicalVaultOutboundWeight, txSize)
+	}
+	if feeRate != 12 {
+		t.Fatalf("expected fee rate 12 thorchain-units/weight, got %d", feeRate)
+	}
+	if txSize*feeRate != 18_000 {
+		t.Fatalf("expected total network fee 18000 thorchain units, got %d", txSize*feeRate)
 	}
 }
 

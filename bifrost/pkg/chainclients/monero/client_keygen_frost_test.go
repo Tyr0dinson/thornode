@@ -213,6 +213,76 @@ func TestClientKeygenFailsWhenFrostAddressMismatchesDerivedAddress(t *testing.T)
 	}
 }
 
+func TestClientKeygenRegistersObservedMoneroHeightAsBirthday(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	frostVaultPubKey, expectedAddress := testVaultPubKeyAndAddress(t)
+	groupKey, err := groupKeyHexFromVaultPubKey(frostVaultPubKey)
+	if err != nil {
+		t.Fatalf("group key: %v", err)
+	}
+	tssServer := &mockFrostKeygenTSS{
+		resp: tssp.FrostKeygenResponse{
+			Address:              expectedAddress.String(),
+			GroupKey:             groupKey,
+			KeyBytesHex:          "beadfeed",
+			ObservedMoneroHeight: 777,
+			Status:               tsscommon.Success,
+		},
+	}
+	store := newTestVaultAddressStore(t)
+	registerReqCh := make(chan xmrFrostRegisterVaultRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/monero/vaults/register":
+			var req xmrFrostRegisterVaultRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode register request: %v", err)
+			}
+			registerReqCh <- req
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+		case "/v1/monero/chain/height":
+			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 100})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:             common.XMRChain,
+		frostSigner:       frostSigner,
+		tssServer:         tssServer,
+		scanner:           NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72),
+		vaultAddressMap:   make(map[string]common.Address),
+		vaultAddressStore: store,
+	}
+
+	if _, err := c.Keygen(chainclienttypes.CustomKeygenRequest{
+		Members:         []string{"member-a", "member-b"},
+		BlockHeight:     101,
+		PoolPubKeyEddsa: vaultPubKey,
+	}); err != nil {
+		t.Fatalf("Keygen failed: %v", err)
+	}
+
+	select {
+	case req := <-registerReqCh:
+		if req.VaultCreationHeight != 777 {
+			t.Fatalf("expected birthday 777, got %d", req.VaultCreationHeight)
+		}
+	default:
+		t.Fatal("expected register request")
+	}
+}
+
 func TestClientKeygenAllowsMonovaultRequestWithoutPreseededEddsaKey(t *testing.T) {
 	t.Parallel()
 

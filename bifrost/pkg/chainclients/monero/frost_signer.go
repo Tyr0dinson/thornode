@@ -50,6 +50,7 @@ type FrostSigner struct {
 
 	client       *http.Client
 	daemonClient *http.Client
+	signClient   *http.Client
 	username     string
 	password     string
 	bearer       string
@@ -407,6 +408,10 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
+	signTimeout := timeout
+	if signTimeout < 120*time.Second {
+		signTimeout = 120 * time.Second
+	}
 
 	return &FrostSigner{
 		endpoint:       endpoint,
@@ -434,6 +439,7 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 
 		client:       &http.Client{Timeout: timeout},
 		daemonClient: &http.Client{Timeout: timeout},
+		signClient:   &http.Client{Timeout: signTimeout},
 		username:     username,
 		password:     password,
 		bearer:       bearer,
@@ -1046,7 +1052,11 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 		req.SetBasicAuth(s.username, s.password)
 	}
 
-	resp, err := s.client.Do(req)
+	httpClient := s.client
+	if path == s.signPreparePath && s.signClient != nil {
+		httpClient = s.signClient
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fail to call frost endpoint %s: %w", path, err)
 	}

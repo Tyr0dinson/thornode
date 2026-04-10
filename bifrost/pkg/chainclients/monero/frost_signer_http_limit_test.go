@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/config"
 )
@@ -120,5 +121,23 @@ func TestFrostSignerResponseAtLimitStillParses(t *testing.T) {
 	}
 	if height != 456 {
 		t.Fatalf("expected height 456, got %d", height)
+	}
+}
+
+func TestNewFrostSignerUsesLongerTimeoutForSignPrepare(t *testing.T) {
+	t.Parallel()
+
+	signer, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		"http://localhost:18080",
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	if signer.client == nil || signer.client.Timeout != 30*time.Second {
+		t.Fatalf("expected default client timeout 30s, got %v", signer.client.Timeout)
+	}
+	if signer.signClient == nil || signer.signClient.Timeout != 120*time.Second {
+		t.Fatalf("expected sign client timeout 120s, got %v", signer.signClient.Timeout)
 	}
 }

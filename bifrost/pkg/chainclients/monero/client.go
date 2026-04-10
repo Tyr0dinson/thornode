@@ -1242,6 +1242,17 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	if err != nil {
 		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
 	}
+	// Older outbounds may still carry the EDDSA vault key while the sidecar is
+	// keyed by FROST pubkey. Retry through the current Asgard set before
+	// failing closed on a zero-balance response.
+	if balance.Balance == 0 && balance.UnlockedBalance == 0 {
+		if frostPK := c.lookupFrostPubKeyFor(vaultPubKey); !frostPK.IsEmpty() && frostPK.String() != vaultPubKey.String() {
+			frostBalance, frostErr := c.frostSigner.GetBalance(frostPK.String())
+			if frostErr == nil && (frostBalance.Balance > 0 || frostBalance.UnlockedBalance > 0) {
+				balance = frostBalance
+			}
+		}
+	}
 	availableAtomic := spendableBalanceAtomic(balance)
 
 	maxGasAtomic, err := xmrMaxGasToAtomic(maxGas)
@@ -1273,6 +1284,29 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	}
 
 	return nil
+}
+
+// lookupFrostPubKeyFor resolves the FROST pubkey of an Asgard vault given any
+// of its other identifiers. This is a recovery path for older XMR outbounds
+// which may still be keyed by EDDSA pubkey.
+func (c *Client) lookupFrostPubKeyFor(pk common.PubKey) common.PubKey {
+	if pk.IsEmpty() || c.thorchainBridge == nil {
+		return common.EmptyPubKey
+	}
+	asgards, err := c.thorchainBridge.GetAsgards()
+	if err != nil {
+		return common.EmptyPubKey
+	}
+	target := pk.String()
+	for i := range asgards {
+		v := asgards[i]
+		if (!v.PubKeyFrost.IsEmpty() && v.PubKeyFrost.String() == target) ||
+			(!v.PubKeyEddsa.IsEmpty() && v.PubKeyEddsa.String() == target) ||
+			(!v.PubKey.IsEmpty() && v.PubKey.String() == target) {
+			return v.PubKeyFrost
+		}
+	}
+	return common.EmptyPubKey
 }
 
 func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {
@@ -1660,10 +1694,11 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	}
 
 	if _, err := c.frostSigner.RegisterVault(xmrFrostRegisterVaultRequest{
-		VaultPubKey: frostVaultPubKey.String(),
-		GroupKey:    groupKeyHex,
-		Address:     frostAddr.String(),
-		Source:      "bifrost",
+		VaultPubKey:         frostVaultPubKey.String(),
+		GroupKey:            groupKeyHex,
+		Address:             frostAddr.String(),
+		Source:              "bifrost",
+		VaultCreationHeight: frostResp.ObservedMoneroHeight,
 	}); err != nil {
 		c.logFailClosedCoordination("frost_tss_keygen_register", err)
 		return types.CustomKeygenResult{}, fmt.Errorf("fail to register FROST vault mapping for %s: %w", frostVaultPubKey.String(), err)
@@ -1881,7 +1916,7 @@ func (c *Client) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
-	currentGasFee := cosmos.NewUint(3 * c.scanner.lastFee.Load())
+	currentGasFee := cosmos.NewUint(3 * totalFeeAtomicToThorchain(c.scanner.lastFee.Load()))
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	checkedVaults := 0

@@ -14,11 +14,11 @@ func TestAverageNetworkFeeFromBlock(t *testing.T) {
 		t.Fatalf("defaultCoinbaseValue %d appears too small; must be in piconero (1e12 per XMR)", defaultCoinbaseValue)
 	}
 
-	// 200,000 piconero total fees across 2 txs → 100,000 piconero per tx → 10 thorchain units.
+	// 200,000 piconero total fees across 2 txs -> 100,000 piconero per tx.
 	reward := defaultCoinbaseValue + uint64(200000)
 	fee := averageNetworkFeeFromBlock(reward, 2)
-	if fee != 10 {
-		t.Fatalf("expected average fee 10, got %d", fee)
+	if fee != 100000 {
+		t.Fatalf("expected average fee 100000 atomic units, got %d", fee)
 	}
 
 	// Reward equal to coinbase → zero fees.

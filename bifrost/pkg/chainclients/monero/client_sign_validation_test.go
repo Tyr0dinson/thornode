@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 const nonGuaranteedFeaturedSubaddress = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v3wfMHCy"
@@ -271,6 +272,52 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "insufficient xmr balance") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateXMRSignTxFallsBackToFrostBalanceLookup(t *testing.T) {
+	t.Parallel()
+
+	eddsaPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	frostPubKey, _ := testVaultPubKeyAndAddress(t)
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		eddsaPubKey.String(): {
+			Balance:         0,
+			UnlockedBalance: 0,
+		},
+		frostPubKey.String(): {
+			Balance:          5 * moneroAtomicToThorchain,
+			UnlockedBalance:  5 * moneroAtomicToThorchain,
+			SpendableBalance: uint64Ptr(5 * moneroAtomicToThorchain),
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     frostSigner,
+		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{eddsaPubKey.String(): {PubKeyEddsa: eddsaPubKey, PubKeyFrost: frostPubKey}}},
+		vaultAddressMap: map[string]common.Address{
+			eddsaPubKey.String(): vaultAddr,
+		},
+	}
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        testOutboundXMRDestination(),
+		VaultPubKeyEddsa: eddsaPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(2)),
+		},
+		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+	}
+
+	if _, err := c.validateXMRSignTx(tx, 100, true); err != nil {
+		t.Fatalf("expected fallback frost balance lookup to validate request, got %v", err)
 	}
 }
 

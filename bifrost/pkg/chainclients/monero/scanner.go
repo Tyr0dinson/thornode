@@ -21,6 +21,12 @@ import (
 const (
 	// Monero uses 1e12 atomic units and THORChain uses 1e8 decimals.
 	moneroAtomicToThorchain = 10000
+
+	// typicalVaultOutboundWeight is the representative vault FROST outbound tx
+	// weight in Monero weight units used for THORChain network fee reporting.
+	// We report tx_size separately from per-weight fee so MaxGas tracks a
+	// realistic XMR outbound instead of collapsing to size=1.
+	typicalVaultOutboundWeight = 1500
 )
 
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
@@ -225,8 +231,16 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	}
 
 	s.currentBlockHeight.Store(fetchHeight)
-	if feeRate := averageNetworkFeeFromBlock(block.Reward, len(block.TxHashes)); feeRate > 0 {
-		s.lastFee.Store(feeRate)
+	// Estimate vault outbound fee from monerod's per-weight fee rate x typical
+	// vault tx weight. Avoid block-coinbase averaging when possible because it
+	// mixes complex user txs and materially overestimates simple vault outbounds.
+	if perWeight, perWeightErr := s.frostSigner.GetFeeRate(); perWeightErr == nil && perWeight > 0 {
+		feeAtomic := perWeight * typicalVaultOutboundWeight
+		if feeAtomic > 0 {
+			s.lastFee.Store(feeAtomic)
+		}
+	} else if feeAtomic := averageNetworkFeeFromBlock(block.Reward, len(block.TxHashes)); feeAtomic > 0 {
+		s.lastFee.Store(feeAtomic)
 	}
 
 	if items, reorgErr := s.processReorg(block, chainHeight); reorgErr != nil {
@@ -556,14 +570,29 @@ func (s *Scanner) GetHeight() (int64, error) {
 	return height, nil
 }
 
-const defaultXMRFeeRate = 20000 // ~0.0002 XMR typical mainnet fee in thorchain units
+const defaultXMRFeeTotalThorchain = 20000 // ~0.0002 XMR typical mainnet fee
+
+func totalFeeAtomicToThorchain(feeAtomic uint64) uint64 {
+	return feeAtomic / moneroAtomicToThorchain
+}
+
+func feeRateFromTotalThorchain(totalThorchain uint64) uint64 {
+	if totalThorchain == 0 {
+		return 0
+	}
+	return (totalThorchain + typicalVaultOutboundWeight - 1) / typicalVaultOutboundWeight
+}
 
 func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	fee := s.lastFee.Load()
-	if fee == 0 {
-		fee = defaultXMRFeeRate
+	totalAtomic := s.lastFee.Load()
+	if totalAtomic == 0 {
+		totalAtomic = defaultXMRFeeTotalThorchain * moneroAtomicToThorchain
 	}
-	return 1, fee
+	totalThorchain := totalFeeAtomicToThorchain(totalAtomic)
+	if totalThorchain == 0 && totalAtomic > 0 {
+		totalThorchain = 1
+	}
+	return typicalVaultOutboundWeight, feeRateFromTotalThorchain(totalThorchain)
 }
 
 func averageNetworkFeeFromBlock(reward uint64, txCount int) uint64 {
@@ -573,7 +602,7 @@ func averageNetworkFeeFromBlock(reward uint64, txCount int) uint64 {
 
 	totalFeesAtomic := reward - defaultCoinbaseValue
 	averageFeeAtomic := totalFeesAtomic / uint64(txCount)
-	return averageFeeAtomic / moneroAtomicToThorchain
+	return averageFeeAtomic
 }
 
 func (s *Scanner) processReorg(block chainBlock, chainHeight int64) ([]*stypes.TxInItem, error) {
@@ -872,10 +901,10 @@ func (s *Scanner) transferToTxInItem(
 
 	fee := transfer.Fee / moneroAtomicToThorchain
 	if fee == 0 {
-		fee = s.lastFee.Load()
+		fee = totalFeeAtomicToThorchain(s.lastFee.Load())
 	}
 	if fee == 0 {
-		fee = defaultXMRFeeRate
+		fee = defaultXMRFeeTotalThorchain
 	}
 
 	height := int64(transfer.Height)
