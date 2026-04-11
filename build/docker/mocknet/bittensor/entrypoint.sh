@@ -4,7 +4,11 @@ set -euo pipefail
 BINARY="/target/fast-runtime/release/node-subtensor"
 
 echo "Building chain spec..."
-$BINARY build-spec --chain local > /tmp/plain-spec.json 2>/dev/null
+# Reduce to single authority so one node can finalize
+$BINARY build-spec --chain local --disable-default-bootnode 2>/dev/null |\
+  jq '.genesis.runtimeGenesis.patch.aura.authorities |= [.[0]] |
+      .genesis.runtimeGenesis.patch.grandpa.authorities |= [.[0]]' \
+ > /tmp/plain-spec.json
 
 # Fund the master TAO address in genesis
 if [ -n "${TAO_MASTER_ADDR:-}" ] && [ -n "${TAO_MASTER_AMOUNT:-}" ]; then
@@ -19,39 +23,16 @@ fi
 echo "Converting to raw chain spec..."
 $BINARY build-spec --chain /tmp/modified-spec.json --raw > /tmp/raw-spec.json 2>/dev/null
 
-# Generate node keys
-$BINARY key generate-node-key --chain=/tmp/raw-spec.json --base-path /tmp/one 2>/dev/null
-$BINARY key generate-node-key --chain=/tmp/raw-spec.json --base-path /tmp/two 2>/dev/null
+# Generate node key
+$BINARY key generate-node-key --chain=/tmp/raw-spec.json --base-path /tmp/one
 
-echo "Starting two-validator localnet..."
-trap 'pkill -P $$' EXIT SIGINT SIGTERM
-
-(
-  $BINARY \
-    --base-path /tmp/one \
-    --chain=/tmp/raw-spec.json \
-    --one \
-    --port 30334 \
-    --rpc-port 9944 \
-    --validator \
-    --rpc-cors=all \
-    --allow-private-ipv4 \
-    --discover-local \
-    --unsafe-rpc-external \
-    --unsafe-force-node-key-generation 2>&1 &
-
-  $BINARY \
-    --base-path /tmp/two \
-    --chain=/tmp/raw-spec.json \
-    --two \
-    --port 30335 \
-    --rpc-port 9945 \
-    --validator \
-    --rpc-cors=all \
-    --allow-private-ipv4 \
-    --discover-local \
-    --unsafe-rpc-external \
-    --unsafe-force-node-key-generation 2>&1
-
-  wait
-)
+echo "Starting single-validator dev localnet..."
+$BINARY \
+  --base-path /tmp/one \
+  --chain=/tmp/raw-spec.json \
+  --one \
+  --validator \
+  --force-authoring \
+  --rpc-port 9944 \
+  --rpc-cors=all \
+  --unsafe-rpc-external

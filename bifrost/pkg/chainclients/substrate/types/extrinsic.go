@@ -29,16 +29,15 @@ const (
 // Extrinsic represents a Substrate extrinsic.
 type Extrinsic struct {
 	// Signature fields (for signed extrinsics)
-	Signer        []byte // 32-byte Ed25519 public key
-	SignatureType byte
-	Signature     []byte // 64 bytes for Ed25519/Sr25519, 65 bytes for ECDSA
-	Era           []byte // mortal or immortal era
-	Nonce         uint64
-	Tip           uint64
-	MetadataMode  byte // CheckMetadataHash mode (0x00 = disabled)
-
-	// Call data
-	CallData []byte
+	Signer            []byte // 32-byte Ed25519 public key
+	SignatureType     byte
+	Signature         []byte // 64 bytes for Ed25519/Sr25519, 65 bytes for ECDSA
+	Era               []byte // mortal or immortal era
+	Nonce             uint64
+	Tip               uint64
+	MetadataMode      byte // CheckMetadataHash mode (0x00 = disabled)
+	CheckMetadataHash bool // if false, MetadataMode is not encoded
+	CallData          []byte
 }
 
 // BalanceTransferKeepAlive creates the call data for a Balances::transfer_keep_alive call.
@@ -90,7 +89,14 @@ func BatchAll(palletIndex, callIndex byte, calls [][]byte) []byte {
 //
 // The metadata_mode byte (0x00 = disabled) is from CheckMetadataHash.
 // When mode is disabled, the implicit Option<Hash> encodes as None (0x00).
-func SigningPayload(callData, era []byte, nonce, tip uint64, metadataMode byte, specVersion, txVersion uint32, genesisHash, blockHash []byte) []byte {
+func SigningPayload(
+	callData, era []byte,
+	nonce, tip uint64,
+	checkMetadataHash bool,
+	metadataMode byte,
+	specVersion, txVersion uint32,
+	genesisHash, blockHash []byte,
+) []byte {
 	payload := make([]byte, 0, 256)
 	// Call data
 	payload = append(payload, callData...)
@@ -105,7 +111,7 @@ func SigningPayload(callData, era []byte, nonce, tip uint64, metadataMode byte, 
 	payload = append(payload, genesisHash...)
 	payload = append(payload, blockHash...)
 	// CheckMetadataHash implicit: Option<[u8;32]>::None when mode == 0
-	if metadataMode == MetadataModeDisabled {
+	if checkMetadataHash && metadataMode == MetadataModeDisabled {
 		payload = append(payload, 0x00) // Option::None
 	}
 	return payload
@@ -137,7 +143,9 @@ func EncodeSignedExtrinsic(ext *Extrinsic) []byte {
 	body = append(body, EncodeCompact(ext.Tip)...)
 
 	// CheckMetadataHash mode byte
-	body = append(body, ext.MetadataMode)
+	if ext.CheckMetadataHash {
+		body = append(body, ext.MetadataMode)
+	}
 
 	// Call data
 	body = append(body, ext.CallData...)

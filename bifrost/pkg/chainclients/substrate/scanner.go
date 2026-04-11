@@ -411,12 +411,13 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	pos += tipLen
 
 	// CheckMetadataHash mode byte (RFC-0078, present in DOT/KSM/TAO runtimes).
-	// Chains without this extension would not have this byte — see Params if
-	// this needs to become conditional.
-	if pos >= len(body) {
-		return nil, fmt.Errorf("extrinsic too short for metadata mode byte")
+	// Chains without this extension would not have this byte
+	if s.params.CheckMetadataHash {
+		if pos >= len(body) {
+			return nil, fmt.Errorf("extrinsic too short for metadata mode byte")
+		}
+		pos++ // skip metadata mode byte
 	}
-	pos++ // skip metadata mode byte
 
 	// The remainder is call data
 	callData := body[pos:]

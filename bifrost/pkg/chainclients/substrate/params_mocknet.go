@@ -11,6 +11,7 @@ var ChainParams = map[common.Chain]Params{
 		MortalEraPeriod:        128,
 		DefaultFee:             20_000_000, // 0.002 DOT
 		BalanceSize:            16,
+		CheckMetadataHash:      true,
 		SystemRemarkCall:       0,
 		BalancesAllowDeathCall: 0,
 		BalancesKeepAliveCall:  3,
@@ -25,6 +26,7 @@ var ChainParams = map[common.Chain]Params{
 		MortalEraPeriod:        64,      // 64 blocks * 12s ≈ 12.8 minutes
 		DefaultFee:             100_000, // 0.0001 TAO
 		BalanceSize:            8,
+		CheckMetadataHash:      true,
 		SystemRemarkCall:       0,
 		BalancesAllowDeathCall: 0,
 		BalancesKeepAliveCall:  3,

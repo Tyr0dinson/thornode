@@ -101,7 +101,7 @@ func NewClient(
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
-	rpcClient := rpc.NewClient(
+	c.rpcClient = rpc.NewClient(
 		config.RPCHost,
 		config.BlockScanner.HTTPRequestTimeout,
 	)
@@ -109,7 +109,7 @@ func NewClient(
 	c.chainScanner, err = NewScanner(
 		c.config.BlockScanner,
 		c.ReportSolvency,
-		rpcClient,
+		c.rpcClient,
 	)
 	if err != nil {
 		return c, fmt.Errorf("failed to create chain scanner: %w", err)
@@ -497,6 +497,7 @@ func (c *Client) createAndSignExtrinsic(
 		era,
 		uint64(nonce),
 		0, // tip = 0
+		c.chainScanner.params.CheckMetadataHash,
 		stypes.MetadataModeDisabled,
 		specVersion,
 		txVersion,
@@ -529,14 +530,15 @@ func (c *Client) createAndSignExtrinsic(
 
 	// Assemble the signed extrinsic
 	ext := &stypes.Extrinsic{
-		Signer:        vaultPubkeyBytes,
-		SignatureType: stypes.SignatureTypeEd25519,
-		Signature:     sig,
-		Era:           era,
-		Nonce:         uint64(nonce),
-		Tip:           0,
-		MetadataMode:  stypes.MetadataModeDisabled,
-		CallData:      callData,
+		Signer:            vaultPubkeyBytes,
+		SignatureType:     stypes.SignatureTypeEd25519,
+		Signature:         sig,
+		Era:               era,
+		Nonce:             uint64(nonce),
+		Tip:               0,
+		MetadataMode:      stypes.MetadataModeDisabled,
+		CheckMetadataHash: c.chainScanner.params.CheckMetadataHash,
+		CallData:          callData,
 	}
 
 	return stypes.EncodeSignedExtrinsic(ext), nil
