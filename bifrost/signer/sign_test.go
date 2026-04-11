@@ -854,7 +854,7 @@ func (s *SignSuite) TestRunCustomKeygenHooksCarriesFrostPubKeyWithoutOverride(c 
 
 	poolPK := types2.GetRandomPubKey()
 	poolED := common.EmptyPubKey
-	updatedPoolED, updatedPoolFrost, _, _, err := sign.runCustomKeygenHooks([]string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	updatedPoolED, updatedPoolFrost, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.ETHChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
 	c.Assert(err, IsNil)
 	c.Assert(updatedPoolED.IsEmpty(), Equals, true)
 	c.Assert(updatedPoolFrost.Equals(frost), Equals, true)
