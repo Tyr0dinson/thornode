@@ -6,7 +6,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	taotypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -14,17 +14,16 @@ import (
 )
 
 // newTestScanner creates a minimal scanner for unit testing parse functions.
-func newTestScanner() *TAOScanner {
-	return &TAOScanner{
-		logger:                        log.Logger,
-		balancesPalletIndex:           5,
-		transferCallIndex:             transferKeepAliveCallIndex,
-		systemPalletIndex:             0,
-		remarkCallIndex:               0,
-		utilityPalletIndex:            11,
-		batchAllCallIndex:             2,
-		transactionPaymentPalletIndex: 6,
+func newTestScanner() *Scanner {
+	s := &Scanner{
+		logger: log.Logger,
+		params: ChainParams[common.TAOChain],
+		cfg: config.BifrostBlockScannerConfiguration{
+			ChainID: common.TAOChain,
+		},
 	}
+	s.currentFee.Swap(s.params.DefaultFee)
+	return s
 }
 
 // buildTestExtrinsic constructs a hex-encoded signed extrinsic for testing.
@@ -35,18 +34,19 @@ func buildTestExtrinsic(callData []byte) string {
 		signer[i] = byte(i + 1)
 	}
 
-	ext := &taotypes.Extrinsic{
-		Signer:        signer,
-		SignatureType: taotypes.SignatureTypeEd25519,
-		Signature:     make([]byte, 64),
-		Era:           taotypes.ImmortalEra(),
-		Nonce:         0,
-		Tip:           0,
-		MetadataMode:  taotypes.MetadataModeDisabled,
-		CallData:      callData,
+	ext := &stypes.Extrinsic{
+		Signer:            signer,
+		SignatureType:     stypes.SignatureTypeEd25519,
+		Signature:         make([]byte, 64),
+		Era:               stypes.ImmortalEra(),
+		Nonce:             0,
+		Tip:               0,
+		MetadataMode:      stypes.MetadataModeDisabled,
+		CheckMetadataHash: true,
+		CallData:          callData,
 	}
 
-	return taotypes.HexEncode(taotypes.EncodeSignedExtrinsic(ext))
+	return stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
 }
 
 // ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ func TestIsTransferCall(t *testing.T) {
 		expected bool
 	}{
 		{0, true}, // transferAllowDeathCallIndex
-		{3, true}, // transferKeepAliveCallIndex
+		{3, true}, // transfer_keep_alive
 		{1, false},
 		{2, false},
 		{4, false},
@@ -67,7 +67,8 @@ func TestIsTransferCall(t *testing.T) {
 		{255, false},
 	}
 	for _, tt := range tests {
-		if got := isTransferCall(tt.callIdx); got != tt.expected {
+		s := newTestScanner()
+		if got := s.isTransferCall(tt.callIdx); got != tt.expected {
 			t.Errorf("isTransferCall(%d): got %v, want %v", tt.callIdx, got, tt.expected)
 		}
 	}
@@ -91,7 +92,7 @@ func TestConvertRaoToThorchain(t *testing.T) {
 		{1, 0},                       // below threshold
 	}
 	for _, tt := range tests {
-		result := convertRaoToThorchain(tt.rao)
+		result := common.TAOChain.NativeGasToThorchain(cosmos.NewUint(tt.rao))
 		if !result.Equal(cosmos.NewUint(tt.expected)) {
 			t.Errorf("convertRaoToThorchain(%d): got %s, want %d", tt.rao, result, tt.expected)
 		}
@@ -107,8 +108,8 @@ func TestProcessExtrinsic_SimpleTransfer(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xAA
-	amount := uint64(1_000_000_000)
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	amount := cosmos.NewUint(1_000_000_000)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
 
 	extHex := buildTestExtrinsic(call)
 
@@ -149,7 +150,7 @@ func TestProcessExtrinsic_TransferAllowDeath(t *testing.T) {
 	s := newTestScanner()
 
 	dest := make([]byte, 32)
-	call := taotypes.BalanceTransferKeepAlive(5, 0, dest, 500_000) // allow_death index
+	call := stypes.BalanceTransferKeepAlive(5, 0, dest, cosmos.NewUint(500_000)) // allow_death index
 
 	extHex := buildTestExtrinsic(call)
 
@@ -167,7 +168,7 @@ func TestProcessExtrinsic_ForceSetBalanceIgnored(t *testing.T) {
 
 	dest := make([]byte, 32)
 	// Call index 7 is force_set_balance (governance-only), should be ignored
-	call := taotypes.BalanceTransferKeepAlive(5, 7, dest, 500_000)
+	call := stypes.BalanceTransferKeepAlive(5, 7, dest, cosmos.NewUint(500_000))
 
 	extHex := buildTestExtrinsic(call)
 
@@ -184,7 +185,7 @@ func TestProcessExtrinsic_ZeroAmount(t *testing.T) {
 	s := newTestScanner()
 
 	dest := make([]byte, 32)
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, 0)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(0))
 
 	extHex := buildTestExtrinsic(call)
 
@@ -201,8 +202,8 @@ func TestProcessExtrinsic_LargeAmount(t *testing.T) {
 	s := newTestScanner()
 
 	dest := make([]byte, 32)
-	amount := uint64(21_000_000_000_000_000) // 21M TAO
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	amount := cosmos.NewUint(21_000_000_000_000_000) // 21M TAO
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
 
 	extHex := buildTestExtrinsic(call)
 
@@ -214,7 +215,7 @@ func TestProcessExtrinsic_LargeAmount(t *testing.T) {
 		t.Fatal("expected non-nil TxInItem")
 	}
 
-	expectedAmount := cosmos.NewUint(amount / 10)
+	expectedAmount := common.TAOChain.NativeGasToThorchain(amount)
 	if !txItem.Coins[0].Amount.Equal(expectedAmount) {
 		t.Errorf("amount: got %s, want %s", txItem.Coins[0].Amount, expectedAmount)
 	}
@@ -229,11 +230,11 @@ func TestProcessExtrinsic_BatchWithMemo(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xBB
-	amount := uint64(2_000_000_000)
+	amount := cosmos.NewUint(2_000_000_000)
 
-	transferCall := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
-	remarkCall := taotypes.SystemRemark(0, 0, []byte("SWAP:BTC.BTC:bc1qtest"))
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall})
+	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	remarkCall := stypes.SystemRemark(0, 0, []byte("SWAP:BTC.BTC:bc1qtest"))
+	batchCall := stypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall})
 
 	extHex := buildTestExtrinsic(batchCall)
 
@@ -259,12 +260,12 @@ func TestProcessExtrinsic_BatchRemarkBeforeTransfer(t *testing.T) {
 	s := newTestScanner()
 
 	dest := make([]byte, 32)
-	amount := uint64(1_000_000_000)
+	amount := cosmos.NewUint(1_000_000_000)
 
 	// Remark comes BEFORE transfer in the batch
-	remarkCall := taotypes.SystemRemark(0, 0, []byte("ADD:TAO.TAO"))
-	transferCall := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{remarkCall, transferCall})
+	remarkCall := stypes.SystemRemark(0, 0, []byte("ADD:TAO.TAO"))
+	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	batchCall := stypes.BatchAll(11, 2, [][]byte{remarkCall, transferCall})
 
 	extHex := buildTestExtrinsic(batchCall)
 
@@ -299,10 +300,10 @@ func TestProcessExtrinsic_BatchMultiTransferRejected(t *testing.T) {
 	dest2[0] = 0x22
 
 	// Batch with multiple transfers must be rejected to prevent ambiguity
-	transfer1 := taotypes.BalanceTransferKeepAlive(5, 3, dest1, 10_000_000_000)
-	transfer2 := taotypes.BalanceTransferKeepAlive(5, 3, dest2, 100)
-	remarkCall := taotypes.SystemRemark(0, 0, []byte("memo"))
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{transfer1, transfer2, remarkCall})
+	transfer1 := stypes.BalanceTransferKeepAlive(5, 3, dest1, cosmos.NewUint(10_000_000_000))
+	transfer2 := stypes.BalanceTransferKeepAlive(5, 3, dest2, cosmos.NewUint(100))
+	remarkCall := stypes.SystemRemark(0, 0, []byte("memo"))
+	batchCall := stypes.BatchAll(11, 2, [][]byte{transfer1, transfer2, remarkCall})
 
 	extHex := buildTestExtrinsic(batchCall)
 
@@ -318,8 +319,8 @@ func TestProcessExtrinsic_BatchMultiTransferRejected(t *testing.T) {
 func TestProcessExtrinsic_BatchRemarkOnlyReturnsNil(t *testing.T) {
 	s := newTestScanner()
 
-	remarkCall := taotypes.SystemRemark(0, 0, []byte("just a remark"))
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{remarkCall})
+	remarkCall := stypes.SystemRemark(0, 0, []byte("just a remark"))
+	batchCall := stypes.BatchAll(11, 2, [][]byte{remarkCall})
 
 	extHex := buildTestExtrinsic(batchCall)
 
@@ -337,12 +338,12 @@ func TestProcessExtrinsic_BatchMultipleRemarksRejected(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xCC
-	amount := uint64(1_000_000_000)
+	amount := cosmos.NewUint(1_000_000_000)
 
-	transferCall := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
-	remark1 := taotypes.SystemRemark(0, 0, []byte("SWAP:BTC.BTC:bc1q1"))
-	remark2 := taotypes.SystemRemark(0, 0, []byte("SWAP:BTC.BTC:bc1q2"))
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{remark1, transferCall, remark2})
+	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	remark1 := stypes.SystemRemark(0, 0, []byte("SWAP:BTC.BTC:bc1q1"))
+	remark2 := stypes.SystemRemark(0, 0, []byte("SWAP:BTC.BTC:bc1q2"))
+	batchCall := stypes.BatchAll(11, 2, [][]byte{remark1, transferCall, remark2})
 
 	extHex := buildTestExtrinsic(batchCall)
 
@@ -357,13 +358,13 @@ func TestProcessExtrinsic_BatchUnknownCallUsesFirstTransfer(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xDD
-	amount := uint64(5_000_000_000) // 5 TAO
+	amount := cosmos.NewUint(5_000_000_000) // 5 TAO
 
-	transferCall := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
-	remarkCall := taotypes.SystemRemark(0, 0, []byte("ADD:TAO.TAO"))
+	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	remarkCall := stypes.SystemRemark(0, 0, []byte("ADD:TAO.TAO"))
 	// Unknown call from pallet 99 — parser breaks here
 	unknownCall := []byte{99, 1, 0xFF, 0xFF}
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall, unknownCall})
+	batchCall := stypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall, unknownCall})
 
 	extHex := buildTestExtrinsic(batchCall)
 
@@ -394,9 +395,9 @@ func TestProcessExtrinsic_UnsignedReturnsNil(t *testing.T) {
 
 	// Build an unsigned extrinsic (version byte 0x04, bit 7 not set)
 	body := []byte{0x04, 5, 3}
-	length := taotypes.EncodeCompact(uint64(len(body)))
+	length := stypes.EncodeCompact(uint64(len(body)))
 	raw := append(length, body...)
-	extHex := taotypes.HexEncode(raw)
+	extHex := stypes.HexEncode(raw)
 
 	txItem, err := s.processExtrinsic(extHex, 100, 0)
 	if err != nil {
@@ -442,9 +443,9 @@ func TestProcessExtrinsic_TruncatedExtrinsic(t *testing.T) {
 	s := newTestScanner()
 
 	// Valid length prefix claiming 200 bytes but only 3 bytes of body
-	length := taotypes.EncodeCompact(200)
+	length := stypes.EncodeCompact(200)
 	raw := append(length, 0x84, 0x00, 0x01)
-	extHex := taotypes.HexEncode(raw)
+	extHex := stypes.HexEncode(raw)
 
 	_, err := s.processExtrinsic(extHex, 100, 0)
 	if err == nil {
@@ -461,7 +462,7 @@ func TestProcessExtrinsic_ECDSASignature(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xEE
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, 1_000_000_000)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(1_000_000_000))
 
 	signer := make([]byte, 32)
 	for i := range signer {
@@ -469,17 +470,18 @@ func TestProcessExtrinsic_ECDSASignature(t *testing.T) {
 	}
 
 	// ECDSA (type 0x02) uses 65-byte signatures
-	ext := &taotypes.Extrinsic{
-		Signer:        signer,
-		SignatureType: 0x02, // ECDSA
-		Signature:     make([]byte, 65),
-		Era:           taotypes.ImmortalEra(),
-		Nonce:         0,
-		Tip:           0,
-		MetadataMode:  taotypes.MetadataModeDisabled,
-		CallData:      call,
+	ext := &stypes.Extrinsic{
+		Signer:            signer,
+		SignatureType:     0x02, // ECDSA
+		Signature:         make([]byte, 65),
+		Era:               stypes.ImmortalEra(),
+		Nonce:             0,
+		Tip:               0,
+		MetadataMode:      stypes.MetadataModeDisabled,
+		CheckMetadataHash: true,
+		CallData:          call,
 	}
-	extHex := taotypes.HexEncode(taotypes.EncodeSignedExtrinsic(ext))
+	extHex := stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
 
 	txItem, err := s.processExtrinsic(extHex, 100, 0)
 	if err != nil {
@@ -499,7 +501,7 @@ func TestProcessExtrinsic_UnknownSignatureTypeRejected(t *testing.T) {
 	s := newTestScanner()
 
 	dest := make([]byte, 32)
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, 500_000)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(500_000))
 
 	signer := make([]byte, 32)
 	for i := range signer {
@@ -507,17 +509,18 @@ func TestProcessExtrinsic_UnknownSignatureTypeRejected(t *testing.T) {
 	}
 
 	// Unknown signature type 0x03
-	ext := &taotypes.Extrinsic{
-		Signer:        signer,
-		SignatureType: 0x03,
-		Signature:     make([]byte, 64),
-		Era:           taotypes.ImmortalEra(),
-		Nonce:         0,
-		Tip:           0,
-		MetadataMode:  taotypes.MetadataModeDisabled,
-		CallData:      call,
+	ext := &stypes.Extrinsic{
+		Signer:            signer,
+		SignatureType:     0x03,
+		Signature:         make([]byte, 64),
+		Era:               stypes.ImmortalEra(),
+		Nonce:             0,
+		Tip:               0,
+		MetadataMode:      stypes.MetadataModeDisabled,
+		CheckMetadataHash: true,
+		CallData:          call,
 	}
-	extHex := taotypes.HexEncode(taotypes.EncodeSignedExtrinsic(ext))
+	extHex := stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
 
 	_, err := s.processExtrinsic(extHex, 100, 0)
 	if err == nil {
@@ -533,7 +536,7 @@ func TestProcessExtrinsic_MortalEra(t *testing.T) {
 	s := newTestScanner()
 
 	dest := make([]byte, 32)
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, 500_000)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(500_000))
 
 	// Build extrinsic with mortal era instead of immortal
 	signer := make([]byte, 32)
@@ -541,17 +544,18 @@ func TestProcessExtrinsic_MortalEra(t *testing.T) {
 		signer[i] = byte(i + 1)
 	}
 
-	ext := &taotypes.Extrinsic{
-		Signer:        signer,
-		SignatureType: taotypes.SignatureTypeEd25519,
-		Signature:     make([]byte, 64),
-		Era:           taotypes.MortalEra(64, 42),
-		Nonce:         7,
-		Tip:           100,
-		MetadataMode:  taotypes.MetadataModeDisabled,
-		CallData:      call,
+	ext := &stypes.Extrinsic{
+		Signer:            signer,
+		SignatureType:     stypes.SignatureTypeEd25519,
+		Signature:         make([]byte, 64),
+		Era:               stypes.MortalEra(64, 42),
+		Nonce:             7,
+		Tip:               100,
+		MetadataMode:      stypes.MetadataModeDisabled,
+		CheckMetadataHash: true,
+		CallData:          call,
 	}
-	extHex := taotypes.HexEncode(taotypes.EncodeSignedExtrinsic(ext))
+	extHex := stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
 
 	txItem, err := s.processExtrinsic(extHex, 100, 0)
 	if err != nil {
@@ -573,21 +577,22 @@ func TestProcessExtrinsic_MortalEra(t *testing.T) {
 
 func TestExtrinsicHashConsistency(t *testing.T) {
 	dest := make([]byte, 32)
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, 1_000_000)
-	raw := taotypes.EncodeSignedExtrinsic(&taotypes.Extrinsic{
-		Signer:        make([]byte, 32),
-		SignatureType: taotypes.SignatureTypeEd25519,
-		Signature:     make([]byte, 64),
-		Era:           taotypes.ImmortalEra(),
-		Nonce:         0,
-		Tip:           0,
-		MetadataMode:  taotypes.MetadataModeDisabled,
-		CallData:      call,
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(1_000_000))
+	raw := stypes.EncodeSignedExtrinsic(&stypes.Extrinsic{
+		Signer:            make([]byte, 32),
+		SignatureType:     stypes.SignatureTypeEd25519,
+		Signature:         make([]byte, 64),
+		Era:               stypes.ImmortalEra(),
+		Nonce:             0,
+		Tip:               0,
+		MetadataMode:      stypes.MetadataModeDisabled,
+		CheckMetadataHash: true,
+		CallData:          call,
 	})
 
 	// Both should produce the same hash for the same raw bytes
-	hash1 := taotypes.ExtrinsicHash(raw)
-	hash2 := taotypes.ExtrinsicHash(raw)
+	hash1 := stypes.ExtrinsicHash(raw)
+	hash2 := stypes.ExtrinsicHash(raw)
 	if hash1 != hash2 {
 		t.Errorf("inconsistent hashes: %s vs %s", hash1, hash2)
 	}
@@ -614,19 +619,13 @@ func TestUpdateFeeCache(t *testing.T) {
 	if cacheLen != 3 {
 		t.Errorf("cache len: got %d, want 3", cacheLen)
 	}
-
-	avg := s.averageFee()
-	expected := uint64(150_000) // (100k + 200k + 150k) / 3
-	if avg != expected {
-		t.Errorf("averageFee: got %d, want %d", avg, expected)
-	}
 }
 
 func TestUpdateFeeCacheOverflow(t *testing.T) {
 	s := newTestScanner()
 
 	// Fill past cache size
-	for i := 0; i < feeCacheSize+50; i++ {
+	for i := 0; i < FeeCacheSize+50; i++ {
 		s.updateFeeCache(uint64(1000 + i))
 	}
 
@@ -634,23 +633,8 @@ func TestUpdateFeeCacheOverflow(t *testing.T) {
 	cacheLen := len(s.feeCache)
 	s.mu.RUnlock()
 
-	if cacheLen != feeCacheSize {
-		t.Errorf("cache len: got %d, want %d", cacheLen, feeCacheSize)
-	}
-
-	// The oldest 50 entries (1000..1049) should have been evicted.
-	// Remaining: 1050..1249, average = (1050+1249)/2 = 1149 (integer)
-	avg := s.averageFee()
-	expectedAvg := uint64(1149)
-	if avg != expectedAvg {
-		t.Errorf("averageFee: got %d, want %d", avg, expectedAvg)
-	}
-}
-
-func TestAverageFee_Empty(t *testing.T) {
-	s := newTestScanner()
-	if avg := s.averageFee(); avg != 0 {
-		t.Errorf("averageFee on empty cache: got %d, want 0", avg)
+	if cacheLen != FeeCacheSize {
+		t.Errorf("cache len: got %d, want %d", cacheLen, FeeCacheSize)
 	}
 }
 
@@ -660,8 +644,8 @@ func TestGetNetworkFee_Default(t *testing.T) {
 	if txSize != 1 {
 		t.Errorf("txSize: got %d, want 1", txSize)
 	}
-	if txRate != defaultFeeRao {
-		t.Errorf("txRate: got %d, want %d (defaultFeeRao)", txRate, defaultFeeRao)
+	if txRate != ChainParams[common.TAOChain].DefaultFee {
+		t.Errorf("txRate: got %d, want %d (DefaultFee)", txRate, ChainParams[common.TAOChain].DefaultFee)
 	}
 }
 
@@ -682,43 +666,40 @@ func TestGetNetworkFee_Cached(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// reportNetworkFee tests
+// updateNetworkFee tests
 // ---------------------------------------------------------------------------
 
-func newTestScannerWithFeeQueue(resolution int64) (*TAOScanner, chan common.NetworkFee) {
+func newTestScannerWithFeeQueue(resolution int64) (*Scanner, chan common.NetworkFee) {
 	ch := make(chan common.NetworkFee, 4)
-	s := &TAOScanner{
+	s := &Scanner{
 		logger: log.Logger,
+		params: ChainParams[common.TAOChain],
 		cfg: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.TAOChain,
 			GasPriceResolution: resolution,
 		},
-		balancesPalletIndex:           5,
-		transferCallIndex:             transferKeepAliveCallIndex,
-		systemPalletIndex:             0,
-		remarkCallIndex:               0,
-		utilityPalletIndex:            11,
-		batchAllCallIndex:             2,
-		transactionPaymentPalletIndex: 6,
-		globalNetworkFeeQueue:         ch,
+		globalNetworkFeeQueue: ch,
 	}
 	return s, ch
 }
 
-func TestReportNetworkFee_SkipsPartialCache(t *testing.T) {
+func TestReportNetworkFee_BootstrapsWithDefaultFee(t *testing.T) {
 	s, ch := newTestScannerWithFeeQueue(1000)
 
-	// Add fewer than feeCacheSize samples
-	for i := 0; i < feeCacheSize-1; i++ {
+	// Add fewer than FeeCacheSize samples
+	for i := 0; i < FeeCacheSize-1; i++ {
 		s.updateFeeCache(100_000)
 	}
 
-	s.reportNetworkFee(100)
+	s.updateNetworkFee(100)
 
 	select {
-	case <-ch:
-		t.Error("should not report fee with partial cache")
+	case fee := <-ch:
+		if fee.TransactionRate != s.params.DefaultFee {
+			t.Errorf("fee rate: got %d, want %d (DefaultFee)", fee.TransactionRate, s.params.DefaultFee)
+		}
 	default:
-		// expected — partial cache is skipped
+		t.Error("expected DefaultFee to be reported on bootstrap with partial cache")
 	}
 }
 
@@ -726,11 +707,11 @@ func TestReportNetworkFee_ReportsRoundedFee(t *testing.T) {
 	s, ch := newTestScannerWithFeeQueue(1000)
 
 	// Fill cache completely with 100_500 rao average → rounds up to 101_000
-	for i := 0; i < feeCacheSize; i++ {
+	for i := 0; i < FeeCacheSize; i++ {
 		s.updateFeeCache(100_500)
 	}
 
-	s.reportNetworkFee(100)
+	s.updateNetworkFee(100)
 
 	select {
 	case fee := <-ch:
@@ -755,12 +736,12 @@ func TestReportNetworkFee_SkipsUnchanged(t *testing.T) {
 	s, ch := newTestScannerWithFeeQueue(1000)
 
 	// Fill cache — average = 100_000, rounds to 100_000 (already aligned)
-	for i := 0; i < feeCacheSize; i++ {
+	for i := 0; i < FeeCacheSize; i++ {
 		s.updateFeeCache(100_000)
 	}
 
 	// First report should send
-	s.reportNetworkFee(100)
+	s.updateNetworkFee(100)
 	select {
 	case <-ch:
 		// expected
@@ -769,7 +750,7 @@ func TestReportNetworkFee_SkipsUnchanged(t *testing.T) {
 	}
 
 	// Second report with identical fees should skip
-	s.reportNetworkFee(200)
+	s.updateNetworkFee(200)
 	select {
 	case <-ch:
 		t.Error("should skip unchanged fee")
@@ -782,19 +763,19 @@ func TestReportNetworkFee_ReportsOnChange(t *testing.T) {
 	s, ch := newTestScannerWithFeeQueue(1000)
 
 	// Fill cache with 100_000
-	for i := 0; i < feeCacheSize; i++ {
+	for i := 0; i < FeeCacheSize; i++ {
 		s.updateFeeCache(100_000)
 	}
 
-	s.reportNetworkFee(100)
+	s.updateNetworkFee(100)
 	<-ch // consume first report
 
 	// Replace cache with higher fees (200_000)
-	for i := 0; i < feeCacheSize; i++ {
+	for i := 0; i < FeeCacheSize; i++ {
 		s.updateFeeCache(200_000)
 	}
 
-	s.reportNetworkFee(200)
+	s.updateNetworkFee(200)
 	select {
 	case fee := <-ch:
 		if fee.TransactionRate != 200_000 {
@@ -814,8 +795,8 @@ func TestProcessExtrinsic_UsesActualFee(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xAA
-	amount := uint64(1_000_000_000)
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	amount := cosmos.NewUint(1_000_000_000)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
 	extHex := buildTestExtrinsic(call)
 
 	// Pass actual fee of 150_000 rao
@@ -841,10 +822,10 @@ func TestProcessExtrinsic_FallsBackToDefaultFee(t *testing.T) {
 	s := newTestScanner()
 
 	dest := make([]byte, 32)
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, 500_000)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(500_000))
 	extHex := buildTestExtrinsic(call)
 
-	// Pass 0 for actualFee — should fall back to defaultFeeRao
+	// Pass 0 for actualFee — gas falls back to 1 (minimum placeholder)
 	txItem, err := s.processExtrinsic(extHex, 100, 0)
 	if err != nil {
 		t.Fatalf("processExtrinsic: %v", err)
@@ -853,13 +834,13 @@ func TestProcessExtrinsic_FallsBackToDefaultFee(t *testing.T) {
 		t.Fatal("expected non-nil TxInItem")
 	}
 
-	// Gas should use defaultFeeRao: 100_000 rao / 10 = 10_000 thorchain units
-	expectedGas := cosmos.NewUint(10_000)
+	// Gas uses minimum placeholder when actual fee is unavailable
+	expectedGas := cosmos.NewUint(1)
 	if len(txItem.Gas) == 0 {
 		t.Fatal("gas should not be empty")
 	}
 	if !txItem.Gas[0].Amount.Equal(expectedGas) {
-		t.Errorf("gas amount: got %s, want %s (should use defaultFeeRao)", txItem.Gas[0].Amount, expectedGas)
+		t.Errorf("gas amount: got %s, want %s (should use minimum placeholder)", txItem.Gas[0].Amount, expectedGas)
 	}
 }
 
@@ -872,14 +853,14 @@ func TestProcessExtrinsic_OversizedMemoDropped(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xBB
-	amount := uint64(2_000_000_000)
+	amount := cosmos.NewUint(2_000_000_000)
 
 	// Build a memo that exceeds MaxMemoSize (250 bytes)
 	longMemo := strings.Repeat("A", constants.MaxMemoSize+1)
 
-	transferCall := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
-	remarkCall := taotypes.SystemRemark(0, 0, []byte(longMemo))
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall})
+	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	remarkCall := stypes.SystemRemark(0, 0, []byte(longMemo))
+	batchCall := stypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall})
 	extHex := buildTestExtrinsic(batchCall)
 
 	txItem, err := s.processExtrinsic(extHex, 200, 0)
@@ -896,14 +877,14 @@ func TestProcessExtrinsic_MaxSizeMemoAccepted(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xCC
-	amount := uint64(1_000_000_000)
+	amount := cosmos.NewUint(1_000_000_000)
 
 	// Build a memo that is exactly MaxMemoSize (250 bytes) — should be accepted
 	exactMemo := strings.Repeat("B", constants.MaxMemoSize)
 
-	transferCall := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
-	remarkCall := taotypes.SystemRemark(0, 0, []byte(exactMemo))
-	batchCall := taotypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall})
+	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	remarkCall := stypes.SystemRemark(0, 0, []byte(exactMemo))
+	batchCall := stypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall})
 	extHex := buildTestExtrinsic(batchCall)
 
 	txItem, err := s.processExtrinsic(extHex, 200, 0)
@@ -923,10 +904,10 @@ func TestProcessExtrinsic_NoMemoTransferAccepted(t *testing.T) {
 
 	dest := make([]byte, 32)
 	dest[0] = 0xDD
-	amount := uint64(1_000_000_000)
+	amount := cosmos.NewUint(1_000_000_000)
 
 	// Direct transfer (no batch, no memo) — memo is empty, should always pass
-	call := taotypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
 	extHex := buildTestExtrinsic(call)
 
 	txItem, err := s.processExtrinsic(extHex, 100, 0)

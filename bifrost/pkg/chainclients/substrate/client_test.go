@@ -5,85 +5,35 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/rs/zerolog/log"
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/storage"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/generic"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/cmd"
+	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
+	"gitlab.com/thorchain/thornode/v3/config"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
-	taorpc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-// ---------------------------------------------------------------------------
-// convertToRao
-// ---------------------------------------------------------------------------
-
-func TestConvertToRao(t *testing.T) {
-	tests := []struct {
-		name     string
-		amount   cosmos.Uint
-		expected uint64
-	}{
-		{"zero", cosmos.ZeroUint(), 0},
-		{"one", cosmos.NewUint(1), 10},
-		{"1e8", cosmos.NewUint(100_000_000), 1_000_000_000},
-		{"large", cosmos.NewUint(1_000_000_000_000), 10_000_000_000_000},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := convertToRao(tt.amount)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result != tt.expected {
-				t.Errorf("got %d, want %d", result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestConvertToRao_Overflow(t *testing.T) {
-	// Value that overflows uint64 when multiplied by 10
-	huge := cosmos.NewUintFromString("99999999999999999999")
-	_, err := convertToRao(huge)
-	if err == nil {
-		t.Error("expected overflow error for huge amount")
-	}
-}
-
-func TestConvertToRao_BoundaryOverflow(t *testing.T) {
-	// math.MaxUint64/10 should succeed, math.MaxUint64/10+1 should overflow on multiply
-	maxSafe := cosmos.NewUint(1844674407370955161) // math.MaxUint64 / 10
-	_, err := convertToRao(maxSafe)
-	if err != nil {
-		t.Errorf("expected success for max safe value, got: %v", err)
-	}
-
-	justOver := cosmos.NewUint(1844674407370955162) // math.MaxUint64/10 + 1
-	_, err = convertToRao(justOver)
-	if err == nil {
-		t.Error("expected overflow error for boundary+1 value")
-	}
-}
-
-func TestConvertToRaoAndBack(t *testing.T) {
-	// Round-trip: amount → rao → thorchain should preserve value
-	// (assuming amount * 10 / 10 = amount for exact multiples)
-	original := cosmos.NewUint(42_000_000)
-	rao, err := convertToRao(original)
-	if err != nil {
-		t.Fatalf("convertToRao: %v", err)
-	}
-	back := convertRaoToThorchain(rao)
-	if !back.Equal(original) {
-		t.Errorf("round trip: got %s, want %s", back, original)
-	}
+// mockBridge is a mock implementation of ThorchainBridge for testing
+type mockBridge struct {
+	thorclient.ThorchainBridge
 }
 
 // ---------------------------------------------------------------------------
@@ -183,11 +133,81 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":%s}`, req.ID, resultJSON)
 }
 
-func newTestClient(rpcClient *taorpc.Client) *TAOClient {
-	return &TAOClient{
+func newTestClient(rpcClient *rpc.Client) *Client {
+	logger := log.Logger
+
+	ns := strconv.Itoa(time.Now().Nanosecond())
+
+	tmpdir := filepath.Join(os.TempDir(), ns, ".thorcli")
+
+	clientConfig := config.BifrostClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       "localhost",
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: tmpdir,
+	}
+
+	chainConfig := config.BifrostChainConfiguration{
+		ChainID: common.TAOChain,
+	}
+
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+
+	kb := keyring.NewInMemory(
+		codec.NewProtoCodec(registry),
+		func(opts *keyring.Options) {
+			opts.SupportedAlgos = append(opts.SupportedAlgos, ed25519.Ed25519)
+		},
+	)
+
+	_, mnemonic, err := kb.NewMnemonic(
+		"ed-"+clientConfig.SignerName,
+		keyring.English,
+		"", clientConfig.SignerPasswd,
+		ed25519.Ed25519,
+	)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Failed to generate mnemonic")
+	}
+
+	_, err = kb.NewAccount(
+		clientConfig.SignerName,
+		mnemonic,
+		clientConfig.SignerPasswd,
+		cmd.THORChainHDPath,
+		hd.Secp256k1,
+	)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Failed to generate account")
+	}
+
+	keys := thorclient.NewKeysWithKeybase(
+		kb, clientConfig.SignerName, clientConfig.SignerPasswd,
+	)
+
+	// Use mock bridge for tests to avoid needing a real THORChain node
+	bridge := &mockBridge{}
+
+	storage, err := blockscanner.NewBlockScannerStorage(tmpdir, config.LevelDBOptions{})
+
+	genericClient, err := generic.NewClient(
+		logger, keys, chainConfig, nil, bridge, storage.GetInternalDb(),
+	)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("could not create generic client")
+	}
+
+	return &Client{
+		Client:    genericClient,
 		logger:    log.Logger,
+		config:    chainConfig,
 		rpcClient: rpcClient,
 		nonces:    make(map[string]nonceMetadata),
+		chainScanner: &Scanner{
+			params: ChainParams[common.TAOChain],
+		},
 	}
 }
 
@@ -203,7 +223,7 @@ func TestReserveNonce_Fresh(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
 	nonce, checkpoint, err := c.reserveNonce(tx, "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", 100)
@@ -226,7 +246,7 @@ func TestReserveNonce_Increment(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
@@ -290,7 +310,7 @@ func TestReserveNonce_OnChainRefresh(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
@@ -322,7 +342,7 @@ func TestReserveNonce_MortalEraExpiry(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
@@ -368,7 +388,7 @@ func TestReserveNonce_ScannerNotReady(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
@@ -420,7 +440,7 @@ func TestGetAccountByAddress(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	acct, err := c.GetAccountByAddress("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", nil)
 	if err != nil {
@@ -451,21 +471,6 @@ func TestGetAccountByAddress(t *testing.T) {
 // BroadcastTx tests
 // ---------------------------------------------------------------------------
 
-// newTestSignerCache creates a signercache.CacheManager backed by in-memory LevelDB.
-func newTestSignerCache(t *testing.T) *signercache.CacheManager {
-	t.Helper()
-	db, err := leveldb.Open(storage.NewMemStorage(), nil)
-	if err != nil {
-		t.Fatalf("failed to open in-memory leveldb: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	cm, err := signercache.NewSignerCacheManager(db)
-	if err != nil {
-		t.Fatalf("failed to create signer cache: %v", err)
-	}
-	return cm
-}
-
 func TestBroadcastTx_Success(t *testing.T) {
 	h := newRPCHandler()
 	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
@@ -474,8 +479,7 @@ func TestBroadcastTx_Success(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
-	c.signerCacheManager = newTestSignerCache(t)
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
@@ -497,8 +501,7 @@ func TestBroadcastTx_AlreadyImported(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
-	c.signerCacheManager = newTestSignerCache(t)
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
@@ -521,8 +524,7 @@ func TestBroadcastTx_Stale(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
-	c.signerCacheManager = newTestSignerCache(t)
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
@@ -545,8 +547,7 @@ func TestBroadcastTx_OtherError(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(taorpc.NewClient(srv.URL, 5*time.Second))
-	c.signerCacheManager = newTestSignerCache(t)
+	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}

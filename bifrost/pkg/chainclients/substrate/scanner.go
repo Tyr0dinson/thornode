@@ -68,6 +68,8 @@ func NewScanner(
 		solvencyReporter: solvencyReporter,
 	}
 
+	s.currentFee.Swap(s.params.DefaultFee)
+
 	rv, err := rpcClient.GetRuntimeVersion("")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime version: %w", err)
@@ -600,11 +602,11 @@ func (s *Scanner) updateNetworkFee(height int64) {
 		return
 	}
 
-	currentFee := s.currentFee.Load()
-
-	if currentFee != 0 && height%FeeUpdatePeriod != 0 {
+	if height%FeeUpdatePeriod != 0 {
 		return
 	}
+
+	currentFee := s.currentFee.Load()
 
 	// Read cache length, average, and last-reported under a single RLock
 	// to avoid TOCTOU between the length check and the average calculation.

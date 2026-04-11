@@ -11,7 +11,7 @@ type AddressSuite struct{}
 var _ = Suite(&AddressSuite{})
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 17)
+	c.Assert(AllChains, HasLen, 18)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)
@@ -278,7 +278,6 @@ func (s *AddressSuite) TestAddress(c *C) {
 			Chain:   SUIChain,
 			Network: CurrentChainNetwork,
 		},
-		// - TAO ---
 		{
 			Address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
 			Chain:   TAOChain,
@@ -312,11 +311,20 @@ func (s *AddressSuite) TestAddress(c *C) {
 			for _, other := range AllChains {
 				_, found := testChains[other]
 
-				if found || other.IsEVM() && chain.IsEVM() {
+				equal := false
+				if chain.IsSubstrate() && other.IsSubstrate() {
+					// different Substrate chains may use the same SS58 prefix
+					// in MockNet and share the same address
+					equal = chain.SS58Prefix() == other.SS58Prefix()
+				} else {
+					equal = chain.IsEVM() && other.IsEVM()
+				}
+
+				if found || equal {
 					c.Assert(addr.IsChain(chain), Equals, true, Commentf("is %s: %s", chain, info))
 					c.Assert(addr.GetNetwork(tc.Chain), Equals, tc.Network, Commentf("is %s: %s", networks[tc.Network], info))
 				} else {
-					c.Assert(addr.IsChain(other), Equals, false, Commentf("is not %s: %s", chain, info))
+					c.Assert(addr.IsChain(other), Equals, false, Commentf("%s address matches %s, %s", chain, other, info))
 				}
 			}
 		}

@@ -90,6 +90,9 @@ func DecodeCompact(data []byte) (cosmos.Uint, int, error) {
 		return cosmos.NewUint(uint64(val >> 2)), 4, nil
 	case 3: // big-integer mode
 		n := int(data[0]>>2) + 4
+		if n > 16 {
+			return cosmos.ZeroUint(), 0, fmt.Errorf("compact value too large: %d bytes (max 16)", n)
+		}
 		if len(data) < 1+n {
 			return cosmos.ZeroUint(), 0, fmt.Errorf("insufficient data for big compact, need %d bytes", 1+n)
 		}

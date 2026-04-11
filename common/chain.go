@@ -123,6 +123,13 @@ func GetEVMChains() []Chain {
 	return []Chain{ETHChain, AVAXChain, BSCChain, BASEChain, POLChain}
 }
 
+// GetSubstrateChains returns all "Substrate" chains connected to THORChain
+// "Substrate" is defined, in thornode's context, as a chain that:
+// - uses the generic "substrate" client
+func GetSubstrateChains() []Chain {
+	return []Chain{DOTChain, TAOChain}
+}
+
 // GetUTXOChains returns all "UTXO" chains connected to THORChain.
 func GetUTXOChains() []Chain {
 	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain}
@@ -135,6 +142,18 @@ func (c Chain) IsEVM() bool {
 	evmChains := GetEVMChains()
 	for _, evm := range evmChains {
 		if c.Equals(evm) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSubstrate returns true if given chain is an Substrate chain.
+// See working definition of a "Substrate" chain in the
+// `GetSubstrateChains` function description
+func (c Chain) IsSubstrate() bool {
+	for _, chain := range GetSubstrateChains() {
+		if c.Equals(chain) {
 			return true
 		}
 	}

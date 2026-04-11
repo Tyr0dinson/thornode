@@ -3,6 +3,8 @@ package types
 import (
 	"bytes"
 	"testing"
+
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func TestHexEncodeDecodeRoundTrip(t *testing.T) {
@@ -176,7 +178,7 @@ func TestExtrinsicHashDifferentInput(t *testing.T) {
 func TestBalanceTransferKeepAlive(t *testing.T) {
 	dest := make([]byte, 32)
 	dest[0] = 0xAA
-	call := BalanceTransferKeepAlive(5, 3, dest, 1_000_000)
+	call := BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(1_000_000))
 
 	// pallet index
 	if call[0] != 5 {
@@ -200,8 +202,8 @@ func TestBalanceTransferKeepAlive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeCompact: %v", err)
 	}
-	if decoded != 1_000_000 {
-		t.Errorf("amount: got %d, want 1000000", decoded)
+	if !decoded.Equal(cosmos.NewUint(1_000_000)) {
+		t.Errorf("amount: got %s, want 1000000", decoded.String())
 	}
 }
 
@@ -214,11 +216,11 @@ func TestSystemRemark(t *testing.T) {
 	}
 
 	// decode compact length
-	remarkLen, n, err := DecodeCompact(call[2:])
+	remarkLen, n, err := DecodeCompactToInt(call[2:])
 	if err != nil {
 		t.Fatalf("DecodeCompact: %v", err)
 	}
-	if remarkLen != uint64(len(memo)) {
+	if remarkLen != len(memo) {
 		t.Errorf("remark length: got %d, want %d", remarkLen, len(memo))
 	}
 	actualMemo := string(call[2+n:])
@@ -233,7 +235,7 @@ func TestSystemRemarkEmpty(t *testing.T) {
 	if len(call) != 3 {
 		t.Errorf("empty remark call length: got %d, want 3", len(call))
 	}
-	remarkLen, _, err := DecodeCompact(call[2:])
+	remarkLen, _, err := DecodeCompactToInt(call[2:])
 	if err != nil {
 		t.Fatalf("DecodeCompact: %v", err)
 	}
@@ -252,7 +254,7 @@ func TestBatchAll(t *testing.T) {
 	}
 
 	// decode compact count
-	count, n, err := DecodeCompact(batch[2:])
+	count, n, err := DecodeCompactToInt(batch[2:])
 	if err != nil {
 		t.Fatalf("DecodeCompact: %v", err)
 	}
@@ -327,7 +329,7 @@ func TestSigningPayloadContainsAllFields(t *testing.T) {
 	blockHash := make([]byte, 32)
 	blockHash[0] = 0xBB
 
-	payload := SigningPayload(callData, era, 1, 0, MetadataModeDisabled, 100, 1, genesisHash, blockHash)
+	payload := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, 100, 1, genesisHash, blockHash)
 
 	// starts with call data
 	if payload[0] != 5 || payload[1] != 3 {

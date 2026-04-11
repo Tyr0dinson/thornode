@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // ---------------------------------------------------------------------------
@@ -66,10 +68,10 @@ func TestSS58DecodeAccountID_WrongLength(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDecodeAccountInfoFreeBalance(t *testing.T) {
-	// Build a minimal AccountInfo: 4 × u32 (16 bytes) + free balance (u64)
+	// Build a minimal AccountInfo: 4 × u32 (16 bytes) + free balance (u128 LE)
 	// nonce=1, consumers=0, providers=1, sufficients=0
 	// free=1_000_000_000 (1 TAO in rao)
-	data := make([]byte, 24)                                  // 16 + 8
+	data := make([]byte, 32)                                  // 16 header + 16 u128
 	binary.LittleEndian.PutUint32(data[0:4], 1)               // nonce
 	binary.LittleEndian.PutUint32(data[4:8], 0)               // consumers
 	binary.LittleEndian.PutUint32(data[8:12], 1)              // providers
@@ -80,7 +82,7 @@ func TestDecodeAccountInfoFreeBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if free != 1_000_000_000 {
+	if !free.Equal(cosmos.NewUint(1_000_000_000)) {
 		t.Errorf("got %d, want 1000000000", free)
 	}
 }
@@ -94,25 +96,25 @@ func TestDecodeAccountInfoFreeBalance_WithTrailingData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if free != 42_000_000_000 {
+	if !free.Equal(cosmos.NewUint(42_000_000_000)) {
 		t.Errorf("got %d, want 42000000000", free)
 	}
 }
 
 func TestDecodeAccountInfoFreeBalance_ZeroBalance(t *testing.T) {
-	data := make([]byte, 24) // all zeros
+	data := make([]byte, 32) // all zeros
 
 	free, err := decodeAccountInfoFreeBalance(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if free != 0 {
+	if !free.IsZero() {
 		t.Errorf("got %d, want 0", free)
 	}
 }
 
 func TestDecodeAccountInfoFreeBalance_TooShort(t *testing.T) {
-	data := make([]byte, 20) // 16 + 4, not enough for u64
+	data := make([]byte, 20) // 16 + 4, not enough for u128 (need 32)
 
 	_, err := decodeAccountInfoFreeBalance(data)
 	if err == nil {
@@ -120,17 +122,22 @@ func TestDecodeAccountInfoFreeBalance_TooShort(t *testing.T) {
 	}
 }
 
-func TestDecodeAccountInfoFreeBalance_HighBytesNonZero(t *testing.T) {
-	// Full AccountInfo with non-zero u128 high bytes in the free balance field.
-	// This simulates a layout shift where the data we expect to be the high half
-	// of u128 free balance is actually a different field with a non-zero value.
-	data := make([]byte, 56)
-	binary.LittleEndian.PutUint64(data[16:24], 5_000_000_000) // free low = 5 TAO
-	binary.LittleEndian.PutUint64(data[24:32], 1)             // free high = non-zero
+func TestDecodeAccountInfoFreeBalance_U128(t *testing.T) {
+	// AccountInfo with a u128 free balance where the high 8 bytes are non-zero.
+	// value = (1 << 64) + 5_000_000_000 = 18446744078709551616 + 5e9
+	data := make([]byte, 32)
+	binary.LittleEndian.PutUint64(data[16:24], 5_000_000_000) // low
+	binary.LittleEndian.PutUint64(data[24:32], 1)             // high
 
-	_, err := decodeAccountInfoFreeBalance(data)
-	if err == nil {
-		t.Error("expected error for non-zero u128 high bytes")
+	free, err := decodeAccountInfoFreeBalance(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Expected: (1 << 64) + 5_000_000_000
+	expected := cosmos.NewUintFromString("18446744078709551616")
+	if !free.Equal(expected) {
+		t.Errorf("got %s, want %s", free.String(), expected.String())
 	}
 }
 

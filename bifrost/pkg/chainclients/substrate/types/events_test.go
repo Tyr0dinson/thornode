@@ -48,50 +48,53 @@ func makeDefaultDispatchInfo() []byte {
 }
 
 func TestParseExtrinsicResults_Success(t *testing.T) {
-	pallets := EventPalletConfig{
-		SystemPalletIndex:             0,
-		BalancesPalletIndex:           5,
-		UtilityPalletIndex:            11,
-		TransactionPaymentPalletIndex: 6,
-	}
+	for _, balanceSize := range []int{8, 16} {
+		pallets := EventPalletConfig{
+			SystemPalletIndex:             0,
+			BalancesPalletIndex:           5,
+			UtilityPalletIndex:            11,
+			TransactionPaymentPalletIndex: 6,
+			BalanceSize:                   balanceSize,
+		}
 
-	var events []byte
+		var events []byte
 
-	// Event 1: ExtrinsicSuccess for extrinsic 0
-	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+		// Event 1: ExtrinsicSuccess for extrinsic 0
+		events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
-	// Event 2: Balances::Withdraw for extrinsic 1 (account=32, balance=8 = 40 bytes)
-	events = append(events, buildEvent(0x00, 1, 5, 8, make([]byte, 40), 0)...)
+		// Event 2: Balances::Withdraw for extrinsic 1 (account + balance)
+		events = append(events, buildEvent(0x00, 1, 5, 8, make([]byte, 32+balanceSize), 0)...)
 
-	// Event 3: Balances::Transfer for extrinsic 1 (from=32, to=32, amount=8 = 72 bytes)
-	events = append(events, buildEvent(0x00, 1, 5, 2, make([]byte, 72), 0)...)
+		// Event 3: Balances::Transfer for extrinsic 1 (from + to + amount)
+		events = append(events, buildEvent(0x00, 1, 5, 2, make([]byte, 32*2+balanceSize), 0)...)
 
-	// Event 4: Balances::Deposit for extrinsic 1 (account=32, balance=8 = 40 bytes)
-	events = append(events, buildEvent(0x00, 1, 5, 7, make([]byte, 40), 0)...)
+		// Event 4: Balances::Deposit for extrinsic 1 (account + balance)
+		events = append(events, buildEvent(0x00, 1, 5, 7, make([]byte, 32+balanceSize), 0)...)
 
-	// Event 5: TransactionPayment::TransactionFeePaid (account=32, fee=8, tip=8 = 48 bytes)
-	events = append(events, buildEvent(0x00, 1, 6, 0, make([]byte, 48), 0)...)
+		// Event 5: TransactionPayment::TransactionFeePaid (account + fee + tip)
+		events = append(events, buildEvent(0x00, 1, 6, 0, make([]byte, 32+balanceSize*2), 0)...)
 
-	// Event 6: ExtrinsicSuccess for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+		// Event 6: ExtrinsicSuccess for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
-	data := EncodeCompact(6)
-	data = append(data, events...)
+		data := EncodeCompact(6)
+		data = append(data, events...)
 
-	results, _, err := ParseExtrinsicResults(data, pallets)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+		results, _, err := ParseExtrinsicResults(data, pallets)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
-	}
+		if len(results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(results))
+		}
 
-	if !results[0] {
-		t.Error("extrinsic 0 should be successful")
-	}
-	if !results[1] {
-		t.Error("extrinsic 1 should be successful")
+		if !results[0] {
+			t.Error("extrinsic 0 should be successful")
+		}
+		if !results[1] {
+			t.Error("extrinsic 1 should be successful")
+		}
 	}
 }
 
@@ -101,6 +104,7 @@ func TestParseExtrinsicResults_Failed(t *testing.T) {
 		BalancesPalletIndex:           5,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
+		BalanceSize:                   8,
 	}
 
 	var events []byte
@@ -131,58 +135,61 @@ func TestParseExtrinsicResults_Failed(t *testing.T) {
 }
 
 func TestParseExtrinsicResults_WithBatchEvents(t *testing.T) {
-	pallets := EventPalletConfig{
-		SystemPalletIndex:             0,
-		BalancesPalletIndex:           5,
-		UtilityPalletIndex:            11,
-		TransactionPaymentPalletIndex: 6,
-	}
+	for _, balanceSize := range []int{8, 16} {
+		pallets := EventPalletConfig{
+			SystemPalletIndex:             0,
+			BalancesPalletIndex:           5,
+			UtilityPalletIndex:            11,
+			TransactionPaymentPalletIndex: 6,
+			BalanceSize:                   balanceSize,
+		}
 
-	var events []byte
+		var events []byte
 
-	// ExtrinsicSuccess for extrinsic 0 (timestamp)
-	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+		// ExtrinsicSuccess for extrinsic 0 (timestamp)
+		events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
-	// Balances::Withdraw for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 5, 8, make([]byte, 40), 0)...)
+		// Balances::Withdraw for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 5, 8, make([]byte, 32+balanceSize), 0)...)
 
-	// Balances::Transfer for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 5, 2, make([]byte, 72), 0)...)
+		// Balances::Transfer for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 5, 2, make([]byte, 32*2+balanceSize), 0)...)
 
-	// Utility::ItemCompleted for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 11, 3, nil, 0)...)
+		// Utility::ItemCompleted for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 11, 3, nil, 0)...)
 
-	// System::Remarked for extrinsic 1 (AccountId + Hash = 64 bytes)
-	events = append(events, buildEvent(0x00, 1, 0, 0x05, make([]byte, 64), 0)...)
+		// System::Remarked for extrinsic 1 (AccountId + Hash = 64 bytes)
+		events = append(events, buildEvent(0x00, 1, 0, 0x05, make([]byte, 64), 0)...)
 
-	// Utility::ItemCompleted for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 11, 3, nil, 0)...)
+		// Utility::ItemCompleted for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 11, 3, nil, 0)...)
 
-	// Utility::BatchCompleted for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 11, 1, nil, 0)...)
+		// Utility::BatchCompleted for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 11, 1, nil, 0)...)
 
-	// Balances::Deposit for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 5, 7, make([]byte, 40), 0)...)
+		// Balances::Deposit for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 5, 7, make([]byte, 32+balanceSize), 0)...)
 
-	// TransactionPayment::TransactionFeePaid for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 6, 0, make([]byte, 48), 0)...)
+		// TransactionPayment::TransactionFeePaid for extrinsic (account + fee + tip)
+		events = append(events, buildEvent(0x00, 1, 6, 0, make([]byte, 32+balanceSize*2), 0)...)
 
-	// ExtrinsicSuccess for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+		// ExtrinsicSuccess for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
-	data := EncodeCompact(10)
-	data = append(data, events...)
+		data := EncodeCompact(10)
+		data = append(data, events...)
 
-	results, _, err := ParseExtrinsicResults(data, pallets)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+		results, _, err := ParseExtrinsicResults(data, pallets)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
-	if !results[0] {
-		t.Error("extrinsic 0 should be successful")
-	}
-	if !results[1] {
-		t.Error("extrinsic 1 should be successful")
+		if !results[0] {
+			t.Error("extrinsic 0 should be successful")
+		}
+		if !results[1] {
+			t.Error("extrinsic 1 should be successful")
+		}
 	}
 }
 
@@ -192,6 +199,7 @@ func TestParseExtrinsicResults_UnknownPallet(t *testing.T) {
 		BalancesPalletIndex:           5,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
+		BalanceSize:                   8,
 	}
 
 	var events []byte
@@ -239,6 +247,7 @@ func TestParseExtrinsicResults_ModuleError(t *testing.T) {
 		BalancesPalletIndex:           5,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
+		BalanceSize:                   8,
 	}
 
 	var events []byte
@@ -270,6 +279,7 @@ func TestScanExtrinsicResults_FindsEventsAfterUnknownPallet(t *testing.T) {
 		BalancesPalletIndex:           5,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
+		BalanceSize:                   8,
 	}
 
 	var events []byte
@@ -308,6 +318,7 @@ func TestScanExtrinsicResults_FindsFailedAfterUnknownPallet(t *testing.T) {
 		BalancesPalletIndex:           5,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
+		BalanceSize:                   8,
 	}
 
 	var events []byte
@@ -486,41 +497,44 @@ func TestDecodeDispatchInfoSize(t *testing.T) {
 }
 
 func TestParseExtrinsicResults_VariableSizeDispatchInfo(t *testing.T) {
-	pallets := EventPalletConfig{
-		SystemPalletIndex:             0,
-		BalancesPalletIndex:           5,
-		UtilityPalletIndex:            11,
-		TransactionPaymentPalletIndex: 6,
-	}
+	for _, balanceSize := range []int{8, 16} {
+		pallets := EventPalletConfig{
+			SystemPalletIndex:             0,
+			BalancesPalletIndex:           5,
+			UtilityPalletIndex:            11,
+			TransactionPaymentPalletIndex: 6,
+			BalanceSize:                   balanceSize,
+		}
 
-	var events []byte
+		var events []byte
 
-	// ExtrinsicSuccess for extrinsic 0 with small DispatchInfo (4 bytes)
-	events = append(events, buildEvent(0x00, 0, 0, 0x00,
-		makeCompactDispatchInfo(10, 0, 2, 0), 0)...)
+		// ExtrinsicSuccess for extrinsic 0 with small DispatchInfo (4 bytes)
+		events = append(events, buildEvent(0x00, 0, 0, 0x00,
+			makeCompactDispatchInfo(10, 0, 2, 0), 0)...)
 
-	// Balances::Withdraw for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 5, 8, make([]byte, 40), 0)...)
+		// Balances::Withdraw for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 5, 8, make([]byte, 32+balanceSize), 0)...)
 
-	// Balances::Transfer for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 5, 2, make([]byte, 72), 0)...)
+		// Balances::Transfer for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 5, 2, make([]byte, 32*2+balanceSize), 0)...)
 
-	// ExtrinsicSuccess for extrinsic 1 with larger DispatchInfo (8 bytes)
-	events = append(events, buildEvent(0x00, 1, 0, 0x00,
-		makeCompactDispatchInfo(21233156999, 0, 1, 1), 0)...)
+		// ExtrinsicSuccess for extrinsic 1 with larger DispatchInfo (8 bytes)
+		events = append(events, buildEvent(0x00, 1, 0, 0x00,
+			makeCompactDispatchInfo(21233156999, 0, 1, 1), 0)...)
 
-	data := EncodeCompact(4)
-	data = append(data, events...)
+		data := EncodeCompact(4)
+		data = append(data, events...)
 
-	results, _, err := ParseExtrinsicResults(data, pallets)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !results[0] {
-		t.Error("extrinsic 0 should be successful")
-	}
-	if !results[1] {
-		t.Error("extrinsic 1 should be successful")
+		results, _, err := ParseExtrinsicResults(data, pallets)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !results[0] {
+			t.Error("extrinsic 0 should be successful")
+		}
+		if !results[1] {
+			t.Error("extrinsic 1 should be successful")
+		}
 	}
 }
 
@@ -533,6 +547,7 @@ func TestParseExtrinsicResults_RealBittensorData(t *testing.T) {
 		BalancesPalletIndex:           5,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
+		BalanceSize:                   8,
 	}
 
 	results, _, err := ParseExtrinsicResults(data, pallets)
@@ -600,45 +615,48 @@ func TestScanExtrinsicResults_UnknownDispatchErrorVariant(t *testing.T) {
 }
 
 func TestParseExtrinsicResults_ExtractsFee(t *testing.T) {
-	pallets := EventPalletConfig{
-		SystemPalletIndex:             0,
-		BalancesPalletIndex:           5,
-		UtilityPalletIndex:            11,
-		TransactionPaymentPalletIndex: 6,
-	}
+	for _, balanceSize := range []int{8, 16} {
+		pallets := EventPalletConfig{
+			SystemPalletIndex:             0,
+			BalancesPalletIndex:           5,
+			UtilityPalletIndex:            11,
+			TransactionPaymentPalletIndex: 6,
+			BalanceSize:                   balanceSize,
+		}
 
-	var events []byte
+		var events []byte
 
-	// ExtrinsicSuccess for extrinsic 0
-	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+		// ExtrinsicSuccess for extrinsic 0
+		events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
-	// TransactionPayment::TransactionFeePaid for extrinsic 1
-	// AccountId(32) + actual_fee(8) + tip(8) = 48 bytes
-	feeData := make([]byte, 48)
-	binary.LittleEndian.PutUint64(feeData[32:40], 125_000) // actual_fee = 125_000 rao
-	events = append(events, buildEvent(0x00, 1, 6, 0, feeData, 0)...)
+		// TransactionPayment::TransactionFeePaid for extrinsic 1
+		// AccountId(32) + actual_fee(8) + tip(8) = 48 bytes
+		feeData := make([]byte, 32+balanceSize*2)
+		binary.LittleEndian.PutUint64(feeData[32:40], 125_000) // actual_fee = 125_000 rao
+		events = append(events, buildEvent(0x00, 1, 6, 0, feeData, 0)...)
 
-	// ExtrinsicSuccess for extrinsic 1
-	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+		// ExtrinsicSuccess for extrinsic 1
+		events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
-	data := EncodeCompact(3)
-	data = append(data, events...)
+		data := EncodeCompact(3)
+		data = append(data, events...)
 
-	results, fees, err := ParseExtrinsicResults(data, pallets)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+		results, fees, err := ParseExtrinsicResults(data, pallets)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
-	if !results[0] {
-		t.Error("extrinsic 0 should be successful")
-	}
-	if !results[1] {
-		t.Error("extrinsic 1 should be successful")
-	}
-	if fees[1] != 125_000 {
-		t.Errorf("fee for extrinsic 1: got %d, want 125000", fees[1])
-	}
-	if _, ok := fees[0]; ok {
-		t.Error("extrinsic 0 should not have a fee (no TransactionFeePaid event)")
+		if !results[0] {
+			t.Error("extrinsic 0 should be successful")
+		}
+		if !results[1] {
+			t.Error("extrinsic 1 should be successful")
+		}
+		if fees[1] != 125_000 {
+			t.Errorf("fee for extrinsic 1: got %d, want 125000", fees[1])
+		}
+		if _, ok := fees[0]; ok {
+			t.Error("extrinsic 0 should not have a fee (no TransactionFeePaid event)")
+		}
 	}
 }

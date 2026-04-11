@@ -64,7 +64,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	}
 
 	// Extract raw Ed25519 private key (64 bytes: seed + public key)
-	privKey := ed25519.PrivateKey(pkStruct.Bytes())
+	privKey := pkStruct.Key
 
 	rpcClient := rpc.NewClient(host, time.Second*30)
 

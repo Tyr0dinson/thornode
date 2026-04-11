@@ -2,6 +2,8 @@ package types
 
 import (
 	"testing"
+
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func TestEncodeCompactSingleByte(t *testing.T) {
@@ -91,8 +93,8 @@ func TestEncodeDecodeCompactRoundTrip(t *testing.T) {
 		if n != len(encoded) {
 			t.Errorf("DecodeCompact for value %d: consumed %d bytes, expected %d", v, n, len(encoded))
 		}
-		if decoded != v {
-			t.Errorf("DecodeCompact for value %d: got %d", v, decoded)
+		if !decoded.Equal(cosmos.NewUint(v)) {
+			t.Errorf("DecodeCompact for value %d: got %s", v, decoded.String())
 		}
 	}
 }
@@ -108,23 +110,17 @@ func TestEncodeU32LE(t *testing.T) {
 }
 
 func TestDecodeCompactBigIntOverflow(t *testing.T) {
-	// Construct a compact big-int with n=9 bytes (exceeds uint64 capacity of 8)
-	// prefix byte: upper 6 bits = (9-4)=5, lower 2 bits = 0b11 → (5<<2)|3 = 23
-	data := make([]byte, 10)
-	data[0] = 23 // prefix for 9 bytes of data
-	data[1] = 0xff
-	data[2] = 0xff
-	data[3] = 0xff
-	data[4] = 0xff
-	data[5] = 0xff
-	data[6] = 0xff
-	data[7] = 0xff
-	data[8] = 0xff
-	data[9] = 0x01
-
+	// Construct a compact big-int with n=17 bytes (exceeds u128 capacity of 16)
+	// prefix byte: upper 6 bits = (17-4)=13, lower 2 bits = 0b11 → (13<<2)|3 = 55
+	data := make([]byte, 18)
+	data[0] = 55 // prefix for 17 bytes of data
+	for i := 1; i < 17; i++ {
+		data[i] = 0xff
+	}
+	data[17] = 0x01
 	_, _, err := DecodeCompact(data)
 	if err == nil {
-		t.Error("expected error for compact value exceeding uint64")
+		t.Error("expected error for compact value exceeding u128")
 	}
 }
 
@@ -149,7 +145,7 @@ func TestDecodeCompactBigInt8BytesOK(t *testing.T) {
 	if consumed != 9 {
 		t.Errorf("expected 9 bytes consumed, got %d", consumed)
 	}
-	if val != 0x40000000 {
+	if !val.Equal(cosmos.NewUint(0x40000000)) {
 		t.Errorf("expected 0x40000000, got 0x%x", val)
 	}
 }
