@@ -1271,6 +1271,7 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 
 	return nil
 }
+
 func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {
 	availableAtomic := balance.UnlockedBalance
 	if availableAtomic > balance.Balance {
