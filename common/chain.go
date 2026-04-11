@@ -474,6 +474,17 @@ func (c Chain) SS58Prefix() byte {
 	}
 }
 
+func (c Chain) ExistentialDeposit() cosmos.Uint {
+	switch c {
+	case XRPChain, TAOChain:
+		return c.DustThreshold()
+	case DOTChain:
+		return cosmos.NewUint(One)
+	default:
+		return cosmos.ZeroUint()
+	}
+}
+
 func (c Chain) ApproximateBlockMilliseconds() int64 {
 	switch c {
 	case BTCChain:

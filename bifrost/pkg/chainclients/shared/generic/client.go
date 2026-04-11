@@ -90,7 +90,6 @@ func (c *Client) Sign(
 	data []byte,
 	txOutItem types.TxOutItem,
 ) ([]byte, error) {
-	// var err error
 	var signature []byte
 
 	vaultPubKey := txOutItem.GetVaultPubKey()

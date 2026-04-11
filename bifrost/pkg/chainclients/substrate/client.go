@@ -20,10 +20,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	ttypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
-	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -63,7 +61,6 @@ func NewClient(
 	server *tssp.TssServer,
 	bridge thorclient.ThorchainBridge,
 	metrics *tcmetrics.Metrics,
-	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*Client, error) {
 	if bridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
@@ -75,9 +72,6 @@ func NewClient(
 		Logger()
 
 	c := &Client{
-		logger:   logger,
-		config:   config,
-		bridge:   bridge,
 		wg:       &sync.WaitGroup{},
 		stopchan: make(chan struct{}),
 		nonces:   make(map[string]nonceMetadata),
@@ -95,7 +89,7 @@ func NewClient(
 	}
 
 	c.Client, err = generic.NewClient(
-		c.logger, thorKeys, config, server, bridge, c.storage.GetInternalDb(),
+		logger, thorKeys, config, server, bridge, c.storage.GetInternalDb(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
@@ -305,25 +299,6 @@ func (c *Client) ReportSolvency(height int64) error {
 
 // SignTx returns the signed transaction.
 func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *ttypes.TxInItem, err error) {
-	defer func() {
-		if err != nil {
-			var keysignError tss.KeysignError
-			if errors.As(err, &keysignError) {
-				if len(keysignError.Blame.BlameNodes) == 0 {
-					c.logger.Err(err).Msg("TSS doesn't know which node to blame")
-					return
-				}
-				var txID common.TxID
-				txID, err = c.bridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, tx.Memo, tx.Coins, tx.VaultPubKeyEddsa)
-				if err != nil {
-					c.logger.Err(err).Msg("failed to post keysign failure to THORChain")
-					return
-				}
-				c.logger.Info().Str("tx_id", txID.String()).Msg("post keysign failure to thorchain")
-			}
-		}
-	}()
-
 	if tx.Chain != c.GetChain() {
 		return nil, nil, nil, errors.New("tx chain not supported")
 	}
@@ -522,6 +497,9 @@ func (c *Client) createAndSignExtrinsic(
 	}
 
 	sig, err = c.Sign(signingData, tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign transaction: %w", err)
+	}
 
 	// Verify signature
 	if !ed25519.Verify(vaultPubkeyBytes, signingData, sig) {
@@ -543,8 +521,6 @@ func (c *Client) createAndSignExtrinsic(
 
 	return stypes.EncodeSignedExtrinsic(ext), nil
 }
-
-// --------------------------------- broadcast ---------------------------------
 
 // BroadcastTx broadcasts the transaction and returns the transaction hash.
 func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, error) {

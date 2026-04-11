@@ -30,6 +30,20 @@ func Abs[T int | int64](a T) T {
 	return a
 }
 
+func MaxUint(a, b cosmos.Uint) cosmos.Uint {
+	if a.GT(b) {
+		return a
+	}
+	return b
+}
+
+func MinUint(a, b cosmos.Uint) cosmos.Uint {
+	if a.LT(b) {
+		return a
+	}
+	return b
+}
+
 func GetMedianUint(vals []cosmos.Uint) cosmos.Uint {
 	if len(vals) == 0 {
 		return cosmos.ZeroUint()

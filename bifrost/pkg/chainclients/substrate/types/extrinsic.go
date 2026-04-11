@@ -104,7 +104,10 @@ func SigningPayload(
 	payload = append(payload, era...)
 	payload = append(payload, EncodeCompact(nonce)...)
 	payload = append(payload, EncodeCompact(tip)...)
-	payload = append(payload, metadataMode)
+	// Metadata hash
+	if checkMetadataHash {
+		payload = append(payload, metadataMode)
+	}
 	// Implicit data
 	payload = append(payload, EncodeU32LE(specVersion)...)
 	payload = append(payload, EncodeU32LE(txVersion)...)

@@ -298,20 +298,6 @@ func (s *Scanner) updateFeeCache(fee uint64) {
 	}
 }
 
-// averageFee returns the mean of cached fees, or 0 if the cache is empty.
-func (s *Scanner) averageFee() uint64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if len(s.feeCache) == 0 {
-		return 0
-	}
-	var sum uint64
-	for _, f := range s.feeCache {
-		sum += f
-	}
-	return sum / uint64(len(s.feeCache))
-}
-
 // processExtrinsic parses a hex-encoded extrinsic and returns a TxInItem if it's
 // a relevant transfer to a vault address.
 func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
