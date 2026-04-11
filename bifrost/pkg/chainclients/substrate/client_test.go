@@ -456,12 +456,12 @@ func newTestSignerCache(t *testing.T) *signercache.CacheManager {
 	t.Helper()
 	db, err := leveldb.Open(storage.NewMemStorage(), nil)
 	if err != nil {
-		t.Fatalf("fail to open in-memory leveldb: %v", err)
+		t.Fatalf("failed to open in-memory leveldb: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
 	cm, err := signercache.NewSignerCacheManager(db)
 	if err != nil {
-		t.Fatalf("fail to create signer cache: %v", err)
+		t.Fatalf("failed to create signer cache: %v", err)
 	}
 	return cm
 }

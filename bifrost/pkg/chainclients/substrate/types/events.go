@@ -62,7 +62,7 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 
 	numEvents, consumed, err := DecodeCompactToInt(data)
 	if err != nil {
-		return nil, nil, fmt.Errorf("fail to decode events count: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode events count: %w", err)
 	}
 	pos := consumed
 
@@ -179,7 +179,7 @@ func decodeDispatchInfoSize(remaining []byte) (int, error) {
 	// Compact ref_time
 	_, n, err := DecodeCompact(remaining[pos:])
 	if err != nil {
-		return 0, fmt.Errorf("fail to decode ref_time: %w", err)
+		return 0, fmt.Errorf("failed to decode ref_time: %w", err)
 	}
 	pos += n
 
@@ -189,7 +189,7 @@ func decodeDispatchInfoSize(remaining []byte) (int, error) {
 	}
 	_, n, err = DecodeCompact(remaining[pos:])
 	if err != nil {
-		return 0, fmt.Errorf("fail to decode proof_size: %w", err)
+		return 0, fmt.Errorf("failed to decode proof_size: %w", err)
 	}
 	pos += n
 

@@ -213,8 +213,6 @@ func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
 	return lastObserved, lastBroadCasted, err
 }
 
-//
-
 func (c *Client) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 	memo, err := thormemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
@@ -239,21 +237,3 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 		c.logger.Err(err).Msg("fail to update signer cache")
 	}
 }
-
-// // decimal conversion
-//
-// func (c *Client) ToThor(amount *big.Int) (*big.Int, error) {
-// 	return common.ConvertDecimals(
-// 		amount,
-// 		int(c.config.ChainID.GetGasAssetDecimal()),
-// 		common.THORChainDecimals,
-// 	)
-// }
-//
-// func (c *Client) FromThor(amount *big.Int) (*big.Int, error) {
-// 	return common.ConvertDecimals(
-// 		amount,
-// 		common.THORChainDecimals,
-// 		int(c.config.ChainID.GetGasAssetDecimal()),
-// 	)
-// }

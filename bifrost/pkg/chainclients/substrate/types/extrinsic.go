@@ -214,7 +214,7 @@ func HexDecode(s string) ([]byte, error) {
 	s = strings.TrimPrefix(s, "0x")
 	data, err := hex.DecodeString(s)
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode hex: %w", err)
+		return nil, fmt.Errorf("failed to decode hex: %w", err)
 	}
 	return data, nil
 }

@@ -3,6 +3,7 @@ package substrate
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -45,7 +46,7 @@ type Scanner struct {
 	latestBlockHash   string
 	latestBlockHeight int64
 	feeCache          []uint64
-	currentFee        uint64
+	currentFee        atomic.Uint64
 }
 
 // NewScanner creates a new generic Substrate block scanner.
@@ -69,7 +70,7 @@ func NewScanner(
 
 	rv, err := rpcClient.GetRuntimeVersion("")
 	if err != nil {
-		return nil, fmt.Errorf("fail to get runtime version: %w", err)
+		return nil, fmt.Errorf("failed to get runtime version: %w", err)
 	}
 
 	// Validate we're connected to the correct node, not another Substrate chain.
@@ -87,7 +88,7 @@ func NewScanner(
 
 	s.genesisHash, err = rpcClient.GetGenesisHash()
 	if err != nil {
-		return nil, fmt.Errorf("fail to get genesis hash: %w", err)
+		return nil, fmt.Errorf("failed to get genesis hash: %w", err)
 	}
 
 	s.logger.Info().
@@ -104,24 +105,24 @@ func NewScanner(
 func (s *Scanner) GetHeight() (int64, error) {
 	hash, err := s.rpcClient.GetFinalizedHead()
 	if err != nil {
-		return -1, fmt.Errorf("fail to get finalized head: %w", err)
+		return -1, fmt.Errorf("failed to get finalized head: %w", err)
 	}
 
 	header, err := s.rpcClient.GetHeader(hash)
 	if err != nil {
-		return -1, fmt.Errorf("fail to get header: %w", err)
+		return -1, fmt.Errorf("failed to get header: %w", err)
 	}
 
 	blockNum, err := header.BlockNumber()
 	if err != nil {
-		return -1, fmt.Errorf("fail to parse block number: %w", err)
+		return -1, fmt.Errorf("failed to parse block number: %w", err)
 	}
 
 	return int64(blockNum), nil
 }
 
 // FetchTxs is called by the standard block scanner for each block.
-func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (ttypes.TxIn, error) {
+func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	txIn := ttypes.TxIn{
 		Chain: s.cfg.ChainID,
 	}
@@ -133,12 +134,12 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (ttypes.TxIn, error) 
 	height := uint64(fetchHeight)
 	blockHash, err := s.rpcClient.GetBlockHash(&height)
 	if err != nil {
-		return txIn, fmt.Errorf("fail to get block hash for height %d: %w", fetchHeight, err)
+		return txIn, fmt.Errorf("failed to get block hash for height %d: %w", fetchHeight, err)
 	}
 
 	block, err := s.rpcClient.GetBlock(blockHash)
 	if err != nil {
-		return txIn, fmt.Errorf("fail to get block at height %d: %w", fetchHeight, err)
+		return txIn, fmt.Errorf("failed to get block at height %d: %w", fetchHeight, err)
 	}
 
 	txIn.TxArray = make([]*ttypes.TxInItem, 0, len(block.Extrinsics))
@@ -146,7 +147,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (ttypes.TxIn, error) 
 	// Fetch events and determine which extrinsics succeeded
 	successMap, feeMap, err := s.getExtrinsicResults(blockHash, len(block.Extrinsics))
 	if err != nil {
-		return txIn, fmt.Errorf("fail to get extrinsic results at height %d: %w", fetchHeight, err)
+		return txIn, fmt.Errorf("failed to get extrinsic results at height %d: %w", fetchHeight, err)
 	}
 
 	// Store latest block hash and height for transaction construction (thread-safe)
@@ -188,14 +189,13 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (ttypes.TxIn, error) 
 	}
 
 	// Report network fee periodically
-	if fetchHeight%FeeUpdatePeriod == 0 {
-		s.updateNetworkFee(fetchHeight)
-	}
+	s.updateNetworkFee(fetchHeight)
 
 	// Report solvency
 	if s.solvencyReporter != nil {
-		if err := s.solvencyReporter(fetchHeight); err != nil {
-			s.logger.Err(err).Msg("fail to report solvency")
+		err = s.solvencyReporter(fetchHeight)
+		if err != nil {
+			s.logger.Err(err).Msg("failed to report solvency")
 		}
 	}
 
@@ -203,15 +203,13 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (ttypes.TxIn, error) 
 }
 
 // FetchMemPool is not used for Substrate chains.
-func (s *Scanner) FetchMemPool(height int64) (ttypes.TxIn, error) {
+func (s *Scanner) FetchMemPool(_ int64) (ttypes.TxIn, error) {
 	return ttypes.TxIn{}, nil
 }
 
 // GetNetworkFee returns the current network fee estimate.
 func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return 1, s.currentFee
+	return 1, s.currentFee.Load()
 }
 
 // getExtrinsicResults queries System::Events and determines which extrinsics succeeded.
@@ -219,12 +217,12 @@ func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[uint32]bool, map[uint32]uint64, error) {
 	eventsHex, err := s.rpcClient.GetEventsStorage(blockHash)
 	if err != nil {
-		return nil, nil, fmt.Errorf("fail to get events storage: %w", err)
+		return nil, nil, fmt.Errorf("failed to get events storage: %w", err)
 	}
 
 	eventsData, err := stypes.HexDecode(eventsHex)
 	if err != nil {
-		return nil, nil, fmt.Errorf("fail to decode events hex: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode events hex: %w", err)
 	}
 
 	palletConfig := stypes.EventPalletConfig{
@@ -272,7 +270,7 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 func (s *Scanner) refreshRuntimeVersion(blockHash string) {
 	rv, err := s.rpcClient.GetRuntimeVersion(blockHash)
 	if err != nil {
-		s.logger.Warn().Err(err).Msg("fail to refresh runtime version")
+		s.logger.Warn().Err(err).Msg("failed to refresh runtime version")
 		return
 	}
 
@@ -303,7 +301,7 @@ func (s *Scanner) updateFeeCache(fee uint64) {
 func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
 	raw, err := stypes.HexDecode(extHex)
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode extrinsic hex: %w", err)
+		return nil, fmt.Errorf("failed to decode extrinsic hex: %w", err)
 	}
 
 	// Compute extrinsic hash (Blake2b-256 of the raw encoded extrinsic)
@@ -312,7 +310,7 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	// Decode the length prefix
 	_, consumed, err := stypes.DecodeCompact(raw)
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode extrinsic length: %w", err)
+		return nil, fmt.Errorf("failed to decode extrinsic length: %w", err)
 	}
 	body := raw[consumed:]
 
@@ -385,14 +383,14 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	// Nonce (compact)
 	_, nonceLen, err := stypes.DecodeCompact(body[pos:])
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode nonce: %w", err)
+		return nil, fmt.Errorf("failed to decode nonce: %w", err)
 	}
 	pos += nonceLen
 
 	// Tip (compact)
 	_, tipLen, err := stypes.DecodeCompact(body[pos:])
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode tip: %w", err)
+		return nil, fmt.Errorf("failed to decode tip: %w", err)
 	}
 	pos += tipLen
 
@@ -414,7 +412,7 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	// Get sender SS58 address
 	senderAddr, err := ss58.Encode(s.cfg.ChainID.SS58Prefix(), signerPubkey)
 	if err != nil {
-		return nil, fmt.Errorf("fail to encode sender address: %w", err)
+		return nil, fmt.Errorf("failed to encode sender address: %w", err)
 	}
 
 	palletIdx := callData[0]
@@ -470,13 +468,13 @@ func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight 
 
 	destAddr, err := ss58.Encode(s.cfg.ChainID.SS58Prefix(), destPubkey)
 	if err != nil {
-		return nil, fmt.Errorf("fail to encode destination address: %w", err)
+		return nil, fmt.Errorf("failed to encode destination address: %w", err)
 	}
 
 	// Amount (compact)
 	amount, _, err := stypes.DecodeCompact(data[pos:])
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode transfer amount: %w", err)
+		return nil, fmt.Errorf("failed to decode transfer amount: %w", err)
 	}
 
 	coin := s.cfg.ChainID.NativeGasToThorCoin(amount)
@@ -484,12 +482,11 @@ func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight 
 		return nil, nil // dust amount, ignore
 	}
 
-	fee := actualFee
-	if fee == 0 {
-		fee = s.params.DefaultFee
+	gasCoin := s.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(actualFee))
+	if gasCoin.Amount.IsZero() {
+		// Gas is not used for inbound observation but cannot be empty.
+		gasCoin.Amount = cosmos.OneUint()
 	}
-
-	gasCoin := s.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(fee))
 
 	return &ttypes.TxInItem{
 		BlockHeight: blockHeight,
@@ -510,7 +507,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 
 	numCalls, consumed, err := stypes.DecodeCompactToInt(data)
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode batch call count: %w", err)
+		return nil, fmt.Errorf("failed to decode batch call count: %w", err)
 	}
 	pos := consumed
 
@@ -572,7 +569,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 			// Skip compact amount
 			_, consumed, err = stypes.DecodeCompact(data[pos:])
 			if err != nil {
-				return nil, fmt.Errorf("fail to skip transfer amount: %w", err)
+				return nil, fmt.Errorf("failed to skip transfer amount: %w", err)
 			}
 			pos += consumed
 		} else {
@@ -603,6 +600,12 @@ func (s *Scanner) updateNetworkFee(height int64) {
 		return
 	}
 
+	currentFee := s.currentFee.Load()
+
+	if currentFee != 0 && height%FeeUpdatePeriod != 0 {
+		return
+	}
+
 	// Read cache length, average, and last-reported under a single RLock
 	// to avoid TOCTOU between the length check and the average calculation.
 	s.mu.RLock()
@@ -615,16 +618,15 @@ func (s *Scanner) updateNetworkFee(height int64) {
 		}
 		fee = sum / uint64(cacheLen)
 	}
-	currentFee := s.currentFee
 	s.mu.RUnlock()
 
 	// Wait for a full cache before reporting to avoid noisy early estimates.
 	if cacheLen < FeeCacheSize {
-		return
+		fee = s.params.DefaultFee
 	}
 
 	if fee == 0 {
-		fee = s.params.DefaultFee
+		return
 	}
 
 	// Round up to GasPriceResolution
@@ -644,9 +646,7 @@ func (s *Scanner) updateNetworkFee(height int64) {
 		TransactionRate: fee,
 	}
 
-	s.mu.Lock()
-	s.currentFee = fee
-	s.mu.Unlock()
+	s.currentFee.Swap(fee)
 
 	s.logger.Info().
 		Uint64("fee", fee).

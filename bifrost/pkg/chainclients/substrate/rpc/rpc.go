@@ -76,12 +76,12 @@ func (c *Client) call(method string, params []interface{}) (json.RawMessage, err
 
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("fail to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	resp, err := c.httpClient.Post(c.host, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("fail to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -92,12 +92,12 @@ func (c *Client) call(method string, params []interface{}) (json.RawMessage, err
 	const maxResponseSize = 16 << 20 // 16 MB
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
 	if err != nil {
-		return nil, fmt.Errorf("fail to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var rpcResp jsonRPCResponse
 	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
-		return nil, fmt.Errorf("fail to unmarshal response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	if rpcResp.Error != nil {
@@ -117,12 +117,12 @@ func (c *Client) GetBlockHash(blockNumber *uint64) (string, error) {
 
 	result, err := c.call("chain_getBlockHash", params)
 	if err != nil {
-		return "", fmt.Errorf("fail to get block hash: %w", err)
+		return "", fmt.Errorf("failed to get block hash: %w", err)
 	}
 
 	var hash string
 	if err := json.Unmarshal(result, &hash); err != nil {
-		return "", fmt.Errorf("fail to unmarshal block hash: %w", err)
+		return "", fmt.Errorf("failed to unmarshal block hash: %w", err)
 	}
 
 	return hash, nil
@@ -132,12 +132,12 @@ func (c *Client) GetBlockHash(blockNumber *uint64) (string, error) {
 func (c *Client) GetFinalizedHead() (string, error) {
 	result, err := c.call("chain_getFinalizedHead", nil)
 	if err != nil {
-		return "", fmt.Errorf("fail to get finalized head: %w", err)
+		return "", fmt.Errorf("failed to get finalized head: %w", err)
 	}
 
 	var hash string
 	if err := json.Unmarshal(result, &hash); err != nil {
-		return "", fmt.Errorf("fail to unmarshal finalized head: %w", err)
+		return "", fmt.Errorf("failed to unmarshal finalized head: %w", err)
 	}
 
 	return hash, nil
@@ -147,12 +147,12 @@ func (c *Client) GetFinalizedHead() (string, error) {
 func (c *Client) GetBlock(hash string) (*Block, error) {
 	result, err := c.call("chain_getBlock", []interface{}{hash})
 	if err != nil {
-		return nil, fmt.Errorf("fail to get block: %w", err)
+		return nil, fmt.Errorf("failed to get block: %w", err)
 	}
 
 	var signedBlock SignedBlock
 	if err := json.Unmarshal(result, &signedBlock); err != nil {
-		return nil, fmt.Errorf("fail to unmarshal block: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
 	}
 
 	return &signedBlock.Block, nil
@@ -162,12 +162,12 @@ func (c *Client) GetBlock(hash string) (*Block, error) {
 func (c *Client) GetHeader(hash string) (*Header, error) {
 	result, err := c.call("chain_getHeader", []interface{}{hash})
 	if err != nil {
-		return nil, fmt.Errorf("fail to get header: %w", err)
+		return nil, fmt.Errorf("failed to get header: %w", err)
 	}
 
 	var header Header
 	if err := json.Unmarshal(result, &header); err != nil {
-		return nil, fmt.Errorf("fail to unmarshal header: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal header: %w", err)
 	}
 
 	return &header, nil
@@ -179,7 +179,7 @@ func (c *Client) GetHeader(hash string) (*Header, error) {
 func (c *Client) GetBalance(address, blockHash string) (cosmos.Uint, error) {
 	accountID, err := ss58DecodeAccountID(address)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to decode SS58 address: %w", err)
+		return cosmos.ZeroUint(), fmt.Errorf("failed to decode SS58 address: %w", err)
 	}
 
 	storageKey := systemAccountStorageKey(accountID)
@@ -191,12 +191,12 @@ func (c *Client) GetBalance(address, blockHash string) (cosmos.Uint, error) {
 
 	result, err := c.call("state_getStorage", params)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to get account storage: %w", err)
+		return cosmos.ZeroUint(), fmt.Errorf("failed to get account storage: %w", err)
 	}
 
 	var hexData string
 	if err := json.Unmarshal(result, &hexData); err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to unmarshal storage result: %w", err)
+		return cosmos.ZeroUint(), fmt.Errorf("failed to unmarshal storage result: %w", err)
 	}
 	if hexData == "" {
 		return cosmos.ZeroUint(), nil // account not found, zero balance
@@ -204,12 +204,12 @@ func (c *Client) GetBalance(address, blockHash string) (cosmos.Uint, error) {
 
 	data, err := hex.DecodeString(strings.TrimPrefix(hexData, "0x"))
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to decode storage hex: %w", err)
+		return cosmos.ZeroUint(), fmt.Errorf("failed to decode storage hex: %w", err)
 	}
 
 	free, err := decodeAccountInfoFreeBalance(data)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to decode AccountInfo: %w", err)
+		return cosmos.ZeroUint(), fmt.Errorf("failed to decode AccountInfo: %w", err)
 	}
 
 	return free, nil
@@ -264,7 +264,7 @@ func decodeAccountInfoFreeBalance(data []byte) (cosmos.Uint, error) {
 func ss58DecodeAccountID(address string) ([]byte, error) {
 	_, pubkey, err := ss58.Decode(address)
 	if err != nil {
-		return nil, fmt.Errorf("fail to decode SS58 address: %w", err)
+		return nil, fmt.Errorf("failed to decode SS58 address: %w", err)
 	}
 	return pubkey, nil
 }
@@ -273,12 +273,12 @@ func ss58DecodeAccountID(address string) ([]byte, error) {
 func (c *Client) GetNonce(address string) (uint32, error) {
 	result, err := c.call("system_accountNextIndex", []interface{}{address})
 	if err != nil {
-		return 0, fmt.Errorf("fail to get nonce: %w", err)
+		return 0, fmt.Errorf("failed to get nonce: %w", err)
 	}
 
 	var nonce uint32
 	if err := json.Unmarshal(result, &nonce); err != nil {
-		return 0, fmt.Errorf("fail to unmarshal nonce: %w", err)
+		return 0, fmt.Errorf("failed to unmarshal nonce: %w", err)
 	}
 
 	return nonce, nil
@@ -293,12 +293,12 @@ func (c *Client) GetRuntimeVersion(blockHash string) (*RuntimeVersion, error) {
 
 	result, err := c.call("state_getRuntimeVersion", params)
 	if err != nil {
-		return nil, fmt.Errorf("fail to get runtime version: %w", err)
+		return nil, fmt.Errorf("failed to get runtime version: %w", err)
 	}
 
 	var rv RuntimeVersion
 	if err := json.Unmarshal(result, &rv); err != nil {
-		return nil, fmt.Errorf("fail to unmarshal runtime version: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal runtime version: %w", err)
 	}
 
 	return &rv, nil
@@ -314,12 +314,12 @@ func (c *Client) GetGenesisHash() (string, error) {
 func (c *Client) SubmitExtrinsic(hexEncoded string) (string, error) {
 	result, err := c.call("author_submitExtrinsic", []interface{}{hexEncoded})
 	if err != nil {
-		return "", fmt.Errorf("fail to submit extrinsic: %w", err)
+		return "", fmt.Errorf("failed to submit extrinsic: %w", err)
 	}
 
 	var hash string
 	if err := json.Unmarshal(result, &hash); err != nil {
-		return "", fmt.Errorf("fail to unmarshal extrinsic hash: %w", err)
+		return "", fmt.Errorf("failed to unmarshal extrinsic hash: %w", err)
 	}
 
 	return hash, nil
@@ -331,12 +331,12 @@ func (c *Client) GetEventsStorage(blockHash string) (string, error) {
 	const eventsKey = "0x26aa394eea5630e07c48ae0c9558cef780d41e5e16056765bc8461851072c9d7"
 	result, err := c.call("state_getStorage", []interface{}{eventsKey, blockHash})
 	if err != nil {
-		return "", fmt.Errorf("fail to get events storage: %w", err)
+		return "", fmt.Errorf("failed to get events storage: %w", err)
 	}
 
 	var hexData string
 	if err := json.Unmarshal(result, &hexData); err != nil {
-		return "", fmt.Errorf("fail to unmarshal events storage: %w", err)
+		return "", fmt.Errorf("failed to unmarshal events storage: %w", err)
 	}
 
 	return hexData, nil
