@@ -123,6 +123,7 @@ var (
 	NewMsgDeposit                  = types.NewMsgDeposit
 	NewMsgTssPool                  = types.NewMsgTssPool
 	NewMsgTssPoolV2                = types.NewMsgTssPoolV2
+	NewMsgTssPoolV3                = types.NewMsgTssPoolV3
 	NewMsgTssKeysignFail           = types.NewMsgTssKeysignFail
 	NewMsgObservedTxIn             = types.NewMsgObservedTxIn
 	NewMsgObservedTxOut            = types.NewMsgObservedTxOut

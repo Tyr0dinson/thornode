@@ -730,7 +730,8 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 	poolPubKey := GetRandomPubKey()
 	frostPubKey := GetRandomPubKey()
 	keygenTime := int64(1024)
-	msg, err := NewMsgTssPoolV2(
+	observedMoneroHeight := int64(777)
+	msg, err := NewMsgTssPoolV3(
 		helper.members.Strings(),
 		poolPubKey,
 		nil,
@@ -745,10 +746,13 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 		nil,
 		[]byte("backup"),
 		frostPubKey,
+		observedMoneroHeight,
 	)
 	c.Assert(err, IsNil)
 
 	voter := NewTssVoter(msg.ID, helper.members.Strings(), poolPubKey, common.EmptyPubKey)
+	voter.PoolPubKeyFrost = frostPubKey
+	voter.ObservedMoneroHeight = observedMoneroHeight
 	for _, member := range helper.members[1:6] {
 		addr, addrErr := member.GetThorAddress()
 		c.Assert(addrErr, IsNil)
@@ -763,6 +767,8 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(updatedVoter.HasConsensus(), Equals, true)
 	c.Assert(updatedVoter.HasCompleteConsensus(), Equals, false)
+	c.Assert(updatedVoter.PoolPubKeyFrost.Equals(frostPubKey), Equals, true)
+	c.Assert(updatedVoter.ObservedMoneroHeight, Equals, observedMoneroHeight)
 
 	vault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
 	c.Assert(err, IsNil)
@@ -770,6 +776,57 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 	c.Assert(vault.IsXMRMonovault(), Equals, true)
 	c.Assert(vault.PubKeyEddsa.IsEmpty(), Equals, true)
 	c.Assert(vault.PubKeyFrost.Equals(frostPubKey), Equals, true)
+	c.Assert(vault.VaultCreationHeightXmr, Equals, observedMoneroHeight)
+}
+
+func (s *HandlerTssSuite) TestXMRMonovaultKeygenRejectsMismatchedLatchedFields(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{
+		Type:    XMRMonovaultKeygen,
+		Members: helper.members.Strings(),
+	}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	frostPubKey := GetRandomPubKey()
+	keygenTime := int64(1024)
+	observedMoneroHeight := int64(777)
+	msg, err := NewMsgTssPoolV3(
+		helper.members.Strings(),
+		poolPubKey,
+		nil,
+		nil,
+		XMRMonovaultKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		xmrMonovaultChains().Strings(),
+		helper.signer,
+		keygenTime,
+		common.EmptyPubKey,
+		nil,
+		[]byte("backup"),
+		frostPubKey,
+		observedMoneroHeight,
+	)
+	c.Assert(err, IsNil)
+
+	voter := NewTssVoter(msg.ID, helper.members.Strings(), poolPubKey, common.EmptyPubKey)
+	voter.PoolPubKeyFrost = frostPubKey
+	voter.ObservedMoneroHeight = observedMoneroHeight
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	mismatchedFrost := *msg
+	mismatchedFrost.PoolPubKeyFrost = GetRandomPubKey()
+	_, err = handler.Run(helper.ctx, &mismatchedFrost)
+	c.Assert(err, ErrorMatches, "invalid pool pubkey or monero height")
+
+	mismatchedHeight := *msg
+	mismatchedHeight.ObservedMoneroHeight = observedMoneroHeight + 1
+	_, err = handler.Run(helper.ctx, &mismatchedHeight)
+	c.Assert(err, ErrorMatches, "invalid pool pubkey or monero height")
 }
 
 func setKeygenMemberNodeAccount(c *C, helper tssHandlerTestHelper, member common.PubKey, status NodeStatus) {
@@ -968,6 +1025,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultWaitsForRegularVaultRotation(c *C) {
 	)
 	c.Assert(err, IsNil)
 	xmrVoter := NewTssVoter(xmrMsg.ID, members.Strings(), xmrPoolPubKey, common.EmptyPubKey)
+	xmrVoter.PoolPubKeyFrost = xmrFrostPubKey
 	for _, member := range members[1:3] {
 		addr, addrErr := member.GetThorAddress()
 		c.Assert(addrErr, IsNil)

@@ -237,6 +237,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(err, IsNil)
 
 	xmrVoter := NewTssVoter(xmrMsg.ID, xmrMsg.PubKeys, xmrMsg.PoolPubKey, xmrMsg.PoolPubKeyEddsa)
+	xmrVoter.PoolPubKeyFrost = xmrFrostPk
 	xmrVoter.Signers = signers
 	xmrVoter.Secp256K1Signatures = signatures
 	mgr.Keeper().SetTssVoter(ctx.WithBlockHeight(xmrKeygenHeight), xmrVoter)

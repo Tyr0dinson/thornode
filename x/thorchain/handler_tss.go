@@ -226,11 +226,16 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 	if voter.PoolPubKey.IsEmpty() {
 		voter.PoolPubKey = msg.PoolPubKey
 		voter.PoolPubKeyEddsa = msg.PoolPubKeyEddsa
+		voter.PoolPubKeyFrost = msg.PoolPubKeyFrost
+		voter.ObservedMoneroHeight = msg.ObservedMoneroHeight
 		voter.PubKeys = msg.PubKeys
 	}
 	// voter's pool pubkey is the same as the one in message
-	if !voter.PoolPubKey.Equals(msg.PoolPubKey) || !voter.PoolPubKeyEddsa.Equals(msg.PoolPubKeyEddsa) {
-		return fmt.Errorf("invalid pool pubkey")
+	if !voter.PoolPubKey.Equals(msg.PoolPubKey) ||
+		!voter.PoolPubKeyEddsa.Equals(msg.PoolPubKeyEddsa) ||
+		!voter.PoolPubKeyFrost.Equals(msg.PoolPubKeyFrost) ||
+		voter.ObservedMoneroHeight != msg.ObservedMoneroHeight {
+		return fmt.Errorf("invalid pool pubkey or monero height")
 	}
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := h.mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
@@ -461,18 +466,18 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			}
 			vaultPubKeyEddsa := voter.PoolPubKeyEddsa
 			if msg.KeygenType == XMRMonovaultKeygen {
-				if msg.PoolPubKeyFrost.IsEmpty() {
+				if voter.PoolPubKeyFrost.IsEmpty() {
 					return fmt.Errorf("xmr monovault keygen requires pool_pub_key_frost")
 				}
 				vaultPubKeyEddsa = common.EmptyPubKey
 			}
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), vaultPubKeyEddsa)
-			vault.PubKeyFrost = msg.PoolPubKeyFrost
+			vault.PubKeyFrost = voter.PoolPubKeyFrost
 			vault.Membership = voter.PubKeys
 			if vault.GetChains().Has(common.XMRChain) {
 				xmrHeight, _ := h.mgr.Keeper().GetLastChainHeight(ctx, common.XMRChain)
-				if xmrHeight <= 0 && msg.ObservedMoneroHeight > 0 {
-					xmrHeight = msg.ObservedMoneroHeight
+				if xmrHeight <= 0 && voter.ObservedMoneroHeight > 0 {
+					xmrHeight = voter.ObservedMoneroHeight
 					ctx.Logger().Info("XMR vault birthday: using node-observed Monero height from keygen", "height", xmrHeight)
 				} else if xmrHeight <= 0 {
 					ctx.Logger().Error("XMR vault birthday: no observed chain height available at keygen, vault scanner will use chain tip")
