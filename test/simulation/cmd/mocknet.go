@@ -44,7 +44,8 @@ var chainRPCs = map[common.Chain]string{
 	common.TRONChain:  "http://localhost:8090",
 	common.XRPChain:   "http://localhost:5005",
 	common.SOLChain:   "http://localhost:8899",
-	common.TAOChain:   "http://localhost:9944",
+	common.DOTChain:   "http://localhost:9944",
+	common.TAOChain:   "http://localhost:9945",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -144,6 +145,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.BTCChain, 1000, 4},
 				{common.ZECChain, 1, 50_000},
 				{common.TAOChain, 1, 100_000},
+				{common.DOTChain, 1, 100_000},
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
@@ -275,15 +277,13 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		case common.ZECChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
 			chainSeedTxs = 20
-		case common.GAIAChain, common.NOBLEChain:
-			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
+		case common.GAIAChain, common.NOBLEChain, common.DOTChain:
+			chainSeedAmount = sdkmath.NewUint(1_000 * common.One)
 		case common.AVAXChain, // more since local gas is high
 			common.XRPChain: // more since dust threshold is 1 XRP
-			chainSeedAmount = sdkmath.NewUint(10000 * common.One)
-		case common.DOGEChain:
-			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
-		case common.TRONChain:
-			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+			chainSeedAmount = sdkmath.NewUint(10_000 * common.One)
+		case common.DOGEChain, common.TRONChain:
+			chainSeedAmount = sdkmath.NewUint(100_000 * common.One)
 		case common.POLChain:
 			chainSeedAmount = sdkmath.NewUint(1_000_000 * common.One)
 		default:

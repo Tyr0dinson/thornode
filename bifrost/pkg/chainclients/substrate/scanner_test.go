@@ -6,7 +6,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	taotypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/bittensor/types"
+	taotypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
