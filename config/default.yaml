@@ -73,6 +73,7 @@ bifrost:
     leveldb: *default-leveldb
     auto_observe: true
     keygen_timeout: 5m
+    frost_keygen_timeout: 5m
     keysign_timeout: 45s
     party_timeout: 45s
     pre_param_timeout: 5m

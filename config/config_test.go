@@ -32,6 +32,30 @@ func (Test) TestAllDefaultDefined(c *C) {
 	check(c, []string{}, confMap, reflect.TypeOf(Config{}))
 }
 
+func (Test) TestFrostKeygenTimeoutDefault(c *C) {
+	// Lock in the default FROST keygen timeout. FROST DKG is a 3-round p2p
+	// protocol and historically inherited KeygenTimeout, which was too
+	// aggressive in some environments. This default should match the
+	// existing production KeygenTimeout (5m).
+	confMap := map[interface{}]interface{}{}
+	err := yaml.Unmarshal(defaultConfig, &confMap)
+	c.Assert(err, IsNil)
+
+	bifrostRaw, ok := confMap["bifrost"]
+	c.Assert(ok, Equals, true)
+	bifrostMap, ok := bifrostRaw.(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+
+	signerRaw, ok := bifrostMap["signer"]
+	c.Assert(ok, Equals, true)
+	signerMap, ok := signerRaw.(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+
+	frostTimeout, ok := signerMap["frost_keygen_timeout"]
+	c.Assert(ok, Equals, true, Commentf("default.yaml must define bifrost.signer.frost_keygen_timeout"))
+	c.Assert(frostTimeout, Equals, "5m")
+}
+
 func (Test) TestXMRSignerEndpointDefault(c *C) {
 	confMap := map[interface{}]interface{}{}
 	err := yaml.Unmarshal(defaultConfig, &confMap)

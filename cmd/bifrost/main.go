@@ -127,6 +127,12 @@ func main() {
 			Stringer("keygenJail", jailTimeKeygen).
 			Msg("keygen timeout must be shorter than jail time")
 	}
+	if cfg.Signer.FrostKeygenTimeout >= jailTimeKeygen {
+		log.Fatal().
+			Stringer("frostKeygenTimeout", cfg.Signer.FrostKeygenTimeout).
+			Stringer("keygenJail", jailTimeKeygen).
+			Msg("frost keygen timeout must be shorter than jail time")
+	}
 	if cfg.Signer.KeysignTimeout >= jailTimeKeysign {
 		log.Fatal().
 			Stringer("keysignTimeout", cfg.Signer.KeysignTimeout).
@@ -151,11 +157,12 @@ func main() {
 		tmPrivateKey,
 		tmPrivateKeyEddsa,
 		common.TssConfig{
-			EnableMonitor:   true,
-			KeyGenTimeout:   cfg.Signer.KeygenTimeout,
-			KeySignTimeout:  cfg.Signer.KeysignTimeout,
-			PartyTimeout:    cfg.Signer.PartyTimeout,
-			PreParamTimeout: cfg.Signer.PreParamTimeout,
+			EnableMonitor:      true,
+			KeyGenTimeout:      cfg.Signer.KeygenTimeout,
+			FrostKeygenTimeout: cfg.Signer.FrostKeygenTimeout,
+			KeySignTimeout:     cfg.Signer.KeysignTimeout,
+			PartyTimeout:       cfg.Signer.PartyTimeout,
+			PreParamTimeout:    cfg.Signer.PreParamTimeout,
 		},
 		nil,
 	)

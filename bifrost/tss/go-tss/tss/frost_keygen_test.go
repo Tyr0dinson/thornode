@@ -131,6 +131,34 @@ func enqueueVerifyMessage(
 	enqueueWrappedPayload(t, msgChan, messages.TSSFrostVerifyMsg, msgID, peerPubKey, payloadBytes)
 }
 
+func TestNewFrostKeygenCoordinatorClampsTimeoutToFloor(t *testing.T) {
+	// Any non-zero timeout shorter than the floor must be clamped up.
+	// This locks in the guarantee that a misconfigured (or zero-value)
+	// FrostKeygenTimeout cannot starve the 3-round p2p DKG exchange.
+	cases := []struct {
+		name    string
+		in      time.Duration
+		wantMin time.Duration
+	}{
+		{name: "zero", in: 0, wantMin: minFrostKeygenTimeout},
+		{name: "very short", in: 1 * time.Second, wantMin: minFrostKeygenTimeout},
+		{name: "equal to floor", in: minFrostKeygenTimeout, wantMin: minFrostKeygenTimeout},
+		{name: "above floor", in: 5 * time.Minute, wantMin: 5 * time.Minute},
+	}
+	msgChan := make(chan *p2p.Message, 1)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			coord := NewFrostKeygenCoordinator(nil, nil, "local", "msg-id", msgChan, tc.in)
+			if coord.timeout < tc.wantMin {
+				t.Fatalf("timeout not clamped: got %v, want >= %v", coord.timeout, tc.wantMin)
+			}
+			if tc.in >= minFrostKeygenTimeout && coord.timeout != tc.in {
+				t.Fatalf("timeout above floor was modified: in=%v coord.timeout=%v", tc.in, coord.timeout)
+			}
+		})
+	}
+}
+
 func TestFrostKeygenParticipantIndexDeterministic(t *testing.T) {
 	membersA := []string{testPubKeys[2], testPubKeys[0], testPubKeys[1]}
 	membersB := []string{testPubKeys[1], testPubKeys[2], testPubKeys[0]}

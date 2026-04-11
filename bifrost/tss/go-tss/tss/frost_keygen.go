@@ -39,6 +39,14 @@ type FrostKeygenCoordinator struct {
 	timeout          time.Duration
 }
 
+// minFrostKeygenTimeout is the minimum per-round wait the FROST DKG
+// coordinator will use, regardless of what the caller passes in. FROST DKG is
+// a 3-round p2p protocol with inter-round libp2p message exchange and no
+// retransmits, so the timeout needs to accommodate a full round trip across
+// all active peers. 60s is a conservative floor; production configs should
+// set this explicitly to something larger.
+const minFrostKeygenTimeout = 60 * time.Second
+
 func NewFrostKeygenCoordinator(
 	comm *p2p.Communication,
 	sidecar FrostSidecarKeygenClient,
@@ -47,8 +55,8 @@ func NewFrostKeygenCoordinator(
 	msgChan chan *p2p.Message,
 	timeout time.Duration,
 ) *FrostKeygenCoordinator {
-	if timeout <= 0 {
-		timeout = 90 * time.Second
+	if timeout < minFrostKeygenTimeout {
+		timeout = minFrostKeygenTimeout
 	}
 	return &FrostKeygenCoordinator{
 		logger:           log.With().Str("module", "frost_keygen").Str("msg_id", msgID).Logger(),
@@ -179,7 +187,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		t.localNodePubKey,
 		msgID,
 		msgChan,
-		t.conf.KeyGenTimeout,
+		t.conf.FrostKeygenTimeout,
 	)
 
 	isActive := false
@@ -194,7 +202,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 	quorum := len(activeSet.originalByNormalized)
 	if !isActive {
 		t.logger.Info().Str("msg_id", msgID).Msg("not active FROST keygen member, waiting for result")
-		waitResp, waitErr := coordinator.WaitForResult(activeParticipants, quorum, t.conf.KeyGenTimeout+5*time.Second)
+		waitResp, waitErr := coordinator.WaitForResult(activeParticipants, quorum, coordinator.timeout+5*time.Second)
 		if waitErr != nil {
 			return FrostKeygenResponse{
 				Status: tcommon.Fail,
@@ -216,7 +224,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		return resp, nil
 	}
 
-	waitResp, waitErr := coordinator.WaitForResult(activeParticipants, quorum, t.conf.KeyGenTimeout+5*time.Second)
+	waitResp, waitErr := coordinator.WaitForResult(activeParticipants, quorum, coordinator.timeout+5*time.Second)
 	if waitErr == nil && waitResp.Status == tcommon.Success {
 		t.persistPeerAddressBook()
 		return waitResp, nil

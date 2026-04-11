@@ -734,10 +734,11 @@ type BifrostSignerConfiguration struct {
 
 	// -------------------- tss timeouts --------------------
 
-	KeygenTimeout   time.Duration `mapstructure:"keygen_timeout"`
-	KeysignTimeout  time.Duration `mapstructure:"keysign_timeout"`
-	PartyTimeout    time.Duration `mapstructure:"party_timeout"`
-	PreParamTimeout time.Duration `mapstructure:"pre_param_timeout"`
+	KeygenTimeout      time.Duration `mapstructure:"keygen_timeout"`
+	FrostKeygenTimeout time.Duration `mapstructure:"frost_keygen_timeout"`
+	KeysignTimeout     time.Duration `mapstructure:"keysign_timeout"`
+	PartyTimeout       time.Duration `mapstructure:"party_timeout"`
+	PreParamTimeout    time.Duration `mapstructure:"pre_param_timeout"`
 }
 
 type BifrostAttestationGossipConfig struct {
