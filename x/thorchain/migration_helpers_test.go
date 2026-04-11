@@ -20,6 +20,7 @@ func (MigrationHelpersTestSuite) TestUnsafeAddRefundOutbound(c *C) {
 
 	// add a vault
 	vault := GetRandomVault()
+	vault.PubKeyFrost = GetRandomEd25519PubKey()
 	vault.Coins = common.Coins{
 		// common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(10000*common.One)),
@@ -74,6 +75,8 @@ func (MigrationHelpersTestSuite) TestUnsafeAddRefundOutbound(c *C) {
 	c.Assert(items[0].InHash.Equals(inTxID), Equals, true)
 	c.Assert(items[0].ToAddress.Equals(ethAddr), Equals, true)
 	c.Assert(items[0].VaultPubKey.Equals(vault.PubKey), Equals, true)
+	c.Assert(items[0].VaultPubKeyEddsa.Equals(vault.PubKeyEddsa), Equals, true)
+	c.Assert(items[0].VaultPubKeyFrost.Equals(vault.PubKeyFrost), Equals, true)
 	c.Assert(items[0].Coin.Equals(coin), Equals, true)
 }
 

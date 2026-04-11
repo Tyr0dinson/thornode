@@ -676,8 +676,10 @@ func (s *Signer) runCustomKeygenHooks(
 		if result.ObservedMoneroHeight > 0 {
 			observedMoneroHeight = result.ObservedMoneroHeight
 		}
+		if !result.PoolPubKeyFrost.IsEmpty() {
+			frostPoolPubKey = result.PoolPubKeyFrost
+		}
 		if !result.PoolPubKeyEddsa.IsEmpty() && !result.PoolPubKeyEddsa.Equals(effectivePoolPubKeyEddsa) {
-			frostPoolPubKey = result.PoolPubKeyEddsa
 			effectivePoolPubKeyEddsa = result.PoolPubKeyEddsa
 			s.logger.Info().
 				Str("chain", chainID.String()).

@@ -518,6 +518,8 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(vaults, HasLen, 1)
+	c.Assert(vaults[0].PubKeyEddsa.Equals(nodeAccount.PubKeySet.Ed25519), Equals, true)
+	c.Assert(vaults[0].PubKeyFrost.Equals(nodeAccount.PubKeySet.Ed25519), Equals, true)
 
 	// fail to get asgard vaults should return an error
 	helper.failToGetAsgardVaults = true
@@ -582,18 +584,57 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
-func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingOnNonMigratePendingActivity(c *C) {
+func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	mgr.txOutStore = NewTxStoreDummy()
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 
-	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	interval := mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval)
+	c.Assert(interval > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(interval)
 	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XMRChain, NetworkFee{
 		Chain:              common.XMRChain,
 		TransactionSize:    1,
 		TransactionFeeRate: 1,
 	}), IsNil)
 
+	retiringVault := GetRandomVault()
+	retiringVault.Status = RetiringVault
+	retiringVault.StatusSince = 0
+	retiringVault.Chains = common.Chains{common.XMRChain}.Strings()
+	retiringVault.PubKeyFrost = GetRandomEd25519PubKey()
+	retiringVault.Coins = common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	activeVault := GetRandomVault()
+	activeVault.Status = ActiveVault
+	activeVault.Chains = common.Chains{common.XMRChain}.Strings()
+	activeVault.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+
+	toAddress, err := activeVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	c.Assert(items[0].Chain, Equals, common.XMRChain)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+	c.Assert(items[0].ToAddress.Equals(toAddress), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiringVault.PubKey), Equals, true)
+	c.Assert(items[0].VaultPubKeyEddsa.Equals(retiringVault.PubKeyEddsa), Equals, true)
+	c.Assert(items[0].VaultPubKeyFrost.Equals(retiringVault.PubKeyFrost), Equals, true)
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingOnNonMigratePendingActivity(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
 	targetKey := GetRandomEd25519PubKey()
 	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
 	target.PubKeyFrost = targetKey

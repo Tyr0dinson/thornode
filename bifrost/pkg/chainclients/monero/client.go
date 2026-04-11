@@ -350,9 +350,6 @@ func (c *Client) catchupSpentOutputRefs() {
 	for _, vault := range vaults {
 		vaultPubKey := vault.PubKeyFrost
 		if vaultPubKey.IsEmpty() {
-			vaultPubKey = vault.PubKeyEddsa
-		}
-		if vaultPubKey.IsEmpty() {
 			continue
 		}
 		if len(vault.SpentOutputRefsXmr) == 0 {
@@ -997,7 +994,7 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 	}
 	vaultPubKey := strings.TrimSpace(txVaultPubKey(tx).String())
 	if vaultPubKey == "" {
-		return "", fmt.Errorf("FROST signed tx payload missing EDDSA vault_pub_key")
+		return "", fmt.Errorf("FROST signed tx payload missing vault_pub_key_frost")
 	}
 
 	if c.frostSigner == nil {
@@ -1708,7 +1705,8 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	return types.CustomKeygenResult{
 		Address:              frostAddr,
 		PoolPubKeyEddsa:      frostVaultPubKey,
-		FrostKeyshareHex:     frostResp.KeyBytesHex,
+		PoolPubKeyFrost:      frostVaultPubKey,
+		FrostKeyshareHex:     strings.TrimSpace(frostResp.KeyBytesHex),
 		ObservedMoneroHeight: frostResp.ObservedMoneroHeight,
 	}, nil
 }
@@ -2049,9 +2047,6 @@ func (c *Client) getVaultAddress(vaultPubKey common.PubKey) string {
 func (c *Client) resolveVaultAddress(vault ttypes.Vault) common.Address {
 	vaultPubKey := vault.PubKeyFrost
 	if vaultPubKey.IsEmpty() {
-		vaultPubKey = vault.PubKeyEddsa
-	}
-	if vaultPubKey.IsEmpty() {
 		return common.NoAddress
 	}
 
@@ -2059,9 +2054,7 @@ func (c *Client) resolveVaultAddress(vault ttypes.Vault) common.Address {
 	if err != nil || addr.IsEmpty() {
 		return common.NoAddress
 	}
-	if !vault.PubKeyFrost.IsEmpty() {
-		c.setVaultAddressMapping(vault.PubKeyFrost, addr)
-	}
+	c.setVaultAddressMapping(vaultPubKey, addr)
 	return addr
 }
 
@@ -2111,11 +2104,6 @@ func (c *Client) loadVaultAddressMap() error {
 	if c.vaultAddressStore == nil {
 		return nil
 	}
-	// Purge any v1 entries — the v1 store held stale eddsa-key mappings from a
-	// prior bug that caused double registration on the sidecar.
-	if err := c.vaultAddressStore.PurgeLegacyEntries(); err != nil {
-		c.logger.Warn().Err(err).Msg("fail to purge legacy vault address store entries")
-	}
 	stored, err := c.vaultAddressStore.List()
 	if err != nil {
 		return err
@@ -2150,10 +2138,7 @@ func (c *Client) loadVaultAddressMap() error {
 }
 
 func txVaultPubKey(tx stypes.TxOutItem) common.PubKey {
-	if !tx.VaultPubKeyFrost.IsEmpty() {
-		return tx.VaultPubKeyFrost
-	}
-	return tx.VaultPubKeyEddsa
+	return tx.VaultPubKeyFrost
 }
 
 func txCacheVault(tx stypes.TxOutItem, chain common.Chain) string {
@@ -2203,7 +2188,7 @@ func (c *Client) getVaultByPubKey(vaultPubKey common.PubKey) (ttypes.Vault, erro
 		return ttypes.Vault{}, asgardErr
 	}
 	for _, item := range vaults {
-		if item.PubKeyEddsa.Equals(vaultPubKey) || item.PubKeyFrost.Equals(vaultPubKey) {
+		if item.PubKeyFrost.Equals(vaultPubKey) {
 			return item, nil
 		}
 	}

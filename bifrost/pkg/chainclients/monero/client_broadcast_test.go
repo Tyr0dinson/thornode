@@ -52,6 +52,7 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 	}
 	payload := signedTxPayload{
 		TxHash:     "signed-hash",
@@ -121,6 +122,7 @@ func TestBroadcastTxIgnoresSidecarHashOverride(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 	}
 	payload := signedTxPayload{
 		TxHash:     "signed-hash",
@@ -176,6 +178,7 @@ func TestBroadcastTxRequiresMsgID(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 	}
 	payload := signedTxPayload{
 		TxHash:     "signed-hash",
@@ -195,7 +198,7 @@ func TestBroadcastTxRequiresMsgID(t *testing.T) {
 	}
 }
 
-func TestBroadcastTxRequiresEddsaVaultPubKey(t *testing.T) {
+func TestBroadcastTxRequiresFrostVaultPubKey(t *testing.T) {
 	t.Parallel()
 
 	var sidecarCalled atomic.Bool
@@ -227,13 +230,13 @@ func TestBroadcastTxRequiresEddsaVaultPubKey(t *testing.T) {
 
 	_, err = client.broadcastTx(tx, payload)
 	if err == nil {
-		t.Fatalf("expected broadcast tx to fail when EDDSA vault pubkey is missing")
+		t.Fatalf("expected broadcast tx to fail when frost vault pubkey is missing")
 	}
-	if !strings.Contains(err.Error(), "missing EDDSA vault_pub_key") {
-		t.Fatalf("expected missing EDDSA vault_pub_key error, got %v", err)
+	if !strings.Contains(err.Error(), "missing vault_pub_key_frost") {
+		t.Fatalf("expected missing vault_pub_key_frost error, got %v", err)
 	}
 	if sidecarCalled.Load() {
-		t.Fatalf("expected no sidecar broadcast call when EDDSA vault pubkey is missing")
+		t.Fatalf("expected no sidecar broadcast call when frost vault pubkey is missing")
 	}
 }
 
@@ -277,6 +280,7 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 	}
 	payload := signedTxPayload{
 		TxHash:      "signed-hash",
@@ -330,6 +334,7 @@ func TestBroadcastTxBroadcastedFlagStillRequiresTxMetadata(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 	}
 	payload := signedTxPayload{
 		TxHash:      "signed-hash",

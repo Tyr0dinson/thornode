@@ -784,9 +784,6 @@ func (s *Scanner) refreshAsgardLookup() error {
 	for _, vault := range vaults {
 		observedVault := vault.PubKeyFrost
 		if observedVault.IsEmpty() {
-			observedVault = vault.PubKeyEddsa
-		}
-		if observedVault.IsEmpty() {
 			continue
 		}
 		creationHeight := vault.VaultCreationHeightXmr

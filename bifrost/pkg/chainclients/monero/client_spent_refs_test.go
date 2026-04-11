@@ -164,7 +164,7 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	assert.Equal(t, uint32(3), capturedRefs[1].OutputIndex)
 }
 
-// Test 2c: txVaultPubKey returns frost key when set, else eddsa.
+// Test 2c: txVaultPubKey only accepts the frost vault key for XMR routing.
 func TestTxVaultPubKeyPreference(t *testing.T) {
 	t.Parallel()
 
@@ -183,7 +183,7 @@ func TestTxVaultPubKeyPreference(t *testing.T) {
 		VaultPubKey:      ecdsa,
 		VaultPubKeyEddsa: eddsa,
 	}
-	assert.Equal(t, eddsa, txVaultPubKey(txNoFrost), "should fall back to eddsa")
+	assert.True(t, txVaultPubKey(txNoFrost).IsEmpty(), "should reject eddsa-only xmr vault routing")
 
 	txOnlyEcdsa := stypes.TxOutItem{
 		VaultPubKey: ecdsa,

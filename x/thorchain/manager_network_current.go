@@ -85,6 +85,10 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 		}
 		pubSet := active[0].PubKeySet
 		vault := NewVaultV2(0, ActiveVault, AsgardVault, pubSet.Secp256k1, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains), pubSet.Ed25519)
+		// Mocknet/genesis bootstrap starts with a single validator before any real
+		// XMR keygen can occur. Keep that initial hard-cutover vault addressable via
+		// the Frost field so local sims do not begin from an EDDSA-only XMR vault.
+		vault.PubKeyFrost = pubSet.Ed25519
 		vault.Membership = common.PubKeys{pubSet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)

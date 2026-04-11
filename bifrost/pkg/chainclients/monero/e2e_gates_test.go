@@ -308,6 +308,7 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 		{
 			PubKeyEddsa: pkA,
 			PubKey:      pkA,
+			PubKeyFrost: pkA,
 			Coins: common.NewCoins(
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(100)),
 			),
@@ -315,6 +316,7 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 		{
 			PubKeyEddsa: pkB,
 			PubKey:      pkB,
+			PubKeyFrost: pkB,
 			Coins: common.NewCoins(
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(500)),
 			),

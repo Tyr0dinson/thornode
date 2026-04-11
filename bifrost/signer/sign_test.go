@@ -355,6 +355,7 @@ type MockCustomKeygenChainClient struct {
 	calledPoolED  common.PubKey
 	retAddress    common.Address
 	retPoolED     common.PubKey
+	retPoolFrost  common.PubKey
 	retBlame      []types2.Blame
 	retErr        error
 }
@@ -371,6 +372,7 @@ func (m *MockCustomKeygenChainClient) Keygen(req chainclienttypes.CustomKeygenRe
 	return chainclienttypes.CustomKeygenResult{
 		Address:         m.retAddress,
 		PoolPubKeyEddsa: m.retPoolED,
+		PoolPubKeyFrost: m.retPoolFrost,
 		Blame:           m.retBlame,
 	}, m.retErr
 }
@@ -832,6 +834,30 @@ func (s *SignSuite) TestRunCustomKeygenHooksAppliesPoolPubKeyOverride(c *C) {
 	updatedPoolED, _, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.ETHChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
 	c.Assert(err, IsNil)
 	c.Assert(updatedPoolED.Equals(override), Equals, true)
+}
+
+func (s *SignSuite) TestRunCustomKeygenHooksCarriesFrostPubKeyWithoutOverride(c *C) {
+	bridge := fakeBridge{s.bridge}
+	frost := types2.GetRandomPubKey()
+	custom := &MockCustomKeygenChainClient{
+		MockChainClient: &MockChainClient{},
+		retPoolFrost:    frost,
+	}
+
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.ETHChain: custom,
+		},
+		thorchainBridge: bridge,
+		logger:          log.With().Str("module", "signer").Logger(),
+	}
+
+	poolPK := types2.GetRandomPubKey()
+	poolED := common.EmptyPubKey
+	updatedPoolED, updatedPoolFrost, _, _, err := sign.runCustomKeygenHooks([]string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	c.Assert(err, IsNil)
+	c.Assert(updatedPoolED.IsEmpty(), Equals, true)
+	c.Assert(updatedPoolFrost.Equals(frost), Equals, true)
 }
 
 func (s *SignSuite) TestRunCustomKeygenHooksFailClosed(c *C) {

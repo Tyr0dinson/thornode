@@ -82,7 +82,7 @@ func (b *consolidationBridge) GetConstants() (map[string]int64, error) {
 
 func (b *consolidationBridge) GetVault(pubkey string) (ttypes.Vault, error) {
 	for _, vault := range b.asgards {
-		if vault.PubKey.String() == pubkey || vault.PubKeyEddsa.String() == pubkey {
+		if vault.PubKey.String() == pubkey || vault.PubKeyFrost.String() == pubkey {
 			return vault, nil
 		}
 	}
@@ -344,6 +344,7 @@ func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -441,6 +442,7 @@ func TestRunConsolidationPassUsesSpendableBalanceForAmount(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -507,6 +509,7 @@ func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -561,6 +564,7 @@ func TestRunConsolidationPassSkipsWhenMempoolOutgoingExists(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -610,6 +614,7 @@ func TestRunConsolidationPassRetiringVaultPreChurnTrigger(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_RetiringVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -661,6 +666,7 @@ func TestRunConsolidationPassSkipsWhenNodeInactive(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -704,6 +710,7 @@ func TestRunConsolidationPassRetriesOnInsufficientFunds(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -761,6 +768,7 @@ func TestRunConsolidationPassHoldsVaultLockDuringPrechecks(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -820,6 +828,7 @@ func TestRunConsolidationPassBacksOffAcrossPasses(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},
@@ -882,6 +891,7 @@ func TestRunConsolidationPassStopsOnNonRetryableError(t *testing.T) {
 	vault := ttypes.Vault{
 		PubKey:      vaultPubKey,
 		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
 		Status:      ttypes.VaultStatus_ActiveVault,
 		StatusSince: 1,
 		Membership:  []string{localNodePubKey.String()},

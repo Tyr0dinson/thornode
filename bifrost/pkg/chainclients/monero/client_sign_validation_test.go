@@ -27,6 +27,7 @@ func TestValidateXMRSignTxRejectsInboundMemo(t *testing.T) {
 		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
@@ -55,6 +56,7 @@ func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
@@ -78,6 +80,7 @@ func TestValidateXMRSignTxAcceptsFeaturedDestination(t *testing.T) {
 		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('C')),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
@@ -101,6 +104,7 @@ func TestValidateXMRSignTxAcceptsNonGuaranteedFeaturedDestination(t *testing.T) 
 		ToAddress:        common.Address(nonGuaranteedFeaturedSubaddress),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
@@ -155,6 +159,7 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(2)),
 		},
@@ -213,6 +218,7 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
@@ -260,6 +266,7 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(2)),
 		},
@@ -331,6 +338,7 @@ func TestValidateXMRSignTxAcceptsValidRequest(t *testing.T) {
 		ToAddress:        testOutboundXMRDestination(),
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},

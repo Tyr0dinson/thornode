@@ -82,7 +82,7 @@ func TestCatchupSpentOutputRefsReadsFromVaultAndCallsSidecar(t *testing.T) {
 	assert.Equal(t, "spent_c", capturedRefs[2].TxHash)
 }
 
-func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrostOrEddsa(t *testing.T) {
+func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrost(t *testing.T) {
 	t.Parallel()
 
 	var calls int
@@ -101,7 +101,8 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrostOrEddsa(t *testing.T) {
 		logger:      testLogger(),
 		thorchainBridge: &mockMoneroBridge{
 			vaultByPubKey: map[string]ttypes.Vault{
-				"empty": {
+				"eddsa-only": {
+					PubKeyEddsa: testVaultPubKey(t, "eddsa-only-catchup"),
 					SpentOutputRefsXmr: []*common.OutputRef{
 						{TxHash: "x", OutputIndex: 0},
 					},

@@ -38,6 +38,7 @@ func TestBuildOutboundObservationUsesOriginalMemo(t *testing.T) {
 			OriginalMemo:     outboundMemo,
 			VaultPubKey:      vaultPubKey,
 			VaultPubKeyEddsa: vaultPubKey,
+			VaultPubKeyFrost: vaultPubKey,
 		},
 		txHash,
 		0,

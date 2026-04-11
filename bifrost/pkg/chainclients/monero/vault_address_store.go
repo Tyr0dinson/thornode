@@ -7,13 +7,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
-// Bumped from v1 to v2 after a bug where both frost and eddsa keys were
-// persisted for the same vault address. v1 entries are ignored at load time
-// and purged on next startup so only frost-key mappings are retained.
-const (
-	vaultAddressPrefix         = "xmr-vault-address-v2-"
-	vaultAddressPrefixLegacyV1 = "xmr-vault-address-v1-"
-)
+const vaultAddressPrefix = "xmr-vault-address-v2-"
 
 type VaultAddressStore struct {
 	db *leveldb.DB
@@ -45,30 +39,6 @@ func (s *VaultAddressStore) Get(vaultPubKey string) (string, error) {
 		return "", err
 	}
 	return string(value), nil
-}
-
-// PurgeLegacyEntries removes any entries using the v1 prefix. The v1 store
-// contained buggy double-registered mappings (both frost and eddsa keys for
-// the same address) which caused the sidecar to return 500 errors during
-// vault registration. Call this on startup before loading v2 entries.
-func (s *VaultAddressStore) PurgeLegacyEntries() error {
-	if s == nil || s.db == nil {
-		return fmt.Errorf("vault address store is not initialized")
-	}
-	iter := s.db.NewIterator(util.BytesPrefix([]byte(vaultAddressPrefixLegacyV1)), nil)
-	defer iter.Release()
-
-	batch := new(leveldb.Batch)
-	for iter.Next() {
-		batch.Delete(iter.Key())
-	}
-	if err := iter.Error(); err != nil {
-		return err
-	}
-	if batch.Len() == 0 {
-		return nil
-	}
-	return s.db.Write(batch, nil)
 }
 
 func (s *VaultAddressStore) List() (map[string]string, error) {

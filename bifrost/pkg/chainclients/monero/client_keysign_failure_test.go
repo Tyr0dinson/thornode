@@ -121,6 +121,7 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 		vaults: map[string]ttypes.Vault{
 			vaultPubKey.String(): {
 				PubKey:      vaultPubKey,
+				PubKeyFrost: vaultPubKey,
 				Status:      ttypes.VaultStatus_ActiveVault,
 				StatusSince: 12000,
 				Membership:  []string{"member-a"},
@@ -167,6 +168,7 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		ToAddress:        testOutboundXMRDestination(),
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
@@ -198,6 +200,7 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 		vaults: map[string]ttypes.Vault{
 			vaultPubKey.String(): {
 				PubKey:      vaultPubKey,
+				PubKeyFrost: vaultPubKey,
 				Status:      ttypes.VaultStatus_ActiveVault,
 				StatusSince: 900,
 				Membership:  []string{"member-a"},
@@ -241,6 +244,7 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 		Chain:            common.XMRChain,
 		VaultPubKey:      vaultPubKey,
 		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
 		ToAddress:        testOutboundXMRDestination(),
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),

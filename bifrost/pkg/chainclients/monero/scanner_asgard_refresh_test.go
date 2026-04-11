@@ -6,10 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // TestRefreshAsgardRegistersOnlyFrostKey validates that refreshAsgardLookup
@@ -54,36 +57,37 @@ func TestRefreshAsgardRegistersOnlyFrostKey(t *testing.T) {
 	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
-	// Simulate what refreshAsgardLookup does: call ensureFrostVaultRegistered
-	// with the frost key (correct) vs eddsa key (buggy).
-	_, err = ensureFrostVaultRegistered(
-		testLogger(),
+	scanner := NewScanner(
+		log.Logger,
 		signer,
-		"XMR",
-		frostKey,
-		nil,
-		"test",
-		0,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{
+				PubKey:      testVaultPubKey(t, "ecdsa-scanner-reg"),
+				PubKeyEddsa: eddsaKey,
+				PubKeyFrost: frostKey,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
 	)
-	require.NoError(t, err, "frost key registration should succeed")
+	require.NoError(t, scanner.refreshAsgardLookup(), "frost key registration should succeed")
 
 	assert.Equal(t, 1, len(registeredKeys))
 	assert.Equal(t, frostKey.String(), registeredKeys[0],
 		"only the frost key should be registered on the sidecar")
 }
 
-func TestRefreshAsgardFallsBackToEddsaWhenFrostMissing(t *testing.T) {
+func TestRefreshAsgardSkipsVaultWithoutPubKeyFrost(t *testing.T) {
 	t.Parallel()
 
 	eddsaKey := testVaultPubKey(t, "eddsa-scanner-fallback")
 
-	var registeredKeys []string
+	var registerCalls int
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/monero/vaults/register" {
-			var req xmrFrostRegisterVaultRequest
-			_ = json.NewDecoder(r.Body).Decode(&req)
-			registeredKeys = append(registeredKeys, req.VaultPubKey)
+			registerCalls++
 			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
 			return
 		}
@@ -94,18 +98,20 @@ func TestRefreshAsgardFallsBackToEddsaWhenFrostMissing(t *testing.T) {
 	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
-	_, err = ensureFrostVaultRegistered(
-		testLogger(),
+	scanner := NewScanner(
+		log.Logger,
 		signer,
-		"XMR",
-		eddsaKey,
-		nil,
-		"test",
-		0,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{
+				PubKey:      testVaultPubKey(t, "ecdsa-scanner-fallback"),
+				PubKeyEddsa: eddsaKey,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
 	)
-	require.NoError(t, err, "eddsa fallback registration should succeed when frost key is not available yet")
+	require.NoError(t, scanner.refreshAsgardLookup(), "vaults without frost keys should be ignored, not registered")
 
-	assert.Equal(t, 1, len(registeredKeys))
-	assert.Equal(t, eddsaKey.String(), registeredKeys[0],
-		"eddsa key should be registered when no frost key is available")
+	assert.Equal(t, 0, registerCalls, "eddsa-only xmr vaults should not hit sidecar registration")
 }

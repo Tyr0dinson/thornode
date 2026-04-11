@@ -201,7 +201,7 @@ func TestFetchTxsAcceptsCurrentAsgardWithPubKeyFrost(t *testing.T) {
 	}
 }
 
-func TestFetchTxsAcceptsCurrentAsgardWithoutPubKeyFrost(t *testing.T) {
+func TestFetchTxsSkipsCurrentAsgardWithoutPubKeyFrost(t *testing.T) {
 	t.Parallel()
 
 	txID := strings.Repeat("f", 64)
@@ -248,11 +248,8 @@ func TestFetchTxsAcceptsCurrentAsgardWithoutPubKeyFrost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch txs: %v", err)
 	}
-	if len(txIn.TxArray) != 1 {
-		t.Fatalf("expected current asgard transfer to survive with PubKeyEddsa fallback, got %d items", len(txIn.TxArray))
-	}
-	if !txIn.TxArray[0].ObservedVaultPubKey.Equals(currentVaultPubKey) {
-		t.Fatalf("expected current asgard vault pubkey %s, got %s", currentVaultPubKey, txIn.TxArray[0].ObservedVaultPubKey)
+	if len(txIn.TxArray) != 0 {
+		t.Fatalf("expected current asgard transfer to be skipped without PubKeyFrost, got %d items", len(txIn.TxArray))
 	}
 }
 

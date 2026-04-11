@@ -39,7 +39,7 @@ func TestGetConfirmationCountAppliesMaxConfirmationCap(t *testing.T) {
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	bridge := &confirmationBridge{
-		asgards:          ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey}},
+		asgards:          ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey, PubKeyFrost: vaultPubKey}},
 		confMultiplier:   int64(constants.MaxBasisPts),
 		maxConfirmations: 3,
 	}
@@ -73,7 +73,7 @@ func TestGetConfirmationCountHonorsMinimumFloor(t *testing.T) {
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	bridge := &confirmationBridge{
-		asgards:          ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey}},
+		asgards:          ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey, PubKeyFrost: vaultPubKey}},
 		confMultiplier:   int64(constants.MaxBasisPts),
 		maxConfirmations: 0,
 	}

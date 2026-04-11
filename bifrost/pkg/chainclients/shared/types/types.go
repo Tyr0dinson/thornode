@@ -83,6 +83,7 @@ type CustomKeygenRequest struct {
 type CustomKeygenResult struct {
 	Address              common.Address
 	PoolPubKeyEddsa      common.PubKey
+	PoolPubKeyFrost      common.PubKey
 	FrostKeyshareHex     string
 	ObservedMoneroHeight int64
 	Blame                []ttypes.Blame

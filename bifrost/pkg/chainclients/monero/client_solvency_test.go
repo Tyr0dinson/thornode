@@ -73,7 +73,7 @@ func TestReportSolvencyAutoUnhaltUsesCheckedVaultCount(t *testing.T) {
 		logger:                  log.Logger,
 		cfg:                     config.BifrostChainConfiguration{SolvencyBlocks: 10},
 		chain:                   common.XMRChain,
-		thorchainBridge:         &solvencyBridge{asgards: ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100)))}, {PubKey: common.EmptyPubKey, PubKeyEddsa: common.EmptyPubKey}}},
+		thorchainBridge:         &solvencyBridge{asgards: ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey, PubKeyFrost: vaultPubKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100)))}, {PubKey: common.EmptyPubKey, PubKeyEddsa: common.EmptyPubKey, PubKeyFrost: common.EmptyPubKey}}},
 		scanner:                 &Scanner{lastFee: atomic.NewUint64(10)},
 		frostSigner:             frostSigner,
 		globalSolvencyQueue:     queue,

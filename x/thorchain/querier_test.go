@@ -988,6 +988,39 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	c.Assert(resp[0].PubKey, Equals, pubKey)
 }
 
+func (s *QuerierSuite) TestQueryPoolAddressesXMRUsesFrostPubKey(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pubKey := GetRandomPubKey()
+	eddsaPubKey := GetRandomEd25519PubKey()
+	frostPubKey := GetRandomEd25519PubKey()
+	asgard := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, common.Chains{common.XMRChain}.Strings(), nil, eddsaPubKey)
+	asgard.PubKeyFrost = frostPubKey
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+	queryInboundAddrResp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	result, err := queryInboundAddrResp.MarshalJSONPB(nil)
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+
+	resp := []struct {
+		Chain   common.Chain   `json:"chain"`
+		PubKey  common.PubKey  `json:"pub_key"`
+		Address common.Address `json:"address"`
+		ViewKey string         `json:"view_key"`
+	}{}
+
+	c.Assert(json.Unmarshal(result, &resp), IsNil)
+	c.Assert(len(resp), Equals, 1)
+	c.Assert(resp[0].Chain, Equals, common.XMRChain)
+	c.Assert(resp[0].PubKey, Equals, frostPubKey)
+	c.Assert(resp[0].ViewKey, Not(Equals), "")
+}
+
 func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)

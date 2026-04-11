@@ -8,36 +8,37 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-func TestTxCacheVaultUsesEddsaVaultPubKey(t *testing.T) {
+func TestTxCacheVaultUsesFrostVaultPubKey(t *testing.T) {
 	t.Parallel()
 
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
-		VaultPubKeyEddsa: common.PubKey("thorpub1eddsa"),
+		VaultPubKeyFrost: common.PubKey("thorpub1frost"),
 	}
 
 	key := txCacheVault(tx, common.XMRChain)
-	if !strings.Contains(key, "thorpub1eddsa") {
-		t.Fatalf("expected cache key to include eddsa vault pubkey, got %s", key)
+	if !strings.Contains(key, "thorpub1frost") {
+		t.Fatalf("expected cache key to include frost vault pubkey, got %s", key)
 	}
 }
 
-func TestTxVaultPubKeyPrefersEddsa(t *testing.T) {
+func TestTxVaultPubKeyUsesFrost(t *testing.T) {
 	t.Parallel()
 
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
 		VaultPubKey:      common.PubKey("thorpub1secp"),
 		VaultPubKeyEddsa: common.PubKey("thorpub1eddsa"),
+		VaultPubKeyFrost: common.PubKey("thorpub1frost"),
 	}
 
 	got := txVaultPubKey(tx)
-	if !got.Equals(tx.VaultPubKeyEddsa) {
-		t.Fatalf("expected eddsa vault pubkey, got %s", got.String())
+	if !got.Equals(tx.VaultPubKeyFrost) {
+		t.Fatalf("expected frost vault pubkey, got %s", got.String())
 	}
 }
 
-func TestTxVaultPubKeyRequiresEddsa(t *testing.T) {
+func TestTxVaultPubKeyRequiresFrost(t *testing.T) {
 	t.Parallel()
 
 	tx := stypes.TxOutItem{
@@ -47,6 +48,6 @@ func TestTxVaultPubKeyRequiresEddsa(t *testing.T) {
 
 	got := txVaultPubKey(tx)
 	if !got.IsEmpty() {
-		t.Fatalf("expected empty vault pubkey when eddsa key is missing, got %s", got.String())
+		t.Fatalf("expected empty vault pubkey when frost key is missing, got %s", got.String())
 	}
 }

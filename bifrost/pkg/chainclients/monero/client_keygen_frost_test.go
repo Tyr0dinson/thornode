@@ -121,6 +121,9 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	if !result.PoolPubKeyEddsa.Equals(frostVaultPubKey) {
 		t.Fatalf("expected eddsa pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyEddsa)
 	}
+	if !result.PoolPubKeyFrost.Equals(frostVaultPubKey) {
+		t.Fatalf("expected frost pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyFrost)
+	}
 	if result.FrostKeyshareHex != "cafebabe" {
 		t.Fatalf("expected frost keyshare hex cafebabe, got %s", result.FrostKeyshareHex)
 	}
