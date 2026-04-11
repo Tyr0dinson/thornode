@@ -282,17 +282,12 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 	}
 }
 
-func TestValidateXMRSignTxFallsBackToFrostBalanceLookup(t *testing.T) {
+func TestValidateXMRSignTxRequiresFrostVaultPubKey(t *testing.T) {
 	t.Parallel()
 
 	eddsaPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
-	frostPubKey, _ := testVaultPubKeyAndAddress(t)
 	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
 		eddsaPubKey.String(): {
-			Balance:         0,
-			UnlockedBalance: 0,
-		},
-		frostPubKey.String(): {
 			Balance:          5 * moneroAtomicToThorchain,
 			UnlockedBalance:  5 * moneroAtomicToThorchain,
 			SpendableBalance: uint64Ptr(5 * moneroAtomicToThorchain),
@@ -308,7 +303,7 @@ func TestValidateXMRSignTxFallsBackToFrostBalanceLookup(t *testing.T) {
 	c := &Client{
 		chain:           common.XMRChain,
 		frostSigner:     frostSigner,
-		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{eddsaPubKey.String(): {PubKeyEddsa: eddsaPubKey, PubKeyFrost: frostPubKey}}},
+		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{eddsaPubKey.String(): {PubKeyEddsa: eddsaPubKey}}},
 		vaultAddressMap: map[string]common.Address{
 			eddsaPubKey.String(): vaultAddr,
 		},
@@ -323,8 +318,12 @@ func TestValidateXMRSignTxFallsBackToFrostBalanceLookup(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	if _, err := c.validateXMRSignTx(tx, 100, true); err != nil {
-		t.Fatalf("expected fallback frost balance lookup to validate request, got %v", err)
+	_, err = c.validateXMRSignTx(tx, 100, true)
+	if err == nil {
+		t.Fatal("expected sign validation to fail closed without VaultPubKeyFrost")
+	}
+	if !strings.Contains(err.Error(), "vault pubkey is empty") {
+		t.Fatalf("expected missing frost vault pubkey error, got %v", err)
 	}
 }
 

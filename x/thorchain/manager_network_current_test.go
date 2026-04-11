@@ -635,6 +635,11 @@ func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingO
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 
 	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XMRChain, NetworkFee{
+		Chain:              common.XMRChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1,
+	}), IsNil)
 	targetKey := GetRandomEd25519PubKey()
 	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
 	target.PubKeyFrost = targetKey
