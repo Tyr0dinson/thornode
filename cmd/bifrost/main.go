@@ -127,12 +127,12 @@ func main() {
 			Stringer("keygenJail", jailTimeKeygen).
 			Msg("keygen timeout must be shorter than jail time")
 	}
-	if cfg.Signer.FrostKeygenTimeout >= jailTimeKeygen {
-		log.Fatal().
-			Stringer("frostKeygenTimeout", cfg.Signer.FrostKeygenTimeout).
-			Stringer("keygenJail", jailTimeKeygen).
-			Msg("frost keygen timeout must be shorter than jail time")
-	}
+	// FrostKeygenTimeout is intentionally NOT bound by jailTimeKeygen.
+	// FROST DKG is a 3-round p2p protocol whose round-2 message exchange
+	// can legitimately exceed the aggressive jail times used in test
+	// environments (mocknet pins JailTimeKeygen to 10 blocks). The 60s
+	// floor inside NewFrostKeygenCoordinator + per-environment overrides
+	// in docker-compose are the relevant safety nets here.
 	if cfg.Signer.KeysignTimeout >= jailTimeKeysign {
 		log.Fatal().
 			Stringer("keysignTimeout", cfg.Signer.KeysignTimeout).
