@@ -141,9 +141,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
 				strings.ToLower(tx.Aggregator) == strings.ToLower(txOutItem.Aggregator) &&
 				strings.ToLower(tx.AggregatorTarget) == strings.ToLower(txOutItem.AggregatorTargetAsset) &&
-				(tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) ||
-					tx.ObservedPubKey.Equals(txOutItem.VaultPubKeyEddsa) ||
-					tx.ObservedPubKey.Equals(txOutItem.VaultPubKeyFrost)) {
+				txOutPubKeyMatchesObserved(tx.Tx.Chain, tx.ObservedPubKey, txOutItem) {
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})
 				if !matchCoin {

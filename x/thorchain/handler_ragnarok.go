@@ -2,7 +2,6 @@ package thorchain
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -82,21 +81,11 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 			// in to trigger it, it is trigger by thorchain itself.
 
 			var fromAddress common.Address
-			switch tx.Chain.GetSigningAlgo() {
-			case common.SigningAlgoSecp256k1:
-				fromAddress, err = tx.VaultPubKey.GetAddress(tx.Chain)
-			case common.SigningAlgoEd25519:
-				key := tx.VaultPubKeyEddsa
-				if tx.Chain == common.XMRChain && !tx.VaultPubKeyFrost.IsEmpty() {
-					key = tx.VaultPubKeyFrost
-				}
-				if key.IsEmpty() {
-					err = fmt.Errorf("vault pubkey eddsa is empty")
-				} else {
-					fromAddress, err = key.GetAddress(tx.Chain)
-				}
-			default:
-				err = fmt.Errorf("unknown signing algorithm: %s", tx.Chain.GetSigningAlgo())
+			sourcePubKey, sourceErr := txOutSourcePubKey(tx)
+			if sourceErr != nil {
+				err = sourceErr
+			} else {
+				fromAddress, err = sourcePubKey.GetAddress(tx.Chain)
 			}
 			if err != nil {
 				ctx.Logger().Error(

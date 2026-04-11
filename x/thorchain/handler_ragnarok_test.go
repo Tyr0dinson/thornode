@@ -181,25 +181,25 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPathXMR(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	retireVault := GetRandomVault()
-	retireVault.PubKeyEddsa = GetRandomEd25519PubKey()
+	retireVault.PubKeyFrost = GetRandomEd25519PubKey()
 	retireVault.Chains = common.Chains{common.XMRChain}.Strings()
 	retireVault.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(2*common.One)),
 	})
 
 	newVault := GetRandomVault()
-	newVault.PubKeyEddsa = GetRandomEd25519PubKey()
+	newVault.PubKeyFrost = GetRandomEd25519PubKey()
 	newVault.Chains = common.Chains{common.XMRChain}.Strings()
 
 	txout := NewTxOut(1)
-	newVaultAddr, err := newVault.PubKeyEddsa.GetAddress(common.XMRChain)
+	newVaultAddr, err := newVault.PubKeyFrost.GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	txout.TxArray = append(txout.TxArray, TxOutItem{
 		Chain:            common.XMRChain,
 		InHash:           common.BlankTxID,
 		ToAddress:        newVaultAddr,
 		VaultPubKey:      retireVault.PubKey,
-		VaultPubKeyEddsa: retireVault.PubKeyEddsa,
+		VaultPubKeyFrost: retireVault.PubKeyFrost,
 		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(1024)),
 		Memo:             NewRagnarokMemo(1).String(),
 	})
@@ -212,7 +212,7 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPathXMR(c *C) {
 		txout:             txout,
 	}
 
-	fromAddr, err := keeper.retireVault.PubKeyEddsa.GetAddress(common.XMRChain)
+	fromAddr, err := keeper.retireVault.PubKeyFrost.GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	handler := NewRagnarokHandler(NewDummyMgrWithKeeper(keeper))
 	tx := NewObservedTx(common.Tx{
@@ -227,7 +227,7 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPathXMR(c *C) {
 		Gas: common.Gas{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(10)),
 		},
-	}, 1, retireVault.PubKeyEddsa, 1)
+	}, 1, retireVault.PubKeyFrost, 1)
 
 	msgRagnarok := NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress)
 	_, err = handler.handle(ctx, *msgRagnarok)

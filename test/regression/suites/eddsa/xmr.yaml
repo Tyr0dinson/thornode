@@ -30,7 +30,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0].chain == "XMR"
-  - .[0].vault_pub_key_eddsa == "{{ pubkey_dog_eddsa }}"
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
   - .[0].to_address == "{{ addr_xmr_cat }}"
   - .[0].coin.asset == "XMR.XMR"
   - .[0].coin.amount|tonumber > 0

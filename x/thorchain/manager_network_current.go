@@ -812,7 +812,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					InHash:           common.BlankTxID,
 					ToAddress:        addr,
 					VaultPubKey:      vault.PubKey,
-					VaultPubKeyEddsa: vault.PubKeyEddsa,
+					VaultPubKeyEddsa: txOutVaultPubKeyEddsa(chain, vault.PubKeyEddsa),
 					VaultPubKeyFrost: vault.PubKeyFrost,
 					Coin: common.Coin{
 						Asset:  coin.Asset,

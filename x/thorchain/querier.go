@@ -225,9 +225,15 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddre
 	var result []*types.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		if vault.PubKeyEddsa.IsEmpty() && c.GetSigningAlgo() == common.SigningAlgoEd25519 {
-			// this is an eddsa chain, but the vault doesn't have an eddsa pubkey, skip.
-			continue
+		if c.GetSigningAlgo() == common.SigningAlgoEd25519 {
+			if c == common.XMRChain {
+				if vault.PubKeyFrost.IsEmpty() {
+					continue
+				}
+			} else if vault.PubKeyEddsa.IsEmpty() {
+				// this is an eddsa chain, but the vault doesn't have an eddsa pubkey, skip.
+				continue
+			}
 		}
 		addr, err := vault.GetAddress(c)
 		if err != nil {
@@ -596,16 +602,6 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 	chains := make(common.Chains, 0)
 	for _, vault := range active {
 		chains = append(chains, vault.GetChains()...)
-	}
-	if !chains.Has(common.XMRChain) {
-		retiring, retiringErr := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
-		if retiringErr != nil {
-			ctx.Logger().Error("fail to get retiring vaults", "error", retiringErr)
-			return nil, fmt.Errorf("fail to get retiring vaults: %w", retiringErr)
-		}
-		if len(filterVaultsByChain(retiring, common.XMRChain)) > 0 {
-			chains = append(chains, common.XMRChain)
-		}
 	}
 	chains = chains.Distinct()
 	if len(chains) == 0 {

@@ -158,16 +158,6 @@ func hasActiveNonXMRAsgardFamily(vaults Vaults) bool {
 
 func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, active Vaults, chain common.Chain, signingTransactionPeriod int64) (Vault, error) {
 	filtered := filterVaultsByChain(active, chain)
-	if len(filtered) == 0 && chain == common.XMRChain {
-		// During the regular-Asgard -> XMR-monovault handoff, keep XMR routing on
-		// the retiring XMR-bearing vault until the dedicated monovault becomes
-		// active. This continuity fallback is XMR-only.
-		retiring, err := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
-		if err != nil {
-			return Vault{}, fmt.Errorf("fail to get retiring xmr vaults: %w", err)
-		}
-		filtered = filterVaultsByChain(retiring, chain)
-	}
 	if chain == common.THORChain {
 		// Keep native THOR routing on ordinary Asgards when they exist. The
 		// dedicated XMR monovault also carries THOR for accounting/solvency, but

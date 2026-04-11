@@ -335,7 +335,10 @@ func (m *Vault) AlgoPubKey(chain common.Chain) (common.PubKey, error) {
 	case common.SigningAlgoSecp256k1:
 		return m.PubKey, nil
 	case common.SigningAlgoEd25519:
-		if chain == common.XMRChain && !m.PubKeyFrost.IsEmpty() {
+		if chain == common.XMRChain {
+			if m.PubKeyFrost.IsEmpty() {
+				return "", fmt.Errorf("xmr vault has no frost public key")
+			}
 			return m.PubKeyFrost, nil
 		}
 		if m.PubKeyEddsa.IsEmpty() {

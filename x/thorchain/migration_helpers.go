@@ -56,7 +56,7 @@ func unsafeAddRefundOutbound(ctx cosmos.Context, mgr *Mgrs, inHash, destAddr str
 		InHash:           inTxId,
 		ToAddress:        dest,
 		VaultPubKey:      asg.PubKey,
-		VaultPubKeyEddsa: asg.PubKeyEddsa,
+		VaultPubKeyEddsa: txOutVaultPubKeyEddsa(coin.Asset.GetChain(), asg.PubKeyEddsa),
 		VaultPubKeyFrost: asg.PubKeyFrost,
 		Coin:             coin,
 		MaxGas:           common.Gas{maxGasCoin},

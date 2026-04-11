@@ -79,5 +79,6 @@ genesis:
             - {{ pubkey_dog }}
           pub_key: {{ pubkey_dog }}
           pub_key_eddsa: {{ pubkey_dog_eddsa }}
+          pub_key_frost: {{ pubkey_dog_eddsa }}
           status: ActiveVault
           type: AsgardVault

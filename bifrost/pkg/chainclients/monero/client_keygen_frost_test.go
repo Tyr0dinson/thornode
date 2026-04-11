@@ -118,8 +118,8 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	if !result.Address.Equals(expectedAddress) {
 		t.Fatalf("expected address %s, got %s", expectedAddress, result.Address)
 	}
-	if !result.PoolPubKeyEddsa.Equals(frostVaultPubKey) {
-		t.Fatalf("expected eddsa pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyEddsa)
+	if !result.PoolPubKeyEddsa.IsEmpty() {
+		t.Fatalf("expected no eddsa pool pubkey, got %s", result.PoolPubKeyEddsa)
 	}
 	if !result.PoolPubKeyFrost.Equals(frostVaultPubKey) {
 		t.Fatalf("expected frost pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyFrost)
@@ -134,8 +134,11 @@ func TestClientKeygenUsesFrostTSSPathAndPersistsVaultAddress(t *testing.T) {
 	if tssServer.sidecar == nil {
 		t.Fatalf("expected non-nil sidecar adapter")
 	}
-	if tssServer.lastReq.VaultPubKey != vaultPubKey.String() {
-		t.Fatalf("expected vault pubkey %s, got %s", vaultPubKey, tssServer.lastReq.VaultPubKey)
+	if tssServer.lastReq.VaultPubKey == "" {
+		t.Fatal("expected deterministic non-empty vault key label")
+	}
+	if tssServer.lastReq.VaultPubKey == frostVaultPubKey.String() {
+		t.Fatalf("expected synthetic monovault key label, got final vault pubkey %s", tssServer.lastReq.VaultPubKey)
 	}
 	if tssServer.lastReq.ExpectedAddr != "" {
 		t.Fatalf("expected empty expected_addr, got %s", tssServer.lastReq.ExpectedAddr)
@@ -322,8 +325,8 @@ func TestClientKeygenAllowsMonovaultRequestWithoutPreseededEddsaKey(t *testing.T
 	if err != nil {
 		t.Fatalf("Keygen failed: %v", err)
 	}
-	if !result.PoolPubKeyEddsa.Equals(frostVaultPubKey) {
-		t.Fatalf("expected eddsa pool pubkey %s, got %s", frostVaultPubKey, result.PoolPubKeyEddsa)
+	if !result.PoolPubKeyEddsa.IsEmpty() {
+		t.Fatalf("expected no eddsa pool pubkey, got %s", result.PoolPubKeyEddsa)
 	}
 	if tssServer.lastReq.VaultPubKey == "" {
 		t.Fatalf("expected deterministic non-empty vault key label")

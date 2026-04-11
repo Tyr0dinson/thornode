@@ -484,6 +484,10 @@ func (a *SwapMemolessActor) signTokenSwap() OpResult {
 }
 
 func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
+	if result := a.ensureXMRVaultSpendable(config, a.requiredOutboundSpend); !result.Continue || result.Finish {
+		return result
+	}
+
 	client := a.user.ChainClients[a.from.Chain]
 	var err error
 	if a.from.Chain.Equals(common.TRONChain) || a.from.Chain.Equals(common.SOLChain) {

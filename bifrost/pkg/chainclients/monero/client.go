@@ -546,7 +546,7 @@ func (c *Client) consolidateVault(
 ) {
 	vaultPubKey := txVaultPubKey(stypes.TxOutItem{
 		VaultPubKey:      vault.PubKey,
-		VaultPubKeyEddsa: vault.PubKeyEddsa,
+		VaultPubKeyEddsa: common.EmptyPubKey,
 		VaultPubKeyFrost: vault.PubKeyFrost,
 	})
 	if vaultPubKey.IsEmpty() {
@@ -662,7 +662,7 @@ func (c *Client) consolidateVault(
 			Chain:            c.chain,
 			ToAddress:        vaultAddress,
 			VaultPubKey:      vault.PubKey,
-			VaultPubKeyEddsa: vault.PubKeyEddsa,
+			VaultPubKeyEddsa: common.EmptyPubKey,
 			VaultPubKeyFrost: vault.PubKeyFrost,
 			Coins: common.Coins{
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(amountThorchain)),
@@ -1239,17 +1239,6 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	if err != nil {
 		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
 	}
-	// Older outbounds may still carry the EDDSA vault key while the sidecar is
-	// keyed by FROST pubkey. Retry through the current Asgard set before
-	// failing closed on a zero-balance response.
-	if balance.Balance == 0 && balance.UnlockedBalance == 0 {
-		if frostPK := c.lookupFrostPubKeyFor(vaultPubKey); !frostPK.IsEmpty() && frostPK.String() != vaultPubKey.String() {
-			frostBalance, frostErr := c.frostSigner.GetBalance(frostPK.String())
-			if frostErr == nil && (frostBalance.Balance > 0 || frostBalance.UnlockedBalance > 0) {
-				balance = frostBalance
-			}
-		}
-	}
 	availableAtomic := spendableBalanceAtomic(balance)
 
 	maxGasAtomic, err := xmrMaxGasToAtomic(maxGas)
@@ -1282,30 +1271,6 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 
 	return nil
 }
-
-// lookupFrostPubKeyFor resolves the FROST pubkey of an Asgard vault given any
-// of its other identifiers. This is a recovery path for older XMR outbounds
-// which may still be keyed by EDDSA pubkey.
-func (c *Client) lookupFrostPubKeyFor(pk common.PubKey) common.PubKey {
-	if pk.IsEmpty() || c.thorchainBridge == nil {
-		return common.EmptyPubKey
-	}
-	asgards, err := c.thorchainBridge.GetAsgards()
-	if err != nil {
-		return common.EmptyPubKey
-	}
-	target := pk.String()
-	for i := range asgards {
-		v := asgards[i]
-		if (!v.PubKeyFrost.IsEmpty() && v.PubKeyFrost.String() == target) ||
-			(!v.PubKeyEddsa.IsEmpty() && v.PubKeyEddsa.String() == target) ||
-			(!v.PubKey.IsEmpty() && v.PubKey.String() == target) {
-			return v.PubKeyFrost
-		}
-	}
-	return common.EmptyPubKey
-}
-
 func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {
 	availableAtomic := balance.UnlockedBalance
 	if availableAtomic > balance.Balance {
@@ -1600,7 +1565,6 @@ func (c *Client) CustomKeygen() bool {
 }
 
 func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult, error) {
-	vaultPubKey := req.PoolPubKeyEddsa
 	if c.frostSigner == nil {
 		return types.CustomKeygenResult{}, fmt.Errorf("%w: signer engine is not initialized", ErrFrostNotConfigured)
 	}
@@ -1623,10 +1587,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	if len(members) == 0 {
 		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires non-empty member set")
 	}
-	requestedVaultKey := strings.TrimSpace(vaultPubKey.String())
-	if requestedVaultKey == "" {
-		requestedVaultKey = xmrMonovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
-	}
+	requestedVaultKey := xmrMonovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
 	version := strings.TrimSpace(req.ThorchainVersion)
 	if version == "" && c.thorchainBridge != nil {
 		chainVersion, versionErr := c.thorchainBridge.GetThorchainVersion()
@@ -1671,13 +1632,6 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	if err != nil {
 		return types.CustomKeygenResult{}, fmt.Errorf("fail to convert FROST group key to vault pubkey: %w", err)
 	}
-	if !vaultPubKey.IsEmpty() && !frostVaultPubKey.Equals(vaultPubKey) {
-		c.logger.Info().
-			Str("requested_pool_pubkey_eddsa", vaultPubKey.String()).
-			Str("frost_pool_pubkey_eddsa", frostVaultPubKey.String()).
-			Msg("FROST keygen produced authoritative eddsa vault pubkey")
-	}
-
 	expectedAddress, err := frostVaultPubKey.GetAddress(common.XMRChain)
 	if err != nil {
 		return types.CustomKeygenResult{}, fmt.Errorf("fail to derive monero address from FROST group key %s: %w", groupKeyHex, err)
@@ -1704,7 +1658,6 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	c.setVaultAddressMapping(frostVaultPubKey, frostAddr)
 	return types.CustomKeygenResult{
 		Address:              frostAddr,
-		PoolPubKeyEddsa:      frostVaultPubKey,
 		PoolPubKeyFrost:      frostVaultPubKey,
 		FrostKeyshareHex:     strings.TrimSpace(frostResp.KeyBytesHex),
 		ObservedMoneroHeight: frostResp.ObservedMoneroHeight,

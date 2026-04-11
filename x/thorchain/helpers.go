@@ -24,6 +24,46 @@ func isSimulationMode(ctx cosmos.Context) bool {
 	return ok && simulationMode
 }
 
+func txOutPubKeyMatchesObserved(chain common.Chain, observed common.PubKey, item TxOutItem) bool {
+	if observed.Equals(item.VaultPubKey) || observed.Equals(item.VaultPubKeyFrost) {
+		return true
+	}
+	if chain == common.XMRChain {
+		return false
+	}
+	return observed.Equals(item.VaultPubKeyEddsa)
+}
+
+func txOutVaultPubKeyEddsa(chain common.Chain, pubKey common.PubKey) common.PubKey {
+	if chain == common.XMRChain {
+		return common.EmptyPubKey
+	}
+	return pubKey
+}
+
+func txOutSourcePubKey(item TxOutItem) (common.PubKey, error) {
+	switch item.Chain.GetSigningAlgo() {
+	case common.SigningAlgoSecp256k1:
+		if item.VaultPubKey.IsEmpty() {
+			return common.EmptyPubKey, fmt.Errorf("vault pubkey is empty")
+		}
+		return item.VaultPubKey, nil
+	case common.SigningAlgoEd25519:
+		if item.Chain == common.XMRChain {
+			if item.VaultPubKeyFrost.IsEmpty() {
+				return common.EmptyPubKey, fmt.Errorf("vault pubkey frost is empty")
+			}
+			return item.VaultPubKeyFrost, nil
+		}
+		if item.VaultPubKeyEddsa.IsEmpty() {
+			return common.EmptyPubKey, fmt.Errorf("vault pubkey eddsa is empty")
+		}
+		return item.VaultPubKeyEddsa, nil
+	default:
+		return common.EmptyPubKey, fmt.Errorf("unknown signing algorithm: %s", item.Chain.GetSigningAlgo())
+	}
+}
+
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
@@ -80,7 +120,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				Chain:                 coin.Asset.GetChain(),
 				ToAddress:             toAddr,
 				VaultPubKey:           vault.PubKey,
-				VaultPubKeyEddsa:      vault.PubKeyEddsa,
+				VaultPubKeyEddsa:      txOutVaultPubKeyEddsa(coin.Asset.GetChain(), vault.PubKeyEddsa),
 				VaultPubKeyFrost:      vault.PubKeyFrost,
 				Coin:                  coin,
 				Memo:                  NewRefundMemo(tx.Tx.ID).String(),

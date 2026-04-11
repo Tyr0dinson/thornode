@@ -679,6 +679,9 @@ func (s *Signer) runCustomKeygenHooks(
 		if !result.PoolPubKeyFrost.IsEmpty() {
 			frostPoolPubKey = result.PoolPubKeyFrost
 		}
+		if chainID == common.XMRChain && !result.PoolPubKeyFrost.IsEmpty() {
+			effectivePoolPubKeyEddsa = common.EmptyPubKey
+		}
 		if !result.PoolPubKeyEddsa.IsEmpty() && !result.PoolPubKeyEddsa.Equals(effectivePoolPubKeyEddsa) {
 			effectivePoolPubKeyEddsa = result.PoolPubKeyEddsa
 			s.logger.Info().

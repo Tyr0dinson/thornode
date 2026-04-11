@@ -78,8 +78,9 @@ type helperFaucetRequest struct {
 }
 
 type frostBalanceResponse struct {
-	Balance         uint64 `json:"balance"`
-	UnlockedBalance uint64 `json:"unlocked_balance"`
+	Balance          uint64  `json:"balance"`
+	UnlockedBalance  uint64  `json:"unlocked_balance"`
+	SpendableBalance *uint64 `json:"spendable_balance,omitempty"`
 }
 
 var _ LiteChainClient = &Client{}
@@ -120,13 +121,12 @@ func NewClient(chain common.Chain, helperEndpoint string, keys *thorclient.Keys)
 
 func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	if pk != nil {
-		var response frostBalanceResponse
-		path := fmt.Sprintf("%s/v1/monero/balance/%s", c.frostEndpoint, url.PathEscape(pk.String()))
-		if err := c.getJSON(path, c.frostBearer, &response); err != nil {
+		totalBalance, _, err := c.GetVaultBalance(*pk)
+		if err != nil {
 			return nil, err
 		}
 		return &common.Account{
-			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, fromAtomic(response.Balance))),
+			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, totalBalance)),
 		}, nil
 	}
 
@@ -147,6 +147,30 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	return &common.Account{
 		Coins: common.NewCoins(common.NewCoin(common.XMRAsset, fromAtomic(response.UnlockedBalanceAtomic))),
 	}, nil
+}
+
+func (c *Client) GetVaultBalance(pk common.PubKey) (sdkmath.Uint, sdkmath.Uint, error) {
+	var response frostBalanceResponse
+	path := fmt.Sprintf("%s/v1/monero/balance/%s", c.frostEndpoint, url.PathEscape(pk.String()))
+	if err := c.getJSON(path, c.frostBearer, &response); err != nil {
+		return sdkmath.ZeroUint(), sdkmath.ZeroUint(), err
+	}
+
+	return fromAtomic(response.Balance), fromAtomic(spendableBalanceAtomic(response)), nil
+}
+
+func spendableBalanceAtomic(balance frostBalanceResponse) uint64 {
+	availableAtomic := balance.UnlockedBalance
+	if availableAtomic > balance.Balance {
+		availableAtomic = balance.Balance
+	}
+	if balance.SpendableBalance != nil {
+		availableAtomic = *balance.SpendableBalance
+		if availableAtomic > balance.Balance {
+			availableAtomic = balance.Balance
+		}
+	}
+	return availableAtomic
 }
 
 func (c *Client) SignTx(tx SimTx) ([]byte, error) {

@@ -96,7 +96,7 @@ vault_birthday_from_api() {
   local birthday
   birthday="$(
     curl -s "$API/thorchain/vaults/asgard" |
-      jq -r --arg pk "$vault_pubkey" '.[] | select((.pub_key_frost // .pub_key_eddsa) == $pk) | (.vault_creation_height_xmr // 0)' |
+      jq -r --arg pk "$vault_pubkey" '.[] | select(.pub_key_frost == $pk) | (.vault_creation_height_xmr // 0)' |
       head -n1
   )"
   [ -n "$birthday" ] || fail "vault $vault_pubkey not found via $API/thorchain/vaults/asgard"
@@ -256,7 +256,11 @@ if $ALL_VAULTS; then
       continue
     fi
 
-    vault_pubkey="$(echo "$vault" | jq -r '.pub_key_frost // .pub_key_eddsa')"
+    vault_pubkey="$(echo "$vault" | jq -r '.pub_key_frost // empty')"
+    if [ -z "$vault_pubkey" ]; then
+      echo "Skipping vault without pub_key_frost"
+      continue
+    fi
     vault_height="$(echo "$vault" | jq -r '.vault_creation_height_xmr // 0')"
     if [ "$vault_height" -le 0 ] 2>/dev/null; then
       echo "Skipping $vault_pubkey: no XMR birthday recorded"

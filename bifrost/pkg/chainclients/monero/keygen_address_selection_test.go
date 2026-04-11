@@ -9,10 +9,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-func expectedXMRVaultAddress(_ common.PubKey, poolPubKeyEddsa common.PubKey) (common.Address, error) {
-	vaultPubKey := poolPubKeyEddsa
+func expectedXMRVaultAddress(vaultPubKeyFrost common.PubKey) (common.Address, error) {
+	vaultPubKey := vaultPubKeyFrost
 	if vaultPubKey.IsEmpty() {
-		return common.NoAddress, fmt.Errorf("xmr keygen requires a non-empty eddsa vault pubkey")
+		return common.NoAddress, fmt.Errorf("xmr keygen requires a non-empty frost vault pubkey")
 	}
 
 	expected, err := vaultPubKey.GetAddress(common.XMRChain)
@@ -25,7 +25,7 @@ func expectedXMRVaultAddress(_ common.PubKey, poolPubKeyEddsa common.PubKey) (co
 	return expected, nil
 }
 
-func expectedXMRVaultAddressFromKeygenRequest(vaultPubKey, vaultPubKeyEddsa string) (common.Address, error) {
+func expectedXMRVaultAddressFromKeygenRequest(vaultPubKeyFrost string) (common.Address, error) {
 	parseVaultPubKey := func(value string) (common.PubKey, error) {
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -38,15 +38,11 @@ func expectedXMRVaultAddressFromKeygenRequest(vaultPubKey, vaultPubKeyEddsa stri
 		return pubKey, nil
 	}
 
-	poolPubKey, err := parseVaultPubKey(vaultPubKey)
+	poolPubKeyFrost, err := parseVaultPubKey(vaultPubKeyFrost)
 	if err != nil {
 		return common.NoAddress, err
 	}
-	poolPubKeyEddsa, err := parseVaultPubKey(vaultPubKeyEddsa)
-	if err != nil {
-		return common.NoAddress, err
-	}
-	return expectedXMRVaultAddress(poolPubKey, poolPubKeyEddsa)
+	return expectedXMRVaultAddress(poolPubKeyFrost)
 }
 
 var testVaultAddressCounter atomic.Uint64
@@ -67,7 +63,7 @@ func TestExpectedXMRVaultAddressFromKeygenRequest(t *testing.T) {
 	t.Parallel()
 
 	pubKey, expected := testVaultPubKeyAndAddress(t)
-	got, err := expectedXMRVaultAddressFromKeygenRequest("", pubKey.String())
+	got, err := expectedXMRVaultAddressFromKeygenRequest(pubKey.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -76,12 +72,11 @@ func TestExpectedXMRVaultAddressFromKeygenRequest(t *testing.T) {
 	}
 }
 
-func TestExpectedXMRVaultAddressFromKeygenRequestRejectsMissingEddsa(t *testing.T) {
+func TestExpectedXMRVaultAddressFromKeygenRequestRejectsMissingFrost(t *testing.T) {
 	t.Parallel()
 
-	pubKey, _ := testVaultPubKeyAndAddress(t)
-	_, err := expectedXMRVaultAddressFromKeygenRequest(pubKey.String(), "")
+	_, err := expectedXMRVaultAddressFromKeygenRequest("")
 	if err == nil {
-		t.Fatal("expected missing eddsa pubkey error")
+		t.Fatal("expected missing frost pubkey error")
 	}
 }

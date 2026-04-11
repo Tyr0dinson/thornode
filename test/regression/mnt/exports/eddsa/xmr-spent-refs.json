@@ -293,7 +293,7 @@
               "original_memo": "OUT:421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
               "to_address": "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejKB4XKtcf1e86oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGdtinVR",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
+              "vault_pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ],
           "finalised_height": "2",
@@ -417,7 +417,7 @@
               "original_memo": "OUT:421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
               "to_address": "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejKB4XKtcf1e86oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGdtinVR",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
+              "vault_pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ]
         }
@@ -457,6 +457,7 @@
           "outbound_tx_count": "1",
           "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
           "pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
+          "pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
           "routers": null,
           "spent_output_refs_xmr": [
             {

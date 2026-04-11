@@ -155,6 +155,13 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 				Continue: false,
 			}
 		}
+		xmrPubKey, err := thornode.GetInboundAddressPubKey(common.XMRChain)
+		if err != nil {
+			a.Log().Error().Err(err).Msg("failed to get active XMR inbound pubkey")
+			return OpResult{
+				Continue: false,
+			}
+		}
 
 		// get all L1 balances
 		l1CoinAmounts := make(map[string]cosmos.Uint)
@@ -170,17 +177,21 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			if asset.IsGasAsset() {
 				switch asset.Chain.GetSigningAlgo() {
 				case common.SigningAlgoEd25519:
-					vaultAddr, err := pubkeyEddsa.GetAddress(asset.Chain)
+					algoPubKey := pubkeyEddsa
+					if asset.Chain.Equals(common.XMRChain) {
+						algoPubKey = xmrPubKey
+					}
+					vaultAddr, err := algoPubKey.GetAddress(asset.Chain)
 					if err != nil {
-						a.Log().Error().Err(err).Msg("failed to get vault address for eddsa pubkey")
+						a.Log().Error().Err(err).Msg("failed to get vault address for ed25519 pubkey")
 						return OpResult{
 							Continue: false,
 						}
 					}
 					vaultAddrs[assetStr] = vaultAddr
-					l1Acct, err := user.ChainClients[asset.Chain].GetAccount(&pubkeyEddsa)
+					l1Acct, err := user.ChainClients[asset.Chain].GetAccount(&algoPubKey)
 					if err != nil {
-						a.Log().Error().Err(err).Msg("failed to get L1 account for eddsa pubkey")
+						a.Log().Error().Err(err).Msg("failed to get L1 account for ed25519 pubkey")
 						return OpResult{
 							Continue: false,
 						}

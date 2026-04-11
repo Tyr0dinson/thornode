@@ -162,6 +162,20 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
+	snapshot, err := getActiveXMRVaultBalance(config, nil)
+	if err != nil {
+		a.Log().Info().Err(err).Msg("waiting for active XMR vault spendable balance")
+		return OpResult{Continue: false}
+	}
+	if snapshot.spendable.IsZero() {
+		a.Log().Info().
+			Stringer("vault_pubkey", snapshot.pubKey).
+			Stringer("total", snapshot.total).
+			Stringer("spendable", snapshot.spendable).
+			Msg("waiting for active XMR vault spendable balance")
+		return OpResult{Continue: false}
+	}
+
 	a.inboundAfter = inboundAddress
 	a.Log().Info().
 		Stringer("inbound_before", a.inboundBefore).

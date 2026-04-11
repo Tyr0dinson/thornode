@@ -625,7 +625,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C)
 	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
 	c.Assert(items[0].ToAddress.Equals(toAddress), Equals, true)
 	c.Assert(items[0].VaultPubKey.Equals(retiringVault.PubKey), Equals, true)
-	c.Assert(items[0].VaultPubKeyEddsa.Equals(retiringVault.PubKeyEddsa), Equals, true)
+	c.Assert(items[0].VaultPubKeyEddsa.IsEmpty(), Equals, true)
 	c.Assert(items[0].VaultPubKeyFrost.Equals(retiringVault.PubKeyFrost), Equals, true)
 }
 
@@ -2537,13 +2537,13 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 	// Should succeed and add another swap to queue
 }
 
-func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesEddsaAddress(c *C) {
+func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesFrostAddress(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	vaultPubKey := GetRandomPubKey()
-	vaultPubKeyEddsa := GetRandomEd25519PubKey()
+	vaultPubKeyFrost := GetRandomEd25519PubKey()
 	vault := NewVaultV2(
 		ctx.BlockHeight(),
 		ActiveVault,
@@ -2551,8 +2551,9 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesEddsaAddres
 		vaultPubKey,
 		common.Chains{common.XMRChain}.Strings(),
 		[]ChainContract{},
-		vaultPubKeyEddsa,
+		common.EmptyPubKey,
 	)
+	vault.PubKeyFrost = vaultPubKeyFrost
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
 	})
@@ -2593,7 +2594,7 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesEddsaAddres
 	}
 	c.Assert(foundSwap, NotNil)
 
-	xmrAddr, err := vaultPubKeyEddsa.GetAddress(common.XMRChain)
+	xmrAddr, err := vaultPubKeyFrost.GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	c.Assert(foundSwap.Tx.FromAddress.Equals(xmrAddr), Equals, true)
 	c.Assert(foundSwap.Tx.ToAddress.Equals(xmrAddr), Equals, true)

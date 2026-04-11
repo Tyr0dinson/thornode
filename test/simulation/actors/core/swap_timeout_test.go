@@ -24,8 +24,8 @@ func TestNewSwapActorTimeouts(t *testing.T) {
 	}
 
 	ethToXmr := NewSwapActor(common.ETHAsset, common.XMRAsset, rng)
-	if ethToXmr.Timeout != 4*time.Minute {
-		t.Fatalf("expected XMR swap timeout to be 4m, got %s", ethToXmr.Timeout)
+	if ethToXmr.Timeout != 8*time.Minute {
+		t.Fatalf("expected XMR swap timeout to be 8m, got %s", ethToXmr.Timeout)
 	}
 
 	btcToTron := NewSwapActor(common.BTCAsset, common.TRXAsset, rng)

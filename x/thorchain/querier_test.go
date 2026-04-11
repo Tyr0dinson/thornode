@@ -1092,6 +1092,7 @@ func (s *QuerierSuite) TestGetXMRActiveVaultReadyRequiresFundsAndAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ready, Equals, false)
 
+	unfundedFrostKey := GetRandomEd25519PubKey()
 	unfunded := NewVaultV2(
 		ctx.BlockHeight(),
 		ActiveVault,
@@ -1099,8 +1100,9 @@ func (s *QuerierSuite) TestGetXMRActiveVaultReadyRequiresFundsAndAddress(c *C) {
 		GetRandomPubKey(),
 		common.Chains{common.XMRChain}.Strings(),
 		nil,
-		GetRandomEd25519PubKey(),
+		common.EmptyPubKey,
 	)
+	unfunded.PubKeyFrost = unfundedFrostKey
 	c.Assert(k.SetVault(ctx, unfunded), IsNil)
 
 	ready, err = getXMRActiveVaultReady(ctx, k)
@@ -1124,6 +1126,7 @@ func (s *QuerierSuite) TestGetXMRActiveVaultReadyRequiresFundsAndAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ready, Equals, false)
 
+	fundedFrostKey := GetRandomEd25519PubKey()
 	funded := NewVaultV2(
 		ctx.BlockHeight(),
 		ActiveVault,
@@ -1131,8 +1134,9 @@ func (s *QuerierSuite) TestGetXMRActiveVaultReadyRequiresFundsAndAddress(c *C) {
 		GetRandomPubKey(),
 		common.Chains{common.XMRChain}.Strings(),
 		nil,
-		GetRandomEd25519PubKey(),
+		common.EmptyPubKey,
 	)
+	funded.PubKeyFrost = fundedFrostKey
 	funded.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
 	})
@@ -1183,7 +1187,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesUsesChainSpecificVaultSelection(
 	c.Assert(xmrPubKey, Equals, xmrFrostKey.String())
 }
 
-func (s *QuerierSuite) TestQueryInboundAddressesFallsBackToRetiringXMRVaultDuringMonovaultCutover(c *C) {
+func (s *QuerierSuite) TestQueryInboundAddressesDoesNotAdvertiseRetiringXMRVaultWithoutActiveMonovault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	regularPubKey := GetRandomPubKey()
@@ -1198,7 +1202,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesFallsBackToRetiringXMRVaultDurin
 		retiringXMRPubKey,
 		common.Chains{common.THORChain, common.XMRChain}.Strings(),
 		nil,
-		retiringXMRPubKey,
+		common.EmptyPubKey,
 	)
 	retiringXMR.PubKeyFrost = retiringXMRPubKey
 	c.Assert(mgr.Keeper().SetVault(ctx, retiringXMR), IsNil)
@@ -1217,7 +1221,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesFallsBackToRetiringXMRVaultDurin
 		}
 	}
 
-	c.Assert(xmrPubKey, Equals, retiringXMRPubKey.String())
+	c.Assert(xmrPubKey, Equals, "")
 }
 
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {

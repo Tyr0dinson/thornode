@@ -460,14 +460,14 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				chains = xmrMonovaultChains()
 			}
 			vaultPubKeyEddsa := voter.PoolPubKeyEddsa
-			if vaultPubKeyEddsa.IsEmpty() && msg.KeygenType == XMRMonovaultKeygen {
-				vaultPubKeyEddsa = msg.PoolPubKeyFrost
+			if msg.KeygenType == XMRMonovaultKeygen {
+				if msg.PoolPubKeyFrost.IsEmpty() {
+					return fmt.Errorf("xmr monovault keygen requires pool_pub_key_frost")
+				}
+				vaultPubKeyEddsa = common.EmptyPubKey
 			}
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), vaultPubKeyEddsa)
 			vault.PubKeyFrost = msg.PoolPubKeyFrost
-			if vault.PubKeyFrost.IsEmpty() && msg.KeygenType == XMRMonovaultKeygen {
-				vault.PubKeyFrost = voter.PoolPubKey
-			}
 			vault.Membership = voter.PubKeys
 			if vault.GetChains().Has(common.XMRChain) {
 				xmrHeight, _ := h.mgr.Keeper().GetLastChainHeight(ctx, common.XMRChain)

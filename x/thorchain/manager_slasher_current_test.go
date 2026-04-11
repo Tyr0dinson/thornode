@@ -1126,7 +1126,7 @@ func (s *SlashingSuite) TestTreasuryRecoveryForMaxAttempts(c *C) {
 	c.Assert(hasSwap, Equals, true, Commentf("Expected a swap to be queued for treasury recovery"))
 }
 
-func (s *SlashingSuite) TestQueueRecoverySwapUsesEddsaVaultAddress(c *C) {
+func (s *SlashingSuite) TestQueueRecoverySwapUsesFrostVaultAddressForXMR(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 
@@ -1134,10 +1134,10 @@ func (s *SlashingSuite) TestQueueRecoverySwapUsesEddsaVaultAddress(c *C) {
 	vault.Type = AsgardVault
 	vault.Status = types2.VaultStatus_ActiveVault
 	vault.PubKey = GetRandomPubKey()
-	vault.PubKeyEddsa = GetRandomEd25519PubKey()
+	vault.PubKeyFrost = GetRandomEd25519PubKey()
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	xmrAddr, err := vault.PubKeyEddsa.GetAddress(common.XMRChain)
+	xmrAddr, err := vault.PubKeyFrost.GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 
 	txID := GetRandomTxHash()
@@ -1145,7 +1145,7 @@ func (s *SlashingSuite) TestQueueRecoverySwapUsesEddsaVaultAddress(c *C) {
 		Chain:            common.XMRChain,
 		InHash:           txID,
 		VaultPubKey:      vault.PubKey,
-		VaultPubKeyEddsa: vault.PubKeyEddsa,
+		VaultPubKeyFrost: vault.PubKeyFrost,
 		ToAddress:        common.Address(common.XMRChecksummedDummyAddress('8')),
 		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
 		Memo:             fmt.Sprintf("OUT:%s", txID),

@@ -532,7 +532,7 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 		}
 
 		toi.VaultPubKey = vault.PubKey
-		toi.VaultPubKeyEddsa = vault.PubKeyEddsa
+		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
 		toi.VaultPubKeyFrost = vault.PubKeyFrost
 
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
@@ -561,7 +561,7 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 					"asset", toi.Coin.Asset.String(),
 					"amount", toi.Coin.Amount.String())
 				toi.VaultPubKey = fallbackVault.PubKey
-				toi.VaultPubKeyEddsa = fallbackVault.PubKeyEddsa
+				toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, fallbackVault.PubKeyEddsa)
 				toi.VaultPubKeyFrost = fallbackVault.PubKeyFrost
 				outputs = append(outputs, toi)
 				toi.Coin.Amount = cosmos.ZeroUint()

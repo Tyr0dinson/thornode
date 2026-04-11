@@ -768,6 +768,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(vault.Status, Equals, InitVault)
 	c.Assert(vault.IsXMRMonovault(), Equals, true)
+	c.Assert(vault.PubKeyEddsa.IsEmpty(), Equals, true)
 	c.Assert(vault.PubKeyFrost.Equals(frostPubKey), Equals, true)
 }
 

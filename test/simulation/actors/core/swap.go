@@ -41,8 +41,9 @@ type SwapActor struct {
 	swapTxID   string
 
 	// expected range for received amount, including outbound fee
-	minExpected sdkmath.Uint
-	maxExpected sdkmath.Uint
+	requiredOutboundSpend sdkmath.Uint
+	minExpected           sdkmath.Uint
+	maxExpected           sdkmath.Uint
 }
 
 var recommendedMinAmountInPattern = regexp.MustCompile(`recommended_min_amount_in:\s*(\d+)`)
@@ -76,7 +77,7 @@ func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
 
 func swapActorTimeout(from, to common.Asset) time.Duration {
 	if from.Chain.Equals(common.XMRChain) || to.Chain.Equals(common.XMRChain) {
-		return 4 * time.Minute
+		return 8 * time.Minute
 	}
 	if from.Chain.Equals(common.SOLChain) || to.Chain.Equals(common.SOLChain) {
 		return 4 * time.Minute
@@ -186,6 +187,7 @@ func setQuoteExpectations(a *SwapActor, quote openapi.QuoteSwapResponse) {
 		// handle 3x gas rate fluctuation (add 2x outbound fee to tolerance)
 		tolerance = tolerance.Add(outboundFee.MulUint64(2))
 	}
+	a.requiredOutboundSpend = quoteOut
 	a.minExpected = common.SafeSub(quoteOut, tolerance)
 	a.maxExpected = quoteOut.Add(tolerance)
 }
@@ -241,6 +243,7 @@ func (a *SwapActor) releaseUserSelection() {
 	a.toAddress = common.NoAddress
 	a.toBalance = sdkmath.ZeroUint()
 	a.swapTxID = ""
+	a.requiredOutboundSpend = sdkmath.ZeroUint()
 	a.minExpected = sdkmath.ZeroUint()
 	a.maxExpected = sdkmath.ZeroUint()
 }
@@ -454,6 +457,10 @@ func (a *SwapActor) getQuote(config *OpConfig) OpResult {
 }
 
 func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
+	if result := a.ensureXMRVaultSpendable(config, a.requiredOutboundSpend); !result.Continue || result.Finish {
+		return result
+	}
+
 	// get inbound address
 	inboundAddr, _, err := thornode.GetInboundAddress(a.from.Chain)
 	if err != nil {
@@ -496,6 +503,10 @@ func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
 }
 
 func (a *SwapActor) sendTokenSwap(config *OpConfig) OpResult {
+	if result := a.ensureXMRVaultSpendable(config, a.requiredOutboundSpend); !result.Continue || result.Finish {
+		return result
+	}
+
 	// get router address
 	inboundAddr, routerAddr, err := thornode.GetInboundAddress(a.from.Chain)
 	if err != nil {

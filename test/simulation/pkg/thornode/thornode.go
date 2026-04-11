@@ -94,6 +94,27 @@ func GetInboundAddress(chain common.Chain) (address common.Address, router *comm
 	return "", nil, fmt.Errorf("no inbound address found for chain %s", chain)
 }
 
+func GetInboundAddressPubKey(chain common.Chain) (common.PubKey, error) {
+	url := fmt.Sprintf("%s/thorchain/inbound_addresses", thornodeURL)
+	var inboundAddresses []openapi.InboundAddress
+	err := Get(url, &inboundAddresses)
+	if err != nil {
+		return common.EmptyPubKey, err
+	}
+
+	for _, inboundAddress := range inboundAddresses {
+		if *inboundAddress.Chain != string(chain) {
+			continue
+		}
+		if inboundAddress.PubKey == nil || *inboundAddress.PubKey == "" {
+			return common.EmptyPubKey, fmt.Errorf("no inbound pubkey found for chain %s", chain)
+		}
+		return common.NewPubKey(*inboundAddress.PubKey)
+	}
+
+	return common.EmptyPubKey, fmt.Errorf("no inbound pubkey found for chain %s", chain)
+}
+
 func GetRouterAddress(chain common.Chain) (common.Address, error) {
 	url := fmt.Sprintf("%s/thorchain/inbound_addresses", thornodeURL)
 	var inboundAddresses []openapi.InboundAddress
@@ -205,7 +226,7 @@ type VaultXMRState struct {
 		TxHash      string `json:"tx_hash"`
 		OutputIndex uint32 `json:"output_index"`
 	} `json:"spent_output_refs_xmr"`
-	PubKeyEddsa string `json:"pub_key_eddsa"`
+	PubKeyFrost string `json:"pub_key_frost"`
 	Status      string `json:"status"`
 }
 

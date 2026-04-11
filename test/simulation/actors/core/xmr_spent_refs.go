@@ -39,12 +39,12 @@ func (a *XMRSpentRefVerifyActor) verifyVaultHasXMR(config *OpConfig) OpResult {
 	}
 
 	for _, v := range vaults {
-		if v.Status != "ActiveVault" || v.PubKeyEddsa == "" {
+		if v.Status != "ActiveVault" || v.PubKeyFrost == "" {
 			continue
 		}
 		a.Log().Info().
 			Int64("vault_creation_height_xmr", v.VaultCreationHeightXmr).
-			Str("pub_key_eddsa", v.PubKeyEddsa).
+			Str("pub_key_frost", v.PubKeyFrost).
 			Msg("active XMR vault found")
 		return OpResult{Continue: true}
 	}
@@ -88,7 +88,7 @@ func (a *XMRSpentRefVerifyActor) waitForSpentRefsOnVault(config *OpConfig) OpRes
 	}
 
 	for _, v := range vaults {
-		if v.Status != "ActiveVault" || v.PubKeyEddsa == "" {
+		if v.Status != "ActiveVault" || v.PubKeyFrost == "" {
 			continue
 		}
 		if len(v.SpentOutputRefsXmr) > 0 {
@@ -111,7 +111,7 @@ func (a *XMRSpentRefVerifyActor) verifySpentRefsValid(config *OpConfig) OpResult
 	}
 
 	for _, v := range vaults {
-		if v.Status != "ActiveVault" || v.PubKeyEddsa == "" {
+		if v.Status != "ActiveVault" || v.PubKeyFrost == "" {
 			continue
 		}
 		for i, ref := range v.SpentOutputRefsXmr {

@@ -860,6 +860,31 @@ func (s *SignSuite) TestRunCustomKeygenHooksCarriesFrostPubKeyWithoutOverride(c 
 	c.Assert(updatedPoolFrost.Equals(frost), Equals, true)
 }
 
+func (s *SignSuite) TestRunCustomKeygenHooksClearsEddsaForXMRFrostKeygen(c *C) {
+	bridge := fakeBridge{s.bridge}
+	frost := types2.GetRandomPubKey()
+	custom := &MockCustomKeygenChainClient{
+		MockChainClient: &MockChainClient{},
+		retPoolFrost:    frost,
+	}
+
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: custom,
+		},
+		thorchainBridge: bridge,
+		logger:          log.With().Str("module", "signer").Logger(),
+	}
+
+	poolPK := types2.GetRandomPubKey()
+	poolED := types2.GetRandomPubKey()
+	updatedPoolED, updatedPoolFrost, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.XMRChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
+	c.Assert(err, IsNil)
+	c.Assert(custom.calledPoolED.Equals(poolED), Equals, true)
+	c.Assert(updatedPoolED.IsEmpty(), Equals, true)
+	c.Assert(updatedPoolFrost.Equals(frost), Equals, true)
+}
+
 func (s *SignSuite) TestRunCustomKeygenHooksFailClosed(c *C) {
 	bridge := fakeBridge{s.bridge}
 	custom := &MockCustomKeygenChainClient{

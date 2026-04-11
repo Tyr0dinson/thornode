@@ -119,6 +119,49 @@ func TestGetAccountUsesUnlockedUserBalanceAndTotalVaultBalance(t *testing.T) {
 	}
 }
 
+func TestGetVaultBalanceReturnsTotalAndSpendableBalances(t *testing.T) {
+	totalBalance := sdkmath.NewUint(77 * common.One)
+	spendableBalance := sdkmath.NewUint(42 * common.One)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/monero/balance/thorpub1vaulttest" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer frost-token" {
+			t.Fatalf("unexpected frost auth header: %s", got)
+		}
+
+		_ = json.NewEncoder(w).Encode(frostBalanceResponse{
+			Balance:          toAtomic(totalBalance),
+			UnlockedBalance:  0,
+			SpendableBalance: ptrUint64(toAtomic(spendableBalance)),
+		})
+	}))
+	defer server.Close()
+
+	client := &Client{
+		chain:         common.XMRChain,
+		frostEndpoint: server.URL,
+		frostBearer:   "frost-token",
+		httpClient:    server.Client(),
+	}
+
+	total, spendable, err := client.GetVaultBalance(common.PubKey("thorpub1vaulttest"))
+	if err != nil {
+		t.Fatalf("failed to get vault balance: %v", err)
+	}
+	if !total.Equal(totalBalance) {
+		t.Fatalf("expected total vault balance %s, got %s", totalBalance, total)
+	}
+	if !spendable.Equal(spendableBalance) {
+		t.Fatalf("expected spendable vault balance %s, got %s", spendableBalance, spendable)
+	}
+}
+
+func ptrUint64(v uint64) *uint64 {
+	return &v
+}
+
 func TestSignAndBroadcastTxUsesHelperTransferContract(t *testing.T) {
 	spendKeyHex, address := testSpendKeyHexAndAddress(t)
 	swapAmount := sdkmath.NewUint(5 * common.One)
