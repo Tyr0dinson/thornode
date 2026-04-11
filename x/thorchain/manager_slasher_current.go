@@ -196,6 +196,18 @@ func (s *SlasherImpl) HandleMissingSign(ctx cosmos.Context, addr crypto.Address,
 	return fmt.Errorf("could not find active node account with validator address: %s", addr)
 }
 
+// xmrSigningPeriodMultiplier scales SigningTransactionPeriod for XMR
+// outbounds. FROST threshold signing is a multi-round p2p protocol that
+// takes noticeably longer than ECDSA/EDDSA keysign, and XMR chain
+// confirmation + observation round-trip adds further delay. Processing
+// XMR outbounds at the same window as other chains races the slasher
+// against in-flight signatures — the ToI gets rescheduled before its
+// observation arrives, and when the original vault's signed tx finally
+// lands on-chain thornode emits a "missing tx out" security event.
+// Process XMR outbounds from a 3x-older batch to give FROST and chain
+// confirmation enough headroom.
+const xmrSigningPeriodMultiplier = 3
+
 // LackSigning slash account that fail to sign tx
 func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	var resultErr error
@@ -209,12 +221,6 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	if ctx.BlockHeight() < signingTransPeriod {
 		return nil
 	}
-	height := ctx.BlockHeight() - signingTransPeriod
-	txs, err := s.keeper.GetTxOut(ctx, height)
-	if err != nil {
-		return fmt.Errorf("fail to get txout from block height(%d): %w", height, err)
-	}
-
 	// round up to nearest multiple of RescheduleCoalesceBlocks
 	rescheduleHeight := ctx.BlockHeight()
 	rescheduleCoalesceBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
@@ -225,301 +231,334 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 
-	for i, toi := range txs.TxArray {
-		if !common.CurrentChainNetwork.SoftEquals(toi.ToAddress.GetNetwork(toi.Chain)) {
-			continue // skip this transaction
+	// Each pass examines a different TxOut batch and processes items whose
+	// chain matches the pass. Non-XMR chains are checked at the standard
+	// SigningTransactionPeriod. XMR outbounds are checked at a longer
+	// period (see xmrSigningPeriodMultiplier above).
+	xmrSigningTransPeriod := signingTransPeriod * xmrSigningPeriodMultiplier
+	type rescheduleBatch struct {
+		height  int64
+		wantXMR bool
+	}
+	batches := []rescheduleBatch{
+		{height: ctx.BlockHeight() - signingTransPeriod, wantXMR: false},
+	}
+	if ctx.BlockHeight() >= xmrSigningTransPeriod {
+		batches = append(batches, rescheduleBatch{
+			height:  ctx.BlockHeight() - xmrSigningTransPeriod,
+			wantXMR: true,
+		})
+	}
+
+	for _, batch := range batches {
+		height := batch.height
+		wantXMR := batch.wantXMR
+		txs, err := s.keeper.GetTxOut(ctx, height)
+		if err != nil {
+			return fmt.Errorf("fail to get txout from block height(%d): %w", height, err)
 		}
-		if toi.OutHash.IsEmpty() {
-			// Slash node account for not sending funds
-			vault, err := s.keeper.GetVault(ctx, toi.VaultPubKey)
-			if err != nil {
-				// in some edge cases the vault may no longer exists, in which
-				// case log and continue with rescheduling
-				ctx.Logger().Error("Unable to get vault", "error", err, "vault pub key", toi.VaultPubKey.String())
-			}
 
-			// if the vault is frozen, reschedule to same vault with no changes
-			frozen := false
-			if len(vault.Frozen) > 0 {
-				var chains common.Chains
-				chains, err = common.NewChains(vault.Frozen)
-				if err != nil {
-					ctx.Logger().Error("failed to convert chains", "error", err)
-				}
-				if chains.Has(toi.Coin.Asset.GetChain()) {
-					etx := common.Tx{
-						ID:        toi.InHash,
-						Chain:     toi.Chain,
-						ToAddress: toi.ToAddress,
-						Coins:     []common.Coin{toi.Coin},
-						Gas:       toi.MaxGas,
-						Memo:      toi.Memo,
-					}
-					eve := NewEventSecurity(etx, "frozen vault reschedule")
-					if err = mgr.EventMgr().EmitEvent(ctx, eve); err != nil {
-						ctx.Logger().Error("fail to emit security event", "error", err)
-					}
-					frozen = true
-				}
-			}
-
-			memo, _ := ParseMemoWithTHORNames(ctx, s.keeper, toi.GetMemo()) // ignore err
-			if memo.IsInternal() {
-				// there is a different mechanism for rescheduling outbound
-				// transactions for migration transactions
+		for i, toi := range txs.TxArray {
+			if toi.Chain.Equals(common.XMRChain) != wantXMR {
+				// XMR items are processed in the extended-period pass;
+				// non-XMR items are processed in the standard pass.
 				continue
 			}
-			var voter ObservedTxVoter
-			if memo.IsType(TxRagnarok) {
-				// A Ragnarok outbound has no ObservedTxInVoter,
-				// so check MaxOutboundAttempts against the memo height.
-				ragnarokHeight := memo.GetBlockHeight()
-				// Though a negative is not expected to cause problems,
-				// nevertheless keep the default 0 as the minimum.
-				if ragnarokHeight > 0 {
-					voter.FinalisedHeight = ragnarokHeight
-				}
-			} else {
-				voter, err = s.keeper.GetObservedTxInVoter(ctx, toi.InHash)
+			if !common.CurrentChainNetwork.SoftEquals(toi.ToAddress.GetNetwork(toi.Chain)) {
+				continue // skip this transaction
+			}
+			if toi.OutHash.IsEmpty() {
+				// Slash node account for not sending funds
+				vault, err := s.keeper.GetVault(ctx, toi.VaultPubKey)
 				if err != nil {
-					ctx.Logger().Error("fail to get observed tx voter", "error", err)
-					resultErr = fmt.Errorf("failed to get observed tx voter: %w", err)
-					continue
-				}
-			}
-
-			// If vault is inactive, check if it still has sufficient funds to fulfill
-			// the outbound. If so, reschedule to the same vault (retired vault recovery).
-			// If the vault has been drained (e.g. migration completed before this outbound
-			// was signed), fall through to active vault selection so the outbound can be
-			// fulfilled from a vault that actually holds the funds.
-			if vault.Status == InactiveVault {
-				maxRetiredVaultRecoveryAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxRetiredVaultRecoveryAttempts)
-				age := ctx.BlockHeight() - voter.FinalisedHeight
-				attempts := age / signingTransPeriod
-				if attempts >= maxRetiredVaultRecoveryAttempts {
-					ctx.Logger().Info("too many attempts for retired vault recovery",
-						"hash", toi.InHash,
-						"attempts", attempts,
-						"max", maxRetiredVaultRecoveryAttempts)
-					continue
+					// in some edge cases the vault may no longer exists, in which
+					// case log and continue with rescheduling
+					ctx.Logger().Error("Unable to get vault", "error", err, "vault pub key", toi.VaultPubKey.String())
 				}
 
-				// Check if the inactive vault has enough funds for the outbound.
-				// Include gas cost when the gas asset is the same as the outbound asset.
-				requiredAmount := toi.Coin.Amount
-				for _, gas := range toi.MaxGas {
-					if gas.Asset.Equals(toi.Coin.Asset) {
-						requiredAmount = requiredAmount.Add(gas.Amount)
-					}
-				}
-				vaultBalance := vault.GetCoin(toi.Coin.Asset).Amount
-				if vaultBalance.GTE(requiredAmount) {
-					// Vault still has funds — reschedule to the same vault for signing.
-					err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
+				// if the vault is frozen, reschedule to same vault with no changes
+				frozen := false
+				if len(vault.Frozen) > 0 {
+					var chains common.Chains
+					chains, err = common.NewChains(vault.Frozen)
 					if err != nil {
-						ctx.Logger().Error("fail to add outbound to queue for retired vault recovery", "error", err)
-						resultErr = fmt.Errorf("failed to add outbound to queue for retired vault recovery: %w", err)
-					} else {
-						txs.TxArray[i].OutHash = common.BlankTxID
+						ctx.Logger().Error("failed to convert chains", "error", err)
 					}
-					continue
+					if chains.Has(toi.Coin.Asset.GetChain()) {
+						etx := common.Tx{
+							ID:        toi.InHash,
+							Chain:     toi.Chain,
+							ToAddress: toi.ToAddress,
+							Coins:     []common.Coin{toi.Coin},
+							Gas:       toi.MaxGas,
+							Memo:      toi.Memo,
+						}
+						eve := NewEventSecurity(etx, "frozen vault reschedule")
+						if err = mgr.EventMgr().EmitEvent(ctx, eve); err != nil {
+							ctx.Logger().Error("fail to emit security event", "error", err)
+						}
+						frozen = true
+					}
 				}
 
-				// Vault has been drained — fall through to active vault selection.
-				ctx.Logger().Info("inactive vault has insufficient funds, reassigning to active vault",
-					"hash", toi.InHash,
-					"vault", vault.PubKey,
-					"asset", toi.Coin.Asset,
-					"required", requiredAmount,
-					"available", vaultBalance)
-			}
+				memo, _ := ParseMemoWithTHORNames(ctx, s.keeper, toi.GetMemo()) // ignore err
+				if memo.IsInternal() {
+					// there is a different mechanism for rescheduling outbound
+					// transactions for migration transactions
+					continue
+				}
+				var voter ObservedTxVoter
+				if memo.IsType(TxRagnarok) {
+					// A Ragnarok outbound has no ObservedTxInVoter,
+					// so check MaxOutboundAttempts against the memo height.
+					ragnarokHeight := memo.GetBlockHeight()
+					// Though a negative is not expected to cause problems,
+					// nevertheless keep the default 0 as the minimum.
+					if ragnarokHeight > 0 {
+						voter.FinalisedHeight = ragnarokHeight
+					}
+				} else {
+					voter, err = s.keeper.GetObservedTxInVoter(ctx, toi.InHash)
+					if err != nil {
+						ctx.Logger().Error("fail to get observed tx voter", "error", err)
+						resultErr = fmt.Errorf("failed to get observed tx voter: %w", err)
+						continue
+					}
+				}
 
-			if maxOutboundAttempts > 0 {
-				age := ctx.BlockHeight() - voter.FinalisedHeight
-				attempts := age / signingTransPeriod
-				if attempts >= maxOutboundAttempts {
-					// Skip treasury recovery if there's already an outbound associated or
-					// at least one observation of the outbound (outbound is in progress)
-					hasOutboundAssociated := len(voter.OutTxs) > 0
-					outboundObservations := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
-					hasOutboundObservation := len(outboundObservations) > 0
-					if hasOutboundAssociated || hasOutboundObservation {
-						ctx.Logger().Info("skipping treasury recovery, outbound in progress",
+				// If vault is inactive, check if it still has sufficient funds to fulfill
+				// the outbound. If so, reschedule to the same vault (retired vault recovery).
+				// If the vault has been drained (e.g. migration completed before this outbound
+				// was signed), fall through to active vault selection so the outbound can be
+				// fulfilled from a vault that actually holds the funds.
+				if vault.Status == InactiveVault {
+					maxRetiredVaultRecoveryAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxRetiredVaultRecoveryAttempts)
+					age := ctx.BlockHeight() - voter.FinalisedHeight
+					attempts := age / signingTransPeriod
+					if attempts >= maxRetiredVaultRecoveryAttempts {
+						ctx.Logger().Info("too many attempts for retired vault recovery",
 							"hash", toi.InHash,
-							"has_outbound", hasOutboundAssociated,
-							"has_observation", hasOutboundObservation)
+							"attempts", attempts,
+							"max", maxRetiredVaultRecoveryAttempts)
 						continue
 					}
 
-					// For user-facing outbounds (refund, outbound, ragnarok), send to treasury recovery
-					if memo.IsOutbound() {
-						treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
-						if treasuryErr != nil {
-							ctx.Logger().Error("failed to send outbound to treasury recovery", "error", treasuryErr, "hash", toi.InHash)
+					// Check if the inactive vault has enough funds for the outbound.
+					// Include gas cost when the gas asset is the same as the outbound asset.
+					requiredAmount := toi.Coin.Amount
+					for _, gas := range toi.MaxGas {
+						if gas.Asset.Equals(toi.Coin.Asset) {
+							requiredAmount = requiredAmount.Add(gas.Amount)
+						}
+					}
+					vaultBalance := vault.GetCoin(toi.Coin.Asset).Amount
+					if vaultBalance.GTE(requiredAmount) {
+						// Vault still has funds — reschedule to the same vault for signing.
+						err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
+						if err != nil {
+							ctx.Logger().Error("fail to add outbound to queue for retired vault recovery", "error", err)
+							resultErr = fmt.Errorf("failed to add outbound to queue for retired vault recovery: %w", err)
 						} else {
 							txs.TxArray[i].OutHash = common.BlankTxID
 						}
-					} else {
-						// For non-outbound transactions (shouldn't happen often), just log and drop
-						ctx.Logger().Info("txn dropped, too many attempts (non-outbound)", "hash", toi.InHash)
-					}
-					continue
-				}
-			}
-
-			if !frozen && s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi) {
-				var active types.Vaults
-				active, err = s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
-				if err != nil {
-					return fmt.Errorf("fail to get active asgard vaults: %w", err)
-				}
-				active = filterActiveVaultsForOutboundChain(active, toi.Chain)
-				// Deduct the asset's pending outbound funds to represent only the available funds.
-				pendingOutbounds := mgr.Keeper().GetPendingOutbounds(ctx, toi.Coin.Asset)
-				for i := range active {
-					active[i].DeductVaultPendingOutbounds(pendingOutbounds)
-
-					// If the currently-assigned vault is an ActiveVault and the only one with enough funds for the outbound,
-					// the item should be reassigned to the same vault rather than assigned to another vault without enough funds;
-					// this is especially important for GAIA outbounds, for which insufficient-funds failures
-					// have THORChain-unobserved gas costs (causing churn-migration-jamming vault insolvency).
-					// As such, re-add the (now free) funds of the outbound being replaced.
-					if active[i].PubKey.Equals(toi.VaultPubKey) {
-						active[i].Coins = active[i].Coins.Add(toi.Coin)
-						active[i].Coins = active[i].Coins.Add(toi.MaxGas...)
-					}
-				}
-
-				available := active
-				mainCoin := toi.Coin
-				var maxGasCoin common.Coin
-				maxGasCoin, err = mgr.GasMgr().GetMaxGas(ctx, toi.Chain)
-				if err != nil {
-					ctx.Logger().Error("fail to get max gas", "error", err)
-				}
-				if mainCoin.Asset.Equals(maxGasCoin.Asset) {
-					// If the main coin and the gas coin are the same asset,
-					// ensure the assigned vault has enough available for both.
-					mainCoin.Amount = mainCoin.Amount.Add(maxGasCoin.Amount)
-				} else {
-					// If the gas coin isn't the main asset,
-					// directly ensure the assigned vault has enough available for it.
-					available = active.Has(maxGasCoin)
-				}
-				available = available.Has(mainCoin)
-
-				if len(available) == 0 {
-					// we need to give it somewhere to send from, even if that
-					// asgard doesn't have enough funds. This is because if we
-					// don't the transaction will just be dropped on the floor,
-					// which is bad. Instead it may try to send from an asgard that
-					// doesn't have enough funds, fail, and then get rescheduled
-					// again later. Maybe by then the network will have enough
-					// funds to satisfy.
-					// TODO add split logic to send it out from multiple asgards in
-					// this edge case.
-					ctx.Logger().Error("unable to determine asgard vault to send funds, trying first asgard")
-					if len(active) > 0 {
-						// Fall back on the vault with the most available funds.
-						vault = active.SortBy(mainCoin.Asset)[0]
-					}
-				} else {
-					// Use InHash for vault selection if available, otherwise use block height.
-					// For internal protocol transactions (ragnarok, migrations, etc.), InHash
-					// is set to BlankTxID since there is no associated inbound transaction.
-					inHashValue := toi.InHash.Int64()
-					rep := int(inHashValue + ctx.BlockHeight()/signingTransPeriod)
-					if vault.PubKey.Equals(available[rep%len(available)].PubKey) {
-						// looks like the new vault is going to be the same as the
-						// old vault, increment rep to ensure a differ asgard is
-						// chosen (if there is more than one option)
-						rep++
-					}
-					vault = available[rep%len(available)]
-				}
-				if !memo.IsType(TxRagnarok) {
-					// update original toi action in observed tx
-					// check observedTx has done status. Skip if it does already.
-					voterTx := voter.GetTx(NodeAccounts{})
-					if voterTx.IsDone(len(voter.Actions)) {
-						if len(voterTx.OutHashes) > 0 && len(voterTx.GetOutHashes()) > 0 {
-							txs.TxArray[i].OutHash = voterTx.GetOutHashes()[0]
-						}
 						continue
 					}
 
-					// update the actions in the voter with the new vault pubkey
-					for i, action := range voter.Actions {
-						if action.Equals(toi) {
-							voter.Actions[i].VaultPubKey = vault.PubKey
-							voter.Actions[i].VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
-							voter.Actions[i].VaultPubKeyFrost = vault.PubKeyFrost
-							if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
-								ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", toi.InHash)
+					// Vault has been drained — fall through to active vault selection.
+					ctx.Logger().Info("inactive vault has insufficient funds, reassigning to active vault",
+						"hash", toi.InHash,
+						"vault", vault.PubKey,
+						"asset", toi.Coin.Asset,
+						"required", requiredAmount,
+						"available", vaultBalance)
+				}
 
-								// Here, simultaneously clear the Aggregator information for a reassigned TxOutItem and its Actions item
-								// so that a SwapOut will send the THORChain output asset instead of cycling and swallowingif
-								// (and maybe failing with slashes) if something goes wrong.
-								toi.Aggregator = ""
-								toi.AggregatorTargetAsset = ""
-								toi.AggregatorTargetLimit = nil
-								voter.Actions[i].Aggregator = ""
-								voter.Actions[i].AggregatorTargetAsset = ""
-								voter.Actions[i].AggregatorTargetLimit = nil
+				if maxOutboundAttempts > 0 {
+					age := ctx.BlockHeight() - voter.FinalisedHeight
+					attempts := age / signingTransPeriod
+					if attempts >= maxOutboundAttempts {
+						// Skip treasury recovery if there's already an outbound associated or
+						// at least one observation of the outbound (outbound is in progress)
+						hasOutboundAssociated := len(voter.OutTxs) > 0
+						outboundObservations := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
+						hasOutboundObservation := len(outboundObservations) > 0
+						if hasOutboundAssociated || hasOutboundObservation {
+							ctx.Logger().Info("skipping treasury recovery, outbound in progress",
+								"hash", toi.InHash,
+								"has_outbound", hasOutboundAssociated,
+								"has_observation", hasOutboundObservation)
+							continue
+						}
+
+						// For user-facing outbounds (refund, outbound, ragnarok), send to treasury recovery
+						if memo.IsOutbound() {
+							treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
+							if treasuryErr != nil {
+								ctx.Logger().Error("failed to send outbound to treasury recovery", "error", treasuryErr, "hash", toi.InHash)
+							} else {
+								txs.TxArray[i].OutHash = common.BlankTxID
 							}
+						} else {
+							// For non-outbound transactions (shouldn't happen often), just log and drop
+							ctx.Logger().Info("txn dropped, too many attempts (non-outbound)", "hash", toi.InHash)
+						}
+						continue
+					}
+				}
+
+				if !frozen && s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi) {
+					var active types.Vaults
+					active, err = s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
+					if err != nil {
+						return fmt.Errorf("fail to get active asgard vaults: %w", err)
+					}
+					active = filterActiveVaultsForOutboundChain(active, toi.Chain)
+					// Deduct the asset's pending outbound funds to represent only the available funds.
+					pendingOutbounds := mgr.Keeper().GetPendingOutbounds(ctx, toi.Coin.Asset)
+					for i := range active {
+						active[i].DeductVaultPendingOutbounds(pendingOutbounds)
+
+						// If the currently-assigned vault is an ActiveVault and the only one with enough funds for the outbound,
+						// the item should be reassigned to the same vault rather than assigned to another vault without enough funds;
+						// this is especially important for GAIA outbounds, for which insufficient-funds failures
+						// have THORChain-unobserved gas costs (causing churn-migration-jamming vault insolvency).
+						// As such, re-add the (now free) funds of the outbound being replaced.
+						if active[i].PubKey.Equals(toi.VaultPubKey) {
+							active[i].Coins = active[i].Coins.Add(toi.Coin)
+							active[i].Coins = active[i].Coins.Add(toi.MaxGas...)
 						}
 					}
-					s.keeper.SetObservedTxInVoter(ctx, voter)
 
-				}
-				// Save the toi to as a new toi, select Asgard to send it this time.
-				toi.VaultPubKey = vault.PubKey
-				toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
-				toi.VaultPubKeyFrost = vault.PubKeyFrost
-
-				// update max gas - update voter first, only update txOut if voter succeeds
-				if !maxGasCoin.IsEmpty() {
-					if err = updateTxOutGas(ctx, s.keeper, toi, common.Gas{maxGasCoin}); err != nil {
-						ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", toi.InHash, "error", err)
+					available := active
+					mainCoin := toi.Coin
+					var maxGasCoin common.Coin
+					maxGasCoin, err = mgr.GasMgr().GetMaxGas(ctx, toi.Chain)
+					if err != nil {
+						ctx.Logger().Error("fail to get max gas", "error", err)
+					}
+					if mainCoin.Asset.Equals(maxGasCoin.Asset) {
+						// If the main coin and the gas coin are the same asset,
+						// ensure the assigned vault has enough available for both.
+						mainCoin.Amount = mainCoin.Amount.Add(maxGasCoin.Amount)
 					} else {
-						toi.MaxGas = common.Gas{maxGasCoin}
+						// If the gas coin isn't the main asset,
+						// directly ensure the assigned vault has enough available for it.
+						available = active.Has(maxGasCoin)
+					}
+					available = available.Has(mainCoin)
+
+					if len(available) == 0 {
+						// we need to give it somewhere to send from, even if that
+						// asgard doesn't have enough funds. This is because if we
+						// don't the transaction will just be dropped on the floor,
+						// which is bad. Instead it may try to send from an asgard that
+						// doesn't have enough funds, fail, and then get rescheduled
+						// again later. Maybe by then the network will have enough
+						// funds to satisfy.
+						// TODO add split logic to send it out from multiple asgards in
+						// this edge case.
+						ctx.Logger().Error("unable to determine asgard vault to send funds, trying first asgard")
+						if len(active) > 0 {
+							// Fall back on the vault with the most available funds.
+							vault = active.SortBy(mainCoin.Asset)[0]
+						}
+					} else {
+						// Use InHash for vault selection if available, otherwise use block height.
+						// For internal protocol transactions (ragnarok, migrations, etc.), InHash
+						// is set to BlankTxID since there is no associated inbound transaction.
+						inHashValue := toi.InHash.Int64()
+						rep := int(inHashValue + ctx.BlockHeight()/signingTransPeriod)
+						if vault.PubKey.Equals(available[rep%len(available)].PubKey) {
+							// looks like the new vault is going to be the same as the
+							// old vault, increment rep to ensure a differ asgard is
+							// chosen (if there is more than one option)
+							rep++
+						}
+						vault = available[rep%len(available)]
+					}
+					if !memo.IsType(TxRagnarok) {
+						// update original toi action in observed tx
+						// check observedTx has done status. Skip if it does already.
+						voterTx := voter.GetTx(NodeAccounts{})
+						if voterTx.IsDone(len(voter.Actions)) {
+							if len(voterTx.OutHashes) > 0 && len(voterTx.GetOutHashes()) > 0 {
+								txs.TxArray[i].OutHash = voterTx.GetOutHashes()[0]
+							}
+							continue
+						}
+
+						// update the actions in the voter with the new vault pubkey
+						for i, action := range voter.Actions {
+							if action.Equals(toi) {
+								voter.Actions[i].VaultPubKey = vault.PubKey
+								voter.Actions[i].VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
+								voter.Actions[i].VaultPubKeyFrost = vault.PubKeyFrost
+								if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
+									ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", toi.InHash)
+
+									// Here, simultaneously clear the Aggregator information for a reassigned TxOutItem and its Actions item
+									// so that a SwapOut will send the THORChain output asset instead of cycling and swallowingif
+									// (and maybe failing with slashes) if something goes wrong.
+									toi.Aggregator = ""
+									toi.AggregatorTargetAsset = ""
+									toi.AggregatorTargetLimit = nil
+									voter.Actions[i].Aggregator = ""
+									voter.Actions[i].AggregatorTargetAsset = ""
+									voter.Actions[i].AggregatorTargetLimit = nil
+								}
+							}
+						}
+						s.keeper.SetObservedTxInVoter(ctx, voter)
+
+					}
+					// Save the toi to as a new toi, select Asgard to send it this time.
+					toi.VaultPubKey = vault.PubKey
+					toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
+					toi.VaultPubKeyFrost = vault.PubKeyFrost
+
+					// update max gas - update voter first, only update txOut if voter succeeds
+					if !maxGasCoin.IsEmpty() {
+						if err = updateTxOutGas(ctx, s.keeper, toi, common.Gas{maxGasCoin}); err != nil {
+							ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", toi.InHash, "error", err)
+						} else {
+							toi.MaxGas = common.Gas{maxGasCoin}
+						}
+					}
+					// Equals checks GasRate so update actions GasRate too (before updating in the queue item)
+					// for future updates of MaxGas, which must match for matchActionItem in AddOutTx.
+					// Only update txOut GasRate if voter update succeeds to prevent permanent desync.
+					gasRate := int64(mgr.GasMgr().GetGasRate(ctx, toi.Chain).Uint64())
+					if err = updateTxOutGasRate(ctx, s.keeper, toi, gasRate); err != nil {
+						ctx.Logger().Error("Failed to update GasRate of action in ObservedTxVoter", "hash", toi.InHash, "error", err)
+					} else {
+						toi.GasRate = gasRate
 					}
 				}
-				// Equals checks GasRate so update actions GasRate too (before updating in the queue item)
-				// for future updates of MaxGas, which must match for matchActionItem in AddOutTx.
-				// Only update txOut GasRate if voter update succeeds to prevent permanent desync.
-				gasRate := int64(mgr.GasMgr().GetGasRate(ctx, toi.Chain).Uint64())
-				if err = updateTxOutGasRate(ctx, s.keeper, toi, gasRate); err != nil {
-					ctx.Logger().Error("Failed to update GasRate of action in ObservedTxVoter", "hash", toi.InHash, "error", err)
-				} else {
-					toi.GasRate = gasRate
+
+				// if a pool with the asset name doesn't exist, skip rescheduling
+				if !toi.Coin.IsRune() && !s.keeper.PoolExist(ctx, toi.Coin.Asset) {
+					ctx.Logger().Error("fail to add outbound to queue", "error", "coin is not rune and does not have an associated pool")
+					continue
 				}
-			}
 
-			// if a pool with the asset name doesn't exist, skip rescheduling
-			if !toi.Coin.IsRune() && !s.keeper.PoolExist(ctx, toi.Coin.Asset) {
-				ctx.Logger().Error("fail to add outbound to queue", "error", "coin is not rune and does not have an associated pool")
-				continue
-			}
+				// Apply memoless outbound logic before rescheduling
+				applyMemolessOutboundLogic(mgr.GetVersion(), &toi, enableMemolessOutbound)
 
-			// Apply memoless outbound logic before rescheduling
-			applyMemolessOutboundLogic(mgr.GetVersion(), &toi, enableMemolessOutbound)
-
-			err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
-			if err != nil {
-				ctx.Logger().Error("fail to add outbound to queue", "error", err)
-				resultErr = fmt.Errorf("failed to add outbound to queue: %w", err)
-				continue
+				err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
+				if err != nil {
+					ctx.Logger().Error("fail to add outbound to queue", "error", err)
+					resultErr = fmt.Errorf("failed to add outbound to queue: %w", err)
+					continue
+				}
+				// because the txout item has been rescheduled, thus mark the replaced tx out item as already send out, even it is not
+				// in this way bifrost will not send it out again cause node to be slashed
+				txs.TxArray[i].OutHash = common.BlankTxID
 			}
-			// because the txout item has been rescheduled, thus mark the replaced tx out item as already send out, even it is not
-			// in this way bifrost will not send it out again cause node to be slashed
-			txs.TxArray[i].OutHash = common.BlankTxID
 		}
-	}
-	if !txs.IsEmpty() {
-		if err := s.keeper.SetTxOut(ctx, txs); err != nil {
-			return fmt.Errorf("fail to save tx out : %w", err)
+		if !txs.IsEmpty() {
+			if err := s.keeper.SetTxOut(ctx, txs); err != nil {
+				return fmt.Errorf("fail to save tx out : %w", err)
+			}
 		}
 	}
 
