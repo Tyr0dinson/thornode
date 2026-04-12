@@ -33,18 +33,6 @@ func hasDedicatedXMRMonovault(vaults Vaults) bool {
 	return false
 }
 
-func hasActiveOrInitXMRMonovault(vaults Vaults) bool {
-	for _, vault := range vaults {
-		if !vault.IsXMRMonovault() {
-			continue
-		}
-		if vault.Status == ActiveVault || vault.Status == InitVault {
-			return true
-		}
-	}
-	return false
-}
-
 func shouldMaintainXMRMonovault(vaults Vaults, validatorCount int) bool {
 	// Multi-node genesis and steady-state churn both schedule the dedicated XMR
 	// monovault family. Keep maintaining it whenever validators exist or an

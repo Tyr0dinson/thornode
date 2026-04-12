@@ -830,7 +830,6 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
 	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
 
-	active := make(NodeAccounts, 0, 4)
 	membership := make([]string, 0, 4)
 	for i := 0; i < 4; i++ {
 		na := GetRandomValidatorNode(NodeActive)
@@ -838,7 +837,6 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 			na.RequestedToLeave = true
 		}
 		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
-		active = append(active, na)
 		membership = append(membership, na.PubKeySet.Secp256k1.String())
 	}
 
