@@ -24,3 +24,22 @@ func (s *XMRMonovaultSuite) TestSelectActiveVaultForChainPrefersRegularTHORVault
 	c.Assert(err, IsNil)
 	c.Assert(selected.PubKey.Equals(regular.PubKey), Equals, true)
 }
+
+func (s *XMRMonovaultSuite) TestPreferredActiveVaultsForChainPrefersDedicatedXMRMonovault(c *C) {
+	hybrid := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil)
+	dedicated := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
+	dedicated.PubKeyFrost = GetRandomPubKey()
+
+	filtered := preferredActiveVaultsForChain(Vaults{hybrid, dedicated}, common.XMRChain)
+	c.Assert(filtered, HasLen, 1)
+	c.Assert(filtered[0].PubKey.Equals(dedicated.PubKey), Equals, true)
+}
+
+func (s *XMRMonovaultSuite) TestPreferredActiveVaultsForChainFallsBackToHybridXMRVault(c *C) {
+	hybrid := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil)
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
+
+	filtered := preferredActiveVaultsForChain(Vaults{regular, hybrid}, common.XMRChain)
+	c.Assert(filtered, HasLen, 1)
+	c.Assert(filtered[0].PubKey.Equals(hybrid.PubKey), Equals, true)
+}

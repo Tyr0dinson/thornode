@@ -83,6 +83,11 @@ type batchingKeygenBridge struct {
 	batchSizes []int
 }
 
+type retryAwareKeygenBridge struct {
+	batchingKeygenBridge
+	mimirs map[string]int64
+}
+
 type timingKeygenBridge struct {
 	batchingKeygenBridge
 	buildDelay time.Duration
@@ -135,6 +140,13 @@ func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
 func (b *batchingKeygenBridge) Broadcast(msgs ...sdktypes.Msg) (common.TxID, error) {
 	b.batchSizes = append(b.batchSizes, len(msgs))
 	return common.TxID("batched-keygen-tx"), nil
+}
+
+func (b *retryAwareKeygenBridge) GetMimir(key string) (int64, error) {
+	if value, ok := b.mimirs[key]; ok {
+		return value, nil
+	}
+	return b.batchingKeygenBridge.GetMimir(key)
 }
 
 func (b *timingKeygenBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types2.Blame, inputPks common.PubKeys, keygenType types2.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdktypes.Msg, error) {
@@ -348,6 +360,7 @@ func (b *MockChainClient) GetConfirmationCount(txIn types.TxIn) int64 {
 type MockCustomKeygenChainClient struct {
 	*MockChainClient
 	called        bool
+	callCount     int
 	calledKeys    []string
 	calledHeight  int64
 	calledVersion string
@@ -358,17 +371,23 @@ type MockCustomKeygenChainClient struct {
 	retPoolFrost  common.PubKey
 	retBlame      []types2.Blame
 	retErr        error
+	results       []chainclienttypes.CustomKeygenResult
+	errs          []error
 }
 
 func (m *MockCustomKeygenChainClient) CustomKeygen() bool { return true }
 
 func (m *MockCustomKeygenChainClient) Keygen(req chainclienttypes.CustomKeygenRequest) (chainclienttypes.CustomKeygenResult, error) {
 	m.called = true
+	m.callCount++
 	m.calledKeys = append([]string(nil), req.Members...)
 	m.calledHeight = req.BlockHeight
 	m.calledVersion = req.ThorchainVersion
 	m.calledPoolPK = req.PoolPubKey
 	m.calledPoolED = req.PoolPubKeyEddsa
+	if len(m.results) >= m.callCount {
+		return m.results[m.callCount-1], m.errs[m.callCount-1]
+	}
 	return chainclienttypes.CustomKeygenResult{
 		Address:         m.retAddress,
 		PoolPubKeyEddsa: m.retPoolED,
@@ -1070,4 +1089,53 @@ func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesInParallel(c *
 	c.Assert(bridge.batchSizes, HasLen, 1)
 	c.Assert(bridge.batchSizes[0], Equals, 2)
 	c.Assert(elapsed < 325*time.Millisecond, Equals, true)
+}
+
+func (s *SignSuite) TestProcessKeygenBlockKeepsSuccessfulSiblingWhenAnotherFails(c *C) {
+	bridge := &retryAwareKeygenBridge{
+		batchingKeygenBridge: batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}},
+		mimirs: map[string]int64{
+			constants.ChurnRetryInterval.String():  1000,
+			constants.KeygenRetryInterval.String(): 0,
+		},
+	}
+	successFrost := types2.GetRandomPubKey()
+	custom := &MockCustomKeygenChainClient{
+		MockChainClient: &MockChainClient{},
+		results: []chainclienttypes.CustomKeygenResult{
+			{PoolPubKeyFrost: successFrost},
+			{},
+		},
+		errs: []error{
+			nil,
+			errors.New("boom"),
+		},
+	}
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: custom,
+		},
+		thorchainBridge: bridge,
+		pubkeyMgr:       pubkeymanager.NewMockPoolAddressValidator(),
+		logger:          log.With().Str("module", "signer").Logger(),
+		errCounter:      s.metrics.GetCounterVec(metrics.SignerError),
+	}
+
+	memberA := types2.GetRandomPubKey()
+	memberB := types2.GetRandomPubKey()
+	memberC := types2.GetRandomPubKey()
+	memberD := types2.GetRandomPubKey()
+	keygenA, err := types2.NewKeygen(2700, []string{memberA.String(), memberB.String()}, types2.KeygenType_XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	keygenB, err := types2.NewKeygen(2700, []string{memberC.String(), memberD.String()}, types2.KeygenType_XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+
+	sign.processKeygenBlock(types2.KeygenBlock{
+		Height:  2700,
+		Keygens: []types2.Keygen{keygenA, keygenB},
+	})
+
+	c.Assert(custom.callCount, Equals, 2)
+	c.Assert(bridge.batchSizes, HasLen, 1)
+	c.Assert(bridge.batchSizes[0], Equals, 1)
 }

@@ -427,6 +427,13 @@ func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock) bool {
 	return true
 }
 
+func singleKeygenBlock(height int64, keygen ttypes.Keygen) ttypes.KeygenBlock {
+	return ttypes.KeygenBlock{
+		Height:  height,
+		Keygens: []ttypes.Keygen{keygen},
+	}
+}
+
 func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 	s.logger.Info().Interface("keygenBlock", keygenBlock).Msg("processing keygen block")
 	pendingBroadcasts := make([]pendingKeygenBroadcast, 0, len(keygenBlock.Keygens))
@@ -456,12 +463,11 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			if err != nil {
 				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("xmr monovault keygen hooks failed")
-				s.flushPendingKeygenBroadcasts(pendingBroadcasts)
-				if s.scheduleKeygenRetry(keygenBlock) {
-					return
+				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
+					continue
 				}
-				s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries after xmr monovault keygen failure")
-				return
+				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after xmr monovault keygen failure")
+				continue
 			}
 			if pubKey.Ed25519.IsEmpty() {
 				pubKey.Ed25519 = frostPubKey
@@ -487,11 +493,11 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 
 			// re-enqueue the keygen block to retry if we failed to generate a key
 			if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-				s.flushPendingKeygenBroadcasts(pendingBroadcasts)
-				if s.scheduleKeygenRetry(keygenBlock) {
-					return
+				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
+					continue
 				}
-				s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries")
+				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
+				continue
 			}
 
 			// Give chain clients with custom keygen logic a chance to initialize chain-specific
@@ -506,12 +512,11 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			if err != nil {
 				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
-				s.flushPendingKeygenBroadcasts(pendingBroadcasts)
-				if s.scheduleKeygenRetry(keygenBlock) {
-					return
+				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
+					continue
 				}
-				s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries after custom keygen hook failure")
-				return
+				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
+				continue
 			}
 
 			// generate a verification signature to ensure we can sign with the new key
@@ -519,12 +524,11 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		}
 
 		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-			s.flushPendingKeygenBroadcasts(pendingBroadcasts)
-			if s.scheduleKeygenRetry(keygenBlock) {
-				return
+			if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
+				continue
 			}
-			s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries after empty keygen result")
-			return
+			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after empty keygen result")
+			continue
 		}
 
 		pendingBroadcasts = append(pendingBroadcasts, pendingKeygenBroadcast{

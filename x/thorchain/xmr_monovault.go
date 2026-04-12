@@ -62,9 +62,28 @@ func filterVaultsByChain(vaults Vaults, chain common.Chain) Vaults {
 	return filtered
 }
 
+func preferredActiveVaultsForChain(vaults Vaults, chain common.Chain) Vaults {
+	filtered := filterVaultsByChain(vaults, chain)
+	if !chain.Equals(common.XMRChain) || len(filtered) == 0 {
+		return filtered
+	}
+
+	dedicated := make(Vaults, 0, len(filtered))
+	for _, vault := range filtered {
+		if vault.IsXMRMonovault() {
+			dedicated = append(dedicated, vault)
+		}
+	}
+	if len(dedicated) > 0 {
+		return dedicated
+	}
+
+	return filtered
+}
+
 func filterActiveVaultsForOutboundChain(vaults Vaults, chain common.Chain) Vaults {
 	if chain.Equals(common.XMRChain) {
-		if filtered := filterVaultsByChain(vaults, chain); len(filtered) > 0 {
+		if filtered := preferredActiveVaultsForChain(vaults, chain); len(filtered) > 0 {
 			return filtered
 		}
 		return vaults
@@ -157,7 +176,7 @@ func hasActiveNonXMRAsgardFamily(vaults Vaults) bool {
 }
 
 func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, active Vaults, chain common.Chain, signingTransactionPeriod int64) (Vault, error) {
-	filtered := filterVaultsByChain(active, chain)
+	filtered := preferredActiveVaultsForChain(active, chain)
 	if chain == common.THORChain {
 		// Keep native THOR routing on ordinary Asgards when they exist. The
 		// dedicated XMR monovault also carries THOR for accounting/solvency, but

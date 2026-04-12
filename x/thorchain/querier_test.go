@@ -1447,6 +1447,7 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 		[]ChainContract{},
 		GetRandomEd25519PubKey(),
 	)
+	asgard.PubKeyFrost = GetRandomPubKey()
 	asgard.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
 	})

@@ -39,7 +39,7 @@ func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesAc
 	activeXMR.Status = ActiveVault
 	activeXMR.Type = AsgardVault
 	activeXMR.Chains = xmrMonovaultChains().Strings()
-	activeXMR.Membership = common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}.Strings()
+	activeXMR.Membership = append([]string(nil), oldRegularA.Membership...)
 
 	newRegularA := GetRandomVault()
 	newRegularA.Status = InitVault
@@ -68,6 +68,104 @@ func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesAc
 	newRegularAAfter, err := mgr.Keeper().GetVault(ctx, newRegularA.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(newRegularAAfter.Status, Equals, ActiveVault)
+}
+
+func (s *NetworkManagerTestSuite) TestRotateVaultXMRMonovaultRetiresOnlyXMRFamilies(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	oldRegular := GetRandomVault()
+	oldRegular.Status = ActiveVault
+	oldRegular.Type = AsgardVault
+	oldRegular.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+
+	oldHybridXMR := GetRandomVault()
+	oldHybridXMR.Status = ActiveVault
+	oldHybridXMR.Type = AsgardVault
+	oldHybridXMR.Chains = common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings()
+
+	oldDedicatedXMR := GetRandomVault()
+	oldDedicatedXMR.Status = ActiveVault
+	oldDedicatedXMR.Type = AsgardVault
+	oldDedicatedXMR.Chains = xmrMonovaultChains().Strings()
+	oldDedicatedXMR.PubKeyFrost = GetRandomPubKey()
+
+	newDedicatedXMR := GetRandomVault()
+	newDedicatedXMR.Status = InitVault
+	newDedicatedXMR.Type = AsgardVault
+	newDedicatedXMR.Chains = xmrMonovaultChains().Strings()
+	newDedicatedXMR.PubKeyFrost = GetRandomPubKey()
+
+	for _, vault := range []Vault{oldRegular, oldHybridXMR, oldDedicatedXMR, newDedicatedXMR} {
+		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	}
+
+	c.Assert(networkMgr.RotateVault(ctx, newDedicatedXMR), IsNil)
+
+	oldRegularAfter, err := mgr.Keeper().GetVault(ctx, oldRegular.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(oldRegularAfter.Status, Equals, ActiveVault)
+
+	oldHybridXMRAfter, err := mgr.Keeper().GetVault(ctx, oldHybridXMR.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(oldHybridXMRAfter.Status, Equals, RetiringVault)
+
+	oldDedicatedXMRAfter, err := mgr.Keeper().GetVault(ctx, oldDedicatedXMR.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(oldDedicatedXMRAfter.Status, Equals, RetiringVault)
+
+	newDedicatedXMRAfter, err := mgr.Keeper().GetVault(ctx, newDedicatedXMR.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(newDedicatedXMRAfter.Status, Equals, ActiveVault)
+}
+
+func (s *NetworkManagerTestSuite) TestTriggerKeygenIgnoresXMRMonovaultMembershipCollision(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	nas := NodeAccounts{na1, na2}
+	membership := []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+
+	activeXMR := GetRandomVault()
+	activeXMR.Status = ActiveVault
+	activeXMR.Type = AsgardVault
+	activeXMR.Chains = xmrMonovaultChains().Strings()
+	activeXMR.Membership = membership
+	activeXMR.PubKeyFrost = GetRandomPubKey()
+	c.Assert(mgr.Keeper().SetVault(ctx, activeXMR), IsNil)
+
+	c.Assert(networkMgr.TriggerKeygen(ctx, nas), IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Assert(keygenBlock.Keygens[0].Type, Equals, AsgardKeygen)
+}
+
+func (s *NetworkManagerTestSuite) TestTriggerXMRKeygenIgnoresRegularVaultMembershipCollision(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	nas := NodeAccounts{na1, na2}
+	membership := []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+
+	activeRegular := GetRandomVault()
+	activeRegular.Status = ActiveVault
+	activeRegular.Type = AsgardVault
+	activeRegular.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+	activeRegular.Membership = membership
+	c.Assert(mgr.Keeper().SetVault(ctx, activeRegular), IsNil)
+
+	c.Assert(networkMgr.TriggerXMRKeygen(ctx, nas), IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Assert(keygenBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
 }
 
 func (s *NetworkManagerTestSuite) TestUpdateNetwork(c *C) {
