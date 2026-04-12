@@ -29,13 +29,15 @@ const (
 )
 
 type solvencyMismatch struct {
-	asset       common.Asset
-	assetStr    string
-	vaultAddr   common.Address
-	vaultAmount cosmos.Uint
-	l1Amount    cosmos.Uint
-	diff        cosmos.Uint
-	tolerance   cosmos.Uint
+	asset             common.Asset
+	assetStr          string
+	vaultAddrs        []string
+	vaultPubKeys      []string
+	vaultPubKeysEddsa []string
+	vaultAmount       cosmos.Uint
+	l1Amount          cosmos.Uint
+	diff              cosmos.Uint
+	tolerance         cosmos.Uint
 }
 
 func NewSolvencyCheckActor(rng *rand.Rand) *Actor {
@@ -91,6 +93,26 @@ func solvencyMismatchRetryable(mismatches []solvencyMismatch) bool {
 	return true
 }
 
+func appendUniqueString(items []string, item string) []string {
+	if item == "" {
+		return items
+	}
+	for _, existing := range items {
+		if existing == item {
+			return items
+		}
+	}
+	return append(items, item)
+}
+
+func addToUintMap(items map[string]cosmos.Uint, key string, amount cosmos.Uint) {
+	current, ok := items[key]
+	if !ok {
+		current = cosmos.ZeroUint()
+	}
+	items[key] = current.Add(amount)
+}
+
 func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 	// wait a moment for any blocks to be created
 	time.Sleep(time.Second * 5)
@@ -134,27 +156,6 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			}
 		}
 
-		// assert only one vault
-		if len(vaults) != 1 {
-			a.Log().Error().Msg("expected only one vault")
-			return OpResult{
-				Continue: false,
-			}
-		}
-		pubkey, err := common.NewPubKey(*vaults[0].PubKey)
-		if err != nil {
-			a.Log().Error().Err(err).Msg("failed to parse vault pubkey")
-			return OpResult{
-				Continue: false,
-			}
-		}
-		pubkeyEddsa, err := common.NewPubKey(*vaults[0].PubKeyEddsa)
-		if err != nil {
-			a.Log().Error().Err(err).Msg("failed to parse vault eddsa pubkey")
-			return OpResult{
-				Continue: false,
-			}
-		}
 		xmrPubKey, err := thornode.GetInboundAddressPubKey(common.XMRChain)
 		if err != nil {
 			a.Log().Error().Err(err).Msg("failed to get active XMR inbound pubkey")
@@ -166,87 +167,134 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 		// get all L1 balances
 		l1CoinAmounts := make(map[string]cosmos.Uint)
 		vaultAssets := make(map[string]common.Asset)
-		vaultAddrs := make(map[string]common.Address)
-		for assetStr := range vaultCoinAmounts {
-			asset, err := common.NewAsset(assetStr)
-			if err != nil {
-				a.Log().Fatal().Err(err).Msg("failed to parse asset")
-			}
-			vaultAssets[assetStr] = asset
+		vaultAddrs := make(map[string][]string)
+		vaultPubKeys := make(map[string][]string)
+		vaultPubKeysEddsa := make(map[string][]string)
+		l1BalanceSeen := make(map[string]struct{})
+		for _, vault := range vaults {
+			vaultPubKeyStr := vault.GetPubKey()
+			vaultPubKeyEddsaStr := vault.GetPubKeyEddsa()
 
-			if asset.IsGasAsset() {
-				switch asset.Chain.GetSigningAlgo() {
-				case common.SigningAlgoEd25519:
-					algoPubKey := pubkeyEddsa
-					if asset.Chain.Equals(common.XMRChain) {
-						algoPubKey = xmrPubKey
-					}
-					vaultAddr, err := algoPubKey.GetAddress(asset.Chain)
-					if err != nil {
-						a.Log().Error().Err(err).Msg("failed to get vault address for ed25519 pubkey")
-						return OpResult{
-							Continue: false,
-						}
-					}
-					vaultAddrs[assetStr] = vaultAddr
-					l1Acct, err := user.ChainClients[asset.Chain].GetAccount(&algoPubKey)
-					if err != nil {
-						a.Log().Error().Err(err).Msg("failed to get L1 account for ed25519 pubkey")
-						return OpResult{
-							Continue: false,
-						}
-					}
-					l1CoinAmounts[assetStr] = l1Acct.Coins.GetCoin(asset).Amount
-				case common.SigningAlgoSecp256k1:
-					vaultAddr, err := pubkey.GetAddress(asset.Chain)
-					if err != nil {
-						a.Log().Error().Err(err).Msg("failed to get vault address for secp256k1 pubkey")
-						return OpResult{
-							Continue: false,
-						}
-					}
-					vaultAddrs[assetStr] = vaultAddr
-					l1Acct, err := user.ChainClients[asset.Chain].GetAccount(&pubkey)
-					if err != nil {
-						a.Log().Error().Err(err).Msg("failed to get L1 account")
-						return OpResult{
-							Continue: false,
-						}
-					}
-					l1CoinAmounts[assetStr] = l1Acct.Coins.GetCoin(asset).Amount
-				default:
-					a.Log().Fatal().Msgf("unsupported signing algo %s for chain %s", asset.Chain.GetSigningAlgo(), asset.Chain)
-				}
-			} else if asset.Chain.IsEVM() {
-				// for EVM chains, we need to get the balance from the contract
-				_, routerAddr, err := thornode.GetInboundAddress(asset.Chain)
+			var vaultPubKey common.PubKey
+			if vaultPubKeyStr != "" {
+				vaultPubKey, err = common.NewPubKey(vaultPubKeyStr)
 				if err != nil {
-					a.Log().Error().Err(err).Msg("failed to get router address")
+					a.Log().Error().Err(err).Str("pubkey", vaultPubKeyStr).Msg("failed to parse vault pubkey")
+					return OpResult{Continue: false}
+				}
+			}
+
+			var vaultPubKeyEddsa common.PubKey
+			if vaultPubKeyEddsaStr != "" {
+				vaultPubKeyEddsa, err = common.NewPubKey(vaultPubKeyEddsaStr)
+				if err != nil {
+					a.Log().Error().Err(err).Str("pubkey_eddsa", vaultPubKeyEddsaStr).Msg("failed to parse vault eddsa pubkey")
+					return OpResult{Continue: false}
+				}
+			}
+
+			for _, coin := range vault.Coins {
+				assetStr := coin.Asset
+				asset, err := common.NewAsset(assetStr)
+				if err != nil {
+					a.Log().Fatal().Err(err).Msg("failed to parse asset")
+				}
+				vaultAssets[assetStr] = asset
+
+				if asset.IsGasAsset() {
+					switch asset.Chain.GetSigningAlgo() {
+					case common.SigningAlgoEd25519:
+						algoPubKey := vaultPubKeyEddsa
+						queryKey := vaultPubKeyEddsaStr
+						if asset.Chain.Equals(common.XMRChain) {
+							algoPubKey = xmrPubKey
+							queryKey = xmrPubKey.String()
+						}
+						if algoPubKey.IsEmpty() {
+							a.Log().Error().Str("asset", assetStr).Msg("missing ed25519 vault pubkey")
+							return OpResult{Continue: false}
+						}
+						seenKey := assetStr + "|" + queryKey
+						if _, seen := l1BalanceSeen[seenKey]; seen {
+							continue
+						}
+						l1BalanceSeen[seenKey] = struct{}{}
+
+						vaultAddr, err := algoPubKey.GetAddress(asset.Chain)
+						if err != nil {
+							a.Log().Error().Err(err).Msg("failed to get vault address for ed25519 pubkey")
+							return OpResult{Continue: false}
+						}
+						vaultAddrs[assetStr] = appendUniqueString(vaultAddrs[assetStr], vaultAddr.String())
+						vaultPubKeysEddsa[assetStr] = appendUniqueString(vaultPubKeysEddsa[assetStr], algoPubKey.String())
+						l1Acct, err := user.ChainClients[asset.Chain].GetAccount(&algoPubKey)
+						if err != nil {
+							a.Log().Error().Err(err).Msg("failed to get L1 account for ed25519 pubkey")
+							return OpResult{Continue: false}
+						}
+						addToUintMap(l1CoinAmounts, assetStr, l1Acct.Coins.GetCoin(asset).Amount)
+					case common.SigningAlgoSecp256k1:
+						if vaultPubKey.IsEmpty() {
+							a.Log().Error().Str("asset", assetStr).Msg("missing secp256k1 vault pubkey")
+							return OpResult{Continue: false}
+						}
+						seenKey := assetStr + "|" + vaultPubKey.String()
+						if _, seen := l1BalanceSeen[seenKey]; seen {
+							continue
+						}
+						l1BalanceSeen[seenKey] = struct{}{}
+
+						vaultAddr, err := vaultPubKey.GetAddress(asset.Chain)
+						if err != nil {
+							a.Log().Error().Err(err).Msg("failed to get vault address for secp256k1 pubkey")
+							return OpResult{Continue: false}
+						}
+						vaultAddrs[assetStr] = appendUniqueString(vaultAddrs[assetStr], vaultAddr.String())
+						vaultPubKeys[assetStr] = appendUniqueString(vaultPubKeys[assetStr], vaultPubKey.String())
+						l1Acct, err := user.ChainClients[asset.Chain].GetAccount(&vaultPubKey)
+						if err != nil {
+							a.Log().Error().Err(err).Msg("failed to get L1 account")
+							return OpResult{Continue: false}
+						}
+						addToUintMap(l1CoinAmounts, assetStr, l1Acct.Coins.GetCoin(asset).Amount)
+					default:
+						a.Log().Fatal().Msgf("unsupported signing algo %s for chain %s", asset.Chain.GetSigningAlgo(), asset.Chain)
+					}
+				} else if asset.Chain.IsEVM() {
+					if vaultPubKey.IsEmpty() {
+						a.Log().Error().Str("asset", assetStr).Msg("missing vault pubkey for EVM asset")
+						return OpResult{Continue: false}
+					}
+					seenKey := assetStr + "|" + vaultPubKey.String()
+					if _, seen := l1BalanceSeen[seenKey]; seen {
+						continue
+					}
+					l1BalanceSeen[seenKey] = struct{}{}
+
+					_, routerAddr, err := thornode.GetInboundAddress(asset.Chain)
+					if err != nil {
+						a.Log().Error().Err(err).Msg("failed to get router address")
+						return OpResult{Continue: false}
+					}
+					vaultAddr, err := vaultPubKey.GetAddress(asset.Chain)
+					if err != nil {
+						a.Log().Error().Err(err).Msg("failed to get vault address")
+						return OpResult{Continue: false}
+					}
+					vaultAddrs[assetStr] = appendUniqueString(vaultAddrs[assetStr], vaultAddr.String())
+					vaultPubKeys[assetStr] = appendUniqueString(vaultPubKeys[assetStr], vaultPubKey.String())
+					balance, err := user.ChainClients[asset.Chain].(*evm.Client).GetVaultAllowance(*routerAddr, vaultAddr, asset)
+					if err != nil {
+						a.Log().Error().Err(err).Msg("failed to get vault allowance")
+						return OpResult{Continue: false}
+					}
+					addToUintMap(l1CoinAmounts, assetStr, balance)
+				} else {
+					a.Log().Error().Msgf("unsupported asset %s", asset)
 					return OpResult{
 						Continue: false,
+						Error:    fmt.Errorf("unsupported asset %s", asset),
 					}
-				}
-				vaultAddr, err := pubkey.GetAddress(asset.Chain)
-				if err != nil {
-					a.Log().Error().Err(err).Msg("failed to get vault address")
-					return OpResult{
-						Continue: false,
-					}
-				}
-				vaultAddrs[assetStr] = vaultAddr
-				balance, err := user.ChainClients[asset.Chain].(*evm.Client).GetVaultAllowance(*routerAddr, vaultAddr, asset)
-				if err != nil {
-					a.Log().Error().Err(err).Msg("failed to get vault allowance")
-					return OpResult{
-						Continue: false,
-					}
-				}
-				l1CoinAmounts[assetStr] = balance
-			} else {
-				a.Log().Error().Msgf("unsupported asset %s", asset)
-				return OpResult{
-					Continue: false,
-					Error:    fmt.Errorf("unsupported asset %s", asset),
 				}
 			}
 		}
@@ -262,20 +310,22 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			solvent, shortfall, tolerance := vaultIsSolvent(asset, vaultAmount, l1Amount)
 			if !solvent {
 				mismatches = append(mismatches, solvencyMismatch{
-					asset:       asset,
-					assetStr:    assetStr,
-					vaultAddr:   vaultAddrs[assetStr],
-					vaultAmount: vaultAmount,
-					l1Amount:    l1Amount,
-					diff:        shortfall,
-					tolerance:   tolerance,
+					asset:             asset,
+					assetStr:          assetStr,
+					vaultAddrs:        vaultAddrs[assetStr],
+					vaultPubKeys:      vaultPubKeys[assetStr],
+					vaultPubKeysEddsa: vaultPubKeysEddsa[assetStr],
+					vaultAmount:       vaultAmount,
+					l1Amount:          l1Amount,
+					diff:              shortfall,
+					tolerance:         tolerance,
 				})
 				continue
 			}
 			if excess := solvencyExcess(vaultAmount, l1Amount); !excess.IsZero() {
 				a.Log().Info().
 					Str("asset", assetStr).
-					Str("vault_address", vaultAddrs[assetStr].String()).
+					Strs("vault_addresses", vaultAddrs[assetStr]).
 					Str("vault_amount", vaultAmount.String()).
 					Str("l1_amount", l1Amount.String()).
 					Str("difference", excess.String()).
@@ -285,7 +335,7 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			if !shortfall.IsZero() {
 				a.Log().Warn().
 					Str("asset", assetStr).
-					Str("vault_address", vaultAddrs[assetStr].String()).
+					Strs("vault_addresses", vaultAddrs[assetStr]).
 					Str("vault_amount", vaultAmount.String()).
 					Str("l1_amount", l1Amount.String()).
 					Str("difference", shortfall.String()).
@@ -307,9 +357,9 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			}
 			logMismatch().
 				Str("asset", mismatch.assetStr).
-				Str("vault_address", mismatch.vaultAddr.String()).
-				Str("vault_pubkey", pubkey.String()).
-				Str("vault_pubkey_eddsa", pubkeyEddsa.String()).
+				Strs("vault_addresses", mismatch.vaultAddrs).
+				Strs("vault_pubkeys", mismatch.vaultPubKeys).
+				Strs("vault_pubkeys_eddsa", mismatch.vaultPubKeysEddsa).
 				Str("vault_amount", mismatch.vaultAmount.String()).
 				Str("l1_amount", mismatch.l1Amount.String()).
 				Str("difference", mismatch.diff.String()).

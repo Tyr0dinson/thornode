@@ -533,10 +533,24 @@ func (b *BlockScanner) GetStartHeight() (int64, error) {
 		clog.Error().Err(err).Msg("failed to get chain height")
 		return 0, err
 	}
+	if b.cfg.ChainID == common.THORChain && b.cfg.MaxResumeBlockLag > 0 {
+		maxLagBlocks := b.cfg.MaxResumeBlockLag.Milliseconds() / b.cfg.ChainID.ApproximateBlockMilliseconds()
+		if maxLagBlocks > 0 {
+			startHeight := height - maxLagBlocks
+			if startHeight < 1 {
+				startHeight = 1
+			}
+			clog.Info().
+				Int64("start_height", startHeight).
+				Int64("chain_height", height).
+				Msg("using chain height with max lag backfill")
+			return startHeight, nil
+		}
+	}
 	clog.Info().
 		Int64("start_height", height).
 		Msg("using chain height as start height")
-	return b.chainScanner.GetHeight()
+	return height, nil
 }
 
 func (b *BlockScanner) Stop() {

@@ -171,3 +171,81 @@ func TestFrostSignerAdapterDKGFinalizePassesKeyBytesHex(t *testing.T) {
 		t.Fatalf("finalize request translation mismatch: %+v", gotFinalize)
 	}
 }
+
+func TestFrostSignerAdapterAllowsEmptyDKGRound2SharesForSingleSigner(t *testing.T) {
+	t.Parallel()
+
+	var gotRound2 xmrFrostDKGRound2Request
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/monero/dkg/round2":
+			if err := json.NewDecoder(r.Body).Decode(&gotRound2); err != nil {
+				t.Fatalf("decode round2 request: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostDKGRound2Response{
+				EncryptedShares: map[string]string{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	adapter := newFrostSignerAdapter(signer)
+
+	resp, err := adapter.FrostDKGRound2(tssp.FrostSidecarDKGRound2Req{
+		SessionID: "sess-1",
+		AllCommitments: map[string]string{
+			"1": "commit-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("adapter round2 single signer: %v", err)
+	}
+	if len(resp.EncryptedShares) != 0 {
+		t.Fatalf("expected empty encrypted shares for single signer dkg, got %+v", resp.EncryptedShares)
+	}
+	if gotRound2.SessionID != "sess-1" || !reflect.DeepEqual(gotRound2.AllCommitments, map[string]string{"1": "commit-1"}) {
+		t.Fatalf("round2 request translation mismatch: %+v", gotRound2)
+	}
+}
+
+func TestFrostSignerAdapterRejectsEmptyDKGRound2SharesForMultiSigner(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/monero/dkg/round2":
+			_ = json.NewEncoder(w).Encode(xmrFrostDKGRound2Response{
+				EncryptedShares: map[string]string{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	adapter := newFrostSignerAdapter(signer)
+
+	_, err = adapter.FrostDKGRound2(tssp.FrostSidecarDKGRound2Req{
+		SessionID: "sess-2",
+		AllCommitments: map[string]string{
+			"1": "commit-1",
+			"2": "commit-2",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected multi-signer round2 to reject empty encrypted shares")
+	}
+}

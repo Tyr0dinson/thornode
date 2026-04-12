@@ -691,6 +691,26 @@ func TestFrostTranscriptDKGRound2HashDeterministicAcrossMapOrder(t *testing.T) {
 	}
 }
 
+func TestFrostTranscriptDKGRound2HashAllowsEmptyShares(t *testing.T) {
+	payload := FrostDKGRound2Payload{
+		SenderPubKey:     "sender",
+		ParticipantIndex: 1,
+		EncryptedShares:  map[string]string{},
+	}
+
+	hashA, err := FrostTranscriptDKGRound2Hash("msg-id", payload)
+	if err != nil {
+		t.Fatalf("hashA: %v", err)
+	}
+	hashB, err := FrostTranscriptDKGRound2Hash("msg-id", payload)
+	if err != nil {
+		t.Fatalf("hashB: %v", err)
+	}
+	if hashA != hashB {
+		t.Fatalf("expected deterministic empty-share hash, got %s vs %s", hashA, hashB)
+	}
+}
+
 func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	ensureBech32Prefix()
 
@@ -879,6 +899,76 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	}
 	if sidecar.finalizeReqs[0].GroupKey != groupKey || sidecar.finalizeReqs[0].Address != groupAddress {
 		t.Fatalf("unexpected finalize payload: %+v", sidecar.finalizeReqs[0])
+	}
+}
+
+func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0]}
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+	activePeerIDs, err := conversion.GetPeerIDsFromPubKeys(members)
+	if err != nil {
+		t.Fatalf("peer ids: %v", err)
+	}
+
+	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	groupAddress := "48xmrsinglesigner"
+	groupKey := strings.Repeat("cd", 32)
+
+	sidecar := &mockFrostSidecarKeygen{
+		round1Resp: FrostSidecarDKGRound1Resp{Commitments: "single-commitment"},
+		round2Resp: FrostSidecarDKGRound2Resp{EncryptedShares: map[string]string{}},
+		round3Resp: FrostSidecarDKGRound3Resp{
+			Address:  groupAddress,
+			GroupKey: groupKey,
+		},
+		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"},
+	}
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-single", make(chan *p2p.Message, 4), time.Second)
+	coord.sidecar = sidecar
+	resp := coord.Execute(FrostKeygenRequest{
+		VaultPubKey:   "thorpub-single",
+		SignerPubKeys: members,
+		ExpectedAddr:  groupAddress,
+	}, activeSet, activePeerIDs)
+	if resp.Status != tcommon.Success {
+		t.Fatalf("expected success status, got %d with blame %+v", resp.Status, resp.Blame)
+	}
+	if resp.Address != groupAddress || resp.GroupKey != groupKey {
+		t.Fatalf("unexpected single-signer keygen response: %+v", resp)
+	}
+	if len(sidecar.round1Reqs) != 1 {
+		t.Fatalf("expected one round1 call, got %d", len(sidecar.round1Reqs))
+	}
+	if sidecar.round1Reqs[0].ParticipantIndex != localIndex {
+		t.Fatalf("expected local participant index %d, got %d", localIndex, sidecar.round1Reqs[0].ParticipantIndex)
+	}
+	if sidecar.round1Reqs[0].N != 1 || sidecar.round1Reqs[0].Threshold != 1 {
+		t.Fatalf("unexpected single-signer round1 N/threshold: %+v", sidecar.round1Reqs[0])
+	}
+	if len(sidecar.round2Reqs) != 1 {
+		t.Fatalf("expected one round2 call, got %d", len(sidecar.round2Reqs))
+	}
+	if len(sidecar.round2Reqs[0].AllCommitments) != 1 {
+		t.Fatalf("expected only local commitment in single-signer round2, got %+v", sidecar.round2Reqs[0].AllCommitments)
+	}
+	if len(sidecar.round3Reqs) != 1 {
+		t.Fatalf("expected one round3 call, got %d", len(sidecar.round3Reqs))
+	}
+	if len(sidecar.round3Reqs[0].AllShares) != 0 {
+		t.Fatalf("expected no remote shares in single-signer round3, got %+v", sidecar.round3Reqs[0].AllShares)
+	}
+	if len(sidecar.finalizeReqs) != 1 {
+		t.Fatalf("expected one finalize call, got %d", len(sidecar.finalizeReqs))
 	}
 }
 

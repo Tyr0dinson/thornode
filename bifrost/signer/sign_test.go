@@ -1017,7 +1017,7 @@ func (s *SignSuite) TestBuildKeygenBackupsRunsEncryptionsInParallel(c *C) {
 	c.Assert(elapsed < 400*time.Millisecond, Equals, true)
 }
 
-func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesInParallel(c *C) {
+func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesSequentially(c *C) {
 	originalSeed, hadSeed := os.LookupEnv("SIGNER_SEED_PHRASE")
 	c.Assert(os.Setenv("SIGNER_SEED_PHRASE", testSignerMnemonic), IsNil)
 	defer func() {
@@ -1088,7 +1088,7 @@ func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesInParallel(c *
 
 	c.Assert(bridge.batchSizes, HasLen, 1)
 	c.Assert(bridge.batchSizes[0], Equals, 2)
-	c.Assert(elapsed < 325*time.Millisecond, Equals, true)
+	c.Assert(elapsed >= 325*time.Millisecond, Equals, true)
 }
 
 func (s *SignSuite) TestProcessKeygenBlockKeepsSuccessfulSiblingWhenAnotherFails(c *C) {

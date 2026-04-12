@@ -621,6 +621,10 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 
 		vault, err := selectActiveVaultForChain(ctx, k, active, chain, signingTransactionPeriod)
 		if err != nil {
+			if chain == common.XMRChain {
+				ctx.Logger().Info("skipping XMR inbound address until dedicated active vault exists", "error", err)
+				continue
+			}
 			ctx.Logger().Error("fail to select active vault for chain", "chain", chain.String(), "error", err)
 			return nil, fmt.Errorf("fail to select active vault for chain %s: %w", chain, err)
 		}

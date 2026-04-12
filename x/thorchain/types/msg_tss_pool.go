@@ -99,8 +99,12 @@ func (m *MsgTssPool) ValidateBasic() error {
 	if len(m.ID) == 0 {
 		return cosmos.ErrUnknownRequest("ID cannot be blank")
 	}
-	if len(m.PubKeys) < 2 {
-		return cosmos.ErrUnknownRequest("Must have at least 2 pub keys")
+	minPubKeys := 2
+	if m.KeygenType == KeygenType_XMRMonovaultKeygen {
+		minPubKeys = 1
+	}
+	if len(m.PubKeys) < minPubKeys {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("Must have at least %d pub keys", minPubKeys))
 	}
 	if len(m.PubKeys) > 100 {
 		return cosmos.ErrUnknownRequest("Must have no more then 100 pub keys")

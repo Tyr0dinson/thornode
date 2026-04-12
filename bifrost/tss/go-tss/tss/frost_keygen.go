@@ -677,7 +677,7 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 					resp := c.failForPubKeys("participant index mismatch in round2 payload", frostDKGRound2, []string{incoming.SenderPubKey})
 					return nil, &resp
 				}
-				if len(incoming.EncryptedShares) == 0 {
+				if len(incoming.EncryptedShares) == 0 && len(activeSet.originalByNormalized) > 1 {
 					resp := c.failForPubKeys("empty encrypted shares in round2 payload", frostDKGRound2, []string{incoming.SenderPubKey})
 					return nil, &resp
 				}

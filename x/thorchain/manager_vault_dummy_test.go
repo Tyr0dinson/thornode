@@ -7,8 +7,9 @@ import (
 )
 
 type NetworkMgrDummy struct {
-	nas   NodeAccounts
-	vault Vault
+	nas    NodeAccounts
+	xmrNas NodeAccounts
+	vault  Vault
 }
 
 func NewNetworkMgrDummy() *NetworkMgrDummy {
@@ -35,7 +36,7 @@ func (vm *NetworkMgrDummy) TriggerKeygen(_ cosmos.Context, nas NodeAccounts) err
 }
 
 func (vm *NetworkMgrDummy) TriggerXMRKeygen(_ cosmos.Context, nas NodeAccounts) error {
-	vm.nas = nas
+	vm.xmrNas = nas
 	return nil
 }
 

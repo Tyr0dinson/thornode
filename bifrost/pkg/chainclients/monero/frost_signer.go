@@ -530,7 +530,9 @@ func (s *FrostSigner) FrostDKGRound2(req xmrFrostDKGRound2Request) (xmrFrostDKGR
 	if err := s.call(http.MethodPost, s.dkgRound2Path, req, &out); err != nil {
 		return xmrFrostDKGRound2Response{}, fmt.Errorf("fail to call frost dkg round2 endpoint: %w", err)
 	}
-	if len(out.EncryptedShares) == 0 {
+	// A single-participant FROST DKG has nobody else to encrypt shares for, so
+	// the sidecar legitimately returns an empty map here.
+	if len(out.EncryptedShares) == 0 && len(req.AllCommitments) > 1 {
 		return xmrFrostDKGRound2Response{}, fmt.Errorf("frost dkg round2 endpoint returned empty encrypted_shares")
 	}
 	return out, nil

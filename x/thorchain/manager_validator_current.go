@@ -203,11 +203,13 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		if err != nil {
 			return err
 		}
-		if shouldMaintainXMRMonovault(allVaults, len(next)) && !hasActiveOrInitXMRMonovault(allVaults) {
+		if shouldMaintainXMRMonovault(allVaults, len(next)) {
 			// Keep the dedicated XMR monovault in the same keygen block as the
 			// regular churn so both vault families are ready together at rotation
-			// time. Delaying the monovault to the next block leaves the retiring
-			// XMR-bearing vault without an active migration target and stalls churn.
+			// time. Once an XMR monovault already exists, later churns still need a
+			// replacement monovault whenever the validator membership changes.
+			// triggerKeygen's membership-aware dedupe keeps same-membership rounds
+			// from being rescheduled.
 			if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
 				return err
 			}

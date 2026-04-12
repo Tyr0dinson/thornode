@@ -75,6 +75,30 @@ func (s *MsgTssPoolSuite) TestMsgTssPool(c *C) {
 	err3 := msg3.ValidateBasic()
 	c.Assert(err3, NotNil)
 	c.Check(errors.Is(err3, se.ErrUnknownRequest), Equals, true)
+
+	xmrMonovaultPk := GetRandomPubKey()
+	xmrMember := []string{GetRandomPubKey().String()}
+	xmrSigner, err := common.PubKey(xmrMember[0]).GetThorAddress()
+	c.Assert(err, IsNil)
+	xmrMsg, err := NewMsgTssPoolV3(
+		xmrMember,
+		xmrMonovaultPk,
+		nil,
+		nil,
+		KeygenType_XMRMonovaultKeygen,
+		1,
+		nil,
+		common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings(),
+		xmrSigner,
+		keygenTime,
+		xmrMonovaultPk,
+		nil,
+		nil,
+		xmrMonovaultPk,
+		1024,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(xmrMsg.ValidateBasic(), IsNil)
 }
 
 func (s *MsgTssPoolSuite) TestMsgTssPoolBlameNodesValidation(c *C) {

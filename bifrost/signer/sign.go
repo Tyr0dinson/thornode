@@ -556,29 +556,19 @@ func (s *Signer) flushPendingKeygenBroadcasts(pending []pendingKeygenBroadcast) 
 	}
 
 	msgs := make([]sdktypes.Msg, len(pending))
-	errs := make(chan error, len(pending))
-	var wg sync.WaitGroup
 	for i, item := range pending {
-		i := i
-		item := item
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			msg, err := s.buildKeygenMsg(item.height, item.poolPk, item.secp256k1Signature, item.blame, item.input, item.keygenType, item.chains, item.keygenTime, item.poolPubKeyEddsa, item.poolPubKeyFrost, item.frostKeyshareHex, item.observedMoneroHeight)
-			if err != nil {
-				errs <- err
-				return
-			}
-			msgs[i] = msg
-		}()
-	}
-	wg.Wait()
-	close(errs)
-
-	if err, ok := <-errs; ok {
-		s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
-		s.logger.Error().Err(err).Msg("fail to build keygen")
-		return
+		// Keep the final THORChain submit batched per block, but build the
+		// individual keygen messages in-process one at a time. In practice there
+		// are at most two messages here (regular Asgard + XMR monovault), and the
+		// real backup/encryption work inside buildKeygenMsg has shown signs of
+		// wedging some nodes when both builders run concurrently.
+		msg, err := s.buildKeygenMsg(item.height, item.poolPk, item.secp256k1Signature, item.blame, item.input, item.keygenType, item.chains, item.keygenTime, item.poolPubKeyEddsa, item.poolPubKeyFrost, item.frostKeyshareHex, item.observedMoneroHeight)
+		if err != nil {
+			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
+			s.logger.Error().Err(err).Str("keygen_type", item.keygenType.String()).Msg("fail to build keygen")
+			return
+		}
+		msgs[i] = msg
 	}
 
 	txID, err := s.broadcastKeygenMsgs(pending[0].height, msgs...)

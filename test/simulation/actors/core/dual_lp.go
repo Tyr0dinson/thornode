@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	rand "math/rand/v2"
+	"time"
 
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 
@@ -36,6 +37,7 @@ func NewDualLPActor(asset common.Asset, rng *rand.Rand) *Actor {
 		Actor: *NewActor(fmt.Sprintf("DualLP-%s", asset), rng),
 		asset: asset,
 	}
+	a.Timeout = dualLPActorTimeout(asset)
 
 	// lock a user that has L1 and RUNE balance
 	a.Ops = append(a.Ops, a.acquireUser)
@@ -54,6 +56,13 @@ func NewDualLPActor(asset common.Asset, rng *rand.Rand) *Actor {
 	a.Ops = append(a.Ops, a.verifyLP)
 
 	return &a.Actor
+}
+
+func dualLPActorTimeout(asset common.Asset) time.Duration {
+	if asset.Chain.Equals(common.XMRChain) {
+		return 8 * time.Minute
+	}
+	return 2 * time.Minute
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -611,13 +611,29 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 
 	nodeAccount := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount), IsNil)
+	mgr.Keeper().SetMimir(ctx, "HaltChurning", 1)
 	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
-	// make sure asgard vault get created
+	// make sure the regular vault is created and the dedicated XMR monovault is
+	// scheduled through keygen instead of being pre-created.
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(vaults, HasLen, 1)
-	c.Assert(vaults[0].PubKeyEddsa.Equals(nodeAccount.PubKeySet.Ed25519), Equals, true)
-	c.Assert(vaults[0].PubKeyFrost.Equals(nodeAccount.PubKeySet.Ed25519), Equals, true)
+	regularVault := vaults[0]
+
+	c.Assert(regularVault.PubKey.Equals(nodeAccount.PubKeySet.Secp256k1), Equals, true)
+	c.Assert(regularVault.PubKeyEddsa.Equals(nodeAccount.PubKeySet.Ed25519), Equals, true)
+	c.Assert(regularVault.PubKeyFrost.IsEmpty(), Equals, true)
+	c.Assert(regularVault.HasChain(common.XMRChain), Equals, false)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 0)
+
+	xmrBootstrapHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, xmrBootstrapHeight)
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Assert(keygenBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
 
 	// fail to get asgard vaults should return an error
 	helper.failToGetAsgardVaults = true
@@ -643,21 +659,16 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(vaults, HasLen, 0)
 
-	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
 	c.Assert(err, IsNil)
-	c.Assert(keygenBlock.Keygens, HasLen, 2)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Assert(keygenBlock.Keygens[0].Type, Equals, AsgardKeygen)
 
-	var sawRegular, sawXMRMonovault bool
-	for _, keygen := range keygenBlock.Keygens {
-		switch keygen.Type {
-		case AsgardKeygen:
-			sawRegular = true
-		case XMRMonovaultKeygen:
-			sawXMRMonovault = true
-		}
-	}
-	c.Assert(sawRegular, Equals, true)
-	c.Assert(sawXMRMonovault, Equals, true)
+	xmrBootstrapHeight = xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, xmrBootstrapHeight)
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Assert(keygenBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
 
 	ctx, mgr = setupManagerForTest(c)
 	helper = NewVaultGenesisSetupTestHelper(mgr.Keeper())

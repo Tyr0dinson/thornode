@@ -63,30 +63,22 @@ func filterVaultsByChain(vaults Vaults, chain common.Chain) Vaults {
 }
 
 func preferredActiveVaultsForChain(vaults Vaults, chain common.Chain) Vaults {
-	filtered := filterVaultsByChain(vaults, chain)
-	if !chain.Equals(common.XMRChain) || len(filtered) == 0 {
-		return filtered
+	if !chain.Equals(common.XMRChain) {
+		return filterVaultsByChain(vaults, chain)
 	}
 
-	dedicated := make(Vaults, 0, len(filtered))
-	for _, vault := range filtered {
+	dedicated := make(Vaults, 0, len(vaults))
+	for _, vault := range vaults {
 		if vault.IsXMRMonovault() {
 			dedicated = append(dedicated, vault)
 		}
 	}
-	if len(dedicated) > 0 {
-		return dedicated
-	}
-
-	return filtered
+	return dedicated
 }
 
 func filterActiveVaultsForOutboundChain(vaults Vaults, chain common.Chain) Vaults {
 	if chain.Equals(common.XMRChain) {
-		if filtered := preferredActiveVaultsForChain(vaults, chain); len(filtered) > 0 {
-			return filtered
-		}
-		return vaults
+		return preferredActiveVaultsForChain(vaults, chain)
 	}
 
 	filtered := make(Vaults, 0, len(vaults))

@@ -33,6 +33,15 @@ type assetAmount struct {
 	Amount math.Int
 }
 
+const xmrMonovaultGenesisBootstrapDelayBlocks int64 = 32
+
+func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
+	if currentHeight < 1 {
+		currentHeight = 1
+	}
+	return currentHeight + xmrMonovaultGenesisBootstrapDelayBlocks
+}
+
 // newNetworkMgr create a new vault manager
 func newNetworkMgr(k keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) *NetworkMgr {
 	return &NetworkMgr{
@@ -62,8 +71,11 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 		return errors.New("no active accounts,cannot proceed")
 	}
 	if len(active) == 1 {
-		// Single-node genesis keeps one shared vault. The dedicated XMR monovault
-		// is only meaningful once multiple active validators exist.
+		// Single-node genesis still bootstraps the regular shared Asgard directly.
+		// XMR stays hard-cut over to its own dedicated vault family, but fresh
+		// bifrost instances start the THOR scanner from tip. Schedule the first
+		// dedicated XMR keygen a few blocks later so bifrost can actually observe
+		// it instead of seeding a hybrid/shared vault.
 		supportChains := common.Chains{
 			common.THORChain,
 			common.BTCChain,
@@ -80,28 +92,27 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			common.XRPChain,
 			common.SOLChain,
 			common.POLChain,
-			common.XMRChain,
 			common.ZECChain,
 		}
 		pubSet := active[0].PubKeySet
 		vault := NewVaultV2(0, ActiveVault, AsgardVault, pubSet.Secp256k1, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains), pubSet.Ed25519)
-		// Mocknet/genesis bootstrap starts with a single validator before any real
-		// XMR keygen can occur. Keep that initial hard-cutover vault addressable via
-		// the Frost field so local sims do not begin from an EDDSA-only XMR vault.
-		vault.PubKeyFrost = pubSet.Ed25519
 		vault.Membership = common.PubKeys{pubSet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
+		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())); err != nil {
+			return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
+		}
 	} else {
 		// Multi-node genesis should schedule both the regular split-Asgard churn
-		// family and the dedicated XMR monovault family so the first monovault is
-		// born with the initial vault set instead of waiting for a later churn.
+		// family and the dedicated XMR monovault family. The XMR keygen needs a
+		// small bootstrap delay so fresh bifrost instances do not miss a height-1
+		// THOR keygen before their scanner is live.
 		err := vm.TriggerKeygen(ctx, active)
 		if err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
 		}
-		if err := vm.TriggerXMRKeygen(ctx, active); err != nil {
+		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())); err != nil {
 			return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
 		}
 	}
@@ -1272,20 +1283,26 @@ func (vm *NetworkMgr) TriggerXMRKeygen(ctx cosmos.Context, nas NodeAccounts) err
 }
 
 func (vm *NetworkMgr) triggerKeygen(ctx cosmos.Context, nas NodeAccounts, keygenType types.KeygenType) error {
-	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
-	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
-		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
-		return nil
+	return vm.scheduleKeygen(ctx, nas, keygenType, ctx.BlockHeight())
+}
+
+func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keygenType types.KeygenType, keygenHeight int64) error {
+	if ctx.BlockHeight() != genesisBlockHeight {
+		halt, err := vm.k.GetMimir(ctx, "HaltChurning")
+		if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
+			ctx.Logger().Info("churn event skipped due to mimir has halted churning")
+			return nil
+		}
 	}
 	var members []string
 	for i := range nas {
 		members = append(members, nas[i].PubKeySet.Secp256k1.String())
 	}
-	keygen, err := NewKeygen(ctx.BlockHeight(), members, keygenType)
+	keygen, err := NewKeygen(keygenHeight, members, keygenType)
 	if err != nil {
 		return fmt.Errorf("fail to create a new keygen: %w", err)
 	}
-	keygenBlock, err := vm.k.GetKeygenBlock(ctx, ctx.BlockHeight())
+	keygenBlock, err := vm.k.GetKeygenBlock(ctx, keygenHeight)
 	if err != nil {
 		return fmt.Errorf("fail to get keygen block from data store: %w", err)
 	}

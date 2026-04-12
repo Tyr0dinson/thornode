@@ -282,10 +282,6 @@ func FrostTranscriptDKGRound1Hash(msgID string, payload FrostDKGRound1Payload) (
 }
 
 func FrostTranscriptDKGRound2Hash(msgID string, payload FrostDKGRound2Payload) (string, error) {
-	if len(payload.EncryptedShares) == 0 {
-		return "", fmt.Errorf("round2 encrypted shares are empty")
-	}
-
 	indexByRaw := make(map[uint64]string, len(payload.EncryptedShares))
 	for rawKey := range payload.EncryptedShares {
 		key := strings.TrimSpace(rawKey)
