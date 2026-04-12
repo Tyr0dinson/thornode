@@ -584,13 +584,7 @@ func TestXMRNonSignerCoAttestation(t *testing.T) {
 	// Give the async co-attestation goroutine time to run.
 	time.Sleep(200 * time.Millisecond)
 
-	k := txKey{
-		Chain:      obsTx.Tx.Chain,
-		ID:         obsTx.Tx.ID,
-		UniqueHash: obsTx.Tx.Hash(obsTx.BlockHeight),
-		Finalized:  obsTx.IsFinal(),
-		Inbound:    false,
-	}
+	k := observedTxKey(obsTx, false, false)
 
 	ag.mu.Lock()
 	state, exists := ag.observedTxs[k]
@@ -648,13 +642,7 @@ func TestXMRCoAttestationSkipsNonXMR(t *testing.T) {
 	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
 	time.Sleep(200 * time.Millisecond)
 
-	k := txKey{
-		Chain:      obsTx.Tx.Chain,
-		ID:         obsTx.Tx.ID,
-		UniqueHash: obsTx.Tx.Hash(obsTx.BlockHeight),
-		Finalized:  obsTx.IsFinal(),
-		Inbound:    false,
-	}
+	k := observedTxKey(obsTx, false, false)
 
 	ag.mu.Lock()
 	state, exists := ag.observedTxs[k]
@@ -717,13 +705,7 @@ func TestXMRCoAttestationIdempotent(t *testing.T) {
 	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
 	time.Sleep(200 * time.Millisecond)
 
-	k := txKey{
-		Chain:      obsTx.Tx.Chain,
-		ID:         obsTx.Tx.ID,
-		UniqueHash: obsTx.Tx.Hash(obsTx.BlockHeight),
-		Finalized:  obsTx.IsFinal(),
-		Inbound:    false,
-	}
+	k := observedTxKey(obsTx, false, false)
 
 	ag.mu.Lock()
 	state, exists := ag.observedTxs[k]
@@ -736,4 +718,70 @@ func TestXMRCoAttestationIdempotent(t *testing.T) {
 	state.mu.Unlock()
 
 	assert.Equal(t, 2, count, "should still be 2: signer + one co-attestation, no duplicates")
+}
+
+func TestXMRObservedTxAttestationsWithDifferentSpentRefsUseDifferentBuckets(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+
+	baseTx := common.Tx{
+		ID:    "xmr-conflicting-refs",
+		Chain: common.XMRChain,
+		Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
+	}
+	obsTxA := common.ObservedTx{
+		Tx:             baseTx,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		SpentOutputRefs: []*common.OutputRef{
+			{TxHash: "aaaa", OutputIndex: 0},
+			{TxHash: "bbbb", OutputIndex: 1},
+		},
+	}
+	obsTxB := common.ObservedTx{
+		Tx:             baseTx,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		SpentOutputRefs: []*common.OutputRef{
+			{TxHash: "cccc", OutputIndex: 0},
+			{TxHash: "dddd", OutputIndex: 1},
+		},
+	}
+
+	signerKey := secp256k1.GenPrivKey()
+	signBzA, err := obsTxA.GetSignablePayload()
+	require.NoError(t, err)
+	sigA, err := signerKey.Sign(signBzA)
+	require.NoError(t, err)
+	signBzB, err := obsTxB.GetSignablePayload()
+	require.NoError(t, err)
+	sigB, err := signerKey.Sign(signBzB)
+	require.NoError(t, err)
+
+	ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+		ObsTx:   obsTxA,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: sigA,
+		},
+	})
+	ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+		ObsTx:   obsTxB,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: sigB,
+		},
+	})
+
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+
+	keyA := observedTxKey(obsTxA, false, false)
+	keyB := observedTxKey(obsTxB, false, false)
+	stateA, okA := ag.observedTxs[keyA]
+	stateB, okB := ag.observedTxs[keyB]
+	require.True(t, okA, "first spent-ref set should retain its own bucket")
+	require.True(t, okB, "second spent-ref set should retain its own bucket")
+	assert.NotEqual(t, keyA.UniqueHash, keyB.UniqueHash)
+	assert.Equal(t, 1, stateA.AttestationCount())
+	assert.Equal(t, 1, stateB.AttestationCount())
 }

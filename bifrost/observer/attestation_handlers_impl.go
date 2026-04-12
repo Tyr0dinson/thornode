@@ -21,14 +21,7 @@ const maxSpentOutputRefs = 32
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
 	obsTx := tx.ObsTx
 
-	k := txKey{
-		Chain:                  obsTx.Tx.Chain,
-		ID:                     obsTx.Tx.ID,
-		UniqueHash:             obsTx.Tx.Hash(obsTx.BlockHeight),
-		AllowFutureObservation: tx.AllowFutureObservation,
-		Finalized:              obsTx.IsFinal(),
-		Inbound:                tx.Inbound,
-	}
+	k := observedTxKey(obsTx, tx.Inbound, tx.AllowFutureObservation)
 
 	s.mu.Lock()
 	state, ok := s.observedTxs[k]

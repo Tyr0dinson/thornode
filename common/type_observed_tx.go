@@ -78,7 +78,33 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if !m.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
 		return false
 	}
+	if !m.HasEquivalentSpentOutputRefs(tx2) {
+		return false
+	}
 	return true
+}
+
+func (m ObservedTx) HasEquivalentSpentOutputRefs(tx2 ObservedTx) bool {
+	if !m.Tx.Chain.Equals(XMRChain) && !tx2.Tx.Chain.Equals(XMRChain) {
+		return true
+	}
+	return spentOutputRefsEqual(m.SpentOutputRefs, tx2.SpentOutputRefs)
+}
+
+func (m ObservedTx) EqualsConsensus(tx2 ObservedTx) bool {
+	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
+		m.Tx.EqualsEx(tx2.Tx) &&
+		m.HasEquivalentSpentOutputRefs(tx2)
+}
+
+func (m ObservedTx) EqualsConsensusIgnoreGas(tx2 ObservedTx) bool {
+	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
+		m.Tx.EqualsExIgnoreGas(tx2.Tx) &&
+		m.HasEquivalentSpentOutputRefs(tx2)
+}
+
+func (m ObservedTx) AttestationUniqueHash() string {
+	return observedTxSpentRefsUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.SpentOutputRefs)
 }
 
 // IsFinal indicates whether ObserveTx is final.

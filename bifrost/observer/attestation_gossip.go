@@ -89,6 +89,17 @@ type txKey struct {
 	Inbound                bool
 }
 
+func observedTxKey(obsTx common.ObservedTx, inbound, allowFutureObservation bool) txKey {
+	return txKey{
+		Chain:                  obsTx.Tx.Chain,
+		ID:                     obsTx.Tx.ID,
+		UniqueHash:             obsTx.AttestationUniqueHash(),
+		AllowFutureObservation: allowFutureObservation,
+		Finalized:              obsTx.IsFinal(),
+		Inbound:                inbound,
+	}
+}
+
 type KeysInterface interface {
 	GetPrivateKey() (*secp256k1.PrivKey, error)
 }
@@ -402,14 +413,7 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		s.applySpentRefsAsync(qtx.ObsTx)
 	}
 
-	k := txKey{
-		Chain:                  qtx.ObsTx.Tx.Chain,
-		ID:                     qtx.ObsTx.Tx.ID,
-		UniqueHash:             qtx.ObsTx.Tx.Hash(qtx.ObsTx.BlockHeight),
-		AllowFutureObservation: qtx.AllowFutureObservation,
-		Inbound:                qtx.Inbound,
-		Finalized:              qtx.ObsTx.IsFinal(),
-	}
+	k := observedTxKey(qtx.ObsTx, qtx.Inbound, qtx.AllowFutureObservation)
 
 	s.mu.Lock()
 	as, ok := s.observedTxs[k]

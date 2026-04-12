@@ -27,20 +27,10 @@ func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 	if len(o.SpentOutputRefs) == 0 {
 		return txBz, nil
 	}
-	// Sort spent output refs canonically so all attestors produce the same
-	// payload regardless of the order they received the refs in.
-	sorted := make([]*OutputRef, len(o.SpentOutputRefs))
-	copy(sorted, o.SpentOutputRefs)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].TxHash != sorted[j].TxHash {
-			return sorted[i].TxHash < sorted[j].TxHash
-		}
-		return sorted[i].OutputIndex < sorted[j].OutputIndex
-	})
 
-	buf := make([]byte, 0, len(txBz)+len(sorted)*36)
+	buf := make([]byte, 0, len(txBz)+len(o.SpentOutputRefs)*36)
 	buf = append(buf, txBz...)
-	for _, ref := range sorted {
+	for _, ref := range normalizeSpentOutputRefs(o.SpentOutputRefs) {
 		refBz, marshalErr := ref.Marshal()
 		if marshalErr != nil {
 			return nil, marshalErr
@@ -48,6 +38,58 @@ func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 		buf = append(buf, refBz...)
 	}
 	return buf, nil
+}
+
+func normalizeSpentOutputRefs(refs []*OutputRef) []*OutputRef {
+	sorted := make([]*OutputRef, len(refs))
+	copy(sorted, refs)
+	sort.Slice(sorted, func(i, j int) bool {
+		return spentOutputRefIdentity(sorted[i]) < spentOutputRefIdentity(sorted[j])
+	})
+	return sorted
+}
+
+func spentOutputRefIdentity(ref *OutputRef) string {
+	if ref == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%s:%d", ref.TxHash, ref.OutputIndex)
+}
+
+func spentOutputRefsEqual(lhs, rhs []*OutputRef) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+	if len(lhs) == 0 {
+		return true
+	}
+	lhs = normalizeSpentOutputRefs(lhs)
+	rhs = normalizeSpentOutputRefs(rhs)
+	for i := range lhs {
+		if spentOutputRefIdentity(lhs[i]) != spentOutputRefIdentity(rhs[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func spentOutputRefsIdentity(refs []*OutputRef) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	for _, ref := range normalizeSpentOutputRefs(refs) {
+		buf.WriteString(spentOutputRefIdentity(ref))
+		buf.WriteByte('|')
+	}
+	return buf.String()
+}
+
+func observedTxSpentRefsUniqueHash(base string, chain Chain, refs []*OutputRef) string {
+	if !chain.Equals(XMRChain) || len(refs) == 0 {
+		return base
+	}
+	return fmt.Sprintf("%X", sha256.Sum256([]byte(base+"|"+spentOutputRefsIdentity(refs))))
 }
 
 // Equals compares two Attestation and returns true iff they are equal

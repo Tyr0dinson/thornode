@@ -168,7 +168,7 @@ func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) *common.ObservedTx {
 }
 
 func sameConsensusObservation(lhs, rhs common.ObservedTx) bool {
-	return lhs.ObservedPubKey.Equals(rhs.ObservedPubKey) && lhs.Tx.EqualsEx(rhs.Tx)
+	return lhs.EqualsConsensus(rhs)
 }
 
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) common.ObservedTx {

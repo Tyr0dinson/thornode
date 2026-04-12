@@ -1244,6 +1244,46 @@ func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersScopesByObserved
 	c.Assert(countB, Equals, 2)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersDoesNotMixXMRSpentRefs(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	txID := GetRandomTxHash()
+	baseTx := GetRandomTx()
+	baseTx.ID = txID
+	baseTx.Chain = common.XMRChain
+	baseTx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000)))
+	baseTx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1000))}
+	baseTx.Memo = "OUT:xmr-spent-refs"
+
+	vaultPubKey := GetRandomPubKey()
+	obsTxA := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
+	obsTxA.SpentOutputRefs = []*common.OutputRef{
+		{TxHash: "aaaa", OutputIndex: 0},
+		{TxHash: "bbbb", OutputIndex: 1},
+	}
+	obsTxA.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String()}
+
+	obsTxB := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
+	obsTxB.SpentOutputRefs = []*common.OutputRef{
+		{TxHash: "cccc", OutputIndex: 0},
+		{TxHash: "dddd", OutputIndex: 1},
+	}
+	obsTxB.Signers = []string{nas[2].NodeAddress.String(), nas[3].NodeAddress.String()}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{obsTxA, obsTxB})
+
+	countA := countMatchingSigners(voter, obsTxA, nas)
+	c.Assert(countA, Equals, 2)
+
+	countB := countMatchingSigners(voter, obsTxB, nas)
+	c.Assert(countB, Equals, 2)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100)

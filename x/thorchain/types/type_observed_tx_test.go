@@ -704,6 +704,81 @@ func (TypeObservedTxSuite) TestGetConsensusTxDoesNotMixObservedVaults(c *C) {
 	c.Assert(voter.GetTx(trusts4).IsEmpty(), Equals, true)
 }
 
+func (TypeObservedTxSuite) TestGetConsensusTxDoesNotMixXMRSpentRefs(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+	}
+
+	txID := GetRandomTxHash()
+	tx := GetRandomTx()
+	tx.ID = txID
+	tx.Chain = common.XMRChain
+	tx.Memo = "OUT:spent-refs"
+
+	observePoolAddr := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	obTxA := common.NewObservedTx(tx, 1, observePoolAddr, 1)
+	obTxA.SpentOutputRefs = []*common.OutputRef{
+		{TxHash: "aaaa", OutputIndex: 0},
+		{TxHash: "bbbb", OutputIndex: 1},
+	}
+	obTxB := common.NewObservedTx(tx, 1, observePoolAddr, 1)
+	obTxB.SpentOutputRefs = []*common.OutputRef{
+		{TxHash: "cccc", OutputIndex: 0},
+		{TxHash: "dddd", OutputIndex: 1},
+	}
+
+	c.Assert(voter.Add(obTxA, nas[0].NodeAddress), Equals, true)
+	c.Assert(voter.Add(obTxA, nas[1].NodeAddress), Equals, true)
+	c.Assert(voter.Add(obTxB, nas[2].NodeAddress), Equals, true)
+	c.Assert(voter.Add(obTxB, nas[3].NodeAddress), Equals, true)
+
+	c.Assert(voter.Txs, HasLen, 2)
+	c.Assert(voter.HasConsensus(nas), Equals, false)
+	c.Assert(voter.GetTx(nas).IsEmpty(), Equals, true)
+}
+
+func (TypeObservedTxSuite) TestVoterMergesEquivalentXMRSpentRefsRegardlessOfOrder(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+	}
+
+	txID := GetRandomTxHash()
+	tx := GetRandomTx()
+	tx.ID = txID
+	tx.Chain = common.XMRChain
+	tx.Memo = "OUT:spent-refs-order"
+
+	observePoolAddr := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	obTxA := common.NewObservedTx(tx, 1, observePoolAddr, 1)
+	obTxA.SpentOutputRefs = []*common.OutputRef{
+		{TxHash: "aaaa", OutputIndex: 0},
+		{TxHash: "bbbb", OutputIndex: 1},
+	}
+	obTxB := common.NewObservedTx(tx, 1, observePoolAddr, 1)
+	obTxB.SpentOutputRefs = []*common.OutputRef{
+		{TxHash: "bbbb", OutputIndex: 1},
+		{TxHash: "aaaa", OutputIndex: 0},
+	}
+
+	c.Assert(voter.Add(obTxA, nas[0].NodeAddress), Equals, true)
+	c.Assert(voter.Add(obTxB, nas[1].NodeAddress), Equals, true)
+	c.Assert(voter.Add(obTxA, nas[2].NodeAddress), Equals, true)
+
+	c.Assert(voter.Txs, HasLen, 1)
+	c.Assert(voter.HasConsensus(nas), Equals, true)
+	c.Assert(voter.GetTx(nas).HasEquivalentSpentOutputRefs(obTxA), Equals, true)
+}
+
 func (TypeObservedTxSuite) TestGetConsensusSignersStayScopedToObservedVault(c *C) {
 	txID := GetRandomTxHash()
 	acc1 := GetRandomBech32Addr()
