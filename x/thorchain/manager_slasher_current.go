@@ -295,7 +295,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	}
 	enableMemolessOutbound := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMemolessOutbound)
 
-	if signingTransPeriod <= 0 || ctx.BlockHeight() < signingTransPeriod {
+	if ctx.BlockHeight() < signingTransPeriod {
 		return nil
 	}
 	// round up to nearest multiple of RescheduleCoalesceBlocks

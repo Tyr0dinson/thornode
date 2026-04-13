@@ -524,7 +524,7 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_HaltSigningGlobal(c *C) {
 		Height: 90,
 	}
 	checkpoint, obs, err := sign.signAndBroadcast(item)
-	c.Assert(err, IsNil)
+	c.Assert(err, Equals, errRetryLater)
 	c.Assert(checkpoint, IsNil)
 	c.Assert(obs, IsNil)
 }
@@ -563,7 +563,7 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_HaltSigningChain(c *C) {
 		Height: 90,
 	}
 	checkpoint, obs, err := sign.signAndBroadcast(item)
-	c.Assert(err, IsNil)
+	c.Assert(err, Equals, errRetryLater)
 	c.Assert(checkpoint, IsNil)
 	c.Assert(obs, IsNil)
 }
