@@ -195,7 +195,7 @@ func (c *Client) GetBalance(address, blockHash string) (cosmos.Uint, error) {
 	}
 
 	var hexData string
-	if err := json.Unmarshal(result, &hexData); err != nil {
+	if err = json.Unmarshal(result, &hexData); err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("failed to unmarshal storage result: %w", err)
 	}
 	if hexData == "" {

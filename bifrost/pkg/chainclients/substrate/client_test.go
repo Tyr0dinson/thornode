@@ -180,7 +180,7 @@ func newTestClient(rpcClient *rpc.Client) *Client {
 		hd.Secp256k1,
 	)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed to generate account")
+		logger.Fatal().Err(err).Msg("failed to generate account")
 	}
 
 	keys := thorclient.NewKeysWithKeybase(
@@ -190,7 +190,11 @@ func newTestClient(rpcClient *rpc.Client) *Client {
 	// Use mock bridge for tests to avoid needing a real THORChain node
 	bridge := &mockBridge{}
 
-	storage, err := blockscanner.NewBlockScannerStorage(tmpdir, config.LevelDBOptions{})
+	var storage *blockscanner.BlockScannerStorage
+	storage, err = blockscanner.NewBlockScannerStorage(tmpdir, config.LevelDBOptions{})
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to create storage")
+	}
 
 	genericClient, err := generic.NewClient(
 		logger, keys, chainConfig, nil, bridge, storage.GetInternalDb(),

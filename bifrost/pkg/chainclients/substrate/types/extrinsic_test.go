@@ -263,6 +263,7 @@ func TestBatchAll(t *testing.T) {
 	}
 
 	remaining := batch[2+n:]
+	/* trunk-ignore(golangci-lint/gocritic) */
 	expected := append(call1, call2...)
 	if !bytes.Equal(remaining, expected) {
 		t.Errorf("batch calls: got %x, want %x", remaining, expected)

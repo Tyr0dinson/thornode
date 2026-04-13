@@ -281,6 +281,10 @@ services:
       BIFROST_CHAINS_TAO_DISABLED: "${BIFROST_CHAINS_TAO_DISABLED:-false}"
       BIFROST_CHAINS_TAO_RPC_HOST: ${TAO_HOST:-http://bittensor:9944}
 
+      # enable polkadot
+      BIFROST_CHAINS_DOT_DISABLED: "${BIFROST_CHAINS_DOT_DISABLED:-false}"
+      BIFROST_CHAINS_DOT_RPC_HOST: ${DOT_HOST:-http://polkadot:9944}
+
       # set fixed gas rate for evm chains
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_FIXED_GAS_RATE: 20_000_000_000 # 20 gwei
       BIFROST_CHAINS_AVAX_BLOCK_SCANNER_FIXED_GAS_RATE: 100_000_000_000 # 100 navax
@@ -784,7 +788,7 @@ services:
     build:
       context: ./mocknet/bittensor
     ports:
-      - 9944:9944
+      - 9945:9944
     environment:
       TAO_MASTER_ADDR: "${TAO_MASTER_ADDR:-5F99wvx3Rn1dJs7AYWxbgtJq43p9dEW6VVcLmxFTKfEDmArz}"
       TAO_MASTER_AMOUNT: "${TAO_MASTER_AMOUNT:-1000000000000000}" # 1M TAO in rao

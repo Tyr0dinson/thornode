@@ -712,10 +712,13 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					// deduct estimated transaction fee from send amount
 					amt = common.SafeSub(amt, gasAmount)
 
-					// burn the remainder if amount after deducting gas is below dust threshold
-					dustThreshold := chain.DustThreshold()
+					// burn the remainder if amount after deducting gas is below dust threshold or existential reserve
+					maxBurnAmount := common.MaxUint(
+						chain.DustThreshold(),
+						chain.ExistentialDeposit(),
+					)
 
-					if amt.LTE(dustThreshold) && nth > migrationRounds {
+					if amt.LTE(maxBurnAmount) && nth > migrationRounds {
 						// No migration should be attempted, but only burn dust if there are no pending outbounds.
 						// (That is, truly only dust remaining in the vault for this Coin.)
 						if !coin.Amount.Equal(vault.Coins.GetCoin(coin.Asset).Amount) {
@@ -730,7 +733,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						vault.SubFunds(common.Coins{
 							coin,
 						})
-						// use reserve to subsidise the pool for the lost
+						// use reserve to subsidize the pool for the loss
 						p, err := vm.k.GetPool(ctx, coin.Asset)
 						if err != nil {
 							return fmt.Errorf("fail to get pool for asset %s, err:%w", coin.Asset, err)
@@ -759,10 +762,10 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					// on the final migration round(s), deduct amt by 1 XRP (1e8) so that we don't try to transfer any of the account reserve
 					// the account reserve balance will be burned on the next migration round
 					if nth >= migrationRounds && chain.OneOf(common.XRPChain, common.SOLChain, common.TAOChain, common.DOTChain) {
-						if amt.GT(dustThreshold) {
-							amt = common.SafeSub(amt, dustThreshold)
+						if amt.GT(maxBurnAmount) {
+							amt = common.SafeSub(amt, maxBurnAmount)
 						} else {
-							// if amt <= dustThreshold / XRP/SOL reserve requirement, skip the transaction
+							// if amt <= maxBurnAmount / XRP/SOL reserve requirement, skip the transaction
 							continue
 						}
 					}

@@ -173,7 +173,8 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 		}
 
 		actualFee := feeMap[uint32(i)]
-		txItem, err := s.processExtrinsic(extHex, fetchHeight, actualFee)
+		var txItem *ttypes.TxInItem
+		txItem, err = s.processExtrinsic(extHex, fetchHeight, actualFee)
 		if err != nil {
 			s.logger.Debug().Err(err).Int("index", i).Msg("skip extrinsic")
 			continue
@@ -526,7 +527,8 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 		call := data[pos+1]
 		pos += 2
 
-		if pallet == s.params.SystemPallet && call == s.params.SystemRemarkCall {
+		switch {
+		case pallet == s.params.SystemPallet && call == s.params.SystemRemarkCall:
 			if memo != "" {
 				// Reject batches with multiple remarks to prevent memo confusion attacks.
 				return nil, fmt.Errorf("batch_all contains multiple remark calls")
@@ -547,7 +549,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 			memo = string(data[pos : pos+remarkLength])
 
 			pos += remarkLength
-		} else if pallet == s.params.BalancesPallet && s.isTransferCall(call) {
+		case pallet == s.params.BalancesPallet && s.isTransferCall(call):
 			// Reject batches with multiple transfers to prevent ambiguity about
 			// which transfer the memo applies to.
 			if hasTransfer {
@@ -574,7 +576,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 				return nil, fmt.Errorf("failed to skip transfer amount: %w", err)
 			}
 			pos += consumed
-		} else {
+		default:
 			// Unknown call in batch — we can't determine its size, so stop parsing.
 			// Any transfer + memo already captured will still be used.
 			s.logger.Warn().
@@ -584,7 +586,6 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 				Uint8("call", call).
 				Bool("has_transfer", hasTransfer).
 				Msg("batch_all contains unknown call, stopping parse early")
-			break
 		}
 	}
 

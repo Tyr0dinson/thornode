@@ -2,6 +2,7 @@ package generic
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 
@@ -15,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	thorconfig "gitlab.com/thorchain/thornode/v3/config"
 	thormemo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
@@ -143,6 +145,8 @@ func (c *Client) Sign(
 	switch c.GetChain().GetSigningAlgo() {
 	case common.SigningAlgoSecp256k1:
 		err = verifySecp256k1(data, signature, pubKey)
+	case common.SigningAlgoEd25519:
+		err = verifyEd25519(data, signature, pubKey)
 	}
 
 	return signature, err
@@ -163,6 +167,24 @@ func verifySecp256k1(msg, sig []byte, pub common.PubKey) error {
 
 	if !bytes.Equal(sigPub, ecdsaPub) {
 		return fmt.Errorf("invalid signature")
+	}
+
+	return nil
+}
+
+func verifyEd25519(msg, sig []byte, pub common.PubKey) error {
+	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pub.String())
+	if err != nil {
+		return fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	pubBytes := pk.Bytes()
+	if len(pubBytes) != 32 {
+		return fmt.Errorf("invalid ed25519 public key length: %d", len(pubBytes))
+	}
+
+	if !ed25519.Verify(pubBytes, msg, sig) {
+		return fmt.Errorf("invalid ed25519 signature")
 	}
 
 	return nil

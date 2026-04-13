@@ -143,7 +143,7 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 		if topicCount > (len(data)-pos)/sizeHash {
 			return results, fees, fmt.Errorf("events data too short for topic data at event %d", i)
 		}
-		pos += int(topicCount) * sizeHash
+		pos += topicCount * sizeHash
 	}
 
 	return results, fees, nil

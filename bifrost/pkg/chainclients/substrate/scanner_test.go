@@ -396,8 +396,7 @@ func TestProcessExtrinsic_UnsignedReturnsNil(t *testing.T) {
 	// Build an unsigned extrinsic (version byte 0x04, bit 7 not set)
 	body := []byte{0x04, 5, 3}
 	length := stypes.EncodeCompact(uint64(len(body)))
-	raw := append(length, body...)
-	extHex := stypes.HexEncode(raw)
+	extHex := stypes.HexEncode(append(length, body...))
 
 	txItem, err := s.processExtrinsic(extHex, 100, 0)
 	if err != nil {
@@ -444,8 +443,7 @@ func TestProcessExtrinsic_TruncatedExtrinsic(t *testing.T) {
 
 	// Valid length prefix claiming 200 bytes but only 3 bytes of body
 	length := stypes.EncodeCompact(200)
-	raw := append(length, 0x84, 0x00, 0x01)
-	extHex := stypes.HexEncode(raw)
+	extHex := stypes.HexEncode(append(length, 0x84, 0x00, 0x01))
 
 	_, err := s.processExtrinsic(extHex, 100, 0)
 	if err == nil {
