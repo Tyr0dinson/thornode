@@ -2447,3 +2447,106 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestNeedsMempoolSwapRollbackDetec
 	c.Assert(err, NotNil)
 	c.Check(needs, Equals, false, Commentf("staged-outbound lookup failure must not falsely report rollback needed"))
 }
+
+// TestReclaimStagedCloutSelfSendReclaimsFullSpent pins the self-address branch
+// in reclaimStagedClout. When a staged outbound's recipient equals the
+// inbound's sender, the function reads the same swapper-clout record twice as
+// cloutIn and cloutOut. Without the special-case re-application of clout1 on
+// cloutOut, the second SetSwapperClout would overwrite the first save with a
+// stale value and only clout2 would land — losing clout1 of the reclaim.
+// This test asserts the full spent amount is reclaimed in the self-send case.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestReclaimStagedCloutSelfSendReclaimsFullSpent(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	k := mgr.Keeper()
+
+	addr := GetRandomBTCAddress()
+
+	initial := NewSwapperClout(addr)
+	initial.Score = cosmos.NewUint(10000)
+	initial.Spent = cosmos.NewUint(1000)
+	initial.Reclaimed = cosmos.ZeroUint()
+	c.Assert(k.SetSwapperClout(ctx, initial), IsNil)
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.Tx = ObservedTx{
+		Tx: common.Tx{
+			ID:          inTxID,
+			Chain:       common.BTCChain,
+			FromAddress: addr,
+			ToAddress:   GetRandomBTCAddress(),
+			Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+		},
+	}
+
+	spent := cosmos.NewUint(500)
+	staged := keeper.StagedOutbound{
+		TxOutItem: TxOutItem{
+			Chain:      common.BTCChain,
+			InHash:     inTxID,
+			ToAddress:  addr,
+			Coin:       common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+			CloutSpent: &spent,
+		},
+		ScheduledHeight: ctx.BlockHeight() + 5,
+		StagedHeight:    ctx.BlockHeight(),
+	}
+
+	c.Assert(reclaimStagedClout(ctx, k, voter, []keeper.StagedOutbound{staged}), IsNil)
+
+	final, err := k.GetSwapperClout(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(final.Reclaimed.Equal(spent), Equals, true,
+		Commentf("self-send reclaim must apply both halves of the split (got reclaimed=%s, want=%s)", final.Reclaimed, spent))
+	c.Check(final.LastReclaimHeight, Equals, ctx.BlockHeight(), Commentf("self-send reclaim must update LastReclaimHeight"))
+
+	// Sanity-check the non-self-send path: a different recipient receives only
+	// half of the spent amount on the recipient side.
+	otherAddr := GetRandomBTCAddress()
+	otherInitial := NewSwapperClout(otherAddr)
+	otherInitial.Score = cosmos.NewUint(10000)
+	otherInitial.Spent = cosmos.NewUint(1000)
+	otherInitial.Reclaimed = cosmos.ZeroUint()
+	c.Assert(k.SetSwapperClout(ctx, otherInitial), IsNil)
+
+	senderAddr := GetRandomBTCAddress()
+	senderInitial := NewSwapperClout(senderAddr)
+	senderInitial.Score = cosmos.NewUint(10000)
+	senderInitial.Spent = cosmos.NewUint(1000)
+	senderInitial.Reclaimed = cosmos.ZeroUint()
+	c.Assert(k.SetSwapperClout(ctx, senderInitial), IsNil)
+
+	otherTxID := GetRandomTxHash()
+	otherVoter := NewObservedTxVoter(otherTxID, ObservedTxs{})
+	otherVoter.Tx = ObservedTx{
+		Tx: common.Tx{
+			ID:          otherTxID,
+			Chain:       common.BTCChain,
+			FromAddress: senderAddr,
+			ToAddress:   otherAddr,
+			Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+		},
+	}
+	otherSpent := cosmos.NewUint(500)
+	otherStaged := keeper.StagedOutbound{
+		TxOutItem: TxOutItem{
+			Chain:      common.BTCChain,
+			InHash:     otherTxID,
+			ToAddress:  otherAddr,
+			Coin:       common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+			CloutSpent: &otherSpent,
+		},
+		ScheduledHeight: ctx.BlockHeight() + 5,
+		StagedHeight:    ctx.BlockHeight(),
+	}
+	c.Assert(reclaimStagedClout(ctx, k, otherVoter, []keeper.StagedOutbound{otherStaged}), IsNil)
+
+	finalSender, err := k.GetSwapperClout(ctx, senderAddr)
+	c.Assert(err, IsNil)
+	finalRecipient, err := k.GetSwapperClout(ctx, otherAddr)
+	c.Assert(err, IsNil)
+	c.Check(finalSender.Reclaimed.Add(finalRecipient.Reclaimed).Equal(otherSpent), Equals, true,
+		Commentf("non-self-send reclaim must split the spent amount across the two clout records"))
+	c.Check(finalSender.Reclaimed.IsZero(), Equals, false, Commentf("sender side of split must reclaim a non-zero share"))
+	c.Check(finalRecipient.Reclaimed.IsZero(), Equals, false, Commentf("recipient side of split must reclaim a non-zero share"))
+}
