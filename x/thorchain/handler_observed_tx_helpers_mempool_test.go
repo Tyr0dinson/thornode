@@ -2550,3 +2550,134 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestReclaimStagedCloutSelfSendRec
 	c.Check(finalSender.Reclaimed.IsZero(), Equals, false, Commentf("sender side of split must reclaim a non-zero share"))
 	c.Check(finalRecipient.Reclaimed.IsZero(), Equals, false, Commentf("recipient side of split must reclaim a non-zero share"))
 }
+
+// TestRevertMempoolSwapTradeAssetTargetFailsGracefully pins the current
+// rollback behavior for trade-asset target staged outbounds. The synth and
+// secured target rollback paths each have dedicated tests; this one closes
+// the testing gap for the third native-non-RUNE target.
+//
+// Reachability note: in production the swap engine refuses both L1 -> trade
+// and trade -> L1 single-tx swaps (see swap_current.go validateMessage),
+// so a trade-asset staged outbound is not normally produced by the mempool
+// swap path. This test stages the outbound directly — the same shape the
+// finalize-affiliate tests already use — so the rollback codepath itself
+// can be exercised. If a future change causes trade-asset targets to flow
+// through staging, this test will catch the regression before pool state
+// can be corrupted.
+//
+// Pinned current behavior: rollback fails because buildMempoolRollbackSwapMsg
+// asks the swap engine to swap the staged trade asset back to the source L1
+// asset, which validateMessage rejects with "swaps from trade asset to L1
+// incur slip, use trade-". Critically, because rollbackMempoolSwapAtomic
+// runs inside its own CacheContext, the failed rollback does NOT corrupt
+// state: the staged outbound, the reserved mempool TOR, and the user's
+// (still-empty) trade balance are all preserved for retry / operator action.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapTradeAssetTargetFailsGracefully(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, "TradeAccountsEnabled", 1)
+	mgr.Keeper().SetMimir(ctx, "TradeAccountsDepositEnabled", 1)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.LPUnits = sourcePool.BalanceRune
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.LPUnits = targetPool.BalanceRune
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	activeVault := GetRandomVault()
+	activeVault.Type = AsgardVault
+	activeVault.Status = ActiveVault
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	tradeTarget := common.ETHAsset.GetTradeAsset()
+	destination := GetRandomTHORAddress()
+	ownerAcc, err := destination.AccAddress()
+	c.Assert(err, IsNil)
+
+	preBalance := mgr.TradeAccountManager().BalanceOf(ctx, tradeTarget, ownerAcc)
+	c.Check(preBalance.IsZero(), Equals, true, Commentf("user trade balance must start empty"))
+
+	inTxID := GetRandomTxHash()
+	sourceAmount := cosmos.NewUint(1 * common.One)
+	stagedAmount := cosmos.NewUint(900_000_000)
+	reservedTOR := cosmos.NewUint(50 * common.One)
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:          inTxID,
+			Chain:       common.BTCChain,
+			FromAddress: GetRandomBTCAddress(),
+			ToAddress:   GetRandomBTCAddress(),
+			Coins:       common.Coins{common.NewCoin(common.BTCAsset, sourceAmount)},
+			Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(200_000))},
+			Memo:        fmt.Sprintf("=:%s:%s", tradeTarget, destination),
+		},
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+		ObservedPubKey: activeVault.PubKey,
+	}
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = reservedTOR
+
+	stagedItem := TxOutItem{
+		Chain:     common.THORChain,
+		InHash:    inTxID,
+		ToAddress: destination,
+		Coin:      common.NewCoin(tradeTarget, stagedAmount),
+		Memo:      NewOutboundMemo(inTxID).String(),
+	}
+	voter.Actions = []TxOutItem{stagedItem}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+5), IsNil)
+
+	err = rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter)
+	c.Assert(err, NotNil,
+		Commentf("trade-asset target rollback currently fails because the swap engine blocks trade->L1 single-tx swaps; if this starts succeeding, the test name and comment above must be updated to describe the new behavior"))
+	c.Check(err.Error(), Matches, ".*swaps from trade asset to L1.*",
+		Commentf("rollback should fail at the swap-engine validation step, not somewhere later"))
+
+	// CacheContext isolation: every piece of state that the rollback would
+	// have touched must be exactly as it was before the failed call.
+	postBalance := mgr.TradeAccountManager().BalanceOf(ctx, tradeTarget, ownerAcc)
+	c.Check(postBalance.IsZero(), Equals, true,
+		Commentf("failed rollback must not credit the user trade balance (got %s)", postBalance))
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 1,
+		Commentf("failed rollback must leave the staged outbound intact for retry"))
+
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(reservedTOR), Equals, true,
+		Commentf("failed rollback must leave reserved mempool capacity intact for retry"))
+
+	preservedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(preservedVoter.HasReservedMempoolSwapTOR(), Equals, true,
+		Commentf("failed rollback must leave the per-voter MempoolSwapTOR reservation intact"))
+	c.Check(preservedVoter.Actions, HasLen, 1,
+		Commentf("failed rollback must leave speculative actions intact"))
+
+	postSourcePool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(postSourcePool.BalanceRune.Equal(sourcePool.BalanceRune), Equals, true,
+		Commentf("failed rollback must not mutate source pool RUNE"))
+	c.Check(postSourcePool.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true,
+		Commentf("failed rollback must not mutate source pool asset"))
+}
