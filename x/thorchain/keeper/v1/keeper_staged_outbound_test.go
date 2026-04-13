@@ -97,6 +97,44 @@ func (s *KeeperStagedOutboundSuite) TestSetMultipleStagedOutbounds(c *C) {
 	c.Check(outbounds[1].ScheduledHeight, Equals, int64(110))
 }
 
+// TestSetStagedOutboundDuplicateAppendIsNotDeduped pins the keeper-level
+// behavior that calling SetStagedOutbound twice with the same TxOutItem and
+// inHash appends two entries instead of deduplicating. This is intentional:
+// production callers (addSwapDirect and the wrapping handleObservedTxInQuorum
+// flow) gate re-execution on voter.Actions and HasSwapQueueItem, so the
+// keeper does not need to re-check identity here. The rollback flow walks
+// every staged item, so if a future caller-side dedup regression starts
+// staging the same outbound twice, pool accounting would be applied twice on
+// rollback. This test pins the unguarded behavior so that any change to the
+// dedup contract — either tightening it at the keeper level or relaxing it
+// at the caller level — is a deliberate, reviewed decision rather than a
+// silent drift.
+func (s *KeeperStagedOutboundSuite) TestSetStagedOutboundDuplicateAppendIsNotDeduped(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	inHash := GetRandomTxHash()
+	item := TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   GetRandomETHAddress(),
+		VaultPubKey: GetRandomPubKey(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+		Memo:        "OUT:test",
+		InHash:      inHash,
+	}
+
+	c.Assert(k.SetStagedOutbound(ctx, item, 100), IsNil)
+	c.Assert(k.SetStagedOutbound(ctx, item, 100), IsNil)
+
+	outbounds, err := k.GetStagedOutbounds(ctx, inHash)
+	c.Assert(err, IsNil)
+	c.Check(outbounds, HasLen, 2,
+		Commentf("identical SetStagedOutbound calls must currently append, not dedupe — see test docstring"))
+	c.Check(outbounds[0].TxOutItem.InHash, Equals, inHash)
+	c.Check(outbounds[1].TxOutItem.InHash, Equals, inHash)
+	c.Check(outbounds[0].ScheduledHeight, Equals, int64(100))
+	c.Check(outbounds[1].ScheduledHeight, Equals, int64(100))
+}
+
 func (s *KeeperStagedOutboundSuite) TestGetStagedOutboundsNonExistent(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
