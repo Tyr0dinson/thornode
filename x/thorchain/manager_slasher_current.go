@@ -598,13 +598,38 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				// If finalization has been retried beyond the force-rollback
 				// threshold, the failure is likely deterministic. Force-rollback
 				// to release the TOR capacity reservation.
+				//
+				// Critical operator note: this path runs against an active vault
+				// where the user's inbound has already finalized on-chain
+				// (FinalisedHeight > 0) but staged outbounds could not be
+				// settled. rollbackMempoolSwapAtomic reverses pool/TOR state
+				// and donates the recovered amount back to the source pool but
+				// does NOT schedule a refund outbound to the user, unlike the
+				// inactive-vault sibling path above. The user's funds remain in
+				// the active vault with no automated recovery — operator
+				// intervention is required to make them whole.
 				if entry.oldestAge >= forceRollbackAge {
-					ctx.Logger().Error("force-rolling back stuck finalized mempool swap",
-						"hash", inHash, "oldest_age", entry.oldestAge, "force_rollback_age", forceRollbackAge)
+					ctx.Logger().Error("force-rolling back stuck finalized mempool swap; user inbound funds will NOT be auto-refunded and require operator intervention",
+						"hash", inHash,
+						"oldest_age", entry.oldestAge,
+						"force_rollback_age", forceRollbackAge,
+						"from_address", voter.Tx.Tx.FromAddress,
+						"chain", voter.Tx.Tx.Chain,
+						"coins", voter.Tx.Tx.Coins)
 					if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
 						ctx.Logger().Error("fail to force roll back stuck mempool swap", "error", err, "hash", inHash)
 					} else {
 						incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "force_rollback")})
+						// Emit an explicit security event so THORSec /
+						// monitoring is alerted that user funds were stranded
+						// on this rollback. The generic "mempool swap rolled
+						// back" event emitted inside rollbackMempoolSwapAtomic
+						// applies to every rollback and does not by itself
+						// signal the no-refund risk surfaced here.
+						forceEvent := NewEventSecurity(voter.Tx.Tx, "mempool swap force-rolled back without refund: user inbound funds stranded in active vault")
+						if err := s.eventMgr.EmitEvent(ctx, forceEvent); err != nil {
+							ctx.Logger().Error("fail to emit security event for force rollback", "error", err, "hash", inHash)
+						}
 					}
 					continue
 				}

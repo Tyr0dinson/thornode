@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
@@ -1661,6 +1662,29 @@ func (s *SlashingSuite) TestLackSigningForceRollbackStuckFinalizedMempoolSwap(c 
 	c.Assert(err, IsNil)
 	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("force rollback should release TOR reservation"))
 	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("force rollback should release global mempool swap usage"))
+
+	// The active-vault force-rollback path does not schedule a refund outbound,
+	// unlike the inactive-vault sibling path. It must surface that no-refund
+	// risk via an explicit security event so monitoring is alerted that user
+	// funds are stranded in the active vault and need operator intervention.
+	// The generic "mempool swap rolled back" event (emitted on every rollback
+	// inside rollbackMempoolSwapAtomic) is not sufficient — a dedicated
+	// no-refund message is required for incident response.
+	foundForceEvent := false
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type != types2.SecurityEventType {
+			continue
+		}
+		for _, attr := range evt.Attributes {
+			if attr.Key == "msg" && strings.Contains(attr.Value, "force-rolled back without refund") {
+				foundForceEvent = true
+				c.Check(attr.Value, Matches, ".*user inbound funds stranded.*",
+					Commentf("force-rollback security event must mention stranded user funds for operator clarity"))
+			}
+		}
+	}
+	c.Check(foundForceEvent, Equals, true,
+		Commentf("force-rollback path must emit an explicit no-refund security event so operators can intervene"))
 }
 
 // TestLackSigningRetriesInactiveVaultFinalizedMempoolSwapRollback verifies
