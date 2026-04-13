@@ -525,10 +525,18 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling
 	if maxOutboundAttempts > 0 {
 		timeoutAge := signingTransPeriod * maxOutboundAttempts
+		// After 3x the normal timeout, force-rollback even finalized active-vault
+		// swaps whose finalization deterministically fails, preventing permanent
+		// TOR capacity reservation.
+		forceRollbackAge := 3 * timeoutAge
 
 		// Collect timed-out inHashes first, then process after closing iterator
 		// to avoid iterator invalidation when rollbackMempoolSwapAtomic deletes from store
-		var timedOutHashes []common.TxID
+		type timedOutEntry struct {
+			inHash    common.TxID
+			oldestAge int64
+		}
+		var timedOutEntries []timedOutEntry
 		stagedIter := s.keeper.GetStagedOutboundIterator(ctx)
 		for ; stagedIter.Valid(); stagedIter.Next() {
 			var stagedList keeper.StagedOutboundList
@@ -538,24 +546,26 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			}
 			// Check timeout based on staged height
 			// Timeout if staged for longer than signingTransPeriod * maxOutboundAttempts
+			var oldest int64
 			for _, staged := range stagedList.Items {
-				stagedAge := ctx.BlockHeight() - staged.StagedHeight
-				if stagedAge >= timeoutAge {
-					ctx.Logger().Info("staged mempool swap timed out",
-						"hash", stagedList.InHash,
-						"staged_height", staged.StagedHeight,
-						"current_height", ctx.BlockHeight(),
-						"asset", staged.TxOutItem.Coin.Asset,
-						"amount", staged.TxOutItem.Coin.Amount)
-					timedOutHashes = append(timedOutHashes, stagedList.InHash)
-					break // Only need to check one item per list
+				age := ctx.BlockHeight() - staged.StagedHeight
+				if age > oldest {
+					oldest = age
 				}
+			}
+			if oldest >= timeoutAge {
+				ctx.Logger().Info("staged mempool swap timed out",
+					"hash", stagedList.InHash,
+					"oldest_age", oldest,
+					"current_height", ctx.BlockHeight())
+				timedOutEntries = append(timedOutEntries, timedOutEntry{inHash: stagedList.InHash, oldestAge: oldest})
 			}
 		}
 		stagedIter.Close()
 
 		// Now process timed-out staged outbounds
-		for _, inHash := range timedOutHashes {
+		for _, entry := range timedOutEntries {
+			inHash := entry.inHash
 			voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
 			if err != nil {
 				ctx.Logger().Error("fail to get observed tx voter for staged outbound", "error", err)
@@ -583,6 +593,20 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						}
 						continue
 					}
+				}
+
+				// If finalization has been retried beyond the force-rollback
+				// threshold, the failure is likely deterministic. Force-rollback
+				// to release the TOR capacity reservation.
+				if entry.oldestAge >= forceRollbackAge {
+					ctx.Logger().Error("force-rolling back stuck finalized mempool swap",
+						"hash", inHash, "oldest_age", entry.oldestAge, "force_rollback_age", forceRollbackAge)
+					if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
+						ctx.Logger().Error("fail to force roll back stuck mempool swap", "error", err, "hash", inHash)
+					} else {
+						incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "force_rollback")})
+					}
+					continue
 				}
 
 				ctx.Logger().Info("retrying staged mempool swap finalization due to timeout", "hash", inHash)

@@ -335,7 +335,8 @@ func handleObservedTxInQuorum(
 	// reservation held alongside any still-staged outbounds until a later
 	// finalize retry or rollback clears the whole mempool-swap snapshot together.
 	// LackSigning's timeout reconciler provides that retry path instead of
-	// forcing an immediate hard failure here.
+	// forcing an immediate hard failure here; if retries also fail, LackSigning
+	// force-rolls back the swap after 3x the normal timeout to release TOR capacity.
 	if hasFinalised && voter.HasReservedMempoolSwapTOR() {
 		if len(voter.Actions) > 0 {
 			if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
