@@ -2369,3 +2369,81 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 	c.Assert(err, IsNil)
 	c.Check(outItems, HasLen, 0, Commentf("queue-backed finalized mempool swap should not schedule a refund while queue state is still live"))
 }
+
+// TestNeedsMempoolSwapRollbackDetectsEachConditionInIsolation pins the four
+// independent detection conditions in needsMempoolSwapRollback so future
+// refactors cannot silently drop one. Each sub-case isolates a single source
+// of mempool-swap state and asserts the function returns true for that source
+// and false when no state exists at all.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestNeedsMempoolSwapRollbackDetectsEachConditionInIsolation(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	k := mgr.Keeper()
+
+	// Baseline: a fresh voter with no Actions, no reserved TOR, no queue item,
+	// and no staged outbounds must report false.
+	emptyVoter := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
+	needs, err := needsMempoolSwapRollback(ctx, k, emptyVoter)
+	c.Assert(err, IsNil)
+	c.Check(needs, Equals, false, Commentf("voter with no mempool-swap state must not require rollback"))
+
+	// Condition 1: non-empty Actions alone triggers rollback.
+	actionsVoter := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
+	actionsVoter.Actions = []TxOutItem{{
+		Chain:  common.BTCChain,
+		InHash: actionsVoter.TxID,
+		Coin:   common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+	}}
+	needs, err = needsMempoolSwapRollback(ctx, k, actionsVoter)
+	c.Assert(err, IsNil)
+	c.Check(needs, Equals, true, Commentf("non-empty Actions must trigger rollback detection"))
+
+	// Condition 2: reserved MempoolSwapTOR alone triggers rollback.
+	torVoter := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
+	torVoter.MempoolSwapTOR = cosmos.NewUint(123 * common.One)
+	c.Check(torVoter.HasReservedMempoolSwapTOR(), Equals, true)
+	needs, err = needsMempoolSwapRollback(ctx, k, torVoter)
+	c.Assert(err, IsNil)
+	c.Check(needs, Equals, true, Commentf("reserved MempoolSwapTOR must trigger rollback detection"))
+
+	// Condition 3: a live adv-queue item alone triggers rollback.
+	queueVoter := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
+	queueMsg := NewMsgSwap(
+		common.Tx{
+			ID:          queueVoter.TxID,
+			Chain:       common.BTCChain,
+			FromAddress: GetRandomBTCAddress(),
+			ToAddress:   GetRandomBTCAddress(),
+			Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+			Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+			Memo:        "=:THOR.RUNE:" + GetRandomTHORAddress().String(),
+		},
+		common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(),
+		common.NoAddress, cosmos.ZeroUint(), "", "", nil,
+		types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr(),
+	)
+	c.Assert(k.SetAdvSwapQueueItem(ctx, *queueMsg), IsNil)
+	c.Check(k.HasAdvSwapQueueItem(ctx, queueVoter.TxID, 0), Equals, true)
+	needs, err = needsMempoolSwapRollback(ctx, k, queueVoter)
+	c.Assert(err, IsNil)
+	c.Check(needs, Equals, true, Commentf("live adv-queue item must trigger rollback detection"))
+
+	// Condition 4: a staged outbound alone triggers rollback.
+	stagedVoter := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
+	stagedItem := TxOutItem{
+		Chain:  common.BTCChain,
+		InHash: stagedVoter.TxID,
+		Coin:   common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+	}
+	c.Assert(k.SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+5), IsNil)
+	needs, err = needsMempoolSwapRollback(ctx, k, stagedVoter)
+	c.Assert(err, IsNil)
+	c.Check(needs, Equals, true, Commentf("staged outbound must trigger rollback detection"))
+
+	// Error path: a keeper that fails staged-outbound lookup must surface the
+	// error rather than silently returning false.
+	failKeeper := failGetStagedOutboundsKeeper{Keeper: k}
+	failVoter := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
+	needs, err = needsMempoolSwapRollback(ctx, failKeeper, failVoter)
+	c.Assert(err, NotNil)
+	c.Check(needs, Equals, false, Commentf("staged-outbound lookup failure must not falsely report rollback needed"))
+}
