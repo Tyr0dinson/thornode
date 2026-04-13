@@ -273,3 +273,49 @@ func (s *InvariantsSuite) TestStreamingSwapsInvariant(c *C) {
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Equals, fmt.Sprintf("%s: state.success_count 3 > state.quantity 2", limitTx.ID))
 }
+
+func (s *InvariantsSuite) TestMempoolSwapsInvariant(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := MempoolSwapsInvariant(k)
+
+	// Empty state: zero global, no voters with reservations.
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	// Two voters with reservations totaling 1500; global matches.
+	voter1 := NewObservedTxVoter(GetRandomTxHash(), nil)
+	voter1.MempoolSwapTOR = cosmos.NewUint(1000)
+	k.SetObservedTxInVoter(ctx, voter1)
+
+	voter2 := NewObservedTxVoter(GetRandomTxHash(), nil)
+	voter2.MempoolSwapTOR = cosmos.NewUint(500)
+	k.SetObservedTxInVoter(ctx, voter2)
+
+	// A third voter without a reservation must not contribute.
+	voter3 := NewObservedTxVoter(GetRandomTxHash(), nil)
+	voter3.MempoolSwapTOR = cosmos.ZeroUint()
+	k.SetObservedTxInVoter(ctx, voter3)
+
+	k.SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(1500))
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, false, Commentf("matched global and voter sum must not break the invariant; got msg=%v", msg))
+	c.Assert(msg, IsNil)
+
+	// Oversolvent: global counter is too high (e.g., a missed Sub).
+	k.SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(2000))
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, HasLen, 1)
+	c.Check(msg[0], Equals, "oversolvent: global mempool swap usage 2000 exceeds sum of voter reservations 1500 by 500")
+
+	// Insolvent: global counter is too low (the SafeSub-underflow case the
+	// invariant is specifically designed to surface).
+	k.SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(1000))
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, HasLen, 1)
+	c.Check(msg[0], Equals, "insolvent: sum of voter reservations 1500 exceeds global mempool swap usage 1000 by 500 (likely SafeSub underflow)")
+}

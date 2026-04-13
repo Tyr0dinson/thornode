@@ -17,6 +17,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("pools", PoolsInvariant(k)),
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
+		common.NewInvariantRoute("mempool_swaps", MempoolSwapsInvariant(k)),
 	}
 }
 
@@ -520,6 +521,50 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 			broken = true
 		}
 
+		return msg, broken
+	}
+}
+
+// MempoolSwapsInvariant asserts that the global MempoolSwapUsageTOR counter
+// equals the sum of MempoolSwapTOR across all observed-tx-in voters that
+// currently hold a reservation. The counter is mutated by Add/Sub helpers,
+// and SubMempoolSwapUsageTOR uses SafeSub which silently truncates underflow
+// to zero. Without this invariant, a single accounting bug — a missed Sub,
+// a double Sub, or a per-voter clear that doesn't decrement the global —
+// would drift the counter permanently and reduce mempool capacity for every
+// future swap, with no detection mechanism.
+func MempoolSwapsInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		voterSum := cosmos.ZeroUint()
+		iter := k.GetObservedTxInVoterIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var voter ObservedTxVoter
+			k.Cdc().MustUnmarshal(iter.Value(), &voter)
+			if voter.HasReservedMempoolSwapTOR() {
+				voterSum = voterSum.Add(voter.MempoolSwapTOR)
+			}
+		}
+
+		global := k.GetMempoolSwapUsageTOR(ctx)
+		if global.Equal(voterSum) {
+			return msg, false
+		}
+
+		broken = true
+		if global.GT(voterSum) {
+			diff := global.Sub(voterSum)
+			msg = append(msg, fmt.Sprintf(
+				"oversolvent: global mempool swap usage %s exceeds sum of voter reservations %s by %s",
+				global, voterSum, diff,
+			))
+		} else {
+			diff := voterSum.Sub(global)
+			msg = append(msg, fmt.Sprintf(
+				"insolvent: sum of voter reservations %s exceeds global mempool swap usage %s by %s (likely SafeSub underflow)",
+				voterSum, global, diff,
+			))
+		}
 		return msg, broken
 	}
 }
