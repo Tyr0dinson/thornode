@@ -2739,6 +2739,88 @@ func (s *SlashingSuite) TestLackSigningRetriesFinalizedStagedMempoolSwap(c *C) {
 	c.Check(recipientBalance.Equal(cosmos.NewIntFromBigInt(stagedAmount.BigInt())), Equals, true, Commentf("native finalize retry should pay the staged outbound"))
 }
 
+// TestLackSigningForceRollbackStuckFinalizedMempoolSwap verifies that
+// LackSigning force-rolls back a finalized active-vault mempool swap whose
+// staged outbounds have been stuck beyond 3x the normal timeout. This
+// prevents permanent TOR capacity reservation from deterministic finalize
+// failures.
+func (s *SlashingSuite) TestLackSigningForceRollbackStuckFinalizedMempoolSwap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	signingTransPeriod := int64(300)
+	maxOutboundAttempts := int64(3)
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), signingTransPeriod)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), maxOutboundAttempts)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	inTxID := GetRandomTxHash()
+	reservedTOR := cosmos.NewUint(500 * common.One)
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{
+		ObservedTx{
+			Tx: common.Tx{
+				ID:    inTxID,
+				Chain: common.BTCChain,
+				Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+			},
+			Status:         common.Status_done,
+			BlockHeight:    ctx.BlockHeight(),
+			Signers:        []string{},
+			FinaliseHeight: ctx.BlockHeight(),
+			ObservedPubKey: vault.PubKey,
+		},
+	})
+	voter.Tx = voter.Txs[0]
+	voter.UnfinalizedHeight = ctx.BlockHeight() - 1
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = reservedTOR
+
+	stagedOutbound := TxOutItem{
+		Chain:       common.THORChain,
+		InHash:      inTxID,
+		ToAddress:   GetRandomTHORAddress(),
+		VaultPubKey: vault.PubKey,
+		Coin:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(7*common.One)),
+		Memo:        "OUT:" + inTxID.String(),
+	}
+	voter.Actions = []TxOutItem{stagedOutbound}
+
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+10), IsNil)
+
+	// Advance to 3x the normal timeout (force-rollback threshold)
+	timeoutAge := signingTransPeriod * maxOutboundAttempts
+	forceRollbackHeight := ctx.BlockHeight() + (3 * timeoutAge) + 10
+	ctx = ctx.WithBlockHeight(forceRollbackHeight)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("staged outbounds should be cleared by force rollback"))
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("force rollback should release TOR reservation"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("force rollback should release global mempool swap usage"))
+}
+
 // TestLackSigningRetriesInactiveVaultFinalizedMempoolSwapRollback verifies
 // that LackSigning acts as the periodic reconciler for finalized staged
 // mempool swaps whose inbound was observed on an inactive vault. Those swaps
