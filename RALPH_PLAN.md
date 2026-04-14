@@ -202,7 +202,7 @@ task, it:
 - [x] **T30** Wire into secured-asset deposit handler. Unit tests. — 9e191c513f
 - [x] **T31** Wire into trade-account deposit handler. Unit tests. — 33fb71b413
 - [x] **T32** Wire into `handler_swap` for swap-to-external-chain path (increases RUNE-valued TVL on the output chain). Unit tests. — ce4c058c4f
-- [x] **T33** Reject swap and add-liquidity into chains with no active Asgard (`GetActiveAsgardVaultsByChain` empty). Unit tests. — pending
+- [x] **T33** Reject swap and add-liquidity into chains with no active Asgard (`GetActiveAsgardVaultsByChain` empty). Unit tests. — 2a9bc6f67f
 
 ### Phase 11 — Genesis
 
