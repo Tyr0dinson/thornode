@@ -184,7 +184,7 @@ task, it:
 - [x] **T21** `handler_network_fee*` uses chain-aware participants. Unit tests. — 15513c2046
 - [x] **T22** `handler_solvency*` uses chain-aware participants. Unit tests. — 2c645523a0
 - [x] **T23** `handler_errata_tx*` uses chain-aware participants. Unit tests. — 92d758932c
-- [ ] **T24** Instant-observation fast-path scoped so the sufficient signer must be a member of the chain's vault. Unit tests.
+- [x] **T24** Instant-observation fast-path scoped so the sufficient signer must be a member of the chain's vault. Unit tests. — 7f2b3fbbac
 
 ### Phase 8 — Slashing
 
