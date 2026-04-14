@@ -127,6 +127,7 @@ type (
 	NodeStatus               = types.NodeStatus
 	NodeType                 = types.NodeType
 	Network                  = types.Network
+	ChainIncome              = types.ChainIncome
 	VaultStatus              = types.VaultStatus
 	NetworkFee               = types.NetworkFee
 	ObservedNetworkFeeVoter  = types.ObservedNetworkFeeVoter

@@ -501,6 +501,13 @@ func (k KVStoreDummy) AddPoolFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error
 func (k KVStoreDummy) AddBondFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error { return kaboom }
 func (k KVStoreDummy) GetNetwork(_ cosmos.Context) (Network, error)              { return Network{}, kaboom }
 func (k KVStoreDummy) SetNetwork(_ cosmos.Context, _ Network) error              { return kaboom }
+func (k KVStoreDummy) GetChainIncome(_ cosmos.Context, _ common.Chain) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+func (k KVStoreDummy) AddChainIncome(_ cosmos.Context, _ common.Chain, _ cosmos.Uint) error {
+	return kaboom
+}
+func (k KVStoreDummy) ZeroChainIncome(_ cosmos.Context, _ common.Chain) error { return kaboom }
 
 func (k KVStoreDummy) GetPOL(_ cosmos.Context) (ProtocolOwnedLiquidity, error) {
 	return ProtocolOwnedLiquidity{}, kaboom

@@ -307,6 +307,9 @@ type KeeperReserveContributors interface {
 type KeeperNetwork interface {
 	GetNetwork(ctx cosmos.Context) (Network, error)
 	SetNetwork(ctx cosmos.Context, data Network) error
+	GetChainIncome(ctx cosmos.Context, chain common.Chain) (cosmos.Uint, error)
+	AddChainIncome(ctx cosmos.Context, chain common.Chain, amount cosmos.Uint) error
+	ZeroChainIncome(ctx cosmos.Context, chain common.Chain) error
 	GetPOL(ctx cosmos.Context) (ProtocolOwnedLiquidity, error)
 	SetPOL(ctx cosmos.Context, data ProtocolOwnedLiquidity) error
 }
