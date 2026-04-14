@@ -1010,3 +1010,143 @@ func (s *BlockScannerExtraSuite) TestScanBlocksFetchError(c *C) {
 	// Scanner should become unhealthy on fetch errors
 	c.Check(scanner.IsHealthy(), Equals, false)
 }
+
+func (s *BlockScannerExtraSuite) TestSetShouldObserveCallback(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	bridge := s.makeBridge(c, server)
+
+	mss := NewMockScannerStorage()
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight: 1,
+		ChainID:          common.ETHChain,
+	}, mss, m, bridge, DummyFetcher{})
+	c.Assert(err, IsNil)
+
+	// Default: no callback → shouldObserve returns true
+	c.Check(scanner.shouldObserve(), Equals, true)
+
+	// Set callback returning false → shouldObserve returns false
+	scanner.SetShouldObserveCallback(func() bool { return false })
+	c.Check(scanner.shouldObserve(), Equals, false)
+
+	// Set callback returning true → shouldObserve returns true
+	scanner.SetShouldObserveCallback(func() bool { return true })
+	c.Check(scanner.shouldObserve(), Equals, true)
+
+	// Clear callback → back to default
+	scanner.SetShouldObserveCallback(nil)
+	c.Check(scanner.shouldObserve(), Equals, true)
+}
+
+func (s *BlockScannerExtraSuite) TestShouldObserveCallbackPausesScanning(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+			_, _ = w.Write([]byte(`-1`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):
+			_, _ = w.Write([]byte(`[{"chain":"NOOP","lastobservedin":0,"lastsignedout":0,"thorchain":0}]`))
+		}
+	}))
+	defer server.Close()
+	bridge := s.makeBridge(c, server)
+
+	mss := NewMockScannerStorage()
+	fetcher := &configFetcher{
+		chainHeight: 100,
+		txIn: types.TxIn{
+			Chain:   common.ETHChain,
+			TxArray: []*types.TxInItem{{Tx: "tx1"}},
+		},
+	}
+
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           1,
+		BlockScanProcessors:        1,
+		HTTPRequestTimeout:         time.Second,
+		BlockHeightDiscoverBackoff: 50 * time.Millisecond,
+		BlockRetryInterval:         50 * time.Millisecond,
+		ChainID:                    common.ETHChain,
+		MaxHealthyLag:              time.Hour,
+	}, mss, m, bridge, fetcher)
+	c.Assert(err, IsNil)
+
+	// Start with observation paused
+	shouldObserve := &atomic.Bool{}
+	shouldObserve.Store(false)
+	scanner.SetShouldObserveCallback(func() bool { return shouldObserve.Load() })
+
+	globalChan := make(chan types.TxIn, 100)
+	nfChan := make(chan common.NetworkFee, 5)
+	scanner.Start(globalChan, nfChan)
+
+	// Wait while paused — scanner should not advance
+	time.Sleep(500 * time.Millisecond)
+	heightWhilePaused := scanner.PreviousHeight()
+	c.Check(heightWhilePaused, Equals, int64(1), Commentf("Scanner should not advance while paused, got %d", heightWhilePaused))
+
+	// Resume observation
+	shouldObserve.Store(true)
+	time.Sleep(1 * time.Second)
+	heightAfterResume := scanner.PreviousHeight()
+	c.Check(heightAfterResume > 1, Equals, true, Commentf("Scanner should advance after resume, got %d", heightAfterResume))
+
+	scanner.Stop()
+}
+
+func (s *BlockScannerExtraSuite) TestShouldObserveCallbackPreservesCursor(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+			_, _ = w.Write([]byte(`-1`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):
+			_, _ = w.Write([]byte(`[{"chain":"NOOP","lastobservedin":0,"lastsignedout":0,"thorchain":0}]`))
+		}
+	}))
+	defer server.Close()
+	bridge := s.makeBridge(c, server)
+
+	mss := NewMockScannerStorage()
+	fetcher := &configFetcher{chainHeight: 100}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           1,
+		BlockScanProcessors:        1,
+		HTTPRequestTimeout:         time.Second,
+		BlockHeightDiscoverBackoff: 50 * time.Millisecond,
+		BlockRetryInterval:         50 * time.Millisecond,
+		ChainID:                    common.ETHChain,
+		MaxHealthyLag:              time.Hour,
+	}, mss, m, bridge, fetcher)
+	c.Assert(err, IsNil)
+
+	shouldObserve := &atomic.Bool{}
+	shouldObserve.Store(true)
+	scanner.SetShouldObserveCallback(func() bool { return shouldObserve.Load() })
+
+	globalChan := make(chan types.TxIn, 200)
+	nfChan := make(chan common.NetworkFee, 5)
+	scanner.Start(globalChan, nfChan)
+
+	// Let scanner advance
+	time.Sleep(500 * time.Millisecond)
+	heightBeforePause := scanner.PreviousHeight()
+	c.Check(heightBeforePause > 1, Equals, true)
+
+	// Pause
+	shouldObserve.Store(false)
+	time.Sleep(200 * time.Millisecond)
+	heightAtPause := scanner.PreviousHeight()
+
+	// Wait while paused — cursor should not change
+	time.Sleep(500 * time.Millisecond)
+	heightStillPaused := scanner.PreviousHeight()
+	c.Check(heightStillPaused, Equals, heightAtPause, Commentf("Cursor moved during pause: %d -> %d", heightAtPause, heightStillPaused))
+
+	// Resume — cursor should continue from where it was
+	shouldObserve.Store(true)
+	time.Sleep(500 * time.Millisecond)
+	heightAfterResume := scanner.PreviousHeight()
+	c.Check(heightAfterResume >= heightAtPause, Equals, true, Commentf("Cursor should resume from paused position"))
+
+	scanner.Stop()
+}

@@ -54,6 +54,8 @@ type BlockScanner struct {
 	thorchainBridge       thorclient.ThorchainBridge
 	chainScanner          BlockScannerFetcher
 	healthy               *atomic.Bool
+	shouldObserveCB       func() bool
+	shouldObserveMu       sync.RWMutex
 }
 
 // NewBlockScanner create a new instance of BlockScanner
@@ -88,6 +90,25 @@ func NewBlockScanner(cfg config.BifrostBlockScannerConfiguration, scannerStorage
 	scanner.previousBlock, err = scanner.GetStartHeight()
 	logger.Info().Int64("block height", scanner.previousBlock).Msg("block scanner last fetch height")
 	return scanner, err
+}
+
+// SetShouldObserveCallback registers a callback that controls whether the
+// scanner actively polls the chain. When the callback returns false the block
+// and mempool scan loops pause (sleeping each iteration) while preserving the
+// current cursor position so scanning resumes without gaps.
+func (b *BlockScanner) SetShouldObserveCallback(cb func() bool) {
+	b.shouldObserveMu.Lock()
+	defer b.shouldObserveMu.Unlock()
+	b.shouldObserveCB = cb
+}
+
+func (b *BlockScanner) shouldObserve() bool {
+	b.shouldObserveMu.RLock()
+	defer b.shouldObserveMu.RUnlock()
+	if b.shouldObserveCB == nil {
+		return true
+	}
+	return b.shouldObserveCB()
 }
 
 // IsHealthy return if the block scanner is healthy or not
@@ -196,6 +217,10 @@ func (b *BlockScanner) scanMempool() {
 		case <-b.stopChan:
 			return
 		default:
+			if !b.shouldObserve() {
+				time.Sleep(constants.ThorchainBlockTime)
+				continue
+			}
 			// mempool scan will continue even the chain get halted , thus the network can still aware of outbound transaction
 			// during chain halt
 			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
@@ -301,6 +326,11 @@ func (b *BlockScanner) scanBlocks() {
 			// Chain is paused, mark as unhealthy
 			if isChainPaused {
 				b.healthy.Store(false)
+				time.Sleep(constants.ThorchainBlockTime)
+				continue
+			}
+
+			if !b.shouldObserve() {
 				time.Sleep(constants.ThorchainBlockTime)
 				continue
 			}
