@@ -90,6 +90,11 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 			continue
 		}
 
+		if !chainNAs.IsNodeKeys(accAddr) {
+			ctx.Logger().Debug("attester is not a member of the chain's vault", "attester", accAddr, "chain", obsTx.Tx.Chain)
+			continue
+		}
+
 		accAddrs = append(accAddrs, accAddr)
 
 		var isQuorum bool

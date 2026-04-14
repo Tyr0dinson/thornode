@@ -73,6 +73,10 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 			nas = getChainConsensusNodeAccounts(ctx, h.mgr, tx.Tx.Chain, activeNodeAccounts)
 			chainNAs[tx.Tx.Chain] = nas
 		}
+		if !nas.IsNodeKeys(msg.Signer) {
+			ctx.Logger().Debug("signer is not a member of the chain's vault", "signer", msg.Signer, "chain", tx.Tx.Chain)
+			continue
+		}
 		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, nas, tx, msg.Signer, true)
 		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, nas, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
 			ctx.Logger().Error("fail to handle observed tx in quorum", "error", err, "tx", tx.Tx.ID)

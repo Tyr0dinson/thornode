@@ -640,3 +640,79 @@ func (k *TestObservedTxQuorumKeeper) ListActiveValidators(ctx cosmos.Context) (N
 	}
 	return k.Keeper.ListActiveValidators(ctx)
 }
+
+func (s *HandlerObservedTxQuorumSuite) TestHandleChainMembership(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	handler := NewObservedTxQuorumHandler(mgr)
+
+	// Create 4 nodes with known private keys
+	na1, _ := nodeWithPrivKey(c, k, ctx)
+	_, privKey2 := nodeWithPrivKey(c, k, ctx)
+	_, privKey3 := nodeWithPrivKey(c, k, ctx)
+	na4, privKey4 := nodeWithPrivKey(c, k, ctx)
+
+	// Create a vault for ETH chain with membership of only na1 and na4
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(1024, ActiveVault, AsgardVault, vaultPubKey,
+		[]string{common.ETHChain.String()}, nil)
+	vault.Membership = []string{
+		na1.PubKeySet.Secp256k1.String(),
+		na4.PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	vaultAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.ETHChain,
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   vaultAddr,
+			Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+			Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+			Memo:        "swap:BTC.BTC:" + GetRandomBTCAddress().String(),
+		},
+		1024, vaultPubKey, 1024,
+	)
+
+	// Attestations from privKey2 and privKey3 (NOT in vault membership)
+	att2 := attestObservedTx(c, privKey2, obsTx)
+	att3 := attestObservedTx(c, privKey3, obsTx)
+
+	quoTx := &common.QuorumTx{
+		ObsTx:        obsTx,
+		Inbound:      true,
+		Attestations: []*common.Attestation{att2, att3},
+	}
+
+	msg := types.NewMsgObservedTxQuorum(quoTx, na1.NodeAddress)
+	result, err := handler.handle(ctx, *msg)
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+
+	// Non-member attestations should be skipped — voter should have no txs
+	voter, err := k.GetObservedTxInVoter(ctx, obsTx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Txs, HasLen, 0, Commentf("non-member attestations should be skipped"))
+
+	// Now include an attestation from privKey4 (IS a vault member)
+	att4 := attestObservedTx(c, privKey4, obsTx)
+	quoTx2 := &common.QuorumTx{
+		ObsTx:        obsTx,
+		Inbound:      true,
+		Attestations: []*common.Attestation{att2, att4},
+	}
+
+	msg2 := types.NewMsgObservedTxQuorum(quoTx2, na1.NodeAddress)
+	result, err = handler.handle(ctx, *msg2)
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+
+	// Only att4 (member) should be counted — voter should have txs
+	voter, err = k.GetObservedTxInVoter(ctx, obsTx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(len(voter.Txs) > 0, Equals, true, Commentf("member attestation should be counted"))
+}

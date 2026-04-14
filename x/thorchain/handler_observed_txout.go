@@ -75,6 +75,10 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 			nas = getChainConsensusNodeAccounts(ctx, h.mgr, tx.Tx.Chain, activeNodeAccounts)
 			chainNAs[tx.Tx.Chain] = nas
 		}
+		if !nas.IsNodeKeys(msg.Signer) {
+			ctx.Logger().Debug("signer is not a member of the chain's vault", "signer", msg.Signer, "chain", tx.Tx.Chain)
+			continue
+		}
 		voter, isQuorum := processTxOutAttestation(ctx, h.mgr, voter, nas, tx, msg.Signer, true)
 
 		if err := handleObservedTxOutQuorum(ctx, h.mgr, msg.Signer, nas, handler, tx, voter, msg.GetSigners(), isQuorum); err != nil {

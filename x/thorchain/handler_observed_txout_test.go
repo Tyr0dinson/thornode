@@ -770,3 +770,61 @@ func (s *HandlerObservedTxOutSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+func (s *HandlerObservedTxOutSuite) TestHandleChainMembership(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	// Create 4 active nodes
+	nodes := make(NodeAccounts, 4)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(k.SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+
+	// Create a vault for ETH chain with membership of only nodes[0] and nodes[1]
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey,
+		common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{
+		nodes[0].PubKeySet.Secp256k1.String(),
+		nodes[1].PubKeySet.Secp256k1.String(),
+	}
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	vaultAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	txInHash := GetRandomTxHash()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		vaultAddr,
+		GetRandomETHAddress(),
+		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+		fmt.Sprintf("OUT:%s", txInHash),
+	)
+	obTx := NewObservedTx(tx, 12, vaultPubKey, 12)
+
+	handler := NewObservedTxOutHandler(mgr)
+
+	// nodes[2] is NOT in the vault membership — observation should be skipped
+	msg := NewMsgObservedTxOut(ObservedTxs{obTx}, nodes[2].NodeAddress)
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+	voter, err := k.GetObservedTxOutVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Txs, HasLen, 0, Commentf("non-member signer should not add to voter"))
+
+	// nodes[0] IS in the vault membership — observation should proceed
+	msg = NewMsgObservedTxOut(ObservedTxs{obTx}, nodes[0].NodeAddress)
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+	voter, err = k.GetObservedTxOutVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Txs, HasLen, 1, Commentf("vault member signer should add to voter"))
+}
