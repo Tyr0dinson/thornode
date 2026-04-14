@@ -172,6 +172,23 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 		}
 	}
 
+	if !target.IsSyntheticAsset() && !target.IsTradeAsset() && !target.IsSecuredAsset() {
+		capChain := target.GetLayer1Asset().GetChain()
+		if !capChain.Equals(common.THORChain) {
+			runeVal := sourceCoin.Amount
+			if !sourceCoin.IsRune() {
+				pool, err := h.mgr.Keeper().GetPool(ctx, sourceCoin.Asset.GetLayer1Asset())
+				if err != nil {
+					return ErrInternal(err, "fail to get pool for chain liquidity cap")
+				}
+				runeVal = pool.AssetValueInRune(sourceCoin.Amount)
+			}
+			if capErr := validateChainLiquidityCap(ctx, h.mgr, capChain, runeVal); capErr != nil {
+				return capErr
+			}
+		}
+	}
+
 	if target.IsSyntheticAsset() {
 		// the following is only applicable for mainnet
 		totalLiquidityRUNE, err := h.getTotalLiquidityRUNE(ctx)

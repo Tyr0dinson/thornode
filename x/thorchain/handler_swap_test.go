@@ -284,6 +284,91 @@ func (s *HandlerSwapSuite) TestValidationWithStreamingSwap(c *C) {
 	c.Assert(handler.validate(ctx, *msg), IsNil)
 }
 
+func (s *HandlerSwapSuite) TestValidateChainLiquidityCap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.DOGEAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Create 3 active nodes and a vault for DOGE with only 1 member
+	nodes := make(NodeAccounts, 3)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Chains = append(vault.Chains, common.DOGEChain.String())
+	vault.Membership = []string{nodes[0].PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(common.NewCoin(common.DOGEAsset, cosmos.NewUint(50*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Set mimirs for sub-BFT ratio and per-validator cap
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100*common.One) // 100 RUNE per validator
+
+	mgr.txOutStore = NewTxStoreDummy()
+	handler := NewSwapHandler(mgr)
+
+	observerAddr := nodes[0].NodeAddress
+	signerDOGEAddr := GetRandomDOGEAddress()
+
+	// Swap RUNE -> DOGE (external chain), small amount should pass
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomTHORAddress(),
+		GetRandomTHORAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.RuneNative, cosmos.NewUint(10000))},
+		"swap:DOGE.DOGE:"+signerDOGEAddr.String(),
+	)
+	msg := NewMsgSwap(tx, common.DOGEAsset, signerDOGEAddr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+	err := handler.validate(ctx, *msg)
+	c.Assert(err, IsNil, Commentf("small swap to external chain should pass"))
+
+	// Swap RUNE -> DOGE, large amount should fail (cap = 1 validator * 100 RUNE = 100 RUNE, vault already has ~50 RUNE worth)
+	tx2 := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomTHORAddress(),
+		GetRandomTHORAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(200*common.One))},
+		common.Gas{common.NewCoin(common.RuneNative, cosmos.NewUint(10000))},
+		"swap:DOGE.DOGE:"+signerDOGEAddr.String(),
+	)
+	msg2 := NewMsgSwap(tx2, common.DOGEAsset, signerDOGEAddr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+	err = handler.validate(ctx, *msg2)
+	c.Assert(err, NotNil, Commentf("large swap to external chain should fail due to cap"))
+	c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, true)
+
+	// Swap RUNE -> synth DOGE should NOT trigger the chain cap (synths have their own checks)
+	msg3 := NewMsgSwap(tx2, common.DOGEAsset.GetSyntheticAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+	err = handler.validate(ctx, *msg3)
+	// Should not fail with chain liquidity cap error (may fail for other synth-specific reasons)
+	if err != nil {
+		c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, false, Commentf("synth swap should not trigger chain liquidity cap"))
+	}
+
+	// Swap RUNE -> RUNE (THORChain) should not trigger chain cap
+	txRune := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomTHORAddress(),
+		GetRandomTHORAddress(),
+		common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(200*common.One))},
+		common.Gas{common.NewCoin(common.DOGEAsset, cosmos.NewUint(10000))},
+		"swap:THOR.RUNE:"+GetRandomTHORAddress().String(),
+	)
+	msgRune := NewMsgSwap(txRune, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+	err = handler.validate(ctx, *msgRune)
+	c.Assert(err, IsNil, Commentf("swap to RUNE should not trigger chain liquidity cap"))
+}
+
 func (s *HandlerSwapSuite) TestHandle(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	keeper := &TestSwapHandleKeeper{
