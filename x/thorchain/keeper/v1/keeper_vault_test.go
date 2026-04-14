@@ -198,3 +198,77 @@ func (s *KeeperVaultSuite) TestGetMostSecureStrict(c *C) {
 	vault = k.GetMostSecureStrict(ctx, vaults, signingPeriod)
 	c.Assert(vault.IsEmpty(), Equals, true)
 }
+
+func (s *KeeperVaultSuite) TestGetAsgardVaultsByChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Empty state returns empty.
+	vaults, err := k.GetAsgardVaultsByChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 0)
+
+	// Create vaults with different chains and statuses.
+	v1 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v1), IsNil)
+
+	v2 := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v2), IsNil)
+
+	v3 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v3), IsNil)
+
+	v4 := NewVault(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v4), IsNil)
+
+	// BTC query returns v1, v2, v4 (all statuses with BTC).
+	vaults, err = k.GetAsgardVaultsByChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 3)
+
+	// ETH query returns v1, v3.
+	vaults, err = k.GetAsgardVaultsByChain(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 2)
+
+	// SOL query returns empty.
+	vaults, err = k.GetAsgardVaultsByChain(ctx, common.SOLChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 0)
+}
+
+func (s *KeeperVaultSuite) TestGetActiveAsgardVaultsByChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Empty state returns empty.
+	vaults, err := k.GetActiveAsgardVaultsByChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 0)
+
+	// Create a mix of vaults.
+	v1 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v1), IsNil)
+
+	v2 := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v2), IsNil)
+
+	v3 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v3), IsNil)
+
+	v4 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, v4), IsNil)
+
+	// Active BTC vaults: v1 and v4 (v2 is retiring, excluded).
+	vaults, err = k.GetActiveAsgardVaultsByChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 2)
+
+	// Active ETH vaults: v1 and v3.
+	vaults, err = k.GetActiveAsgardVaultsByChain(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 2)
+
+	// Active SOL vaults: none.
+	vaults, err = k.GetActiveAsgardVaultsByChain(ctx, common.SOLChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 0)
+}

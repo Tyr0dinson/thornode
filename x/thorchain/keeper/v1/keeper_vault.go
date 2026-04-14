@@ -426,6 +426,40 @@ func (k KVStore) GetAsgardVaultsByStatus(ctx cosmos.Context, status VaultStatus)
 	return asgards, nil
 }
 
+// GetAsgardVaultsByChain returns all asgard vaults that include the given chain.
+func (k KVStore) GetAsgardVaultsByChain(ctx cosmos.Context, chain common.Chain) (Vaults, error) {
+	all, err := k.GetAsgardVaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var asgards Vaults
+	for _, vault := range all {
+		if vault.GetChains().Has(chain) {
+			asgards = append(asgards, vault)
+		}
+	}
+
+	return asgards, nil
+}
+
+// GetActiveAsgardVaultsByChain returns active asgard vaults that include the given chain.
+func (k KVStore) GetActiveAsgardVaultsByChain(ctx cosmos.Context, chain common.Chain) (Vaults, error) {
+	all, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return nil, err
+	}
+
+	var asgards Vaults
+	for _, vault := range all {
+		if vault.GetChains().Has(chain) {
+			asgards = append(asgards, vault)
+		}
+	}
+
+	return asgards, nil
+}
+
 // DeleteVault remove the given vault from data store
 func (k KVStore) DeleteVault(ctx cosmos.Context, pubkey common.PubKey) error {
 	vault, err := k.GetVault(ctx, pubkey)
