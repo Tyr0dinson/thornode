@@ -200,7 +200,7 @@ task, it:
 
 - [x] **T29** Wire `validateChainLiquidityCap` into `handler_deposit` add-liquidity path. Unit tests. — f9278800ca
 - [x] **T30** Wire into secured-asset deposit handler. Unit tests. — 9e191c513f
-- [x] **T31** Wire into trade-account deposit handler. Unit tests. — pending
+- [x] **T31** Wire into trade-account deposit handler. Unit tests. — 33fb71b413
 - [ ] **T32** Wire into `handler_swap` for swap-to-external-chain path (increases RUNE-valued TVL on the output chain). Unit tests.
 - [ ] **T33** Reject swap and add-liquidity into chains with no active Asgard (`GetActiveAsgardVaultsByChain` empty). Unit tests.
 
