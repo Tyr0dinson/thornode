@@ -1694,3 +1694,107 @@ func (s *HelperSuite) TestGetMinSlipBpsStableOverride(c *C) {
 	result = getMinSlipBps(ctx, k, busd, false)
 	c.Assert(result.Uint64(), Equals, uint64(10))
 }
+
+type TestGetNodeSupportedChainsKeeper struct {
+	keeper.KVStoreDummy
+	activeVaults   Vaults
+	retiringVaults Vaults
+}
+
+func (k *TestGetNodeSupportedChainsKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, status VaultStatus) (Vaults, error) {
+	switch status {
+	case ActiveVault:
+		return k.activeVaults, nil
+	case RetiringVault:
+		return k.retiringVaults, nil
+	}
+	return nil, nil
+}
+
+func (s *HelperSuite) TestGetNodeSupportedChains(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	nodePK := types.GetRandomPubKey()
+
+	// Case 1: explicit SupportedChains set on NodeAccount
+	na := NodeAccount{
+		NodeAddress:     types.GetRandomBech32Addr(),
+		Status:          NodeActive,
+		PubKeySet:       common.PubKeySet{Secp256k1: nodePK},
+		SupportedChains: []string{"BTC", "ETH"},
+	}
+	chains := getNodeSupportedChains(ctx, mgr, na)
+	c.Assert(len(chains), Equals, 2)
+	found := common.Chains(chains)
+	c.Assert(found.Has(common.BTCChain), Equals, true)
+	c.Assert(found.Has(common.ETHChain), Equals, true)
+
+	// Case 2: empty SupportedChains, node is in active vault
+	na2 := NodeAccount{
+		NodeAddress: types.GetRandomBech32Addr(),
+		Status:      NodeActive,
+		PubKeySet:   common.PubKeySet{Secp256k1: nodePK},
+	}
+	activeVault := Vault{
+		Status:     ActiveVault,
+		Chains:     []string{"BTC", "DOGE"},
+		Membership: []string{nodePK.String()},
+	}
+	k := &TestGetNodeSupportedChainsKeeper{
+		activeVaults:   Vaults{activeVault},
+		retiringVaults: Vaults{},
+	}
+	mgr.K = k
+	chains = getNodeSupportedChains(ctx, mgr, na2)
+	c.Assert(len(chains), Equals, 2)
+	found = common.Chains(chains)
+	c.Assert(found.Has(common.BTCChain), Equals, true)
+	c.Assert(found.Has(common.DOGEChain), Equals, true)
+
+	// Case 3: empty SupportedChains, node is in both active and retiring vaults with different chains
+	retiringVault := Vault{
+		Status:     RetiringVault,
+		Chains:     []string{"ETH", "BTC"},
+		Membership: []string{nodePK.String()},
+	}
+	k.retiringVaults = Vaults{retiringVault}
+	chains = getNodeSupportedChains(ctx, mgr, na2)
+	c.Assert(len(chains), Equals, 3)
+	found = common.Chains(chains)
+	c.Assert(found.Has(common.BTCChain), Equals, true)
+	c.Assert(found.Has(common.DOGEChain), Equals, true)
+	c.Assert(found.Has(common.ETHChain), Equals, true)
+
+	// Case 4: empty SupportedChains, node not in any vault (standby) — returns AllChains
+	otherPK := types.GetRandomPubKey()
+	na3 := NodeAccount{
+		NodeAddress: types.GetRandomBech32Addr(),
+		Status:      NodeStandby,
+		PubKeySet:   common.PubKeySet{Secp256k1: otherPK},
+	}
+	chains = getNodeSupportedChains(ctx, mgr, na3)
+	c.Assert(len(chains), Equals, len(common.AllChains))
+
+	// Case 5: SupportedChains with invalid chain entry — skips invalid, returns valid
+	na4 := NodeAccount{
+		NodeAddress:     types.GetRandomBech32Addr(),
+		Status:          NodeActive,
+		PubKeySet:       common.PubKeySet{Secp256k1: nodePK},
+		SupportedChains: []string{"BTC", "INVALIDCHAIN", "ETH"},
+	}
+	chains = getNodeSupportedChains(ctx, mgr, na4)
+	c.Assert(len(chains), Equals, 2)
+	found = common.Chains(chains)
+	c.Assert(found.Has(common.BTCChain), Equals, true)
+	c.Assert(found.Has(common.ETHChain), Equals, true)
+
+	// Case 6: empty SupportedChains, node only in vaults it's not a member of — returns AllChains
+	nonMemberPK := types.GetRandomPubKey()
+	na5 := NodeAccount{
+		NodeAddress: types.GetRandomBech32Addr(),
+		Status:      NodeActive,
+		PubKeySet:   common.PubKeySet{Secp256k1: nonMemberPK},
+	}
+	chains = getNodeSupportedChains(ctx, mgr, na5)
+	c.Assert(len(chains), Equals, len(common.AllChains))
+}

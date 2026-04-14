@@ -1637,3 +1637,53 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 		toi.Memo = toi.OriginalMemo
 	}
 }
+
+func getNodeSupportedChains(ctx cosmos.Context, mgr Manager, na NodeAccount) []common.Chain {
+	if len(na.SupportedChains) > 0 {
+		chains := make([]common.Chain, 0, len(na.SupportedChains))
+		for _, s := range na.SupportedChains {
+			chain, err := common.NewChain(s)
+			if err != nil {
+				ctx.Logger().Error("invalid chain in SupportedChains", "chain", s, "error", err)
+				continue
+			}
+			chains = append(chains, chain)
+		}
+		return chains
+	}
+
+	activeVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active vaults", "error", err)
+	}
+	retiringVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get retiring vaults", "error", err)
+	}
+
+	chainSet := make(map[common.Chain]struct{})
+	for _, vault := range append(activeVaults, retiringVaults...) {
+		if !vault.Contains(na.PubKeySet.Secp256k1) {
+			continue
+		}
+		for _, c := range vault.GetChains() {
+			chainSet[c] = struct{}{}
+		}
+	}
+
+	if len(chainSet) == 0 {
+		all := common.AllChains
+		chains := make([]common.Chain, len(all))
+		copy(chains, all[:])
+		return chains
+	}
+
+	chains := make([]common.Chain, 0, len(chainSet))
+	for c := range chainSet {
+		chains = append(chains, c)
+	}
+	sort.Slice(chains, func(i, j int) bool {
+		return chains[i].String() < chains[j].String()
+	})
+	return chains
+}
