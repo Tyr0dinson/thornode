@@ -225,7 +225,7 @@ task, it:
 - [x] **T41** Wire callback in `bifrost/pkg/chainclients/ethereum/`. Unit tests. — d569756f94
 - [x] **T42** Wire callback in `bifrost/pkg/chainclients/evm/` (generic EVM). Unit tests. — ae9bd842b8
 - [x] **T43** Wire callback in `bifrost/pkg/chainclients/gaia/`. Unit tests. — 53fcade0fc
-- [x] **T44** Wire callback in `bifrost/pkg/chainclients/solana/`. Unit tests. — pending
+- [x] **T44** Wire callback in `bifrost/pkg/chainclients/solana/`. Unit tests. — 4b0fa7fc29
 - [ ] **T45** Wire callback in `bifrost/pkg/chainclients/tron/`. Unit tests.
 - [ ] **T46** Wire callback in `bifrost/pkg/chainclients/utxo/` (btc/ltc/bch/doge variants). Unit tests.
 - [ ] **T47** Wire callback in `bifrost/pkg/chainclients/xrp/`. Unit tests.
