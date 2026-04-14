@@ -156,6 +156,10 @@ func NewConstantValue() *ConstantVals {
 			OverSolvencyCheckInterval:           600,                // interval in blocks for over-solvency checks (approximately 30 days)
 			MaxRetiredVaultRecoveryAttempts:     100,                // maximum retries for retired vault recovery refunds
 			ModifyLimitSwapMaxIterations:        100,                // maximum iterations when searching for a user's swap in a ratio-grouped index
+			MinNodeChainSupport:                 1,                  // minimum chains a node must declare support for
+			ChainLiquidityRunePerValidator:      10_000_00000000,    // per-validator liquidity cap when chain support < 2/3 (100k RUNE)
+			ChainSubBFTRatioNum:                 2,                  // numerator of the ratio below which liquidity cap activates
+			ChainSubBFTRatioDenom:               3,                  // denominator of the ratio below which liquidity cap activates
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

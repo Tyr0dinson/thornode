@@ -119,6 +119,11 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		constants.MaxRetiredVaultRecoveryAttempts.String(),
 		constants.P2PGateDisabled.String(),
 		constants.EnableMemolessOutbound.String(),
+		constants.MinNodeChainSupport.String(),
+		constants.ChainLiquidityRunePerValidator.String(),
+		constants.MinimumNodesForBFT.String(),
+		constants.ChainSubBFTRatioNum.String(),
+		constants.ChainSubBFTRatioDenom.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
