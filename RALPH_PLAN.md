@@ -143,7 +143,7 @@ task, it:
 
 ### Phase 1 — Proto / type foundation
 
-- [x] **T1** Add `repeated string supported_chains` to `NodeAccount` proto; `make generate`; ensure callers compile (empty-default behavior — no functional change yet). — pending
+- [x] **T1** Add `repeated string supported_chains` to `NodeAccount` proto; `make generate`; ensure callers compile (empty-default behavior — no functional change yet). — 507267f45f
 - [ ] **T2** Add `repeated string target_chains` to `Keygen` proto; `make generate`; default empty, no functional change.
 - [ ] **T3** Add `ChainIncome` message and `repeated ChainIncome chain_income` to `Network` proto; `make generate`; default empty.
 - [ ] **T4** Add `MsgAddNodeChainSupport` proto + type wrapper (`x/thorchain/types/msg_node_chain_support.go`), but no handler yet. Register nothing in router. Build green.
