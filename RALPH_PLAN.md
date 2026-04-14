@@ -223,7 +223,7 @@ task, it:
 - [x] **T39** `bifrost/thorclient/pubkey_manager.go`: implement `GetSupportedChains() []common.Chain` with active+retiring vault union and fallback to `common.AllChains` when no membership. Unit tests. — 6807845b23
 - [x] **T40** `bifrost/blockscanner/blockscanner.go`: add `SetShouldObserveCallback(func() bool)`; pause polling when callback returns false; preserve cursor across pause/resume. Unit tests. — 9e8e87517b
 - [x] **T41** Wire callback in `bifrost/pkg/chainclients/ethereum/`. Unit tests. — d569756f94
-- [x] **T42** Wire callback in `bifrost/pkg/chainclients/evm/` (generic EVM). Unit tests. — pending
+- [x] **T42** Wire callback in `bifrost/pkg/chainclients/evm/` (generic EVM). Unit tests. — ae9bd842b8
 - [ ] **T43** Wire callback in `bifrost/pkg/chainclients/gaia/`. Unit tests.
 - [ ] **T44** Wire callback in `bifrost/pkg/chainclients/solana/`. Unit tests.
 - [ ] **T45** Wire callback in `bifrost/pkg/chainclients/tron/`. Unit tests.
