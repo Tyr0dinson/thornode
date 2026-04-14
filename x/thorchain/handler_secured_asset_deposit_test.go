@@ -129,6 +129,61 @@ func (HandlerSecuredAssetDeposit) TestSecuredAssetDepositTVLCap(c *C) {
 	c.Check(err.Error(), Matches, ".*secured deposits more than bond.*")
 }
 
+func (HandlerSecuredAssetDeposit) TestSecuredAssetDepositChainLiquidityCap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewSecuredAssetDepositHandler(mgr)
+	asset := common.BTCAsset
+	addr := GetRandomBech32Addr()
+	dummyTx := common.Tx{ID: "test"}
+
+	// Create 6 active nodes so BTC with 3 validators is below 2/3 threshold
+	nodes := make(NodeAccounts, 6)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	FundModule(c, ctx, mgr.K, BondName, 600*common.One)
+
+	// Create an active vault for BTC chain with 3 members (below 2/3 of 6)
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.Type = AsgardVault
+	vault.Chains = []string{common.BTCChain.String()}
+	vault.Membership = []string{
+		nodes[0].PubKeySet.Secp256k1.String(),
+		nodes[1].PubKeySet.Secp256k1.String(),
+		nodes[2].PubKeySet.Secp256k1.String(),
+	}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(asset, cosmos.NewUint(1_00000000)),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Set up BTC pool: 1 BTC = 10,000 RUNE
+	pool := NewPool()
+	pool.Asset = asset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100_000_00000000)
+	pool.BalanceAsset = cosmos.NewUint(10_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Configure mimirs: cap = 3 * 10,000 = 30,000 RUNE
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 10_000_00000000)
+
+	// Deposit exceeding cap: 2.5 BTC = 25,000 RUNE; current vault = 10,000 RUNE → total 35,000 > 30,000
+	msg := NewMsgSecuredAssetDeposit(asset, cosmos.NewUint(2_50000000), addr, addr, dummyTx)
+	_, err := h.Run(ctx, msg)
+	c.Assert(err, NotNil, Commentf("should reject secured deposit exceeding chain liquidity cap"))
+	c.Check(err.Error(), Matches, ".*chain liquidity cap.*")
+
+	// Deposit within cap: 0.5 BTC = 5,000 RUNE; current vault = 10,000 RUNE → total 15,000 < 30,000
+	msg = NewMsgSecuredAssetDeposit(asset, cosmos.NewUint(50000000), addr, addr, dummyTx)
+	_, err = h.Run(ctx, msg)
+	c.Assert(err, IsNil, Commentf("should allow secured deposit within chain liquidity cap"))
+}
+
 func (HandlerSecuredAssetDeposit) TestSecuredAssetDepositValidateBasicFails(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	h := NewSecuredAssetDepositHandler(mgr)

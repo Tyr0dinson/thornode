@@ -57,6 +57,14 @@ func (h SecuredAssetDepositHandler) validate(ctx cosmos.Context, msg MsgSecuredA
 		return fmt.Errorf("%s secured deposits more than bond", msg.Asset)
 	}
 
+	capChain := msg.Asset.GetLayer1Asset().GetChain()
+	if !capChain.Equals(common.THORChain) {
+		inboundRuneValue := pool.AssetValueInRune(msg.Amount)
+		if capErr := validateChainLiquidityCap(ctx, h.mgr, capChain, inboundRuneValue); capErr != nil {
+			return capErr
+		}
+	}
+
 	return msg.ValidateBasic()
 }
 
