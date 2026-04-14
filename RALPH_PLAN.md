@@ -180,7 +180,7 @@ task, it:
 
 ### Phase 7 — Chain-aware consensus
 
-- [x] **T20** `handler_observed_tx*` uses `getChainConsensusParticipants(chain)` for 2/3 threshold. Unit tests against a vault-membership fixture. — pending
+- [x] **T20** `handler_observed_tx*` uses `getChainConsensusParticipants(chain)` for 2/3 threshold. Unit tests against a vault-membership fixture. — efaa96f472
 - [ ] **T21** `handler_network_fee*` uses chain-aware participants. Unit tests.
 - [ ] **T22** `handler_solvency*` uses chain-aware participants. Unit tests.
 - [ ] **T23** `handler_errata_tx*` uses chain-aware participants. Unit tests.
