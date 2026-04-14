@@ -680,6 +680,10 @@ func (c *CosmosClient) ShouldReportSolvency(height int64) bool {
 }
 
 // OnObservedTxIn update the signer cache (in case we haven't already)
+func (c *CosmosClient) SetShouldObserveCallback(cb func() bool) {
+	c.blockScanner.SetShouldObserveCallback(cb)
+}
+
 func (c *CosmosClient) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 	m, err := memo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {

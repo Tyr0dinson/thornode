@@ -294,3 +294,44 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 	)
 	c.Assert(err, IsNil)
 }
+
+func (s *CosmosTestSuite) TestSetShouldObserveCallback(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {}))
+	defer server.Close()
+
+	fakeGRPCHost := strings.ReplaceAll(server.URL, "http://", "grpc://")
+
+	client, err := NewCosmosClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID:        common.GAIAChain,
+		RPCHost:        server.URL,
+		CosmosGRPCHost: fakeGRPCHost,
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			CosmosGRPCHost:   fakeGRPCHost,
+			StartBlockHeight: 1,
+			WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
+				{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
+			},
+		},
+	}, nil, s.bridge, s.m, nil)
+	c.Assert(err, IsNil)
+	c.Assert(client, NotNil)
+
+	// Default: block scanner should observe (no callback set)
+	c.Assert(client.IsBlockScannerHealthy(), Equals, true)
+
+	// Set callback that returns false — scanner should pause
+	called := false
+	client.SetShouldObserveCallback(func() bool {
+		called = true
+		return false
+	})
+	c.Assert(called, Equals, false)
+
+	// Set callback that returns true — scanner should observe
+	client.SetShouldObserveCallback(func() bool {
+		return true
+	})
+
+	// Set nil callback — should not panic, restores default behavior
+	client.SetShouldObserveCallback(nil)
+}
