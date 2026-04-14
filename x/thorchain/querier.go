@@ -492,11 +492,10 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		return nil, fmt.Errorf("fail to get network: %w", err)
 	}
 
-	vaults, err := qs.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	vaultsMigrating, err := networkHasMigratingVaults(ctx, qs.mgr.Keeper())
 	if err != nil {
-		return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
+		return nil, fmt.Errorf("fail to get vault migration state: %w", err)
 	}
-	vaultsMigrating := (len(vaults) != 0)
 
 	nodeAccounts, err := qs.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {

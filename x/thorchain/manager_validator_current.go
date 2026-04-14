@@ -113,13 +113,12 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		}
 	}
 
-	// don't churn if we have retiring asgard vaults that still have funds
-	retiringVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	migratingVaults, err := networkHasMigratingVaults(ctx, vm.k)
 	if err != nil {
 		return err
 	}
-	if len(retiringVaults) > 0 {
-		ctx.Logger().Info("Skipping rotation due to retiring vaults still have funds.")
+	if migratingVaults {
+		ctx.Logger().Info("Skipping rotation due to vault migrations still in flight.")
 		return nil
 	}
 
@@ -328,14 +327,12 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 		(artificialRagnarokBlockHeight > 0 && ctx.BlockHeight() >= artificialRagnarokBlockHeight) {
 		// THORNode don't have enough validators for BFT
 
-		// Check we're not migrating funds
-		var retiring Vaults
-		retiring, err = vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
-		if err != nil {
-			ctx.Logger().Error("fail to get retiring vaults", "error", err)
+		migratingVaults, migrationErr := networkHasMigratingVaults(ctx, vm.k)
+		if migrationErr != nil {
+			ctx.Logger().Error("fail to get vault migration state", "error", migrationErr)
 		}
 
-		if len(retiring) == 0 { // wait until all funds are migrated before starting ragnarok
+		if !migratingVaults { // wait until all funds are migrated before starting ragnarok
 			if err = vm.processRagnarok(ctx, mgr); err != nil {
 				ctx.Logger().Error("fail to process ragnarok protocol", "error", err)
 			}
