@@ -349,6 +349,10 @@ func (c *TronClient) ConfirmationCountReady(_ types.TxIn) bool {
 // OnObservedTxIn is called when a new observed tx is received.
 func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 
+func (c *TronClient) SetShouldObserveCallback(cb func() bool) {
+	c.blockScanner.SetShouldObserveCallback(cb)
+}
+
 // SignTx returns the signed transaction.
 func (c *TronClient) SignTx(
 	txOutItem types.TxOutItem,

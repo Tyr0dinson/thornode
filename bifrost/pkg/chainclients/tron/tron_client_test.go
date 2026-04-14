@@ -169,6 +169,15 @@ func (s *TronTestSuite) SetUpSuite(c *C) {
 	)
 	c.Assert(err, IsNil)
 
+	bs, err := blockscanner.NewBlockScanner(
+		chainConfig.BlockScanner,
+		storage,
+		s.metrics,
+		bridge,
+		scanner,
+	)
+	c.Assert(err, IsNil)
+
 	s.client = &TronClient{
 		chainId:            common.TRONChain.String(),
 		config:             chainConfig,
@@ -177,6 +186,7 @@ func (s *TronTestSuite) SetUpSuite(c *C) {
 		api:                api.NewTronApi(chainConfig.APIHost, chainConfig.BlockScanner.HTTPRequestTimeout),
 		rpc:                rpc.NewTronRpc(chainConfig.RPCHost, chainConfig.BlockScanner.HTTPRequestTimeout),
 		tronScanner:        scanner,
+		blockScanner:       bs,
 		localKeyManager:    localKeyManager,
 		signerCacheManager: signerCacheManager,
 	}
@@ -318,4 +328,24 @@ func (s *TronTestSuite) TestCreateTrc20Transaction(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(tx.TxId, Equals, "482b1a3b61894f75ea25bd10b14335a4db86c7e2c642ae07abc5a8ae45fb0027")
 	}
+}
+
+func (s *TronTestSuite) TestSetShouldObserveCallback(c *C) {
+	c.Assert(s.client.blockScanner, NotNil)
+
+	// Set callback that returns false — scanner should pause
+	called := false
+	s.client.SetShouldObserveCallback(func() bool {
+		called = true
+		return false
+	})
+	c.Assert(called, Equals, false)
+
+	// Set callback that returns true — scanner should observe
+	s.client.SetShouldObserveCallback(func() bool {
+		return true
+	})
+
+	// Set nil callback — should not panic, restores default behavior
+	s.client.SetShouldObserveCallback(nil)
 }
