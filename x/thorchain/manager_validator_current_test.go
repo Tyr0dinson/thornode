@@ -1169,3 +1169,140 @@ func (vts *ValidatorMgrTestSuite) TestChurnPartitionBelowMinimumExcluded(c *C) {
 	c.Assert(len(networkMgrDummy.keygens[0]), Equals, 5)
 	c.Assert(len(networkMgrDummy.keygenChains[0]), Equals, 2) // BTC+ETH
 }
+
+func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToOptOuts(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr := newEventMgr()
+	networkMgrDummy := NewNetworkMgrDummy()
+	vm := newValidatorMgr(k, networkMgrDummy, mgr.TxOutStore(), eventMgr)
+
+	// Create an active vault that includes DOGE chain, simulating a chain that
+	// was previously supported but will lose support due to opt-outs.
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain, common.DOGEChain}.Strings(),
+		[]ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Create a DOGE pool so we can verify it gets staged for ragnarok.
+	dogePool := NewPool()
+	dogePool.Asset = common.DOGEAsset
+	dogePool.Status = PoolAvailable
+	dogePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	dogePool.BalanceAsset = cosmos.NewUint(5000 * common.One)
+	c.Assert(k.SetPool(ctx, dogePool), IsNil)
+
+	// 5 nodes all opt into BTC+ETH only (no DOGE support).
+	nodes := make(NodeAccounts, 5)
+	for i := 0; i < 5; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+		na.Bond = cosmos.NewUint(uint64(100+i) * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nodes[i] = na
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	coveredChains := make(map[common.Chain]struct{})
+	coveredChains[common.BTCChain] = struct{}{}
+	coveredChains[common.ETHChain] = struct{}{}
+
+	err := vm.autoRagnarokUncoveredChains(ctx, mgr, coveredChains)
+	c.Assert(err, IsNil)
+
+	// Verify halt mimir was set for DOGE.
+	haltVal, err := k.GetMimir(ctx, "HaltDOGEChain")
+	c.Assert(err, IsNil)
+	c.Assert(haltVal, Equals, int64(100))
+
+	// Verify pool was staged.
+	pool, err := k.GetPool(ctx, common.DOGEAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.Status, Equals, PoolStaged)
+
+	// Verify pool ragnarok start was set.
+	ragStart, err := k.GetPoolRagnarokStart(ctx, common.DOGEAsset)
+	c.Assert(err, IsNil)
+	c.Assert(ragStart, Equals, int64(100))
+
+	// Verify chain_ragnarok_initiated event was emitted.
+	found := false
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type == "chain_ragnarok_initiated" {
+			found = true
+			for _, attr := range evt.Attributes {
+				if attr.Key == "chain" {
+					c.Assert(attr.Value, Equals, common.DOGEChain.String())
+				}
+				if attr.Key == "reason" {
+					c.Assert(attr.Value, Equals, "insufficient validators")
+				}
+			}
+		}
+	}
+	c.Assert(found, Equals, true)
+
+	// Verify BTC/ETH halt mimirs were NOT set.
+	btcHalt, err := k.GetMimir(ctx, "HaltBTCChain")
+	c.Assert(err, IsNil)
+	c.Assert(btcHalt, Equals, int64(-1))
+	ethHalt, err := k.GetMimir(ctx, "HaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(ethHalt, Equals, int64(-1))
+}
+
+func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToNodeRemovals(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr := newEventMgr()
+	networkMgrDummy := NewNetworkMgrDummy()
+	vm := newValidatorMgr(k, networkMgrDummy, mgr.TxOutStore(), eventMgr)
+
+	// Active vault with BTC, ETH, and DOGE.
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain, common.DOGEChain}.Strings(),
+		[]ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// DOGE pool.
+	dogePool := NewPool()
+	dogePool.Asset = common.DOGEAsset
+	dogePool.Status = PoolAvailable
+	dogePool.BalanceRune = cosmos.NewUint(500 * common.One)
+	dogePool.BalanceAsset = cosmos.NewUint(2500 * common.One)
+	c.Assert(k.SetPool(ctx, dogePool), IsNil)
+
+	// Scenario: only 2 nodes support DOGE (below MinimumNodesForBFT=4),
+	// while 5 nodes support BTC+ETH. The partition loop would have already
+	// filtered out the DOGE partition, so coveredChains won't include DOGE.
+	ctx = ctx.WithBlockHeight(200)
+	coveredChains := make(map[common.Chain]struct{})
+	coveredChains[common.BTCChain] = struct{}{}
+	coveredChains[common.ETHChain] = struct{}{}
+
+	err := vm.autoRagnarokUncoveredChains(ctx, mgr, coveredChains)
+	c.Assert(err, IsNil)
+
+	// Verify DOGE halt.
+	haltVal, err := k.GetMimir(ctx, "HaltDOGEChain")
+	c.Assert(err, IsNil)
+	c.Assert(haltVal, Equals, int64(200))
+
+	// Verify pool ragnarok.
+	pool, err := k.GetPool(ctx, common.DOGEAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.Status, Equals, PoolStaged)
+
+	ragStart, err := k.GetPoolRagnarokStart(ctx, common.DOGEAsset)
+	c.Assert(err, IsNil)
+	c.Assert(ragStart, Equals, int64(200))
+
+	// Verify event.
+	found := false
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type == "chain_ragnarok_initiated" {
+			found = true
+		}
+	}
+	c.Assert(found, Equals, true)
+}

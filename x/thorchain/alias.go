@@ -168,6 +168,7 @@ var (
 	NewEventOutbound               = types.NewEventOutbound
 	NewEventChainSupportAdded      = types.NewEventChainSupportAdded
 	NewEventChainSupportRemoved    = types.NewEventChainSupportRemoved
+	NewEventChainRagnarokInitiated = types.NewEventChainRagnarokInitiated
 	NewEventSetMimir               = types.NewEventSetMimir
 	NewEventSetNodeMimir           = types.NewEventSetNodeMimir
 	NewEventTssKeygenSuccess       = types.NewEventTssKeygenSuccess

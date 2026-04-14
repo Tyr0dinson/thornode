@@ -191,11 +191,16 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context, mgr Manager) error {
 	if ok {
 		minimumNodesForBFT := vm.k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
 		partitions := vm.partitionByChainSupport(ctx, mgr, next)
+
+		coveredChains := make(map[common.Chain]struct{})
 		for _, p := range partitions {
 			if int64(len(p.nodes)) < minimumNodesForBFT {
 				ctx.Logger().Info("Skipping chain partition below MinimumNodesForBFT",
 					"chains", p.chains, "nodes", len(p.nodes), "minimum", minimumNodesForBFT)
 				continue
+			}
+			for _, c := range p.chains {
+				coveredChains[c] = struct{}{}
 			}
 			groups := vm.splitNext(ctx, p.nodes, asgardSize)
 			if groups == nil {
@@ -206,6 +211,10 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context, mgr Manager) error {
 					return err
 				}
 			}
+		}
+
+		if err := vm.autoRagnarokUncoveredChains(ctx, mgr, coveredChains); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -252,6 +261,63 @@ func (vm *ValidatorMgr) partitionByChainSupport(ctx cosmos.Context, mgr Manager,
 		result = append(result, chainPartition{chains: e.chains, nodes: e.nodes})
 	}
 	return result
+}
+
+// autoRagnarokUncoveredChains triggers chain-level ragnarok for any currently
+// active chain that is not covered by a viable keygen partition at churn.
+func (vm *ValidatorMgr) autoRagnarokUncoveredChains(ctx cosmos.Context, mgr Manager, coveredChains map[common.Chain]struct{}) error {
+	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active vaults for auto-ragnarok check: %w", err)
+	}
+
+	activeChains := make(map[common.Chain]struct{})
+	for _, v := range activeVaults {
+		for _, c := range v.GetChains() {
+			if c.Equals(common.THORChain) {
+				continue
+			}
+			activeChains[c] = struct{}{}
+		}
+	}
+
+	for chain := range activeChains {
+		if _, ok := coveredChains[chain]; ok {
+			continue
+		}
+		ctx.Logger().Warn("auto-ragnarok triggered for chain with no viable partition", "chain", chain)
+
+		// Halt the chain to block new inflows.
+		vm.k.SetMimir(ctx, fmt.Sprintf("Halt%sChain", chain), ctx.BlockHeight())
+
+		// Mark pools on this chain for ragnarok.
+		pools, err := vm.k.GetPools(ctx)
+		if err != nil {
+			return fmt.Errorf("fail to get pools for chain ragnarok: %w", err)
+		}
+		for _, pool := range pools {
+			if !pool.Asset.GetChain().Equals(chain) {
+				continue
+			}
+			vm.k.SetPoolRagnarokStart(ctx, pool.Asset)
+			if pool.Status != PoolStaged {
+				pool.Status = PoolStaged
+				if err := vm.k.SetPool(ctx, pool); err != nil {
+					return fmt.Errorf("fail to stage pool %s for chain ragnarok: %w", pool.Asset, err)
+				}
+				poolEvent := NewEventPool(pool.Asset, PoolStaged)
+				if err := vm.eventMgr.EmitEvent(ctx, poolEvent); err != nil {
+					ctx.Logger().Error("fail to emit pool staged event", "error", err)
+				}
+			}
+		}
+
+		evt := NewEventChainRagnarokInitiated(chain, ctx.BlockHeight(), "insufficient validators")
+		if err := vm.eventMgr.EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit chain ragnarok event", "error", err)
+		}
+	}
+	return nil
 }
 
 // splits given list of node accounts into separate list of nas, for separate
