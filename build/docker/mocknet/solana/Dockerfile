@@ -18,13 +18,7 @@ RUN set -eux; \
   ); \
   validate_pkg() { \
     local spec="$1"; \
-    local name="${spec%%=*}"; \
-    if [[ "$name" == "$spec" ]]; then \
-      apt-cache show "$name" >/dev/null 2>&1; \
-    else \
-      local version="${spec#*=}"; \
-      apt-cache policy "$name" | grep -Fq "Candidate: $version"; \
-    fi; \
+    apt-cache show "$spec" >/dev/null 2>&1; \
   }; \
   sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
   for attempt in 1 2 3 4 5 6 7 8 9 10; do \
@@ -71,18 +65,25 @@ RUN set -eux; \
   ); \
   validate_pkg() { \
     local spec="$1"; \
-    local name="${spec%%=*}"; \
-    if [[ "$name" == "$spec" ]]; then \
-      apt-cache show "$name" >/dev/null 2>&1; \
-    else \
-      local version="${spec#*=}"; \
-      apt-cache policy "$name" | grep -Fq "Candidate: $version"; \
-    fi; \
+    apt-cache show "$spec" >/dev/null 2>&1; \
   }; \
-  sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do \
+  refresh_metadata() { \
     rm -rf /var/lib/apt/lists/*; \
     apt-get -o Acquire::Retries=5 update || true; \
+  }; \
+  if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then \
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do \
+      refresh_metadata; \
+      validate_pkg 'ca-certificates=20230311+deb12u1' && break; \
+      [ "$attempt" -lt 10 ] || { echo "ca-certificates metadata incomplete after retries" >&2; exit 1; }; \
+      sleep 5; \
+    done; \
+    apt-get install -y --no-install-recommends ca-certificates=20230311+deb12u1; \
+    rm -rf /var/lib/apt/lists/*; \
+  fi; \
+  sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do \
+    refresh_metadata; \
     missing=0; \
     for pkg in "${required_pkgs[@]}"; do \
       validate_pkg "$pkg" || missing=1; \
