@@ -597,6 +597,45 @@ func (s *SolTestSuite) TestSignSOLTx_DoesNotPostKeysignFailureWithoutBlameNodes(
 	c.Assert(bridge.postCalls, HasLen, 0)
 }
 
+func (s *SolTestSuite) TestSetShouldObserveCallback(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	client, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + s.server.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				StartBlockHeight:   1,
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        15000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(client, NotNil)
+
+	// Default: scanner shouldObserve returns true (no callback set)
+	c.Assert(client.solScanner.shouldObserve(), Equals, true)
+
+	// Set callback that returns false — scanner should pause
+	called := false
+	client.SetShouldObserveCallback(func() bool {
+		called = true
+		return false
+	})
+	c.Assert(client.solScanner.shouldObserve(), Equals, false)
+	c.Assert(called, Equals, true)
+
+	// Set callback that returns true — scanner should observe
+	client.SetShouldObserveCallback(func() bool {
+		return true
+	})
+	c.Assert(client.solScanner.shouldObserve(), Equals, true)
+
+	// Set nil callback — should not panic, restores default behavior
+	client.SetShouldObserveCallback(nil)
+	c.Assert(client.solScanner.shouldObserve(), Equals, true)
+}
+
 func TestSolAddrKeyringRoundTrip(t *testing.T) {
 	testCases := []struct {
 		name         string

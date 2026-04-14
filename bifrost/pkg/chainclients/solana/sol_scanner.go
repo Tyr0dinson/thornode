@@ -89,6 +89,9 @@ type SOLScanner struct {
 
 	isChainPaused  bool
 	lastMimirCheck time.Time
+
+	shouldObserveCB func() bool
+	shouldObserveMu sync.RWMutex
 }
 
 type vaultScanStatus struct {
@@ -140,6 +143,21 @@ func NewSOLScanner(
 	}, nil
 }
 
+func (s *SOLScanner) SetShouldObserveCallback(cb func() bool) {
+	s.shouldObserveMu.Lock()
+	defer s.shouldObserveMu.Unlock()
+	s.shouldObserveCB = cb
+}
+
+func (s *SOLScanner) shouldObserve() bool {
+	s.shouldObserveMu.RLock()
+	defer s.shouldObserveMu.RUnlock()
+	if s.shouldObserveCB == nil {
+		return true
+	}
+	return s.shouldObserveCB()
+}
+
 func (s *SOLScanner) Start() {
 	s.lastMimirCheck = time.Now().Add(-constants.ThorchainBlockTime)
 	s.isChainPaused = false
@@ -175,6 +193,10 @@ func (s *SOLScanner) Start() {
 			s.logger.Info().Msg("stopping SOL scanner")
 			return
 		default:
+			if !s.shouldObserve() {
+				time.Sleep(constants.ThorchainBlockTime)
+				continue
+			}
 			s.scan()
 		}
 	}

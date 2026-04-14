@@ -603,6 +603,10 @@ func txSigFromRawTx(rawTx []byte) (string, bool) {
 
 // --------------------------------- observe ---------------------------------
 
+func (c *SOLClient) SetShouldObserveCallback(cb func() bool) {
+	c.solScanner.SetShouldObserveCallback(cb)
+}
+
 // OnObservedTxIn is called when a new observed tx is received.
 func (c *SOLClient) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 	m, err := mem.ParseMemo(common.LatestVersion, txIn.Memo)
