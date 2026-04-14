@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,16 +83,32 @@ type VaultResponse struct {
 }
 
 // -------------------------------------------------------------------------------------
+// Chain info provider (observer exposes these)
+// -------------------------------------------------------------------------------------
+
+type ChainInfoProvider interface {
+	GetObservedChains() []common.Chain
+	GetLastObservedChangeHeight() int64
+}
+
+// -------------------------------------------------------------------------------------
 // Health Server
 // -------------------------------------------------------------------------------------
 
+type ChainsStatusResponse struct {
+	ObservedChains           []string `json:"observed_chains"`
+	ConfiguredChains         []string `json:"configured_chains"`
+	LastObservedChangeHeight int64    `json:"last_observed_change_height"`
+}
+
 // HealthServer to provide something for health check and also p2pid
 type HealthServer struct {
-	logger          zerolog.Logger
-	s               *http.Server
-	tssServer       tss.Server
-	chains          map[common.Chain]chainclients.ChainClient
-	providerPayload []byte
+	logger            zerolog.Logger
+	s                 *http.Server
+	tssServer         tss.Server
+	chains            map[common.Chain]chainclients.ChainClient
+	providerPayload   []byte
+	chainInfoProvider ChainInfoProvider
 }
 
 // NewHealthServer create a new instance of health server
@@ -135,6 +152,7 @@ func (s *HealthServer) newHandler() http.Handler {
 	router.Handle("/status/scanner", http.HandlerFunc(s.chainScanner)).Methods(http.MethodGet)
 	router.Handle("/status/provider", http.HandlerFunc(s.providerStatus)).Methods(http.MethodGet)
 	router.Handle("/status/signing", http.HandlerFunc(s.currentSigning)).Methods(http.MethodGet)
+	router.Handle("/status/chains", http.HandlerFunc(s.chainsStatus)).Methods(http.MethodGet)
 	router.Handle("/version", http.HandlerFunc(s.versionHandler)).Methods(http.MethodGet)
 	return router
 }
@@ -479,6 +497,40 @@ func classifyHost(rawURL string) string {
 		return strings.Join(parts[len(parts)-2:], ".")
 	}
 	return "unknown"
+}
+
+func (s *HealthServer) SetChainInfoProvider(p ChainInfoProvider) {
+	s.chainInfoProvider = p
+}
+
+func (s *HealthServer) chainsStatus(w http.ResponseWriter, _ *http.Request) {
+	res := ChainsStatusResponse{}
+
+	// configured chains from statically loaded chain clients
+	for c := range s.chains {
+		res.ConfiguredChains = append(res.ConfiguredChains, c.String())
+	}
+	sort.Strings(res.ConfiguredChains)
+
+	if s.chainInfoProvider != nil {
+		observed := s.chainInfoProvider.GetObservedChains()
+		for _, c := range observed {
+			res.ObservedChains = append(res.ObservedChains, c.String())
+		}
+		sort.Strings(res.ObservedChains)
+		res.LastObservedChangeHeight = s.chainInfoProvider.GetLastObservedChangeHeight()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	jsonBytes, err := json.MarshalIndent(res, "", "  ")
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to marshal chains status")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if _, err = w.Write(jsonBytes); err != nil {
+		s.logger.Error().Err(err).Msg("fail to write chains status response")
+	}
 }
 
 // Start health server

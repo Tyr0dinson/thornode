@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
@@ -215,4 +216,79 @@ func (HealthServerTestSuite) TestProviderStatusHandler(c *C) {
 	s.providerStatus(res, req)
 	c.Assert(res.Code, Equals, http.StatusOK)
 	c.Assert(res.Body.String(), Equals, `{"BTC":{"rpc_host":"self-hosted"}}`)
+}
+
+type mockChainInfoProvider struct {
+	observedChains   []tcommon.Chain
+	lastChangeHeight int64
+}
+
+func (m *mockChainInfoProvider) GetObservedChains() []tcommon.Chain {
+	return m.observedChains
+}
+
+func (m *mockChainInfoProvider) GetLastObservedChangeHeight() int64 {
+	return m.lastChangeHeight
+}
+
+func (HealthServerTestSuite) TestChainsStatusHandler_NoProvider(c *C) {
+	tssServer := &MockTssServer{}
+	s := NewHealthServer("127.0.0.1:8080", tssServer, nil)
+	req := httptest.NewRequest(http.MethodGet, "/status/chains", nil)
+	res := httptest.NewRecorder()
+	s.chainsStatus(res, req)
+	c.Assert(res.Code, Equals, http.StatusOK)
+
+	var body ChainsStatusResponse
+	c.Assert(json.NewDecoder(res.Body).Decode(&body), IsNil)
+	c.Assert(body.ObservedChains, IsNil)
+	c.Assert(body.ConfiguredChains, IsNil)
+	c.Assert(body.LastObservedChangeHeight, Equals, int64(0))
+}
+
+func (HealthServerTestSuite) TestChainsStatusHandler_WithProvider(c *C) {
+	tssServer := &MockTssServer{}
+
+	chains := map[tcommon.Chain]chainclients.ChainClient{
+		tcommon.BTCChain:  nil,
+		tcommon.ETHChain:  nil,
+		tcommon.DOGEChain: nil,
+	}
+	s := NewHealthServer("127.0.0.1:8080", tssServer, chains)
+	s.SetChainInfoProvider(&mockChainInfoProvider{
+		observedChains:   []tcommon.Chain{tcommon.BTCChain, tcommon.ETHChain},
+		lastChangeHeight: 12345,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/status/chains", nil)
+	res := httptest.NewRecorder()
+	s.chainsStatus(res, req)
+	c.Assert(res.Code, Equals, http.StatusOK)
+
+	var body ChainsStatusResponse
+	c.Assert(json.NewDecoder(res.Body).Decode(&body), IsNil)
+	c.Assert(body.ObservedChains, DeepEquals, []string{"BTC", "ETH"})
+	c.Assert(len(body.ConfiguredChains), Equals, 3)
+	c.Assert(body.ConfiguredChains[0], Equals, "BTC")
+	c.Assert(body.LastObservedChangeHeight, Equals, int64(12345))
+}
+
+func (HealthServerTestSuite) TestChainsStatusHandler_ViaRouter(c *C) {
+	tssServer := &MockTssServer{}
+	s := NewHealthServer("127.0.0.1:8080", tssServer, nil)
+	s.SetChainInfoProvider(&mockChainInfoProvider{
+		observedChains:   []tcommon.Chain{tcommon.BTCChain},
+		lastChangeHeight: 999,
+	})
+
+	handler := s.newHandler()
+	req := httptest.NewRequest(http.MethodGet, "/status/chains", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	c.Assert(res.Code, Equals, http.StatusOK)
+
+	var body ChainsStatusResponse
+	c.Assert(json.NewDecoder(res.Body).Decode(&body), IsNil)
+	c.Assert(body.ObservedChains, DeepEquals, []string{"BTC"})
+	c.Assert(body.LastObservedChangeHeight, Equals, int64(999))
 }

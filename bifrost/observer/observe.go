@@ -93,9 +93,10 @@ type Observer struct {
 
 	deckDumpFile string
 
-	supportedChains    map[common.Chain]bool
-	supportedChainsMu  sync.RWMutex
-	getSupportedChains func() []common.Chain
+	supportedChains          map[common.Chain]bool
+	supportedChainsMu        sync.RWMutex
+	getSupportedChains       func() []common.Chain
+	lastObservedChangeHeight int64
 }
 
 // NewObserver create a new instance of Observer for chain
@@ -898,11 +899,35 @@ func (o *Observer) recomputeSupportedChains() {
 		}
 	}
 	if len(added) > 0 || len(removed) > 0 {
+		height, err := o.thorchainBridge.GetBlockHeight()
+		if err != nil {
+			o.logger.Warn().Err(err).Msg("failed to get block height for chain change tracking")
+		} else {
+			o.supportedChainsMu.Lock()
+			o.lastObservedChangeHeight = height
+			o.supportedChainsMu.Unlock()
+		}
 		o.logger.Info().
 			Strs("chains_added", added).
 			Strs("chains_removed", removed).
 			Msg("supported chains changed")
 	}
+}
+
+func (o *Observer) GetObservedChains() []common.Chain {
+	o.supportedChainsMu.RLock()
+	defer o.supportedChainsMu.RUnlock()
+	chains := make([]common.Chain, 0, len(o.supportedChains))
+	for c := range o.supportedChains {
+		chains = append(chains, c)
+	}
+	return chains
+}
+
+func (o *Observer) GetLastObservedChangeHeight() int64 {
+	o.supportedChainsMu.RLock()
+	defer o.supportedChainsMu.RUnlock()
+	return o.lastObservedChangeHeight
 }
 
 // Stop the observer

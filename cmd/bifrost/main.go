@@ -208,6 +208,7 @@ func main() {
 	if err = obs.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("fail to start observer")
 	}
+	healthServer.SetChainInfoProvider(obs)
 
 	// enable observer to react to notifications from thornode
 	// that come through the grpc connection within AttestationGossip.
