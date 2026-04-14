@@ -165,7 +165,7 @@ task, it:
 
 ### Phase 4 — Handlers
 
-- [ ] **T14** Implement `handler_add_node_chain_support.go`: validate signer is a NodeAccount, chain in `common.SupportedChains()`, idempotent append, emit `chain_support_added`. Register in router + ante. Unit tests for each error path + happy path. Activation is churn-deferred — do not touch vaults here.
+- [x] **T14** Implement `handler_add_node_chain_support.go`: validate signer is a NodeAccount, chain in `common.SupportedChains()`, idempotent append, emit `chain_support_added`. Register in router + ante. Unit tests for each error path + happy path. Activation is churn-deferred — do not touch vaults here. — pending
 - [ ] **T15** Implement `handler_remove_node_chain_support.go`: validate, enforce `MinNodeChainSupport`, remove chain, emit `chain_support_removed`. Register in router + ante. Unit tests.
 
 ### Phase 5 — Validator manager / churn
