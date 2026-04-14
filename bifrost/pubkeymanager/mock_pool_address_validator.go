@@ -51,3 +51,7 @@ func (mpa *MockPoolAddressValidator) GetContracts(chain common.Chain, includeIna
 func (mpa *MockPoolAddressValidator) GetContract(chain common.Chain, pk common.PubKey) common.Address {
 	return common.NoAddress
 }
+
+func (mpa *MockPoolAddressValidator) GetSupportedChains() []common.Chain {
+	return common.AllChains[:]
+}

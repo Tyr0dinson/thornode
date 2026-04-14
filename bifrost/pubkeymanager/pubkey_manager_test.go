@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -456,6 +457,134 @@ func (s *PubKeyMgrSuite) TestIsValidPoolAddressAlgoFiltering(c *C) {
 	c.Assert(err, IsNil)
 	ok, _ := pubkeyMgr.IsValidPoolAddress(addr.String(), common.ETHChain)
 	c.Check(ok, Equals, false)
+}
+
+func (s *PubKeyMgrSuite) TestGetSupportedChains(c *C) {
+	nodePk := types.GetRandomPubKey()
+	otherNodePk := types.GetRandomPubKey()
+	vaultPk1 := types.GetRandomPubKey()
+	vaultPk2 := types.GetRandomPubKey()
+	vaultPk3 := types.GetRandomPubKey()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.RequestURI {
+		case "/thorchain/vaults/asgard":
+			vaults := types.Vaults{
+				{
+					PubKey:     vaultPk1,
+					Status:     types.VaultStatus_ActiveVault,
+					Chains:     []string{"BTC", "ETH"},
+					Membership: []string{nodePk.String(), otherNodePk.String()},
+				},
+				{
+					PubKey:     vaultPk2,
+					Status:     types.VaultStatus_RetiringVault,
+					Chains:     []string{"ETH", "DOGE"},
+					Membership: []string{nodePk.String()},
+				},
+				{
+					PubKey:     vaultPk3,
+					Status:     types.VaultStatus_InactiveVault,
+					Chains:     []string{"LTC"},
+					Membership: []string{nodePk.String()},
+				},
+			}
+			buf, err := json.Marshal(vaults)
+			c.Assert(err, IsNil)
+			_, _ = w.Write(buf)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+
+	cfg := config.BifrostClientConfiguration{
+		ChainID:   "thorchain",
+		ChainHost: server.URL[7:],
+	}
+	bridge, err := thorclient.NewThorchainBridge(cfg, nil, nil)
+	c.Assert(err, IsNil)
+
+	pubkeyMgr, err := NewPubKeyManager(bridge, nil)
+	c.Assert(err, IsNil)
+
+	// Add node pubkey so the manager knows which node we are
+	pubkeyMgr.AddNodePubKey(nodePk, common.SigningAlgoSecp256k1)
+
+	chains := pubkeyMgr.GetSupportedChains()
+	sort.Slice(chains, func(i, j int) bool { return chains[i] < chains[j] })
+	c.Assert(chains, HasLen, 3) // BTC, DOGE, ETH (union of active+retiring)
+	c.Check(chains[0], Equals, common.BTCChain)
+	c.Check(chains[1], Equals, common.DOGEChain)
+	c.Check(chains[2], Equals, common.ETHChain)
+}
+
+func (s *PubKeyMgrSuite) TestGetSupportedChainsNoMembership(c *C) {
+	nodePk := types.GetRandomPubKey()
+	otherPk := types.GetRandomPubKey()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.RequestURI {
+		case "/thorchain/vaults/asgard":
+			vaults := types.Vaults{
+				{
+					PubKey:     types.GetRandomPubKey(),
+					Status:     types.VaultStatus_ActiveVault,
+					Chains:     []string{"BTC"},
+					Membership: []string{otherPk.String()},
+				},
+			}
+			buf, err := json.Marshal(vaults)
+			c.Assert(err, IsNil)
+			_, _ = w.Write(buf)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+
+	cfg := config.BifrostClientConfiguration{
+		ChainID:   "thorchain",
+		ChainHost: server.URL[7:],
+	}
+	bridge, err := thorclient.NewThorchainBridge(cfg, nil, nil)
+	c.Assert(err, IsNil)
+
+	pubkeyMgr, err := NewPubKeyManager(bridge, nil)
+	c.Assert(err, IsNil)
+	pubkeyMgr.AddNodePubKey(nodePk, common.SigningAlgoSecp256k1)
+
+	// No membership in any vault → fallback to AllChains
+	chains := pubkeyMgr.GetSupportedChains()
+	c.Assert(len(chains), Equals, len(common.AllChains))
+}
+
+func (s *PubKeyMgrSuite) TestGetSupportedChainsNoNodePubKey(c *C) {
+	pubkeyMgr, err := NewPubKeyManager(nil, nil)
+	c.Assert(err, IsNil)
+
+	// No node pubkey set → fallback to AllChains
+	chains := pubkeyMgr.GetSupportedChains()
+	c.Assert(len(chains), Equals, len(common.AllChains))
+}
+
+func (s *PubKeyMgrSuite) TestGetSupportedChainsBridgeError(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	cfg := config.BifrostClientConfiguration{
+		ChainID:   "thorchain",
+		ChainHost: server.URL[7:],
+	}
+	bridge, err := thorclient.NewThorchainBridge(cfg, nil, nil)
+	c.Assert(err, IsNil)
+
+	pubkeyMgr, err := NewPubKeyManager(bridge, nil)
+	c.Assert(err, IsNil)
+	pubkeyMgr.AddNodePubKey(types.GetRandomPubKey(), common.SigningAlgoSecp256k1)
+
+	// Bridge error → fallback to AllChains
+	chains := pubkeyMgr.GetSupportedChains()
+	c.Assert(len(chains), Equals, len(common.AllChains))
 }
 
 func (s *PubKeyMgrSuite) TestFetchPubKeysError(c *C) {

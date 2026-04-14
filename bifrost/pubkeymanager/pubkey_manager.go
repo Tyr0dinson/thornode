@@ -32,6 +32,7 @@ type PubKeyValidator interface {
 	RegisterCallback(callback OnNewPubKey)
 	GetContracts(chain common.Chain, includeInactive bool) []common.Address
 	GetContract(chain common.Chain, pk common.PubKey) common.Address
+	GetSupportedChains() []common.Chain
 }
 
 // pubKeyInfo is a struct to store pubkey information  in memory
@@ -391,4 +392,50 @@ func (pkm *PubKeyManager) GetContract(chain common.Chain, pubKey common.PubKey) 
 		return pk.Contracts[chain]
 	}
 	return common.NoAddress
+}
+
+// GetSupportedChains returns the union of chains from all active and retiring
+// Asgard vaults where this node is a member. Falls back to AllChains when
+// no vault membership is found (standby/bootstrapping).
+func (pkm *PubKeyManager) GetSupportedChains() []common.Chain {
+	nodePubKey := pkm.GetNodePubKey(common.SigningAlgoSecp256k1)
+	if nodePubKey.IsEmpty() {
+		return common.AllChains[:]
+	}
+
+	vaults, err := pkm.bridge.GetAsgards()
+	if err != nil {
+		pkm.logger.Error().Err(err).Msg("fail to get asgards for supported chains")
+		return common.AllChains[:]
+	}
+
+	seen := make(map[common.Chain]bool)
+	for _, vault := range vaults {
+		if !vault.IsActive() && !vault.IsRetiring() {
+			continue
+		}
+		isMember := false
+		for _, member := range vault.GetMembership() {
+			if member.Equals(nodePubKey) {
+				isMember = true
+				break
+			}
+		}
+		if !isMember {
+			continue
+		}
+		for _, chain := range vault.GetChains() {
+			seen[chain] = true
+		}
+	}
+
+	if len(seen) == 0 {
+		return common.AllChains[:]
+	}
+
+	chains := make([]common.Chain, 0, len(seen))
+	for chain := range seen {
+		chains = append(chains, chain)
+	}
+	return chains
 }
