@@ -1229,20 +1229,34 @@ curl -s "$STAGENET_API/thorchain/nodes" \
 ```
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/thorchain/nodes" \
+  | jq '.[] | select(.status == "Standby") | {node_address, total_bond, status}'
+{
+  "node_address": "sthor1jel9mhmfrcllptknmsvt4wj42sc8usms6yzfgz",
+  "total_bond": "30072878021857",
+  "status": "Standby"
+}
+{
+  "node_address": "sthor1x9ths2nevz0e002hq93jfdpdt7rtmxwdq07fp5",
+  "total_bond": "30074906498511",
+  "status": "Standby"
+}
 ```
 
 **Step 2 — Snapshot bond module balance**
 ```bash
-MODULE_ADDR="thor17gw75axcnr8747pkanbe2ven74se88f52yfzpz"
+MODULE_ADDR="sthor17gw75axcnr8747pkanye45pnrwk7p9c3ve0wxj"
 curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$MODULE_ADDR" \
   | jq '.balances[] | select(.denom == "rune") | .amount'
 ```
 
 **Result:**
-```
-
+```bash
+~ MODULE_ADDR="sthor17gw75axcnr8747pkanye45pnrwk7p9c3ve0wxj"
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$MODULE_ADDR" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+"180317317158270"
 ```
 
 **Step 3 — Snapshot sum of all node bonds**
@@ -1252,8 +1266,10 @@ curl -s "$STAGENET_API/thorchain/nodes" \
 ```
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/thorchain/nodes" \
+  | jq '[.[] | .total_bond | tonumber] | add'
+180317317130332
 ```
 
 **Step 4 — Submit mimir votes from standby nodes first, then active nodes**
@@ -1268,7 +1284,65 @@ sleep 12
 
 **Result:**
 ```
-
+# Expected: standby nodes (snode2, snode5) are not authorized to vote mimir — only active nodes can.
+9:00AM ERR failure when running app err="rpc error: code = Unknown desc = rpc error: code = Unknown desc = [3157782A79609F97BD57016324B42D5F86BD99CD] are not authorized: unauthorized [cosmossdk.io/errors@v1.0.2/errors.go:151] with gas used: '38254': unknown request"
+9:00AM ERR failure when running app err="rpc error: code = Unknown desc = rpc error: code = Unknown desc = [967E5DDF691E3FF0AED3DC18BABA5554307E4370] are not authorized: unauthorized [cosmossdk.io/errors@v1.0.2/errors.go:151] with gas used: '47851': unknown request"
+gas estimate: 790857
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 9DF89AB92E0675F8545E145938648CD99240468E9F54773FE41EB2AC806BC3EF
+gas estimate: 754644
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 4BDAC22C86872C88CC45B350CA5E68ED477C49FE58801AD2325437AC2D46782E
+gas estimate: 845137
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 8C1CB2A54B47D352B0F5074ACC03276DB7A363843604377744F53E576A72EE2F
+gas estimate: 629340
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: EBF40B838BDD1669584BAC306BFB48CA74CAE16E371873ABC11B1A2BCD704F7B
 ```
 
 **Step 5 — Re-snapshot bond module balance**
@@ -1278,8 +1352,10 @@ curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$MODULE_ADDR" \
 ```
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$MODULE_ADDR" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+"180317309159458"
 ```
 
 **Step 6 — Re-snapshot sum of all node bonds**
@@ -1289,14 +1365,16 @@ curl -s "$STAGENET_API/thorchain/nodes" \
 ```
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/thorchain/nodes" \
+  | jq '[.[] | .total_bond | tonumber] | add'
+180317309130332
 ```
 
 **Step 7 — Assert module balance ≥ sum of bonds**
 ```bash
 python3 -c "
-module=<paste step 5>; bonds=<paste step 6>
+module=180317309159458; bonds=180317309130332
 diff = module - bonds
 print(f'Difference: {diff}')
 print('PASS' if diff >= 0 else 'FAIL: module deficit detected')
@@ -1305,11 +1383,18 @@ print('PASS' if diff >= 0 else 'FAIL: module deficit detected')
 > Expected: `PASS` — no deficit
 
 **Result:**
+```bash
+~ python3 -c "
+module=180317309159458; bonds=180317309130332
+diff = module - bonds
+print(f'Difference: {diff}')
+print('PASS' if diff >= 0 else 'FAIL: module deficit detected')
+"
+Difference: 29126
+PASS
 ```
 
-```
-
-> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+> **Status:** `[x] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: Module balance (180317309159458) ≥ sum of node bonds (180317309130332), difference +29,126. No deficit detected before or after mimir votes. Standby nodes could not vote mimir (expected — only active nodes authorized), so the invariant check via active node votes confirms no accounting regression.
 
 ---
 
@@ -2296,7 +2381,7 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 | T1.3 | Solana double-spend prevention         | Critical | P0         | [x]    |
 | T1.4 | DoS via unbounded attestation          | Critical | P1         | [x]    |
 | T1.5 | Limit swap DoS + rescue via mimir      | Critical | P1         | [x]    |
-| T1.6 | Bond module accounting                 | Critical | P1         | [ ]    |
+| T1.6 | Bond module accounting                 | Critical | P1         | [x]    |
 | T1.7 | Gaia stuck outbounds (3 bugs)          | Critical | P1         | [ ]    |
 | T1.8 | Limit swap expiry — no fund lock       | Critical | [Security] | [ ]    |
 | T2.1 | UTXO vault lock through broadcast      | Bifrost  |            | [ ]    |
