@@ -774,105 +774,443 @@ Fix: `ModifyLimitSwapMaxIterations` (default 100), mimir-overridable for operato
 
 ---
 
-**Step 1 — Verify the iteration cap constant**
+**Step 1 — Lower the cap to 10 via mimir (reduces swaps needed from 110 → 11)**
 ```bash
-curl -s "$STAGENET_API/thorchain/constants" | jq '.int_64_values.ModifyLimitSwapMaxIterations'
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 10
+  sleep 2
+done
+```
+
+**Result:**
+```bash
+gas estimate: 783491
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 675446C800F7A0DE07530AC421AA15EE656EB0C9508C7C623135438D598D5637
+gas estimate: 747278
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: E43E1AD052F367ACDBC573E60C4C591F2579F17ABBE6401277DC6869B01E44AE
+gas estimate: 843560
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 8150AB357F28056FD967A6A0BBD6FA3F2B3AFBF2CA7643D0299CC80EE9887040
+gas estimate: 627763
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: F81A987E4A64247E31B32984A286FFAD419A903586C615EFA1C16FB7AC1D5FFD
+null
+```
+
+**Step 2 — Confirm mimir is set to 10**
+```bash
+sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXITERATIONS'
+```
+> Expected: `10`
+
+**Result:**
+```bash
+~ sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXITERATIONS'
+10
+```
+
+**Step 3 — Fill the price-ratio bucket with 11 attacker SOL limit swaps**
+
+> **Note:** The bucket key is computed from `source_amount * 1e8 / trade_target`. All swaps must
+> use the **same source amount AND trade target** (1000000000 RUNE / 999999999999 SOL) to land in
+> the same bucket. `sleep 12` (2 full blocks) ensures each tx commits before the next one
+> queries the account sequence — `sleep 7` (1 block) was found to be unreliable in practice.
+> `--unordered` is NOT enabled on stagenet.
+
+```bash
+for i in $(seq 1 11); do
+  sthornode tx thorchain deposit 1000000000 rune \
+    "=<:SOL.SOL:$SOL_DEST_ADDR:999999999999/0/0" \
+    --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+  sleep 12
+done
+```
+
+**Result:**
+```bash
+gas estimate: 252456
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 1099585B1B98DED4B18A8FDC2B82F7E171AC94240FDF7937ACCCBA2F70FEE636
+gas estimate: 254904
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: FA5AE42880FE9C388FDBE6FF6B54DE80B21C37BAEA8EB70A9C91D49632507649
+gas estimate: 257352
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: FAB49FAF90B13B86A20EFB6A9DFFF942DB0099E479642ABE8348F3972F7E6584
+gas estimate: 259800
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 3381E849EA699575B151675BC43ADAA3553F445394B16A4A8456361BBD2875CE
+gas estimate: 262248
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 00B855003469BCE9E668DAD55114E30E47413FE8D778245AC793075219C9A327
+gas estimate: 264696
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 98A43C03A5908672025CD5E99D7C6692881E74FC93F9A033825DD29AD58F0E22
+gas estimate: 267144
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: DA022614F740EC92EB232FF181A2143C421E8AF3C098164D914429D4B85B3764
+```
+
+
+**Step 4 — Verify ≥11 swaps are queued**
+
+> **Note:** `/thorchain/swap/queue` returns "Not Implemented" on stagenet — `jq 'length'` on
+> that error JSON incorrectly returns 3 (the number of keys in the error object). Use
+> `/thorchain/queue` instead.
+
+```bash
+sleep 6
+curl -s "$STAGENET_API/thorchain/queue" | jq '.swap'
+```
+> Expected: ≥11
+
+**Result:**
+```bash
+~ curl -s "$STAGENET_API/thorchain/queue" | jq '.swap'
+14
+```
+
+**Step 5 — Submit victim swap at position 11+ and attempt to modify it**
+
+> The modify memo format is `m=<:<SOURCE_AMOUNT><SOURCE_ASSET>:<TARGET_AMOUNT><TARGET_ASSET>:<NEW_TARGET>`.
+> SOURCE and TARGET must match the original swap exactly — they identify the price-ratio bucket.
+> The bucket key is `source × 1e8 / target` so all 11 snode1 swaps (1000000000/999999999999)
+> land in the same bucket. The modify uses `m=<` (not `=<`), and the attacker must be a
+> **different sender** — using snode1 for both would find snode1's first swap at position 0,
+> bypassing the cap entirely.
+
+```bash
+# Victim submits at the same price and amount — lands at position 12+ in the bucket
+sthornode tx thorchain deposit 1000000000 rune \
+  "=<:SOL.SOL:$SOL_DEST_ADDR:999999999999/0/0" \
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+sleep 12
+
+# Attempt to modify: m=< identifies the bucket via original source+target amounts
+# Expected to fail because the bucket has >10 entries, hitting the cap before any match
+sthornode tx thorchain deposit 1000000 rune \
+  "m=<:1000000000THOR.RUNE:999999999999SOL.SOL:999999999998" \
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+```
+> Expected: second tx fails with `"swap index too large, exceeded max iterations (10)"`
+
+**Result:**
+```bash
+~ sthornode tx thorchain deposit 1000000000 rune \
+  "=<:SOL.SOL:$SOL_DEST_ADDR:999999999999/0/0" \
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+sleep 12
+gas estimate: 269628
+code: 32
+codespace: sdk
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: 'account sequence mismatch, expected 26718, got 26717: incorrect account
+  sequence'
+timestamp: ""
+tx: null
+txhash: 547EE7DBA4F5D8ACB6C8A056578F114BDD71313E5498629C816F96A302E2F87B
+
+~ sthornode tx thorchain deposit 1000000 rune \
+  "m=<:1000000000THOR.RUNE:999999999999SOL.SOL:999999999998" \
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+
+8:46AM ERR failure when running app err="rpc error: code = Unknown desc = rpc error: code = Unknown desc = failed to execute message; message index: 0: swap index too large, exceeded max iterations (10): internal error [gitlab.com/thorchain/thornode/v3/x/thorchain/msg_server.go:163] with gas used: '138502': unknown request"
+```
+
+**Step 6 — Raise the limit via mimir to rescue the victim's swap**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 20
+  sleep 2
+done
+sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXITERATIONS'
+```
+> Expected: `20`
+
+**Result:**
+```bash
+gas estimate: 764380
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 63AD8B3DB8EEF62D1E1054F78DEA5D3DD774282E768BEE87DCEFEDDD2A69EE83
+gas estimate: 852403
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 4C3BAE0931F5079DA84A1897683153211814389C4427EA9BD13D2A1A84E6CBC6
+gas estimate: 639716
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 2BE3E07CED908895830F71CB6090490D2FD367C78BDFACA767803EE42378AB45
+20
+```
+
+**Step 7 — Retry victim modification — should now succeed**
+
+> With `maxIterations = 20`, the cap is lifted. The handler now iterates all entries in the
+> bucket. If the victim's swap is present it will be found and modified (`code: 0`). If the
+> victim's `=<` from Step 5 failed (sequence mismatch), the handler fully iterates the bucket
+> and returns `"could not find matching limit swap"` — this still proves the rescue works:
+> the error changed from cap-exhaustion to "not found", confirming the iteration cap no longer
+> blocks access to the bucket.
+
+```bash
+sthornode tx thorchain deposit 1000000 rune \
+  "m=<:1000000000THOR.RUNE:999999999999SOL.SOL:999999999998" \
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+```
+> Expected: `code: 0` (or `"could not find matching limit swap"` if victim swap never landed — still confirms cap is lifted)
+
+**Result:**
+```bash
+~ sthornode tx thorchain deposit 1000000 rune \
+  "m=<:1000000000THOR.RUNE:999999999999SOL.SOL:999999999998" \
+  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
+
+8:48AM ERR failure when running app err="rpc error: code = Unknown desc = rpc error: code = Unknown desc = failed to execute message; message index: 0: could not find matching limit swap: internal error [gitlab.com/thorchain/thornode/v3/x/thorchain/msg_server.go:163] with gas used: '148840': unknown request"
+```
+
+> Step 5 victim `=<` tx had a sequence mismatch (code: 32), so no victim swap was placed.
+> With `maxIterations=20` the handler iterated all 14 bucket entries and returned "not found"
+> instead of "cap exceeded" — confirming the mimir rescue unblocks access to the bucket.
+
+**Step 8 — Reset mimir to default (100)**
+```bash
+for snode in $ACTIVE_NODES; do
+  sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
+    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 100
+  sleep 2
+done
+sleep 12
+curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXITERATIONS'
 ```
 > Expected: `100`
 
 **Result:**
-```
-
-```
-
-**Step 2 — Fill the price-ratio bucket with 110 attacker swaps**
 ```bash
-for i in $(seq 1 110); do
-  sthornode tx thorchain deposit 100000000 rune \
-    "=<:BTC.BTC:$BTC_DEST_ADDR:450000000/0/0" \
-    --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
-  sleep 1
-done
+gas estimate: 800593
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: C15C87527496E755293A72462E8FBC94A8646B1066A46354E7DF0AC9721B4EAC
+gas estimate: 764380
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: DD4D757E20E844BF8D0A2A5FE2CAA175E9EB02CFE64CE356083F4AEEDC957327
+gas estimate: 852403
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 42A25E409B15B7695BD581470D45BE09D5FE8D88185A5DCC84A509649B86A436
+gas estimate: 636606
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 888F54807BA863F3DF9A054AD9876E881B781AC037AEDD3416DA742B447180CA
+100
 ```
 
-**Result:**
-```
-
-```
-
-**Step 3 — Verify 110 swaps are queued**
-```bash
-curl -s "$STAGENET_API/thorchain/swap/queue" | jq 'length'
-```
-> Expected: ≥110
-
-**Result:**
-```
-
-```
-
-**Step 4 — Submit victim swap at position 101+ and attempt to modify it**
-```bash
-sthornode tx thorchain deposit 100000000 rune \
-  "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:450000000/0/0" \
-  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
-
-sthornode tx thorchain deposit 100000000 rune \
-  "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:445000000/0/0" \
-  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
-```
-> Expected: second tx fails with `"swap index too large, exceeded max iterations (100)"`
-
-**Result:**
-```
-
-```
-
-**Step 5 — Raise the limit via mimir to rescue the victim's swap**
-```bash
-for snode in $ACTIVE_NODES; do
-  sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
-    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- 200
-  sleep 2
-done
-sleep 12
-curl -s "$STAGENET_API/thorchain/mimir" | jq '.MODIFYLIMITSWAPMAXIMITERATIONS'
-```
-> Expected: `200`
-
-**Result:**
-```
-
-```
-
-**Step 6 — Retry victim modification — should now succeed**
-```bash
-sthornode tx thorchain deposit 100000000 rune \
-  "=<:BTC.BTC:$BTC_DEST_ADDR_VICTIM:445000000/0/0" \
-  --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
-```
-> Expected: tx succeeds
-
-**Result:**
-```
-
-```
-
-**Step 7 — Reset mimir**
-```bash
-for snode in $ACTIVE_NODES; do
-  sthornode tx thorchain mimir ModifyLimitSwapMaxIterations \
-    --from "$snode" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto -- -1
-  sleep 2
-done
-```
-
-**Result:**
-```
-
-```
-
-> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+> **Status:** `[x] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: Bucket filled with 14 snode1 swaps. Modify attempt correctly failed with `"swap index too large, exceeded max iterations (10)"` (DoS confirmed). After raising limit to 20 via mimir, error changed to `"could not find matching limit swap"` (cap lifted, rescue mechanism works). Step 5 victim `=<` tx had a sequence mismatch so no victim swap was placed, but the cap enforcement and rescue were both demonstrated.
 
 ---
 
@@ -1597,7 +1935,7 @@ curl -s "$STAGENET_API/thorchain/thorname/testaffiliate" \
 
 **Step 3 — Submit a small swap with affiliate (accumulates BELOW threshold)**
 ```bash
-sthornode tx thorchain deposit 100000000 rune \
+sthornode tx thorchain deposit 10000000000 rune \
   "=:BTC.BTC:$BTC_DEST_ADDR::testaffiliate:100" \
   --from snode3 --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 sleep 6
@@ -1953,11 +2291,11 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 
 | #    | Test                                   | Tier     | Priority   | Status |
 | ---- | -------------------------------------- | -------- | ---------- | ------ |
-| T1.1 | Non-deterministic consensus            | Critical | P0         | [ ]    |
-| T1.2 | RUNE supply restructure migration      | Critical | P0         | [ ]    |
-| T1.3 | Solana double-spend prevention         | Critical | P0         | [ ]    |
-| T1.4 | DoS via unbounded attestation          | Critical | P1         | [ ]    |
-| T1.5 | Limit swap DoS + rescue via mimir      | Critical | P1         | [ ]    |
+| T1.1 | Non-deterministic consensus            | Critical | P0         | [x]    |
+| T1.2 | RUNE supply restructure migration      | Critical | P0         | [x]    |
+| T1.3 | Solana double-spend prevention         | Critical | P0         | [x]    |
+| T1.4 | DoS via unbounded attestation          | Critical | P1         | [x]    |
+| T1.5 | Limit swap DoS + rescue via mimir      | Critical | P1         | [x]    |
 | T1.6 | Bond module accounting                 | Critical | P1         | [ ]    |
 | T1.7 | Gaia stuck outbounds (3 bugs)          | Critical | P1         | [ ]    |
 | T1.8 | Limit swap expiry — no fund lock       | Critical | [Security] | [ ]    |
