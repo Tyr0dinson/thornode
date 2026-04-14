@@ -41,6 +41,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgReserveContributor{}, ModuleName+"/MsgReserveContributor", nil)
 	cdc.RegisterConcrete(&MsgErrataTx{}, ModuleName+"/MsgErrataTx", nil)
 	cdc.RegisterConcrete(&MsgErrataTxQuorum{}, ModuleName+"/MsgErrataTxQuorum", nil)
+	cdc.RegisterConcrete(&MsgAddNodeChainSupport{}, ModuleName+"/MsgAddNodeChainSupport", nil)
 	cdc.RegisterConcrete(&MsgBan{}, ModuleName+"/MsgBan", nil)
 	cdc.RegisterConcrete(&MsgMimir{}, ModuleName+"/MsgMimir", nil)
 	cdc.RegisterConcrete(&MsgDeposit{}, ModuleName+"/MsgDeposit", nil)
@@ -70,6 +71,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 	registry.RegisterImplementations(
 		(*sdk.Msg)(nil),
+		&MsgAddNodeChainSupport{},
 		&MsgSwap{},
 		&MsgTssPool{},
 		&MsgTssKeysignFail{},
@@ -122,6 +124,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 }
 
 func DefineCustomGetSigners(signingOptions *signing.Options) {
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgAddNodeChainSupport"), MsgAddNodeChainSupportCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgBan"), MsgBanCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgDeposit"), MsgDepositCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgErrataTx"), MsgErrataCustomGetSigners)

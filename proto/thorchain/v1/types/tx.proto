@@ -2,6 +2,7 @@ syntax = "proto3";
 package types;
 
 import "cosmos/msg/v1/msg.proto";
+import "types/msg_add_node_chain_support.proto";
 import "types/msg_ban.proto";
 import "types/msg_deposit.proto";
 import "types/msg_errata.proto";
@@ -29,6 +30,7 @@ option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 service Msg {
   option (cosmos.msg.v1.service) = true;
 
+  rpc AddNodeChainSupport(MsgAddNodeChainSupport) returns (MsgEmpty);
   rpc Ban(MsgBan) returns (MsgEmpty);
   rpc Deposit(MsgDeposit) returns (MsgEmpty);
   rpc ErrataTx(MsgErrataTx) returns (MsgEmpty);

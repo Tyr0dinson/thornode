@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
+	Msg_AddNodeChainSupport_FullMethodName  = "/types.Msg/AddNodeChainSupport"
 	Msg_Ban_FullMethodName                  = "/types.Msg/Ban"
 	Msg_Deposit_FullMethodName              = "/types.Msg/Deposit"
 	Msg_ErrataTx_FullMethodName             = "/types.Msg/ErrataTx"
@@ -57,6 +58,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MsgClient interface {
+	AddNodeChainSupport(ctx context.Context, in *MsgAddNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Ban(ctx context.Context, in *MsgBan, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Deposit(ctx context.Context, in *MsgDeposit, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ErrataTx(ctx context.Context, in *MsgErrataTx, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -99,6 +101,15 @@ type msgClient struct {
 
 func NewMsgClient(cc grpc.ClientConnInterface) MsgClient {
 	return &msgClient{cc}
+}
+
+func (c *msgClient) AddNodeChainSupport(ctx context.Context, in *MsgAddNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_AddNodeChainSupport_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *msgClient) Ban(ctx context.Context, in *MsgBan, opts ...grpc.CallOption) (*MsgEmpty, error) {
@@ -384,6 +395,7 @@ func (c *msgClient) ClearAdmin(ctx context.Context, in *types.MsgClearAdmin, opt
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
 type MsgServer interface {
+	AddNodeChainSupport(context.Context, *MsgAddNodeChainSupport) (*MsgEmpty, error)
 	Ban(context.Context, *MsgBan) (*MsgEmpty, error)
 	Deposit(context.Context, *MsgDeposit) (*MsgEmpty, error)
 	ErrataTx(context.Context, *MsgErrataTx) (*MsgEmpty, error)
@@ -425,6 +437,9 @@ type MsgServer interface {
 type UnimplementedMsgServer struct {
 }
 
+func (UnimplementedMsgServer) AddNodeChainSupport(context.Context, *MsgAddNodeChainSupport) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddNodeChainSupport not implemented")
+}
 func (UnimplementedMsgServer) Ban(context.Context, *MsgBan) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ban not implemented")
 }
@@ -529,6 +544,24 @@ type UnsafeMsgServer interface {
 
 func RegisterMsgServer(s grpc.ServiceRegistrar, srv MsgServer) {
 	s.RegisterService(&Msg_ServiceDesc, srv)
+}
+
+func _Msg_AddNodeChainSupport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgAddNodeChainSupport)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).AddNodeChainSupport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_AddNodeChainSupport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).AddNodeChainSupport(ctx, req.(*MsgAddNodeChainSupport))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Msg_Ban_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1096,6 +1129,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "types.Msg",
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "AddNodeChainSupport",
+			Handler:    _Msg_AddNodeChainSupport_Handler,
+		},
 		{
 			MethodName: "Ban",
 			Handler:    _Msg_Ban_Handler,
