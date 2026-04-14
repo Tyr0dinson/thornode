@@ -108,6 +108,14 @@ func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 		return fmt.Errorf("fail to unbond, still part of the retiring vault")
 	}
 
+	inRagnarokVault, err := isNodeInRagnarokingChainVault(ctx, h.mgr, na)
+	if err != nil {
+		return ErrInternal(err, "fail to check ragnaroking chain vault membership")
+	}
+	if inRagnarokVault {
+		return fmt.Errorf("fail to unbond, node is in a vault for a ragnaroking chain")
+	}
+
 	from, err := cosmos.AccAddressFromBech32(msg.BondAddress.String())
 	if err != nil {
 		return ErrInternal(err, "fail to parse from address")

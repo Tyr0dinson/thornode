@@ -63,6 +63,15 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 	if nodeAcc.IsEmpty() {
 		return cosmos.ErrUnknownRequest("node account doesn't exist")
 	}
+
+	inRagnarokVault, err := isNodeInRagnarokingChainVault(ctx, h.mgr, nodeAcc)
+	if err != nil {
+		return ErrInternal(err, "fail to check ragnaroking chain vault membership")
+	}
+	if inRagnarokVault {
+		return fmt.Errorf("node is in a vault for a ragnaroking chain and cannot leave until the chain ragnarok completes")
+	}
+
 	if !nodeAcc.BondAddress.Equals(msg.Tx.FromAddress) {
 		// the msg was not sent from the node operator address
 		// allow bond providers > minBond to issue leave

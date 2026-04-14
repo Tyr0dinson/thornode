@@ -442,6 +442,104 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 				c.Check(result, NotNil, Commentf(name))
 			},
 		},
+		{
+			name: "node in active vault for ragnaroking chain should be blocked from leaving",
+			messageProvider: func(ctx cosmos.Context, helper *LeaveHandlerTestHelper) cosmos.Msg {
+				nodeAccount := GetRandomValidatorNode(NodeActive)
+				nodeAccount.Bond = cosmos.NewUint(100 * common.One)
+				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
+
+				activeVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+				activeVault.Membership = common.PubKeys{
+					nodeAccount.PubKeySet.Secp256k1,
+					GetRandomPubKey(),
+				}.Strings()
+				c.Assert(helper.Keeper.SetVault(ctx, activeVault), IsNil)
+
+				pool := NewPool()
+				pool.Asset = common.BTCAsset
+				pool.Status = PoolStaged
+				c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
+				helper.Keeper.SetPoolRagnarokStart(ctx, common.BTCAsset)
+
+				tx := GetRandomTx()
+				tx.Coins[0].Amount = cosmos.ZeroUint()
+				tx.FromAddress = nodeAccount.BondAddress
+				return NewMsgLeave(tx, nodeAccount.NodeAddress, GetRandomBech32Addr())
+			},
+			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *LeaveHandlerTestHelper, name string, msg cosmos.Msg) {
+				c.Check(err, NotNil, Commentf(name))
+				c.Check(result, IsNil, Commentf(name))
+				c.Check(err.Error(), Matches, ".*ragnaroking chain.*", Commentf(name))
+			},
+		},
+		{
+			name: "node in retiring vault for ragnaroking chain should be blocked from leaving",
+			messageProvider: func(ctx cosmos.Context, helper *LeaveHandlerTestHelper) cosmos.Msg {
+				nodeAccount := GetRandomValidatorNode(NodeDisabled)
+				nodeAccount.Bond = cosmos.NewUint(100)
+				activeNodeAccount := GetRandomValidatorNode(NodeActive)
+				c.Assert(helper.Keeper.SetNodeAccount(ctx, activeNodeAccount), IsNil)
+				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
+
+				activeVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+				c.Assert(helper.Keeper.SetVault(ctx, activeVault), IsNil)
+
+				retiringVault := NewVault(1000, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+				retiringVault.Membership = common.PubKeys{
+					nodeAccount.PubKeySet.Secp256k1,
+					GetRandomPubKey(),
+				}.Strings()
+				c.Assert(helper.Keeper.SetVault(ctx, retiringVault), IsNil)
+
+				pool := NewPool()
+				pool.Asset = common.BTCAsset
+				pool.Status = PoolStaged
+				c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
+				helper.Keeper.SetPoolRagnarokStart(ctx, common.BTCAsset)
+
+				tx := GetRandomTx()
+				tx.Coins[0].Amount = cosmos.ZeroUint()
+				tx.FromAddress = nodeAccount.BondAddress
+				return NewMsgLeave(tx, nodeAccount.NodeAddress, GetRandomBech32Addr())
+			},
+			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *LeaveHandlerTestHelper, name string, msg cosmos.Msg) {
+				c.Check(err, NotNil, Commentf(name))
+				c.Check(result, IsNil, Commentf(name))
+				c.Check(err.Error(), Matches, ".*ragnaroking chain.*", Commentf(name))
+			},
+		},
+		{
+			name: "node not in ragnaroking chain vault should be allowed to leave",
+			messageProvider: func(ctx cosmos.Context, helper *LeaveHandlerTestHelper) cosmos.Msg {
+				nodeAccount := GetRandomValidatorNode(NodeStandby)
+				nodeAccount.Bond = cosmos.NewUint(100)
+				activeNodeAccount := GetRandomValidatorNode(NodeActive)
+				c.Assert(helper.Keeper.SetNodeAccount(ctx, activeNodeAccount), IsNil)
+				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
+
+				activeVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+				activeVault.Membership = common.PubKeys{
+					GetRandomPubKey(),
+				}.Strings()
+				c.Assert(helper.Keeper.SetVault(ctx, activeVault), IsNil)
+
+				pool := NewPool()
+				pool.Asset = common.BTCAsset
+				pool.Status = PoolStaged
+				c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
+				helper.Keeper.SetPoolRagnarokStart(ctx, common.BTCAsset)
+
+				tx := GetRandomTx()
+				tx.Coins[0].Amount = cosmos.ZeroUint()
+				tx.FromAddress = nodeAccount.BondAddress
+				return NewMsgLeave(tx, nodeAccount.NodeAddress, GetRandomBech32Addr())
+			},
+			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *LeaveHandlerTestHelper, name string, msg cosmos.Msg) {
+				c.Check(err, IsNil, Commentf(name))
+				c.Check(result, NotNil, Commentf(name))
+			},
+		},
 	}
 
 	for _, tc := range testCases {

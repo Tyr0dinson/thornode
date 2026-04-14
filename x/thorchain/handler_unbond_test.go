@@ -289,6 +289,82 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (HandlerUnBondSuite) TestUnBondHandler_RagnarokingChainVault(c *C) {
+	ctx, k1 := setupKeeperForTest(c)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
+	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
+	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
+
+	vault := NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = common.PubKeys{
+		standbyNodeAccount.PubKeySet.Secp256k1,
+		GetRandomPubKey(),
+	}.Strings()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(k1.SetVault(ctx, vault), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolStaged
+	c.Assert(k1.SetPool(ctx, pool), IsNil)
+	k1.SetPoolRagnarokStart(ctx, common.BTCAsset)
+
+	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k1))
+	txIn := common.NewTx(
+		GetRandomTxHash(),
+		standbyNodeAccount.BondAddress,
+		GetRandomETHAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
+		},
+		common.Gas{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(10000)),
+		},
+		"unbond me please",
+	)
+	msg := NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(5*common.One)), standbyNodeAccount.BondAddress, nil, activeNodeAccount.NodeAddress)
+	_, err := handler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*ragnaroking chain.*")
+}
+
+func (HandlerUnBondSuite) TestUnBondHandler_NoRagnarokAllowsUnbond(c *C) {
+	ctx, k1 := setupKeeperForTest(c)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
+	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
+	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
+
+	vault := NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{})
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(k1.SetVault(ctx, vault), IsNil)
+
+	bondSum := activeNodeAccount.Bond.Add(standbyNodeAccount.Bond)
+	FundModule(c, ctx, k1, BondName, bondSum.Uint64())
+
+	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k1))
+	txIn := common.NewTx(
+		GetRandomTxHash(),
+		standbyNodeAccount.BondAddress,
+		GetRandomETHAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
+		},
+		common.Gas{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(10000)),
+		},
+		"unbond me please",
+	)
+	msg := NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(5*common.One)), standbyNodeAccount.BondAddress, nil, activeNodeAccount.NodeAddress)
+	_, err := handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+}
+
 func (HandlerUnBondSuite) TestBondProviders_Validate(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)

@@ -1817,3 +1817,41 @@ func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Cha
 
 	return nil
 }
+
+func isNodeInRagnarokingChainVault(ctx cosmos.Context, mgr Manager, na NodeAccount) (bool, error) {
+	ragnarokingChains := make(map[common.Chain]struct{})
+	pools, err := mgr.Keeper().GetPools(ctx)
+	if err != nil {
+		return false, fmt.Errorf("fail to get pools: %w", err)
+	}
+	for _, pool := range pools {
+		height, err := mgr.Keeper().GetPoolRagnarokStart(ctx, pool.Asset)
+		if err != nil {
+			continue
+		}
+		if height > 0 {
+			ragnarokingChains[pool.Asset.GetChain()] = struct{}{}
+		}
+	}
+	if len(ragnarokingChains) == 0 {
+		return false, nil
+	}
+
+	for _, status := range []VaultStatus{ActiveVault, RetiringVault} {
+		vaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, status)
+		if err != nil {
+			return false, fmt.Errorf("fail to get %s vaults: %w", status, err)
+		}
+		for _, v := range vaults {
+			if !v.GetMembership().Contains(na.PubKeySet.Secp256k1) {
+				continue
+			}
+			for _, c := range v.GetChains() {
+				if _, ok := ragnarokingChains[c]; ok {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
