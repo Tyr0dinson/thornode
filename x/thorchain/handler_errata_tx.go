@@ -53,6 +53,8 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
 
+	chainNAs := getChainConsensusNodeAccounts(ctx, h.mgr, msg.Chain, active)
+
 	voter, err := h.mgr.Keeper().GetErrataTxVoter(ctx, msg.TxID, msg.Chain)
 	if err != nil {
 		return nil, err
@@ -62,7 +64,7 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 		h.mgr.Keeper().SetErrataTxVoter(ctx, voter)
 	}()
 
-	if err := processErrataTxAttestation(ctx, h.mgr, &voter, msg.Signer, active, &common.ErrataTx{Id: msg.TxID, Chain: msg.Chain}, true); err != nil {
+	if err := processErrataTxAttestation(ctx, h.mgr, &voter, msg.Signer, chainNAs, &common.ErrataTx{Id: msg.TxID, Chain: msg.Chain}, true); err != nil {
 		ctx.Logger().Error("fail to process errata tx attestation", "error", err)
 		return nil, err
 	}

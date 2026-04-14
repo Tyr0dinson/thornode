@@ -880,3 +880,98 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+func (s *HandlerErrataTxSuite) TestChainAwareConsensus(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1024)
+
+	// 6 active nodes, but only nas[0..2] are in the BTC vault.
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+
+	// Create an active Asgard vault for BTC with only nas[0..2] as members.
+	btcVault := GetRandomVault()
+	btcVault.Status = ActiveVault
+	btcVault.Type = AsgardVault
+	btcVault.Chains = []string{common.BTCChain.String()}
+	btcVault.Membership = []string{
+		nas[0].PubKeySet.Secp256k1.String(),
+		nas[1].PubKeySet.Secp256k1.String(),
+		nas[2].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	handler := NewErrataTxHandler(mgr)
+	txID := GetRandomTxHash()
+
+	// Seed an observed inbound so processErrataTxAttestation has something to process.
+	observedTx := NewObservedTx(common.Tx{
+		ID:          txID,
+		Chain:       common.BTCChain,
+		FromAddress: GetRandomBTCAddress(),
+		ToAddress:   GetRandomBTCAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100000000))),
+		Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(10000))},
+		Memo:        "swap:BTC.BTC:" + GetRandomBTCAddress().String(),
+	}, 1000, btcVault.PubKey, 1000)
+	observedTx.Tx.Coins = append(observedTx.Tx.Coins, common.NewCoin(common.RuneAsset(), cosmos.NewUint(100000000)))
+	voter := NewObservedTxVoter(txID, []ObservedTx{observedTx})
+	voter.FinalisedHeight = 1000
+	voter.Tx = voter.Txs[0]
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000_00000000)
+	pool.BalanceAsset = cosmos.NewUint(10_00000000)
+	pool.LPUnits = cosmos.NewUint(100)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	broadcast := func(c *C, na NodeAccount) {
+		msg := NewMsgErrataTx(txID, common.BTCChain, na.NodeAddress)
+		_, err := handler.handle(ctx, *msg)
+		c.Assert(err, IsNil)
+	}
+
+	// With 3 chain participants, consensus needs 2 of 3.
+	// nas[0] signs — no consensus yet.
+	broadcast(c, nas[0])
+	errataVoter, err := mgr.Keeper().GetErrataTxVoter(ctx, txID, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(errataVoter.BlockHeight, Equals, int64(0), Commentf("should not have consensus with 1 of 3"))
+
+	// nas[1] signs — 2 of 3 reaches consensus.
+	broadcast(c, nas[1])
+	errataVoter, err = mgr.Keeper().GetErrataTxVoter(ctx, txID, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(errataVoter.BlockHeight, Equals, ctx.BlockHeight(), Commentf("should have consensus with 2 of 3 chain participants"))
+
+	// nas[3] (not in vault) should not be penalized.
+	pts3, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[3].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts3, Equals, int64(0), Commentf("non-chain-participant should not be penalized"))
+
+	// nas[4] and nas[5] also unaffected.
+	pts4, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[4].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts4, Equals, int64(0))
+	pts5, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[5].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts5, Equals, int64(0))
+
+	// nas[2] (in vault but didn't sign) should have LackOfObservationPenalty.
+	pts2, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[2].NodeAddress)
+	c.Assert(err, IsNil)
+	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
+	c.Assert(pts2, Equals, lackOfObservationPenalty, Commentf("chain-participant non-signer should be penalized"))
+}

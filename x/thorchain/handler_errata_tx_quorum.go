@@ -48,6 +48,8 @@ func (h ErrataTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgErrataTxQ
 
 	er := msg.QuoErrata.ErrataTx
 
+	chainNAs := getChainConsensusNodeAccounts(ctx, h.mgr, er.Chain, active)
+
 	voter, err := h.mgr.Keeper().GetErrataTxVoter(ctx, er.Id, er.Chain)
 	if err != nil {
 		return nil, err
@@ -71,7 +73,7 @@ func (h ErrataTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgErrataTxQ
 			continue
 		}
 
-		if err := processErrataTxAttestation(ctx, h.mgr, &voter, accAddr, active, er, false); err != nil {
+		if err := processErrataTxAttestation(ctx, h.mgr, &voter, accAddr, chainNAs, er, false); err != nil {
 			return nil, fmt.Errorf("fail to process errata tx attestation: %w", err)
 		}
 	}
