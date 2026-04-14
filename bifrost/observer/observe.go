@@ -42,6 +42,10 @@ const deckRefreshTime = 1 * time.Second
 // are computed and gossiped via p2p
 const defaultOracleUpdateInterval = 1 * time.Second
 
+// supportedChainsRefreshTime is how often the observer recomputes the
+// supported chains from PubKeyManager and diffs against the previous set.
+const supportedChainsRefreshTime = 6 * time.Second
+
 type txInKey struct {
 	chain  common.Chain
 	height int64
@@ -88,6 +92,10 @@ type Observer struct {
 	lastNodeStatusMu sync.RWMutex
 
 	deckDumpFile string
+
+	supportedChains    map[common.Chain]bool
+	supportedChainsMu  sync.RWMutex
+	getSupportedChains func() []common.Chain
 }
 
 // NewObserver create a new instance of Observer for chain
@@ -130,7 +138,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		return nil, fmt.Errorf("fail to create oracle instance: %w", err)
 	}
 
-	return &Observer{
+	obs := &Observer{
 		logger:                logger,
 		chains:                chains,
 		oracle:                priceOracle,
@@ -153,7 +161,9 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		attestationGossip:     attestationGossip,
 		observerWorkers:       observerWorkers,
 		deckDumpFile:          deckDumpFile,
-	}, nil
+	}
+	obs.getSupportedChains = pubkeyMgr.GetSupportedChains
+	return obs, nil
 }
 
 func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, error) {
@@ -167,7 +177,16 @@ func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, err
 
 func (o *Observer) Start(ctx context.Context) error {
 	o.restoreDeck()
-	for _, chain := range o.chains {
+	for chainID, chain := range o.chains {
+		c := chainID
+		chain.SetShouldObserveCallback(func() bool {
+			o.supportedChainsMu.RLock()
+			defer o.supportedChainsMu.RUnlock()
+			if o.supportedChains == nil {
+				return true
+			}
+			return o.supportedChains[c]
+		})
 		chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
 	}
 	o.oracle.Start()
@@ -179,6 +198,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
 	go o.processPriceFeedQueue(ctx)
+	go o.refreshSupportedChains()
 	return nil
 }
 
@@ -836,6 +856,52 @@ func (o *Observer) processPriceFeedQueue(ctx context.Context) {
 				}
 			}
 		}
+	}
+}
+
+func (o *Observer) refreshSupportedChains() {
+	for {
+		select {
+		case <-o.stopChan:
+			return
+		case <-time.After(supportedChainsRefreshTime):
+			o.recomputeSupportedChains()
+		}
+	}
+}
+
+func (o *Observer) recomputeSupportedChains() {
+	chains := o.getSupportedChains()
+	newSet := make(map[common.Chain]bool, len(chains))
+	for _, c := range chains {
+		newSet[c] = true
+	}
+
+	o.supportedChainsMu.Lock()
+	oldSet := o.supportedChains
+	o.supportedChains = newSet
+	o.supportedChainsMu.Unlock()
+
+	if oldSet == nil {
+		return
+	}
+
+	var added, removed []string
+	for c := range newSet {
+		if !oldSet[c] {
+			added = append(added, c.String())
+		}
+	}
+	for c := range oldSet {
+		if !newSet[c] {
+			removed = append(removed, c.String())
+		}
+	}
+	if len(added) > 0 || len(removed) > 0 {
+		o.logger.Info().
+			Strs("chains_added", added).
+			Strs("chains_removed", removed).
+			Msg("supported chains changed")
 	}
 }
 

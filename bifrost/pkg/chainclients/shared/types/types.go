@@ -65,6 +65,10 @@ type ChainClient interface {
 
 	// RollbackBlockScanner rolls back the block scanner to re-observe recent blocks.
 	RollbackBlockScanner() error
+
+	// SetShouldObserveCallback sets a callback that the block scanner checks each
+	// iteration; when it returns false the scanner pauses polling.
+	SetShouldObserveCallback(cb func() bool)
 }
 
 // SolvencyReporter reports the solvency of the chain at the given height.

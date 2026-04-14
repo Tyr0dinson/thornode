@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -933,4 +934,179 @@ func (s *ObserverSuite) TestPeerConcurrencyLimits(c *C) {
 		c.Assert(exists, Equals, false)
 		peerMgr.mu.Unlock()
 	}
+}
+
+// testChainClient is a lightweight mock for testing supported-chain tracking.
+type testChainClient struct {
+	chain    common.Chain
+	callback func() bool
+}
+
+func (t *testChainClient) Start(chan types.TxIn, chan types.ErrataBlock, chan types.Solvency, chan common.NetworkFee) {
+}
+func (t *testChainClient) Stop()                       {}
+func (t *testChainClient) IsBlockScannerHealthy() bool { return true }
+func (t *testChainClient) SignTx(types.TxOutItem, int64) ([]byte, []byte, *types.TxInItem, error) {
+	return nil, nil, nil, nil
+}
+func (t *testChainClient) BroadcastTx(types.TxOutItem, []byte) (string, error) { return "", nil }
+func (t *testChainClient) GetHeight() (int64, error)                           { return 0, nil }
+func (t *testChainClient) GetAddress(common.PubKey) string                     { return "" }
+func (t *testChainClient) GetAccount(common.PubKey, *big.Int) (common.Account, error) {
+	return common.Account{}, nil
+}
+func (t *testChainClient) GetAccountByAddress(string, *big.Int) (common.Account, error) {
+	return common.Account{}, nil
+}
+func (t *testChainClient) GetChain() common.Chain { return t.chain }
+func (t *testChainClient) GetConfig() config.BifrostChainConfiguration {
+	return config.BifrostChainConfiguration{}
+}
+func (t *testChainClient) OnObservedTxIn(types.TxInItem, int64)               {}
+func (t *testChainClient) GetConfirmationCount(types.TxIn) int64              { return 0 }
+func (t *testChainClient) ConfirmationCountReady(types.TxIn) bool             { return true }
+func (t *testChainClient) GetBlockScannerHeight() (int64, error)              { return 0, nil }
+func (t *testChainClient) GetLatestTxForVault(string) (string, string, error) { return "", "", nil }
+func (t *testChainClient) RollbackBlockScanner() error                        { return nil }
+func (t *testChainClient) SetShouldObserveCallback(cb func() bool)            { t.callback = cb }
+
+func (s *ObserverSuite) TestRecomputeSupportedChains(c *C) {
+	tempDir, err := os.MkdirTemp("", "observer-chain-test")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tempDir)
+
+	btcClient := &testChainClient{chain: common.BTCChain}
+	ethClient := &testChainClient{chain: common.ETHChain}
+	dogeClient := &testChainClient{chain: common.DOGEChain}
+
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
+	c.Assert(err, IsNil)
+
+	ag, err := NewAttestationGossip(NewMockHost([]peer.ID{}), s.thorKeys, "localhost:50053", s.bridge, s.metrics, config.BifrostAttestationGossipConfig{})
+	c.Assert(err, IsNil)
+
+	obs, err := NewObserver(
+		pubkeyMgr,
+		map[common.Chain]chainclients.ChainClient{
+			common.BTCChain:  btcClient,
+			common.ETHChain:  ethClient,
+			common.DOGEChain: dogeClient,
+		},
+		s.bridge,
+		s.metrics,
+		tempDir,
+		metrics.NewTssKeysignMetricMgr(),
+		ag,
+		"",
+	)
+	c.Assert(err, IsNil)
+
+	// Override getSupportedChains with a controllable mock
+	supportedChains := []common.Chain{common.BTCChain, common.ETHChain, common.DOGEChain}
+	obs.getSupportedChains = func() []common.Chain {
+		return supportedChains
+	}
+
+	// First call: initializes the set, no diff logged (oldSet is nil)
+	obs.recomputeSupportedChains()
+	obs.supportedChainsMu.RLock()
+	c.Assert(obs.supportedChains[common.BTCChain], Equals, true)
+	c.Assert(obs.supportedChains[common.ETHChain], Equals, true)
+	c.Assert(obs.supportedChains[common.DOGEChain], Equals, true)
+	obs.supportedChainsMu.RUnlock()
+
+	// Second call: remove DOGE, add nothing — should detect removal
+	supportedChains = []common.Chain{common.BTCChain, common.ETHChain}
+	obs.recomputeSupportedChains()
+	obs.supportedChainsMu.RLock()
+	c.Assert(obs.supportedChains[common.BTCChain], Equals, true)
+	c.Assert(obs.supportedChains[common.ETHChain], Equals, true)
+	c.Assert(obs.supportedChains[common.DOGEChain], Equals, false)
+	obs.supportedChainsMu.RUnlock()
+
+	// Third call: add DOGE back, remove ETH — should detect both
+	supportedChains = []common.Chain{common.BTCChain, common.DOGEChain}
+	obs.recomputeSupportedChains()
+	obs.supportedChainsMu.RLock()
+	c.Assert(obs.supportedChains[common.BTCChain], Equals, true)
+	c.Assert(obs.supportedChains[common.ETHChain], Equals, false)
+	c.Assert(obs.supportedChains[common.DOGEChain], Equals, true)
+	obs.supportedChainsMu.RUnlock()
+
+	// No change: calling again with same set should not change anything
+	obs.recomputeSupportedChains()
+	obs.supportedChainsMu.RLock()
+	c.Assert(obs.supportedChains[common.BTCChain], Equals, true)
+	c.Assert(obs.supportedChains[common.DOGEChain], Equals, true)
+	obs.supportedChainsMu.RUnlock()
+
+	obs.storage.Close()
+}
+
+func (s *ObserverSuite) TestShouldObserveCallbackWiring(c *C) {
+	tempDir, err := os.MkdirTemp("", "observer-callback-test")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(tempDir)
+
+	btcClient := &testChainClient{chain: common.BTCChain}
+	ethClient := &testChainClient{chain: common.ETHChain}
+
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
+	c.Assert(err, IsNil)
+
+	ag, err := NewAttestationGossip(NewMockHost([]peer.ID{}), s.thorKeys, "localhost:50054", s.bridge, s.metrics, config.BifrostAttestationGossipConfig{})
+	c.Assert(err, IsNil)
+
+	obs, err := NewObserver(
+		pubkeyMgr,
+		map[common.Chain]chainclients.ChainClient{
+			common.BTCChain: btcClient,
+			common.ETHChain: ethClient,
+		},
+		s.bridge,
+		s.metrics,
+		tempDir,
+		metrics.NewTssKeysignMetricMgr(),
+		ag,
+		"",
+	)
+	c.Assert(err, IsNil)
+
+	// Override getSupportedChains
+	obs.getSupportedChains = func() []common.Chain {
+		return []common.Chain{common.BTCChain, common.ETHChain}
+	}
+
+	// Wire callbacks via Start — but stop immediately after to avoid side effects
+	err = obs.Start(context.Background())
+	c.Assert(err, IsNil)
+
+	// Callbacks should have been set
+	c.Assert(btcClient.callback, NotNil)
+	c.Assert(ethClient.callback, NotNil)
+
+	// Before recompute, supportedChains is nil → callbacks return true (observe all)
+	c.Assert(btcClient.callback(), Equals, true)
+	c.Assert(ethClient.callback(), Equals, true)
+
+	// Recompute with only BTC supported
+	obs.getSupportedChains = func() []common.Chain {
+		return []common.Chain{common.BTCChain}
+	}
+	obs.recomputeSupportedChains()
+
+	c.Assert(btcClient.callback(), Equals, true)
+	c.Assert(ethClient.callback(), Equals, false)
+
+	// Recompute with both supported again
+	obs.getSupportedChains = func() []common.Chain {
+		return []common.Chain{common.BTCChain, common.ETHChain}
+	}
+	obs.recomputeSupportedChains()
+
+	c.Assert(btcClient.callback(), Equals, true)
+	c.Assert(ethClient.callback(), Equals, true)
+
+	err = obs.Stop()
+	c.Assert(err, IsNil)
 }

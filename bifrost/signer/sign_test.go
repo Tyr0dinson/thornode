@@ -295,6 +295,9 @@ func (b *MockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueu
 }
 
 func (b *MockChainClient) Stop() {}
+
+func (b *MockChainClient) SetShouldObserveCallback(_ func() bool) {}
+
 func (b *MockChainClient) ConfirmationCountReady(txIn types.TxIn) bool {
 	return true
 }
