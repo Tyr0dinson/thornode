@@ -14,6 +14,541 @@ import (
 )
 
 var (
+	md_ChainIncome        protoreflect.MessageDescriptor
+	fd_ChainIncome_chain  protoreflect.FieldDescriptor
+	fd_ChainIncome_amount protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_type_network_proto_init()
+	md_ChainIncome = File_types_type_network_proto.Messages().ByName("ChainIncome")
+	fd_ChainIncome_chain = md_ChainIncome.Fields().ByName("chain")
+	fd_ChainIncome_amount = md_ChainIncome.Fields().ByName("amount")
+}
+
+var _ protoreflect.Message = (*fastReflection_ChainIncome)(nil)
+
+type fastReflection_ChainIncome ChainIncome
+
+func (x *ChainIncome) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_ChainIncome)(x)
+}
+
+func (x *ChainIncome) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_network_proto_msgTypes[0]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_ChainIncome_messageType fastReflection_ChainIncome_messageType
+var _ protoreflect.MessageType = fastReflection_ChainIncome_messageType{}
+
+type fastReflection_ChainIncome_messageType struct{}
+
+func (x fastReflection_ChainIncome_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_ChainIncome)(nil)
+}
+func (x fastReflection_ChainIncome_messageType) New() protoreflect.Message {
+	return new(fastReflection_ChainIncome)
+}
+func (x fastReflection_ChainIncome_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_ChainIncome
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_ChainIncome) Descriptor() protoreflect.MessageDescriptor {
+	return md_ChainIncome
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_ChainIncome) Type() protoreflect.MessageType {
+	return _fastReflection_ChainIncome_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_ChainIncome) New() protoreflect.Message {
+	return new(fastReflection_ChainIncome)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_ChainIncome) Interface() protoreflect.ProtoMessage {
+	return (*ChainIncome)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_ChainIncome) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Chain != "" {
+		value := protoreflect.ValueOfString(x.Chain)
+		if !f(fd_ChainIncome_chain, value) {
+			return
+		}
+	}
+	if x.Amount != "" {
+		value := protoreflect.ValueOfString(x.Amount)
+		if !f(fd_ChainIncome_amount, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_ChainIncome) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.ChainIncome.chain":
+		return x.Chain != ""
+	case "types.ChainIncome.amount":
+		return x.Amount != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ChainIncome"))
+		}
+		panic(fmt.Errorf("message types.ChainIncome does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ChainIncome) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.ChainIncome.chain":
+		x.Chain = ""
+	case "types.ChainIncome.amount":
+		x.Amount = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ChainIncome"))
+		}
+		panic(fmt.Errorf("message types.ChainIncome does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_ChainIncome) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.ChainIncome.chain":
+		value := x.Chain
+		return protoreflect.ValueOfString(value)
+	case "types.ChainIncome.amount":
+		value := x.Amount
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ChainIncome"))
+		}
+		panic(fmt.Errorf("message types.ChainIncome does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ChainIncome) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.ChainIncome.chain":
+		x.Chain = value.Interface().(string)
+	case "types.ChainIncome.amount":
+		x.Amount = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ChainIncome"))
+		}
+		panic(fmt.Errorf("message types.ChainIncome does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ChainIncome) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.ChainIncome.chain":
+		panic(fmt.Errorf("field chain of message types.ChainIncome is not mutable"))
+	case "types.ChainIncome.amount":
+		panic(fmt.Errorf("field amount of message types.ChainIncome is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ChainIncome"))
+		}
+		panic(fmt.Errorf("message types.ChainIncome does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_ChainIncome) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.ChainIncome.chain":
+		return protoreflect.ValueOfString("")
+	case "types.ChainIncome.amount":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ChainIncome"))
+		}
+		panic(fmt.Errorf("message types.ChainIncome does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_ChainIncome) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.ChainIncome", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_ChainIncome) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ChainIncome) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_ChainIncome) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_ChainIncome) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*ChainIncome)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Chain)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Amount)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*ChainIncome)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Amount) > 0 {
+			i -= len(x.Amount)
+			copy(dAtA[i:], x.Amount)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Amount)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.Chain) > 0 {
+			i -= len(x.Chain)
+			copy(dAtA[i:], x.Chain)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Chain)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*ChainIncome)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ChainIncome: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ChainIncome: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Chain", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Chain = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Amount = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var _ protoreflect.List = (*_Network_9_list)(nil)
+
+type _Network_9_list struct {
+	list *[]*ChainIncome
+}
+
+func (x *_Network_9_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_Network_9_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_Network_9_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*ChainIncome)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_Network_9_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*ChainIncome)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_Network_9_list) AppendMutable() protoreflect.Value {
+	v := new(ChainIncome)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_Network_9_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_Network_9_list) NewElement() protoreflect.Value {
+	v := new(ChainIncome)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_Network_9_list) IsValid() bool {
+	return x.list != nil
+}
+
+var (
 	md_Network                            protoreflect.MessageDescriptor
 	fd_Network_bond_reward_rune           protoreflect.FieldDescriptor
 	fd_Network_total_bond_units           protoreflect.FieldDescriptor
@@ -21,6 +556,7 @@ var (
 	fd_Network_NodeIncomeSplit            protoreflect.FieldDescriptor
 	fd_Network_outbound_gas_spent_rune    protoreflect.FieldDescriptor
 	fd_Network_outbound_gas_withheld_rune protoreflect.FieldDescriptor
+	fd_Network_chain_income               protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -32,6 +568,7 @@ func init() {
 	fd_Network_NodeIncomeSplit = md_Network.Fields().ByName("NodeIncomeSplit")
 	fd_Network_outbound_gas_spent_rune = md_Network.Fields().ByName("outbound_gas_spent_rune")
 	fd_Network_outbound_gas_withheld_rune = md_Network.Fields().ByName("outbound_gas_withheld_rune")
+	fd_Network_chain_income = md_Network.Fields().ByName("chain_income")
 }
 
 var _ protoreflect.Message = (*fastReflection_Network)(nil)
@@ -43,7 +580,7 @@ func (x *Network) ProtoReflect() protoreflect.Message {
 }
 
 func (x *Network) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_type_network_proto_msgTypes[0]
+	mi := &file_types_type_network_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -135,6 +672,12 @@ func (x *fastReflection_Network) Range(f func(protoreflect.FieldDescriptor, prot
 			return
 		}
 	}
+	if len(x.ChainIncome) != 0 {
+		value := protoreflect.ValueOfList(&_Network_9_list{list: &x.ChainIncome})
+		if !f(fd_Network_chain_income, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -162,6 +705,8 @@ func (x *fastReflection_Network) Has(fd protoreflect.FieldDescriptor) bool {
 		return x.OutboundGasSpentRune != uint64(0)
 	case "types.Network.outbound_gas_withheld_rune":
 		return x.OutboundGasWithheldRune != uint64(0)
+	case "types.Network.chain_income":
+		return len(x.ChainIncome) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Network"))
@@ -190,6 +735,8 @@ func (x *fastReflection_Network) Clear(fd protoreflect.FieldDescriptor) {
 		x.OutboundGasSpentRune = uint64(0)
 	case "types.Network.outbound_gas_withheld_rune":
 		x.OutboundGasWithheldRune = uint64(0)
+	case "types.Network.chain_income":
+		x.ChainIncome = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Network"))
@@ -224,6 +771,12 @@ func (x *fastReflection_Network) Get(descriptor protoreflect.FieldDescriptor) pr
 	case "types.Network.outbound_gas_withheld_rune":
 		value := x.OutboundGasWithheldRune
 		return protoreflect.ValueOfUint64(value)
+	case "types.Network.chain_income":
+		if len(x.ChainIncome) == 0 {
+			return protoreflect.ValueOfList(&_Network_9_list{})
+		}
+		listValue := &_Network_9_list{list: &x.ChainIncome}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Network"))
@@ -256,6 +809,10 @@ func (x *fastReflection_Network) Set(fd protoreflect.FieldDescriptor, value prot
 		x.OutboundGasSpentRune = value.Uint()
 	case "types.Network.outbound_gas_withheld_rune":
 		x.OutboundGasWithheldRune = value.Uint()
+	case "types.Network.chain_income":
+		lv := value.List()
+		clv := lv.(*_Network_9_list)
+		x.ChainIncome = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Network"))
@@ -276,6 +833,12 @@ func (x *fastReflection_Network) Set(fd protoreflect.FieldDescriptor, value prot
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Network) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "types.Network.chain_income":
+		if x.ChainIncome == nil {
+			x.ChainIncome = []*ChainIncome{}
+		}
+		value := &_Network_9_list{list: &x.ChainIncome}
+		return protoreflect.ValueOfList(value)
 	case "types.Network.bond_reward_rune":
 		panic(fmt.Errorf("field bond_reward_rune of message types.Network is not mutable"))
 	case "types.Network.total_bond_units":
@@ -313,6 +876,9 @@ func (x *fastReflection_Network) NewField(fd protoreflect.FieldDescriptor) proto
 		return protoreflect.ValueOfUint64(uint64(0))
 	case "types.Network.outbound_gas_withheld_rune":
 		return protoreflect.ValueOfUint64(uint64(0))
+	case "types.Network.chain_income":
+		list := []*ChainIncome{}
+		return protoreflect.ValueOfList(&_Network_9_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.Network"))
@@ -402,6 +968,12 @@ func (x *fastReflection_Network) ProtoMethods() *protoiface.Methods {
 		if x.OutboundGasWithheldRune != 0 {
 			n += 1 + runtime.Sov(uint64(x.OutboundGasWithheldRune))
 		}
+		if len(x.ChainIncome) > 0 {
+			for _, e := range x.ChainIncome {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -430,6 +1002,22 @@ func (x *fastReflection_Network) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.ChainIncome) > 0 {
+			for iNdEx := len(x.ChainIncome) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.ChainIncome[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x4a
+			}
 		}
 		if x.OutboundGasWithheldRune != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.OutboundGasWithheldRune))
@@ -654,6 +1242,40 @@ func (x *fastReflection_Network) ProtoMethods() *protoiface.Methods {
 						break
 					}
 				}
+			case 9:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ChainIncome", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.ChainIncome = append(x.ChainIncome, &ChainIncome{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.ChainIncome[len(x.ChainIncome)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -702,23 +1324,67 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ChainIncome struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Chain  string `protobuf:"bytes,1,opt,name=chain,proto3" json:"chain,omitempty"`
+	Amount string `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+}
+
+func (x *ChainIncome) Reset() {
+	*x = ChainIncome{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_type_network_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ChainIncome) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChainIncome) ProtoMessage() {}
+
+// Deprecated: Use ChainIncome.ProtoReflect.Descriptor instead.
+func (*ChainIncome) Descriptor() ([]byte, []int) {
+	return file_types_type_network_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ChainIncome) GetChain() string {
+	if x != nil {
+		return x.Chain
+	}
+	return ""
+}
+
+func (x *ChainIncome) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
 type Network struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	BondRewardRune          string `protobuf:"bytes,1,opt,name=bond_reward_rune,json=bondRewardRune,proto3" json:"bond_reward_rune,omitempty"`
-	TotalBondUnits          string `protobuf:"bytes,2,opt,name=total_bond_units,json=totalBondUnits,proto3" json:"total_bond_units,omitempty"`
-	LPIncomeSplit           int64  `protobuf:"varint,5,opt,name=LPIncomeSplit,proto3" json:"LPIncomeSplit,omitempty"`
-	NodeIncomeSplit         int64  `protobuf:"varint,6,opt,name=NodeIncomeSplit,proto3" json:"NodeIncomeSplit,omitempty"`
-	OutboundGasSpentRune    uint64 `protobuf:"varint,7,opt,name=outbound_gas_spent_rune,json=outboundGasSpentRune,proto3" json:"outbound_gas_spent_rune,omitempty"`
-	OutboundGasWithheldRune uint64 `protobuf:"varint,8,opt,name=outbound_gas_withheld_rune,json=outboundGasWithheldRune,proto3" json:"outbound_gas_withheld_rune,omitempty"`
+	BondRewardRune          string         `protobuf:"bytes,1,opt,name=bond_reward_rune,json=bondRewardRune,proto3" json:"bond_reward_rune,omitempty"`
+	TotalBondUnits          string         `protobuf:"bytes,2,opt,name=total_bond_units,json=totalBondUnits,proto3" json:"total_bond_units,omitempty"`
+	LPIncomeSplit           int64          `protobuf:"varint,5,opt,name=LPIncomeSplit,proto3" json:"LPIncomeSplit,omitempty"`
+	NodeIncomeSplit         int64          `protobuf:"varint,6,opt,name=NodeIncomeSplit,proto3" json:"NodeIncomeSplit,omitempty"`
+	OutboundGasSpentRune    uint64         `protobuf:"varint,7,opt,name=outbound_gas_spent_rune,json=outboundGasSpentRune,proto3" json:"outbound_gas_spent_rune,omitempty"`
+	OutboundGasWithheldRune uint64         `protobuf:"varint,8,opt,name=outbound_gas_withheld_rune,json=outboundGasWithheldRune,proto3" json:"outbound_gas_withheld_rune,omitempty"`
+	ChainIncome             []*ChainIncome `protobuf:"bytes,9,rep,name=chain_income,json=chainIncome,proto3" json:"chain_income,omitempty"`
 }
 
 func (x *Network) Reset() {
 	*x = Network{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_type_network_proto_msgTypes[0]
+		mi := &file_types_type_network_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -732,7 +1398,7 @@ func (*Network) ProtoMessage() {}
 
 // Deprecated: Use Network.ProtoReflect.Descriptor instead.
 func (*Network) Descriptor() ([]byte, []int) {
-	return file_types_type_network_proto_rawDescGZIP(), []int{0}
+	return file_types_type_network_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Network) GetBondRewardRune() string {
@@ -777,44 +1443,60 @@ func (x *Network) GetOutboundGasWithheldRune() uint64 {
 	return 0
 }
 
+func (x *Network) GetChainIncome() []*ChainIncome {
+	if x != nil {
+		return x.ChainIncome
+	}
+	return nil
+}
+
 var File_types_type_network_proto protoreflect.FileDescriptor
 
 var file_types_type_network_proto_rawDesc = []byte{
 	0x0a, 0x18, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x6e, 0x65, 0x74,
 	0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x74, 0x79, 0x70, 0x65,
 	0x73, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67,
-	0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xe1, 0x02, 0x0a, 0x07, 0x4e, 0x65, 0x74, 0x77,
-	0x6f, 0x72, 0x6b, 0x12, 0x48, 0x0a, 0x10, 0x62, 0x6f, 0x6e, 0x64, 0x5f, 0x72, 0x65, 0x77, 0x61,
-	0x72, 0x64, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8,
-	0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b,
-	0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x62,
-	0x6f, 0x6e, 0x64, 0x52, 0x65, 0x77, 0x61, 0x72, 0x64, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x48, 0x0a,
-	0x10, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x5f, 0x62, 0x6f, 0x6e, 0x64, 0x5f, 0x75, 0x6e, 0x69, 0x74,
-	0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f,
-	0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61,
-	0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x42, 0x6f,
-	0x6e, 0x64, 0x55, 0x6e, 0x69, 0x74, 0x73, 0x12, 0x24, 0x0a, 0x0d, 0x4c, 0x50, 0x49, 0x6e, 0x63,
-	0x6f, 0x6d, 0x65, 0x53, 0x70, 0x6c, 0x69, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0d,
-	0x4c, 0x50, 0x49, 0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x53, 0x70, 0x6c, 0x69, 0x74, 0x12, 0x28, 0x0a,
-	0x0f, 0x4e, 0x6f, 0x64, 0x65, 0x49, 0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x53, 0x70, 0x6c, 0x69, 0x74,
-	0x18, 0x06, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0f, 0x4e, 0x6f, 0x64, 0x65, 0x49, 0x6e, 0x63, 0x6f,
-	0x6d, 0x65, 0x53, 0x70, 0x6c, 0x69, 0x74, 0x12, 0x35, 0x0a, 0x17, 0x6f, 0x75, 0x74, 0x62, 0x6f,
-	0x75, 0x6e, 0x64, 0x5f, 0x67, 0x61, 0x73, 0x5f, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x5f, 0x72, 0x75,
-	0x6e, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x04, 0x52, 0x14, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75,
-	0x6e, 0x64, 0x47, 0x61, 0x73, 0x53, 0x70, 0x65, 0x6e, 0x74, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x3b,
-	0x0a, 0x1a, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x67, 0x61, 0x73, 0x5f, 0x77,
-	0x69, 0x74, 0x68, 0x68, 0x65, 0x6c, 0x64, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x08, 0x20, 0x01,
-	0x28, 0x04, 0x52, 0x17, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x47, 0x61, 0x73, 0x57,
-	0x69, 0x74, 0x68, 0x68, 0x65, 0x6c, 0x64, 0x52, 0x75, 0x6e, 0x65, 0x42, 0x7d, 0x0a, 0x09, 0x63,
-	0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x10, 0x54, 0x79, 0x70, 0x65, 0x4e, 0x65,
-	0x74, 0x77, 0x6f, 0x72, 0x6b, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69,
-	0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61,
-	0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61,
-	0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02,
-	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02,
-	0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61,
-	0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x33,
+	0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x5b, 0x0a, 0x0b, 0x43, 0x68, 0x61, 0x69, 0x6e,
+	0x49, 0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12, 0x36, 0x0a, 0x06,
+	0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde,
+	0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e,
+	0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x06, 0x61, 0x6d,
+	0x6f, 0x75, 0x6e, 0x74, 0x22, 0x9e, 0x03, 0x0a, 0x07, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b,
+	0x12, 0x48, 0x0a, 0x10, 0x62, 0x6f, 0x6e, 0x64, 0x5f, 0x72, 0x65, 0x77, 0x61, 0x72, 0x64, 0x5f,
+	0x72, 0x75, 0x6e, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00,
+	0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f,
+	0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x62, 0x6f, 0x6e, 0x64,
+	0x52, 0x65, 0x77, 0x61, 0x72, 0x64, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x48, 0x0a, 0x10, 0x74, 0x6f,
+	0x74, 0x61, 0x6c, 0x5f, 0x62, 0x6f, 0x6e, 0x64, 0x5f, 0x75, 0x6e, 0x69, 0x74, 0x73, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f,
+	0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e,
+	0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x42, 0x6f, 0x6e, 0x64, 0x55,
+	0x6e, 0x69, 0x74, 0x73, 0x12, 0x24, 0x0a, 0x0d, 0x4c, 0x50, 0x49, 0x6e, 0x63, 0x6f, 0x6d, 0x65,
+	0x53, 0x70, 0x6c, 0x69, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0d, 0x4c, 0x50, 0x49,
+	0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x53, 0x70, 0x6c, 0x69, 0x74, 0x12, 0x28, 0x0a, 0x0f, 0x4e, 0x6f,
+	0x64, 0x65, 0x49, 0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x53, 0x70, 0x6c, 0x69, 0x74, 0x18, 0x06, 0x20,
+	0x01, 0x28, 0x03, 0x52, 0x0f, 0x4e, 0x6f, 0x64, 0x65, 0x49, 0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x53,
+	0x70, 0x6c, 0x69, 0x74, 0x12, 0x35, 0x0a, 0x17, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64,
+	0x5f, 0x67, 0x61, 0x73, 0x5f, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18,
+	0x07, 0x20, 0x01, 0x28, 0x04, 0x52, 0x14, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x47,
+	0x61, 0x73, 0x53, 0x70, 0x65, 0x6e, 0x74, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x3b, 0x0a, 0x1a, 0x6f,
+	0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x67, 0x61, 0x73, 0x5f, 0x77, 0x69, 0x74, 0x68,
+	0x68, 0x65, 0x6c, 0x64, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x08, 0x20, 0x01, 0x28, 0x04, 0x52,
+	0x17, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x47, 0x61, 0x73, 0x57, 0x69, 0x74, 0x68,
+	0x68, 0x65, 0x6c, 0x64, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x3b, 0x0a, 0x0c, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x5f, 0x69, 0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x18, 0x09, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12,
+	0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x43, 0x68, 0x61, 0x69, 0x6e, 0x49, 0x6e, 0x63, 0x6f,
+	0x6d, 0x65, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0b, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x49,
+	0x6e, 0x63, 0x6f, 0x6d, 0x65, 0x42, 0x7d, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0x42, 0x10, 0x54, 0x79, 0x70, 0x65, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
+	0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -829,16 +1511,18 @@ func file_types_type_network_proto_rawDescGZIP() []byte {
 	return file_types_type_network_proto_rawDescData
 }
 
-var file_types_type_network_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_types_type_network_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_types_type_network_proto_goTypes = []interface{}{
-	(*Network)(nil), // 0: types.Network
+	(*ChainIncome)(nil), // 0: types.ChainIncome
+	(*Network)(nil),     // 1: types.Network
 }
 var file_types_type_network_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: types.Network.chain_income:type_name -> types.ChainIncome
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_types_type_network_proto_init() }
@@ -848,6 +1532,18 @@ func file_types_type_network_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_types_type_network_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ChainIncome); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_type_network_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Network); i {
 			case 0:
 				return &v.state
@@ -866,7 +1562,7 @@ func file_types_type_network_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_type_network_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
