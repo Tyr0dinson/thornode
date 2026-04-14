@@ -358,6 +358,9 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 		if err := mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, toi.Coin.Asset, totalOutboundFeeRune); err != nil {
 			ctx.Logger().Error("fail to add to outbound fee withheld rune", "outbound asset", toi.Coin.Asset, "error", err)
 		}
+		if err := mgr.Keeper().AddChainIncome(ctx, toi.Chain, totalOutboundFeeRune); err != nil {
+			ctx.Logger().Error("fail to add outbound fee to chain income", "chain", toi.Chain, "error", err)
+		}
 	}
 
 	return true, nil

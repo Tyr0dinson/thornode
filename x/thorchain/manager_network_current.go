@@ -1638,6 +1638,19 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 	tcyStakeSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.TCYStakeSystemIncomeBps)
 	marketingFundSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.MarketingFundSystemIncomeBps)
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
+
+	// Compute blockReward (emission) for per-chain income bucketing.
+	// Uses the same emissionCurve (possibly overridden above) that calcBlockRewards receives.
+	var blockReward cosmos.Uint
+	if emissionCurve > 0 && blocksPerYear > 0 {
+		trD := cosmos.NewDec(int64(totalReserve.Uint64()))
+		ecD := cosmos.NewDec(emissionCurve)
+		bpyD := cosmos.NewDec(blocksPerYear)
+		blockReward = cosmos.NewUint(uint64(trD.Quo(ecD).Quo(bpyD).RoundInt64()))
+	} else {
+		blockReward = cosmos.ZeroUint()
+	}
+
 	bondReward, totalPoolRewards, lpShare, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct := vm.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
 		totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve,
@@ -1751,7 +1764,59 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 			return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
 		}
 	}
-	network.BondRewardRune = network.BondRewardRune.Add(bondReward) // Add here for individual Node collection later
+
+	// Split bonder reward between emission-sourced (global) and fee-sourced (per-chain).
+	originalSystemIncome := blockReward.Add(totalLiquidityFees)
+	if !totalLiquidityFees.IsZero() && !originalSystemIncome.IsZero() {
+		feeBonderShare := common.GetSafeShare(totalLiquidityFees, originalSystemIncome, bondReward)
+		emissionBonderShare := common.SafeSub(bondReward, feeBonderShare)
+
+		// Group pool liquidity fees by chain for proportional attribution.
+		type chainFeeEntry struct {
+			chain common.Chain
+			fees  cosmos.Uint
+		}
+		chainFeeMap := make(map[common.Chain]cosmos.Uint)
+		for _, pool := range availablePools {
+			fees, feeErr := vm.k.GetPoolLiquidityFees(ctx, currentHeight, pool.Asset)
+			if feeErr != nil || fees.IsZero() {
+				continue
+			}
+			chain := pool.Asset.GetChain()
+			if existing, ok := chainFeeMap[chain]; ok {
+				chainFeeMap[chain] = existing.Add(fees)
+			} else {
+				chainFeeMap[chain] = fees
+			}
+		}
+
+		// Deterministic ordering for remainder-to-last pattern.
+		chainFeeEntries := make([]chainFeeEntry, 0, len(chainFeeMap))
+		for chain, fees := range chainFeeMap {
+			chainFeeEntries = append(chainFeeEntries, chainFeeEntry{chain: chain, fees: fees})
+		}
+		sort.Slice(chainFeeEntries, func(i, j int) bool {
+			return chainFeeEntries[i].chain < chainFeeEntries[j].chain
+		})
+
+		totalChainAllocated := cosmos.ZeroUint()
+		for idx, entry := range chainFeeEntries {
+			var share cosmos.Uint
+			if idx == len(chainFeeEntries)-1 {
+				share = common.SafeSub(feeBonderShare, totalChainAllocated)
+			} else {
+				share = common.GetSafeShare(entry.fees, totalLiquidityFees, feeBonderShare)
+			}
+			totalChainAllocated = totalChainAllocated.Add(share)
+			if !share.IsZero() {
+				addChainIncomeToNetwork(&network, entry.chain, share)
+			}
+		}
+
+		network.BondRewardRune = network.BondRewardRune.Add(emissionBonderShare)
+	} else {
+		network.BondRewardRune = network.BondRewardRune.Add(bondReward)
+	}
 
 	rewardEvt := NewEventRewards(bondReward, evtPools, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct)
 	if err = eventMgr.EmitEvent(ctx, rewardEvt); err != nil {
@@ -1902,6 +1967,20 @@ func (vm *NetworkMgr) calcBlockRewards(
 // securityBond: RUNE value bonded by smallest 66% of nodes
 // effectiveBond: total RUNE value bonded, with max per-node at 66th percentile
 // totalRewards: total RUNE rewards to be distributed
+func addChainIncomeToNetwork(network *Network, chain common.Chain, amount cosmos.Uint) {
+	chainStr := chain.String()
+	for i, ci := range network.ChainIncome {
+		if ci.Chain == chainStr {
+			network.ChainIncome[i].Amount = network.ChainIncome[i].Amount.Add(amount)
+			return
+		}
+	}
+	network.ChainIncome = append(network.ChainIncome, ChainIncome{
+		Chain:  chainStr,
+		Amount: amount,
+	})
+}
+
 func (vm *NetworkMgr) getPoolShare(
 	pooledRune, vaultLiquidity, effectiveSecurityBond, totalEffectiveBond, totalRewards, assetsBps cosmos.Uint, useEffectiveSecurity, useVaultAssets bool,
 ) cosmos.Uint {

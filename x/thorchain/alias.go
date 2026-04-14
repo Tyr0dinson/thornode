@@ -365,6 +365,7 @@ type (
 	BondProviders            = types.BondProviders
 	BondProvider             = types.BondProvider
 	Network                  = types.Network
+	ChainIncome              = types.ChainIncome
 	ProtocolOwnedLiquidity   = types.ProtocolOwnedLiquidity
 	VaultStatus              = types.VaultStatus
 	GasPool                  = types.GasPool

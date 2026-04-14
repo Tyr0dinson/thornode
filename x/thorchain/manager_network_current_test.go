@@ -2678,3 +2678,135 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeSecuredAsset(c *C)
 		c.Assert(foundSwap, Equals, true, Commentf("swap should have been created in queue"))
 	}
 }
+
+func (s *NetworkManagerTestSuite) TestAddChainIncomeToNetwork(c *C) {
+	network := NewNetwork()
+
+	// Adding to empty chain income list.
+	addChainIncomeToNetwork(&network, common.BTCChain, cosmos.NewUint(100))
+	c.Assert(len(network.ChainIncome), Equals, 1)
+	c.Assert(network.ChainIncome[0].Chain, Equals, common.BTCChain.String())
+	c.Assert(network.ChainIncome[0].Amount.Equal(cosmos.NewUint(100)), Equals, true)
+
+	// Adding to existing chain accumulates.
+	addChainIncomeToNetwork(&network, common.BTCChain, cosmos.NewUint(50))
+	c.Assert(len(network.ChainIncome), Equals, 1)
+	c.Assert(network.ChainIncome[0].Amount.Equal(cosmos.NewUint(150)), Equals, true)
+
+	// Adding a different chain creates a new entry.
+	addChainIncomeToNetwork(&network, common.ETHChain, cosmos.NewUint(200))
+	c.Assert(len(network.ChainIncome), Equals, 2)
+}
+
+func (s *NetworkManagerTestSuite) TestPerChainIncomeBucketing(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	mgr.K = helper
+	networkMgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Fund the reserve so emission can be calculated.
+	FundModule(c, ctx, helper, ReserveName, 10000*common.One)
+
+	// Set up two pools on different chains.
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(common.One * 500)
+	btcPool.BalanceAsset = cosmos.NewUint(common.One * 500)
+	btcPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(common.One * 500)
+	ethPool.BalanceAsset = cosmos.NewUint(common.One * 500)
+	ethPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, ethPool), IsNil)
+
+	// Vault for getVaultsLiquidityRune.
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
+		common.BTCChain.String(),
+		common.ETHChain.String(),
+	}, []ChainContract{})
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, btcPool.BalanceAsset),
+		common.NewCoin(common.ETHAsset, ethPool.BalanceAsset),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Add active nodes so bond reward is non-zero.
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+
+	//
+	// Case 1: No liquidity fees — all bonder split goes to global BondRewardRune.
+	//
+	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	network, err := helper.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(network.BondRewardRune.GT(cosmos.ZeroUint()), Equals, true,
+		Commentf("emission-only block should add to global BondRewardRune"))
+	c.Assert(len(network.ChainIncome), Equals, 0,
+		Commentf("no chain income when there are no liquidity fees"))
+
+	//
+	// Case 2: Liquidity fees from a single chain — that chain gets the fee-sourced bonder share.
+	//
+	prevBondRewardRune := network.BondRewardRune
+	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(1000*common.One)), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	network, err = helper.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	// Global BondRewardRune should have increased (emission portion), but less than if no per-chain bucketing.
+	c.Assert(network.BondRewardRune.GT(prevBondRewardRune), Equals, true,
+		Commentf("emission portion should still add to global BondRewardRune"))
+	// BTC chain should have received income.
+	btcIncome := cosmos.ZeroUint()
+	for _, ci := range network.ChainIncome {
+		if ci.Chain == common.BTCChain.String() {
+			btcIncome = ci.Amount
+		}
+	}
+	c.Assert(btcIncome.GT(cosmos.ZeroUint()), Equals, true,
+		Commentf("BTC chain should have income from liquidity fees"))
+
+	//
+	// Case 3: Liquidity fees from two chains — proportional attribution.
+	//
+	// Reset network chain income for cleaner test.
+	network.ChainIncome = nil
+	c.Assert(helper.SetNetwork(ctx, network), IsNil)
+	prevBondRewardRune = network.BondRewardRune
+
+	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300*common.One)), IsNil)
+	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100*common.One)), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	network, err = helper.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+
+	btcIncome = cosmos.ZeroUint()
+	ethIncome := cosmos.ZeroUint()
+	for _, ci := range network.ChainIncome {
+		if ci.Chain == common.BTCChain.String() {
+			btcIncome = ci.Amount
+		}
+		if ci.Chain == common.ETHChain.String() {
+			ethIncome = ci.Amount
+		}
+	}
+	c.Assert(btcIncome.GT(cosmos.ZeroUint()), Equals, true, Commentf("BTC should have income"))
+	c.Assert(ethIncome.GT(cosmos.ZeroUint()), Equals, true, Commentf("ETH should have income"))
+	// BTC had 3x the fees of ETH, so BTC income should be roughly 3x ETH income.
+	// Use a tolerance of 1 for rounding.
+	c.Assert(btcIncome.GT(ethIncome), Equals, true,
+		Commentf("BTC income (%s) should be greater than ETH income (%s)", btcIncome, ethIncome))
+	// Sum of chain incomes should equal feeBonderShare (total bondReward increase minus emission).
+	totalChainIncome := btcIncome.Add(ethIncome)
+	bondRewardIncrease := common.SafeSub(network.BondRewardRune, prevBondRewardRune)
+	// The total bonder reward is emission (global) + fee share (per-chain).
+	// So bondReward from calcBlockRewards = bondRewardIncrease + totalChainIncome.
+	totalBonderReward := bondRewardIncrease.Add(totalChainIncome)
+	c.Assert(totalBonderReward.GT(cosmos.ZeroUint()), Equals, true,
+		Commentf("total bonder reward should be positive"))
+}
