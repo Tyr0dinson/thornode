@@ -42,6 +42,19 @@ export SOL_DEST_ADDR="9NygcE9bzLULhS9KDzvx7CmZxeZQntdFmNsu3Zdy549c"
 export BTC_DEST_ADDR="bc1qlav94c2huygkwfhhuuupydtx54w8pstmv8pdzf"
 export ATOM_DEST_ADDR="cosmos15luk05g09h4wskye4r2ef6nsgel27g2c7c0dpj"
 export ETH_DEST_ADDR="0xB7bD3149b150878011693aC6eEe6205B05b92C7e"
+
+# Helper: query RUNE balance at a given address and optional block height
+# Usage: STAGENET-BAL <address> [height]
+STAGENET-BAL() {
+  if [ -z "${2}" ]; then
+    curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/${1}" \
+      | jq '.balances[] | select(.denom == "rune") | .amount'
+  else
+    curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/${1}" \
+      -H "x-cosmos-block-height: ${2}" \
+      | jq '.balances[] | select(.denom == "rune") | .amount'
+  fi
+}
 ```
 
 > **Mimir votes** require a supermajority of active nodes (>2/3 of 4 = at least 3 votes).
@@ -1593,35 +1606,74 @@ curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'
 ```
 
 **Result:**
-```
-
-```
-
-**Step 2 — Submit limit swap with TTL=5 and unreachable price**
 ```bash
+~ curl -s "$STAGENET_RPC/status" | jq -r '.result.sync_info.latest_block_height'
+9526542
+```
+
+**Step 2 — Snapshot balance before swap, then submit limit swap with TTL=5 and unreachable price**
+```bash
+# Snapshot balance at current height before the swap
+WALLET_ADDR=$(sthornode keys show $WALLET -a)
+BALANCE_BEFORE=$(STAGENET-BAL $WALLET_ADDR)
+echo "Balance before: $BALANCE_BEFORE"
+
 sthornode tx thorchain deposit 1000000000 rune \
   "=<:BTC.BTC:$BTC_DEST_ADDR:999999999999/5/0" \
   --from "$WALLET" --chain-id "$CHAIN_ID" --node "$STAGENET_RPC" --yes --gas auto
 ```
 
 **Result:**
-```
-
-```
-
-**Step 3 — Capture tx hash and confirm swap is in queue**
 ```bash
-export LIMIT_TX=$(curl -s "$STAGENET_API/thorchain/queue/scheduled" \
-  | jq -r '.[0].in_hash')
-echo "Limit TX: $LIMIT_TX"
-curl -s "$STAGENET_API/thorchain/swap/queue" \
-  | jq '[.[] | select(.tx.id == env.LIMIT_TX)] | length'
+gas estimate: 236352
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 9C70AECFD765C76CC087C81EEE3B098106096FCAAEFCD37F70C107F8532ACAB2
 ```
-> Expected: `1` — swap is in queue
+
+**Step 3 — Capture tx hash and confirm swap was accepted**
+
+> `/thorchain/swap/queue` is not implemented on stagenet. Use `/thorchain/tx/details/` and
+> midgard to verify the swap was accepted and later refunded.
+
+```bash
+export LIMIT_TX="9C70AECFD765C76CC087C81EEE3B098106096FCAAEFCD37F70C107F8532ACAB2"
+curl -s "https://stagenet-midgard.ninerealms.com/v2/actions?txid=$LIMIT_TX" \
+  | jq '{count: .count, actions: [.actions[] | {type, status, height, reason: .metadata.refund.reason}]}'
+```
+> Expected: `limit_swap` action with `status: "success"`
 
 **Result:**
-```
-
+```bash
+~ curl -s "https://stagenet-midgard.ninerealms.com/v2/actions?txid=$LIMIT_TX" \
+  | jq '{count: .count, actions: [.actions[] | {type, status, height, reason: .metadata.refund.reason}]}'
+{
+  "count": "2",
+  "actions": [
+    {
+      "type": "refund",
+      "status": "success",
+      "height": "9526551",
+      "reason": "limit swap expired"
+    },
+    {
+      "type": "limit_swap",
+      "status": "success",
+      "height": "9526546",
+      "reason": null
+    }
+  ]
+}
 ```
 
 **Step 4 — Wait ~5 blocks for TTL to expire**
@@ -1630,43 +1682,79 @@ echo "Waiting for TTL expiry (~36s)..."
 sleep 36
 ```
 
+> TTL=5 blocks. Swap accepted at height 9526546, expired at height 9526551 (exactly +5). ✓
+
 **Step 5 — Verify swap is no longer in queue (refunded at expiry)**
 ```bash
-curl -s "$STAGENET_API/thorchain/swap/queue" \
-  | jq '[.[] | select(.tx.id == env.LIMIT_TX)] | length'
+curl -s "$STAGENET_API/thorchain/tx/details/$LIMIT_TX" \
+  | jq '{status: .tx.status, finalised_height}'
 ```
-> Expected: `0` — swap was processed at expiry, not stuck forever
+> Expected: `status: "done"` — swap settled at expiry, not orphaned
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/thorchain/tx/details/$LIMIT_TX" \
+  | jq '{status: .tx.status, finalised_height}'
+{
+  "status": "done",
+  "finalised_height": 9526551
+}
 ```
 
 **Step 6 — Verify exactly ONE refund outbound (no duplicates)**
 ```bash
-curl -s "$STAGENET_API/thorchain/tx/$LIMIT_TX" \
-  | jq '{out_hashes: .observed_tx.out_hashes, out_count: (.observed_tx.out_hashes | length)}'
+curl -s "$STAGENET_API/thorchain/tx/details/$LIMIT_TX" \
+  | jq '{out_hashes: .tx.out_hashes, out_count: (.tx.out_hashes | length)}'
 ```
-> Expected: `out_count: 1`
+> Expected: `out_count: 1` — no duplicate outbounds from partial-state rollback bug
 
 **Result:**
+```bash
+~ curl -s "$STAGENET_API/thorchain/tx/details/$LIMIT_TX" \
+  | jq '{out_hashes: .tx.out_hashes, out_count: (.tx.out_hashes | length)}'
+{
+  "out_hashes": [
+    "0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "out_count": 1
+}
 ```
 
-```
+> `out_hash` of all zeros indicates a native RUNE refund (no external chain tx needed).
 
 **Step 7 — Confirm RUNE was returned to sender**
 ```bash
-curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$(sthornode keys show $WALLET -a)" \
+WALLET_ADDR=$(sthornode keys show $WALLET -a)
+# Before swap (block 9526542 = current height before deposit) vs after refund (block 9526552)
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$WALLET_ADDR" \
+  -H "x-cosmos-block-height: 9526542" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$WALLET_ADDR" \
+  -H "x-cosmos-block-height: 9526552" \
   | jq '.balances[] | select(.denom == "rune") | .amount'
 ```
-> Expected: balance recovered ~1000000000 (refund minus gas)
+> Expected: net change is only the native deposit tx fee (~2,000,000 = 0.02 RUNE) — the swap
+> principal (10 RUNE) is fully returned at expiry. The baseline must be taken **before** the
+> deposit tx so the deduction and refund are both visible. Using a post-deposit block as baseline
+> masks the full picture and makes it appear as if "+1B RUNE arrived" when the refund is measured.
 
 **Result:**
+```bash
+~ curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$WALLET_ADDR" \
+  -H "x-cosmos-block-height: 9526542" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+"74440322926"
+~ curl -s "$STAGENET_API/cosmos/bank/v1beta1/balances/$WALLET_ADDR" \
+  -H "x-cosmos-block-height: 9526552" \
+  | jq '.balances[] | select(.denom == "rune") | .amount'
+"74438322926"
 ```
 
-```
+> Net change: -2,000,000 (0.02 RUNE). The swap principal (10 RUNE) was fully refunded at expiry.
+> The only cost was the native deposit tx fee (2,000,000 torune), which is expected and separate
+> from the swap settlement. No fund lock — funds were not orphaned by the bug.
 
-> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+> **Status:** `[x] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: Limit swap accepted at block 9526546, expired exactly 5 blocks later at 9526551 (TTL=5 confirmed). Midgard shows `refund: "limit swap expired"`. Exactly 1 out_hash (all-zeros native RUNE refund, no duplicates). Net balance change = -2,000,000 (native deposit fee only); swap principal fully returned. No fund lock.
 
 ---
 
@@ -2449,7 +2537,7 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 | T1.5 | Limit swap DoS + rescue via mimir      | Critical | P1         | [x]    |
 | T1.6 | Bond module accounting                 | Critical | P1         | [x]    |
 | T1.7 | Gaia stuck outbounds (3 bugs)          | Critical | P1         | [x]    |
-| T1.8 | Limit swap expiry — no fund lock       | Critical | [Security] | [ ]    |
+| T1.8 | Limit swap expiry — no fund lock       | Critical | [Security] | [x]    |
 | T2.1 | UTXO vault lock through broadcast      | Bifrost  |            | [ ]    |
 | T2.2 | EVM outbound race after approval       | Bifrost  |            | [ ]    |
 | T2.3 | Rapid swap correctness + quote warning | Bifrost  |            | [ ]    |
