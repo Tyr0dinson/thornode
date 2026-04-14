@@ -78,6 +78,8 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 		return &cosmos.Result{}, nil
 	}
 
+	chainNAs := getChainConsensusNodeAccounts(ctx, h.mgr, obsTx.Tx.Chain, activeNodeAccounts)
+
 	var crossedQuorum bool
 	var accAddrs []cosmos.AccAddress
 	attestations := deduplicateAttestations(msg.QuoTx.Attestations, len(activeNodeAccounts))
@@ -92,9 +94,9 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 
 		var isQuorum bool
 		if inbound {
-			voter, isQuorum = processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, obsTx, accAddr, false)
+			voter, isQuorum = processTxInAttestation(ctx, h.mgr, voter, chainNAs, obsTx, accAddr, false)
 		} else {
-			voter, isQuorum = processTxOutAttestation(ctx, h.mgr, voter, activeNodeAccounts, obsTx, accAddr, false)
+			voter, isQuorum = processTxOutAttestation(ctx, h.mgr, voter, chainNAs, obsTx, accAddr, false)
 		}
 		if isQuorum {
 			// we crossed over quorum with this attestation.
@@ -103,11 +105,11 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 	}
 
 	if inbound {
-		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
+		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, chainNAs, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
 			return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
 		}
 	} else {
-		if err := handleObservedTxOutQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
+		if err := handleObservedTxOutQuorum(ctx, h.mgr, msg.Signer, chainNAs, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
 			return nil, wrapError(ctx, err, "fail to handle observed tx out quorum")
 		}
 	}

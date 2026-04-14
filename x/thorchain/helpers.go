@@ -1733,6 +1733,27 @@ func getChainConsensusParticipants(ctx cosmos.Context, mgr Manager, chain common
 	return result
 }
 
+func getChainConsensusNodeAccounts(ctx cosmos.Context, mgr Manager, chain common.Chain, allActiveNAs NodeAccounts) NodeAccounts {
+	participants := getChainConsensusParticipants(ctx, mgr, chain)
+	if len(participants) == 0 {
+		return allActiveNAs
+	}
+	participantSet := make(map[string]struct{}, len(participants))
+	for _, addr := range participants {
+		participantSet[addr.String()] = struct{}{}
+	}
+	result := make(NodeAccounts, 0, len(participants))
+	for _, na := range allActiveNAs {
+		if _, ok := participantSet[na.NodeAddress.String()]; ok {
+			result = append(result, na)
+		}
+	}
+	if len(result) == 0 {
+		return allActiveNAs
+	}
+	return result
+}
+
 func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress, chain common.Chain) []cosmos.AccAddress {
 	participants := getChainConsensusParticipants(ctx, mgr, chain)
 	signerSet := make(map[string]struct{}, len(signers))

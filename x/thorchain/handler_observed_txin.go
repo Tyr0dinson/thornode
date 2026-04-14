@@ -60,6 +60,7 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
 	handler := NewInternalHandler(h.mgr)
+	chainNAs := make(map[common.Chain]NodeAccounts)
 	for _, tx := range msg.Txs {
 		voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
 		if err != nil {
@@ -67,8 +68,13 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 			continue
 		}
 
-		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
-		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
+		nas, ok := chainNAs[tx.Tx.Chain]
+		if !ok {
+			nas = getChainConsensusNodeAccounts(ctx, h.mgr, tx.Tx.Chain, activeNodeAccounts)
+			chainNAs[tx.Tx.Chain] = nas
+		}
+		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, nas, tx, msg.Signer, true)
+		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, nas, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
 			ctx.Logger().Error("fail to handle observed tx in quorum", "error", err, "tx", tx.Tx.ID)
 		}
 	}

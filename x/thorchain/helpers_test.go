@@ -2166,3 +2166,71 @@ func (s *HelperSuite) TestValidateChainLiquidityCap(c *C) {
 	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.ZeroUint())
 	c.Assert(err, IsNil, Commentf("exactly at cap with zero inbound should pass"))
 }
+
+func (s *HelperSuite) TestGetChainConsensusNodeAccounts(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pk1 := types.GetRandomPubKey()
+	pk2 := types.GetRandomPubKey()
+	pk3 := types.GetRandomPubKey()
+
+	addr1, err := pk1.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr2, err := pk2.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr3, err := pk3.GetThorAddress()
+	c.Assert(err, IsNil)
+
+	na1 := NodeAccount{NodeAddress: addr1, Status: NodeActive}
+	na2 := NodeAccount{NodeAddress: addr2, Status: NodeActive}
+	na3 := NodeAccount{NodeAddress: addr3, Status: NodeActive}
+	allActive := NodeAccounts{na1, na2, na3}
+
+	// Case 1: BTC vault has pk1 and pk2 — only na1, na2 returned
+	k := &TestChainConsensusParticipantsKeeper{
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC", "ETH"},
+				Membership: []string{pk1.String(), pk2.String()},
+			},
+		},
+	}
+	mgr.K = k
+	result := getChainConsensusNodeAccounts(ctx, mgr, common.BTCChain, allActive)
+	c.Assert(len(result), Equals, 2)
+	addrSet := make(map[string]bool)
+	for _, na := range result {
+		addrSet[na.NodeAddress.String()] = true
+	}
+	c.Assert(addrSet[addr1.String()], Equals, true)
+	c.Assert(addrSet[addr2.String()], Equals, true)
+
+	// Case 2: no vaults for DOGE — fallback to all active
+	result = getChainConsensusNodeAccounts(ctx, mgr, common.DOGEChain, allActive)
+	c.Assert(len(result), Equals, 3)
+
+	// Case 3: disjoint vault sets — BTC vault has pk1, ETH vault has pk3
+	k2 := &TestChainConsensusParticipantsKeeper{
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk1.String()},
+			},
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"ETH"},
+				Membership: []string{pk3.String()},
+			},
+		},
+	}
+	mgr.K = k2
+	result = getChainConsensusNodeAccounts(ctx, mgr, common.BTCChain, allActive)
+	c.Assert(len(result), Equals, 1)
+	c.Assert(result[0].NodeAddress.Equals(addr1), Equals, true)
+
+	result = getChainConsensusNodeAccounts(ctx, mgr, common.ETHChain, allActive)
+	c.Assert(len(result), Equals, 1)
+	c.Assert(result[0].NodeAddress.Equals(addr3), Equals, true)
+}

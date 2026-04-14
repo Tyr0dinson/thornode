@@ -5,6 +5,7 @@ import (
 
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
@@ -60,6 +61,7 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 	}
 
 	handler := NewInternalHandler(h.mgr)
+	chainNAs := make(map[common.Chain]NodeAccounts)
 
 	for _, tx := range msg.Txs {
 		voter, err := ensureVaultAndGetTxOutVoter(ctx, k, tx.ObservedPubKey, tx.Tx.ID, msg.GetSigners(), tx.KeysignMs)
@@ -68,10 +70,14 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 			continue
 		}
 
-		// check whether the tx has consensus
-		voter, isQuorum := processTxOutAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
+		nas, ok := chainNAs[tx.Tx.Chain]
+		if !ok {
+			nas = getChainConsensusNodeAccounts(ctx, h.mgr, tx.Tx.Chain, activeNodeAccounts)
+			chainNAs[tx.Tx.Chain] = nas
+		}
+		voter, isQuorum := processTxOutAttestation(ctx, h.mgr, voter, nas, tx, msg.Signer, true)
 
-		if err := handleObservedTxOutQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, msg.GetSigners(), isQuorum); err != nil {
+		if err := handleObservedTxOutQuorum(ctx, h.mgr, msg.Signer, nas, handler, tx, voter, msg.GetSigners(), isQuorum); err != nil {
 			ctx.Logger().Error("fail to handle observed tx out quorum", "error", err)
 		}
 	}
