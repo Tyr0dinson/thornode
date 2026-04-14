@@ -157,7 +157,7 @@ task, it:
 ### Phase 3 — Core helpers + keeper
 
 - [x] **T8** Implement `getNodeSupportedChains(ctx, mgr, na) []common.Chain` in `x/thorchain/helpers.go` with the empty-set-means-all fallback (union of active + retiring vault chains; `common.AllChains` for standby). Full unit test coverage. — bb360354a8
-- [x] **T9** Implement `GetAsgardVaultsByChain` and `GetActiveAsgardVaultsByChain` in `x/thorchain/keeper/v1/keeper_vault.go` (or current keeper version). Unit tests for mixed-vault-set scenarios. — pending
+- [x] **T9** Implement `GetAsgardVaultsByChain` and `GetActiveAsgardVaultsByChain` in `x/thorchain/keeper/v1/keeper_vault.go` (or current keeper version). Unit tests for mixed-vault-set scenarios. — bb19373c5f
 - [ ] **T10** Implement `GetChainIncome`, `AddChainIncome`, `ZeroChainIncome` on the Network keeper. Unit tests including overflow-safety and missing-chain-returns-zero.
 - [ ] **T11** Implement `getChainConsensusParticipants(ctx, mgr, chain) []cosmos.AccAddress` returning `union(activeVaultMembers, retiringVaultMembers)` for the chain. Unit tests.
 - [ ] **T12** Implement `getChainAwareNonSigners(ctx, mgr, signers, chain) []cosmos.AccAddress`. Unit tests with chain-specific membership matrices.
