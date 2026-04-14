@@ -161,7 +161,7 @@ task, it:
 - [x] **T10** Implement `GetChainIncome`, `AddChainIncome`, `ZeroChainIncome` on the Network keeper. Unit tests including overflow-safety and missing-chain-returns-zero. — bd9f552746
 - [x] **T11** Implement `getChainConsensusParticipants(ctx, mgr, chain) []cosmos.AccAddress` returning `union(activeVaultMembers, retiringVaultMembers)` for the chain. Unit tests. — b2cee5693c
 - [x] **T12** Implement `getChainAwareNonSigners(ctx, mgr, signers, chain) []cosmos.AccAddress`. Unit tests with chain-specific membership matrices. — 3a539230a1
-- [x] **T13** Implement `validateChainLiquidityCap(ctx, mgr, chain, inboundRuneValue) error` per spec §8.7. Unit tests: below-2/3 triggers cap, at-cap rejects, at-or-above-2/3 skips cap, RUNE-valuation sums pool+secured+trade. — pending
+- [x] **T13** Implement `validateChainLiquidityCap(ctx, mgr, chain, inboundRuneValue) error` per spec §8.7. Unit tests: below-2/3 triggers cap, at-cap rejects, at-or-above-2/3 skips cap, RUNE-valuation sums pool+secured+trade. — 869ca9900d
 
 ### Phase 4 — Handlers
 
