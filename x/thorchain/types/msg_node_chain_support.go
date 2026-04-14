@@ -16,6 +16,10 @@ var (
 	_ sdk.Msg              = &MsgAddNodeChainSupport{}
 	_ sdk.HasValidateBasic = &MsgAddNodeChainSupport{}
 	_ sdk.LegacyMsg        = &MsgAddNodeChainSupport{}
+
+	_ sdk.Msg              = &MsgRemoveNodeChainSupport{}
+	_ sdk.HasValidateBasic = &MsgRemoveNodeChainSupport{}
+	_ sdk.LegacyMsg        = &MsgRemoveNodeChainSupport{}
 )
 
 func NewMsgAddNodeChainSupport(chain common.Chain, signer cosmos.AccAddress) *MsgAddNodeChainSupport {
@@ -43,6 +47,35 @@ func MsgAddNodeChainSupportCustomGetSigners(m proto.Message) ([][]byte, error) {
 	msg, ok := m.(*types.MsgAddNodeChainSupport)
 	if !ok {
 		return nil, fmt.Errorf("can't cast as MsgAddNodeChainSupport: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
+}
+
+func NewMsgRemoveNodeChainSupport(chain common.Chain, signer cosmos.AccAddress) *MsgRemoveNodeChainSupport {
+	return &MsgRemoveNodeChainSupport{
+		Chain:  chain,
+		Signer: signer,
+	}
+}
+
+func (m *MsgRemoveNodeChainSupport) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
+	}
+	if m.Chain.IsEmpty() {
+		return cosmos.ErrUnknownRequest("chain can't be empty")
+	}
+	return nil
+}
+
+func (m *MsgRemoveNodeChainSupport) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgRemoveNodeChainSupportCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msg, ok := m.(*types.MsgRemoveNodeChainSupport)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgRemoveNodeChainSupport: %T", m)
 	}
 	return [][]byte{msg.Signer}, nil
 }
