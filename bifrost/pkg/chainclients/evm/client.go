@@ -548,6 +548,10 @@ func (c *EVMClient) RollbackBlockScanner() error {
 	return c.blockScanner.RollbackToLastObserved()
 }
 
+func (c *EVMClient) SetShouldObserveCallback(cb func() bool) {
+	c.blockScanner.SetShouldObserveCallback(cb)
+}
+
 func (c *EVMClient) GetLatestTxForVault(vault string) (string, string, error) {
 	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(stypes.InboundCacheKey(vault, c.GetChain().String()))
 	if err != nil {

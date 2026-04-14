@@ -1246,3 +1246,37 @@ func (s *EVMSuite) TestApprovalTransactionBroadcastFlow(c *C) {
 	c.Logf("  - No unnecessary signer cache or transaction tracking overhead")
 	c.Logf("  - Same pattern as unstuck cancel transactions")
 }
+
+func (s *EVMSuite) TestSetShouldObserveCallback(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewEVMClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID: common.AVAXChain,
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.AVAXChain,
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+
+	// Default: no callback set, scanner is healthy
+	c.Assert(e.blockScanner.IsHealthy(), Equals, true)
+
+	// Set callback that returns false — scanner should pause
+	called := false
+	e.SetShouldObserveCallback(func() bool {
+		called = true
+		return false
+	})
+	c.Assert(called, Equals, false)
+
+	// Set callback that returns true — scanner should observe
+	e.SetShouldObserveCallback(func() bool { return true })
+
+	// Set nil callback — should not panic, restores default behavior
+	e.SetShouldObserveCallback(nil)
+}
