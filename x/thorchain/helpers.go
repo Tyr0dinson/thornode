@@ -739,6 +739,21 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 
+	// emit chain support metrics
+	for _, entry := range computeChainTelemetry(ctx, mgr, asgards, nodes) {
+		chainLabel := []metrics.Label{telemetry.NewLabel("chain", entry.chain.String())}
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "chain", "supporting_validators"},
+			float32(entry.supportingValidators),
+			chainLabel,
+		)
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "chain", "liquidity_cap_headroom_ratio"},
+			entry.headroomRatio,
+			chainLabel,
+		)
+	}
+
 	// emit queue metrics
 	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	startHeight := ctx.BlockHeight() - signingTransactionPeriod
@@ -801,6 +816,93 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	telemetry.SetGauge(telem(queueScheduledOutboundValue)*runeUSDPrice, "thornode", "queue", "scheduled", "value", "usd")
 
 	return nil
+}
+
+type chainTelemetryEntry struct {
+	chain                common.Chain
+	supportingValidators int64
+	headroomRatio        float32
+}
+
+func computeChainTelemetry(ctx cosmos.Context, mgr Manager, asgards Vaults, activeNodes NodeAccounts) []chainTelemetryEntry {
+	activeNodeCount := int64(len(activeNodes))
+
+	chainMembers := make(map[common.Chain]map[string]struct{})
+	chainVaultCoins := make(map[common.Chain]common.Coins)
+	for _, vault := range asgards {
+		if vault.Status != ActiveVault {
+			continue
+		}
+		for _, chain := range vault.GetChains() {
+			if _, ok := chainMembers[chain]; !ok {
+				chainMembers[chain] = make(map[string]struct{})
+			}
+			for _, pk := range vault.GetMembership() {
+				chainMembers[chain][pk.String()] = struct{}{}
+			}
+			chainVaultCoins[chain] = append(chainVaultCoins[chain], vault.Coins...)
+		}
+	}
+
+	ratioNum := mgr.Keeper().GetConfigInt64(ctx, constants.ChainSubBFTRatioNum)
+	ratioDenom := mgr.Keeper().GetConfigInt64(ctx, constants.ChainSubBFTRatioDenom)
+	if ratioDenom == 0 {
+		ratioDenom = 3
+	}
+	liquidityRunePerValidator := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.ChainLiquidityRunePerValidator)))
+
+	chains := make([]common.Chain, 0, len(chainMembers))
+	for chain := range chainMembers {
+		chains = append(chains, chain)
+	}
+	sort.Slice(chains, func(i, j int) bool { return chains[i].String() < chains[j].String() })
+
+	entries := make([]chainTelemetryEntry, 0, len(chains))
+	for _, chain := range chains {
+		members := chainMembers[chain]
+		validatorsForChain := int64(len(members))
+
+		threshold := (ratioNum*activeNodeCount + ratioDenom - 1) / ratioDenom
+		var headroom float32
+		if activeNodeCount == 0 || validatorsForChain >= threshold {
+			headroom = 1.0
+		} else {
+			cap := liquidityRunePerValidator.MulUint64(uint64(validatorsForChain))
+			if cap.IsZero() {
+				headroom = 0.0
+			} else {
+				currentRuneValue := cosmos.ZeroUint()
+				for _, coin := range chainVaultCoins[chain] {
+					if coin.IsEmpty() {
+						continue
+					}
+					if coin.IsRune() {
+						currentRuneValue = currentRuneValue.Add(coin.Amount)
+						continue
+					}
+					pool, poolErr := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
+					if poolErr != nil || pool.IsEmpty() {
+						continue
+					}
+					currentRuneValue = currentRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+				}
+				if currentRuneValue.GTE(cap) {
+					headroom = 0.0
+				} else {
+					remaining := cap.Sub(currentRuneValue)
+					headroom = float32(remaining.Uint64()) / float32(cap.Uint64())
+				}
+			}
+		}
+
+		entries = append(entries, chainTelemetryEntry{
+			chain:                chain,
+			supportingValidators: validatorsForChain,
+			headroomRatio:        headroom,
+		})
+	}
+
+	return entries
 }
 
 func getAvailablePoolsRune(ctx cosmos.Context, keeper keeper.Keeper) (Pools, cosmos.Uint, error) {

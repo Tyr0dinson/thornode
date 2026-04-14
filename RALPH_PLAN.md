@@ -216,7 +216,7 @@ task, it:
 
 ### Phase 13 — Metrics
 
-- [ ] **T38** Register Prometheus gauges `thornode_chain_supporting_validators{chain}` and `thornode_chain_liquidity_cap_headroom_ratio{chain}`. Update values each block / at relevant state change. Unit tests confirm gauge updates.
+- [x] **T38** Register Prometheus gauges `thornode_chain_supporting_validators{chain}` and `thornode_chain_liquidity_cap_headroom_ratio{chain}`. Update values each block / at relevant state change. Unit tests confirm gauge updates. — pending
 
 ### Phase 14 — Bifrost
 

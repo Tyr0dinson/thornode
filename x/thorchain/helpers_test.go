@@ -2306,3 +2306,137 @@ func (s *HelperSuite) TestGetChainConsensusNodeAccounts(c *C) {
 	c.Assert(len(result), Equals, 1)
 	c.Assert(result[0].NodeAddress.Equals(addr3), Equals, true)
 }
+
+func (s *HelperSuite) TestComputeChainTelemetry(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pk1 := types.GetRandomPubKey()
+	pk2 := types.GetRandomPubKey()
+	pk3 := types.GetRandomPubKey()
+
+	btcPool := Pool{
+		Asset:        common.BTCAsset,
+		Status:       PoolAvailable,
+		BalanceRune:  cosmos.NewUint(100_000_00000000),
+		BalanceAsset: cosmos.NewUint(10_00000000),
+	}
+
+	makeActiveNodes := func(n int) NodeAccounts {
+		nas := make(NodeAccounts, n)
+		for i := range nas {
+			nas[i] = NodeAccount{Status: NodeActive, NodeAddress: types.GetRandomBech32Addr()}
+		}
+		return nas
+	}
+
+	// Case 1: chain with 2/3+ support → headroom 1.0
+	k := &TestValidateChainLiquidityCapKeeper{
+		pools: map[string]Pool{common.BTCAsset.String(): btcPool},
+		configs: map[constants.ConstantName]int64{
+			constants.ChainSubBFTRatioNum:            2,
+			constants.ChainSubBFTRatioDenom:          3,
+			constants.ChainLiquidityRunePerValidator: 10_000_00000000,
+		},
+	}
+	mgr.K = k
+	activeNodes := makeActiveNodes(3)
+	asgards := Vaults{
+		{
+			Status:     ActiveVault,
+			Chains:     []string{"BTC"},
+			Membership: []string{pk1.String(), pk2.String()},
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(5_00000000)),
+			},
+		},
+	}
+	entries := computeChainTelemetry(ctx, mgr, asgards, activeNodes)
+	c.Assert(len(entries), Equals, 1)
+	c.Assert(entries[0].chain.Equals(common.BTCChain), Equals, true)
+	c.Assert(entries[0].supportingValidators, Equals, int64(2))
+	c.Assert(entries[0].headroomRatio, Equals, float32(1.0))
+
+	// Case 2: below 2/3, partially filled → headroom between 0 and 1
+	activeNodes6 := makeActiveNodes(6)
+	asgards2 := Vaults{
+		{
+			Status:     ActiveVault,
+			Chains:     []string{"BTC"},
+			Membership: []string{pk1.String(), pk2.String(), pk3.String()},
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000)),
+			},
+		},
+	}
+	entries = computeChainTelemetry(ctx, mgr, asgards2, activeNodes6)
+	c.Assert(len(entries), Equals, 1)
+	c.Assert(entries[0].supportingValidators, Equals, int64(3))
+	// 3 validators, cap = 30_000 RUNE, current = 1 BTC = 10_000 RUNE
+	// headroom = 1 - 10_000/30_000 = 2/3 ≈ 0.6667
+	c.Assert(entries[0].headroomRatio > 0.66, Equals, true)
+	c.Assert(entries[0].headroomRatio < 0.67, Equals, true)
+
+	// Case 3: below 2/3 and at cap → headroom 0
+	asgards3 := Vaults{
+		{
+			Status:     ActiveVault,
+			Chains:     []string{"BTC"},
+			Membership: []string{pk1.String(), pk2.String(), pk3.String()},
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(3_00000000)),
+			},
+		},
+	}
+	entries = computeChainTelemetry(ctx, mgr, asgards3, activeNodes6)
+	c.Assert(len(entries), Equals, 1)
+	// 3 BTC = 30_000 RUNE = cap, headroom = 0
+	c.Assert(entries[0].headroomRatio, Equals, float32(0.0))
+
+	// Case 4: no active nodes → headroom 1.0
+	entries = computeChainTelemetry(ctx, mgr, asgards, NodeAccounts{})
+	c.Assert(len(entries), Equals, 1)
+	c.Assert(entries[0].headroomRatio, Equals, float32(1.0))
+
+	// Case 5: retiring vaults excluded from chain membership
+	asgardsWithRetiring := Vaults{
+		{
+			Status:     ActiveVault,
+			Chains:     []string{"BTC"},
+			Membership: []string{pk1.String()},
+			Coins:      common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000))},
+		},
+		{
+			Status:     RetiringVault,
+			Chains:     []string{"BTC"},
+			Membership: []string{pk2.String(), pk3.String()},
+			Coins:      common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(2_00000000))},
+		},
+	}
+	entries = computeChainTelemetry(ctx, mgr, asgardsWithRetiring, activeNodes6)
+	c.Assert(len(entries), Equals, 1)
+	// Only active vault members counted: 1 validator
+	c.Assert(entries[0].supportingValidators, Equals, int64(1))
+
+	// Case 6: multiple chains returned sorted
+	pk4 := types.GetRandomPubKey()
+	asgardsMulti := Vaults{
+		{
+			Status:     ActiveVault,
+			Chains:     []string{"BTC", "ETH"},
+			Membership: []string{pk1.String(), pk2.String(), pk3.String(), pk4.String()},
+			Coins: common.Coins{
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000)),
+			},
+		},
+	}
+	entries = computeChainTelemetry(ctx, mgr, asgardsMulti, activeNodes6)
+	c.Assert(len(entries), Equals, 2)
+	c.Assert(entries[0].chain.Equals(common.BTCChain), Equals, true)
+	c.Assert(entries[1].chain.Equals(common.ETHChain), Equals, true)
+	c.Assert(entries[0].supportingValidators, Equals, int64(4))
+	c.Assert(entries[1].supportingValidators, Equals, int64(4))
+
+	// Case 7: empty vaults list → no entries
+	entries = computeChainTelemetry(ctx, mgr, Vaults{}, activeNodes6)
+	c.Assert(len(entries), Equals, 0)
+}
