@@ -182,7 +182,7 @@ task, it:
 
 - [x] **T20** `handler_observed_tx*` uses `getChainConsensusParticipants(chain)` for 2/3 threshold. Unit tests against a vault-membership fixture. — efaa96f472
 - [x] **T21** `handler_network_fee*` uses chain-aware participants. Unit tests. — 15513c2046
-- [x] **T22** `handler_solvency*` uses chain-aware participants. Unit tests. — pending
+- [x] **T22** `handler_solvency*` uses chain-aware participants. Unit tests. — 2c645523a0
 - [ ] **T23** `handler_errata_tx*` uses chain-aware participants. Unit tests.
 - [ ] **T24** Instant-observation fast-path scoped so the sufficient signer must be a member of the chain's vault. Unit tests.
 
