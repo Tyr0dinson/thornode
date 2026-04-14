@@ -176,7 +176,7 @@ task, it:
 
 ### Phase 6 — TSS
 
-- [x] **T19** TSS voter in `handler_tss.go` consumes `Keygen.TargetChains`; vault created from successful keygen carries `TargetChains` as its `Chains`. Unit tests. — pending
+- [x] **T19** TSS voter in `handler_tss.go` consumes `Keygen.TargetChains`; vault created from successful keygen carries `TargetChains` as its `Chains`. Unit tests. — 72ebb16fe8
 
 ### Phase 7 — Chain-aware consensus
 
