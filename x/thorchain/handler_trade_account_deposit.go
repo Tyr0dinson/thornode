@@ -47,6 +47,9 @@ func (h TradeAccountDepositHandler) validate(ctx cosmos.Context, msg MsgTradeAcc
 
 	capChain := msg.Asset.GetLayer1Asset().GetChain()
 	if !capChain.Equals(common.THORChain) {
+		if capErr := validateActiveAsgardExists(ctx, h.mgr, capChain); capErr != nil {
+			return capErr
+		}
 		pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
 		if err != nil {
 			return fmt.Errorf("error loading %s pool: %w", msg.Asset, err)

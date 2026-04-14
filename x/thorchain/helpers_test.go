@@ -1993,6 +1993,78 @@ func (s *HelperSuite) TestGetChainAwareNonSigners(c *C) {
 	c.Assert(nonSigners[0].Equals(addr3), Equals, true)
 }
 
+type TestValidateActiveAsgardExistsKeeper struct {
+	keeper.KVStoreDummy
+	activeVaults Vaults
+}
+
+func (k *TestValidateActiveAsgardExistsKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Context, chain common.Chain) (Vaults, error) {
+	var result Vaults
+	for _, vault := range k.activeVaults {
+		if vault.GetChains().Has(chain) {
+			result = append(result, vault)
+		}
+	}
+	return result, nil
+}
+
+func (s *HelperSuite) TestValidateActiveAsgardExists(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Case 1: no active vaults for chain — should return error
+	k := &TestValidateActiveAsgardExistsKeeper{
+		activeVaults: Vaults{},
+	}
+	mgr.K = k
+	err := validateActiveAsgardExists(ctx, mgr, common.BTCChain)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "no active vault for chain BTC")
+
+	// Case 2: active vault exists for chain — should pass
+	k2 := &TestValidateActiveAsgardExistsKeeper{
+		activeVaults: Vaults{
+			{
+				Status: ActiveVault,
+				Chains: []string{"BTC"},
+			},
+		},
+	}
+	mgr.K = k2
+	err = validateActiveAsgardExists(ctx, mgr, common.BTCChain)
+	c.Assert(err, IsNil)
+
+	// Case 3: active vault exists but for different chain — should return error
+	k3 := &TestValidateActiveAsgardExistsKeeper{
+		activeVaults: Vaults{
+			{
+				Status: ActiveVault,
+				Chains: []string{"ETH"},
+			},
+		},
+	}
+	mgr.K = k3
+	err = validateActiveAsgardExists(ctx, mgr, common.BTCChain)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "no active vault for chain BTC")
+
+	// Case 4: multiple vaults, one matching — should pass
+	k4 := &TestValidateActiveAsgardExistsKeeper{
+		activeVaults: Vaults{
+			{
+				Status: ActiveVault,
+				Chains: []string{"ETH"},
+			},
+			{
+				Status: ActiveVault,
+				Chains: []string{"BTC", "ETH"},
+			},
+		},
+	}
+	mgr.K = k4
+	err = validateActiveAsgardExists(ctx, mgr, common.BTCChain)
+	c.Assert(err, IsNil)
+}
+
 type TestValidateChainLiquidityCapKeeper struct {
 	keeper.KVStoreDummy
 	activeNodes  NodeAccounts

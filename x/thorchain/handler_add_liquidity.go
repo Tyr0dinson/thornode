@@ -190,6 +190,9 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 
 	capChain := msg.Asset.GetLayer1Asset().GetChain()
 	if !capChain.Equals(common.THORChain) {
+		if capErr := validateActiveAsgardExists(ctx, h.mgr, capChain); capErr != nil {
+			return capErr
+		}
 		inboundRuneValue := msg.RuneAmount.Add(pool.AssetValueInRune(msg.AssetAmount))
 		if capErr := validateChainLiquidityCap(ctx, h.mgr, capChain, inboundRuneValue); capErr != nil {
 			return capErr

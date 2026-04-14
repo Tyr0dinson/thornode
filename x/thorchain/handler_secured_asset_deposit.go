@@ -59,6 +59,9 @@ func (h SecuredAssetDepositHandler) validate(ctx cosmos.Context, msg MsgSecuredA
 
 	capChain := msg.Asset.GetLayer1Asset().GetChain()
 	if !capChain.Equals(common.THORChain) {
+		if capErr := validateActiveAsgardExists(ctx, h.mgr, capChain); capErr != nil {
+			return capErr
+		}
 		inboundRuneValue := pool.AssetValueInRune(msg.Amount)
 		if capErr := validateChainLiquidityCap(ctx, h.mgr, capChain, inboundRuneValue); capErr != nil {
 			return capErr

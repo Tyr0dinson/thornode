@@ -1769,6 +1769,17 @@ func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.A
 	return nonSigners
 }
 
+func validateActiveAsgardExists(ctx cosmos.Context, mgr Manager, chain common.Chain) error {
+	activeVaults, err := mgr.Keeper().GetActiveAsgardVaultsByChain(ctx, chain)
+	if err != nil {
+		return fmt.Errorf("fail to get active asgard vaults by chain: %w", err)
+	}
+	if len(activeVaults) == 0 {
+		return fmt.Errorf("no active vault for chain %s", chain)
+	}
+	return nil
+}
+
 func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Chain, inboundRuneValue cosmos.Uint) error {
 	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {

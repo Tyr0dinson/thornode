@@ -175,6 +175,9 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	if !target.IsSyntheticAsset() && !target.IsTradeAsset() && !target.IsSecuredAsset() {
 		capChain := target.GetLayer1Asset().GetChain()
 		if !capChain.Equals(common.THORChain) {
+			if capErr := validateActiveAsgardExists(ctx, h.mgr, capChain); capErr != nil {
+				return capErr
+			}
 			runeVal := sourceCoin.Amount
 			if !sourceCoin.IsRune() {
 				pool, err := h.mgr.Keeper().GetPool(ctx, sourceCoin.Asset.GetLayer1Asset())
