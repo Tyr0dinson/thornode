@@ -56,6 +56,8 @@ func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee) (*cosmo
 		return nil, err
 	}
 
+	chainNAs := getChainConsensusNodeAccounts(ctx, h.mgr, msg.Chain, active)
+
 	voter, err := h.mgr.Keeper().GetObservedNetworkFeeVoter(ctx, msg.BlockHeight, msg.Chain, int64(msg.TransactionFeeRate), int64(msg.TransactionSize))
 	if err != nil {
 		return nil, err
@@ -72,7 +74,7 @@ func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee) (*cosmo
 		TransactionRate: msg.TransactionFeeRate,
 	}
 
-	if err := processNetworkFeeAttestation(ctx, h.mgr, &voter, msg.Signer, active, nf, true); err != nil {
+	if err := processNetworkFeeAttestation(ctx, h.mgr, &voter, msg.Signer, chainNAs, nf, true); err != nil {
 		return nil, err
 	}
 

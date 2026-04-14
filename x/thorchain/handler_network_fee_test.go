@@ -206,3 +206,80 @@ func (s *HandlerObserveNetworkFeeSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+func (s *HandlerObserveNetworkFeeSuite) TestChainAwareConsensus(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1024)
+
+	// 6 active nodes, but only nas[0..2] are in the ETH vault.
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+
+	// Create an active Asgard vault for ETH with only nas[0..2] as members.
+	ethVault := GetRandomVault()
+	ethVault.Status = ActiveVault
+	ethVault.Type = AsgardVault
+	ethVault.Chains = []string{common.ETHChain.String()}
+	ethVault.Membership = []string{
+		nas[0].PubKeySet.Secp256k1.String(),
+		nas[1].PubKeySet.Secp256k1.String(),
+		nas[2].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+
+	handler := NewNetworkFeeHandler(mgr)
+	msg := NewMsgNetworkFee(1024, common.ETHChain, 256, 100, cosmos.AccAddress{})
+
+	broadcast := func(c *C, na NodeAccount) {
+		msg.Signer = na.NodeAddress
+		_, err := handler.handle(ctx, *msg)
+		c.Assert(err, IsNil)
+	}
+
+	// With 3 chain participants, consensus needs 2 of 3.
+	// nas[0] signs — no consensus yet.
+	broadcast(c, nas[0])
+	voter, err := mgr.Keeper().GetObservedNetworkFeeVoter(ctx, 1024, common.ETHChain, 256, 100)
+	c.Assert(err, IsNil)
+	c.Assert(voter.BlockHeight, Equals, int64(0), Commentf("should not have consensus with 1 of 3"))
+
+	// nas[1] signs — 2 of 3 reaches consensus.
+	broadcast(c, nas[1])
+	voter, err = mgr.Keeper().GetObservedNetworkFeeVoter(ctx, 1024, common.ETHChain, 256, 100)
+	c.Assert(err, IsNil)
+	c.Assert(voter.BlockHeight, Equals, ctx.BlockHeight(), Commentf("should have consensus with 2 of 3 chain participants"))
+
+	// Verify the network fee was saved (consensus was real).
+	savedFee, err := mgr.Keeper().GetNetworkFee(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(savedFee.TransactionFeeRate, Equals, uint64(256))
+
+	// nas[3] (not in vault) should get no LackOfObservationPenalty because
+	// they are not a chain participant.
+	pts3, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[3].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts3, Equals, int64(0), Commentf("non-chain-participant should not be penalized"))
+
+	// nas[4] and nas[5] also unaffected.
+	pts4, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[4].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts4, Equals, int64(0))
+	pts5, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[5].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts5, Equals, int64(0))
+
+	// nas[2] (in vault but didn't sign) should have LackOfObservationPenalty.
+	pts2, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[2].NodeAddress)
+	c.Assert(err, IsNil)
+	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
+	c.Assert(pts2, Equals, lackOfObservationPenalty, Commentf("chain participant non-signer should be penalized"))
+}

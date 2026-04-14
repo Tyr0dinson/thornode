@@ -56,6 +56,9 @@ func (h NetworkFeeQuorumHandler) handle(ctx cosmos.Context, msg types.MsgNetwork
 	if nf.TransactionRate > uint64(math.MaxInt64) || nf.TransactionSize > uint64(math.MaxInt64) {
 		return nil, fmt.Errorf("transaction rate or size exceeds int64 max")
 	}
+
+	chainNAs := getChainConsensusNodeAccounts(ctx, h.mgr, nf.Chain, active)
+
 	voter, err := h.mgr.Keeper().GetObservedNetworkFeeVoter(ctx, nf.Height, nf.Chain, int64(nf.TransactionRate), int64(nf.TransactionSize))
 	if err != nil {
 		return nil, err
@@ -79,7 +82,7 @@ func (h NetworkFeeQuorumHandler) handle(ctx cosmos.Context, msg types.MsgNetwork
 			continue
 		}
 
-		if err := processNetworkFeeAttestation(ctx, h.mgr, &voter, accAddr, active, nf, false); err != nil {
+		if err := processNetworkFeeAttestation(ctx, h.mgr, &voter, accAddr, chainNAs, nf, false); err != nil {
 			return nil, fmt.Errorf("fail to process network fee attestation: %w", err)
 		}
 	}
