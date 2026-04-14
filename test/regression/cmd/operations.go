@@ -125,6 +125,10 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		op = &OpTxApproveUpgrade{}
 	case "tx-reject-upgrade":
 		op = &OpTxRejectUpgrade{}
+	case "tx-add-node-chain-support":
+		op = &OpTxAddNodeChainSupport{}
+	case "tx-remove-node-chain-support":
+		op = &OpTxRemoveNodeChainSupport{}
 
 	// x/wasm
 	case "tx-execute-contract":
@@ -181,6 +185,8 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		*OpTxTssKeysign,
 		*OpTxTssPool,
 		*OpTxBankSend,
+		*OpTxAddNodeChainSupport,
+		*OpTxRemoveNodeChainSupport,
 		*OpTxExecuteContract,
 		*OpTxInstantiateContract,
 		*OpTxInstantiateContract2,
@@ -756,6 +762,36 @@ type OpTxBan struct {
 
 func (op *OpTxBan) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
 	msg := types.NewMsgBan(op.NodeAddress, op.Signer)
+	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
+}
+
+// ------------------------------ OpTxAddNodeChainSupport ------------------------------
+
+type OpTxAddNodeChainSupport struct {
+	OpBase   `yaml:",inline"`
+	Chain    common.Chain   `json:"chain"`
+	Signer   sdk.AccAddress `json:"signer"`
+	Sequence *int64         `json:"sequence"`
+	Gas      *int64         `json:"gas"`
+}
+
+func (op *OpTxAddNodeChainSupport) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	msg := types.NewMsgAddNodeChainSupport(op.Chain, op.Signer)
+	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
+}
+
+// ------------------------------ OpTxRemoveNodeChainSupport ------------------------------
+
+type OpTxRemoveNodeChainSupport struct {
+	OpBase   `yaml:",inline"`
+	Chain    common.Chain   `json:"chain"`
+	Signer   sdk.AccAddress `json:"signer"`
+	Sequence *int64         `json:"sequence"`
+	Gas      *int64         `json:"gas"`
+}
+
+func (op *OpTxRemoveNodeChainSupport) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	msg := types.NewMsgRemoveNodeChainSupport(op.Chain, op.Signer)
 	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
 

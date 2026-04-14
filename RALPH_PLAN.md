@@ -234,7 +234,7 @@ task, it:
 
 ### Phase 15 — Regression tests
 
-- [ ] **T50** `test/regression/suites/opt-in-chain-security/happy-path.yaml`: opt-in → churn → chain-only Asgard → BTC swap → reward credited to BTC supporters only.
+- [x] **T50** `test/regression/suites/opt-in-chain-security/happy-path.yaml`: opt-in → churn → chain-only Asgard → BTC swap → reward credited to BTC supporters only.
 - [ ] **T51** `test/regression/suites/opt-in-chain-security/liquidity-cap.yaml`: drop BTC support below 2/3, verify add-liquidity/secured-deposit/trade-deposit/swap-in rejected once at cap; existing untouched; withdrawals still succeed.
 - [ ] **T52** `test/regression/suites/opt-in-chain-security/chain-ragnarok.yaml`: reduce BTC support below `MinimumNodesForBFT`; auto-ragnarok at next churn; `MsgLeave` rejected for in-vault node; after drain, unbond allowed.
 
