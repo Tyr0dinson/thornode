@@ -1747,3 +1747,73 @@ func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.A
 	}
 	return nonSigners
 }
+
+func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Chain, inboundRuneValue cosmos.Uint) error {
+	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to list active validators: %w", err)
+	}
+	activeNodeCount := int64(len(activeNodes))
+	if activeNodeCount == 0 {
+		return nil
+	}
+
+	activeVaults, err := mgr.Keeper().GetActiveAsgardVaultsByChain(ctx, chain)
+	if err != nil {
+		return fmt.Errorf("fail to get active asgard vaults by chain: %w", err)
+	}
+
+	memberSet := make(map[string]struct{})
+	for _, vault := range activeVaults {
+		for _, pk := range vault.GetMembership() {
+			memberSet[pk.String()] = struct{}{}
+		}
+	}
+	validatorsForChain := int64(len(memberSet))
+
+	ratioNum := mgr.Keeper().GetConfigInt64(ctx, constants.ChainSubBFTRatioNum)
+	ratioDenom := mgr.Keeper().GetConfigInt64(ctx, constants.ChainSubBFTRatioDenom)
+	if ratioDenom == 0 {
+		ratioDenom = 3
+	}
+	threshold := (ratioNum*activeNodeCount + ratioDenom - 1) / ratioDenom
+	if validatorsForChain >= threshold {
+		return nil
+	}
+
+	liquidityRunePerValidator := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.ChainLiquidityRunePerValidator)))
+	cap := liquidityRunePerValidator.MulUint64(uint64(validatorsForChain))
+
+	currentRuneValue := cosmos.ZeroUint()
+	for _, vault := range activeVaults {
+		for _, coin := range vault.Coins {
+			if coin.IsEmpty() {
+				continue
+			}
+			if coin.IsRune() {
+				currentRuneValue = currentRuneValue.Add(coin.Amount)
+				continue
+			}
+			pool, poolErr := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
+			if poolErr != nil {
+				ctx.Logger().Error("fail to get pool for liquidity cap", "asset", coin.Asset, "error", poolErr)
+				continue
+			}
+			if pool.IsEmpty() {
+				continue
+			}
+			currentRuneValue = currentRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+		}
+	}
+
+	if currentRuneValue.Add(inboundRuneValue).GT(cap) {
+		ctx.Logger().Warn("chain liquidity cap breach", "chain", chain, "cap", cap, "current", currentRuneValue, "validators", validatorsForChain)
+		evt := types.NewEventChainLiquidityCapBreach(chain, cap, currentRuneValue, validatorsForChain)
+		if emitErr := mgr.EventMgr().EmitEvent(ctx, evt); emitErr != nil {
+			ctx.Logger().Error("fail to emit chain liquidity cap breach event", "error", emitErr)
+		}
+		return fmt.Errorf("chain %s liquidity cap exceeded: current %s + inbound %s > cap %s", chain, currentRuneValue, inboundRuneValue, cap)
+	}
+
+	return nil
+}

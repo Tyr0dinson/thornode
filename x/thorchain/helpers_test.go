@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"cosmossdk.io/math"
+	"github.com/blang/semver"
 
 	. "gopkg.in/check.v1"
 
@@ -1990,4 +1991,178 @@ func (s *HelperSuite) TestGetChainAwareNonSigners(c *C) {
 	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr2}, common.ETHChain)
 	c.Assert(len(nonSigners), Equals, 1)
 	c.Assert(nonSigners[0].Equals(addr3), Equals, true)
+}
+
+type TestValidateChainLiquidityCapKeeper struct {
+	keeper.KVStoreDummy
+	activeNodes  NodeAccounts
+	activeVaults Vaults
+	pools        map[string]Pool
+	configs      map[constants.ConstantName]int64
+}
+
+func (k *TestValidateChainLiquidityCapKeeper) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
+	return k.activeNodes, nil
+}
+
+func (k *TestValidateChainLiquidityCapKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Context, chain common.Chain) (Vaults, error) {
+	var result Vaults
+	for _, vault := range k.activeVaults {
+		if vault.GetChains().Has(chain) {
+			result = append(result, vault)
+		}
+	}
+	return result, nil
+}
+
+func (k *TestValidateChainLiquidityCapKeeper) GetPool(_ cosmos.Context, asset common.Asset) (Pool, error) {
+	if p, ok := k.pools[asset.String()]; ok {
+		return p, nil
+	}
+	return Pool{}, nil
+}
+
+func (k *TestValidateChainLiquidityCapKeeper) GetConfigInt64(_ cosmos.Context, key constants.ConstantName) int64 {
+	if v, ok := k.configs[key]; ok {
+		return v
+	}
+	cv := constants.GetConstantValues(semver.MustParse("999.0.0"))
+	return cv.GetInt64Value(key)
+}
+
+func (s *HelperSuite) TestValidateChainLiquidityCap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pk1 := types.GetRandomPubKey()
+	pk2 := types.GetRandomPubKey()
+	pk3 := types.GetRandomPubKey()
+
+	btcPool := Pool{
+		Asset:        common.BTCAsset,
+		Status:       PoolAvailable,
+		BalanceRune:  cosmos.NewUint(100_000_00000000),
+		BalanceAsset: cosmos.NewUint(10_00000000),
+	}
+
+	makeActiveNodes := func(n int) NodeAccounts {
+		nas := make(NodeAccounts, n)
+		for i := range nas {
+			nas[i] = NodeAccount{Status: NodeActive, NodeAddress: types.GetRandomBech32Addr()}
+		}
+		return nas
+	}
+
+	// Case 1: at or above 2/3 threshold — no cap
+	k := &TestValidateChainLiquidityCapKeeper{
+		activeNodes: makeActiveNodes(3),
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk1.String(), pk2.String()},
+				Coins: common.Coins{
+					common.NewCoin(common.BTCAsset, cosmos.NewUint(5_00000000)),
+				},
+			},
+		},
+		pools: map[string]Pool{common.BTCAsset.String(): btcPool},
+		configs: map[constants.ConstantName]int64{
+			constants.ChainSubBFTRatioNum:   2,
+			constants.ChainSubBFTRatioDenom: 3,
+		},
+	}
+	mgr.K = k
+	err := validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(1_00000000))
+	c.Assert(err, IsNil, Commentf("2 of 3 validators is >= ceil(2/3*3)=2, no cap"))
+
+	// Case 2: below 2/3 but under cap — allowed
+	k2 := &TestValidateChainLiquidityCapKeeper{
+		activeNodes: makeActiveNodes(6),
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk1.String(), pk2.String(), pk3.String()},
+				Coins: common.Coins{
+					common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000)),
+				},
+			},
+		},
+		pools: map[string]Pool{common.BTCAsset.String(): btcPool},
+		configs: map[constants.ConstantName]int64{
+			constants.ChainSubBFTRatioNum:            2,
+			constants.ChainSubBFTRatioDenom:          3,
+			constants.ChainLiquidityRunePerValidator: 10_000_00000000,
+		},
+	}
+	mgr.K = k2
+	// 3 of 6 active = below ceil(2/3*6)=4 threshold
+	// cap = 3 * 10_000 RUNE = 30_000 RUNE
+	// current vault: 1 BTC = 10_000 RUNE (pool ratio 100k RUNE / 10 BTC)
+	// inbound: small amount → should pass
+	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(100_00000000))
+	c.Assert(err, IsNil, Commentf("under cap, should pass"))
+
+	// Case 3: below 2/3 and at cap — rejects
+	// current: 1 BTC = 10_000 RUNE, cap = 30_000 RUNE
+	// inbound 20_001 RUNE worth → 10_000 + 20_001 = 30_001 > 30_000
+	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(20_001_00000000))
+	c.Assert(err, NotNil, Commentf("exceeds cap, should reject"))
+	c.Assert(err.Error(), Matches, ".*liquidity cap exceeded.*")
+
+	// Case 4: no active validators — no error
+	k3 := &TestValidateChainLiquidityCapKeeper{
+		activeNodes: NodeAccounts{},
+	}
+	mgr.K = k3
+	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(1))
+	c.Assert(err, IsNil)
+
+	// Case 5: zero validators for chain (no vaults) below threshold — cap is 0
+	k4 := &TestValidateChainLiquidityCapKeeper{
+		activeNodes:  makeActiveNodes(6),
+		activeVaults: Vaults{},
+		configs: map[constants.ConstantName]int64{
+			constants.ChainSubBFTRatioNum:            2,
+			constants.ChainSubBFTRatioDenom:          3,
+			constants.ChainLiquidityRunePerValidator: 10_000_00000000,
+		},
+	}
+	mgr.K = k4
+	// 0 validators for chain, below threshold, cap = 0, any inbound > 0 rejects
+	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(1))
+	c.Assert(err, NotNil)
+
+	// Case 6: RUNE valuation includes secured and trade assets via pool lookup
+	securedBTC := common.BTCAsset.GetSecuredAsset()
+	tradeBTC := common.BTCAsset.GetTradeAsset()
+	k5 := &TestValidateChainLiquidityCapKeeper{
+		activeNodes: makeActiveNodes(6),
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk1.String(), pk2.String(), pk3.String()},
+				Coins: common.Coins{
+					common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000)),
+					common.NewCoin(securedBTC, cosmos.NewUint(1_00000000)),
+					common.NewCoin(tradeBTC, cosmos.NewUint(1_00000000)),
+				},
+			},
+		},
+		pools: map[string]Pool{common.BTCAsset.String(): btcPool},
+		configs: map[constants.ConstantName]int64{
+			constants.ChainSubBFTRatioNum:            2,
+			constants.ChainSubBFTRatioDenom:          3,
+			constants.ChainLiquidityRunePerValidator: 10_000_00000000,
+		},
+	}
+	mgr.K = k5
+	// 3 BTC total = 30_000 RUNE = cap exactly, adding 1 more RUNE should fail
+	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(1))
+	c.Assert(err, NotNil, Commentf("3 BTC = 30k RUNE at cap, +1 should fail"))
+
+	// exactly at cap with zero inbound should pass (GT not GTE)
+	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.ZeroUint())
+	c.Assert(err, IsNil, Commentf("exactly at cap with zero inbound should pass"))
 }
