@@ -471,6 +471,10 @@ func (c *Client) RollbackBlockScanner() error {
 	return c.blockScanner.RollbackToLastObserved()
 }
 
+func (c *Client) SetShouldObserveCallback(cb func() bool) {
+	c.blockScanner.SetShouldObserveCallback(cb)
+}
+
 func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
 	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(stypes.InboundCacheKey(vault, c.GetChain().String()))
 	if err != nil {
