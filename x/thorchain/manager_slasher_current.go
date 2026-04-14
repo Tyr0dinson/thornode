@@ -941,6 +941,73 @@ func (s *SlasherImpl) DecSlashPoints(ctx cosmos.Context, point int64, addresses 
 	}
 }
 
+// ForfeitChainIncomeForNonSigners identifies chain-specific non-signers and
+// forfeits their pro-rata share of the chain's pending income bucket, moving
+// the forfeited amount to the global reserve reward bucket (BondRewardRune).
+func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, mgr Manager, chain common.Chain, signers []cosmos.AccAddress) {
+	nonSigners := getChainAwareNonSigners(ctx, mgr, signers, chain)
+	if len(nonSigners) == 0 {
+		return
+	}
+
+	participants := getChainConsensusParticipants(ctx, mgr, chain)
+	if len(participants) == 0 {
+		return
+	}
+
+	chainIncome, err := s.keeper.GetChainIncome(ctx, chain)
+	if err != nil {
+		ctx.Logger().Error("fail to get chain income for forfeiture", "chain", chain, "error", err)
+		return
+	}
+	if chainIncome.IsZero() {
+		return
+	}
+
+	totalParticipants := cosmos.NewUint(uint64(len(participants)))
+	perNodeShare := chainIncome.Quo(totalParticipants)
+	if perNodeShare.IsZero() {
+		return
+	}
+
+	totalForfeiture := perNodeShare.MulUint64(uint64(len(nonSigners)))
+	if totalForfeiture.GT(chainIncome) {
+		totalForfeiture = chainIncome
+	}
+
+	// Deduct forfeited amount from chain income bucket.
+	remainder := common.SafeSub(chainIncome, totalForfeiture)
+	if err := s.keeper.ZeroChainIncome(ctx, chain); err != nil {
+		ctx.Logger().Error("fail to zero chain income for forfeiture", "chain", chain, "error", err)
+		return
+	}
+	if !remainder.IsZero() {
+		if err := s.keeper.AddChainIncome(ctx, chain, remainder); err != nil {
+			ctx.Logger().Error("fail to restore chain income remainder", "chain", chain, "error", err)
+			return
+		}
+	}
+
+	// Move forfeited amount to global reserve reward bucket.
+	network, err := s.keeper.GetNetwork(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get network for forfeiture", "error", err)
+		return
+	}
+	network.BondRewardRune = network.BondRewardRune.Add(totalForfeiture)
+	if err := s.keeper.SetNetwork(ctx, network); err != nil {
+		ctx.Logger().Error("fail to set network for forfeiture", "error", err)
+		return
+	}
+
+	ctx.Logger().Debug("chain income forfeited for non-signers",
+		"chain", chain,
+		"non_signers", len(nonSigners),
+		"participants", len(participants),
+		"forfeited", totalForfeiture,
+	)
+}
+
 // updatePoolFromSlash updates a pool's depths and emits appropriate events after a slash
 func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, stolenAsset common.Coin, runeCreditAmt cosmos.Uint, mgr Manager) {
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, stolenAsset.Amount)

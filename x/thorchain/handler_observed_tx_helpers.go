@@ -71,9 +71,10 @@ func processTxInAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getNonSigners(nas, signers)
+			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
@@ -98,9 +99,10 @@ func processTxInAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getNonSigners(nas, signers)
+			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
@@ -431,9 +433,10 @@ func processTxOutAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getNonSigners(nas, signers)
+			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
@@ -474,9 +477,10 @@ func processTxOutAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getNonSigners(nas, signers)
+			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&

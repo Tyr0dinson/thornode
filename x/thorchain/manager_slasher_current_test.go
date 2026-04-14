@@ -6,6 +6,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
@@ -1431,4 +1432,164 @@ func (s *SlashingSuite) TestReverseSwapFallbackToTreasury(c *C) {
 		Commentf("Treasury recovery should swap to RUNE"))
 	c.Assert(queuedSwap.Destination.Equals(common.TreasuryAddress), Equals, true,
 		Commentf("Treasury recovery should send to treasury address"))
+}
+
+// TestForfeitChainIncomeKeeper is a test keeper for ForfeitChainIncomeForNonSigners tests.
+type TestForfeitChainIncomeKeeper struct {
+	keeper.KVStoreDummy
+	activeVaults   Vaults
+	retiringVaults Vaults
+	network        Network
+	chainIncomes   map[string]cosmos.Uint
+}
+
+func (k *TestForfeitChainIncomeKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Context, chain common.Chain) (Vaults, error) {
+	var result Vaults
+	for _, vault := range k.activeVaults {
+		if vault.GetChains().Has(chain) {
+			result = append(result, vault)
+		}
+	}
+	return result, nil
+}
+
+func (k *TestForfeitChainIncomeKeeper) GetAsgardVaultsByChain(_ cosmos.Context, chain common.Chain) (Vaults, error) {
+	var result Vaults
+	allVaults := append(k.activeVaults, k.retiringVaults...)
+	for _, v := range allVaults {
+		if v.GetChains().Has(chain) {
+			result = append(result, v)
+		}
+	}
+	return result, nil
+}
+
+func (k *TestForfeitChainIncomeKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, status types2.VaultStatus) (Vaults, error) {
+	if status == RetiringVault {
+		return k.retiringVaults, nil
+	}
+	return nil, nil
+}
+
+func (k *TestForfeitChainIncomeKeeper) GetChainIncome(_ cosmos.Context, chain common.Chain) (cosmos.Uint, error) {
+	if k.chainIncomes == nil {
+		return cosmos.ZeroUint(), nil
+	}
+	if v, ok := k.chainIncomes[chain.String()]; ok {
+		return v, nil
+	}
+	return cosmos.ZeroUint(), nil
+}
+
+func (k *TestForfeitChainIncomeKeeper) ZeroChainIncome(_ cosmos.Context, chain common.Chain) error {
+	if k.chainIncomes != nil {
+		k.chainIncomes[chain.String()] = cosmos.ZeroUint()
+	}
+	return nil
+}
+
+func (k *TestForfeitChainIncomeKeeper) AddChainIncome(_ cosmos.Context, chain common.Chain, amount cosmos.Uint) error {
+	if k.chainIncomes == nil {
+		k.chainIncomes = make(map[string]cosmos.Uint)
+	}
+	existing := k.chainIncomes[chain.String()]
+	k.chainIncomes[chain.String()] = existing.Add(amount)
+	return nil
+}
+
+func (k *TestForfeitChainIncomeKeeper) GetNetwork(_ cosmos.Context) (Network, error) {
+	return k.network, nil
+}
+
+func (k *TestForfeitChainIncomeKeeper) SetNetwork(_ cosmos.Context, network Network) error {
+	k.network = network
+	return nil
+}
+
+func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pk1 := GetRandomPubKey()
+	pk2 := GetRandomPubKey()
+	pk3 := GetRandomPubKey()
+
+	addr1, err := pk1.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr2, err := pk2.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr3, err := pk3.GetThorAddress()
+	c.Assert(err, IsNil)
+
+	slasher := newSlasher(nil, NewDummyEventMgr())
+
+	// Case 1: zero chain income — no-op
+	k := &TestForfeitChainIncomeKeeper{
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk1.String(), pk2.String(), pk3.String()},
+			},
+		},
+		chainIncomes: map[string]cosmos.Uint{
+			"BTC": cosmos.ZeroUint(),
+		},
+		network: Network{BondRewardRune: cosmos.ZeroUint()},
+	}
+	slasher.keeper = k
+	mgr.K = k
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	income, err := k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.IsZero(), Equals, true)
+	c.Assert(k.network.BondRewardRune.IsZero(), Equals, true)
+
+	// Case 2: normal forfeiture — 1 of 3 non-signers, income = 300
+	k.chainIncomes["BTC"] = cosmos.NewUint(300)
+	k.network.BondRewardRune = cosmos.ZeroUint()
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	income, err = k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	// per-node share = 300/3 = 100; 1 non-signer; forfeiture = 100; remainder = 200
+	c.Assert(income.Equal(cosmos.NewUint(200)), Equals, true, Commentf("expected 200, got %s", income))
+	c.Assert(k.network.BondRewardRune.Equal(cosmos.NewUint(100)), Equals, true, Commentf("expected 100, got %s", k.network.BondRewardRune))
+
+	// Case 3: all signed — no non-signers, no forfeiture
+	k.chainIncomes["BTC"] = cosmos.NewUint(300)
+	k.network.BondRewardRune = cosmos.ZeroUint()
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2, addr3})
+	income, err = k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.Equal(cosmos.NewUint(300)), Equals, true, Commentf("expected 300 (no forfeiture), got %s", income))
+	c.Assert(k.network.BondRewardRune.IsZero(), Equals, true)
+
+	// Case 4: no participants for chain — no-op
+	k.chainIncomes["DOGE"] = cosmos.NewUint(500)
+	k.network.BondRewardRune = cosmos.ZeroUint()
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.DOGEChain, []cosmos.AccAddress{addr1})
+	income, err = k.GetChainIncome(ctx, common.DOGEChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.Equal(cosmos.NewUint(500)), Equals, true, Commentf("expected 500 (no participants), got %s", income))
+
+	// Case 5: forfeiture clamped when income < expected (2 non-signers, income = 1)
+	k.chainIncomes["BTC"] = cosmos.NewUint(1)
+	k.network.BondRewardRune = cosmos.ZeroUint()
+	// Only addr1 signs; addr2 and addr3 are non-signers (2 of 3)
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1})
+	income, err = k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	// per-node share = 1/3 = 0 (integer division); forfeiture = 0; income unchanged
+	c.Assert(income.Equal(cosmos.NewUint(1)), Equals, true, Commentf("expected 1 (share rounds to zero), got %s", income))
+	c.Assert(k.network.BondRewardRune.IsZero(), Equals, true)
+
+	// Case 6: 2 of 3 non-signers with sufficient income
+	k.chainIncomes["BTC"] = cosmos.NewUint(900)
+	k.network.BondRewardRune = cosmos.NewUint(50)
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1})
+	income, err = k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	// per-node share = 900/3 = 300; 2 non-signers; forfeiture = 600; remainder = 300
+	c.Assert(income.Equal(cosmos.NewUint(300)), Equals, true, Commentf("expected 300, got %s", income))
+	// BondRewardRune was 50, should now be 50 + 600 = 650
+	c.Assert(k.network.BondRewardRune.Equal(cosmos.NewUint(650)), Equals, true, Commentf("expected 650, got %s", k.network.BondRewardRune))
 }

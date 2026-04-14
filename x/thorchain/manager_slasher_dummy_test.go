@@ -63,3 +63,6 @@ func (d DummySlasher) DecSlashPoints(ctx cosmos.Context, point int64, addresses 
 		}
 	}
 }
+
+func (d DummySlasher) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, mgr Manager, chain common.Chain, signers []cosmos.AccAddress) {
+}
