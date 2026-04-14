@@ -1207,3 +1207,112 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityPOL(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(pol.RuneDeposited.Uint64(), Equals, uint64(10000000000))
 }
+
+func (s *HandlerAddLiquiditySuite) TestAddLiquidityChainLiquidityCap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create 6 active nodes so BTC with 3 validators is below 2/3 threshold
+	nodes := make(NodeAccounts, 6)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+
+	FundModule(c, ctx, mgr.K, BondName, 600*common.One)
+
+	// Create an active vault for BTC chain with 3 members (below 2/3 of 6)
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.Type = AsgardVault
+	vault.Chains = []string{common.BTCChain.String()}
+	vault.Membership = []string{
+		nodes[0].PubKeySet.Secp256k1.String(),
+		nodes[1].PubKeySet.Secp256k1.String(),
+		nodes[2].PubKeySet.Secp256k1.String(),
+	}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000)),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Set up BTC pool: 1 BTC = 10,000 RUNE
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100_000_00000000)
+	pool.BalanceAsset = cosmos.NewUint(10_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Configure mimirs: cap = 3 * 10,000 = 30,000 RUNE
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 10_000_00000000)
+
+	addHandler := NewAddLiquidityHandler(mgr)
+	runeAddr := GetRandomRUNEAddress()
+	btcAddr := GetRandomBTCAddress()
+
+	// Current vault: 1 BTC = 10,000 RUNE. Cap = 30,000 RUNE.
+	// Adding 20,001 RUNE → total = 30,001 > 30,000 → should be rejected
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(20_001_00000000)))
+	msg := NewMsgAddLiquidity(
+		tx,
+		common.BTCAsset,
+		cosmos.NewUint(20_001_00000000),
+		cosmos.ZeroUint(),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		nodes[0].NodeAddress,
+	)
+	_, err := addHandler.Run(ctx, msg)
+	c.Assert(err, NotNil, Commentf("should reject add-liquidity exceeding chain liquidity cap"))
+	c.Assert(err.Error(), Matches, ".*liquidity cap exceeded.*")
+
+	// Adding a small amount (100 RUNE) → total = 10,100 < 30,000 → should pass
+	tx2 := GetRandomTx()
+	tx2.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(100_00000000)))
+	msg2 := NewMsgAddLiquidity(
+		tx2,
+		common.BTCAsset,
+		cosmos.NewUint(100_00000000),
+		cosmos.ZeroUint(),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		nodes[0].NodeAddress,
+	)
+	_, err = addHandler.Run(ctx, msg2)
+	c.Assert(err, IsNil, Commentf("should allow add-liquidity under chain liquidity cap"))
+
+	// When all 6 nodes support BTC (>= 2/3), cap should not apply
+	vault.Membership = []string{
+		nodes[0].PubKeySet.Secp256k1.String(),
+		nodes[1].PubKeySet.Secp256k1.String(),
+		nodes[2].PubKeySet.Secp256k1.String(),
+		nodes[3].PubKeySet.Secp256k1.String(),
+		nodes[4].PubKeySet.Secp256k1.String(),
+		nodes[5].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Same large add that was rejected before should now pass
+	tx3 := GetRandomTx()
+	tx3.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(20_001_00000000)))
+	msg3 := NewMsgAddLiquidity(
+		tx3,
+		common.BTCAsset,
+		cosmos.NewUint(20_001_00000000),
+		cosmos.ZeroUint(),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		nodes[0].NodeAddress,
+	)
+	_, err = addHandler.Run(ctx, msg3)
+	c.Assert(err, IsNil, Commentf("should allow add-liquidity when validators >= 2/3 threshold"))
+}

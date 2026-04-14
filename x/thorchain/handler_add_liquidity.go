@@ -188,6 +188,14 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 		return fmt.Errorf("unable to add liquidity, deposits are paused for asset (%s)", msg.Asset.String())
 	}
 
+	capChain := msg.Asset.GetLayer1Asset().GetChain()
+	if !capChain.Equals(common.THORChain) {
+		inboundRuneValue := msg.RuneAmount.Add(pool.AssetValueInRune(msg.AssetAmount))
+		if capErr := validateChainLiquidityCap(ctx, h.mgr, capChain, inboundRuneValue); capErr != nil {
+			return capErr
+		}
+	}
+
 	ensureLiquidityNoLargerThanBond := h.mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
 	// if the pool is THORChain no need to check economic security
 	if msg.Asset.IsSyntheticAsset() || !ensureLiquidityNoLargerThanBond {
