@@ -226,7 +226,7 @@ task, it:
 - [x] **T42** Wire callback in `bifrost/pkg/chainclients/evm/` (generic EVM). Unit tests. — ae9bd842b8
 - [x] **T43** Wire callback in `bifrost/pkg/chainclients/gaia/`. Unit tests. — 53fcade0fc
 - [x] **T44** Wire callback in `bifrost/pkg/chainclients/solana/`. Unit tests. — 4b0fa7fc29
-- [x] **T45** Wire callback in `bifrost/pkg/chainclients/tron/`. Unit tests. — pending
+- [x] **T45** Wire callback in `bifrost/pkg/chainclients/tron/`. Unit tests. — a22d05fda5
 - [ ] **T46** Wire callback in `bifrost/pkg/chainclients/utxo/` (btc/ltc/bch/doge variants). Unit tests.
 - [ ] **T47** Wire callback in `bifrost/pkg/chainclients/xrp/`. Unit tests.
 - [ ] **T48** `bifrost/observer/observer.go`: per-block-time tick that recomputes supported set, diffs against previous, logs `chains_added`/`chains_removed`, invokes callbacks. Unit tests with mocked PubKeyManager.
