@@ -229,7 +229,7 @@ task, it:
 - [x] **T45** Wire callback in `bifrost/pkg/chainclients/tron/`. Unit tests. — a22d05fda5
 - [x] **T46** Wire callback in `bifrost/pkg/chainclients/utxo/` (btc/ltc/bch/doge variants). Unit tests. — bafe7fb913
 - [x] **T47** Wire callback in `bifrost/pkg/chainclients/xrp/`. Unit tests. — 29252377d8
-- [x] **T48** `bifrost/observer/observer.go`: per-block-time tick that recomputes supported set, diffs against previous, logs `chains_added`/`chains_removed`, invokes callbacks. Unit tests with mocked PubKeyManager. — pending
+- [x] **T48** `bifrost/observer/observer.go`: per-block-time tick that recomputes supported set, diffs against previous, logs `chains_added`/`chains_removed`, invokes callbacks. Unit tests with mocked PubKeyManager. — 79843d2951
 - [ ] **T49** `bifrost/cmd/bifrost/main.go` + health endpoint: report `observed_chains`, `configured_chains`, `last_observed_change_height`. Integration test via health HTTP handler.
 
 ### Phase 15 — Regression tests
