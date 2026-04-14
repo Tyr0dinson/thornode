@@ -375,7 +375,7 @@ func (s *ExtraTestSuite) TestUpdateGasFees(c *C) {
 	// on boundary with full cache -> should post fee
 	err = scanner.updateGasFees(10)
 	c.Assert(err, IsNil)
-	c.Check(len(feeQueue), Equals, 1)
+	c.Assert(len(feeQueue), Equals, 1)
 
 	nf := <-feeQueue
 	c.Check(nf.Chain, Equals, common.GAIAChain)
@@ -522,30 +522,35 @@ func (s *ExtraTestSuite) TestFetchTxs(c *C) {
 	btypes.RegisterInterfaces(registry)
 	cdc := codec.NewProtoCodec(registry)
 
-	solvencyReported := false
-	scanner := &CosmosBlockScanner{
-		cfg:      cfg,
-		rpc:      &mockTendermintRPC{},
-		cdc:      cdc,
-		feeCache: make([]sdkmath.Uint, 0),
-		solvencyReporter: func(height int64) error {
-			solvencyReported = true
-			return nil
-		},
-		globalNetworkFeeQueue: make(chan common.NetworkFee, 10),
+	feeQueue := make(chan common.NetworkFee, 10)
+	feeCache := make([]sdkmath.Uint, GasCacheTransactions)
+	for i := range feeCache {
+		feeCache[i] = sdkmath.NewUint(5000)
 	}
 
-	// chainHeight close to block -> should run solvency
-	txIn, err := scanner.FetchTxs(1, 10)
+	scanner := &CosmosBlockScanner{
+		cfg:                   cfg,
+		rpc:                   &mockTendermintRPC{},
+		cdc:                   cdc,
+		feeCache:              feeCache,
+		lastFee:               sdkmath.NewUint(0),
+		globalNetworkFeeQueue: feeQueue,
+	}
+
+	// chainHeight close to block -> should update network fee
+	txIn, err := scanner.FetchTxs(10, 10)
 	c.Assert(err, IsNil)
 	c.Check(txIn.Chain, Equals, common.GAIAChain)
-	c.Check(solvencyReported, Equals, true)
+	c.Assert(len(feeQueue), Equals, 1)
+	nf := <-feeQueue
+	c.Check(nf.Chain, Equals, common.GAIAChain)
+	c.Check(nf.Height, Equals, int64(10))
 
-	// chainHeight far from block -> skip solvency
-	solvencyReported = false
-	txIn, err = scanner.FetchTxs(1, 1000)
+	// chainHeight far from block -> skip network fee update
+	txIn, err = scanner.FetchTxs(20, 1000)
 	c.Assert(err, IsNil)
-	c.Check(solvencyReported, Equals, false)
+	c.Check(txIn.Chain, Equals, common.GAIAChain)
+	c.Check(len(feeQueue), Equals, 0)
 }
 
 // -------------------------------------------------------------------------------------
@@ -1429,7 +1434,7 @@ func (s *ExtraTestSuite) TestUpdateGasFeesPostsFee(c *C) {
 	// On block 10 with full cache, should post the fee
 	err := scanner.updateGasFees(10)
 	c.Assert(err, IsNil)
-	c.Check(len(feeQueue), Equals, 1)
+	c.Assert(len(feeQueue), Equals, 1)
 	nf := <-feeQueue
 	c.Check(nf.TransactionRate > 0, Equals, true)
 

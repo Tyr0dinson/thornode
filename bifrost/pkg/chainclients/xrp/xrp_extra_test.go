@@ -2317,10 +2317,9 @@ func (s *XrpTestSuite) TestStartStop(c *C) {
 
 	globalTxsQueue := make(chan types.TxIn, 10)
 	globalErrataQueue := make(chan types.ErrataBlock, 10)
-	globalSolvencyQueue := make(chan types.Solvency, 10)
 	globalNetworkFeeQueue := make(chan common.NetworkFee, 10)
 
-	client.Start(globalTxsQueue, globalErrataQueue, globalSolvencyQueue, globalNetworkFeeQueue)
+	client.Start(globalTxsQueue, globalErrataQueue, globalNetworkFeeQueue, nil)
 
 	// Give it a moment to start
 	time.Sleep(100 * time.Millisecond)

@@ -121,6 +121,13 @@ func getCosmosGasCacheTransactions(cfg config.BifrostBlockScannerConfiguration) 
 	return GasCacheTransactions
 }
 
+func (c *CosmosBlockScanner) getGasCacheTransactions() int {
+	if c.gasCacheTransactions > 0 {
+		return c.gasCacheTransactions
+	}
+	return getCosmosGasCacheTransactions(c.cfg)
+}
+
 // NewCosmosBlockScanner create a new instance of BlockScan
 func NewCosmosBlockScanner(
 	rpcHost string,
@@ -281,8 +288,9 @@ func (c *CosmosBlockScanner) updateGasCache(tx ctypes.FeeTx) {
 	c.feeCache = append(c.feeCache, fee)
 
 	// truncate gas prices older than our max cached transactions
-	if len(c.feeCache) > c.gasCacheTransactions {
-		c.feeCache = c.feeCache[(len(c.feeCache) - c.gasCacheTransactions):]
+	gasCacheTransactions := c.getGasCacheTransactions()
+	if len(c.feeCache) > gasCacheTransactions {
+		c.feeCache = c.feeCache[(len(c.feeCache) - gasCacheTransactions):]
 	}
 }
 
@@ -328,7 +336,7 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 		defer c.networkFeeMu.Unlock()
 
 		// post the gas fee over every cache period when we have a full gas cache
-		if height%GasUpdatePeriodBlocks != 0 || len(c.feeCache) != c.gasCacheTransactions {
+		if height%GasUpdatePeriodBlocks != 0 || len(c.feeCache) != c.getGasCacheTransactions() {
 			return false, nil
 		}
 
@@ -693,7 +701,7 @@ func (c *CosmosBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, er
 		MemPool:  false,
 	}
 
-	// skip reporting network fee and solvency if block more than flexibility blocks from tip
+	// skip network fee updates if the block is more than flexibility blocks from tip
 	if chainHeight-height > c.cfg.ObservationFlexibilityBlocks {
 		return txIn, nil
 	}
