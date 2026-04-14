@@ -206,7 +206,7 @@ task, it:
 
 ### Phase 11 — Genesis
 
-- [x] **T34** `x/thorchain/genesis.go`: export `SupportedChains` on each `NodeAccount`; import honors field if present, defaults nil. Round-trip unit test. — pending
+- [x] **T34** `x/thorchain/genesis.go`: export `SupportedChains` on each `NodeAccount`; import honors field if present, defaults nil. Round-trip unit test. — d6f1b60444
 
 ### Phase 12 — API
 
