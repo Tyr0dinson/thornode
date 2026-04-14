@@ -1035,6 +1035,75 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	c.Assert(resp[0].PubKey, Equals, pubKey)
 }
 
+func (s *QuerierSuite) TestQueryInboundAddressesChainSupport(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create 3 active validators
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Create an active vault with ETH chain and membership for 2 of 3 validators
+	pubKey := GetRandomPubKey()
+	asgard := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	asgard.Membership = []string{
+		na1.PubKeySet.Secp256k1.String(),
+		na2.PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+	queryInboundAddrResp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	result, err := queryInboundAddrResp.MarshalJSONPB(nil)
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+
+	var resp []struct {
+		Chain                   common.Chain `json:"chain"`
+		SupportingValidators    int64        `json:"supporting_validators"`
+		ActiveValidatorFraction string       `json:"active_validator_fraction"`
+		LiquidityCapApplied     bool         `json:"liquidity_cap_applied"`
+		LiquidityCapRune        string       `json:"liquidity_cap_rune,omitempty"`
+	}
+
+	c.Assert(json.Unmarshal(result, &resp), IsNil)
+	c.Assert(len(resp), Equals, 1)
+	c.Assert(resp[0].Chain, Equals, common.ETHChain)
+	c.Assert(resp[0].SupportingValidators, Equals, int64(2))
+	c.Assert(resp[0].ActiveValidatorFraction, Equals, "0.67")
+	c.Assert(resp[0].LiquidityCapApplied, Equals, true)
+
+	// Verify cap amount: 2 validators × default ChainLiquidityRunePerValidator (10_000_00000000)
+	expectedCap := cosmos.NewUint(10_000_00000000).MulUint64(2)
+	c.Assert(resp[0].LiquidityCapRune, Equals, expectedCap.String())
+
+	// Now add a third validator to the vault membership (all 3 of 3 = 100%)
+	asgard.Membership = []string{
+		na1.PubKeySet.Secp256k1.String(),
+		na2.PubKeySet.Secp256k1.String(),
+		na3.PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+
+	queryInboundAddrResp, err = queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	result, err = queryInboundAddrResp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+
+	c.Assert(json.Unmarshal(result, &resp), IsNil)
+	c.Assert(len(resp), Equals, 1)
+	c.Assert(resp[0].SupportingValidators, Equals, int64(3))
+	c.Assert(resp[0].ActiveValidatorFraction, Equals, "1.00")
+	c.Assert(resp[0].LiquidityCapApplied, Equals, false)
+	c.Assert(resp[0].LiquidityCapRune, Equals, "")
+}
+
 func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)

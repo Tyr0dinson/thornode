@@ -2674,6 +2674,23 @@ components:
           type: string
           example: "10000"
           description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+        supporting_validators:
+          type: integer
+          format: int64
+          example: 22
+          description: The number of active validators currently supporting this chain.
+        active_validator_fraction:
+          type: string
+          example: "0.73"
+          description: The fraction of active validators supporting this chain.
+        liquidity_cap_applied:
+          type: boolean
+          example: false
+          description: Returns true if a liquidity cap is currently applied to this chain due to sub-BFT validator support.
+        liquidity_cap_rune:
+          type: string
+          example: "220000000000000"
+          description: The current liquidity cap in RUNE (1e8) when liquidity_cap_applied is true.
 
     LastBlock:
       type: object

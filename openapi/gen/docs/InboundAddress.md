@@ -18,6 +18,10 @@ Name | Type | Description | Notes
 **OutboundTxSize** | Pointer to **string** | Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts | [optional] 
 **OutboundFee** | Pointer to **string** | The total outbound fee charged to the user for outbound txs in the gas asset of the chain.  Can be observed_fee_rate * 1.5 * outbound_tx_size or else kept to an equivalent of Mimir key MinimumL1OutboundFeeUSD. | [optional] 
 **DustThreshold** | Pointer to **string** | Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored. | [optional] 
+**SupportingValidators** | Pointer to **int64** | The number of active validators currently supporting this chain. | [optional] 
+**ActiveValidatorFraction** | Pointer to **string** | The fraction of active validators supporting this chain. | [optional] 
+**LiquidityCapApplied** | Pointer to **bool** | Returns true if a liquidity cap is currently applied to this chain due to sub-BFT validator support. | [optional] 
+**LiquidityCapRune** | Pointer to **string** | The current liquidity cap in RUNE (1e8) when liquidity_cap_applied is true. | [optional] 
 
 ## Methods
 
@@ -367,6 +371,106 @@ SetDustThreshold sets DustThreshold field to given value.
 `func (o *InboundAddress) HasDustThreshold() bool`
 
 HasDustThreshold returns a boolean if a field has been set.
+
+### GetSupportingValidators
+
+`func (o *InboundAddress) GetSupportingValidators() int64`
+
+GetSupportingValidators returns the SupportingValidators field if non-nil, zero value otherwise.
+
+### GetSupportingValidatorsOk
+
+`func (o *InboundAddress) GetSupportingValidatorsOk() (*int64, bool)`
+
+GetSupportingValidatorsOk returns a tuple with the SupportingValidators field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSupportingValidators
+
+`func (o *InboundAddress) SetSupportingValidators(v int64)`
+
+SetSupportingValidators sets SupportingValidators field to given value.
+
+### HasSupportingValidators
+
+`func (o *InboundAddress) HasSupportingValidators() bool`
+
+HasSupportingValidators returns a boolean if a field has been set.
+
+### GetActiveValidatorFraction
+
+`func (o *InboundAddress) GetActiveValidatorFraction() string`
+
+GetActiveValidatorFraction returns the ActiveValidatorFraction field if non-nil, zero value otherwise.
+
+### GetActiveValidatorFractionOk
+
+`func (o *InboundAddress) GetActiveValidatorFractionOk() (*string, bool)`
+
+GetActiveValidatorFractionOk returns a tuple with the ActiveValidatorFraction field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetActiveValidatorFraction
+
+`func (o *InboundAddress) SetActiveValidatorFraction(v string)`
+
+SetActiveValidatorFraction sets ActiveValidatorFraction field to given value.
+
+### HasActiveValidatorFraction
+
+`func (o *InboundAddress) HasActiveValidatorFraction() bool`
+
+HasActiveValidatorFraction returns a boolean if a field has been set.
+
+### GetLiquidityCapApplied
+
+`func (o *InboundAddress) GetLiquidityCapApplied() bool`
+
+GetLiquidityCapApplied returns the LiquidityCapApplied field if non-nil, zero value otherwise.
+
+### GetLiquidityCapAppliedOk
+
+`func (o *InboundAddress) GetLiquidityCapAppliedOk() (*bool, bool)`
+
+GetLiquidityCapAppliedOk returns a tuple with the LiquidityCapApplied field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLiquidityCapApplied
+
+`func (o *InboundAddress) SetLiquidityCapApplied(v bool)`
+
+SetLiquidityCapApplied sets LiquidityCapApplied field to given value.
+
+### HasLiquidityCapApplied
+
+`func (o *InboundAddress) HasLiquidityCapApplied() bool`
+
+HasLiquidityCapApplied returns a boolean if a field has been set.
+
+### GetLiquidityCapRune
+
+`func (o *InboundAddress) GetLiquidityCapRune() string`
+
+GetLiquidityCapRune returns the LiquidityCapRune field if non-nil, zero value otherwise.
+
+### GetLiquidityCapRuneOk
+
+`func (o *InboundAddress) GetLiquidityCapRuneOk() (*string, bool)`
+
+GetLiquidityCapRuneOk returns a tuple with the LiquidityCapRune field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLiquidityCapRune
+
+`func (o *InboundAddress) SetLiquidityCapRune(v string)`
+
+SetLiquidityCapRune sets LiquidityCapRune field to given value.
+
+### HasLiquidityCapRune
+
+`func (o *InboundAddress) HasLiquidityCapRune() bool`
+
+HasLiquidityCapRune returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

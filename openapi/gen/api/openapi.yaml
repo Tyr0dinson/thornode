@@ -3908,15 +3908,19 @@ components:
         halted: false
         observed_fee_rate: "114"
         chain: BTC
+        active_validator_fraction: "0.73"
         address: bc1qn9esxuw8ca7ts8l6w66kdh800s09msvutydc46
         gas_rate: "216"
+        liquidity_cap_applied: false
         dust_threshold: "10000"
         pub_key: thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
         outbound_tx_size: "1000"
         chain_lp_actions_paused: false
         router: 0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146
         outbound_fee: "216000"
+        liquidity_cap_rune: "220000000000000"
         gas_rate_units: satsperbyte
+        supporting_validators: 22
         chain_trading_paused: false
         global_trading_paused: false
       properties:
@@ -3982,6 +3986,25 @@ components:
             \ units (sats, wei, uatom). Transactions with asset amounts lower than\
             \ the dust_threshold are ignored."
           example: "10000"
+          type: string
+        supporting_validators:
+          description: The number of active validators currently supporting this chain.
+          example: 22
+          format: int64
+          type: integer
+        active_validator_fraction:
+          description: The fraction of active validators supporting this chain.
+          example: "0.73"
+          type: string
+        liquidity_cap_applied:
+          description: Returns true if a liquidity cap is currently applied to this
+            chain due to sub-BFT validator support.
+          example: false
+          type: boolean
+        liquidity_cap_rune:
+          description: The current liquidity cap in RUNE (1e8) when liquidity_cap_applied
+            is true.
+          example: "220000000000000"
           type: string
       required:
       - chain_lp_actions_paused

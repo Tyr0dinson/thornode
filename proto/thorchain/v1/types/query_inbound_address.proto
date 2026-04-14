@@ -44,6 +44,11 @@ message QueryInboundAddressResponse {
   // wei, uatom). Transactions with asset amounts lower than the dust_threshold
   // are ignored.
   string dust_threshold = 13;
+  int64 supporting_validators = 15;
+  string active_validator_fraction = 16;
+  bool liquidity_cap_applied = 17
+      [ (gogoproto.jsontag) = "liquidity_cap_applied" ];
+  string liquidity_cap_rune = 18;
 }
 
 message QueryInboundAddressesRequest { string height = 1; }

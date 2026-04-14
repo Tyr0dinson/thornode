@@ -573,6 +573,20 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 
 	isGlobalTradingPaused := k.IsGlobalTradingHalted(ctx)
 
+	activeNodes, err := k.ListActiveValidators(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to list active validators", "error", err)
+		return nil, fmt.Errorf("fail to list active validators: %w", err)
+	}
+	activeNodeCount := int64(len(activeNodes))
+
+	ratioNum := k.GetConfigInt64(ctx, constants.ChainSubBFTRatioNum)
+	ratioDenom := k.GetConfigInt64(ctx, constants.ChainSubBFTRatioDenom)
+	if ratioDenom == 0 {
+		ratioDenom = 3
+	}
+	liquidityRunePerValidator := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.ChainLiquidityRunePerValidator)))
+
 	for _, chain := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
 		if chain == common.THORChain {
@@ -613,21 +627,51 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			}
 		}
 
+		chainVaults, chainVaultsErr := k.GetActiveAsgardVaultsByChain(ctx, chain)
+		var supportingValidators int64
+		if chainVaultsErr == nil {
+			memberSet := make(map[string]struct{})
+			for _, v := range chainVaults {
+				for _, pk := range v.GetMembership() {
+					memberSet[pk.String()] = struct{}{}
+				}
+			}
+			supportingValidators = int64(len(memberSet))
+		}
+
+		var fraction string
+		if activeNodeCount > 0 {
+			fraction = fmt.Sprintf("%.2f", float64(supportingValidators)/float64(activeNodeCount))
+		} else {
+			fraction = "0.00"
+		}
+
+		threshold := (ratioNum*activeNodeCount + ratioDenom - 1) / ratioDenom
+		capApplied := supportingValidators < threshold && activeNodeCount > 0
+		var capRune string
+		if capApplied {
+			capRune = liquidityRunePerValidator.MulUint64(uint64(supportingValidators)).String()
+		}
+
 		addr := types.QueryInboundAddressResponse{
-			Chain:                chain.String(),
-			PubKey:               pubKey.String(),
-			Address:              address.String(),
-			Router:               cc.Router.String(),
-			Halted:               isGlobalTradingPaused || isChainTradingPaused,
-			GlobalTradingPaused:  isGlobalTradingPaused,
-			ChainTradingPaused:   isChainTradingPaused,
-			ChainLpActionsPaused: isChainLpPaused,
-			ObservedFeeRate:      cosmos.NewUint(networkFeeInfo.TransactionFeeRate).String(),
-			GasRate:              gasRate.String(),
-			GasRateUnits:         gasUnits,
-			OutboundTxSize:       cosmos.NewUint(networkFeeInfo.TransactionSize).String(),
-			OutboundFee:          outboundFee.String(),
-			DustThreshold:        chain.DustThreshold().String(),
+			Chain:                   chain.String(),
+			PubKey:                  pubKey.String(),
+			Address:                 address.String(),
+			Router:                  cc.Router.String(),
+			Halted:                  isGlobalTradingPaused || isChainTradingPaused,
+			GlobalTradingPaused:     isGlobalTradingPaused,
+			ChainTradingPaused:      isChainTradingPaused,
+			ChainLpActionsPaused:    isChainLpPaused,
+			ObservedFeeRate:         cosmos.NewUint(networkFeeInfo.TransactionFeeRate).String(),
+			GasRate:                 gasRate.String(),
+			GasRateUnits:            gasUnits,
+			OutboundTxSize:          cosmos.NewUint(networkFeeInfo.TransactionSize).String(),
+			OutboundFee:             outboundFee.String(),
+			DustThreshold:           chain.DustThreshold().String(),
+			SupportingValidators:    supportingValidators,
+			ActiveValidatorFraction: fraction,
+			LiquidityCapApplied:     capApplied,
+			LiquidityCapRune:        capRune,
 		}
 
 		resp = append(resp, &addr)

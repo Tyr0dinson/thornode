@@ -14,21 +14,25 @@ import (
 )
 
 var (
-	md_QueryInboundAddressResponse                         protoreflect.MessageDescriptor
-	fd_QueryInboundAddressResponse_chain                   protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_pub_key                 protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_address                 protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_router                  protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_halted                  protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_global_trading_paused   protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_chain_trading_paused    protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_chain_lp_actions_paused protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_observed_fee_rate       protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_gas_rate                protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_gas_rate_units          protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_outbound_tx_size        protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_outbound_fee            protoreflect.FieldDescriptor
-	fd_QueryInboundAddressResponse_dust_threshold          protoreflect.FieldDescriptor
+	md_QueryInboundAddressResponse                           protoreflect.MessageDescriptor
+	fd_QueryInboundAddressResponse_chain                     protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_pub_key                   protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_address                   protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_router                    protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_halted                    protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_global_trading_paused     protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_chain_trading_paused      protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_chain_lp_actions_paused   protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_observed_fee_rate         protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_gas_rate                  protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_gas_rate_units            protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_outbound_tx_size          protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_outbound_fee              protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_dust_threshold            protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_supporting_validators     protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_active_validator_fraction protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_liquidity_cap_applied     protoreflect.FieldDescriptor
+	fd_QueryInboundAddressResponse_liquidity_cap_rune        protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -48,6 +52,10 @@ func init() {
 	fd_QueryInboundAddressResponse_outbound_tx_size = md_QueryInboundAddressResponse.Fields().ByName("outbound_tx_size")
 	fd_QueryInboundAddressResponse_outbound_fee = md_QueryInboundAddressResponse.Fields().ByName("outbound_fee")
 	fd_QueryInboundAddressResponse_dust_threshold = md_QueryInboundAddressResponse.Fields().ByName("dust_threshold")
+	fd_QueryInboundAddressResponse_supporting_validators = md_QueryInboundAddressResponse.Fields().ByName("supporting_validators")
+	fd_QueryInboundAddressResponse_active_validator_fraction = md_QueryInboundAddressResponse.Fields().ByName("active_validator_fraction")
+	fd_QueryInboundAddressResponse_liquidity_cap_applied = md_QueryInboundAddressResponse.Fields().ByName("liquidity_cap_applied")
+	fd_QueryInboundAddressResponse_liquidity_cap_rune = md_QueryInboundAddressResponse.Fields().ByName("liquidity_cap_rune")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryInboundAddressResponse)(nil)
@@ -199,6 +207,30 @@ func (x *fastReflection_QueryInboundAddressResponse) Range(f func(protoreflect.F
 			return
 		}
 	}
+	if x.SupportingValidators != int64(0) {
+		value := protoreflect.ValueOfInt64(x.SupportingValidators)
+		if !f(fd_QueryInboundAddressResponse_supporting_validators, value) {
+			return
+		}
+	}
+	if x.ActiveValidatorFraction != "" {
+		value := protoreflect.ValueOfString(x.ActiveValidatorFraction)
+		if !f(fd_QueryInboundAddressResponse_active_validator_fraction, value) {
+			return
+		}
+	}
+	if x.LiquidityCapApplied != false {
+		value := protoreflect.ValueOfBool(x.LiquidityCapApplied)
+		if !f(fd_QueryInboundAddressResponse_liquidity_cap_applied, value) {
+			return
+		}
+	}
+	if x.LiquidityCapRune != "" {
+		value := protoreflect.ValueOfString(x.LiquidityCapRune)
+		if !f(fd_QueryInboundAddressResponse_liquidity_cap_rune, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -242,6 +274,14 @@ func (x *fastReflection_QueryInboundAddressResponse) Has(fd protoreflect.FieldDe
 		return x.OutboundFee != ""
 	case "types.QueryInboundAddressResponse.dust_threshold":
 		return x.DustThreshold != ""
+	case "types.QueryInboundAddressResponse.supporting_validators":
+		return x.SupportingValidators != int64(0)
+	case "types.QueryInboundAddressResponse.active_validator_fraction":
+		return x.ActiveValidatorFraction != ""
+	case "types.QueryInboundAddressResponse.liquidity_cap_applied":
+		return x.LiquidityCapApplied != false
+	case "types.QueryInboundAddressResponse.liquidity_cap_rune":
+		return x.LiquidityCapRune != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryInboundAddressResponse"))
@@ -286,6 +326,14 @@ func (x *fastReflection_QueryInboundAddressResponse) Clear(fd protoreflect.Field
 		x.OutboundFee = ""
 	case "types.QueryInboundAddressResponse.dust_threshold":
 		x.DustThreshold = ""
+	case "types.QueryInboundAddressResponse.supporting_validators":
+		x.SupportingValidators = int64(0)
+	case "types.QueryInboundAddressResponse.active_validator_fraction":
+		x.ActiveValidatorFraction = ""
+	case "types.QueryInboundAddressResponse.liquidity_cap_applied":
+		x.LiquidityCapApplied = false
+	case "types.QueryInboundAddressResponse.liquidity_cap_rune":
+		x.LiquidityCapRune = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryInboundAddressResponse"))
@@ -344,6 +392,18 @@ func (x *fastReflection_QueryInboundAddressResponse) Get(descriptor protoreflect
 	case "types.QueryInboundAddressResponse.dust_threshold":
 		value := x.DustThreshold
 		return protoreflect.ValueOfString(value)
+	case "types.QueryInboundAddressResponse.supporting_validators":
+		value := x.SupportingValidators
+		return protoreflect.ValueOfInt64(value)
+	case "types.QueryInboundAddressResponse.active_validator_fraction":
+		value := x.ActiveValidatorFraction
+		return protoreflect.ValueOfString(value)
+	case "types.QueryInboundAddressResponse.liquidity_cap_applied":
+		value := x.LiquidityCapApplied
+		return protoreflect.ValueOfBool(value)
+	case "types.QueryInboundAddressResponse.liquidity_cap_rune":
+		value := x.LiquidityCapRune
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryInboundAddressResponse"))
@@ -392,6 +452,14 @@ func (x *fastReflection_QueryInboundAddressResponse) Set(fd protoreflect.FieldDe
 		x.OutboundFee = value.Interface().(string)
 	case "types.QueryInboundAddressResponse.dust_threshold":
 		x.DustThreshold = value.Interface().(string)
+	case "types.QueryInboundAddressResponse.supporting_validators":
+		x.SupportingValidators = value.Int()
+	case "types.QueryInboundAddressResponse.active_validator_fraction":
+		x.ActiveValidatorFraction = value.Interface().(string)
+	case "types.QueryInboundAddressResponse.liquidity_cap_applied":
+		x.LiquidityCapApplied = value.Bool()
+	case "types.QueryInboundAddressResponse.liquidity_cap_rune":
+		x.LiquidityCapRune = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryInboundAddressResponse"))
@@ -440,6 +508,14 @@ func (x *fastReflection_QueryInboundAddressResponse) Mutable(fd protoreflect.Fie
 		panic(fmt.Errorf("field outbound_fee of message types.QueryInboundAddressResponse is not mutable"))
 	case "types.QueryInboundAddressResponse.dust_threshold":
 		panic(fmt.Errorf("field dust_threshold of message types.QueryInboundAddressResponse is not mutable"))
+	case "types.QueryInboundAddressResponse.supporting_validators":
+		panic(fmt.Errorf("field supporting_validators of message types.QueryInboundAddressResponse is not mutable"))
+	case "types.QueryInboundAddressResponse.active_validator_fraction":
+		panic(fmt.Errorf("field active_validator_fraction of message types.QueryInboundAddressResponse is not mutable"))
+	case "types.QueryInboundAddressResponse.liquidity_cap_applied":
+		panic(fmt.Errorf("field liquidity_cap_applied of message types.QueryInboundAddressResponse is not mutable"))
+	case "types.QueryInboundAddressResponse.liquidity_cap_rune":
+		panic(fmt.Errorf("field liquidity_cap_rune of message types.QueryInboundAddressResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryInboundAddressResponse"))
@@ -480,6 +556,14 @@ func (x *fastReflection_QueryInboundAddressResponse) NewField(fd protoreflect.Fi
 	case "types.QueryInboundAddressResponse.outbound_fee":
 		return protoreflect.ValueOfString("")
 	case "types.QueryInboundAddressResponse.dust_threshold":
+		return protoreflect.ValueOfString("")
+	case "types.QueryInboundAddressResponse.supporting_validators":
+		return protoreflect.ValueOfInt64(int64(0))
+	case "types.QueryInboundAddressResponse.active_validator_fraction":
+		return protoreflect.ValueOfString("")
+	case "types.QueryInboundAddressResponse.liquidity_cap_applied":
+		return protoreflect.ValueOfBool(false)
+	case "types.QueryInboundAddressResponse.liquidity_cap_rune":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -602,6 +686,20 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		if x.SupportingValidators != 0 {
+			n += 1 + runtime.Sov(uint64(x.SupportingValidators))
+		}
+		l = len(x.ActiveValidatorFraction)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		if x.LiquidityCapApplied {
+			n += 3
+		}
+		l = len(x.LiquidityCapRune)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -630,6 +728,41 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.LiquidityCapRune) > 0 {
+			i -= len(x.LiquidityCapRune)
+			copy(dAtA[i:], x.LiquidityCapRune)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LiquidityCapRune)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x92
+		}
+		if x.LiquidityCapApplied {
+			i--
+			if x.LiquidityCapApplied {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x88
+		}
+		if len(x.ActiveValidatorFraction) > 0 {
+			i -= len(x.ActiveValidatorFraction)
+			copy(dAtA[i:], x.ActiveValidatorFraction)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ActiveValidatorFraction)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x82
+		}
+		if x.SupportingValidators != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.SupportingValidators))
+			i--
+			dAtA[i] = 0x78
 		}
 		if len(x.ObservedFeeRate) > 0 {
 			i -= len(x.ObservedFeeRate)
@@ -1189,6 +1322,109 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
 				x.DustThreshold = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 15:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SupportingValidators", wireType)
+				}
+				x.SupportingValidators = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.SupportingValidators |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 16:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ActiveValidatorFraction", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.ActiveValidatorFraction = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 17:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LiquidityCapApplied", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.LiquidityCapApplied = bool(v != 0)
+			case 18:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LiquidityCapRune", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LiquidityCapRune = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -2189,7 +2425,11 @@ type QueryInboundAddressResponse struct {
 	// Defines the minimum transaction size for the chain in base units (sats,
 	// wei, uatom). Transactions with asset amounts lower than the dust_threshold
 	// are ignored.
-	DustThreshold string `protobuf:"bytes,13,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	DustThreshold           string `protobuf:"bytes,13,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	SupportingValidators    int64  `protobuf:"varint,15,opt,name=supporting_validators,json=supportingValidators,proto3" json:"supporting_validators,omitempty"`
+	ActiveValidatorFraction string `protobuf:"bytes,16,opt,name=active_validator_fraction,json=activeValidatorFraction,proto3" json:"active_validator_fraction,omitempty"`
+	LiquidityCapApplied     bool   `protobuf:"varint,17,opt,name=liquidity_cap_applied,json=liquidityCapApplied,proto3" json:"liquidity_cap_applied,omitempty"`
+	LiquidityCapRune        string `protobuf:"bytes,18,opt,name=liquidity_cap_rune,json=liquidityCapRune,proto3" json:"liquidity_cap_rune,omitempty"`
 }
 
 func (x *QueryInboundAddressResponse) Reset() {
@@ -2310,6 +2550,34 @@ func (x *QueryInboundAddressResponse) GetDustThreshold() string {
 	return ""
 }
 
+func (x *QueryInboundAddressResponse) GetSupportingValidators() int64 {
+	if x != nil {
+		return x.SupportingValidators
+	}
+	return 0
+}
+
+func (x *QueryInboundAddressResponse) GetActiveValidatorFraction() string {
+	if x != nil {
+		return x.ActiveValidatorFraction
+	}
+	return ""
+}
+
+func (x *QueryInboundAddressResponse) GetLiquidityCapApplied() bool {
+	if x != nil {
+		return x.LiquidityCapApplied
+	}
+	return false
+}
+
+func (x *QueryInboundAddressResponse) GetLiquidityCapRune() string {
+	if x != nil {
+		return x.LiquidityCapRune
+	}
+	return ""
+}
+
 type QueryInboundAddressesRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -2387,7 +2655,7 @@ var file_types_query_inbound_address_proto_rawDesc = []byte{
 	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x12, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f,
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x22, 0xf2, 0x04, 0x0a, 0x1b, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e,
+	0x22, 0xe0, 0x06, 0x0a, 0x1b, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e,
 	0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
 	0x12, 0x14, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
 	0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12, 0x17, 0x0a, 0x07, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65,
@@ -2426,27 +2694,42 @@ var file_types_query_inbound_address_proto_rawDesc = []byte{
 	0x09, 0x52, 0x0b, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x46, 0x65, 0x65, 0x12, 0x25,
 	0x0a, 0x0e, 0x64, 0x75, 0x73, 0x74, 0x5f, 0x74, 0x68, 0x72, 0x65, 0x73, 0x68, 0x6f, 0x6c, 0x64,
 	0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x64, 0x75, 0x73, 0x74, 0x54, 0x68, 0x72, 0x65,
-	0x73, 0x68, 0x6f, 0x6c, 0x64, 0x22, 0x36, 0x0a, 0x1c, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e,
-	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x65, 0x73, 0x52, 0x65,
-	0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x70, 0x0a,
-	0x1d, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64,
-	0x72, 0x65, 0x73, 0x73, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x4f,
-	0x0a, 0x11, 0x69, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
-	0x73, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x74, 0x79, 0x70, 0x65,
-	0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64,
-	0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x10, 0x69,
-	0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x65, 0x73, 0x42,
-	0x89, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x18, 0x51,
+	0x73, 0x68, 0x6f, 0x6c, 0x64, 0x12, 0x33, 0x0a, 0x15, 0x73, 0x75, 0x70, 0x70, 0x6f, 0x72, 0x74,
+	0x69, 0x6e, 0x67, 0x5f, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x73, 0x18, 0x0f,
+	0x20, 0x01, 0x28, 0x03, 0x52, 0x14, 0x73, 0x75, 0x70, 0x70, 0x6f, 0x72, 0x74, 0x69, 0x6e, 0x67,
+	0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x73, 0x12, 0x3a, 0x0a, 0x19, 0x61, 0x63,
+	0x74, 0x69, 0x76, 0x65, 0x5f, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x5f, 0x66,
+	0x72, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x10, 0x20, 0x01, 0x28, 0x09, 0x52, 0x17, 0x61,
+	0x63, 0x74, 0x69, 0x76, 0x65, 0x56, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x6f, 0x72, 0x46, 0x72,
+	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x4d, 0x0a, 0x15, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64,
+	0x69, 0x74, 0x79, 0x5f, 0x63, 0x61, 0x70, 0x5f, 0x61, 0x70, 0x70, 0x6c, 0x69, 0x65, 0x64, 0x18,
+	0x11, 0x20, 0x01, 0x28, 0x08, 0x42, 0x19, 0xea, 0xde, 0x1f, 0x15, 0x6c, 0x69, 0x71, 0x75, 0x69,
+	0x64, 0x69, 0x74, 0x79, 0x5f, 0x63, 0x61, 0x70, 0x5f, 0x61, 0x70, 0x70, 0x6c, 0x69, 0x65, 0x64,
+	0x52, 0x13, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x43, 0x61, 0x70, 0x41, 0x70,
+	0x70, 0x6c, 0x69, 0x65, 0x64, 0x12, 0x2c, 0x0a, 0x12, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69,
+	0x74, 0x79, 0x5f, 0x63, 0x61, 0x70, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x12, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x10, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x43, 0x61, 0x70, 0x52,
+	0x75, 0x6e, 0x65, 0x22, 0x36, 0x0a, 0x1c, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f,
+	0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x70, 0x0a, 0x1d, 0x51,
 	0x75, 0x65, 0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65,
-	0x73, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61,
-	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
-	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79,
-	0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79,
-	0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea,
-	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x73, 0x73, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x4f, 0x0a, 0x11,
+	0x69, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x65,
+	0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e,
+	0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72,
+	0x65, 0x73, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x10, 0x69, 0x6e, 0x62,
+	0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x65, 0x73, 0x42, 0x89, 0x01,
+	0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x18, 0x51, 0x75, 0x65,
+	0x72, 0x79, 0x49, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
+	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79,
+	0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05,
+	0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x33,
 }
 
 var (

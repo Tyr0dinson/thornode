@@ -40,6 +40,14 @@ type InboundAddress struct {
 	OutboundFee *string `json:"outbound_fee,omitempty"`
 	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
 	DustThreshold *string `json:"dust_threshold,omitempty"`
+	// The number of active validators currently supporting this chain.
+	SupportingValidators *int64 `json:"supporting_validators,omitempty"`
+	// The fraction of active validators supporting this chain.
+	ActiveValidatorFraction *string `json:"active_validator_fraction,omitempty"`
+	// Returns true if a liquidity cap is currently applied to this chain due to sub-BFT validator support.
+	LiquidityCapApplied *bool `json:"liquidity_cap_applied,omitempty"`
+	// The current liquidity cap in RUNE (1e8) when liquidity_cap_applied is true.
+	LiquidityCapRune *string `json:"liquidity_cap_rune,omitempty"`
 }
 
 // NewInboundAddress instantiates a new InboundAddress object
@@ -479,6 +487,134 @@ func (o *InboundAddress) SetDustThreshold(v string) {
 	o.DustThreshold = &v
 }
 
+// GetSupportingValidators returns the SupportingValidators field value if set, zero value otherwise.
+func (o *InboundAddress) GetSupportingValidators() int64 {
+	if o == nil || o.SupportingValidators == nil {
+		var ret int64
+		return ret
+	}
+	return *o.SupportingValidators
+}
+
+// GetSupportingValidatorsOk returns a tuple with the SupportingValidators field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InboundAddress) GetSupportingValidatorsOk() (*int64, bool) {
+	if o == nil || o.SupportingValidators == nil {
+		return nil, false
+	}
+	return o.SupportingValidators, true
+}
+
+// HasSupportingValidators returns a boolean if a field has been set.
+func (o *InboundAddress) HasSupportingValidators() bool {
+	if o != nil && o.SupportingValidators != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetSupportingValidators gets a reference to the given int64 and assigns it to the SupportingValidators field.
+func (o *InboundAddress) SetSupportingValidators(v int64) {
+	o.SupportingValidators = &v
+}
+
+// GetActiveValidatorFraction returns the ActiveValidatorFraction field value if set, zero value otherwise.
+func (o *InboundAddress) GetActiveValidatorFraction() string {
+	if o == nil || o.ActiveValidatorFraction == nil {
+		var ret string
+		return ret
+	}
+	return *o.ActiveValidatorFraction
+}
+
+// GetActiveValidatorFractionOk returns a tuple with the ActiveValidatorFraction field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InboundAddress) GetActiveValidatorFractionOk() (*string, bool) {
+	if o == nil || o.ActiveValidatorFraction == nil {
+		return nil, false
+	}
+	return o.ActiveValidatorFraction, true
+}
+
+// HasActiveValidatorFraction returns a boolean if a field has been set.
+func (o *InboundAddress) HasActiveValidatorFraction() bool {
+	if o != nil && o.ActiveValidatorFraction != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetActiveValidatorFraction gets a reference to the given string and assigns it to the ActiveValidatorFraction field.
+func (o *InboundAddress) SetActiveValidatorFraction(v string) {
+	o.ActiveValidatorFraction = &v
+}
+
+// GetLiquidityCapApplied returns the LiquidityCapApplied field value if set, zero value otherwise.
+func (o *InboundAddress) GetLiquidityCapApplied() bool {
+	if o == nil || o.LiquidityCapApplied == nil {
+		var ret bool
+		return ret
+	}
+	return *o.LiquidityCapApplied
+}
+
+// GetLiquidityCapAppliedOk returns a tuple with the LiquidityCapApplied field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InboundAddress) GetLiquidityCapAppliedOk() (*bool, bool) {
+	if o == nil || o.LiquidityCapApplied == nil {
+		return nil, false
+	}
+	return o.LiquidityCapApplied, true
+}
+
+// HasLiquidityCapApplied returns a boolean if a field has been set.
+func (o *InboundAddress) HasLiquidityCapApplied() bool {
+	if o != nil && o.LiquidityCapApplied != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLiquidityCapApplied gets a reference to the given bool and assigns it to the LiquidityCapApplied field.
+func (o *InboundAddress) SetLiquidityCapApplied(v bool) {
+	o.LiquidityCapApplied = &v
+}
+
+// GetLiquidityCapRune returns the LiquidityCapRune field value if set, zero value otherwise.
+func (o *InboundAddress) GetLiquidityCapRune() string {
+	if o == nil || o.LiquidityCapRune == nil {
+		var ret string
+		return ret
+	}
+	return *o.LiquidityCapRune
+}
+
+// GetLiquidityCapRuneOk returns a tuple with the LiquidityCapRune field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InboundAddress) GetLiquidityCapRuneOk() (*string, bool) {
+	if o == nil || o.LiquidityCapRune == nil {
+		return nil, false
+	}
+	return o.LiquidityCapRune, true
+}
+
+// HasLiquidityCapRune returns a boolean if a field has been set.
+func (o *InboundAddress) HasLiquidityCapRune() bool {
+	if o != nil && o.LiquidityCapRune != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLiquidityCapRune gets a reference to the given string and assigns it to the LiquidityCapRune field.
+func (o *InboundAddress) SetLiquidityCapRune(v string) {
+	o.LiquidityCapRune = &v
+}
+
 func (o InboundAddress) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Chain != nil {
@@ -522,6 +658,18 @@ func (o InboundAddress) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.DustThreshold != nil {
 		toSerialize["dust_threshold"] = o.DustThreshold
+	}
+	if o.SupportingValidators != nil {
+		toSerialize["supporting_validators"] = o.SupportingValidators
+	}
+	if o.ActiveValidatorFraction != nil {
+		toSerialize["active_validator_fraction"] = o.ActiveValidatorFraction
+	}
+	if o.LiquidityCapApplied != nil {
+		toSerialize["liquidity_cap_applied"] = o.LiquidityCapApplied
+	}
+	if o.LiquidityCapRune != nil {
+		toSerialize["liquidity_cap_rune"] = o.LiquidityCapRune
 	}
 	return json.Marshal(toSerialize)
 }
