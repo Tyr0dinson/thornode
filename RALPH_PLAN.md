@@ -220,7 +220,7 @@ task, it:
 
 ### Phase 14 — Bifrost
 
-- [x] **T39** `bifrost/thorclient/pubkey_manager.go`: implement `GetSupportedChains() []common.Chain` with active+retiring vault union and fallback to `common.AllChains` when no membership. Unit tests. — pending
+- [x] **T39** `bifrost/thorclient/pubkey_manager.go`: implement `GetSupportedChains() []common.Chain` with active+retiring vault union and fallback to `common.AllChains` when no membership. Unit tests. — 6807845b23
 - [ ] **T40** `bifrost/blockscanner/blockscanner.go`: add `SetShouldObserveCallback(func() bool)`; pause polling when callback returns false; preserve cursor across pause/resume. Unit tests.
 - [ ] **T41** Wire callback in `bifrost/pkg/chainclients/ethereum/`. Unit tests.
 - [ ] **T42** Wire callback in `bifrost/pkg/chainclients/evm/` (generic EVM). Unit tests.
