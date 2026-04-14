@@ -1006,6 +1006,93 @@ func (s *QuerierSuite) TestQueryNodeAccountSupportedChains(c *C) {
 	c.Assert(found[common.ETHChain.String()], Equals, true)
 }
 
+func (s *QuerierSuite) TestQueryNodesSupportedChainsEndToEnd(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+	k := mgr.Keeper()
+
+	// Create a vault with specific chains and membership
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+
+	vault := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	vault.Membership = common.PubKeys{na1.PubKeySet.Secp256k1, na2.PubKeySet.Secp256k1}.Strings()
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// na1: empty SupportedChains -> resolved from vault membership
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+
+	// na2: explicit SupportedChains = [BTC]
+	na2.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+
+	// Query the Nodes (plural) endpoint
+	queryNodesResp, err := queryServer.Nodes(ctx, &types.QueryNodesRequest{})
+	c.Assert(err, IsNil)
+
+	res, err := queryNodesResp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+
+	var nodes []openapi.Node
+	c.Assert(json.Unmarshal(res, &nodes), IsNil)
+	c.Assert(len(nodes), Equals, 2)
+
+	for _, node := range nodes {
+		if node.NodeAddress == na1.NodeAddress.String() {
+			// na1 has empty SupportedChains -> resolves from vault, supports_all_chains=true
+			c.Assert(node.SupportsAllChains, Equals, true)
+			chainSet := make(map[string]bool)
+			for _, ch := range node.SupportedChains {
+				chainSet[ch] = true
+			}
+			c.Assert(chainSet[common.BTCChain.String()], Equals, true)
+			c.Assert(chainSet[common.ETHChain.String()], Equals, true)
+		} else if node.NodeAddress == na2.NodeAddress.String() {
+			// na2 has explicit SupportedChains=[BTC] -> supports_all_chains=false
+			c.Assert(node.SupportsAllChains, Equals, false)
+			c.Assert(len(node.SupportedChains), Equals, 1)
+			c.Assert(node.SupportedChains[0], Equals, common.BTCChain.String())
+		} else {
+			c.Fatalf("unexpected node address: %s", node.NodeAddress)
+		}
+	}
+
+	// Also verify single-node endpoint returns consistent results for na1
+	queryNodeResp, err := queryServer.Node(ctx, &types.QueryNodeRequest{
+		Address: na1.NodeAddress.String(),
+	})
+	c.Assert(err, IsNil)
+	singleRes, err := queryNodeResp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+
+	var singleNode openapi.Node
+	c.Assert(json.Unmarshal(singleRes, &singleNode), IsNil)
+	c.Assert(singleNode.SupportsAllChains, Equals, true)
+	singleChainSet := make(map[string]bool)
+	for _, ch := range singleNode.SupportedChains {
+		singleChainSet[ch] = true
+	}
+	c.Assert(singleChainSet[common.BTCChain.String()], Equals, true)
+	c.Assert(singleChainSet[common.ETHChain.String()], Equals, true)
+
+	// Verify single-node endpoint for na2 with explicit chains
+	queryNodeResp, err = queryServer.Node(ctx, &types.QueryNodeRequest{
+		Address: na2.NodeAddress.String(),
+	})
+	c.Assert(err, IsNil)
+	singleRes, err = queryNodeResp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+
+	var singleNode2 openapi.Node
+	c.Assert(json.Unmarshal(singleRes, &singleNode2), IsNil)
+	c.Assert(singleNode2.SupportsAllChains, Equals, false)
+	c.Assert(len(singleNode2.SupportedChains), Equals, 1)
+	c.Assert(singleNode2.SupportedChains[0], Equals, common.BTCChain.String())
+}
+
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
