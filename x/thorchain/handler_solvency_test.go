@@ -256,3 +256,85 @@ func (s *HandlerSolvencyTestSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+func (s *HandlerSolvencyTestSuite) TestChainAwareConsensus(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1024)
+
+	// 6 active nodes, but only nas[0..2] are in the ETH vault.
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+
+	ethVault := GetRandomVault()
+	ethVault.Status = ActiveVault
+	ethVault.Type = AsgardVault
+	ethVault.Chains = []string{common.ETHChain.String()}
+	ethVault.Membership = []string{
+		nas[0].PubKeySet.Secp256k1.String(),
+		nas[1].PubKeySet.Secp256k1.String(),
+		nas[2].PubKeySet.Secp256k1.String(),
+	}
+	ethVault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
+
+	handler := NewSolvencyHandler(mgr)
+
+	msg, err := NewMsgSolvency(common.ETHChain,
+		ethVault.PubKey,
+		common.NewCoins(
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One)),
+		),
+		1024,
+		cosmos.AccAddress{})
+	c.Assert(err, IsNil)
+
+	broadcast := func(c *C, na NodeAccount) {
+		msg.Signer = na.NodeAddress
+		_, err := handler.handle(ctx, *msg)
+		c.Assert(err, IsNil)
+	}
+
+	// With 3 chain participants, SolvencyVoter consensus needs 1/3 = 1.
+	// nas[0] signs — reaches consensus with 1 of 3.
+	broadcast(c, nas[0])
+	voter, err := mgr.Keeper().GetSolvencyVoter(ctx, msg.Id, msg.Chain)
+	c.Assert(err, IsNil)
+	c.Assert(voter.ConsensusBlockHeight, Equals, ctx.BlockHeight(), Commentf("should have consensus with 1 of 3 chain participants"))
+
+	// nas[3] (not in vault) should not be penalized — they are not a chain participant.
+	pts3, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[3].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts3, Equals, int64(0), Commentf("non-chain-participant should not be penalized"))
+
+	pts4, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[4].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts4, Equals, int64(0))
+
+	pts5, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[5].NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(pts5, Equals, int64(0))
+
+	// nas[2] (in vault but didn't sign) should have LackOfObservationPenalty.
+	pts2, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[2].NodeAddress)
+	c.Assert(err, IsNil)
+	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
+	c.Assert(pts2, Equals, lackOfObservationPenalty, Commentf("chain participant non-signer should be penalized"))
+}

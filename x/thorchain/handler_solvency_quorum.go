@@ -59,6 +59,8 @@ func (h SolvencyQuorumHandler) handle(ctx cosmos.Context, msg types.MsgSolvencyQ
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
 
+	active = getChainConsensusNodeAccounts(ctx, h.mgr, s.Chain, active)
+
 	voter, err := k.GetSolvencyVoter(ctx, s.Id, s.Chain)
 	if err != nil {
 		return &cosmos.Result{}, fmt.Errorf("fail to get solvency voter, err: %w", err)
