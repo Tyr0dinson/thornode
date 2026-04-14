@@ -716,6 +716,125 @@ func (s *HandlerTssSuite) TestKeygenSuccessHandler(c *C) {
 	}
 }
 
+func (s *HandlerTssSuite) TestFindMatchingKeygen(c *C) {
+	members := []string{"pk1", "pk2", "pk3"}
+	kb := KeygenBlock{
+		Keygens: []Keygen{
+			{Type: AsgardKeygen, Members: []string{"pk4", "pk5"}, TargetChains: []string{"BTC"}},
+			{Type: AsgardKeygen, Members: []string{"pk1", "pk2", "pk3"}, TargetChains: []string{"ETH", "BTC"}},
+		},
+	}
+
+	kg := findMatchingKeygen(kb, members)
+	c.Assert(kg, NotNil)
+	c.Assert(kg.TargetChains, DeepEquals, []string{"ETH", "BTC"})
+
+	// no match
+	kg = findMatchingKeygen(kb, []string{"pk1", "pk2"})
+	c.Assert(kg, IsNil)
+
+	// empty keygen block
+	kg = findMatchingKeygen(KeygenBlock{}, members)
+	c.Assert(kg, IsNil)
+}
+
+func (s *HandlerTssSuite) TestKeygenSuccessWithTargetChains(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	keygenTime := int64(1024)
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+
+	// update keygen block with TargetChains
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{
+			Type:         AsgardKeygen,
+			Members:      helper.members.Strings(),
+			TargetChains: common.Chains{common.BTCChain, common.ETHChain}.Strings(),
+		},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	// bypass signature checks
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error {
+		return nil
+	}
+
+	for _, item := range helper.members {
+		thorAddr, err := item.GetThorAddress()
+		c.Assert(err, IsNil)
+		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, nil, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
+		c.Assert(err, IsNil)
+		err = handler.handle(helper.ctx, tssMsg)
+		c.Assert(err, IsNil)
+	}
+
+	// vault should have TargetChains, not consensus chains
+	vaults, err := helper.keeper.GetAsgardVaultsByStatus(helper.ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(vaults) >= 1, Equals, true)
+
+	found := false
+	for _, v := range vaults {
+		if v.PubKey.Equals(poolPubKey) {
+			found = true
+			vaultChains := v.GetChains()
+			sort.SliceStable(vaultChains, func(i, j int) bool {
+				return vaultChains[i].String() < vaultChains[j].String()
+			})
+			c.Assert(vaultChains, DeepEquals, common.Chains{common.BTCChain, common.ETHChain})
+			break
+		}
+	}
+	c.Assert(found, Equals, true)
+}
+
+func (s *HandlerTssSuite) TestKeygenSuccessWithoutTargetChainsFallback(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	keygenTime := int64(1024)
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+
+	// keygen block without TargetChains (legacy behavior)
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{
+			Type:    AsgardKeygen,
+			Members: helper.members.Strings(),
+		},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error {
+		return nil
+	}
+
+	for _, item := range helper.members {
+		thorAddr, err := item.GetThorAddress()
+		c.Assert(err, IsNil)
+		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, nil, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
+		c.Assert(err, IsNil)
+		err = handler.handle(helper.ctx, tssMsg)
+		c.Assert(err, IsNil)
+	}
+
+	// vault should use consensus chains (THOR) since no TargetChains
+	vaults, err := helper.keeper.GetAsgardVaultsByStatus(helper.ctx, InitVault)
+	c.Assert(err, IsNil)
+
+	found := false
+	for _, v := range vaults {
+		if v.PubKey.Equals(poolPubKey) {
+			found = true
+			c.Assert(v.GetChains(), DeepEquals, common.Chains{common.THORChain})
+			break
+		}
+	}
+	c.Assert(found, Equals, true)
+}
+
 func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	height := int64(1024)

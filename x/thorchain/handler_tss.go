@@ -441,16 +441,32 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			h.mgr.Keeper().SetTssVoter(ctx, voter)
 
 			vaultType := AsgardVault
+			keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
+			if err != nil {
+				return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
+			}
+
 			chains := voter.ConsensusChains()
+			if matchingKeygen := findMatchingKeygen(keygenBlock, voter.PubKeys); matchingKeygen != nil && len(matchingKeygen.TargetChains) > 0 {
+				targetChains := make(common.Chains, 0, len(matchingKeygen.TargetChains))
+				for _, tc := range matchingKeygen.TargetChains {
+					chain, err := common.NewChain(tc)
+					if err != nil {
+						ctx.Logger().Error("fail to parse target chain", "chain", tc, "error", err)
+						continue
+					}
+					targetChains = append(targetChains, chain)
+				}
+				if len(targetChains) > 0 {
+					chains = targetChains
+				}
+			}
+
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), voter.PoolPubKeyEddsa)
 			vault.Membership = voter.PubKeys
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 				return fmt.Errorf("fail to save vault: %w", err)
-			}
-			keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
-			if err != nil {
-				return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
 			}
 			initVaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
 			if err != nil {
@@ -545,6 +561,30 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter Tss
 			}
 		}
 	}
+}
+
+func findMatchingKeygen(keygenBlock KeygenBlock, voterPubKeys []string) *Keygen {
+	voterSet := make(map[string]struct{}, len(voterPubKeys))
+	for _, pk := range voterPubKeys {
+		voterSet[pk] = struct{}{}
+	}
+	for i := range keygenBlock.Keygens {
+		kg := &keygenBlock.Keygens[i]
+		if len(kg.Members) != len(voterPubKeys) {
+			continue
+		}
+		match := true
+		for _, m := range kg.Members {
+			if _, ok := voterSet[m]; !ok {
+				match = false
+				break
+			}
+		}
+		if match {
+			return kg
+		}
+	}
+	return nil
 }
 
 // TssAnteHandler called by the ante handler to gate mempool entry
