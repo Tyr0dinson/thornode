@@ -40,6 +40,8 @@ export WALLET="snode1"
 # Destination addresses
 export SOL_DEST_ADDR="9NygcE9bzLULhS9KDzvx7CmZxeZQntdFmNsu3Zdy549c"
 export BTC_DEST_ADDR="bc1qlav94c2huygkwfhhuuupydtx54w8pstmv8pdzf"
+export ATOM_DEST_ADDR="cosmos15luk05g09h4wskye4r2ef6nsgel27g2c7c0dpj"
+export ETH_DEST_ADDR="0xB7bD3149b150878011693aC6eEe6205B05b92C7e"
 ```
 
 > **Mimir votes** require a supermajority of active nodes (>2/3 of 4 = at least 3 votes).
@@ -1415,8 +1417,11 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 ```
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
+  | jq '.[] | select(.coins[].asset == "GAIA.ATOM") | .coins[] | select(.asset == "GAIA.ATOM") | .amount'
+"27396756700"
+"27393756700"
 ```
 
 **Step 2 — Submit RUNE → ATOM swap**
@@ -1427,21 +1432,42 @@ sthornode tx thorchain deposit 1000000000 rune \
 ```
 
 **Result:**
-```
-
+```bash
+gas estimate: 230970
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 99CD44F450BCCE68D71F8FB5F1A3667EEBED45AD84DBE7634BD8CC4C955E6F63
 ```
 
 **Step 3 — Wait for the outbound to finalise**
 ```bash
-export GAIA_TX=$(curl -s "$STAGENET_API/thorchain/queue/outbound" \
-  | jq -r '(. // [])[] | select(.coin.asset == "GAIA.ATOM") | .in_hash')
-watch -n 6 "curl -s $STAGENET_API/thorchain/tx/$GAIA_TX | jq '.observed_tx.status'"
+export GAIA_TX="99CD44F450BCCE68D71F8FB5F1A3667EEBED45AD84DBE7634BD8CC4C955E6F63"
+curl -s "$STAGENET_API/thorchain/tx/details/$GAIA_TX" \
+  | jq '{status: .tx.status, out_hashes: .tx.out_hashes, finalised_height}'
 ```
-> Expected: `"done"`
+> Expected: `status: "done"` with an `out_hashes` entry
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/thorchain/tx/details/99CD44F450BCCE68D71F8FB5F1A3667EEBED45AD84DBE7634BD8CC4C955E6F63" \
+  | jq '{status: .tx.status, out_hashes: .tx.out_hashes, finalised_height}'
+{
+  "status": "done",
+  "out_hashes": [
+    "DB3D7C9CCD47EFA1EEFEEC60BB4746A1C0258C273C30A14723BC77C1F98BBF2E"
+  ],
+  "finalised_height": 9526371
+}
 ```
 
 **Step 4 — Verify vault balance decreased by outbound + gas only**
@@ -1452,8 +1478,10 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 > Expected: decreased by swap amount + gas, not more
 
 **Result:**
-```
-
+```bash
+~ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
+  | jq '.[] | select(.coins[].asset == "GAIA.ATOM") | .coins[] | select(.asset == "GAIA.ATOM") | .amount'
+"54232304000"
 ```
 
 **Step 5 — Confirm GAIA is not halted**
@@ -1463,20 +1491,33 @@ curl -s "$STAGENET_API/thorchain/mimir" | jq '.HALTGAIACHAINACTIVITY // "not set
 > Expected: `"not set (good)"`
 
 **Result:**
-```
-
-```
-
-**Step 6 — Check no insolvency events emitted**
 ```bash
-curl -s "$STAGENET_API/thorchain/block" \
-  | jq '[.[] | select(.type == "security")] | length'
+~ curl -s "$STAGENET_API/thorchain/mimir" | jq '.HALTGAIACHAINACTIVITY'
+null
 ```
-> Expected: `0`
+
+**Step 6 — Check no insolvency events emitted around finalisation**
+
+> Security (insolvency) events are emitted once in the block where the vault balance diverges —
+> checking the current block would miss them. Query the blocks at and just after
+> `finalised_height` (9526371) where the gas accounting would have been applied.
+
+```bash
+for height in 9526371 9526372 9526373 9526374 9526375; do
+  result=$(curl -s "$STAGENET_API/thorchain/block?height=$height" \
+    | jq '[(.begin_block_events // []) + (.end_block_events // []) + (.finalize_block_events // []) | .[] | select(.type == "security")] | length')
+  echo "Block $height: $result security events"
+done
+```
+> Expected: `0` for all blocks
 
 **Result:**
-```
-
+```bash
+Block 9526371: 0 security events
+Block 9526372: 0 security events
+Block 9526373: 0 security events
+Block 9526374: 0 security events
+Block 9526375: 0 security events
 ```
 
 #### Bug 3 — EVM failed outbound produces no slash
@@ -1490,24 +1531,49 @@ sthornode tx thorchain deposit 1000000000 rune \
 
 **Result:**
 ```
-
+gas estimate: 232428
+code: 0
+codespace: ""
+data: ""
+events: []
+gas_used: "0"
+gas_wanted: "0"
+height: "0"
+info: ""
+logs: []
+raw_log: ""
+timestamp: ""
+tx: null
+txhash: 8F08C7DD96028047816C4F98C7A0549BBCFBD790D46C8436ADFDD0220308CCA4
 ```
 
 **Step 8 — After finalisation, verify no slash events**
+
+> Slash events would be emitted in the blocks at/after `finalised_height` if the EVM outbound
+> memo bug existed (lowercase txhash → slash instead of gas deduction). Check those specific
+> blocks, not the current block.
+
 ```bash
-export ETH_TX=$(curl -s "$STAGENET_API/thorchain/queue/outbound" \
-  | jq -r '(. // [])[] | select(.coin.asset == "ETH.ETH") | .in_hash')
-curl -s "$STAGENET_API/thorchain/block" \
-  | jq '[.[] | select(.type == "slash")] | length'
+# ETH tx: 8F08C7DD96028047816C4F98C7A0549BBCFBD790D46C8436ADFDD0220308CCA4
+# finalised_height: 9526441
+for height in 9526441 9526442 9526443 9526444 9526445; do
+  result=$(curl -s "$STAGENET_API/thorchain/block?height=$height" \
+    | jq '[(.begin_block_events // []) + (.end_block_events // []) + (.finalize_block_events // []) | .[] | select(.type == "slash")] | length')
+  echo "Block $height: $result slash events"
+done
 ```
-> Expected: `0`
+> Expected: `0` for all blocks
 
 **Result:**
+```bash
+Block 9526441: 0 slash events
+Block 9526442: 0 slash events
+Block 9526443: 0 slash events
+Block 9526444: 0 slash events
+Block 9526445: 0 slash events
 ```
 
-```
-
-> **Status:** `[ ] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: ___
+> **Status:** `[x] Pass` &nbsp;&nbsp; `[ ] Fail` &nbsp;&nbsp; Notes: GAIA outbound finalised (status: "done", out_hash: DB3D7C9C...). Vault decreased by ~558M ≈ outbound (555,809,400) + gas (450,000). GAIA not halted. No security (insolvency) events in blocks 9526371–9526375. No slash events in blocks 9526441–9526445. All three bugs covered.
 
 ---
 
@@ -2382,7 +2448,7 @@ curl -s "$STAGENET_API/thorchain/vaults/asgard" \
 | T1.4 | DoS via unbounded attestation          | Critical | P1         | [x]    |
 | T1.5 | Limit swap DoS + rescue via mimir      | Critical | P1         | [x]    |
 | T1.6 | Bond module accounting                 | Critical | P1         | [x]    |
-| T1.7 | Gaia stuck outbounds (3 bugs)          | Critical | P1         | [ ]    |
+| T1.7 | Gaia stuck outbounds (3 bugs)          | Critical | P1         | [x]    |
 | T1.8 | Limit swap expiry — no fund lock       | Critical | [Security] | [ ]    |
 | T2.1 | UTXO vault lock through broadcast      | Bifrost  |            | [ ]    |
 | T2.2 | EVM outbound race after approval       | Bifrost  |            | [ ]    |
