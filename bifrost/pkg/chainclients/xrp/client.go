@@ -699,6 +699,10 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 	return height%c.cfg.SolvencyBlocks == 0 && !c.xrpScanner.lastFee.IsZero()
 }
 
+func (c *Client) SetShouldObserveCallback(cb func() bool) {
+	c.blockScanner.SetShouldObserveCallback(cb)
+}
+
 // OnObservedTxIn update the signer cache (in case we haven't already)
 func (c *Client) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 	m, err := memo.ParseMemo(common.LatestVersion, txIn.Memo)

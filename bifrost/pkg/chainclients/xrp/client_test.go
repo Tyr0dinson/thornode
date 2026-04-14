@@ -340,6 +340,38 @@ func (s *XrpTestSuite) TestSign(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *XrpTestSuite) TestSetShouldObserveCallback(c *C) {
+	client, err := NewClient(
+		s.thorKeys,
+		config.BifrostChainConfiguration{
+			ChainID:      common.XRPChain,
+			ChainNetwork: "1234",
+			RPCHost:      "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				StartBlockHeight: 1,
+			},
+		},
+		nil,
+		s.bridge,
+		s.m,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(client.blockScanner, NotNil)
+
+	called := false
+	client.SetShouldObserveCallback(func() bool {
+		called = true
+		return false
+	})
+	c.Assert(called, Equals, false)
+
+	client.SetShouldObserveCallback(func() bool {
+		return true
+	})
+
+	client.SetShouldObserveCallback(nil)
+}
+
 // Test signature verification with a signature that needs padding
 func (s *XrpTestSuite) TestSignatureRequiringPadding(c *C) {
 	signBytesHex := "5354580012000021000004d224000000016140000000017645e06840000000000b71b07321030cef2112503d3a56d2d48b3a0f0f6503e4353400f450f9dbf344d182e7c7069c8114d4b66bcf790babd0032c5dbfdc14ff1c643a4f488314fdffd00f2f2d215ecdad483b99be1dad2259b9c3f9ea7d046d656d6fe1f1"
