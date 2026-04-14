@@ -1081,6 +1081,26 @@ func (s *BitcoinSuite) TestGetChain(c *C) {
 	c.Assert(chain, Equals, common.BTCChain)
 }
 
+func (s *BitcoinSuite) TestSetShouldObserveCallback(c *C) {
+	c.Assert(s.client.blockScanner, NotNil)
+
+	// Set callback that returns false — scanner should pause
+	called := false
+	s.client.SetShouldObserveCallback(func() bool {
+		called = true
+		return false
+	})
+	c.Assert(called, Equals, false)
+
+	// Set callback that returns true — scanner should observe
+	s.client.SetShouldObserveCallback(func() bool {
+		return true
+	})
+
+	// Set nil callback — should not panic, restores default behavior
+	s.client.SetShouldObserveCallback(nil)
+}
+
 func (s *BitcoinSuite) TestGetHeight(c *C) {
 	height, err := s.client.GetHeight()
 	c.Assert(err, IsNil)

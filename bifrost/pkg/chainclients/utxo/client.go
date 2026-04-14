@@ -212,6 +212,11 @@ func (c *Client) GetChain() common.Chain {
 	return c.cfg.ChainID
 }
 
+// SetShouldObserveCallback sets a callback that controls whether the scanner actively polls.
+func (c *Client) SetShouldObserveCallback(cb func() bool) {
+	c.blockScanner.SetShouldObserveCallback(cb)
+}
+
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *Client) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
