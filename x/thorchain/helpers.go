@@ -1687,3 +1687,48 @@ func getNodeSupportedChains(ctx cosmos.Context, mgr Manager, na NodeAccount) []c
 	})
 	return chains
 }
+
+func getChainConsensusParticipants(ctx cosmos.Context, mgr Manager, chain common.Chain) []cosmos.AccAddress {
+	activeVaults, err := mgr.Keeper().GetActiveAsgardVaultsByChain(ctx, chain)
+	if err != nil {
+		ctx.Logger().Error("fail to get active vaults by chain", "chain", chain, "error", err)
+	}
+	retiringVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get retiring vaults", "error", err)
+	}
+
+	memberSet := make(map[string]cosmos.AccAddress)
+	for _, vault := range activeVaults {
+		for _, pk := range vault.GetMembership() {
+			addr, err := pk.GetThorAddress()
+			if err != nil {
+				ctx.Logger().Error("fail to get thor address from pubkey", "error", err)
+				continue
+			}
+			memberSet[addr.String()] = addr
+		}
+	}
+	for _, vault := range retiringVaults {
+		if !vault.GetChains().Has(chain) {
+			continue
+		}
+		for _, pk := range vault.GetMembership() {
+			addr, err := pk.GetThorAddress()
+			if err != nil {
+				ctx.Logger().Error("fail to get thor address from pubkey", "error", err)
+				continue
+			}
+			memberSet[addr.String()] = addr
+		}
+	}
+
+	result := make([]cosmos.AccAddress, 0, len(memberSet))
+	for _, addr := range memberSet {
+		result = append(result, addr)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].String() < result[j].String()
+	})
+	return result
+}

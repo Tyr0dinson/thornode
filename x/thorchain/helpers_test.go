@@ -1798,3 +1798,116 @@ func (s *HelperSuite) TestGetNodeSupportedChains(c *C) {
 	chains = getNodeSupportedChains(ctx, mgr, na5)
 	c.Assert(len(chains), Equals, len(common.AllChains))
 }
+
+type TestChainConsensusParticipantsKeeper struct {
+	keeper.KVStoreDummy
+	activeVaults   Vaults
+	retiringVaults Vaults
+}
+
+func (k *TestChainConsensusParticipantsKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Context, chain common.Chain) (Vaults, error) {
+	var result Vaults
+	for _, vault := range k.activeVaults {
+		if vault.GetChains().Has(chain) {
+			result = append(result, vault)
+		}
+	}
+	return result, nil
+}
+
+func (k *TestChainConsensusParticipantsKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, status VaultStatus) (Vaults, error) {
+	switch status {
+	case RetiringVault:
+		return k.retiringVaults, nil
+	case ActiveVault:
+		return k.activeVaults, nil
+	}
+	return nil, nil
+}
+
+func (s *HelperSuite) TestGetChainConsensusParticipants(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pk1 := types.GetRandomPubKey()
+	pk2 := types.GetRandomPubKey()
+	pk3 := types.GetRandomPubKey()
+
+	addr1, err := pk1.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr2, err := pk2.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr3, err := pk3.GetThorAddress()
+	c.Assert(err, IsNil)
+
+	// Case 1: single active vault with BTC chain
+	k := &TestChainConsensusParticipantsKeeper{
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC", "ETH"},
+				Membership: []string{pk1.String(), pk2.String()},
+			},
+		},
+	}
+	mgr.K = k
+	participants := getChainConsensusParticipants(ctx, mgr, common.BTCChain)
+	c.Assert(len(participants), Equals, 2)
+
+	// Case 2: no vaults for DOGE — empty result
+	participants = getChainConsensusParticipants(ctx, mgr, common.DOGEChain)
+	c.Assert(len(participants), Equals, 0)
+
+	// Case 3: active + retiring vault with overlapping members — deduplication
+	k.retiringVaults = Vaults{
+		{
+			Status:     RetiringVault,
+			Chains:     []string{"BTC"},
+			Membership: []string{pk2.String(), pk3.String()},
+		},
+	}
+	participants = getChainConsensusParticipants(ctx, mgr, common.BTCChain)
+	c.Assert(len(participants), Equals, 3)
+	addrSet := make(map[string]bool)
+	for _, a := range participants {
+		addrSet[a.String()] = true
+	}
+	c.Assert(addrSet[addr1.String()], Equals, true)
+	c.Assert(addrSet[addr2.String()], Equals, true)
+	c.Assert(addrSet[addr3.String()], Equals, true)
+
+	// Case 4: retiring vault does not contain the queried chain — excluded
+	participants = getChainConsensusParticipants(ctx, mgr, common.ETHChain)
+	c.Assert(len(participants), Equals, 2)
+	addrSet = make(map[string]bool)
+	for _, a := range participants {
+		addrSet[a.String()] = true
+	}
+	c.Assert(addrSet[addr1.String()], Equals, true)
+	c.Assert(addrSet[addr2.String()], Equals, true)
+
+	// Case 5: multiple active vaults for same chain — union of members
+	k2 := &TestChainConsensusParticipantsKeeper{
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk1.String()},
+			},
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk2.String()},
+			},
+		},
+	}
+	mgr.K = k2
+	participants = getChainConsensusParticipants(ctx, mgr, common.BTCChain)
+	c.Assert(len(participants), Equals, 2)
+
+	// Case 6: result is sorted deterministically
+	for i := 0; i < 10; i++ {
+		p := getChainConsensusParticipants(ctx, mgr, common.BTCChain)
+		c.Assert(len(p), Equals, 2)
+		c.Assert(p[0].String() < p[1].String(), Equals, true)
+	}
+}
