@@ -3001,6 +3001,8 @@ components:
         - observe_chains
         - maintenance
         - missing_blocks
+        - supported_chains
+        - supports_all_chains
         - preflight_status
       properties:
         node_address:
@@ -3131,6 +3133,16 @@ components:
           type: integer
           format: int64
           description: the number of recent blocks the node has missed signing
+        supported_chains:
+          type: array
+          description: the chains this node supports; resolved from vault membership when not explicitly set
+          items:
+            type: string
+            example: "BTC"
+        supports_all_chains:
+          type: boolean
+          description: true when the node has not explicitly opted into specific chains (supports all chains by default)
+          example: true
         preflight_status:
           type: object
           title: NodePreflightStatus

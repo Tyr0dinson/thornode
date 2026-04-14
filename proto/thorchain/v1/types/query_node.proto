@@ -57,6 +57,9 @@ message QueryNodeResponse {
   // if the node operator has placed the node in maintenance or not
   bool maintenance = 22 [ (gogoproto.jsontag) = "maintenance" ];
   int64 missing_blocks = 23 [ (gogoproto.jsontag) = "missing_blocks" ];
+  repeated string supported_chains = 24
+      [ (gogoproto.jsontag) = "supported_chains" ];
+  bool supports_all_chains = 25 [ (gogoproto.jsontag) = "supports_all_chains" ];
 }
 
 message QueryNodesRequest { string height = 1; }

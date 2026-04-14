@@ -958,6 +958,54 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	c.Assert(r3.CurrentAward, Equals, cosmos.NewUint(common.One*750).String())
 }
 
+func (s *QuerierSuite) TestQueryNodeAccountSupportedChains(c *C) {
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.StatusSince = 1
+	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
+
+	// Node with empty SupportedChains should return resolved list and supports_all_chains=true
+	queryNodeAccount, err := s.queryServer.Node(s.ctx, &types.QueryNodeRequest{
+		Address: na.NodeAddress.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(queryNodeAccount, NotNil)
+
+	result, err := queryNodeAccount.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+	var r openapi.Node
+	c.Assert(json.Unmarshal(result, &r), IsNil)
+
+	c.Assert(r.SupportsAllChains, Equals, true)
+	c.Assert(len(r.SupportedChains) > 0, Equals, true)
+
+	// Node with explicit SupportedChains should return those and supports_all_chains=false
+	na.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
+
+	queryNodeAccount, err = s.queryServer.Node(s.ctx, &types.QueryNodeRequest{
+		Address: na.NodeAddress.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(queryNodeAccount, NotNil)
+
+	result, err = queryNodeAccount.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+	var r2 openapi.Node
+	c.Assert(json.Unmarshal(result, &r2), IsNil)
+
+	c.Assert(r2.SupportsAllChains, Equals, false)
+	c.Assert(len(r2.SupportedChains), Equals, 2)
+	found := map[string]bool{}
+	for _, ch := range r2.SupportedChains {
+		found[ch] = true
+	}
+	c.Assert(found[common.BTCChain.String()], Equals, true)
+	c.Assert(found[common.ETHChain.String()], Equals, true)
+}
+
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

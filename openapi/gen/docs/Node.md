@@ -26,13 +26,15 @@ Name | Type | Description | Notes
 **ObserveChains** | [**[]ChainHeight**](ChainHeight.md) | the last observed heights for all chain by the node | 
 **Maintenance** | **bool** | indicates whether the node is in maintenance mode | 
 **MissingBlocks** | **int64** | the number of recent blocks the node has missed signing | 
+**SupportedChains** | **[]string** | the chains this node supports; resolved from vault membership when not explicitly set | 
+**SupportsAllChains** | **bool** | true when the node has not explicitly opted into specific chains (supports all chains by default) | 
 **PreflightStatus** | [**NodePreflightStatus**](NodePreflightStatus.md) |  | 
 
 ## Methods
 
 ### NewNode
 
-`func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, preflightStatus NodePreflightStatus, ) *Node`
+`func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, supportedChains []string, supportsAllChains bool, preflightStatus NodePreflightStatus, ) *Node`
 
 NewNode instantiates a new Node object
 This constructor will assign default values to properties that have it defined,
@@ -485,6 +487,46 @@ and a boolean to check if the value has been set.
 `func (o *Node) SetMissingBlocks(v int64)`
 
 SetMissingBlocks sets MissingBlocks field to given value.
+
+
+### GetSupportedChains
+
+`func (o *Node) GetSupportedChains() []string`
+
+GetSupportedChains returns the SupportedChains field if non-nil, zero value otherwise.
+
+### GetSupportedChainsOk
+
+`func (o *Node) GetSupportedChainsOk() (*[]string, bool)`
+
+GetSupportedChainsOk returns a tuple with the SupportedChains field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSupportedChains
+
+`func (o *Node) SetSupportedChains(v []string)`
+
+SetSupportedChains sets SupportedChains field to given value.
+
+
+### GetSupportsAllChains
+
+`func (o *Node) GetSupportsAllChains() bool`
+
+GetSupportsAllChains returns the SupportsAllChains field if non-nil, zero value otherwise.
+
+### GetSupportsAllChainsOk
+
+`func (o *Node) GetSupportsAllChainsOk() (*bool, bool)`
+
+GetSupportsAllChainsOk returns a tuple with the SupportsAllChains field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSupportsAllChains
+
+`func (o *Node) SetSupportsAllChains(v bool)`
+
+SetSupportsAllChains sets SupportsAllChains field to given value.
 
 
 ### GetPreflightStatus

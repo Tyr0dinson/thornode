@@ -4450,38 +4450,26 @@ components:
       type: object
     Node:
       example:
-        node_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-        observe_chains:
-        - chain: BTC
-          height: 2000000
-        - chain: BTC
-          height: 2000000
         preflight_status:
           reason: OK
           code: 0
           status: Ready
-        leave_height: 0
-        active_block_height: 123456
+        supported_chains:
+        - BTC
+        - BTC
+        supports_all_chains: true
         pub_key_set:
           ed25519: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           secp256k1: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
         signer_membership:
         - thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
         - thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
-        ip_address: 10.20.30.40
-        jail:
-          reason: reason
-          release_height: 1234
-        version: 0.35.0
         requested_to_leave: true
         peer_id: 16Uiu2HAmRgsiryer3pWCPJz18PQZDFFs1GBqCPGGJczrQXdoTBMk
         status_since: 100000
-        current_award: "123456"
-        total_bond: "123456789"
         slash_points: 42
         forced_to_leave: true
         missing_blocks: 0
-        validator_cons_pub_key: thor104gsqwta048e80j909g6y9kkqdjrw0lff866ew
         bond_providers:
           node_operator_fee: node_operator_fee
           providers:
@@ -4489,6 +4477,22 @@ components:
             bond: bond
           - bond_address: bond_address
             bond: bond
+        node_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        observe_chains:
+        - chain: BTC
+          height: 2000000
+        - chain: BTC
+          height: 2000000
+        leave_height: 0
+        active_block_height: 123456
+        ip_address: 10.20.30.40
+        jail:
+          reason: reason
+          release_height: 1234
+        version: 0.35.0
+        current_award: "123456"
+        total_bond: "123456789"
+        validator_cons_pub_key: thor104gsqwta048e80j909g6y9kkqdjrw0lff866ew
         node_operator_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
         maintenance: false
         status: Active
@@ -4581,6 +4585,18 @@ components:
           description: the number of recent blocks the node has missed signing
           format: int64
           type: integer
+        supported_chains:
+          description: the chains this node supports; resolved from vault membership
+            when not explicitly set
+          items:
+            example: BTC
+            type: string
+          type: array
+        supports_all_chains:
+          description: true when the node has not explicitly opted into specific chains
+            (supports all chains by default)
+          example: true
+          type: boolean
         preflight_status:
           $ref: '#/components/schemas/NodePreflightStatus'
       required:
@@ -4604,6 +4620,8 @@ components:
       - slash_points
       - status
       - status_since
+      - supported_chains
+      - supports_all_chains
       - total_bond
       - validator_cons_pub_key
       - version

@@ -50,6 +50,10 @@ type Node struct {
 	Maintenance bool `json:"maintenance"`
 	// the number of recent blocks the node has missed signing
 	MissingBlocks int64 `json:"missing_blocks"`
+	// the chains this node supports; resolved from vault membership when not explicitly set
+	SupportedChains []string `json:"supported_chains"`
+	// true when the node has not explicitly opted into specific chains (supports all chains by default)
+	SupportsAllChains bool `json:"supports_all_chains"`
 	PreflightStatus NodePreflightStatus `json:"preflight_status"`
 }
 
@@ -57,7 +61,7 @@ type Node struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, preflightStatus NodePreflightStatus) *Node {
+func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, supportedChains []string, supportsAllChains bool, preflightStatus NodePreflightStatus) *Node {
 	this := Node{}
 	this.NodeAddress = nodeAddress
 	this.Status = status
@@ -81,6 +85,8 @@ func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validat
 	this.ObserveChains = observeChains
 	this.Maintenance = maintenance
 	this.MissingBlocks = missingBlocks
+	this.SupportedChains = supportedChains
+	this.SupportsAllChains = supportsAllChains
 	this.PreflightStatus = preflightStatus
 	return &this
 }
@@ -621,6 +627,54 @@ func (o *Node) SetMissingBlocks(v int64) {
 	o.MissingBlocks = v
 }
 
+// GetSupportedChains returns the SupportedChains field value
+func (o *Node) GetSupportedChains() []string {
+	if o == nil {
+		var ret []string
+		return ret
+	}
+
+	return o.SupportedChains
+}
+
+// GetSupportedChainsOk returns a tuple with the SupportedChains field value
+// and a boolean to check if the value has been set.
+func (o *Node) GetSupportedChainsOk() ([]string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.SupportedChains, true
+}
+
+// SetSupportedChains sets field value
+func (o *Node) SetSupportedChains(v []string) {
+	o.SupportedChains = v
+}
+
+// GetSupportsAllChains returns the SupportsAllChains field value
+func (o *Node) GetSupportsAllChains() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.SupportsAllChains
+}
+
+// GetSupportsAllChainsOk returns a tuple with the SupportsAllChains field value
+// and a boolean to check if the value has been set.
+func (o *Node) GetSupportsAllChainsOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.SupportsAllChains, true
+}
+
+// SetSupportsAllChains sets field value
+func (o *Node) SetSupportsAllChains(v bool) {
+	o.SupportsAllChains = v
+}
+
 // GetPreflightStatus returns the PreflightStatus field value
 func (o *Node) GetPreflightStatus() NodePreflightStatus {
 	if o == nil {
@@ -712,6 +766,12 @@ func (o Node) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["missing_blocks"] = o.MissingBlocks
+	}
+	if true {
+		toSerialize["supported_chains"] = o.SupportedChains
+	}
+	if true {
+		toSerialize["supports_all_chains"] = o.SupportsAllChains
 	}
 	if true {
 		toSerialize["preflight_status"] = o.PreflightStatus

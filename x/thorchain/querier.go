@@ -675,6 +675,13 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		return nil, fmt.Errorf("fail to get all active node account: %w", err)
 	}
 
+	supportsAll := len(nodeAcc.SupportedChains) == 0
+	resolvedChains := getNodeSupportedChains(ctx, qs.mgr, nodeAcc)
+	chainStrs := make([]string, len(resolvedChains))
+	for i, c := range resolvedChains {
+		chainStrs[i] = c.String()
+	}
+
 	result := types.QueryNodeResponse{
 		NodeAddress: nodeAcc.NodeAddress.String(),
 		Status:      nodeAcc.Status.String(),
@@ -696,6 +703,8 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		IpAddress:           nodeAcc.IPAddress,
 		Version:             nodeAcc.GetVersion().String(),
 		CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
+		SupportedChains:     chainStrs,
+		SupportsAllChains:   supportsAll,
 	}
 	result.PeerId = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
 	result.SlashPoints = slashPts
@@ -854,12 +863,13 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			// ignore the node , it left and also has very little bond
 			// Set the default display for fields which would otherwise be "".
 			result[i] = &types.QueryNodeResponse{
-				Status:          types.NodeStatus_Unknown.String(),
-				TotalBond:       cosmos.ZeroUint().String(),
-				BondProviders:   &types.NodeBondProviders{NodeOperatorFee: cosmos.ZeroUint().String()},
-				Version:         semver.MustParse("0.0.0").String(),
-				CurrentAward:    cosmos.ZeroUint().String(),
-				PreflightStatus: &types.NodePreflightStatus{Status: types.NodeStatus_Unknown.String()},
+				Status:            types.NodeStatus_Unknown.String(),
+				TotalBond:         cosmos.ZeroUint().String(),
+				BondProviders:     &types.NodeBondProviders{NodeOperatorFee: cosmos.ZeroUint().String()},
+				Version:           semver.MustParse("0.0.0").String(),
+				CurrentAward:      cosmos.ZeroUint().String(),
+				PreflightStatus:   &types.NodePreflightStatus{Status: types.NodeStatus_Unknown.String()},
+				SupportsAllChains: false,
 			}
 			continue
 		}
@@ -867,6 +877,13 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 		slashPts, err := qs.mgr.Keeper().GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get node slash points: %w", err)
+		}
+
+		naSupportsAll := len(na.SupportedChains) == 0
+		naResolvedChains := getNodeSupportedChains(ctx, qs.mgr, na)
+		naChainStrs := make([]string, len(naResolvedChains))
+		for j, c := range naResolvedChains {
+			naChainStrs[j] = c.String()
 		}
 
 		result[i] = &types.QueryNodeResponse{
@@ -890,6 +907,8 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			IpAddress:           na.IPAddress,
 			Version:             na.GetVersion().String(),
 			CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
+			SupportedChains:     naChainStrs,
+			SupportsAllChains:   naSupportsAll,
 		}
 		result[i].PeerId = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
 		result[i].SlashPoints = slashPts
