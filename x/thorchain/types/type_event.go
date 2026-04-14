@@ -13,55 +13,59 @@ import (
 
 // all event types support by THORChain
 const (
-	AddLiquidityEventType           = "add_liquidity"
-	BondEventType                   = "bond"
-	ReBondEventType                 = "rebond"
-	DonateEventType                 = "donate"
-	ErrataEventType                 = "errata"
-	FeeEventType                    = "fee"
-	GasEventType                    = "gas"
-	OutboundEventType               = "outbound"
-	PendingLiquidity                = "pending_liquidity"
-	PoolBalanceChangeEventType      = "pool_balance_change"
-	PoolEventType                   = "pool"
-	RefundEventType                 = "refund"
-	ReserveEventType                = "reserve"
-	RewardEventType                 = "rewards"
-	ScheduledOutboundEventType      = "scheduled_outbound"
-	SecurityEventType               = "security"
-	SetMimirEventType               = "set_mimir"
-	SetNodeMimirEventType           = "set_node_mimir"
-	SlashEventType                  = "slash"
-	SlashPointEventType             = "slash_points"
-	StreamingSwapEventType          = "streaming_swap"
-	SwapEventType                   = "swap"
-	AffiliateFeeEventType           = "affiliate_fee"
-	LimitSwapEventType              = "limit_swap"
-	ModifyLimitSwapEventType        = "limit_swap_mod"
-	LimitSwapCloseEventType         = "limit_swap_close"
-	MintBurnType                    = "mint_burn"
-	THORNameEventType               = "thorname"
-	TradeAccountDepositEventType    = "trade_account_deposit"
-	TradeAccountWithdrawEventType   = "trade_account_withdraw"
-	SecuredAssetDepositEventType    = "secured_asset_deposit"
-	SecuredAssetWithdrawEventType   = "secured_asset_withdraw"
-	SwitchEventType                 = "switch"
-	OperatorRotateEventType         = "operator_rotate"
-	RUNEPoolDepositEventType        = "rune_pool_deposit"
-	RUNEPoolWithdrawEventType       = "rune_pool_withdraw"
-	TSSKeygenSuccess                = "tss_keygen_success"
-	TSSKeygenFailure                = "tss_keygen_failure"
-	TSSKeygenMetricEventType        = "tss_keygen"
-	TSSKeysignMetricEventType       = "tss_keysign"
-	VersionEventType                = "version"
-	WithdrawEventType               = "withdraw"
-	TCYDistributionType             = "tcy_distribution"
-	TCYClaimType                    = "tcy_claim"
-	TCYStakeType                    = "tcy_stake"
-	TCYUnstakeType                  = "tcy_unstake"
-	OraclePriceEvent                = "oracle_price"
-	FailedOutboundRecoveryEventType = "failed_outbound_recovery"
-	VaultOverSolvencyEventType      = "vault_over_solvency"
+	AddLiquidityEventType            = "add_liquidity"
+	BondEventType                    = "bond"
+	ReBondEventType                  = "rebond"
+	DonateEventType                  = "donate"
+	ErrataEventType                  = "errata"
+	FeeEventType                     = "fee"
+	GasEventType                     = "gas"
+	OutboundEventType                = "outbound"
+	PendingLiquidity                 = "pending_liquidity"
+	PoolBalanceChangeEventType       = "pool_balance_change"
+	PoolEventType                    = "pool"
+	RefundEventType                  = "refund"
+	ReserveEventType                 = "reserve"
+	RewardEventType                  = "rewards"
+	ScheduledOutboundEventType       = "scheduled_outbound"
+	SecurityEventType                = "security"
+	SetMimirEventType                = "set_mimir"
+	SetNodeMimirEventType            = "set_node_mimir"
+	SlashEventType                   = "slash"
+	SlashPointEventType              = "slash_points"
+	StreamingSwapEventType           = "streaming_swap"
+	SwapEventType                    = "swap"
+	AffiliateFeeEventType            = "affiliate_fee"
+	LimitSwapEventType               = "limit_swap"
+	ModifyLimitSwapEventType         = "limit_swap_mod"
+	LimitSwapCloseEventType          = "limit_swap_close"
+	MintBurnType                     = "mint_burn"
+	THORNameEventType                = "thorname"
+	TradeAccountDepositEventType     = "trade_account_deposit"
+	TradeAccountWithdrawEventType    = "trade_account_withdraw"
+	SecuredAssetDepositEventType     = "secured_asset_deposit"
+	SecuredAssetWithdrawEventType    = "secured_asset_withdraw"
+	SwitchEventType                  = "switch"
+	OperatorRotateEventType          = "operator_rotate"
+	RUNEPoolDepositEventType         = "rune_pool_deposit"
+	RUNEPoolWithdrawEventType        = "rune_pool_withdraw"
+	TSSKeygenSuccess                 = "tss_keygen_success"
+	TSSKeygenFailure                 = "tss_keygen_failure"
+	TSSKeygenMetricEventType         = "tss_keygen"
+	TSSKeysignMetricEventType        = "tss_keysign"
+	VersionEventType                 = "version"
+	WithdrawEventType                = "withdraw"
+	TCYDistributionType              = "tcy_distribution"
+	TCYClaimType                     = "tcy_claim"
+	TCYStakeType                     = "tcy_stake"
+	TCYUnstakeType                   = "tcy_unstake"
+	OraclePriceEvent                 = "oracle_price"
+	FailedOutboundRecoveryEventType  = "failed_outbound_recovery"
+	VaultOverSolvencyEventType       = "vault_over_solvency"
+	ChainSupportAddedEventType       = "chain_support_added"
+	ChainSupportRemovedEventType     = "chain_support_removed"
+	ChainLiquidityCapBreachEventType = "chain_liquidity_cap_breach"
+	ChainRagnarokInitiatedEventType  = "chain_ragnarok_initiated"
 )
 
 // PoolMods a list of pool modifications
@@ -1443,6 +1447,92 @@ func (m *EventVaultOverSolvency) Events() (cosmos.Events, error) {
 			cosmos.NewAttribute(prefix+"swap_to_reserve_amount", assetOverSolvency.SwapToReserveAmount.String()),
 		)
 	}
+	return cosmos.Events{evt}, nil
+}
+
+func NewEventChainSupportAdded(nodeAddress cosmos.AccAddress, chain common.Chain, height int64) *EventChainSupportAdded {
+	return &EventChainSupportAdded{
+		NodeAddress: nodeAddress,
+		Chain:       chain,
+		Height:      height,
+	}
+}
+
+func (m *EventChainSupportAdded) Type() string {
+	return ChainSupportAddedEventType
+}
+
+func (m *EventChainSupportAdded) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+		cosmos.NewAttribute("chain", m.Chain.String()),
+		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+func NewEventChainSupportRemoved(nodeAddress cosmos.AccAddress, chain common.Chain, height int64) *EventChainSupportRemoved {
+	return &EventChainSupportRemoved{
+		NodeAddress: nodeAddress,
+		Chain:       chain,
+		Height:      height,
+	}
+}
+
+func (m *EventChainSupportRemoved) Type() string {
+	return ChainSupportRemovedEventType
+}
+
+func (m *EventChainSupportRemoved) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+		cosmos.NewAttribute("chain", m.Chain.String()),
+		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+func NewEventChainLiquidityCapBreach(chain common.Chain, cap, current cosmos.Uint, validatorCount int64) *EventChainLiquidityCapBreach {
+	return &EventChainLiquidityCapBreach{
+		Chain:          chain,
+		Cap:            cap,
+		Current:        current,
+		ValidatorCount: validatorCount,
+	}
+}
+
+func (m *EventChainLiquidityCapBreach) Type() string {
+	return ChainLiquidityCapBreachEventType
+}
+
+func (m *EventChainLiquidityCapBreach) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("chain", m.Chain.String()),
+		cosmos.NewAttribute("cap", m.Cap.String()),
+		cosmos.NewAttribute("current", m.Current.String()),
+		cosmos.NewAttribute("validator_count", strconv.FormatInt(m.ValidatorCount, 10)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+func NewEventChainRagnarokInitiated(chain common.Chain, height int64, reason string) *EventChainRagnarokInitiated {
+	return &EventChainRagnarokInitiated{
+		Chain:  chain,
+		Height: height,
+		Reason: reason,
+	}
+}
+
+func (m *EventChainRagnarokInitiated) Type() string {
+	return ChainRagnarokInitiatedEventType
+}
+
+func (m *EventChainRagnarokInitiated) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("chain", m.Chain.String()),
+		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
+		cosmos.NewAttribute("reason", m.Reason),
+	)
 	return cosmos.Events{evt}, nil
 }
 

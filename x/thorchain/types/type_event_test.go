@@ -413,3 +413,92 @@ func (EventSuite) TestEventLimitSwapCloseEventType(c *C) {
 	c.Assert(len(events), Equals, 1)
 	c.Check(events[0].Type, Equals, LimitSwapCloseEventType)
 }
+
+func (EventSuite) TestEventChainSupportAdded(c *C) {
+	addr := GetRandomBech32Addr()
+	e := NewEventChainSupportAdded(addr, common.BTCChain, 12345)
+	c.Check(e.Type(), Equals, ChainSupportAddedEventType)
+	c.Check(e.Type(), Equals, "chain_support_added")
+	c.Check(e.NodeAddress.Equals(addr), Equals, true)
+	c.Check(e.Chain, Equals, common.BTCChain)
+	c.Check(e.Height, Equals, int64(12345))
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Assert(events, HasLen, 1)
+	attrs := make(map[string]string)
+	for _, attr := range events[0].Attributes {
+		attrs[attr.Key] = attr.Value
+	}
+	c.Check(attrs["node_address"], Equals, addr.String())
+	c.Check(attrs["chain"], Equals, common.BTCChain.String())
+	c.Check(attrs["height"], Equals, "12345")
+}
+
+func (EventSuite) TestEventChainSupportRemoved(c *C) {
+	addr := GetRandomBech32Addr()
+	e := NewEventChainSupportRemoved(addr, common.ETHChain, 67890)
+	c.Check(e.Type(), Equals, ChainSupportRemovedEventType)
+	c.Check(e.Type(), Equals, "chain_support_removed")
+	c.Check(e.NodeAddress.Equals(addr), Equals, true)
+	c.Check(e.Chain, Equals, common.ETHChain)
+	c.Check(e.Height, Equals, int64(67890))
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Assert(events, HasLen, 1)
+	attrs := make(map[string]string)
+	for _, attr := range events[0].Attributes {
+		attrs[attr.Key] = attr.Value
+	}
+	c.Check(attrs["node_address"], Equals, addr.String())
+	c.Check(attrs["chain"], Equals, common.ETHChain.String())
+	c.Check(attrs["height"], Equals, "67890")
+}
+
+func (EventSuite) TestEventChainLiquidityCapBreach(c *C) {
+	e := NewEventChainLiquidityCapBreach(
+		common.BTCChain,
+		cosmos.NewUint(500000_00000000),
+		cosmos.NewUint(450000_00000000),
+		5,
+	)
+	c.Check(e.Type(), Equals, ChainLiquidityCapBreachEventType)
+	c.Check(e.Type(), Equals, "chain_liquidity_cap_breach")
+	c.Check(e.Chain, Equals, common.BTCChain)
+	c.Check(e.Cap.Equal(cosmos.NewUint(500000_00000000)), Equals, true)
+	c.Check(e.Current.Equal(cosmos.NewUint(450000_00000000)), Equals, true)
+	c.Check(e.ValidatorCount, Equals, int64(5))
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Assert(events, HasLen, 1)
+	attrs := make(map[string]string)
+	for _, attr := range events[0].Attributes {
+		attrs[attr.Key] = attr.Value
+	}
+	c.Check(attrs["chain"], Equals, common.BTCChain.String())
+	c.Check(attrs["cap"], Equals, cosmos.NewUint(500000_00000000).String())
+	c.Check(attrs["current"], Equals, cosmos.NewUint(450000_00000000).String())
+	c.Check(attrs["validator_count"], Equals, "5")
+}
+
+func (EventSuite) TestEventChainRagnarokInitiated(c *C) {
+	e := NewEventChainRagnarokInitiated(common.BTCChain, 99999, "insufficient validators")
+	c.Check(e.Type(), Equals, ChainRagnarokInitiatedEventType)
+	c.Check(e.Type(), Equals, "chain_ragnarok_initiated")
+	c.Check(e.Chain, Equals, common.BTCChain)
+	c.Check(e.Height, Equals, int64(99999))
+	c.Check(e.Reason, Equals, "insufficient validators")
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Assert(events, HasLen, 1)
+	attrs := make(map[string]string)
+	for _, attr := range events[0].Attributes {
+		attrs[attr.Key] = attr.Value
+	}
+	c.Check(attrs["chain"], Equals, common.BTCChain.String())
+	c.Check(attrs["height"], Equals, "99999")
+	c.Check(attrs["reason"], Equals, "insufficient validators")
+}

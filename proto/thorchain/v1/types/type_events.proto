@@ -714,3 +714,42 @@ message EventVaultOverSolvency {
   repeated AssetOverSolvency assets = 1 [ (gogoproto.nullable) = false ];
   int64 over_solvency_basis_points = 2;
 }
+
+message EventChainSupportAdded {
+  bytes node_address = 1
+      [ (gogoproto.casttype) =
+            "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
+  string chain = 2 [ (gogoproto.casttype) =
+                         "gitlab.com/thorchain/thornode/v3/common.Chain" ];
+  int64 height = 3;
+}
+
+message EventChainSupportRemoved {
+  bytes node_address = 1
+      [ (gogoproto.casttype) =
+            "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
+  string chain = 2 [ (gogoproto.casttype) =
+                         "gitlab.com/thorchain/thornode/v3/common.Chain" ];
+  int64 height = 3;
+}
+
+message EventChainLiquidityCapBreach {
+  string chain = 1 [ (gogoproto.casttype) =
+                         "gitlab.com/thorchain/thornode/v3/common.Chain" ];
+  string cap = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string current = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  int64 validator_count = 4;
+}
+
+message EventChainRagnarokInitiated {
+  string chain = 1 [ (gogoproto.casttype) =
+                         "gitlab.com/thorchain/thornode/v3/common.Chain" ];
+  int64 height = 2;
+  string reason = 3;
+}
