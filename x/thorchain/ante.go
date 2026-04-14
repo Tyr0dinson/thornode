@@ -172,6 +172,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return VersionAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgAddNodeChainSupport:
 		return AddNodeChainSupportAnteHandler(ctx, version, ad.keeper, *m)
+	case *types.MsgRemoveNodeChainSupport:
+		return RemoveNodeChainSupportAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgProposeUpgrade, *types.MsgApproveUpgrade, *types.MsgRejectUpgrade:
 		legacyMsg, ok := msg.(sdk.LegacyMsg)
 		if !ok {

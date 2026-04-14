@@ -83,6 +83,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgTCYUnstake{})] = NewTCYUnstakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgOperatorRotate{})] = NewOperatorRotateHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgAddNodeChainSupport{})] = NewAddNodeChainSupportHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgRemoveNodeChainSupport{})] = NewRemoveNodeChainSupportHandler(mgr)
 	return m
 }
 

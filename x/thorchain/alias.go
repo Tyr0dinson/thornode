@@ -120,6 +120,7 @@ var (
 	NewMsgMimir                    = types.NewMsgMimir
 	NewMsgNodePauseChain           = types.NewMsgNodePauseChain
 	NewMsgAddNodeChainSupport      = types.NewMsgAddNodeChainSupport
+	NewMsgRemoveNodeChainSupport   = types.NewMsgRemoveNodeChainSupport
 	NewMsgDeposit                  = types.NewMsgDeposit
 	NewMsgTssPool                  = types.NewMsgTssPool
 	NewMsgTssPoolV2                = types.NewMsgTssPoolV2
@@ -166,6 +167,7 @@ var (
 	NewEventFee                    = types.NewEventFee
 	NewEventOutbound               = types.NewEventOutbound
 	NewEventChainSupportAdded      = types.NewEventChainSupportAdded
+	NewEventChainSupportRemoved    = types.NewEventChainSupportRemoved
 	NewEventSetMimir               = types.NewEventSetMimir
 	NewEventSetNodeMimir           = types.NewEventSetNodeMimir
 	NewEventTssKeygenSuccess       = types.NewEventTssKeygenSuccess
@@ -287,6 +289,7 @@ type (
 	MsgMimir                  = types.MsgMimir
 	MsgNodePauseChain         = types.MsgNodePauseChain
 	MsgAddNodeChainSupport    = types.MsgAddNodeChainSupport
+	MsgRemoveNodeChainSupport = types.MsgRemoveNodeChainSupport
 	MsgMigrate                = types.MsgMigrate
 	MsgRagnarok               = types.MsgRagnarok
 	MsgRefundTx               = types.MsgRefundTx

@@ -28,7 +28,8 @@ func (ms msgServer) AddNodeChainSupport(goCtx context.Context, msg *types.MsgAdd
 }
 
 func (ms msgServer) RemoveNodeChainSupport(goCtx context.Context, msg *types.MsgRemoveNodeChainSupport) (*types.MsgEmpty, error) {
-	return nil, fmt.Errorf("MsgRemoveNodeChainSupport handler not yet implemented")
+	handler := NewRemoveNodeChainSupportHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
 }
 
 func (ms msgServer) Ban(goCtx context.Context, msg *types.MsgBan) (*types.MsgEmpty, error) {
