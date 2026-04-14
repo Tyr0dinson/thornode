@@ -2,10 +2,22 @@ ARG DOCKER_MIRROR=
 FROM ${DOCKER_MIRROR}golang:1.24.6
 
 # hadolint ignore=DL3008,DL4006
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-    curl git jq make protobuf-compiler xz-utils sudo python3-pip \
-    && rm -rf /var/cache/apt/lists
+RUN set -eux; \
+    required_pkgs="curl git jq make protobuf-compiler xz-utils sudo python3-pip"; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do \
+      rm -rf /var/lib/apt/lists/*; \
+      apt-get -o Acquire::Retries=5 update || true; \
+      missing=0; \
+      for pkg in $required_pkgs; do \
+        apt-cache show "$pkg" >/dev/null 2>&1 || missing=1; \
+      done; \
+      [ "$missing" -eq 0 ] && break; \
+      [ "$attempt" -lt 10 ] || { echo "apt metadata incomplete after retries" >&2; exit 1; }; \
+      sleep 5; \
+    done; \
+    apt-get install -y --no-install-recommends $required_pkgs; \
+    rm -rf /var/cache/apt/lists
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go

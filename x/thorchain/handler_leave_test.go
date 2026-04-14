@@ -411,7 +411,7 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 			},
 		},
 		{
-			name: "when node account is still belongs to a retiring vault , don't return bond",
+			name: "when node account still belongs to a migrating vault, block the leave request",
 			messageProvider: func(ctx cosmos.Context, helper *LeaveHandlerTestHelper) cosmos.Msg {
 				nodeAccount := GetRandomValidatorNode(NodeDisabled)
 				nodeAccount.Bond = cosmos.NewUint(100)
@@ -438,8 +438,10 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 				na, err := helper.GetNodeAccount(ctx, leaveMsg.NodeAddress)
 				c.Assert(err, IsNil)
 				c.Assert(na.Bond.Equal(cosmos.NewUint(100)), Equals, true)
-				c.Check(err2, IsNil, Commentf(name))
-				c.Check(result, NotNil, Commentf(name))
+				c.Check(na.RequestedToLeave, Equals, false)
+				c.Assert(err2, NotNil, Commentf(name))
+				c.Check(err2.Error(), Equals, "fail to leave, vault migration still in flight", Commentf(name))
+				c.Check(result, IsNil, Commentf(name))
 			},
 		},
 	}
