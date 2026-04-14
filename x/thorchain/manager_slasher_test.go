@@ -26,6 +26,7 @@ type TestSlashingLackKeeper struct {
 	failSetTxOut               bool
 	slashPts                   map[string]int64
 	mimirs                     map[string]int64
+	stagedOutbounds            map[common.TxID]bool
 }
 
 func (k *TestSlashingLackKeeper) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
@@ -41,6 +42,10 @@ func (k *TestSlashingLackKeeper) GetObservedTxInVoter(_ cosmos.Context, _ common
 		return ObservedTxVoter{}, errKaboom
 	}
 	return k.voter, nil
+}
+
+func (k *TestSlashingLackKeeper) HasStagedOutbound(_ cosmos.Context, inHash common.TxID) bool {
+	return k.stagedOutbounds[inHash]
 }
 
 func (k *TestSlashingLackKeeper) SetObservedTxInVoter(_ cosmos.Context, voter ObservedTxVoter) {

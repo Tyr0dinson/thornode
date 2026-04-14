@@ -385,6 +385,67 @@ func (s *SlashingSuite) TestEVMTokenLackSigningUsesExtendedPeriod(c *C) {
 	c.Assert(outItems[0].Coin.Asset.Equals(tokenAsset), Equals, true)
 }
 
+func (s *SlashingSuite) TestLackSigningProcessesNativeTxOutUnlessStaged(c *C) {
+	runCase := func(c *C, hasStaged bool) *TestSlashingLackKeeper {
+		ctx, _ := setupKeeperForTest(c)
+		ver := GetCurrentVersion()
+		constAccessor := constants.GetConstantValues(ver)
+		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+		ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
+
+		na := GetRandomValidatorNode(NodeActive)
+		vault := GetRandomVault()
+		vault.Type = AsgardVault
+		vault.Status = ActiveVault
+		vault.PubKey = na.PubKeySet.Secp256k1
+		vault.Coins = common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(5000000*common.One)),
+		}
+
+		inHash := GetRandomTxHash()
+		txOutItem := TxOutItem{
+			Chain:       common.THORChain,
+			InHash:      inHash,
+			VaultPubKey: vault.PubKey,
+			ToAddress:   GetRandomTHORAddress(),
+			Coin:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+			Memo:        "OUT:" + inHash.String(),
+		}
+		txOut := NewTxOut(3)
+		txOut.TxArray = append(txOut.TxArray, txOutItem)
+
+		stagedOutbounds := make(map[common.TxID]bool)
+		if hasStaged {
+			stagedOutbounds[inHash] = true
+		}
+		keeper := &TestSlashingLackKeeper{
+			txOut:  txOut,
+			na:     na,
+			vaults: Vaults{vault},
+			voter: ObservedTxVoter{
+				Actions:         []TxOutItem{txOutItem},
+				FinalisedHeight: 3,
+			},
+			slashPts:        make(map[string]int64),
+			stagedOutbounds: stagedOutbounds,
+		}
+
+		mgr := NewDummyMgrWithKeeper(keeper)
+		mgr.txOutStore = NewTxStoreDummy()
+		slasher := newSlasher(keeper, NewDummyEventMgr())
+		c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+		return keeper
+	}
+
+	unstagedKeeper := runCase(c, false)
+	c.Check(unstagedKeeper.txOut.TxArray[0].OutHash, Equals, common.BlankTxID,
+		Commentf("native TxOut without staged state should be recovered and marked handled"))
+
+	stagedKeeper := runCase(c, true)
+	c.Check(stagedKeeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, true,
+		Commentf("native TxOut duplicate should only be skipped while staged state owns the inbound"))
+}
+
 func (s *SlashingSuite) TestInactiveVaultDrainedReroute(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(201)

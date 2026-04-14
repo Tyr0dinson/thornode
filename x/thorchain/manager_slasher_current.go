@@ -372,15 +372,16 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue // skip this transaction
 			}
 			if toi.OutHash.IsEmpty() {
-				// Native (THORChain) outbounds execute immediately on finalization.
-				// With the staged queue design, unfinalized native outbounds are in the staged queue,
-				// not in TxOut. Any native outbound in TxOut should already be executed.
-				if toi.Chain.IsTHORChain() {
-					ctx.Logger().Info("skipping probably stale native THORChain outbound found in TxOut",
+				// Unfinalized mempool-swap native outbounds are owned by the staged
+				// queue. Only skip a native TxOut duplicate while staged state still
+				// exists for the same inbound.
+				hasStagedInbound := !toi.InHash.IsEmpty() && !toi.InHash.Equals(common.BlankTxID) && s.keeper.HasStagedOutbound(ctx, toi.InHash)
+				if toi.Chain.IsTHORChain() && hasStagedInbound {
+					ctx.Logger().Info("skipping staged native THORChain outbound duplicate found in TxOut",
 						"hash", toi.InHash,
 						"to", toi.ToAddress,
 						"memo", toi.Memo)
-					continue // Skip signing-related logic for native outbounds
+					continue
 				}
 
 				itemSigningTransPeriod := txOutSigningPeriod(toi, signingTransPeriod)
