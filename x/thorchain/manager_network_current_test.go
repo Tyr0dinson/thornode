@@ -2810,3 +2810,171 @@ func (s *NetworkManagerTestSuite) TestPerChainIncomeBucketing(c *C) {
 	c.Assert(totalBonderReward.GT(cosmos.ZeroUint()), Equals, true,
 		Commentf("total bonder reward should be positive"))
 }
+
+func (s *NetworkManagerTestSuite) TestSkimsDrawFromGlobalSystemIncome(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgr()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 1)
+
+	availablePoolsRune := cosmos.NewUint(1000 * common.One)
+	vaultsLiquidityRune := cosmos.NewUint(1000 * common.One)
+	effectiveSecurityBond := cosmos.NewUint(2000 * common.One)
+	totalEffectiveBond := effectiveSecurityBond
+	totalReserve := cosmos.NewUint(10000 * common.One)
+	totalLiquidityFees := cosmos.NewUint(500 * common.One)
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	emissionCurve := constAccessor.GetInt64Value(constants.EmissionCurve)
+	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
+
+	// Baseline: no skims.
+	bondNoSkim, poolNoSkim, _, devNoSkim, burnNoSkim, tcyNoSkim, mktNoSkim := networkMgr.calcBlockRewards(
+		ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear,
+		0, 0, 0, 0)
+	c.Assert(devNoSkim.IsZero(), Equals, true)
+	c.Assert(burnNoSkim.IsZero(), Equals, true)
+	c.Assert(tcyNoSkim.IsZero(), Equals, true)
+	c.Assert(mktNoSkim.IsZero(), Equals, true)
+
+	// Compute expected system income for reference.
+	blockRewardD := cosmos.NewDec(int64(totalReserve.Uint64())).Quo(cosmos.NewDec(emissionCurve)).Quo(cosmos.NewDec(blocksPerYear))
+	blockReward := cosmos.NewUint(uint64(blockRewardD.RoundInt64()))
+	expectedSystemIncome := blockReward.Add(totalLiquidityFees)
+
+	// The full system income should equal bondNoSkim + poolNoSkim (no skims).
+	c.Assert(bondNoSkim.Add(poolNoSkim).Uint64(), Equals, expectedSystemIncome.Uint64(),
+		Commentf("with no skims, bond+pool should equal full system income"))
+
+	// With skims: 500bps (5%) dev fund, 300bps (3%) marketing fund, 200bps (2%) burn.
+	devBps := int64(500)
+	burnBps := int64(200)
+	tcyBps := int64(0)
+	mktBps := int64(300)
+
+	bondSkim, poolSkim, _, devDeduct, burnDeduct, tcyDeduct, mktDeduct := networkMgr.calcBlockRewards(
+		ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear,
+		devBps, burnBps, tcyBps, mktBps)
+
+	// Skims should be calculated on the FULL system income (emission + all fees).
+	expectedDevDeduct := common.GetSafeShare(cosmos.NewUint(uint64(devBps)), cosmos.NewUint(10_000), expectedSystemIncome)
+	expectedBurnDeduct := common.GetSafeShare(cosmos.NewUint(uint64(burnBps)), cosmos.NewUint(10_000), expectedSystemIncome)
+	expectedMktDeduct := common.GetSafeShare(cosmos.NewUint(uint64(mktBps)), cosmos.NewUint(10_000), expectedSystemIncome)
+
+	c.Assert(devDeduct.Uint64(), Equals, expectedDevDeduct.Uint64(),
+		Commentf("dev fund skim should be %d bps of full system income %s", devBps, expectedSystemIncome))
+	c.Assert(burnDeduct.Uint64(), Equals, expectedBurnDeduct.Uint64(),
+		Commentf("burn skim should be %d bps of full system income", burnBps))
+	c.Assert(mktDeduct.Uint64(), Equals, expectedMktDeduct.Uint64(),
+		Commentf("marketing fund skim should be %d bps of full system income", mktBps))
+	c.Assert(tcyDeduct.IsZero(), Equals, true)
+
+	// Total accounting: bond + pool + all skims = full system income.
+	totalAccounted := bondSkim.Add(poolSkim).Add(devDeduct).Add(burnDeduct).Add(mktDeduct)
+	c.Assert(totalAccounted.Uint64(), Equals, expectedSystemIncome.Uint64(),
+		Commentf("bond+pool+skims should account for full system income"))
+
+	// Post-skim rewards should be strictly less than pre-skim.
+	c.Assert(bondSkim.LT(bondNoSkim), Equals, true,
+		Commentf("bond reward should be reduced after skims"))
+	c.Assert(poolSkim.LT(poolNoSkim), Equals, true,
+		Commentf("pool reward should be reduced after skims"))
+}
+
+func (s *NetworkManagerTestSuite) TestSkimsApplyBeforePerChainBucketing(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	mgr.K = helper
+	networkMgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	FundModule(c, ctx, helper, ReserveName, 10000*common.One)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(common.One * 500)
+	btcPool.BalanceAsset = cosmos.NewUint(common.One * 500)
+	btcPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(common.One * 500)
+	ethPool.BalanceAsset = cosmos.NewUint(common.One * 500)
+	ethPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, ethPool), IsNil)
+
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
+		common.BTCChain.String(),
+		common.ETHChain.String(),
+	}, []ChainContract{})
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, btcPool.BalanceAsset),
+		common.NewCoin(common.ETHAsset, ethPool.BalanceAsset),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+
+	// Run once with no skims to get baseline per-chain income.
+	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300*common.One)), IsNil)
+	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100*common.One)), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	networkNoSkim, err := helper.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+
+	baselineBtcIncome := cosmos.ZeroUint()
+	baselineEthIncome := cosmos.ZeroUint()
+	for _, ci := range networkNoSkim.ChainIncome {
+		if ci.Chain == common.BTCChain.String() {
+			baselineBtcIncome = ci.Amount
+		}
+		if ci.Chain == common.ETHChain.String() {
+			baselineEthIncome = ci.Amount
+		}
+	}
+	baselineBondReward := networkNoSkim.BondRewardRune
+
+	// Reset for next run.
+	networkNoSkim.ChainIncome = nil
+	networkNoSkim.BondRewardRune = cosmos.ZeroUint()
+	c.Assert(helper.SetNetwork(ctx, networkNoSkim), IsNil)
+
+	// Now enable 500bps (5%) dev fund and 500bps (5%) marketing fund.
+	helper.Keeper.SetMimir(ctx, constants.DevFundSystemIncomeBps.String(), 500)
+	helper.Keeper.SetMimir(ctx, constants.MarketingFundSystemIncomeBps.String(), 500)
+
+	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300*common.One)), IsNil)
+	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100*common.One)), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	networkWithSkim, err := helper.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+
+	skimBtcIncome := cosmos.ZeroUint()
+	skimEthIncome := cosmos.ZeroUint()
+	for _, ci := range networkWithSkim.ChainIncome {
+		if ci.Chain == common.BTCChain.String() {
+			skimBtcIncome = ci.Amount
+		}
+		if ci.Chain == common.ETHChain.String() {
+			skimEthIncome = ci.Amount
+		}
+	}
+
+	// Per-chain income should be reduced because skims apply before per-chain bucketing.
+	c.Assert(skimBtcIncome.LT(baselineBtcIncome), Equals, true,
+		Commentf("BTC chain income with skims (%s) should be less than without (%s)", skimBtcIncome, baselineBtcIncome))
+	c.Assert(skimEthIncome.LT(baselineEthIncome), Equals, true,
+		Commentf("ETH chain income with skims (%s) should be less than without (%s)", skimEthIncome, baselineEthIncome))
+
+	// Global BondRewardRune (emission portion) should also be reduced.
+	c.Assert(networkWithSkim.BondRewardRune.LT(baselineBondReward), Equals, true,
+		Commentf("global BondRewardRune with skims (%s) should be less than without (%s)",
+			networkWithSkim.BondRewardRune, baselineBondReward))
+}

@@ -194,7 +194,7 @@ task, it:
 
 - [x] **T26** In `manager_network_current.go` (and fee handling sites), bucket per-chain income as specified in spec §4.3 and §8.6: pool swap fees, outbound fees, network fees → chain bucket; emission + slash-forfeiture → global. Unit tests. — 3abb774aaf
 - [x] **T27** Per-chain reward payout at the reward distribution interval: pro-rata by effective bond (capped at `MaxEffectiveBond` per chain) across chain's active vault members. Unit tests covering: single-chain node, multi-chain node, bond-over-cap truncation. — 11954f07f9
-- [ ] **T28** Confirm dev fund / marketing fund / reserve skims draw from global system income (union across all buckets plus emission). Adjust if current code implicitly assumed a single bucket. Unit tests.
+- [x] **T28** Confirm dev fund / marketing fund / reserve skims draw from global system income (union across all buckets plus emission). Adjust if current code implicitly assumed a single bucket. Unit tests. — pending
 
 ### Phase 10 — Liquidity cap enforcement + swap gating
 
