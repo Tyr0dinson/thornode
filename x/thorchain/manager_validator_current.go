@@ -893,7 +893,161 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 			ctx.Logger().Error("fail to pay node account bond award", "node address", item.NodeAddress.String(), "error", err)
 		}
 	}
+
+	if err := vm.distributeChainBondRewards(ctx, mgr); err != nil {
+		resultErr = errors.Join(resultErr, err)
+	}
+
 	return resultErr
+}
+
+func (vm *ValidatorMgr) distributeChainBondRewards(ctx cosmos.Context, mgr Manager) error {
+	network, err := vm.k.GetNetwork(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get network for chain rewards: %w", err)
+	}
+
+	var resultErr error
+	for _, ci := range network.ChainIncome {
+		if ci.Amount.IsZero() {
+			continue
+		}
+		chain, chainErr := common.NewChain(ci.Chain)
+		if chainErr != nil {
+			ctx.Logger().Error("fail to parse chain from income entry", "chain", ci.Chain, "error", chainErr)
+			continue
+		}
+
+		if err := vm.distributeChainIncome(ctx, mgr, chain, ci.Amount); err != nil {
+			resultErr = errors.Join(resultErr, err)
+			ctx.Logger().Error("fail to distribute chain income", "chain", chain, "error", err)
+			continue
+		}
+
+		if err := vm.k.ZeroChainIncome(ctx, chain); err != nil {
+			resultErr = errors.Join(resultErr, err)
+		}
+	}
+	return resultErr
+}
+
+func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, chain common.Chain, totalReward cosmos.Uint) error {
+	vaults, err := vm.k.GetActiveAsgardVaultsByChain(ctx, chain)
+	if err != nil {
+		return fmt.Errorf("fail to get active vaults for chain %s: %w", chain, err)
+	}
+
+	seen := make(map[string]struct{})
+	var chainNodes NodeAccounts
+	for _, vault := range vaults {
+		for _, pk := range vault.GetMembership() {
+			if _, ok := seen[pk.String()]; ok {
+				continue
+			}
+			seen[pk.String()] = struct{}{}
+			na, naErr := vm.k.GetNodeAccountByPubKey(ctx, pk)
+			if naErr != nil {
+				ctx.Logger().Error("fail to get node account by pubkey", "pubkey", pk, "error", naErr)
+				continue
+			}
+			if na.IsEmpty() || na.Bond.IsZero() {
+				continue
+			}
+			chainNodes = append(chainNodes, na)
+		}
+	}
+
+	if len(chainNodes) == 0 {
+		return nil
+	}
+
+	chainTotalEffBond, chainBondCap := getTotalEffectiveBond(chainNodes)
+	if chainTotalEffBond.IsZero() {
+		return nil
+	}
+
+	distributed := cosmos.ZeroUint()
+	for i, na := range chainNodes {
+		effBond := na.Bond
+		if effBond.GT(chainBondCap) {
+			effBond = chainBondCap
+		}
+
+		var reward cosmos.Uint
+		if i == len(chainNodes)-1 {
+			reward = common.SafeSub(totalReward, distributed)
+		} else {
+			reward = common.GetUncappedShare(effBond, chainTotalEffBond, totalReward)
+		}
+		distributed = distributed.Add(reward)
+		if reward.IsZero() {
+			continue
+		}
+
+		if err := vm.payChainReward(ctx, mgr, na, reward); err != nil {
+			ctx.Logger().Error("fail to pay chain reward", "node", na.NodeAddress, "chain", chain, "error", err)
+			continue
+		}
+	}
+	return nil
+}
+
+func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeAccount, reward cosmos.Uint) error {
+	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
+	if err != nil {
+		return fmt.Errorf("fail to get bond providers(%s): %w", na.NodeAddress, err)
+	}
+	nodeOperatorAccAddr, err := na.BondAddress.AccAddress()
+	if err != nil {
+		return fmt.Errorf("fail to parse bond address(%s): %w", na.BondAddress, err)
+	}
+	if err := passiveBackfill(ctx, mgr, na, &bp); err != nil {
+		return err
+	}
+	bp.Adjust(na.Bond)
+	nodeOperatorProvider := bp.Get(nodeOperatorAccAddr)
+	if nodeOperatorProvider.IsEmpty() {
+		return fmt.Errorf("node operator address(%s) not listed in bond providers", na.BondAddress)
+	}
+	lastNodeOperatorProviderBond := nodeOperatorProvider.Bond
+
+	na.Bond = na.Bond.Add(reward)
+
+	bp.Adjust(na.Bond)
+	nodeOperatorProvider = bp.Get(nodeOperatorAccAddr)
+	nodeOperatorFees := common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(10000), reward)
+	nodeOperatorBondIncrease := common.SafeSub(nodeOperatorProvider.Bond, lastNodeOperatorProviderBond)
+	if nodeOperatorFees.GT(nodeOperatorBondIncrease) {
+		nodeOperatorFees = nodeOperatorBondIncrease
+	}
+	if !nodeOperatorFees.IsZero() {
+		na.Bond = common.SafeSub(na.Bond, nodeOperatorFees)
+		bp.Unbond(nodeOperatorFees, nodeOperatorAccAddr)
+	}
+
+	if err := vm.k.SetNodeAccount(ctx, na); err != nil {
+		return fmt.Errorf("fail to save node account: %w", err)
+	}
+	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+		return fmt.Errorf("fail to save bond providers(%s): %w", bp.NodeAddress, err)
+	}
+	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
+	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
+		ctx.Logger().Error("fail to emit bond event", "error", err)
+	}
+
+	if !nodeOperatorFees.IsZero() {
+		coin := common.NewCoin(common.RuneNative, nodeOperatorFees)
+		if sdkErr := vm.k.SendFromModuleToAccount(ctx, BondName, nodeOperatorAccAddr, common.NewCoins(coin)); sdkErr != nil {
+			return fmt.Errorf("fail to send node operator fees: %w", sdkErr)
+		}
+
+		bondReturnedEvent := NewEventBond(nodeOperatorFees, BondReturned, common.Tx{}, &na, nodeOperatorAccAddr)
+		if err := mgr.EventMgr().EmitEvent(ctx, bondReturnedEvent); err != nil {
+			ctx.Logger().Error("fail to emit bond event", "error", err)
+		}
+	}
+	return nil
 }
 
 func (vm *ValidatorMgr) ragnarokBond(ctx cosmos.Context, nth int64, mgr Manager) error {

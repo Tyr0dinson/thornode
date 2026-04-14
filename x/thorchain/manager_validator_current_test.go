@@ -1306,3 +1306,141 @@ func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToNodeRemovals(c *C) 
 	}
 	c.Assert(found, Equals, true)
 }
+
+func (vts *ValidatorMgrTestSuite) TestDistributeChainBondRewardsSingleChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{na1.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	FundModule(c, ctx, k, BondName, 100*common.One)
+
+	c.Assert(k.AddChainIncome(ctx, common.BTCChain, cosmos.NewUint(10*common.One)), IsNil)
+
+	c.Assert(vm.distributeChainBondRewards(ctx, mgr), IsNil)
+
+	naAfter, err := k.GetNodeAccount(ctx, na1.NodeAddress)
+	c.Assert(err, IsNil)
+	expectedBond := na1.Bond.Add(cosmos.NewUint(10 * common.One))
+	nodeOperatorFee := common.GetSafeShare(cosmos.NewUint(500), cosmos.NewUint(10000), cosmos.NewUint(10*common.One))
+	expectedBond = common.SafeSub(expectedBond, nodeOperatorFee)
+	c.Assert(naAfter.Bond.String(), Equals, expectedBond.String())
+
+	income, err := k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.IsZero(), Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestDistributeChainBondRewardsMultiChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+
+	btcVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, btcVault), IsNil)
+
+	ethVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	ethVault.Membership = []string{na1.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, ethVault), IsNil)
+
+	FundModule(c, ctx, k, BondName, 200*common.One)
+
+	c.Assert(k.AddChainIncome(ctx, common.BTCChain, cosmos.NewUint(10*common.One)), IsNil)
+	c.Assert(k.AddChainIncome(ctx, common.ETHChain, cosmos.NewUint(20*common.One)), IsNil)
+
+	c.Assert(vm.distributeChainBondRewards(ctx, mgr), IsNil)
+
+	naAfter, err := k.GetNodeAccount(ctx, na1.NodeAddress)
+	c.Assert(err, IsNil)
+	totalChainReward := cosmos.NewUint(30 * common.One)
+	expectedBond := na1.Bond.Add(totalChainReward)
+	nodeOperatorFee := common.GetSafeShare(cosmos.NewUint(500), cosmos.NewUint(10000), totalChainReward)
+	expectedBond = common.SafeSub(expectedBond, nodeOperatorFee)
+	c.Assert(naAfter.Bond.String(), Equals, expectedBond.String())
+
+	btcIncome, err := k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(btcIncome.IsZero(), Equals, true)
+
+	ethIncome, err := k.GetChainIncome(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(ethIncome.IsZero(), Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestDistributeChainBondRewardsBondOverCap(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(4 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.Bond = cosmos.NewUint(3 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+
+	na3 := GetRandomValidatorNode(NodeActive)
+	na3.Bond = cosmos.NewUint(2 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na3), IsNil)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{
+		na1.PubKeySet.Secp256k1.String(),
+		na2.PubKeySet.Secp256k1.String(),
+		na3.PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	FundModule(c, ctx, k, BondName, 100*common.One)
+
+	chainReward := cosmos.NewUint(1 * common.One)
+	c.Assert(k.AddChainIncome(ctx, common.BTCChain, chainReward), IsNil)
+
+	c.Assert(vm.distributeChainBondRewards(ctx, mgr), IsNil)
+
+	// Bond hard cap for 3 nodes: sort [2,3,4], 2/3*3=2, index 1 → cap=3
+	// Effective bonds: min(4,3)=3, min(3,3)=3, min(2,3)=2. Total=8
+	// na1 share: 3/8 * 1e8, na2 share: 3/8 * 1e8, na3 share: remainder (2/8)
+
+	na1After, _ := k.GetNodeAccount(ctx, na1.NodeAddress)
+	na2After, _ := k.GetNodeAccount(ctx, na2.NodeAddress)
+	na3After, _ := k.GetNodeAccount(ctx, na3.NodeAddress)
+
+	reward1 := common.GetUncappedShare(cosmos.NewUint(3), cosmos.NewUint(8), chainReward)
+	reward2 := common.GetUncappedShare(cosmos.NewUint(3), cosmos.NewUint(8), chainReward)
+	// na3 gets the remainder
+	reward3 := common.SafeSub(chainReward, reward1.Add(reward2))
+
+	fee1 := common.GetSafeShare(cosmos.NewUint(500), cosmos.NewUint(10000), reward1)
+	fee2 := common.GetSafeShare(cosmos.NewUint(500), cosmos.NewUint(10000), reward2)
+	fee3 := common.GetSafeShare(cosmos.NewUint(500), cosmos.NewUint(10000), reward3)
+
+	c.Assert(na1After.Bond.String(), Equals, na1.Bond.Add(reward1).Sub(fee1).String())
+	c.Assert(na2After.Bond.String(), Equals, na2.Bond.Add(reward2).Sub(fee2).String())
+	c.Assert(na3After.Bond.String(), Equals, na3.Bond.Add(reward3).Sub(fee3).String())
+
+	// na1 and na2 should have equal rewards (both capped at 3)
+	c.Assert(reward1.String(), Equals, reward2.String())
+	// na3 should have less
+	c.Assert(reward3.LT(reward1), Equals, true)
+}
