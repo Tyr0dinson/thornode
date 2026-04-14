@@ -1047,3 +1047,125 @@ func (vts *ValidatorMgrTestSuite) TestMarkMissingActors_MimirDisabled(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(nodeAfter.LeaveScore, Equals, uint64(0), Commentf("Node should not be marked when MissingBlockChurnOut is disabled"))
 }
+
+func (vts *ValidatorMgrTestSuite) TestPartitionByChainSupport_SinglePartition(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgrDummy := NewNetworkMgrDummy()
+	vm := newValidatorMgr(k, networkMgrDummy, mgr.TxOutStore(), mgr.EventMgr())
+
+	// All nodes with empty SupportedChains (legacy behavior) should partition into one group
+	nas := make(NodeAccounts, 5)
+	for i := 0; i < 5; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(uint64(100+i) * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nas[i] = na
+	}
+
+	// Create an active vault so getNodeSupportedChains resolves chains from vaults
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	for _, na := range nas {
+		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	partitions := vm.partitionByChainSupport(ctx, mgr, nas)
+	c.Assert(len(partitions), Equals, 1)
+	c.Assert(len(partitions[0].nodes), Equals, 5)
+	c.Assert(len(partitions[0].chains), Equals, 2)
+}
+
+func (vts *ValidatorMgrTestSuite) TestPartitionByChainSupport_TwoPartitions(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgrDummy := NewNetworkMgrDummy()
+	vm := newValidatorMgr(k, networkMgrDummy, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Group A: 3 nodes with BTC+ETH
+	groupA := make(NodeAccounts, 3)
+	for i := 0; i < 3; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+		na.Bond = cosmos.NewUint(uint64(100+i) * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		groupA[i] = na
+	}
+
+	// Group B: 2 nodes with BTC only
+	groupB := make(NodeAccounts, 2)
+	for i := 0; i < 2; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SupportedChains = []string{common.BTCChain.String()}
+		na.Bond = cosmos.NewUint(uint64(200+i) * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		groupB[i] = na
+	}
+
+	all := append(groupA, groupB...)
+	partitions := vm.partitionByChainSupport(ctx, mgr, all)
+	c.Assert(len(partitions), Equals, 2)
+
+	// Partitions are sorted by chain key: "BTC" < "BTC,ETH"
+	c.Assert(len(partitions[0].nodes), Equals, 2) // BTC only
+	c.Assert(len(partitions[0].chains), Equals, 1)
+	c.Assert(partitions[0].chains[0], Equals, common.BTCChain)
+
+	c.Assert(len(partitions[1].nodes), Equals, 3) // BTC+ETH
+	c.Assert(len(partitions[1].chains), Equals, 2)
+}
+
+func (vts *ValidatorMgrTestSuite) TestChurnPartitionBelowMinimumExcluded(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgrDummy := NewNetworkMgrDummy()
+	vm := newValidatorMgr(k, networkMgrDummy, mgr.TxOutStore(), mgr.EventMgr())
+
+	// MinimumNodesForBFT default is 4
+	// Group A: 5 nodes with BTC+ETH — viable
+	groupA := make(NodeAccounts, 5)
+	for i := 0; i < 5; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+		na.Bond = cosmos.NewUint(uint64(100+i) * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		groupA[i] = na
+	}
+
+	// Group B: 2 nodes with DOGE only — below MinimumNodesForBFT
+	groupB := make(NodeAccounts, 2)
+	for i := 0; i < 2; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SupportedChains = []string{common.DOGEChain.String()}
+		na.Bond = cosmos.NewUint(uint64(200+i) * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		groupB[i] = na
+	}
+
+	all := append(groupA, groupB...)
+	minimumNodesForBFT := k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
+	c.Assert(minimumNodesForBFT, Equals, int64(4))
+
+	partitions := vm.partitionByChainSupport(ctx, mgr, all)
+	c.Assert(len(partitions), Equals, 2)
+
+	// Simulate what churnInner does: filter out partitions below MinimumNodesForBFT
+	asgardSize := int64(40)
+	triggeredCount := 0
+	for _, p := range partitions {
+		if int64(len(p.nodes)) < minimumNodesForBFT {
+			continue
+		}
+		groups := vm.splitNext(ctx, p.nodes, asgardSize)
+		for _, group := range groups {
+			_ = networkMgrDummy.TriggerKeygen(ctx, group, p.chains)
+			triggeredCount++
+		}
+	}
+
+	// Only the viable partition (5 nodes) should have triggered keygen
+	c.Assert(triggeredCount, Equals, 1)
+	c.Assert(len(networkMgrDummy.keygens), Equals, 1)
+	c.Assert(len(networkMgrDummy.keygens[0]), Equals, 5)
+	c.Assert(len(networkMgrDummy.keygenChains[0]), Equals, 2) // BTC+ETH
+}

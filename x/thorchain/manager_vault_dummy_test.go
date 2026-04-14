@@ -7,8 +7,10 @@ import (
 )
 
 type NetworkMgrDummy struct {
-	nas   NodeAccounts
-	vault Vault
+	nas          NodeAccounts
+	vault        Vault
+	keygens      []NodeAccounts
+	keygenChains [][]common.Chain
 }
 
 func NewNetworkMgrDummy() *NetworkMgrDummy {
@@ -29,8 +31,10 @@ func (vm *NetworkMgrDummy) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
-func (vm *NetworkMgrDummy) TriggerKeygen(_ cosmos.Context, nas NodeAccounts) error {
+func (vm *NetworkMgrDummy) TriggerKeygen(_ cosmos.Context, nas NodeAccounts, targetChains []common.Chain) error {
 	vm.nas = nas
+	vm.keygens = append(vm.keygens, nas)
+	vm.keygenChains = append(vm.keygenChains, targetChains)
 	return nil
 }
 

@@ -170,7 +170,7 @@ task, it:
 
 ### Phase 5 — Validator manager / churn
 
-- [ ] **T16** In `manager_validator_current.go` churn path: partition eligible nodes by effective `SupportedChains` set; emit one Keygen per partition (size ≥ `MinimumNodesForBFT`, sharded by `AsgardSize`) with `TargetChains`. Unit tests covering: single partition (legacy), two partitions, partition < MinimumNodesForBFT is excluded.
+- [x] **T16** In `manager_validator_current.go` churn path: partition eligible nodes by effective `SupportedChains` set; emit one Keygen per partition (size ≥ `MinimumNodesForBFT`, sharded by `AsgardSize`) with `TargetChains`. Unit tests covering: single partition (legacy), two partitions, partition < MinimumNodesForBFT is excluded. — pending
 - [ ] **T17** Auto-ragnarok trigger at churn for any chain without a viable partition. Emit `chain_ragnarok_initiated`. Unit tests covering: chain lost to opt-outs, chain lost to node removals.
 - [ ] **T18** Block `MsgLeave` / unbond while node is in any active or retiring vault for a ragnaroking chain. Unit tests.
 

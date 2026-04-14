@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -128,19 +129,19 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	} else {
 		ctx.Logger().Info("Checking for node account rotation...")
 	}
-	return vm.churn(ctx)
+	return vm.churn(ctx, mgr)
 }
 
-func (vm *ValidatorMgr) churn(ctx cosmos.Context) error {
+func (vm *ValidatorMgr) churn(ctx cosmos.Context, mgr Manager) error {
 	cacheCtx, commit := ctx.CacheContext()
-	if err := vm.churnInner(cacheCtx); err != nil {
+	if err := vm.churnInner(cacheCtx, mgr); err != nil {
 		return err
 	}
 	commit()
 	return nil
 }
 
-func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
+func (vm *ValidatorMgr) churnInner(ctx cosmos.Context, mgr Manager) error {
 	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
 	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
 	redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
@@ -188,13 +189,69 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		return err
 	}
 	if ok {
-		for _, nodeAccSet := range vm.splitNext(ctx, next, asgardSize) {
-			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
-				return err
+		minimumNodesForBFT := vm.k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
+		partitions := vm.partitionByChainSupport(ctx, mgr, next)
+		for _, p := range partitions {
+			if int64(len(p.nodes)) < minimumNodesForBFT {
+				ctx.Logger().Info("Skipping chain partition below MinimumNodesForBFT",
+					"chains", p.chains, "nodes", len(p.nodes), "minimum", minimumNodesForBFT)
+				continue
+			}
+			groups := vm.splitNext(ctx, p.nodes, asgardSize)
+			if groups == nil {
+				continue
+			}
+			for _, nodeAccSet := range groups {
+				if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet, p.chains); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
+}
+
+type chainPartition struct {
+	chains []common.Chain
+	nodes  NodeAccounts
+}
+
+func (vm *ValidatorMgr) partitionByChainSupport(ctx cosmos.Context, mgr Manager, nas NodeAccounts) []chainPartition {
+	type entry struct {
+		chains []common.Chain
+		nodes  NodeAccounts
+	}
+	partMap := make(map[string]*entry)
+	for _, na := range nas {
+		chains := getNodeSupportedChains(ctx, mgr, na)
+		sort.Slice(chains, func(i, j int) bool {
+			return chains[i].String() < chains[j].String()
+		})
+		strs := make([]string, len(chains))
+		for i, c := range chains {
+			strs[i] = c.String()
+		}
+		key := strings.Join(strs, ",")
+		e, ok := partMap[key]
+		if !ok {
+			e = &entry{chains: chains}
+			partMap[key] = e
+		}
+		e.nodes = append(e.nodes, na)
+	}
+
+	keys := make([]string, 0, len(partMap))
+	for k := range partMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	result := make([]chainPartition, 0, len(keys))
+	for _, k := range keys {
+		e := partMap[k]
+		result = append(result, chainPartition{chains: e.chains, nodes: e.nodes})
+	}
+	return result
 }
 
 // splits given list of node accounts into separate list of nas, for separate

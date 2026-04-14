@@ -88,7 +88,7 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 		}
 	} else {
 		// Trigger a keygen ceremony
-		err := vm.TriggerKeygen(ctx, active)
+		err := vm.TriggerKeygen(ctx, active, nil)
 		if err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
 		}
@@ -1224,7 +1224,7 @@ func (vm *NetworkMgr) removePOLLiquidity(
 }
 
 // TriggerKeygen generate a record to instruct signer kick off keygen process
-func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error {
+func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts, targetChains []common.Chain) error {
 	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
 	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
@@ -1237,6 +1237,13 @@ func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 	keygen, err := NewKeygen(ctx.BlockHeight(), members, AsgardKeygen)
 	if err != nil {
 		return fmt.Errorf("fail to create a new keygen: %w", err)
+	}
+	if len(targetChains) > 0 {
+		chainStrs := make([]string, len(targetChains))
+		for i, c := range targetChains {
+			chainStrs[i] = c.String()
+		}
+		keygen.TargetChains = chainStrs
 	}
 	keygenBlock, err := vm.k.GetKeygenBlock(ctx, ctx.BlockHeight())
 	if err != nil {
