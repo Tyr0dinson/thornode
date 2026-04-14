@@ -1911,3 +1911,83 @@ func (s *HelperSuite) TestGetChainConsensusParticipants(c *C) {
 		c.Assert(p[0].String() < p[1].String(), Equals, true)
 	}
 }
+
+func (s *HelperSuite) TestGetChainAwareNonSigners(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pk1 := types.GetRandomPubKey()
+	pk2 := types.GetRandomPubKey()
+	pk3 := types.GetRandomPubKey()
+
+	addr1, err := pk1.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr2, err := pk2.GetThorAddress()
+	c.Assert(err, IsNil)
+	addr3, err := pk3.GetThorAddress()
+	c.Assert(err, IsNil)
+
+	k := &TestChainConsensusParticipantsKeeper{
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC", "ETH"},
+				Membership: []string{pk1.String(), pk2.String(), pk3.String()},
+			},
+		},
+	}
+	mgr.K = k
+
+	// Case 1: all participants signed — no non-signers
+	nonSigners := getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, addr2, addr3}, common.BTCChain)
+	c.Assert(len(nonSigners), Equals, 0)
+
+	// Case 2: one participant did not sign
+	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, addr2}, common.BTCChain)
+	c.Assert(len(nonSigners), Equals, 1)
+	c.Assert(nonSigners[0].Equals(addr3), Equals, true)
+
+	// Case 3: no one signed — all are non-signers
+	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{}, common.BTCChain)
+	c.Assert(len(nonSigners), Equals, 3)
+
+	// Case 4: chain with no vault members — no non-signers
+	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1}, common.DOGEChain)
+	c.Assert(len(nonSigners), Equals, 0)
+
+	// Case 5: signers include addresses NOT in the chain's vault — ignored
+	extraAddr := types.GetRandomBech32Addr()
+	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, extraAddr}, common.BTCChain)
+	c.Assert(len(nonSigners), Equals, 2)
+	nsSet := make(map[string]bool)
+	for _, ns := range nonSigners {
+		nsSet[ns.String()] = true
+	}
+	c.Assert(nsSet[addr2.String()], Equals, true)
+	c.Assert(nsSet[addr3.String()], Equals, true)
+
+	// Case 6: chain-specific membership — only BTC vault members matter for BTC
+	k2 := &TestChainConsensusParticipantsKeeper{
+		activeVaults: Vaults{
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"BTC"},
+				Membership: []string{pk1.String(), pk2.String()},
+			},
+			{
+				Status:     ActiveVault,
+				Chains:     []string{"ETH"},
+				Membership: []string{pk2.String(), pk3.String()},
+			},
+		},
+	}
+	mgr.K = k2
+	// addr2 signed for BTC — only addr1 is a non-signer for BTC
+	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr2}, common.BTCChain)
+	c.Assert(len(nonSigners), Equals, 1)
+	c.Assert(nonSigners[0].Equals(addr1), Equals, true)
+
+	// addr2 signed for ETH — only addr3 is a non-signer for ETH
+	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr2}, common.ETHChain)
+	c.Assert(len(nonSigners), Equals, 1)
+	c.Assert(nonSigners[0].Equals(addr3), Equals, true)
+}

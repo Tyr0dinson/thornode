@@ -1732,3 +1732,18 @@ func getChainConsensusParticipants(ctx cosmos.Context, mgr Manager, chain common
 	})
 	return result
 }
+
+func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress, chain common.Chain) []cosmos.AccAddress {
+	participants := getChainConsensusParticipants(ctx, mgr, chain)
+	signerSet := make(map[string]struct{}, len(signers))
+	for _, s := range signers {
+		signerSet[s.String()] = struct{}{}
+	}
+	var nonSigners []cosmos.AccAddress
+	for _, p := range participants {
+		if _, signed := signerSet[p.String()]; !signed {
+			nonSigners = append(nonSigners, p)
+		}
+	}
+	return nonSigners
+}
