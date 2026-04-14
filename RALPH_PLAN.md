@@ -188,7 +188,7 @@ task, it:
 
 ### Phase 8 — Slashing
 
-- [x] **T25** In `manager_slasher_current.go`, for chain-scoped observation misses: call `getChainAwareNonSigners`, forfeit their share of the chain's pending income bucket to the global reserve reward bucket (no bond slash). Update existing tests; add new ones for chain-aware behavior. — pending
+- [x] **T25** In `manager_slasher_current.go`, for chain-scoped observation misses: call `getChainAwareNonSigners`, forfeit their share of the chain's pending income bucket to the global reserve reward bucket (no bond slash). Update existing tests; add new ones for chain-aware behavior. — 397e01499e
 
 ### Phase 9 — Rewards
 
