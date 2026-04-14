@@ -151,7 +151,7 @@ task, it:
 
 ### Phase 2 — Mimir + events
 
-- [x] **T6** Register mimirs: `MinNodeChainSupport=1`, `ChainLiquidityRunePerValidator=10_000_00000000` (100k RUNE), `MinimumNodesForBFT=4`, `ChainSubBFTRatioNum=2`, `ChainSubBFTRatioDenom=3`. Add `IsValidMimirKey` entries if applicable. Unit test: mimir lookups return defaults when unset. — pending
+- [x] **T6** Register mimirs: `MinNodeChainSupport=1`, `ChainLiquidityRunePerValidator=10_000_00000000` (100k RUNE), `MinimumNodesForBFT=4`, `ChainSubBFTRatioNum=2`, `ChainSubBFTRatioDenom=3`. Add `IsValidMimirKey` entries if applicable. Unit test: mimir lookups return defaults when unset. — 09b55b589c
 - [ ] **T7** Add event types to `x/thorchain/events.go` (or appropriate file): `chain_support_added`, `chain_support_removed`, `chain_liquidity_cap_breach`, `chain_ragnarok_initiated`. Unit tests for each event constructor.
 
 ### Phase 3 — Core helpers + keeper
