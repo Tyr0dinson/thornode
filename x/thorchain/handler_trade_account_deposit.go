@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -43,6 +44,19 @@ func (h TradeAccountDepositHandler) validate(ctx cosmos.Context, msg MsgTradeAcc
 	if tradeAccountsEnabled <= 0 || tradeAccountsDespositEnabled <= 0 {
 		return fmt.Errorf("trade accounts are disabled")
 	}
+
+	capChain := msg.Asset.GetLayer1Asset().GetChain()
+	if !capChain.Equals(common.THORChain) {
+		pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
+		if err != nil {
+			return fmt.Errorf("error loading %s pool: %w", msg.Asset, err)
+		}
+		inboundRuneValue := pool.AssetValueInRune(msg.Amount)
+		if capErr := validateChainLiquidityCap(ctx, h.mgr, capChain, inboundRuneValue); capErr != nil {
+			return capErr
+		}
+	}
+
 	return msg.ValidateBasic()
 }
 
