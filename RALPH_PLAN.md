@@ -212,7 +212,7 @@ task, it:
 
 - [x] **T35** `openapi/openapi.yaml`: add `supported_chains` and `supports_all_chains` to node_account response. `make generate`. Update querier serialization so empty set returns the resolved list plus `supports_all_chains: true`. Test via query unit test. — 95b0fa54f4
 - [x] **T36** `openapi/openapi.yaml`: add `supporting_validators`, `active_validator_fraction`, `liquidity_cap_applied`, `liquidity_cap_rune` to `inbound_addresses`. Implement the handler. Remove/adjust any stale "all active validators" claim. Unit tests. — db85694d9e
-- [x] **T37** Node querier test coverage for the new field end-to-end through the API gateway. — pending
+- [x] **T37** Node querier test coverage for the new field end-to-end through the API gateway. — 6c98071b5e
 
 ### Phase 13 — Metrics
 
