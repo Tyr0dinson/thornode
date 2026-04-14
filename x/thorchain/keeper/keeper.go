@@ -205,6 +205,7 @@ type KeeperObservedTx interface {
 	SetObservedTxOutVoter(ctx cosmos.Context, tx ObservedTxVoter)
 	GetObservedTxOutVoterIterator(ctx cosmos.Context) cosmos.Iterator
 	GetObservedTxOutVoter(ctx cosmos.Context, hash common.TxID) (ObservedTxVoter, error)
+	GetInFlightMigrateIterator(ctx cosmos.Context) cosmos.Iterator
 	SetObservedLink(ctx cosmos.Context, _, _ common.TxID)
 	GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
 }

@@ -6,6 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func networkHasMigratingVaults(ctx cosmos.Context, k keeper.Keeper) (bool, error) {
@@ -37,41 +38,35 @@ func nodeHasMigratingVaults(ctx cosmos.Context, k keeper.Keeper, memberPubKey co
 }
 
 func hasInFlightMigrate(ctx cosmos.Context, k keeper.Keeper, matchVault func(Vault) bool) (bool, error) {
-	iter := k.GetObservedTxOutVoterIterator(ctx)
+	iter := k.GetInFlightMigrateIterator(ctx)
 	if iter == nil {
 		return false, nil
 	}
 	defer iter.Close()
 
 	for ; iter.Valid(); iter.Next() {
-		var voter ObservedTxVoter
-		if err := k.Cdc().Unmarshal(iter.Value(), &voter); err != nil {
-			return false, fmt.Errorf("fail to unmarshal observed tx out voter: %w", err)
+		var source types.ProtoString
+		if err := k.Cdc().Unmarshal(iter.Value(), &source); err != nil {
+			return false, fmt.Errorf("fail to unmarshal in-flight migrate source vault: %w", err)
 		}
-		if voter.Tx.IsEmpty() || voter.Height == 0 {
+		if source.GetValue() == "" {
 			continue
 		}
 
-		memo, err := ParseMemoWithTHORNames(ctx, k, voter.Tx.Tx.Memo)
-		if err != nil || !memo.IsType(TxMigrate) {
-			continue
-		}
-
-		if matchVault != nil {
-			sourceVault, vaultErr := k.GetVault(ctx, voter.Tx.ObservedPubKey)
-			if vaultErr != nil {
-				return false, fmt.Errorf("fail to get source vault for migrate voter: %w", vaultErr)
-			}
-			if !matchVault(sourceVault) {
-				continue
-			}
-		}
-
-		inboundVoter, err := k.GetObservedTxInVoter(ctx, voter.TxID)
+		sourcePubKey, err := common.NewPubKey(source.GetValue())
 		if err != nil {
-			return false, fmt.Errorf("fail to get observed tx in voter: %w", err)
+			return false, fmt.Errorf("fail to parse in-flight migrate source vault pubkey: %w", err)
 		}
-		if !inboundVoter.UpdatedVault {
+
+		if matchVault == nil {
+			return true, nil
+		}
+
+		vault, err := k.GetVault(ctx, sourcePubKey)
+		if err != nil {
+			return false, fmt.Errorf("fail to get source vault for migrate guard: %w", err)
+		}
+		if matchVault(vault) {
 			return true, nil
 		}
 	}

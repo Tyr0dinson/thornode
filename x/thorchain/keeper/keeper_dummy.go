@@ -376,7 +376,8 @@ func (k KVStoreDummy) GetObservedTxOutVoterIterator(_ cosmos.Context) cosmos.Ite
 func (k KVStoreDummy) GetObservedTxOutVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
 	return ObservedTxVoter{}, kaboom
 }
-func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID) {}
+func (k KVStoreDummy) GetInFlightMigrateIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID)        {}
 func (k KVStoreDummy) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
 	return nil
 }

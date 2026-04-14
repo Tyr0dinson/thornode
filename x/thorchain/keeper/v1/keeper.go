@@ -30,6 +30,7 @@ const (
 	prefixObservedTxIn            types.DbPrefix = "observed_tx_in/"
 	prefixObservedTxOut           types.DbPrefix = "observed_tx_out/"
 	prefixObservedLink            types.DbPrefix = "ob_link/"
+	prefixInFlightMigrate         types.DbPrefix = "in_flight_migrate/"
 	prefixPool                    types.DbPrefix = "pool/"
 	prefixPoolLUVI                types.DbPrefix = "luvi/"
 	prefixTxOut                   types.DbPrefix = "txout/"

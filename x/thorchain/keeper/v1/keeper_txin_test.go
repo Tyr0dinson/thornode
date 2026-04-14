@@ -87,3 +87,36 @@ func (s *KeeperTxInSuite) TestObservedLink(c *C) {
 	c.Check(hashes[1].Equals(outhash2), Equals, true)
 	c.Check(hashes[2].Equals(outhash3), Equals, true)
 }
+
+func (s *KeeperTxInSuite) TestInFlightMigrateIndex(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	tx := GetRandomTx()
+	tx.Memo = "migrate:123"
+
+	observed := NewObservedTx(tx, 12, vaultPubKey, 12)
+	voter := NewObservedTxVoter(tx.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	voter.Height = ctx.BlockHeight()
+
+	k.SetObservedTxOutVoter(ctx, voter)
+
+	iter := k.GetInFlightMigrateIterator(ctx)
+	c.Assert(iter, NotNil)
+	defer iter.Close()
+	c.Assert(iter.Valid(), Equals, true)
+
+	var source ProtoString
+	c.Assert(k.Cdc().Unmarshal(iter.Value(), &source), IsNil)
+	c.Assert(source.GetValue(), Equals, vaultPubKey.String())
+
+	inVoter := NewObservedTxVoter(tx.ID, nil)
+	inVoter.UpdatedVault = true
+	k.SetObservedTxInVoter(ctx, inVoter)
+
+	iter = k.GetInFlightMigrateIterator(ctx)
+	c.Assert(iter, NotNil)
+	defer iter.Close()
+	c.Assert(iter.Valid(), Equals, false)
+}
