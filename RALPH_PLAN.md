@@ -236,7 +236,7 @@ task, it:
 
 - [x] **T50** `test/regression/suites/opt-in-chain-security/happy-path.yaml`: opt-in → churn → chain-only Asgard → BTC swap → reward credited to BTC supporters only. <!-- aae3c91173 -->
 - [x] **T51** `test/regression/suites/opt-in-chain-security/liquidity-cap.yaml`: drop BTC support below 2/3, verify add-liquidity/secured-deposit/trade-deposit/swap-in rejected once at cap; existing untouched; withdrawals still succeed. <!-- 0486e2b39e -->
-- [ ] **T52** `test/regression/suites/opt-in-chain-security/chain-ragnarok.yaml`: reduce BTC support below `MinimumNodesForBFT`; auto-ragnarok at next churn; `MsgLeave` rejected for in-vault node; after drain, unbond allowed.
+- [x] **T52** `test/regression/suites/opt-in-chain-security/chain-ragnarok.yaml`: reduce BTC support below `MinimumNodesForBFT`; auto-ragnarok at next churn; `MsgLeave` rejected for in-vault node; after drain, unbond allowed. <!-- 83137b97d2 -->
 
 Each regression suite must run via `make test-regression RUN=opt-in-chain-security/<name> CI=1 EXPORT=1 DEBUG=1` and pass.
 
