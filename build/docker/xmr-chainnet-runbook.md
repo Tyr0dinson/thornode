@@ -8,6 +8,8 @@ and bootstrapped by
 ## Topology
 
 - 7 validators: `dog`, `cat`, `fox`, `goat`, `whale`, `wolf`, `eagle`
+- `dog` is the genesis validator and maps to the unsuffixed compose services:
+  `thornode`, `bifrost`, `xmr-frost-signer`
 - steady state: `6 Active`, `1 Standby`
 - XMR target shape after fresh bootstrap: `2` active Asgard vaults, each with `3` members
 - FROST threshold in that shape: `2-of-3`
@@ -28,6 +30,12 @@ Required env in the repo `.env`:
 
 ```bash
 XMR_DAEMON_URL=http://<monerod-rpc>:18081
+```
+
+Current chainnet value on `91.99.89.216`:
+
+```bash
+XMR_DAEMON_URL=http://188.245.203.167:18081
 ```
 
 The post-deploy script also reads `XMR_DAEMON_URL` from the shell environment and does a host-side reachability check, so export it before running the script even if it already exists in `.env`.
