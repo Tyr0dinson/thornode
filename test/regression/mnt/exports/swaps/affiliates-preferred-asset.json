@@ -163,7 +163,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "218512088333",
+              "amount": "218512088377",
               "denom": "rune"
             }
           ]
@@ -172,7 +172,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35009751639236",
+              "amount": "35009899001284",
               "denom": "rune"
             }
           ]
@@ -181,7 +181,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2567041532591",
+              "amount": "2567041532598",
               "denom": "rune"
             }
           ]
@@ -199,7 +199,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5004709739840",
+              "amount": "5004562377741",
               "denom": "rune"
             }
           ]
@@ -309,14 +309,14 @@
       "network": {
         "LPIncomeSplit": "9563",
         "NodeIncomeSplit": "437",
-        "bond_reward_rune": "1380812",
+        "bond_reward_rune": "1380814",
         "chain_income": [
           {
-            "amount": "1134566170",
+            "amount": "1092916865",
             "chain": "BTC"
           },
           {
-            "amount": "3577792858",
+            "amount": "3472080062",
             "chain": "ETH"
           }
         ],
@@ -382,7 +382,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "86654809",
-          "balance_rune": "136354021158",
+          "balance_rune": "136354021180",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -393,7 +393,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "2799683007",
-          "balance_rune": "82158067175",
+          "balance_rune": "82158067197",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -417,13 +417,13 @@
         {
           "address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
           "reclaimed": "0",
-          "score": "10713917487",
+          "score": "10713917488",
           "spent": "0"
         },
         {
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
           "reclaimed": "0",
-          "score": "29221831293",
+          "score": "29221831296",
           "spent": "0"
         },
         {
@@ -435,7 +435,7 @@
         {
           "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
           "reclaimed": "0",
-          "score": "337033248",
+          "score": "337033249",
           "spent": "0"
         },
         {
@@ -447,7 +447,7 @@
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "30027241235",
+          "score": "30027241238",
           "spent": "0"
         },
         {

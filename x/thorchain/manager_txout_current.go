@@ -358,9 +358,12 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 		if err := mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, toi.Coin.Asset, totalOutboundFeeRune); err != nil {
 			ctx.Logger().Error("fail to add to outbound fee withheld rune", "outbound asset", toi.Coin.Asset, "error", err)
 		}
-		if err := mgr.Keeper().AddChainIncome(ctx, toi.Chain, totalOutboundFeeRune); err != nil {
-			ctx.Logger().Error("fail to add outbound fee to chain income", "chain", toi.Chain, "error", err)
-		}
+		// Note: outbound fees are NOT added to ChainIncome here. The rune lives
+		// in the Reserve to fund gas reimbursement (ProcessGas), so crediting it
+		// to ChainIncome would either break the bond invariant (Bond module would
+		// be short) or starve gas reimbursement (if we moved it to Bond). The
+		// per-chain bond reward split in CalcBlockRewards already attributes
+		// fee-sourced bond rewards to the originating chain.
 	}
 
 	return true, nil

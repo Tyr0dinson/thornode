@@ -945,17 +945,6 @@ func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, c
 		return fmt.Errorf("fail to get active vaults for chain %s: %w", chain, err)
 	}
 
-	// ChainIncome is tracked in network state, but the backing rune remains in
-	// the Reserve module (from outbound fees and block reward fee-share) until
-	// now. Move it to the Bond module before payChainReward credits node bonds
-	// so that sum(na.Bond) stays backed by the Bond module balance.
-	if !totalReward.IsZero() {
-		coin := common.NewCoin(common.RuneNative, totalReward)
-		if err := vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
-			return fmt.Errorf("fail to move chain income from reserve to bond: %w", err)
-		}
-	}
-
 	seen := make(map[string]struct{})
 	var chainNodes NodeAccounts
 	for _, vault := range vaults {

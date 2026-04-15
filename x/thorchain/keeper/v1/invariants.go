@@ -173,13 +173,19 @@ func BondInvariant(k KVStore) common.Invariant {
 		network, _ := k.GetNetwork(ctx)
 		bondRewardRune := network.BondRewardRune
 
+		// get pending per-chain bond rewards; the full bondReward is transferred
+		// Reserve → Bond at block reward time and then bookkept across
+		// BondRewardRune (emission portion) and ChainIncome (fee portion).
+		chainIncomeRune := cosmos.ZeroUint()
+		for _, ci := range network.ChainIncome {
+			chainIncomeRune = chainIncomeRune.Add(ci.Amount)
+		}
+
 		// get rune balance of bond module
 		bondModuleRune := k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
 
-		// bond module is expected to equal bonded rune and pending rewards.
-		// Per-chain bond rewards (network.ChainIncome) live in the Reserve module
-		// until distributeChainIncome moves them to Bond at distribution time.
-		expectedRune := bondedRune.Add(bondRewardRune)
+		// bond module is expected to equal bonded rune and pending rewards
+		expectedRune := bondedRune.Add(bondRewardRune).Add(chainIncomeRune)
 		if expectedRune.GT(bondModuleRune) {
 			broken = true
 			diff := expectedRune.Sub(bondModuleRune)

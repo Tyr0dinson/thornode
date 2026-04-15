@@ -1757,18 +1757,22 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 
 	}
 
-	// Split bonder reward between emission-sourced (global, tracked in BondRewardRune)
-	// and fee-sourced (per-chain, tracked in ChainIncome). Only the emission portion
-	// is transferred to the Bond module up-front; the per-chain portion is moved from
-	// Reserve to Bond at distribution time (distributeChainIncome) so that the outbound
-	// fee flow — which also adds to ChainIncome but leaves rune in the Reserve for gas
-	// reimbursement — can share the same accounting path without over- or under-funding
-	// the Bond module.
+	if !bondReward.IsZero() {
+		coin := common.NewCoin(common.RuneNative, bondReward)
+		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
+			ctx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
+			return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
+		}
+	}
+
+	// Split bonder reward between emission-sourced (global) and fee-sourced (per-chain).
+	// The full bondReward has already been moved to the Bond module above; this split
+	// just decides how it is bookkept — BondRewardRune drains via the normal churn
+	// payout, ChainIncome drains via distributeChainBondRewards.
 	originalSystemIncome := blockReward.Add(totalLiquidityFees)
-	emissionBonderShare := bondReward
 	if !totalLiquidityFees.IsZero() && !originalSystemIncome.IsZero() {
 		feeBonderShare := common.GetSafeShare(totalLiquidityFees, originalSystemIncome, bondReward)
-		emissionBonderShare = common.SafeSub(bondReward, feeBonderShare)
+		emissionBonderShare := common.SafeSub(bondReward, feeBonderShare)
 
 		// Group pool liquidity fees by chain for proportional attribution.
 		type chainFeeEntry struct {
@@ -1812,15 +1816,17 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 				addChainIncomeToNetwork(&network, entry.chain, share)
 			}
 		}
-	}
-	network.BondRewardRune = network.BondRewardRune.Add(emissionBonderShare)
 
-	if !emissionBonderShare.IsZero() {
-		coin := common.NewCoin(common.RuneNative, emissionBonderShare)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
-			ctx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
-			return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
-		}
+		// totalLiquidityFees counts fees from ALL pools (including native /
+		// derived pools that have no external chain validators), but
+		// chainFeeEntries only covers layer-1 pools via availablePools. Any
+		// leftover feeBonderShare — i.e. the portion attributable to native
+		// pool fees — has no chain to distribute to, so fold it into the
+		// global BondRewardRune bucket. This keeps the Bond module solvent.
+		unallocated := common.SafeSub(feeBonderShare, totalChainAllocated)
+		network.BondRewardRune = network.BondRewardRune.Add(emissionBonderShare).Add(unallocated)
+	} else {
+		network.BondRewardRune = network.BondRewardRune.Add(bondReward)
 	}
 
 	rewardEvt := NewEventRewards(bondReward, evtPools, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct)
