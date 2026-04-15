@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blang/semver"
 
@@ -106,11 +107,13 @@ func newTestSignerCacheManager(t *testing.T) *signercache.CacheManager {
 
 type mockFrostTssServer struct {
 	tssp.Server
-	resp tssp.FrostKeySignResponse
-	err  error
+	calls int
+	resp  tssp.FrostKeySignResponse
+	err   error
 }
 
 func (m *mockFrostTssServer) FrostKeySign(req tssp.FrostKeySignRequest, _ tssp.FrostSidecarClient) (tssp.FrostKeySignResponse, error) {
+	m.calls++
 	if m.err != nil {
 		return m.resp, m.err
 	}
@@ -144,6 +147,40 @@ func (m *mockFrostTssServer) FrostKeySign(req tssp.FrostKeySignRequest, _ tssp.F
 	}
 
 	return resp, nil
+}
+
+func TestXMRKeyImageCeremonyGateFIFO(t *testing.T) {
+	t.Parallel()
+
+	c := &Client{}
+	firstRelease := c.acquireXMRKeyImageCeremonySlot()
+
+	orderCh := make(chan string, 2)
+	secondEntered := make(chan struct{})
+
+	go func() {
+		release := c.acquireXMRKeyImageCeremonySlot()
+		orderCh <- "second"
+		close(secondEntered)
+		release()
+	}()
+
+	select {
+	case <-secondEntered:
+		t.Fatalf("second key-image ceremony entered before first released")
+	default:
+	}
+
+	firstRelease()
+
+	select {
+	case got := <-orderCh:
+		if got != "second" {
+			t.Fatalf("expected second ceremony to run next, got %s", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for queued key-image ceremony")
+	}
 }
 
 func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
@@ -433,5 +470,88 @@ func TestSignTxRequiresTxKeysInSuccessResponse(t *testing.T) {
 	}
 	if bridge.calls != 0 {
 		t.Fatalf("expected PostKeysignFailure not to be called, got %d calls", bridge.calls)
+	}
+}
+
+func TestSignTxDefersWhileXMRKeyImageBacklogIsActive(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
+	bridge := &keysignFailureBridge{
+		vaults: map[string]ttypes.Vault{
+			vaultPubKey.String(): {
+				PubKey:      vaultPubKey,
+				PubKeyEddsa: vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+				StatusSince: 12000,
+				Membership:  []string{"member-a"},
+			},
+		},
+	}
+
+	tssServer := &mockFrostTssServer{
+		resp: tssp.FrostKeySignResponse{
+			Status: gotsscommon.Success,
+		},
+	}
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:         10 * moneroAtomicToThorchain,
+			UnlockedBalance: 10 * moneroAtomicToThorchain,
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:              common.XMRChain,
+		localNodePubKey:    common.PubKey("member-a"),
+		frostSigner:        frostSigner,
+		tssServer:          tssServer,
+		signerCacheManager: newTestSignerCacheManager(t),
+		thorchainBridge:    bridge,
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddress,
+		},
+	}
+
+	release := c.acquireXMRKeyImageCeremonySlot()
+	defer release()
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        testOutboundXMRDestination(),
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+		},
+		Memo: "OUT:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+	}
+
+	_, _, _, signErr := c.SignTx(tx, 321)
+	if signErr == nil {
+		t.Fatalf("expected SignTx error")
+	}
+	var retryErr interface {
+		error
+		RetryAfterNextBlock() bool
+	}
+	if !errors.As(signErr, &retryErr) {
+		t.Fatalf("expected retry-after-next-block error, got: %T %v", signErr, signErr)
+	}
+	if !retryErr.RetryAfterNextBlock() {
+		t.Fatalf("expected key-image backlog error to request retry after next block")
+	}
+	if tssServer.calls != 0 {
+		t.Fatalf("expected keysign not to start while key-image backlog is active, got %d TSS calls", tssServer.calls)
+	}
+	if bridge.calls != 0 {
+		t.Fatalf("expected PostKeysignFailure not to be called for key-image backlog deferral, got %d calls", bridge.calls)
 	}
 }

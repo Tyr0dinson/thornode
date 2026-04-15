@@ -1,8 +1,11 @@
 package tss
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +22,7 @@ import (
 )
 
 const frostKeyImageMsgIDDomain = "thorchain-frost-keyimage-msgid-v1"
+const frostKeyImageCoordinationHeightDomain = "thorchain-frost-keyimage-coordination-height-v1"
 
 type FrostKeyImageCoordinator struct {
 	logger           zerolog.Logger
@@ -75,6 +79,15 @@ func FrostKeyImageMsgID(req FrostKeyImageRequest) (string, error) {
 	return tcommon.MsgToHashString([]byte(canonical))
 }
 
+func frostKeyImageCoordinationHeight(msgID string) int64 {
+	sum := sha256.Sum256([]byte(frostKeyImageCoordinationHeightDomain + "\n" + strings.TrimSpace(msgID)))
+	height := int64(binary.BigEndian.Uint64(sum[:8]) & uint64(math.MaxInt64))
+	if height <= 0 {
+		return 1
+	}
+	return height
+}
+
 func (t *TssServer) FrostKeyImage(req FrostKeyImageRequest, sidecar FrostSidecarClient) (FrostKeyImageResponse, error) {
 	if sidecar == nil {
 		return FrostKeyImageResponse{}, fmt.Errorf("frost sidecar client is nil")
@@ -86,10 +99,31 @@ func (t *TssServer) FrostKeyImage(req FrostKeyImageRequest, sidecar FrostSidecar
 	if err != nil {
 		return FrostKeyImageResponse{}, fmt.Errorf("fail to compute frost key image msgID: %w", err)
 	}
+	coordinationHeight := frostKeyImageCoordinationHeight(msgID)
 	threshold, err := conversion.GetThreshold(len(req.SignerPubKeys))
 	if err != nil {
 		return FrostKeyImageResponse{}, fmt.Errorf("fail to compute frost threshold: %w", err)
 	}
+	predictedLeader := ""
+	if peerIDs, peerErr := conversion.GetPeerIDsFromPubKeys(req.SignerPubKeys); peerErr == nil {
+		peerIDStrings := make([]string, 0, len(peerIDs))
+		for _, peerID := range peerIDs {
+			peerIDStrings = append(peerIDStrings, peerID.String())
+		}
+		if leader, leaderErr := p2p.LeaderNode(msgID, coordinationHeight, peerIDStrings); leaderErr == nil {
+			predictedLeader = leader
+		}
+	}
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Str("vault_pub_key", strings.TrimSpace(req.VaultPubKey)).
+		Str("tx_hash", strings.ToLower(strings.TrimSpace(req.TxHash))).
+		Uint32("output_index", req.OutputIndex).
+		Int64("requested_block_height", req.BlockHeight).
+		Int64("coordination_height", coordinationHeight).
+		Str("predicted_leader", predictedLeader).
+		Strs("signer_pub_keys", req.SignerPubKeys).
+		Msg("starting frost key-image ceremony")
 
 	msgChan := make(chan *p2p.Message, 1024)
 	sigChan := make(chan string, 2)
@@ -109,12 +143,23 @@ func (t *TssServer) FrostKeyImage(req FrostKeyImageRequest, sidecar FrostSidecar
 	onlinePeers, _, errJoinParty := t.joinParty(
 		msgID,
 		req.Version,
-		req.BlockHeight,
+		coordinationHeight,
 		req.SignerPubKeys,
 		threshold,
 		sigChan,
 	)
 	if errJoinParty != nil {
+		t.logger.Warn().
+			Err(errJoinParty).
+			Str("msg_id", msgID).
+			Str("vault_pub_key", strings.TrimSpace(req.VaultPubKey)).
+			Str("tx_hash", strings.ToLower(strings.TrimSpace(req.TxHash))).
+			Uint32("output_index", req.OutputIndex).
+			Int64("requested_block_height", req.BlockHeight).
+			Int64("coordination_height", coordinationHeight).
+			Str("predicted_leader", predictedLeader).
+			Strs("signer_pub_keys", req.SignerPubKeys).
+			Msg("frost key-image join party failed")
 		return FrostKeyImageResponse{
 			Status: tcommon.Fail,
 			Blame:  blame.NewBlame(errJoinParty.Error(), nil),
