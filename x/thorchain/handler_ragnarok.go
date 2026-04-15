@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -80,9 +81,31 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 			// this type of tx out is special, because it doesn't have relevant tx
 			// in to trigger it, it is trigger by thorchain itself.
 
-			fromAddress, err := tx.VaultPubKey.GetAddress(tx.Chain)
+			var fromAddress common.Address
+			switch tx.Chain.GetSigningAlgo() {
+			case common.SigningAlgoSecp256k1:
+				fromAddress, err = tx.VaultPubKey.GetAddress(tx.Chain)
+			case common.SigningAlgoEd25519:
+				key := tx.VaultPubKeyEddsa
+				if tx.Chain == common.XMRChain && !tx.VaultPubKeyFrost.IsEmpty() {
+					key = tx.VaultPubKeyFrost
+				}
+				if key.IsEmpty() {
+					err = fmt.Errorf("vault pubkey for ed25519 chain is empty")
+				} else {
+					fromAddress, err = key.GetAddress(tx.Chain)
+				}
+			default:
+				err = fmt.Errorf("unknown signing algorithm: %s", tx.Chain.GetSigningAlgo())
+			}
 			if err != nil {
-				ctx.Logger().Error("fail to get from address from vault pubkey", "error", err, "vault_pubkey", tx.VaultPubKey, "chain", tx.Chain)
+				ctx.Logger().Error(
+					"fail to get from address from vault pubkey",
+					"error", err,
+					"vault_pubkey", tx.VaultPubKey,
+					"vault_pubkey_eddsa", tx.VaultPubKeyEddsa,
+					"chain", tx.Chain,
+				)
 				continue
 			}
 

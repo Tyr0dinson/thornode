@@ -238,6 +238,46 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegration(c *C) {
 	c.Assert(updatedRefMemo.HasBeenUsedBy(tx.Tx.ID), Equals, true)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestNetworkHasMigratingVaultsTracksInFlightMigrates(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	memberPubKey := GetRandomPubKey()
+	vault := NewVault(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	vault.Membership = []string{memberPubKey.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	observed := GetRandomObservedTx()
+	observed.Tx.Chain = common.BTCChain
+	observed.Tx.Memo = "migrate:123"
+	observed.ObservedPubKey = vault.PubKey
+
+	outVoter := NewObservedTxVoter(observed.Tx.ID, ObservedTxs{observed})
+	outVoter.Tx = observed
+	outVoter.Height = ctx.BlockHeight()
+	outVoter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxOutVoter(ctx, outVoter)
+
+	migrating, err := networkHasMigratingVaults(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(migrating, Equals, true)
+
+	memberMigrating, err := nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(memberMigrating, Equals, true)
+
+	inVoter := NewObservedTxVoter(observed.Tx.ID, nil)
+	inVoter.UpdatedVault = true
+	mgr.Keeper().SetObservedTxInVoter(ctx, inVoter)
+
+	migrating, err = networkHasMigratingVaults(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(migrating, Equals, false)
+
+	memberMigrating, err = nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(memberMigrating, Equals, false)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithExpiredMemo(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100) // Current block height
@@ -485,10 +525,9 @@ func (s *HandlerObservedTxHelpersSuite) TestUnfinalizedHeightUsedInFetchMemoFrom
 	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.UnfinalizedHeight)
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
-	// If we had used Height (120) instead, let's verify it would fail the height check
-	// (transaction observed after memo creation: 120 > 50, but this should be caught by height validation)
+	// A later finalized height still represents an observation after memo creation, so it should succeed.
 	resolvedMemoWithHeight := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.Height)
-	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890") // This will still work since 120 > 50
+	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
 	// Test edge case where using Height would fail but UnfinalizedHeight succeeds
 	// Create reference memo at height 70

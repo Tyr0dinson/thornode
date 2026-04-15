@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/blang/semver"
 
@@ -197,6 +198,31 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 	})
 	c.Assert(queryPoolResp, IsNil)
 	c.Assert(err, NotNil)
+}
+
+func (s *QuerierSuite) TestCastTxOutItemIncludesVaultPubKeyFrost(c *C) {
+	limit := cosmos.NewUint(0)
+	clout := cosmos.NewUint(0)
+	toi := TxOutItem{
+		Chain:                 common.XMRChain,
+		VaultPubKey:           GetRandomPubKey(),
+		VaultPubKeyEddsa:      GetRandomPubKey(),
+		VaultPubKeyFrost:      GetRandomPubKey(),
+		ToAddress:             GetRandomTHORAddress(),
+		InHash:                GetRandomTxHash(),
+		Coin:                  common.NewCoin(common.XMRAsset, cosmos.NewUint(123)),
+		MaxGas:                common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(456))},
+		GasRate:               12,
+		Memo:                  "OUT:TEST",
+		AggregatorTargetLimit: &limit,
+		CloutSpent:            &clout,
+	}
+
+	got := castTxOutItem(toi, 42)
+	c.Assert(got, NotNil)
+	c.Check(got.VaultPubKey, Equals, toi.VaultPubKey.String())
+	c.Check(got.VaultPubKeyEddsa, Equals, toi.VaultPubKeyEddsa.String())
+	c.Check(got.VaultPubKeyFrost, Equals, toi.VaultPubKeyFrost.String())
 }
 
 func (s *QuerierSuite) TestVaults(c *C) {
@@ -1101,9 +1127,15 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 		},
 	}
 	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
-	vault1 := GetRandomVault()
-	vault1.Routers = vault.Routers
-	c.Assert(s.k.SetVault(s.ctx, vault1), IsNil)
+
+	inactive := GetRandomVault()
+	inactive.Type = AsgardVault
+	inactive.Status = InactiveVault
+	inactive.BlockHeight = s.ctx.BlockHeight()
+	inactive.Membership = []string{node.PubKeySet.Secp256k1.String()}
+	inactive.InboundTxCount = 0
+	c.Assert(s.k.SetVault(s.ctx, inactive), IsNil)
+
 	queryVaultPubkeys, err := s.queryServer.VaultsPubkeys(s.ctx, &types.QueryVaultsPubkeysRequest{})
 	c.Assert(err, IsNil)
 
@@ -1116,8 +1148,12 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 
 	// Verify conformance to openapi spec
 	c.Assert(r.Asgard[0].PubKey, Equals, queryVaultPubkeys.Asgard[0].PubKey)
+	c.Assert(*r.Asgard[0].PubKeyFrost, Equals, queryVaultPubkeys.Asgard[0].PubKeyFrost)
 	c.Assert(*r.Asgard[0].Routers[0].Chain, Equals, queryVaultPubkeys.Asgard[0].Routers[0].Chain)
 	c.Assert(*r.Asgard[0].Routers[0].Router, Equals, queryVaultPubkeys.Asgard[0].Routers[0].Router)
+	c.Assert(len(queryVaultPubkeys.Inactive), Equals, 1)
+	c.Assert(queryVaultPubkeys.Inactive[0].PubKey, Equals, inactive.PubKey.String())
+	c.Assert(queryVaultPubkeys.Inactive[0].PubKeyFrost, Equals, inactive.PubKeyFrost.String())
 }
 
 func (s *QuerierSuite) TestQueryBalanceModule(c *C) {
@@ -1201,9 +1237,10 @@ func (s *QuerierSuite) TestQueryVersion(c *C) {
 }
 
 func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
-	// Success example, secp256k1 pubkey from Mocknet node tthor1jgnk2mg88m57csrmrlrd6c3qe4lag3e33y2f3k
-	var mocknetPubKey common.PubKey = "tthorpub1addwnpepqt8tnluxnk3y5quyq952klgqnlmz2vmaynm40fp592s0um7ucvjh5lc2l2z"
-	c.Assert(getPeerIDFromPubKey(mocknetPubKey), Equals, "16Uiu2HAm9LeTqHJWSa67eHNZzSz3yKb64dbj7A4V1Ckv9hXyDkQR")
+	// Success example for the current configured THOR pubkey prefix.
+	peerID := getPeerIDFromPubKey(GetRandomPubKey())
+	c.Assert(strings.HasPrefix(peerID, "fail to parse account pub key"), Equals, false)
+	c.Assert(peerID, Matches, "^16Uiu2[1-9A-HJ-NP-Za-km-z]+$")
 
 	// Failure example.
 	expectedErrorString := "fail to parse account pub key(nonsense): decoding bech32 failed: invalid separator index -1"
@@ -1259,7 +1296,7 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	c.Assert(s.mgr.Keeper().SetNodeAccount(s.ctx, nodeAccount), IsNil)
 
 	// pubKey := GetRandomPubKey()
-	asgard := NewVault(
+	asgard := NewVaultV2(
 		s.ctx.BlockHeight(),
 		ActiveVault,
 		AsgardVault,
@@ -1267,9 +1304,14 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 		common.Chains{
 			common.BTCChain,
 			common.ETHChain,
+			common.XMRChain,
 		}.Strings(),
 		[]ChainContract{},
+		GetRandomEd25519PubKey(),
 	)
+	asgard.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
+	})
 
 	c.Assert(s.mgr.Keeper().SetVault(s.ctx, asgard), IsNil)
 
@@ -1289,6 +1331,21 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	poolETH.LPUnits = cosmos.NewUint(100)
 
 	err = s.mgr.Keeper().SetPool(s.ctx, poolETH)
+	c.Assert(err, IsNil)
+
+	poolXMR := NewPool()
+	poolXMR.Asset = common.XMRAsset
+	poolXMR.BalanceAsset = cosmos.NewUint(1_000_000_000_000)
+	poolXMR.BalanceRune = cosmos.NewUint(10_000_000_000_000)
+	poolXMR.LPUnits = cosmos.NewUint(100)
+
+	err = s.mgr.Keeper().SetPool(s.ctx, poolXMR)
+	c.Assert(err, IsNil)
+	err = s.mgr.Keeper().SaveNetworkFee(s.ctx, common.XMRChain, NetworkFee{
+		Chain:              common.XMRChain,
+		TransactionSize:    10000,
+		TransactionFeeRate: 10000,
+	})
 	c.Assert(err, IsNil)
 
 	var addressBTC, addressTHOR string
@@ -1328,6 +1385,33 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(queryPoolsResp, NotNil)
+
+	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &types.QueryQuoteSwapRequest{
+		FromAsset: common.BTCAsset.String(),
+		ToAsset:   common.XMRAsset.String(),
+		Amount:    "10000000",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(queryPoolsResp, NotNil)
+	c.Assert(queryPoolsResp.Memo, Equals, "")
+
+	longDest := "43hSSzguniAQWhHnwk1rcYH51z2thnf6AVfNaMwg9t99S78LtMrjrKdJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRY3YMUb"
+	longRefund := "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejK5g6JTU2K5uJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRXBN2hK"
+	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &types.QueryQuoteSwapRequest{
+		FromAsset:         common.BTCAsset.String(),
+		ToAsset:           common.XMRAsset.String(),
+		Amount:            "100000000",
+		Destination:       longDest,
+		RefundAddress:     longRefund,
+		Affiliate:         GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String(),
+		AffiliateBps:      "10/10/10",
+		StreamingInterval: "2",
+		StreamingQuantity: "5",
+		Extended:          true,
+	})
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "generated memo too long for source chain")
+	c.Assert(queryPoolsResp, IsNil)
 
 	// The following assertions are commented out because the request now fails due to fee parsing issues
 	// memo := fmt.Sprintf("=:r:%s/%s:97000000000/1/1:%s:50", addressTHOR, addressBTC, affiliateAddr)

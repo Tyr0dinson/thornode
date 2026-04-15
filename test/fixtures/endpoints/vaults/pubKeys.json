@@ -54,7 +54,8 @@
     },
     {
       "pub_key": "tthorpub1addwnpepq27s79a9xk8hjcpjuthmwnl2z4su43uynekcjuqcnmhpemfgfrh6sm4yd8e",
-      "pub_key_eddsa": "tthorpub1zcjduepq3p80uejsez2p7ynwjfshlsetm7uqqjxn8xe5susgsf37c0de0kcsecrfnm"
+      "pub_key_eddsa": "tthorpub1zcjduepq3p80uejsez2p7ynwjfshlsetm7uqqjxn8xe5susgsf37c0de0kcsecrfnm",
+      "pub_key_frost": "tthorpub1zcjduepqqtpdwp9g6f7d74h7fq69je8l5a2qhnv3m4nplrjr6y45zsv3c5ncw7g5zpn"
     },
     {
       "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
@@ -67,6 +68,15 @@
           "chain": "AVAX",
           "router": "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
         }
+      ]
+    }
+  ],
+  "inactive": [
+    {
+      "pub_key": "tthorpub1addwnpepqzt2w08kxps5gj5aytzgm29t0eqc0me2kjp7k0rh9x8g83yyd49r5j5nq7a",
+      "pub_key_frost": "tthorpub1zcjduepqx7mdt0cuu0d9cw3t3h44yfxh3g0g48yldntj4n9s2snvrc8h88l79yl4hh3",
+      "membership": [
+        "tthorpub1addwnpepqflvfv08t6qt95lmttd6wpf3ss8wx63e9vf6fvyuj2yy6nnyna576rfzjks"
       ]
     }
   ],

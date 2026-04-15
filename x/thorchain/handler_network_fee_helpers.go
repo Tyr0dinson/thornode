@@ -12,6 +12,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
+const xmrNetworkFeeLookbackBlocks = int64(600)
+
 func processNetworkFeeAttestation(
 	ctx cosmos.Context,
 	mgr Manager,
@@ -66,13 +68,59 @@ func processNetworkFeeAttestation(
 	mgr.Slasher().IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 
 	ctx.Logger().Info("update network fee", "chain", nf.Chain.String(), "transaction-size", nf.TransactionSize, "fee-rate", nf.TransactionRate)
-	if err := mgr.Keeper().SaveNetworkFee(ctx, nf.Chain, NetworkFee{
+	networkFeeToSave, err := applyNetworkFeeLookback(ctx, mgr, NetworkFee{
 		Chain:              nf.Chain,
 		TransactionSize:    nf.TransactionSize,
 		TransactionFeeRate: nf.TransactionRate,
-	}); err != nil {
+	})
+	if err != nil {
+		return ErrInternal(err, "fail to apply network fee lookback")
+	}
+	if err := mgr.Keeper().SaveNetworkFee(ctx, nf.Chain, networkFeeToSave); err != nil {
 		return ErrInternal(err, "fail to save network fee")
 	}
 
+	if nf.Height > 0 {
+		if err := mgr.Keeper().SetLastChainHeight(ctx, nf.Chain, nf.Height); err != nil {
+			ctx.Logger().Error("fail to set last chain height from network fee", "chain", nf.Chain, "height", nf.Height, "error", err)
+		}
+	}
+
 	return nil
+}
+
+func applyNetworkFeeLookback(ctx cosmos.Context, mgr Manager, incoming NetworkFee) (NetworkFee, error) {
+	if !incoming.Chain.Equals(common.XMRChain) {
+		return incoming, nil
+	}
+
+	current, err := mgr.Keeper().GetNetworkFee(ctx, incoming.Chain)
+	if err != nil {
+		return incoming, err
+	}
+	floorBlock, err := mgr.Keeper().GetNetworkFeeFloorBlock(ctx, incoming.Chain)
+	if err != nil {
+		return incoming, err
+	}
+
+	incomingTotal := incoming.TransactionSize * incoming.TransactionFeeRate
+	currentTotal := current.TransactionSize * current.TransactionFeeRate
+
+	if currentTotal > incomingTotal && floorBlock > ctx.BlockHeight() {
+		ctx.Logger().Info("preserving xmr network fee floor",
+			"current_size", current.TransactionSize,
+			"current_rate", current.TransactionFeeRate,
+			"incoming_size", incoming.TransactionSize,
+			"incoming_rate", incoming.TransactionFeeRate,
+			"floor_until", floorBlock)
+		return current, nil
+	}
+
+	if incomingTotal >= currentTotal && incomingTotal > 0 {
+		mgr.Keeper().SetNetworkFeeFloorBlock(ctx, incoming.Chain, ctx.BlockHeight()+xmrNetworkFeeLookbackBlocks)
+		return incoming, nil
+	}
+
+	mgr.Keeper().SetNetworkFeeFloorBlock(ctx, incoming.Chain, 0)
+	return incoming, nil
 }

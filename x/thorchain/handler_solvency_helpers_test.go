@@ -355,7 +355,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_NoMatc
 		},
 	}
 
-	result := deductVaultBlockPendingOutbound(vault, block)
+	result, _ := deductVaultBlockPendingOutbound(vault, block, make(map[string]cosmos.Uint))
 	// Balance should be unchanged since VaultPubKey doesn't match
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -379,7 +379,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_Alread
 		},
 	}
 
-	result := deductVaultBlockPendingOutbound(vault, block)
+	result, _ := deductVaultBlockPendingOutbound(vault, block, make(map[string]cosmos.Uint))
 	// Balance should be unchanged since tx already has OutHash
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -405,7 +405,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_WithGa
 		},
 	}
 
-	result := deductVaultBlockPendingOutbound(vault, block)
+	result, _ := deductVaultBlockPendingOutbound(vault, block, make(map[string]cosmos.Uint))
 	// Should deduct both the coin amount and gas
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(899 * common.One) // 1000 - 100 - 1
@@ -427,7 +427,7 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 	}
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 
-	adjusted, err := excludePendingOutboundFromVault(ctx, mgr, vault)
+	adjusted, _, err := excludePendingOutboundFromVault(ctx, mgr, vault)
 	c.Assert(err, IsNil)
 	ethCoin := adjusted.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(950 * common.One) // 1000 - 50

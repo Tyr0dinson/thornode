@@ -1,12 +1,24 @@
 <!-- markdownlint-disable MD041 -->
 
-[![pipeline status](https://gitlab.com/thorchain/thornode/badges/develop/pipeline.svg)](https://gitlab.com/thorchain/thornode/commits/develop)
-[![coverage report](https://gitlab.com/thorchain/thornode/badges/develop/coverage.svg)](https://gitlab.com/thorchain/thornode/-/commits/develop)
-[![Go Report Card](https://goreportcard.com/badge/gitlab.com/thorchain/thornode)](https://goreportcard.com/report/gitlab.com/thorchain/thornode)
+[![pipeline status](https://gitlab.com/boonew/thornode/badges/rust-sidecar/pipeline.svg)](https://gitlab.com/boonew/thornode/-/commits/rust-sidecar)
+[![coverage report](https://gitlab.com/boonew/thornode/badges/rust-sidecar/coverage.svg)](https://gitlab.com/boonew/thornode/-/commits/rust-sidecar)
+[![Go Report Card](https://goreportcard.com/badge/gitlab.com/boonew/thornode)](https://goreportcard.com/report/gitlab.com/boonew/thornode)
 
 # THORChain
 
 THORChain is a decentralised liquidity network built with [CosmosSDK](https://cosmos.network) and [TSS-lib](https://github.com/bnb-chain/tss-lib)
+
+## Repository Line
+
+This repository is the canonical Rust-sidecar line for THORChain's Monero/XMR implementation.
+
+- Default implementation branch: `rust-sidecar`
+- `develop` is retained only for upstream sync from `thorchain/thornode`
+- Supported XMR architecture here: Go Bifrost/go-tss plus the `xmr-frost-signer` Rust sidecar
+- The sidecar source lives under `bifrost/pkg/chainclients/monero/xmr-frost-signer` and pins Serai-derived Rust crates to `serai-dex/serai` rev `737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391`
+- The separate all-Go cutover line lives at [boonew/thornode-go](https://gitlab.com/boonew/thornode-go)
+
+`xmr-frost-signer` remains intentionally isolated as its own AGPL-licensed service in this repo. See [bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md](./bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md) for the sidecar boundary, Serai attribution, and licensing details.
 
 ## THORNodes
 
@@ -60,7 +72,14 @@ ln -sf $(which gawk) /usr/local/bin/awk
 
 Install [Docker and Docker Compose V2](https://docs.docker.com/engine/install/).
 
-Ensure you have a recent version of go ([scripts/check-env.sh](https://gitlab.com/thorchain/thornode/-/blob/develop/scripts/check-env.sh#L46-48)) and enabled go modules.<br/>
+This project must be built with **Go `1.23.10`** (see `go.mod` and `.go-version`).<br/>
+If your workspace has multiple Go versions, set:
+
+```bash
+go env -w GOTOOLCHAIN=go1.23.10
+```
+
+Ensure go modules are enabled.<br/>
 Add `GOBIN` to your `PATH`.
 
 ```bash
@@ -72,8 +91,9 @@ export GOBIN=$GOPATH/bin
 Clone repo
 
 ```bash
-git clone https://gitlab.com/thorchain/thornode.git
+git clone https://gitlab.com/boonew/thornode.git
 cd thornode
+git switch rust-sidecar
 ```
 
 Install via this `make` command.
@@ -191,6 +211,8 @@ go build -tags cgo,ledger
 
 # Contributions
 
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the branch model, review expectations, and repo split rules for the Rust-sidecar line.
+
 ## Devs
 
 - Create an issue or find an existing issue on https://gitlab.com/thorchain/thornode/-/issues
@@ -202,7 +224,9 @@ go build -tags cgo,ledger
 - If you have completed this step (or have the required permissions to use the shared runners) make sure the pipeline completes and all is green
 - Once the PR gets all required approvals by other contributors, it can be merged
 
-Current active branch is `develop`, so when you open PR, make sure your target branch is `develop`
+Current implementation branch is `rust-sidecar`, so when you open a PR for this repo, make sure your target branch is `rust-sidecar`
+
+`develop` is reserved for upstream sync and should not be used as the default feature target in this repo
 
 ## ADRs
 

@@ -86,6 +86,7 @@ message QueryObservedTx {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = true
   ];
+  reserved 12;
 }
 
 // Same as ObservedTxVoter, but changes height (openapi spec)

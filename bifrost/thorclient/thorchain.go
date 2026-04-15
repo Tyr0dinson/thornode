@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -59,6 +60,8 @@ const (
 	THORNameEndpoint            = "/thorchain/thorname/%s"
 	ReferenceMemoEndpoint       = "/thorchain/memo/%s/%s"
 	ReferenceMemoByHashEndpoint = "/thorchain/memo/%s"
+	TxDetailEndpoint            = "/thorchain/tx/details/%s"
+	TxStatusEndpoint            = "/thorchain/tx/status/%s"
 )
 
 // thorchainBridge will be used to send tx to THORChain
@@ -87,7 +90,7 @@ type ThorchainBridge interface {
 	GetContext() client.Context
 	GetContractAddress() ([]PubKeyContractAddressPair, error)
 	GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg
-	GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error)
+	GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa, keysharesBackupFrost []byte, poolPubKeyFrost common.PubKey, observedMoneroHeight int64) (sdk.Msg, error)
 	GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error)
 	GetMimir(key string) (int64, error)
 	GetMimirWithRef(template, ref string) (int64, error)
@@ -117,6 +120,8 @@ type ThorchainBridge interface {
 	GetKeygenBlock(int64, string) (stypes.KeygenBlock, error)
 	GetReferenceMemo(chain common.Chain, ref string) (string, error)
 	GetReferenceMemoByTxHash(hash string) (string, error)
+	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetTxStatus(txID string) (*stypes.QueryTxStatusResponse, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -342,13 +347,13 @@ func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKe
 }
 
 // GetKeygenStdTx get keygen tx from params
-func (b *thorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) {
+func (b *thorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa, keysharesBackupFrost []byte, poolPubKeyFrost common.PubKey, observedMoneroHeight int64) (sdk.Msg, error) {
 	signerAddr, err := b.keys.GetSignerInfo().GetAddress()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get signer address: %w", err)
 	}
 
-	return stypes.NewMsgTssPoolV2(inputPks.Strings(), poolPubKey, secp256k1Signature, keysharesBackup, keygenType, height, blame, chains.Strings(), signerAddr, keygenTime, poolPubKeyEddsa, keysharesBackupEddsa)
+	return stypes.NewMsgTssPoolV3(inputPks.Strings(), poolPubKey, secp256k1Signature, keysharesBackup, keygenType, height, blame, chains.Strings(), signerAddr, keygenTime, poolPubKeyEddsa, keysharesBackupEddsa, keysharesBackupFrost, poolPubKeyFrost, observedMoneroHeight)
 }
 
 // GetInboundOutbound separate the txs into inbound and outbound
@@ -368,9 +373,17 @@ func (b *thorchainBridge) GetInboundOutbound(txIns common.ObservedTxs) (common.O
 
 		obAddr, err := tx.ObservedPubKey.GetAddress(chain)
 		if err != nil {
+			if chain.Equals(common.XMRChain) {
+				return nil, nil, fmt.Errorf("xmr observed vault pubkey %s is invalid: %w", tx.ObservedPubKey.String(), err)
+			}
 			b.logger.Err(err).Msgf("fail to parse observed pool address: %s", tx.ObservedPubKey.String())
 			continue
 		}
+
+		if chain.Equals(common.XMRChain) && obAddr.IsEmpty() {
+			return nil, nil, fmt.Errorf("xmr observed vault pubkey %s does not map to an address", tx.ObservedPubKey.String())
+		}
+
 		vaultToAddress := tx.Tx.ToAddress.Equals(obAddr)
 		vaultFromAddress := tx.Tx.FromAddress.Equals(obAddr)
 		var inInboundArray, inOutboundArray bool
@@ -630,6 +643,37 @@ func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 	return vault, nil
 }
 
+func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := b.getWithPath(fmt.Sprintf(TxDetailEndpoint, txID))
+	if err != nil {
+		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d for tx %s", s, txID)
+	}
+	var voter stypes.QueryObservedTxVoter
+	err = json.Unmarshal(buf, &voter)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unmarshal observed tx voter: %w", err)
+	}
+	return &voter, nil
+}
+
+func (b *thorchainBridge) GetTxStatus(txID string) (*stypes.QueryTxStatusResponse, error) {
+	buf, s, err := b.getWithPath(fmt.Sprintf(TxStatusEndpoint, txID))
+	if err != nil {
+		return nil, fmt.Errorf("fail to get tx status: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d for tx status %s", s, txID)
+	}
+	var status stypes.QueryTxStatusResponse
+	if err = json.Unmarshal(buf, &status); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal tx status: %w", err)
+	}
+	return &status, nil
+}
+
 func (b *thorchainBridge) getVaultPubkeys() ([]byte, error) {
 	buf, s, err := b.getWithPath(PubKeysEndpoint)
 	if err != nil {
@@ -661,17 +705,31 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 			membership = append(membership, common.PubKey(item))
 		}
 
+		contracts := make(map[common.Chain]common.Address)
+		for _, item := range v.Routers {
+			contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
+		}
+
 		// process eddsa pubkey if present
 		if v.PubKeyEddsa != nil && *v.PubKeyEddsa != "" {
 			kp := PubKeyContractAddressPair{
 				PubKey:     common.PubKey(*v.PubKeyEddsa),
-				Contracts:  make(map[common.Chain]common.Address),
+				Contracts:  maps.Clone(contracts),
 				Algo:       common.SigningAlgoEd25519,
 				Membership: membership,
 				Inactive:   inactive,
 			}
-			for _, item := range v.Routers {
-				kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
+			addressPairs = append(addressPairs, kp)
+		}
+
+		// process frost pubkey if present
+		if v.PubKeyFrost != nil && *v.PubKeyFrost != "" {
+			kp := PubKeyContractAddressPair{
+				PubKey:     common.PubKey(*v.PubKeyFrost),
+				Contracts:  maps.Clone(contracts),
+				Algo:       common.SigningAlgoEd25519,
+				Membership: membership,
+				Inactive:   inactive,
 			}
 			addressPairs = append(addressPairs, kp)
 		}
@@ -679,13 +737,10 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 		// process secp256k1 pubkey
 		kp := PubKeyContractAddressPair{
 			PubKey:     common.PubKey(v.PubKey),
-			Contracts:  make(map[common.Chain]common.Address),
+			Contracts:  maps.Clone(contracts),
 			Algo:       common.SigningAlgoSecp256k1,
 			Membership: membership,
 			Inactive:   inactive,
-		}
-		for _, item := range v.Routers {
-			kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
 		}
 		addressPairs = append(addressPairs, kp)
 	}
@@ -715,24 +770,30 @@ func (b *thorchainBridge) GetAsgardPubKeys() ([]PubKeyContractAddressPair, error
 	}
 	var addressPairs []PubKeyContractAddressPair
 	for _, v := range append(result.Asgard, result.Inactive...) {
+		contracts := make(map[common.Chain]common.Address)
+		for _, item := range v.Routers {
+			contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
+		}
 		if v.PubKeyEddsa != nil {
 			kp := PubKeyContractAddressPair{
 				PubKey:    common.PubKey(*v.PubKeyEddsa),
-				Contracts: make(map[common.Chain]common.Address),
+				Contracts: maps.Clone(contracts),
 				Algo:      common.SigningAlgoEd25519,
 			}
-			for _, item := range v.Routers {
-				kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
+			addressPairs = append(addressPairs, kp)
+		}
+		if v.PubKeyFrost != nil && *v.PubKeyFrost != "" {
+			kp := PubKeyContractAddressPair{
+				PubKey:    common.PubKey(*v.PubKeyFrost),
+				Contracts: maps.Clone(contracts),
+				Algo:      common.SigningAlgoEd25519,
 			}
 			addressPairs = append(addressPairs, kp)
 		}
 		kp := PubKeyContractAddressPair{
 			PubKey:    common.PubKey(v.PubKey),
-			Contracts: make(map[common.Chain]common.Address),
+			Contracts: maps.Clone(contracts),
 			Algo:      common.SigningAlgoSecp256k1,
-		}
-		for _, item := range v.Routers {
-			kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
 		}
 		addressPairs = append(addressPairs, kp)
 	}

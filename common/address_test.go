@@ -11,7 +11,7 @@ type AddressSuite struct{}
 var _ = Suite(&AddressSuite{})
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 16)
+	c.Assert(AllChains, HasLen, 17)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)
@@ -362,9 +362,22 @@ func (s *AddressSuite) TestAddressMapping(c *C) {
 	c.Check(err, IsNil)
 	c.Check(mapped.String(), Equals, "cosmos1pfy63nact82mfmts5jv87p2uayxqs29gf8070td7kzhwzx6zc9ruqdehkrz")
 
-	// Invalid
+	// Non-bech32 chains (XRP, SOL, XMR, TRON) use hash-based mapping.
 	addr, err = NewAddress("r4KYDZBbcAaJJ5MQPwRR9apJ2p5EBz8bq8")
 	c.Check(err, IsNil)
-	_, err = addr.MappedAccAddress()
-	c.Check(err, NotNil)
+	mapped, err = addr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mapped), Equals, 20)
+
+	addr, err = NewAddress("TKSrg7Ffs81r8QsLMfqRHG82hbFYz2Bw5W")
+	c.Check(err, IsNil)
+	mapped, err = addr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mapped), Equals, 20)
+
+	addr, err = NewAddress("BEcrPLugbAY1zEJGUNYgzcsxMi72rPeVwG6qKm96LK5g")
+	c.Check(err, IsNil)
+	mapped, err = addr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mapped), Equals, 20)
 }

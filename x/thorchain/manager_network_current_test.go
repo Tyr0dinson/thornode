@@ -601,14 +601,14 @@ func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(10_07925863), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(1_007_925_863), Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// mgr.Keeper().SetMimir(ctx, constants.IncentiveCurve.String(), 50)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, pool.Asset, cosmos.NewUint(50*common.One)), IsNil)
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882082), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(1_259_882_082), Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// check we don't give yield when synth utilization is too high
 	// add some synths
@@ -618,7 +618,7 @@ func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882082), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(1_259_882_082), Commentf("%d", spool.BalanceAsset.Uint64()))
 }
 
 func (s *NetworkManagerTestSuite) TestRagnarokPool(c *C) {
@@ -2125,6 +2125,7 @@ func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapSynthTargetNotSubtrac
 func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create a pool
 	pool := NewPool()
@@ -2200,6 +2201,7 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create an active vault with BTC asset
 	vaultPubKey := GetRandomPubKey()
@@ -2276,6 +2278,68 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 	err = nmgr.createSwapToOverSolvency(ctx, mgr, common.ETHAsset, cosmos.NewUint(5*common.One))
 	c.Assert(err, IsNil)
 	// Should succeed and add another swap to queue
+}
+
+func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesEddsaAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
+
+	vaultPubKey := GetRandomPubKey()
+	vaultPubKeyEddsa := GetRandomEd25519PubKey()
+	vault := NewVaultV2(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		vaultPubKey,
+		common.Chains{common.XMRChain}.Strings(),
+		[]ChainContract{},
+		vaultPubKeyEddsa,
+	)
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.XMRAsset
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	swapAmount := cosmos.NewUint(10 * common.One)
+	err := nmgr.createSwapToOverSolvency(ctx, mgr, common.XMRAsset, swapAmount)
+	c.Assert(err, IsNil)
+
+	var foundSwap *types.MsgSwap
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg types.MsgSwap
+			unmarshalErr := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg)
+			c.Assert(unmarshalErr, IsNil)
+			foundSwap = &msg
+			break
+		}
+	} else {
+		iter := mgr.Keeper().GetSwapQueueIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg types.MsgSwap
+			unmarshalErr := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg)
+			c.Assert(unmarshalErr, IsNil)
+			foundSwap = &msg
+			break
+		}
+	}
+	c.Assert(foundSwap, NotNil)
+
+	xmrAddr, err := vaultPubKeyEddsa.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	c.Assert(foundSwap.Tx.FromAddress.Equals(xmrAddr), Equals, true)
+	c.Assert(foundSwap.Tx.ToAddress.Equals(xmrAddr), Equals, true)
 }
 
 func (s *NetworkManagerTestSuite) TestSolvencyWithScheduledOutbounds(c *C) {
@@ -2592,6 +2656,7 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncome(c *C) {
 func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeTradeAsset(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create an active vault with BTC asset
 	vaultPubKey := GetRandomPubKey()
@@ -2637,6 +2702,7 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeTradeAsset(c *C) {
 func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeSecuredAsset(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 
 	// Setup: Create an active vault with BTC asset
 	vaultPubKey := GetRandomPubKey()

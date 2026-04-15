@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean
+.PHONY: build build-xmr-frost-signer test test-xmr-frost test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -72,12 +72,15 @@ TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
 RUN_FLAG := -run=$(RUN)
 endif
-BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
+XMR_E2E_RUN := TestSeraiDistributedSignAndSubmitFlow|TestSeraiDistributedSignFailsClosedWhenThresholdCannotBeMet|TestKeygenFailsClosedWhenPeerCoordinationFails|TestXMRScannerInboundDeferredReferenceMemoAttribution|TestXMRScannerInboundMemolessDeferredAttribution|TestXMRReportSolvencyMultiVaultAccounting
+BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup ./tools/xmr-reset-scanner
 GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
 
-# docker tty args are disabled in CI
+# docker tty args are disabled in CI and non-interactive shells
 ifndef CI
+ifneq ($(shell test -t 0 && test -t 1 && echo tty),)
 DOCKER_TTY_ARGS=-it
+endif
 endif
 
 HTTPS_GIT := https://gitlab.com/thorchain/thornode.git
@@ -159,6 +162,15 @@ docs-dev: docs-init
 build:
 	go build ${BUILD_FLAGS} ${BINARIES}
 
+build-xmr-frost-signer:
+	cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo build --release
+
+test-xmr-frost:
+	cd bifrost/pkg/chainclients/monero/xmr-frost-signer && cargo test
+
+test-xmr-frost-e2e:
+	GOTOOLCHAIN=go1.23.10 go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'
+
 install:
 	go install ${BUILD_FLAGS} ${BINARIES}
 
@@ -166,6 +178,7 @@ tools:
 	go install -tags ${TAG} ./tools/pubkey2address
 	go install -tags ${TAG} ./tools/p2p-check
 	go install -tags ${TAG} ./tools/recover-keyshare-backup
+	go install -tags ${TAG} ./tools/xmr-reset-scanner
 
 # ------------------------------ Gitlab CI ------------------------------
 
@@ -214,6 +227,9 @@ test-all: test-network-specific
 
 test-go-tss:
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
+
+test-xmr-e2e:
+	@go test -count=1 ./bifrost/pkg/chainclients/monero -run '${XMR_E2E_RUN}'
 
 test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common
@@ -336,15 +352,25 @@ _test-regression:
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
-STAGES ?= all
+TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,solvency,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,solvency,ragnarok,xmr-post-churn
+
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
-	@STAGES=$(STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES --network host -w /app \
+	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
+	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 test-simulation-no-reset: build-test-simulation
-	@docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES --network host -w /app \
+	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
+	@STAGES=$(TEST_SIMULATION_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 build-test-simulation:
@@ -388,7 +414,10 @@ build-mocknet:
 
 bootstrap-mocknet:
 	@docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES=seed,bootstrap --network host -w /app \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES=seed,bootstrap \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 ps-mocknet:

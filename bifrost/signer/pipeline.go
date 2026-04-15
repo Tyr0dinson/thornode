@@ -2,6 +2,7 @@ package signer
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -46,6 +47,7 @@ func (s semaphore) release(count int) {
 type pipelineSigner interface {
 	isStopped() bool
 	storageList() []TxOutStoreItem
+	blockScannerHeight(chain common.Chain) (int64, error)
 	processTransaction(item TxOutStoreItem)
 }
 
@@ -106,7 +108,7 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 	// gather all vault/chain combinations with an out item in retry
 	retryItems := make(map[vaultChain][]TxOutStoreItem)
 	for _, item := range allItems {
-		if item.Round7Retry || len(item.SignedTx) > 0 {
+		if item.Round7Retry || len(item.SignedTx) > 0 || item.RetryAfterBlockScannerHeight > 0 {
 			vc := vaultChain{item.TxOutItem.VaultPubKey, item.TxOutItem.Chain}
 			retryItems[vc] = append(retryItems[vc], item)
 		}
@@ -137,6 +139,14 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 		}
 	}
 
+	// sort deterministically so all nodes attempt the same outbound first
+	sort.Slice(itemsToSign, func(i, j int) bool {
+		if itemsToSign[i].Height != itemsToSign[j].Height {
+			return itemsToSign[i].Height < itemsToSign[j].Height
+		}
+		return itemsToSign[i].Index < itemsToSign[j].Index
+	})
+
 	// get the available capacities for each vault status
 	availableCapacities := make(map[types.VaultStatus]int)
 	for status, semaphore := range p.vaultStatusConcurrency {
@@ -157,6 +167,7 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 			lockedVaultChains[vc] = true
 		}
 	}
+	blockScannerHeights := make(map[common.Chain]int64)
 
 	// spawn signing routines for each item
 	for _, item := range itemsToSign {
@@ -166,6 +177,23 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 		}
 
 		vc := vaultChain{item.TxOutItem.VaultPubKey, item.TxOutItem.Chain}
+
+		if item.RetryAfterBlockScannerHeight > 0 {
+			height, ok := blockScannerHeights[item.TxOutItem.Chain]
+			if !ok {
+				var err error
+				height, err = s.blockScannerHeight(item.TxOutItem.Chain)
+				if err != nil {
+					log.Err(err).Str("chain", item.TxOutItem.Chain.String()).Msg("failed to get block scanner height")
+					continue
+				}
+				blockScannerHeights[item.TxOutItem.Chain] = height
+			}
+			if height < item.RetryAfterBlockScannerHeight {
+				continue
+			}
+			item.RetryAfterBlockScannerHeight = 0
+		}
 
 		// check if the vault/chain is locked
 		if lockedVaultChains[vc] {
@@ -183,11 +211,13 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 			log.Err(err).
 				Stringer("vault_pubkey", item.TxOutItem.VaultPubKey).
 				Stringer("vault_pubkey_eddsa", item.TxOutItem.VaultPubKeyEddsa).
+				Stringer("vault_pubkey_frost", item.TxOutItem.VaultPubKeyFrost).
 				Msg("failed to get tx out item vault")
 			return
 		}
 
 		item.TxOutItem.VaultPubKeyEddsa = vault.PubKeyEddsa
+		item.TxOutItem.VaultPubKeyFrost = vault.PubKeyFrost
 
 		// check if the vault status semaphore has capacity
 		if availableCapacities[vault.Status] == 0 {

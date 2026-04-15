@@ -78,7 +78,9 @@ func (s *HandlerObservedTxInSuite) TestValidate(c *C) {
 
 type TestObservedTxInFailureKeeper struct {
 	keeper.KVStoreDummy
-	pool Pool
+	pool         Pool
+	vault        Vault
+	activeVaults Vaults
 }
 
 func (k *TestObservedTxInFailureKeeper) GetPool(_ cosmos.Context, _ common.Asset) (Pool, error) {
@@ -89,10 +91,27 @@ func (k *TestObservedTxInFailureKeeper) GetPool(_ cosmos.Context, _ common.Asset
 }
 
 func (k *TestObservedTxInFailureKeeper) GetVault(_ cosmos.Context, pubKey common.PubKey) (Vault, error) {
+	if !k.vault.IsEmpty() && k.vault.PubKey.Equals(pubKey) {
+		return k.vault, nil
+	}
 	return Vault{
 		PubKey:      pubKey,
 		PubKeyEddsa: pubKey,
 	}, nil
+}
+
+func (k *TestObservedTxInFailureKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, status VaultStatus) (Vaults, error) {
+	if status == ActiveVault {
+		return k.activeVaults, nil
+	}
+	return nil, nil
+}
+
+func (k *TestObservedTxInFailureKeeper) GetMostSecure(_ cosmos.Context, vaults Vaults, _ int64) Vault {
+	if len(vaults) == 0 {
+		return Vault{}
+	}
+	return vaults[0]
 }
 
 func (s *HandlerObservedTxInSuite) TestFailure(c *C) {
@@ -114,6 +133,100 @@ func (s *HandlerObservedTxInSuite) TestFailure(c *C) {
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Check(items, HasLen, 1)
+}
+
+func (s *HandlerObservedTxInSuite) TestXMRRefundSkipsUnknownSenderWithoutExplicitRefundAddress(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+
+	keeper := &TestObservedTxInFailureKeeper{
+		pool: Pool{
+			Asset:        common.XMRAsset,
+			BalanceRune:  cosmos.NewUint(200),
+			BalanceAsset: cosmos.NewUint(300),
+		},
+	}
+	mgr := NewDummyMgrWithKeeper(keeper)
+
+	tx := NewObservedTx(GetRandomTx(), 12, GetRandomPubKey(), 12)
+	tx.Tx.Chain = common.XMRChain
+	tx.Tx.Coins = common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(100)),
+	}
+	tx.Tx.Gas = common.Gas{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+	}
+	tx.Tx.ToAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("xmr-refund-vault")))
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("xmr-refund-destination")))
+	tx.Tx.Memo = fmt.Sprintf("=:%s:%s", common.XMRAsset.String(), destination.String())
+	tx.Tx.FromAddress, _ = common.NewAddress(common.XMRUnknownSenderAddress(tx.Tx.ID.String(), tx.Tx.ToAddress.String()))
+
+	err := refundTx(ctx, tx, mgr, CodeInvalidMemo, "Invalid memo", "")
+	c.Assert(err, IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+
+	tx.Tx.ID = GetRandomTxHash()
+	refundAddress := common.Address(common.XMRSeededDummyAddress('8', []byte("xmr-refund-address")))
+	tx.Tx.Memo = fmt.Sprintf("=:%s:%s/%s", common.XMRAsset.String(), destination.String(), refundAddress.String())
+	tx.Tx.FromAddress, _ = common.NewAddress(common.XMRUnknownSenderAddress(tx.Tx.ID.String(), tx.Tx.ToAddress.String()))
+
+	err = refundTx(ctx, tx, mgr, CodeInvalidMemo, "Invalid memo", "")
+	c.Assert(err, IsNil)
+	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 1)
+	c.Check(items[0].ToAddress.Equals(refundAddress), Equals, true)
+}
+
+func (s *HandlerObservedTxInSuite) TestXMRInactiveVaultUnknownSenderReroutesToActiveVaultWithEmptyMemo(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+
+	sourceVault := NewVaultV2(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil, GetRandomEd25519PubKey())
+	sourceVault.PubKeyFrost = GetRandomEd25519PubKey()
+	sourceVault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100))))
+
+	activeVault := NewVaultV2(2, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil, GetRandomEd25519PubKey())
+	activeVault.PubKeyFrost = GetRandomEd25519PubKey()
+	activeAddr, err := activeVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	keeper := &TestObservedTxInFailureKeeper{
+		pool: Pool{
+			Asset:        common.XMRAsset,
+			BalanceRune:  cosmos.NewUint(200),
+			BalanceAsset: cosmos.NewUint(300),
+		},
+		vault:        sourceVault,
+		activeVaults: Vaults{activeVault},
+	}
+	mgr := NewDummyMgrWithKeeper(keeper)
+
+	tx := NewObservedTx(GetRandomTx(), 12, sourceVault.PubKey, 12)
+	tx.Tx.Chain = common.XMRChain
+	tx.Tx.Coins = common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(100)),
+	}
+	tx.Tx.Gas = common.Gas{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+	}
+	tx.Tx.ToAddress, err = sourceVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	tx.Tx.FromAddress, err = common.NewAddress(common.XMRUnknownSenderAddress(tx.Tx.ID.String(), tx.Tx.ToAddress.String()))
+	c.Assert(err, IsNil)
+	tx.Tx.Memo = fmt.Sprintf("ADD:%s:%s", common.XMRAsset.String(), GetRandomTHORAddress().String())
+
+	err = refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", "")
+	c.Assert(err, IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Check(items[0].Chain.Equals(common.XMRChain), Equals, true)
+	c.Check(items[0].ToAddress.Equals(activeAddr), Equals, true)
+	c.Check(items[0].Memo, Equals, "")
+	c.Check(items[0].VaultPubKey.Equals(sourceVault.PubKey), Equals, true)
+	c.Check(items[0].VaultPubKeyFrost.Equals(sourceVault.PubKeyFrost), Equals, true)
 }
 
 type TestObservedTxInHandleKeeper struct {

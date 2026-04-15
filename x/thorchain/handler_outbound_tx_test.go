@@ -503,6 +503,74 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerInvalidObservedTxVoterShou
 	c.Assert(pool.BalanceAsset, DeepEquals, poolBTC)
 }
 
+func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerLateObservationFromReassignedVaultGetsSlashed(c *C) {
+	helper := newOutboundTxHandlerTestHelper(c)
+	handler := NewOutboundTxHandler(helper.mgr)
+
+	liveVault := GetRandomVault()
+	c.Assert(liveVault.PubKey.Equals(helper.asgardVault.PubKey), Equals, false)
+
+	// The live queue entry expects the reassigned vault.
+	liveTxOut, err := helper.keeper.GetTxOut(helper.ctx, helper.ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(liveTxOut.TxArray, HasLen, 1)
+	liveTxOut.TxArray[0].VaultPubKey = liveVault.PubKey
+	c.Assert(helper.keeper.SetTxOut(helper.ctx, liveTxOut), IsNil)
+
+	oldHeight := helper.ctx.BlockHeight() - 10
+	voter := NewObservedTxVoter(helper.inboundTx.Tx.ID, ObservedTxs{helper.inboundTx})
+	voter.Tx = helper.inboundTx
+	voter.Height = oldHeight
+	voter.FinalisedHeight = oldHeight
+	voter.Actions = []TxOutItem{liveTxOut.TxArray[0]}
+	helper.keeper.SetObservedTxOutVoter(helper.ctx, voter)
+
+	// Simulate the prior assignment already being rescheduled away.
+	staleTxOut := NewTxOut(oldHeight)
+	staleToi := liveTxOut.TxArray[0]
+	staleToi.VaultPubKey = helper.asgardVault.PubKey
+	staleToi.OutHash = common.BlankTxID
+	staleTxOut.TxArray = append(staleTxOut.TxArray, staleToi)
+	c.Assert(helper.keeper.SetTxOut(helper.ctx, staleTxOut), IsNil)
+
+	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	observed := NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       staleToi.Chain,
+		Coins:       common.Coins{staleToi.Coin},
+		Memo:        staleToi.Memo,
+		FromAddress: fromAddr,
+		ToAddress:   staleToi.ToAddress,
+		Gas: common.Gas{
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(10000)),
+		},
+	}, helper.ctx.BlockHeight(), helper.asgardVault.PubKey, helper.ctx.BlockHeight())
+
+	before, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
+	c.Assert(err, IsNil)
+
+	outMsg := NewMsgOutboundTx(observed, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
+	_, err = handler.Run(helper.ctx, outMsg)
+	c.Assert(err, IsNil)
+
+	after, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(after.Bond.LT(before.Bond), Equals, true)
+
+	updatedVoter, err := helper.keeper.Keeper.GetObservedTxInVoter(helper.ctx, helper.inboundTx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVoter.Actions, HasLen, 1)
+	c.Assert(updatedVoter.Actions[0].VaultPubKey.Equals(liveVault.PubKey), Equals, true)
+	c.Assert(updatedVoter.OutTxs, HasLen, 1)
+	c.Assert(updatedVoter.OutTxs[0].ID.Equals(observed.Tx.ID), Equals, true)
+
+	currentTxOut, err := helper.keeper.GetTxOut(helper.ctx, helper.ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(currentTxOut.TxArray, HasLen, 1)
+	c.Assert(currentTxOut.TxArray[0].OutHash.IsEmpty(), Equals, true)
+}
+
 func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerETHChainSpendTooMuchGasShouldSlash(c *C) {
 	helper := newOutboundTxHandlerTestHelper(c)
 	handler := NewOutboundTxHandler(helper.mgr)

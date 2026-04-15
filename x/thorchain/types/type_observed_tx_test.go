@@ -639,3 +639,68 @@ func (TypeObservedTxSuite) TestNewGetConsensusTx(c *C) {
 	c.Assert(txGood.IsEmpty(), Equals, false)
 	c.Assert(txGood.Equals(obTx3), Equals, true)
 }
+
+func (TypeObservedTxSuite) TestGetConsensusTxMergesXMRMetadata(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+	acc4 := GetRandomBech32Addr()
+
+	accConsPub1 := GetRandomBech32ConsensusPubKey()
+	accConsPub2 := GetRandomBech32ConsensusPubKey()
+	accConsPub3 := GetRandomBech32ConsensusPubKey()
+	accConsPub4 := GetRandomBech32ConsensusPubKey()
+
+	accPubKeySet1 := GetRandomPubKeySet()
+	accPubKeySet2 := GetRandomPubKeySet()
+	accPubKeySet3 := GetRandomPubKeySet()
+	accPubKeySet4 := GetRandomPubKeySet()
+
+	active := NodeAccounts{
+		NodeAccount{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		NodeAccount{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+		NodeAccount{
+			NodeAddress:         acc3,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet3,
+			ValidatorConsPubKey: accConsPub3,
+		},
+		NodeAccount{
+			NodeAddress:         acc4,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet4,
+			ValidatorConsPubKey: accConsPub4,
+		},
+	}
+
+	tx := GetRandomTx()
+	tx.ID = txID
+	tx.Memo = "OUT:"
+	observePoolAddr := GetRandomPubKey()
+	plain := common.NewObservedTx(tx, 1, observePoolAddr, 1)
+	rich := common.NewObservedTx(tx, 1, observePoolAddr, 1)
+	rich.TxKeys = []string{"key-a", "key-b"}
+
+	voter := NewObservedTxVoter(txID, nil)
+	c.Assert(voter.Add(plain, acc1), Equals, true)
+	c.Assert(voter.Add(plain, acc2), Equals, true)
+	c.Assert(voter.Add(rich, acc3), Equals, true)
+
+	c.Assert(voter.HasConsensus(active), Equals, true)
+	consensusTx := voter.GetTx(active)
+	c.Assert(consensusTx.IsEmpty(), Equals, false)
+	c.Assert(consensusTx.Tx.EqualsEx(tx), Equals, true)
+	c.Assert(consensusTx.TxKeys, DeepEquals, []string{"key-a", "key-b"})
+	c.Assert(consensusTx.GetSigners(), HasLen, 3)
+}

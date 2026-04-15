@@ -1,7 +1,6 @@
 package signer
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -30,6 +29,7 @@ type mockPipelineSigner struct {
 	stopped          bool
 	storageListItems []TxOutStoreItem
 	processed        []TxOutStoreItem
+	blockHeights     map[common.Chain]int64
 }
 
 func (m *mockPipelineSigner) isStopped() bool {
@@ -38,6 +38,13 @@ func (m *mockPipelineSigner) isStopped() bool {
 
 func (m *mockPipelineSigner) storageList() []TxOutStoreItem {
 	return m.storageListItems
+}
+
+func (m *mockPipelineSigner) blockScannerHeight(chain common.Chain) (int64, error) {
+	if m.blockHeights == nil {
+		return 0, nil
+	}
+	return m.blockHeights[chain], nil
 }
 
 func (m *mockPipelineSigner) processTransaction(item TxOutStoreItem) {
@@ -111,6 +118,18 @@ type PipelineSuite struct{}
 
 var _ = Suite(&PipelineSuite{})
 
+type fakeVaultBridge struct {
+	fakeBridge
+	vault ttypes.Vault
+}
+
+func (b fakeVaultBridge) GetVault(pubkey string) (ttypes.Vault, error) {
+	if !b.vault.PubKey.IsEmpty() && b.vault.PubKey.String() == pubkey {
+		return b.vault, nil
+	}
+	return b.fakeBridge.GetVault(pubkey)
+}
+
 func (s *PipelineSuite) TestPipelineInit(c *C) {
 	// valid
 	for i := 1; i < 3; i++ {
@@ -174,6 +193,40 @@ func (s *PipelineSuite) TestPipelineSequential(c *C) {
 	c.Assert(mockSigner.processed[1].TxOutItem.Equals(tosis[1].TxOutItem), Equals, true)
 	c.Assert(mockSigner.processed[2].TxOutItem.Equals(tosis[2].TxOutItem), Equals, true)
 	c.Assert(mockSigner.processed[3].TxOutItem.Equals(tosis[3].TxOutItem), Equals, true)
+}
+
+func (s *PipelineSuite) TestPipelineHydratesVaultPubKeyFrost(c *C) {
+	pipeline, err := newPipeline(1)
+	c.Assert(pipeline, NotNil)
+	c.Assert(err, IsNil)
+
+	vault := ttypes.GetRandomVault()
+	vault.Status = ttypes.VaultStatus_ActiveVault
+
+	item := TxOutStoreItem{
+		TxOutItem: types.TxOutItem{
+			Chain:            common.XMRChain,
+			ToAddress:        ttypes.GetRandomTHORAddress(),
+			VaultPubKey:      vault.PubKey,
+			VaultPubKeyEddsa: vault.PubKeyEddsa,
+		},
+	}
+
+	bridge := fakeVaultBridge{
+		fakeBridge: fakeBridge{},
+		vault:      vault,
+	}
+	mockSigner := &mockPipelineSigner{
+		storageListItems: []TxOutStoreItem{item},
+	}
+
+	pipeline.SpawnSignings(mockSigner, bridge)
+	pipeline.Wait()
+
+	c.Assert(mockSigner.processed, HasLen, 1)
+	c.Check(mockSigner.processed[0].TxOutItem.VaultPubKey.Equals(vault.PubKey), Equals, true)
+	c.Check(mockSigner.processed[0].TxOutItem.VaultPubKeyEddsa.Equals(vault.PubKeyEddsa), Equals, true)
+	c.Check(mockSigner.processed[0].TxOutItem.VaultPubKeyFrost.Equals(vault.PubKeyFrost), Equals, true)
 }
 
 func (s *PipelineSuite) TestPipelineSequentialStop(c *C) {
@@ -449,32 +502,4 @@ func (s *PipelineSuite) testPipelineRetry(c *C, round7, broadcast bool) {
 
 	// the retry item should have been the first one processed
 	c.Assert(mockSigner.processed[0].TxOutItem.Equals(retryTosis[2].TxOutItem), Equals, true)
-}
-
-func (s *PipelineSuite) TestPipelineGetVaultError(c *C) {
-	pipeline, err := newPipeline(2)
-	c.Assert(pipeline, NotNil)
-	c.Assert(err, IsNil)
-
-	// Use a bridge that always returns error on GetVault
-	bridge := &vaultErrBridge{}
-	mockSigner := &mockPipelineSigner{
-		storageListItems: append([]TxOutStoreItem{}, tosis[0:1]...),
-	}
-
-	// SpawnSignings should handle GetVault error gracefully (logs and returns)
-	pipeline.SpawnSignings(mockSigner, bridge)
-	pipeline.Wait()
-
-	// No items should be processed since GetVault failed
-	c.Assert(len(mockSigner.processed), Equals, 0)
-}
-
-// vaultErrBridge is a mock bridge that always returns an error on GetVault
-type vaultErrBridge struct {
-	fakeBridge
-}
-
-func (b *vaultErrBridge) GetVault(pubkey string) (ttypes.Vault, error) {
-	return ttypes.Vault{}, fmt.Errorf("vault not found")
 }

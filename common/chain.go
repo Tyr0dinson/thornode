@@ -30,6 +30,7 @@ const (
 	XRPChain   = Chain("XRP")
 	SOLChain   = Chain("SOL")
 	ZECChain   = Chain("ZEC")
+	XMRChain   = Chain("XMR")
 	POLChain   = Chain("POL")
 	SUIChain   = Chain("SUI")
 	ADAChain   = Chain("ADA")
@@ -54,6 +55,7 @@ var AllChains = [...]Chain{
 	XRPChain,
 	SOLChain,
 	ZECChain,
+	XMRChain,
 	POLChain,
 }
 
@@ -153,7 +155,7 @@ func (c Chain) String() string {
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
 	switch c {
-	case SOLChain, SUIChain, ADAChain:
+	case SOLChain, SUIChain, ADAChain, XMRChain:
 		return SigningAlgoEd25519
 	default:
 		return SigningAlgoSecp256k1
@@ -194,6 +196,8 @@ func (c Chain) GetGasAsset() Asset {
 		return SOLAsset
 	case ZECChain:
 		return ZECAsset
+	case XMRChain:
+		return XMRAsset
 	case POLChain:
 		return POLAsset
 	case SUIChain:
@@ -234,6 +238,8 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "mist", cosmos.NewUint(1e9)
 	case ADAChain:
 		return "lovelace", cosmos.NewUint(1e6)
+	case XMRChain:
+		return "piconeroperweight", cosmos.NewUint(1e12)
 	default:
 		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}
@@ -262,6 +268,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 6
 	case SOLChain, SUIChain:
 		return 9
+	case XMRChain:
+		return 12
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
@@ -270,6 +278,21 @@ func (c Chain) GetGasAssetDecimal() int64 {
 // IsValidAddress make sure the address is correct for the chain
 // And this also make sure mocknet doesn't use mainnet address vice versa
 func (c Chain) IsValidAddress(addr Address) bool {
+	if c.Equals(XMRChain) {
+		if !IsValidXMRAddress(addr.String()) {
+			return false
+		}
+		if info, ok := xmrAddressInfoFromString(addr.String()); ok && info.isFeatured {
+			if !isSupportedFeaturedNetworkByte(info.networkByte) {
+				return false
+			}
+		}
+		network := addr.GetNetwork(XMRChain)
+		if CurrentChainNetwork == MockNet {
+			return network == MockNet
+		}
+		return network != MockNet
+	}
 	network := CurrentChainNetwork
 	prefix := c.AddressPrefix(network)
 	return strings.HasPrefix(addr.String(), prefix)
@@ -300,6 +323,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return "tm"
 		case ADAChain:
 			return "addr_test1"
+		case XMRChain:
+			return "C"
 		}
 	case MainNet, StageNet, ChainNet:
 		switch c {
@@ -319,6 +344,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return "t1"
 		case ADAChain:
 			return "addr1"
+		case XMRChain:
+			return "C"
 		}
 	}
 	return ""
@@ -368,6 +395,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(1_000_000)
 	case ADAChain:
 		return cosmos.NewUint(10_000_000)
+	case XMRChain:
+		return cosmos.NewUint(10_000)
 	default:
 		return cosmos.ZeroUint()
 	}
@@ -426,6 +455,8 @@ func (c Chain) DefaultCoinbase() float64 {
 		return 10000
 	case ZECChain:
 		return 1.5625
+	case XMRChain:
+		return 0.6
 	default:
 		return 0
 	}
@@ -463,6 +494,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 400
 	case ZECChain:
 		return 75_000
+	case XMRChain:
+		return 120_000
 	case POLChain:
 		return 2_000
 	case SUIChain:
@@ -488,6 +521,8 @@ func (c Chain) InboundNotes() string {
 		return "Broadcast a MsgDeposit to the THORChain network with the appropriate memo. Do not use multi-in, multi-out transactions."
 	case XRPChain:
 		return "Transfer the inbound_address the asset with the memo. Only a single memo is supported and only MemoData is used."
+	case XMRChain:
+		return "Transfer the inbound_address the asset with the memo in tx extra. Do not batch unrelated transfers into one transaction."
 	default:
 		return ""
 	}

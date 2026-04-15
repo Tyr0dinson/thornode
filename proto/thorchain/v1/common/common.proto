@@ -82,6 +82,38 @@ enum Status {
   reverted = 2;
 }
 
+message OutputRef {
+  option (gogoproto.stringer) = true;
+
+  string tx_hash = 1;
+  uint32 output_index = 2;
+}
+
+message XmrKeyImageRef {
+  option (gogoproto.stringer) = true;
+
+  string tx_hash = 1;
+  uint32 output_index = 2;
+  string key_image = 3;
+}
+
+message XmrTxKeyRef {
+  option (gogoproto.stringer) = true;
+
+  string tx_hash = 1;
+  repeated string tx_keys = 2;
+}
+
+message XmrKeyImageProof {
+  option (gogoproto.stringer) = true;
+
+  string tx_hash = 1;
+  uint32 output_index = 2;
+  string key_image = 3;
+  string proof_c = 4;
+  string proof_s = 5;
+}
+
 message ObservedTx {
   Tx tx = 1 [ (gogoproto.nullable) = false ];
   Status status = 2;
@@ -97,6 +129,9 @@ message ObservedTx {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = true
   ];
+  reserved 12;
+  repeated string tx_keys = 13;
+  repeated XmrKeyImageProof xmr_key_images = 14;
 }
 
 message Attestation {

@@ -42,4 +42,12 @@ message Vault {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
     (gogoproto.nullable) = true
   ];
+  int64 vault_creation_height_xmr = 25;
+  reserved 26;
+  string pub_key_frost = 27 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
+    (gogoproto.nullable) = true
+  ];
+  repeated common.XmrKeyImageRef key_images_xmr = 28;
+  repeated common.XmrTxKeyRef tx_keys_xmr = 29;
 }

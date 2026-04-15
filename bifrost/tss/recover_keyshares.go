@@ -73,7 +73,9 @@ func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge)
 	// walk backward from the churn height until we find the TssPool message we sent
 	var keysharesEncBytes []byte
 	var keysharesEncBytesEddsa []byte
+	var keysharesEncBytesFrost []byte
 	var vaultEddsa common.PubKey
+	var vaultFrost common.PubKey
 	cdc := thorclient.MakeCodec()
 	dec := ebifrost.TxDecoder(cdc, tx.DefaultTxDecoder(cdc))
 	for i := lastVaultHeight; i > lastVaultHeight-conf.TSS.MaxKeyshareRecoverScanBlocks; i-- {
@@ -102,7 +104,9 @@ func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge)
 						}
 						keysharesEncBytes = m.KeysharesBackup
 						keysharesEncBytesEddsa = m.KeysharesBackupEddsa
+						keysharesEncBytesFrost = m.KeysharesBackupFrost
 						vaultEddsa = m.PoolPubKeyEddsa
+						vaultFrost = m.PoolPubKeyFrost
 						goto finish
 					}
 				default:
@@ -175,6 +179,26 @@ finish:
 
 	// success
 	log.Info().Str("path", keysharesPath).Msgf("recovered key shares for %s", na.NodeAddress)
+
+	// FROST key recovery — decrypt the backup and write the raw hex to a
+	// recovery file. The XMR client's startup picks this up and sends it
+	// to the sidecar's restore endpoint.
+	if len(keysharesEncBytesFrost) > 0 && !vaultFrost.IsEmpty() {
+		frostRecoveryPath := filepath.Join(app.DefaultNodeHome, fmt.Sprintf("frost-recovery-%s.hex", vaultFrost))
+		if _, statErr := os.Stat(frostRecoveryPath); os.IsNotExist(statErr) {
+			rawKeyHex, frostErr := DecryptRawKeyshares(keysharesEncBytesFrost, seedPhrase)
+			if frostErr != nil {
+				log.Error().Err(frostErr).Msg("failed to decrypt frost keyshare backup")
+			} else {
+				frostErr = os.WriteFile(frostRecoveryPath, rawKeyHex, 0o600)
+				if frostErr != nil {
+					log.Error().Err(frostErr).Str("path", frostRecoveryPath).Msg("failed to write frost recovery file")
+				} else {
+					log.Info().Str("path", frostRecoveryPath).Msgf("recovered frost key shares for %s", vaultFrost)
+				}
+			}
+		}
+	}
 
 	return nil
 }

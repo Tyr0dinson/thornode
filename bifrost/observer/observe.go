@@ -21,6 +21,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -597,6 +598,10 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
 	var txs []*types.TxInItem
 	for _, txInItem := range items {
+		if o.pubkeyMgr == nil {
+			continue
+		}
+
 		// NOTE: the following could result in the same tx being added
 		// twice, which is expected. We want to make sure we generate both
 		// a inbound and outbound txn, if we both apply.
@@ -702,11 +707,31 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 	obsTxs := make(common.ObservedTxs, 0, len(txIn.TxArray))
 	invalidIndices := make([]int, 0)
 	o.logger.Debug().Msgf("len %d", len(txIn.TxArray))
+	chain, chainErr := o.getChain(txIn.Chain)
+	if chainErr != nil {
+		return nil, nil, fmt.Errorf("fail to get chain client: %w", chainErr)
+	}
 	for i, item := range txIn.TxArray {
 		if item.CommittedUnFinalised && !finalized {
 			// we have already committed this tx in the un-finalized state,
 			// and the tx is not yet final, so we should not send it again.
 			continue
+		}
+		if preparer, ok := chain.(chainclienttypes.ObservationPreparer); ok {
+			prepared, include, prepErr := preparer.PrepareObservedTxInItem(item, finalized, finaliseHeight)
+			if prepErr != nil {
+				o.logger.Error().
+					Err(prepErr).
+					Str("chain", txIn.Chain.String()).
+					Str("tx", item.Tx).
+					Bool("finalized", finalized).
+					Msg("failed to prepare observed tx item")
+				continue
+			}
+			if !include || prepared == nil {
+				continue
+			}
+			item = prepared
 		}
 		isInvalid := false
 		if item.Coins.IsEmpty() {
@@ -730,14 +755,18 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		blockHeight := strconv.FormatInt(item.BlockHeight, 10)
 		txID, err := common.NewTxID(item.Tx)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail_to_parse_tx_hash", blockHeight).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_parse_tx_hash", blockHeight).Inc()
+			}
 			o.logger.Err(err).Msgf("fail to parse tx hash, %s is invalid", item.Tx)
 			invalidIndices = append(invalidIndices, i)
 			continue
 		}
 		sender, err := common.NewAddress(item.Sender)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail_to_parse_sender", item.Sender).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_parse_sender", item.Sender).Inc()
+			}
 			// log the error , and ignore the transaction, since the address is not valid
 			o.logger.Err(err).Msgf("fail to parse sender, %s is invalid sender address", item.Sender)
 			invalidIndices = append(invalidIndices, i)
@@ -746,7 +775,9 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 
 		to, err := common.NewAddress(item.To)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail_to_parse_to", item.To).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_parse_to", item.To).Inc()
+			}
 			o.logger.Err(err).Msgf("fail to parse to, %s is invalid to address", item.To)
 			invalidIndices = append(invalidIndices, i)
 			continue
@@ -756,7 +787,9 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		chainAddr, err := item.ObservedVaultPubKey.GetAddress(txIn.Chain)
 		o.logger.Debug().Msgf("%s address %s", txIn.Chain.String(), chainAddr)
 		if err != nil {
-			o.errCounter.WithLabelValues("fail to parse observed pool address", item.ObservedVaultPubKey.String()).Inc()
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail to parse observed pool address", item.ObservedVaultPubKey.String()).Inc()
+			}
 			o.logger.Err(err).Msgf("fail to parse observed pool address: %s", item.ObservedVaultPubKey.String())
 			invalidIndices = append(invalidIndices, i)
 			continue
@@ -772,9 +805,113 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		obsTx.Aggregator = item.Aggregator
 		obsTx.AggregatorTarget = item.AggregatorTarget
 		obsTx.AggregatorTargetLimit = item.AggregatorTargetLimit
+		obsTx.TxKeys = append([]string(nil), item.TxKeys...)
+		obsTx.XmrKeyImages = item.XmrKeyImages
 		obsTxs = append(obsTxs, obsTx)
 	}
 	return obsTxs, invalidIndices, nil
+}
+
+func (o *Observer) ValidateInboundXMRKeyImages(tx common.ObservedTx) error {
+	if !tx.Tx.Chain.Equals(common.XMRChain) || !tx.IsFinal() || len(tx.XmrKeyImages) == 0 {
+		return nil
+	}
+
+	chain, err := o.getChain(tx.Tx.Chain)
+	if err != nil {
+		return fmt.Errorf("fail to get chain client for XMR key-image validation: %w", err)
+	}
+	validator, ok := chain.(chainclienttypes.ObservedTxInValidator)
+	if !ok {
+		return fmt.Errorf("chain client for %s does not support inbound validation", tx.Tx.Chain)
+	}
+	if err := validator.ValidateObservedTxIn(tx); err != nil {
+		return err
+	}
+
+	o.applyXMRKeyImagesToDeck(tx)
+	return nil
+}
+
+func (o *Observer) applyXMRKeyImagesToDeck(tx common.ObservedTx) {
+	if len(tx.XmrKeyImages) == 0 {
+		return
+	}
+
+	k := txInKey{
+		chain:  tx.Tx.Chain,
+		height: tx.FinaliseHeight,
+	}
+
+	o.lock.Lock()
+	defer o.lock.Unlock()
+
+	deck, ok := o.onDeck[k]
+	if !ok {
+		return
+	}
+
+	updated := false
+	for _, item := range deck.TxArray {
+		if !txInItemMatchesObservedTxIgnoringXMRKeyImages(item, tx) {
+			continue
+		}
+		item.XmrKeyImages = cloneXMRKeyImageProofs(tx.XmrKeyImages)
+		updated = true
+		break
+	}
+	if !updated {
+		return
+	}
+	if err := o.storage.AddOrUpdateTx(deck); err != nil {
+		o.logger.Error().Err(err).Msg("fail to persist XMR key-images onto observer deck")
+	}
+}
+
+func txInItemMatchesObservedTxIgnoringXMRKeyImages(item *types.TxInItem, tx common.ObservedTx) bool {
+	if item == nil {
+		return false
+	}
+
+	txID, err := common.NewTxID(item.Tx)
+	if err != nil || !txID.Equals(tx.Tx.ID) {
+		return false
+	}
+	if item.Memo != tx.Tx.Memo {
+		return false
+	}
+	if item.Sender != tx.Tx.FromAddress.String() {
+		return false
+	}
+	if item.To != tx.Tx.ToAddress.String() {
+		return false
+	}
+	if !item.Coins.EqualsEx(tx.Tx.Coins) {
+		return false
+	}
+	if !item.Gas.Equals(tx.Tx.Gas) {
+		return false
+	}
+	if !item.ObservedVaultPubKey.Equals(tx.ObservedPubKey) {
+		return false
+	}
+	return true
+}
+
+func cloneXMRKeyImageProofs(proofs []*common.XmrKeyImageProof) []*common.XmrKeyImageProof {
+	if len(proofs) == 0 {
+		return nil
+	}
+
+	out := make([]*common.XmrKeyImageProof, 0, len(proofs))
+	for _, proof := range proofs {
+		if proof == nil {
+			continue
+		}
+		cp := *proof
+		out = append(out, &cp)
+	}
+	return out
 }
 
 func (o *Observer) processSolvencyQueue(ctx context.Context) {

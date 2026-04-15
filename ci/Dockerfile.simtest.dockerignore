@@ -14,3 +14,19 @@ test/regression/templates
 tools/hardhat
 tmp
 .git
+thornode
+thornode-image-original
+thornode-linux-arm64
+.codex-tmp
+test/simulation/.codex-tmp
+**/target
+
+# Keep the XMR sidecar source visible to the simtest build, but exclude
+# local Rust artifacts that can grow into multi-GB docker contexts.
+bifrost/pkg/chainclients/monero/xmr-frost-signer/*
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/LICENSE
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/src
+!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**

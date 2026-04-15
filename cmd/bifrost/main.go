@@ -23,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/observer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/signer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -212,6 +213,11 @@ func main() {
 	// enable observer to react to notifications from thornode
 	// that come through the grpc connection within AttestationGossip.
 	ag.SetObserverHandleObservedTxCommitted(obs)
+	ag.SetObserverValidateInboundXMRKeyImages(obs)
+
+	if xmrClient, ok := chains[tcommon.XMRChain].(*monero.Client); ok {
+		ag.SetObserverValidateXMRTx(xmrClient.ValidateOutboundObservation)
+	}
 
 	// start signer
 	sign, err := signer.NewSigner(cfg, thorchainBridge, k, pubkeyMgr, tssIns, chains, m, tssKeysignMetricMgr, obs)

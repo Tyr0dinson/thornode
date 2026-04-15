@@ -219,6 +219,9 @@ func handleObservedTxInQuorum(
 			voter.UpdatedVault = true
 		}
 	}
+	if hasFinalised && vault.IsAsgard() && tx.Tx.Chain.Equals(common.XMRChain) && len(tx.XmrKeyImages) > 0 {
+		appendVaultXMRKeyImages(&vault, tx.XmrKeyImages)
+	}
 	if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
 		ctx.Logger().Error("fail to set last chain height", "error", err)
 	}
@@ -283,7 +286,7 @@ func handleObservedTxInQuorum(
 	// construct msg from memo
 	m, txErr := processOneTxIn(ctx, k, voter.Tx, signer)
 	if txErr != nil {
-		ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
+		ctx.Logger().Error("fail to process inbound tx", "error", txErr, "tx hash", tx.Tx.ID.String())
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
@@ -768,6 +771,9 @@ func handleObservedTxOutQuorum(
 			}
 			vault.OutboundTxCount++
 		}
+		if vault.IsAsgard() && tx.IsFinal() && tx.Tx.Chain.Equals(common.XMRChain) && len(tx.TxKeys) > 0 {
+			appendVaultXMRTxKeys(&vault, tx.Tx.ID.String(), tx.TxKeys)
+		}
 
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
 			// only remove the block height that had been specified in the memo
@@ -802,6 +808,144 @@ func handleObservedTxOutQuorum(
 	ctx.Logger().Info("tx out processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+func appendVaultXMRKeyImages(vault *Vault, proofs []*common.XmrKeyImageProof) {
+	if vault == nil || len(proofs) == 0 {
+		return
+	}
+
+	existing := make(map[string]struct{}, len(vault.KeyImagesXmr))
+	for _, ref := range vault.KeyImagesXmr {
+		if ref == nil {
+			continue
+		}
+		existing[xmrOutputRefKey(ref.TxHash, ref.OutputIndex)] = struct{}{}
+	}
+	for _, proof := range proofs {
+		if proof == nil {
+			continue
+		}
+		key := xmrOutputRefKey(proof.TxHash, proof.OutputIndex)
+		if _, ok := existing[key]; ok {
+			continue
+		}
+		vault.KeyImagesXmr = append(vault.KeyImagesXmr, &common.XmrKeyImageRef{
+			TxHash:      proof.TxHash,
+			OutputIndex: proof.OutputIndex,
+			KeyImage:    proof.KeyImage,
+		})
+		existing[key] = struct{}{}
+	}
+}
+
+func removeVaultXMRKeyImages(vault *Vault, proofs []*common.XmrKeyImageProof) bool {
+	if vault == nil || len(proofs) == 0 || len(vault.KeyImagesXmr) == 0 {
+		return false
+	}
+
+	removeRefs := make(map[string]struct{}, len(proofs))
+	for _, proof := range proofs {
+		if proof == nil {
+			continue
+		}
+		removeRefs[xmrOutputRefKey(proof.TxHash, proof.OutputIndex)] = struct{}{}
+	}
+	if len(removeRefs) == 0 {
+		return false
+	}
+
+	filtered := vault.KeyImagesXmr[:0]
+	removed := false
+	for _, ref := range vault.KeyImagesXmr {
+		if ref == nil {
+			continue
+		}
+		if _, ok := removeRefs[xmrOutputRefKey(ref.TxHash, ref.OutputIndex)]; ok {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, ref)
+	}
+	vault.KeyImagesXmr = filtered
+	return removed
+}
+
+func appendVaultXMRTxKeys(vault *Vault, txHash string, txKeys []string) {
+	if vault == nil || txHash == "" || len(txKeys) == 0 {
+		return
+	}
+
+	deduped := make([]string, 0, len(txKeys))
+	seen := make(map[string]struct{}, len(txKeys))
+	for _, txKey := range txKeys {
+		if txKey == "" {
+			continue
+		}
+		if _, ok := seen[txKey]; ok {
+			continue
+		}
+		deduped = append(deduped, txKey)
+		seen[txKey] = struct{}{}
+	}
+	if len(deduped) == 0 {
+		return
+	}
+
+	for _, ref := range vault.TxKeysXmr {
+		if ref == nil || ref.TxHash != txHash {
+			continue
+		}
+		if len(ref.TxKeys) == 0 {
+			ref.TxKeys = deduped
+			return
+		}
+		existing := make(map[string]struct{}, len(ref.TxKeys))
+		for _, existingKey := range ref.TxKeys {
+			if existingKey == "" {
+				continue
+			}
+			existing[existingKey] = struct{}{}
+		}
+		for _, txKey := range deduped {
+			if _, ok := existing[txKey]; ok {
+				continue
+			}
+			ref.TxKeys = append(ref.TxKeys, txKey)
+			existing[txKey] = struct{}{}
+		}
+		return
+	}
+
+	vault.TxKeysXmr = append(vault.TxKeysXmr, &common.XmrTxKeyRef{
+		TxHash: txHash,
+		TxKeys: deduped,
+	})
+}
+
+func removeVaultXMRTxKeys(vault *Vault, txHash string) bool {
+	if vault == nil || txHash == "" || len(vault.TxKeysXmr) == 0 {
+		return false
+	}
+
+	filtered := vault.TxKeysXmr[:0]
+	removed := false
+	for _, ref := range vault.TxKeysXmr {
+		if ref == nil {
+			continue
+		}
+		if ref.TxHash == txHash {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, ref)
+	}
+	vault.TxKeysXmr = filtered
+	return removed
+}
+
+func xmrOutputRefKey(txHash string, outputIndex uint32) string {
+	return txHash + ":" + fmt.Sprint(outputIndex)
 }
 
 // matchedOutbound holds a matching TxOutItem with its height and hash for sorting
@@ -865,7 +1009,7 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 				continue
 			}
 			// Check both regular and EdDSA vault pubkeys (same as handler_common_outbound.go)
-			if !item.VaultPubKey.Equals(tx.ObservedPubKey) && !item.VaultPubKeyEddsa.Equals(tx.ObservedPubKey) {
+			if !item.VaultPubKey.Equals(tx.ObservedPubKey) && !item.VaultPubKeyEddsa.Equals(tx.ObservedPubKey) && !item.VaultPubKeyFrost.Equals(tx.ObservedPubKey) {
 				continue
 			}
 			if !item.Coin.Asset.Equals(tx.Tx.Coins[0].Asset) {

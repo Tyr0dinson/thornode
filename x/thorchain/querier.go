@@ -157,21 +157,25 @@ func (qs queryServer) queryVault(ctx cosmos.Context, req *types.QueryVaultReques
 	}
 
 	resp := types.QueryVaultResponse{
-		BlockHeight:           v.BlockHeight,
-		PubKey:                v.PubKey.String(),
-		PubKeyEddsa:           v.PubKeyEddsa.String(),
-		Coins:                 v.Coins,
-		Type:                  v.Type.String(),
-		Status:                v.Status.String(),
-		StatusSince:           v.StatusSince,
-		Membership:            v.Membership,
-		Chains:                v.Chains,
-		InboundTxCount:        v.InboundTxCount,
-		OutboundTxCount:       v.OutboundTxCount,
-		PendingTxBlockHeights: v.PendingTxBlockHeights,
-		Routers:               castVaultRouters(v.Routers),
-		Addresses:             getVaultChainAddresses(ctx, v),
-		Frozen:                v.Frozen,
+		BlockHeight:            v.BlockHeight,
+		PubKey:                 v.PubKey.String(),
+		PubKeyEddsa:            v.PubKeyEddsa.String(),
+		PubKeyFrost:            v.PubKeyFrost.String(),
+		Coins:                  v.Coins,
+		Type:                   v.Type.String(),
+		Status:                 v.Status.String(),
+		StatusSince:            v.StatusSince,
+		Membership:             v.Membership,
+		Chains:                 v.Chains,
+		InboundTxCount:         v.InboundTxCount,
+		OutboundTxCount:        v.OutboundTxCount,
+		PendingTxBlockHeights:  v.PendingTxBlockHeights,
+		Routers:                castVaultRouters(v.Routers),
+		Addresses:              getVaultChainAddresses(ctx, v),
+		Frozen:                 v.Frozen,
+		VaultCreationHeightXmr: v.VaultCreationHeightXmr,
+		KeyImagesXmr:           v.KeyImagesXmr,
+		TxKeysXmr:              v.TxKeysXmr,
 	}
 	return &resp, nil
 }
@@ -193,21 +197,25 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 		// Being in a RetiringVault blocks a node from unbonding, so display them even if having no funds.
 		if vault.HasFunds() || vault.Status == ActiveVault || vault.Status == RetiringVault {
 			vaultsWithFunds = append(vaultsWithFunds, &types.QueryVaultResponse{
-				BlockHeight:           vault.BlockHeight,
-				PubKey:                vault.PubKey.String(),
-				PubKeyEddsa:           vault.PubKeyEddsa.String(),
-				Coins:                 vault.Coins,
-				Type:                  vault.Type.String(),
-				Status:                vault.Status.String(),
-				StatusSince:           vault.StatusSince,
-				Membership:            vault.Membership,
-				Chains:                vault.Chains,
-				InboundTxCount:        vault.InboundTxCount,
-				OutboundTxCount:       vault.OutboundTxCount,
-				PendingTxBlockHeights: vault.PendingTxBlockHeights,
-				Routers:               castVaultRouters(vault.Routers),
-				Frozen:                vault.Frozen,
-				Addresses:             getVaultChainAddresses(ctx, vault),
+				BlockHeight:            vault.BlockHeight,
+				PubKey:                 vault.PubKey.String(),
+				PubKeyEddsa:            vault.PubKeyEddsa.String(),
+				PubKeyFrost:            vault.PubKeyFrost.String(),
+				Coins:                  vault.Coins,
+				Type:                   vault.Type.String(),
+				Status:                 vault.Status.String(),
+				StatusSince:            vault.StatusSince,
+				Membership:             vault.Membership,
+				Chains:                 vault.Chains,
+				InboundTxCount:         vault.InboundTxCount,
+				OutboundTxCount:        vault.OutboundTxCount,
+				PendingTxBlockHeights:  vault.PendingTxBlockHeights,
+				Routers:                castVaultRouters(vault.Routers),
+				Frozen:                 vault.Frozen,
+				Addresses:              getVaultChainAddresses(ctx, vault),
+				VaultCreationHeightXmr: vault.VaultCreationHeightXmr,
+				KeyImagesXmr:           vault.KeyImagesXmr,
+				TxKeysXmr:              vault.TxKeysXmr,
 			})
 		}
 	}
@@ -219,7 +227,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddre
 	var result []*types.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		if vault.PubKeyEddsa.IsEmpty() && c.GetSigningAlgo() != common.SigningAlgoEd25519 {
+		if vault.PubKeyEddsa.IsEmpty() && c.GetSigningAlgo() == common.SigningAlgoEd25519 {
 			// this is an eddsa chain, but the vault doesn't have an eddsa pubkey, skip.
 			continue
 		}
@@ -279,15 +287,11 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 				resp.Asgard = append(resp.Asgard, &types.VaultInfo{
 					PubKey:      vault.PubKey.String(),
 					PubKeyEddsa: vault.PubKeyEddsa.String(),
+					PubKeyFrost: vault.PubKeyFrost.String(),
 					Routers:     castVaultRouters(vault.Routers),
 					Membership:  vault.Membership,
 				})
 			case InactiveVault:
-				// skip inactive vaults that have never received an inbound
-				if vault.InboundTxCount == 0 {
-					continue
-				}
-
 				// skip inactive vaults older than the cutoff age
 				if vault.BlockHeight < cutOffAge && !whitelistPubkeys[vault.PubKey.String()] {
 					continue
@@ -303,6 +307,7 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 					resp.Inactive = append(resp.Inactive, &types.VaultInfo{
 						PubKey:      vault.PubKey.String(),
 						PubKeyEddsa: vault.PubKeyEddsa.String(),
+						PubKeyFrost: vault.PubKeyFrost.String(),
 						Routers:     castVaultRouters(vault.Routers),
 						Membership:  vault.Membership,
 					})
@@ -492,12 +497,10 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		return nil, fmt.Errorf("fail to get network: %w", err)
 	}
 
-	vaults, err := qs.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	vaultsMigrating, err := networkHasMigratingVaults(ctx, qs.mgr.Keeper())
 	if err != nil {
-		return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
+		return nil, fmt.Errorf("fail to get vault migration state: %w", err)
 	}
-	vaultsMigrating := (len(vaults) != 0)
-
 	nodeAccounts, err := qs.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get active validators: %w", err)
@@ -613,6 +616,11 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			}
 		}
 
+		var viewKey string
+		if chain == common.XMRChain {
+			viewKey, _ = common.XMRViewKeyHex()
+		}
+
 		addr := types.QueryInboundAddressResponse{
 			Chain:                chain.String(),
 			PubKey:               pubKey.String(),
@@ -628,6 +636,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			OutboundTxSize:       cosmos.NewUint(networkFeeInfo.TransactionSize).String(),
 			OutboundFee:          outboundFee.String(),
 			DustThreshold:        chain.DustThreshold().String(),
+			ViewKey:              viewKey,
 		}
 
 		resp = append(resp, &addr)
@@ -1212,7 +1221,6 @@ func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) *types.Query
 		Quantity:          int64(streamingSwap.Quantity),
 		Count:             int64(streamingSwap.Count),
 		LastHeight:        streamingSwap.LastHeight,
-		InitialHeight:     msgSwap.InitialBlockHeight,
 		TradeTarget:       streamingSwap.TradeTarget.String(),
 		SourceAsset:       sourceAsset.String(),
 		TargetAsset:       msgSwap.TargetAsset.String(),
@@ -1248,7 +1256,6 @@ func newStreamingSwapFromAdvQueue(msgSwap MsgSwap) *types.QueryStreamingSwapResp
 		Quantity:          int64(msgSwap.State.Quantity),
 		Count:             int64(msgSwap.State.Count),
 		LastHeight:        msgSwap.State.LastHeight,
-		InitialHeight:     msgSwap.InitialBlockHeight,
 		TradeTarget:       msgSwap.TradeTarget.String(),
 		SourceAsset:       sourceAsset.String(),
 		TargetAsset:       msgSwap.TargetAsset.String(),
@@ -3369,6 +3376,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		VaultPubKey:           toi.VaultPubKey.String(),
 		VaultPubKeyEddsa:      toi.VaultPubKeyEddsa.String(),
+		VaultPubKeyFrost:      toi.VaultPubKeyFrost.String(),
 		InHash:                toi.InHash.String(),
 		OutHash:               toi.OutHash.String(),
 		Chain:                 toi.Chain.String(),

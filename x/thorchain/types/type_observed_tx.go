@@ -2,6 +2,7 @@ package types
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -170,6 +171,7 @@ func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) *common.ObservedTx {
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) common.ObservedTx {
 	for _, txFinal := range m.Txs {
 		voters := make(map[string]bool)
+		consensusTx := txFinal
 		if txFinal.IsFinal() != final {
 			continue
 		}
@@ -177,9 +179,10 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) comm
 			if txIn.IsFinal() != final {
 				continue
 			}
-			if !txFinal.Tx.EqualsEx(txIn.Tx) {
+			if !sameObservedTxConsensusKey(txFinal, txIn) {
 				continue
 			}
+			mergeObservedTxMetadata(&consensusTx, txIn)
 			for _, signer := range txIn.GetSigners() {
 				_, exist := voters[signer.String()]
 				if !exist && accounts.IsNodeKeys(signer) {
@@ -188,10 +191,58 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) comm
 			}
 		}
 		if HasSuperMajority(len(voters), len(accounts)) {
-			return txFinal
+			return consensusTx
 		}
 	}
 	return common.ObservedTx{}
+}
+
+func mergeObservedTxMetadata(dst *common.ObservedTx, src common.ObservedTx) {
+	if dst == nil {
+		return
+	}
+
+	if len(dst.TxKeys) == 0 && len(src.TxKeys) > 0 {
+		dst.TxKeys = append([]string(nil), src.TxKeys...)
+	}
+
+	if len(dst.XmrKeyImages) == 0 && len(src.XmrKeyImages) > 0 {
+		dst.XmrKeyImages = append([]*common.XmrKeyImageProof(nil), src.XmrKeyImages...)
+	} else if len(src.XmrKeyImages) > 0 {
+		existing := make(map[string]struct{}, len(dst.XmrKeyImages))
+		for _, proof := range dst.XmrKeyImages {
+			if proof == nil {
+				continue
+			}
+			existing[fmt.Sprintf("%s:%d", proof.TxHash, proof.OutputIndex)] = struct{}{}
+		}
+		for _, proof := range src.XmrKeyImages {
+			if proof == nil {
+				continue
+			}
+			key := fmt.Sprintf("%s:%d", proof.TxHash, proof.OutputIndex)
+			if _, ok := existing[key]; ok {
+				continue
+			}
+			dst.XmrKeyImages = append(dst.XmrKeyImages, proof)
+			existing[key] = struct{}{}
+		}
+	}
+
+	if len(src.Signers) == 0 {
+		return
+	}
+	existingSigners := make(map[string]struct{}, len(dst.Signers))
+	for _, signer := range dst.Signers {
+		existingSigners[signer] = struct{}{}
+	}
+	for _, signer := range src.Signers {
+		if _, ok := existingSigners[signer]; ok {
+			continue
+		}
+		dst.Signers = append(dst.Signers, signer)
+		existingSigners[signer] = struct{}{}
+	}
 }
 
 // SetReverted set all the tx status to `Reverted` , only when a relevant errata tx had been processed
@@ -230,7 +281,7 @@ func (m *ObservedTxVoter) GetConsensusSigners() []cosmos.AccAddress {
 		if tx.IsFinal() != final {
 			continue
 		}
-		if !tx.Tx.EqualsEx(m.Tx.Tx) {
+		if !sameObservedTxConsensusKey(tx, m.Tx) {
 			continue
 		}
 
@@ -246,4 +297,30 @@ func (m *ObservedTxVoter) GetConsensusSigners() []cosmos.AccAddress {
 	}
 
 	return signers
+}
+
+func sameObservedTxConsensusKey(left, right common.ObservedTx) bool {
+	if !left.Tx.EqualsEx(right.Tx) {
+		return false
+	}
+	if !left.ObservedPubKey.Equals(right.ObservedPubKey) {
+		return false
+	}
+	if !strings.EqualFold(left.Aggregator, right.Aggregator) {
+		return false
+	}
+	if !strings.EqualFold(left.AggregatorTarget, right.AggregatorTarget) {
+		return false
+	}
+	emptyAmt := cosmos.ZeroUint()
+	if left.AggregatorTargetLimit == nil {
+		left.AggregatorTargetLimit = &emptyAmt
+	}
+	if right.AggregatorTargetLimit == nil {
+		right.AggregatorTargetLimit = &emptyAmt
+	}
+	if !left.AggregatorTargetLimit.Equal(*right.AggregatorTargetLimit) {
+		return false
+	}
+	return true
 }

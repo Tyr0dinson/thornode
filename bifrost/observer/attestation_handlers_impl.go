@@ -1,8 +1,10 @@
 package observer
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -11,17 +13,59 @@ import (
 
 const priceFeedsUpdateDelay = time.Millisecond * 100
 
+const (
+	maxXMRKeyImages = 64
+)
+
+func requireXMROutboundTxKeys(obsTx common.ObservedTx, inbound bool) error {
+	if inbound || !obsTx.Tx.Chain.Equals(common.XMRChain) {
+		return nil
+	}
+	if len(obsTx.TxKeys) == 0 {
+		return fmt.Errorf("xmr outbound attestation requires tx keys for %s", obsTx.Tx.ID)
+	}
+	return nil
+}
+
+func requireXMRFinalInboundKeyImages(obsTx common.ObservedTx, inbound bool) error {
+	if !inbound || !obsTx.Tx.Chain.Equals(common.XMRChain) || !obsTx.IsFinal() {
+		return nil
+	}
+	if len(obsTx.XmrKeyImages) == 0 {
+		return fmt.Errorf("xmr finalized inbound attestation requires key images for %s", obsTx.Tx.ID)
+	}
+	if len(obsTx.XmrKeyImages) > maxXMRKeyImages {
+		return fmt.Errorf("xmr finalized inbound attestation has too many key images for %s", obsTx.Tx.ID)
+	}
+	return nil
+}
+
+func requireXMRAttestationMetadata(obsTx common.ObservedTx, inbound bool) error {
+	if err := requireXMROutboundTxKeys(obsTx, inbound); err != nil {
+		return err
+	}
+	return requireXMRFinalInboundKeyImages(obsTx, inbound)
+}
+
+func useActiveValidatorQuorumForObservedTx(obsTx common.ObservedTx, inbound bool) bool {
+	return !inbound && obsTx.Tx.Chain.Equals(common.XMRChain) && len(obsTx.TxKeys) > 0
+}
+
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
 	obsTx := tx.ObsTx
+	if err := requireXMRAttestationMetadata(obsTx, tx.Inbound); err != nil {
+		s.logger.Warn().
+			Err(err).
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("dropping xmr attestation without required metadata")
+		return
+	}
 
-	k := txKey{
-		Chain:                  obsTx.Tx.Chain,
-		ID:                     obsTx.Tx.ID,
-		UniqueHash:             obsTx.Tx.Hash(obsTx.BlockHeight),
-		AllowFutureObservation: tx.AllowFutureObservation,
-		Finalized:              obsTx.IsFinal(),
-		Inbound:                tx.Inbound,
+	k, err := observedTxKey(obsTx, tx.AllowFutureObservation, tx.Inbound)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to derive observed tx attestation key")
+		return
 	}
 
 	s.mu.Lock()
@@ -44,9 +88,39 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		return
 	}
 
+	// Non-signing nodes cannot independently observe XMR outbounds via
+	// their scanner (the sidecar only stores OutgoingTransferRecord during
+	// signing). They must receive tx keys from a signing peer, validate the
+	// outbound locally via the sidecar, and only then co-attest. Missing or
+	// invalid tx keys are a hard blocker for outbound attestation propagation.
+	var shouldValidateAndCoAttestOutbound bool
+	isXMROutboundWithTxKeys := obsTx.Tx.Chain.Equals(common.XMRChain) &&
+		!tx.Inbound &&
+		len(obsTx.TxKeys) > 0
+	isXMROutboundWithKeyImages := isXMROutboundWithTxKeys &&
+		obsTx.IsFinal() &&
+		len(obsTx.XmrKeyImages) > 0 &&
+		len(obsTx.XmrKeyImages) <= maxXMRKeyImages
+	if isXMROutboundWithTxKeys && !bytes.Equal(tx.Attestation.PubKey, s.pubKey) {
+		shouldValidateAndCoAttestOutbound = !hasLocalObservedTxAttestation(state, s.pubKey)
+	}
+
+	// Final XMR inbound observations carry the key-image proof set. Non-signing
+	// nodes should only co-attest after they validate and apply the proofs
+	// locally, so they never sign a forged or incomplete final observation.
+	var shouldValidateAndCoAttestInbound bool
+	isXMRInboundWithKeyImages := obsTx.Tx.Chain.Equals(common.XMRChain) &&
+		tx.Inbound &&
+		obsTx.IsFinal() &&
+		len(obsTx.XmrKeyImages) > 0 &&
+		len(obsTx.XmrKeyImages) <= maxXMRKeyImages
+	if isXMRInboundWithKeyImages && !bytes.Equal(tx.Attestation.PubKey, s.pubKey) {
+		shouldValidateAndCoAttestInbound = !hasLocalObservedTxAttestation(state, s.pubKey)
+	}
+
 	// Determine the number of validators needed for attestation
 	var total int
-	if k.AllowFutureObservation {
+	if k.AllowFutureObservation && !useActiveValidatorQuorumForObservedTx(obsTx, k.Inbound) {
 		keysignParty, err := s.getKeysignParty(obsTx.ObservedPubKey)
 		if err != nil {
 			s.logger.Error().Err(err).Msg("fail to get key sign party")
@@ -68,6 +142,117 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		s.logger.Debug().Msgf("observed tx attestation received - %s, id: %s, inbound: %t, final: %t, quorum: %d/%d",
 			k.Chain, k.ID, k.Inbound, k.Finalized, state.AttestationCount(), total)
 	}
+
+	// Co-attest to XMR outbounds only after tx-key validation succeeds. This
+	// prevents non-signers from blindly propagating forged outbound
+	// observations.
+	if shouldValidateAndCoAttestOutbound {
+		cp := obsTx
+		if isXMROutboundWithKeyImages {
+			s.scheduleOutboundXMRKeyImageValidation(ctx, cp, tx.AllowFutureObservation)
+		} else {
+			s.validateXMRObservationAsync(cp, func() {
+				if err := s.attestObservedTxWithFutureFlag(ctx, &cp, false, tx.AllowFutureObservation); err != nil {
+					s.logger.Err(err).
+						Str("tx_id", cp.Tx.ID.String()).
+						Msg("failed to co-attest XMR outbound")
+				}
+			})
+		}
+	}
+
+	if shouldValidateAndCoAttestInbound {
+		s.scheduleInboundXMRKeyImageValidation(ctx, obsTx, tx.AllowFutureObservation)
+	}
+}
+
+func hasLocalObservedTxAttestation(state *AttestationState[*common.ObservedTx], localPubKey []byte) bool {
+	if state == nil {
+		return false
+	}
+	for _, att := range state.attestations {
+		if bytes.Equal(att.attestation.PubKey, localPubKey) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *AttestationGossip) validateAndCoAttestInboundXMRKeyImages(ctx context.Context, obsTx common.ObservedTx, allowFutureObservation bool) {
+	if s.observerValidateInboundXMRKeyImages == nil {
+		s.logger.Debug().
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("skipping XMR inbound co-attest: no key-image validator configured")
+		return
+	}
+	if err := s.observerValidateInboundXMRKeyImages(obsTx); err != nil {
+		s.logger.Err(err).
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("failed to validate XMR inbound key-images before co-attest")
+		return
+	}
+	if err := s.attestObservedTxWithFutureFlag(ctx, &obsTx, true, allowFutureObservation); err != nil {
+		s.logger.Err(err).
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("failed to co-attest XMR inbound final observation")
+	}
+}
+
+func (s *AttestationGossip) validateAndCoAttestOutboundXMRKeyImages(ctx context.Context, obsTx common.ObservedTx, allowFutureObservation bool) {
+	if s.observerValidateXMRTx == nil {
+		s.logger.Debug().
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("skipping XMR outbound co-attest: no validator configured")
+		return
+	}
+	if err := s.observerValidateXMRTx(obsTx); err != nil {
+		s.logger.Err(err).
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("failed to validate XMR outbound key-images before co-attest")
+		return
+	}
+	if err := s.attestObservedTxWithFutureFlag(ctx, &obsTx, false, allowFutureObservation); err != nil {
+		s.logger.Err(err).
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("failed to co-attest XMR outbound final observation")
+	}
+}
+
+// attestObservedTxWithFutureFlag creates and broadcasts a local attestation for
+// an observed tx, preserving the AllowFutureObservation flag from the original
+// signer. This is used by non-signing nodes to co-attest XMR outbounds.
+func (s *AttestationGossip) attestObservedTxWithFutureFlag(ctx context.Context, obsTx *common.ObservedTx, inbound, allowFutureObservation bool) error {
+	if !s.isActiveValidator(s.host.ID()) {
+		return fmt.Errorf("skipping co-attest: not active")
+	}
+	if err := requireXMRAttestationMetadata(*obsTx, inbound); err != nil {
+		return err
+	}
+
+	signBz, err := obsTx.GetSignablePayload()
+	if err != nil {
+		return fmt.Errorf("fail to marshal tx sign payload: %w", err)
+	}
+
+	signature, err := s.privKey.Sign(signBz)
+	if err != nil {
+		return fmt.Errorf("fail to sign tx sign payload: %w", err)
+	}
+
+	msg := common.AttestTx{
+		ObsTx:                  *obsTx,
+		Inbound:                inbound,
+		AllowFutureObservation: allowFutureObservation,
+		Attestation: &common.Attestation{
+			PubKey:    s.pubKey,
+			Signature: signature,
+		},
+	}
+
+	s.handleObservedTxAttestation(ctx, msg)
+	s.batcher.AddObservedTx(msg)
+
+	return nil
 }
 
 // sendObservedTxAttestationsToThornode sends attestations to thornode via gRPC
@@ -77,6 +262,13 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 	state *AttestationState[*common.ObservedTx],
 	inbound, allowFutureObservation, isQuorum bool,
 ) {
+	if err := requireXMRAttestationMetadata(tx, inbound); err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("tx_id", tx.Tx.ID.String()).
+			Msg("refusing to send xmr quorum tx without required metadata")
+		return
+	}
 	unsent := state.UnsentAttestations()
 	if len(unsent) == 0 {
 		s.logger.Debug().Msg("no unsent observed tx attestations")

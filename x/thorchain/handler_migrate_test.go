@@ -162,6 +162,59 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 	c.Assert(keeper.txout.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true)
 }
 
+func (HandlerMigrateSuite) TestMigrateMatchesWhenGasOverrunIsAbsorbedByLowerAmount(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	retireVault := GetRandomVault()
+	newVault := GetRandomVault()
+	txout := NewTxOut(1)
+
+	newVaultAddr, err := newVault.PubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	txout.TxArray = append(txout.TxArray, TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      common.BlankTxID,
+		ToAddress:   newVaultAddr,
+		VaultPubKey: retireVault.PubKey,
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1000)),
+		MaxGas: common.Gas{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(100)),
+		},
+		Memo: NewMigrateMemo(1).String(),
+	})
+
+	keeper := &TestMigrateKeeperHappyPath{
+		Keeper:            k,
+		activeNodeAccount: GetRandomValidatorNode(NodeActive),
+		newVault:          newVault,
+		retireVault:       retireVault,
+		txout:             txout,
+	}
+
+	fromAddr, err := keeper.retireVault.PubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	handler := NewMigrateHandler(NewDummyMgrWithKeeper(keeper))
+	tx := NewObservedTx(common.Tx{
+		ID:    GetRandomTxHash(),
+		Chain: common.ETHChain,
+		Coins: common.Coins{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(995)),
+		},
+		Memo:        NewMigrateMemo(1).String(),
+		FromAddress: fromAddr,
+		ToAddress:   newVaultAddr,
+		Gas: common.Gas{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(105)),
+		},
+	}, 1, retireVault.PubKey, 1)
+
+	msgMigrate := NewMsgMigrate(tx, 1, keeper.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(ctx, msgMigrate)
+	c.Assert(err, IsNil)
+	c.Assert(keeper.txout.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true)
+}
+
 func (HandlerMigrateSuite) TestSlash(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	retireVault := GetRandomVault()

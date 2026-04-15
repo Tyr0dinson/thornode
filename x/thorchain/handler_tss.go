@@ -57,13 +57,6 @@ var verifySecp256K1Signature = func(pk common.PubKey, sig []byte) error {
 	// build the signature
 	r := new(big.Int).SetBytes(sig[:32])
 	s := new(big.Int).SetBytes(sig[32:])
-
-	// reject high-S signatures (BIP-62) to prevent signature malleability
-	halfOrder := new(big.Int).Rsh(btcec.S256().N, 1)
-	if s.Cmp(halfOrder) == 1 {
-		return fmt.Errorf("high-S signature rejected (BIP-62)")
-	}
-
 	signature := &btcec.Signature{R: r, S: s}
 
 	// verify the signature
@@ -93,7 +86,7 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 		}
 	}
 
-	newMsg, err := NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa, msg.KeysharesBackupEddsa)
+	newMsg, err := NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa, msg.KeysharesBackupEddsa, nil, common.EmptyPubKey)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -443,7 +436,18 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			vaultType := AsgardVault
 			chains := voter.ConsensusChains()
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), voter.PoolPubKeyEddsa)
+			vault.PubKeyFrost = msg.PoolPubKeyFrost
 			vault.Membership = voter.PubKeys
+			if vault.GetChains().Has(common.XMRChain) {
+				xmrHeight, _ := h.mgr.Keeper().GetLastChainHeight(ctx, common.XMRChain)
+				if xmrHeight <= 0 && msg.ObservedMoneroHeight > 0 {
+					xmrHeight = msg.ObservedMoneroHeight
+					ctx.Logger().Info("XMR vault birthday: using node-observed Monero height from keygen", "height", xmrHeight)
+				} else if xmrHeight <= 0 {
+					ctx.Logger().Error("XMR vault birthday: no observed chain height available at keygen, vault scanner will use chain tip")
+				}
+				vault.VaultCreationHeightXmr = xmrHeight
+			}
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 				return fmt.Errorf("fail to save vault: %w", err)
@@ -553,8 +557,8 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter Tss
 func TssAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgTssPool) (cosmos.Context, error) {
 	err := validateTssAuth(ctx, k, msg.Signer)
 	if err != nil {
-		return ctx, err
+		return ctx.WithPriority(ActiveNodePriority), err
 	}
 
-	return ctx.WithPriority(ActiveNodePriority), nil
+	return ctx, nil
 }

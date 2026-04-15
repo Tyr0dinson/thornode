@@ -6,6 +6,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **PubKey** | **string** |  | 
 **PubKeyEddsa** | Pointer to **string** |  | [optional] 
+**PubKeyFrost** | Pointer to **string** |  | [optional]
 **Routers** | [**[]VaultRouter**](VaultRouter.md) |  | 
 **Membership** | Pointer to **[]string** | the list of node public keys which are members of the vault | [optional] 
 
@@ -73,6 +74,31 @@ SetPubKeyEddsa sets PubKeyEddsa field to given value.
 
 HasPubKeyEddsa returns a boolean if a field has been set.
 
+### GetPubKeyFrost
+
+`func (o *VaultInfo) GetPubKeyFrost() string`
+
+GetPubKeyFrost returns the PubKeyFrost field if non-nil, zero value otherwise.
+
+### GetPubKeyFrostOk
+
+`func (o *VaultInfo) GetPubKeyFrostOk() (*string, bool)`
+
+GetPubKeyFrostOk returns a tuple with the PubKeyFrost field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPubKeyFrost
+
+`func (o *VaultInfo) SetPubKeyFrost(v string)`
+
+SetPubKeyFrost sets PubKeyFrost field to given value.
+
+### HasPubKeyFrost
+
+`func (o *VaultInfo) HasPubKeyFrost() bool`
+
+HasPubKeyFrost returns a boolean if a field has been set.
+
 ### GetRouters
 
 `func (o *VaultInfo) GetRouters() []VaultRouter`
@@ -120,5 +146,4 @@ HasMembership returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
-
 

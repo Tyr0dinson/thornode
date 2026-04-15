@@ -23,18 +23,20 @@ type TxIn struct {
 }
 
 type TxInItem struct {
-	BlockHeight           int64         `json:"block_height"`
-	Tx                    string        `json:"tx"`
-	Memo                  string        `json:"memo"`
-	Sender                string        `json:"sender"`
-	To                    string        `json:"to"` // to address
-	Coins                 common.Coins  `json:"coins"`
-	Gas                   common.Gas    `json:"gas"`
-	ObservedVaultPubKey   common.PubKey `json:"observed_vault_pub_key"`
-	Aggregator            string        `json:"aggregator"`
-	AggregatorTarget      string        `json:"aggregator_target"`
-	AggregatorTargetLimit *cosmos.Uint  `json:"aggregator_target_limit"`
-	CommittedUnFinalised  bool          `json:"committed_pre_final"`
+	BlockHeight           int64                      `json:"block_height"`
+	Tx                    string                     `json:"tx"`
+	Memo                  string                     `json:"memo"`
+	Sender                string                     `json:"sender"`
+	To                    string                     `json:"to"` // to address
+	Coins                 common.Coins               `json:"coins"`
+	Gas                   common.Gas                 `json:"gas"`
+	ObservedVaultPubKey   common.PubKey              `json:"observed_vault_pub_key"`
+	Aggregator            string                     `json:"aggregator"`
+	AggregatorTarget      string                     `json:"aggregator_target"`
+	AggregatorTargetLimit *cosmos.Uint               `json:"aggregator_target_limit"`
+	TxKeys                []string                   `json:"tx_keys,omitempty"`
+	XmrKeyImages          []*common.XmrKeyImageProof `json:"xmr_key_images,omitempty"`
+	CommittedUnFinalised  bool                       `json:"committed_pre_final"`
 }
 type TxInStatus byte
 
@@ -97,6 +99,17 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedVaultPubKey) {
 		return false
 	}
+	if len(t.TxKeys) != len(other.TxKeys) {
+		return false
+	}
+	for i, txKey := range t.TxKeys {
+		if txKey != other.TxKeys[i] {
+			return false
+		}
+	}
+	if !common.XmrKeyImageProofsEqual(t.XmrKeyImages, other.XmrKeyImages) {
+		return false
+	}
 	return true
 }
 
@@ -129,10 +142,33 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedPubKey) {
 		return false
 	}
+	if len(t.TxKeys) != len(other.TxKeys) {
+		return false
+	}
+	for i, txKey := range t.TxKeys {
+		if txKey != other.TxKeys[i] {
+			return false
+		}
+	}
+	if !common.XmrKeyImageProofsEqual(t.XmrKeyImages, other.XmrKeyImages) {
+		return false
+	}
 	return true
 }
 
 func (t *TxInItem) Copy() *TxInItem {
+	var txKeys []string
+	if len(t.TxKeys) > 0 {
+		txKeys = append([]string(nil), t.TxKeys...)
+	}
+	var keyImages []*common.XmrKeyImageProof
+	if len(t.XmrKeyImages) > 0 {
+		keyImages = make([]*common.XmrKeyImageProof, len(t.XmrKeyImages))
+		for i, proof := range t.XmrKeyImages {
+			cp := *proof
+			keyImages[i] = &cp
+		}
+	}
 	return &TxInItem{
 		BlockHeight:           t.BlockHeight,
 		Tx:                    t.Tx,
@@ -145,6 +181,8 @@ func (t *TxInItem) Copy() *TxInItem {
 		Aggregator:            t.Aggregator,
 		AggregatorTarget:      t.AggregatorTarget,
 		AggregatorTargetLimit: t.AggregatorTargetLimit,
+		TxKeys:                txKeys,
+		XmrKeyImages:          keyImages,
 		CommittedUnFinalised:  t.CommittedUnFinalised,
 	}
 }

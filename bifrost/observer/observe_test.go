@@ -116,7 +116,7 @@ func (s *ObserverSuite) ResetMockClient(c *C) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (s *ObserverSuite) SetUpSuite(c *C) {
-	types2.SetupConfigForTest()
+	setupMocknetThorConfig()
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -163,10 +163,17 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 			}
 		}))
 
-	s.metrics = getSharedTestMetrics()
-	c.Assert(s.metrics, NotNil)
-
 	var err error
+	s.metrics, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{
+		Enabled:      false,
+		ListenPort:   9000,
+		ReadTimeout:  time.Second,
+		WriteTimeout: time.Second,
+		Chains:       common.Chains{common.AVAXChain},
+	})
+	c.Assert(s.metrics, NotNil)
+	c.Assert(err, IsNil)
+
 	cfg := config.BifrostClientConfiguration{
 		ChainID:      "thorchain",
 		ChainHost:    server.Listener.Addr().String(),

@@ -22,11 +22,13 @@ COPY config config
 COPY constants constants
 COPY log log
 COPY openapi openapi
+COPY scripts/check-env.sh scripts/check-env.sh
 COPY x x
 COPY Makefile Makefile
 COPY version version
 COPY tools/thorscan tools/thorscan
 COPY tools/recover-keyshare-backup tools/recover-keyshare-backup
+COPY tools/xmr-reset-scanner tools/xmr-reset-scanner
 
 ARG TAG=mainnet
 ARG COMMIT=unknown
@@ -54,7 +56,7 @@ RUN apt-get update && \
   pip3 install --no-cache-dir requests==2.32.3 web3==7.5.0 retry==0.9.2
 
 # Copy the compiled binaries over.
-COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
+COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /go/bin/xmr-reset-scanner /usr/bin/
 COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/api/libwasmvm.*.so /usr/lib
 
 COPY build/scripts /scripts

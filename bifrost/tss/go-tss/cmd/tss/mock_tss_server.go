@@ -60,3 +60,42 @@ func (mts *MockTssServer) KeySign(req keysign.Request) (keysign.Response, error)
 	newSig := keysign.NewSignature("", "", "", "")
 	return keysign.NewResponse([]keysign.Signature{newSig}, common.Success, blame.Blame{}), nil
 }
+
+func (mts *MockTssServer) FrostKeySign(req tss.FrostKeySignRequest, _ tss.FrostSidecarClient) (tss.FrostKeySignResponse, error) {
+	if mts.failToKeySign {
+		return tss.FrostKeySignResponse{}, errors.New("you ask for it")
+	}
+	return tss.FrostKeySignResponse{
+		TxHash:    "mock-tx-hash",
+		TxHex:     "mock-tx-hex",
+		FeeAtomic: 1,
+		Status:    common.Success,
+		Blame:     blame.Blame{},
+	}, nil
+}
+
+func (mts *MockTssServer) FrostKeygen(_ tss.FrostKeygenRequest, _ tss.FrostSidecarKeygenClient) (tss.FrostKeygenResponse, error) {
+	if mts.failToKeyGen {
+		return tss.FrostKeygenResponse{}, errors.New("you ask for it")
+	}
+	return tss.FrostKeygenResponse{
+		Address:  "mock-address",
+		GroupKey: "mock-group-key",
+		Status:   common.Success,
+		Blame:    blame.Blame{},
+	}, nil
+}
+
+func (mts *MockTssServer) FrostKeyImage(_ tss.FrostKeyImageRequest, _ tss.FrostSidecarClient) (tss.FrostKeyImageResponse, error) {
+	if mts.failToKeySign {
+		return tss.FrostKeyImageResponse{}, errors.New("you ask for it")
+	}
+	return tss.FrostKeyImageResponse{
+		TxHash:   "mock-xmr-inbound",
+		KeyImage: "mock-key-image",
+		ProofC:   "mock-proof-c",
+		ProofS:   "mock-proof-s",
+		Status:   common.Success,
+		Blame:    blame.Blame{},
+	}, nil
+}

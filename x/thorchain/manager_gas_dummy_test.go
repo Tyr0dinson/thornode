@@ -47,10 +47,7 @@ func (m *DummyGasManager) GetMaxGas(ctx cosmos.Context, chain common.Chain) (com
 }
 
 func (m *DummyGasManager) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
-	_, gasRate, err := m.GetGasDetails(ctx, chain)
-	if err != nil {
-		return cosmos.ZeroUint()
-	}
+	_, gasRate, _ := m.GetGasDetails(ctx, chain)
 	return cosmos.NewUint(uint64(gasRate))
 }
 

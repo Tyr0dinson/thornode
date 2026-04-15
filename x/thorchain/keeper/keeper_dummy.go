@@ -31,7 +31,7 @@ func (k KVStoreDummy) DeleteKey(_ cosmos.Context, _ []byte)    {}
 func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }
 func (k KVStoreDummy) AccountKeeper() authkeeper.AccountKeeper { return authkeeper.AccountKeeper{} }
 func (k KVStoreDummy) Logger(ctx cosmos.Context) log.Logger {
-	return ctx.Logger().With("module", fmt.Sprintf("x/%s", ModuleName))
+	return ctx.Logger().With("module", "x/"+ModuleName)
 }
 
 func (k KVStoreDummy) GetVersion() semver.Version { return semver.MustParse("9999999.0.0") }
@@ -376,7 +376,8 @@ func (k KVStoreDummy) GetObservedTxOutVoterIterator(_ cosmos.Context) cosmos.Ite
 func (k KVStoreDummy) GetObservedTxOutVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
 	return ObservedTxVoter{}, kaboom
 }
-func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID) {}
+func (k KVStoreDummy) GetInFlightMigrateIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID)        {}
 func (k KVStoreDummy) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
 	return nil
 }
@@ -690,6 +691,12 @@ func (k KVStoreDummy) SaveNetworkFee(ctx cosmos.Context, chain common.Chain, net
 func (k KVStoreDummy) GetNetworkFeeIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
+
+func (k KVStoreDummy) GetNetworkFeeFloorBlock(ctx cosmos.Context, chain common.Chain) (int64, error) {
+	return 0, nil
+}
+
+func (k KVStoreDummy) SetNetworkFeeFloorBlock(ctx cosmos.Context, chain common.Chain, height int64) {}
 
 func (k KVStoreDummy) SetObservedNetworkFeeVoter(ctx cosmos.Context, networkFeeVoter ObservedNetworkFeeVoter) {
 }

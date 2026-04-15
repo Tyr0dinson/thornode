@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/mr-tron/base58"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -308,7 +307,7 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 			Coins:  acct.Coins,
 		}
 
-		if runners.IsVaultSolvent(c.cfg.ChainID, acct, v, currentFeeRate) {
+		if runners.IsVaultSolvent(acct, v, currentFeeRate) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}
@@ -389,16 +388,6 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 	signedTx, err := c.signTransaction(solTx, tx)
 	if err != nil {
-		// Forward blamed TSS failures to Thornode so EdDSA outbounds participate
-		// in the same slash/freeze handling as the secp256k1 signer paths.
-		var keysignError tss.KeysignError
-		if errors.As(err, &keysignError) && len(keysignError.Blame.BlameNodes) > 0 {
-			txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, tx.GetMemo(), tx.Coins, tx.VaultPubKeyEddsa)
-			if errPostKeysignFail != nil {
-				return checkPointBytes, nil, nil, multierror.Append(err, errPostKeysignFail)
-			}
-			c.logger.Info().Str("tx_id", txID.String()).Msg("post keysign failure to THORChain")
-		}
 		return checkPointBytes, nil, nil, fmt.Errorf("fail to sign tx: %w", err)
 	}
 
@@ -510,31 +499,12 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing string) (types.
 		return solTx, fmt.Errorf("fail to create to public key: %w", err)
 	}
 
-	accountKeys := []types.PublicKey{vaultPubKey, toPubkey, types.SystemProgramID, types.MemoProgramID}
-
-	// Memo instruction
-	// Program index is 3 (referencing accountKeys) for the memo program
-	// Account index is 0 for the vault/signer
-	memoInstruction := types.NewCompiledInstruction(3, []int{0}, []byte(tx.Memo))
-
 	solValue := convertToLamports(tx.Coins[0].Amount)
 	if solValue.Int64() == 0 {
 		return solTx, errors.New("sol value is zero")
 	}
-	// Transfer instruction
-	// Program index is 2 (referencing accountKeys) for the system program
-	// Account index is 0 for the vault/signer
-	// Account index is 1 for the recipient
-	transferInstruction := types.NewCompiledTransferInstruction(2, 0, 1, solValue.Uint64())
 
-	header := types.MessageHeader{
-		NumRequireSignatures:        1,
-		NumReadonlySignedAccounts:   0,
-		NumReadonlyUnsignedAccounts: 2,
-	}
-
-	message := types.NewMessage(header, accountKeys, recentBlockhash, []types.CompiledInstruction{memoInstruction, transferInstruction})
-	return types.NewTransaction(message), nil
+	return types.NewTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
 }
 
 // --------------------------------- sign ---------------------------------

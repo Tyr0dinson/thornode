@@ -45,12 +45,15 @@ func (k *TestSlashingLackKeeper) GetVault(_ cosmos.Context, pk common.PubKey) (V
 	if k.failGetVault {
 		return Vault{}, errKaboom
 	}
-	for _, v := range k.vaults {
-		if v.PubKey.Equals(pk) {
-			return v, nil
+	for _, vault := range k.vaults {
+		if vault.PubKey.Equals(pk) || vault.PubKeyEddsa.Equals(pk) || vault.PubKeyFrost.Equals(pk) {
+			return vault, nil
 		}
 	}
-	return k.vaults[0], nil
+	if len(k.vaults) > 0 {
+		return k.vaults[0], nil
+	}
+	return Vault{}, errors.New("vault not found")
 }
 
 func (k *TestSlashingLackKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, status VaultStatus) (Vaults, error) {
@@ -58,15 +61,12 @@ func (k *TestSlashingLackKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, statu
 		return nil, errKaboom
 	}
 	var result Vaults
-	for _, v := range k.vaults {
-		if v.Status == status {
-			result = append(result, v)
+	for _, vault := range k.vaults {
+		if vault.Status == status {
+			result = append(result, vault)
 		}
 	}
-	if len(result) > 0 {
-		return result, nil
-	}
-	return k.vaults, nil
+	return result, nil
 }
 
 func (k *TestSlashingLackKeeper) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error) {

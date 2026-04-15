@@ -123,7 +123,7 @@ func (m *MockThorchainBridge) GetContractAddress() ([]thorclient.PubKeyContractA
 	return nil, nil
 }
 func (m *MockThorchainBridge) GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg { return nil }
-func (m *MockThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types.Blame, inputPks common.PubKeys, keygenType types.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) {
+func (m *MockThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types.Blame, inputPks common.PubKeys, keygenType types.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa, keysharesBackupFrost []byte, poolPubKeyFrost common.PubKey, observedMoneroHeight int64) (sdk.Msg, error) {
 	return nil, nil
 }
 
@@ -194,6 +194,9 @@ func (m *MockThorchainBridge) GetReferenceMemo(chain common.Chain, ref string) (
 	return "", nil
 }
 func (m *MockThorchainBridge) GetReferenceMemoByTxHash(hash string) (string, error) { return "", nil }
+func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*types.QueryObservedTxVoter, error) {
+	return nil, nil
+}
 func (m *MockThorchainBridge) GetBlockTimestamp(height int64) (time.Time, error) {
 	return time.Time{}, nil
 }

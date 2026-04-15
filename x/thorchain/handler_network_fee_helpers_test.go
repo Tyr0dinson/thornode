@@ -36,6 +36,15 @@ func setupNetworkFeeHelpersTest(c *C) (cosmos.Context, *Mgrs, NodeAccounts) {
 	return ctx, mgr, nas
 }
 
+func reachNetworkFeeConsensus(c *C, ctx cosmos.Context, mgr *Mgrs, nas NodeAccounts, nf *common.NetworkFee) {
+	voter, err := mgr.Keeper().GetObservedNetworkFeeVoter(ctx, nf.Height, nf.Chain, int64(nf.TransactionRate), int64(nf.TransactionSize))
+	c.Assert(err, IsNil)
+	for i := 0; i < 3; i++ {
+		err = processNetworkFeeAttestation(ctx, mgr, &voter, nas[i].NodeAddress, nas, nf, false)
+		c.Assert(err, IsNil)
+	}
+}
+
 func (s *HandlerNetworkFeeHelpersSuite) TestDuplicateSignerWithSlash(c *C) {
 	ctx, mgr, nas := setupNetworkFeeHelpersTest(c)
 
@@ -290,6 +299,63 @@ func (s *HandlerNetworkFeeHelpersSuite) TestNonSignersGetSlashed(c *C) {
 	ptsAfter, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nas[3].NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(ptsAfter > ptsBefore, Equals, true, Commentf("non-signer should get slashed at consensus"))
+}
+
+func (s *HandlerNetworkFeeHelpersSuite) TestXMRNetworkFeeLookbackPreservesHigherObservedFee(c *C) {
+	ctx, mgr, nas := setupNetworkFeeHelpersTest(c)
+
+	high := &common.NetworkFee{
+		Chain:           common.XMRChain,
+		Height:          1000,
+		TransactionRate: 27,
+		TransactionSize: 2226,
+	}
+	reachNetworkFeeConsensus(c, ctx, mgr, nas, high)
+
+	savedFee, err := mgr.Keeper().GetNetworkFee(ctx, common.XMRChain)
+	c.Assert(err, IsNil)
+	c.Assert(savedFee.TransactionFeeRate, Equals, uint64(27))
+	c.Assert(savedFee.TransactionSize, Equals, uint64(2226))
+
+	lowerCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 100)
+	lower := &common.NetworkFee{
+		Chain:           common.XMRChain,
+		Height:          1100,
+		TransactionRate: 8,
+		TransactionSize: 3000,
+	}
+	reachNetworkFeeConsensus(c, lowerCtx, mgr, nas, lower)
+
+	savedFee, err = mgr.Keeper().GetNetworkFee(lowerCtx, common.XMRChain)
+	c.Assert(err, IsNil)
+	c.Assert(savedFee.TransactionFeeRate, Equals, uint64(27))
+	c.Assert(savedFee.TransactionSize, Equals, uint64(2226))
+}
+
+func (s *HandlerNetworkFeeHelpersSuite) TestXMRNetworkFeeLookbackExpires(c *C) {
+	ctx, mgr, nas := setupNetworkFeeHelpersTest(c)
+
+	high := &common.NetworkFee{
+		Chain:           common.XMRChain,
+		Height:          1000,
+		TransactionRate: 27,
+		TransactionSize: 2226,
+	}
+	reachNetworkFeeConsensus(c, ctx, mgr, nas, high)
+
+	expiredCtx := ctx.WithBlockHeight(ctx.BlockHeight() + xmrNetworkFeeLookbackBlocks + 1)
+	lower := &common.NetworkFee{
+		Chain:           common.XMRChain,
+		Height:          1700,
+		TransactionRate: 8,
+		TransactionSize: 3000,
+	}
+	reachNetworkFeeConsensus(c, expiredCtx, mgr, nas, lower)
+
+	savedFee, err := mgr.Keeper().GetNetworkFee(expiredCtx, common.XMRChain)
+	c.Assert(err, IsNil)
+	c.Assert(savedFee.TransactionFeeRate, Equals, uint64(8))
+	c.Assert(savedFee.TransactionSize, Equals, uint64(3000))
 }
 
 // --- Test keeper for failure injection ---

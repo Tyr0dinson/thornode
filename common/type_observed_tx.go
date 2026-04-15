@@ -78,6 +78,17 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if !m.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
 		return false
 	}
+	if len(m.TxKeys) != len(tx2.TxKeys) {
+		return false
+	}
+	for i, txKey := range m.TxKeys {
+		if txKey != tx2.TxKeys[i] {
+			return false
+		}
+	}
+	if !XmrKeyImageProofsEqual(m.XmrKeyImages, tx2.XmrKeyImages) {
+		return false
+	}
 	return true
 }
 

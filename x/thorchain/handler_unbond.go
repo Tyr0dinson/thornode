@@ -61,7 +61,7 @@ func (h UnBondHandler) validate(ctx cosmos.Context, msg MsgUnBond) error {
 	}
 
 	if h.mgr.Keeper().GetConfigInt64(ctx, constants.PauseUnbond) > 0 {
-		return fmt.Errorf("unbonding has been paused")
+		return ErrInternal(err, "unbonding has been paused")
 	}
 
 	bp, err := h.mgr.Keeper().GetBondProviders(ctx, msg.NodeAddress)
@@ -92,20 +92,12 @@ func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 	if ctx.BlockHeight()-na.StatusSince < bondLockPeriod {
 		return fmt.Errorf("node can not unbond before %d", na.StatusSince+bondLockPeriod)
 	}
-	vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	migratingVaults, err := nodeHasMigratingVaults(ctx, h.mgr.Keeper(), na.PubKeySet.Secp256k1)
 	if err != nil {
-		return ErrInternal(err, "fail to get retiring vault")
+		return ErrInternal(err, "fail to get vault migration state")
 	}
-	isMemberOfRetiringVault := false
-	for _, v := range vaults {
-		if v.GetMembership().Contains(na.PubKeySet.Secp256k1) {
-			isMemberOfRetiringVault = true
-			ctx.Logger().Info("node account is still part of the retiring vault,can't return bond yet")
-			break
-		}
-	}
-	if isMemberOfRetiringVault {
-		return fmt.Errorf("fail to unbond, still part of the retiring vault")
+	if migratingVaults {
+		return fmt.Errorf("fail to unbond, vault migration still in flight")
 	}
 
 	from, err := cosmos.AccAddressFromBech32(msg.BondAddress.String())

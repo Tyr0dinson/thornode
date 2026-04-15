@@ -3,6 +3,8 @@ package observer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -84,9 +86,17 @@ type txKey struct {
 	Chain                  common.Chain
 	ID                     common.TxID
 	UniqueHash             string
+	PayloadHash            string
 	AllowFutureObservation bool
 	Finalized              bool
 	Inbound                bool
+}
+
+type pendingInboundXMRKeyImageAttestation struct {
+	key                    txKey
+	obsTx                  common.ObservedTx
+	allowFutureObservation bool
+	inbound                bool
 }
 
 type KeysInterface interface {
@@ -132,7 +142,19 @@ type AttestationGossip struct {
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
-	observerHandleObservedTxCommitted func(tx common.ObservedTx)
+	observerHandleObservedTxCommitted   func(tx common.ObservedTx)
+	observerValidateXMRTx               func(tx common.ObservedTx) error
+	observerValidateInboundXMRKeyImages func(tx common.ObservedTx) error
+	// validateXMRTxSem bounds outbound tx-key validation calls into the XMR
+	// sidecar, which may need daemon RPC access before returning.
+	validateXMRTxSem chan struct{}
+	// inbound XMR key-image validation/co-attest work must run serially so the
+	// same node does not compete with itself across ceremonies. We keep a FIFO
+	// queue and a de-duplication set keyed by the observed tx payload.
+	inboundXMRKeyImageMu            sync.Mutex
+	inboundXMRKeyImageInFlight      map[txKey]struct{}
+	inboundXMRKeyImageQueue         []pendingInboundXMRKeyImageAttestation
+	inboundXMRKeyImageWorkerRunning bool
 
 	cachedKeySignParties map[common.PubKey]cachedKeySignParty
 	cachedKeySignMu      sync.Mutex
@@ -149,6 +171,29 @@ type AttestationGossip struct {
 type cachedKeySignParty struct {
 	keySignParty common.PubKeys
 	lastUpdated  time.Time
+}
+
+func observedTxKey(obsTx common.ObservedTx, allowFutureObservation, inbound bool) (txKey, error) {
+	k := txKey{
+		Chain:                  obsTx.Tx.Chain,
+		ID:                     obsTx.Tx.ID,
+		UniqueHash:             obsTx.Tx.Hash(obsTx.BlockHeight),
+		AllowFutureObservation: allowFutureObservation,
+		Finalized:              obsTx.IsFinal(),
+		Inbound:                inbound,
+	}
+
+	if len(obsTx.TxKeys) == 0 && len(obsTx.XmrKeyImages) == 0 {
+		return k, nil
+	}
+
+	signBz, err := obsTx.GetSignablePayload()
+	if err != nil {
+		return txKey{}, fmt.Errorf("fail to hash observed tx payload: %w", err)
+	}
+	sum := sha256.Sum256(signBz)
+	k.PayloadHash = hex.EncodeToString(sum[:])
+	return k, nil
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip
@@ -217,6 +262,9 @@ func NewAttestationGossip(
 		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
 
 		batcher: batcher,
+
+		validateXMRTxSem:           make(chan struct{}, 8),
+		inboundXMRKeyImageInFlight: make(map[txKey]struct{}),
 	}
 	batcher.setActiveValGetter(s.getActiveValidators)
 	// Register event handlers
@@ -342,6 +390,162 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 	s.observerHandleObservedTxCommitted = o.handleObservedTxCommitted
 }
 
+func (s *AttestationGossip) SetObserverValidateXMRTx(fn func(tx common.ObservedTx) error) {
+	s.observerValidateXMRTx = fn
+}
+
+func (s *AttestationGossip) SetObserverValidateInboundXMRKeyImages(o *Observer) {
+	if o == nil {
+		s.observerValidateInboundXMRKeyImages = nil
+		return
+	}
+	s.observerValidateInboundXMRKeyImages = o.ValidateInboundXMRKeyImages
+}
+
+func (s *AttestationGossip) retryPendingInboundXMRKeyImageAttestations(ctx context.Context) {
+	if s.observerValidateInboundXMRKeyImages == nil && s.observerValidateXMRTx == nil {
+		return
+	}
+
+	candidates := make([]pendingInboundXMRKeyImageAttestation, 0)
+
+	s.mu.Lock()
+	for k, state := range s.observedTxs {
+		state.mu.Lock()
+
+		shouldRetry := k.Finalized &&
+			state.Item != nil &&
+			state.Item.Tx.Chain.Equals(common.XMRChain) &&
+			len(state.Item.XmrKeyImages) > 0 &&
+			len(state.Item.XmrKeyImages) <= maxXMRKeyImages &&
+			!hasLocalObservedTxAttestation(state, s.pubKey) &&
+			((k.Inbound && s.observerValidateInboundXMRKeyImages != nil) || (!k.Inbound && s.observerValidateXMRTx != nil))
+		if shouldRetry {
+			candidates = append(candidates, pendingInboundXMRKeyImageAttestation{
+				key:                    k,
+				obsTx:                  *state.Item,
+				allowFutureObservation: k.AllowFutureObservation,
+				inbound:                k.Inbound,
+			})
+		}
+
+		state.mu.Unlock()
+	}
+	s.mu.Unlock()
+
+	for _, candidate := range candidates {
+		s.scheduleXMRKeyImageValidation(ctx, candidate.obsTx, candidate.allowFutureObservation, candidate.inbound)
+	}
+}
+
+func (s *AttestationGossip) validateXMRObservationAsync(tx common.ObservedTx, onSuccess func()) {
+	if s.observerValidateXMRTx == nil {
+		return
+	}
+	if s.validateXMRTxSem == nil {
+		go func() {
+			if err := s.observerValidateXMRTx(tx); err == nil && onSuccess != nil {
+				onSuccess()
+			}
+		}()
+		return
+	}
+	select {
+	case s.validateXMRTxSem <- struct{}{}:
+		go func() {
+			defer func() { <-s.validateXMRTxSem }()
+			if err := s.observerValidateXMRTx(tx); err != nil {
+				s.logger.Warn().
+					Err(err).
+					Str("tx_id", tx.Tx.ID.String()).
+					Msg("failed to validate xmr outbound via sidecar")
+				return
+			}
+			if onSuccess != nil {
+				onSuccess()
+			}
+		}()
+	default:
+		s.logger.Warn().
+			Str("tx_id", tx.Tx.ID.String()).
+			Msg("xmr outbound validation queue full, dropping")
+	}
+}
+
+func (s *AttestationGossip) scheduleInboundXMRKeyImageValidation(ctx context.Context, obsTx common.ObservedTx, allowFutureObservation bool) {
+	s.scheduleXMRKeyImageValidation(ctx, obsTx, allowFutureObservation, true)
+}
+
+func (s *AttestationGossip) scheduleOutboundXMRKeyImageValidation(ctx context.Context, obsTx common.ObservedTx, allowFutureObservation bool) {
+	s.scheduleXMRKeyImageValidation(ctx, obsTx, allowFutureObservation, false)
+}
+
+func (s *AttestationGossip) scheduleXMRKeyImageValidation(ctx context.Context, obsTx common.ObservedTx, allowFutureObservation bool, inbound bool) {
+	if inbound && s.observerValidateInboundXMRKeyImages == nil {
+		return
+	}
+	if !inbound && s.observerValidateXMRTx == nil {
+		return
+	}
+
+	key, err := observedTxKey(obsTx, allowFutureObservation, inbound)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Msg("failed to derive XMR key-image validation key")
+		return
+	}
+
+	s.inboundXMRKeyImageMu.Lock()
+	if s.inboundXMRKeyImageInFlight == nil {
+		s.inboundXMRKeyImageInFlight = make(map[txKey]struct{})
+	}
+	if _, exists := s.inboundXMRKeyImageInFlight[key]; exists {
+		s.inboundXMRKeyImageMu.Unlock()
+		return
+	}
+	s.inboundXMRKeyImageInFlight[key] = struct{}{}
+	s.inboundXMRKeyImageQueue = append(s.inboundXMRKeyImageQueue, pendingInboundXMRKeyImageAttestation{
+		key:                    key,
+		obsTx:                  obsTx,
+		allowFutureObservation: allowFutureObservation,
+		inbound:                inbound,
+	})
+	if s.inboundXMRKeyImageWorkerRunning {
+		s.inboundXMRKeyImageMu.Unlock()
+		return
+	}
+	s.inboundXMRKeyImageWorkerRunning = true
+	s.inboundXMRKeyImageMu.Unlock()
+
+	go s.runInboundXMRKeyImageValidationQueue(ctx)
+}
+
+func (s *AttestationGossip) runInboundXMRKeyImageValidationQueue(ctx context.Context) {
+	for {
+		s.inboundXMRKeyImageMu.Lock()
+		if len(s.inboundXMRKeyImageQueue) == 0 {
+			s.inboundXMRKeyImageWorkerRunning = false
+			s.inboundXMRKeyImageMu.Unlock()
+			return
+		}
+		next := s.inboundXMRKeyImageQueue[0]
+		s.inboundXMRKeyImageQueue = s.inboundXMRKeyImageQueue[1:]
+		s.inboundXMRKeyImageMu.Unlock()
+
+		if next.inbound {
+			s.validateAndCoAttestInboundXMRKeyImages(ctx, next.obsTx, next.allowFutureObservation)
+		} else {
+			s.validateAndCoAttestOutboundXMRKeyImages(ctx, next.obsTx, next.allowFutureObservation)
+		}
+
+		s.inboundXMRKeyImageMu.Lock()
+		delete(s.inboundXMRKeyImageInFlight, next.key)
+		s.inboundXMRKeyImageMu.Unlock()
+	}
+}
+
 // Handle a committed quorum transaction event
 func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotification) {
 	s.logger.Debug().Msg("handling quorum tx committed event")
@@ -364,13 +568,17 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		}
 	}
 
-	k := txKey{
-		Chain:                  qtx.ObsTx.Tx.Chain,
-		ID:                     qtx.ObsTx.Tx.ID,
-		UniqueHash:             qtx.ObsTx.Tx.Hash(qtx.ObsTx.BlockHeight),
-		AllowFutureObservation: qtx.AllowFutureObservation,
-		Inbound:                qtx.Inbound,
-		Finalized:              qtx.ObsTx.IsFinal(),
+	if s.observerValidateXMRTx != nil &&
+		!qtx.Inbound &&
+		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
+		len(qtx.ObsTx.TxKeys) > 0 {
+		s.validateXMRObservationAsync(qtx.ObsTx, nil)
+	}
+
+	k, err := observedTxKey(qtx.ObsTx, qtx.AllowFutureObservation, qtx.Inbound)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to derive committed observed tx key")
+		return
 	}
 
 	s.mu.Lock()
@@ -549,6 +757,8 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
 
 			s.mu.Unlock()
+
+			s.retryPendingInboundXMRKeyImageAttestations(ctx)
 
 			// Prune cached keysign parties
 			s.cachedKeySignMu.Lock()

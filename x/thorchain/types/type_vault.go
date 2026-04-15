@@ -313,6 +313,9 @@ func (m *Vault) AlgoPubKey(chain common.Chain) (common.PubKey, error) {
 	case common.SigningAlgoSecp256k1:
 		return m.PubKey, nil
 	case common.SigningAlgoEd25519:
+		if chain == common.XMRChain && !m.PubKeyFrost.IsEmpty() {
+			return m.PubKeyFrost, nil
+		}
 		if m.PubKeyEddsa.IsEmpty() {
 			return "", fmt.Errorf("vault has no eddsa public key")
 		}
@@ -386,9 +389,9 @@ func (vs Vaults) SelectByMaxCoin(asset common.Asset) (vault Vault) {
 // vault match the given address on the given chain
 func (vs Vaults) HasAddress(chain common.Chain, address common.Address) (bool, error) {
 	for _, item := range vs {
-		addr, err := item.PubKey.GetAddress(chain)
+		addr, err := item.GetAddress(chain)
 		if err != nil {
-			return false, fmt.Errorf("fail to get address from (%s) for chain(%s)", item.PubKey, chain)
+			return false, fmt.Errorf("fail to get address from vault(%s) for chain(%s): %w", item.PubKey, chain, err)
 		}
 		if addr.Equals(address) {
 			return true, nil

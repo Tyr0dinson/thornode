@@ -94,16 +94,21 @@ func processErrataTxAttestation(
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
 	k.SetObservedTxInVoter(ctx, observedVoter)
-	if observedVoter.UpdatedVault {
-		vaultPubKey := observedVoter.Tx.ObservedPubKey
-		if !vaultPubKey.IsEmpty() {
-			// try to deduct the asset from asgard
-			var vault Vault
-			vault, err = k.GetVault(ctx, vaultPubKey)
-			if err != nil {
-				return fmt.Errorf("fail to get active asgard vaults: %w", err)
-			}
+	vaultPubKey := observedVoter.Tx.ObservedPubKey
+	if !vaultPubKey.IsEmpty() && (observedVoter.UpdatedVault || len(observedVoter.Tx.XmrKeyImages) > 0) {
+		var vault Vault
+		vault, err = k.GetVault(ctx, vaultPubKey)
+		if err != nil {
+			return fmt.Errorf("fail to get active asgard vaults: %w", err)
+		}
+		if observedVoter.UpdatedVault {
 			vault.SubFunds(tx.Coins)
+		}
+		removedKeyImages := false
+		if observedVoter.Tx.IsFinal() && tx.Chain.Equals(common.XMRChain) && len(observedVoter.Tx.XmrKeyImages) > 0 {
+			removedKeyImages = removeVaultXMRKeyImages(&vault, observedVoter.Tx.XmrKeyImages)
+		}
+		if observedVoter.UpdatedVault || removedKeyImages {
 			if err = k.SetVault(ctx, vault); err != nil {
 				return fmt.Errorf("fail to save vault, err: %w", err)
 			}
@@ -221,6 +226,9 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 		v.AddFunds(tx.Coins)
 		if v.Status == InactiveVault {
 			ctx.Logger().Info("Errata credited funds to inactive vault - recovery via migration needed", "vault pub key", v.PubKey)
+		}
+		if txOutVoter.Tx.IsFinal() && tx.Chain.Equals(common.XMRChain) && len(txOutVoter.Tx.TxKeys) > 0 {
+			removeVaultXMRTxKeys(&v, tx.ID.String())
 		}
 
 		if !v.IsEmpty() {

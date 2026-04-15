@@ -18,6 +18,9 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 	if !s.isActiveValidator(s.host.ID()) {
 		return fmt.Errorf("skipping attest observed tx: not active")
 	}
+	if err := requireXMRAttestationMetadata(*obsTx, inbound); err != nil {
+		return err
+	}
 
 	signBz, err := obsTx.GetSignablePayload()
 	if err != nil {

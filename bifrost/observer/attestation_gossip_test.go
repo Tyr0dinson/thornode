@@ -145,7 +145,9 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
 		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
 
-		peerMgr: newPeerManager(getTestLogger(t), 2),
+		peerMgr:                    newPeerManager(getTestLogger(t), 2),
+		validateXMRTxSem:           make(chan struct{}, 8),
+		inboundXMRKeyImageInFlight: make(map[txKey]struct{}),
 	}
 
 	// Set active validators
@@ -956,4 +958,153 @@ func TestConcurrentAttestationHandling(t *testing.T) {
 	state, exists := ag.observedTxs[key]
 	assert.True(t, exists)
 	assert.Equal(t, numAttestations, state.AttestationCount())
+}
+
+func TestXMRValidateCallbackForOutboundTxKeys(t *testing.T) {
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz []byte, signature []byte, attester []byte) error {
+		return nil
+	}
+
+	t.Run("validator fires for XMR outbound with tx keys", func(t *testing.T) {
+		ag, _, _, _, bridge, _ := setupTestGossip(t)
+		bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+			return common.PubKeys{"pk1", "pk2", "pk3"}, nil
+		}
+
+		called := make(chan common.ObservedTx, 1)
+		ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+			called <- tx
+			return nil
+		})
+
+		tx := common.ObservedTx{
+			Tx:             common.Tx{ID: "xmr-out-1", Chain: common.XMRChain},
+			ObservedPubKey: "pk1",
+			TxKeys:         []string{"11"},
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:                  tx,
+			Inbound:                false,
+			AllowFutureObservation: true,
+			Attestation:            &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		select {
+		case validated := <-called:
+			assert.Equal(t, tx.Tx.ID, validated.Tx.ID)
+			assert.Equal(t, tx.TxKeys, validated.TxKeys)
+		case <-time.After(time.Second):
+			t.Fatal("expected tx-key validator to run")
+		}
+	})
+
+	t.Run("validator does not fire for non-XMR chain", func(t *testing.T) {
+		ag, _, _, _, _, _ := setupTestGossip(t)
+		var called bool
+		ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+			called = true
+			return nil
+		})
+
+		tx := common.ObservedTx{
+			Tx:             common.Tx{ID: "btc-out-1", Chain: common.BTCChain},
+			ObservedPubKey: "pk1",
+			TxKeys:         []string{"11"},
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:       tx,
+			Inbound:     false,
+			Attestation: &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, called)
+	})
+
+	t.Run("validator does not fire when tx keys are missing", func(t *testing.T) {
+		ag, _, _, _, _, _ := setupTestGossip(t)
+		var called bool
+		ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+			called = true
+			return nil
+		})
+
+		tx := common.ObservedTx{
+			Tx:             common.Tx{ID: "xmr-out-no-keys", Chain: common.XMRChain},
+			ObservedPubKey: "pk1",
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:       tx,
+			Inbound:     false,
+			Attestation: &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, called)
+	})
+
+	t.Run("validator does not fire for inbound XMR", func(t *testing.T) {
+		ag, _, _, _, _, _ := setupTestGossip(t)
+		var called bool
+		ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+			called = true
+			return nil
+		})
+
+		tx := common.ObservedTx{
+			Tx:             common.Tx{ID: "xmr-in-1", Chain: common.XMRChain},
+			ObservedPubKey: "pk1",
+			TxKeys:         []string{"11"},
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:       tx,
+			Inbound:     true,
+			Attestation: &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, called)
+	})
+}
+
+func TestGetSignablePayloadConsistency(t *testing.T) {
+	txKeys := []string{"11", "22"}
+	obsTx := common.ObservedTx{
+		Tx:     common.Tx{ID: "test-tx", Chain: common.XMRChain, Memo: "OUT:abc"},
+		TxKeys: txKeys,
+	}
+
+	payload1, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+
+	attestTx := common.AttestTx{ObsTx: obsTx}
+	payload2, err := attestTx.GetSignablePayload()
+	require.NoError(t, err)
+
+	assert.Equal(t, payload1, payload2, "ObservedTx and AttestTx signable payloads must match")
+
+	obsTxNoKeys := common.ObservedTx{
+		Tx: common.Tx{ID: "test-tx", Chain: common.XMRChain, Memo: "OUT:abc"},
+	}
+	payloadNoKeys, err := obsTxNoKeys.GetSignablePayload()
+	require.NoError(t, err)
+
+	assert.NotEqual(t, payload1, payloadNoKeys, "payload with tx keys should differ from txs without them")
+
+	obsTxDifferentKeys := obsTx
+	obsTxDifferentKeys.TxKeys = []string{"33", "44"}
+	payloadDifferentKeys, err := obsTxDifferentKeys.GetSignablePayload()
+	require.NoError(t, err)
+
+	assert.NotEqual(t, payload1, payloadDifferentKeys, "payload should change when tx keys change")
 }

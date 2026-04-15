@@ -24,6 +24,17 @@ func (k *ExpiredLimitSwapRetryTestKeeper) GetVault(_ cosmos.Context, _ common.Pu
 	return Vault{}, fmt.Errorf("vault not found")
 }
 
+func seedActiveAdvSwapVault(c *C, ctx cosmos.Context, mgr *Mgrs) {
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10_000*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(10_000*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10_000*common.One)),
+		common.NewCoin(common.DOGEAsset, cosmos.NewUint(10_000*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+}
+
 func (s AdvSwapQueueSuite) TestGetTodoNum(c *C) {
 	book := newSwapQueueAdv(keeper.KVStoreDummy{})
 
@@ -557,6 +568,7 @@ func (s AdvSwapQueueSuite) TestTradePairsTodo(c *C) {
 
 func (s AdvSwapQueueSuite) TestEndBlock(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	mgr.txOutStore = NewTxStoreDummy()
 	book := newSwapQueueAdv(mgr.Keeper())
 
@@ -667,11 +679,7 @@ func (s AdvSwapQueueSuite) TestEndBlock(c *C) {
 		c.Logf("Limit swap not found or has no state")
 	}
 
-	// The test expects 2 outbound items: 1 market swap output + 1 limit swap refund
-	// Market swap processes in iteration 0 (RUNE→ETH output)
-	// Limit swap gets refunded since it doesn't meet criteria (BTC refund)
-	// Market swap doesn't process again in iteration 1 because it has no partner
-	c.Assert(items, HasLen, 2) // 2 outbound items: 1 refund + 1 market swap transaction
+	c.Assert(items, HasLen, 2)
 
 	// The processor state check is removed as the expected values don't match
 	// the actual implementation of findMatchingTrades logic
@@ -3193,12 +3201,10 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwaps(c *C) {
 	k.SetMimir(ctx, "StreamingLimitSwapMaxAge", maxAge)
 
 	// Create expired and non-expired limit swaps
-	// The new processExpiredLimitSwaps only checks currentHeight (not a range),
-	// so set currentHeight to the exact expiry height of the expired swap.
-	expiryHeight := int64(150) // block 50 + maxAge 100
-	ctx = ctx.WithBlockHeight(expiryHeight)
+	currentBlockHeight := int64(200)
+	ctx = ctx.WithBlockHeight(currentBlockHeight)
 
-	// Expired swap (created at block 50, expires at 150, current is 150)
+	// Expired swap (created at block 50, expires at 150, current is 200)
 	txID1 := GetRandomTxHash()
 
 	expiredSwap := types.MsgSwap{
@@ -3224,7 +3230,7 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwaps(c *C) {
 		c.Assert(k.SetAdvSwapQueueItem(ctx, expiredSwap), IsNil)
 	}
 
-	// Non-expired swap (created at block 150, expires at 250, current is 150)
+	// Non-expired swap (created at block 150, expires at 250, current is 200)
 	txID2 := GetRandomTxHash()
 	activeSwap := types.MsgSwap{
 		Tx: common.Tx{
@@ -3244,6 +3250,7 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwaps(c *C) {
 	c.Assert(k.SetAdvSwapQueueItem(ctx, activeSwap), IsNil)
 
 	// Set up TTL tracking for expired swap
+	expiryHeight := expiredSwap.InitialBlockHeight + maxAge
 	err := k.AddToLimitSwapTTL(ctx, expiryHeight, txID1)
 	c.Assert(err, IsNil)
 
@@ -3344,12 +3351,12 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsMultipleAtSameHeight(c *C
 	maxAge := int64(50)
 	k.SetMimir(ctx, "StreamingLimitSwapMaxAge", maxAge)
 
+	currentBlockHeight := int64(150)
+	ctx = ctx.WithBlockHeight(currentBlockHeight)
+
 	// Create multiple expired swaps that expire at the same block height
 	initialHeight := int64(50) // All expire at block 100
 	expiryHeight := initialHeight + maxAge
-
-	// Set currentHeight to the exact expiry height
-	ctx = ctx.WithBlockHeight(expiryHeight)
 
 	var txIDs []common.TxID
 	for i := 0; i < 3; i++ {
@@ -3410,10 +3417,11 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsHandlesMissingSwap(c *C) 
 	k := mgr.Keeper()
 	vm := newSwapQueueAdv(k)
 
+	currentBlockHeight := int64(200)
+	ctx = ctx.WithBlockHeight(currentBlockHeight)
+
 	// Create TTL entry for a swap that doesn't exist in the queue
 	expiryHeight := int64(150)
-	ctx = ctx.WithBlockHeight(expiryHeight)
-
 	nonExistentTxID := GetRandomTxHash()
 	err := k.AddToLimitSwapTTL(ctx, expiryHeight, nonExistentTxID)
 	c.Assert(err, IsNil)
@@ -3437,9 +3445,8 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsWithMixedSwapTypes(c *C) 
 	maxAge := int64(50)
 	k.SetMimir(ctx, "StreamingLimitSwapMaxAge", maxAge)
 
-	// Set currentHeight to the exact expiry height (100 + 50 = 150)
-	expiryHeight := int64(150)
-	ctx = ctx.WithBlockHeight(expiryHeight)
+	currentBlockHeight := int64(200)
+	ctx = ctx.WithBlockHeight(currentBlockHeight)
 
 	// Create expired limit swap
 	txID1 := GetRandomTxHash()
@@ -3451,7 +3458,7 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsWithMixedSwapTypes(c *C) 
 		TargetAsset:        common.BTCAsset,
 		TradeTarget:        cosmos.NewUint(5000000), // 0.05 BTC
 		SwapType:           types.SwapType_limit,
-		InitialBlockHeight: 100, // Expires at 150, current is 150
+		InitialBlockHeight: 100, // Expires at 150, current is 200
 		State: &types.SwapState{
 			Quantity: 1,
 			Count:    0,
@@ -3479,6 +3486,7 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsWithMixedSwapTypes(c *C) 
 	c.Assert(k.SetAdvSwapQueueItem(ctx, expiredMarketSwap), IsNil)
 
 	// Set up TTL tracking only for limit swap
+	expiryHeight := expiredLimitSwap.InitialBlockHeight + maxAge
 	err := k.AddToLimitSwapTTL(ctx, expiryHeight, txID1)
 	c.Assert(err, IsNil)
 
@@ -3500,9 +3508,8 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsDoesNotDuplicateOutboundO
 	ctx, mgr := setupManagerForTest(c)
 	baseKeeper := mgr.Keeper()
 
-	// Set currentHeight to the exact expiry height (100 + 50 = 150)
-	expiryHeight := int64(150)
-	ctx = ctx.WithBlockHeight(expiryHeight)
+	currentBlockHeight := int64(200)
+	ctx = ctx.WithBlockHeight(currentBlockHeight)
 
 	maxAge := int64(50)
 	baseKeeper.SetMimir(ctx, "StreamingLimitSwapMaxAge", maxAge)
@@ -3541,7 +3548,7 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsDoesNotDuplicateOutboundO
 		},
 	}
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, expiredSwap), IsNil)
-	c.Assert(mgr.Keeper().AddToLimitSwapTTL(ctx, expiryHeight, txID), IsNil)
+	c.Assert(mgr.Keeper().AddToLimitSwapTTL(ctx, expiredSwap.InitialBlockHeight+maxAge, txID), IsNil)
 
 	c.Assert(vm.processExpiredLimitSwaps(ctx, mgr), IsNil)
 
@@ -3549,7 +3556,7 @@ func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsDoesNotDuplicateOutboundO
 	c.Assert(err, IsNil)
 	c.Assert(len(outItems), Equals, 0, Commentf("failed settlement must not leave a partial outbound behind"))
 
-	ctx = ctx.WithBlockHeight(expiryHeight + 1)
+	ctx = ctx.WithBlockHeight(currentBlockHeight + 1)
 	c.Assert(vm.processExpiredLimitSwaps(ctx, mgr), IsNil)
 
 	outItems, err = mgr.TxOutStore().GetOutboundItems(ctx)
@@ -5123,6 +5130,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapDirectionIntegration(c *C) {
 		c.Log("--- Scenario:", sc.name)
 
 		ctx, mgr := setupManagerForTest(c)
+		seedActiveAdvSwapVault(c, ctx, mgr)
 		book := newSwapQueueAdv(mgr.Keeper())
 
 		// Setup ETH pool: 10000 RUNE / 1000 ETH (1 ETH ≈ 10 RUNE)
@@ -5290,6 +5298,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapIntervalBlocksMultiExecution(c *C) {
 // single block for counter-directional streaming swaps.
 func (s AdvSwapQueueSuite) TestRapidSwapStateAccumulation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH (1 ETH ≈ 10 RUNE)
@@ -5443,6 +5452,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapMaxZero(c *C) {
 // higher-scoring same-direction swaps are skipped.
 func (s AdvSwapQueueSuite) TestRapidSwapDirectionSkipDoesNotConsumeBudget(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH (1 ETH ≈ 10 RUNE)
@@ -5551,6 +5561,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapDirectionSkipDoesNotConsumeBudget(c *C) 
 // shouldSkipRapidSwapDirection returns false for non-market swaps.
 func (s AdvSwapQueueSuite) TestRapidSwapLimitSwapBypassesDirectionSkip(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH (1 ETH ≈ 10 RUNE)
@@ -5660,6 +5671,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapLimitSwapBypassesDirectionSkip(c *C) {
 // swaps successfully execute through all iterations.
 func (s AdvSwapQueueSuite) TestRapidSwapPoolBalanceChangesAcrossIterations(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH
@@ -5745,6 +5757,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapPoolBalanceChangesAcrossIterations(c *C)
 // with other swaps in the same or subsequent iterations.
 func (s AdvSwapQueueSuite) TestRapidSwapSettleMidIterationNoInterference(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH
@@ -5956,6 +5969,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapFailedSwapSkipMarketOnlyLogic(c *C) {
 // execute only once, when both coexist in the same queue during rapid iterations.
 func (s AdvSwapQueueSuite) TestRapidSwapMixedIntervalZeroAndNonZero(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH
@@ -6038,6 +6052,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapMixedIntervalZeroAndNonZero(c *C) {
 // lastPoolDir and blocks same-direction swaps in subsequent iterations.
 func (s AdvSwapQueueSuite) TestRapidSwapSettledSwapDirectionBlocksSameDir(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH
@@ -6282,6 +6297,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapDirectionResetsAcrossBlocks(c *C) {
 // actually execute.
 func (s AdvSwapQueueSuite) TestRapidSwapDirectionSkipDoesNotBuildTodo(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH
@@ -6399,6 +6415,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapDirectionSkipDoesNotBuildTodo(c *C) {
 // iteration based on remaining deposit.
 func (s AdvSwapQueueSuite) TestRapidSwapNextSizeProgressionAcrossIterations(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 100000 RUNE / 10000 ETH (deep pool to minimize price impact)
@@ -6584,6 +6601,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapNegativeMaxFallsBackToDefault(c *C) {
 // proving they never reached the telemetry or execution code paths.
 func (s AdvSwapQueueSuite) TestRapidSwapTelemetryExcludesDirectionSkips(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool
@@ -6780,6 +6798,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapCacheContextRollbackOnFailure(c *C) {
 // the cacheCtx IS committed, so pool balances change, and State.In/Out > 0.
 func (s AdvSwapQueueSuite) TestRapidSwapCacheContextCommitOnSuccess(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool with ample liquidity
@@ -6861,6 +6880,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapCacheContextCommitOnSuccess(c *C) {
 //     so the iter-1+ skip guard would NOT trigger for a failing limit swap.
 func (s AdvSwapQueueSuite) TestRapidSwapFailedLimitSwapCountsOnAllIterations(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool (for the failing swap)
@@ -6986,6 +7006,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapFailedLimitSwapCountsOnAllIterations(c *
 // iterations. This proves the double swap correctly tracks both legs.
 func (s AdvSwapQueueSuite) TestRapidSwapDirectionTrackingDoubleSwapEndToEnd(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool: 10000 RUNE / 1000 ETH
@@ -7168,6 +7189,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapSimulationModeSkips(c *C) {
 // amount would shrink each execution.
 func (s AdvSwapQueueSuite) TestRapidSwapOriginalAmountRestoredBeforeSave(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool with deep liquidity
@@ -7234,6 +7256,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapOriginalAmountRestoredBeforeSave(c *C) {
 // State.LastHeight are unconditionally updated on BOTH success and failure paths.
 func (s AdvSwapQueueSuite) TestRapidSwapStateCountIncrementOnBothPaths(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool
@@ -7326,6 +7349,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapStateCountIncrementOnBothPaths(c *C) {
 // was blocked in the second iteration because the direction flipped.
 func (s AdvSwapQueueSuite) TestRapidSwapDirectionReversalWithinBlock(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool with deep liquidity
@@ -7407,6 +7431,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapDirectionReversalWithinBlock(c *C) {
 func (s AdvSwapQueueSuite) TestRapidSwapSettleMidLoopNotReprocessed(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool
@@ -7494,6 +7519,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapSettleMidLoopNotReprocessed(c *C) {
 // budget based on the current queue length.
 func (s AdvSwapQueueSuite) TestRapidSwapGetTodoNumFreshBudgetPerIteration(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
 	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup ETH pool with deep liquidity

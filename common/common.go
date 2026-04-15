@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/blang/semver"
 )
@@ -15,9 +16,105 @@ func (o *ObservedTx) IsValid() bool {
 	return o != nil
 }
 
-// GetSignablePayload returns the data that is signed for verification
+// GetSignablePayload returns the data that is signed for verification.
+// XMR outbound metadata is appended so all attestors commit to the same
+// tx keys, and final inbound observations commit to the same key-image
+// proof set.
 func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
-	return o.Tx.Marshal()
+	txBz, err := o.Tx.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	if len(o.TxKeys) == 0 && len(o.XmrKeyImages) == 0 {
+		return txBz, nil
+	}
+	buf := make([]byte, 0, len(txBz)+len(o.XmrKeyImages)*128)
+	buf = append(buf, txBz...)
+	for _, txKey := range o.TxKeys {
+		buf = append(buf, []byte(txKey)...)
+	}
+	for _, proof := range sortedXMRKeyImageProofs(o.XmrKeyImages) {
+		proofBz, marshalErr := proof.Marshal()
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		buf = append(buf, proofBz...)
+	}
+	return buf, nil
+}
+
+func sortedXMRKeyImageProofs(proofs []*XmrKeyImageProof) []*XmrKeyImageProof {
+	if len(proofs) == 0 {
+		return nil
+	}
+	out := make([]*XmrKeyImageProof, 0, len(proofs))
+	for _, proof := range proofs {
+		if proof == nil {
+			continue
+		}
+		cp := *proof
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TxHash != out[j].TxHash {
+			return out[i].TxHash < out[j].TxHash
+		}
+		if out[i].OutputIndex != out[j].OutputIndex {
+			return out[i].OutputIndex < out[j].OutputIndex
+		}
+		if out[i].KeyImage != out[j].KeyImage {
+			return out[i].KeyImage < out[j].KeyImage
+		}
+		if out[i].ProofC != out[j].ProofC {
+			return out[i].ProofC < out[j].ProofC
+		}
+		return out[i].ProofS < out[j].ProofS
+	})
+	return out
+}
+
+func OutputRefsEqual(left, right []*OutputRef) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] == nil || right[i] == nil {
+			return left[i] == right[i]
+		}
+		if left[i].TxHash != right[i].TxHash {
+			return false
+		}
+		if left[i].OutputIndex != right[i].OutputIndex {
+			return false
+		}
+	}
+	return true
+}
+
+func XmrKeyImageProofsEqual(left, right []*XmrKeyImageProof) bool {
+	left = sortedXMRKeyImageProofs(left)
+	right = sortedXMRKeyImageProofs(right)
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].TxHash != right[i].TxHash {
+			return false
+		}
+		if left[i].OutputIndex != right[i].OutputIndex {
+			return false
+		}
+		if left[i].KeyImage != right[i].KeyImage {
+			return false
+		}
+		if left[i].ProofC != right[i].ProofC {
+			return false
+		}
+		if left[i].ProofS != right[i].ProofS {
+			return false
+		}
+	}
+	return true
 }
 
 // Equals compares two Attestation and returns true iff they are equal
@@ -310,7 +407,7 @@ func (a *AttestTx) GetAttestation() *Attestation {
 }
 
 func (a *AttestTx) GetSignablePayload() ([]byte, error) {
-	return a.ObsTx.Tx.Marshal()
+	return a.ObsTx.GetSignablePayload()
 }
 
 // Implement AttestMessage for AttestNetworkFee

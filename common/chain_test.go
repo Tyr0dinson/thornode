@@ -29,6 +29,8 @@ func (s ChainSuite) TestChain(c *C) {
 
 	algo := ETHChain.GetSigningAlgo()
 	c.Assert(algo, Equals, SigningAlgoSecp256k1)
+	c.Assert(SOLChain.GetSigningAlgo(), Equals, SigningAlgoEd25519)
+	c.Assert(XMRChain.GetSigningAlgo(), Equals, SigningAlgoEd25519)
 
 	c.Assert(BTCChain.GetGasAsset(), Equals, BTCAsset)
 	c.Assert(ETHChain.GetGasAsset(), Equals, ETHAsset)
@@ -38,6 +40,7 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(GAIAChain.GetGasAsset(), Equals, ATOMAsset)
 	c.Assert(NOBLEChain.GetGasAsset(), Equals, USDCAsset)
 	c.Assert(TRONChain.GetGasAsset(), Equals, TRXAsset)
+	c.Assert(XMRChain.GetGasAsset(), Equals, XMRAsset)
 	c.Assert(EmptyChain.GetGasAsset(), Equals, EmptyAsset)
 
 	c.Assert(BTCChain.AddressPrefix(MockNet), Equals, chaincfg.RegressionNetParams.Bech32HRPSegwit)
@@ -51,6 +54,9 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(DOGEChain.AddressPrefix(MockNet), Equals, dogchaincfg.RegressionNetParams.Bech32HRPSegwit)
 	c.Assert(DOGEChain.AddressPrefix(MainNet), Equals, dogchaincfg.MainNetParams.Bech32HRPSegwit)
 	c.Assert(DOGEChain.AddressPrefix(StageNet), Equals, dogchaincfg.MainNetParams.Bech32HRPSegwit)
+	c.Assert(XMRChain.AddressPrefix(MockNet), Equals, "C")
+	c.Assert(XMRChain.AddressPrefix(MainNet), Equals, "C")
+	c.Assert(XMRChain.AddressPrefix(StageNet), Equals, "C")
 
 	// Noble chain tests
 	c.Assert(NOBLEChain.AddressPrefix(MockNet), Equals, "noble")
@@ -80,4 +86,10 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(tronGasUnits, Equals, "sun")
 	c.Assert(TRONChain.GetGasAssetDecimal(), Equals, int64(6))
 	c.Assert(TRONChain.ApproximateBlockMilliseconds(), Equals, int64(3000))
+
+	// XMR chain tests
+	xmrGasUnits, _ := XMRChain.GetGasUnits()
+	c.Assert(xmrGasUnits, Equals, "piconeroperweight")
+	c.Assert(XMRChain.GetGasAssetDecimal(), Equals, int64(12))
+	c.Assert(XMRChain.ApproximateBlockMilliseconds(), Equals, int64(120000))
 }

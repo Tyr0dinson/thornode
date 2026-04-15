@@ -55,3 +55,13 @@ func (k KVStore) SaveNetworkFee(ctx cosmos.Context, chain common.Chain, networkF
 func (k KVStore) GetNetworkFeeIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixNetworkFee)
 }
+
+func (k KVStore) GetNetworkFeeFloorBlock(ctx cosmos.Context, chain common.Chain) (int64, error) {
+	var record int64
+	_, err := k.getInt64(ctx, k.GetKey(prefixNetworkFeeFloor, chain.String()), &record)
+	return record, err
+}
+
+func (k KVStore) SetNetworkFeeFloorBlock(ctx cosmos.Context, chain common.Chain, height int64) {
+	k.setInt64(ctx, k.GetKey(prefixNetworkFeeFloor, chain.String()), height)
+}

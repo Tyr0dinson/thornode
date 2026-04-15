@@ -41,7 +41,7 @@ func (k Keeper) Schedules(ctx context.Context, req *types.QuerySchedulesRequest)
 
 		schedules, pageRes, err = k.listSchedulesBySender(sdkCtx, &req.Pagination, req.Sender)
 	} else {
-		schedules, pageRes, err = k.ListSchedules(sdkCtx, &req.Pagination)
+		schedules, pageRes, err = k.listSchedules(sdkCtx, &req.Pagination)
 	}
 
 	if err != nil {
@@ -54,7 +54,7 @@ func (k Keeper) Schedules(ctx context.Context, req *types.QuerySchedulesRequest)
 	}, nil
 }
 
-func (k Keeper) ListSchedules(
+func (k Keeper) listSchedules(
 	ctx sdk.Context,
 	pageReq *query.PageRequest,
 ) ([]*types.Schedule, *query.PageResponse, error) {

@@ -123,19 +123,14 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 		if ctx.BlockHeight()-nodeAcc.StatusSince < bondLockPeriod {
 			return fmt.Errorf("node can not unbond before %d", nodeAcc.StatusSince+bondLockPeriod)
 		}
-		vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+		migratingVaults, err := nodeHasMigratingVaults(ctx, h.mgr.Keeper(), nodeAcc.PubKeySet.Secp256k1)
 		if err != nil {
-			return ErrInternal(err, "fail to get retiring vault")
+			return ErrInternal(err, "fail to get vault migration state")
 		}
-		isMemberOfRetiringVault := false
-		for _, v := range vaults {
-			if v.GetMembership().Contains(nodeAcc.PubKeySet.Secp256k1) {
-				isMemberOfRetiringVault = true
-				ctx.Logger().Info("node account is still part of the retiring vault,can't return bond yet")
-				break
-			}
+		if migratingVaults {
+			return fmt.Errorf("fail to leave, vault migration still in flight")
 		}
-		if !isMemberOfRetiringVault {
+		if !migratingVaults {
 			// NOTE: there is an edge case, where the first node doesn't have a
 			// vault (it was destroyed when we successfully migrated funds from
 			// their address to a new TSS vault

@@ -67,7 +67,11 @@ func (h MigrateHandler) handle(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Resu
 		case common.SigningAlgoSecp256k1:
 			fromAddress, addrErr = tx.VaultPubKey.GetAddress(tx.Chain)
 		case common.SigningAlgoEd25519:
-			fromAddress, addrErr = tx.VaultPubKeyEddsa.GetAddress(tx.Chain)
+			key := tx.VaultPubKeyEddsa
+			if tx.Chain == common.XMRChain && !tx.VaultPubKeyFrost.IsEmpty() {
+				key = tx.VaultPubKeyFrost
+			}
+			fromAddress, addrErr = key.GetAddress(tx.Chain)
 		default:
 			ctx.Logger().Error("unknown signing algo", "signing_algo", tx.Chain.GetSigningAlgo())
 			continue
@@ -91,12 +95,15 @@ func (h MigrateHandler) handle(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Resu
 				if intendToSpend.Equal(actualSpend) {
 					maxGasAmt := tx.MaxGas.ToCoins().GetCoin(asset).Amount
 					realGasAmt := migTx.Gas.ToCoins().GetCoin(asset).Amount
+					matchCoin = true
 					if maxGasAmt.GTE(realGasAmt) {
 						ctx.Logger().Info("override match coin", "intend to spend", intendToSpend, "actual spend", actualSpend)
-						matchCoin = true
+					} else {
+						ctx.Logger().Info("override match coin for migration despite gas overrun", "intend to spend", intendToSpend, "actual spend", actualSpend, "max_gas", maxGasAmt, "actual_gas", realGasAmt)
 					}
-					// although here might detect there some some discrepancy between MaxGas , and actual gas
-					// but migrate is internal tx , asset didn't leave the network , thus doesn't need to update pool
+					// Migration is an internal vault-to-vault movement. If the signer reduces the
+					// migrated amount to keep total spend equal to the queued amount, accept the
+					// match even when the realized gas is slightly higher than MaxGas.
 				}
 			}
 			if !matchCoin {

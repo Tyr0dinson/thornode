@@ -736,6 +736,137 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_EnsureFundsAreCreditedT
 	c.Assert(ltcCoin.Equals(common.NewCoin(common.LTCAsset, cosmos.NewUint(102400000))), Equals, true)
 }
 
+func (*HandlerErrataTxSuite) TestErrataRemovesXMRVaultKeyImages(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewErrataTxHandler(mgr)
+
+	nodes := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	for _, node := range nodes {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, node), IsNil)
+	}
+
+	vaultPubKey := GetRandomPubKey()
+	txID := GetRandomTxHash()
+
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
+		common.XMRChain.String(),
+	}, []ChainContract{})
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(5*common.One)),
+	})
+	vault.KeyImagesXmr = []*common.XmrKeyImageRef{
+		{TxHash: txID.String(), OutputIndex: 0, KeyImage: "ki-0"},
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:          txID,
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+			},
+		},
+		BlockHeight:    1024,
+		FinaliseHeight: 1024,
+		ObservedPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txID.String(), OutputIndex: 0, KeyImage: "ki-0", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+	voter := ObservedTxVoter{
+		TxID:            txID,
+		Tx:              observedTx,
+		Txs:             common.ObservedTxs{observedTx},
+		Height:          observedTx.BlockHeight,
+		FinalisedHeight: observedTx.BlockHeight,
+		UpdatedVault:    true,
+	}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	msg := NewMsgErrataTx(txID, common.XMRChain, nodes[0].NodeAddress)
+	for _, node := range nodes {
+		msg.Signer = node.NodeAddress
+		_, err := handler.handle(ctx, *msg)
+		c.Assert(err, IsNil)
+	}
+
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.KeyImagesXmr, HasLen, 0)
+	c.Assert(vault.GetCoin(common.XMRAsset).Amount.Equal(cosmos.NewUint(4*common.One)), Equals, true)
+}
+
+func (*HandlerErrataTxSuite) TestProcessErrataOutboundTxRemovesXMRVaultTxKeys(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	nodes := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	for _, node := range nodes {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, node), IsNil)
+	}
+
+	vaultPubKey := GetRandomPubKey()
+	txID := GetRandomTxHash()
+	inHash := GetRandomTxHash()
+
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
+		common.XMRChain.String(),
+	}, []ChainContract{})
+	vault.TxKeysXmr = []*common.XmrTxKeyRef{
+		{TxHash: txID.String(), TxKeys: []string{"key-a", "key-b"}},
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          txID,
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+			},
+			Gas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
+			},
+			Memo: "OUT:" + inHash.String(),
+		},
+		BlockHeight:    1024,
+		FinaliseHeight: 1024,
+		ObservedPubKey: vaultPubKey,
+		TxKeys:         []string{"key-a", "key-b"},
+	}
+	txOutVoter := ObservedTxVoter{
+		TxID:            txID,
+		Tx:              observedTx,
+		Txs:             common.ObservedTxs{observedTx},
+		Height:          observedTx.BlockHeight,
+		FinalisedHeight: observedTx.BlockHeight,
+	}
+	mgr.Keeper().SetObservedTxOutVoter(ctx, txOutVoter)
+
+	err := processErrataOutboundTx(ctx, mgr.Keeper(), mgr.EventMgr(), &common.ErrataTx{
+		Id:    txID,
+		Chain: common.XMRChain,
+	})
+	c.Assert(err, IsNil)
+
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.TxKeysXmr, HasLen, 0)
+	c.Assert(vault.GetCoin(common.XMRAsset).Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+}
+
 func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	height := int64(1024)

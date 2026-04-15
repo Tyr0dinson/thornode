@@ -3,6 +3,7 @@ package observer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -493,14 +494,8 @@ func TestRefactoredHandlersIntegration(t *testing.T) {
 		defer ag.mu.Unlock()
 
 		// Check observed tx state
-		k := txKey{
-			Chain:                  tx.Tx.Chain,
-			ID:                     tx.Tx.ID,
-			UniqueHash:             tx.Tx.Hash(0),
-			AllowFutureObservation: false,
-			Finalized:              tx.IsFinal(),
-			Inbound:                true,
-		}
+		k, err := observedTxKey(tx, false, true)
+		require.NoError(t, err)
 		txState, exists := ag.observedTxs[k]
 		assert.True(t, exists, "TX should exist in observed txs map")
 		if exists {
@@ -530,4 +525,448 @@ func TestRefactoredHandlersIntegration(t *testing.T) {
 			assert.Equal(t, 3, errataState.AttestationCount(), "Should have 3 errata attestations")
 		}
 	})
+}
+
+// TestXMRNonSignerCoAttestation verifies that a non-signing node automatically
+// co-attests to XMR outbound observations it receives from signing peers.
+// In a 2-of-3 threshold setup the two signers create attestations during
+// signing; the non-signer learns the observation via gossip and must add its
+// own vote so quorum can be reached.
+func TestXMRNonSignerCoAttestation(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error { return nil })
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "xmr-outbound-tx-1",
+			Chain: common.XMRChain,
+			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys: []string{strings.Repeat("1", 64)},
+	}
+
+	// Simulate a signing peer sending its attestation to the non-signer.
+	signerKey := secp256k1.GenPrivKey()
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	signerSig, err := signerKey.Sign(signBz)
+	require.NoError(t, err)
+
+	peerAttestation := common.AttestTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: signerSig,
+		},
+	}
+
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+
+	// Give the async co-attestation goroutine time to run.
+	time.Sleep(200 * time.Millisecond)
+
+	k, err := observedTxKey(obsTx, false, false)
+	require.NoError(t, err)
+
+	ag.mu.Lock()
+	state, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+
+	require.True(t, exists, "attestation state should exist")
+
+	state.mu.Lock()
+	count := state.AttestationCount()
+	state.mu.Unlock()
+
+	assert.Equal(t, 2, count, "should have 2 attestations: signer + non-signer co-attestation")
+}
+
+// TestXMRCoAttestationSkipsNonXMR verifies that co-attestation only triggers
+// for XMR outbound transactions with tx keys.
+func TestXMRCoAttestationSkipsNonXMR(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error { return nil })
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
+	}
+
+	// BTC outbound — should NOT trigger co-attestation.
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "btc-outbound-tx-1",
+			Chain: common.BTCChain,
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100000))),
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+	}
+
+	signerKey := secp256k1.GenPrivKey()
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	signerSig, err := signerKey.Sign(signBz)
+	require.NoError(t, err)
+
+	peerAttestation := common.AttestTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: signerSig,
+		},
+	}
+
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+	time.Sleep(200 * time.Millisecond)
+
+	k, err := observedTxKey(obsTx, false, false)
+	require.NoError(t, err)
+
+	ag.mu.Lock()
+	state, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+
+	require.True(t, exists)
+
+	state.mu.Lock()
+	count := state.AttestationCount()
+	state.mu.Unlock()
+
+	assert.Equal(t, 1, count, "only the peer attestation — no co-attestation for non-XMR chains")
+}
+
+// TestXMRCoAttestationIdempotent verifies that receiving the same XMR outbound
+// attestation twice does not produce duplicate co-attestations.
+func TestXMRCoAttestationIdempotent(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error { return nil })
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "xmr-outbound-dedup",
+			Chain: common.XMRChain,
+			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys: []string{strings.Repeat("2", 64)},
+	}
+
+	signerKey := secp256k1.GenPrivKey()
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	signerSig, err := signerKey.Sign(signBz)
+	require.NoError(t, err)
+
+	peerAttestation := common.AttestTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: signerSig,
+		},
+	}
+
+	// Send the same attestation twice.
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+	time.Sleep(200 * time.Millisecond)
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+	time.Sleep(200 * time.Millisecond)
+
+	k, err := observedTxKey(obsTx, false, false)
+	require.NoError(t, err)
+
+	ag.mu.Lock()
+	state, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+
+	require.True(t, exists)
+
+	state.mu.Lock()
+	count := state.AttestationCount()
+	state.mu.Unlock()
+
+	assert.Equal(t, 2, count, "should still be 2: signer + one co-attestation, no duplicates")
+}
+
+func TestXMRNonSignerCoAttestationSkipsValidationFailure(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error { return fmt.Errorf("invalid outbound") })
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "xmr-outbound-invalid",
+			Chain: common.XMRChain,
+			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys: []string{strings.Repeat("3", 64)},
+	}
+
+	signerKey := secp256k1.GenPrivKey()
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	signerSig, err := signerKey.Sign(signBz)
+	require.NoError(t, err)
+
+	peerAttestation := common.AttestTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestation: &common.Attestation{
+			PubKey:    signerKey.PubKey().Bytes(),
+			Signature: signerSig,
+		},
+	}
+
+	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
+	time.Sleep(200 * time.Millisecond)
+
+	k, err := observedTxKey(obsTx, false, false)
+	require.NoError(t, err)
+
+	ag.mu.Lock()
+	state, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+
+	require.True(t, exists)
+
+	state.mu.Lock()
+	count := state.AttestationCount()
+	state.mu.Unlock()
+
+	assert.Equal(t, 1, count, "validation failure should prevent non-signer co-attestation")
+}
+
+func TestXMROutboundAttestationRequiresTxKeys(t *testing.T) {
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	t.Run("local attestation rejects outbound without tx keys", func(t *testing.T) {
+		ag, _, _, _, _, _ := setupTestGossip(t)
+		obsTx := &common.ObservedTx{
+			Tx:             common.Tx{ID: "xmr-outbound-local-no-keys", Chain: common.XMRChain},
+			ObservedPubKey: "thorpub1addwnpepqtest",
+		}
+
+		err := ag.AttestObservedTx(context.Background(), obsTx, false)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "requires tx keys")
+	})
+
+	t.Run("peer attestation is dropped when outbound tx keys are missing", func(t *testing.T) {
+		ag, _, _, _, _, _ := setupTestGossip(t)
+
+		obsTx := common.ObservedTx{
+			Tx:             common.Tx{ID: "xmr-outbound-peer-no-keys", Chain: common.XMRChain},
+			ObservedPubKey: "thorpub1addwnpepqtest",
+		}
+		signerKey := secp256k1.GenPrivKey()
+		signBz, err := obsTx.GetSignablePayload()
+		require.NoError(t, err)
+		signerSig, err := signerKey.Sign(signBz)
+		require.NoError(t, err)
+
+		ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+			ObsTx:   obsTx,
+			Inbound: false,
+			Attestation: &common.Attestation{
+				PubKey:    signerKey.PubKey().Bytes(),
+				Signature: signerSig,
+			},
+		})
+
+		k, err := observedTxKey(obsTx, false, false)
+		require.NoError(t, err)
+
+		ag.mu.Lock()
+		_, exists := ag.observedTxs[k]
+		ag.mu.Unlock()
+		assert.False(t, exists, "xmr outbound without tx keys should not enter attestation state")
+	})
+}
+
+func TestXMRFinalInboundAttestationRequiresKeyImages(t *testing.T) {
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	t.Run("local attestation rejects finalized inbound without key images", func(t *testing.T) {
+		ag, _, _, _, _, _ := setupTestGossip(t)
+		obsTx := &common.ObservedTx{
+			Tx: common.Tx{
+				ID:          "xmr-inbound-local-no-key-images",
+				Chain:       common.XMRChain,
+				FromAddress: common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+				ToAddress:   common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			},
+			BlockHeight:    100,
+			FinaliseHeight: 100,
+			ObservedPubKey: "thorpub1addwnpepqtest",
+		}
+
+		err := ag.AttestObservedTx(context.Background(), obsTx, true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "requires key images")
+	})
+
+	t.Run("peer attestation is dropped when finalized inbound key images are missing", func(t *testing.T) {
+		ag, _, _, _, _, _ := setupTestGossip(t)
+
+		obsTx := common.ObservedTx{
+			Tx: common.Tx{
+				ID:          "xmr-inbound-peer-no-key-images",
+				Chain:       common.XMRChain,
+				FromAddress: common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+				ToAddress:   common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			},
+			BlockHeight:    100,
+			FinaliseHeight: 100,
+			ObservedPubKey: "thorpub1addwnpepqtest",
+		}
+		signerKey := secp256k1.GenPrivKey()
+		signBz, err := obsTx.GetSignablePayload()
+		require.NoError(t, err)
+		signerSig, err := signerKey.Sign(signBz)
+		require.NoError(t, err)
+
+		ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+			ObsTx:   obsTx,
+			Inbound: true,
+			Attestation: &common.Attestation{
+				PubKey:    signerKey.PubKey().Bytes(),
+				Signature: signerSig,
+			},
+		})
+
+		k, err := observedTxKey(obsTx, false, true)
+		require.NoError(t, err)
+
+		ag.mu.Lock()
+		_, exists := ag.observedTxs[k]
+		ag.mu.Unlock()
+		assert.False(t, exists, "xmr finalized inbound without key images should not enter attestation state")
+	})
+}
+
+func TestXMROutboundTxKeysUseActiveValidatorQuorum(t *testing.T) {
+	ag, _, _, grpcClient, bridge, _ := setupTestGossip(t)
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	activePrivKeys := []*secp256k1.PrivKey{
+		secp256k1.GenPrivKey(),
+		secp256k1.GenPrivKey(),
+		secp256k1.GenPrivKey(),
+		secp256k1.GenPrivKey(),
+		secp256k1.GenPrivKey(),
+		secp256k1.GenPrivKey(),
+	}
+	activeVals := make(common.PubKeys, 0, len(activePrivKeys))
+	for _, privKey := range activePrivKeys {
+		bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey.PubKey())
+		require.NoError(t, err)
+		activeVals = append(activeVals, common.PubKey(bech32Pub))
+	}
+	ag.setActiveValidators(activeVals)
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+		return common.PubKeys{"signer-a", "signer-b", "signer-c"}, nil
+	}
+
+	var sent []*common.QuorumTx
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		sent = append(sent, quorumTx)
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "xmr-outbound-active-quorum",
+			Chain: common.XMRChain,
+		},
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys:         []string{strings.Repeat("4", 64)},
+	}
+
+	for i := 0; i < 3; i++ {
+		signBz, err := obsTx.GetSignablePayload()
+		require.NoError(t, err)
+		sig, err := activePrivKeys[i].Sign(signBz)
+		require.NoError(t, err)
+
+		ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+			ObsTx:                  obsTx,
+			Inbound:                false,
+			AllowFutureObservation: true,
+			Attestation: &common.Attestation{
+				PubKey:    activePrivKeys[i].PubKey().Bytes(),
+				Signature: sig,
+			},
+		})
+	}
+
+	require.Empty(t, sent, "three vault signers alone must not satisfy the active-validator quorum")
+
+	signBz, err := obsTx.GetSignablePayload()
+	require.NoError(t, err)
+	sig, err := activePrivKeys[3].Sign(signBz)
+	require.NoError(t, err)
+
+	ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+		ObsTx:                  obsTx,
+		Inbound:                false,
+		AllowFutureObservation: true,
+		Attestation: &common.Attestation{
+			PubKey:    activePrivKeys[3].PubKey().Bytes(),
+			Signature: sig,
+		},
+	})
+
+	require.Len(t, sent, 1, "active-validator quorum should be reached only after a fourth attestation")
 }

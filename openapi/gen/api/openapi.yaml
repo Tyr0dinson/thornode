@@ -3732,6 +3732,7 @@ components:
       type: object
     VaultInfo:
       example:
+        pub_key_frost: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         membership:
         - membership
         - membership
@@ -3749,6 +3750,9 @@ components:
         pub_key_eddsa:
           example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           type: string
+        pub_key_frost:
+          example: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
         routers:
           items:
             $ref: '#/components/schemas/VaultRouter'
@@ -3765,8 +3769,8 @@ components:
     StreamingSwap:
       example:
         failed_swaps:
-        - 2
-        - 2
+        - 5
+        - 5
         quantity: 6
         in: "100"
         trade_target: "100"
@@ -3779,7 +3783,6 @@ components:
         last_height: 5
         out: "100"
         target_asset: ETH.ETH
-        initial_height: 5
         deposit: "100"
         interval: 0
         source_asset: BTC.BTC
@@ -3802,10 +3805,6 @@ components:
           type: integer
         last_height:
           description: the block height of the latest swap
-          format: int64
-          type: integer
-        initial_height:
-          description: the block height when the swap first entered the queue
           format: int64
           type: integer
         trade_target:
@@ -5772,7 +5771,8 @@ components:
     VaultPubkeysResponse:
       example:
         yggdrasil:
-        - membership:
+        - pub_key_frost: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          membership:
           - membership
           - membership
           routers:
@@ -5782,7 +5782,8 @@ components:
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
-        - membership:
+        - pub_key_frost: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          membership:
           - membership
           - membership
           routers:
@@ -5793,7 +5794,8 @@ components:
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         inactive:
-        - membership:
+        - pub_key_frost: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          membership:
           - membership
           - membership
           routers:
@@ -5803,7 +5805,8 @@ components:
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
-        - membership:
+        - pub_key_frost: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          membership:
           - membership
           - membership
           routers:
@@ -5814,7 +5817,8 @@ components:
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         asgard:
-        - membership:
+        - pub_key_frost: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          membership:
           - membership
           - membership
           routers:
@@ -5824,7 +5828,8 @@ components:
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
-        - membership:
+        - pub_key_frost: thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          membership:
           - membership
           - membership
           routers:

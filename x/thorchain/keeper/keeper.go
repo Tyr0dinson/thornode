@@ -205,6 +205,7 @@ type KeeperObservedTx interface {
 	SetObservedTxOutVoter(ctx cosmos.Context, tx ObservedTxVoter)
 	GetObservedTxOutVoterIterator(ctx cosmos.Context) cosmos.Iterator
 	GetObservedTxOutVoter(ctx cosmos.Context, hash common.TxID) (ObservedTxVoter, error)
+	GetInFlightMigrateIterator(ctx cosmos.Context) cosmos.Iterator
 	SetObservedLink(ctx cosmos.Context, _, _ common.TxID)
 	GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
 }
@@ -406,6 +407,8 @@ type KeeperNetworkFee interface {
 	GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error)
 	SaveNetworkFee(ctx cosmos.Context, chain common.Chain, networkFee NetworkFee) error
 	GetNetworkFeeIterator(ctx cosmos.Context) cosmos.Iterator
+	GetNetworkFeeFloorBlock(ctx cosmos.Context, chain common.Chain) (int64, error)
+	SetNetworkFeeFloorBlock(ctx cosmos.Context, chain common.Chain, height int64)
 }
 
 type KeeperObservedNetworkFeeVoter interface {
