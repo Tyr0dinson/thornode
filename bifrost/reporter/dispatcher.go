@@ -99,7 +99,10 @@ func (d *dispatcher) start() {
 		d.wg.Add(1)
 		go d.processChainQueue(chain, taskQueue)
 	}
-	d.wg.Add(2)
+	// Account for all goroutines synchronously before launching them. The runner
+	// creates one ticker goroutine per chain, so include those here rather than
+	// calling Add from inside the runner goroutine.
+	d.wg.Add(2 + len(d.chains))
 	go d.runner(
 		// Get chain-specific timing
 		func(chain common.Chain) time.Duration {

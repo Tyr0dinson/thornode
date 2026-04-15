@@ -31,8 +31,6 @@ func (d *dispatcher) runner(getBackoffForChain func(chain common.Chain) time.Dur
 		}
 		// Launch a goroutine for each chain ticker.
 		ticker := time.NewTicker(interval)
-		// Track each per-chain ticker separately so dispatcher shutdown waits for them too.
-		d.wg.Add(1)
 		go func(ch common.Chain, ticker *time.Ticker) {
 			defer d.wg.Done()
 			defer ticker.Stop()
