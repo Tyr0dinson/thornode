@@ -553,7 +553,7 @@ func TestXMRNonSignerCoAttestation(t *testing.T) {
 			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
 		},
 		ObservedPubKey: "thorpub1addwnpepqtest",
-		TxKeys: []string{strings.Repeat("1", 64)},
+		TxKeys:         []string{strings.Repeat("1", 64)},
 	}
 
 	// Simulate a signing peer sending its attestation to the non-signer.
@@ -676,7 +676,7 @@ func TestXMRCoAttestationIdempotent(t *testing.T) {
 			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
 		},
 		ObservedPubKey: "thorpub1addwnpepqtest",
-		TxKeys: []string{strings.Repeat("2", 64)},
+		TxKeys:         []string{strings.Repeat("2", 64)},
 	}
 
 	signerKey := secp256k1.GenPrivKey()
@@ -737,7 +737,7 @@ func TestXMRNonSignerCoAttestationSkipsValidationFailure(t *testing.T) {
 			Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000))),
 		},
 		ObservedPubKey: "thorpub1addwnpepqtest",
-		TxKeys: []string{strings.Repeat("3", 64)},
+		TxKeys:         []string{strings.Repeat("3", 64)},
 	}
 
 	signerKey := secp256k1.GenPrivKey()
@@ -888,6 +888,128 @@ func TestXMRFinalInboundAttestationRequiresKeyImages(t *testing.T) {
 		ag.mu.Unlock()
 		assert.False(t, exists, "xmr finalized inbound without key images should not enter attestation state")
 	})
+}
+
+func TestAttestObservedTxGatesFinalXMROutboundOnValidatedMetadata(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+		return fmt.Errorf("missing key images")
+	})
+
+	obsTx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:          common.TxID(stringsRepeat("9", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("external"))),
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 100,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys:         []string{strings.Repeat("9", 64)},
+	}
+
+	err := ag.AttestObservedTx(context.Background(), obsTx, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not ready")
+
+	k, keyErr := observedTxKey(*obsTx, false, false)
+	require.NoError(t, keyErr)
+
+	ag.mu.Lock()
+	_, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+	assert.False(t, exists, "finalized xmr outbound should not enter attestation state until metadata is ready")
+}
+
+func TestSendObservedTxAttestationsToThornodeGatesFinalXMROutboundOnValidatedMetadata(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+		return fmt.Errorf("missing key images")
+	})
+
+	obsTx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:          common.TxID(stringsRepeat("a", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("external"))),
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 100,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys:         []string{strings.Repeat("a", 64)},
+	}
+
+	state := ag.observedTxsPool.NewAttestationState(obsTx)
+	state.attestations = []attestationSentState{
+		{
+			attestation: &common.Attestation{
+				PubKey:    []byte("pubkey1"),
+				Signature: []byte("sig1"),
+			},
+		},
+	}
+
+	called := false
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		called = true
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	ag.sendObservedTxAttestationsToThornode(context.Background(), *obsTx, state, false, false, true)
+
+	assert.False(t, called, "finalized xmr outbound should not be sent before validator accepts propagated metadata")
+	for _, att := range state.attestations {
+		assert.False(t, att.sent)
+	}
+}
+
+func TestSendObservedTxAttestationsToThornodeAllowsFinalXMROutboundWhenValidatedMetadataReady(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+
+	var validateCalls int
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+		validateCalls++
+		return nil
+	})
+
+	obsTx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:          common.TxID(stringsRepeat("b", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("external"))),
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 100,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys:         []string{strings.Repeat("b", 64)},
+	}
+
+	state := ag.observedTxsPool.NewAttestationState(obsTx)
+	state.attestations = []attestationSentState{
+		{
+			attestation: &common.Attestation{
+				PubKey:    []byte("pubkey1"),
+				Signature: []byte("sig1"),
+			},
+		},
+	}
+
+	called := false
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		called = true
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	ag.sendObservedTxAttestationsToThornode(context.Background(), *obsTx, state, false, false, true)
+
+	assert.True(t, called)
+	assert.Equal(t, 1, validateCalls)
+	for _, att := range state.attestations {
+		assert.True(t, att.sent)
+	}
 }
 
 func TestXMROutboundTxKeysUseActiveValidatorQuorum(t *testing.T) {

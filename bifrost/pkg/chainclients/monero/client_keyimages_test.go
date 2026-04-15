@@ -579,11 +579,20 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *test
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	txHash := strings.Repeat("g", 64)
 	destination := common.XMRSeededDummyAddress('8', []byte("external-destination"))
+	var applyReqs []xmrFrostApplyKeyImagesRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
-			Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100}},
-		})
+		switch r.URL.Path {
+		case "/v1/monero/outputs/apply-key-images":
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			applyReqs = append(applyReqs, req)
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		default:
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100}},
+			})
+		}
 	}))
 	defer server.Close()
 
@@ -634,6 +643,12 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *test
 	defer tssServer.mu.Unlock()
 	require.Len(t, tssServer.reqs, 1)
 	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
+	require.Len(t, applyReqs, 1)
+	require.Len(t, applyReqs[0].KeyImages, 1)
+	assert.Equal(t, txHash, applyReqs[0].KeyImages[0].TxHash)
+	assert.Equal(t, uint32(0), applyReqs[0].KeyImages[0].OutputIndex)
+	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", applyReqs[0].KeyImages[0].KeyImage)
+	assert.False(t, applyReqs[0].Reconcile)
 }
 
 func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testing.T) {
@@ -1033,6 +1048,54 @@ func TestValidateOutboundObservationRequiresKeyImagesForFinalOutboundChange(t *t
 	assert.Contains(t, err.Error(), "missing key images")
 }
 
+func TestValidateOutboundObservationDefersFinalOutboundUntilTrackedChangeMaterializes(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("l", 64)
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("external-destination")))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 1})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.NewTx(
+			common.TxID(txHash),
+			vaultAddr,
+			destination,
+			common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			"OUT:LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+		),
+		BlockHeight:    110,
+		FinaliseHeight: 110,
+		ObservedPubKey: vaultPubKey,
+		TxKeys:         []string{strings.Repeat("1", 64)},
+	}
+
+	err = c.ValidateOutboundObservation(obsTx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "still waiting for tracked vault-owned outputs/key images")
+}
+
 func TestValidateOutboundObservationAllowsFinalOutboundWithoutChange(t *testing.T) {
 	t.Parallel()
 
@@ -1043,7 +1106,7 @@ func TestValidateOutboundObservationAllowsFinalOutboundWithoutChange(t *testing.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v1/monero/outbounds/validate":
-			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 1})
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: false, Marked: 1})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
 			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
 		default:

@@ -47,6 +47,19 @@ func requireXMRAttestationMetadata(obsTx common.ObservedTx, inbound bool) error 
 	return requireXMRFinalInboundKeyImages(obsTx, inbound)
 }
 
+func (s *AttestationGossip) requireXMRFinalOutboundPropagation(obsTx common.ObservedTx, inbound bool) error {
+	if inbound || !obsTx.Tx.Chain.Equals(common.XMRChain) || !obsTx.IsFinal() {
+		return nil
+	}
+	if s.observerValidateXMRTx == nil {
+		return nil
+	}
+	if err := s.observerValidateXMRTx(obsTx); err != nil {
+		return fmt.Errorf("xmr finalized outbound attestation is not ready for %s: %w", obsTx.Tx.ID, err)
+	}
+	return nil
+}
+
 func useActiveValidatorQuorumForObservedTx(obsTx common.ObservedTx, inbound bool) bool {
 	return !inbound && obsTx.Tx.Chain.Equals(common.XMRChain) && len(obsTx.TxKeys) > 0
 }
@@ -267,6 +280,13 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 			Err(err).
 			Str("tx_id", tx.Tx.ID.String()).
 			Msg("refusing to send xmr quorum tx without required metadata")
+		return
+	}
+	if err := s.requireXMRFinalOutboundPropagation(tx, inbound); err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("tx_id", tx.Tx.ID.String()).
+			Msg("refusing to send finalized xmr outbound before tx metadata is fully propagated")
 		return
 	}
 	unsent := state.UnsentAttestations()

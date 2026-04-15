@@ -2963,7 +2963,7 @@ pub async fn validate_outbound(
         );
     }
 
-    if let Err(e) = validation::validate_outbound_transaction(
+    let validated = match validation::validate_outbound_transaction(
         &tx_hex,
         &req.tx_keys,
         &to_address,
@@ -2971,22 +2971,25 @@ pub async fn validate_outbound(
         Some(req.fee),
         &owned_addresses,
     ) {
-        warn!(
-            error = %e,
-            vault = vault_pub_key,
-            tx_hash,
-            to_address,
-            amount = req.amount,
-            fee = req.fee,
-            "outbound tx-key validation failed"
-        );
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json(format!(
-                "failed to validate outbound transaction: {e}"
-            ))),
-        );
-    }
+        Ok(validated) => validated,
+        Err(e) => {
+            warn!(
+                error = %e,
+                vault = vault_pub_key,
+                tx_hash,
+                to_address,
+                amount = req.amount,
+                fee = req.fee,
+                "outbound tx-key validation failed"
+            );
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json(format!(
+                    "failed to validate outbound transaction: {e}"
+                ))),
+            );
+        }
+    };
 
     let existing = match state.store.load_outgoing_transfer(&vault_pub_key, &tx_hash) {
         Ok(record) => record,
@@ -3054,7 +3057,7 @@ pub async fn validate_outbound(
             StatusCode::OK,
             Json(
                 serde_json::to_value(crate::api::types::ValidateOutboundResponse {
-                    tracked: true,
+                    tracked: validated.tracked_owned_output,
                     marked: 0,
                     not_found: 0,
                 })
@@ -3162,6 +3165,7 @@ pub async fn validate_outbound(
     info!(
         vault = vault_pub_key,
         tx_hash,
+        tracked = validated.tracked_owned_output,
         marked,
         reconcile = req.reconcile,
         "validated outbound via tx keys and reconciled local spend state"
@@ -3171,7 +3175,7 @@ pub async fn validate_outbound(
         StatusCode::OK,
         Json(
             serde_json::to_value(crate::api::types::ValidateOutboundResponse {
-                tracked: true,
+                tracked: validated.tracked_owned_output,
                 marked,
                 not_found,
             })

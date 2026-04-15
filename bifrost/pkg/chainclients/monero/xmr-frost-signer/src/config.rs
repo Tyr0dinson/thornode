@@ -77,8 +77,8 @@ impl Config {
         }
 
         let daemon_disable_tls = read_env_bool("XMR_FROST_DAEMON_DISABLE_TLS", false)?;
-        let daemon_url_raw =
-            std::env::var(XMR_DAEMON_URL_ENV).map_err(|_| ConfigError::Missing(XMR_DAEMON_URL_ENV))?;
+        let daemon_url_raw = std::env::var(XMR_DAEMON_URL_ENV)
+            .map_err(|_| ConfigError::Missing(XMR_DAEMON_URL_ENV))?;
         if daemon_url_raw.trim().is_empty() {
             return Err(ConfigError::Missing(XMR_DAEMON_URL_ENV));
         }

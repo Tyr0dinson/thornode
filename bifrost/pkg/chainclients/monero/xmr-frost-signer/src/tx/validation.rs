@@ -16,6 +16,11 @@ struct OutputDerivations {
     shared_key: Scalar,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ValidatedOutboundTransaction {
+    pub tracked_owned_output: bool,
+}
+
 pub fn validate_outbound_transaction(
     tx_hex: &str,
     tx_keys: &[String],
@@ -23,7 +28,7 @@ pub fn validate_outbound_transaction(
     expected_amount: u64,
     expected_fee: Option<u64>,
     owned_addresses: &[String],
-) -> Result<()> {
+) -> Result<ValidatedOutboundTransaction> {
     if tx_keys.is_empty() {
         anyhow::bail!("tx_keys must not be empty");
     }
@@ -148,10 +153,9 @@ pub fn validate_outbound_transaction(
             "no transaction output matched the provided tx key(s), destination, and amount"
         );
     }
-    if !matched_owned {
-        anyhow::bail!("no transaction output matched a registered vault address");
-    }
-    Ok(())
+    Ok(ValidatedOutboundTransaction {
+        tracked_owned_output: matched_owned,
+    })
 }
 
 fn parse_pruned_transaction(tx_hex: &str) -> Result<Transaction<Pruned>> {
@@ -436,7 +440,7 @@ mod tests {
             ],
         );
 
-        validate_outbound_transaction(
+        let validated = validate_outbound_transaction(
             &tx_hex,
             &[scalar_hex(7)],
             &recipient.to_string(),
@@ -445,6 +449,7 @@ mod tests {
             &[change.to_string()],
         )
         .expect("standard outbound validation should succeed");
+        assert!(validated.tracked_owned_output);
     }
 
     #[test]
@@ -480,7 +485,7 @@ mod tests {
             ],
         );
 
-        validate_outbound_transaction(
+        let validated = validate_outbound_transaction(
             &tx_hex,
             &[scalar_hex(5), scalar_hex(6), scalar_hex(7)],
             &recipient.to_string(),
@@ -489,10 +494,11 @@ mod tests {
             &[change.to_string()],
         )
         .expect("subaddress outbound validation should succeed");
+        assert!(validated.tracked_owned_output);
     }
 
     #[test]
-    fn validate_outbound_requires_owned_vault_output() {
+    fn validate_outbound_without_owned_vault_output_is_still_valid_but_untracked() {
         let recipient = MoneroAddress::new(
             Network::Mainnet,
             AddressType::Legacy,
@@ -522,7 +528,7 @@ mod tests {
             ],
         );
 
-        let err = validate_outbound_transaction(
+        let validated = validate_outbound_transaction(
             &tx_hex,
             &[scalar_hex(7)],
             &recipient.to_string(),
@@ -530,9 +536,7 @@ mod tests {
             Some(fee),
             &[claimed_owned.to_string()],
         )
-        .expect_err("validation should reject tx without a vault-owned output");
-        assert!(err
-            .to_string()
-            .contains("no transaction output matched a registered vault address"));
+        .expect("validation should succeed even without a vault-owned output");
+        assert!(!validated.tracked_owned_output);
     }
 }

@@ -774,6 +774,9 @@ func handleObservedTxOutQuorum(
 		if vault.IsAsgard() && tx.IsFinal() && tx.Tx.Chain.Equals(common.XMRChain) && len(tx.TxKeys) > 0 {
 			appendVaultXMRTxKeys(&vault, tx.Tx.ID.String(), tx.TxKeys)
 		}
+		if vault.IsAsgard() && tx.IsFinal() && tx.Tx.Chain.Equals(common.XMRChain) && len(tx.XmrKeyImages) > 0 {
+			appendVaultXMRKeyImages(&vault, tx.XmrKeyImages)
+		}
 
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
 			// only remove the block height that had been specified in the memo

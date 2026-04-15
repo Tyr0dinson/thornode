@@ -2470,7 +2470,7 @@ func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
 		}
 	}
 
-	_, err = c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
+	validateResp, err := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
 		VaultPubKey: tx.ObservedPubKey.String(),
 		TxHash:      tx.Tx.ID.String(),
 		TxKeys:      append([]string(nil), tx.TxKeys...),
@@ -2484,7 +2484,7 @@ func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
 	if err != nil {
 		return fmt.Errorf("fail to validate xmr outbound via sidecar: %w", err)
 	}
-	return c.validateObservedTxKeyImages(tx, false)
+	return c.validateObservedTxKeyImages(tx, false, validateResp.Tracked)
 }
 
 func (c *Client) ExportFrostKeyshare(groupKey common.PubKey) ([]byte, error) {
@@ -2627,7 +2627,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 }
 
 func (c *Client) ValidateObservedTxIn(tx common.ObservedTx) error {
-	return c.validateObservedTxKeyImages(tx, true)
+	return c.validateObservedTxKeyImages(tx, true, false)
 }
 
 func (c *Client) postKeysignFailure(tx stypes.TxOutItem, height int64, signErr error) error {
@@ -3163,6 +3163,32 @@ func (c *Client) generateObservedTxKeyImages(
 		Str("tx_hash", txHash).
 		Int("proof_count", len(proofs)).
 		Msg("completed XMR key-image generation batch")
+	applyRefs := make([]xmrFrostApplyKeyImageRef, 0, len(proofs))
+	for _, proof := range proofs {
+		if proof == nil {
+			continue
+		}
+		applyRefs = append(applyRefs, xmrFrostApplyKeyImageRef{
+			TxHash:      proof.TxHash,
+			OutputIndex: proof.OutputIndex,
+			KeyImage:    proof.KeyImage,
+		})
+	}
+	if len(applyRefs) > 0 {
+		result, err := c.frostSigner.ApplyKeyImages(vaultPubKey.String(), applyRefs, false)
+		if err != nil {
+			return nil, fmt.Errorf("fail to apply locally generated XMR key-images: %w", err)
+		}
+		if result.NotFound > 0 {
+			return nil, fmt.Errorf("locally generated XMR key-images missing %d outputs", result.NotFound)
+		}
+		c.logger.Info().
+			Str("vault_pub_key", vaultPubKey.String()).
+			Str("tx_hash", txHash).
+			Int("applied", result.Applied).
+			Int("not_found", result.NotFound).
+			Msg("applied locally generated XMR key-images")
+	}
 	return canonicalXMRKeyImageProofs(proofs), nil
 }
 
@@ -3296,7 +3322,7 @@ func (c *Client) isObservedTxOutboundFromVault(tx common.ObservedTx) bool {
 	return strings.EqualFold(strings.TrimSpace(tx.Tx.FromAddress.String()), vaultAddr.String())
 }
 
-func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound bool) error {
+func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trackedOutboundChange bool) error {
 	if c.frostSigner == nil || !tx.Tx.Chain.Equals(common.XMRChain) || !tx.IsFinal() {
 		return nil
 	}
@@ -3332,6 +3358,9 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound bool)
 		return err
 	}
 	if len(outputs) == 0 {
+		if !inbound && trackedOutboundChange {
+			return fmt.Errorf("xmr finalized outbound is still waiting for tracked vault-owned outputs/key images for %s", tx.Tx.ID)
+		}
 		if len(tx.XmrKeyImages) == 0 {
 			return nil
 		}
