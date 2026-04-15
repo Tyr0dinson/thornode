@@ -284,10 +284,7 @@ mod tests {
             do_request(app.clone(), None).await,
             StatusCode::UNAUTHORIZED
         );
-        assert_eq!(
-            do_request(app, Some("Bearer secret-token")).await,
-            StatusCode::OK
-        );
+        assert_eq!(do_request(app, Some("secret-token")).await, StatusCode::OK);
     }
 
     #[test]

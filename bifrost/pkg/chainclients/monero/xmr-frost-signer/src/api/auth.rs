@@ -33,7 +33,19 @@ impl AuthConfig {
     }
 }
 
-/// Axum middleware that checks Basic auth or Bearer token.
+fn bearer_token_matches(header_value: &str, bearer: &str) -> bool {
+    if constant_time_str_eq(header_value.trim(), bearer) {
+        return true;
+    }
+
+    if let Some(token) = header_value.strip_prefix("Bearer ") {
+        return constant_time_str_eq(token.trim(), bearer);
+    }
+
+    false
+}
+
+/// Axum middleware that checks Basic auth or a raw token in Authorization.
 pub async fn auth_middleware(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     auth: Option<Extension<AuthConfig>>,
@@ -59,11 +71,8 @@ pub async fn auth_middleware(
     match auth_header {
         Some(header_value) => {
             if let Some(bearer) = &auth_config.bearer {
-                if header_value.starts_with("Bearer ") {
-                    let token = &header_value[7..];
-                    if constant_time_str_eq(token, bearer) {
-                        return Ok(next.run(request).await);
-                    }
+                if bearer_token_matches(header_value, bearer) {
+                    return Ok(next.run(request).await);
                 }
             }
 
@@ -149,6 +158,31 @@ mod tests {
 
     #[tokio::test]
     async fn bearer_auth_allows_request() {
+        let app = Router::new()
+            .route("/secure", get(|| async { StatusCode::OK }))
+            .layer(from_fn(auth_middleware))
+            .layer(Extension(AuthConfig {
+                username: None,
+                password: None,
+                bearer: Some("secret-token".to_string()),
+            }))
+            .layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 2], 12345))));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/secure")
+                    .header("Authorization", "secret-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn bearer_prefix_remains_accepted_for_compatibility() {
         let app = Router::new()
             .route("/secure", get(|| async { StatusCode::OK }))
             .layer(from_fn(auth_middleware))

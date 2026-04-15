@@ -70,7 +70,7 @@ func parseFlags() toolOptions {
 	fs.StringVar(&opts.apiURL, "api", defaultAPIURL, "THORChain API base URL")
 	fs.StringVar(&opts.chainNetwork, "chain-network", "chainnet", "chain network used for local signer transport policy")
 	fs.StringVar(&opts.signerEndpoint, "signer-endpoint", "", "xmr-frost-signer endpoint (auto-discovered if omitted)")
-	fs.StringVar(&opts.signerSeed, "signer-seed", "", "signer bearer token or seed phrase (defaults to SIGNER_SEED_PHRASE env or auto-discovered from docker)")
+	fs.StringVar(&opts.signerSeed, "signer-seed", "", "signer auth token or seed phrase used as the raw Authorization header value (defaults to SIGNER_SEED_PHRASE env or auto-discovered from docker)")
 	fs.StringVar(&opts.signerContainer, "signer-container", "", "local xmr-frost-signer container name")
 	fs.StringVar(&opts.vaultPubKey, "vault-pubkey", "", "reset one vault pubkey")
 	fs.Int64Var(&opts.height, "height", 0, "XMR birthday height override for --vault-pubkey")

@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     };
     if !auth_config.is_enabled() {
         anyhow::bail!(
-            "xmr-frost-signer requires configured auth (XMR_FROST_AUTH_BEARER or basic auth)"
+            "xmr-frost-signer requires configured auth (raw Authorization token via XMR_FROST_AUTH_BEARER or SIGNER_SEED_PHRASE, or basic auth)"
         );
     }
     info!("sidecar auth enabled for protected routes");

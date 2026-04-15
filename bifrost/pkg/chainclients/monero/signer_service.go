@@ -107,16 +107,29 @@ func secureEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+func matchesBearerToken(authHeader, expected string) bool {
+	authHeader = strings.TrimSpace(authHeader)
+	expected = strings.TrimSpace(expected)
+	if authHeader == "" || expected == "" {
+		return false
+	}
+	if secureEqual(authHeader, expected) {
+		return true
+	}
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		return secureEqual(token, expected)
+	}
+	return false
+}
+
 func (s *HTTPSignerService) ensureAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	if s.username == "" && s.bearer == "" {
 		return true
 	}
 	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-	if s.bearer != "" && strings.HasPrefix(authHeader, "Bearer ") {
-		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-		if secureEqual(token, s.bearer) {
-			return true
-		}
+	if s.bearer != "" && matchesBearerToken(authHeader, s.bearer) {
+		return true
 	}
 	if s.username != "" {
 		username, password, ok := r.BasicAuth()

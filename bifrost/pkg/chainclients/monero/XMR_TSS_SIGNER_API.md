@@ -9,7 +9,7 @@ Bifrost (`bifrost.chains.xmr`):
 - `signer_backend`: `tss`
 - `signer_endpoint`: base URL for the signer service
 - Auth credentials used by Bifrost when calling sidecar:
-  - `authorization_bearer` (Bearer token), or
+  - `authorization_bearer` (raw `Authorization` header token for XMR), or
   - `username` + `password` (HTTP Basic auth)
 
 Sidecar (`xmr-frost-signer` environment):
@@ -18,6 +18,8 @@ Sidecar (`xmr-frost-signer` environment):
 - `XMR_DAEMON_URL` (required)
 - `XMR_FROST_STORE_SECRET` (required; mainnet mode requires strong secret material)
 - `XMR_FROST_AUTH_BEARER` or (`XMR_FROST_AUTH_USERNAME` + `XMR_FROST_AUTH_PASSWORD`) (required)
+  - if `XMR_FROST_AUTH_BEARER` is unset, the sidecar falls back to `SIGNER_SEED_PHRASE`
+  - the token is sent as the raw `Authorization` header value, not `Authorization: Bearer ...`
 - `XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS` (optional; default `3`)
 
 `signer_endpoint` is required for the Monero FROST signer path.

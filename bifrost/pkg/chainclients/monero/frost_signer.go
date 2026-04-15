@@ -283,17 +283,17 @@ type xmrFrostRegisterVaultResponse struct {
 }
 
 type xmrFrostTransferEntry struct {
-	TxID            string              `json:"txid"`
-	Address         string              `json:"address"`
-	FromAddress     string              `json:"from_address,omitempty"`
-	VaultPubKey     string              `json:"vault_pub_key,omitempty"`
-	TxKeys          []string            `json:"tx_keys,omitempty"`
-	Amount          uint64              `json:"amount"`
-	Fee             uint64              `json:"fee"`
-	Height          uint64              `json:"height"`
-	Confirmations   uint64              `json:"confirmations"`
-	Note            string              `json:"note"`
-	Locked          bool                `json:"locked"`
+	TxID          string   `json:"txid"`
+	Address       string   `json:"address"`
+	FromAddress   string   `json:"from_address,omitempty"`
+	VaultPubKey   string   `json:"vault_pub_key,omitempty"`
+	TxKeys        []string `json:"tx_keys,omitempty"`
+	Amount        uint64   `json:"amount"`
+	Fee           uint64   `json:"fee"`
+	Height        uint64   `json:"height"`
+	Confirmations uint64   `json:"confirmations"`
+	Note          string   `json:"note"`
+	Locked        bool     `json:"locked"`
 }
 
 type xmrFrostTransfersResponse struct {
@@ -1085,7 +1085,7 @@ func (s *FrostSigner) callDaemonJSONRPC(method string, params any, out any) erro
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if s.bearer != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bearer))
+		req.Header.Set("Authorization", s.bearer)
 	}
 	if s.username != "" {
 		req.SetBasicAuth(s.username, s.password)
@@ -1137,7 +1137,7 @@ func (s *FrostSigner) callGet(path string, out any) error {
 		return fmt.Errorf("fail to create frost request: %w", err)
 	}
 	if s.bearer != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bearer))
+		req.Header.Set("Authorization", s.bearer)
 	}
 	if s.username != "" {
 		req.SetBasicAuth(s.username, s.password)
@@ -1207,7 +1207,7 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if s.bearer != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bearer))
+		req.Header.Set("Authorization", s.bearer)
 	}
 	if s.username != "" {
 		req.SetBasicAuth(s.username, s.password)

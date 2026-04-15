@@ -41,6 +41,85 @@ func TestFrostSignerGetChainHeight(t *testing.T) {
 	}
 }
 
+func TestFrostSignerUsesRawAuthorizationHeaderForSidecarAndDaemon(t *testing.T) {
+	t.Parallel()
+
+	var sidecarAuth string
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sidecarAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/monero/chain/height" {
+			http.Error(w, "unexpected path: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 123})
+	}))
+	defer sidecar.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{
+			AuthorizationBearer: "test raw seed phrase",
+		},
+		sidecar.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	if _, err := signer.GetChainHeight(); err != nil {
+		t.Fatalf("GetChainHeight failed: %v", err)
+	}
+	if sidecarAuth != "test raw seed phrase" {
+		t.Fatalf("expected raw Authorization header for sidecar, got %q", sidecarAuth)
+	}
+
+	var daemonAuth string
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		daemonAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/json_rpc" {
+			http.NotFound(w, r)
+			return
+		}
+
+		var req struct {
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		switch req.Method {
+		case "get_info":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": map[string]any{
+					"height": 124,
+				},
+			})
+		default:
+			http.Error(w, "unexpected method: "+req.Method, http.StatusBadRequest)
+		}
+	}))
+	defer daemon.Close()
+
+	signer, err = NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{
+			AuthorizationBearer: "test raw seed phrase",
+			RPCHost:             daemon.URL,
+		},
+		sidecar.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer with daemon: %v", err)
+	}
+
+	if _, err := signer.GetChainHeight(); err != nil {
+		t.Fatalf("GetChainHeight via daemon failed: %v", err)
+	}
+	if daemonAuth != "test raw seed phrase" {
+		t.Fatalf("expected raw Authorization header for daemon, got %q", daemonAuth)
+	}
+}
+
 func TestFrostSignerGetChainHeightUsesDaemonRPCWhenConfigured(t *testing.T) {
 	t.Parallel()
 
@@ -80,7 +159,7 @@ func TestFrostSignerGetChainHeightUsesDaemonRPCWhenConfigured(t *testing.T) {
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)
@@ -175,7 +254,7 @@ func TestFrostSignerGetChainBlockUsesDaemonRPCWhenConfigured(t *testing.T) {
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)
@@ -217,7 +296,7 @@ func TestFrostSignerGetChainHeightFallsBackToSidecarWhenDaemonRPCFails(t *testin
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)
@@ -268,7 +347,7 @@ func TestFrostSignerGetChainBlockMapsDaemonTipToUnavailable(t *testing.T) {
 
 	signer, err := NewFrostSignerWithEndpoint(
 		config.BifrostChainConfiguration{
-			RPCHost:           daemon.URL,
+			RPCHost: daemon.URL,
 		},
 		sidecar.URL,
 	)

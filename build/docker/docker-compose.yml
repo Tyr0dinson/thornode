@@ -270,7 +270,9 @@ services:
       BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
       BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
-      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
+      # XMR signer auth is sent as the raw Authorization header value.
+      # Default it to the node's seed phrase so compose matches the sidecar fallback.
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil}"
 
       # enable tron
       BIFROST_CHAINS_TRON_DISABLED: "${BIFROST_CHAINS_TRON_DISABLED:-false}"
@@ -795,7 +797,8 @@ services:
       XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
       XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-      XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
+      # Despite the env name, the value is used as the raw Authorization header token.
+      XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil}"
     volumes:
       - xmr-frost-data:/var/lib/xmr-frost
     ports:
@@ -855,7 +858,7 @@ services:
       XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
       XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-      XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:-xmr-sim-helper-mocknet-token}"
+      XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:-dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil}"
       XMR_SIM_HELPER_ENABLED: "true"
       XMR_SIM_HELPER_WALLET_RPC_URL: "http://monero-wallet-rpc:18082"
     volumes:

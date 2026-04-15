@@ -237,7 +237,39 @@ func TestHTTPSignerServiceRejectsUnauthorizedWhenAuthConfigured(t *testing.T) {
 	}
 }
 
-func TestHTTPSignerServiceAllowsAuthorizedBearer(t *testing.T) {
+func TestHTTPSignerServiceAllowsAuthorizedRawToken(t *testing.T) {
+	t.Parallel()
+
+	engine := &mockSignerEngine{
+		frostDKGRound1Resp: xmrFrostDKGRound1Response{Commitments: "commit"},
+	}
+	service := NewHTTPSignerServiceWithAuth("127.0.0.1:0", engine, zerolog.New(io.Discard), "", "", "token")
+	server := httptest.NewServer(service.server.Handler)
+	defer server.Close()
+
+	reqBody, err := json.Marshal(xmrFrostDKGRound1Request{VaultPubKey: "thorpub1vault", SessionID: "s1", Threshold: 2, N: 3, ParticipantIndex: 1})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/monero/dkg/round1", bytes.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "token")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPSignerServiceStillAllowsBearerToken(t *testing.T) {
 	t.Parallel()
 
 	engine := &mockSignerEngine{

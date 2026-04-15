@@ -33,7 +33,8 @@
 # others) to establish libp2p bootstrap connections. Simultaneous start via
 # compose leaves bifrosts unable to discover peers for TSS keygen.
 #
-# Auth: bifrost <-> frost-signer uses raw SIGNER_SEED_PHRASE as bearer token.
+# Auth: bifrost <-> frost-signer uses raw SIGNER_SEED_PHRASE in the
+# Authorization header.
 # Both Go and Rust must be built from the same commit. Mismatched auth causes
 # silent scan failure (txs=0 on every block). Always rebuild BOTH together.
 ########################################################################################

@@ -2580,9 +2580,16 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		}
 	}
 
-	outputs, err := c.collectVaultOutputsForTx(ceremonyCtx.vaultPubKey, item.Tx)
+	allOutputs, err := c.frostSigner.GetAllOutputs(ceremonyCtx.vaultPubKey.String())
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("fail to query tracked outputs for vault %s: %w", ceremonyCtx.vaultPubKey, err)
+	}
+	outputs := filterVaultOutputsForTx(allOutputs, item.Tx)
+	pendingOutputs := xmrOutputsMissingKeyImages(outputs)
+	backlogOutputs := xmrOutputsMissingKeyImages(allOutputs)
+	backlogHeadTxHash := ""
+	if len(backlogOutputs) > 0 {
+		backlogHeadTxHash = normalizeTxID(backlogOutputs[0].TxHash)
 	}
 	if len(outputs) == 0 {
 		if isOutboundFromVault {
@@ -2599,8 +2606,35 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("finalized XMR inbound has no tracked outputs locally yet; retrying key-image preparation later")
 		return nil, false, nil
 	}
+	if len(pendingOutputs) == 0 {
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Int("tracked_output_count", len(outputs)).
+			Msg("tracked XMR outputs already have local key-images; waiting for finalized proof propagation")
+		return nil, false, nil
+	}
+	if len(pendingOutputs) != len(outputs) {
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Int("tracked_output_count", len(outputs)).
+			Int("missing_key_image_output_count", len(pendingOutputs)).
+			Msg("waiting for coherent XMR key-image proof propagation before retrying finalized observation")
+		return nil, false, nil
+	}
+	if backlogHeadTxHash != "" && backlogHeadTxHash != normalizeTxID(item.Tx) {
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Str("backlog_head_tx_hash", backlogHeadTxHash).
+			Int("pending_key_image_output_count", len(backlogOutputs)).
+			Int("pending_key_image_tx_count", xmrPendingKeyImageTxCount(backlogOutputs)).
+			Msg("waiting for earlier XMR key-image backlog item before finalized observation")
+		return nil, false, nil
+	}
 
-	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs); ok {
+	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), pendingOutputs); ok {
 		item.XmrKeyImages = cachedProofs
 		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
@@ -2621,10 +2655,11 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		Bool("inbound", isInboundToVault).
 		Bool("outbound", isOutboundFromVault).
 		Int("tracked_output_count", len(outputs)).
+		Int("missing_key_image_output_count", len(pendingOutputs)).
 		Int64("finalise_height", finaliseHeight).
 		Str("memo", item.Memo).
 		Msg("preparing finalized XMR observation for key-image generation")
-	proofs, err := c.generateObservedTxKeyImages(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, ceremonyCtx.members, finaliseHeight, version.String())
+	proofs, err := c.generateObservedTxKeyImages(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), pendingOutputs, ceremonyCtx.members, finaliseHeight, version.String())
 	if err != nil {
 		if errors.Is(err, errXMRKeyImageNotActiveSigner) {
 			c.logger.Info().
@@ -2644,7 +2679,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		}
 		return nil, false, err
 	}
-	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, proofs)
+	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), pendingOutputs, proofs)
 	item.XmrKeyImages = proofs
 	c.logger.Info().
 		Str("tx_hash", normalizeTxID(item.Tx)).
@@ -3092,7 +3127,10 @@ func (c *Client) collectVaultOutputsForTx(vaultPubKey common.PubKey, txHash stri
 	if err != nil {
 		return nil, fmt.Errorf("fail to query tracked outputs for vault %s: %w", vaultPubKey, err)
 	}
+	return filterVaultOutputsForTx(outputs, txHash), nil
+}
 
+func filterVaultOutputsForTx(outputs []xmrFrostOutputEntry, txHash string) []xmrFrostOutputEntry {
 	normalizedTxHash := normalizeTxID(txHash)
 	filtered := make([]xmrFrostOutputEntry, 0)
 	for _, output := range outputs {
@@ -3107,7 +3145,39 @@ func (c *Client) collectVaultOutputsForTx(vaultPubKey common.PubKey, txHash stri
 		}
 		return filtered[i].OutputIndex < filtered[j].OutputIndex
 	})
-	return filtered, nil
+	return filtered
+}
+
+func xmrOutputsMissingKeyImages(outputs []xmrFrostOutputEntry) []xmrFrostOutputEntry {
+	pending := make([]xmrFrostOutputEntry, 0, len(outputs))
+	for _, output := range outputs {
+		if strings.TrimSpace(output.KeyImage) != "" {
+			continue
+		}
+		pending = append(pending, output)
+	}
+	sort.Slice(pending, func(i, j int) bool {
+		if pending[i].Height != pending[j].Height {
+			return pending[i].Height < pending[j].Height
+		}
+		if normalizeTxID(pending[i].TxHash) != normalizeTxID(pending[j].TxHash) {
+			return normalizeTxID(pending[i].TxHash) < normalizeTxID(pending[j].TxHash)
+		}
+		return pending[i].OutputIndex < pending[j].OutputIndex
+	})
+	return pending
+}
+
+func xmrPendingKeyImageTxCount(outputs []xmrFrostOutputEntry) int {
+	seen := make(map[string]struct{})
+	for _, output := range outputs {
+		txHash := normalizeTxID(output.TxHash)
+		if txHash == "" {
+			continue
+		}
+		seen[txHash] = struct{}{}
+	}
+	return len(seen)
 }
 
 func (c *Client) generateObservedTxKeyImages(

@@ -177,7 +177,7 @@ Design choices:
   - no in-place migration,
   - clean sidecar data directory required for cutover upgrade.
 - `XMR_FROST_CHAIN_NETWORK` must be explicit (`mocknet` or `mainnet`).
-- Sidecar protected routes require configured auth (`XMR_FROST_AUTH_BEARER` or basic auth vars).
+- Sidecar protected routes require configured auth (raw `Authorization` token via `XMR_FROST_AUTH_BEARER` or `SIGNER_SEED_PHRASE`, or basic auth vars).
 - In mainnet mode, sidecar daemon endpoint hardening is stricter (TLS/auth requirements).
 - In mainnet mode, `XMR_FROST_STORE_SECRET` must be strong (32-byte hex/base64 equivalent).
 - `XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS` controls fail-closed signing when scan state is stale (default `3`).

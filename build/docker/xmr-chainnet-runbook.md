@@ -228,7 +228,7 @@ Redirection rule:
 - `ssh root@91.99.89.216 'docker cp ... | gzip' > local.tar.gz` writes `local.tar.gz` on your local machine
 - `ssh root@91.99.89.216 'docker cp ... | gzip > /tmp/remote.tar.gz'` writes `/tmp/remote.tar.gz` on the remote host
 
-Avoid this pattern for seed phrases and bearer tokens:
+Avoid this pattern for seed phrases and raw auth tokens:
 
 ```bash
 ssh root@91.99.89.216 "seed=...words with spaces...; docker exec -e AUTH=\"$seed\" ..."
@@ -241,16 +241,20 @@ ssh root@91.99.89.216 'bash -s' <<'EOF'
 set -euo pipefail
 seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' docker-xmr-frost-signer-1 | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
 docker exec -e AUTH="$seed" docker-xmr-frost-signer-1 sh -lc \
-  'curl -sf -H "Authorization: Bearer $AUTH" http://127.0.0.1:8283/v1/monero/chain/height'
+  'curl -sf -H "Authorization: $AUTH" http://127.0.0.1:8283/v1/monero/chain/height'
 EOF
 ```
 
 ### Signer API auth
 
-The XMR signer API uses the raw `SIGNER_SEED_PHRASE` as the bearer token unless
+The XMR signer API uses the raw `SIGNER_SEED_PHRASE` as the `Authorization`
+header value unless
 `XMR_FROST_AUTH_BEARER` is explicitly set.
 
-In this chainnet, each signer has its own bearer token because each signer has its
+Despite the env name, `XMR_FROST_AUTH_BEARER` is also sent as the raw
+`Authorization` header value, not as `Authorization: Bearer ...`.
+
+In this chainnet, each signer has its own auth token because each signer has its
 own seed phrase. Do not reuse a token from one node against another node.
 
 Example for one signer:
@@ -258,7 +262,7 @@ Example for one signer:
 ```bash
 seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' docker-xmr-frost-signer-1 | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
 docker exec -e AUTH="$seed" docker-xmr-frost-signer-1 sh -lc \
-  'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/outputs/<vault_pub_key>?view=all"'
+  'curl -sf -H "Authorization: $AUTH" "http://127.0.0.1:8283/v1/monero/outputs/<vault_pub_key>?view=all"'
 ```
 
 Quick auth smoke test across all signers:
@@ -269,7 +273,7 @@ for c in "${SIGNERS[@]}"; do
   seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
   printf '%s ' "$c"
   docker exec -e AUTH="$seed" "$c" sh -lc \
-    'curl -sf -H "Authorization: Bearer $AUTH" http://127.0.0.1:8283/v1/monero/chain/height >/dev/null && echo OK'
+    'curl -sf -H "Authorization: $AUTH" http://127.0.0.1:8283/v1/monero/chain/height >/dev/null && echo OK'
 done
 ```
 
@@ -282,7 +286,7 @@ TX=<lowercase_xmr_tx_hash>
 SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
 for c in "${SIGNERS[@]}"; do
   seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
-  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/transfers?mempool=true"')
+  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: $AUTH" "http://127.0.0.1:8283/v1/monero/transfers?mempool=true"')
   printf '%s ' "$c"
   printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outgoing[]? | select((.txid // "") | ascii_downcase == $tx) | {txid,from_address,address,vault_pub_key,amount,fee,height,tx_keys,note}) // "MISSING"'
 done
@@ -316,7 +320,7 @@ TX=<tx_hash_lowercase>
 SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
 for c in "${SIGNERS[@]}"; do
   seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
-  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/transfers?mempool=true"')
+  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: $AUTH" "http://127.0.0.1:8283/v1/monero/transfers?mempool=true"')
   printf '%s ' "$c"
   printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outgoing[]? | select((.txid // "") | ascii_downcase == $tx) | {txid,from_address,address,vault_pub_key,amount,fee,tx_keys,note}) // "MISSING"'
 done
@@ -336,7 +340,7 @@ SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-fros
 VAULT=<cthorpub1...frost_vault>
 for c in "${SIGNERS[@]}"; do
   seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
-  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/outputs/'"$VAULT"'?view=all"')
+  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: $AUTH" "http://127.0.0.1:8283/v1/monero/outputs/'"$VAULT"'?view=all"')
   printf '%s ' "$c"
   printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outputs[]? | select((.tx_hash // "") | ascii_downcase == $tx) | {tx_hash,state,spent,key_image,height,amount,output_index}) // "MISSING"'
 done
