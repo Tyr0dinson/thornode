@@ -3192,26 +3192,25 @@ pub async fn validate_outbound(
             let scanner = state.scanner.lock();
             scanner.get_all_outputs(&vault_pub_key)
         };
-        let selected_refs =
-            match builder::select_outbound_input_refs(&outputs_before, req.amount, req.fee, None) {
-                Ok(refs) => refs,
-                Err(e) => {
-                    warn!(
-                        error = %e,
-                        vault = vault_pub_key,
-                        tx_hash,
-                        amount = req.amount,
-                        fee = req.fee,
-                        "failed to reconcile spent outputs for validated outbound"
-                    );
-                    return (
-                        StatusCode::CONFLICT,
-                        Json(error_json(format!(
-                            "failed to reconcile spent outputs for validated outbound: {e}"
-                        ))),
-                    );
-                }
-            };
+        let selected_refs = match builder::select_outbound_input_refs(
+            &outputs_before,
+            req.amount,
+            req.fee,
+            None,
+        ) {
+            Ok(refs) => refs,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    vault = vault_pub_key,
+                    tx_hash,
+                    amount = req.amount,
+                    fee = req.fee,
+                    "failed to reconcile spent outputs for validated outbound; continuing with tx-key validated audit record only"
+                );
+                Vec::new()
+            }
+        };
 
         let ref_pairs: Vec<(String, u32)> = selected_refs
             .iter()
@@ -6289,6 +6288,99 @@ mod tests {
         let (status, body) = response_to_status_json(missed).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["exists"], serde_json::json!(false));
+    }
+
+    #[tokio::test]
+    async fn validate_outbound_reconcile_failure_is_best_effort() {
+        let tx_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let synthetic = crate::tx::validation::synthetic_untracked_outbound_case_for_tests();
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/get_transactions",
+                axum::routing::post(move |Json(req): Json<serde_json::Value>| {
+                    let tx_hash = tx_hash.to_string();
+                    let tx_hex = synthetic.tx_hex.clone();
+                    async move {
+                        let hash = req
+                            .get("txs_hashes")
+                            .and_then(serde_json::Value::as_array)
+                            .and_then(|hashes| hashes.first())
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let payload = if hash.eq_ignore_ascii_case(&tx_hash) {
+                            serde_json::json!({
+                                "txs": [{
+                                    "tx_hash": tx_hash,
+                                    "as_hex": tx_hex,
+                                    "block_height": 77,
+                                    "in_pool": false
+                                }],
+                                "status": "OK"
+                            })
+                        } else {
+                            serde_json::json!({
+                                "txs": [],
+                                "missed_tx": [hash],
+                                "status": "OK"
+                            })
+                        };
+                        (StatusCode::OK, Json(payload))
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        state
+            .scanner
+            .lock()
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                crate::config::ChainNetworkMode::Mocknet,
+                vec![],
+                None,
+            )
+            .expect("failed to register vault scanner state");
+
+        let response = validate_outbound(
+            State(state.clone()),
+            Json(crate::api::types::ValidateOutboundRequest {
+                vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+                tx_hash: tx_hash.to_string(),
+                tx_keys: synthetic.tx_keys.clone(),
+                from_address: None,
+                to_address: synthetic.to_address.clone(),
+                amount: synthetic.amount,
+                fee: synthetic.fee,
+                memo: Some("OUT:TEST".to_string()),
+                reconcile: true,
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        assert_eq!(body["tracked"], serde_json::json!(false));
+        assert_eq!(body["marked"], serde_json::json!(0));
+        assert_eq!(body["not_found"], serde_json::json!(0));
+
+        let saved = state
+            .store
+            .load_outgoing_transfer(VALID_VAULT_PUB_KEY, tx_hash)
+            .expect("failed to load outgoing transfer")
+            .expect("outgoing transfer should exist");
+        assert_eq!(saved.tx_keys, synthetic.tx_keys);
+        assert_eq!(saved.to_address, synthetic.to_address);
+        assert_eq!(saved.amount, synthetic.amount);
+        assert_eq!(saved.fee, synthetic.fee);
+        assert_eq!(saved.status, OUTGOING_STATUS_MINED);
     }
 
     #[tokio::test]

@@ -332,6 +332,130 @@ fn commitment_mask(derivations: &OutputDerivations) -> Scalar {
 }
 
 #[cfg(test)]
+pub(crate) struct SyntheticOutboundCase {
+    pub tx_hex: String,
+    pub tx_keys: Vec<String>,
+    pub to_address: String,
+    pub amount: u64,
+    pub fee: u64,
+}
+
+#[cfg(test)]
+pub(crate) fn synthetic_untracked_outbound_case_for_tests() -> SyntheticOutboundCase {
+    fn point_from_scalar(value: u64) -> EdwardsPoint {
+        &Scalar::from(value) * ED25519_BASEPOINT_TABLE
+    }
+
+    fn scalar_hex(value: u64) -> String {
+        hex::encode(Scalar::from(value).to_bytes())
+    }
+
+    struct SyntheticOutput {
+        output: Output,
+        encrypted_amount: EncryptedAmount,
+        commitment: EdwardsPoint,
+    }
+
+    fn synthetic_output_for_address(
+        tx_key: &Scalar,
+        output_index: usize,
+        address: &MoneroAddress,
+        amount: u64,
+    ) -> SyntheticOutput {
+        let derivations =
+            output_derivations(None, Zeroizing::new(address.view() * tx_key), output_index);
+        let mask = commitment_mask(&derivations);
+        let mut amount_mask = Zeroizing::new(b"amount".to_vec());
+        amount_mask.extend(derivations.shared_key.to_bytes());
+        let amount_mask = keccak256(&amount_mask);
+        let mut amount_mask_8 = [0u8; 8];
+        amount_mask_8.copy_from_slice(&amount_mask[..8]);
+
+        let commitment = Commitment::new(mask, amount).calculate();
+        SyntheticOutput {
+            output: Output {
+                amount: None,
+                key: (address.spend() + (&derivations.shared_key * ED25519_BASEPOINT_TABLE))
+                    .compress(),
+                view_tag: Some(derivations.view_tag),
+            },
+            encrypted_amount: EncryptedAmount::Compact {
+                amount: (amount ^ u64::from_le_bytes(amount_mask_8)).to_le_bytes(),
+            },
+            commitment,
+        }
+    }
+
+    fn serialize_extra(primary: EdwardsPoint, additional: Vec<EdwardsPoint>) -> Vec<u8> {
+        let mut extra = ExtraField::PublicKey(primary).serialize();
+        if !additional.is_empty() {
+            extra.extend(ExtraField::PublicKeys(additional).serialize());
+        }
+        extra
+    }
+
+    fn synthetic_pruned_tx_hex(fee: u64, extra: Vec<u8>, outputs: Vec<SyntheticOutput>) -> String {
+        let tx = Transaction::<Pruned>::V2 {
+            prefix: TransactionPrefix {
+                additional_timelock: Timelock::None,
+                inputs: vec![Input::ToKey {
+                    amount: None,
+                    key_offsets: vec![1],
+                    key_image: point_from_scalar(99),
+                }],
+                outputs: outputs.iter().map(|output| output.output.clone()).collect(),
+                extra,
+            },
+            proofs: Some(PrunedRctProofs {
+                rct_type: RctType::ClsagBulletproofPlus,
+                base: RctBase {
+                    fee,
+                    pseudo_outs: vec![],
+                    encrypted_amounts: outputs
+                        .iter()
+                        .map(|output| output.encrypted_amount.clone())
+                        .collect(),
+                    commitments: outputs.iter().map(|output| output.commitment).collect(),
+                },
+            }),
+        };
+        hex::encode(tx.serialize())
+    }
+
+    let recipient = MoneroAddress::new(
+        Network::Mainnet,
+        AddressType::Legacy,
+        point_from_scalar(11),
+        point_from_scalar(13),
+    );
+    let unrelated = MoneroAddress::new(
+        Network::Mainnet,
+        AddressType::Legacy,
+        point_from_scalar(17),
+        point_from_scalar(19),
+    );
+    let primary = Scalar::from(7u64);
+    let fee = 42u64;
+    let amount = 1_000_000u64;
+    let tx_hex = synthetic_pruned_tx_hex(
+        fee,
+        serialize_extra(&primary * ED25519_BASEPOINT_TABLE, vec![]),
+        vec![
+            synthetic_output_for_address(&primary, 0, &recipient, amount),
+            synthetic_output_for_address(&primary, 1, &unrelated, 2_000_000),
+        ],
+    );
+
+    SyntheticOutboundCase {
+        tx_hex,
+        tx_keys: vec![scalar_hex(7)],
+        to_address: recipient.to_string(),
+        amount,
+        fee,
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
