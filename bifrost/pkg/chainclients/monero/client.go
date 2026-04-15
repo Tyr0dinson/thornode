@@ -163,6 +163,11 @@ type xmrKeyImageCeremonyGate struct {
 	active        bool
 }
 
+type xmrKeyImageProofCacheEntry struct {
+	proofs   []*common.XmrKeyImageProof
+	cachedAt time.Time
+}
+
 // Client implements the chain client interface for Monero.
 type Client struct {
 	logger zerolog.Logger
@@ -203,6 +208,8 @@ type Client struct {
 	txKeyCatchupState       map[string]xmrTxKeyCatchupState
 	keyImageCeremonyGateMu  sync.Mutex
 	keyImageCeremonyGate    *xmrKeyImageCeremonyGate
+	keyImageProofCacheMu    sync.Mutex
+	keyImageProofCache      map[string]xmrKeyImageProofCacheEntry
 	consolidateInProgress   *atomic.Bool
 	lastConsolidationHeight *atomic.Int64
 	lastSolvencyCheckHeight *atomic.Int64
@@ -368,6 +375,73 @@ func (c *Client) pendingXMRKeyImageBacklog() (queued uint64, active bool) {
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	return gate.queued, gate.active
+}
+
+func xmrKeyImageProofCacheKey(vaultPubKey common.PubKey, txHash string, outputs []xmrFrostOutputEntry) string {
+	var b strings.Builder
+	b.WriteString(vaultPubKey.String())
+	b.WriteString("|")
+	b.WriteString(normalizeTxID(txHash))
+	for _, output := range outputs {
+		b.WriteString("|")
+		b.WriteString(strconv.FormatUint(uint64(output.OutputIndex), 10))
+	}
+	return b.String()
+}
+
+func cloneXMRKeyImageProofs(proofs []*common.XmrKeyImageProof) []*common.XmrKeyImageProof {
+	if len(proofs) == 0 {
+		return nil
+	}
+	cloned := make([]*common.XmrKeyImageProof, 0, len(proofs))
+	for _, proof := range proofs {
+		if proof == nil {
+			continue
+		}
+		dup := *proof
+		cloned = append(cloned, &dup)
+	}
+	return cloned
+}
+
+func (c *Client) getCachedXMRKeyImageProofs(vaultPubKey common.PubKey, txHash string, outputs []xmrFrostOutputEntry) ([]*common.XmrKeyImageProof, bool) {
+	cacheKey := xmrKeyImageProofCacheKey(vaultPubKey, txHash, outputs)
+	c.keyImageProofCacheMu.Lock()
+	defer c.keyImageProofCacheMu.Unlock()
+	if c.keyImageProofCache == nil {
+		return nil, false
+	}
+	entry, ok := c.keyImageProofCache[cacheKey]
+	if !ok {
+		return nil, false
+	}
+	if time.Since(entry.cachedAt) > 15*time.Minute {
+		delete(c.keyImageProofCache, cacheKey)
+		return nil, false
+	}
+	return cloneXMRKeyImageProofs(entry.proofs), true
+}
+
+func (c *Client) putCachedXMRKeyImageProofs(vaultPubKey common.PubKey, txHash string, outputs []xmrFrostOutputEntry, proofs []*common.XmrKeyImageProof) {
+	cacheKey := xmrKeyImageProofCacheKey(vaultPubKey, txHash, outputs)
+	c.keyImageProofCacheMu.Lock()
+	defer c.keyImageProofCacheMu.Unlock()
+	if c.keyImageProofCache == nil {
+		c.keyImageProofCache = make(map[string]xmrKeyImageProofCacheEntry)
+	}
+	c.keyImageProofCache[cacheKey] = xmrKeyImageProofCacheEntry{
+		proofs:   cloneXMRKeyImageProofs(proofs),
+		cachedAt: time.Now(),
+	}
+}
+
+func isTransientXMRKeyImageCeremonyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errText := err.Error()
+	return strings.Contains(errText, "leader not reachable") ||
+		strings.Contains(errText, "fail to join party, timeout")
 }
 
 func (c *Client) Start(
@@ -2499,7 +2573,21 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 				Msg("finalized XMR outbound has no tracked vault-owned outputs; no key-image ceremony needed")
 			return item, true, nil
 		}
-		return nil, false, fmt.Errorf("no tracked outputs found for finalized XMR inbound %s", item.Tx)
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Msg("finalized XMR inbound has no tracked outputs locally yet; retrying key-image preparation later")
+		return nil, false, nil
+	}
+
+	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs); ok {
+		item.XmrKeyImages = cachedProofs
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Int("proof_count", len(cachedProofs)).
+			Msg("reusing cached XMR key-images for finalized observation")
+		return item, true, nil
 	}
 
 	version, err := c.thorchainBridge.GetThorchainVersion()
@@ -2518,8 +2606,17 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		Msg("preparing finalized XMR observation for key-image generation")
 	proofs, err := c.generateObservedTxKeyImages(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, ceremonyCtx.members, finaliseHeight, version.String())
 	if err != nil {
+		if isTransientXMRKeyImageCeremonyError(err) {
+			c.logger.Info().
+				Err(err).
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Msg("transient XMR key-image ceremony failure; retrying finalized observation later")
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
+	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, proofs)
 	item.XmrKeyImages = proofs
 	c.logger.Info().
 		Str("tx_hash", normalizeTxID(item.Tx)).

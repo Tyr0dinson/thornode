@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	bifrosttss "gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	gotssblame "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	gotsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -65,6 +66,25 @@ type mockKeyImageErrorTssServer struct {
 
 func (m *mockKeyImageErrorTssServer) FrostKeyImage(_ tssp.FrostKeyImageRequest, _ tssp.FrostSidecarClient) (tssp.FrostKeyImageResponse, error) {
 	return tssp.FrostKeyImageResponse{}, m.err
+}
+
+type mockKeyImageFailTssServer struct {
+	tssp.Server
+	failReason string
+	calls      int
+}
+
+func (m *mockKeyImageFailTssServer) FrostKeyImage(req tssp.FrostKeyImageRequest, _ tssp.FrostSidecarClient) (tssp.FrostKeyImageResponse, error) {
+	m.calls++
+	return tssp.FrostKeyImageResponse{
+		MsgID:       "msg-" + req.TxHash,
+		TxHash:      req.TxHash,
+		OutputIndex: req.OutputIndex,
+		Status:      gotsscommon.Fail,
+		Blame: gotssblame.Blame{
+			FailReason: m.failReason,
+		},
+	}, nil
 }
 
 func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) {
@@ -141,6 +161,186 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) 
 	require.Len(t, tssServer.reqs, 2)
 	assert.Equal(t, int64(110), tssServer.reqs[0].BlockHeight)
 	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
+}
+
+func TestPrepareObservedTxInItemSkipsFinalInboundUntilTrackedOutputsExist(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("e", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: []xmrFrostOutputEntry{}})
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+		To:                  vaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	require.Len(t, tssServer.reqs, 0)
+}
+
+func TestPrepareObservedTxInItemReusesCachedKeyImagesForDuplicateFinalInbound(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("f", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+			Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100}},
+		})
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	newItem := func() *stypes.TxInItem {
+		return &stypes.TxInItem{
+			BlockHeight:         100,
+			Tx:                  txHash,
+			Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+			To:                  vaultAddr.String(),
+			Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			ObservedVaultPubKey: vaultPubKey,
+			Memo:                "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+		}
+	}
+
+	firstPrepared, include, err := c.PrepareObservedTxInItem(newItem(), true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.Len(t, firstPrepared.XmrKeyImages, 1)
+
+	secondPrepared, include, err := c.PrepareObservedTxInItem(newItem(), true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.Len(t, secondPrepared.XmrKeyImages, 1)
+	assert.Equal(t, firstPrepared.XmrKeyImages[0].KeyImage, secondPrepared.XmrKeyImages[0].KeyImage)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	require.Len(t, tssServer.reqs, 1)
+}
+
+func TestPrepareObservedTxInItemTreatsLeaderNotReachableAsRetryLater(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("g", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+			Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100}},
+		})
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageFailTssServer{failReason: "leader not reachable"}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+		To:                  vaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+	assert.Equal(t, 1, tssServer.calls)
 }
 
 func TestResolveXMRKeyImageCeremonyContextCanonicalizesVaultPubKey(t *testing.T) {
