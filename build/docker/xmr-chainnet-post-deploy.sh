@@ -245,58 +245,7 @@ done
 
 echo ""
 echo "[6.5/8] Restarting bifrosts in bootstrap order (dog first, then others)..."
-echo "  Clearing stale address_book.seed from all thornode volumes..."
-for name in dog $(joiner_names); do
-  if [ "$name" = "dog" ]; then
-    docker exec docker-thornode-1 rm -f /root/.thornode/address_book.seed 2>/dev/null
-  else
-    docker exec "docker-thornode-${name}-1" rm -f /root/.thornode/address_book.seed 2>/dev/null
-  fi
-done
-
-echo "  Restarting dog bifrost..."
-compose restart bifrost
-echo -n "  Waiting for dog /p2pid"
-for i in $(seq 1 30); do
-  docker exec docker-bifrost-1 curl -sf http://localhost:6040/p2pid >/dev/null 2>&1 && echo " OK (${i}x2s)" && break
-  echo -n "."
-  sleep 2
-done
-
-other_bifrosts=()
-for name in $(joiner_names); do
-  other_bifrosts+=("bifrost-${name}")
-done
-echo "  Restarting joiner bifrosts (${other_bifrosts[*]})..."
-compose restart "${other_bifrosts[@]}"
-
-echo "  Waiting for all bifrosts /p2pid..."
-BIFROSTS=(docker-bifrost-1)
-for name in $(joiner_names); do
-  BIFROSTS+=("docker-bifrost-${name}-1")
-done
-for attempt in $(seq 1 60); do
-  all_ok=true
-  status_line=""
-  for bf in "${BIFROSTS[@]}"; do
-    pid=$(docker exec "$bf" curl -sf http://localhost:6040/p2pid 2>/dev/null || echo "FAIL")
-    if [ "$pid" = "FAIL" ]; then
-      all_ok=false
-      status_line="$status_line ${bf##*-bifrost-}=FAIL"
-    else
-      status_line="$status_line ${bf##*-bifrost-}=OK"
-    fi
-  done
-  if $all_ok; then
-    echo "  All ${#BIFROSTS[@]} bifrosts p2p OK (${attempt}x5s)"
-    break
-  fi
-  echo "  [$attempt/60]$status_line"
-  if [ "$attempt" = "60" ]; then
-    echo "  TIMEOUT: not all bifrosts have p2p after 5 min."
-  fi
-  sleep 5
-done
+"$SCRIPT_DIR/xmr-chainnet-restart-bifrosts.sh" restart
 
 echo ""
 echo "[6.6/8] Lifting HaltChurning so the first keygen can fire..."

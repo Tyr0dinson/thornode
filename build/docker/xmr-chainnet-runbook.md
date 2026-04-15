@@ -136,12 +136,11 @@ git pull --ff-only
 docker compose --env-file .env -f build/docker/docker-compose.xmr-chainnet.yml build thornode
 ```
 
-3. Recreate thornodes and bifrosts.
+3. Recreate thornodes only.
 
 ```bash
 docker compose --env-file .env -f build/docker/docker-compose.xmr-chainnet.yml up -d --force-recreate \
-  thornode thornode-cat thornode-fox thornode-goat thornode-whale thornode-wolf thornode-eagle \
-  bifrost bifrost-cat bifrost-fox bifrost-goat bifrost-whale bifrost-wolf bifrost-eagle
+  thornode thornode-cat thornode-fox thornode-goat thornode-whale thornode-wolf thornode-eagle
 ```
 
 4. If Rust signer code changed, rebuild and recreate the signer sidecars too.
@@ -151,6 +150,16 @@ docker compose --env-file .env -f build/docker/docker-compose.xmr-chainnet.yml b
 docker compose --env-file .env -f build/docker/docker-compose.xmr-chainnet.yml up -d --force-recreate \
   xmr-frost-signer xmr-frost-signer-cat xmr-frost-signer-fox xmr-frost-signer-goat \
   xmr-frost-signer-whale xmr-frost-signer-wolf xmr-frost-signer-eagle
+```
+
+5. Recreate bifrosts in bootstrap order.
+
+Do not recreate all bifrosts in one `docker compose up` call. That reintroduces
+the startup race where dog has no peers yet and joiners hit `protocol not supported`
+while the leader is still finishing TSS pre-parameter setup.
+
+```bash
+bash build/docker/xmr-chainnet-restart-bifrosts.sh recreate
 ```
 
 ## Smoke Checks After Deploy

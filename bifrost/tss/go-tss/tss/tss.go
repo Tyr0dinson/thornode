@@ -67,6 +67,19 @@ func NewTss(
 		return nil, fmt.Errorf("fail to generate the secp256k1 key: %w", err)
 	}
 
+	// Register the join-party handlers before pre-parameter generation.
+	// Preparams can take multiple seconds to compute on startup, and peers may
+	// already be connected and trying to coordinate keygen/keysign/key-image
+	// ceremonies during that window. If the party coordinator is created only
+	// after preparams finish, those peers see "protocol not supported" even
+	// though the libp2p host is already live.
+	pc := p2p.NewPartyCoordinator(comm.GetHost(), conf.PartyTimeout)
+	sn := keysign.NewSignatureNotifier(comm.GetHost())
+	metrics := monitor.NewMetric()
+	if conf.EnableMonitor {
+		metrics.Enable()
+	}
+
 	// When using the keygen party it is recommended that you pre-compute the
 	// "safe primes" and Paillier secret beforehand because this can take some
 	// time.
@@ -80,13 +93,6 @@ func NewTss(
 	}
 	if !preParams.Validate() {
 		return nil, errors.New("invalid preparams")
-	}
-
-	pc := p2p.NewPartyCoordinator(comm.GetHost(), conf.PartyTimeout)
-	sn := keysign.NewSignatureNotifier(comm.GetHost())
-	metrics := monitor.NewMetric()
-	if conf.EnableMonitor {
-		metrics.Enable()
 	}
 	tssServer := TssServer{
 		conf:              conf,
