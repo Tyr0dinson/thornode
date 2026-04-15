@@ -2,9 +2,9 @@ FROM parity/polkadot:stable2603
 
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  curl=7.81.0-1 \
-  jq=1.6-2.1ubuntu3 \
-  python3=3.10.4-0ubuntu2 \
+  curl=7.81.0-1ubuntu1.23 \
+  jq=1.6-2.1ubuntu3.1 \
+  python3=3.10.6-1~22.04.1 \
   && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh add-master.py /usr/local/bin/
