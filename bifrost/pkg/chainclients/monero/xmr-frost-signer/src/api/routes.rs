@@ -2907,6 +2907,14 @@ pub async fn apply_key_images(
             Json(error_json("vault_pub_key is required")),
         );
     }
+    if req.reconcile && req.spend {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json(
+                "reconcile and spend modes are mutually exclusive",
+            )),
+        );
+    }
     if req.key_images.is_empty() && !req.reconcile {
         return (
             StatusCode::BAD_REQUEST,
@@ -2928,12 +2936,51 @@ pub async fn apply_key_images(
         })
         .collect();
 
-    {
-        let mut scanner = state.scanner.lock();
-        scanner.apply_key_images(&vault_pub_key, &key_images, req.reconcile);
-    }
+    let (applied, not_found) = if req.spend {
+        let Some(spent_height) = req.spent_height.filter(|height| *height > 0) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json("spent_height is required when spend=true")),
+            );
+        };
+        let spent_key_images: Vec<String> = key_images
+            .iter()
+            .map(|(_, _, key_image)| key_image.clone())
+            .filter(|key_image| !key_image.is_empty())
+            .collect();
+        if spent_key_images.is_empty() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(error_json("spend=true requires at least one key_image")),
+            );
+        }
 
-    let (applied, not_found) =
+        {
+            let mut scanner = state.scanner.lock();
+            scanner.mark_spent_key_images(&vault_pub_key, &spent_key_images, spent_height);
+        }
+
+        match state
+            .store
+            .mark_spent_key_images(&vault_pub_key, &spent_key_images, spent_height)
+        {
+            Ok(result) => result,
+            Err(e) => {
+                error!(error = %e, vault = vault_pub_key, "failed to persist spent key images");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to persist spent key images: {e}"
+                    ))),
+                );
+            }
+        }
+    } else {
+        {
+            let mut scanner = state.scanner.lock();
+            scanner.apply_key_images(&vault_pub_key, &key_images, req.reconcile);
+        }
+
         match state
             .store
             .apply_key_images(&vault_pub_key, &key_images, req.reconcile)
@@ -2946,7 +2993,8 @@ pub async fn apply_key_images(
                     Json(error_json(format!("failed to persist key images: {e}"))),
                 );
             }
-        };
+        }
+    };
 
     let outputs_after = match state.store.load_outputs(&vault_pub_key) {
         Ok(outputs) => outputs,
@@ -4310,6 +4358,123 @@ mod tests {
             serde_json::from_slice(&body).expect("failed to parse json response body")
         };
         (status, json)
+    }
+
+    #[tokio::test]
+    async fn apply_key_images_spend_marks_matching_outputs() {
+        let mut already_spent = sample_output(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            1,
+            OutputState::Spent,
+        );
+        already_spent.spent_by_key_image_height = None;
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(vec![
+            sample_output(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                0,
+                OutputState::Unspent,
+            ),
+            already_spent,
+        ]);
+        state
+            .store
+            .save_outputs(
+                &vault_pub_key,
+                &state.scanner.lock().get_all_outputs(&vault_pub_key),
+            )
+            .expect("failed to seed outputs");
+
+        let response = apply_key_images(
+            State(state.clone()),
+            Json(crate::api::types::ApplyKeyImagesRequest {
+                vault_pub_key: vault_pub_key.clone(),
+                reconcile: false,
+                spend: true,
+                spent_height: Some(123),
+                key_images: vec![
+                    crate::api::types::KeyImageEntry {
+                        tx_hash: String::new(),
+                        output_index: 0,
+                        key_image: "key-image-0".to_string(),
+                    },
+                    crate::api::types::KeyImageEntry {
+                        tx_hash: String::new(),
+                        output_index: 0,
+                        key_image: "key-image-1".to_string(),
+                    },
+                    crate::api::types::KeyImageEntry {
+                        tx_hash: String::new(),
+                        output_index: 0,
+                        key_image: "key-image-missing".to_string(),
+                    },
+                ],
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["applied"], serde_json::json!(2));
+        assert_eq!(body["not_found"], serde_json::json!(1));
+
+        let outputs = state
+            .store
+            .load_outputs(&vault_pub_key)
+            .expect("failed to reload outputs");
+        let by_index: HashMap<_, _> = outputs
+            .into_iter()
+            .map(|output| (output.output_index, output))
+            .collect();
+
+        assert_eq!(by_index.get(&0).unwrap().state, OutputState::Spent);
+        assert_eq!(
+            by_index.get(&0).unwrap().spent_by_key_image_height,
+            Some(123)
+        );
+        assert_eq!(by_index.get(&1).unwrap().state, OutputState::Spent);
+        assert_eq!(
+            by_index.get(&1).unwrap().spent_by_key_image_height,
+            Some(123)
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_key_images_spend_requires_chain_height() {
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(vec![sample_output(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            0,
+            OutputState::Unspent,
+        )]);
+        state
+            .store
+            .save_outputs(
+                &vault_pub_key,
+                &state.scanner.lock().get_all_outputs(&vault_pub_key),
+            )
+            .expect("failed to seed outputs");
+
+        let response = apply_key_images(
+            State(state),
+            Json(crate::api::types::ApplyKeyImagesRequest {
+                vault_pub_key,
+                reconcile: false,
+                spend: true,
+                spent_height: None,
+                key_images: vec![crate::api::types::KeyImageEntry {
+                    tx_hash: String::new(),
+                    output_index: 0,
+                    key_image: "key-image-0".to_string(),
+                }],
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body["error"].as_str().unwrap_or_default(),
+            "spent_height is required when spend=true"
+        );
     }
 
     #[test]

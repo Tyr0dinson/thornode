@@ -712,6 +712,65 @@ impl Store {
         Ok((applied, not_found))
     }
 
+    pub fn mark_spent_key_images(
+        &self,
+        vault_pub_key: &str,
+        key_images: &[String],
+        height: u64,
+    ) -> Result<(usize, usize)> {
+        let requested: HashSet<String> = key_images
+            .iter()
+            .map(|key_image| key_image.trim().to_ascii_lowercase())
+            .filter(|key_image| !key_image.is_empty())
+            .collect();
+        if requested.is_empty() {
+            return Ok((0, 0));
+        }
+
+        let mut applied = 0usize;
+        let mut not_found = 0usize;
+        self.cas_update_outputs(vault_pub_key, |outputs| {
+            let mut matched = HashSet::new();
+            for output in outputs.iter_mut() {
+                let Some(key_image) = output
+                    .key_image
+                    .as_ref()
+                    .map(|key_image| key_image.trim().to_ascii_lowercase())
+                else {
+                    continue;
+                };
+                if !requested.contains(&key_image) {
+                    continue;
+                }
+                matched.insert(key_image);
+
+                let mut changed = false;
+                if output.state != OutputState::Spent {
+                    output.state = OutputState::Spent;
+                    changed = true;
+                }
+                if output.reservation.take().is_some() {
+                    changed = true;
+                }
+                if output.spent_by_key_image_height.is_none()
+                    || output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+                {
+                    if output.spent_by_key_image_height != Some(height) {
+                        output.spent_by_key_image_height = Some(height);
+                        changed = true;
+                    }
+                }
+                if changed {
+                    applied += 1;
+                }
+            }
+
+            not_found = requested.difference(&matched).count();
+            Ok(())
+        })?;
+        Ok((applied, not_found))
+    }
+
     /// Load tracked outputs for a vault.
     pub fn load_outputs(&self, vault_pub_key: &str) -> Result<Vec<TrackedOutput>> {
         let tree = self.db.open_tree("outputs")?;
@@ -2629,6 +2688,62 @@ mod tests {
         let (applied_again, not_found_again) = store.apply_key_images(vault, &refs, false).unwrap();
         assert_eq!(applied_again, 0);
         assert_eq!(not_found_again, 1);
+    }
+
+    #[test]
+    fn mark_spent_key_images_backfills_chain_spend_height() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let vault = "thorpub1vault";
+
+        let mut unspent = sample_scanned_output("tx-unspent", 0);
+        unspent.key_image = Some("ki-0".to_string());
+
+        let mut already_spent = sample_scanned_output("tx-already-spent", 1);
+        already_spent.key_image = Some("ki-1".to_string());
+        already_spent.state = OutputState::Spent;
+
+        let mut chain_spent = sample_scanned_output("tx-chain-spent", 2);
+        chain_spent.key_image = Some("ki-2".to_string());
+        chain_spent.state = OutputState::Spent;
+        chain_spent.spent_by_key_image_height = Some(77);
+
+        store
+            .save_outputs(vault, &[unspent, already_spent, chain_spent])
+            .unwrap();
+
+        let (applied, not_found) = store
+            .mark_spent_key_images(
+                vault,
+                &[
+                    "ki-0".to_string(),
+                    "ki-1".to_string(),
+                    "ki-2".to_string(),
+                    "ki-missing".to_string(),
+                ],
+                121,
+            )
+            .unwrap();
+        assert_eq!(applied, 2);
+        assert_eq!(not_found, 1);
+
+        let outputs = store.load_outputs(vault).unwrap();
+        let by_tx: HashMap<_, _> = outputs
+            .into_iter()
+            .map(|output| (output.tx_hash.clone(), output))
+            .collect();
+
+        let unspent = by_tx.get("tx-unspent").unwrap();
+        assert_eq!(unspent.state, OutputState::Spent);
+        assert_eq!(unspent.spent_by_key_image_height, Some(121));
+
+        let already_spent = by_tx.get("tx-already-spent").unwrap();
+        assert_eq!(already_spent.state, OutputState::Spent);
+        assert_eq!(already_spent.spent_by_key_image_height, Some(121));
+
+        let chain_spent = by_tx.get("tx-chain-spent").unwrap();
+        assert_eq!(chain_spent.state, OutputState::Spent);
+        assert_eq!(chain_spent.spent_by_key_image_height, Some(77));
     }
 
     #[test]

@@ -329,6 +329,10 @@ pub struct ApplyKeyImagesRequest {
     pub vault_pub_key: String,
     #[serde(default)]
     pub reconcile: bool,
+    #[serde(default)]
+    pub spend: bool,
+    #[serde(default)]
+    pub spent_height: Option<u64>,
     pub key_images: Vec<KeyImageEntry>,
 }
 

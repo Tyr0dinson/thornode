@@ -240,6 +240,8 @@ type xmrFrostApplyKeyImagesRequest struct {
 	VaultPubKey string                     `json:"vault_pub_key"`
 	KeyImages   []xmrFrostApplyKeyImageRef `json:"key_images"`
 	Reconcile   bool                       `json:"reconcile,omitempty"`
+	Spend       bool                       `json:"spend,omitempty"`
+	SpentHeight uint64                     `json:"spent_height,omitempty"`
 }
 
 type xmrFrostApplyKeyImageRef struct {
@@ -1006,6 +1008,29 @@ func (s *FrostSigner) ApplyKeyImages(vaultPubKey string, refs []xmrFrostApplyKey
 	err := s.call(http.MethodPost, "/v1/monero/outputs/apply-key-images", req, &out)
 	if err != nil {
 		return out, fmt.Errorf("fail to call frost apply-key-images endpoint: %w", err)
+	}
+	return out, nil
+}
+
+func (s *FrostSigner) ApplySpentKeyImages(vaultPubKey string, keyImages []string, spentHeight uint64) (xmrFrostApplyKeyImagesResponse, error) {
+	var out xmrFrostApplyKeyImagesResponse
+	refs := make([]xmrFrostApplyKeyImageRef, 0, len(keyImages))
+	for _, keyImage := range keyImages {
+		normalized := strings.ToLower(strings.TrimSpace(keyImage))
+		if normalized == "" {
+			continue
+		}
+		refs = append(refs, xmrFrostApplyKeyImageRef{KeyImage: normalized})
+	}
+	req := xmrFrostApplyKeyImagesRequest{
+		VaultPubKey: vaultPubKey,
+		KeyImages:   refs,
+		Spend:       true,
+		SpentHeight: spentHeight,
+	}
+	err := s.call(http.MethodPost, "/v1/monero/outputs/apply-key-images", req, &out)
+	if err != nil {
+		return out, fmt.Errorf("fail to call frost apply-spent-key-images endpoint: %w", err)
 	}
 	return out, nil
 }

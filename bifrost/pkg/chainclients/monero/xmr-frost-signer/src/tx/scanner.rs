@@ -361,40 +361,78 @@ impl Scanner {
         >],
         height: u64,
     ) -> Vec<(String, u32)> {
+        let spent_key_images: Vec<String> = transactions
+            .iter()
+            .flat_map(|tx| tx.prefix().inputs.iter())
+            .filter_map(|input| match input {
+                Input::ToKey { key_image, .. } => {
+                    Some(hex::encode(key_image.compress().to_bytes()))
+                }
+                _ => None,
+            })
+            .collect();
+
+        self.mark_spent_key_images(vault_pub_key, &spent_key_images, height)
+            .0
+    }
+
+    pub fn mark_spent_key_images(
+        &mut self,
+        vault_pub_key: &str,
+        key_images: &[String],
+        height: u64,
+    ) -> (Vec<(String, u32)>, usize) {
+        let requested: HashSet<String> = key_images
+            .iter()
+            .map(|key_image| key_image.trim().to_ascii_lowercase())
+            .filter(|key_image| !key_image.is_empty())
+            .collect();
+        if requested.is_empty() {
+            return (Vec::new(), 0);
+        }
+
         let Some(state) = self.vault_states.get_mut(vault_pub_key) else {
-            return Vec::new();
+            return (Vec::new(), requested.len());
         };
 
-        let mut spent_key_images = HashSet::new();
-        for tx in transactions {
-            for input in &tx.prefix().inputs {
-                if let Input::ToKey { key_image, .. } = input {
-                    spent_key_images.insert(hex::encode(key_image.compress().to_bytes()));
-                }
-            }
-        }
-
-        if spent_key_images.is_empty() {
-            return Vec::new();
-        }
-
+        let mut matched = HashSet::new();
         let mut spent_output_ids = Vec::new();
         for output in &mut state.outputs {
-            let Some(key_image) = output.key_image.as_ref() else {
+            let Some(key_image) = output
+                .key_image
+                .as_ref()
+                .map(|key_image| key_image.trim().to_ascii_lowercase())
+            else {
                 continue;
             };
-            if output.state == crate::state::store::OutputState::Spent {
+            if !requested.contains(&key_image) {
                 continue;
             }
-            if spent_key_images.contains(key_image) {
+            matched.insert(key_image);
+
+            let mut changed = false;
+            if output.state != crate::state::store::OutputState::Spent {
                 output.state = crate::state::store::OutputState::Spent;
-                output.reservation = None;
-                output.spent_by_key_image_height = Some(height);
+                changed = true;
+            }
+            if output.reservation.take().is_some() {
+                changed = true;
+            }
+            if output.spent_by_key_image_height.is_none()
+                || output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+            {
+                if output.spent_by_key_image_height != Some(height) {
+                    output.spent_by_key_image_height = Some(height);
+                    changed = true;
+                }
+            }
+            if changed {
                 spent_output_ids.push((output.tx_hash.clone(), output.output_index));
             }
         }
 
-        spent_output_ids
+        let not_found = requested.difference(&matched).count();
+        (spent_output_ids, not_found)
     }
 
     pub fn apply_key_images(
@@ -866,5 +904,99 @@ mod tests {
         let outputs = scanner.get_all_outputs("thorpub1vault");
         assert_eq!(outputs[0].state, crate::state::store::OutputState::Spent);
         assert_eq!(outputs[0].spent_by_key_image_height, Some(121));
+    }
+
+    #[test]
+    fn mark_spent_key_images_backfills_chain_spend_height() {
+        let mut scanner = Scanner::new();
+        let base = Scalar::from(7u64);
+        let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
+
+        scanner
+            .register_vault(
+                "thorpub1vault",
+                &group_key_hex,
+                ChainNetworkMode::Mocknet,
+                vec![
+                    TrackedOutput {
+                        tx_hash: "tx-unspent".to_string(),
+                        output_index: 0,
+                        amount: 10,
+                        height: 10,
+                        key_image: Some("ki-0".to_string()),
+                        spent_by_key_image_height: None,
+                        state: crate::state::store::OutputState::Unspent,
+                        reservation: None,
+                        subaddress_major: 0,
+                        subaddress_minor: 0,
+                        wallet_output_hex: Some("aa".to_string()),
+                        address: Some("48a".to_string()),
+                        note: None,
+                    },
+                    TrackedOutput {
+                        tx_hash: "tx-already-spent".to_string(),
+                        output_index: 1,
+                        amount: 20,
+                        height: 11,
+                        key_image: Some("ki-1".to_string()),
+                        spent_by_key_image_height: None,
+                        state: crate::state::store::OutputState::Spent,
+                        reservation: None,
+                        subaddress_major: 0,
+                        subaddress_minor: 0,
+                        wallet_output_hex: Some("bb".to_string()),
+                        address: Some("48b".to_string()),
+                        note: None,
+                    },
+                    TrackedOutput {
+                        tx_hash: "tx-chain-spent".to_string(),
+                        output_index: 2,
+                        amount: 30,
+                        height: 12,
+                        key_image: Some("ki-2".to_string()),
+                        spent_by_key_image_height: Some(77),
+                        state: crate::state::store::OutputState::Spent,
+                        reservation: None,
+                        subaddress_major: 0,
+                        subaddress_minor: 0,
+                        wallet_output_hex: Some("cc".to_string()),
+                        address: Some("48c".to_string()),
+                        note: None,
+                    },
+                ],
+                None,
+            )
+            .unwrap();
+
+        let (spent, not_found) = scanner.mark_spent_key_images(
+            "thorpub1vault",
+            &[
+                "ki-0".to_string(),
+                "ki-1".to_string(),
+                "ki-2".to_string(),
+                "ki-missing".to_string(),
+            ],
+            121,
+        );
+        assert_eq!(spent.len(), 2);
+        assert_eq!(not_found, 1);
+
+        let outputs = scanner.get_all_outputs("thorpub1vault");
+        let by_tx: HashMap<_, _> = outputs
+            .into_iter()
+            .map(|output| (output.tx_hash.clone(), output))
+            .collect();
+
+        let unspent = by_tx.get("tx-unspent").unwrap();
+        assert_eq!(unspent.state, crate::state::store::OutputState::Spent);
+        assert_eq!(unspent.spent_by_key_image_height, Some(121));
+
+        let already_spent = by_tx.get("tx-already-spent").unwrap();
+        assert_eq!(already_spent.state, crate::state::store::OutputState::Spent);
+        assert_eq!(already_spent.spent_by_key_image_height, Some(121));
+
+        let chain_spent = by_tx.get("tx-chain-spent").unwrap();
+        assert_eq!(chain_spent.state, crate::state::store::OutputState::Spent);
+        assert_eq!(chain_spent.spent_by_key_image_height, Some(77));
     }
 }
