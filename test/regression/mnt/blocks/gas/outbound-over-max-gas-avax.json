@@ -274,19 +274,19 @@
         "type": "message"
       },
       {
-        "amount": "93938361rune",
+        "amount": "47223rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "93938361rune",
+        "amount": "47223rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "93938361rune",
+        "amount": "47223rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -468,19 +468,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "494387rune",
+        "amount": "494388rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "494387rune",
+        "amount": "494388rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "494387rune",
+        "amount": "494388rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -492,19 +492,19 @@
         "type": "message"
       },
       {
-        "amount": "567769rune",
+        "amount": "567771rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "567769rune",
+        "amount": "567771rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "567769rune",
+        "amount": "567771rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -540,8 +540,8 @@
         "type": "message"
       },
       {
-        "AVAX.AVAX": "494387",
-        "AVAX.USDX-0X9999999999999999999999999999999999999999": "567769",
+        "AVAX.AVAX": "494388",
+        "AVAX.USDX-0X9999999999999999999999999999999999999999": "567771",
         "bond_reward": "47689",
         "dev_fund_reward": "0",
         "income_burn": "0",
@@ -828,19 +828,19 @@
         "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
       },
       {
-        "amount": "1841230281rune",
+        "amount": "1841230284rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "1841230281rune",
+        "amount": "1841230284rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "1841230281rune",
+        "amount": "1841230284rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -852,19 +852,19 @@
         "type": "message"
       },
       {
-        "amount": "89931754rune",
+        "amount": "51680rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "89931754rune",
+        "amount": "51680rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "89931754rune",
+        "amount": "51680rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -876,7 +876,7 @@
         "type": "message"
       },
       {
-        "AVAX.USDX-0X9999999999999999999999999999999999999999": "1841230281",
+        "AVAX.USDX-0X9999999999999999999999999999999999999999": "1841230284",
         "bond_reward": "89931754",
         "dev_fund_reward": "0",
         "income_burn": "0",
@@ -1046,19 +1046,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "610320rune",
+        "amount": "610323rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "610320rune",
+        "amount": "610323rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "610320rune",
+        "amount": "610323rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1070,19 +1070,19 @@
         "type": "message"
       },
       {
-        "amount": "419551rune",
+        "amount": "419554rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "419551rune",
+        "amount": "419554rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "419551rune",
+        "amount": "419554rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1118,8 +1118,8 @@
         "type": "message"
       },
       {
-        "AVAX.AVAX": "610320",
-        "AVAX.USDX-0X9999999999999999999999999999999999999999": "419551",
+        "AVAX.AVAX": "610323",
+        "AVAX.USDX-0X9999999999999999999999999999999999999999": "419554",
         "bond_reward": "81715",
         "dev_fund_reward": "0",
         "income_burn": "0",
@@ -1264,7 +1264,7 @@
               "value": "5"
             },
             {
-              "amount": "22016686010",
+              "amount": "22016686011",
               "bond_address": "",
               "bond_type": "bond_cost",
               "chain": "",
@@ -1302,19 +1302,19 @@
               "type": "message"
             },
             {
-              "amount": "14677790673rune",
+              "amount": "14677790674rune",
               "msg_index": "0",
               "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
               "type": "coin_spent"
             },
             {
-              "amount": "14677790673rune",
+              "amount": "14677790674rune",
               "msg_index": "0",
               "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
               "type": "coin_received"
             },
             {
-              "amount": "14677790673rune",
+              "amount": "14677790674rune",
               "msg_index": "0",
               "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
               "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
@@ -1327,7 +1327,7 @@
             },
             {
               "AVAX.USDX-0X9999999999999999999999999999999999999999": "-9019300200",
-              "THOR.RUNE": "14677790673",
+              "THOR.RUNE": "14677790674",
               "msg_index": "0",
               "pool": "AVAX.USDX-0X9999999999999999999999999999999999999999",
               "type": "slash"
@@ -1345,7 +1345,7 @@
               "value": "5"
             },
             {
-              "amount": "157501617552",
+              "amount": "157501617554",
               "bond_address": "",
               "bond_type": "bond_cost",
               "chain": "",
@@ -1359,19 +1359,19 @@
               "type": "bond"
             },
             {
-              "amount": "52500539184rune",
+              "amount": "52500539185rune",
               "msg_index": "0",
               "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
               "type": "coin_spent"
             },
             {
-              "amount": "52500539184rune",
+              "amount": "52500539185rune",
               "msg_index": "0",
               "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
               "type": "coin_received"
             },
             {
-              "amount": "52500539184rune",
+              "amount": "52500539185rune",
               "msg_index": "0",
               "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
               "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
@@ -1383,19 +1383,19 @@
               "type": "message"
             },
             {
-              "amount": "105001078368rune",
+              "amount": "105001078369rune",
               "msg_index": "0",
               "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
               "type": "coin_spent"
             },
             {
-              "amount": "105001078368rune",
+              "amount": "105001078369rune",
               "msg_index": "0",
               "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
               "type": "coin_received"
             },
             {
-              "amount": "105001078368rune",
+              "amount": "105001078369rune",
               "msg_index": "0",
               "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
               "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
@@ -1408,7 +1408,7 @@
             },
             {
               "AVAX.AVAX": "-950000001",
-              "THOR.RUNE": "105001078368",
+              "THOR.RUNE": "105001078369",
               "msg_index": "0",
               "pool": "AVAX.AVAX",
               "type": "slash"

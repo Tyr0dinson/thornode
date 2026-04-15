@@ -1757,19 +1757,18 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 
 	}
 
-	if !bondReward.IsZero() {
-		coin := common.NewCoin(common.RuneNative, bondReward)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
-			ctx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
-			return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
-		}
-	}
-
-	// Split bonder reward between emission-sourced (global) and fee-sourced (per-chain).
+	// Split bonder reward between emission-sourced (global, tracked in BondRewardRune)
+	// and fee-sourced (per-chain, tracked in ChainIncome). Only the emission portion
+	// is transferred to the Bond module up-front; the per-chain portion is moved from
+	// Reserve to Bond at distribution time (distributeChainIncome) so that the outbound
+	// fee flow — which also adds to ChainIncome but leaves rune in the Reserve for gas
+	// reimbursement — can share the same accounting path without over- or under-funding
+	// the Bond module.
 	originalSystemIncome := blockReward.Add(totalLiquidityFees)
+	emissionBonderShare := bondReward
 	if !totalLiquidityFees.IsZero() && !originalSystemIncome.IsZero() {
 		feeBonderShare := common.GetSafeShare(totalLiquidityFees, originalSystemIncome, bondReward)
-		emissionBonderShare := common.SafeSub(bondReward, feeBonderShare)
+		emissionBonderShare = common.SafeSub(bondReward, feeBonderShare)
 
 		// Group pool liquidity fees by chain for proportional attribution.
 		type chainFeeEntry struct {
@@ -1813,10 +1812,15 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 				addChainIncomeToNetwork(&network, entry.chain, share)
 			}
 		}
+	}
+	network.BondRewardRune = network.BondRewardRune.Add(emissionBonderShare)
 
-		network.BondRewardRune = network.BondRewardRune.Add(emissionBonderShare)
-	} else {
-		network.BondRewardRune = network.BondRewardRune.Add(bondReward)
+	if !emissionBonderShare.IsZero() {
+		coin := common.NewCoin(common.RuneNative, emissionBonderShare)
+		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
+			ctx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
+			return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
+		}
 	}
 
 	rewardEvt := NewEventRewards(bondReward, evtPools, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct)

@@ -243,6 +243,7 @@
       "network": {
         "NodeIncomeSplit": "10000",
         "bond_reward_rune": "0",
+        "chain_income": null,
         "total_bond_units": "4"
       },
       "network_fees": [

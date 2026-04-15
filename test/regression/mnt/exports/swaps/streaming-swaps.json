@@ -130,7 +130,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "207708865786",
+              "amount": "207708865861",
               "denom": "rune"
             }
           ]
@@ -139,7 +139,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999732430501",
+              "amount": "35000032219490",
               "denom": "rune"
             }
           ]
@@ -152,7 +152,7 @@
               "denom": "eth/eth"
             },
             {
-              "amount": "2492259674120",
+              "amount": "2492259674145",
               "denom": "rune"
             }
           ]
@@ -170,7 +170,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000299029593",
+              "amount": "4999999240504",
               "denom": "rune"
             }
           ]
@@ -257,7 +257,17 @@
       "network": {
         "LPIncomeSplit": "9585",
         "NodeIncomeSplit": "415",
-        "bond_reward_rune": "303029593",
+        "bond_reward_rune": "3240504",
+        "chain_income": [
+          {
+            "amount": "8999446",
+            "chain": "BTC"
+          },
+          {
+            "amount": "692054147",
+            "chain": "ETH"
+          }
+        ],
         "total_bond_units": "68"
       },
       "network_fees": [
@@ -332,7 +342,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "867393674",
-          "balance_rune": "122861032207",
+          "balance_rune": "122861032282",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -368,7 +378,7 @@
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "5880274015",
+          "score": "5880274018",
           "spent": "0"
         }
       ],

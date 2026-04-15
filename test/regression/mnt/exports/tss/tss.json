@@ -203,6 +203,7 @@
       "mimirs": [],
       "network": {
         "bond_reward_rune": "0",
+        "chain_income": null,
         "total_bond_units": "0"
       },
       "network_fees": [],

@@ -139,7 +139,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999999560628",
+              "amount": "35000006371035",
               "denom": "rune"
             }
           ]
@@ -166,7 +166,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "50000009249779",
+              "amount": "50000002439372",
               "denom": "rune"
             }
           ]
@@ -248,7 +248,13 @@
       ],
       "network": {
         "NodeIncomeSplit": "10000",
-        "bond_reward_rune": "11249779",
+        "bond_reward_rune": "4439372",
+        "chain_income": [
+          {
+            "amount": "6810407",
+            "chain": "ETH"
+          }
+        ],
         "total_bond_units": "4"
       },
       "network_fees": [

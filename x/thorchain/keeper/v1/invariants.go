@@ -176,7 +176,9 @@ func BondInvariant(k KVStore) common.Invariant {
 		// get rune balance of bond module
 		bondModuleRune := k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
 
-		// bond module is expected to equal bonded rune and pending rewards
+		// bond module is expected to equal bonded rune and pending rewards.
+		// Per-chain bond rewards (network.ChainIncome) live in the Reserve module
+		// until distributeChainIncome moves them to Bond at distribution time.
 		expectedRune := bondedRune.Add(bondRewardRune)
 		if expectedRune.GT(bondModuleRune) {
 			broken = true

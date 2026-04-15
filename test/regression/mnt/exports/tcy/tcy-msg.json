@@ -390,6 +390,7 @@
         "LPIncomeSplit": "9000",
         "NodeIncomeSplit": "1000",
         "bond_reward_rune": "1098756",
+        "chain_income": null,
         "total_bond_units": "11"
       },
       "network_fees": [

@@ -133,7 +133,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "297132555212",
+              "amount": "297132558881",
               "denom": "rune"
             }
           ]
@@ -142,7 +142,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999730780512",
+              "amount": "35003058086095",
               "denom": "rune"
             }
           ]
@@ -169,7 +169,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5003314664278",
+              "amount": "4999987355026",
               "denom": "rune"
             }
           ]
@@ -280,7 +280,21 @@
       "network": {
         "LPIncomeSplit": "9406",
         "NodeIncomeSplit": "594",
-        "bond_reward_rune": "3330664278",
+        "bond_reward_rune": "3355026",
+        "chain_income": [
+          {
+            "amount": "323927753",
+            "chain": "ETH"
+          },
+          {
+            "amount": "179673783",
+            "chain": "BTC"
+          },
+          {
+            "amount": "3176475421",
+            "chain": "GAIA"
+          }
+        ],
         "total_bond_units": "51"
       },
       "network_fees": [
@@ -340,7 +354,7 @@
           "asset": "BTC.BTC"
         },
         {
-          "amount": "441684614",
+          "amount": "441684617",
           "asset": "ETH.ETH"
         }
       ],
@@ -359,7 +373,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "96128753",
-          "balance_rune": "106368644871",
+          "balance_rune": "106368646357",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -370,7 +384,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "931730115",
-          "balance_rune": "107815897281",
+          "balance_rune": "107815898579",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -381,7 +395,7 @@
           "LP_units": "100000000000",
           "asset": "GAIA.ATOM",
           "balance_asset": "60000100",
-          "balance_rune": "82948013060",
+          "balance_rune": "82948013945",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -532,7 +546,7 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "35932257976",
+          "score": "35932257977",
           "spent": "0"
         },
         {
@@ -544,7 +558,7 @@
         {
           "address": "cosmos13wrmhnh2qe98rjse30pl7u6jxszjjwl4t2v05e",
           "reclaimed": "0",
-          "score": "35704023161",
+          "score": "35704023162",
           "spent": "0"
         },
         {
