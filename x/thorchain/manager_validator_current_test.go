@@ -1102,7 +1102,9 @@ func (vts *ValidatorMgrTestSuite) TestPartitionByChainSupport_TwoPartitions(c *C
 		groupB[i] = na
 	}
 
-	all := append(groupA, groupB...)
+	all := make(NodeAccounts, 0, len(groupA)+len(groupB))
+	all = append(all, groupA...)
+	all = append(all, groupB...)
 	partitions := vm.partitionByChainSupport(ctx, mgr, all)
 	c.Assert(len(partitions), Equals, 2)
 
@@ -1142,7 +1144,9 @@ func (vts *ValidatorMgrTestSuite) TestChurnPartitionBelowMinimumExcluded(c *C) {
 		groupB[i] = na
 	}
 
-	all := append(groupA, groupB...)
+	all := make(NodeAccounts, 0, len(groupA)+len(groupB))
+	all = append(all, groupA...)
+	all = append(all, groupB...)
 	minimumNodesForBFT := k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
 	c.Assert(minimumNodesForBFT, Equals, int64(4))
 

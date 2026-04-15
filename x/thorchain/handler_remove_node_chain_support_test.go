@@ -154,7 +154,7 @@ func (s *HandlerRemoveNodeChainSupportSuite) TestAnteHandler(c *C) {
 	msg := NewMsgRemoveNodeChainSupport(common.BTCChain, node.NodeAddress)
 	newCtx, err := RemoveNodeChainSupportAnteHandler(ctx, GetCurrentVersion(), k, *msg)
 	c.Assert(err, IsNil)
-	c.Assert(newCtx.Priority(), Equals, int64(ActiveNodePriority))
+	c.Assert(newCtx.Priority(), Equals, ActiveNodePriority)
 
 	// standby node passes ante
 	standbyNode := GetRandomValidatorNode(NodeStandby)

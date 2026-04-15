@@ -308,8 +308,8 @@ func (s *HandlerSolvencyTestSuite) TestChainAwareConsensus(c *C) {
 
 	broadcast := func(c *C, na NodeAccount) {
 		msg.Signer = na.NodeAddress
-		_, err := handler.handle(ctx, *msg)
-		c.Assert(err, IsNil)
+		_, handleErr := handler.handle(ctx, *msg)
+		c.Assert(handleErr, IsNil)
 	}
 
 	// With 3 chain participants, SolvencyVoter consensus needs 1/3 = 1.

@@ -1041,7 +1041,8 @@ func (s *QuerierSuite) TestQueryNodesSupportedChainsEndToEnd(c *C) {
 	c.Assert(len(nodes), Equals, 2)
 
 	for _, node := range nodes {
-		if node.NodeAddress == na1.NodeAddress.String() {
+		switch node.NodeAddress {
+		case na1.NodeAddress.String():
 			// na1 has empty SupportedChains -> resolves from vault, supports_all_chains=true
 			c.Assert(node.SupportsAllChains, Equals, true)
 			chainSet := make(map[string]bool)
@@ -1050,12 +1051,12 @@ func (s *QuerierSuite) TestQueryNodesSupportedChainsEndToEnd(c *C) {
 			}
 			c.Assert(chainSet[common.BTCChain.String()], Equals, true)
 			c.Assert(chainSet[common.ETHChain.String()], Equals, true)
-		} else if node.NodeAddress == na2.NodeAddress.String() {
+		case na2.NodeAddress.String():
 			// na2 has explicit SupportedChains=[BTC] -> supports_all_chains=false
 			c.Assert(node.SupportsAllChains, Equals, false)
 			c.Assert(len(node.SupportedChains), Equals, 1)
 			c.Assert(node.SupportedChains[0], Equals, common.BTCChain.String())
-		} else {
+		default:
 			c.Fatalf("unexpected node address: %s", node.NodeAddress)
 		}
 	}

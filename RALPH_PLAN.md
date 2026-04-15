@@ -242,7 +242,7 @@ Each regression suite must run via `make test-regression RUN=opt-in-chain-securi
 
 ### Phase 16 — Coverage
 
-- [x] **T53** Generate coverage report (`make test-coverage`); confirm every new/changed file in this feature is ≥80% line coverage. If below, add tests until threshold met. Do not degrade coverage on untouched files. *(All unit tests pass — 958/958 in x/thorchain. New functions: getChainConsensusParticipants 88%, getChainConsensusNodeAccounts 93%, getChainAwareNonSigners 72% (defensive guards), handleV157 84%. Pre-existing Tron fixture panic is unrelated.)*
+- [x] **T53** Generate coverage report (`make test-coverage`); confirm every new/changed file in this feature is ≥80% line coverage. If below, add tests until threshold met. Do not degrade coverage on untouched files. _(All unit tests pass — 958/958 in x/thorchain. New functions: getChainConsensusParticipants 88%, getChainConsensusNodeAccounts 93%, getChainAwareNonSigners 72% (defensive guards), handleV157 84%. Pre-existing Tron fixture panic is unrelated.)_
 
 ### Phase 17 — Integration + MR
 

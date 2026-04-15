@@ -118,7 +118,7 @@ func (s *HandlerAddNodeChainSupportSuite) TestAnteHandler(c *C) {
 	msg := NewMsgAddNodeChainSupport(common.BTCChain, node.NodeAddress)
 	newCtx, err := AddNodeChainSupportAnteHandler(ctx, GetCurrentVersion(), k, *msg)
 	c.Assert(err, IsNil)
-	c.Assert(newCtx.Priority(), Equals, int64(ActiveNodePriority))
+	c.Assert(newCtx.Priority(), Equals, ActiveNodePriority)
 
 	// standby node passes ante
 	standbyNode := GetRandomValidatorNode(NodeStandby)
@@ -145,5 +145,5 @@ func (s *HandlerAddNodeChainSupportSuite) TestNodeAccountSignerPriority(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, node), IsNil)
 	newCtx, err := nodeAccountSignerPriority(ctx, k, []cosmos.AccAddress{node.NodeAddress})
 	c.Assert(err, IsNil)
-	c.Assert(newCtx.Priority(), Equals, int64(ActiveNodePriority))
+	c.Assert(newCtx.Priority(), Equals, ActiveNodePriority)
 }

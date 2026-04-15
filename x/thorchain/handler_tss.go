@@ -450,9 +450,9 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			if matchingKeygen := findMatchingKeygen(keygenBlock, voter.PubKeys); matchingKeygen != nil && len(matchingKeygen.TargetChains) > 0 {
 				targetChains := make(common.Chains, 0, len(matchingKeygen.TargetChains))
 				for _, tc := range matchingKeygen.TargetChains {
-					chain, err := common.NewChain(tc)
-					if err != nil {
-						ctx.Logger().Error("fail to parse target chain", "chain", tc, "error", err)
+					chain, parseErr := common.NewChain(tc)
+					if parseErr != nil {
+						ctx.Logger().Error("fail to parse target chain", "chain", tc, "error", parseErr)
 						continue
 					}
 					targetChains = append(targetChains, chain)

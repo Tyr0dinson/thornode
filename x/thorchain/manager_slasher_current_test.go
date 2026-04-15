@@ -1455,7 +1455,9 @@ func (k *TestForfeitChainIncomeKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Con
 
 func (k *TestForfeitChainIncomeKeeper) GetAsgardVaultsByChain(_ cosmos.Context, chain common.Chain) (Vaults, error) {
 	var result Vaults
-	allVaults := append(k.activeVaults, k.retiringVaults...)
+	allVaults := make(Vaults, 0, len(k.activeVaults)+len(k.retiringVaults))
+	allVaults = append(allVaults, k.activeVaults...)
+	allVaults = append(allVaults, k.retiringVaults...)
 	for _, v := range allVaults {
 		if v.GetChains().Has(chain) {
 			result = append(result, v)

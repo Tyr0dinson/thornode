@@ -977,13 +977,13 @@ func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, mgr Ma
 
 	// Deduct forfeited amount from chain income bucket.
 	remainder := common.SafeSub(chainIncome, totalForfeiture)
-	if err := s.keeper.ZeroChainIncome(ctx, chain); err != nil {
-		ctx.Logger().Error("fail to zero chain income for forfeiture", "chain", chain, "error", err)
+	if zeroErr := s.keeper.ZeroChainIncome(ctx, chain); zeroErr != nil {
+		ctx.Logger().Error("fail to zero chain income for forfeiture", "chain", chain, "error", zeroErr)
 		return
 	}
 	if !remainder.IsZero() {
-		if err := s.keeper.AddChainIncome(ctx, chain, remainder); err != nil {
-			ctx.Logger().Error("fail to restore chain income remainder", "chain", chain, "error", err)
+		if addErr := s.keeper.AddChainIncome(ctx, chain, remainder); addErr != nil {
+			ctx.Logger().Error("fail to restore chain income remainder", "chain", chain, "error", addErr)
 			return
 		}
 	}
