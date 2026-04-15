@@ -16,9 +16,12 @@ genesis:
       balances:
         - address: {{ addr_module_bond }}
           coins:
-            - amount: "10000000000000"
+            - amount: "15000000000000"
               denom: rune
     thorchain:
+      mimirs:
+        - key: MinimumNodesForBFT
+          value: "2"
       node_accounts:
         - active_block_height: "0"
           bond: "5000000000000"
@@ -30,10 +33,13 @@ genesis:
             ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
           signer_membership: []
           status: Active
+          supported_chains:
+            - THOR
+            - BTC
           # matches the priv_validator_key.json mounted in the test container
           validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
           version: {{ version }}
-        - bond: "2500000000000"
+        - bond: "5000000000000"
           ip_address: 1.1.1.1
           node_address: {{ addr_thor_cat }}
           bond_address: {{ addr_thor_cat }}
@@ -41,9 +47,12 @@ genesis:
             secp256k1: {{ pubkey_cat }}
             ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
           status: Active
+          supported_chains:
+            - THOR
+            - BTC
           validator_cons_pub_key: {{ cons_pubkey_cat }}
           version: {{ version }}
-        - bond: "2500000000000"
+        - bond: "5000000000000"
           ip_address: 1.1.1.1
           node_address: {{ addr_thor_fox }}
           bond_address: {{ addr_thor_fox }}
@@ -51,6 +60,9 @@ genesis:
             secp256k1: {{ pubkey_fox }}
             ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
           status: Active
+          supported_chains:
+            - THOR
+            - BTC
           validator_cons_pub_key: {{ cons_pubkey_fox }}
           version: {{ version }}
       vaults:

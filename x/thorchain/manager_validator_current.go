@@ -189,7 +189,7 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context, mgr Manager) error {
 		return err
 	}
 	if ok {
-		minimumNodesForBFT := vm.k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
+		minimumNodesForBFT := vm.k.GetConfigInt64(ctx, constants.MinimumNodesForBFT)
 		partitions := vm.partitionByChainSupport(ctx, mgr, next)
 
 		coveredChains := make(map[common.Chain]struct{})

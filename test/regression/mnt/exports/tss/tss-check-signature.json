@@ -160,7 +160,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "10000000000000",
+              "amount": "15000000000000",
               "denom": "rune"
             }
           ]
@@ -174,7 +174,7 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "55000000000000",
+          "amount": "60000000000000",
           "denom": "rune"
         }
       ]
@@ -202,7 +202,7 @@
           "node_operator_fee": "500",
           "providers": [
             {
-              "bond": "2500000000000",
+              "bond": "5000000000000",
               "bond_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
             }
           ]
@@ -212,7 +212,7 @@
           "node_operator_fee": "500",
           "providers": [
             {
-              "bond": "2500000000000",
+              "bond": "5000000000000",
               "bond_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
             }
           ]
@@ -231,9 +231,15 @@
       "chain_contracts": [],
       "last_chain_heights": [],
       "liquidity_providers": null,
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "MINIMUMNODESFORBFT",
+          "value": "2"
+        }
+      ],
       "network": {
         "bond_reward_rune": "0",
+        "chain_income": null,
         "total_bond_units": "0"
       },
       "network_fees": [],
@@ -241,7 +247,7 @@
       "node_accounts": [
         {
           "active_block_height": "11",
-          "bond": "2500000000000",
+          "bond": "5000000000000",
           "bond_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "ip_address": "1.1.1.1",
           "node_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -254,11 +260,15 @@
           ],
           "status": "Active",
           "status_since": "11",
+          "supported_chains": [
+            "THOR",
+            "BTC"
+          ],
           "validator_cons_pub_key": "tthorcpub1zcjduepqsukty8qkyj4wfrpc8he2hl9fc8m06cfz8ex3ddspzzufw93xxhqqec5sp0"
         },
         {
           "active_block_height": "11",
-          "bond": "2500000000000",
+          "bond": "5000000000000",
           "bond_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
@@ -271,6 +281,10 @@
           ],
           "status": "Active",
           "status_since": "11",
+          "supported_chains": [
+            "THOR",
+            "BTC"
+          ],
           "validator_cons_pub_key": "tthorcpub1zcjduepqj78u6rt597vlvfmrr8sn8qfs2j9qm6z44vt43a3nuk0zduew5y8qf3s6hx"
         },
         {
@@ -288,6 +302,10 @@
             "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v"
           ],
           "status": "Active",
+          "supported_chains": [
+            "THOR",
+            "BTC"
+          ],
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
