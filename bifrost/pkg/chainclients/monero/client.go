@@ -444,6 +444,8 @@ func isTransientXMRKeyImageCeremonyError(err error) bool {
 		strings.Contains(errText, "fail to join party, timeout")
 }
 
+var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not active")
+
 func (c *Client) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
@@ -2606,6 +2608,14 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		Msg("preparing finalized XMR observation for key-image generation")
 	proofs, err := c.generateObservedTxKeyImages(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, ceremonyCtx.members, finaliseHeight, version.String())
 	if err != nil {
+		if errors.Is(err, errXMRKeyImageNotActiveSigner) {
+			c.logger.Info().
+				Err(err).
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Msg("waiting for finalized XMR key-images from the active signer subset")
+			return nil, false, nil
+		}
 		if isTransientXMRKeyImageCeremonyError(err) {
 			c.logger.Info().
 				Err(err).
@@ -3139,10 +3149,14 @@ func (c *Client) generateObservedTxKeyImages(
 			return nil, fmt.Errorf("fail to execute XMR key-image ceremony for %s:%d: %w", txHash, output.OutputIndex, err)
 		}
 		if resp.Status != gotsscommon.Success {
+			failReason := strings.TrimSpace(resp.Blame.FailReason)
+			if failReason == "local signer is not in active signer set" || failReason == "local signer is not in participant set" {
+				return nil, fmt.Errorf("%w for %s:%d: %s", errXMRKeyImageNotActiveSigner, txHash, output.OutputIndex, failReason)
+			}
 			if len(resp.Blame.BlameNodes) > 0 {
 				return nil, bifrosttss.NewKeysignError(frostBlameToThorchainBlame(resp.Blame))
 			}
-			return nil, fmt.Errorf("XMR key-image ceremony failed for %s:%d: %s", txHash, output.OutputIndex, resp.Blame.FailReason)
+			return nil, fmt.Errorf("XMR key-image ceremony failed for %s:%d: %s", txHash, output.OutputIndex, failReason)
 		}
 		c.logger.Info().
 			Str("vault_pub_key", vaultPubKey.String()).
