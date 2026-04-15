@@ -3,6 +3,7 @@ package cosmos
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/big"
 	"os"
@@ -209,6 +210,14 @@ func MinUint(u1, u2 Uint) Uint {
 	return u2
 }
 
+// MaxUint returns the maximum of two Uints.
+func MaxUint(u1, u2 Uint) Uint {
+	if u1.GT(u2) {
+		return u1
+	}
+	return u2
+}
+
 // Sum returns the sum of all the Uints in the slice.
 func Sum(u []Uint) Uint {
 	sum := ZeroUint()
@@ -216,4 +225,20 @@ func Sum(u []Uint) Uint {
 		sum = sum.Add(i)
 	}
 	return sum
+}
+
+func ParseUint128(data []byte) (Uint, error) {
+	if len(data) != 16 {
+		return ZeroUint(), fmt.Errorf("data must be 16 bytes")
+	}
+
+	// Reconstruct u128 from two LE u64 halves: value = (high << 64) | low
+	low := binary.LittleEndian.Uint64(data[:8])
+	high := binary.LittleEndian.Uint64(data[8:])
+
+	value := new(big.Int).SetUint64(high)
+	value.Lsh(value, 64)
+	value.Or(value, new(big.Int).SetUint64(low))
+
+	return NewUintFromBigInt(value), nil
 }

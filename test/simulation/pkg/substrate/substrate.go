@@ -95,7 +95,7 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 		}
 	}
 
-	balance, err := c.rpc.GetBalance(address.String(), "")
+	balance, err := c.rpc.GetBalance(address.String(), "", c.params.BalanceSize)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get balance: %w", err)
 	}

@@ -72,6 +72,8 @@ func NewClient(
 		Logger()
 
 	c := &Client{
+		logger:   logger,
+		config:   config,
 		wg:       &sync.WaitGroup{},
 		stopchan: make(chan struct{}),
 		nonces:   make(map[string]nonceMetadata),
@@ -196,7 +198,7 @@ func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, 
 
 // GetAccountByAddress returns account information.
 func (c *Client) GetAccountByAddress(addr string, height *big.Int) (common.Account, error) {
-	balance, err := c.rpcClient.GetBalance(addr, "")
+	balance, err := c.rpcClient.GetBalance(addr, "", c.chainScanner.params.BalanceSize)
 	if err != nil {
 		return common.Account{}, fmt.Errorf("failed to get balance: %w", err)
 	}

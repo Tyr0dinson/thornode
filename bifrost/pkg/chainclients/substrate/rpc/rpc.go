@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -176,7 +175,7 @@ func (c *Client) GetHeader(hash string) (*Header, error) {
 // GetBalance returns the free balance for the given address at the given block hash.
 // It queries System::Account storage directly via state_getStorage and SCALE-decodes
 // the AccountInfo struct to extract the free balance.
-func (c *Client) GetBalance(address, blockHash string) (cosmos.Uint, error) {
+func (c *Client) GetBalance(address, blockHash string, balanceSize int) (cosmos.Uint, error) {
 	accountID, err := ss58DecodeAccountID(address)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("failed to decode SS58 address: %w", err)
@@ -207,7 +206,7 @@ func (c *Client) GetBalance(address, blockHash string) (cosmos.Uint, error) {
 		return cosmos.ZeroUint(), fmt.Errorf("failed to decode storage hex: %w", err)
 	}
 
-	free, err := decodeAccountInfoFreeBalance(data)
+	free, err := decodeAccountInfoFreeBalance(data, balanceSize)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("failed to decode AccountInfo: %w", err)
 	}
@@ -241,22 +240,21 @@ func systemAccountStorageKey(accountID []byte) string {
 // This layout is stable across both old (misc_frozen/fee_frozen) and new
 // (frozen/flags) AccountData variants.
 
-func decodeAccountInfoFreeBalance(data []byte) (cosmos.Uint, error) {
+func decodeAccountInfoFreeBalance(data []byte, balanceSize int) (cosmos.Uint, error) {
 	const offset = 16 // 4 × u32 fields before AccountData.free
 
-	if len(data) < offset+16 {
-		return cosmos.ZeroUint(), fmt.Errorf("AccountInfo data too short: %d bytes (need %d)", len(data), offset+16)
+	if len(data) < offset+balanceSize {
+		return cosmos.ZeroUint(), fmt.Errorf("AccountInfo data too short: %d bytes (need %d)", len(data), offset+balanceSize)
 	}
 
-	// Reconstruct u128 from two LE u64 halves: value = (high << 64) | low
-	low := binary.LittleEndian.Uint64(data[offset : offset+8])
-	high := binary.LittleEndian.Uint64(data[offset+8 : offset+16])
-
-	value := new(big.Int).SetUint64(high)
-	value.Lsh(value, 64)
-	value.Or(value, new(big.Int).SetUint64(low))
-
-	return cosmos.NewUintFromBigInt(value), nil
+	switch balanceSize {
+	case 8:
+		return cosmos.NewUint(binary.LittleEndian.Uint64(data[offset : offset+8])), nil
+	case 16:
+		return cosmos.ParseUint128(data[offset : offset+16])
+	default:
+		return cosmos.ZeroUint(), fmt.Errorf("unsupported balance size: %d", balanceSize)
+	}
 }
 
 // ss58DecodeAccountID decodes an SS58 address to its 32-byte account ID.

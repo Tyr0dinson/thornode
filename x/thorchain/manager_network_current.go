@@ -713,7 +713,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					amt = common.SafeSub(amt, gasAmount)
 
 					// burn the remainder if amount after deducting gas is below dust threshold or existential reserve
-					maxBurnAmount := common.MaxUint(
+					maxBurnAmount := cosmos.MaxUint(
 						chain.DustThreshold(),
 						chain.ExistentialDeposit(),
 					)

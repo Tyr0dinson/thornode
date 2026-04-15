@@ -73,10 +73,12 @@ func (s *RPCSuite) TestDecodeAccountInfoFreeBalance(c *C) {
 	binary.LittleEndian.PutUint32(data[12:16], 0)             // sufficients
 	binary.LittleEndian.PutUint64(data[16:24], 1_000_000_000) // free
 
-	free, err := decodeAccountInfoFreeBalance(data)
-	c.Assert(err, IsNil)
-	c.Check(free.Equal(cosmos.NewUint(1_000_000_000)), Equals, true,
-		Commentf("got %s, want 1000000000", free))
+	for _, balanceSize := range []int{8, 16} {
+		free, err := decodeAccountInfoFreeBalance(data, balanceSize)
+		c.Assert(err, IsNil)
+		c.Check(free.Equal(cosmos.NewUint(1_000_000_000)), Equals, true,
+			Commentf("got %s, want 1000000000", free))
+	}
 }
 
 func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_WithTrailingData(c *C) {
@@ -84,7 +86,7 @@ func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_WithTrailingData(c *C) {
 	data := make([]byte, 56)                                   // 16 + 8 + 8 + 8 + 16
 	binary.LittleEndian.PutUint64(data[16:24], 42_000_000_000) // free = 42 TAO
 
-	free, err := decodeAccountInfoFreeBalance(data)
+	free, err := decodeAccountInfoFreeBalance(data, 8)
 	c.Assert(err, IsNil)
 	c.Check(free.Equal(cosmos.NewUint(42_000_000_000)), Equals, true,
 		Commentf("got %s, want 42000000000", free))
@@ -93,7 +95,7 @@ func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_WithTrailingData(c *C) {
 func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_ZeroBalance(c *C) {
 	data := make([]byte, 32) // all zeros
 
-	free, err := decodeAccountInfoFreeBalance(data)
+	free, err := decodeAccountInfoFreeBalance(data, 16)
 	c.Assert(err, IsNil)
 	c.Check(free.IsZero(), Equals, true, Commentf("got %s, want 0", free))
 }
@@ -101,24 +103,37 @@ func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_ZeroBalance(c *C) {
 func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_TooShort(c *C) {
 	data := make([]byte, 20) // 16 + 4, not enough for u128 (need 32)
 
-	_, err := decodeAccountInfoFreeBalance(data)
+	_, err := decodeAccountInfoFreeBalance(data, 16)
 	c.Check(err, NotNil, Commentf("expected error for data too short"))
 }
 
 func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_U128(c *C) {
-	// AccountInfo with a u128 free balance where the high 8 bytes are non-zero.
+	// AccountInfo with u128 free balance where the high 8 bytes are non-zero.
 	// value = (1 << 64) + 5_000_000_000 = 18446744078709551616 + 5e9
 	data := make([]byte, 32)
 	binary.LittleEndian.PutUint64(data[16:24], 5_000_000_000) // low
 	binary.LittleEndian.PutUint64(data[24:32], 1)             // high
 
-	free, err := decodeAccountInfoFreeBalance(data)
+	free, err := decodeAccountInfoFreeBalance(data, 16)
 	c.Assert(err, IsNil)
 
 	// Expected: (1 << 64) + 5_000_000_000
 	expected := cosmos.NewUintFromString("18446744078709551616")
 	c.Check(free.Equal(expected), Equals, true,
 		Commentf("got %s, want %s", free.String(), expected.String()))
+}
+
+func (s *RPCSuite) TestDecodeAccountInfoFreeBalance_U64WithReserved(c *C) {
+	// AccountInfo with u64 free and reserved balance
+	// (Balance=u64): header(16) + free(8) + reserved(8) + frozen(8) + flags(16)
+	data := make([]byte, 56)
+	binary.LittleEndian.PutUint64(data[16:24], 5_000_000_000) // free = 5 TAO
+	binary.LittleEndian.PutUint64(data[24:32], 1_000_000_000) // reserved = 1 TAO
+
+	free, err := decodeAccountInfoFreeBalance(data, 8)
+	c.Assert(err, IsNil)
+	c.Check(free.Equal(cosmos.NewUint(5_000_000_000)), Equals, true,
+		Commentf("got %s, want 5000000000 — reserved must not leak into free", free))
 }
 
 // ---------------------------------------------------------------------------

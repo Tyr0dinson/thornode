@@ -122,6 +122,7 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 
 		// Extract actual fee from TransactionPayment::TransactionFeePaid
 		if isApplyExtrinsic && palletIdx == pallets.TransactionPaymentPalletIndex && eventIdx == 0x00 {
+			// Technically just storing u64 which is fine for fee amounts
 			if dataSize >= sizeAccountID+sizeBalance {
 				fees[extrinsicIdx] = binary.LittleEndian.Uint64(data[pos+sizeAccountID : pos+sizeAccountID+sizeBalance])
 			}

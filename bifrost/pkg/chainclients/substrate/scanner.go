@@ -586,6 +586,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 				Uint8("call", call).
 				Bool("has_transfer", hasTransfer).
 				Msg("batch_all contains unknown call, stopping parse early")
+			break
 		}
 	}
 
