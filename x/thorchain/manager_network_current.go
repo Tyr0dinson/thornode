@@ -1792,6 +1792,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 
 		// Deterministic ordering for remainder-to-last pattern.
 		chainFeeEntries := make([]chainFeeEntry, 0, len(chainFeeMap))
+		// analyze-ignore(map-iteration)
 		for chain, fees := range chainFeeMap {
 			chainFeeEntries = append(chainFeeEntries, chainFeeEntry{chain: chain, fees: fees})
 		}

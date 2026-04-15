@@ -852,6 +852,7 @@ func computeChainTelemetry(ctx cosmos.Context, mgr Manager, asgards Vaults, acti
 	liquidityRunePerValidator := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.ChainLiquidityRunePerValidator)))
 
 	chains := make([]common.Chain, 0, len(chainMembers))
+	// analyze-ignore(map-iteration)
 	for chain := range chainMembers {
 		chains = append(chains, chain)
 	}
@@ -1203,7 +1204,6 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 	return false
 }
 
-// trunk-ignore(golangci-lint/unused): used by store helper
 func isActionsItemDangling(voter ObservedTxVoter, i int) bool {
 	if i < 0 || i > len(voter.Actions)-1 {
 		// No such Actions item exists in the voter.
@@ -1781,6 +1781,7 @@ func getNodeSupportedChains(ctx cosmos.Context, mgr Manager, na NodeAccount) []c
 	}
 
 	chains := make([]common.Chain, 0, len(chainSet))
+	// analyze-ignore(map-iteration)
 	for c := range chainSet {
 		chains = append(chains, c)
 	}
@@ -1826,6 +1827,7 @@ func getChainConsensusParticipants(ctx cosmos.Context, mgr Manager, chain common
 	}
 
 	result := make([]cosmos.AccAddress, 0, len(memberSet))
+	// analyze-ignore(map-iteration)
 	for _, addr := range memberSet {
 		result = append(result, addr)
 	}

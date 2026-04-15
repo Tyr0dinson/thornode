@@ -51,6 +51,9 @@ type mockBridge struct {
 	thorclient.ThorchainBridge
 }
 
+func (m *mockBridge) WaitToCatchUp() error                                      { return nil }
+func (m *mockBridge) GetLastObservedInHeight(chain common.Chain) (int64, error) { return 0, nil }
+
 func (m *mockBridge) GetBlockTimestamp(height int64) (time.Time, error) {
 	// Return a fixed timestamp that matches the test's refBlock
 	return time.Unix(0, 1749121581000*int64(time.Millisecond)), nil

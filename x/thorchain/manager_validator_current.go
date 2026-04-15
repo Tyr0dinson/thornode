@@ -250,6 +250,7 @@ func (vm *ValidatorMgr) partitionByChainSupport(ctx cosmos.Context, mgr Manager,
 	}
 
 	keys := make([]string, 0, len(partMap))
+	// analyze-ignore(map-iteration)
 	for k := range partMap {
 		keys = append(keys, k)
 	}
@@ -271,17 +272,24 @@ func (vm *ValidatorMgr) autoRagnarokUncoveredChains(ctx cosmos.Context, mgr Mana
 		return fmt.Errorf("fail to get active vaults for auto-ragnarok check: %w", err)
 	}
 
-	activeChains := make(map[common.Chain]struct{})
+	activeChainSet := make(map[common.Chain]struct{})
 	for _, v := range activeVaults {
 		for _, c := range v.GetChains() {
 			if c.Equals(common.THORChain) {
 				continue
 			}
-			activeChains[c] = struct{}{}
+			activeChainSet[c] = struct{}{}
 		}
 	}
 
-	for chain := range activeChains {
+	activeChains := make([]common.Chain, 0, len(activeChainSet))
+	// analyze-ignore(map-iteration)
+	for c := range activeChainSet {
+		activeChains = append(activeChains, c)
+	}
+	sort.Slice(activeChains, func(i, j int) bool { return activeChains[i].String() < activeChains[j].String() })
+
+	for _, chain := range activeChains {
 		if _, ok := coveredChains[chain]; ok {
 			continue
 		}

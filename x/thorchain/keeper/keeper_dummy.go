@@ -476,9 +476,11 @@ func (k KVStoreDummy) GetAsgardVaults(_ cosmos.Context) (Vaults, error) { return
 func (k KVStoreDummy) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
 	return nil, nil
 }
+
 func (k KVStoreDummy) GetAsgardVaultsByChain(_ cosmos.Context, _ common.Chain) (Vaults, error) {
 	return nil, nil
 }
+
 func (k KVStoreDummy) GetActiveAsgardVaultsByChain(_ cosmos.Context, _ common.Chain) (Vaults, error) {
 	return nil, nil
 }
@@ -504,6 +506,7 @@ func (k KVStoreDummy) SetNetwork(_ cosmos.Context, _ Network) error             
 func (k KVStoreDummy) GetChainIncome(_ cosmos.Context, _ common.Chain) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), kaboom
 }
+
 func (k KVStoreDummy) AddChainIncome(_ cosmos.Context, _ common.Chain, _ cosmos.Uint) error {
 	return kaboom
 }

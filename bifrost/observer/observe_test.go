@@ -955,6 +955,7 @@ func (t *testChainClient) GetAddress(common.PubKey) string                     {
 func (t *testChainClient) GetAccount(common.PubKey, *big.Int) (common.Account, error) {
 	return common.Account{}, nil
 }
+
 func (t *testChainClient) GetAccountByAddress(string, *big.Int) (common.Account, error) {
 	return common.Account{}, nil
 }

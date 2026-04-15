@@ -342,7 +342,8 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
 asserts:
-  - .supports_all_chains == true
+  - .supports_all_chains == false
+  - .supported_chains | length == 3
 ---
 ########################################################################################
 # BTC swap: fox sends BTC to vault, swaps to RUNE.
