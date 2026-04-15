@@ -689,13 +689,13 @@ func (s *ScannerSuite) TestProcessExtrinsic_UsesActualFee(c *C) {
 	call := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
 	extHex := buildTestExtrinsic(call)
 
-	// Pass actual fee of 150_000 rao
+	// Pass actual fee of 150_000
 	txItem, err := sc.processExtrinsic(extHex, 100, 150_000)
 	c.Assert(err, IsNil)
 	c.Assert(txItem, NotNil, Commentf("expected non-nil TxInItem"))
 
-	// Gas should use actual fee: 150_000 rao / 10 = 15_000 thorchain units
-	expectedGas := cosmos.NewUint(15_000)
+	// Should use actual fee: 150_000 / 10 = 15_000 + 1 (+1 from CoinCeil)
+	expectedGas := cosmos.NewUint(15_001)
 	c.Assert(len(txItem.Gas) > 0, Equals, true, Commentf("gas should not be empty"))
 	c.Check(txItem.Gas[0].Amount.Equal(expectedGas), Equals, true,
 		Commentf("gas amount: got %s, want %s", txItem.Gas[0].Amount, expectedGas))

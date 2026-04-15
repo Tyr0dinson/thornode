@@ -209,7 +209,7 @@ func (c *Client) GetAccountByAddress(addr string, height *big.Int) (common.Accou
 		return common.Account{}, fmt.Errorf("failed to get nonce: %w", err)
 	}
 
-	coin := c.GetChain().NativeGasToThorCoinCeil(balance)
+	coin := c.GetChain().NativeGasToThorCoin(balance)
 	coins := common.Coins{coin}
 
 	return common.Account{
