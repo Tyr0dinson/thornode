@@ -248,6 +248,7 @@ BLOCKED: Go 1.26 is installed but project requires Go 1.24 (go.mod toolchain go1
 ### Phase 17 — Integration + MR
 
 - [ ] **T54** Full green-light pass: `make lint`, `make build`, `make test`, `make test-regression CI=1 EXPORT=1 DEBUG=1`. Fix anything the above tasks missed. This is the hard gate for the completion promise.
+BLOCKED: Same Go 1.26 toolchain incompatibility as T53. `make build` fails because `bytedance/sonic` does not compile with Go 1.26. Need Go 1.24.5 on PATH or GOTOOLCHAIN=auto set in environment.
 - [ ] **T55** Open/update the MR targeting `develop`: push branch, `glab mr create --target-branch develop --title "..." --description "..."` (no `--body`; use `--description`). Title + description reflect the final delivered scope; inline MR comments are the only way to respond to review. After push + MR exists, the feature is complete.
 
 ---
