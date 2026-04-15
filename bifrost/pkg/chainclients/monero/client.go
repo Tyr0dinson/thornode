@@ -625,6 +625,26 @@ func (c *Client) catchupTxKeys() {
 			c.clearTxKeyCatchupState(vaultPubKey.String())
 			continue
 		}
+		keyImageRefs := makeApplyKeyImageRefs(vault.KeyImagesXmr)
+		if len(keyImageRefs) > 0 {
+			keyImagesPending, verifyErr := c.keyImageCatchupNeedsReplay(vaultPubKey.String(), keyImageRefs)
+			if verifyErr != nil {
+				c.logger.Debug().
+					Err(verifyErr).
+					Str("vault", vaultPubKey.String()).
+					Msg("xmr tx-key catchup: failed to verify key-image state, blocking outbound audit replay")
+				c.clearTxKeyCatchupState(vaultPubKey.String())
+				continue
+			}
+			if keyImagesPending {
+				c.logger.Info().
+					Str("vault", vaultPubKey.String()).
+					Int("key_images", len(keyImageRefs)).
+					Msg("xmr tx-key catchup: waiting for key-image reconciliation before outbound audit replay")
+				c.clearTxKeyCatchupState(vaultPubKey.String())
+				continue
+			}
+		}
 
 		batch, shouldApply := c.nextTxKeyCatchupBatch(vaultPubKey.String(), refs)
 		stateCheck, verifyErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), refs)

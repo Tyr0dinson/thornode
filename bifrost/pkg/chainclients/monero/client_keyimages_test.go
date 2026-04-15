@@ -2123,6 +2123,139 @@ func TestCatchupTxKeysReadsVaultHistoryAndReplaysOutboundAudit(t *testing.T) {
 	assert.True(t, requests[0].Reconcile)
 }
 
+func TestCatchupTxKeysWaitsForKeyImageReconciliation(t *testing.T) {
+	t.Parallel()
+
+	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	spentOutputTxHash := strings.Repeat("7", 64)
+	outboundTxHash := strings.Repeat("a", 64)
+	parentTxHash := strings.Repeat("b", 64)
+	txKey := strings.Repeat("1", 64)
+	keyImage := "key-image-0"
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("tx-key-gated-destination")))
+
+	var mu sync.Mutex
+	var keyImagesApplied bool
+	var applyRequests []xmrFrostApplyKeyImagesRequest
+	var validateRequests []xmrFrostValidateOutboundRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			keyImagesApplied = true
+			applyRequests = append(applyRequests, req)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outputs/"+url.PathEscape(frostKey.String()):
+			mu.Lock()
+			applied := keyImagesApplied
+			mu.Unlock()
+			output := xmrFrostOutputEntry{
+				TxHash:      spentOutputTxHash,
+				OutputIndex: 0,
+				Amount:      1,
+				Height:      100,
+			}
+			if applied {
+				output.KeyImage = keyImage
+				output.Spent = true
+				output.State = "spent"
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: []xmrFrostOutputEntry{output}})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+url.PathEscape(frostKey.String()):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: frostKey.String(),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			var req xmrFrostValidateOutboundRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			validateRequests = append(validateRequests, req)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	bridge := &mockMoneroBridge{
+		vaultByPubKey: map[string]ttypes.Vault{
+			frostKey.String(): {
+				PubKeyFrost: frostKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+				KeyImagesXmr: []*common.XmrKeyImageRef{
+					{TxHash: spentOutputTxHash, OutputIndex: 0, KeyImage: keyImage},
+				},
+				TxKeysXmr: []*common.XmrTxKeyRef{
+					{TxHash: outboundTxHash, TxKeys: []string{txKey}},
+				},
+			},
+		},
+		observedTxVoterByID: map[string]*ttypes.QueryObservedTxVoter{
+			outboundTxHash: {
+				TxID: common.TxID(outboundTxHash),
+				Tx: ttypes.QueryObservedTx{
+					Tx: common.NewTx(
+						common.TxID(outboundTxHash),
+						common.Address(common.XMRUnknownSenderAddress(outboundTxHash, vaultAddr.String())),
+						vaultAddr,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+parentTxHash,
+					),
+					ObservedPubKey: frostKey,
+				},
+			},
+		},
+		txStatusByID: map[string]*ttypes.QueryTxStatusResponse{
+			parentTxHash: {
+				OutTxs: common.Txs{
+					common.NewTx(
+						common.TxID(outboundTxHash),
+						vaultAddr,
+						destination,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+parentTxHash,
+					),
+				},
+			},
+		},
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		logger:          testLogger(),
+		thorchainBridge: bridge,
+	}
+
+	c.catchupTxKeys()
+
+	mu.Lock()
+	require.Empty(t, validateRequests)
+	require.Empty(t, applyRequests)
+	mu.Unlock()
+
+	c.catchupKeyImages()
+	c.catchupTxKeys()
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, applyRequests, 1)
+	require.Len(t, validateRequests, 1)
+	assert.Equal(t, frostKey.String(), validateRequests[0].VaultPubKey)
+	assert.Equal(t, outboundTxHash, validateRequests[0].TxHash)
+	assert.True(t, validateRequests[0].Reconcile)
+}
+
 func TestCatchupTxKeysReplaysAfterSignerReset(t *testing.T) {
 	t.Parallel()
 

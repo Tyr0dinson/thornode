@@ -11,6 +11,7 @@ const PRIVATE_FILE_MODE: u32 = 0o600;
 pub const IDEMPOTENCY_RETENTION_SECS: i64 = 86_400;
 pub const IDEMPOTENCY_PENDING_RECLAIM_SECS: i64 = 600;
 pub const IDEMPOTENCY_PRUNE_INTERVAL_SECS: u64 = 600;
+pub const RECONCILED_KEY_IMAGE_SPEND_HEIGHT: u64 = 0;
 
 fn is_idempotency_expired(created_at: i64, now_ts: i64) -> bool {
     now_ts
@@ -666,8 +667,24 @@ impl Store {
             for output in existing.iter_mut() {
                 let key = (output.tx_hash.clone(), output.output_index);
                 if let Some(key_image) = by_ref.remove(&key) {
-                    let changed = output.key_image.as_ref() != Some(&key_image);
+                    let mut changed = output.key_image.as_ref() != Some(&key_image);
                     output.key_image = Some(key_image);
+                    if reconcile {
+                        if output.state != OutputState::Spent {
+                            output.state = OutputState::Spent;
+                            output.reservation = None;
+                            changed = true;
+                        } else if output.reservation.take().is_some() {
+                            changed = true;
+                        }
+                        if output.spent_by_key_image_height
+                            != Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+                        {
+                            output.spent_by_key_image_height =
+                                Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
+                            changed = true;
+                        }
+                    }
                     if changed {
                         applied += 1;
                     }
@@ -2611,7 +2628,7 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_key_images_clears_removed_refs_and_key_image_spend_state() {
+    fn reconcile_key_images_marks_matched_refs_spent_and_clears_removed_refs() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
         let vault = "thorpub1vault";
@@ -2634,12 +2651,16 @@ mod tests {
 
         let refs = vec![("tx-keep".to_string(), 0, "keep-image".to_string())];
         let (applied, not_found) = store.apply_key_images(vault, &refs, true).unwrap();
-        assert_eq!(applied, 2);
+        assert_eq!(applied, 3);
         assert_eq!(not_found, 0);
 
         let outputs = store.load_outputs(vault).unwrap();
         assert_eq!(outputs[0].key_image.as_deref(), Some("keep-image"));
-        assert_eq!(outputs[0].state, OutputState::Unspent);
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(
+            outputs[0].spent_by_key_image_height,
+            Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+        );
 
         assert_eq!(outputs[1].key_image, None);
         assert_eq!(outputs[1].spent_by_key_image_height, None);

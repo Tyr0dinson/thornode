@@ -10,7 +10,7 @@ use monero_wallet::{
 use tracing::{debug, info};
 
 use crate::config::ChainNetworkMode;
-use crate::state::store::TrackedOutput;
+use crate::state::store::{TrackedOutput, RECONCILED_KEY_IMAGE_SPEND_HEIGHT};
 use crate::xmr;
 
 /// Subaddress account indices used by THORChain vaults.
@@ -425,8 +425,24 @@ impl Scanner {
                 continue;
             };
             let output = &mut state.outputs[idx];
-            if output.key_image.as_ref() != Some(key_image) {
+            let mut changed = output.key_image.as_ref() != Some(key_image);
+            if changed {
                 output.key_image = Some(key_image.clone());
+            }
+            if reconcile {
+                if output.state != crate::state::store::OutputState::Spent {
+                    output.state = crate::state::store::OutputState::Spent;
+                    output.reservation = None;
+                    changed = true;
+                } else if output.reservation.take().is_some() {
+                    changed = true;
+                }
+                if output.spent_by_key_image_height != Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT) {
+                    output.spent_by_key_image_height = Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
+                    changed = true;
+                }
+            }
+            if changed {
                 applied += 1;
             }
         }
@@ -693,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_key_images_clears_removed_refs_and_key_image_spend_state() {
+    fn reconcile_key_images_marks_matched_refs_spent_and_clears_removed_refs() {
         let mut scanner = Scanner::new();
         let base = Scalar::from(7u64);
         let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
@@ -743,12 +759,16 @@ mod tests {
             &[("tx-keep".to_string(), 0, "keep-image".to_string())],
             true,
         );
-        assert_eq!(applied, 1);
+        assert_eq!(applied, 2);
         assert_eq!(not_found, 0);
 
         let outputs = scanner.get_all_outputs("thorpub1vault");
         assert_eq!(outputs[0].key_image.as_deref(), Some("keep-image"));
-        assert_eq!(outputs[0].state, crate::state::store::OutputState::Unspent);
+        assert_eq!(outputs[0].state, crate::state::store::OutputState::Spent);
+        assert_eq!(
+            outputs[0].spent_by_key_image_height,
+            Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+        );
         assert_eq!(outputs[1].key_image, None);
         assert_eq!(outputs[1].spent_by_key_image_height, None);
         assert_eq!(outputs[1].state, crate::state::store::OutputState::Unspent);
