@@ -183,6 +183,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	if err := am.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)
 	}
+	if err := runChainnetXMRVaultMetadataBackfillOnce(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to run one-time chainnet XMR vault metadata backfill", "error", err)
+	}
 
 	version := am.mgr.GetVersion()
 	localVer := semver.MustParse(constants.SWVersion.String())
