@@ -1850,6 +1850,16 @@ fn scan_lag_exceeds(tip_height: u64, scanned_height: u64, max_lag_blocks: u64) -
     tip_height.saturating_sub(scanned_height) > max_lag_blocks
 }
 
+const RESCAN_MAX_BLOCKS_PER_SYNC: u64 = 500;
+
+fn rescan_target_height(scan_height: u64, validated_height: u64, chain_tip: u64) -> u64 {
+    let rescan_tip = std::cmp::max(validated_height, chain_tip);
+    std::cmp::min(
+        scan_height.saturating_add(RESCAN_MAX_BLOCKS_PER_SYNC),
+        rescan_tip,
+    )
+}
+
 fn outputs_for_view(
     scanner: &Scanner,
     vault_pub_key: &str,
@@ -1939,6 +1949,21 @@ pub async fn scanner_sync(
             );
         }
     };
+    let rescan_chain_tip = if vaults.iter().any(|vault| vault.rescan) {
+        match state.daemon.get_height().await {
+            Ok(height) => height,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    validated_height = effective_height,
+                    "failed to fetch daemon tip for scanner rescan; using validated height"
+                );
+                effective_height
+            }
+        }
+    } else {
+        effective_height
+    };
     let rpc = match state.daemon.oxide_rpc().await {
         Ok(rpc) => rpc,
         Err(e) => {
@@ -1967,15 +1992,15 @@ pub async fn scanner_sync(
                 .ok()
                 .flatten()
                 .unwrap_or(vault.birthday);
-            let tip = effective_height;
+            let tip = std::cmp::max(effective_height, rescan_chain_tip);
             if vault_scan_height < tip {
-                let batch_limit = 50u64; // scan up to 50 blocks per scanner_sync call
-                let end = std::cmp::min(vault_scan_height + batch_limit, tip);
+                let end = rescan_target_height(vault_scan_height, effective_height, tip);
                 info!(
                     vault = %vault.vault_pub_key,
                     from = vault_scan_height + 1,
                     to = end,
                     tip,
+                    validated_height = effective_height,
                     "rescan: scanning blocks for vault"
                 );
                 for h in (vault_scan_height + 1)..=end {
@@ -5346,6 +5371,16 @@ mod tests {
             .expect("incoming should be an array");
         assert_eq!(incoming.len(), 1);
         assert_eq!(incoming[0]["confirmations"], serde_json::json!(20u64));
+    }
+
+    #[test]
+    fn rescan_target_height_prefers_chain_tip_with_larger_catchup_budget() {
+        assert_eq!(rescan_target_height(100, 120, 170), 170);
+        assert_eq!(
+            rescan_target_height(100, 120, 10_000),
+            100 + RESCAN_MAX_BLOCKS_PER_SYNC
+        );
+        assert_eq!(rescan_target_height(600, 650, 640), 650);
     }
 
     #[tokio::test]
