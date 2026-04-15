@@ -96,6 +96,11 @@ type lockedOutputsError struct {
 	locked    uint64
 }
 
+type keyImageBacklogError struct {
+	queued uint64
+	active bool
+}
+
 const xmrDefaultMaxConfirmationCap uint64 = 30 // ~1 hour at 2-minute XMR blocks
 
 func (e *lockedOutputsError) Error() string {
@@ -106,6 +111,12 @@ func (e *lockedOutputsError) Error() string {
 }
 
 func (e *lockedOutputsError) RetryAfterNextBlock() bool { return true }
+
+func (e *keyImageBacklogError) Error() string {
+	return fmt.Sprintf("pending xmr key-image backlog: queued=%d active=%t", e.queued, e.active)
+}
+
+func (e *keyImageBacklogError) RetryAfterNextBlock() bool { return true }
 
 type xmrConsolidationSettings struct {
 	Enabled             bool
@@ -141,6 +152,15 @@ type xmrTxKeyCatchupRef struct {
 type xmrTxKeyCatchupState struct {
 	refs    []xmrTxKeyCatchupRef
 	pending bool
+}
+
+type xmrKeyImageCeremonyGate struct {
+	mu            sync.Mutex
+	cond          *sync.Cond
+	nextTicket    uint64
+	servingTicket uint64
+	queued        uint64
+	active        bool
 }
 
 // Client implements the chain client interface for Monero.
@@ -181,6 +201,8 @@ type Client struct {
 	keyImageCatchupState    map[string]xmrKeyImageCatchupState
 	txKeyCatchupMu          sync.Mutex
 	txKeyCatchupState       map[string]xmrTxKeyCatchupState
+	keyImageCeremonyGateMu  sync.Mutex
+	keyImageCeremonyGate    *xmrKeyImageCeremonyGate
 	consolidateInProgress   *atomic.Bool
 	lastConsolidationHeight *atomic.Int64
 	lastSolvencyCheckHeight *atomic.Int64
@@ -305,6 +327,49 @@ func NewClient(
 	return c, nil
 }
 
+func newXMRKeyImageCeremonyGate() *xmrKeyImageCeremonyGate {
+	g := &xmrKeyImageCeremonyGate{}
+	g.cond = sync.NewCond(&g.mu)
+	return g
+}
+
+func (c *Client) getXMRKeyImageCeremonyGate() *xmrKeyImageCeremonyGate {
+	c.keyImageCeremonyGateMu.Lock()
+	defer c.keyImageCeremonyGateMu.Unlock()
+	if c.keyImageCeremonyGate == nil {
+		c.keyImageCeremonyGate = newXMRKeyImageCeremonyGate()
+	}
+	return c.keyImageCeremonyGate
+}
+
+func (c *Client) acquireXMRKeyImageCeremonySlot() func() {
+	gate := c.getXMRKeyImageCeremonyGate()
+	gate.mu.Lock()
+	myTicket := gate.nextTicket
+	gate.nextTicket++
+	gate.queued++
+	for gate.active || myTicket != gate.servingTicket {
+		gate.cond.Wait()
+	}
+	gate.queued--
+	gate.active = true
+	gate.mu.Unlock()
+	return func() {
+		gate.mu.Lock()
+		gate.active = false
+		gate.servingTicket++
+		gate.cond.Broadcast()
+		gate.mu.Unlock()
+	}
+}
+
+func (c *Client) pendingXMRKeyImageBacklog() (queued uint64, active bool) {
+	gate := c.getXMRKeyImageCeremonyGate()
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	return gate.queued, gate.active
+}
+
 func (c *Client) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
@@ -404,6 +469,21 @@ func (c *Client) catchupKeyImages() {
 		refs := makeApplyKeyImageRefs(vault.KeyImagesXmr)
 		batch, shouldApply := c.nextKeyImageCatchupBatch(vaultPubKey.String(), refs)
 		if !shouldApply {
+			needsReplay, verifyErr := c.keyImageCatchupNeedsReplay(vaultPubKey.String(), refs)
+			if verifyErr != nil {
+				c.logger.Debug().
+					Err(verifyErr).
+					Str("vault", vaultPubKey.String()).
+					Msg("xmr key-image catchup: failed to verify signer state, forcing replay")
+				needsReplay = true
+			}
+			if needsReplay {
+				c.clearKeyImageCatchupState(vaultPubKey.String())
+				batch = cloneApplyKeyImageRefs(refs)
+				shouldApply = true
+			}
+		}
+		if !shouldApply {
 			continue
 		}
 
@@ -467,6 +547,21 @@ func (c *Client) catchupTxKeys() {
 		}
 
 		batch, shouldApply := c.nextTxKeyCatchupBatch(vaultPubKey.String(), refs)
+		if !shouldApply {
+			needsReplay, verifyErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), refs)
+			if verifyErr != nil {
+				c.logger.Debug().
+					Err(verifyErr).
+					Str("vault", vaultPubKey.String()).
+					Msg("xmr tx-key catchup: failed to verify signer state, forcing replay")
+				needsReplay = true
+			}
+			if needsReplay {
+				c.clearTxKeyCatchupState(vaultPubKey.String())
+				batch = cloneTxKeyCatchupRefs(refs)
+				shouldApply = true
+			}
+		}
 		if !shouldApply {
 			continue
 		}
@@ -761,6 +856,10 @@ func keyImageCatchupVaultPubKey(vault ttypes.Vault) common.PubKey {
 	return vaultPubKey
 }
 
+func xmrOutputRefKey(txHash string, outputIndex uint32) string {
+	return strings.ToLower(strings.TrimSpace(txHash)) + ":" + strconv.FormatUint(uint64(outputIndex), 10)
+}
+
 func makeApplyKeyImageRefs(refs []*common.XmrKeyImageRef) []xmrFrostApplyKeyImageRef {
 	out := make([]xmrFrostApplyKeyImageRef, 0, len(refs))
 	for _, ref := range refs {
@@ -774,6 +873,109 @@ func makeApplyKeyImageRefs(refs []*common.XmrKeyImageRef) []xmrFrostApplyKeyImag
 		})
 	}
 	return out
+}
+
+func normalizeTxKeyValues(keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		normalized := strings.ToLower(strings.TrimSpace(key))
+		if normalized == "" {
+			continue
+		}
+		out = append(out, normalized)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sameNormalizedTxKeyValues(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostApplyKeyImageRef) (bool, error) {
+	outputs, err := c.frostSigner.GetAllOutputs(vaultPubKey)
+	if err != nil {
+		return false, err
+	}
+
+	wanted := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		wanted[xmrOutputRefKey(ref.TxHash, ref.OutputIndex)] = strings.ToLower(strings.TrimSpace(ref.KeyImage))
+	}
+
+	seen := make(map[string]struct{}, len(refs))
+	for _, output := range outputs {
+		key := xmrOutputRefKey(output.TxHash, output.OutputIndex)
+		wantKeyImage, wantedOutput := wanted[key]
+		hasSignerState := output.Spent || strings.TrimSpace(output.KeyImage) != ""
+		switch {
+		case !wantedOutput && hasSignerState:
+			return true, nil
+		case !wantedOutput:
+			continue
+		case !output.Spent:
+			return true, nil
+		case wantKeyImage != "" && !strings.EqualFold(strings.TrimSpace(output.KeyImage), wantKeyImage):
+			return true, nil
+		default:
+			seen[key] = struct{}{}
+		}
+	}
+
+	for key := range wanted {
+		if _, ok := seen[key]; !ok {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatchupRef) (bool, error) {
+	transfers, err := c.frostSigner.GetTransfersByHeight(0)
+	if err != nil {
+		return false, err
+	}
+
+	wanted := make(map[string][]string, len(refs))
+	for _, ref := range refs {
+		wanted[strings.ToLower(strings.TrimSpace(ref.txHash))] = normalizeTxKeyValues(ref.txKeys)
+	}
+
+	seen := make(map[string]struct{}, len(refs))
+	for _, transfer := range transfers.Outgoing {
+		if !strings.EqualFold(strings.TrimSpace(transfer.VaultPubKey), vaultPubKey) {
+			continue
+		}
+		txHash := strings.ToLower(strings.TrimSpace(transfer.TxID))
+		wantKeys, ok := wanted[txHash]
+		if !ok {
+			continue
+		}
+		if !sameNormalizedTxKeyValues(normalizeTxKeyValues(transfer.TxKeys), wantKeys) {
+			return true, nil
+		}
+		seen[txHash] = struct{}{}
+	}
+
+	for txHash := range wanted {
+		if _, ok := seen[txHash]; !ok {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func makeTxKeyCatchupRefs(refs []*common.XmrTxKeyRef) []xmrTxKeyCatchupRef {
@@ -1738,6 +1940,18 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if memberErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve vault signing members for FROST signing: %w", memberErr)
 	}
+	if queued, active := c.pendingXMRKeyImageBacklog(); queued > 0 || active {
+		c.logger.Info().
+			Str("vault_pub_key", signReqCtx.vaultPubKey.String()).
+			Str("memo", tx.Memo).
+			Uint64("pending_key_image_queue", queued).
+			Bool("key_image_active", active).
+			Msg("deferring XMR keysign until key-image backlog clears")
+		return nil, nil, nil, &keyImageBacklogError{
+			queued: queued,
+			active: active,
+		}
+	}
 	version, err := c.thorchainBridge.GetThorchainVersion()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve thorchain version: %w", err)
@@ -2240,15 +2454,23 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return item, true, nil
 	}
 
-	members, err := c.vaultSigningMembers(item.ObservedVaultPubKey)
+	ceremonyCtx, err := c.resolveXMRKeyImageCeremonyContext(item.ObservedVaultPubKey)
 	if err != nil {
 		return nil, false, fmt.Errorf("fail to resolve XMR vault signing members: %w", err)
 	}
-	if !c.localNodeIsVaultSigner(members) {
+	if !ceremonyCtx.vaultPubKey.Equals(item.ObservedVaultPubKey) {
+		c.logger.Info().
+			Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Msg("canonicalized XMR key-image vault context")
+		item.ObservedVaultPubKey = ceremonyCtx.vaultPubKey
+	}
+	if !c.localNodeIsVaultSigner(ceremonyCtx.members) {
 		return nil, false, nil
 	}
 
-	outputs, err := c.collectVaultOutputsForTx(item.ObservedVaultPubKey, item.Tx)
+	outputs, err := c.collectVaultOutputsForTx(ceremonyCtx.vaultPubKey, item.Tx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -2264,7 +2486,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, fmt.Errorf("fail to resolve thorchain version for XMR key-images: %w", err)
 	}
 
-	proofs, err := c.generateObservedTxKeyImages(item.ObservedVaultPubKey, normalizeTxID(item.Tx), outputs, members, finaliseHeight, version.String())
+	proofs, err := c.generateObservedTxKeyImages(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, ceremonyCtx.members, finaliseHeight, version.String())
 	if err != nil {
 		return nil, false, err
 	}
@@ -2548,6 +2770,33 @@ func (c *Client) vaultSigningMembers(vaultPubKey common.PubKey) ([]string, error
 	return members, nil
 }
 
+type xmrKeyImageCeremonyContext struct {
+	vaultPubKey common.PubKey
+	members     []string
+}
+
+func (c *Client) resolveXMRKeyImageCeremonyContext(vaultPubKey common.PubKey) (xmrKeyImageCeremonyContext, error) {
+	if vaultPubKey.IsEmpty() {
+		return xmrKeyImageCeremonyContext{}, fmt.Errorf("vault pubkey is empty")
+	}
+	vault, err := c.getVaultByPubKey(vaultPubKey)
+	if err != nil {
+		return xmrKeyImageCeremonyContext{}, fmt.Errorf("fail to get vault: %w", err)
+	}
+	canonicalVaultPubKey, err := vault.AlgoPubKey(common.XMRChain)
+	if err != nil {
+		return xmrKeyImageCeremonyContext{}, fmt.Errorf("fail to resolve canonical XMR vault pubkey: %w", err)
+	}
+	members, err := c.vaultSigningMembers(vaultPubKey)
+	if err != nil {
+		return xmrKeyImageCeremonyContext{}, err
+	}
+	return xmrKeyImageCeremonyContext{
+		vaultPubKey: canonicalVaultPubKey,
+		members:     members,
+	}, nil
+}
+
 func frostBlameToThorchainBlame(in gotssblame.Blame) ttypes.Blame {
 	out := ttypes.Blame{
 		FailReason: in.FailReason,
@@ -2709,8 +2958,18 @@ func (c *Client) generateObservedTxKeyImages(
 	finaliseHeight int64,
 	version string,
 ) ([]*common.XmrKeyImageProof, error) {
+	release := c.acquireXMRKeyImageCeremonySlot()
+	defer release()
+
 	proofs := make([]*common.XmrKeyImageProof, 0, len(outputs))
 	for _, output := range outputs {
+		c.logger.Info().
+			Str("vault_pub_key", vaultPubKey.String()).
+			Str("tx_hash", txHash).
+			Uint32("output_index", output.OutputIndex).
+			Int64("requested_finalise_height", finaliseHeight).
+			Strs("signer_pub_keys", members).
+			Msg("starting XMR key-image generation")
 		resp, err := c.tssServer.FrostKeyImage(tssp.FrostKeyImageRequest{
 			VaultPubKey:   vaultPubKey.String(),
 			TxHash:        txHash,
@@ -2884,7 +3143,23 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound bool)
 		return nil
 	}
 
-	outputs, err := c.collectVaultOutputsForTx(tx.ObservedPubKey, tx.Tx.ID.String())
+	canonicalVaultPubKey := tx.ObservedPubKey
+	if c.thorchainBridge != nil {
+		ceremonyCtx, ctxErr := c.resolveXMRKeyImageCeremonyContext(tx.ObservedPubKey)
+		if ctxErr != nil {
+			return fmt.Errorf("fail to resolve XMR key-image validation context: %w", ctxErr)
+		}
+		if !ceremonyCtx.vaultPubKey.Equals(tx.ObservedPubKey) {
+			c.logger.Info().
+				Str("observed_vault_pub_key", tx.ObservedPubKey.String()).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Str("tx_hash", tx.Tx.ID.String()).
+				Msg("canonicalized XMR key-image validation vault context")
+		}
+		canonicalVaultPubKey = ceremonyCtx.vaultPubKey
+	}
+
+	outputs, err := c.collectVaultOutputsForTx(canonicalVaultPubKey, tx.Tx.ID.String())
 	if err != nil {
 		return err
 	}
@@ -2916,7 +3191,7 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound bool)
 			return fmt.Errorf("xmr key-image proof set does not match local output set for tx %s", tx.Tx.ID)
 		}
 		validateResp, validateErr := c.frostSigner.FrostKeyImageValidate(xmrFrostKeyImageValidateRequest{
-			VaultPubKey: tx.ObservedPubKey.String(),
+			VaultPubKey: canonicalVaultPubKey.String(),
 			TxHash:      proof.TxHash,
 			OutputIndex: proof.OutputIndex,
 			KeyImage:    proof.KeyImage,
@@ -2936,7 +3211,7 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound bool)
 		})
 	}
 
-	result, err := c.frostSigner.ApplyKeyImages(tx.ObservedPubKey.String(), applyRefs, false)
+	result, err := c.frostSigner.ApplyKeyImages(canonicalVaultPubKey.String(), applyRefs, false)
 	if err != nil {
 		return fmt.Errorf("fail to apply validated XMR key-images: %w", err)
 	}
