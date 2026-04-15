@@ -182,7 +182,23 @@ func (t *TssServer) FrostKeyImage(req FrostKeyImageRequest, sidecar FrostSidecar
 			break
 		}
 	}
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Str("vault_pub_key", strings.TrimSpace(req.VaultPubKey)).
+		Str("tx_hash", strings.ToLower(strings.TrimSpace(req.TxHash))).
+		Uint32("output_index", req.OutputIndex).
+		Str("local_peer_id", ourPeerID).
+		Interface("online_peer_ids", peerIDsToStrings(onlinePeers)).
+		Strs("active_participants", activeParticipants).
+		Bool("local_is_active", isActive).
+		Msg("frost key-image join party succeeded")
 	if !isActive {
+		t.logger.Info().
+			Str("msg_id", msgID).
+			Str("vault_pub_key", strings.TrimSpace(req.VaultPubKey)).
+			Str("tx_hash", strings.ToLower(strings.TrimSpace(req.TxHash))).
+			Uint32("output_index", req.OutputIndex).
+			Msg("local node will not execute frost key-image ceremony because it is not in the active signer set")
 		return FrostKeyImageResponse{
 			Status: tcommon.Fail,
 			Blame:  blame.NewBlame("local signer is not in active signer set", nil),
@@ -197,7 +213,16 @@ func (t *TssServer) FrostKeyImage(req FrostKeyImageRequest, sidecar FrostSidecar
 		msgChan,
 		t.conf.KeySignTimeout,
 	)
-	return coordinator.Execute(req, activeParticipants, onlinePeers), nil
+	resp := coordinator.Execute(req, activeParticipants, onlinePeers)
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Str("vault_pub_key", strings.TrimSpace(req.VaultPubKey)).
+		Str("tx_hash", strings.ToLower(strings.TrimSpace(req.TxHash))).
+		Uint32("output_index", req.OutputIndex).
+		Int("status", int(resp.Status)).
+		Str("fail_reason", resp.Blame.FailReason).
+		Msg("completed frost key-image ceremony")
+	return resp, nil
 }
 
 func (c *FrostKeyImageCoordinator) Execute(

@@ -2448,9 +2448,19 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return item, true, nil
 	}
 	if isInboundToVault && isOutboundObservationMemo(item.Memo) && !c.isKnownVaultAddress(item.Sender) {
+		c.logger.Debug().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
+			Str("sender", item.Sender).
+			Str("memo", item.Memo).
+			Msg("skipping delayed XMR change inbound; key-images will ride on finalized outbound")
 		return nil, false, nil
 	}
 	if len(item.XmrKeyImages) > 0 {
+		c.logger.Debug().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Int("proof_count", len(item.XmrKeyImages)).
+			Msg("observed tx item already has XMR key-images")
 		return item, true, nil
 	}
 
@@ -2467,6 +2477,12 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		item.ObservedVaultPubKey = ceremonyCtx.vaultPubKey
 	}
 	if !c.localNodeIsVaultSigner(ceremonyCtx.members) {
+		c.logger.Debug().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Str("local_node_pub_key", c.localNodePubKey.String()).
+			Strs("signer_pub_keys", ceremonyCtx.members).
+			Msg("skipping XMR key-image generation; local node not in signer set")
 		return nil, false, nil
 	}
 
@@ -2476,6 +2492,11 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	}
 	if len(outputs) == 0 {
 		if isOutboundFromVault {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Str("memo", item.Memo).
+				Msg("finalized XMR outbound has no tracked vault-owned outputs; no key-image ceremony needed")
 			return item, true, nil
 		}
 		return nil, false, fmt.Errorf("no tracked outputs found for finalized XMR inbound %s", item.Tx)
@@ -2486,11 +2507,25 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, fmt.Errorf("fail to resolve thorchain version for XMR key-images: %w", err)
 	}
 
+	c.logger.Info().
+		Str("tx_hash", normalizeTxID(item.Tx)).
+		Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+		Bool("inbound", isInboundToVault).
+		Bool("outbound", isOutboundFromVault).
+		Int("tracked_output_count", len(outputs)).
+		Int64("finalise_height", finaliseHeight).
+		Str("memo", item.Memo).
+		Msg("preparing finalized XMR observation for key-image generation")
 	proofs, err := c.generateObservedTxKeyImages(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, ceremonyCtx.members, finaliseHeight, version.String())
 	if err != nil {
 		return nil, false, err
 	}
 	item.XmrKeyImages = proofs
+	c.logger.Info().
+		Str("tx_hash", normalizeTxID(item.Tx)).
+		Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+		Int("proof_count", len(proofs)).
+		Msg("attached XMR key-images to finalized observation")
 	return item, true, nil
 }
 
@@ -2958,8 +2993,33 @@ func (c *Client) generateObservedTxKeyImages(
 	finaliseHeight int64,
 	version string,
 ) ([]*common.XmrKeyImageProof, error) {
+	queuedBefore, activeBefore := c.pendingXMRKeyImageBacklog()
+	c.logger.Info().
+		Str("vault_pub_key", vaultPubKey.String()).
+		Str("tx_hash", txHash).
+		Int("tracked_output_count", len(outputs)).
+		Uint64("queued_before", queuedBefore).
+		Bool("active_before", activeBefore).
+		Msg("queueing XMR key-image generation")
 	release := c.acquireXMRKeyImageCeremonySlot()
-	defer release()
+	queuedAfterAcquire, activeAfterAcquire := c.pendingXMRKeyImageBacklog()
+	c.logger.Info().
+		Str("vault_pub_key", vaultPubKey.String()).
+		Str("tx_hash", txHash).
+		Int("tracked_output_count", len(outputs)).
+		Uint64("queued_after_acquire", queuedAfterAcquire).
+		Bool("active_after_acquire", activeAfterAcquire).
+		Msg("acquired XMR key-image generation slot")
+	defer func() {
+		release()
+		queuedAfterRelease, activeAfterRelease := c.pendingXMRKeyImageBacklog()
+		c.logger.Info().
+			Str("vault_pub_key", vaultPubKey.String()).
+			Str("tx_hash", txHash).
+			Uint64("queued_after_release", queuedAfterRelease).
+			Bool("active_after_release", activeAfterRelease).
+			Msg("released XMR key-image generation slot")
+	}()
 
 	proofs := make([]*common.XmrKeyImageProof, 0, len(outputs))
 	for _, output := range outputs {
@@ -2987,6 +3047,12 @@ func (c *Client) generateObservedTxKeyImages(
 			}
 			return nil, fmt.Errorf("XMR key-image ceremony failed for %s:%d: %s", txHash, output.OutputIndex, resp.Blame.FailReason)
 		}
+		c.logger.Info().
+			Str("vault_pub_key", vaultPubKey.String()).
+			Str("tx_hash", txHash).
+			Uint32("output_index", output.OutputIndex).
+			Str("key_image", strings.ToLower(strings.TrimSpace(resp.KeyImage))).
+			Msg("completed XMR key-image generation for output")
 		proofs = append(proofs, &common.XmrKeyImageProof{
 			TxHash:      strings.ToLower(strings.TrimSpace(resp.TxHash)),
 			OutputIndex: resp.OutputIndex,
@@ -2995,6 +3061,11 @@ func (c *Client) generateObservedTxKeyImages(
 			ProofS:      strings.ToLower(strings.TrimSpace(resp.ProofS)),
 		})
 	}
+	c.logger.Info().
+		Str("vault_pub_key", vaultPubKey.String()).
+		Str("tx_hash", txHash).
+		Int("proof_count", len(proofs)).
+		Msg("completed XMR key-image generation batch")
 	return canonicalXMRKeyImageProofs(proofs), nil
 }
 
@@ -3183,6 +3254,13 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound bool)
 	if len(normalizedProofs) != len(outputs) {
 		return fmt.Errorf("expected %d XMR key-images for tx %s, got %d", len(outputs), tx.Tx.ID, len(normalizedProofs))
 	}
+	c.logger.Info().
+		Str("tx_hash", tx.Tx.ID.String()).
+		Str("canonical_vault_pub_key", canonicalVaultPubKey.String()).
+		Bool("inbound", inbound).
+		Int("expected_output_count", len(outputs)).
+		Int("provided_key_image_count", len(normalizedProofs)).
+		Msg("validating finalized XMR key-images against local tracked outputs")
 
 	applyRefs := make([]xmrFrostApplyKeyImageRef, 0, len(normalizedProofs))
 	for i, output := range outputs {
@@ -3218,6 +3296,13 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound bool)
 	if result.NotFound > 0 {
 		return fmt.Errorf("validated XMR key-images missing %d local outputs", result.NotFound)
 	}
+	c.logger.Info().
+		Str("tx_hash", tx.Tx.ID.String()).
+		Str("canonical_vault_pub_key", canonicalVaultPubKey.String()).
+		Bool("inbound", inbound).
+		Int("applied", result.Applied).
+		Int("not_found", result.NotFound).
+		Msg("validated and applied finalized XMR key-images")
 	return nil
 }
 
