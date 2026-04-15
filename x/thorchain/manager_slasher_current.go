@@ -888,6 +888,9 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// Timeout if staged for longer than signingTransPeriod * maxOutboundAttempts
 			var oldest int64
 			for _, staged := range stagedList.Items {
+				if staged.StagedHeight <= 0 || staged.StagedHeight > ctx.BlockHeight() {
+					continue
+				}
 				age := ctx.BlockHeight() - staged.StagedHeight
 				if age > oldest {
 					oldest = age
