@@ -240,6 +240,29 @@ pub struct TransfersResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct OutgoingTransferStateEntry {
+    pub tx_hash: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tx_keys: Vec<String>,
+    pub from_address: String,
+    pub to_address: String,
+    pub amount: u64,
+    pub fee: u64,
+    pub memo: String,
+    pub planned_height: u64,
+    pub observed_height: Option<u64>,
+    pub status: String,
+    pub reported_effective_height: Option<u64>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OutgoingTransfersStateResponse {
+    pub vault_pub_key: String,
+    pub outgoing: Vec<OutgoingTransferStateEntry>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AddressesResponse {
     pub addresses: Vec<String>,
 }
@@ -283,6 +306,22 @@ pub struct ValidateOutboundResponse {
     pub tracked: bool,
     pub marked: usize,
     pub not_found: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PruneOutgoingTransfersRequest {
+    pub vault_pub_key: String,
+    #[serde(default)]
+    pub tx_hashes: Vec<String>,
+    #[serde(default)]
+    pub observed_mined_only: bool,
+    #[serde(default)]
+    pub tx_key_backed_only: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PruneOutgoingTransfersResponse {
+    pub removed: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

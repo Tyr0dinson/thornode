@@ -1713,6 +1713,25 @@ fn transfer_entry_from_outgoing_record(
     }
 }
 
+fn outgoing_state_entry_from_record(
+    tx: crate::state::store::OutgoingTransferRecord,
+) -> crate::api::types::OutgoingTransferStateEntry {
+    crate::api::types::OutgoingTransferStateEntry {
+        tx_hash: tx.tx_hash,
+        tx_keys: tx.tx_keys,
+        from_address: tx.from_address,
+        to_address: tx.to_address,
+        amount: tx.amount,
+        fee: tx.fee,
+        memo: tx.memo,
+        planned_height: tx.planned_height,
+        observed_height: tx.observed_height,
+        status: tx.status,
+        reported_effective_height: tx.reported_effective_height,
+        created_at: tx.created_at,
+    }
+}
+
 fn build_mempool_outgoing_entries(
     records: &[crate::state::store::OutgoingTransferRecord],
     in_pool_hashes: &HashSet<String>,
@@ -2770,6 +2789,88 @@ pub async fn get_outputs(
     )
 }
 
+pub async fn get_outbounds(
+    State(state): State<Arc<AppState>>,
+    Path(vault_pub_key): Path<String>,
+) -> impl IntoResponse {
+    match state.store.load_outgoing_transfers(&vault_pub_key) {
+        Ok(outgoing) => {
+            let entries = outgoing
+                .into_iter()
+                .map(outgoing_state_entry_from_record)
+                .collect();
+            (
+                StatusCode::OK,
+                Json(
+                    serde_json::to_value(crate::api::types::OutgoingTransfersStateResponse {
+                        vault_pub_key,
+                        outgoing: entries,
+                    })
+                    .unwrap(),
+                ),
+            )
+        }
+        Err(e) => {
+            error!(error = %e, vault = %vault_pub_key, "failed to load outgoing transfers");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to load outgoing transfers: {e}"
+                ))),
+            )
+        }
+    }
+}
+
+pub async fn prune_outbounds(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<crate::api::types::PruneOutgoingTransfersRequest>,
+) -> impl IntoResponse {
+    let vault_pub_key = req.vault_pub_key.trim().to_string();
+    if vault_pub_key.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("vault_pub_key is required")),
+        );
+    }
+    let tx_hashes: HashSet<String> = req
+        .tx_hashes
+        .iter()
+        .map(|hash| normalize_tx_hash(hash))
+        .filter(|hash| !hash.is_empty())
+        .collect();
+    if tx_hashes.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_json("tx_hashes must not be empty")),
+        );
+    }
+
+    match state.store.prune_outgoing_transfers(
+        &vault_pub_key,
+        &tx_hashes,
+        req.observed_mined_only,
+        req.tx_key_backed_only,
+    ) {
+        Ok(removed) => (
+            StatusCode::OK,
+            Json(
+                serde_json::to_value(crate::api::types::PruneOutgoingTransfersResponse { removed })
+                    .unwrap(),
+            ),
+        ),
+        Err(e) => {
+            error!(error = %e, vault = %vault_pub_key, "failed to prune outgoing transfers");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to prune outgoing transfers: {e}"
+                ))),
+            )
+        }
+    }
+}
+
 pub async fn apply_key_images(
     State(state): State<Arc<AppState>>,
     Json(req): Json<crate::api::types::ApplyKeyImagesRequest>,
@@ -3035,7 +3136,22 @@ pub async fn validate_outbound(
     let observed_height = tx_entry.block_height;
     let observed_at = observed_height.map(|_| chrono::Utc::now().timestamp());
 
-    if let Some(_record) = existing {
+    if let Some(record) = existing {
+        if let Err(e) = state.store.update_outgoing_transfer_audit_metadata(
+            &vault_pub_key,
+            &tx_hash,
+            &req.tx_keys,
+            &from_address,
+            req.memo.as_deref().unwrap_or_default(),
+        ) {
+            error!(error = %e, vault = vault_pub_key, tx_hash, "failed to update existing outgoing transfer metadata");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to update outgoing transfer metadata: {e}"
+                ))),
+            );
+        }
         if let Err(e) = state.store.update_outgoing_transfer_status(
             &vault_pub_key,
             &tx_hash,
@@ -3053,12 +3169,17 @@ pub async fn validate_outbound(
             );
         }
 
+        let marked = if req.reconcile && record.tx_keys.is_empty() {
+            0
+        } else {
+            0
+        };
         return (
             StatusCode::OK,
             Json(
                 serde_json::to_value(crate::api::types::ValidateOutboundResponse {
                     tracked: validated.tracked_owned_output,
-                    marked: 0,
+                    marked,
                     not_found: 0,
                 })
                 .unwrap(),
@@ -5270,6 +5391,64 @@ mod tests {
             .load_outgoing_transfers(VALID_VAULT_PUB_KEY)
             .expect("failed to load outgoing transfers");
         assert!(outgoing.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_outbounds_and_prune_outbounds_expose_and_trim_state() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let mut stale = sample_outgoing(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            VALID_VAULT_PUB_KEY,
+            "48from-a",
+            "8to-a",
+            1,
+        );
+        stale.tx_keys = vec!["aa".repeat(32)];
+        let mut keep = sample_outgoing(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            VALID_VAULT_PUB_KEY,
+            "48from-b",
+            "8to-b",
+            2,
+        );
+        keep.tx_keys = vec!["bb".repeat(32)];
+        state
+            .store
+            .save_outgoing_transfer(&stale)
+            .expect("failed to seed stale outgoing transfer");
+        state
+            .store
+            .save_outgoing_transfer(&keep)
+            .expect("failed to seed keep outgoing transfer");
+
+        let listed = get_outbounds(State(state.clone()), Path(VALID_VAULT_PUB_KEY.to_string()))
+            .await
+            .into_response();
+        let (list_status, body) = response_to_status_json(listed).await;
+        assert_eq!(list_status, StatusCode::OK);
+        assert_eq!(body["outgoing"].as_array().map(|v| v.len()), Some(2));
+
+        let pruned = prune_outbounds(
+            State(state.clone()),
+            Json(crate::api::types::PruneOutgoingTransfersRequest {
+                vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+                tx_hashes: vec![stale.tx_hash.clone()],
+                observed_mined_only: true,
+                tx_key_backed_only: true,
+            }),
+        )
+        .await
+        .into_response();
+        let (prune_status, prune_body) = response_to_status_json(pruned).await;
+        assert_eq!(prune_status, StatusCode::OK);
+        assert_eq!(prune_body["removed"].as_array().map(|v| v.len()), Some(1));
+
+        let remaining = state
+            .store
+            .load_outgoing_transfers(VALID_VAULT_PUB_KEY)
+            .expect("failed to load outgoing transfers");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].tx_hash, keep.tx_hash);
     }
 
     #[tokio::test]

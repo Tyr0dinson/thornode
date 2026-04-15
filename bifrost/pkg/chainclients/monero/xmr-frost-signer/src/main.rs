@@ -171,6 +171,14 @@ async fn main() -> anyhow::Result<()> {
             "/v1/monero/outbounds/validate",
             post(api::routes::validate_outbound),
         )
+        .route(
+            "/v1/monero/outbounds/prune",
+            post(api::routes::prune_outbounds),
+        )
+        .route(
+            "/v1/monero/outbounds/:vault_pub_key",
+            get(api::routes::get_outbounds),
+        )
         .route(ADDRESSES_ROUTE, get(api::routes::get_addresses))
         .route(OUTPUTS_ROUTE, get(api::routes::get_outputs))
         .route(

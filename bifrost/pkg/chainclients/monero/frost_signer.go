@@ -40,6 +40,8 @@ type FrostSigner struct {
 	keyImageCombinePath  string
 	keyImageValidatePath string
 	validatePath         string
+	outgoingStatePath    string
+	outgoingPrunePath    string
 	clearSessionsPath    string
 	broadcastPath        string
 	balancePath          string
@@ -301,6 +303,26 @@ type xmrFrostTransfersResponse struct {
 	Outgoing []xmrFrostTransferEntry `json:"outgoing"`
 }
 
+type xmrFrostOutgoingTransferStateEntry struct {
+	TxHash                  string   `json:"tx_hash"`
+	TxKeys                  []string `json:"tx_keys,omitempty"`
+	FromAddress             string   `json:"from_address"`
+	ToAddress               string   `json:"to_address"`
+	Amount                  uint64   `json:"amount"`
+	Fee                     uint64   `json:"fee"`
+	Memo                    string   `json:"memo"`
+	PlannedHeight           uint64   `json:"planned_height"`
+	ObservedHeight          *uint64  `json:"observed_height,omitempty"`
+	Status                  string   `json:"status"`
+	ReportedEffectiveHeight *uint64  `json:"reported_effective_height,omitempty"`
+	CreatedAt               int64    `json:"created_at"`
+}
+
+type xmrFrostOutgoingTransfersStateResponse struct {
+	VaultPubKey string                               `json:"vault_pub_key"`
+	Outgoing    []xmrFrostOutgoingTransferStateEntry `json:"outgoing"`
+}
+
 type xmrFrostValidateOutboundRequest struct {
 	VaultPubKey string   `json:"vault_pub_key"`
 	TxHash      string   `json:"tx_hash"`
@@ -317,6 +339,17 @@ type xmrFrostValidateOutboundResponse struct {
 	Tracked  bool `json:"tracked"`
 	Marked   int  `json:"marked"`
 	NotFound int  `json:"not_found"`
+}
+
+type xmrFrostPruneOutgoingTransfersRequest struct {
+	VaultPubKey       string   `json:"vault_pub_key"`
+	TxHashes          []string `json:"tx_hashes"`
+	ObservedMinedOnly bool     `json:"observed_mined_only,omitempty"`
+	TxKeyBackedOnly   bool     `json:"tx_key_backed_only,omitempty"`
+}
+
+type xmrFrostPruneOutgoingTransfersResponse struct {
+	Removed []string `json:"removed"`
 }
 
 type xmrFrostScannerSyncRequest struct {
@@ -505,6 +538,8 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 		keyImageCombinePath:  "/v1/monero/key-image/combine",
 		keyImageValidatePath: "/v1/monero/key-image/validate",
 		validatePath:         "/v1/monero/outbounds/validate",
+		outgoingStatePath:    "/v1/monero/outbounds",
+		outgoingPrunePath:    "/v1/monero/outbounds/prune",
 		clearSessionsPath:    "/v1/monero/sessions/clear",
 		broadcastPath:        "/v1/monero/broadcast",
 		balancePath:          "/v1/monero/balance",
@@ -785,6 +820,23 @@ func (s *FrostSigner) GetTransfersByHeight(height int64) (xmrFrostTransfersRespo
 	path := fmt.Sprintf("%s?height=%d", s.transfersPath, height)
 	if err := s.callGet(path, &out); err != nil {
 		return xmrFrostTransfersResponse{}, fmt.Errorf("fail to call frost transfers endpoint: %w", err)
+	}
+	return out, nil
+}
+
+func (s *FrostSigner) GetOutgoingTransferState(vaultPubKey string) (xmrFrostOutgoingTransfersStateResponse, error) {
+	var out xmrFrostOutgoingTransfersStateResponse
+	path := s.outgoingStatePath + "/" + url.PathEscape(vaultPubKey)
+	if err := s.callGet(path, &out); err != nil {
+		return xmrFrostOutgoingTransfersStateResponse{}, fmt.Errorf("fail to call frost outgoing state endpoint: %w", err)
+	}
+	return out, nil
+}
+
+func (s *FrostSigner) PruneOutgoingTransfers(req xmrFrostPruneOutgoingTransfersRequest) (xmrFrostPruneOutgoingTransfersResponse, error) {
+	var out xmrFrostPruneOutgoingTransfersResponse
+	if err := s.call(http.MethodPost, s.outgoingPrunePath, req, &out); err != nil {
+		return xmrFrostPruneOutgoingTransfersResponse{}, fmt.Errorf("fail to call frost outgoing prune endpoint: %w", err)
 	}
 	return out, nil
 }

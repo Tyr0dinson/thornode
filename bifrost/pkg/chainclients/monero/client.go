@@ -627,20 +627,33 @@ func (c *Client) catchupTxKeys() {
 		}
 
 		batch, shouldApply := c.nextTxKeyCatchupBatch(vaultPubKey.String(), refs)
-		if !shouldApply {
-			needsReplay, verifyErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), refs)
-			if verifyErr != nil {
-				c.logger.Debug().
-					Err(verifyErr).
+		stateCheck, verifyErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), refs)
+		if verifyErr != nil {
+			c.logger.Debug().
+				Err(verifyErr).
+				Str("vault", vaultPubKey.String()).
+				Msg("xmr tx-key catchup: failed to verify signer state, forcing replay")
+			stateCheck.needsReplay = true
+		}
+		if len(stateCheck.removeHashes) > 0 {
+			_, pruneErr := c.frostSigner.PruneOutgoingTransfers(xmrFrostPruneOutgoingTransfersRequest{
+				VaultPubKey:       vaultPubKey.String(),
+				TxHashes:          append([]string(nil), stateCheck.removeHashes...),
+				ObservedMinedOnly: true,
+				TxKeyBackedOnly:   true,
+			})
+			if pruneErr != nil {
+				c.logger.Err(pruneErr).
 					Str("vault", vaultPubKey.String()).
-					Msg("xmr tx-key catchup: failed to verify signer state, forcing replay")
-				needsReplay = true
+					Strs("tx_hashes", stateCheck.removeHashes).
+					Msg("xmr tx-key catchup: failed to prune stale signer outbounds")
+				stateCheck.needsReplay = true
 			}
-			if needsReplay {
-				c.clearTxKeyCatchupState(vaultPubKey.String())
-				batch = cloneTxKeyCatchupRefs(refs)
-				shouldApply = true
-			}
+		}
+		if stateCheck.needsReplay && !shouldApply {
+			c.clearTxKeyCatchupState(vaultPubKey.String())
+			batch = cloneTxKeyCatchupRefs(refs)
+			shouldApply = true
 		}
 		if !shouldApply {
 			continue
@@ -1022,18 +1035,23 @@ func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostA
 	return false, nil
 }
 
-func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatchupRef) (bool, error) {
-	transfers, err := c.frostSigner.GetTransfersByHeight(0)
-	if err != nil {
-		return false, err
-	}
+type xmrTxKeyCatchupStateCheck struct {
+	needsReplay  bool
+	removeHashes []string
+}
 
+func legacyTxKeyCatchupNeedsReplay(
+	vaultPubKey string,
+	refs []xmrTxKeyCatchupRef,
+	transfers xmrFrostTransfersResponse,
+) xmrTxKeyCatchupStateCheck {
 	wanted := make(map[string][]string, len(refs))
 	for _, ref := range refs {
 		wanted[strings.ToLower(strings.TrimSpace(ref.txHash))] = normalizeTxKeyValues(ref.txKeys)
 	}
 
 	seen := make(map[string]struct{}, len(refs))
+	needsReplay := false
 	for _, transfer := range transfers.Outgoing {
 		if !strings.EqualFold(strings.TrimSpace(transfer.VaultPubKey), vaultPubKey) {
 			continue
@@ -1044,18 +1062,84 @@ func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatc
 			continue
 		}
 		if !sameNormalizedTxKeyValues(normalizeTxKeyValues(transfer.TxKeys), wantKeys) {
-			return true, nil
+			needsReplay = true
+			continue
 		}
 		seen[txHash] = struct{}{}
 	}
 
 	for txHash := range wanted {
 		if _, ok := seen[txHash]; !ok {
-			return true, nil
+			needsReplay = true
 		}
 	}
 
-	return false, nil
+	return xmrTxKeyCatchupStateCheck{needsReplay: needsReplay}
+}
+
+func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatchupRef) (xmrTxKeyCatchupStateCheck, error) {
+	state, err := c.frostSigner.GetOutgoingTransferState(vaultPubKey)
+	if err != nil {
+		transfers, transferErr := c.frostSigner.GetTransfersByHeight(0)
+		if transferErr != nil {
+			return xmrTxKeyCatchupStateCheck{}, err
+		}
+		return legacyTxKeyCatchupNeedsReplay(vaultPubKey, refs, transfers), nil
+	}
+
+	wanted := make(map[string][]string, len(refs))
+	for _, ref := range refs {
+		wanted[strings.ToLower(strings.TrimSpace(ref.txHash))] = normalizeTxKeyValues(ref.txKeys)
+	}
+
+	seen := make(map[string]struct{}, len(refs))
+	removeSet := make(map[string]struct{})
+	needsReplay := false
+	for _, record := range state.Outgoing {
+		if !strings.EqualFold(strings.TrimSpace(record.Status), "observed_mined") {
+			continue
+		}
+		txHash := strings.ToLower(strings.TrimSpace(record.TxHash))
+		if txHash == "" {
+			continue
+		}
+		localKeys := normalizeTxKeyValues(record.TxKeys)
+		wantKeys, ok := wanted[txHash]
+		if !ok {
+			if len(localKeys) > 0 {
+				removeSet[strings.TrimSpace(record.TxHash)] = struct{}{}
+				needsReplay = true
+			}
+			continue
+		}
+		if len(localKeys) == 0 {
+			needsReplay = true
+			continue
+		}
+		if !sameNormalizedTxKeyValues(localKeys, wantKeys) {
+			removeSet[strings.TrimSpace(record.TxHash)] = struct{}{}
+			needsReplay = true
+			continue
+		}
+		seen[txHash] = struct{}{}
+	}
+
+	for txHash := range wanted {
+		if _, ok := seen[txHash]; !ok {
+			needsReplay = true
+		}
+	}
+
+	removeHashes := make([]string, 0, len(removeSet))
+	for txHash := range removeSet {
+		removeHashes = append(removeHashes, txHash)
+	}
+	sort.Strings(removeHashes)
+
+	return xmrTxKeyCatchupStateCheck{
+		needsReplay:  needsReplay,
+		removeHashes: removeHashes,
+	}, nil
 }
 
 func makeTxKeyCatchupRefs(refs []*common.XmrTxKeyRef) []xmrTxKeyCatchupRef {

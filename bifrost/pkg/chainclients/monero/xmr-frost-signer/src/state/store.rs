@@ -755,6 +755,42 @@ impl Store {
         Ok(removed)
     }
 
+    pub fn prune_outgoing_transfers(
+        &self,
+        vault_pub_key: &str,
+        tx_hashes: &HashSet<String>,
+        observed_mined_only: bool,
+        tx_key_backed_only: bool,
+    ) -> Result<Vec<String>> {
+        let tree = self.db.open_tree("outgoing_transfers")?;
+        let prefix = format!("{}:", vault_pub_key);
+        let mut keys = Vec::new();
+        let mut removed = Vec::new();
+
+        for item in tree.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = item?;
+            let record: OutgoingTransferRecord = serde_json::from_slice(&value)?;
+            let normalized_hash = record.tx_hash.trim().to_ascii_lowercase();
+            if normalized_hash.is_empty() || !tx_hashes.contains(&normalized_hash) {
+                continue;
+            }
+            if observed_mined_only && !record.status.eq_ignore_ascii_case("observed_mined") {
+                continue;
+            }
+            if tx_key_backed_only && record.tx_keys.is_empty() {
+                continue;
+            }
+            keys.push(key);
+            removed.push(record.tx_hash);
+        }
+
+        for key in keys {
+            tree.remove(key)?;
+        }
+        tree.flush()?;
+        Ok(removed)
+    }
+
     pub fn load_outgoing_transfer(
         &self,
         vault_pub_key: &str,
@@ -802,6 +838,34 @@ impl Store {
             || previous_effective_height != effective_height
         {
             record.reported_effective_height = None;
+        }
+        tree.insert(key.as_bytes(), serde_json::to_vec(&record)?)?;
+        tree.flush()?;
+        Ok(())
+    }
+
+    pub fn update_outgoing_transfer_audit_metadata(
+        &self,
+        vault_pub_key: &str,
+        tx_hash: &str,
+        tx_keys: &[String],
+        from_address: &str,
+        memo: &str,
+    ) -> Result<()> {
+        let tree = self.db.open_tree("outgoing_transfers")?;
+        let key = format!("{}:{}", vault_pub_key, tx_hash);
+        let Some(raw) = tree.get(key.as_bytes())? else {
+            return Ok(());
+        };
+        let mut record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
+        if !tx_keys.is_empty() {
+            record.tx_keys = tx_keys.to_vec();
+        }
+        if !from_address.trim().is_empty() {
+            record.from_address = from_address.trim().to_string();
+        }
+        if !memo.trim().is_empty() {
+            record.memo = memo.trim().to_string();
         }
         tree.insert(key.as_bytes(), serde_json::to_vec(&record)?)?;
         tree.flush()?;
@@ -1832,6 +1896,115 @@ mod tests {
             .load_outgoing_transfer("thorpub1vault-b", "hash2")
             .unwrap()
             .is_some());
+    }
+
+    #[test]
+    fn prune_outgoing_transfers_removes_only_matching_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        let first = OutgoingTransferRecord {
+            tx_hash: "hash1".to_string(),
+            tx_hex: "deadbeef".to_string(),
+            tx_keys: vec!["11".repeat(32)],
+            msg_id: "msg1".to_string(),
+            vault_pub_key: "thorpub1vault-a".to_string(),
+            from_address: "48from-a".to_string(),
+            to_address: "48to-a".to_string(),
+            amount: 42,
+            fee: 2,
+            memo: "OUT:ABC".to_string(),
+            planned_height: 12,
+            observed_height: Some(12),
+            status: "observed_mined".to_string(),
+            broadcasted_at: None,
+            observed_at: None,
+            reported_effective_height: None,
+            created_at: 123,
+        };
+        let mut second = first.clone();
+        second.tx_hash = "hash2".to_string();
+        second.msg_id = "msg2".to_string();
+        second.tx_keys = vec![];
+        let mut third = first.clone();
+        third.tx_hash = "hash3".to_string();
+        third.msg_id = "msg3".to_string();
+        third.status = "signed_pending_observation".to_string();
+
+        store.save_outgoing_transfer(&first).unwrap();
+        store.save_outgoing_transfer(&second).unwrap();
+        store.save_outgoing_transfer(&third).unwrap();
+
+        let mut hashes = HashSet::new();
+        hashes.insert("hash1".to_string());
+        hashes.insert("hash2".to_string());
+        hashes.insert("hash3".to_string());
+
+        let removed = store
+            .prune_outgoing_transfers("thorpub1vault-a", &hashes, true, true)
+            .unwrap();
+        assert_eq!(removed, vec!["hash1".to_string()]);
+        assert!(store
+            .load_outgoing_transfer("thorpub1vault-a", "hash1")
+            .unwrap()
+            .is_none());
+        assert!(store
+            .load_outgoing_transfer("thorpub1vault-a", "hash2")
+            .unwrap()
+            .is_some());
+        assert!(store
+            .load_outgoing_transfer("thorpub1vault-a", "hash3")
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn update_outgoing_transfer_audit_metadata_backfills_existing_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        let mut record = OutgoingTransferRecord {
+            tx_hash: "hash1".to_string(),
+            tx_hex: "deadbeef".to_string(),
+            tx_keys: vec![],
+            msg_id: "msg1".to_string(),
+            vault_pub_key: "thorpub1vault-a".to_string(),
+            from_address: String::new(),
+            to_address: "48to-a".to_string(),
+            amount: 42,
+            fee: 2,
+            memo: String::new(),
+            planned_height: 12,
+            observed_height: None,
+            status: "signed_pending_observation".to_string(),
+            broadcasted_at: None,
+            observed_at: None,
+            reported_effective_height: None,
+            created_at: 123,
+        };
+
+        store.save_outgoing_transfer(&record).unwrap();
+        store
+            .update_outgoing_transfer_audit_metadata(
+                "thorpub1vault-a",
+                "hash1",
+                &["11".repeat(32)],
+                "48from-a",
+                "OUT:ABC",
+            )
+            .unwrap();
+
+        record.tx_keys = vec!["11".repeat(32)];
+        record.from_address = "48from-a".to_string();
+        record.memo = "OUT:ABC".to_string();
+
+        let loaded = store
+            .load_outgoing_transfer("thorpub1vault-a", "hash1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.tx_keys, record.tx_keys);
+        assert_eq!(loaded.from_address, record.from_address);
+        assert_eq!(loaded.memo, record.memo);
     }
 
     fn sample_reserved_output(msg_id: &str, tx_hash_candidate: Option<&str>) -> TrackedOutput {
