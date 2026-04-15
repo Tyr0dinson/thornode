@@ -1644,6 +1644,91 @@ func (*NetworkManagerTestSuite) TestMigrateFundsFinalXMRMigrationCoversFrostFeeE
 	)
 }
 
+func (*NetworkManagerTestSuite) TestMigrateFundsRollsBackUnfinalizedMempoolSwapsForInactiveVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	retiringVault := NewVault(ctx.BlockHeight(), RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	retiringAddress, err := retiringVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		retiringAddress,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	observedTx := NewObservedTx(inboundTx, ctx.BlockHeight(), retiringVault.PubKey, 0)
+	observedTx.Status = common.Status_done
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.FinalisedHeight = 0
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+
+	stagedOutbound := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: activeVault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)),
+		Memo:        "OUT:" + inTxID.String(),
+	}
+	voter.Actions = []TxOutItem{stagedOutbound}
+
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+10), IsNil)
+
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	updatedVault, err := mgr.Keeper().GetVault(ctx, retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(updatedVault.Status, Equals, InactiveVault)
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("inactive-vault transition should immediately clear staged mempool outbounds"))
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.FinalisedHeight, Equals, int64(0), Commentf("rollback should not mark an unfinalized inbound as finalized"))
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("inactive-vault rollback should clear the voter mempool TOR value"))
+	c.Check(updatedVoter.Actions, IsNil, Commentf("inactive-vault rollback should discard speculative actions"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("inactive-vault rollback should release mempool swap capacity"))
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(outItems, HasLen, 0, Commentf("unfinalized inactive-vault rollback should not schedule a refund"))
+}
+
 func (*NetworkManagerTestSuite) TestGetAvailablePoolsRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())

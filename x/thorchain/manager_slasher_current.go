@@ -861,8 +861,8 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 
-	// Handle timeout for staged outbounds (mempool swaps waiting for inbound finalization)
-	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling
+	// Handle timeout for staged outbounds (mempool swaps waiting for inbound finalization).
+	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling.
 	if maxOutboundAttempts > 0 {
 		timeoutAge := signingTransPeriod * maxOutboundAttempts
 		// After 3x the normal timeout, force-rollback even finalized active-vault
@@ -960,6 +960,10 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 
+			// Inactive-vault unfinalized swaps are normally rolled back when the vault
+			// transitions inactive. This timeout rollback remains a fallback for missed
+			// transition cleanup, rollback errors, and active-vault swaps whose inbound
+			// never finalizes.
 			ctx.Logger().Info("rolling back staged mempool swap due to timeout", "hash", inHash)
 			if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
 				ctx.Logger().Error("fail to roll back staged mempool swap", "error", err, "hash", inHash)
