@@ -465,8 +465,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), voter.PoolPubKeyEddsa)
 			vault.Membership = voter.PubKeys
 
-			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
-				return fmt.Errorf("fail to save vault: %w", err)
+			if setErr := h.mgr.Keeper().SetVault(ctx, vault); setErr != nil {
+				return fmt.Errorf("fail to save vault: %w", setErr)
 			}
 			initVaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
 			if err != nil {
