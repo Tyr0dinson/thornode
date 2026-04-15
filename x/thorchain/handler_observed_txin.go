@@ -128,7 +128,7 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
 		return nil
 	}
 	// Check if swap already exists in queue to prevent duplicates
-	if k.HasSwapQueueItem(ctx, msg.Tx.ID, 0) {
+	if k.HasSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
 		ctx.Logger().Debug("swap already exists in queue, skipping duplicate", "txid", msg.Tx.ID)
 		return nil
 	}
@@ -149,7 +149,7 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
 		return nil
 	}
 	// Queue the main swap
-	if err := k.SetSwapQueueItem(ctx, msg, 0); err != nil {
+	if err := k.SetSwapQueueItem(ctx, msg, int(msg.Index)); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "swap_queue", "add_failed"},
