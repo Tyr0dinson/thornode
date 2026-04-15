@@ -453,6 +453,47 @@ mod tests {
     }
 
     #[test]
+    fn validate_standard_outbound_transaction_rejects_forged_tx_key() {
+        let recipient = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(11),
+            point_from_scalar(13),
+        );
+        let change = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(17),
+            point_from_scalar(19),
+        );
+        let primary = Scalar::from(7u64);
+        let fee = 42u64;
+        let tx_hex = synthetic_pruned_tx_hex(
+            fee,
+            serialize_extra(&primary * ED25519_BASEPOINT_TABLE, vec![]),
+            vec![
+                synthetic_output_for_address(&primary, 0, &recipient, 1_000_000),
+                synthetic_output_for_address(&primary, 1, &change, 2_000_000),
+            ],
+        );
+
+        let err = validate_outbound_transaction(
+            &tx_hex,
+            &[scalar_hex(8)],
+            &recipient.to_string(),
+            1_000_000,
+            Some(fee),
+            &[change.to_string()],
+        )
+        .expect_err("forged tx key should fail validation");
+        assert!(
+            err.to_string()
+                .contains("primary tx key does not match transaction extra"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn validate_subaddress_outbound_with_additional_keys_succeeds() {
         let recipient = MoneroAddress::new(
             Network::Mainnet,
