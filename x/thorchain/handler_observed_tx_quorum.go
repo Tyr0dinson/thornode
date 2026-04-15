@@ -49,6 +49,9 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 	}
 	handler := NewInternalHandler(h.mgr)
 
+	if msg.QuoTx == nil {
+		return nil, cosmos.ErrUnknownRequest("QuoTx cannot be nil")
+	}
 	quoTx := msg.QuoTx
 	obsTx := quoTx.ObsTx
 	inbound := quoTx.Inbound
@@ -77,7 +80,8 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 
 	var crossedQuorum bool
 	var accAddrs []cosmos.AccAddress
-	for _, att := range msg.QuoTx.Attestations {
+	attestations := deduplicateAttestations(msg.QuoTx.Attestations, len(activeNodeAccounts))
+	for _, att := range attestations {
 		accAddr, err := verifyQuorumAttestation(activeNodeAccounts, signBz, att)
 		if err != nil {
 			ctx.Logger().Error("fail to verify quorum tx in attestation", "error", err)
@@ -100,11 +104,11 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 
 	if inbound {
 		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
-			ctx.Logger().Error("fail to handle observed tx in quorum", "error", err)
+			return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
 		}
 	} else {
 		if err := handleObservedTxOutQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
-			ctx.Logger().Error("fail to handle observed tx out quorum", "error", err)
+			return nil, wrapError(ctx, err, "fail to handle observed tx out quorum")
 		}
 	}
 

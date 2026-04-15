@@ -1,7 +1,10 @@
 package utxo
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -10,6 +13,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -19,6 +23,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/mock"
+	utxorpcc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -45,6 +50,17 @@ type ZcashSignerSuite struct {
 }
 
 var _ = Suite(&ZcashSignerSuite{})
+
+func zecFixtureVaultPubKey(c *C) common.PubKey {
+	raw := "thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy2cr8a2"
+	if common.CurrentChainNetwork == common.MockNet {
+		raw = "tthorpub1zcjduepqrcthx0ke3r2z39rp42xrr777af7qfcs6wcxtxck6tj9j0ap8cl0q0msnrn"
+	}
+
+	pubKey, err := common.NewPubKey(raw)
+	c.Assert(err, IsNil)
+	return pubKey
+}
 
 func (s *ZcashSignerSuite) SetUpSuite(c *C) {
 	types2.SetupConfigForTest()
@@ -230,6 +246,28 @@ func (s *ZcashSignerSuite) TestSignTxInsufficientUTXOs(c *C) {
 	c.Assert(buf, IsNil)
 }
 
+func (s *ZcashSignerSuite) TestVinsUnspentRejectsSpentCachedZECInput(c *C) {
+	const txID = "500468e8f504eaeee3c53f826dac132dbff2abf824b5361d10d712a199917d65"
+	hash, err := chainhash.NewHashFromStr(txID)
+	c.Assert(err, IsNil)
+
+	tx := stypes.TxOutItem{
+		Chain:       common.ZECChain,
+		VaultPubKey: zecFixtureVaultPubKey(c),
+	}
+	vin := wire.NewTxIn(wire.NewOutPoint(hash, 0), nil, nil)
+
+	unspent, err := s.client.vinsUnspent(tx, []*wire.TxIn{vin})
+	c.Assert(err, IsNil)
+	c.Assert(unspent, Equals, true)
+
+	c.Assert(s.client.temporalStorage.SetSpentUtxos([]string{formatUtxoKey(txID, 0)}, 123), IsNil)
+
+	unspent, err = s.client.vinsUnspent(tx, []*wire.TxIn{vin})
+	c.Assert(err, IsNil)
+	c.Assert(unspent, Equals, false)
+}
+
 // TestBroadcastTx tests transaction broadcasting behavior.
 // ZEC chain sends raw bytes directly to RPC without local validation (unlike BTC/LTC/DOGE/BCH).
 // This tests that: 1) empty payload fails, 2) non-empty payload is sent to RPC.
@@ -259,6 +297,85 @@ func (s *ZcashSignerSuite) TestBroadcastTx(c *C) {
 	txid, err := s.client.BroadcastTx(txOutItem, somePayload)
 	c.Assert(err, IsNil, Commentf("Non-empty payload should be forwarded to RPC"))
 	c.Assert(txid, Not(Equals), "", Commentf("Should return txid from RPC"))
+}
+
+// zecPayloadTxID mirrors the ZEC fallback txid derivation used by BroadcastTx when
+// RPC returns "already in block chain" without a txid in the response.
+func zecPayloadTxID(payload []byte) string {
+	hash1 := sha256.Sum256(payload)
+	hash2 := sha256.Sum256(hash1[:])
+	final := hash2[:]
+	for i, j := 0, len(final)-1; i < j; i, j = i+1, j-1 {
+		final[i], final[j] = final[j], final[i]
+	}
+	return hex.EncodeToString(final)
+}
+
+// TestBroadcastTxAlreadyInBlockChainMarksSignerCache verifies that the
+// "already in block chain" path is treated as success and recorded in signer cache.
+func (s *ZcashSignerSuite) TestBroadcastTxAlreadyInBlockChainMarksSignerCache(c *C) {
+	txOutItem := stypes.TxOutItem{
+		Chain:       common.ZECChain,
+		ToAddress:   "t1RMxNfN8Q7iwZw7UJB4CqzatxsBmGeYMe2",
+		VaultPubKey: types2.GetRandomPubKey(),
+		Coins: common.Coins{
+			common.NewCoin(common.ZECAsset, cosmos.NewUint(10)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.ZECAsset, cosmos.NewUint(1)),
+		},
+		InHash: thorchain.GetRandomTxHash(),
+		Memo:   "OUT:" + thorchain.GetRandomTxHash().String(),
+	}
+	payload := []byte("already broadcast by another node")
+
+	rpcServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		c.Assert(err, IsNil)
+		c.Assert(req.Body.Close(), IsNil)
+
+		var resp string
+		switch {
+		case strings.Contains(string(body), `"method":"getblockcount"`):
+			resp = `{"result":12345,"error":null,"id":1}`
+		case strings.Contains(string(body), `"method":"sendrawtransaction"`):
+			resp = `{"result":null,"error":{"code":-27,"message":"already in block chain"},"id":1}`
+		default:
+			c.Fatalf("unexpected RPC request body: %s", body)
+		}
+
+		_, err = rw.Write([]byte(resp))
+		c.Assert(err, IsNil)
+	}))
+	defer rpcServer.Close()
+
+	testRPC, err := utxorpcc.NewClient(
+		rpcServer.Listener.Addr().String(),
+		s.cfg.UserName,
+		s.cfg.Password,
+		0,
+		time.Second,
+		common.ZECChain,
+		s.client.log,
+	)
+	c.Assert(err, IsNil)
+
+	originalRPC := s.client.rpc
+	s.client.rpc = testRPC
+	defer func() {
+		s.client.rpc = originalRPC
+	}()
+
+	c.Assert(s.client.signerCacheManager.HasSigned(txOutItem.CacheHash()), Equals, false)
+
+	txid, err := s.client.BroadcastTx(txOutItem, payload)
+	c.Assert(err, IsNil)
+	c.Assert(txid, Equals, zecPayloadTxID(payload))
+	c.Assert(s.client.signerCacheManager.HasSigned(txOutItem.CacheHash()), Equals, true)
+
+	latestTx, err := s.client.signerCacheManager.GetLatestRecordedTx(txOutItem.CacheVault(common.ZECChain))
+	c.Assert(err, IsNil)
+	c.Assert(latestTx, Equals, txid)
 }
 
 // TestIsSelfTransaction tests detection of transactions originated by this node.

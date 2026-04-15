@@ -124,6 +124,7 @@ func NewConstantValue() *ConstantVals {
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points
 			SynthSlipMinBps:                     0,                  // Minimum synth asset swap fee in basis points
 			DerivedSlipMinBps:                   0,                  // Minimum derived asset swap fee in basis points
+			StableSlipMinBps:                    0,                  // Minimum swap fee in basis points for stable-to-stable swaps
 			SlipMinBpsMax:                       100,                // Maximum slip min bps for all asset types
 			RUNEPoolEnabled:                     0,                  // enable/disable RUNE Pool
 			RUNEPoolDepositMaturityBlocks:       14400 * 90,         // blocks from last deposit to allow withdraw
@@ -151,17 +152,19 @@ func NewConstantValue() *ConstantVals {
 			TCYClaimingHalt:                     1,                  // enable/disable tcy claiming
 			ReserveMaxCap:                       0,                  // maximum reserve balance before EmissionCurve is overridden, 0 = disabled
 			MaxDepositTxIDRetries:               100,                // maximum retries for deposit txid auto-increment to avoid collisions
-			OverSolvencyToReserveBps:            0,                  // basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to reserve
+			OverSolvencyToTreasuryBps:           0,                  // basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to over-solvency sweep destination address
 			OverSolvencyCheckInterval:           600,                // interval in blocks for over-solvency checks (approximately 30 days)
 			MaxRetiredVaultRecoveryAttempts:     100,                // maximum retries for retired vault recovery refunds
+			ModifyLimitSwapMaxIterations:        100,                // maximum iterations when searching for a user's swap in a ratio-grouped index
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
 		},
 		stringValues: map[ConstantName]string{
 			DefaultPoolStatus:    "Staged",
-			DevFundAddress:       "thor1d8c0wv4y72kmlytegjmgx825xwumt9qt5xe07k", // dev fund address for ADR 18,  initially set via to address pre-funded 1M by TC treasury
+			DevFundAddress:       "thor1sgnuptp32y2fht3258vlx68mq8wsk2uz4wrshu", // dev fund address for ADR 18
 			MarketingFundAddress: "thor1usj8cqjmjea32csxn5fma96ffeulln40gyrahn", // marketing fund address for ADR 21
+			OverSolvencyAddress:  "thor1lhufh0mwasa0lk9udppdegmvnkgqt08f0m9p5g", // over-solvency sweep destination address
 			RequiredPriceFeeds:   "ATOM,AVAX,BCH,BNB,BTC,DOGE,ETH,LTC,RUNE,SOL,TRX,USDC,USDT,XRP,ZEC",
 		},
 	}

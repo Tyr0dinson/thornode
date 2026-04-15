@@ -23,6 +23,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+
+	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
 )
 
 type Address string
@@ -35,7 +37,7 @@ const (
 	// TreasuryAddress is defined in address_treasury_*.go with build tags for network-specific addresses
 )
 
-var alphaNumRegex = regexp.MustCompile("^[:A-Za-z0-9]*$")
+var alphaNumRegex = regexp.MustCompile("^[:_A-Za-z0-9]*$")
 
 // NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP.
 func NewAddress(address string) (Address, error) {
@@ -49,6 +51,10 @@ func NewAddress(address string) (Address, error) {
 
 	// Check is tron address
 	if IsValidTRONAddress(address) {
+		return Address(address), nil
+	}
+
+	if IsValidADAAddress(address) {
 		return Address(address), nil
 	}
 
@@ -167,6 +173,14 @@ func IsValidSUIAddress(address string) bool {
 	return err == nil
 }
 
+func IsValidADAAddress(address string) bool {
+	if !strings.HasPrefix(address, "addr1") && !strings.HasPrefix(address, "addr_test1") {
+		return false
+	}
+	_, err := adacommon.NewAddress(address)
+	return err == nil
+}
+
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format
 func (addr Address) IsValidBCHAddress() bool {
 	// Check mainnet other formats
@@ -273,7 +287,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		}
 		return false
 	case LTCChain:
-		prefix, _, err := bech32.Decode(addr.String())
+		// Check bech32 (segwit v0) and bech32m (taproot) addresses
+		prefix, _, _, err := bech32.DecodeGeneric(addr.String())
 		if err == nil && (prefix == "ltc" || prefix == "tltc" || prefix == "rltc") {
 			return true
 		}
@@ -332,6 +347,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return IsValidZECAddress(addr.String())
 	case SUIChain:
 		return IsValidSUIAddress(addr.String())
+	case ADAChain:
+		return IsValidADAAddress(addr.String())
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
@@ -340,7 +357,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain, TAOChain, DOTChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain, TAOChain, DOTChain, ADAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -397,7 +414,8 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 			}
 		}
 	case LTCChain:
-		prefix, _, _ := bech32.Decode(addr.String())
+		// DecodeGeneric handles both bech32 (segwit v0) and bech32m (taproot)
+		prefix, _, _, _ := bech32.DecodeGeneric(addr.String())
 		switch prefix {
 		case "ltc":
 			return mainNetPredicate()
@@ -461,11 +479,20 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 			if strings.HasPrefix(addr.String(), prefix) {
 				switch prefix {
 				case "t1", "t3", "tex1":
-					return MainNet
+					return mainNetPredicate()
 				case "t2", "tm", "textest1":
 					return MockNet
 				}
 			}
+		}
+	case ADAChain:
+		addrStr := addr.String()
+		if strings.HasPrefix(addrStr, "addr1") {
+			return mainNetPredicate()
+		}
+
+		if strings.HasPrefix(addrStr, "addr_test1") {
+			return MockNet
 		}
 	}
 	return currentNetwork
@@ -527,7 +554,7 @@ func (addr Address) ToTexAddress() (Address, error) {
 	case MockNet:
 		network = "testnet3"
 		prefix = "textest"
-	case MainNet, StageNet:
+	case MainNet, StageNet, ChainNet:
 		network = "mainnet"
 		prefix = "tex"
 	}

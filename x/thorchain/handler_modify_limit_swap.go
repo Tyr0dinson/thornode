@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // ModifyLimitSwapHandler is the handler to process MsgModifyLimitSwap.
@@ -81,10 +82,17 @@ func (h ModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgModifyLimitSwa
 		return err
 	}
 
-	// Find the first matching swap from the user
-	// Use early break to avoid loading all swaps (gas griefing protection)
+	// Find the first matching swap from the user.
+	// Limit iterations to prevent DoS via bloated ratio-grouped index buckets.
+	// An attacker could create many low-value limit swaps at the same price ratio,
+	// inflating the shared index and forcing expensive iteration on modify/cancel.
+	maxIterations := h.mgr.Keeper().GetConfigInt64(ctx, constants.ModifyLimitSwapMaxIterations)
 	var matchingSwap *MsgSwap
-	for _, item := range items {
+	for i, item := range items {
+		if int64(i) >= maxIterations {
+			return fmt.Errorf("swap index too large, exceeded max iterations (%d)", maxIterations)
+		}
+
 		msgSwap, err := h.mgr.Keeper().GetAdvSwapQueueItem(ctx, item.TxID, item.Index)
 		if err != nil {
 			ctx.Logger().Error("fail to get swap book item", "hash", item.TxID, "index", item.Index)
@@ -192,12 +200,8 @@ func (h ModifyLimitSwapHandler) donateToPool(ctx cosmos.Context, asset common.As
 		}
 	}
 
-	// Add the amount to the appropriate balance
-	if asset.IsRune() {
-		pool.BalanceRune = pool.BalanceRune.Add(amount)
-	} else {
-		pool.BalanceAsset = pool.BalanceAsset.Add(amount)
-	}
+	// Add the amount to the pool's asset balance (RUNE is handled by early return above)
+	pool.BalanceAsset = pool.BalanceAsset.Add(amount)
 
 	// Save the updated pool
 	if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {

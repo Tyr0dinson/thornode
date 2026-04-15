@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	bchtxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/bchd-txscript"
 	dogetxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/dogd-txscript"
@@ -30,25 +31,16 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (c *Client) getAsgardAddress() ([]common.Address, error) {
-	if time.Since(c.lastAsgard) < constants.ThorchainBlockTime && c.asgardAddresses != nil {
-		return c.asgardAddresses, nil
-	}
-	newAddresses, err := utxo.GetAsgardAddress(c.cfg.ChainID, c.bridge)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get asgards: %w", err)
-	}
-	if len(newAddresses) > 0 { // ensure we don't overwrite with empty list
-		c.asgardAddresses = newAddresses
-	}
-	c.lastAsgard = time.Now()
-	return c.asgardAddresses, nil
+	return utxo.GetAsgardAddressCached(&c.asgardCache, c.cfg.ChainID, c.bridge, constants.ThorchainBlockTime)
 }
 
 func (c *Client) isAsgardAddress(addressToCheck string) bool {
 	asgards, err := c.getAsgardAddress()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get asgard addresses")
-		return false
+		if len(asgards) == 0 {
+			return false
+		}
 	}
 	for _, addr := range asgards {
 		if strings.EqualFold(addr.String(), addressToCheck) {
@@ -233,7 +225,7 @@ func (c *Client) updateNetworkInfo() {
 		c.log.Err(err).Msg("fail to get minimum relay fee")
 		return
 	}
-	c.minRelayFeeSats = uint64(amt.ToUnit(btcutil.AmountSatoshi))
+	c.minRelayFeeSats.Store(uint64(amt.ToUnit(btcutil.AmountSatoshi)))
 }
 
 func (c *Client) sendNetworkFee(height int64) error {
@@ -275,9 +267,13 @@ func (c *Client) sendNetworkFee(height int64) error {
 		return nil
 	}
 
-	if c.cfg.UTXO.EstimatedAverageTxSize*feeRate < c.minRelayFeeSats {
-		feeRate = c.minRelayFeeSats / c.cfg.UTXO.EstimatedAverageTxSize
-		if feeRate*c.cfg.UTXO.EstimatedAverageTxSize < c.minRelayFeeSats {
+	c.networkFeeLock.Lock()
+	defer c.networkFeeLock.Unlock()
+
+	minRelayFeeSats := c.minRelayFeeSats.Load()
+	if c.cfg.UTXO.EstimatedAverageTxSize*feeRate < minRelayFeeSats {
+		feeRate = minRelayFeeSats / c.cfg.UTXO.EstimatedAverageTxSize
+		if feeRate*c.cfg.UTXO.EstimatedAverageTxSize < minRelayFeeSats {
 			feeRate++
 		}
 	}
@@ -302,11 +298,11 @@ func (c *Client) sendNetworkFee(height int64) error {
 	c.m.GetGauge(metrics.GasPrice(c.cfg.ChainID)).Set(float64(feeRate))
 
 	// skip update if fee has not changed
-	if c.lastFeeRate == feeRate {
+	if c.lastFeeRate.Load() == feeRate {
 		return nil
 	}
 
-	c.lastFeeRate = feeRate
+	c.lastFeeRate.Store(feeRate)
 	c.m.GetCounter(metrics.GasPriceChange(c.cfg.ChainID)).Inc()
 
 	c.globalNetworkFeeQueue <- common.NetworkFee{
@@ -336,46 +332,64 @@ func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxR
 		}
 	}
 
-	// skip updating network fee if there are no utxos (except coinbase) in the block
-	if totalVSize == 0 {
-		return nil
-	}
-	amt, err := btcutil.NewAmount(total - c.cfg.ChainID.DefaultCoinbase())
-	if err != nil {
-		return fmt.Errorf("fail to parse total block fee amount, err: %w", err)
-	}
+	transactionSize := c.cfg.UTXO.EstimatedAverageTxSize
+	var feeRateSats uint64
 
-	// average fee rate in sats/vbyte or default min relay fee
-	feeRateSats := uint64(amt.ToUnit(btcutil.AmountSatoshi) / float64(totalVSize))
-	if c.cfg.UTXO.DefaultMinRelayFeeSats > feeRateSats {
-		feeRateSats = c.cfg.UTXO.DefaultMinRelayFeeSats
+	if c.GetChain() == common.ZECChain {
+		// ZEC uses ZIP-317 static fee calculation, independent of block contents.
+		// Report static 'worst case' scenario with the maximum possible
+		// amounts of inputs and max memo size of 80 chars, which counts as
+		// 5 actions and will likely always be lower that max inputs.
+		tx := wire.MsgTx{TxIn: make([]*wire.TxIn, c.getMaximumUtxosToSpend()-1)}
+		memo := strings.Repeat("X", 80)
+		feeRateSats = c.getGasCoinZEC(&tx, memo).Amount.Uint64()
+		transactionSize = 1
+	} else {
+		// skip updating network fee if there are no utxos (except coinbase) in the block
+		if totalVSize == 0 {
+			return nil
+		}
+		amt, err := btcutil.NewAmount(total - c.cfg.ChainID.DefaultCoinbase())
+		if err != nil {
+			return fmt.Errorf("fail to parse total block fee amount, err: %w", err)
+		}
+
+		// average fee rate in sats/vbyte or default min relay fee
+		feeRateSats = uint64(amt.ToUnit(btcutil.AmountSatoshi) / float64(totalVSize))
+		if c.cfg.UTXO.DefaultMinRelayFeeSats > feeRateSats {
+			feeRateSats = c.cfg.UTXO.DefaultMinRelayFeeSats
+		}
 	}
 
 	// round to prevent fee observation noise
 	resolution := uint64(c.cfg.BlockScanner.GasPriceResolution)
 	feeRateSats = ((feeRateSats / resolution) + 1) * resolution
 
+	c.networkFeeLock.Lock()
+	defer c.networkFeeLock.Unlock()
+
 	// skip fee if less than 1 resolution away from the last
-	feeDelta := new(big.Int).Sub(big.NewInt(int64(feeRateSats)), big.NewInt(int64(c.lastFeeRate)))
+	lastFeeRate := c.lastFeeRate.Load()
+	feeDelta := new(big.Int).Sub(big.NewInt(int64(feeRateSats)), big.NewInt(int64(lastFeeRate)))
 	feeDelta.Abs(feeDelta)
-	if c.lastFeeRate != 0 && feeDelta.Cmp(big.NewInt(c.cfg.BlockScanner.GasPriceResolution)) != 1 {
+	if lastFeeRate != 0 && feeDelta.Cmp(big.NewInt(c.cfg.BlockScanner.GasPriceResolution)) != 1 {
 		return nil
 	}
 
 	c.log.Info().
 		Int64("height", height).
-		Uint64("lastFeeRate", c.lastFeeRate).
+		Uint64("lastFeeRate", lastFeeRate).
 		Uint64("feeRateSats", feeRateSats).
 		Msg("sendNetworkFee")
 
 	c.globalNetworkFeeQueue <- common.NetworkFee{
 		Chain:           c.cfg.ChainID,
 		Height:          height,
-		TransactionSize: c.cfg.UTXO.EstimatedAverageTxSize,
+		TransactionSize: transactionSize,
 		TransactionRate: feeRateSats,
 	}
 
-	c.lastFeeRate = feeRateSats
+	c.lastFeeRate.Store(feeRateSats)
 
 	return nil
 }
@@ -682,9 +696,6 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 		if !added {
 			c.log.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
-			if err = c.temporalStorage.UntrackObservedTx(txInItem.Tx); err != nil {
-				c.log.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItem.Tx)
-			}
 			continue
 		}
 		txItems = append(txItems, &txInItem)
@@ -1075,7 +1086,11 @@ func (c *Client) getCoinbaseValue(blockHeight int64) (int64, error) {
 
 // getBlockRequiredConfirmation find out how many confirmation the given txIn need to have before it can be send to THORChain
 func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (int64, error) {
-	totalTxValue := txIn.GetTotalTransactionValue(c.cfg.ChainID.GetGasAsset(), c.asgardAddresses)
+	asgardAddresses, err := c.getAsgardAddress()
+	if err != nil {
+		c.log.Err(err).Msg("fail to get asgard addresses")
+	}
+	totalTxValue := txIn.GetTotalTransactionValue(c.cfg.ChainID.GetGasAsset(), asgardAddresses)
 	totalFeeAndSubsidy, err := c.getCoinbaseValue(height)
 	if err != nil {
 		c.log.Err(err).Msgf("fail to get coinbase value")

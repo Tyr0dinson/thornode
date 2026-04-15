@@ -165,6 +165,7 @@
                   }
                 ],
                 "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
+                "salt": null,
                 "signer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
               }
             ],
@@ -240,13 +241,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "4000000 THOR.RUNE",
-              "target": "0 BTC.BTC",
-              "txid": "174A83D71CACC5651703245BCB4B6B8336C3A390FADFC6A7D31539C23B345C49",
-              "type": "limit_swap"
             }
           ]
         }
@@ -340,6 +334,7 @@
                   }
                 ],
                 "memo": "-:BTC.BTC:4999",
+                "salt": null,
                 "signer": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
               }
             ],

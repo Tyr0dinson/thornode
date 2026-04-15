@@ -124,6 +124,9 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			if rate.Amount == 0 {
 				continue
 			}
+			if rate.Decimals > 18 {
+				continue
+			}
 			pricesByAsset[symbol][nodeAddress] = rate.BigFloat()
 			if found {
 				pricesByBondAddress[bondAddress][symbol] = rate.BigFloat()
@@ -197,7 +200,9 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 		}
 	}
 
-	h.telemetryLatency(time.UnixMilli(common.GetMedianInt64(timestamps)))
+	if len(timestamps) > 0 {
+		h.telemetryLatency(time.UnixMilli(common.GetMedianInt64(timestamps)))
+	}
 
 	return &cosmos.Result{}, nil
 }
@@ -207,6 +212,9 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	qpf *common.QuorumPriceFeed,
 	active NodeAccounts,
 ) (*PriceFeed, error) {
+	if qpf.PriceFeed == nil {
+		return nil, fmt.Errorf("PriceFeed cannot be nil")
+	}
 	pf := qpf.PriceFeed
 
 	if !bytes.Equal(pf.Version, h.requiredVersion) {

@@ -36,19 +36,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -60,19 +60,19 @@
         "type": "message"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -108,8 +108,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532724",
-        "ETH.ETH": "532724",
+        "BTC.BTC": "532725",
+        "ETH.ETH": "532725",
         "bond_reward": "44394",
         "dev_fund_reward": "0",
         "income_burn": "0",
@@ -349,6 +349,7 @@
                   }
                 ],
                 "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
+                "salt": null,
                 "signer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
               }
             ],
@@ -424,13 +425,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "10000000000 THOR.RUNE",
-              "target": "0 BTC.BTC",
-              "txid": "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965",
-              "type": "limit_swap"
             }
           ]
         }
@@ -583,7 +577,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "7B4A50C2148BA967005AE97D5B7EFDD5A40ADF372B404119569E27F9E27BE24E",
+      "data_hash": "B2CFEC76827040D2712FF3366F8BAE12B20B6CF39B87141B790D882ABB374164",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -681,7 +675,7 @@
     ],
     "txs": [
       {
-        "hash": "FB0DBB532CA5920BCEE62E0F8C219276502E02C25FCC58C9F84A105FF316FA3D",
+        "hash": "4C1CA7799887360470A4B8F73FD5E4A118A6C5FB2E3C6AA419C924A86B031AED",
         "tx": {
           "auth_info": {
             "fee": {
@@ -732,7 +726,7 @@
                   }
                 ],
                 "height": "100",
-                "id": "43919a6ec98353bac5030b4db64e36abe299f91ab26c2c8442a42595a772c280",
+                "id": "59e027442da9ca2ca3a05995451cf5c3b36bea49398c817dc69f0b92ae6fc4e4",
                 "memo": "OUT:D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965",
                 "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                 "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
@@ -744,7 +738,7 @@
             "unordered": false
           },
           "signatures": [
-            "DHFY4mJFkrNnEFg5xT9VXF+nV+phvAElrjHMyjRKxBY0HOCdRO0bn908ZRjq4Lh7D1bj2PckD/iGY7gIOb5lvQ=="
+            "UBcY6ON+Cng9E0yU+0jmQCL1/xFWtvSXmqOUr+vqXiIH6OYcX6soRYsh2ZQPmf2l0mDOH8TNnROY5jMB9TNiSQ=="
           ]
         },
         "result": {
@@ -757,7 +751,7 @@
               "type": "tx"
             },
             {
-              "signature": "DHFY4mJFkrNnEFg5xT9VXF+nV+phvAElrjHMyjRKxBY0HOCdRO0bn908ZRjq4Lh7D1bj2PckD/iGY7gIOb5lvQ==",
+              "signature": "UBcY6ON+Cng9E0yU+0jmQCL1/xFWtvSXmqOUr+vqXiIH6OYcX6soRYsh2ZQPmf2l0mDOH8TNnROY5jMB9TNiSQ==",
               "type": "tx"
             },
             {

@@ -535,6 +535,7 @@ type Bifrost struct {
 		POL   BifrostChainConfiguration `mapstructure:"pol"`
 		ZEC   BifrostChainConfiguration `mapstructure:"zec"`
 		SUI   BifrostChainConfiguration `mapstructure:"sui"`
+		ADA   BifrostChainConfiguration `mapstructure:"ada"`
 		TAO   BifrostChainConfiguration `mapstructure:"tao"`
 		DOT   BifrostChainConfiguration `mapstructure:"dot"`
 	} `mapstructure:"chains"`
@@ -583,6 +584,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.POLChain:   b.Chains.POL,
 		common.ZECChain:   b.Chains.ZEC,
 		common.SUIChain:   b.Chains.SUI,
+		common.ADAChain:   b.Chains.ADA,
 		common.TAOChain:   b.Chains.TAO,
 		common.DOTChain:   b.Chains.DOT,
 	}

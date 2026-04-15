@@ -32,7 +32,7 @@ asserts:
   - .[]|select(.chain == "XRP")|.address == "{{ addr_xrp_dog }}"
   - .[]|select(.chain == "SOL")|.address == "{{ addr_sol_dog }}"
   - .[]|select(.chain == "POL")|.address == "{{ addr_pol_dog }}"
-  - .[]|select(.chain == "ZEC")|.address == "{{ addr_zec_dog }}"
+  - .[]|select(.chain == "ZEC")|.address == "{{ addr_zec_dog_tex }}"
   - .[]|select(.chain == "TAO")|.address == "{{ addr_tao_dog }}"
   - .[]|select(.chain == "DOT")|.address == "{{ addr_dot_dog }}"
   # the pubkey on all inbound addresses should be the dog public key

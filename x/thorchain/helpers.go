@@ -65,6 +65,13 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				if err != nil {
 					return fmt.Errorf("fail to get vault: %w", err)
 				}
+				// If the vault is no longer active or retiring and lacks sufficient
+				// balance for this refund, clear it so prepareTxOutItem discovers an
+				// appropriate active vault. This handles expired limit order refunds
+				// where the original inbound vault has been churned out and emptied.
+				if !vault.IsActive() && !vault.IsRetiring() && vault.GetCoin(coin.Asset).Amount.LT(coin.Amount) {
+					vault = Vault{}
+				}
 			}
 
 			toi := TxOutItem{
@@ -168,12 +175,16 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 }
 
 func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
-	if swp.Interval == 0 {
-		return 0, nil
+	// Interval 0 is rapid streaming. For quantity limits, treat it as 1 block
+	// so rapid requests can still be bounded by swap size and max length rules.
+	interval := swp.Interval
+	if interval == 0 {
+		interval = 1
 	}
 
 	// collect pools involved in this swap
 	minSwapSize := cosmos.ZeroUint()
+	stableSwap := isStableToStable(ctx, mgr.Keeper(), sourceAsset, targetAsset)
 	var sourceAssetPool types.Pool
 	for i, asset := range []common.Asset{sourceAsset, targetAsset} {
 		if asset.IsRune() {
@@ -193,7 +204,7 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 		}
 
 		// get the configured min slip for this asset
-		minSlip := getMinSlipBps(ctx, mgr.Keeper(), asset)
+		minSlip := getMinSlipBps(ctx, mgr.Keeper(), asset, stableSwap)
 		if minSlip.IsZero() {
 			continue
 		}
@@ -222,10 +233,7 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 	} else {
 		maxLength = mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
 	}
-	if swp.Interval == 0 {
-		return 1, nil
-	}
-	maxSwapInMaxLength := uint64(maxLength) / swp.Interval
+	maxSwapInMaxLength := uint64(maxLength) / interval
 	if maxSwapQuantity.GT(cosmos.NewUint(maxSwapInMaxLength)) {
 		return maxSwapInMaxLength, nil
 	}
@@ -268,12 +276,39 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 	return maxSwapQuantity.Uint64(), nil
 }
 
+// isStableToStable returns true if both source and target L1 assets are TOR anchors (stablecoins).
+func isStableToStable(ctx cosmos.Context, k keeper.Keeper, source, target common.Asset) bool {
+	anchors := k.GetAnchors(ctx, common.TOR)
+	if len(anchors) == 0 {
+		return false
+	}
+	sourceL1 := source.GetLayer1Asset()
+	targetL1 := target.GetLayer1Asset()
+	var sourceIsAnchor, targetIsAnchor bool
+	for _, anchor := range anchors {
+		if anchor.Equals(sourceL1) {
+			sourceIsAnchor = true
+		}
+		if anchor.Equals(targetL1) {
+			targetIsAnchor = true
+		}
+	}
+	return sourceIsAnchor && targetIsAnchor
+}
+
 // getMinSlipBps returns artificial slip floor, expressed in basis points (10000).
 func getMinSlipBps(
 	ctx cosmos.Context,
 	k keeper.Keeper,
 	asset common.Asset,
+	stableOverride bool,
 ) cosmos.Uint {
+	if stableOverride {
+		stableBps := k.GetConfigInt64(ctx, constants.StableSlipMinBps)
+		if stableBps > 0 {
+			return cosmos.SafeUintFromInt64(stableBps)
+		}
+	}
 	var ref constants.ConstantName
 	switch {
 	case asset.IsSyntheticAsset():
@@ -1106,7 +1141,8 @@ func IsModuleAccAddress(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
 		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(TCYClaimingName)) ||
-		accAddr.Equals(keeper.GetModuleAccAddress(TCYStakeName))
+		accAddr.Equals(keeper.GetModuleAccAddress(TCYStakeName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(TreasuryName))
 }
 
 func NewSwapMemo(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, destination common.Address, limit cosmos.Uint, affiliate string, affiliateBps cosmos.Uint) string {
@@ -1165,7 +1201,7 @@ func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
 	vaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		ctx.Logger().Error("failed to get asgard vaults", "error", err)
-		return ctx.BlockHeight()
+		return 0
 	}
 	// calculate last churn block height
 	var lastChurnHeight int64 // the last block height we had a successful churn
@@ -1183,6 +1219,18 @@ func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
 // - Removing the swap from advanced queue and indexes
 // - Emitting appropriate events
 func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// Settle swap mutates multiple pieces of state (scheduled outbounds, refunds,
+	// queue removal, events). Run it in a cache context so partial failures do not
+	// leave committed side effects that can be duplicated on retry.
+	cacheCtx, commit := ctx.CacheContext()
+	if err := settleSwapCached(cacheCtx, mgr, msg, settleReason); err != nil {
+		return err
+	}
+	commit()
+	return nil
+}
+
+func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
 	// Schedule outbound for what was already swapped
 	if !msg.State.Out.IsZero() {
 		// Parse memo to check if this is a savers add
@@ -1250,11 +1298,11 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 		voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
 		if voterErr == nil && !voter.Tx.IsEmpty() {
 			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx, ObservedPubKey: voter.Tx.ObservedPubKey}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
-				ctx.Logger().Error("fail to refund swap remainder", "error", refundErr)
+				return fmt.Errorf("fail to refund swap remainder: %w", refundErr)
 			}
 		} else {
 			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
-				ctx.Logger().Error("fail to refund swap remainder", "error", refundErr)
+				return fmt.Errorf("fail to refund swap remainder: %w", refundErr)
 			}
 		}
 	}
@@ -1477,7 +1525,7 @@ func leadingZeros(length int, str string) string {
 }
 
 // isOutboundFakeGasTx returns true if the observed outbound is a "fake gas" transaction
-// for a failed outbound. When an EVM outbound fails (e.g., out of gas), bifrost
+// for a failed outbound. When an outbound fails (e.g., out of gas), bifrost
 // observes the failed transaction and reports it as an outbound observation with
 // amount=1 wei and memo="OUT:failed_txhash" so the gas can be accounted for. This
 // should not trigger slashing as it's a legitimate observation of a failed transaction.

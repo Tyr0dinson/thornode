@@ -163,17 +163,10 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 			}
 		}))
 
-	var err error
-	s.metrics, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{
-		Enabled:      false,
-		ListenPort:   9000,
-		ReadTimeout:  time.Second,
-		WriteTimeout: time.Second,
-		Chains:       common.Chains{common.AVAXChain},
-	})
+	s.metrics = getSharedTestMetrics()
 	c.Assert(s.metrics, NotNil)
-	c.Assert(err, IsNil)
 
+	var err error
 	cfg := config.BifrostClientConfiguration{
 		ChainID:      "thorchain",
 		ChainHost:    server.Listener.Addr().String(),
@@ -214,7 +207,7 @@ func (s *ObserverSuite) TestProcess(c *C) {
 	comm, err := p2p.NewCommunication(&p2p.Config{
 		RendezvousString: "rendezvous",
 		Port:             1234,
-	}, nil)
+	}, nil, nil)
 	c.Assert(err, IsNil)
 	c.Assert(comm, NotNil)
 
@@ -261,7 +254,7 @@ func (s *ObserverSuite) TestErrataTx(c *C) {
 	comm, err := p2p.NewCommunication(&p2p.Config{
 		RendezvousString: "rendezvous",
 		Port:             1234,
-	}, nil)
+	}, nil, nil)
 	c.Assert(err, IsNil)
 	c.Assert(comm, NotNil)
 	priv, err := s.thorKeys.GetPrivateKey()
@@ -775,7 +768,7 @@ func (s *ObserverSuite) TestPeerConcurrencyLimits(c *C) {
 	comm, err := p2p.NewCommunication(&p2p.Config{
 		RendezvousString: "test-rendezvous",
 		Port:             1234,
-	}, nil)
+	}, nil, nil)
 	c.Assert(err, IsNil)
 
 	priv, err := s.thorKeys.GetPrivateKey()

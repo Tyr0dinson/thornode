@@ -897,10 +897,13 @@ func (HandlerSuite) TestIsPeriodLastBlock(c *C) {
 
 type SettleSwapTestKeeper struct {
 	keeper.KVStoreDummy
-	advSwapItems map[string]types.MsgSwap
-	failRemove   bool
-	voter        ObservedTxVoter
-	pools        map[common.Asset]Pool
+	advSwapItems  map[string]types.MsgSwap
+	failRemove    bool
+	voter         ObservedTxVoter
+	pools         map[common.Asset]Pool
+	overrideVault bool
+	vaultStatus   VaultStatus
+	vaultCoins    common.Coins
 }
 
 func (k *SettleSwapTestKeeper) GetObservedTxInVoter(_ cosmos.Context, txID common.TxID) (ObservedTxVoter, error) {
@@ -933,6 +936,11 @@ func (k *SettleSwapTestKeeper) GetPool(_ cosmos.Context, asset common.Asset) (Po
 }
 
 func (k *SettleSwapTestKeeper) GetVault(_ cosmos.Context, pk common.PubKey) (Vault, error) {
+	if k.overrideVault {
+		vault := NewVault(0, k.vaultStatus, AsgardVault, pk, common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+		vault.Coins = k.vaultCoins
+		return vault, nil
+	}
 	// Return a dummy vault for testing
 	vault := NewVault(0, ActiveVault, AsgardVault, pk, common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
 	vault.Coins = common.Coins{
@@ -948,6 +956,44 @@ func (k *SettleSwapTestKeeper) GetTHORNameIterator(ctx cosmos.Context) cosmos.It
 
 func (k *SettleSwapTestKeeper) GetTHORName(ctx cosmos.Context, _ string) (THORName, error) {
 	return THORName{}, fmt.Errorf("thorname not found")
+}
+
+type SettleSwapRetryVaultErrorKeeper struct {
+	keeper.Keeper
+}
+
+func (k *SettleSwapRetryVaultErrorKeeper) GetVault(_ cosmos.Context, _ common.PubKey) (Vault, error) {
+	return Vault{}, fmt.Errorf("vault not found")
+}
+
+func seedSettleSwapRetryState(c *C, ctx cosmos.Context, k keeper.Keeper, tx common.Tx, observedPubKey common.PubKey) {
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	voter := NewObservedTxVoter(tx.ID, nil)
+	voter.Tx = ObservedTx{
+		Tx:             tx,
+		ObservedPubKey: observedPubKey,
+	}
+	k.SetObservedTxInVoter(ctx, voter)
 }
 
 func (HelperSuite) TestSettleSwap(c *C) {
@@ -1111,6 +1157,119 @@ func (HelperSuite) TestSettleSwap(c *C) {
 	err = settleSwap(ctx, mgr, msg, "test with removal failure")
 	c.Assert(err, IsNil) // Should not fail, just log errors
 	keeper.failRemove = false
+}
+
+func (HelperSuite) TestSettleSwapDoesNotDuplicateOutboundOnRetry(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	txID := GetRandomTxHash()
+	tx := common.NewTx(
+		txID,
+		GetRandomBTCAddress(),
+		GetRandomBTCAddress(),
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))},
+		"SWAP:ETH.ETH",
+	)
+
+	baseKeeper := mgr.Keeper()
+	observedPubKey := GetRandomPubKey()
+	seedSettleSwapRetryState(c, ctx, baseKeeper, tx, observedPubKey)
+	mgr.K = &SettleSwapRetryVaultErrorKeeper{Keeper: baseKeeper}
+
+	msg := types.MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.ETHAsset,
+		Destination: GetRandomETHAddress(),
+		TradeTarget: cosmos.NewUint(1),
+		SwapType:    types.SwapType_limit,
+		State: &types.SwapState{
+			Deposit: cosmos.NewUint(1000),
+			In:      cosmos.NewUint(600),
+			Out:     cosmos.NewUint(550),
+		},
+	}
+
+	c.Assert(settleSwap(ctx, mgr, msg, "expired limit order"), NotNil)
+	c.Assert(settleSwap(ctx, mgr, msg, "expired limit order"), NotNil)
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(len(outItems), Equals, 0, Commentf("failed settlement must not leave a partial outbound behind"))
+}
+
+func (HelperSuite) TestSettleSwapRefundFromInactiveVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	txID := GetRandomTxHash()
+	observedPubKey := GetRandomPubKey()
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+
+	// Keeper returns an inactive vault with no coins (simulates churned-out vault)
+	k := &SettleSwapTestKeeper{
+		advSwapItems: make(map[string]types.MsgSwap),
+		pools:        make(map[common.Asset]Pool),
+		voter: ObservedTxVoter{
+			Tx: ObservedTx{
+				Tx: common.Tx{
+					ID: txID,
+				},
+				ObservedPubKey: observedPubKey,
+			},
+		},
+		overrideVault: true,
+		vaultStatus:   InactiveVault,
+		vaultCoins:    common.Coins{}, // empty — funds migrated away
+	}
+	k.pools[common.BTCAsset] = btcPool
+	mgr.K = k
+	mgr.txOutStore = NewTxStoreDummy()
+
+	btcAddr := GetRandomBTCAddress()
+	tx := common.NewTx(
+		txID,
+		btcAddr,
+		GetRandomBTCAddress(),
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))},
+		"SWAP:ETH.ETH",
+	)
+	msg := types.MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.ETHAsset,
+		Destination: GetRandomETHAddress(),
+		State: &types.SwapState{
+			Deposit: cosmos.NewUint(1000),
+			In:      cosmos.NewUint(600), // Only 600 used, 400 to refund
+			Out:     cosmos.NewUint(550),
+		},
+	}
+
+	err := settleSwap(ctx, mgr, msg, "expired limit order")
+	c.Assert(err, IsNil)
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	// Expect 2 items: swap outbound + refund
+	c.Assert(len(outItems), Equals, 2)
+
+	// Find the refund item (the one in the original BTC asset)
+	var refundItem *TxOutItem
+	for i, item := range outItems {
+		if item.Coin.Asset.Equals(common.BTCAsset) {
+			refundItem = &outItems[i]
+			break
+		}
+	}
+	c.Assert(refundItem, NotNil)
+	c.Assert(refundItem.Coin.Amount.Equal(cosmos.NewUint(400)), Equals, true)
+	// VaultPubKey should be empty so prepareTxOutItem uses dynamic vault discovery
+	c.Assert(refundItem.VaultPubKey.IsEmpty(), Equals, true)
 }
 
 func (s *HelperSuite) TestSettleSwapLimitSwapBasic(c *C) {
@@ -1417,4 +1576,121 @@ func (s *HelperSuite) TestApplyMemolessOutboundLogic(c *C) {
 		c.Assert(toi.Memo, Equals, tt.expectedMemo, Commentf("Test: %s - Memo mismatch", tt.name))
 		c.Assert(toi.OriginalMemo, Equals, tt.expectedOriginalMemo, Commentf("Test: %s - OriginalMemo mismatch", tt.name))
 	}
+}
+
+func (s *HelperSuite) TestGetMaxSwapQuantityRapidInterval(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(2000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	k.SetMimir(ctx, "L1SlipMinBps", 100)             // 1%
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 14400) // max non-native streaming length
+
+	// interval=0 (rapid) should not force max quantity to zero.
+	quantity, err := getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, StreamingSwap{
+		Interval: 0,
+		Deposit:  cosmos.NewUint(1000 * common.One),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(quantity, Equals, uint64(1000), Commentf("rapid interval should preserve non-zero quantity cap"))
+
+	// interval=0 should still be bounded by max length constraints using effective interval=1.
+	quantity, err = getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, StreamingSwap{
+		Interval: 0,
+		Deposit:  cosmos.NewUint(50000 * common.One),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(quantity, Equals, uint64(14400), Commentf("rapid interval should respect max length cap"))
+}
+
+func (s *HelperSuite) TestIsStableToStable(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	busd, _ := common.NewAsset("ETH.BUSD-BD1")
+	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+
+	// Set up pools
+	for _, asset := range []common.Asset{busd, usdc} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.Decimals = 8
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+
+	// No anchors configured — should return false
+	c.Assert(isStableToStable(ctx, k, busd, usdc), Equals, false)
+
+	// Enable both as TOR anchors
+	k.SetMimir(ctx, "TorAnchor-ETH-BUSD-BD1", 1)
+	k.SetMimir(ctx, "TorAnchor-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1)
+
+	// Both are anchors — should return true
+	c.Assert(isStableToStable(ctx, k, busd, usdc), Equals, true)
+
+	// One stable, one non-stable — should return false
+	c.Assert(isStableToStable(ctx, k, busd, common.BTCAsset), Equals, false)
+	c.Assert(isStableToStable(ctx, k, common.ETHAsset, usdc), Equals, false)
+
+	// RUNE to stable — should return false
+	c.Assert(isStableToStable(ctx, k, common.RuneAsset(), usdc), Equals, false)
+
+	// Synth stablecoin should also match via GetLayer1Asset
+	synthBusd, _ := common.NewAsset("ETH/BUSD-BD1")
+	synthUsdc, _ := common.NewAsset("ETH/USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(isStableToStable(ctx, k, synthBusd, synthUsdc), Equals, true)
+}
+
+func (s *HelperSuite) TestGetMinSlipBpsStableOverride(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	busd, _ := common.NewAsset("ETH.BUSD-BD1")
+
+	// Set up pool
+	pool := NewPool()
+	pool.Asset = busd
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.Decimals = 8
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// Set L1SlipMinBps to 10
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+
+	// Without stable override, should return L1 min bps
+	result := getMinSlipBps(ctx, k, busd, false)
+	c.Assert(result.Uint64(), Equals, uint64(10))
+
+	// With stable override but StableSlipMinBps=0, should fall through to L1
+	result = getMinSlipBps(ctx, k, busd, true)
+	c.Assert(result.Uint64(), Equals, uint64(10))
+
+	// Set StableSlipMinBps to 3
+	k.SetMimir(ctx, "StableSlipMinBps", 3)
+
+	// With stable override and non-zero StableSlipMinBps, should return stable value
+	result = getMinSlipBps(ctx, k, busd, true)
+	c.Assert(result.Uint64(), Equals, uint64(3))
+
+	// Without stable override, should still return L1 value
+	result = getMinSlipBps(ctx, k, busd, false)
+	c.Assert(result.Uint64(), Equals, uint64(10))
 }

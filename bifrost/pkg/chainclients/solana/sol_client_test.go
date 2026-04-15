@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,10 +24,13 @@ import (
 	bech32 "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint SA1019 deprecated
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/require"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -266,7 +270,331 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	// c.Assert(obs, NotNil)
+
+	// Already signed — signer cache should suppress re-signing
+	txOut := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		VaultPubKey:      pubkeys[0],
+		VaultPubKeyEddsa: pubkeys[0],
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}
+	c.Assert(e.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "somesig"), IsNil)
+	result, _, _, err = e.SignTx(txOut, 1)
+	c.Assert(err, IsNil)
+	c.Assert(result, IsNil) // suppressed by signer cache
+}
+
+func (s *SolTestSuite) TestBroadcastTxLandedDespiteError(c *C) {
+	// Build a test server that rejects sendTransaction but confirms the tx on-chain
+	// via getTransaction — simulating a network timeout after the tx was accepted.
+	const landedSlot = uint64(12345)
+	broadcastServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var rpcRequest struct {
+			Method string `json:"method"`
+		}
+		_ = json.Unmarshal(body, &rpcRequest)
+		rw.Header().Set("Content-Type", "application/json")
+		switch rpcRequest.Method {
+		case "sendTransaction":
+			// Simulate RPC error (e.g. node behind, response dropped)
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"Node is behind by 150 slots"}}`))
+		case "getTransaction":
+			_, _ = fmt.Fprintf(rw, `{"jsonrpc":"2.0","id":1,"result":{"slot":%d,"meta":{},"transaction":{}}}`, landedSlot)
+		case "getLatestBlockhash":
+			httpTestHandler(c, rw, "./test/getLatestBlockHash.json")
+		default:
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+		}
+	}))
+	defer broadcastServer.Close()
+
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + broadcastServer.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.SOLChain,
+				StartBlockHeight:   1,
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        80000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+	e.solScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+	pubkeys := pubkeyMgr.GetPubKeys()
+
+	txOut := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		VaultPubKey:      pubkeys[0],
+		VaultPubKeyEddsa: pubkeys[0],
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}
+
+	// Override the broadcast lookup delay so the test doesn't sleep.
+	broadcastLookupDelay = 0
+
+	e.solScanner.recentBlockHash = "asdfasdf"
+	rawTx, _, _, err := e.SignTx(txOut, 1)
+	c.Assert(err, IsNil)
+	c.Assert(rawTx, NotNil)
+
+	// Derive expected sig from raw bytes before broadcast
+	expectedSig, ok := txSigFromRawTx(rawTx)
+	c.Assert(ok, Equals, true)
+
+	// Cache should be empty before broadcast
+	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)
+
+	// BroadcastTx should detect the tx on-chain despite the RPC error
+	txSig, err := e.BroadcastTx(txOut, rawTx)
+	c.Assert(err, IsNil)
+	c.Assert(txSig, Equals, expectedSig)
+
+	// Cache must now be written so a future reschedule won't re-sign
+	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, true)
+}
+
+func TestTxSigFromRawTx(t *testing.T) {
+	sig := make([]byte, 64)
+	for i := range sig {
+		sig[i] = byte(i)
+	}
+	expectedSig := base58.Encode(sig)
+
+	// valid: 1-byte count prefix + 64-byte sig + message bytes
+	validTx := append([]byte{0x01}, sig...)
+	validTx = append(validTx, []byte("message")...)
+
+	tests := []struct {
+		name    string
+		rawTx   []byte
+		wantSig string
+		wantOk  bool
+	}{
+		{"nil input", nil, "", false},
+		{"empty input", []byte{}, "", false},
+		{"too short - only prefix", []byte{0x01}, "", false},
+		{"too short - 64 bytes (missing 1)", append([]byte{0x01}, make([]byte, 63)...), "", false},
+		{"exactly 65 bytes", append([]byte{0x01}, sig...), expectedSig, true},
+		{"valid tx with message", validTx, expectedSig, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotSig, gotOk := txSigFromRawTx(tc.rawTx)
+			require.Equal(t, tc.wantOk, gotOk)
+			require.Equal(t, tc.wantSig, gotSig)
+		})
+	}
+}
+
+// solKeysignFailureCall captures a PostKeysignFailure invocation for assertions.
+type solKeysignFailureCall struct {
+	blame  types2.Blame
+	height int64
+	memo   string
+	coins  common.Coins
+	pubkey common.PubKey
+}
+
+// mockSOLThorchainBridge records keysign-failure posts emitted by the signer.
+type mockSOLThorchainBridge struct {
+	thorclient.ThorchainBridge
+	postCalls []solKeysignFailureCall
+	postErr   error
+}
+
+// PostKeysignFailure records the forwarded blame so the Solana signer tests can
+// assert whether Thornode reporting happened.
+func (m *mockSOLThorchainBridge) PostKeysignFailure(blame types2.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
+	m.postCalls = append(m.postCalls, solKeysignFailureCall{
+		blame:  blame,
+		height: height,
+		memo:   memo,
+		coins:  coins,
+		pubkey: pubkey,
+	})
+	return common.TxID("ABCD"), m.postErr
+}
+
+// mockSOLThorchainKeyManager injects remote-sign failures into the Solana signer.
+type mockSOLThorchainKeyManager struct {
+	tss.ThorchainKeyManager
+	err error
+}
+
+// RemoteSign returns the configured TSS error to exercise SignTx failure paths.
+func (m *mockSOLThorchainKeyManager) RemoteSign(_ []byte, _ common.SigningAlgo, _ string) ([]byte, []byte, error) {
+	return nil, nil, m.err
+}
+
+// newTestSignerCacheManager creates a CacheManager backed by a temp LevelDB for tests.
+func newTestSignerCacheManager(c *C) *signercache.CacheManager {
+	storage, err := blockscanner.NewBlockScannerStorageSolana(c.MkDir(), config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	mgr, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
+	c.Assert(err, IsNil)
+	return mgr
+}
+
+// TestSignSOLTx_PostKeysignFailureOnEdDSAFinalRound verifies that blamed EdDSA
+// terminal-round failures are reported back to Thornode.
+func (s *SolTestSuite) TestSignSOLTx_PostKeysignFailureOnEdDSAFinalRound(c *C) {
+	bridge := &mockSOLThorchainBridge{}
+	vaultPubKey := types2.GetRandomEd25519PubKey()
+	toPubKey := types2.GetRandomEd25519PubKey()
+	toAddr, err := toPubKey.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+
+	blame := types2.Blame{
+		FailReason: "error Tss Timeout",
+		Round:      "thorchain.tsslib.eddsa.signing.SignRound3Message",
+		BlameNodes: []types2.Node{
+			{Pubkey: types2.GetRandomEd25519PubKey().String()},
+		},
+	}
+	client := &SOLClient{
+		bridge:             bridge,
+		localPubKey:        "not-local",
+		solScanner:         &SOLScanner{recentBlockHash: "asdfasdf"},
+		tssKeyManager:      &mockSOLThorchainKeyManager{err: tss.NewKeysignError(blame)},
+		signerCacheManager: newTestSignerCacheManager(c),
+	}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        toAddr,
+		VaultPubKeyEddsa: vaultPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}
+
+	result, checkpoint, obs, err := client.SignTx(tx, 123)
+	c.Assert(err, NotNil)
+	c.Assert(result, NotNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(obs, IsNil)
+	c.Assert(errors.As(err, &tss.KeysignError{}), Equals, true)
+	c.Assert(bridge.postCalls, HasLen, 1)
+	c.Check(bridge.postCalls[0].height, Equals, int64(123))
+	c.Check(bridge.postCalls[0].memo, Equals, tx.Memo)
+	c.Check(bridge.postCalls[0].coins.String(), Equals, tx.Coins.String())
+	c.Check(bridge.postCalls[0].pubkey, Equals, tx.VaultPubKeyEddsa)
+	c.Check(bridge.postCalls[0].blame.Round, Equals, blame.Round)
+}
+
+// TestSignSOLTx_PostKeysignFailureUsesOriginalMemo verifies memoless Solana
+// outbounds report the canonical memo used for signing failure IDs.
+func (s *SolTestSuite) TestSignSOLTx_PostKeysignFailureUsesOriginalMemo(c *C) {
+	bridge := &mockSOLThorchainBridge{}
+	vaultPubKey := types2.GetRandomEd25519PubKey()
+	toPubKey := types2.GetRandomEd25519PubKey()
+	toAddr, err := toPubKey.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+
+	blame := types2.Blame{
+		FailReason: "error Tss Timeout",
+		Round:      "thorchain.tsslib.eddsa.signing.SignRound3Message",
+		BlameNodes: []types2.Node{
+			{Pubkey: types2.GetRandomEd25519PubKey().String()},
+		},
+	}
+	client := &SOLClient{
+		bridge:             bridge,
+		localPubKey:        "not-local",
+		solScanner:         &SOLScanner{recentBlockHash: "asdfasdf"},
+		tssKeyManager:      &mockSOLThorchainKeyManager{err: tss.NewKeysignError(blame)},
+		signerCacheManager: newTestSignerCacheManager(c),
+	}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        toAddr,
+		VaultPubKeyEddsa: vaultPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate:      1,
+		Memo:         "",
+		OriginalMemo: "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}
+
+	result, checkpoint, obs, err := client.SignTx(tx, 123)
+	c.Assert(err, NotNil)
+	c.Assert(result, NotNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(obs, IsNil)
+	c.Assert(bridge.postCalls, HasLen, 1)
+	c.Check(bridge.postCalls[0].memo, Equals, tx.GetMemo())
+}
+
+// TestSignSOLTx_DoesNotPostKeysignFailureWithoutBlameNodes keeps the existing
+// behavior for generic TSS failures where no culprit set is available.
+func (s *SolTestSuite) TestSignSOLTx_DoesNotPostKeysignFailureWithoutBlameNodes(c *C) {
+	bridge := &mockSOLThorchainBridge{}
+	vaultPubKey := types2.GetRandomEd25519PubKey()
+	toPubKey := types2.GetRandomEd25519PubKey()
+	toAddr, err := toPubKey.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+
+	client := &SOLClient{
+		bridge:             bridge,
+		localPubKey:        "not-local",
+		solScanner:         &SOLScanner{recentBlockHash: "asdfasdf"},
+		tssKeyManager:      &mockSOLThorchainKeyManager{err: tss.NewKeysignError(types2.Blame{FailReason: "timeout", Round: "thorchain.tsslib.eddsa.signing.SignRound3Message"})},
+		signerCacheManager: newTestSignerCacheManager(c),
+	}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        toAddr,
+		VaultPubKeyEddsa: vaultPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}
+
+	result, checkpoint, obs, err := client.SignTx(tx, 123)
+	c.Assert(err, NotNil)
+	c.Assert(result, NotNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(obs, IsNil)
+	c.Assert(bridge.postCalls, HasLen, 0)
 }
 
 func TestSolAddrKeyringRoundTrip(t *testing.T) {

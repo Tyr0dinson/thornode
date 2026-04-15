@@ -45,6 +45,8 @@ var (
 	POLAsset = Asset{Chain: POLChain, Symbol: "POL", Ticker: "POL", Synth: false}
 	// SUIAsset SUI
 	SUIAsset = Asset{Chain: SUIChain, Symbol: "SUI", Ticker: "SUI", Synth: false}
+	// ADAAsset ADA
+	ADAAsset = Asset{Chain: ADAChain, Symbol: "ADA", Ticker: "ADA", Synth: false}
 	// TAOAsset TAO
 	TAOAsset = Asset{Chain: TAOChain, Symbol: "TAO", Ticker: "TAO", Synth: false}
 	// DOTAsset DOT
@@ -61,6 +63,7 @@ var (
 	NAMI = Asset{Chain: THORChain, Symbol: "NAMI", Ticker: "NAMI", Synth: false}
 	LQDY = Asset{Chain: THORChain, Symbol: "LQDY", Ticker: "LQDY", Synth: false}
 	AUTO = Asset{Chain: THORChain, Symbol: "AUTO", Ticker: "AUTO", Synth: false}
+	XUSK = Asset{Chain: THORChain, Symbol: "XUSK", Ticker: "XUSK", Synth: false}
 )
 
 var _ sdk.CustomProtobufType = (*Asset)(nil)
@@ -137,7 +140,10 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[XRPAsset.ShortCode()] = XRPAsset.String()
 	shorts[POLAsset.ShortCode()] = POLAsset.String()
 	shorts[SUIAsset.ShortCode()] = SUIAsset.String()
+	shorts[ADAAsset.ShortCode()] = ADAAsset.String()
+	shorts[ZECAsset.ShortCode()] = ZECAsset.String()
 	shorts[TAOAsset.ShortCode()] = TAOAsset.String()
+	shorts[DOTAsset.ShortCode()] = DOTAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -282,6 +288,8 @@ func (a Asset) Native() string {
 		return "thor.nami"
 	case a.Equals(LQDY):
 		return "thor.lqdy"
+	case a.Equals(XUSK):
+		return "thor.xusk"
 	case a.Equals(AUTO):
 		return "thor.auto"
 	}
@@ -348,6 +356,8 @@ func (a Asset) ShortCode() string {
 		return "u"
 	case "DOT.DOT":
 		return "do"
+	case "ADA.ADA":
+		return "ad"
 	default:
 		return ""
 	}
@@ -378,6 +388,7 @@ func (a Asset) IsWhitelisted() bool {
 		RUJI: true,
 		NAMI: true,
 		LQDY: true,
+		XUSK: true,
 		AUTO: true,
 	}
 	return whitelist[a]

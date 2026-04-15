@@ -122,16 +122,16 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	// vaultsLiquidityRune more than availablePoolsRune.
 	bondR, poolR, lpShare, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0, 0, 0)
 	// TODO: poolR here is intended to be non-zero; find out what's strange.
-	c.Check(bondR.Uint64(), Equals, uint64(2115), Commentf("%d", bondR.Uint64()))
-	c.Check(poolR.Uint64(), Equals, uint64(1056), Commentf("%d", poolR.Uint64()))
-	c.Check(lpShare.Uint64(), Equals, uint64(3330), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting half the rewards of 2000 effectiveSecurityBond; same yield)
+	c.Check(bondR.Uint64(), Equals, uint64(2114), Commentf("%d", bondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(1057), Commentf("%d", poolR.Uint64()))
+	c.Check(lpShare.Uint64(), Equals, uint64(3333), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting half the rewards of 2000 effectiveSecurityBond; same yield)
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
 	bondR, poolR, lpShare, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0, 0, 0)
-	c.Check(bondR.Uint64(), Equals, uint64(2379), Commentf("%d", bondR.Uint64()))
+	c.Check(bondR.Uint64(), Equals, uint64(2378), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
-	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1586), Commentf("%d", effectiveSecurityBondR.Uint64()))
-	c.Check(poolR.Uint64(), Equals, uint64(792), Commentf("%d", poolR.Uint64()))
-	c.Check(lpShare.Uint64(), Equals, uint64(2498), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting a third the rewards of 3000 totalEffectiveBond; same yield)
+	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1585), Commentf("%d", effectiveSecurityBondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(793), Commentf("%d", poolR.Uint64()))
+	c.Check(lpShare.Uint64(), Equals, uint64(2501), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting a third the rewards of 3000 totalEffectiveBond; same yield)
 
 	// Liquidity fees non-zero.
 	bondR, poolR, lpShare, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, cosmos.NewUint(3000), emissionCurve, blocksPerYear, 0, 0, 0, 0)
@@ -224,9 +224,9 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	// vaultsLiquidityRune more than availablePoolsRune.
 	bondR, poolR, lpShare, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0, 0, 0)
 	// TODO: poolR here is intended to be non-zero; find out what's strange.
-	c.Check(bondR.Uint64(), Equals, uint64(2115), Commentf("%d", bondR.Uint64()))
-	c.Check(poolR.Uint64(), Equals, uint64(1056), Commentf("%d", poolR.Uint64()))
-	c.Check(lpShare.Uint64(), Equals, uint64(3330), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting half the rewards of 2000 effectiveSecurityBond; same yield)
+	c.Check(bondR.Uint64(), Equals, uint64(2114), Commentf("%d", bondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(1057), Commentf("%d", poolR.Uint64()))
+	c.Check(lpShare.Uint64(), Equals, uint64(3333), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting half the rewards of 2000 effectiveSecurityBond; same yield)
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
 	bondR, poolR, lpShare, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1585), Commentf("%d", bondR.Uint64()))
@@ -320,13 +320,13 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(devFundDeduct.String(), Equals, "0")
 	c.Check(systemIncomeBurnDeduct.String(), Equals, "0")
 	c.Check(tcyStakeDeduct.String(), Equals, "0")
-	c.Check(bondR.String(), Equals, "2379")
-	c.Check(poolR.String(), Equals, "792")
+	c.Check(bondR.String(), Equals, "2378")
+	c.Check(poolR.String(), Equals, "793")
 
 	e12BondYield := bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield := poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
-	c.Check(e12BondYield.String(), Equals, "7930")
-	c.Check(e12PoolYield.String(), Equals, "7920")
+	c.Check(e12BondYield.String(), Equals, "7926")
+	c.Check(e12PoolYield.String(), Equals, "7930")
 	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
 	// Approximately equilibrium (affected slightly by rounding steps).
 
@@ -347,8 +347,8 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	bondR, poolR, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
-	c.Check(e12BondYield.String(), Equals, "6340")
-	c.Check(e12PoolYield.String(), Equals, "12690")
+	c.Check(e12BondYield.String(), Equals, "6343")
+	c.Check(e12PoolYield.String(), Equals, "12680")
 	// The pendulum perceives secured liquidity as being 1/3rd of securing liquidity rather than 1/2, so nodes get less than the yield of pools (half).
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -389,8 +389,8 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	bondR, poolR, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
-	c.Check(e12BondYield.String(), Equals, "3523")
-	c.Check(e12PoolYield.String(), Equals, "21140")
+	c.Check(e12BondYield.String(), Equals, "3526")
+	c.Check(e12PoolYield.String(), Equals, "21130")
 	// The pendulum perceives secured liquidity as being 1/4th of securing liquidity rather than 1/2, so nodes get less than the yield of pools (1/6th).
 
 	// Equilbrium yield when availablePoolsRune is doubled:
@@ -422,8 +422,8 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	bondR, poolR, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
-	c.Check(e12BondYield.String(), Equals, "1760")
-	c.Check(e12PoolYield.String(), Equals, "26430")
+	c.Check(e12BondYield.String(), Equals, "1763")
+	c.Check(e12PoolYield.String(), Equals, "26420")
 	// The pendulum perceives secured liquidity as being 1/6th of securing liquidity rather than 1/2, so nodes get less than the yield of pools (1/15th).
 
 	// Equilbrium yield when availablePoolsRune is tripled:
@@ -601,14 +601,14 @@ func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(10_07925862), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(10_07925863), Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// mgr.Keeper().SetMimir(ctx, constants.IncentiveCurve.String(), 50)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, pool.Asset, cosmos.NewUint(50*common.One)), IsNil)
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882080), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882082), Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// check we don't give yield when synth utilization is too high
 	// add some synths
@@ -618,7 +618,7 @@ func (s *NetworkManagerTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882080), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(12_59882082), Commentf("%d", spool.BalanceAsset.Uint64()))
 }
 
 func (s *NetworkManagerTestSuite) TestRagnarokPool(c *C) {
@@ -1784,6 +1784,344 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithStreamingSwaps
 		Commentf("Streaming swap with no progress should deduct full amount, expected 25, got %s", solvency[0].Amount))
 }
 
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTargetOutput(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// Setup: Create ETH and BTC pools
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(80 * common.One) // Pool already emitted 20 BTC to streaming swap output
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Create an active vault
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(150*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Create a V2 streaming swap ETH -> BTC with accumulated output
+	streamingTxID := GetRandomTxHash()
+	streamingSwapMsg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    streamingTxID,
+			Chain: common.ETHChain,
+			Coins: common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One))}, // 50 ETH deposit
+		},
+		TargetAsset: common.BTCAsset,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 10,
+			Count:    6,
+			Interval: 5,
+			Deposit:  cosmos.NewUint(50 * common.One),
+			In:       cosmos.NewUint(30 * common.One), // 30 ETH processed
+			Out:      cosmos.NewUint(20 * common.One), // 20 BTC emitted from pool
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+
+	// No legacy SetStreamingSwap here — this test must exercise the V2 msg.State path only.
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 2)
+
+	// Find ETH and BTC solvency
+	var ethSolvency, btcSolvency math.Int
+	for _, s := range solvency {
+		if s.Asset.Equals(common.ETHAsset) {
+			ethSolvency = s.Amount
+		}
+		if s.Asset.Equals(common.BTCAsset) {
+			btcSolvency = s.Amount
+		}
+	}
+
+	// ETH: Vault 150 - Pool 100 - SwapQueueRemaining 20 = 30
+	c.Assert(ethSolvency.Equal(math.NewInt(30*common.One)), Equals, true,
+		Commentf("ETH solvency: expected 30, got %s", ethSolvency))
+
+	// BTC: Vault 100 - Pool 80 - StreamingOutput 20 = 0
+	// Without the fix, it would be: Vault 100 - Pool 80 = 20 (incorrect over-solvency)
+	c.Assert(btcSolvency.Equal(math.NewInt(0)), Equals, true,
+		Commentf("BTC solvency: expected 0 (streaming output subtracted), got %s", btcSolvency))
+}
+
+// TestSolvencyStreamingSwapTargetOutputFromNativeSource reproduces the case
+// where a V2 streaming swap starts from native RUNE and emits external-chain
+// target assets. The current implementation skips queue processing too early
+// for native sources, so the emitted target liability is not deducted.
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTargetOutputFromNativeSource(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// The BTC pool has already emitted 20 BTC to the in-flight stream, but the
+	// vault still holds the coins because settleSwap has not created an outbound yet.
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(80 * common.One) // Pool already emitted 20 BTC
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Intentionally rely on inline msg.State only. This exercises the V2 path the
+	// MR 4640 changed, without falling back to the legacy streaming swap record.
+	streamingTxID := GetRandomTxHash()
+	streamingSwapMsg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    streamingTxID,
+			Chain: common.THORChain,
+			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(50*common.One))},
+		},
+		TargetAsset: common.BTCAsset,
+		SwapType:    types.SwapType_market,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 10,
+			Count:    6,
+			Interval: 5,
+			Deposit:  cosmos.NewUint(50 * common.One),
+			In:       cosmos.NewUint(30 * common.One),
+			Out:      cosmos.NewUint(20 * common.One),
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 1)
+	c.Assert(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+
+	// BTC: Vault 100 - Pool 80 - StreamingOutput 20 = 0
+	c.Assert(solvency[0].Amount.Equal(math.ZeroInt()), Equals, true,
+		Commentf("BTC solvency: expected 0 when native-source streaming output is deducted, got %s", solvency[0].Amount))
+}
+
+// TestSolvencyStreamingSwapTargetSynthOutput reproduces the case where a
+// streaming swap target is synth. Synth output should not create an external
+// Layer1 liability, because the swap path mints synths without reducing the L1
+// pool asset depth.
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTargetSynthOutput(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// Keep the BTC pool unchanged: synth output should not reduce L1 BTC depth.
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One) // Synth output should not reduce this
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(150*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Again, rely on inline msg.State only so this test covers the new V2
+	// streaming solvency accounting path directly.
+	streamingTxID := GetRandomTxHash()
+	streamingSwapMsg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    streamingTxID,
+			Chain: common.ETHChain,
+			Coins: common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One))},
+		},
+		TargetAsset: common.BTCAsset.GetSyntheticAsset(),
+		SwapType:    types.SwapType_market,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 10,
+			Count:    6,
+			Interval: 5,
+			Deposit:  cosmos.NewUint(50 * common.One),
+			In:       cosmos.NewUint(30 * common.One),
+			Out:      cosmos.NewUint(20 * common.One),
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 2)
+
+	var ethSolvency, btcSolvency math.Int
+	for _, s := range solvency {
+		if s.Asset.Equals(common.ETHAsset) {
+			ethSolvency = s.Amount
+		}
+		if s.Asset.Equals(common.BTCAsset) {
+			btcSolvency = s.Amount
+		}
+	}
+
+	// ETH: Vault 150 - Pool 100 - SwapQueueRemaining 20 = 30
+	c.Assert(ethSolvency.Equal(math.NewInt(30*common.One)), Equals, true,
+		Commentf("ETH solvency: expected 30, got %s", ethSolvency))
+
+	// BTC synth output should not create an L1 BTC liability.
+	c.Assert(btcSolvency.Equal(math.ZeroInt()), Equals, true,
+		Commentf("BTC solvency: expected 0 when synth output is ignored for L1 solvency, got %s", btcSolvency))
+}
+
+// TestSolvencyStreamingSwapNativeSourceTargetOutput verifies that RUNE -> L1 streaming swaps
+// still subtract accumulated target output even though the source asset (RUNE) is native.
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapNativeSourceTargetOutput(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// Setup: BTC pool where BalanceAsset is already reduced by streaming swap output
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(80 * common.One) // Pool emitted 20 BTC
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Vault holds 100 BTC
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// V2 streaming swap: RUNE -> BTC (native source, L1 target)
+	streamingTxID := GetRandomTxHash()
+	streamingSwapMsg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    streamingTxID,
+			Chain: common.THORChain,
+			Coins: common.Coins{common.NewCoin(common.RuneNative, cosmos.NewUint(50*common.One))},
+		},
+		TargetAsset: common.BTCAsset,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 10,
+			Count:    6,
+			Interval: 5,
+			Deposit:  cosmos.NewUint(50 * common.One),
+			In:       cosmos.NewUint(30 * common.One),
+			Out:      cosmos.NewUint(20 * common.One), // 20 BTC emitted
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	var btcSolvency math.Int
+	for _, s := range solvency {
+		if s.Asset.Equals(common.BTCAsset) {
+			btcSolvency = s.Amount
+		}
+	}
+
+	// BTC: Vault 100 - Pool 80 - StreamingOutput 20 = 0
+	// Without the fix, the native-source continue skips target output accounting,
+	// yielding: Vault 100 - Pool 80 = 20 (incorrectly over-solvent)
+	c.Assert(btcSolvency.Equal(math.NewInt(0)), Equals, true,
+		Commentf("BTC solvency: expected 0 (RUNE->BTC streaming output subtracted), got %s", btcSolvency))
+}
+
+// TestSolvencyStreamingSwapSynthTargetNotSubtracted verifies that streaming swaps targeting
+// synth/trade/secured assets do NOT subtract output from L1 solvency, because those assets
+// are minted without reducing pool.BalanceAsset.
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapSynthTargetNotSubtracted(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// Setup: BTC pool with full balance (no L1 assets emitted)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Vault holds 100 BTC
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// V2 streaming swap: RUNE -> BTC/BTC (synth target)
+	// Synth minting does NOT reduce pool.BalanceAsset, so output should NOT be subtracted.
+	synthTarget := common.BTCAsset.GetSyntheticAsset()
+	streamingTxID := GetRandomTxHash()
+	streamingSwapMsg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    streamingTxID,
+			Chain: common.THORChain,
+			Coins: common.Coins{common.NewCoin(common.RuneNative, cosmos.NewUint(50*common.One))},
+		},
+		TargetAsset: synthTarget,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 10,
+			Count:    6,
+			Interval: 5,
+			Deposit:  cosmos.NewUint(50 * common.One),
+			In:       cosmos.NewUint(30 * common.One),
+			Out:      cosmos.NewUint(20 * common.One), // 20 synth BTC minted (not L1)
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	var btcSolvency math.Int
+	for _, s := range solvency {
+		if s.Asset.Equals(common.BTCAsset) {
+			btcSolvency = s.Amount
+		}
+	}
+
+	// BTC: Vault 100 - Pool 100 = 0
+	// The synth streaming output (20) must NOT be subtracted from L1 solvency.
+	// Without the fix, it would be: Vault 100 - Pool 100 - SynthOutput 20 = -20 (incorrectly under-solvent)
+	c.Assert(btcSolvency.Equal(math.NewInt(0)), Equals, true,
+		Commentf("BTC solvency: expected 0 (synth output NOT subtracted), got %s", btcSolvency))
+}
+
 func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
@@ -1814,14 +2152,14 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	// Test 2: At interval block - should process
 	ctx = ctx.WithBlockHeight(432000)
 
-	// Set OverSolvencyToReserveBps to 0 - should emit event but not create swaps
-	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToReserveBps.String(), 0)
+	// Set OverSolvencyToTreasuryBps to 0 - should emit event but not create swaps
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), 0)
 
 	err = nmgr.processOverSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
 
-	// Test 3: With OverSolvencyToReserveBps set to 5000 (50%)
-	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToReserveBps.String(), 5000)
+	// Test 3: With OverSolvencyToTreasuryBps set to 5000 (50%)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), 5000)
 
 	err = nmgr.processOverSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
@@ -1859,7 +2197,7 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	// Should complete without error even when under-solvent
 }
 
-func (s *NetworkManagerTestSuite) TestCreateSwapToReserve(c *C) {
+func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
 
@@ -1879,9 +2217,9 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToReserve(c *C) {
 	pool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	// Test 1: Create swap to reserve
+	// Test 1: Create swap to over-solvency
 	swapAmount := cosmos.NewUint(10 * common.One)
-	err := nmgr.createSwapToReserve(ctx, mgr, common.BTCAsset, swapAmount)
+	err := nmgr.createSwapToOverSolvency(ctx, mgr, common.BTCAsset, swapAmount)
 	c.Assert(err, IsNil)
 
 	// Verify swap was created in the queue
@@ -1923,9 +2261,9 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToReserve(c *C) {
 	c.Assert(foundSwap.Tx.FromAddress.String(), Equals, btcAddr.String())
 	c.Assert(foundSwap.Tx.ToAddress.String(), Equals, btcAddr.String())
 
-	// Verify destination is reserve address
-	reserveAddr := mgr.Keeper().GetModuleAccAddress(ReserveName)
-	c.Assert(foundSwap.Destination.String(), Equals, reserveAddr.String())
+	// Verify destination is over-solvency address
+	overSolvencyAddr := mgr.Keeper().GetConstants().GetStringValue(constants.OverSolvencyAddress)
+	c.Assert(foundSwap.Destination.String(), Equals, overSolvencyAddr)
 
 	// Test 2: Multiple swaps - add vault for ETH chain
 	ethVaultPubKey := GetRandomPubKey()
@@ -1935,7 +2273,7 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToReserve(c *C) {
 	})
 	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
 
-	err = nmgr.createSwapToReserve(ctx, mgr, common.ETHAsset, cosmos.NewUint(5*common.One))
+	err = nmgr.createSwapToOverSolvency(ctx, mgr, common.ETHAsset, cosmos.NewUint(5*common.One))
 	c.Assert(err, IsNil)
 	// Should succeed and add another swap to queue
 }
@@ -1986,6 +2324,80 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithScheduledOutbounds(c *C) {
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true)
 }
 
+func (s *NetworkManagerTestSuite) TestSolvencyWithPendingOutboundsAtPastHeight(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// Setup: Create a pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Create vault with funds
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Add a pending outbound at a PAST block height (OutHash empty - not yet signed).
+	// This simulates an outbound that was scheduled a few blocks ago but Bifrost
+	// hasn't signed it yet. The solvency calc should still deduct it.
+	pastHeight := ctx.BlockHeight() - 5
+	if pastHeight < 1 {
+		pastHeight = 1
+	}
+	txOut := &TxOut{
+		Height: pastHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.BTCChain,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)),
+				ToAddress:   GetRandomBTCAddress(),
+				VaultPubKey: vault.PubKey,
+				// OutHash is empty - not yet signed
+			},
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	// Calculate solvency - should account for pending outbound at past height
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 1)
+
+	// Vault has 150, pool needs 100, pending outbound 20
+	// Expected: 150 - 100 - 20 = 30 over-solvent
+	expectedSolvency := math.NewInt(30 * common.One)
+	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
+		Commentf("expected %s, got %s", expectedSolvency.String(), solvency[0].Amount.String()))
+
+	// Now simulate the outbound being signed (OutHash set).
+	// When OutHash is set, vault.SubFunds has already been called in the same block,
+	// so the item should NOT be deducted anymore.
+	txOut.TxArray[0].OutHash = GetRandomTxHash()
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	// Also decrement vault coins (as vault.SubFunds would do on observation)
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(130*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Calculate solvency again - should still be 30 (130 - 100 = 30)
+	// The signed outbound should be skipped, and vault coins already reflect the send
+	solvency2, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency2), Equals, 1)
+	c.Assert(solvency2[0].Amount.Equal(expectedSolvency), Equals, true,
+		Commentf("expected %s, got %s", expectedSolvency.String(), solvency2[0].Amount.String()))
+}
+
 func (s *NetworkManagerTestSuite) TestSolvencyWithTradeAndSecuredAssets(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
@@ -2029,7 +2441,7 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithTradeAndSecuredAssets(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(solvency2), Equals, 1)
 
-	// Vault 150 - Pool 100 - TradeUnits 10 = 40 over-solvent
+	// Vault 150 - Pool 100 - TradeDepth 10 = 40 over-solvent
 	expected = math.NewInt(40 * common.One)
 	c.Assert(solvency2[0].Amount.Equal(expected), Equals, true)
 
@@ -2051,7 +2463,7 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithTradeAndSecuredAssets(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(solvency3), Equals, 1)
 
-	// Vault 150 - Pool 100 - TradeUnits 10 - SecuredSupply 15 = 25 over-solvent
+	// Vault 150 - Pool 100 - TradeDepth 10 - SecuredDepth 15 = 25 over-solvent
 	expected = math.NewInt(25 * common.One)
 	c.Assert(solvency3[0].Amount.Equal(expected), Equals, true)
 }
@@ -2079,8 +2491,8 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvencyEdgeCases(c *C) {
 	err = nmgr.processOverSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
 
-	// Test 3: OverSolvencyToReserveBps exceeds maximum (should cap at 10000)
-	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToReserveBps.String(), 15000)
+	// Test 3: OverSolvencyToTreasuryBps exceeds maximum (should cap at 10000)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), 15000)
 
 	vault := GetRandomVault()
 	vault.Type = AsgardVault
@@ -2095,14 +2507,14 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvencyEdgeCases(c *C) {
 	// Should cap at 100% and not error
 
 	// Test 4: Negative mimir value (should treat as 0)
-	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToReserveBps.String(), -100)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), -100)
 
 	err = nmgr.processOverSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
 	// Should not create any swaps when set to 0
 }
 
-func (s *NetworkManagerTestSuite) TestSwapToReserveIncome(c *C) {
+func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncome(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
 
@@ -2124,11 +2536,10 @@ func (s *NetworkManagerTestSuite) TestSwapToReserveIncome(c *C) {
 
 	// Test 1: Process L1 asset (BTC) as income
 	coin := common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))
-	err := nmgr.SwapToReserveIncome(ctx, mgr, coin)
-	c.Assert(err, IsNil)
-
-	// Verify swap was created in the queue (fee tracking happens during swap execution)
+	err := nmgr.SwapToOverSolvencyIncome(ctx, mgr, coin)
 	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		c.Assert(err, IsNil)
+		// Verify swap was created in the queue (fee tracking happens during swap execution)
 		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		defer iter.Close()
 		var foundSwap bool
@@ -2143,37 +2554,42 @@ func (s *NetworkManagerTestSuite) TestSwapToReserveIncome(c *C) {
 			}
 		}
 		c.Assert(foundSwap, Equals, true, Commentf("swap should have been created in queue"))
+	} else {
+		c.Assert(err, NotNil, Commentf("should return error when AdvSwapQueue is disabled"))
 	}
 
-	// Test 2: Process RUNE directly to reserve
+	// Test 2: Process RUNE directly to over-solvency address
 	FundModule(c, ctx, mgr.Keeper(), AsgardName, 100*common.One)
 	runeCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(50*common.One))
-	reserveBalanceBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	overSolvencyAddrStr := mgr.Keeper().GetConstants().GetStringValue(constants.OverSolvencyAddress)
+	overSolvencyAccAddr, addrErr := cosmos.AccAddressFromBech32(overSolvencyAddrStr)
+	c.Assert(addrErr, IsNil)
+	runeBalanceBefore := mgr.Keeper().GetBalanceOf(ctx, overSolvencyAccAddr, common.RuneAsset())
 
-	err = nmgr.SwapToReserveIncome(ctx, mgr, runeCoin)
+	err = nmgr.SwapToOverSolvencyIncome(ctx, mgr, runeCoin)
 	c.Assert(err, IsNil)
 
-	// Verify RUNE was transferred to reserve
-	reserveBalanceAfter := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
-	c.Assert(reserveBalanceAfter.Sub(reserveBalanceBefore).Equal(runeCoin.Amount), Equals, true)
+	// Verify RUNE was transferred to over-solvency address
+	runeBalanceAfter := mgr.Keeper().GetBalanceOf(ctx, overSolvencyAccAddr, common.RuneAsset())
+	c.Assert(runeBalanceAfter.Amount.Sub(runeBalanceBefore.Amount).Uint64(), Equals, runeCoin.Amount.Uint64())
 
 	// Test 3: Zero amount should return nil without error
 	zeroCoin := common.NewCoin(common.BTCAsset, cosmos.ZeroUint())
-	err = nmgr.SwapToReserveIncome(ctx, mgr, zeroCoin)
+	err = nmgr.SwapToOverSolvencyIncome(ctx, mgr, zeroCoin)
 	c.Assert(err, IsNil)
 
 	// Test 4: Empty coin should return nil without error
 	emptyCoin := common.Coin{}
-	err = nmgr.SwapToReserveIncome(ctx, mgr, emptyCoin)
+	err = nmgr.SwapToOverSolvencyIncome(ctx, mgr, emptyCoin)
 	c.Assert(err, IsNil)
 
-	// Test 5: Asset with no pool/vault still creates swap (will fail during execution)
+	// Test 5: Asset with no vault should return an error (no active vault found)
 	noPoolCoin := common.NewCoin(common.LTCAsset, cosmos.NewUint(10*common.One))
-	err = nmgr.SwapToReserveIncome(ctx, mgr, noPoolCoin)
-	c.Assert(err, IsNil) // No error at creation time - swap is queued for later execution
+	err = nmgr.SwapToOverSolvencyIncome(ctx, mgr, noPoolCoin)
+	c.Assert(err, NotNil) // No active vault for LTC, so swap creation fails
 }
 
-func (s *NetworkManagerTestSuite) TestSwapToReserveIncomeTradeAsset(c *C) {
+func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeTradeAsset(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
 
@@ -2196,7 +2612,7 @@ func (s *NetworkManagerTestSuite) TestSwapToReserveIncomeTradeAsset(c *C) {
 	// Test: Process trade asset - swap created for later execution
 	tradeAsset := common.BTCAsset.GetTradeAsset()
 	tradeCoin := common.NewCoin(tradeAsset, cosmos.NewUint(5*common.One))
-	err := nmgr.SwapToReserveIncome(ctx, mgr, tradeCoin)
+	err := nmgr.SwapToOverSolvencyIncome(ctx, mgr, tradeCoin)
 	c.Assert(err, IsNil)
 
 	// Verify swap was created (fee tracking happens during swap execution)
@@ -2218,7 +2634,7 @@ func (s *NetworkManagerTestSuite) TestSwapToReserveIncomeTradeAsset(c *C) {
 	}
 }
 
-func (s *NetworkManagerTestSuite) TestSwapToReserveIncomeSecuredAsset(c *C) {
+func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeSecuredAsset(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
 
@@ -2241,7 +2657,7 @@ func (s *NetworkManagerTestSuite) TestSwapToReserveIncomeSecuredAsset(c *C) {
 	// Test: Process secured asset - swap created for later execution
 	securedAsset := common.BTCAsset.GetSecuredAsset()
 	securedCoin := common.NewCoin(securedAsset, cosmos.NewUint(2*common.One))
-	err := nmgr.SwapToReserveIncome(ctx, mgr, securedCoin)
+	err := nmgr.SwapToOverSolvencyIncome(ctx, mgr, securedCoin)
 	c.Assert(err, IsNil)
 
 	// Verify swap was created (fee tracking happens during swap execution)

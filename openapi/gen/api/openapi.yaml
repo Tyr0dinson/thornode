@@ -4,7 +4,7 @@ info:
     email: devs@thorchain.org
   description: Thornode REST API.
   title: Thornode API
-  version: 3.15.0
+  version: 3.17.0
 servers:
 - url: /
 paths:
@@ -2664,6 +2664,143 @@ paths:
           description: OK
       tags:
       - Export
+  /thorchain/supply:
+    get:
+      description: Returns the RUNE supply breakdown.
+      operationId: supply
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyResponse'
+          description: OK
+      tags:
+      - Supply
+  /thorchain/supply/cmc:
+    get:
+      description: Returns a single supply value as plain text for CoinMarketCap integration.
+      operationId: supply_cmc
+      parameters:
+      - description: The asset to query supply for (default rune).
+        explode: true
+        in: query
+        name: asset
+        required: false
+        schema:
+          enum:
+          - rune
+          - tcy
+          type: string
+        style: form
+      - description: The type of supply value to return.
+        explode: true
+        in: query
+        name: type
+        required: true
+        schema:
+          enum:
+          - circulating
+          - total
+          - locked
+          - staked
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                example: 30000000000
+                type: integer
+          description: OK
+      tags:
+      - Supply
+  /thorchain/contracts:
+    get:
+      description: Returns type and version for all contracts with stored `contract_info`
+      operationId: contractInfos
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: optional contract type prefix to filter results
+        explode: true
+        in: query
+        name: contract
+        required: false
+        schema:
+          example: rujira-fin
+          type: string
+        style: form
+      - description: optional contract version prefix to filter results
+        explode: true
+        in: query
+        name: version
+        required: false
+        schema:
+          example: 2.0.0
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractInfosResponse'
+          description: OK
+      tags:
+      - Smart Contracts
+  /thorchain/contract/{address}:
+    get:
+      description: Returns type and version from `contract_info` for requested address
+      operationId: contractInfo
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractInfoResponse'
+          description: OK
+      tags:
+      - Smart Contracts
 components:
   parameters:
     queryHeight:
@@ -2759,6 +2896,26 @@ components:
         example: BTC
         type: string
       style: simple
+    contract:
+      description: optional contract type prefix to filter results
+      explode: true
+      in: query
+      name: contract
+      required: false
+      schema:
+        example: rujira-fin
+        type: string
+      style: form
+    version:
+      description: optional contract version prefix to filter results
+      explode: true
+      in: query
+      name: version
+      required: false
+      schema:
+        example: 2.0.0
+        type: string
+      style: form
   schemas:
     Pool:
       example:
@@ -3608,8 +3765,8 @@ components:
     StreamingSwap:
       example:
         failed_swaps:
-        - 5
-        - 5
+        - 2
+        - 2
         quantity: 6
         in: "100"
         trade_target: "100"
@@ -3622,6 +3779,7 @@ components:
         last_height: 5
         out: "100"
         target_asset: ETH.ETH
+        initial_height: 5
         deposit: "100"
         interval: 0
         source_asset: BTC.BTC
@@ -3644,6 +3802,10 @@ components:
           type: integer
         last_height:
           description: the block height of the latest swap
+          format: int64
+          type: integer
+        initial_height:
+          description: the block height when the swap first entered the queue
           format: int64
           type: integer
         trade_target:
@@ -4718,6 +4880,26 @@ components:
       required:
       - amount
       - denom
+      type: object
+    ContractInfo:
+      example:
+        address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
+        contract: rujira-fin
+        version: 2.0.0
+      properties:
+        address:
+          example: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
+          type: string
+        contract:
+          example: rujira-fin
+          type: string
+        version:
+          example: 2.0.0
+          type: string
+      required:
+      - address
+      - contract
+      - version
       type: object
     AccountResponse:
       example:
@@ -7355,6 +7537,68 @@ components:
       - max_use
       - reference
       - usage_count
+      type: object
+    LockedSupply:
+      example:
+        reserve: 10000000000
+      properties:
+        reserve:
+          description: RUNE locked in the reserve module
+          example: 10000000000
+          format: int64
+          type: integer
+      type: object
+    SupplyResponse:
+      example:
+        circulating: 30000000000
+        total: 50000000000
+        locked:
+          reserve: 10000000000
+      properties:
+        circulating:
+          description: circulating RUNE supply
+          example: 30000000000
+          format: int64
+          type: integer
+        locked:
+          $ref: '#/components/schemas/LockedSupply'
+        total:
+          description: total RUNE supply
+          example: 50000000000
+          format: int64
+          type: integer
+      required:
+      - circulating
+      - total
+      type: object
+    ContractInfoResponse:
+      example:
+        info:
+          address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
+          contract: rujira-fin
+          version: 2.0.0
+      properties:
+        info:
+          $ref: '#/components/schemas/ContractInfo'
+      required:
+      - info
+      type: object
+    ContractInfosResponse:
+      example:
+        infos:
+        - address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
+          contract: rujira-fin
+          version: 2.0.0
+        - address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
+          contract: rujira-fin
+          version: 2.0.0
+      properties:
+        infos:
+          items:
+            $ref: '#/components/schemas/ContractInfo'
+          type: array
+      required:
+      - infos
       type: object
     Ping:
       example:

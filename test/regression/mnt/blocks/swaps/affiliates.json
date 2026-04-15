@@ -36,19 +36,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -60,19 +60,19 @@
         "type": "message"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "532725rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -108,8 +108,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532724",
-        "ETH.ETH": "532724",
+        "BTC.BTC": "532725",
+        "ETH.ETH": "532725",
         "bond_reward": "44394",
         "dev_fund_reward": "0",
         "income_burn": "0",
@@ -361,6 +361,7 @@
                   }
                 ],
                 "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw::tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u:500",
+                "salt": null,
                 "signer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
               }
             ],
@@ -436,13 +437,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "10000000000 THOR.RUNE",
-              "target": "0 BTC.BTC",
-              "txid": "8C59F38B596FFBBA3E320605BD3DF9ECFE5D5BF56D181BF82747805223582CDF",
-              "type": "limit_swap"
             }
           ]
         }
@@ -1200,13 +1194,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "50000000 BTC.BTC",
-              "target": "0 THOR.RUNE",
-              "txid": "0000000000000000000000000000000000000000000000000000000000000002",
-              "type": "limit_swap"
             }
           ]
         }

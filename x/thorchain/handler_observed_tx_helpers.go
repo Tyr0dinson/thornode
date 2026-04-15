@@ -3,6 +3,7 @@ package thorchain
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -284,7 +285,7 @@ func handleObservedTxInQuorum(
 	if txErr != nil {
 		ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
-			ctx.Logger().Error("fail to refund", "error", err)
+			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
 		return nil
 	}
@@ -296,7 +297,7 @@ func handleObservedTxInQuorum(
 	if isSwap || isAddLiquidity {
 		if k.IsTradingHalt(ctx, m) || k.RagnarokInProgress(ctx) {
 			if newErr := refundTx(ctx, tx, mgr, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
-				ctx.Logger().Error("fail to refund for halted trading", "error", err)
+				ctx.Logger().Error("fail to refund for halted trading", "error", newErr)
 			}
 			return nil
 		}
@@ -319,7 +320,7 @@ func handleObservedTxInQuorum(
 	// Check is independent of the mimir to enable the handler in order to support
 	// bifrost & switch whitelisting prior to switching commencing
 	_, isSwitch := m.(*MsgSwitch)
-	if !isSwitch && mgr.SwitchManager().IsSwitch(ctx, tx.Tx.Coins[0].Asset) {
+	if !isSwitch && len(tx.Tx.Coins) > 0 && mgr.SwitchManager().IsSwitch(ctx, tx.Tx.Coins[0].Asset) {
 		if err = refundTx(ctx, tx, mgr, CodeTxFail, "asset is a switch asset", ""); err != nil {
 			ctx.Logger().Error("fail to refund", "error", err)
 		}
@@ -442,6 +443,21 @@ func processTxOutAttestation(
 			// event the tx had been processed , given the signer just a bit late , so we still take away their slash points
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
 		}
+
+		// Gas correction for re-org re-observations.
+		// When a voter is finalized but a re-observation has the same tx except gas
+		// (likely due to a reorg changing the effective gas price), check if enough
+		// nodes agree on the corrected gas to update vault accounting.
+		if voter.FinalisedHeight > 0 &&
+			voter.Tx.IsFinal() == tx.IsFinal() &&
+			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
+			voter.Tx.Tx.EqualsExIgnoreGas(tx.Tx) {
+			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
+			if HasSuperMajority(gasCorrectionSigners, len(nas)) {
+				correctOutboundGas(ctx, mgr, voter.Tx, tx)
+				voter.Tx.Tx.Gas = tx.Tx.Gas
+			}
+		}
 	}
 	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
@@ -471,12 +487,105 @@ func processTxOutAttestation(
 			// but only when the tx signer are voting is the tx that already reached consensus
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
 		}
+
+		// Gas correction for re-org re-observations (non-finalized consensus path).
+		if voter.Height > 0 &&
+			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
+			voter.Tx.Tx.EqualsExIgnoreGas(tx.Tx) {
+			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
+			if HasSuperMajority(gasCorrectionSigners, len(nas)) {
+				correctOutboundGas(ctx, mgr, voter.Tx, tx)
+				voter.Tx.Tx.Gas = tx.Tx.Gas
+			}
+		}
 	}
 
 	k.SetObservedTxOutVoter(ctx, voter)
 
 	// Check to see if we have enough identical observations to process the transaction
 	return voter, ok
+}
+
+// countMatchingSigners counts the number of unique active node signers that have observed
+// the exact same tx (including gas) as the given observation.
+func countMatchingSigners(voter ObservedTxVoter, tx ObservedTx, nas NodeAccounts) int {
+	signers := make(map[string]struct{})
+	for _, otherTx := range voter.Txs {
+		if otherTx.IsFinal() != tx.IsFinal() {
+			continue
+		}
+		if !otherTx.Tx.EqualsEx(tx.Tx) {
+			continue
+		}
+		for _, s := range otherTx.GetSigners() {
+			if !nas.IsNodeKeys(s) {
+				continue
+			}
+			signers[s.String()] = struct{}{}
+		}
+	}
+	return len(signers)
+}
+
+// correctOutboundGas adjusts a vault's gas accounting when a reorg results in
+// a different gas amount for the same outbound transaction. It computes the delta
+// between the original consensus gas and the corrected gas, then adjusts the vault
+// balance and gas manager accordingly.
+func correctOutboundGas(ctx cosmos.Context, mgr Manager, consensusTx common.ObservedTx, correctedTx ObservedTx) {
+	oldGas := consensusTx.Tx.Gas
+	newGas := correctedTx.Tx.Gas
+
+	vault, err := mgr.Keeper().GetVault(ctx, correctedTx.ObservedPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault for gas correction", "error", err)
+		return
+	}
+
+	// Calculate gas delta per asset and adjust vault balance.
+	var additionalGas common.Gas
+	for _, newGasCoin := range newGas {
+		oldAmount := oldGas.ToCoins().GetCoin(newGasCoin.Asset).Amount
+		if newGasCoin.Amount.GT(oldAmount) {
+			// More gas was actually spent - deduct additional from vault.
+			delta := common.NewCoin(newGasCoin.Asset, newGasCoin.Amount.Sub(oldAmount))
+			vault.SubFunds(common.NewCoins(delta))
+			additionalGas = additionalGas.Add(delta)
+		} else if oldAmount.GT(newGasCoin.Amount) {
+			// Less gas was actually spent - credit back to vault.
+			delta := common.NewCoin(newGasCoin.Asset, oldAmount.Sub(newGasCoin.Amount))
+			vault.AddFunds(common.NewCoins(delta))
+		}
+	}
+
+	if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+		ctx.Logger().Error("fail to save vault after gas correction", "error", err)
+		return
+	}
+
+	// If more gas was spent, add the delta to the gas manager for reserve reimbursement,
+	// skipping reimbursement for inactive vaults and during ragnarok (matching addGasFees behavior).
+	if !additionalGas.IsEmpty() {
+		if vault.Status == InactiveVault {
+			return
+		}
+		if mgr.Keeper().RagnarokInProgress(ctx) {
+			gasAsset := correctedTx.Tx.Chain.GetGasAsset()
+			if !correctedTx.Tx.Coins.GetCoin(gasAsset).IsEmpty() {
+				return
+			}
+		}
+		outAsset := common.EmptyAsset
+		if len(correctedTx.Tx.Coins) != 0 {
+			outAsset = correctedTx.Tx.Coins[0].Asset
+		}
+		mgr.GasMgr().AddGasAsset(outAsset, additionalGas, false)
+	}
+
+	ctx.Logger().Info("corrected outbound gas after reorg",
+		"txid", correctedTx.Tx.ID,
+		"old_gas", common.Coins(oldGas).String(),
+		"new_gas", common.Coins(newGas).String(),
+	)
 }
 
 // ensureVaultAndGetTxOutVoter will make sure the vault exists, then get the ObservedTxOutVoter from the store.
@@ -524,7 +633,7 @@ func handleObservedTxOutQuorum(
 ) error {
 	// check whether the tx has consensus
 	if !isQuorum {
-		if voter.Height == ctx.BlockHeight() {
+		if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 			// we've already process the transaction, but we should still
 			// update the observing addresses
 			mgr.ObMgr().AppendObserver(tx.Tx.Chain, observers)
@@ -572,121 +681,123 @@ func handleObservedTxOutQuorum(
 		return nil
 	}
 
+	// Process the handler if we can get the consensus tx.
+	// Even if the handler fails, vault accounting must still happen because
+	// the outbound transaction is irrevocable (funds already left the vault).
+	vaultSlash := false
 	txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 	if txOut == nil || txOut.IsEmpty() {
 		ctx.Logger().Error("fail to get consensus tx from voter", "txid", tx.Tx.ID)
-		return fmt.Errorf("fail to get consensus tx from voter: %s", tx.Tx.ID)
-	}
-	txOut.Tx.Memo = tx.Tx.Memo
+		// Continue with vault accounting below - outbound is irrevocable
+	} else {
+		txOut.Tx.Memo = tx.Tx.Memo
 
-	// For memoless outbounds, look up the original memo from the scheduled TxOutItem
-	if txOut.Tx.Memo == "" {
-		if originalMemo := findOriginalMemoForOutbound(ctx, mgr, tx); originalMemo != "" {
-			txOut.Tx.Memo = originalMemo
-			ctx.Logger().Info("resolved memoless outbound", "original_memo", originalMemo, "txid", tx.Tx.ID)
+		// For memoless outbounds, look up the original memo from the scheduled TxOutItem
+		if txOut.Tx.Memo == "" {
+			if originalMemo := findOriginalMemoForOutbound(ctx, mgr, tx); originalMemo != "" {
+				txOut.Tx.Memo = originalMemo
+				ctx.Logger().Info("resolved memoless outbound", "original_memo", originalMemo, "txid", tx.Tx.ID)
+			}
 		}
-	}
 
-	m, err := processOneTxIn(ctx, k, *txOut, signer)
-	if err != nil || tx.Tx.Chain.IsEmpty() {
-		ctx.Logger().Error("fail to process txOut",
-			"error", err,
-			"tx", tx.Tx.String())
-		return nil
-	}
-
-	// add addresses to observing addresses. This is used to detect
-	// active/inactive observing node accounts
-	mgr.ObMgr().AppendObserver(tx.Tx.Chain, txOut.GetSigners())
-
-	// emit tss keysign metrics
-	if tx.KeysignMs > 0 {
-		var keysignMetric *keeper.TssKeysignMetric
-		keysignMetric, err = k.GetTssKeysignMetric(ctx, tx.Tx.ID)
-		if err != nil {
-			ctx.Logger().Error("fail to get tss keysign metric", "error", err, "hash", tx.Tx.ID)
+		if tx.Tx.Chain.IsEmpty() {
+			ctx.Logger().Error("fail to process txOut: chain is empty", "tx", tx.Tx.String())
+		} else if m, mErr := processOneTxIn(ctx, k, *txOut, signer); mErr != nil {
+			ctx.Logger().Error("fail to process txOut",
+				"error", mErr,
+				"tx", tx.Tx.String())
 		} else {
-			evt := NewEventTssKeysignMetric(keysignMetric.TxID, keysignMetric.GetMedianTime())
-			if err = mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-				ctx.Logger().Error("fail to emit tss metric event", "error", err)
+			// add addresses to observing addresses. This is used to detect
+			// active/inactive observing node accounts
+			mgr.ObMgr().AppendObserver(tx.Tx.Chain, txOut.GetSigners())
+
+			// emit tss keysign metrics
+			if tx.KeysignMs > 0 {
+				keysignMetric, kmErr := k.GetTssKeysignMetric(ctx, tx.Tx.ID)
+				if kmErr != nil {
+					ctx.Logger().Error("fail to get tss keysign metric", "error", kmErr, "hash", tx.Tx.ID)
+				} else {
+					evt := NewEventTssKeysignMetric(keysignMetric.TxID, keysignMetric.GetMedianTime())
+					if emitErr := mgr.EventMgr().EmitEvent(ctx, evt); emitErr != nil {
+						ctx.Logger().Error("fail to emit tss metric event", "error", emitErr)
+					}
+				}
+			}
+
+			res, hErr := handler(ctx, m)
+			if hErr != nil {
+				ctx.Logger().Error("handler failed:", "error", hErr)
+				// Continue with vault accounting - outbound is irrevocable
+			} else if res != nil && res.Events != nil {
+				for _, ev := range res.Events {
+					if ev.Type == "vault-slash" {
+						vaultSlash = true
+						break
+					}
+				}
 			}
 		}
 	}
-	var res *cosmos.Result
-	res, err = handler(ctx, m)
-	if err != nil {
-		ctx.Logger().Error("handler failed:", "error", err)
-		return nil
-	}
 
-	vaultSlash := false
-	if res != nil && res.Events != nil {
-		for _, ev := range res.Events {
-			if ev.Type == "vault-slash" {
-				vaultSlash = true
-				break
-			}
-		}
-	}
-
-	voter.SetDone()
-	k.SetObservedTxOutVoter(ctx, voter)
+	// Vault accounting - always runs because outbound is irrevocable.
+	// Gas and coin deductions must happen regardless of handler success.
 
 	// only deduct gas fee via the manager if there was not a vault slash that covered it
 	if !vaultSlash {
-		if err = addGasFees(ctx, mgr, tx); err != nil {
+		if err := addGasFees(ctx, mgr, tx); err != nil {
 			ctx.Logger().Error("fail to add gas fee", "error", err)
-			return nil
 		}
 	}
 
-	// process the msg first , and then deduct the fund from vault last
 	// If sending from one of our vaults, decrement coins
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
-		return fmt.Errorf("fail to get vault for outbound tx: %w", err)
-	}
-
-	// if the vault was slashed we skipped the gas manager above and deduct gas directly
-	if vaultSlash {
-		vault.SubFunds(tx.Tx.Gas.ToCoins())
-	}
-
-	// Don't add to or subtract from vault balances when the sender and recipient are the same
-	// (particularly avoid Consolidate SafeSub zeroing of vault balances).
-	if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
-		// skip deducting funds for outbound fake gas
-		if !isOutboundFakeGasTx(tx) {
-			vault.SubFunds(tx.Tx.Coins)
+	} else {
+		// if the vault was slashed we skipped the gas manager above and deduct gas directly
+		if vaultSlash {
+			vault.SubFunds(tx.Tx.Gas.ToCoins())
 		}
-		vault.OutboundTxCount++
-	}
 
-	if vault.IsAsgard() && memo.IsType(TxMigrate) {
-		// only remove the block height that had been specified in the memo
-		vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
-	}
+		// Don't add to or subtract from vault balances when the sender and recipient are the same
+		// (particularly avoid Consolidate SafeSub zeroing of vault balances).
+		if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
+			// skip deducting funds for outbound fake gas
+			if !isOutboundFakeGasTx(tx) {
+				vault.SubFunds(tx.Tx.Coins)
+			}
+			vault.OutboundTxCount++
+		}
 
-	if !vault.HasFunds() && vault.Status == RetiringVault {
-		// we have successfully removed all funds from a retiring vault,
-		// mark it as inactive
-		vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
-	}
-	// if the vault is frozen, then unfreeze it. Since we saw that a
-	// transaction was signed
-	for _, coin := range tx.Tx.Coins {
-		for i := range vault.Frozen {
-			if strings.EqualFold(coin.Asset.GetChain().String(), vault.Frozen[i]) {
-				vault.Frozen = append(vault.Frozen[:i], vault.Frozen[i+1:]...)
-				break
+		if vault.IsAsgard() && memo.IsType(TxMigrate) {
+			// only remove the block height that had been specified in the memo
+			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
+		}
+
+		if !vault.HasFunds() && vault.Status == RetiringVault {
+			// we have successfully removed all funds from a retiring vault,
+			// mark it as inactive
+			vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
+		}
+		// if the vault is frozen, then unfreeze it. Since we saw that a
+		// transaction was signed
+		for _, coin := range tx.Tx.Coins {
+			for i := range vault.Frozen {
+				if strings.EqualFold(coin.Asset.GetChain().String(), vault.Frozen[i]) {
+					vault.Frozen = append(vault.Frozen[:i], vault.Frozen[i+1:]...)
+					break
+				}
 			}
 		}
+		if err := k.SetVault(ctx, vault); err != nil {
+			ctx.Logger().Error("fail to save vault", "error", err)
+		}
 	}
-	if err := k.SetVault(ctx, vault); err != nil {
-		ctx.Logger().Error("fail to save vault", "error", err)
-		return nil
-	}
+
+	// Mark voter as done AFTER all vault operations to prevent
+	// inconsistency if vault ops fail.
+	voter.SetDone()
+	k.SetObservedTxOutVoter(ctx, voter)
 
 	ctx.Logger().Info("tx out processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
@@ -907,7 +1018,11 @@ func generateReferenceMemoID(ctx cosmos.Context, mgr Manager, asset common.Asset
 		return "", fmt.Errorf("no coins in transaction for reference generation")
 	}
 
-	amount := tx.Tx.Coins[0].Amount.Uint64()
+	coinAmount := tx.Tx.Coins[0].Amount
+	if coinAmount.GT(cosmos.NewUint(math.MaxUint64)) {
+		return "", fmt.Errorf("coin amount exceeds uint64 max")
+	}
+	amount := coinAmount.Uint64()
 	return ExtractReferenceFromAmount(ctx, mgr, asset, amount)
 }
 
@@ -933,6 +1048,11 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 			return "", err
 		}
 		decimals = pool.Decimals
+		if decimals == 0 {
+			// For non-gas assets, a pool decimal value of zero is used as a sentinel
+			// for THORChain default precision (1e8), not literal 0-decimal precision.
+			decimals = int64(common.THORChainDecimals)
+		}
 	}
 
 	baseEnd := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnRefCount)

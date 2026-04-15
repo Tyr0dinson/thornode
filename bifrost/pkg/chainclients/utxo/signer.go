@@ -18,6 +18,8 @@ import (
 	"github.com/ltcsuite/ltcutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
+	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
+
 	btcwire "github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	dogewire "github.com/eager7/dogd/wire"
@@ -88,7 +90,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 		outputAddrStr = outputAddr.(bchutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
 	case common.LTCChain:
-		outputAddr, err = ltcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
+		outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
@@ -169,7 +171,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	signings := []struct{ idx, amount int64 }{}
 	totalAmount := int64(0)
 	for idx, txIn := range redeemTx.TxIn {
-		key := fmt.Sprintf("%s-%d", txIn.PreviousOutPoint.Hash, txIn.PreviousOutPoint.Index)
+		key := formatUtxoKey(txIn.PreviousOutPoint.Hash.String(), txIn.PreviousOutPoint.Index)
 		outputAmount := checkpoint.IndividualAmounts[key]
 		totalAmount += outputAmount
 		signings = append(signings, struct{ idx, amount int64 }{int64(idx), outputAmount})
@@ -296,12 +298,19 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	for _, txOut := range redeemTx.TxOut { // subtract all vouts to from vins to get the gas
 		gas -= txOut.Value
 	}
+
+	// ZEC hash is computed from zecTx instead of redeemTx
+	txHash := redeemTx.TxHash().String()
+	if c.cfg.ChainID == common.ZECChain {
+		txHash = zecTx.TxHash().String()
+	}
+
 	var txIn *stypes.TxInItem
 	sender, err := tx.VaultPubKey.GetAddress(tx.Chain)
 	if err == nil {
 		txIn = stypes.NewTxInItem(
 			chainHeight,
-			redeemTx.TxHash().String(),
+			txHash,
 			tx.Memo,
 			sender.String(),
 			tx.ToAddress.String(),
@@ -322,7 +331,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	if c.cfg.ChainID == common.ZECChain {
 		var ids []string
 		for _, vin := range redeemTx.TxIn {
-			id := fmt.Sprintf("%s:%d", vin.PreviousOutPoint.Hash.String(), vin.PreviousOutPoint.Index)
+			id := formatUtxoKey(vin.PreviousOutPoint.Hash.String(), vin.PreviousOutPoint.Index)
 			ids = append(ids, id)
 		}
 		err = c.temporalStorage.SetSpentUtxos(ids, chainHeight)
@@ -385,7 +394,6 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		args := []any{hex.EncodeToString(payload)}
 
 		err = c.rpc.Call(&txid, "sendrawtransaction", args...)
-
 		if err != nil {
 			c.log.Err(err).Msg("fail to call SendRawTransaction")
 		}
@@ -429,6 +437,9 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 		if strings.Contains(err.Error(), "already in block chain") {
 			c.log.Info().Str("hash", txid).Msg("broadcasted by another node")
+			if cacheErr := c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid); cacheErr != nil {
+				c.log.Err(cacheErr).Msgf("fail to mark tx out item (%+v) as signed", txOut)
+			}
 			return txid, nil
 		}
 

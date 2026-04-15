@@ -20,7 +20,6 @@ asserts:
 ########################################################################################
 # Set up ATOM vaults
 ########################################################################################
-
 type: tx-network-fee
 signer: {{ addr_thor_dog }}
 block_height: 1
@@ -198,4 +197,4 @@ asserts:
   - .balances[0].denom == "rune"
   - .balances[0].amount == "2359588307220"
   - .balances[1].denom == "thor.nami"
-  - .balances[1].amount == "9951849112426035"
+  - .balances[1].amount == "9951849112426036"

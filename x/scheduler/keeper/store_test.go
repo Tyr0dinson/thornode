@@ -2,17 +2,18 @@ package keeper_test
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	. "gopkg.in/check.v1"
+
 	"gitlab.com/thorchain/thornode/v3/x/scheduler/types"
 )
 
-func (s *KeeperTestSuite) TestStoreMsgs() {
-	s.SetupTest()
+func (s *KeeperTestSuite) TestStoreMsgs(c *C) {
 	sdkCtx := sdk.UnwrapSDKContext(s.ctx)
 	res, err := s.keeper.GetSchedule(sdkCtx, 1000)
 
-	s.Require().NoError(err)
-	s.Require().Equal(res.Height, uint64(0x3e8))
-	s.Require().Empty(res.Msgs)
+	c.Assert(err, IsNil)
+	c.Assert(res.Height, Equals, uint64(0x3e8))
+	c.Assert(res.Msgs, HasLen, 0)
 
 	err = s.keeper.AddMsg(sdkCtx, types.MsgScheduleExecuteContract{
 		After:  1000,
@@ -20,30 +21,30 @@ func (s *KeeperTestSuite) TestStoreMsgs() {
 		Msg:    []byte(`{"do":"something"}`),
 	})
 
-	s.Require().NoError(err)
+	c.Assert(err, IsNil)
 
 	res, err = s.keeper.GetSchedule(sdkCtx, 1001)
 
-	s.Require().NoError(err)
-	s.Require().Equal(res.Height, uint64(0x3e9))
-	s.Require().Len(res.Msgs, 1)
-	s.Require().Equal(accAddrs[0].String(), res.Msgs[0].Sender)
-	s.Require().Equal([]byte(`{"do":"something"}`), res.Msgs[0].Msg)
+	c.Assert(err, IsNil)
+	c.Assert(res.Height, Equals, uint64(0x3e9))
+	c.Assert(res.Msgs, HasLen, 1)
+	c.Assert(res.Msgs[0].Sender, Equals, accAddrs[0].String())
+	c.Assert(res.Msgs[0].Msg, DeepEquals, []byte(`{"do":"something"}`))
 
 	err = s.keeper.AddMsg(sdkCtx, types.MsgScheduleExecuteContract{
 		After:  1000,
 		Sender: accAddrs[1].String(),
 		Msg:    []byte(`{"do":"something else"}`),
 	})
-	s.Require().NoError(err)
+	c.Assert(err, IsNil)
 
 	res, err = s.keeper.GetSchedule(sdkCtx, 1001)
 
-	s.Require().NoError(err)
-	s.Require().Equal(res.Height, uint64(0x3e9))
-	s.Require().Len(res.Msgs, 2)
-	s.Require().Equal(accAddrs[0].String(), res.Msgs[0].Sender)
-	s.Require().Equal([]byte(`{"do":"something"}`), res.Msgs[0].Msg)
-	s.Require().Equal(accAddrs[1].String(), res.Msgs[1].Sender)
-	s.Require().Equal([]byte(`{"do":"something else"}`), res.Msgs[1].Msg)
+	c.Assert(err, IsNil)
+	c.Assert(res.Height, Equals, uint64(0x3e9))
+	c.Assert(res.Msgs, HasLen, 2)
+	c.Assert(res.Msgs[0].Sender, Equals, accAddrs[0].String())
+	c.Assert(res.Msgs[0].Msg, DeepEquals, []byte(`{"do":"something"}`))
+	c.Assert(res.Msgs[1].Sender, Equals, accAddrs[1].String())
+	c.Assert(res.Msgs[1].Msg, DeepEquals, []byte(`{"do":"something else"}`))
 }

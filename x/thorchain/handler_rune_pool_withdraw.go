@@ -108,9 +108,17 @@ func (h RunePoolWithdrawHandler) handle(ctx cosmos.Context, msg MsgRunePoolWithd
 	if !msg.AffiliateBasisPoints.IsZero() {
 		totalUnits := runePool.TotalUnits()
 		currentValue := common.GetSafeShare(runeProvider.Units, totalUnits, totalRunePoolValue)
-		depositRemaining := common.SafeSub(runeProvider.DepositAmount, runeProvider.WithdrawAmount)
-		currentYield := common.SafeSub(currentValue, depositRemaining)
-		withdrawYield := common.GetSafeShare(msg.BasisPoints, maxBps, currentYield)
+		withdrawValue := common.GetSafeShare(msg.BasisPoints, maxBps, currentValue)
+
+		// Compute yield proportionally using lifetime PnL to avoid overcounting.
+		// The previous approach (SafeSub(DepositAmount, WithdrawAmount) as remaining
+		// principal) is incorrect because WithdrawAmount includes yield, causing
+		// depositRemaining to understate remaining principal after profitable
+		// partial withdrawals. Instead, distribute the lifetime PnL proportionally
+		// across total value generated (current value + all past withdrawals).
+		totalValue := currentValue.Add(runeProvider.WithdrawAmount)
+		lifetimePnL := common.SafeSub(totalValue, runeProvider.DepositAmount)
+		withdrawYield := common.GetSafeShare(lifetimePnL, totalValue, withdrawValue)
 		affiliateAmount = common.GetSafeShare(msg.AffiliateBasisPoints, maxBps, withdrawYield)
 	}
 
@@ -130,7 +138,7 @@ func (h RunePoolWithdrawHandler) handle(ctx cosmos.Context, msg MsgRunePoolWithd
 		// logic to trigger POL withdraw and sacrifice pool depth to satisfy withdrawals.
 		maxReserveBackstop := h.mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolMaxReserveBackstop)
 		polMaxNetworkDeposit := h.mgr.Keeper().GetConfigInt64(ctx, constants.POLMaxNetworkDeposit)
-		maxReserveUsage := cosmos.NewInt(maxReserveBackstop + polMaxNetworkDeposit)
+		maxReserveUsage := cosmos.NewInt(maxReserveBackstop).Add(cosmos.NewInt(polMaxNetworkDeposit))
 		var pol ProtocolOwnedLiquidity
 		pol, err = h.mgr.Keeper().GetPOL(ctx)
 		if err != nil {

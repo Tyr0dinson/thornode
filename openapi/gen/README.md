@@ -134,8 +134,12 @@ Class | Method | HTTP request | Description
 *SaversApi* | [**Savers**](docs/SaversApi.md#savers) | **Get** /thorchain/pool/{asset}/savers | 
 *SecuredAssetApi* | [**SecuredAsset**](docs/SecuredAssetApi.md#securedasset) | **Get** /thorchain/securedasset/{asset} | 
 *SecuredAssetsApi* | [**SecuredAssets**](docs/SecuredAssetsApi.md#securedassets) | **Get** /thorchain/securedassets | 
+*SmartContractsApi* | [**ContractInfo**](docs/SmartContractsApi.md#contractinfo) | **Get** /thorchain/contract/{address} | 
+*SmartContractsApi* | [**ContractInfos**](docs/SmartContractsApi.md#contractinfos) | **Get** /thorchain/contracts | 
 *StreamingSwapApi* | [**StreamSwap**](docs/StreamingSwapApi.md#streamswap) | **Get** /thorchain/swap/streaming/{hash} | 
 *StreamingSwapApi* | [**StreamSwaps**](docs/StreamingSwapApi.md#streamswaps) | **Get** /thorchain/swaps/streaming | 
+*SupplyApi* | [**Supply**](docs/SupplyApi.md#supply) | **Get** /thorchain/supply | 
+*SupplyApi* | [**SupplyCmc**](docs/SupplyApi.md#supplycmc) | **Get** /thorchain/supply/cmc | 
 *SwapApi* | [**SwapDetails**](docs/SwapApi.md#swapdetails) | **Get** /thorchain/queue/swap/details/{tx_id} | 
 *TCYClaimersApi* | [**TcyClaimer**](docs/TCYClaimersApi.md#tcyclaimer) | **Get** /thorchain/tcy_claimer/{address} | 
 *TCYClaimersApi* | [**TcyClaimers**](docs/TCYClaimersApi.md#tcyclaimers) | **Get** /thorchain/tcy_claimers | 
@@ -185,6 +189,9 @@ Class | Method | HTTP request | Description
  - [CodesResponse](docs/CodesResponse.md)
  - [Coin](docs/Coin.md)
  - [ConstantsResponse](docs/ConstantsResponse.md)
+ - [ContractInfo](docs/ContractInfo.md)
+ - [ContractInfoResponse](docs/ContractInfoResponse.md)
+ - [ContractInfosResponse](docs/ContractInfosResponse.md)
  - [DerivedPool](docs/DerivedPool.md)
  - [InboundAddress](docs/InboundAddress.md)
  - [InboundConfirmationCountedStage](docs/InboundConfirmationCountedStage.md)
@@ -205,6 +212,7 @@ Class | Method | HTTP request | Description
  - [LimitSwapsSummaryResponse](docs/LimitSwapsSummaryResponse.md)
  - [LiquidityProvider](docs/LiquidityProvider.md)
  - [LiquidityProviderSummary](docs/LiquidityProviderSummary.md)
+ - [LockedSupply](docs/LockedSupply.md)
  - [MetricsResponse](docs/MetricsResponse.md)
  - [MimirNodesResponse](docs/MimirNodesResponse.md)
  - [MimirVote](docs/MimirVote.md)
@@ -246,6 +254,7 @@ Class | Method | HTTP request | Description
  - [SecuredAssetResponse](docs/SecuredAssetResponse.md)
  - [StreamingStatus](docs/StreamingStatus.md)
  - [StreamingSwap](docs/StreamingSwap.md)
+ - [SupplyResponse](docs/SupplyResponse.md)
  - [SwapDetailsResponse](docs/SwapDetailsResponse.md)
  - [SwapFinalisedStage](docs/SwapFinalisedStage.md)
  - [SwapState](docs/SwapState.md)

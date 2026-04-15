@@ -103,6 +103,9 @@ const (
 	Query_ReferenceMemo_FullMethodName          = "/types.Query/ReferenceMemo"
 	Query_ReferenceMemoByHash_FullMethodName    = "/types.Query/ReferenceMemoByHash"
 	Query_ReferenceMemoPreflight_FullMethodName = "/types.Query/ReferenceMemoPreflight"
+	Query_Supply_FullMethodName                 = "/types.Query/Supply"
+	Query_ContractInfos_FullMethodName          = "/types.Query/ContractInfos"
+	Query_ContractInfo_FullMethodName           = "/types.Query/ContractInfo"
 )
 
 // QueryClient is the client API for Query service.
@@ -202,6 +205,9 @@ type QueryClient interface {
 	ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(ctx context.Context, in *QueryReferenceMemoPreflightRequest, opts ...grpc.CallOption) (*QueryReferenceMemoPreflightResponse, error)
+	Supply(ctx context.Context, in *QuerySupplyRequest, opts ...grpc.CallOption) (*QuerySupplyResponse, error)
+	ContractInfos(ctx context.Context, in *QueryContractInfosRequest, opts ...grpc.CallOption) (*QueryContractInfosResponse, error)
+	ContractInfo(ctx context.Context, in *QueryContractInfoRequest, opts ...grpc.CallOption) (*QueryContractInfoResponse, error)
 }
 
 type queryClient struct {
@@ -968,6 +974,33 @@ func (c *queryClient) ReferenceMemoPreflight(ctx context.Context, in *QueryRefer
 	return out, nil
 }
 
+func (c *queryClient) Supply(ctx context.Context, in *QuerySupplyRequest, opts ...grpc.CallOption) (*QuerySupplyResponse, error) {
+	out := new(QuerySupplyResponse)
+	err := c.cc.Invoke(ctx, Query_Supply_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ContractInfos(ctx context.Context, in *QueryContractInfosRequest, opts ...grpc.CallOption) (*QueryContractInfosResponse, error) {
+	out := new(QueryContractInfosResponse)
+	err := c.cc.Invoke(ctx, Query_ContractInfos_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ContractInfo(ctx context.Context, in *QueryContractInfoRequest, opts ...grpc.CallOption) (*QueryContractInfoResponse, error) {
+	out := new(QueryContractInfoResponse)
+	err := c.cc.Invoke(ctx, Query_ContractInfo_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -1065,6 +1098,9 @@ type QueryServer interface {
 	ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error)
+	Supply(context.Context, *QuerySupplyRequest) (*QuerySupplyResponse, error)
+	ContractInfos(context.Context, *QueryContractInfosRequest) (*QueryContractInfosResponse, error)
+	ContractInfo(context.Context, *QueryContractInfoRequest) (*QueryContractInfoResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1323,6 +1359,15 @@ func (UnimplementedQueryServer) ReferenceMemoByHash(context.Context, *QueryRefer
 }
 func (UnimplementedQueryServer) ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemoPreflight not implemented")
+}
+func (UnimplementedQueryServer) Supply(context.Context, *QuerySupplyRequest) (*QuerySupplyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Supply not implemented")
+}
+func (UnimplementedQueryServer) ContractInfos(context.Context, *QueryContractInfosRequest) (*QueryContractInfosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContractInfos not implemented")
+}
+func (UnimplementedQueryServer) ContractInfo(context.Context, *QueryContractInfoRequest) (*QueryContractInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContractInfo not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2849,6 +2894,60 @@ func _Query_ReferenceMemoPreflight_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_Supply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuerySupplyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Supply(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_Supply_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Supply(ctx, req.(*QuerySupplyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ContractInfos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryContractInfosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ContractInfos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ContractInfos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ContractInfos(ctx, req.(*QueryContractInfosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ContractInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryContractInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ContractInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ContractInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ContractInfo(ctx, req.(*QueryContractInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3191,6 +3290,18 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReferenceMemoPreflight",
 			Handler:    _Query_ReferenceMemoPreflight_Handler,
+		},
+		{
+			MethodName: "Supply",
+			Handler:    _Query_Supply_Handler,
+		},
+		{
+			MethodName: "ContractInfos",
+			Handler:    _Query_ContractInfos_Handler,
+		},
+		{
+			MethodName: "ContractInfo",
+			Handler:    _Query_ContractInfo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

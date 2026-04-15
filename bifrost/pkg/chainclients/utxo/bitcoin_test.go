@@ -88,6 +88,7 @@ func init() {
 	btcChainRPCs["getrawtransaction-27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241"] = loadFixture("../../../../test/fixtures/btc/tx-c241.json")
 	btcChainRPCs["getrawtransaction"] = loadFixture("../../../../test/fixtures/btc/tx.json")
 	btcChainRPCs["createwallet"] = loadFixture("../../../../test/fixtures/btc/createwallet.json")
+	btcChainRPCs["sendrawtransaction"] = loadFixture("../../../../test/fixtures/btc/sendrawtransaction.json")
 }
 
 func (s *BitcoinSuite) SetUpTest(c *C) {
@@ -244,6 +245,24 @@ func (s *BitcoinSuite) TestFetchTxs(c *C) {
 	c.Assert(txs.TxArray[0].Coins.EqualsEx(common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10000000))}), Equals, true)
 	c.Assert(txs.TxArray[0].Gas.Equals(common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(22705334))}), Equals, true)
 	c.Assert(len(txs.TxArray), Equals, 1)
+}
+
+func (s *BitcoinSuite) TestExtractTxsDoesNotToggleObservedTxCache(c *C) {
+	block, err := s.client.getBlock(0)
+	c.Assert(err, IsNil)
+
+	firstScan, err := s.client.extractTxs(block)
+	c.Assert(err, IsNil)
+	c.Assert(firstScan.TxArray, HasLen, 1)
+	c.Assert(firstScan.TxArray[0].Tx, Equals, "24ed2d26fd5d4e0e8fa86633e40faf1bdfc8d1903b1cd02855286312d48818a2")
+
+	secondScan, err := s.client.extractTxs(block)
+	c.Assert(err, IsNil)
+	c.Assert(secondScan.TxArray, HasLen, 0)
+
+	thirdScan, err := s.client.extractTxs(block)
+	c.Assert(err, IsNil)
+	c.Assert(thirdScan.TxArray, HasLen, 0)
 }
 
 func (s *BitcoinSuite) TestGetSender(c *C) {

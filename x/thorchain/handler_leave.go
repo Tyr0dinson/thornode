@@ -96,10 +96,6 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 	}
 	// THORNode add the node to leave queue
 
-	coin := msg.Tx.Coins.GetCoin(common.RuneAsset())
-	if !coin.IsEmpty() {
-		nodeAcc.Bond = nodeAcc.Bond.Add(coin.Amount)
-	}
 	bondAddr, err := nodeAcc.BondAddress.AccAddress()
 	if err != nil {
 		return ErrInternal(err, "fail to refund bond")
@@ -110,8 +106,10 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 			// get to the 8th decimal point, but keep numbers integers for safer math
 			age := cosmos.NewUint(uint64((ctx.BlockHeight() - nodeAcc.StatusSince) * common.One))
 			slashPts, err := h.mgr.Keeper().GetNodeAccountSlashPoints(ctx, nodeAcc.NodeAddress)
-			if err != nil || slashPts == 0 {
-				ctx.Logger().Error("fail to get node account slash points", "error", err)
+			if err != nil {
+				return ErrInternal(err, "fail to get node account slash points")
+			}
+			if slashPts == 0 {
 				nodeAcc.LeaveScore = age.Uint64()
 			} else {
 				nodeAcc.LeaveScore = age.QuoUint64(uint64(slashPts)).Uint64()

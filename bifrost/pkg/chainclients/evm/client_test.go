@@ -276,6 +276,21 @@ func (s *EVMSuite) TearDownTest(c *C) {
 	}
 }
 
+func (s *EVMSuite) TestSolvencyRunnerBackoff(c *C) {
+	client := &EVMClient{
+		cfg: config.BifrostChainConfiguration{
+			ChainID: common.AVAXChain,
+		},
+	}
+
+	c.Assert(client.solvencyRunnerBackoff(), Equals, time.Duration(common.AVAXChain.ApproximateBlockMilliseconds())*time.Millisecond)
+
+	// ETH is above THORChain block time in both mocknet and non-mocknet builds,
+	// so this consistently exercises the fallback path.
+	client.cfg.ChainID = common.ETHChain
+	c.Assert(client.solvencyRunnerBackoff(), Equals, constants.ThorchainBlockTime)
+}
+
 func (s *EVMSuite) TestNewClient(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
@@ -525,7 +540,7 @@ func (s *EVMSuite) TestGetAccount(c *C) {
 	acct, err := e.GetAccountByAddress("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da", nil)
 	c.Assert(err, IsNil)
 	c.Assert(acct.Sequence, Equals, int64(0))
-	b, err := e.GetBalance("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da", "0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d", nil)
+	b, err := e.GetBalance("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da", "0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d", nil, "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25")
 	c.Assert(err, IsNil)
 	c.Assert(b, NotNil)
 }
@@ -988,7 +1003,9 @@ func (s *EVMSuite) TestSignTxWithAllowanceFlow(c *C) {
 		"EVMAllowanceCheck-AVAX": "1",
 	}
 
-	// Test SignTx with token asset and enabled mimir (triggers approval + sign flow)
+	// Test SignTx with token asset and enabled mimir (triggers approval + sign flow).
+	// After broadcasting the approval, SignTx waits for it to be mined then proceeds
+	// to build and sign the outbound.
 	result, checkpoint, obs, err = e.SignTx(stypes.TxOutItem{
 		Chain:       common.AVAXChain,
 		ToAddress:   addr,

@@ -4,12 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blang/semver"
-
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-// NoOpHandler is to handle donate message
+// NoOpHandler is to handle no-op messages (e.g. vault balance adjustments)
 type NoOpHandler struct {
 	mgr Manager
 }
@@ -21,7 +19,7 @@ func NewNoOpHandler(mgr Manager) NoOpHandler {
 	}
 }
 
-// Run is the main entry point to execute donate logic
+// Run is the main entry point to execute no-op logic
 func (h NoOpHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
 	msg, ok := m.(*MsgNoOp)
 	if !ok {
@@ -41,31 +39,11 @@ func (h NoOpHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 }
 
 func (h NoOpHandler) validate(ctx cosmos.Context, msg MsgNoOp) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
+	return msg.ValidateBasic()
 }
 
-func (h NoOpHandler) validateV3_0_0(ctx cosmos.Context, msg MsgNoOp) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
-
-	// Verify that the signer is an active node account with observation privileges.
-	// This is critical for the "novault" action which modifies vault balances.
-	if !isSignedByActiveNodeAccounts(ctx, h.mgr.Keeper(), msg.GetSigners()) {
-		return cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", msg.GetSigners()))
-	}
-
-	return nil
-}
-
-// handle process MsgNoOp, MsgNoOp add asset and RUNE to the asset pool
-// it simply increase the pool asset/RUNE balance but without taking any of the pool units
+// handle process MsgNoOp
+// For "novault" action, it subtracts coins from the vault balance (e.g. to correct for already-observed funds)
 func (h NoOpHandler) handle(ctx cosmos.Context, msg MsgNoOp) error {
 	action := msg.GetAction()
 	if len(action) == 0 {

@@ -127,6 +127,7 @@ const (
 	TradeAccountsEnabled
 	TradeAccountsDepositEnabled
 	SecuredAssetSlipMinBps
+	StableSlipMinBps
 	EVMDisableContractWhitelist
 	OperationalVotesMin
 	RUNEPoolEnabled
@@ -162,10 +163,12 @@ const (
 	ReserveMaxCap
 	MarketingFundSystemIncomeBps
 	MarketingFundAddress
-	OverSolvencyToReserveBps
+	OverSolvencyToTreasuryBps
 	OverSolvencyCheckInterval
+	OverSolvencyAddress
 	MaxDepositTxIDRetries
 	MaxRetiredVaultRecoveryAttempts
+	ModifyLimitSwapMaxIterations
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
@@ -184,6 +187,7 @@ const (
 	MemolessTxnMaxUse
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
+	P2PGateDisabled
 )
 
 // ConstantValues define methods used to get constant values

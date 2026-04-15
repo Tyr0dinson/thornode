@@ -48,7 +48,8 @@ func NewTxID(hash string) (TxID, error) {
 			return TxID(""), err
 		}
 	case 87, 88:
-		// SOL transaction hash, do nothing
+		// SOL transaction hash, base58 is case-sensitive so do not uppercase
+		return TxID(hash), nil
 	default:
 		err := fmt.Errorf("txid error: must be 64 characters (got %d)", len(hash))
 		return TxID(""), err
@@ -175,6 +176,31 @@ func (tx Tx) EqualsEx(tx2 Tx) bool {
 		return false
 	}
 	if !tx.Gas.Equals(tx2.Gas) {
+		return false
+	}
+	if !strings.EqualFold(tx.Memo, tx2.Memo) {
+		return false
+	}
+	return true
+}
+
+// EqualsExIgnoreGas compare two Tx to see whether they represent the same Tx,
+// ignoring gas differences. Used for matching re-observations after reorg where
+// gas may differ due to changed block conditions (different base fees or tips).
+func (tx Tx) EqualsExIgnoreGas(tx2 Tx) bool {
+	if !tx.ID.Equals(tx2.ID) {
+		return false
+	}
+	if !tx.Chain.Equals(tx2.Chain) {
+		return false
+	}
+	if !tx.FromAddress.Equals(tx2.FromAddress) {
+		return false
+	}
+	if !tx.ToAddress.Equals(tx2.ToAddress) {
+		return false
+	}
+	if !tx.Coins.EqualsEx(tx2.Coins) {
 		return false
 	}
 	if !strings.EqualFold(tx.Memo, tx2.Memo) {

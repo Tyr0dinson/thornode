@@ -14,6 +14,9 @@ func (k KVStore) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool {
 	checkAssets := []common.Asset{}
 	switch m := msg.(type) {
 	case *MsgSwap:
+		if len(m.Tx.Coins) == 0 {
+			return k.IsGlobalTradingHalted(ctx)
+		}
 		// regardless ragnarok, synth to equivalent layer1 asset is allowed
 		source := m.Tx.Coins[0].Asset
 		if !(source.IsSyntheticAsset() && m.TargetAsset.Equals(source.GetLayer1Asset())) {
@@ -31,8 +34,9 @@ func (k KVStore) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool {
 	switch m := msg.(type) {
 	case *MsgSwap:
 		source := common.EmptyChain
-		sourceAsset := m.Tx.Coins[0].Asset
+		sourceAsset := common.EmptyAsset
 		if len(m.Tx.Coins) > 0 {
+			sourceAsset = m.Tx.Coins[0].Asset
 			source = m.Tx.Coins[0].Asset.GetLayer1Asset().Chain
 		}
 		target := m.TargetAsset.GetLayer1Asset().Chain
@@ -55,8 +59,11 @@ func (k KVStore) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool {
 }
 
 func (k KVStore) IsGlobalTradingHalted(ctx cosmos.Context) bool {
+	if k.RagnarokInProgress(ctx) {
+		return true
+	}
 	haltTrading, err := k.GetMimir(ctx, constants.MimirKeyHaltTradingGlobal)
-	if err == nil && ((haltTrading > 0 && haltTrading <= ctx.BlockHeight()) || k.RagnarokInProgress(ctx)) {
+	if err == nil && haltTrading > 0 && haltTrading <= ctx.BlockHeight() {
 		return true
 	}
 	return false
@@ -130,7 +137,7 @@ func (k KVStore) IsPoolDepositPaused(ctx cosmos.Context, asset common.Asset) boo
 
 func (k KVStore) IsTCYTradingHalted(ctx cosmos.Context) bool {
 	haltTCYTrading, err := k.GetMimir(ctx, "HaltTCYTrading")
-	if err == nil && (haltTCYTrading > 0 && haltTCYTrading < ctx.BlockHeight()) {
+	if err == nil && (haltTCYTrading > 0 && haltTCYTrading <= ctx.BlockHeight()) {
 		ctx.Logger().Debug("TCY trading is halt")
 		return true
 	}

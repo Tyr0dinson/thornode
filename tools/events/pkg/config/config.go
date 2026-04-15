@@ -86,7 +86,7 @@ type Config struct {
 
 	// Links contain URLs to services linked in alerts.
 	Links struct {
-		// Track is the Nine Realms Tracker service.
+		// Track is the THORChain Tracker service (https://gitlab.com/thorchain/track).
 		Track string `mapstructure:"track"`
 
 		// Explorer is the native Thorchain explorer, should support:
@@ -134,6 +134,18 @@ type Config struct {
 		// an alert. This avoids ongoing noise from known stuck outbounds.
 		MaxRescheduledAge time.Duration `mapstructure:"max_rescheduled_age"`
 	} `mapstructure:"thresholds"`
+
+	// RateLimits contain alert rate limits.
+	RateLimits struct {
+		// FailedTransactions limits the rate of failed transaction alerts.
+		FailedTransactions struct {
+			// Burst is the maximum number of alerts allowed in a burst.
+			Burst int `mapstructure:"burst"`
+
+			// Interval is the minimum time between alerts (after burst is exhausted).
+			Interval time.Duration `mapstructure:"interval"`
+		} `mapstructure:"failed_transactions"`
+	} `mapstructure:"rate_limits"`
 
 	// Styles contain various styling for alerts.
 	Styles struct {
@@ -183,8 +195,8 @@ func init() {
 
 	// endpoints
 	config.Endpoints.CacheSize = 100
-	config.Endpoints.Thornode = "https://thornode.ninerealms.com"
-	config.Endpoints.Midgard = "https://midgard.ninerealms.com"
+	config.Endpoints.Thornode = "https://gateway.liquify.com/chain/thorchain_api"
+	config.Endpoints.Midgard = "https://gateway.liquify.com/chain/thorchain_midgard"
 
 	// notifications
 	config.Notifications.Activity.Category = "Activity"
@@ -201,9 +213,9 @@ func init() {
 	config.Network = "mainnet"
 
 	// links
-	config.Links.Track = "https://track.ninerealms.com"
+	config.Links.Track = "https://track.thorchain.org"
 	config.Links.Explorer = "https://runescan.io"
-	config.Links.Thornode = "https://thornode.ninerealms.com"
+	config.Links.Thornode = "https://gateway.liquify.com/chain/thorchain_api"
 
 	config.TORAnchorCheckBlocks = 300 // 30 minutes
 
@@ -216,6 +228,10 @@ func init() {
 	config.Thresholds.SwapSlipBasisPoints = 100
 	config.Thresholds.TORAnchorDriftBasisPoints = 500
 	config.Thresholds.MaxRescheduledAge = 3 * 24 * time.Hour
+
+	// rate limits
+	config.RateLimits.FailedTransactions.Burst = 10
+	config.RateLimits.FailedTransactions.Interval = time.Hour
 
 	// styles
 	config.Styles.USDPerMoneyBag = 100_000

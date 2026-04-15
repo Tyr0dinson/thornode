@@ -1,4 +1,4 @@
-image: golang:1.23.8
+image: golang:1.24.6
 
 workflow:
   rules:
@@ -14,18 +14,20 @@ variables:
   DOCKER_TLS_CERTDIR: /certs
   DOCKER_TLS_VERIFY: 1
   DOCKER_CERT_PATH: $DOCKER_TLS_CERTDIR/client
+  GOMODCACHE: /go-mod-cache
+  GOCACHE: /go-build-cache
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
 .use_dind: &use_dind
-  image: docker:27.5.0
+  image: docker:28.5.2
   services:
-    - docker:27.5.0-dind
+    - docker:28.5.2-dind
 
 stages:
   - .pre
   - fork
-  - generate
+  - protobuf
   - test
   - build
   - long-test
@@ -105,11 +107,20 @@ generate:
       when: never
     - if: $CI == "true"
       when: on_success
-  stage: generate
+  stage: protobuf
   <<: *use_dind
   before_script:
     - apk -U add bash curl findutils git go jq make protoc sed wget python3
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
+      fi
   script:
     - |
       export PATH="$PATH:/root/go/bin"
@@ -151,29 +162,41 @@ lint:
     - if: $CI == "true"
       when: on_success
   stage: test
+  # limit to 1 concurrent execution as shared trunk cache can cause internal error
+  resource_group: trunk-lint
+  variables:
+    XDG_CACHE_HOME: /trunk-cache
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends jq
   script:
     - make lint-ci
 
-check-formatting:
-  rules:
-    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
-      when: never
-    - if: $CI_COMMIT_BRANCH == "stagenet"
-      when: never
-    - if: $CI_COMMIT_BRANCH == "chainnet"
-      when: never
-    - if: $CI_COMMIT_BRANCH == "mainnet"
-      when: never
-    - if: $CI == "true"
-      when: on_success
-  stage: test
+proto-check-formatting:
+  rules: *rules
+  stage: protobuf
   <<: *use_dind
   before_script:
     - apk -U add findutils make
   script:
     - make proto-format-check
+
+proto-lint:
+  rules: *rules
+  stage: protobuf
+  <<: *use_dind
+  before_script:
+    - apk -U add make
+  script:
+    - make proto-lint
+
+proto-check-breaking:
+  rules: *rules
+  stage: protobuf
+  <<: *use_dind
+  before_script:
+    - apk -U add git make
+  script:
+    - make proto-check-breaking
 
 build-thornode:
   rules: &build-thornode-rules
@@ -200,36 +223,35 @@ build-thornode:
       done
     - apk -U add make git jq curl protoc
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
+      fi
     - make docker-gitlab-login
   script:
     - make docker-gitlab-build
     - make docker-gitlab-push
     # also push mocknet from develop
-    - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-build
-    - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-push
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "develop" ]; then
+        BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-build
+        BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-push
+      fi
 
-chain-avalanche:
+chain-evm:
   rules:
     - changes:
         paths:
-          - chain/avalanche/**/*
+          - chain/evm/**/*
   stage: test
-  image: node:16
+  image: node:18
   script:
-    - cd chain/avalanche/
-    - yarn install --non-interactive
-    - yarn hardhat compile
-    - yarn hardhat test
-
-chain-ethereum:
-  rules:
-    - changes:
-        paths:
-          - chain/ethereum/**/*
-  stage: test
-  image: node:16
-  script:
-    - cd chain/ethereum/
+    - cd chain/evm/
     - yarn install --non-interactive
     - yarn hardhat test
 
@@ -239,10 +261,6 @@ go-tss:
         paths:
           - bifrost/tss/go-tss/**/*
   stage: test
-  <<: *use_dind
-  before_script:
-    - apk -U add make git bash go
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
   script:
     - make test-go-tss
 
@@ -300,8 +318,17 @@ test-simulation:
   environment:
     name: integration
   before_script:
-    - apk -U add git make protoc bash
+    - apk -U add git make protoc bash go
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
+      fi
     - |
       PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
       mkdir -p $(dirname $PLUGIN)
@@ -342,8 +369,25 @@ test-regression:
   before_script:
     - apk -U add make git bash
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.24.6" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.24.6; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
+      fi
   script:
     - make test-regression
+    - |
+      CHANGES=$(git status --porcelain test/regression/mnt/exports/ test/regression/mnt/blocks/)
+      if [ -n "$CHANGES" ]; then
+        echo "Detected uncommitted regression test exports or blocks:"
+        echo "$CHANGES"
+        echo "Please run 'make test-regression' locally and commit the changes."
+        exit 1
+      fi
 
 include:
   - template: Security/SAST.gitlab-ci.yml

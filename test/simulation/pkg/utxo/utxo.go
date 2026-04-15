@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
@@ -81,7 +82,7 @@ func NewConstructor(host string) LiteChainClientConstructor {
 func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChainClient, error) {
 	// create rpc client
 	retries := 5
-	rpc, err := rpc.NewClient(host, "thorchain", "password", retries, zerolog.Nop(), chain)
+	rpc, err := rpc.NewClient(host, "thorchain", "password", retries, time.Second, chain, zerolog.Nop())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc client: %w", err)
 	}
@@ -418,7 +419,7 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 
 	for _, item := range utxos {
 		if c.chain.Equals(common.ZECChain) {
-			key := fmt.Sprintf("%s:%d", item.TxID, item.Vout)
+			key := fmt.Sprintf("%s-%d", item.TxID, item.Vout)
 
 			_, found := c.spentUtxos[key]
 			if found {

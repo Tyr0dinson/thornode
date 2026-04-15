@@ -41,7 +41,7 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	height := ctx.BlockHeight()
 	if height == genesisBlockHeight {
 		if err := vm.setupValidatorNodes(ctx, height); err != nil {
-			ctx.Logger().Error("fail to setup validator nodes", "error", err)
+			return fmt.Errorf("fail to setup validator nodes: %w", err)
 		}
 	}
 	if vm.k.RagnarokInProgress(ctx) {
@@ -52,9 +52,9 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	lastChurnHeight := getLastChurnHeight(ctx, vm.k)
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
 	churnRetryInterval := vm.k.GetConfigInt64(ctx, constants.ChurnRetryInterval)
-	// Only compute retry tick if the interval is valid
+	// Only compute retry tick if the interval is valid and past the scheduled churn height
 	onChurnTick := false
-	if churnRetryInterval > 0 {
+	if churnRetryInterval > 0 && ctx.BlockHeight() > lastChurnHeight+churnInterval {
 		onChurnTick = (ctx.BlockHeight()-lastChurnHeight-churnInterval)%churnRetryInterval == 0
 	}
 	// Allow regular churns to proceed regardless of churnRetryInterval
@@ -132,6 +132,15 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 }
 
 func (vm *ValidatorMgr) churn(ctx cosmos.Context) error {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := vm.churnInner(cacheCtx); err != nil {
+		return err
+	}
+	commit()
+	return nil
+}
+
+func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
 	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
 	redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
@@ -551,7 +560,7 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	nodeOperatorProvider := bp.Get(nodeOperatorAccAddr)
 	// Sanity check that the node operator is accounted for
 	if nodeOperatorProvider.IsEmpty() {
-		return ErrInternal(err, fmt.Sprintf("node operator address(%s) not listed in bond providers", na.BondAddress))
+		return ErrInternal(fmt.Errorf("node operator not found"), fmt.Sprintf("node operator address(%s) not listed in bond providers", na.BondAddress))
 	}
 	lastNodeOperatorProviderBond := nodeOperatorProvider.Bond
 
@@ -606,7 +615,7 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		coin := common.NewCoin(common.RuneNative, nodeOperatorFees)
 		sdkErr := vm.k.SendFromModuleToAccount(ctx, BondName, nodeOperatorAccAddr, common.NewCoins(coin))
 		if sdkErr != nil {
-			return errors.New(sdkErr.Error())
+			return fmt.Errorf("fail to send node operator fees: %w", sdkErr)
 		}
 
 		// TODO: Remove this NewAddress call entirely in the next version of this manager.
@@ -668,8 +677,7 @@ func (vm *ValidatorMgr) processRagnarok(ctx cosmos.Context, mgr Manager) error {
 		var txOutQueue int64
 		txOutQueue, err = vm.getPendingTxOut(ctx)
 		if err != nil {
-			ctx.Logger().Error("fail to get pending tx out item", "error", err)
-			return nil
+			return fmt.Errorf("fail to get pending tx out item: %w", err)
 		}
 		if txOutQueue > 0 {
 			ctx.Logger().Info("awaiting previous ragnarok transaction to clear before continuing", "nth", nth, "count", pending)
@@ -716,13 +724,13 @@ func (vm *ValidatorMgr) ragnarokProtocolStage2(ctx cosmos.Context, nth int64, mg
 
 	// refund bonders
 	if err := vm.ragnarokBond(ctx, nth, mgr); err != nil {
-		ctx.Logger().Error("fail to ragnarok bond", "error", err)
+		return fmt.Errorf("fail to ragnarok bond: %w", err)
 	}
 
 	// refund liquidity providers. This is last to ensure there is likely gas for the
 	// returning bond and reserve
 	if err := vm.ragnarokPools(ctx, nth, mgr); err != nil {
-		ctx.Logger().Error("fail to ragnarok pools", "error", err)
+		return fmt.Errorf("fail to ragnarok pools: %w", err)
 	}
 
 	return nil
@@ -739,9 +747,9 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 	// this estimate treats lastChurnHeight as the active_block_height of the youngest active node,
 	// rather than the block_height of the first (oldest) Asgard vault.
 	// As an example, note from the below URLs that these 5293733 and 5293728 respectively in block 5336942.
-	// https://thornode.ninerealms.com/thorchain/nodes?height=5336942
+	// https://gateway.liquify.com/chain/thorchain_api/thorchain/nodes?height=5336942
 	// (Nodes .cxmy and .uy3a .)
-	// https://thornode.ninerealms.com/thorchain/vaults/asgard?height=5336942
+	// https://gateway.liquify.com/chain/thorchain_api/thorchain/vaults/asgard?height=5336942
 	lastChurnHeight := int64(0)
 	for _, node := range active {
 		if node.ActiveBlockHeight > lastChurnHeight {
@@ -758,7 +766,7 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 
 	for _, item := range active {
 		if err := vm.payNodeAccountBondAward(ctx, lastChurnHeight, item, network.BondRewardRune, totalEffectiveBond, bondHardCap, mgr); err != nil {
-			resultErr = err
+			resultErr = errors.Join(resultErr, err)
 			ctx.Logger().Error("fail to pay node account bond award", "node address", item.NodeAddress.String(), "error", err)
 		}
 	}
@@ -893,6 +901,7 @@ func (vm *ValidatorMgr) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manager
 
 		j := int64(-1)
 		iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
+		defer iterator.Close()
 		for ; iterator.Valid(); iterator.Next() {
 			j++
 			if j == position.Number {
@@ -937,6 +946,7 @@ func (vm *ValidatorMgr) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manager
 					count++
 					pending, err := vm.k.GetRagnarokPending(ctx)
 					if err != nil {
+						vm.k.SetRagnarokWithdrawPosition(ctx, position)
 						return fmt.Errorf("fail to get ragnarok pending: %w", err)
 					}
 					vm.k.SetRagnarokPending(ctx, pending+1)
@@ -945,9 +955,6 @@ func (vm *ValidatorMgr) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manager
 					}
 				}
 			}
-		}
-		if err := iterator.Close(); err != nil {
-			ctx.Logger().Error("fail to close iterator", "error", err)
 		}
 		if count >= maxWithdrawsPerBlock {
 			break
@@ -1055,7 +1062,7 @@ func (vm *ValidatorMgr) findBadActors(ctx cosmos.Context, minSlashPointsForBadVa
 	for _, na := range nas {
 		slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 		if err != nil {
-			ctx.Logger().Error("fail to get node slash points", "error", err)
+			return badActors, fmt.Errorf("fail to get node slash points: %w", err)
 		}
 
 		if slashPts <= minSlashPointsForBadValidator {
@@ -1176,18 +1183,15 @@ func (vm *ValidatorMgr) findLowBondActor(ctx cosmos.Context) (NodeAccount, error
 		return na, err
 	}
 
-	if len(nas) > 0 {
-		bond := nas[0].Bond
-		na = nas[0]
-		for _, n := range nas {
-			// Only mark a low bond actor not already marked for churn-out.
-			if n.LeaveScore > 0 {
-				continue
-			}
-			if n.Bond.LT(bond) {
-				bond = n.Bond
-				na = n
-			}
+	first := true
+	for _, n := range nas {
+		// Only mark a low bond actor not already marked for churn-out.
+		if n.LeaveScore > 0 {
+			continue
+		}
+		if first || n.Bond.LT(na.Bond) {
+			na = n
+			first = false
 		}
 	}
 
@@ -1479,7 +1483,7 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 			rotation = true
 			active = append(active, ready[i-1])
 		}
-		if i == limit { // limit adding ready accounts
+		if i >= limit || i > len(ready) { // limit adding ready accounts
 			break
 		}
 	}

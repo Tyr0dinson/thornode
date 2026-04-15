@@ -25,7 +25,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/observer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -629,7 +628,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	start := time.Now()
 	defer func() {
-		s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain())).Observe(time.Since(start).Seconds())
+		if h := s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain())); h != nil {
+			h.Observe(time.Since(start).Seconds())
+		}
 	}()
 
 	if !tx.OutHash.IsEmpty() {
@@ -654,10 +655,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		}
 	}
 
-	// If this is a UTXO chain, lock the vault around sign and broadcast to avoid
-	// consolidate transactions from using the same UTXOs.
-	if utxoClient, ok := chain.(*utxo.Client); ok {
-		lock := utxoClient.GetVaultLock(tx.VaultPubKey.String())
+	// If this chain provides a vault lock, hold it across sign and broadcast to avoid
+	// concurrent UTXO selection or local double-spend on ambiguous broadcast errors.
+	if locker, ok := chain.(interface{ GetVaultLock(string) *sync.Mutex }); ok {
+		lock := locker.GetVaultLock(tx.VaultPubKey.String())
 		lock.Lock()
 		defer lock.Unlock()
 	}
@@ -679,6 +680,12 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 			return checkpoint, nil, err
 		}
 		elapse = time.Since(startKeySign)
+
+		// store immediately after a successful sign so the signed payload is saved even if broadcast crashes
+		item.SignedTx = signedTx
+		if storeErr := s.storage.Set(item); storeErr != nil {
+			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
+		}
 	}
 
 	// looks like the transaction is already signed

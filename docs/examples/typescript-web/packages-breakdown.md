@@ -39,9 +39,9 @@ const defaultMidgardConfig: Record<Network, MidgardConfig> = {
   mainnet: {
     apiRetries: 3,
     midgardBaseUrls: [
-      'https://midgard.ninerealms.com',
-      'https://midgard.ninerealms.com',
-      'https://midgard.thorswap.net',
+      'https://gateway.liquify.com/chain/thorchain_midgard',
+      'https://gateway.liquify.com/chain/thorchain_midgard',
+      'https://midgard.thorchain.network',
     ],
   },
   ...
@@ -85,9 +85,9 @@ const defaultThornodeConfig: Record<Network, ThornodeConfig> = {
   mainnet: {
     apiRetries: 3,
     thornodeBaseUrls: [
-      `https://thornode.ninerealms.com`,
-      `https://thornode.thorswap.net`,
-      `https://thornode.ninerealms.com/`,
+      `https://gateway.liquify.com/chain/thorchain_api`,
+      `https://thornode.thorchain.network`,
+      `https://gateway.liquify.com/chain/thorchain_api/`,
     ],
   },
   ...

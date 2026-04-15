@@ -230,6 +230,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
 	ctx = ctx.WithBlockHeight(18)
+	ctx = ctx.WithTxBytes([]byte("tx"))
 
 	encodingConfig := testutil.MakeTestEncodingConfig(
 		bank.AppModuleBasic{},
@@ -245,6 +246,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 			types.AsgardName:             {},
 			types.BondName:               {},
 			types.ReserveName:            {},
+			types.TreasuryName:           {},
 			types.LendingName:            {},
 			types.AffiliateCollectorName: {},
 			types.TCYStakeName:           {},

@@ -87,6 +87,9 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 		return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorized", msg.Signer))
 	}
 	cost := h.mgr.Keeper().GetNativeTxFee(ctx)
+	if cost.GT(nodeAccount.Bond) {
+		cost = nodeAccount.Bond
+	}
 	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cost)
 	if err = h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		ctx.Logger().Error("fail to save node account", "error", err)
@@ -160,7 +163,7 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	h.mgr.Keeper().SetMimir(ctx, msg.Key, effectiveValue)
 	mimirEvent := NewEventSetMimir(strings.ToUpper(msg.Key), strconv.FormatInt(effectiveValue, 10))
 	if err = h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
-		ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+		return fmt.Errorf("fail to emit set_mimir event: %w", err)
 	}
 
 	return nil

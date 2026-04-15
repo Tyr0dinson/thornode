@@ -250,7 +250,11 @@ func (gm *GasMgr) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.
 
 // GetGasRate return the gas rate
 func (gm *GasMgr) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
-	_, gasRate, _ := gm.GetGasDetails(ctx, chain)
+	_, gasRate, err := gm.GetGasDetails(ctx, chain)
+	if err != nil {
+		ctx.Logger().Error("fail to get gas rate", "chain", chain, "error", err)
+		return cosmos.ZeroUint()
+	}
 	return cosmos.NewUint(uint64(gasRate))
 }
 
@@ -259,9 +263,6 @@ func (gm *GasMgr) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.N
 	case common.THORChain:
 		transactionFee := gm.keeper.GetOutboundTxFee(ctx)
 		return types.NewNetworkFee(common.THORChain, 1, transactionFee.Uint64()), nil
-	case common.ZECChain:
-		// gas fee on Zcash is calculated by logical action, which is done when constructing the tx
-		return types.NewNetworkFee(common.ZECChain, 1, 20_000), nil
 	default:
 		return gm.keeper.GetNetworkFee(ctx, chain)
 	}

@@ -7,11 +7,11 @@ import (
 	"math/rand"
 	"regexp"
 	"sync"
+	stdatomic "sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"go.uber.org/atomic"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
@@ -63,7 +63,9 @@ type Client struct {
 	wg                    *sync.WaitGroup
 	signerLock            *sync.Mutex
 	vaultLocks            map[string]*sync.Mutex
-	consolidateInProgress *atomic.Bool
+	networkFeeLock        sync.Mutex
+	solvencyLock          sync.Mutex
+	consolidateInProgress stdatomic.Bool
 
 	// ---------- scanner ----------
 	blockScanner    *blockscanner.BlockScanner
@@ -74,22 +76,17 @@ type Client struct {
 	globalSolvencyQueue   chan<- types.Solvency
 	globalNetworkFeeQueue chan<- common.NetworkFee
 	stopchan              chan struct{}
-	currentBlockHeight    *atomic.Int64
+	currentBlockHeight    stdatomic.Int64
 
 	// ---------- thornode state ----------
-	bridge          thorclient.ThorchainBridge
-	asgardAddresses []common.Address
-	lastAsgard      time.Time
-
-	// TODO: The current block height uses an atomic int64, but the following values are
-	// accessed without a lock. Update everything to use atomic values and switch to the
-	// standard library sync/atomic package (recent versions include all necessary types).
+	bridge      thorclient.ThorchainBridge
+	asgardCache stdatomic.Pointer[utxo.AsgardCache]
 
 	// ---------- fees / solvency ----------
-	minRelayFeeSats         uint64
-	lastFeeRate             uint64
+	minRelayFeeSats         stdatomic.Uint64
+	lastFeeRate             stdatomic.Uint64
 	feeRateCache            []uint64
-	lastSolvencyCheckHeight int64
+	lastSolvencyCheckHeight stdatomic.Int64
 
 	// ---------- testing ----------
 	disableVinZeroBatch bool
@@ -123,7 +120,15 @@ func NewClient(
 	logger := log.Logger.With().Stringer("chain", cfg.ChainID).Logger()
 
 	// create rpc client
-	rpcClient, err := rpc.NewClient(cfg.RPCHost, cfg.UserName, cfg.Password, cfg.MaxRPCRetries, logger, cfg.ChainID)
+	rpcClient, err := rpc.NewClient(
+		cfg.RPCHost,
+		cfg.UserName,
+		cfg.Password,
+		cfg.MaxRPCRetries,
+		cfg.BlockScanner.HTTPRequestTimeout,
+		cfg.ChainID,
+		logger,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc client: %w", err)
 	}
@@ -155,9 +160,7 @@ func NewClient(
 		wg:                        &sync.WaitGroup{},
 		signerLock:                &sync.Mutex{},
 		vaultLocks:                make(map[string]*sync.Mutex),
-		consolidateInProgress:     atomic.NewBool(false),
 		stopchan:                  make(chan struct{}),
-		currentBlockHeight:        atomic.NewInt64(0),
 		bridge:                    bridge,
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
 	}
@@ -221,7 +224,11 @@ func (c *Client) GetHeight() (int64, error) {
 
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (c *Client) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return c.cfg.UTXO.EstimatedAverageTxSize, c.lastFeeRate
+	transactionSize = c.cfg.UTXO.EstimatedAverageTxSize
+	if c.GetChain() == common.ZECChain {
+		transactionSize = 1
+	}
+	return transactionSize, c.lastFeeRate.Load()
 }
 
 // GetBlockScannerHeight returns blockscanner height
@@ -507,9 +514,8 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	}
 
 	// consolidate UTXOs if there is not one in progress
-	if !c.consolidateInProgress.Load() {
+	if c.consolidateInProgress.CompareAndSwap(false, true) {
 		c.wg.Add(1)
-		c.consolidateInProgress.Store(true)
 		go c.consolidateUTXOs()
 	}
 
@@ -698,7 +704,12 @@ func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 
 // ShouldReportSolvency returns true if solvency should be reported at the given height.
 func (c *Client) ShouldReportSolvency(height int64) bool {
-	if height-c.lastSolvencyCheckHeight <= 1 {
+	return c.shouldReportSolvency(height)
+}
+
+func (c *Client) shouldReportSolvency(height int64) bool {
+	lastHeight := c.lastSolvencyCheckHeight.Load()
+	if height-lastHeight <= 1 {
 		return false
 	}
 
@@ -708,7 +719,7 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 	case common.BCHChain, common.BTCChain:
 		return true
 	case common.LTCChain:
-		return height-c.lastSolvencyCheckHeight > 5 && height%5 == 0
+		return height-lastHeight > 5 && height%5 == 0
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 		return false
@@ -717,7 +728,10 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 
 // ReportSolvency reports solvency for all asgard vaults.
 func (c *Client) ReportSolvency(height int64) error {
-	if !c.ShouldReportSolvency(height) {
+	c.solvencyLock.Lock()
+	defer c.solvencyLock.Unlock()
+
+	if !c.shouldReportSolvency(height) {
 		return nil
 	}
 
@@ -727,7 +741,11 @@ func (c *Client) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
-	currentGasFee := cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate)
+	txSize := c.cfg.UTXO.EstimatedAverageTxSize
+	if c.GetChain() == common.ZECChain {
+		txSize = 1 // ZEC lastFeeRate is already the full ZIP-317 fee, not a per-byte rate
+	}
+	currentGasFee := cosmos.NewUint(3 * txSize * c.lastFeeRate.Load())
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -748,7 +766,7 @@ func (c *Client) ReportSolvency(height int64) error {
 			Coins:  acct.Coins,
 		}
 
-		if runners.IsVaultSolvent(acct, asgardVaults[i], currentGasFee) {
+		if runners.IsVaultSolvent(c.cfg.ChainID, acct, asgardVaults[i], currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}
@@ -782,6 +800,6 @@ func (c *Client) ReportSolvency(height int64) error {
 		}
 	}
 
-	c.lastSolvencyCheckHeight = height
+	c.lastSolvencyCheckHeight.Store(height)
 	return nil
 }

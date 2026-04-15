@@ -34,18 +34,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
-// THORNode define version / revision here , so THORNode could inject the version from CI pipeline if THORNode want to
-var (
-	version  string
-	revision string
-)
-
 const (
 	serverIdentity = "bifrost"
 )
 
 func printVersion() {
-	fmt.Printf("%s v%s, rev %s\n", serverIdentity, version, revision)
+	fmt.Printf("%s v%s, rev %s\n", serverIdentity, constants.Version, constants.GitCommit)
 }
 
 func main() {
@@ -139,10 +133,12 @@ func main() {
 			Msg("keysign timeout must be shorter than jail time")
 	}
 
-	comm, stateManager, err := p2p.StartP2P(
+	// Start P2P with bonded node gating enabled
+	comm, stateManager, err := p2p.StartP2PWithBridge(
 		cfg.TSS,
 		tmPrivateKey,
 		app.DefaultNodeHome,
+		thorchainBridge,
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to start p2p")

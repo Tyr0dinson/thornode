@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -47,6 +47,7 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 	maxGasCache := make(map[common.Chain]common.Coin)
 	gasRateCache := make(map[common.Chain]int64)
+	gasDetailsFailed := make(map[common.Chain]bool)
 
 	for i, tx := range txOut.TxArray {
 		voter, err := tos.keeper.GetObservedTxInVoter(ctx, tx.InHash)
@@ -66,26 +67,38 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		gasRate, okGasRate := gasRateCache[tx.Chain]
 		// update cache if needed
 		if !okMaxGas || !okGasRate {
-			maxGasCoin, gasRate, _ = mgr.GasMgr().GetGasDetails(ctx, tx.Chain)
+			if gasDetailsFailed[tx.Chain] {
+				continue
+			}
+			var err error
+			maxGasCoin, gasRate, err = mgr.GasMgr().GetGasDetails(ctx, tx.Chain)
+			if err != nil {
+				ctx.Logger().Error("fail to get gas details", "chain", tx.Chain, "error", err)
+				gasDetailsFailed[tx.Chain] = true
+				continue
+			}
 			maxGasCache[tx.Chain] = maxGasCoin
 			gasRateCache[tx.Chain] = gasRate
 		}
 
 		if len(tx.MaxGas) == 0 || (!maxGasCoin.IsEmpty() && !maxGasCoin.Amount.Equal(tx.MaxGas[0].Amount)) {
-			txOut.TxArray[i].MaxGas = common.Gas{maxGasCoin}
-			// Update MaxGas in ObservedTxVoter action as well
-			err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGasCoin})
-			if err != nil {
+			// Update MaxGas in ObservedTxVoter action first; only update txOut if voter update succeeds
+			// to maintain consistency between the txOut item and the voter action.
+			if err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGasCoin}); err != nil {
 				ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
+			} else {
+				txOut.TxArray[i].MaxGas = common.Gas{maxGasCoin}
 			}
 		}
 		if gasRate > 0 && txOut.TxArray[i].GasRate != gasRate {
 			// Equals checks GasRate so update actions GasRate too (before updating in the queue item)
 			// for future updates of MaxGas, which must match for matchActionItem in AddOutTx.
+			// Only update txOut GasRate if voter update succeeds to prevent permanent desync.
 			if err := updateTxOutGasRate(ctx, tos.keeper, tx, gasRate); err != nil {
 				ctx.Logger().Error("Failed to update GasRate of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
+			} else {
+				txOut.TxArray[i].GasRate = gasRate
 			}
-			txOut.TxArray[i].GasRate = gasRate
 		}
 	}
 
@@ -284,7 +297,16 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 		}
 
 		var targetHeight int64
-		targetHeight, cloutApplied, err = tos.CalcTxOutHeight(ctx, mgr.GetVersion(), outputs[0])
+		// Build a synthetic TxOutItem representing the whole batch so
+		// CalcTxOutHeight sees the total Coin and MaxGas values.
+		scheduled := outputs[0]
+		scheduled.Coin.Amount = cosmos.ZeroUint()
+		scheduled.MaxGas = common.Gas{}
+		for _, output := range outputs {
+			scheduled.Coin.Amount = scheduled.Coin.Amount.Add(output.Coin.Amount)
+			scheduled.MaxGas = scheduled.MaxGas.Add(output.MaxGas...)
+		}
+		targetHeight, cloutApplied, err = tos.CalcTxOutHeight(ctx, mgr.GetVersion(), scheduled)
 		if err != nil {
 			ctx.Logger().Error("failed to calc target block height for txout item", "error", err)
 		}
@@ -346,6 +368,25 @@ func (tos *TxOutStorage) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 	if toi.ToAddress.IsNoop() {
 		return nil
 	}
+
+	// EVM outbounds to the null address should be dropped and a security event emitted
+	if toi.Chain.IsEVM() && toi.ToAddress.Equals(common.EVMNullAddress) {
+		ctx.Logger().Error("evm outbound to null address in UnSafeAddTxOutItem", "txout", toi)
+		etx := common.Tx{
+			ID:        toi.InHash,
+			Chain:     toi.Chain,
+			ToAddress: toi.ToAddress,
+			Coins:     common.Coins{toi.Coin},
+			Gas:       toi.MaxGas,
+			Memo:      toi.Memo,
+		}
+		event := NewEventSecurity(etx, "evm outbound to null address in UnSafeAddTxOutItem")
+		if err := tos.eventMgr.EmitEvent(ctx, event); err != nil {
+			ctx.Logger().Error("failed to emit security event", "error", err)
+		}
+		return nil
+	}
+
 	// BCH chain will convert legacy address to new format automatically , thus when observe it back can't be associated with the original inbound
 	// so here convert the legacy address to new format
 	if toi.Chain.Equals(common.BCHChain) {
@@ -378,7 +419,6 @@ func (tos *TxOutStorage) selectFallbackVault(ctx cosmos.Context, toi TxOutItem, 
 			chains, err := common.NewChains(vault.Frozen)
 			if err != nil {
 				ctx.Logger().Error("failed to convert chains", "error", err)
-				continue
 			}
 			if chains.Has(toi.Chain) {
 				continue
@@ -390,6 +430,12 @@ func (tos *TxOutStorage) selectFallbackVault(ctx cosmos.Context, toi TxOutItem, 
 		originalVault, err := tos.keeper.GetVault(ctx, vault.PubKey)
 		if err != nil {
 			ctx.Logger().Error("failed to get vault from keeper", "error", err)
+			continue
+		}
+
+		// Skip if vault address matches ToAddress (prevent self-sends)
+		fromAddr, err := originalVault.GetAddress(toi.Chain)
+		if err != nil || fromAddr.IsEmpty() || toi.ToAddress.Equals(fromAddr) {
 			continue
 		}
 
@@ -458,9 +504,16 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 				}
 			}
 
+			estimate := toi.Coin.Amount.Quo(vault.GetCoin(toi.Coin.Asset).Amount)
+			var estimateU64 uint64
+			if estimate.BigInt().IsUint64() {
+				estimateU64 = estimate.Uint64()
+			} else {
+				estimateU64 = math.MaxUint64
+			}
 			vaultsNecessary = append(vaultsNecessary, VaultsNecessary{
 				Vault:    vault,
-				Estimate: toi.Coin.Amount.Quo(vault.GetCoin(toi.Coin.Asset).Amount).Uint64(),
+				Estimate: estimateU64,
 			})
 		}
 
@@ -513,6 +566,9 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 		case common.XRPAsset, common.TAOAsset, common.DOTAsset:
 			amount := toi.Coin.Asset.Chain.ExistentialDeposit()
 			vaultCoinAmount = common.SafeSub(vaultCoinAmount, amount)
+			if vaultCoinAmount.IsZero() {
+				continue
+			}
 		}
 
 		toi.VaultPubKey = vault.PubKey
@@ -665,7 +721,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			var activeAsgards Vaults
 			activeAsgards, err = tos.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 			if err != nil {
-				ctx.Logger().Error("fail to get active vaults", "error", err)
+				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get active vaults: %w", err)
 			}
 
 			// All else being equal, prefer lower-security vaults for outbounds.
@@ -681,7 +737,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			var retiringAsgards Vaults
 			retiringAsgards, err = tos.keeper.GetAsgardVaultsByStatus(ctx, RetiringVault)
 			if err != nil {
-				ctx.Logger().Error("fail to get retiring vaults", "error", err)
+				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get retiring vaults: %w", err)
 			}
 
 			// All else being equal, prefer lower-security vaults for outbounds.
@@ -1245,7 +1301,7 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 	}
 
 	if sdkErr != nil {
-		return errors.New(sdkErr.Error())
+		return sdkErr
 	}
 
 	from, err := tos.keeper.GetModuleAddress(toi.ModuleName)

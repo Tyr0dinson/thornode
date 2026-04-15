@@ -15,6 +15,7 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
+	wasm "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -120,19 +121,20 @@ func (qs queryServer) queryTHORName(ctx cosmos.Context, req *types.QueryThorname
 	if !name.PreferredAsset.IsEmpty() {
 		paOf, err := qs.mgr.gasMgr.GetAssetOutboundFee(ctx, name.PreferredAsset, true)
 		if err == nil {
-			multiplier := qs.mgr.Keeper().GetConfigInt64(ctx, constants.PreferredAssetOutboundFeeMultiplier)
+			multiplier := getEffectiveMultiplier(ctx, qs.mgr, name)
 			threshold = paOf.MulUint64(uint64(multiplier))
 		}
 	}
 
 	resp := types.QueryThornameResponse{
-		Name:                            name.Name,
-		ExpireBlockHeight:               name.ExpireBlockHeight,
-		Owner:                           name.Owner.String(),
-		PreferredAsset:                  name.PreferredAsset.String(),
-		Aliases:                         aliases,
-		AffiliateCollectorRune:          affRune.String(),
-		PreferredAssetSwapThresholdRune: threshold.String(),
+		Name:                                name.Name,
+		ExpireBlockHeight:                   name.ExpireBlockHeight,
+		Owner:                               name.Owner.String(),
+		PreferredAsset:                      name.PreferredAsset.String(),
+		Aliases:                             aliases,
+		AffiliateCollectorRune:              affRune.String(),
+		PreferredAssetSwapThresholdRune:     threshold.String(),
+		PreferredAssetOutboundFeeMultiplier: name.PreferredAssetOutboundFeeMultiplier,
 	}
 
 	return &resp, nil
@@ -247,13 +249,10 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddre
 
 // TODO: remove these vault pubkeys once we are done attempting recoveries from them
 var whitelistPubkeys = map[string]bool{
-	"thorpub1addwnpepqd3m3c05pyvgzgn2wnq083pdpq9pr7smv9l42j3tj2nc508dx8sqvsccz90": true,
-	"thorpub1addwnpepqvr35n5ks2zcp7ff5k4qv3m0xq36dn9gfjd2whja6s4h40wz5fy46pg532g": true,
-	"thorpub1addwnpepqdqdflk4cl2vt22xygvnsalq0s9yz25y0yuc5sgsmzsh4a2g6r6l5t6e4dt": true,
-	"thorpub1addwnpepqd6utq4k678z3f6nw02k0zfs6ew0nvjezuh0njuhyazhftq3sgj6yfmu6fl": true,
-	"thorpub1addwnpepqtw7shm9xdlwzutrz9yq5ywz2xyzczcs2u3jvezcx5f83vwhcc8vc0w7cxt": true,
-	"thorpub1addwnpepqw6wwm9kvwsd978pwkrj94ex88ch0vx6pm45wndzsnwenjfyrdqx2e0ry5n": true,
-	"thorpub1addwnpepq0rf954ne8ahjl0es3k32prvngy6tsye4cr8wdqsrmmdqcsvyzrujqexwxp": true,
+	"thorpub1addwnpepqdc348zt7v8pqrncxzf0gz47jz5jcey9tcfpvv7zlsj50qfgmw7nuj296rh": true,
+	"thorpub1addwnpepqwku796ak4ke2hj356m8yfq549m3fs96t57sukgg9we7u6tsqs6ajrsandz": true,
+	"thorpub1addwnpepqwm8e5jdyjkm43hlf9mkm38vqvhj8cf6l3y9a745cn076u223vvyzxlaz2u": true,
+	"thorpub1addwnpepqwht8xtersz90wsyu6fgx9tj5s3lx4w6q5adcm3mxzetgaa3rxv9sshhjmu": true,
 }
 
 func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVaultsPubkeysRequest) (*types.QueryVaultsPubkeysResponse, error) {
@@ -606,10 +605,18 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			return nil, fmt.Errorf("fail to get pubkey for chain: %w", err)
 		}
 
+		address := vaultAddress
+		if chain == common.ZECChain {
+			address, err = address.ToTexAddress()
+			if err != nil {
+				ctx.Logger().Error("fail convert address", "chain", chain.String(), "error", err)
+			}
+		}
+
 		addr := types.QueryInboundAddressResponse{
 			Chain:                chain.String(),
 			PubKey:               pubKey.String(),
-			Address:              vaultAddress.String(),
+			Address:              address.String(),
 			Router:               cc.Router.String(),
 			Halted:               isGlobalTradingPaused || isChainTradingPaused,
 			GlobalTradingPaused:  isGlobalTradingPaused,
@@ -1205,6 +1212,7 @@ func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) *types.Query
 		Quantity:          int64(streamingSwap.Quantity),
 		Count:             int64(streamingSwap.Count),
 		LastHeight:        streamingSwap.LastHeight,
+		InitialHeight:     msgSwap.InitialBlockHeight,
 		TradeTarget:       streamingSwap.TradeTarget.String(),
 		SourceAsset:       sourceAsset.String(),
 		TargetAsset:       msgSwap.TargetAsset.String(),
@@ -1240,6 +1248,7 @@ func newStreamingSwapFromAdvQueue(msgSwap MsgSwap) *types.QueryStreamingSwapResp
 		Quantity:          int64(msgSwap.State.Quantity),
 		Count:             int64(msgSwap.State.Count),
 		LastHeight:        msgSwap.State.LastHeight,
+		InitialHeight:     msgSwap.InitialBlockHeight,
 		TradeTarget:       msgSwap.TradeTarget.String(),
 		SourceAsset:       sourceAsset.String(),
 		TargetAsset:       msgSwap.TargetAsset.String(),
@@ -3718,4 +3727,89 @@ func (qs queryServer) queryEip712TypedData(_ cosmos.Context, req *types.QueryEip
 		return nil, fmt.Errorf("failed to marshal EIP-712 typed data: %w", err)
 	}
 	return &types.QueryEip712TypedDataResponse{TypedData: string(data)}, nil
+}
+
+// querySupply returns the RUNE supply breakdown.
+func (qs queryServer) querySupply(ctx cosmos.Context, req *types.QuerySupplyRequest) (*types.QuerySupplyResponse, error) {
+	keeper := qs.mgr.Keeper()
+
+	// total RUNE supply from bank module
+	runeSupply := keeper.GetTotalSupply(ctx, common.RuneAsset())
+
+	// reserve module balance (locked/non-circulating)
+	reserveBal := keeper.GetRuneBalanceOfModule(ctx, ReserveName)
+
+	// circulating = total - reserves
+	circulating := common.SafeSub(runeSupply, reserveBal)
+
+	const e8 = 1e8
+	return &types.QuerySupplyResponse{
+		Circulating: int64(circulating.Uint64() / e8),
+		Locked: &types.LockedSupply{
+			Reserve: int64(reserveBal.Uint64() / e8),
+		},
+		Total: int64(runeSupply.Uint64() / e8),
+	}, nil
+}
+
+func (qs queryServer) queryContractInfo(ctx cosmos.Context, req *types.QueryContractInfoRequest) (*types.QueryContractInfoResponse, error) {
+	address, err := cosmos.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	if qs.mgr.wasmKeeper.GetContractInfo(ctx, address) == nil {
+		return nil, fmt.Errorf("no wasm contract at address %s", req.Address)
+	}
+
+	data := qs.mgr.wasmKeeper.QueryRaw(ctx, address, []byte("contract_info"))
+	if len(data) == 0 {
+		return nil, fmt.Errorf("contract does not expose contract_info")
+	}
+
+	var info ContractInfo
+
+	err = json.Unmarshal(data, &info)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal contract info: %w", err)
+	}
+
+	info.Address = req.Address
+
+	return &types.QueryContractInfoResponse{Info: &info}, nil
+}
+
+func (qs queryServer) queryContractInfos(ctx cosmos.Context, req *types.QueryContractInfosRequest) (*types.QueryContractInfosResponse, error) {
+	var infos []*ContractInfo
+
+	qs.mgr.wasmKeeper.IterateContractInfo(ctx, func(address sdk.AccAddress, _ wasm.ContractInfo) bool {
+		data := qs.mgr.wasmKeeper.QueryRaw(ctx, address, []byte("contract_info"))
+		if len(data) == 0 {
+			return false
+		}
+
+		var info ContractInfo
+
+		err := json.Unmarshal(data, &info)
+		if err != nil {
+			log.Debug().Err(err).Msg("failed to unmarshal contract info")
+			return false
+		}
+
+		if !strings.HasPrefix(info.Contract, req.Contract) {
+			return false
+		}
+
+		if !strings.HasPrefix(info.Version, req.Version) {
+			return false
+		}
+
+		info.Address = address.String()
+
+		infos = append(infos, &info)
+
+		return false
+	})
+
+	return &types.QueryContractInfosResponse{Infos: infos}, nil
 }

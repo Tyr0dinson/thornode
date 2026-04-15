@@ -120,7 +120,9 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 					if err != nil {
 						ctx.Logger().Error("fail to get ragnarok pending", "error", err)
 					} else {
-						h.mgr.Keeper().SetRagnarokPending(ctx, pending-1)
+						if pending > 0 {
+							h.mgr.Keeper().SetRagnarokPending(ctx, pending-1)
+						}
 						ctx.Logger().Info("remaining ragnarok transaction", "count", pending-1)
 					}
 					decrementedPendingRagnarok = true
@@ -128,6 +130,11 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 				break
 
 			}
+		}
+		// If the TxOutItem matching the observed outbound has been found,
+		// do not check other block heights.
+		if !shouldSlash {
+			break
 		}
 	}
 

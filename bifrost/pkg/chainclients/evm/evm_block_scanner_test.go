@@ -416,11 +416,11 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 			}
 			if rpcRequest.Method == "eth_getTransactionReceipt" {
 				switch string(rpcRequest.Params) {
-				case `["0xc5df10917683a31c361218577d5e13ee9d7e29f8b92415f337a318942bd2c875"]`:
+				case `["0x73247964cf3c18a6afc4470998395ca1c2268a45cdd09dcf2ce4e408a5c95d37"]`:
 					_, err = rw.Write(depositEVMReceipt)
 					c.Assert(err, IsNil)
 					return
-				case `["0x08053d250f3897e1e27b29dc97bb71a7f99809a5dfd052117ea335c2ee0f55e5"]`:
+				case `["0xf36195f1f864911cfa68eb43a92bc168e286d78a2b3a2c31b7a1cb494f08c381"]`:
 					_, err = rw.Write(depositTknReceipt)
 					c.Assert(err, IsNil)
 					return
@@ -531,10 +531,10 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	txInItem, err = bs.getTxInItem(tx)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
-	c.Assert(txInItem.Sender, Equals, "0x970e8128ab834e8eac17ab8e3812f010678cf791")
-	c.Assert(txInItem.To, Equals, "0x6F2744B3a9eba0C5929AAdc9e81183a48B9221FC")
+	c.Assert(txInItem.Sender, Equals, "0xc96aaa54e2d44c299564da76e1cd3184a2386b8d")
+	c.Assert(txInItem.To, Equals, "0xd58610F89265a2fB637Ac40EDf59141Ff873b266")
 	c.Assert(txInItem.Memo, Equals, "ADD:AVAX.AVAX:tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej")
-	c.Assert(txInItem.Tx, Equals, "c5df10917683a31c361218577d5e13ee9d7e29f8b92415f337a318942bd2c875")
+	c.Assert(txInItem.Tx, Equals, "73247964cf3c18a6afc4470998395ca1c2268a45cdd09dcf2ce4e408a5c95d37")
 	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "AVAX.AVAX")
 	c.Assert(txInItem.Coins[0].Amount.Uint64(), Equals, cosmos.NewUint(200000000).Uint64())
 
@@ -551,10 +551,10 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	txInItem, err = bs.getTxInItem(tx)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
-	c.Assert(txInItem.Sender, Equals, "0x970e8128ab834e8eac17ab8e3812f010678cf791")
-	c.Assert(txInItem.To, Equals, "0x6F2744B3a9eba0C5929AAdc9e81183a48B9221FC")
+	c.Assert(txInItem.Sender, Equals, "0xc96aaa54e2d44c299564da76e1cd3184a2386b8d")
+	c.Assert(txInItem.To, Equals, "0xd58610F89265a2fB637Ac40EDf59141Ff873b266")
 	c.Assert(txInItem.Memo, Equals, "ADD:AVAX.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D:tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej")
-	c.Assert(txInItem.Tx, Equals, "08053d250f3897e1e27b29dc97bb71a7f99809a5dfd052117ea335c2ee0f55e5")
+	c.Assert(txInItem.Tx, Equals, "f36195f1f864911cfa68eb43a92bc168e286d78a2b3a2c31b7a1cb494f08c381")
 	// c.Assert(txInItem.Coins[0].Asset.String(), Equals, "AVAX.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D")
 	c.Assert(txInItem.Coins[0].Amount.Uint64(), Equals, cosmos.NewUint(100000000).Uint64())
 
@@ -570,6 +570,171 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	c.Assert(txInItem.Tx, Equals, "1f451e1361a1374d135d3da413391cd0d0510e106488b681bed888f3e141bb04")
 	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "AVAX.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D")
 	c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(24310000)), Equals, true)
+}
+
+func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
+	// This test validates the full swap-in flow through getTxInItem for aggregator
+	// deposits where tx.To() is an aggregator contract but the Deposit event is
+	// emitted by a different router. The EVM scanner uses GetContracts() for log
+	// address validation (no useWhitelistSmartContract override), so both routers
+	// must be in the pubkeys fixture for the log parser to process both.
+
+	correctRouter := "0x17ab05351fc94a1a67bf3f56ddbb941ae6c63e25" // from fixture
+	wrongRouter := "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	// Vault derived from tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+	vaultAddr := "0xd58610F89265a2fB637Ac40EDf59141Ff873b266"
+	vaultAddrLower := strings.ToLower(vaultAddr[2:])
+
+	// Reuse the aggregator tx from the ETH test (chainID=1337).
+	// tx.To()=0x81a392... (aggregator), sender=0xc96aaa54... (not a vault)
+	encodedTx := `{"nonce":"0x4","gasPrice":"0x1","gas":"0x177b8","to":"0x81a392e6a757d58a7eb6781a775a3449da3b9df5","value":"0x0","input":"0x1fece7b4000000000000000000000000d58610f89265a2fb637ac40edf59141ff873b2660000000000000000000000003b7fa4dd21c6f9ba3ca375217ead7cab9d6bf4830000000000000000000000000000000000000000000000004563918244f40000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000634144443a4554482e544b4e2d3078336237464134646432316336663942413363613337353231374541443743416239443662463438333a7474686f72313678786e30636164727575773661327177707633356176306d6568727976647a7a6a7a3361660000000000000000000000000000000000000000000000000000000000","v":"0xa96","r":"0x7fbfee9939a7e6de1e9dec44f4ac8cd9496de934dff9abe74c9ba2ecc69ac66e","s":"0x606c5d6510558513b6425099892fc2269663abbd11266b7087c6ecb899827b11","hash":"0xbd6e8494e18d627d2331c625203bcea6fb5acb9cdc8a82628f1bc894e90884e2"}`
+	txHash := "0xbd6e8494e18d627d2331c625203bcea6fb5acb9cdc8a82628f1bc894e90884e2"
+
+	makeReceiptJSON := func(routerAddr string) string {
+		return fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{
+			"status":"0x1",
+			"cumulativeGasUsed":"0xe8c5",
+			"gasUsed":"0xe8c5",
+			"effectiveGasPrice":"0x2540be400",
+			"transactionHash":"%s",
+			"transactionIndex":"0x0",
+			"blockHash":"0x0000000000000000000000000000000000000000000000000000000000000001",
+			"blockNumber":"0x22",
+			"contractAddress":"0x0000000000000000000000000000000000000000",
+			"logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+			"logs":[{
+				"address":"%s",
+				"topics":[
+					"0xef519b7eb82aaf6ac376a6df2d793843ebfd593de5f1a0601d3cc6ab49ebb395",
+					"0x000000000000000000000000%s",
+					"0x0000000000000000000000000000000000000000000000000000000000000000"
+				],
+				"data":"0x0000000000000000000000000000000000000000000000004563918244f40000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000384144443a4554482e4554483a7474686f72313678786e30636164727575773661327177707633356176306d6568727976647a7a6a7a3361660000000000000000",
+				"blockNumber":"0x22",
+				"transactionHash":"%s",
+				"transactionIndex":"0x0",
+				"blockHash":"0x0000000000000000000000000000000000000000000000000000000000000001",
+				"logIndex":"0x0",
+				"removed":false
+			}]
+		}}`, txHash, routerAddr, vaultAddrLower, txHash)
+	}
+
+	// Custom pubkeys: two asgard vaults with different AVAX routers.
+	// This ensures both router addresses are in GetContracts(AVAX), so the log
+	// parser's address validator accepts deposit events from either one.
+	pubkeysJSON := fmt.Sprintf(`{
+		"asgard": [
+			{
+				"pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+				"routers": [{"chain":"AVAX","router":"%s"}]
+			},
+			{
+				"pub_key": "tthorpub1addwnpepqflvfv08t6qt95lmttd6wpf3ss8wx63e9vf6fvyuj2yy6nnyna576rfzjks",
+				"routers": [{"chain":"AVAX","router":"%s"}]
+			}
+		]
+	}`, correctRouter, wrongRouter)
+
+	var receiptResponse string
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.RequestURI == thorclient.ChainVersionEndpoint:
+			_, err := rw.Write([]byte(`{"current":"` + types.GetCurrentVersion().String() + `"}`))
+			c.Assert(err, IsNil)
+		case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint+"/key"):
+			if strings.HasSuffix(req.RequestURI, "EVMDisableContractWhitelist") {
+				_, err := rw.Write([]byte(`1`))
+				c.Assert(err, IsNil)
+			} else {
+				_, err := rw.Write([]byte(`-1`))
+				c.Assert(err, IsNil)
+			}
+		case req.RequestURI == thorclient.PubKeysEndpoint:
+			_, err := rw.Write([]byte(pubkeysJSON))
+			c.Assert(err, IsNil)
+		case req.RequestURI == thorclient.InboundAddressesEndpoint:
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/inbound_addresses/inbound_addresses.json")
+		case req.RequestURI == thorclient.AsgardVault:
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
+		case strings.HasPrefix(req.RequestURI, thorclient.NodeAccountEndpoint):
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
+		default:
+			body, err := io.ReadAll(req.Body)
+			c.Assert(err, IsNil)
+			type RPCRequest struct {
+				JSONRPC string          `json:"jsonrpc"`
+				ID      any             `json:"id"`
+				Method  string          `json:"method"`
+				Params  json.RawMessage `json:"params"`
+			}
+			var rpcRequest RPCRequest
+			err = json.Unmarshal(body, &rpcRequest)
+			if err != nil {
+				return
+			}
+			switch rpcRequest.Method {
+			case "eth_chainId":
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x539"}`))
+				c.Assert(err, IsNil)
+			case "eth_gasPrice":
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+				c.Assert(err, IsNil)
+			case "eth_getTransactionReceipt":
+				_, err = rw.Write([]byte(receiptResponse))
+				c.Assert(err, IsNil)
+			}
+		}
+	}))
+	defer server.Close()
+
+	ethClient, err := ethclient.Dial(server.URL)
+	c.Assert(err, IsNil)
+	rpcClient, err := evm.NewEthRPC(ethClient, time.Second, "AVAX")
+	c.Assert(err, IsNil)
+	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	u, err := url.Parse(server.URL)
+	c.Assert(err, IsNil)
+	cfg := config.BifrostClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       u.Host,
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: "",
+	}
+	bridge, err := thorclient.NewThorchainBridge(cfg, s.m, s.keys)
+	c.Assert(err, IsNil)
+	pkeyMgr, err := pubkeymanager.NewPubKeyManager(bridge, s.m)
+	c.Assert(pkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pkeyMgr.Stop(), IsNil) }()
+	c.Assert(err, IsNil)
+
+	// Use chainID=1337 to match the aggregator tx signature
+	bs, err := NewEVMScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
+		return nil
+	}, nil)
+	c.Assert(err, IsNil)
+
+	tx := &etypes.Transaction{}
+	c.Assert(tx.UnmarshalJSON([]byte(encodedTx)), IsNil)
+
+	// Test 1: Aggregator swap-in with correct router — full getTxInItem flow.
+	// tx.To() is the aggregator (not vault, not router), disableWhitelist=1 routes
+	// through: IsSmartContractCall → getTxInFromSmartContract → router validation passes.
+	receiptResponse = makeReceiptJSON(correctRouter)
+	txInItem, err := bs.getTxInItem(tx)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem, NotNil, Commentf("aggregator deposit with correct router should be observed"))
+	c.Assert(txInItem.To, Equals, vaultAddr)
+	c.Assert(txInItem.Memo, Equals, "ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af")
+
+	// Test 2: Aggregator swap-in with wrong router — full getTxInItem flow.
+	// The deposit event is emitted by the wrong router, so validation rejects it.
+	receiptResponse = makeReceiptJSON(wrongRouter)
+	txInItem, err = bs.getTxInItem(tx)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem, IsNil, Commentf("deposit from wrong router should be dropped"))
 }
 
 func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {

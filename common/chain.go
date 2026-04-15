@@ -32,6 +32,7 @@ const (
 	ZECChain   = Chain("ZEC")
 	POLChain   = Chain("POL")
 	SUIChain   = Chain("SUI")
+	ADAChain   = Chain("ADA")
 	TAOChain   = Chain("TAO")
 	DOTChain   = Chain("DOT")
 
@@ -185,7 +186,7 @@ func (c Chain) String() string {
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
 	switch c {
-	case SOLChain, SUIChain, TAOChain, DOTChain:
+	case SOLChain, SUIChain, TAOChain, DOTChain, ADAChain:
 		return SigningAlgoEd25519
 	default:
 		return SigningAlgoSecp256k1
@@ -234,6 +235,8 @@ func (c Chain) GetGasAsset() Asset {
 		return SUIAsset
 	case DOTChain:
 		return DOTAsset
+	case ADAChain:
+		return ADAAsset
 	default:
 		return EmptyAsset
 	}
@@ -266,6 +269,8 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "lamport", cosmos.NewUint(1e9)
 	case SUIChain:
 		return "mist", cosmos.NewUint(1e9)
+	case ADAChain:
+		return "lovelace", cosmos.NewUint(1e6)
 	case TAOChain:
 		return "rao", cosmos.NewUint(1e9)
 	case DOTChain:
@@ -310,7 +315,7 @@ func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
 // 1e8, just return cosmos.DefaultCoinDecimals.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
-	case GAIAChain, NOBLEChain, TRONChain:
+	case GAIAChain, NOBLEChain, TRONChain, ADAChain:
 		return 6
 	case XRPChain:
 		return 6
@@ -357,6 +362,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
 		case ZECChain:
 			return "tm"
+		case ADAChain:
+			return "addr_test1"
 		}
 	case MainNet, StageNet, ChainNet:
 		switch c {
@@ -374,6 +381,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return dogchaincfg.MainNetParams.Bech32HRPSegwit
 		case ZECChain:
 			return "t1"
+		case ADAChain:
+			return "addr1"
 		}
 	}
 	return ""
@@ -425,6 +434,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(1_000_000)
 	case DOTChain:
 		return cosmos.NewUint(2_000_000) // 0.02 DOT
+	case ADAChain:
+		return cosmos.NewUint(10_000_000)
 	default:
 		return cosmos.ZeroUint()
 	}
@@ -442,8 +453,9 @@ func (c Chain) P2WPKHOutputValue() int64 {
 		// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.cpp#L17-L30
 		return 2940
 	case DOGEChain:
-		// using bitcoin default for p2pkh txout
-		return 546
+		// DOGE creates P2PKH scripts for memo overflow outputs and has a dustRelayFee of
+		// 1 DOGE/kB (100,000,000 koinu/kB). P2PKH dust = (34 + 148) * 100,000,000 / 1000.
+		return 18_200_000
 	case BCHChain:
 		// using bitcoin default for p2pkh txout
 		return 546
@@ -528,7 +540,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case ETHChain:
 		return 12_000
 	case AVAXChain:
-		return 3_000
+		return 1_000 // ~1s
 	case BSCChain:
 		return 450
 	case GAIAChain:
@@ -555,6 +567,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 2_000
 	case SUIChain:
 		return 250
+	case ADAChain:
+		return 20_000
 	default:
 		return 0
 	}
@@ -562,7 +576,9 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 
 func (c Chain) InboundNotes() string {
 	switch c {
-	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain:
+	case LTCChain:
+		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats. MWEB addresses are not supported; do not use ltcmweb1 addresses or peg-in transactions."
+	case BTCChain, BCHChain, DOGEChain, ZECChain:
 		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats."
 	case ETHChain, AVAXChain, BSCChain, BASEChain, POLChain:
 		return "Base Asset: Send the inbound_address the asset with the memo encoded in hex in the data field. Tokens: First approve router to spend tokens from user: asset.approve(router, amount). Then call router.depositWithExpiry(inbound_address, asset, amount, memo, expiry). Asset is the token contract address. Amount should be in native asset decimals (eg 1e18 for most tokens). Do not swap to smart contract addresses."
@@ -583,6 +599,8 @@ func (c Chain) OutboundNotes() string {
 	switch c {
 	case XRPChain:
 		return "Ensure XRP destination address does not have special flags like lsfRequireDestTag, lsfRequireAuth, lsfDisallowIncomingPayChan, etcetera."
+	case LTCChain:
+		return "Do not use MWEB (ltcmweb1) addresses as the destination; they are not supported."
 	default:
 		return ""
 	}

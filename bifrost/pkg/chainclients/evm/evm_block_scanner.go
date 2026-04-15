@@ -591,6 +591,13 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		destination := tx.To()
 		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
+		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
+		sender, senderErr := e.eipSigner.Sender(tx)
+		var isFromVault bool
+		if senderErr == nil {
+			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+		}
+
 		switch {
 		case isToVault:
 			// Tx to a vault
@@ -598,19 +605,33 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		case e.isToValidContractAddress(destination, true):
 			// Deposit directly to router
 			return e.getTxInFromSmartContract(tx, receipt, 0)
+		case isFromVault:
+			// Tx from a vault (outbound, approval, cancel, etc.)
+			return e.getTxInFromTransaction(tx, receipt)
 		case evm.IsSmartContractCall(tx, receipt):
 			// Tx to a different contract, attempt to parse with max allowable logs
 			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs))
 		default:
-			// Tx to a non-contract or vault address
-			return e.getTxInFromTransaction(tx, receipt)
+			// ignore tx not involving any vault
+			return nil, nil
 		}
 	} else {
 		// parse tx with whitelist
 		if e.isToValidContractAddress(tx.To(), true) {
 			return e.getTxInFromSmartContract(tx, receipt, 0)
 		}
-		return e.getTxInFromTransaction(tx, receipt)
+		// check if tx is to or from a vault
+		sender, err := e.eipSigner.Sender(tx)
+		if err != nil {
+			return nil, nil // ignore tx if we cannot determine sender
+		}
+		isFromVault, _ := e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(tx.To().String(), e.cfg.ChainID)
+		if isFromVault || isToVault {
+			return e.getTxInFromTransaction(tx, receipt)
+		}
+		// ignore tx not involving any vault
+		return nil, nil
 	}
 }
 
@@ -923,7 +944,7 @@ func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 		return false
 	}
 	// get the smart contract used by thornode
-	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID)
+	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
 	if includeWhiteList {
 		contractAddresses = append(contractAddresses, e.whitelistContracts...)
 	}
@@ -969,7 +990,7 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		return nil, fmt.Errorf("failed to parse logs, err: %w", err)
 	}
 	if isVaultTransfer {
-		contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID)
+		contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
 		isDirectlyToRouter := false
 		for _, item := range contractAddresses {
 			if strings.EqualFold(item.String(), tx.To().String()) {
@@ -991,6 +1012,38 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		}
 	}
 
+	// Validate that the deposit's target vault is associated with the router
+	// that emitted the event. This prevents an attacker from depositing to an
+	// old router targeting the current active vault (or vice versa), which would
+	// cause bifrost to observe an inbound the vault cannot actually spend.
+	// Skip this check for vault-initiated transactions (e.g. migrations), which
+	// legitimately use the old router to send to a vault on a new router.
+	// NOTE: We compare against the log-emitting address (the actual router that
+	// produced the Deposit event), NOT tx.To(), because aggregator contracts
+	// forward deposits to the router internally — tx.To() is the aggregator.
+	if txInItem.To != "" {
+		senderIsVault, _ := e.pubkeyMgr.IsValidPoolAddress(txInItem.Sender, e.cfg.ChainID)
+		if !senderIsVault {
+			ok, cpi := e.pubkeyMgr.IsValidPoolAddress(txInItem.To, e.cfg.ChainID)
+			if ok {
+				expectedRouter := e.pubkeyMgr.GetContract(e.cfg.ChainID, cpi.PubKey)
+				if expectedRouter != common.NoAddress {
+					depositRouter := evm.DepositEventRouter(receipt.Logs)
+					if depositRouter != nil && !strings.EqualFold(expectedRouter.String(), depositRouter.String()) {
+						e.logger.Warn().
+							Str("tx", txInItem.Tx).
+							Str("vault", txInItem.To).
+							Str("sender", txInItem.Sender).
+							Str("expected_router", expectedRouter.String()).
+							Str("deposit_router", depositRouter.String()).
+							Msg("deposit targets vault via wrong router, ignoring")
+						return nil, nil
+					}
+				}
+			}
+		}
+	}
+
 	// under no circumstance EVM gas price will be less than 1 Gwei, unless it is in dev environment
 	txGasPrice := receipt.EffectiveGasPrice
 	if txGasPrice == nil {
@@ -1004,10 +1057,9 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 }
 
 // getTxInFromFailedTransaction when a transaction failed due to out of gas, this method
-// will check whether the transaction is an outbound it fake a txInItem if the failed
-// transaction is an outbound , and report it back to thornode, thus the gas fee can be
-// subsidised need to know that this will also cause the vault that send
-// out the outbound to be slashed 1.5x gas it is for security purpose
+// will check whether the transaction is an outbound. It fakes a txInItem if the failed
+// transaction is an outbound, and reports it back to THORNode so the gas fee can be
+// deducted from the vault balance to keep accounting in sync.
 func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receipt *etypes.Receipt) *stypes.TxInItem {
 	if receipt.Status == 1 {
 		e.logger.Info().Str("hash", tx.Hash().String()).Msg("success transaction should not get into getTxInFromFailedTransaction")
@@ -1029,7 +1081,7 @@ func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 	txHash := tx.Hash().Hex()[2:]
 	return &stypes.TxInItem{
 		Tx:     txHash,
-		Memo:   memo.NewOutboundMemo(common.TxID(txHash)).String(),
+		Memo:   memo.NewOutboundMemo(common.TxID(strings.ToUpper(txHash))).String(),
 		Sender: strings.ToLower(fromAddr.String()),
 		To:     strings.ToLower(tx.To().String()),
 		Coins:  common.NewCoins(common.NewCoin(e.cfg.ChainID.GetGasAsset(), cosmos.NewUint(1))),

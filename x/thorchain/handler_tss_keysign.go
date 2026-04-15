@@ -107,17 +107,12 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		return &cosmos.Result{}, nil
 	}
 
-	// track the count of round 7 failures
-	if msg.Blame.Round == tssMessages.KEYSIGN7 || msg.Blame.Round == tssMessages.EDDSAKEYSIGN3 {
-		voter.LastRoundCount++
-	}
-
-	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
 	vault, err := h.mgr.Keeper().GetVault(ctx, msg.PubKey)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get vault")
 	}
 	if vault.IsEmpty() {
+		h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
 		return &cosmos.Result{}, nil
 	}
 	var vaultMemberNodes NodeAccounts
@@ -134,6 +129,21 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		}
 		vaultMemberNodes = append(vaultMemberNodes, na)
 	}
+
+	// Track terminal-round failures from the vault's actual signing committee,
+	// not just the current active validator set. Retiring vault members can
+	// still participate in keysign during churn after leaving the active set,
+	// so using IsNodeKeys here would undercount final-round reports and could
+	// miss freezing a vault that is still failing at the terminal round.
+	if msg.Blame.Round == tssMessages.KEYSIGN7 || msg.Blame.Round == tssMessages.EDDSAKEYSIGN3 {
+		for _, na := range vaultMemberNodes {
+			if msg.Signer.Equals(na.NodeAddress) {
+				voter.LastRoundCount++
+				break
+			}
+		}
+	}
+	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
 
 	// doesn't have consensus yet
 	if !voter.HasConsensus(vaultMemberNodes) {
@@ -161,10 +171,7 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	// There is a tradeoff here between the number of nodes required to maliciously freeze
 	// the vault and the number of nodes required to maliciously prevent freeze - we err
 	// on the side of over-freezing.
-	if voter.LastRoundCount > 1 || (voter.LastRoundCount > 0 && len(voter.Signers) <= 2) {
-		if err != nil {
-			ctx.Logger().Error("fail to fetch vault", "pubkey", msg.PubKey, "error", err)
-		}
+	if voter.LastRoundCount > 1 || (voter.LastRoundCount > 0 && voter.MemberSignerCount(vaultMemberNodes) <= 2) {
 		// this will cause the vault to be "frozen" which causes the
 		// rescheduler to NOT reschedule any outbound txns AND cause the tx out
 		// manager to not assign new txns to this vault
@@ -181,7 +188,7 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 			}
 		}
 		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
-			ctx.Logger().Error("fail to save vault", "pubkey", msg.PubKey, "error", err)
+			return nil, fmt.Errorf("fail to save vault: %w", err)
 		}
 	}
 

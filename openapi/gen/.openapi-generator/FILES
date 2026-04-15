@@ -25,7 +25,9 @@ api_rune_pool.go
 api_savers.go
 api_secured_asset.go
 api_secured_assets.go
+api_smart_contracts.go
 api_streaming_swap.go
+api_supply.go
 api_swap.go
 api_tcy_claimers.go
 api_tcy_stakers.go
@@ -64,6 +66,9 @@ docs/CodesApi.md
 docs/CodesResponse.md
 docs/Coin.md
 docs/ConstantsResponse.md
+docs/ContractInfo.md
+docs/ContractInfoResponse.md
+docs/ContractInfosResponse.md
 docs/DerivedPool.md
 docs/ExportApi.md
 docs/HealthApi.md
@@ -89,6 +94,7 @@ docs/LimitSwapsSummaryResponse.md
 docs/LiquidityProvider.md
 docs/LiquidityProviderSummary.md
 docs/LiquidityProvidersApi.md
+docs/LockedSupply.md
 docs/MetricsResponse.md
 docs/MimirApi.md
 docs/MimirNodesResponse.md
@@ -141,9 +147,12 @@ docs/SaversApi.md
 docs/SecuredAssetApi.md
 docs/SecuredAssetResponse.md
 docs/SecuredAssetsApi.md
+docs/SmartContractsApi.md
 docs/StreamingStatus.md
 docs/StreamingSwap.md
 docs/StreamingSwapApi.md
+docs/SupplyApi.md
+docs/SupplyResponse.md
 docs/SwapApi.md
 docs/SwapDetailsResponse.md
 docs/SwapFinalisedStage.md
@@ -211,6 +220,9 @@ model_code.go
 model_codes_response.go
 model_coin.go
 model_constants_response.go
+model_contract_info.go
+model_contract_info_response.go
+model_contract_infos_response.go
 model_derived_pool.go
 model_inbound_address.go
 model_inbound_confirmation_counted_stage.go
@@ -231,6 +243,7 @@ model_limit_swaps_response.go
 model_limit_swaps_summary_response.go
 model_liquidity_provider.go
 model_liquidity_provider_summary.go
+model_locked_supply.go
 model_metrics_response.go
 model_mimir_nodes_response.go
 model_mimir_vote.go
@@ -272,6 +285,7 @@ model_saver.go
 model_secured_asset_response.go
 model_streaming_status.go
 model_streaming_swap.go
+model_supply_response.go
 model_swap_details_response.go
 model_swap_finalised_stage.go
 model_swap_state.go

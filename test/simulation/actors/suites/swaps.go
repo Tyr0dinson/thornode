@@ -18,15 +18,8 @@ func MemolessSwaps(rng *rand.Rand) *Actor {
 	a := NewActor("Memoless Swaps", rng)
 
 	// memoless swaps
-	simChains1e8 := []common.Chain{}
-	for _, chain := range acommon.SimChains {
-		if chain.GetGasAssetDecimal() == 8 {
-			simChains1e8 = append(simChains1e8, chain)
-		}
-	}
-
 	for _, t := range []core.MemolessType{core.MemolessTypeRef, core.MemolessTypeAmount} {
-		for _, chain := range simChains1e8 {
+		for _, chain := range acommon.SimChains {
 			// choose a random (other) pool to swap to
 			j := rng.IntN(len(acommon.SimChains))
 			for chain.Equals(acommon.SimChains[j]) {
@@ -34,6 +27,20 @@ func MemolessSwaps(rng *rand.Rand) *Actor {
 			}
 			a.Children[core.NewSwapMemolessActor(chain.GetGasAsset(), acommon.SimChains[j].GetGasAsset(), t, rng)] = true
 		}
+		// Add non-gas EVM token sources to exercise memoless router flow.
+		for _, chain := range acommon.SimChains {
+			if !chain.IsEVM() {
+				continue
+			}
+			for asset := range evm.Tokens(chain) {
+				if asset.IsGasAsset() {
+					continue
+				}
+				toAsset := acommon.SimChains[rng.IntN(len(acommon.SimChains))].GetGasAsset()
+				a.Children[core.NewSwapMemolessActor(asset, toAsset, t, rng)] = true
+			}
+		}
+
 	}
 
 	return a
@@ -57,6 +64,44 @@ func Swaps(rng *rand.Rand) *Actor {
 		}
 		for asset := range evm.Tokens(chain) {
 			swapPools = append(swapPools, asset)
+		}
+	}
+
+	// aggregator swap-out: various source assets → EVM gas asset via aggregator
+	type aggConfig struct {
+		chain  common.Chain
+		suffix string // aggregator contract address suffix
+		target string // aggregator target ERC20 address (arbitrary for testing)
+		limit  string // aggregator target limit (minimum output from the DEX leg)
+	}
+	aggConfigs := []aggConfig{
+		{common.ETHChain, "6f3848", "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25", "1000000"},
+		{common.AVAXChain, "cFA0F20f", "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25", "1000000"},
+	}
+	for _, cfg := range aggConfigs {
+		gasAsset := cfg.chain.GetGasAsset()
+
+		// non-EVM, non-UTXO source → EVM gas asset via aggregator.
+		// UTXO chains (BTC, DOGE, LTC) cannot be used here because the aggregator
+		// memo fields exceed the 80-byte OP_RETURN limit.
+		a.Children[core.NewAggregatorSwapActor(common.ATOMAsset, gasAsset, cfg.suffix, cfg.target, cfg.limit, rng)] = true
+		a.Children[core.NewAggregatorSwapActor(common.SOLAsset, gasAsset, cfg.suffix, cfg.target, cfg.limit, rng)] = true
+
+		// EVM token → same-chain gas asset via aggregator (e.g. ETH.TKN → ETH.ETH via aggregator)
+		for asset := range evm.Tokens(cfg.chain) {
+			if asset.IsGasAsset() {
+				continue
+			}
+			a.Children[core.NewAggregatorSwapActor(asset, gasAsset, cfg.suffix, cfg.target, cfg.limit, rng)] = true
+		}
+
+		// cross-chain EVM → different EVM gas asset via aggregator
+		for _, otherChain := range acommon.SimChains {
+			if !otherChain.IsEVM() || otherChain.Equals(cfg.chain) {
+				continue
+			}
+			a.Children[core.NewAggregatorSwapActor(otherChain.GetGasAsset(), gasAsset, cfg.suffix, cfg.target, cfg.limit, rng)] = true
+			break // one cross-chain pair per aggregator is sufficient
 		}
 	}
 

@@ -40,7 +40,7 @@ func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 			condition: func(keeper *TestSlashingLackKeeper) {
 				keeper.failGetVault = true
 			},
-			shouldError: false,
+			shouldError: true,
 		},
 		{
 			name: "fail to get node account by pub key should return an error",
@@ -185,6 +185,85 @@ func (s *SlashingSuite) TestNotSigningSlash(c *C) {
 	c.Assert(keeper.voter.Actions, HasLen, 1)
 	// ensure we've updated our action item
 	c.Assert(keeper.voter.Actions[0].VaultPubKey.Equals(outItems[0].VaultPubKey), Equals, true)
+	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
+}
+
+func (s *SlashingSuite) TestInactiveVaultDrainedReroute(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(201)
+	txOutStore := NewTxStoreDummy()
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	na := GetRandomValidatorNode(NodeActive)
+	inTx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		GetRandomETHAddress(),
+		common.Coins{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(3200000000)),
+		},
+		nil,
+		"REFUND:"+GetRandomTxHash().String(),
+	)
+
+	// Create the inactive vault (drained — 0 ETH)
+	inactiveVault := GetRandomVault()
+	inactiveVault.Type = AsgardVault
+	inactiveVault.Status = InactiveVault
+	inactiveVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.ZeroUint()),
+	}
+
+	txOutItem := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inTx.ID,
+		VaultPubKey: inactiveVault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin: common.NewCoin(
+			common.ETHAsset, cosmos.NewUint(31239*common.One),
+		),
+		MaxGas: common.Gas{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(150000)),
+		},
+		Memo: "REFUND:" + inTx.ID.String(),
+	}
+	txOut := NewTxOut(3)
+	txOut.TxArray = append(txOut.TxArray, txOutItem)
+
+	// Create an active vault with sufficient ETH
+	activeVault := GetRandomVault()
+	activeVault.Type = AsgardVault
+	activeVault.Status = ActiveVault
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(500000*common.One)),
+	}
+
+	keeper := &TestSlashingLackKeeper{
+		txOut:  txOut,
+		na:     na,
+		vaults: Vaults{inactiveVault, activeVault},
+		voter: ObservedTxVoter{
+			Actions:         []TxOutItem{txOutItem},
+			FinalisedHeight: 3,
+		},
+		slashPts: make(map[string]int64),
+	}
+
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
+	mgr := NewDummyMgr()
+	mgr.txOutStore = txOutStore
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	outItems, err := txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1)
+	// The outbound should have been rerouted to the active vault, NOT the inactive one
+	c.Assert(outItems[0].VaultPubKey.Equals(inactiveVault.PubKey), Equals, false)
+	c.Assert(outItems[0].VaultPubKey.Equals(activeVault.PubKey), Equals, true)
+	// voter action should also be updated
+	c.Assert(keeper.voter.Actions[0].VaultPubKey.Equals(activeVault.PubKey), Equals, true)
 	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
 }
 
@@ -711,7 +790,7 @@ func (s *SlashingSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	nodeBondAfterSlash := nodeAfterSlash.Bond
 	node1BondAfterSlash := node1AfterSlash.Bond
 
-	c.Check(nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64(), Equals, uint64(37862675), Commentf("%d", nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64()))
+	c.Check(nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64(), Equals, uint64(37862676), Commentf("%d", nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64()))
 	c.Check(node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64(), Equals, uint64(37891094), Commentf("%d", node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64()))
 
 	// Check that signing halt mimir was set
@@ -799,6 +878,57 @@ func (s *SlashingSuite) TestNeedsNewVault(c *C) {
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 
 	// test that more than 2/3rd will always return false
+	ctx = ctx.WithBlockHeight(999999999)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+}
+
+func (s *SlashingSuite) TestNeedsNewVaultEdDSA(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	inhash := GetRandomTxHash()
+	outhash := GetRandomTxHash()
+	pk1 := GetRandomPubKey()
+	pk2 := GetRandomPubKey()
+	pk3 := GetRandomPubKey()
+	sig1, _ := pk1.GetThorAddress()
+	sig2, _ := pk2.GetThorAddress()
+	sig3, _ := pk3.GetThorAddress()
+
+	// Use separate ECDSA and EdDSA keys for the vault, as would be the case for SOL.
+	ecdsaPK := GetRandomPubKey()
+	eddsaPK := GetRandomPubKey()
+
+	tx := GetRandomTx()
+	tx.ID = outhash
+	obs := NewObservedTx(tx, 0, eddsaPK, 0)
+	obs.ObservedPubKey = eddsaPK // observation uses the EdDSA key (as SOL bifrost would)
+	obs.Signers = []string{sig1.String(), sig2.String(), sig3.String()}
+
+	vault := GetRandomVault()
+	vault.Membership = []string{pk1.String(), pk2.String(), pk3.String()}
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+	c.Assert(len(tx.Coins), Equals, 1)
+	toi := TxOutItem{
+		InHash:           inhash,
+		Coin:             tx.Coins[0],
+		VaultPubKey:      ecdsaPK, // ECDSA key on the toi
+		VaultPubKeyEddsa: eddsaPK, // EdDSA key on the toi
+	}
+
+	// No observation yet, should need new vault.
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, true)
+
+	voter := NewObservedTxVoter(outhash, []common.ObservedTx{obs})
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	mgr.Keeper().SetObservedLink(ctx, inhash, outhash)
+
+	// Observation exists with EdDSA key matching toi.VaultPubKeyEddsa,
+	// even though it doesn't match toi.VaultPubKey (ECDSA). Should NOT need new vault.
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+
+	// Confirm it still returns false at later block heights.
 	ctx = ctx.WithBlockHeight(999999999)
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 }
