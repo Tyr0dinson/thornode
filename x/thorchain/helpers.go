@@ -911,39 +911,17 @@ func emitMempoolSwapTelemetry(ctx cosmos.Context, mgr Manager, runeUSDPrice floa
 	telemetry.SetGauge(telem(usageTOR), "thornode", "mempool_swap", "usage", "tor")
 
 	stagedValueScanStart := time.Now()
-	stagedRuneValue, _, err := mgr.Keeper().GetStagedOutboundValue(ctx)
+	stagedSummary, err := mgr.Keeper().GetStagedOutboundSummary(ctx)
 	if err != nil {
 		return err
 	}
 	stagedValueScanDurationMS := float32(time.Since(stagedValueScanStart).Microseconds()) / 1000
 
-	var stagedInboundCount, stagedOutboundCount, oldestStagedAge int64
-	stagedIter := mgr.Keeper().GetStagedOutboundIterator(ctx)
-	defer stagedIter.Close()
-	for ; stagedIter.Valid(); stagedIter.Next() {
-		var stagedList keeper.StagedOutboundList
-		if err := mgr.Keeper().Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
-			ctx.Logger().Error("fail to unmarshal staged outbound list while emitting mempool swap telemetry", "error", err)
-			continue
-		}
-		stagedInboundCount++
-		stagedOutboundCount += int64(len(stagedList.Items))
-		for _, staged := range stagedList.Items {
-			if staged.StagedHeight <= 0 || staged.StagedHeight > ctx.BlockHeight() {
-				continue
-			}
-			age := ctx.BlockHeight() - staged.StagedHeight
-			if age > oldestStagedAge {
-				oldestStagedAge = age
-			}
-		}
-	}
-
-	telemetry.SetGauge(float32(stagedInboundCount), "thornode", "mempool_swap", "staged_inbounds")
-	telemetry.SetGauge(float32(stagedOutboundCount), "thornode", "mempool_swap", "staged_outbounds")
-	telemetry.SetGauge(float32(oldestStagedAge), "thornode", "mempool_swap", "staged_oldest_age_blocks")
-	telemetry.SetGauge(telem(stagedRuneValue), "thornode", "mempool_swap", "staged_value", "rune")
-	telemetry.SetGauge(telem(stagedRuneValue)*runeUSDPrice, "thornode", "mempool_swap", "staged_value", "usd")
+	telemetry.SetGauge(float32(stagedSummary.InboundCount), "thornode", "mempool_swap", "staged_inbounds")
+	telemetry.SetGauge(float32(stagedSummary.OutboundCount), "thornode", "mempool_swap", "staged_outbounds")
+	telemetry.SetGauge(float32(stagedSummary.OldestAge), "thornode", "mempool_swap", "staged_oldest_age_blocks")
+	telemetry.SetGauge(telem(stagedSummary.RuneValue), "thornode", "mempool_swap", "staged_value", "rune")
+	telemetry.SetGauge(telem(stagedSummary.RuneValue)*runeUSDPrice, "thornode", "mempool_swap", "staged_value", "usd")
 	telemetry.SetGauge(stagedValueScanDurationMS, "thornode", "mempool_swap", "staged_value_scan_duration_ms")
 
 	return nil

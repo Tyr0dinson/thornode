@@ -6,6 +6,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 // SetStagedOutbound adds a staged outbound item for a mempool swap.
@@ -61,12 +62,13 @@ func (k KVStore) GetStagedOutboundIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixStagedOutbound)
 }
 
-// GetStagedOutboundValue returns the total RUNE value and clout of all staged outbounds.
-// This is used by CalcTxOutHeight to include staged values in delay calculations.
-func (k KVStore) GetStagedOutboundValue(ctx cosmos.Context) (cosmos.Uint, cosmos.Uint, error) {
-	runeValue := cosmos.ZeroUint()
-	cloutValue := cosmos.ZeroUint()
-
+// GetStagedOutboundSummary returns the total value, count, and age metadata for
+// all staged outbounds in a single store scan.
+func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutboundSummary, error) {
+	summary := keeper.StagedOutboundSummary{
+		RuneValue:  cosmos.ZeroUint(),
+		CloutValue: cosmos.ZeroUint(),
+	}
 	iter := k.GetStagedOutboundIterator(ctx)
 	defer iter.Close()
 
@@ -77,19 +79,36 @@ func (k KVStore) GetStagedOutboundValue(ctx cosmos.Context) (cosmos.Uint, cosmos
 			continue
 		}
 
+		summary.InboundCount++
+		summary.OutboundCount += int64(len(list.Items))
+
 		// Extract TxOutItems from staged outbounds
 		items := make([]TxOutItem, len(list.Items))
 		for i, staged := range list.Items {
 			items[i] = staged.TxOutItem
+			if staged.StagedHeight <= 0 || staged.StagedHeight > ctx.BlockHeight() {
+				continue
+			}
+			age := ctx.BlockHeight() - staged.StagedHeight
+			if age > summary.OldestAge {
+				summary.OldestAge = age
+			}
 		}
 
 		// Calculate value using existing helper
 		itemRuneValue, itemCloutValue := k.GetTOIsValue(ctx, items...)
-		runeValue = runeValue.Add(itemRuneValue)
-		cloutValue = cloutValue.Add(itemCloutValue)
+		summary.RuneValue = summary.RuneValue.Add(itemRuneValue)
+		summary.CloutValue = summary.CloutValue.Add(itemCloutValue)
 	}
 
-	return runeValue, cloutValue, nil
+	return summary, nil
+}
+
+// GetStagedOutboundValue returns the total RUNE value and clout of all staged outbounds.
+// This is used by CalcTxOutHeight to include staged values in delay calculations.
+func (k KVStore) GetStagedOutboundValue(ctx cosmos.Context) (cosmos.Uint, cosmos.Uint, error) {
+	summary, err := k.GetStagedOutboundSummary(ctx)
+	return summary.RuneValue, summary.CloutValue, err
 }
 
 // RestoreStagedOutboundList writes an entire StagedOutboundList to the store

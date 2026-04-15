@@ -749,7 +749,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			if err = vm.k.SetVault(ctx, vault); err != nil {
 				ctx.Logger().Error("fail to set vault to inactive", "error", err)
 			} else {
-				vm.rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx, mgr, vault)
+				rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx, vm.k, mgr, vault)
 			}
 			continue
 		}
@@ -1007,109 +1007,6 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 	return nil
-}
-
-// rollbackUnfinalizedMempoolSwapsForInactiveVault rolls back speculative
-// mempool-swap state as soon as a vault becomes inactive. The inbound has not
-// finalized yet, so this intentionally does not schedule a refund; if the
-// inbound later finalizes to the inactive vault, the finalized observed-tx path
-// will handle the normal inactive-vault refund.
-func (vm *NetworkMgr) rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx cosmos.Context, mgr Manager, vault Vault) {
-	hashes := vm.collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx, vault.PubKey)
-	for _, inHash := range hashes {
-		voter, err := vm.k.GetObservedTxInVoter(ctx, inHash)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed tx voter for inactive-vault mempool rollback", "error", err, "hash", inHash)
-			continue
-		}
-
-		ctx.Logger().Info("rolling back unfinalized mempool swap for inactive vault",
-			"hash", inHash,
-			"vault", vault.PubKey)
-
-		if err := rollbackMempoolSwapAtomic(ctx, vm.k, mgr, voter); err != nil {
-			// Leave the state intact for the LackSigning timeout fallback to retry.
-			ctx.Logger().Error("fail to roll back unfinalized inactive-vault mempool swap", "error", err, "hash", inHash)
-			continue
-		}
-
-		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
-	}
-}
-
-// collectUnfinalizedMempoolSwapHashesForInactiveVault finds unfinalized
-// mempool-swap inbounds observed to the vault that is transitioning inactive.
-// Staged outbounds are a definitive mempool-swap marker; queued-only advanced
-// swaps additionally require a live TOR reservation so normal queued swaps are
-// not rolled back.
-func (vm *NetworkMgr) collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, vaultPubKey common.PubKey) []common.TxID {
-	hashes := make([]common.TxID, 0)
-	seen := make(map[common.TxID]struct{})
-
-	addIfMatch := func(inHash common.TxID, requireReservation bool) {
-		if inHash.IsEmpty() {
-			return
-		}
-		if _, ok := seen[inHash]; ok {
-			return
-		}
-
-		voter, err := vm.k.GetObservedTxInVoter(ctx, inHash)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed tx voter for inactive-vault mempool scan", "error", err, "hash", inHash)
-			return
-		}
-		// Only unfinalized inbounds observed to the newly inactive vault need this rollback.
-		if voter.FinalisedHeight > 0 || !voter.Tx.ObservedPubKey.Equals(vaultPubKey) {
-			return
-		}
-		// Queue-only candidates need the reservation marker to distinguish mempool swaps.
-		if requireReservation && !voter.HasReservedMempoolSwapTOR() {
-			return
-		}
-
-		hasCleanupState, err := needsMempoolSwapRollback(ctx, vm.k, voter)
-		if err != nil {
-			ctx.Logger().Error("fail to inspect mempool rollback state for inactive vault", "error", err, "hash", inHash)
-			return
-		}
-		// Nothing to roll back if the voter no longer owns staged or reserved state.
-		if !hasCleanupState {
-			return
-		}
-
-		seen[inHash] = struct{}{}
-		hashes = append(hashes, inHash)
-	}
-
-	// Staged outbound entries are keyed by inbound hash and exist only for
-	// mempool-swap state, so the TOR reservation is not required as a marker.
-	stagedIter := vm.k.GetStagedOutboundIterator(ctx)
-	for ; stagedIter.Valid(); stagedIter.Next() {
-		var stagedList keeper.StagedOutboundList
-		if err := vm.k.Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
-			ctx.Logger().Error("fail to unmarshal staged outbound list for inactive-vault cleanup", "error", err)
-			continue
-		}
-		addIfMatch(stagedList.InHash, false)
-	}
-	stagedIter.Close()
-
-	// Queue-backed mempool swaps can be stranded before any staged outbound is
-	// written. Require a TOR reservation here so ordinary advanced-queue swaps
-	// are not mistaken for speculative mempool work.
-	advIter := vm.k.GetAdvSwapQueueItemIterator(ctx)
-	for ; advIter.Valid(); advIter.Next() {
-		var msg MsgSwap
-		if err := vm.k.Cdc().Unmarshal(advIter.Value(), &msg); err != nil {
-			ctx.Logger().Error("fail to unmarshal advanced swap queue item for inactive-vault cleanup", "error", err)
-			continue
-		}
-		addIfMatch(msg.Tx.ID, true)
-	}
-	advIter.Close()
-
-	return hashes
 }
 
 // paySaverYield - takes a pool asset and total rune collected in yield to the pool, then pays out savers their proportion of yield based on its size (relative to dual side LPs) and the SynthYieldBasisPoints

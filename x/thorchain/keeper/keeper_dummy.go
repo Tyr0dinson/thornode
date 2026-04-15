@@ -1210,6 +1210,13 @@ func (k KVStoreDummy) GetStagedOutboundValue(_ cosmos.Context) (cosmos.Uint, cos
 	return cosmos.ZeroUint(), cosmos.ZeroUint(), kaboom
 }
 
+func (k KVStoreDummy) GetStagedOutboundSummary(_ cosmos.Context) (StagedOutboundSummary, error) {
+	return StagedOutboundSummary{
+		RuneValue:  cosmos.ZeroUint(),
+		CloutValue: cosmos.ZeroUint(),
+	}, kaboom
+}
+
 func (k KVStoreDummy) RestoreStagedOutboundList(_ cosmos.Context, _ StagedOutboundList) error {
 	return kaboom
 }

@@ -1611,6 +1611,117 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultFinalizedMempool
 	c.Check(outItems[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 }
 
+func (s *HandlerObservedTxHelpersMempoolSuite) TestObservedTxOutQuorumInactiveVaultTransitionRollsBackUnfinalizedMempoolSwaps(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain, common.THORChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	retiringVault := NewVault(ctx.BlockHeight(), RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	retiringVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	retiringBTCAddress, err := retiringVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		retiringBTCAddress,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	observedInbound := NewObservedTx(inboundTx, ctx.BlockHeight(), retiringVault.PubKey, 0)
+	observedInbound.Status = common.Status_done
+
+	inVoter := NewObservedTxVoter(inTxID, ObservedTxs{observedInbound})
+	inVoter.Tx = observedInbound
+	inVoter.UnfinalizedHeight = ctx.BlockHeight()
+	inVoter.FinalisedHeight = 0
+	inVoter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+
+	stagedOutbound := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: activeVault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)),
+		Memo:        "OUT:" + inTxID.String(),
+	}
+	inVoter.Actions = []TxOutItem{stagedOutbound}
+
+	mgr.Keeper().SetObservedTxInVoter(ctx, inVoter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, inVoter.MempoolSwapTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+10), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	retiringETHAddress, err := retiringVault.PubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	outTxID := GetRandomTxHash()
+	outboundTx := common.NewTx(
+		outTxID,
+		retiringETHAddress,
+		GetRandomETHAddress(),
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{},
+		NewOutboundMemo(GetRandomTxHash()).String(),
+	)
+	observedOutbound := NewObservedTx(outboundTx, ctx.BlockHeight(), retiringVault.PubKey, ctx.BlockHeight())
+	observedOutbound.Status = common.Status_done
+
+	outVoter := NewObservedTxVoter(outTxID, ObservedTxs{observedOutbound})
+	outVoter.Tx = observedOutbound
+	outVoter.Height = ctx.BlockHeight()
+	outVoter.FinalisedHeight = ctx.BlockHeight()
+
+	err = handleObservedTxOutQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), observedOutbound, outVoter, []cosmos.AccAddress{na.NodeAddress}, true)
+	c.Assert(err, IsNil)
+
+	updatedVault, err := mgr.Keeper().GetVault(ctx, retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(updatedVault.Status, Equals, InactiveVault)
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("outbound-driven inactive-vault transition should clear staged mempool outbounds"))
+
+	updatedInVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedInVoter.FinalisedHeight, Equals, int64(0), Commentf("rollback should not mark an unfinalized inbound as finalized"))
+	c.Check(updatedInVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("outbound-driven inactive-vault rollback should clear the voter mempool TOR value"))
+	c.Check(updatedInVoter.Actions, IsNil, Commentf("outbound-driven inactive-vault rollback should discard speculative actions"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("outbound-driven inactive-vault rollback should release mempool swap capacity"))
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(outItems, HasLen, 0, Commentf("unfinalized inactive-vault rollback should not schedule a refund"))
+}
+
 // TestInactiveVaultFinalizedNonMempoolStillRefundsWhenRollbackInspectionFails
 // verifies that plain finalized inactive-vault inbounds keep the historical
 // direct-refund behavior even if mempool rollback-state inspection is broken.
@@ -2090,6 +2201,104 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestTimeoutRevertedMempoolSwapFin
 		Commentf("confirmed inbound should re-queue a BTC->ETH swap after timeout rollback"))
 	c.Check(queuedSwap.Destination.Equals(ethDestination), Equals, true,
 		Commentf("confirmed inbound should preserve the memo destination when it re-queues after timeout rollback"))
+}
+
+func (s *HandlerObservedTxHelpersMempoolSuite) TestErrataRevertedMempoolSwapRollbackPreservesReverted(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain, common.THORChain}.Strings(), nil)
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	inTxID := GetRandomTxHash()
+	fromAddr := GetRandomBTCAddress()
+	ethDestination := GetRandomETHAddress()
+	unfinalizedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:          inTxID,
+			Chain:       common.BTCChain,
+			FromAddress: fromAddr,
+			ToAddress:   GetRandomBTCAddress(),
+			Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+			Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(10_000))},
+			Memo:        fmt.Sprintf("=:ETH.ETH:%s", ethDestination),
+		},
+		ObservedPubKey: vault.PubKey,
+		Status:         common.Status_done,
+		BlockHeight:    ctx.BlockHeight(),
+	}
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{unfinalizedTx})
+	voter.Tx = unfinalizedTx
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	voter.Actions = []TxOutItem{{
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)),
+	}}
+	voter.SetReverted()
+
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, voter.Actions[0], ctx.BlockHeight()+5), IsNil)
+
+	err := rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter)
+	c.Assert(err, IsNil)
+
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.Reverted, Equals, true, Commentf("rollback must preserve errata-reverted state"))
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("rollback should still clear mempool TOR bookkeeping"))
+	c.Check(updatedVoter.Actions, IsNil, Commentf("rollback should still discard speculative actions"))
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("rollback should clear staged outbounds for errata-reverted mempool swaps"))
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	nas := NodeAccounts{na}
+
+	finalizedTx := unfinalizedTx
+	finalizedTx.FinaliseHeight = ctx.BlockHeight()
+	finalizedTx.Signers = []string{na.NodeAddress.String()}
+	updatedVoter.Txs = ObservedTxs{finalizedTx}
+	updatedVoter.Tx = finalizedTx
+	updatedVoter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxInVoter(ctx, updatedVoter)
+
+	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, nas, NewInternalHandler(mgr), finalizedTx, updatedVoter, []cosmos.AccAddress{na.NodeAddress}, true)
+	c.Assert(err, IsNil)
+
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Assert(err, NotNil, Commentf("errata-reverted inbound must not be re-queued as a fresh finalized swap"))
+
+	finalVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(finalVoter.Reverted, Equals, true, Commentf("finalized observation should leave errata-reverted state intact"))
 }
 
 // TestRevertMempoolSwapAggregatesSplitExternalOutboundsByAsset verifies that

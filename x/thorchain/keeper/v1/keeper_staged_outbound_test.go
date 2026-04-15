@@ -329,3 +329,85 @@ func (s *KeeperStagedOutboundSuite) TestGetStagedOutboundValueMultiple(c *C) {
 	c.Check(runeValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("expected rune value > 0, got %s", runeValue))
 	c.Check(cloutValue.String(), Equals, "100") // 30 + 70
 }
+
+func (s *KeeperStagedOutboundSuite) TestGetStagedOutboundSummary(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(200)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(100000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.Status = types.PoolStatus_Available
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(200000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.Status = types.PoolStatus_Available
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	inHash1 := GetRandomTxHash()
+	spent1 := cosmos.NewUint(30)
+	spent2 := cosmos.NewUint(20)
+	c.Assert(k.RestoreStagedOutboundList(ctx, StagedOutboundList{
+		InHash: inHash1,
+		Items: []StagedOutbound{
+			{
+				TxOutItem: TxOutItem{
+					Chain:      common.ETHChain,
+					ToAddress:  GetRandomETHAddress(),
+					Coin:       common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+					InHash:     inHash1,
+					CloutSpent: &spent1,
+				},
+				ScheduledHeight: 220,
+				StagedHeight:    180,
+			},
+			{
+				TxOutItem: TxOutItem{
+					Chain:      common.ETHChain,
+					ToAddress:  GetRandomETHAddress(),
+					Coin:       common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
+					InHash:     inHash1,
+					CloutSpent: &spent2,
+				},
+				ScheduledHeight: 225,
+				StagedHeight:    205,
+			},
+		},
+	}), IsNil)
+
+	inHash2 := GetRandomTxHash()
+	spent3 := cosmos.NewUint(70)
+	c.Assert(k.RestoreStagedOutboundList(ctx, StagedOutboundList{
+		InHash: inHash2,
+		Items: []StagedOutbound{
+			{
+				TxOutItem: TxOutItem{
+					Chain:      common.BTCChain,
+					ToAddress:  GetRandomBTCAddress(),
+					Coin:       common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+					InHash:     inHash2,
+					CloutSpent: &spent3,
+				},
+				ScheduledHeight: 230,
+				StagedHeight:    150,
+			},
+		},
+	}), IsNil)
+
+	summary, err := k.GetStagedOutboundSummary(ctx)
+	c.Assert(err, IsNil)
+	c.Check(summary.RuneValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("expected rune value > 0, got %s", summary.RuneValue))
+	c.Check(summary.CloutValue.String(), Equals, "120")
+	c.Check(summary.InboundCount, Equals, int64(2))
+	c.Check(summary.OutboundCount, Equals, int64(3))
+	c.Check(summary.OldestAge, Equals, int64(50), Commentf("future staged heights should not count toward age"))
+
+	runeValue, cloutValue, err := k.GetStagedOutboundValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(runeValue.Equal(summary.RuneValue), Equals, true)
+	c.Check(cloutValue.Equal(summary.CloutValue), Equals, true)
+}

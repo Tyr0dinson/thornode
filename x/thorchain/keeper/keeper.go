@@ -636,6 +636,14 @@ type KeeperMempoolSwapUsage interface {
 	SubMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cosmos.Uint
 }
 
+type StagedOutboundSummary struct {
+	RuneValue     cosmos.Uint
+	CloutValue    cosmos.Uint
+	InboundCount  int64
+	OutboundCount int64
+	OldestAge     int64
+}
+
 type KeeperStagedOutbound interface {
 	// SetStagedOutbound adds a staged outbound for a mempool swap (inHash extracted from item.InHash)
 	SetStagedOutbound(ctx cosmos.Context, item TxOutItem, scheduledHeight int64) error
@@ -649,6 +657,8 @@ type KeeperStagedOutbound interface {
 	GetStagedOutboundIterator(ctx cosmos.Context) cosmos.Iterator
 	// GetStagedOutboundValue returns the total RUNE value and clout of all staged outbounds
 	GetStagedOutboundValue(ctx cosmos.Context) (cosmos.Uint, cosmos.Uint, error)
+	// GetStagedOutboundSummary returns staged outbound value and count/age metadata
+	GetStagedOutboundSummary(ctx cosmos.Context) (StagedOutboundSummary, error)
 	// RestoreStagedOutboundList writes an entire list to the store preserving StagedHeight (for genesis import)
 	RestoreStagedOutboundList(ctx cosmos.Context, list StagedOutboundList) error
 }

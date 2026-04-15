@@ -885,6 +885,109 @@ func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, 
 	return nil
 }
 
+// rollbackUnfinalizedMempoolSwapsForInactiveVault rolls back speculative
+// mempool-swap state as soon as a vault becomes inactive. The inbound has not
+// finalized yet, so this intentionally does not schedule a refund; if the
+// inbound later finalizes to the inactive vault, the finalized observed-tx path
+// will handle the normal inactive-vault refund.
+func rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx cosmos.Context, k keeper.Keeper, mgr Manager, vault Vault) {
+	hashes := collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx, k, vault.PubKey)
+	for _, inHash := range hashes {
+		voter, err := k.GetObservedTxInVoter(ctx, inHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed tx voter for inactive-vault mempool rollback", "error", err, "hash", inHash)
+			continue
+		}
+
+		ctx.Logger().Info("rolling back unfinalized mempool swap for inactive vault",
+			"hash", inHash,
+			"vault", vault.PubKey)
+
+		if err := rollbackMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
+			// Leave the state intact for the LackSigning timeout fallback to retry.
+			ctx.Logger().Error("fail to roll back unfinalized inactive-vault mempool swap", "error", err, "hash", inHash)
+			continue
+		}
+
+		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
+	}
+}
+
+// collectUnfinalizedMempoolSwapHashesForInactiveVault finds unfinalized
+// mempool-swap inbounds observed to the vault that is transitioning inactive.
+// Staged outbounds are a definitive mempool-swap marker; queued-only advanced
+// swaps additionally require a live TOR reservation so normal queued swaps are
+// not rolled back.
+func collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) []common.TxID {
+	hashes := make([]common.TxID, 0)
+	seen := make(map[common.TxID]struct{})
+
+	addIfMatch := func(inHash common.TxID, requireReservation bool) {
+		if inHash.IsEmpty() {
+			return
+		}
+		if _, ok := seen[inHash]; ok {
+			return
+		}
+
+		voter, err := k.GetObservedTxInVoter(ctx, inHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed tx voter for inactive-vault mempool scan", "error", err, "hash", inHash)
+			return
+		}
+		// Only unfinalized inbounds observed to the newly inactive vault need this rollback.
+		if voter.FinalisedHeight > 0 || !voter.Tx.ObservedPubKey.Equals(vaultPubKey) {
+			return
+		}
+		// Queue-only candidates need the reservation marker to distinguish mempool swaps.
+		if requireReservation && !voter.HasReservedMempoolSwapTOR() {
+			return
+		}
+
+		hasCleanupState, err := needsMempoolSwapRollback(ctx, k, voter)
+		if err != nil {
+			ctx.Logger().Error("fail to inspect mempool rollback state for inactive vault", "error", err, "hash", inHash)
+			return
+		}
+		// Nothing to roll back if the voter no longer owns staged or reserved state.
+		if !hasCleanupState {
+			return
+		}
+
+		seen[inHash] = struct{}{}
+		hashes = append(hashes, inHash)
+	}
+
+	// Staged outbound entries are keyed by inbound hash and exist only for
+	// mempool-swap state, so the TOR reservation is not required as a marker.
+	stagedIter := k.GetStagedOutboundIterator(ctx)
+	for ; stagedIter.Valid(); stagedIter.Next() {
+		var stagedList keeper.StagedOutboundList
+		if err := k.Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
+			ctx.Logger().Error("fail to unmarshal staged outbound list for inactive-vault cleanup", "error", err)
+			continue
+		}
+		addIfMatch(stagedList.InHash, false)
+	}
+	stagedIter.Close()
+
+	// Queue-backed mempool swaps can be stranded before any staged outbound is
+	// written. Require a TOR reservation here so ordinary advanced-queue swaps
+	// are not mistaken for speculative mempool work.
+	advIter := k.GetAdvSwapQueueItemIterator(ctx)
+	for ; advIter.Valid(); advIter.Next() {
+		var msg MsgSwap
+		if err := k.Cdc().Unmarshal(advIter.Value(), &msg); err != nil {
+			ctx.Logger().Error("fail to unmarshal advanced swap queue item for inactive-vault cleanup", "error", err)
+			continue
+		}
+		addIfMatch(msg.Tx.ID, true)
+	}
+	advIter.Close()
+
+	return hashes
+}
+
 // processTxOutAttestation applies a single attestation for an observed tx and saves
 // the voter. MsgObservedTxOut (single attester) uses it; MsgObservedTxQuorum applies
 // its attestations with applyTxOutAttestation and saves the voter once.
@@ -1605,6 +1708,7 @@ func handleObservedTxOutQuorum(
 
 		// RetiringVault status should clear once all real coins are drained,
 		// even if deficit accounting still remains on the vault.
+		becameInactive := false
 		if !vault.HasFunds() && vault.Status == RetiringVault {
 			// We have successfully removed all funds from a retiring vault;
 			// mark it inactive so it no longer blocks churn or unbonding.
@@ -1616,6 +1720,7 @@ func handleObservedTxOutQuorum(
 				)
 			}
 			vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
+			becameInactive = true
 		}
 		// if the vault is frozen, then unfreeze it. Since we saw that a
 		// transaction was signed
@@ -1629,10 +1734,16 @@ func handleObservedTxOutQuorum(
 		}
 		if err := k.SetVault(ctx, vault); err != nil {
 			ctx.Logger().Error("fail to save vault", "error", err)
-		} else if principalDebited && tx.Tx.Chain.RequiresTerminalErrataOutcome() {
-			// Record the principal debit only once it is stored, so errata
-			// restores exactly what this observation removed from the vault.
-			voter.UpdatedVault = true
+		} else {
+			if principalDebited && tx.Tx.Chain.RequiresTerminalErrataOutcome() {
+				// Record the principal debit only once it is stored, so errata
+				// restores exactly what this observation removed from the vault.
+				voter.UpdatedVault = true
+			}
+			if becameInactive {
+				// Clean up speculative mempool-swap state tied to this vault transition.
+				rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx, k, mgr, vault)
+			}
 		}
 	}
 	saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, tx, activeNodeAccounts)
@@ -2970,11 +3081,10 @@ func rollbackMempoolSwapAtomic(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	return nil
 }
 
-// clearMempoolRollbackState normalizes mempool-swap state after a
-// successful inline rollback so a later finalized inbound is processed like a
-// fresh swap.
+// clearMempoolRollbackState clears speculative mempool-swap state after a
+// successful inline rollback. It preserves Reverted because errata uses that
+// flag as terminal invalidation state, not as rollback bookkeeping.
 func clearMempoolRollbackState(voter ObservedTxVoter) ObservedTxVoter {
-	voter.Reverted = false
 	voter.MempoolSwapTOR = cosmos.ZeroUint()
 	voter.Actions = nil
 	return voter
