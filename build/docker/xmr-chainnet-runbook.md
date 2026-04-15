@@ -171,6 +171,248 @@ Things to watch for:
 - no fresh `failed to derive outbound tx keys`
 - no fresh `leader not reachable` storms during normal keysign
 
+## Operator Notes
+
+### Service naming on the 7-node cluster
+
+- chainnet host: `root@91.99.89.216`
+- run commands from `/root/thornode`
+- `dog` uses the unsuffixed service names: `thornode`, `bifrost`, `xmr-frost-signer`
+- the other 6 validators use suffixed names, for example `docker-bifrost-cat-1`
+- when checking "all nodes", include both unsuffixed `dog` and the 6 suffixed services
+
+Keep canonical container lists around so loops do not silently skip `dog`:
+
+```bash
+THORNODES=(docker-thornode-1 docker-thornode-cat-1 docker-thornode-fox-1 docker-thornode-goat-1 docker-thornode-whale-1 docker-thornode-wolf-1 docker-thornode-eagle-1)
+BIFROSTS=(docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-goat-1 docker-bifrost-whale-1 docker-bifrost-wolf-1 docker-bifrost-eagle-1)
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
+```
+
+### Signer API auth
+
+The XMR signer API uses the raw `SIGNER_SEED_PHRASE` as the bearer token unless
+`XMR_FROST_AUTH_BEARER` is explicitly set.
+
+In this chainnet, each signer has its own bearer token because each signer has its
+own seed phrase. Do not reuse a token from one node against another node.
+
+Example for one signer:
+
+```bash
+seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' docker-xmr-frost-signer-1 | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
+docker exec -e AUTH="$seed" docker-xmr-frost-signer-1 sh -lc \
+  'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/outputs/<vault_pub_key>?view=all"'
+```
+
+Quick auth smoke test across all signers:
+
+```bash
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
+for c in "${SIGNERS[@]}"; do
+  seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
+  printf '%s ' "$c"
+  docker exec -e AUTH="$seed" "$c" sh -lc \
+    'curl -sf -H "Authorization: Bearer $AUTH" http://127.0.0.1:8283/v1/monero/chain/height >/dev/null && echo OK'
+done
+```
+
+### Fresh outbound visibility on signers
+
+For a newly signed XMR outbound, use the signer mempool view first:
+
+```bash
+TX=<lowercase_xmr_tx_hash>
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
+for c in "${SIGNERS[@]}"; do
+  seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
+  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/transfers?mempool=true"')
+  printf '%s ' "$c"
+  printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outgoing[]? | select((.txid // "") | ascii_downcase == $tx) | {txid,from_address,address,vault_pub_key,amount,fee,height,tx_keys,note}) // "MISSING"'
+done
+```
+
+Endpoint semantics:
+
+- `GET /v1/monero/transfers?mempool=true` is the correct view for a fresh outbound and tx-key propagation
+- `GET /v1/monero/transfers?height=0` only returns mined outbound records
+- if keysign just succeeded, absence from the height-based view does not mean the signer lost the tx
+
+### Fast path to verify an XMR tx end to end
+
+1. Check thornode has the tx:
+
+```bash
+TX=<lowercase_or_uppercase_xmr_tx_hash>
+curl -s "http://localhost:1317/thorchain/tx/${TX^^}" | jq
+```
+
+2. Get the canonical active XMR vaults and the key-images stored on chain:
+
+```bash
+curl -s http://localhost:1317/thorchain/vaults/asgard | jq '[.[] | {status, pub_key_frost, key_images_xmr, tx_keys_xmr}]'
+```
+
+3. For a fresh outbound, confirm the signer-side outgoing record includes the tx keys:
+
+```bash
+TX=<tx_hash_lowercase>
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
+for c in "${SIGNERS[@]}"; do
+  seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
+  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/transfers?mempool=true"')
+  printf '%s ' "$c"
+  printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outgoing[]? | select((.txid // "") | ascii_downcase == $tx) | {txid,from_address,address,vault_pub_key,amount,fee,tx_keys,note}) // "MISSING"'
+done
+```
+
+Interpretation:
+
+- signing nodes should show the outgoing row immediately after keysign
+- non-signing nodes can miss the local row briefly, but must catch up from thornode attestation
+- once the tx is mined, the same record should become visible in `GET /v1/monero/transfers?height=0`
+
+4. Check all signers hold the same tracked output state for that tx:
+
+```bash
+TX=<tx_hash_lowercase>
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
+VAULT=<cthorpub1...frost_vault>
+for c in "${SIGNERS[@]}"; do
+  seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
+  resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: Bearer $AUTH" "http://127.0.0.1:8283/v1/monero/outputs/'"$VAULT"'?view=all"')
+  printf '%s ' "$c"
+  printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outputs[]? | select((.tx_hash // "") | ascii_downcase == $tx) | {tx_hash,state,spent,key_image,height,amount,output_index}) // "MISSING"'
+done
+```
+
+Interpretation:
+
+- tx visible in thornode and on all signers with `key_image=null`:
+  first observation completed, finalized key-image round has not landed yet
+- tx visible in `key_images_xmr` on chain and on all signers with the same non-null `key_image`:
+  key-image generation, validation, attestation, and local apply all completed
+
+5. Check the recent bifrost path for that tx:
+
+```bash
+TX=<tx_hash_lowercase>
+for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-goat-1 docker-bifrost-whale-1 docker-bifrost-wolf-1 docker-bifrost-eagle-1; do
+  hit=$(docker logs "$c" --since 30m 2>&1 | grep -i "$TX" || true)
+  if [ -n "$hit" ]; then
+    echo "=== $c ==="
+    printf '%s\n' "$hit" | tail -n 12
+  fi
+done
+```
+
+Look for these stages:
+
+- `queueing XMR key-image generation`
+- `starting frost key-image ceremony`
+- `completed frost key-image ceremony`
+- `attached XMR key-images to finalized observation`
+- `validating finalized XMR key-images against local tracked outputs`
+- `validated and applied finalized XMR key-images`
+- `sent quorum tx to thornode ... final: true`
+
+### Transient key-image leader failures
+
+A single `leader not reachable` during XMR key-image generation is not automatically
+fatal. Another bifrost can win the next attempt, complete the ceremony, and the cluster
+can still converge correctly. Treat repeated failures across multiple nodes as the
+real problem, not a single failed attempt.
+
+### Driving a birthday reset scanner
+
+Use the reset tool when a signer needs to forget local Monero scan state and replay from
+the vault birthday.
+
+Wrapper:
+
+```bash
+build/docker/xmr-reset-scanner.sh
+```
+
+The wrapper runs an installed `xmr-reset-scanner` binary if one exists. Otherwise it
+falls back to `go run tools/xmr-reset-scanner`, so the host must have a working
+`go` binary unless the tool is already installed.
+
+Single vault on one signer:
+
+```bash
+build/docker/xmr-reset-scanner.sh \
+  --chain-network chainnet \
+  --signer-container docker-xmr-frost-signer-1 \
+  --vault-pubkey <cthorpub1...frost_vault> \
+  --height <vault_creation_height_xmr>
+```
+
+All local vaults on one signer, using birthdays from thornode:
+
+```bash
+build/docker/xmr-reset-scanner.sh \
+  --chain-network chainnet \
+  --signer-container docker-xmr-frost-signer-1 \
+  --all-vaults
+```
+
+Important scope note:
+
+- `--all-vaults` means all XMR vaults with `has_frost_keys=true` on that signer
+- it does not reset every historical XMR vault record in thornode
+- for a cluster-wide sidecar rebuild, run the reset against each signer container and each target vault pubkey you want rebuilt everywhere
+
+Cluster-wide reset for two tracked vaults on all 7 signers:
+
+```bash
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
+VAULTS=(<cthorpub1_vault_a> <cthorpub1_vault_b>)
+for signer in "${SIGNERS[@]}"; do
+  for vault in "${VAULTS[@]}"; do
+    build/docker/xmr-reset-scanner.sh \
+      --chain-network chainnet \
+      --signer-container "$signer" \
+      --vault-pubkey "$vault"
+  done
+done
+```
+
+Dry run first if needed:
+
+```bash
+build/docker/xmr-reset-scanner.sh \
+  --chain-network chainnet \
+  --signer-container docker-xmr-frost-signer-1 \
+  --all-vaults \
+  --dry-run
+```
+
+Important behavior:
+
+- the reset is local to the signer you target
+- repeat the command for each signer container that needs replay
+- if `--height` is omitted for `--vault-pubkey`, the tool looks up `vault_creation_height_xmr` from thornode
+- the signer reset clears local outputs, clears outgoing transfer records, rewinds scan state, and re-registers the vault at its birthday
+- bifrost then rebuilds state during normal `scanner_sync`, including replaying key-images and tx-key-backed outbound audit records from thornode
+- immediately after reset, nodes can disagree for a short period while scan replay and catchup are still running
+
+What to expect after a reset:
+
+- signer outputs for that vault can temporarily drop to zero
+- signer outgoing transfer lists for that vault can temporarily be empty
+- signer logs should show `scanner reset complete — rescan enabled from birthday`
+- later logs should show the scanner walking forward from the birthday
+- bifrost can briefly log both XMR key-image catchup and XMR tx-key catchup while state is being rediscovered
+- final state should converge back to the same tracked outputs, key-images, and outbound audit records as before the reset
+
+Quick verification loop:
+
+```bash
+docker logs --since 5m docker-xmr-frost-signer-1 2>&1 | egrep 'scanner reset complete|rescan|scanning blocks'
+docker logs --since 5m docker-bifrost-1 2>&1 | egrep 'xmr key-image catchup|xmr tx-key catchup' || true
+```
+
 ## Fresh Teardown
 
 Do not remove the Monero volume unless you intend to fully rebuild Monero state.
@@ -227,6 +469,18 @@ docker compose --env-file .env -f build/docker/docker-compose.xmr-chainnet.yml r
 docker compose --env-file .env -f build/docker/docker-compose.xmr-chainnet.yml restart \
   bifrost-cat bifrost-fox bifrost-goat bifrost-whale bifrost-wolf bifrost-eagle
 ```
+
+### Fresh outbound missing from `transfers?height=0`
+
+Newly signed XMR outbounds appear first in `GET /v1/monero/transfers?mempool=true`.
+`GET /v1/monero/transfers?height=0` only returns `observed_mined` rows, so a valid
+fresh outbound can be absent there until it lands on chain and is observed mined.
+
+### `xmr-reset-scanner.sh` fails with `go: command not found`
+
+The wrapper script falls back to `go run tools/xmr-reset-scanner` when no installed
+`xmr-reset-scanner` binary is present. On hosts without Go installed, either install
+the tool first or run the reset from an environment that has a working `go` binary.
 
 ### Go/Rust auth mismatch
 
