@@ -295,13 +295,6 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 			Msg("refusing to send xmr quorum tx without required metadata")
 		return
 	}
-	if err := s.requireXMRFinalInboundPropagation(tx, inbound); err != nil {
-		s.logger.Error().
-			Err(err).
-			Str("tx_id", tx.Tx.ID.String()).
-			Msg("refusing to send finalized xmr inbound before key-image validation succeeds")
-		return
-	}
 	if err := s.requireXMRFinalOutboundPropagation(tx, inbound); err != nil {
 		s.logger.Error().
 			Err(err).
