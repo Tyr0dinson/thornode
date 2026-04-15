@@ -74,6 +74,7 @@ func NewClient(
 	c := &Client{
 		logger:   logger,
 		config:   config,
+		bridge:   bridge,
 		wg:       &sync.WaitGroup{},
 		stopchan: make(chan struct{}),
 		nonces:   make(map[string]nonceMetadata),
