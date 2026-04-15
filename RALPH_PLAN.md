@@ -243,6 +243,7 @@ Each regression suite must run via `make test-regression RUN=opt-in-chain-securi
 ### Phase 16 — Coverage
 
 - [ ] **T53** Generate coverage report (`make test-coverage`); confirm every new/changed file in this feature is ≥80% line coverage. If below, add tests until threshold met. Do not degrade coverage on untouched files.
+BLOCKED: Go 1.26 is installed but project requires Go 1.24 (go.mod toolchain go1.24.5). `bytedance/sonic` dependency fails to compile with Go 1.26. `make build`, `make test`, and `make test-coverage` all fail. Need either Go 1.24.5 on PATH as default or GOTOOLCHAIN=auto set in environment. Human must fix Go toolchain before coverage can be verified.
 
 ### Phase 17 — Integration + MR
 
