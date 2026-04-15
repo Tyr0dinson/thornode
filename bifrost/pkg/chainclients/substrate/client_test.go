@@ -29,7 +29,14 @@ import (
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	. "gopkg.in/check.v1"
 )
+
+func TestClientSuite(t *testing.T) { TestingT(t) }
+
+type ClientSuite struct{}
+
+var _ = Suite(&ClientSuite{})
 
 // mockBridge is a mock implementation of ThorchainBridge for testing
 type mockBridge struct {
@@ -40,44 +47,32 @@ type mockBridge struct {
 // nonceMetadata JSON serialization
 // ---------------------------------------------------------------------------
 
-func TestNonceMetadataJSON(t *testing.T) {
+func (s *ClientSuite) TestNonceMetadataJSON(c *C) {
 	meta := nonceMetadata{
 		Nonce:       42,
 		BlockHeight: 1000,
 	}
 
 	data, err := json.Marshal(meta)
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
-	}
+	c.Assert(err, IsNil)
 
 	var restored nonceMetadata
-	if err := json.Unmarshal(data, &restored); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
+	err = json.Unmarshal(data, &restored)
+	c.Assert(err, IsNil)
 
-	if restored.Nonce != meta.Nonce {
-		t.Errorf("nonce: got %d, want %d", restored.Nonce, meta.Nonce)
-	}
-	if restored.BlockHeight != meta.BlockHeight {
-		t.Errorf("block height: got %d, want %d", restored.BlockHeight, meta.BlockHeight)
-	}
+	c.Check(restored.Nonce, Equals, meta.Nonce)
+	c.Check(restored.BlockHeight, Equals, meta.BlockHeight)
 }
 
-func TestNonceMetadataJSONBackwardsCompat(t *testing.T) {
+func (s *ClientSuite) TestNonceMetadataJSONBackwardsCompat(c *C) {
 	// Ensure the JSON field names match the old NonceMetadata format
 	// so that checkpoints serialized before the refactor still deserialize.
 	raw := `{"Nonce":7,"BlockHeight":500}`
 	var meta nonceMetadata
-	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-	if meta.Nonce != 7 {
-		t.Errorf("nonce: got %d, want 7", meta.Nonce)
-	}
-	if meta.BlockHeight != 500 {
-		t.Errorf("block height: got %d, want 500", meta.BlockHeight)
-	}
+	err := json.Unmarshal([]byte(raw), &meta)
+	c.Assert(err, IsNil)
+	c.Check(meta.Nonce, Equals, uint32(7))
+	c.Check(meta.BlockHeight, Equals, int64(500))
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +214,7 @@ func newTestClient(rpcClient *rpc.Client) *Client {
 // reserveNonce tests
 // ---------------------------------------------------------------------------
 
-func TestReserveNonce_Fresh(t *testing.T) {
+func (s *ClientSuite) TestReserveNonce_Fresh(c *C) {
 	h := newRPCHandler()
 	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
 		return uint32(0), nil
@@ -227,22 +222,16 @@ func TestReserveNonce_Fresh(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
-	nonce, checkpoint, err := c.reserveNonce(tx, "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", 100)
-	if err != nil {
-		t.Fatalf("reserveNonce: %v", err)
-	}
-	if nonce != 0 {
-		t.Errorf("nonce: got %d, want 0", nonce)
-	}
-	if checkpoint == nil {
-		t.Fatal("checkpoint should not be nil")
-	}
+	nonce, checkpoint, err := cl.reserveNonce(tx, "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", 100)
+	c.Assert(err, IsNil)
+	c.Check(nonce, Equals, uint32(0))
+	c.Assert(checkpoint, NotNil, Commentf("checkpoint should not be nil"))
 }
 
-func TestReserveNonce_Increment(t *testing.T) {
+func (s *ClientSuite) TestReserveNonce_Increment(c *C) {
 	h := newRPCHandler()
 	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
 		return uint32(5), nil
@@ -250,30 +239,22 @@ func TestReserveNonce_Increment(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
-	n1, _, err := c.reserveNonce(tx, vault, 100)
-	if err != nil {
-		t.Fatalf("first reserveNonce: %v", err)
-	}
-	if n1 != 5 {
-		t.Errorf("first nonce: got %d, want 5", n1)
-	}
+	n1, _, err := cl.reserveNonce(tx, vault, 100)
+	c.Assert(err, IsNil, Commentf("first reserveNonce"))
+	c.Check(n1, Equals, uint32(5), Commentf("first nonce"))
 
 	// Second call at same height should return incremented nonce
-	n2, _, err := c.reserveNonce(tx, vault, 100)
-	if err != nil {
-		t.Fatalf("second reserveNonce: %v", err)
-	}
-	if n2 != 6 {
-		t.Errorf("second nonce: got %d, want 6", n2)
-	}
+	n2, _, err := cl.reserveNonce(tx, vault, 100)
+	c.Assert(err, IsNil, Commentf("second reserveNonce"))
+	c.Check(n2, Equals, uint32(6), Commentf("second nonce"))
 }
 
-func TestReserveNonce_Checkpoint(t *testing.T) {
-	c := newTestClient(nil) // RPC not needed for checkpoint path
+func (s *ClientSuite) TestReserveNonce_Checkpoint(c *C) {
+	cl := newTestClient(nil) // RPC not needed for checkpoint path
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 
 	checkpointData, _ := json.Marshal(nonceMetadata{Nonce: 42, BlockHeight: 100})
@@ -282,25 +263,20 @@ func TestReserveNonce_Checkpoint(t *testing.T) {
 		Checkpoint: checkpointData,
 	}
 
-	nonce, cp, err := c.reserveNonce(tx, vault, 200)
-	if err != nil {
-		t.Fatalf("reserveNonce: %v", err)
-	}
-	if nonce != 42 {
-		t.Errorf("nonce: got %d, want 42", nonce)
-	}
+	nonce, cp, err := cl.reserveNonce(tx, vault, 200)
+	c.Assert(err, IsNil)
+	c.Check(nonce, Equals, uint32(42))
 	// Checkpoint should be returned as-is
-	if string(cp) != string(checkpointData) {
-		t.Errorf("checkpoint mismatch")
-	}
+	c.Check(string(cp), Equals, string(checkpointData), Commentf("checkpoint mismatch"))
 
 	// The nonce map should NOT have been incremented (checkpoint bypasses increment)
-	if meta, ok := c.nonces[vault]; ok && meta.Nonce != 0 {
-		t.Errorf("nonce map should not be modified by checkpoint path, got nonce=%d", meta.Nonce)
+	if meta, ok := cl.nonces[vault]; ok {
+		c.Check(meta.Nonce, Equals, uint32(0),
+			Commentf("nonce map should not be modified by checkpoint path, got nonce=%d", meta.Nonce))
 	}
 }
 
-func TestReserveNonce_OnChainRefresh(t *testing.T) {
+func (s *ClientSuite) TestReserveNonce_OnChainRefresh(c *C) {
 	callCount := 0
 	h := newRPCHandler()
 	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
@@ -314,30 +290,22 @@ func TestReserveNonce_OnChainRefresh(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
 	// First call at height 100
-	n1, _, err := c.reserveNonce(tx, vault, 100)
-	if err != nil {
-		t.Fatalf("first: %v", err)
-	}
-	if n1 != 3 {
-		t.Errorf("first nonce: got %d, want 3", n1)
-	}
+	n1, _, err := cl.reserveNonce(tx, vault, 100)
+	c.Assert(err, IsNil, Commentf("first"))
+	c.Check(n1, Equals, uint32(3), Commentf("first nonce"))
 
 	// Second call at higher height — should fetch fresh on-chain nonce
-	n2, _, err := c.reserveNonce(tx, vault, 200)
-	if err != nil {
-		t.Fatalf("second: %v", err)
-	}
-	if n2 != 5 {
-		t.Errorf("second nonce: got %d, want 5 (on-chain advanced)", n2)
-	}
+	n2, _, err := cl.reserveNonce(tx, vault, 200)
+	c.Assert(err, IsNil, Commentf("second"))
+	c.Check(n2, Equals, uint32(5), Commentf("second nonce: should advance to on-chain"))
 }
 
-func TestReserveNonce_MortalEraExpiry(t *testing.T) {
+func (s *ClientSuite) TestReserveNonce_MortalEraExpiry(c *C) {
 	h := newRPCHandler()
 	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
 		// On-chain nonce stays at 5 (broadcast failed, tx expired)
@@ -346,42 +314,30 @@ func TestReserveNonce_MortalEraExpiry(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
 	// First call at height 100: gets on-chain nonce 5, reserves it, cache goes to 6
-	n1, _, err := c.reserveNonce(tx, vault, 100)
-	if err != nil {
-		t.Fatalf("first: %v", err)
-	}
-	if n1 != 5 {
-		t.Errorf("first nonce: got %d, want 5", n1)
-	}
+	n1, _, err := cl.reserveNonce(tx, vault, 100)
+	c.Assert(err, IsNil, Commentf("first"))
+	c.Check(n1, Equals, uint32(5), Commentf("first nonce"))
 
 	// Simulate: the broadcast failed, on-chain nonce is still 5, but cache is at 6.
 	// At height 101 (same block epoch), cache nonce (6) > on-chain (5) and
 	// mortalEraPeriod hasn't passed, so cache wins — returns 6.
-	n2, _, err := c.reserveNonce(tx, vault, 101)
-	if err != nil {
-		t.Fatalf("second: %v", err)
-	}
-	if n2 != 6 {
-		t.Errorf("second nonce: got %d, want 6 (cache ahead, era not expired)", n2)
-	}
+	n2, _, err := cl.reserveNonce(tx, vault, 101)
+	c.Assert(err, IsNil, Commentf("second"))
+	c.Check(n2, Equals, uint32(6), Commentf("second nonce: cache ahead, era not expired"))
 
 	// Now jump past mortalEraPeriod (64 blocks from height 101 when cache was updated).
 	// At height 101+64=165, the mortal era expiry triggers reset to on-chain nonce 5.
-	n3, _, err := c.reserveNonce(tx, vault, 165)
-	if err != nil {
-		t.Fatalf("third: %v", err)
-	}
-	if n3 != 5 {
-		t.Errorf("third nonce: got %d, want 5 (should reset after mortal era expiry)", n3)
-	}
+	n3, _, err := cl.reserveNonce(tx, vault, 165)
+	c.Assert(err, IsNil, Commentf("third"))
+	c.Check(n3, Equals, uint32(5), Commentf("third nonce: should reset after mortal era expiry"))
 }
 
-func TestReserveNonce_ScannerNotReady(t *testing.T) {
+func (s *ClientSuite) TestReserveNonce_ScannerNotReady(c *C) {
 	// When the scanner hasn't observed any blocks, reserveNonce is called with
 	// currentHeight=0. This reserves nonce 0 without on-chain verification.
 	// Verify that the nonce self-corrects once the scanner starts.
@@ -392,35 +348,27 @@ func TestReserveNonce_ScannerNotReady(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
 	// First call at height 0 (scanner not ready) — doesn't fetch on-chain nonce
-	n1, _, err := c.reserveNonce(tx, vault, 0)
-	if err != nil {
-		t.Fatalf("first: %v", err)
-	}
-	if n1 != 0 {
-		t.Errorf("first nonce: got %d, want 0 (empty cache, height 0 skips fetch)", n1)
-	}
+	n1, _, err := cl.reserveNonce(tx, vault, 0)
+	c.Assert(err, IsNil, Commentf("first"))
+	c.Check(n1, Equals, uint32(0), Commentf("first nonce: empty cache, height 0 skips fetch"))
 
 	// Second call once scanner is running (height 100) — fetches on-chain nonce
 	// and the mortal era expiry resets the cache (100 >= 0 + 64)
-	n2, _, err := c.reserveNonce(tx, vault, 100)
-	if err != nil {
-		t.Fatalf("second: %v", err)
-	}
-	if n2 != 10 {
-		t.Errorf("second nonce: got %d, want 10 (should reset to on-chain nonce)", n2)
-	}
+	n2, _, err := cl.reserveNonce(tx, vault, 100)
+	c.Assert(err, IsNil, Commentf("second"))
+	c.Check(n2, Equals, uint32(10), Commentf("second nonce: should reset to on-chain nonce"))
 }
 
 // ---------------------------------------------------------------------------
 // GetAccountByAddress test
 // ---------------------------------------------------------------------------
 
-func TestGetAccountByAddress(t *testing.T) {
+func (s *ClientSuite) TestGetAccountByAddress(c *C) {
 	h := newRPCHandler()
 	// Mock balance: 5 TAO = 5_000_000_000 rao
 	// SCALE-encoded AccountInfo: nonce(4) + consumers(4) + providers(4) + sufficients(4)
@@ -444,38 +392,28 @@ func TestGetAccountByAddress(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
-	acct, err := c.GetAccountByAddress("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", nil)
-	if err != nil {
-		t.Fatalf("GetAccountByAddress: %v", err)
-	}
+	acct, err := cl.GetAccountByAddress("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", nil)
+	c.Assert(err, IsNil)
 
-	if acct.Sequence != 1 {
-		t.Errorf("sequence: got %d, want 1", acct.Sequence)
-	}
+	c.Check(acct.Sequence, Equals, int64(1))
 
 	// 5_000_000_000 rao / 10 = 500_000_000 thorchain units
 	expectedAmount := cosmos.NewUint(500_000_000)
-	if len(acct.Coins) != 1 {
-		t.Fatalf("coins len: got %d, want 1", len(acct.Coins))
-	}
-	if !acct.Coins[0].Amount.Equal(expectedAmount) {
-		t.Errorf("amount: got %s, want %s", acct.Coins[0].Amount, expectedAmount)
-	}
-	if !acct.Coins[0].Asset.Equals(common.TAOAsset) {
-		t.Errorf("asset: got %s, want %s", acct.Coins[0].Asset, common.TAOAsset)
-	}
-	if acct.Coins[0].Decimals != 9 {
-		t.Errorf("decimals: got %d, want 9", acct.Coins[0].Decimals)
-	}
+	c.Assert(len(acct.Coins), Equals, 1)
+	c.Check(acct.Coins[0].Amount.Equal(expectedAmount), Equals, true,
+		Commentf("amount: got %s, want %s", acct.Coins[0].Amount, expectedAmount))
+	c.Check(acct.Coins[0].Asset.Equals(common.TAOAsset), Equals, true,
+		Commentf("asset: got %s, want %s", acct.Coins[0].Asset, common.TAOAsset))
+	c.Check(acct.Coins[0].Decimals, Equals, int64(9))
 }
 
 // ---------------------------------------------------------------------------
 // BroadcastTx tests
 // ---------------------------------------------------------------------------
 
-func TestBroadcastTx_Success(t *testing.T) {
+func (s *ClientSuite) TestBroadcastTx_Success(c *C) {
 	h := newRPCHandler()
 	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
 		return "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", nil
@@ -483,21 +421,17 @@ func TestBroadcastTx_Success(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
 
-	txHash, err := c.BroadcastTx(txOutItem, rawTx)
-	if err != nil {
-		t.Fatalf("BroadcastTx: %v", err)
-	}
-	if txHash == "" {
-		t.Error("expected non-empty tx hash")
-	}
+	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
+	c.Assert(err, IsNil)
+	c.Check(txHash, Not(Equals), "", Commentf("expected non-empty tx hash"))
 }
 
-func TestBroadcastTx_AlreadyImported(t *testing.T) {
+func (s *ClientSuite) TestBroadcastTx_AlreadyImported(c *C) {
 	h := newRPCHandler()
 	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("rpc error (code: 1013): Transaction already imported")
@@ -505,22 +439,18 @@ func TestBroadcastTx_AlreadyImported(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
 
 	// Should succeed — AlreadyImported is treated as success
-	txHash, err := c.BroadcastTx(txOutItem, rawTx)
-	if err != nil {
-		t.Fatalf("BroadcastTx should succeed for AlreadyImported: %v", err)
-	}
-	if txHash == "" {
-		t.Error("expected non-empty tx hash")
-	}
+	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
+	c.Assert(err, IsNil, Commentf("BroadcastTx should succeed for AlreadyImported"))
+	c.Check(txHash, Not(Equals), "", Commentf("expected non-empty tx hash"))
 }
 
-func TestBroadcastTx_Stale(t *testing.T) {
+func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 	h := newRPCHandler()
 	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("rpc error (code: 1010): Stale")
@@ -528,22 +458,18 @@ func TestBroadcastTx_Stale(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
 
 	// Should succeed — Stale nonce means tx already confirmed
-	txHash, err := c.BroadcastTx(txOutItem, rawTx)
-	if err != nil {
-		t.Fatalf("BroadcastTx should succeed for Stale: %v", err)
-	}
-	if txHash == "" {
-		t.Error("expected non-empty tx hash")
-	}
+	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
+	c.Assert(err, IsNil, Commentf("BroadcastTx should succeed for Stale"))
+	c.Check(txHash, Not(Equals), "", Commentf("expected non-empty tx hash"))
 }
 
-func TestBroadcastTx_OtherError(t *testing.T) {
+func (s *ClientSuite) TestBroadcastTx_OtherError(c *C) {
 	h := newRPCHandler()
 	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("rpc error (code: -32000): Some other error")
@@ -551,13 +477,11 @@ func TestBroadcastTx_OtherError(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	c := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
 
-	_, err := c.BroadcastTx(txOutItem, rawTx)
-	if err == nil {
-		t.Fatal("BroadcastTx should fail for unknown errors")
-	}
+	_, err := cl.BroadcastTx(txOutItem, rawTx)
+	c.Check(err, NotNil, Commentf("BroadcastTx should fail for unknown errors"))
 }

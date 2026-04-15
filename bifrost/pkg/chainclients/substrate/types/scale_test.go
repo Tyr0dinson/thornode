@@ -1,12 +1,20 @@
 package types
 
 import (
+	"bytes"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	. "gopkg.in/check.v1"
 )
 
-func TestEncodeCompactSingleByte(t *testing.T) {
+func TestScaleSuite(t *testing.T) { TestingT(t) }
+
+type ScaleSuite struct{}
+
+var _ = Suite(&ScaleSuite{})
+
+func (s *ScaleSuite) TestEncodeCompactSingleByte(c *C) {
 	tests := []struct {
 		value    uint64
 		expected []byte
@@ -19,19 +27,12 @@ func TestEncodeCompactSingleByte(t *testing.T) {
 
 	for _, tt := range tests {
 		result := EncodeCompact(tt.value)
-		if len(result) != len(tt.expected) {
-			t.Errorf("EncodeCompact(%d): expected %d bytes, got %d", tt.value, len(tt.expected), len(result))
-			continue
-		}
-		for i := range result {
-			if result[i] != tt.expected[i] {
-				t.Errorf("EncodeCompact(%d): byte %d: expected 0x%02x, got 0x%02x", tt.value, i, tt.expected[i], result[i])
-			}
-		}
+		c.Assert(bytes.Equal(result, tt.expected), Equals, true,
+			Commentf("EncodeCompact(%d): got %x, want %x", tt.value, result, tt.expected))
 	}
 }
 
-func TestEncodeCompactTwoBytes(t *testing.T) {
+func (s *ScaleSuite) TestEncodeCompactTwoBytes(c *C) {
 	tests := []struct {
 		value    uint64
 		expected []byte
@@ -42,19 +43,12 @@ func TestEncodeCompactTwoBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		result := EncodeCompact(tt.value)
-		if len(result) != len(tt.expected) {
-			t.Errorf("EncodeCompact(%d): expected %d bytes, got %d", tt.value, len(tt.expected), len(result))
-			continue
-		}
-		for i := range result {
-			if result[i] != tt.expected[i] {
-				t.Errorf("EncodeCompact(%d): byte %d: expected 0x%02x, got 0x%02x", tt.value, i, tt.expected[i], result[i])
-			}
-		}
+		c.Assert(bytes.Equal(result, tt.expected), Equals, true,
+			Commentf("EncodeCompact(%d): got %x, want %x", tt.value, result, tt.expected))
 	}
 }
 
-func TestEncodeCompactFourBytes(t *testing.T) {
+func (s *ScaleSuite) TestEncodeCompactFourBytes(c *C) {
 	tests := []struct {
 		value    uint64
 		expected []byte
@@ -65,19 +59,12 @@ func TestEncodeCompactFourBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		result := EncodeCompact(tt.value)
-		if len(result) != len(tt.expected) {
-			t.Errorf("EncodeCompact(%d): expected %d bytes, got %d", tt.value, len(tt.expected), len(result))
-			continue
-		}
-		for i := range result {
-			if result[i] != tt.expected[i] {
-				t.Errorf("EncodeCompact(%d): byte %d: expected 0x%02x, got 0x%02x", tt.value, i, tt.expected[i], result[i])
-			}
-		}
+		c.Assert(bytes.Equal(result, tt.expected), Equals, true,
+			Commentf("EncodeCompact(%d): got %x, want %x", tt.value, result, tt.expected))
 	}
 }
 
-func TestEncodeDecodeCompactRoundTrip(t *testing.T) {
+func (s *ScaleSuite) TestEncodeDecodeCompactRoundTrip(c *C) {
 	values := []uint64{
 		0, 1, 42, 63, 64, 100, 255, 16383, 16384, 65535,
 		1000000, 1073741823, 1073741824, 1000000000,
@@ -86,30 +73,20 @@ func TestEncodeDecodeCompactRoundTrip(t *testing.T) {
 	for _, v := range values {
 		encoded := EncodeCompact(v)
 		decoded, n, err := DecodeCompact(encoded)
-		if err != nil {
-			t.Errorf("DecodeCompact for value %d: %v", v, err)
-			continue
-		}
-		if n != len(encoded) {
-			t.Errorf("DecodeCompact for value %d: consumed %d bytes, expected %d", v, n, len(encoded))
-		}
-		if !decoded.Equal(cosmos.NewUint(v)) {
-			t.Errorf("DecodeCompact for value %d: got %s", v, decoded.String())
-		}
+		c.Assert(err, IsNil, Commentf("DecodeCompact for value %d", v))
+		c.Assert(n, Equals, len(encoded), Commentf("DecodeCompact for value %d", v))
+		c.Assert(decoded.Equal(cosmos.NewUint(v)), Equals, true,
+			Commentf("DecodeCompact for value %d: got %s", v, decoded.String()))
 	}
 }
 
-func TestEncodeU32LE(t *testing.T) {
+func (s *ScaleSuite) TestEncodeU32LE(c *C) {
 	result := EncodeU32LE(0x01020304)
 	expected := []byte{0x04, 0x03, 0x02, 0x01}
-	for i := range result {
-		if result[i] != expected[i] {
-			t.Errorf("byte %d: expected 0x%02x, got 0x%02x", i, expected[i], result[i])
-		}
-	}
+	c.Assert(bytes.Equal(result, expected), Equals, true)
 }
 
-func TestDecodeCompactBigIntOverflow(t *testing.T) {
+func (s *ScaleSuite) TestDecodeCompactBigIntOverflow(c *C) {
 	// Construct a compact big-int with n=17 bytes (exceeds u128 capacity of 16)
 	// prefix byte: upper 6 bits = (17-4)=13, lower 2 bits = 0b11 → (13<<2)|3 = 55
 	data := make([]byte, 18)
@@ -119,12 +96,10 @@ func TestDecodeCompactBigIntOverflow(t *testing.T) {
 	}
 	data[17] = 0x01
 	_, _, err := DecodeCompact(data)
-	if err == nil {
-		t.Error("expected error for compact value exceeding u128")
-	}
+	c.Assert(err, NotNil, Commentf("expected error for compact value exceeding u128"))
 }
 
-func TestDecodeCompactBigInt8BytesOK(t *testing.T) {
+func (s *ScaleSuite) TestDecodeCompactBigInt8BytesOK(c *C) {
 	// A valid big-int compact with exactly 8 bytes should work
 	// prefix: (8-4)<<2 | 3 = (4<<2)|3 = 19
 	data := make([]byte, 9)
@@ -139,13 +114,7 @@ func TestDecodeCompactBigInt8BytesOK(t *testing.T) {
 	data[8] = 0x00
 
 	val, consumed, err := DecodeCompact(data)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if consumed != 9 {
-		t.Errorf("expected 9 bytes consumed, got %d", consumed)
-	}
-	if !val.Equal(cosmos.NewUint(0x40000000)) {
-		t.Errorf("expected 0x40000000, got 0x%x", val)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(consumed, Equals, 9)
+	c.Assert(val.Equal(cosmos.NewUint(0x40000000)), Equals, true)
 }

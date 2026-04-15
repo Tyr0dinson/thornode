@@ -5,9 +5,16 @@ import (
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	. "gopkg.in/check.v1"
 )
 
-func TestHexEncodeDecodeRoundTrip(t *testing.T) {
+func TestExtrinsicSuite(t *testing.T) { TestingT(t) }
+
+type ExtrinsicSuite struct{}
+
+var _ = Suite(&ExtrinsicSuite{})
+
+func (s *ExtrinsicSuite) TestHexEncodeDecodeRoundTrip(c *C) {
 	tests := []struct {
 		name string
 		data []byte
@@ -17,84 +24,57 @@ func TestHexEncodeDecodeRoundTrip(t *testing.T) {
 		{"multiple bytes", []byte{0xde, 0xad, 0xbe, 0xef}},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			encoded := HexEncode(tt.data)
-			decoded, err := HexDecode(encoded)
-			if err != nil {
-				t.Fatalf("HexDecode: %v", err)
-			}
-			if !bytes.Equal(decoded, tt.data) {
-				t.Errorf("round trip failed: got %x, want %x", decoded, tt.data)
-			}
-		})
+		encoded := HexEncode(tt.data)
+		decoded, err := HexDecode(encoded)
+		c.Assert(err, IsNil, Commentf("%s", tt.name))
+		c.Assert(bytes.Equal(decoded, tt.data), Equals, true,
+			Commentf("%s: got %x, want %x", tt.name, decoded, tt.data))
 	}
 }
 
-func TestHexDecodeStripsPrefix(t *testing.T) {
+func (s *ExtrinsicSuite) TestHexDecodeStripsPrefix(c *C) {
 	data, err := HexDecode("0xdeadbeef")
-	if err != nil {
-		t.Fatalf("HexDecode: %v", err)
-	}
-	expected := []byte{0xde, 0xad, 0xbe, 0xef}
-	if !bytes.Equal(data, expected) {
-		t.Errorf("got %x, want %x", data, expected)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(bytes.Equal(data, []byte{0xde, 0xad, 0xbe, 0xef}), Equals, true)
 }
 
-func TestHexDecodeWithoutPrefix(t *testing.T) {
+func (s *ExtrinsicSuite) TestHexDecodeWithoutPrefix(c *C) {
 	data, err := HexDecode("deadbeef")
-	if err != nil {
-		t.Fatalf("HexDecode: %v", err)
-	}
-	expected := []byte{0xde, 0xad, 0xbe, 0xef}
-	if !bytes.Equal(data, expected) {
-		t.Errorf("got %x, want %x", data, expected)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(bytes.Equal(data, []byte{0xde, 0xad, 0xbe, 0xef}), Equals, true)
 }
 
-func TestHexDecodeInvalid(t *testing.T) {
+func (s *ExtrinsicSuite) TestHexDecodeInvalid(c *C) {
 	_, err := HexDecode("0xZZZZ")
-	if err == nil {
-		t.Error("expected error for invalid hex")
-	}
+	c.Assert(err, NotNil)
 }
 
-func TestImmortalEra(t *testing.T) {
+func (s *ExtrinsicSuite) TestImmortalEra(c *C) {
 	era := ImmortalEra()
-	if len(era) != 1 || era[0] != 0x00 {
-		t.Errorf("ImmortalEra: got %x, want [00]", era)
-	}
+	c.Assert(era, HasLen, 1)
+	c.Assert(era[0], Equals, byte(0x00))
 }
 
-func TestMortalEra(t *testing.T) {
+func (s *ExtrinsicSuite) TestMortalEra(c *C) {
 	tests := []struct {
 		name     string
 		period   uint64
 		block    uint64
 		expected []byte
 	}{
-		// Substrate encodes the low nibble as trailing_zeros(period) - 1.
-		// Decoding: period = 2 << low_nibble, phase = (encoded >> 4) * quantize_factor.
 		{"period64_block0", 64, 0, []byte{0x05, 0x00}},
 		{"period64_block42", 64, 42, []byte{0xa5, 0x02}},
 		{"period64_block63", 64, 63, []byte{0xf5, 0x03}},
-		{"period64_block64", 64, 64, []byte{0x05, 0x00}}, // wraps around
+		{"period64_block64", 64, 64, []byte{0x05, 0x00}},
 		{"period4_block0", 4, 0, []byte{0x01, 0x00}},
 		{"period4_block3", 4, 3, []byte{0x31, 0x00}},
-		// MortalEra(256, 100): trailing_zeros(256)=8, low nibble=7
-		// encoded = 7 | (100<<4) = 0x0647
 		{"period256_block100", 256, 100, []byte{0x47, 0x06}},
-		// MortalEra(4096, 1000): trailing_zeros(4096)=12, low nibble=11
-		// encoded = 11 | (1000<<4) = 0x3E8B
 		{"period4096_block1000", 4096, 1000, []byte{0x8b, 0x3e}},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			era := MortalEra(tt.period, tt.block)
-			if !bytes.Equal(era, tt.expected) {
-				t.Errorf("MortalEra(%d, %d): got %x, want %x", tt.period, tt.block, era, tt.expected)
-			}
-		})
+		era := MortalEra(tt.period, tt.block)
+		c.Assert(bytes.Equal(era, tt.expected), Equals, true,
+			Commentf("%s: got %x, want %x", tt.name, era, tt.expected))
 	}
 }
 
@@ -104,17 +84,17 @@ func TestMortalEra(t *testing.T) {
 //	period = 2 << (encoded & 0x0F)
 //	quantize = max(period >> 12, 1)
 //	phase = (encoded >> 4) * quantize
-func TestMortalEraSubstrateDecodeRoundTrip(t *testing.T) {
+func (s *ExtrinsicSuite) TestMortalEraSubstrateDecodeRoundTrip(c *C) {
 	tests := []struct {
 		period uint64
 		block  uint64
-		wantP  uint64 // expected decoded period
-		wantPh uint64 // expected decoded phase
+		wantP  uint64
+		wantPh uint64
 	}{
 		{64, 0, 64, 0},
 		{64, 42, 64, 42},
 		{64, 63, 64, 63},
-		{64, 64, 64, 0}, // wraps
+		{64, 64, 64, 0},
 		{4, 0, 4, 0},
 		{4, 3, 4, 3},
 		{256, 100, 256, 100},
@@ -124,7 +104,6 @@ func TestMortalEraSubstrateDecodeRoundTrip(t *testing.T) {
 		era := MortalEra(tt.period, tt.block)
 		encoded := uint16(era[0]) | uint16(era[1])<<8
 
-		// Substrate decode formula
 		period := uint64(2) << (encoded & 0x0F)
 		quantize := period >> 12
 		if quantize < 1 {
@@ -132,145 +111,91 @@ func TestMortalEraSubstrateDecodeRoundTrip(t *testing.T) {
 		}
 		phase := uint64(encoded>>4) * quantize
 
-		if period != tt.wantP {
-			t.Errorf("MortalEra(%d,%d) decode period: got %d, want %d (encoded=%04x)", tt.period, tt.block, period, tt.wantP, encoded)
-		}
-		if phase != tt.wantPh {
-			t.Errorf("MortalEra(%d,%d) decode phase: got %d, want %d (encoded=%04x)", tt.period, tt.block, phase, tt.wantPh, encoded)
-		}
-		if phase >= period {
-			t.Errorf("MortalEra(%d,%d) invalid: phase(%d) >= period(%d) (encoded=%04x)", tt.period, tt.block, phase, period, encoded)
-		}
+		c.Assert(period, Equals, tt.wantP,
+			Commentf("MortalEra(%d,%d) period (encoded=%04x)", tt.period, tt.block, encoded))
+		c.Assert(phase, Equals, tt.wantPh,
+			Commentf("MortalEra(%d,%d) phase (encoded=%04x)", tt.period, tt.block, encoded))
+		c.Assert(phase < period, Equals, true,
+			Commentf("MortalEra(%d,%d) phase(%d) >= period(%d)", tt.period, tt.block, phase, period))
 	}
 }
 
-func TestMortalEraIsTwoBytes(t *testing.T) {
+func (s *ExtrinsicSuite) TestMortalEraIsTwoBytes(c *C) {
 	era := MortalEra(64, 10)
-	if len(era) != 2 {
-		t.Errorf("mortal era should be 2 bytes, got %d", len(era))
-	}
+	c.Assert(era, HasLen, 2)
 }
 
-func TestExtrinsicHashDeterministic(t *testing.T) {
+func (s *ExtrinsicSuite) TestExtrinsicHashDeterministic(c *C) {
 	data := []byte{0x01, 0x02, 0x03}
 	hash1 := ExtrinsicHash(data)
 	hash2 := ExtrinsicHash(data)
-	if hash1 != hash2 {
-		t.Error("ExtrinsicHash should be deterministic")
-	}
-	// 0x prefix + 64 hex chars
-	if len(hash1) != 66 {
-		t.Errorf("hash length: got %d, want 66", len(hash1))
-	}
-	if hash1[:2] != "0x" {
-		t.Error("hash should start with 0x")
-	}
+	c.Assert(hash1, Equals, hash2)
+	c.Assert(hash1, HasLen, 66)
+	c.Assert(hash1[:2], Equals, "0x")
 }
 
-func TestExtrinsicHashDifferentInput(t *testing.T) {
+func (s *ExtrinsicSuite) TestExtrinsicHashDifferentInput(c *C) {
 	hash1 := ExtrinsicHash([]byte{0x01})
 	hash2 := ExtrinsicHash([]byte{0x02})
-	if hash1 == hash2 {
-		t.Error("different inputs should produce different hashes")
-	}
+	c.Assert(hash1, Not(Equals), hash2)
 }
 
-func TestBalanceTransferKeepAlive(t *testing.T) {
+func (s *ExtrinsicSuite) TestBalanceTransferKeepAlive(c *C) {
 	dest := make([]byte, 32)
 	dest[0] = 0xAA
 	call := BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(1_000_000))
 
-	// pallet index
-	if call[0] != 5 {
-		t.Errorf("pallet index: got %d, want 5", call[0])
-	}
-	// call index
-	if call[1] != 3 {
-		t.Errorf("call index: got %d, want 3", call[1])
-	}
-	// MultiAddress::Id variant
-	if call[2] != MultiAddressID {
-		t.Errorf("address type: got %d, want %d", call[2], MultiAddressID)
-	}
-	// first byte of destination
-	if call[3] != 0xAA {
-		t.Errorf("first byte of dest: got 0x%02x, want 0xAA", call[3])
-	}
-	// decode compact amount at the end
+	c.Assert(call[0], Equals, byte(5))
+	c.Assert(call[1], Equals, byte(3))
+	c.Assert(call[2], Equals, byte(MultiAddressID))
+	c.Assert(call[3], Equals, byte(0xAA))
+
 	amountBytes := call[3+32:]
 	decoded, _, err := DecodeCompact(amountBytes)
-	if err != nil {
-		t.Fatalf("DecodeCompact: %v", err)
-	}
-	if !decoded.Equal(cosmos.NewUint(1_000_000)) {
-		t.Errorf("amount: got %s, want 1000000", decoded.String())
-	}
+	c.Assert(err, IsNil)
+	c.Assert(decoded.Equal(cosmos.NewUint(1_000_000)), Equals, true)
 }
 
-func TestSystemRemark(t *testing.T) {
+func (s *ExtrinsicSuite) TestSystemRemark(c *C) {
 	memo := []byte("SWAP:BTC.BTC:bc1qxyz")
 	call := SystemRemark(0, 0, memo)
 
-	if call[0] != 0 || call[1] != 0 {
-		t.Errorf("pallet/call: got %d/%d, want 0/0", call[0], call[1])
-	}
+	c.Assert(call[0], Equals, byte(0))
+	c.Assert(call[1], Equals, byte(0))
 
-	// decode compact length
 	remarkLen, n, err := DecodeCompactToInt(call[2:])
-	if err != nil {
-		t.Fatalf("DecodeCompact: %v", err)
-	}
-	if remarkLen != len(memo) {
-		t.Errorf("remark length: got %d, want %d", remarkLen, len(memo))
-	}
-	actualMemo := string(call[2+n:])
-	if actualMemo != string(memo) {
-		t.Errorf("memo: got %q, want %q", actualMemo, string(memo))
-	}
+	c.Assert(err, IsNil)
+	c.Assert(remarkLen, Equals, len(memo))
+	c.Assert(string(call[2+n:]), Equals, string(memo))
 }
 
-func TestSystemRemarkEmpty(t *testing.T) {
+func (s *ExtrinsicSuite) TestSystemRemarkEmpty(c *C) {
 	call := SystemRemark(0, 1, []byte{})
-	// pallet(1) + call(1) + compact_len(1 for 0)
-	if len(call) != 3 {
-		t.Errorf("empty remark call length: got %d, want 3", len(call))
-	}
+	c.Assert(call, HasLen, 3)
+
 	remarkLen, _, err := DecodeCompactToInt(call[2:])
-	if err != nil {
-		t.Fatalf("DecodeCompact: %v", err)
-	}
-	if remarkLen != 0 {
-		t.Errorf("remark length: got %d, want 0", remarkLen)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(remarkLen, Equals, 0)
 }
 
-func TestBatchAll(t *testing.T) {
+func (s *ExtrinsicSuite) TestBatchAll(c *C) {
 	call1 := []byte{5, 3, 0x00}
 	call2 := []byte{0, 0, 0x04}
 	batch := BatchAll(11, 2, [][]byte{call1, call2})
 
-	if batch[0] != 11 || batch[1] != 2 {
-		t.Errorf("pallet/call: got %d/%d, want 11/2", batch[0], batch[1])
-	}
+	c.Assert(batch[0], Equals, byte(11))
+	c.Assert(batch[1], Equals, byte(2))
 
-	// decode compact count
 	count, n, err := DecodeCompactToInt(batch[2:])
-	if err != nil {
-		t.Fatalf("DecodeCompact: %v", err)
-	}
-	if count != 2 {
-		t.Errorf("call count: got %d, want 2", count)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, 2)
 
 	remaining := batch[2+n:]
-	/* trunk-ignore(golangci-lint/gocritic) */
-	expected := append(call1, call2...)
-	if !bytes.Equal(remaining, expected) {
-		t.Errorf("batch calls: got %x, want %x", remaining, expected)
-	}
+	expected := append(call1, call2...) //nolint:gocritic
+	c.Assert(bytes.Equal(remaining, expected), Equals, true)
 }
 
-func TestEncodeSignedExtrinsicFormat(t *testing.T) {
+func (s *ExtrinsicSuite) TestEncodeSignedExtrinsicFormat(c *C) {
 	signer := make([]byte, 32)
 	signer[0] = 0x01
 	sig := make([]byte, 64)
@@ -289,40 +214,18 @@ func TestEncodeSignedExtrinsicFormat(t *testing.T) {
 
 	encoded := EncodeSignedExtrinsic(ext)
 
-	// should start with compact length prefix
 	_, consumed, err := DecodeCompact(encoded)
-	if err != nil {
-		t.Fatalf("length prefix: %v", err)
-	}
+	c.Assert(err, IsNil)
 	body := encoded[consumed:]
 
-	// version byte 0x84 (signed, version 4)
-	if body[0] != ExtrinsicFormatVersion {
-		t.Errorf("version byte: got 0x%02x, want 0x%02x", body[0], ExtrinsicFormatVersion)
-	}
-
-	// MultiAddress::Id
-	if body[1] != MultiAddressID {
-		t.Errorf("address type: got 0x%02x, want 0x%02x", body[1], MultiAddressID)
-	}
-
-	// signer at offset 2
-	if body[2] != 0x01 {
-		t.Errorf("first signer byte: got 0x%02x, want 0x01", body[2])
-	}
-
-	// signature type at offset 2+32=34
-	if body[34] != SignatureTypeEd25519 {
-		t.Errorf("signature type: got 0x%02x, want 0x%02x", body[34], SignatureTypeEd25519)
-	}
-
-	// first byte of signature at offset 35
-	if body[35] != 0xFF {
-		t.Errorf("first signature byte: got 0x%02x, want 0xFF", body[35])
-	}
+	c.Assert(body[0], Equals, byte(ExtrinsicFormatVersion))
+	c.Assert(body[1], Equals, byte(MultiAddressID))
+	c.Assert(body[2], Equals, byte(0x01))
+	c.Assert(body[34], Equals, byte(SignatureTypeEd25519))
+	c.Assert(body[35], Equals, byte(0xFF))
 }
 
-func TestSigningPayloadContainsAllFields(t *testing.T) {
+func (s *ExtrinsicSuite) TestSigningPayloadContainsAllFields(c *C) {
 	callData := []byte{5, 3}
 	era := MortalEra(64, 10)
 	genesisHash := make([]byte, 32)
@@ -332,23 +235,9 @@ func TestSigningPayloadContainsAllFields(t *testing.T) {
 
 	payload := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, 100, 1, genesisHash, blockHash)
 
-	// starts with call data
-	if payload[0] != 5 || payload[1] != 3 {
-		t.Error("payload should start with call data")
-	}
-
-	// ends with Option<Hash>::None (0x00) from CheckMetadataHash implicit
-	if payload[len(payload)-1] != 0x00 {
-		t.Error("payload should end with metadata hash None byte")
-	}
-
-	// blockHash is before the trailing None byte
-	if payload[len(payload)-33] != 0xBB {
-		t.Error("block hash should be before metadata hash None byte")
-	}
-
-	// genesisHash is before blockHash
-	if payload[len(payload)-65] != 0xAA {
-		t.Error("genesis hash should be before block hash")
-	}
+	c.Assert(payload[0], Equals, byte(5))
+	c.Assert(payload[1], Equals, byte(3))
+	c.Assert(payload[len(payload)-1], Equals, byte(0x00))
+	c.Assert(payload[len(payload)-33], Equals, byte(0xBB))
+	c.Assert(payload[len(payload)-65], Equals, byte(0xAA))
 }
