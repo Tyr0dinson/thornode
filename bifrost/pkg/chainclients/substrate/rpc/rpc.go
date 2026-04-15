@@ -241,7 +241,7 @@ func systemAccountStorageKey(accountID []byte) string {
 // (frozen/flags) AccountData variants.
 
 func decodeAccountInfoFreeBalance(data []byte, balanceSize int) (cosmos.Uint, error) {
-	const offset = 16 // 4 × u32 fields before AccountData.free
+	offset := 16 // 4 × u32 fields before AccountData.free
 
 	if len(data) < offset+balanceSize {
 		return cosmos.ZeroUint(), fmt.Errorf("AccountInfo data too short: %d bytes (need %d)", len(data), offset+balanceSize)

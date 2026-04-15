@@ -519,6 +519,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 	var transferData []byte
 	var hasTransfer bool
 
+	stop := false
 	for i := 0; i < numCalls; i++ {
 		if pos+2 > len(data) {
 			break
@@ -580,6 +581,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 		default:
 			// Unknown call in batch — we can't determine its size, so stop parsing.
 			// Any transfer + memo already captured will still be used.
+			stop = true
 			s.logger.Warn().
 				Int("call_index", i).
 				Int("total_calls", numCalls).
@@ -587,6 +589,9 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 				Uint8("call", call).
 				Bool("has_transfer", hasTransfer).
 				Msg("batch_all contains unknown call, stopping parse early")
+		}
+
+		if stop {
 			break
 		}
 	}

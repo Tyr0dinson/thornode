@@ -827,9 +827,19 @@ services:
       DOT_MASTER_ADDR: "${DOT_MASTER_ADDR:-5F99wvx3Rn1dJs7AYWxbgtJq43p9dEW6VVcLmxFTKfEDmArz}"
       DOT_MASTER_AMOUNT: "${DOT_MASTER_AMOUNT:-10000000000000000}" # 1M DOT
     healthcheck:
-      test: [ "CMD", "curl", "-sf", "-X", "POST", "-H", "Content-Type: application/json",
-              "-d", '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}',
-              "http://localhost:9944" ]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-X",
+          "POST",
+          "-H",
+          "Content-Type: application/json",
+          "-d",
+          '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}',
+          "http://localhost:9944",
+        ]
       interval: 5s
       timeout: 5s
       retries: 20

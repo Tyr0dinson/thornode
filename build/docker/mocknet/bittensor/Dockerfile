@@ -1,7 +1,9 @@
-FROM ghcr.io/opentensor/subtensor-localnet:devnet-ready
+FROM ghcr.io/opentensor/subtensor-localnet:v3.3.13-393
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  jq curl && rm -rf /var/lib/apt/lists/*
+  curl=8.5.0-2ubuntu10 \
+  jq=1.7.1-3build1 \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
