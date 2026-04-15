@@ -247,7 +247,7 @@ Each regression suite must run via `make test-regression RUN=opt-in-chain-securi
 ### Phase 17 — Integration + MR
 
 - [x] **T54** Full green-light pass: `make lint`, `make build`, `make test`, `make test-regression CI=1 EXPORT=1 DEBUG=1`. Fix anything the above tasks missed. This is the hard gate for the completion promise. — e85ee1effb
-- [x] **T55** Open/update the MR targeting `develop`: push branch, then run `glab mr create --target-branch develop --title "..." --description "$(cat .mr-description.md)" --yes` (use `--description` not `--body`; use `--yes` to skip interactive confirmation). Title + description reflect the final delivered scope; inline MR comments are the only way to respond to review. After push + MR exists, the feature is complete. — pending
+- [x] **T55** Open/update the MR targeting `develop`: push branch, then run `glab mr create --target-branch develop --title "..." --description "$(cat .mr-description.md)" --yes` (use `--description` not `--body`; use `--yes` to skip interactive confirmation). Title + description reflect the final delivered scope; inline MR comments are the only way to respond to review. After push + MR exists, the feature is complete. — b7555f8696
 
 ---
 
