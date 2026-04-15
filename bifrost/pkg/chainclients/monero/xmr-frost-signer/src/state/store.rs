@@ -11,6 +11,9 @@ const PRIVATE_FILE_MODE: u32 = 0o600;
 pub const IDEMPOTENCY_RETENTION_SECS: i64 = 86_400;
 pub const IDEMPOTENCY_PENDING_RECLAIM_SECS: i64 = 600;
 pub const IDEMPOTENCY_PRUNE_INTERVAL_SECS: u64 = 600;
+// Legacy sentinel used by older signer builds that incorrectly treated THORChain
+// key-image inventory replay as proof that an output had been spent. Reconcile
+// now uses this value only to unwind that metadata-only state during catchup.
 pub const RECONCILED_KEY_IMAGE_SPEND_HEIGHT: u64 = 0;
 
 fn is_idempotency_expired(created_at: i64, now_ts: i64) -> bool {
@@ -670,18 +673,13 @@ impl Store {
                     let mut changed = output.key_image.as_ref() != Some(&key_image);
                     output.key_image = Some(key_image);
                     if reconcile {
-                        if output.state != OutputState::Spent {
-                            output.state = OutputState::Spent;
-                            output.reservation = None;
-                            changed = true;
-                        } else if output.reservation.take().is_some() {
-                            changed = true;
-                        }
                         if output.spent_by_key_image_height
-                            != Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+                            == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
                         {
-                            output.spent_by_key_image_height =
-                                Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
+                            output.spent_by_key_image_height = None;
+                            if output.state == OutputState::Spent {
+                                output.state = OutputState::Unspent;
+                            }
                             changed = true;
                         }
                     }
@@ -689,11 +687,17 @@ impl Store {
                         applied += 1;
                     }
                 } else if reconcile {
-                    let mut changed = output.key_image.take().is_some();
-                    if output.spent_by_key_image_height.take().is_some() {
+                    let legacy_reconciled =
+                        output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
+                    let mut changed = false;
+                    if legacy_reconciled {
+                        output.spent_by_key_image_height = None;
                         if output.state == OutputState::Spent {
                             output.state = OutputState::Unspent;
                         }
+                        changed = true;
+                    }
+                    if output.state == OutputState::Unspent && output.key_image.take().is_some() {
                         changed = true;
                     }
                     if changed {
@@ -2628,47 +2632,54 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_key_images_marks_matched_refs_spent_and_clears_removed_refs() {
+    fn reconcile_key_images_preserves_real_spends_and_clears_legacy_metadata_spends() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
         let vault = "thorpub1vault";
 
         let mut preserved = sample_scanned_output("tx-keep", 0);
         preserved.key_image = Some("keep-image".to_string());
+        preserved.state = OutputState::Spent;
+        preserved.spent_by_key_image_height = Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
 
         let mut reverted = sample_scanned_output("tx-drop", 1);
         reverted.key_image = Some("drop-image".to_string());
-        reverted.state = OutputState::Spent;
-        reverted.spent_by_key_image_height = Some(123);
+        reverted.state = OutputState::Unspent;
 
         let mut spent_by_ref = sample_scanned_output("tx-spent-ref", 2);
         spent_by_ref.key_image = Some("old-image".to_string());
         spent_by_ref.state = OutputState::Spent;
+        spent_by_ref.spent_by_key_image_height = Some(123);
 
         store
-            .save_outputs(vault, &[preserved, reverted, spent_by_ref])
+            .save_outputs(vault, &[preserved, spent_by_ref, reverted])
             .unwrap();
 
         let refs = vec![("tx-keep".to_string(), 0, "keep-image".to_string())];
         let (applied, not_found) = store.apply_key_images(vault, &refs, true).unwrap();
-        assert_eq!(applied, 3);
+        assert_eq!(applied, 2);
         assert_eq!(not_found, 0);
 
         let outputs = store.load_outputs(vault).unwrap();
-        assert_eq!(outputs[0].key_image.as_deref(), Some("keep-image"));
-        assert_eq!(outputs[0].state, OutputState::Spent);
-        assert_eq!(
-            outputs[0].spent_by_key_image_height,
-            Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
-        );
+        let by_tx: HashMap<_, _> = outputs
+            .into_iter()
+            .map(|output| (output.tx_hash.clone(), output))
+            .collect();
 
-        assert_eq!(outputs[1].key_image, None);
-        assert_eq!(outputs[1].spent_by_key_image_height, None);
-        assert_eq!(outputs[1].state, OutputState::Unspent);
+        let keep = by_tx.get("tx-keep").unwrap();
+        assert_eq!(keep.key_image.as_deref(), Some("keep-image"));
+        assert_eq!(keep.state, OutputState::Unspent);
+        assert_eq!(keep.spent_by_key_image_height, None);
 
-        assert_eq!(outputs[2].key_image, None);
-        assert_eq!(outputs[2].spent_by_key_image_height, None);
-        assert_eq!(outputs[2].state, OutputState::Spent);
+        let drop = by_tx.get("tx-drop").unwrap();
+        assert_eq!(drop.key_image, None);
+        assert_eq!(drop.spent_by_key_image_height, None);
+        assert_eq!(drop.state, OutputState::Unspent);
+
+        let spent = by_tx.get("tx-spent-ref").unwrap();
+        assert_eq!(spent.key_image.as_deref(), Some("old-image"));
+        assert_eq!(spent.spent_by_key_image_height, Some(123));
+        assert_eq!(spent.state, OutputState::Spent);
     }
 
     #[test]

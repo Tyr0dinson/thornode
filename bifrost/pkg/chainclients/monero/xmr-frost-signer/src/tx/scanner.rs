@@ -430,15 +430,16 @@ impl Scanner {
                 output.key_image = Some(key_image.clone());
             }
             if reconcile {
-                if output.state != crate::state::store::OutputState::Spent {
-                    output.state = crate::state::store::OutputState::Spent;
-                    output.reservation = None;
-                    changed = true;
-                } else if output.reservation.take().is_some() {
-                    changed = true;
-                }
-                if output.spent_by_key_image_height != Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT) {
-                    output.spent_by_key_image_height = Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
+                // THORChain stores key images as vault metadata for tracked outputs.
+                // Replaying that metadata into local signer state must not mark the
+                // output as spent. Only block scanning can prove a spend by observing
+                // the key image in a Monero input. Reconcile mode only heals legacy
+                // metadata-only spends written by older code paths.
+                if output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT) {
+                    output.spent_by_key_image_height = None;
+                    if output.state == crate::state::store::OutputState::Spent {
+                        output.state = crate::state::store::OutputState::Unspent;
+                    }
                     changed = true;
                 }
             }
@@ -452,11 +453,21 @@ impl Scanner {
                 if requested_refs.contains(&key) {
                     continue;
                 }
-                let mut changed = output.key_image.take().is_some();
-                if output.spent_by_key_image_height.take().is_some() {
+                let legacy_reconciled =
+                    output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
+                let mut changed = false;
+                if legacy_reconciled {
+                    output.spent_by_key_image_height = None;
                     if output.state == crate::state::store::OutputState::Spent {
                         output.state = crate::state::store::OutputState::Unspent;
                     }
+                    changed = true;
+                }
+                // Only clear stale metadata on currently unspent outputs. Keep
+                // reservations and chain-proven spends intact.
+                if output.state == crate::state::store::OutputState::Unspent
+                    && output.key_image.take().is_some()
+                {
                     changed = true;
                 }
                 if changed {
@@ -709,7 +720,7 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_key_images_marks_matched_refs_spent_and_clears_removed_refs() {
+    fn reconcile_key_images_preserves_real_spends_and_clears_legacy_metadata_spends() {
         let mut scanner = Scanner::new();
         let base = Scalar::from(7u64);
         let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
@@ -725,8 +736,8 @@ mod tests {
                         amount: 10,
                         height: 10,
                         key_image: Some("keep-image".to_string()),
-                        spent_by_key_image_height: None,
-                        state: crate::state::store::OutputState::Unspent,
+                        spent_by_key_image_height: Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT),
+                        state: crate::state::store::OutputState::Spent,
                         reservation: None,
                         subaddress_major: 0,
                         subaddress_minor: 0,
@@ -740,13 +751,28 @@ mod tests {
                         amount: 20,
                         height: 11,
                         key_image: Some("drop-image".to_string()),
-                        spent_by_key_image_height: Some(99),
-                        state: crate::state::store::OutputState::Spent,
+                        spent_by_key_image_height: None,
+                        state: crate::state::store::OutputState::Unspent,
                         reservation: None,
                         subaddress_major: 0,
                         subaddress_minor: 0,
                         wallet_output_hex: Some("bb".to_string()),
                         address: Some("48b".to_string()),
+                        note: None,
+                    },
+                    TrackedOutput {
+                        tx_hash: "tx-real-spent".to_string(),
+                        output_index: 2,
+                        amount: 30,
+                        height: 12,
+                        key_image: Some("real-image".to_string()),
+                        spent_by_key_image_height: Some(99),
+                        state: crate::state::store::OutputState::Spent,
+                        reservation: None,
+                        subaddress_major: 0,
+                        subaddress_minor: 0,
+                        wallet_output_hex: Some("cc".to_string()),
+                        address: Some("48c".to_string()),
                         note: None,
                     },
                 ],
@@ -763,15 +789,25 @@ mod tests {
         assert_eq!(not_found, 0);
 
         let outputs = scanner.get_all_outputs("thorpub1vault");
-        assert_eq!(outputs[0].key_image.as_deref(), Some("keep-image"));
-        assert_eq!(outputs[0].state, crate::state::store::OutputState::Spent);
-        assert_eq!(
-            outputs[0].spent_by_key_image_height,
-            Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
-        );
-        assert_eq!(outputs[1].key_image, None);
-        assert_eq!(outputs[1].spent_by_key_image_height, None);
-        assert_eq!(outputs[1].state, crate::state::store::OutputState::Unspent);
+        let by_tx: HashMap<_, _> = outputs
+            .into_iter()
+            .map(|output| (output.tx_hash.clone(), output))
+            .collect();
+
+        let keep = by_tx.get("tx-keep").unwrap();
+        assert_eq!(keep.key_image.as_deref(), Some("keep-image"));
+        assert_eq!(keep.state, crate::state::store::OutputState::Unspent);
+        assert_eq!(keep.spent_by_key_image_height, None);
+
+        let drop = by_tx.get("tx-drop").unwrap();
+        assert_eq!(drop.key_image, None);
+        assert_eq!(drop.spent_by_key_image_height, None);
+        assert_eq!(drop.state, crate::state::store::OutputState::Unspent);
+
+        let spent = by_tx.get("tx-real-spent").unwrap();
+        assert_eq!(spent.key_image.as_deref(), Some("real-image"));
+        assert_eq!(spent.spent_by_key_image_height, Some(99));
+        assert_eq!(spent.state, crate::state::store::OutputState::Spent);
     }
 
     #[test]

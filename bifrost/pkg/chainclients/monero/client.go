@@ -1058,13 +1058,13 @@ func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostA
 	for _, output := range outputs {
 		key := xmrOutputRefKey(output.TxHash, output.OutputIndex)
 		wantKeyImage, wantedOutput := wanted[key]
-		hasSignerState := output.Spent || strings.TrimSpace(output.KeyImage) != ""
+		hasSignerKeyImage := strings.TrimSpace(output.KeyImage) != ""
 		switch {
-		case !wantedOutput && hasSignerState:
+		case !wantedOutput && hasSignerKeyImage && !output.Spent:
 			return true, nil
 		case !wantedOutput:
 			continue
-		case !output.Spent:
+		case !hasSignerKeyImage:
 			return true, nil
 		case wantKeyImage != "" && !strings.EqualFold(strings.TrimSpace(output.KeyImage), wantKeyImage):
 			return true, nil

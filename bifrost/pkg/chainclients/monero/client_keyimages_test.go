@@ -1769,7 +1769,7 @@ func TestCatchupKeyImagesSkipsUnchangedHistoryAndSendsOnlyDelta(t *testing.T) {
 					Amount:      10,
 					Height:      100,
 					KeyImage:    ref.KeyImage,
-					Spent:       true,
+					Spent:       false,
 				})
 			}
 			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: outputs})
