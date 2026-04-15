@@ -11,6 +11,7 @@ import (
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
@@ -230,4 +231,38 @@ func (t *TssServer) GetKnownPeers() []PeerInfo {
 		infos = append(infos, pi)
 	}
 	return infos
+}
+
+// MissingPeerAddresses returns signer pubkeys whose peer IDs are neither
+// connected nor present in the local peerstore yet. Startup-time finalized XMR
+// key-image ceremonies should wait for this to clear rather than immediately
+// spending their join-party timeout budget on peers that have not finished
+// bootstrapping into libp2p.
+func (t *TssServer) MissingPeerAddresses(pubKeys []string) ([]string, error) {
+	if t == nil || t.p2pCommunication == nil || t.p2pCommunication.GetHost() == nil {
+		return nil, nil
+	}
+
+	peerIDs, err := conversion.GetPeerIDsFromPubKeys(pubKeys)
+	if err != nil {
+		return nil, fmt.Errorf("fail to convert signer pubkeys to peer IDs: %w", err)
+	}
+
+	host := t.p2pCommunication.GetHost()
+	localPeerID := host.ID()
+	missing := make([]string, 0)
+	for i, peerID := range peerIDs {
+		if peerID == localPeerID {
+			continue
+		}
+		if host.Network().Connectedness(peerID) == network.Connected {
+			continue
+		}
+		if len(host.Peerstore().Addrs(peerID)) > 0 {
+			continue
+		}
+		missing = append(missing, strings.TrimSpace(pubKeys[i]))
+	}
+
+	return missing, nil
 }

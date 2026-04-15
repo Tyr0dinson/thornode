@@ -71,6 +71,10 @@ var ErrFrostNotConfigured = errors.New("xmr frost signing requires signer_endpoi
 
 var xmrNecessaryFeePattern = regexp.MustCompile(`necessary_fee Some\((\d+)\)`)
 
+type xmrKeyImagePeerReadiness interface {
+	MissingPeerAddresses(pubKeys []string) ([]string, error)
+}
+
 type signedTxPayload struct {
 	TxHash       string                `json:"tx_hash"`
 	TxMetadata   string                `json:"tx_metadata"`
@@ -2560,6 +2564,20 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Strs("signer_pub_keys", ceremonyCtx.members).
 			Msg("skipping XMR key-image generation; local node not in signer set")
 		return nil, false, nil
+	}
+	if readiness, ok := c.tssServer.(xmrKeyImagePeerReadiness); ok {
+		missingPeers, readinessErr := readiness.MissingPeerAddresses(ceremonyCtx.members)
+		if readinessErr != nil {
+			return nil, false, fmt.Errorf("fail to inspect XMR signer peer readiness: %w", readinessErr)
+		}
+		if len(missingPeers) > 0 {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Strs("missing_signer_pub_keys", missingPeers).
+				Msg("waiting for XMR signer peer discovery before finalized key-image observation")
+			return nil, false, nil
+		}
 	}
 
 	outputs, err := c.collectVaultOutputsForTx(ceremonyCtx.vaultPubKey, item.Tx)
