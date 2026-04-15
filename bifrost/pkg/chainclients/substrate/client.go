@@ -128,13 +128,14 @@ func NewClient(
 // Start starts the Substrate chain client.
 func (c *Client) Start(
 	globalTxsQueue chan ttypes.TxIn,
-	globalErrataQueue chan ttypes.ErrataBlock,
+	_ chan ttypes.ErrataBlock,
 	globalSolvencyQueue chan ttypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.chainScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	c.Client.Start()
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
@@ -208,7 +209,7 @@ func (c *Client) GetAccountByAddress(addr string, height *big.Int) (common.Accou
 		return common.Account{}, fmt.Errorf("failed to get nonce: %w", err)
 	}
 
-	coin := c.GetChain().NativeGasToThorCoin(balance)
+	coin := c.GetChain().NativeGasToThorCoinCeil(balance)
 	coins := common.Coins{coin}
 
 	return common.Account{
@@ -372,7 +373,7 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, fmt.Errorf("negative gas rate: %d", tx.GasRate)
 	}
 
-	gasCoin := c.GetChain().NativeGasToThorCoin(cosmos.NewUint(uint64(tx.GasRate)))
+	gasCoin := c.GetChain().NativeGasToThorCoinCeil(cosmos.NewUint(uint64(tx.GasRate)))
 	if gasCoin.Amount.IsZero() {
 		gasCoin.Amount = cosmos.OneUint()
 	}

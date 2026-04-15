@@ -485,7 +485,8 @@ func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight 
 		return nil, nil // dust amount, ignore
 	}
 
-	gasCoin := s.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(actualFee))
+	// Report +1
+	gasCoin := s.cfg.ChainID.NativeGasToThorCoinCeil(cosmos.NewUint(actualFee))
 	if gasCoin.Amount.IsZero() {
 		// Gas is not used for inbound observation but cannot be empty.
 		gasCoin.Amount = cosmos.OneUint()

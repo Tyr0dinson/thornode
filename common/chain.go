@@ -287,10 +287,21 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 	return thorchain.Mul(gasRateUnitsPerOne).QuoUint64(One)
 }
 
-// NativeGasToThorchain converts native gas units to THORChain units (1e8).
+// NativeGasToThorCoin converts native gas units to Coin with THORChain units (1e8).
 func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchain(native))
 	coin.Decimals = c.GetGasAssetDecimal()
+	return coin
+}
+
+// NativeGasToThorCoinCeil converts native gas units to Coin
+// with THORChain units (1e8). It adds 1 to amount if the conversion would
+// floor() the result.
+func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
+	coin := c.NativeGasToThorCoin(native)
+	if c.GetGasAssetDecimal() > THORChainDecimals {
+		coin.Amount = coin.Amount.Add(cosmos.OneUint())
+	}
 	return coin
 }
 

@@ -235,8 +235,8 @@ func systemAccountStorageKey(accountID []byte) string {
 //
 //   nonce(4) + consumers(4) + providers(4) + sufficients(4) = 16 bytes header
 //
-// AccountData.free is stored as u128 LE (16 bytes). We read the full u128
-// and return it as cosmos.Uint.
+// AccountData.free is stored as either u64 (8 bytes) or u128 LE (16 bytes).
+// We read the amount specified via balanceSize and return it as cosmos.Uint.
 // This layout is stable across both old (misc_frozen/fee_frozen) and new
 // (frozen/flags) AccountData variants.
 
