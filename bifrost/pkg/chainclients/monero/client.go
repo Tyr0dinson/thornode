@@ -3690,15 +3690,134 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 	return height%solvencyBlocks == 0 && c.scanner.lastFee.Load() > 0
 }
 
+func (c *Client) hasPendingXMRKeyImageCatchup() bool {
+	c.keyImageCatchupMu.Lock()
+	defer c.keyImageCatchupMu.Unlock()
+
+	for _, state := range c.keyImageCatchupState {
+		if state.pending {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) hasPendingXMRTxKeyCatchup() bool {
+	c.txKeyCatchupMu.Lock()
+	defer c.txKeyCatchupMu.Unlock()
+
+	for _, state := range c.txKeyCatchupState {
+		if state.pending {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) xmrSolvencyHasPendingOutboundWork() (bool, string, error) {
+	if c.thorchainBridge == nil || c.frostSigner == nil {
+		return false, "", nil
+	}
+
+	asgards, err := c.thorchainBridge.GetAsgards()
+	if err != nil {
+		return false, "", fmt.Errorf("fail to get asgards: %w", err)
+	}
+	for _, vault := range asgards {
+		if len(vault.PendingTxBlockHeights) == 0 {
+			continue
+		}
+		return true, fmt.Sprintf("thornode outbound queue not empty for vault %s", keyImageCatchupVaultPubKey(vault)), nil
+	}
+
+	trackedVaults, err := c.trackedXMRVaultsForKeyImageCatchup()
+	if err != nil {
+		return false, "", fmt.Errorf("fail to get tracked xmr vaults: %w", err)
+	}
+	for _, vault := range trackedVaults {
+		vaultPubKey := keyImageCatchupVaultPubKey(vault)
+		if vaultPubKey.IsEmpty() {
+			continue
+		}
+		state, err := c.frostSigner.GetOutgoingTransferState(vaultPubKey.String())
+		if err != nil {
+			if isFrostHTTPStatus(err, 404) {
+				continue
+			}
+			return false, "", fmt.Errorf("fail to get outgoing xmr state for vault %s: %w", vaultPubKey, err)
+		}
+		for _, record := range state.Outgoing {
+			status := strings.TrimSpace(record.Status)
+			txHash := strings.TrimSpace(record.TxHash)
+			switch {
+			case !strings.EqualFold(status, "observed_mined"):
+				return true, fmt.Sprintf("xmr outbound %s still %s", txHash, status), nil
+			case record.ReportedEffectiveHeight == nil:
+				return true, fmt.Sprintf("xmr outbound %s is still awaiting finalized observation", txHash), nil
+			}
+		}
+	}
+
+	return false, "", nil
+}
+
+func (c *Client) xmrSolvencySystemIdle() (bool, string, error) {
+	if c.scanner == nil {
+		return false, "xmr scanner is not initialized", nil
+	}
+	if c.frostSigner == nil {
+		return false, "xmr frost signer is not initialized", nil
+	}
+	if c.blockScanner != nil && !c.blockScanner.IsHealthy() {
+		return false, "xmr scanner is unhealthy or catching up", nil
+	}
+
+	scannerHeight := c.scanner.CurrentHeight()
+	chainHeight, err := c.GetHeight()
+	if err != nil {
+		return false, "failed to query xmr chain tip", err
+	}
+	if scannerHeight <= 0 || chainHeight <= 0 {
+		return false, fmt.Sprintf("xmr scanner height unavailable (scan=%d tip=%d)", scannerHeight, chainHeight), nil
+	}
+	if scannerHeight != chainHeight {
+		return false, fmt.Sprintf("xmr scanner is not at tip (scan=%d tip=%d)", scannerHeight, chainHeight), nil
+	}
+
+	if queued, active := c.pendingXMRKeyImageBacklog(); queued > 0 || active {
+		return false, fmt.Sprintf("xmr key-image queue not empty (queued=%d active=%t)", queued, active), nil
+	}
+	if c.hasPendingXMRKeyImageCatchup() {
+		return false, "xmr key-image catchup is still pending", nil
+	}
+	if c.hasPendingXMRTxKeyCatchup() {
+		return false, "xmr tx-key catchup is still pending", nil
+	}
+
+	pending, reason, err := c.xmrSolvencyHasPendingOutboundWork()
+	if err != nil {
+		return false, "failed to inspect xmr outbound activity", err
+	}
+	if pending {
+		return false, reason, nil
+	}
+
+	return true, "", nil
+}
+
 func (c *Client) ReportSolvency(height int64) error {
 	if !c.ShouldReportSolvency(height) {
 		return nil
 	}
-	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	if !c.IsBlockScannerHealthy() {
-		if c.blockScanner != nil && height == c.blockScanner.PreviousHeight()+1 {
-			return nil
-		}
+
+	idle, reason, err := c.xmrSolvencySystemIdle()
+	if err != nil {
+		c.logger.Info().Err(err).Int64("height", height).Str("reason", reason).Msg("skip monero solvency: idle check failed")
+		return nil
+	}
+	if !idle {
+		c.logger.Info().Int64("height", height).Str("reason", reason).Msg("skip monero solvency: xmr system not idle")
+		return nil
 	}
 
 	asgardVaults, err := c.thorchainBridge.GetAsgards()
@@ -3735,10 +3854,6 @@ func (c *Client) ReportSolvency(height int64) error {
 			continue
 		}
 		msgs = append(msgs, msg)
-	}
-
-	if !c.IsBlockScannerHealthy() && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
-		msgs = solventMsgs
 	}
 
 	for i := range msgs {

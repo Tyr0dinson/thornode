@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog/log"
-	"go.uber.org/atomic"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -384,32 +383,17 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 		},
 	}
 
-	// Mock frost signer that returns balance by vault pub key
 	balanceByPK := map[string]xmrFrostBalanceResponse{
 		pkA.String(): {Balance: 100 * moneroAtomicToThorchain, UnlockedBalance: 100 * moneroAtomicToThorchain},
 		pkB.String(): {Balance: 10 * moneroAtomicToThorchain, UnlockedBalance: 10 * moneroAtomicToThorchain},
 	}
-	balanceServer := newFrostBalanceServer(t, balanceByPK)
-	defer balanceServer.Close()
-
-	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
+	c, server := newTestXMRSolvencyClient(t, 500, asgardVaults, balanceByPK, nil)
+	defer server.Close()
 
 	queue := make(chan stypes.Solvency, 4)
-	c := &Client{
-		logger:                  log.Logger,
-		cfg:                     config.BifrostChainConfiguration{SolvencyBlocks: 10},
-		chain:                   common.XMRChain,
-		thorchainBridge:         &solvencyBridge{asgards: asgardVaults},
-		scanner:                 &Scanner{lastFee: atomic.NewUint64(10)},
-		frostSigner:             frostSigner,
-		globalSolvencyQueue:     queue,
-		vaultAddressMap:         map[string]common.Address{pkA.String(): addrA, pkB.String(): addrB},
-		lastSolvencyCheckHeight: atomic.NewInt64(0),
-	}
+	c.globalSolvencyQueue = queue
+	c.vaultAddressMap[pkA.String()] = addrA
+	c.vaultAddressMap[pkB.String()] = addrB
 
 	if err := c.ReportSolvency(10); err != nil {
 		t.Fatalf("report solvency: %v", err)
