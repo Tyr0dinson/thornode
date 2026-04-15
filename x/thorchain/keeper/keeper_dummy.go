@@ -474,13 +474,13 @@ func (k KVStoreDummy) GetVault(_ cosmos.Context, _ common.PubKey) (Vault, error)
 }
 func (k KVStoreDummy) GetAsgardVaults(_ cosmos.Context) (Vaults, error) { return nil, kaboom }
 func (k KVStoreDummy) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
-	return nil, kaboom
+	return nil, nil
 }
 func (k KVStoreDummy) GetAsgardVaultsByChain(_ cosmos.Context, _ common.Chain) (Vaults, error) {
-	return nil, kaboom
+	return nil, nil
 }
 func (k KVStoreDummy) GetActiveAsgardVaultsByChain(_ cosmos.Context, _ common.Chain) (Vaults, error) {
-	return nil, kaboom
+	return nil, nil
 }
 
 func (k KVStoreDummy) RemoveFromAsgardIndex(ctx cosmos.Context, pubkey common.PubKey) error {

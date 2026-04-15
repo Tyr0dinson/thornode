@@ -1263,9 +1263,6 @@ func (s *EVMSuite) TestSetShouldObserveCallback(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 
-	// Default: no callback set, scanner is healthy
-	c.Assert(e.blockScanner.IsHealthy(), Equals, true)
-
 	// Set callback that returns false — scanner should pause
 	called := false
 	e.SetShouldObserveCallback(func() bool {

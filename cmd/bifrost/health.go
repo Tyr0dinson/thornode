@@ -115,6 +115,9 @@ type HealthServer struct {
 func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]chainclients.ChainClient) *HealthServer {
 	res := make(ProviderResponse)
 	for chain, client := range chains {
+		if client == nil {
+			continue
+		}
 		cfg := client.GetConfig()
 		res[chain.String()] = ProviderEntry{
 			RPCHost:   classifyHost(cfg.RPCHost),

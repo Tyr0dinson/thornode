@@ -117,7 +117,7 @@ func (HandlerTradeAccountDeposit) TestTradeAccountDepositChainLiquidityCap(c *C)
 	msg := NewMsgTradeAccountDeposit(asset, cosmos.NewUint(2_50000000), addr, addr, dummyTx)
 	_, err := h.Run(ctx, msg)
 	c.Assert(err, NotNil, Commentf("should reject trade deposit exceeding chain liquidity cap"))
-	c.Check(err.Error(), Matches, ".*chain liquidity cap.*")
+	c.Check(err.Error(), Matches, ".*liquidity cap exceeded.*")
 
 	// Deposit within cap: 0.5 BTC = 5,000 RUNE; current vault = 10,000 RUNE → total 15,000 < 30,000
 	msg = NewMsgTradeAccountDeposit(asset, cosmos.NewUint(50000000), addr, addr, dummyTx)

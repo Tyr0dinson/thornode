@@ -1125,15 +1125,17 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 func (s *QuerierSuite) TestQueryInboundAddressesChainSupport(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	// Create 3 active validators
+	// Create 4 active validators (need 4 so threshold = ceil(2/3*4) = 3 > 2)
 	na1 := GetRandomValidatorNode(NodeActive)
 	na2 := GetRandomValidatorNode(NodeActive)
 	na3 := GetRandomValidatorNode(NodeActive)
+	na4 := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na4), IsNil)
 
-	// Create an active vault with ETH chain and membership for 2 of 3 validators
+	// Create an active vault with ETH chain and membership for 2 of 4 validators
 	pubKey := GetRandomPubKey()
 	asgard := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, common.Chains{common.ETHChain}.Strings(), nil)
 	asgard.Membership = []string{
@@ -1163,18 +1165,19 @@ func (s *QuerierSuite) TestQueryInboundAddressesChainSupport(c *C) {
 	c.Assert(len(resp), Equals, 1)
 	c.Assert(resp[0].Chain, Equals, common.ETHChain)
 	c.Assert(resp[0].SupportingValidators, Equals, int64(2))
-	c.Assert(resp[0].ActiveValidatorFraction, Equals, "0.67")
+	c.Assert(resp[0].ActiveValidatorFraction, Equals, "0.50")
 	c.Assert(resp[0].LiquidityCapApplied, Equals, true)
 
 	// Verify cap amount: 2 validators × default ChainLiquidityRunePerValidator (10_000_00000000)
 	expectedCap := cosmos.NewUint(10_000_00000000).MulUint64(2)
 	c.Assert(resp[0].LiquidityCapRune, Equals, expectedCap.String())
 
-	// Now add a third validator to the vault membership (all 3 of 3 = 100%)
+	// Now add all 4 validators to the vault membership (4 of 4 = 100%)
 	asgard.Membership = []string{
 		na1.PubKeySet.Secp256k1.String(),
 		na2.PubKeySet.Secp256k1.String(),
 		na3.PubKeySet.Secp256k1.String(),
+		na4.PubKeySet.Secp256k1.String(),
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 
@@ -1183,9 +1186,10 @@ func (s *QuerierSuite) TestQueryInboundAddressesChainSupport(c *C) {
 	result, err = queryInboundAddrResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
 
+	resp = nil
 	c.Assert(json.Unmarshal(result, &resp), IsNil)
 	c.Assert(len(resp), Equals, 1)
-	c.Assert(resp[0].SupportingValidators, Equals, int64(3))
+	c.Assert(resp[0].SupportingValidators, Equals, int64(4))
 	c.Assert(resp[0].ActiveValidatorFraction, Equals, "1.00")
 	c.Assert(resp[0].LiquidityCapApplied, Equals, false)
 	c.Assert(resp[0].LiquidityCapRune, Equals, "")

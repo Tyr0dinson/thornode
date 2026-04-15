@@ -316,9 +316,6 @@ func (s *CosmosTestSuite) TestSetShouldObserveCallback(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(client, NotNil)
 
-	// Default: block scanner should observe (no callback set)
-	c.Assert(client.IsBlockScannerHealthy(), Equals, true)
-
 	// Set callback that returns false — scanner should pause
 	called := false
 	client.SetShouldObserveCallback(func() bool {

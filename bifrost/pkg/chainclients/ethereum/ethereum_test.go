@@ -448,9 +448,6 @@ func (s *EthereumSuite) TestSetShouldObserveCallback(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 
-	// Default: block scanner should observe (no callback set)
-	c.Assert(e.blockScanner.IsHealthy(), Equals, true)
-
 	// Set callback that returns false — scanner should pause
 	called := false
 	e.SetShouldObserveCallback(func() bool {

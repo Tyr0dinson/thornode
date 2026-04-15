@@ -1998,6 +1998,10 @@ type TestValidateActiveAsgardExistsKeeper struct {
 	activeVaults Vaults
 }
 
+func (k *TestValidateActiveAsgardExistsKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
+	return k.activeVaults, nil
+}
+
 func (k *TestValidateActiveAsgardExistsKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Context, chain common.Chain) (Vaults, error) {
 	var result Vaults
 	for _, vault := range k.activeVaults {
@@ -2011,14 +2015,13 @@ func (k *TestValidateActiveAsgardExistsKeeper) GetActiveAsgardVaultsByChain(_ co
 func (s *HelperSuite) TestValidateActiveAsgardExists(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	// Case 1: no active vaults for chain — should return error
+	// Case 1: no active vaults at all (bootstrap) — should skip check
 	k := &TestValidateActiveAsgardExistsKeeper{
 		activeVaults: Vaults{},
 	}
 	mgr.K = k
 	err := validateActiveAsgardExists(ctx, mgr, common.BTCChain)
-	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "no active vault for chain BTC")
+	c.Assert(err, IsNil)
 
 	// Case 2: active vault exists for chain — should pass
 	k2 := &TestValidateActiveAsgardExistsKeeper{
@@ -2190,7 +2193,8 @@ func (s *HelperSuite) TestValidateChainLiquidityCap(c *C) {
 	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(1))
 	c.Assert(err, IsNil)
 
-	// Case 5: zero validators for chain (no vaults) below threshold — cap is 0
+	// Case 5: zero validators for chain (no vaults) — skips cap (production code calls
+	// validateActiveAsgardExists first, so this path only occurs with membership-less vaults)
 	k4 := &TestValidateChainLiquidityCapKeeper{
 		activeNodes:  makeActiveNodes(6),
 		activeVaults: Vaults{},
@@ -2201,9 +2205,8 @@ func (s *HelperSuite) TestValidateChainLiquidityCap(c *C) {
 		},
 	}
 	mgr.K = k4
-	// 0 validators for chain, below threshold, cap = 0, any inbound > 0 rejects
 	err = validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(1))
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 
 	// Case 6: RUNE valuation includes secured and trade assets via pool lookup
 	securedBTC := common.BTCAsset.GetSecuredAsset()

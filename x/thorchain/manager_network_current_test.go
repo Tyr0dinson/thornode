@@ -2946,10 +2946,20 @@ func (s *NetworkManagerTestSuite) TestSkimsApplyBeforePerChainBucketing(c *C) {
 	networkNoSkim.BondRewardRune = cosmos.ZeroUint()
 	c.Assert(helper.SetNetwork(ctx, networkNoSkim), IsNil)
 
+	// Restore reserve and pool balances so emission calculations are identical.
+	FundModule(c, ctx, helper, ReserveName, 10000*common.One)
+	btcPool.BalanceRune = cosmos.NewUint(common.One * 500)
+	btcPool.BalanceAsset = cosmos.NewUint(common.One * 500)
+	c.Assert(helper.SetPool(ctx, btcPool), IsNil)
+	ethPool.BalanceRune = cosmos.NewUint(common.One * 500)
+	ethPool.BalanceAsset = cosmos.NewUint(common.One * 500)
+	c.Assert(helper.SetPool(ctx, ethPool), IsNil)
+
 	// Now enable 500bps (5%) dev fund and 500bps (5%) marketing fund.
 	helper.Keeper.SetMimir(ctx, constants.DevFundSystemIncomeBps.String(), 500)
 	helper.Keeper.SetMimir(ctx, constants.MarketingFundSystemIncomeBps.String(), 500)
 
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300*common.One)), IsNil)
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100*common.One)), IsNil)
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)

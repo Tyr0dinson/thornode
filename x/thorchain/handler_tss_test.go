@@ -761,10 +761,11 @@ func (s *HandlerTssSuite) TestKeygenSuccessWithTargetChains(c *C) {
 		return nil
 	}
 
+	fakeSig := []byte("fakeSignature")
 	for _, item := range helper.members {
 		thorAddr, err := item.GetThorAddress()
 		c.Assert(err, IsNil)
-		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, nil, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
+		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, fakeSig, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
 		c.Assert(err, IsNil)
 		err = handler.handle(helper.ctx, tssMsg)
 		c.Assert(err, IsNil)
@@ -811,10 +812,11 @@ func (s *HandlerTssSuite) TestKeygenSuccessWithoutTargetChainsFallback(c *C) {
 		return nil
 	}
 
+	fakeSig := []byte("fakeSignature")
 	for _, item := range helper.members {
 		thorAddr, err := item.GetThorAddress()
 		c.Assert(err, IsNil)
-		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, nil, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
+		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, fakeSig, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
 		c.Assert(err, IsNil)
 		err = handler.handle(helper.ctx, tssMsg)
 		c.Assert(err, IsNil)

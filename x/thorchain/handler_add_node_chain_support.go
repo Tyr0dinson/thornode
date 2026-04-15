@@ -71,21 +71,29 @@ func (h AddNodeChainSupportHandler) handle(ctx cosmos.Context, msg MsgAddNodeCha
 	}
 
 	// If SupportedChains is empty/nil, materialize the full list first
-	if len(na.SupportedChains) == 0 {
+	materialized := len(na.SupportedChains) == 0
+	if materialized {
 		for _, c := range getNodeSupportedChains(ctx, h.mgr, na) {
 			na.SupportedChains = append(na.SupportedChains, c.String())
 		}
 	}
 
 	chainStr := msg.Chain.String()
+	alreadyPresent := false
 	for _, c := range na.SupportedChains {
 		if c == chainStr {
-			// already present, idempotent no-op
-			return nil
+			alreadyPresent = true
+			break
 		}
 	}
 
-	na.SupportedChains = append(na.SupportedChains, chainStr)
+	if alreadyPresent && !materialized {
+		return nil
+	}
+
+	if !alreadyPresent {
+		na.SupportedChains = append(na.SupportedChains, chainStr)
+	}
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, na); err != nil {
 		return fmt.Errorf("fail to save node account: %w", err)
 	}

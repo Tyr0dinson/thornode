@@ -248,20 +248,20 @@ func (s *HandlerObserveNetworkFeeSuite) TestChainAwareConsensus(c *C) {
 	// With 3 chain participants, consensus needs 2 of 3.
 	// nas[0] signs — no consensus yet.
 	broadcast(c, nas[0])
-	voter, err := mgr.Keeper().GetObservedNetworkFeeVoter(ctx, 1024, common.ETHChain, 256, 100)
+	voter, err := mgr.Keeper().GetObservedNetworkFeeVoter(ctx, 1024, common.ETHChain, 100, 256)
 	c.Assert(err, IsNil)
 	c.Assert(voter.BlockHeight, Equals, int64(0), Commentf("should not have consensus with 1 of 3"))
 
 	// nas[1] signs — 2 of 3 reaches consensus.
 	broadcast(c, nas[1])
-	voter, err = mgr.Keeper().GetObservedNetworkFeeVoter(ctx, 1024, common.ETHChain, 256, 100)
+	voter, err = mgr.Keeper().GetObservedNetworkFeeVoter(ctx, 1024, common.ETHChain, 100, 256)
 	c.Assert(err, IsNil)
 	c.Assert(voter.BlockHeight, Equals, ctx.BlockHeight(), Commentf("should have consensus with 2 of 3 chain participants"))
 
 	// Verify the network fee was saved (consensus was real).
 	savedFee, err := mgr.Keeper().GetNetworkFee(ctx, common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(savedFee.TransactionFeeRate, Equals, uint64(256))
+	c.Assert(savedFee.TransactionFeeRate, Equals, uint64(100))
 
 	// nas[3] (not in vault) should get no LackOfObservationPenalty because
 	// they are not a chain participant.

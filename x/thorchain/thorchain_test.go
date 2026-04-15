@@ -136,8 +136,9 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	// create new node account to rotate in
+	// create new node account to rotate in, matching the vault's chain support
 	na := GetRandomValidatorNode(NodeReady)
+	na.SupportedChains = vault.Chains
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// trigger marking bad actors as well as a keygen

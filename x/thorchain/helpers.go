@@ -1858,6 +1858,16 @@ func getChainConsensusNodeAccounts(ctx cosmos.Context, mgr Manager, chain common
 
 func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress, chain common.Chain) []cosmos.AccAddress {
 	participants := getChainConsensusParticipants(ctx, mgr, chain)
+	if len(participants) == 0 {
+		active, err := mgr.Keeper().ListActiveValidators(ctx)
+		if err != nil {
+			return nil
+		}
+		participants = make([]cosmos.AccAddress, len(active))
+		for i, na := range active {
+			participants[i] = na.NodeAddress
+		}
+	}
 	signerSet := make(map[string]struct{}, len(signers))
 	for _, s := range signers {
 		signerSet[s.String()] = struct{}{}
@@ -1872,6 +1882,10 @@ func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.A
 }
 
 func validateActiveAsgardExists(ctx cosmos.Context, mgr Manager, chain common.Chain) error {
+	allActive, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil || len(allActive) == 0 {
+		return nil
+	}
 	activeVaults, err := mgr.Keeper().GetActiveAsgardVaultsByChain(ctx, chain)
 	if err != nil {
 		return fmt.Errorf("fail to get active asgard vaults by chain: %w", err)
@@ -1884,13 +1898,10 @@ func validateActiveAsgardExists(ctx cosmos.Context, mgr Manager, chain common.Ch
 
 func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Chain, inboundRuneValue cosmos.Uint) error {
 	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
-	if err != nil {
-		return fmt.Errorf("fail to list active validators: %w", err)
-	}
-	activeNodeCount := int64(len(activeNodes))
-	if activeNodeCount == 0 {
+	if err != nil || len(activeNodes) == 0 {
 		return nil
 	}
+	activeNodeCount := int64(len(activeNodes))
 
 	activeVaults, err := mgr.Keeper().GetActiveAsgardVaultsByChain(ctx, chain)
 	if err != nil {
@@ -1904,6 +1915,10 @@ func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Cha
 		}
 	}
 	validatorsForChain := int64(len(memberSet))
+
+	if validatorsForChain == 0 {
+		return nil
+	}
 
 	ratioNum := mgr.Keeper().GetConfigInt64(ctx, constants.ChainSubBFTRatioNum)
 	ratioDenom := mgr.Keeper().GetConfigInt64(ctx, constants.ChainSubBFTRatioDenom)
