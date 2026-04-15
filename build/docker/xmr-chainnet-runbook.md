@@ -189,6 +189,53 @@ BIFROSTS=(docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifr
 SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
 ```
 
+### SSH and shell escaping
+
+The cluster is much easier to operate if you avoid stacking local shell expansion,
+remote shell expansion, and inner `docker exec ... sh -lc` expansion in the same line.
+
+Preferred patterns:
+
+- for exploratory work, `ssh root@91.99.89.216`, `cd /root/thornode`, then run the
+  runbook commands locally on the host
+- for complex remote command blocks, use a quoted heredoc so the local shell does not
+  pre-expand `$vars`, backticks, or globs
+- for signer API calls, derive the seed on the host and pass it into `docker exec -e`;
+  do not try to inline a seed phrase directly through nested `ssh "...$seed..."` quoting
+
+Safe multiline pattern:
+
+```bash
+ssh root@91.99.89.216 'bash -s' <<'EOF'
+set -euo pipefail
+cd /root/thornode
+docker compose --env-file .env -f build/docker/docker-compose.xmr-chainnet.yml ps
+curl -s localhost:1317/thorchain/lastblock | jq '.[] | select(.chain=="XMR")'
+EOF
+```
+
+Redirection rule:
+
+- `ssh root@91.99.89.216 'docker cp ... | gzip' > local.tar.gz` writes `local.tar.gz` on your local machine
+- `ssh root@91.99.89.216 'docker cp ... | gzip > /tmp/remote.tar.gz'` writes `/tmp/remote.tar.gz` on the remote host
+
+Avoid this pattern for seed phrases and bearer tokens:
+
+```bash
+ssh root@91.99.89.216 "seed=...words with spaces...; docker exec -e AUTH=\"$seed\" ..."
+```
+
+Use this pattern instead:
+
+```bash
+ssh root@91.99.89.216 'bash -s' <<'EOF'
+set -euo pipefail
+seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' docker-xmr-frost-signer-1 | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
+docker exec -e AUTH="$seed" docker-xmr-frost-signer-1 sh -lc \
+  'curl -sf -H "Authorization: Bearer $AUTH" http://127.0.0.1:8283/v1/monero/chain/height'
+EOF
+```
+
 ### Signer API auth
 
 The XMR signer API uses the raw `SIGNER_SEED_PHRASE` as the bearer token unless
