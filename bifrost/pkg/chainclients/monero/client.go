@@ -2570,38 +2570,45 @@ func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
 	if tx.Tx.ToAddress.IsEmpty() {
 		return fmt.Errorf("observed tx destination is empty")
 	}
-	if len(tx.TxKeys) == 0 {
-		return fmt.Errorf("observed tx is missing tx keys")
-	}
 
-	amountAtomic, err := xmrThorchainAmountToAtomic(tx.Tx.Coins.GetCoin(common.XMRAsset).Amount)
-	if err != nil {
-		return fmt.Errorf("fail to convert xmr outbound amount to atomic: %w", err)
-	}
-	var feeAtomic uint64
-	gasCoin := tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
-	if !gasCoin.IsEmpty() {
-		feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
+	trackedOutboundChange := len(tx.XmrKeyImages) > 0
+	if len(tx.TxKeys) > 0 {
+		amountAtomic, err := xmrThorchainAmountToAtomic(tx.Tx.Coins.GetCoin(common.XMRAsset).Amount)
 		if err != nil {
-			return fmt.Errorf("fail to convert xmr outbound fee to atomic: %w", err)
+			return fmt.Errorf("fail to convert xmr outbound amount to atomic: %w", err)
 		}
-	}
+		var feeAtomic uint64
+		gasCoin := tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
+		if !gasCoin.IsEmpty() {
+			feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
+			if err != nil {
+				return fmt.Errorf("fail to convert xmr outbound fee to atomic: %w", err)
+			}
+		}
 
-	validateResp, err := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
-		VaultPubKey: tx.ObservedPubKey.String(),
-		TxHash:      tx.Tx.ID.String(),
-		TxKeys:      append([]string(nil), tx.TxKeys...),
-		FromAddress: tx.Tx.FromAddress.String(),
-		ToAddress:   tx.Tx.ToAddress.String(),
-		Amount:      amountAtomic,
-		Fee:         feeAtomic,
-		Memo:        tx.Tx.Memo,
-		Reconcile:   true,
-	})
-	if err != nil {
-		return fmt.Errorf("fail to validate xmr outbound via sidecar: %w", err)
+		validateResp, err := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
+			VaultPubKey: tx.ObservedPubKey.String(),
+			TxHash:      tx.Tx.ID.String(),
+			TxKeys:      append([]string(nil), tx.TxKeys...),
+			FromAddress: tx.Tx.FromAddress.String(),
+			ToAddress:   tx.Tx.ToAddress.String(),
+			Amount:      amountAtomic,
+			Fee:         feeAtomic,
+			Memo:        tx.Tx.Memo,
+			Reconcile:   true,
+		})
+		if err != nil {
+			return fmt.Errorf("fail to validate xmr outbound via sidecar: %w", err)
+		}
+		trackedOutboundChange = trackedOutboundChange || validateResp.Tracked
+	} else {
+		c.logger.Info().
+			Str("tx_hash", tx.Tx.ID.String()).
+			Str("vault_pub_key", tx.ObservedPubKey.String()).
+			Int("key_image_count", len(tx.XmrKeyImages)).
+			Msg("skipping xmr tx-key outbound audit; validating finalized key-images only")
 	}
-	return c.validateObservedTxKeyImages(tx, false, validateResp.Tracked)
+	return c.validateObservedTxKeyImages(tx, false, trackedOutboundChange)
 }
 
 func (c *Client) ExportFrostKeyshare(groupKey common.PubKey) ([]byte, error) {

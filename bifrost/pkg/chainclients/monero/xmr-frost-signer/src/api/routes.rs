@@ -3212,71 +3212,7 @@ pub async fn validate_outbound(
         );
     }
 
-    let (marked, not_found) = if req.reconcile {
-        let outputs_before = {
-            let scanner = state.scanner.lock();
-            scanner.get_all_outputs(&vault_pub_key)
-        };
-        let selected_refs = match builder::select_outbound_input_refs(
-            &outputs_before,
-            req.amount,
-            req.fee,
-            None,
-        ) {
-            Ok(refs) => refs,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    vault = vault_pub_key,
-                    tx_hash,
-                    amount = req.amount,
-                    fee = req.fee,
-                    "failed to reconcile spent outputs for validated outbound; continuing with tx-key validated audit record only"
-                );
-                Vec::new()
-            }
-        };
-
-        let ref_pairs: Vec<(String, u32)> = selected_refs
-            .iter()
-            .map(|ref_| (ref_.tx_hash.clone(), ref_.output_index))
-            .collect();
-        {
-            let mut scanner = state.scanner.lock();
-            scanner.mark_spent_by_refs(&vault_pub_key, &ref_pairs);
-        }
-
-        let outputs_after = {
-            let scanner = state.scanner.lock();
-            scanner.get_all_outputs(&vault_pub_key)
-        };
-        let mut not_found = 0usize;
-        for ref_ in &selected_refs {
-            let found = outputs_after.iter().any(|output| {
-                output.tx_hash == ref_.tx_hash
-                    && output.output_index == ref_.output_index
-                    && output.is_spent()
-            });
-            if !found {
-                not_found += 1;
-            }
-        }
-
-        if let Err(e) = state
-            .store
-            .merge_scanned_outputs(&vault_pub_key, &outputs_after)
-        {
-            error!(error = %e, vault = vault_pub_key, tx_hash, "failed to persist outputs after tx-key reconciliation");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to persist outputs: {e}"))),
-            );
-        }
-
-        (selected_refs.len().saturating_sub(not_found), not_found)
-    } else {
-        (0usize, 0usize)
-    };
+    let (marked, not_found) = (0usize, 0usize);
 
     let record = crate::state::store::OutgoingTransferRecord {
         tx_hash: tx_hash.clone(),
@@ -3313,7 +3249,7 @@ pub async fn validate_outbound(
         tracked = validated.tracked_owned_output,
         marked,
         reconcile = req.reconcile,
-        "validated outbound via tx keys and reconciled local spend state"
+        "validated outbound via tx keys without mutating local spend state"
     );
 
     (
@@ -6416,6 +6352,127 @@ mod tests {
         assert_eq!(saved.amount, synthetic.amount);
         assert_eq!(saved.fee, synthetic.fee);
         assert_eq!(saved.status, OUTGOING_STATUS_MINED);
+    }
+
+    #[tokio::test]
+    async fn validate_outbound_reconcile_keeps_balance_unchanged() {
+        let tx_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let synthetic = crate::tx::validation::synthetic_untracked_outbound_case_for_tests();
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/get_transactions",
+                axum::routing::post(move |Json(req): Json<serde_json::Value>| {
+                    let tx_hash = tx_hash.to_string();
+                    let tx_hex = synthetic.tx_hex.clone();
+                    async move {
+                        let hash = req
+                            .get("txs_hashes")
+                            .and_then(serde_json::Value::as_array)
+                            .and_then(|hashes| hashes.first())
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let payload = if hash.eq_ignore_ascii_case(&tx_hash) {
+                            serde_json::json!({
+                                "txs": [{
+                                    "tx_hash": tx_hash,
+                                    "as_hex": tx_hex,
+                                    "block_height": 77,
+                                    "in_pool": false
+                                }],
+                                "status": "OK"
+                            })
+                        } else {
+                            serde_json::json!({
+                                "txs": [],
+                                "missed_tx": [hash],
+                                "status": "OK"
+                            })
+                        };
+                        (StatusCode::OK, Json(payload))
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let output = sample_output(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            0,
+            OutputState::Unspent,
+        );
+        state
+            .scanner
+            .lock()
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                crate::config::ChainNetworkMode::Mocknet,
+                vec![output.clone()],
+                None,
+            )
+            .expect("failed to register vault scanner state");
+        state.scanner.lock().set_current_height(200);
+        state
+            .store
+            .save_outputs(VALID_VAULT_PUB_KEY, std::slice::from_ref(&output))
+            .expect("failed to seed outputs");
+
+        let before = get_balance(State(state.clone()), Path(VALID_VAULT_PUB_KEY.to_string()))
+            .await
+            .into_response();
+        let (before_status, before_body) = response_to_status_json(before).await;
+        assert_eq!(before_status, StatusCode::OK);
+        assert_eq!(before_body["balance"], serde_json::json!(1_000_000_000u64));
+        assert_eq!(
+            before_body["unlocked_balance"],
+            serde_json::json!(1_000_000_000u64)
+        );
+
+        let response = validate_outbound(
+            State(state.clone()),
+            Json(crate::api::types::ValidateOutboundRequest {
+                vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+                tx_hash: tx_hash.to_string(),
+                tx_keys: synthetic.tx_keys.clone(),
+                from_address: None,
+                to_address: synthetic.to_address.clone(),
+                amount: synthetic.amount,
+                fee: synthetic.fee,
+                memo: Some("OUT:TEST".to_string()),
+                reconcile: true,
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        assert_eq!(body["tracked"], serde_json::json!(false));
+        assert_eq!(body["marked"], serde_json::json!(0));
+        assert_eq!(body["not_found"], serde_json::json!(0));
+
+        let after = get_balance(State(state.clone()), Path(VALID_VAULT_PUB_KEY.to_string()))
+            .await
+            .into_response();
+        let (after_status, after_body) = response_to_status_json(after).await;
+        assert_eq!(after_status, StatusCode::OK);
+        assert_eq!(after_body["balance"], serde_json::json!(1_000_000_000u64));
+        assert_eq!(
+            after_body["unlocked_balance"],
+            serde_json::json!(1_000_000_000u64)
+        );
+
+        let outputs = state
+            .store
+            .load_outputs(VALID_VAULT_PUB_KEY)
+            .expect("failed to reload outputs");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].state, OutputState::Unspent);
     }
 
     #[tokio::test]

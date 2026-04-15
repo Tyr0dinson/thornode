@@ -541,6 +541,11 @@ mod tests {
     use super::*;
     use curve25519_dalek::{constants::ED25519_BASEPOINT_TABLE, Scalar};
     use monero_wallet::address::MoneroAddress;
+    use monero_wallet::transaction::{Input, Pruned, Timelock, Transaction, TransactionPrefix};
+
+    fn point_from_scalar(value: u64) -> curve25519_dalek::edwards::EdwardsPoint {
+        &Scalar::from(value) * ED25519_BASEPOINT_TABLE
+    }
 
     #[test]
     fn role_mapping_is_stable_and_not_index_sorted() {
@@ -747,5 +752,63 @@ mod tests {
         assert_eq!(outputs[1].key_image, None);
         assert_eq!(outputs[1].spent_by_key_image_height, None);
         assert_eq!(outputs[1].state, crate::state::store::OutputState::Unspent);
+    }
+
+    #[test]
+    fn mark_spent_by_key_images_excludes_spent_outputs_from_balance() {
+        let mut scanner = Scanner::new();
+        let base = Scalar::from(7u64);
+        let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
+        let key_image = point_from_scalar(9);
+        let key_image_hex = hex::encode(key_image.compress().to_bytes());
+
+        scanner
+            .register_vault(
+                "thorpub1vault",
+                &group_key_hex,
+                ChainNetworkMode::Mocknet,
+                vec![TrackedOutput {
+                    tx_hash: "tx-spend".to_string(),
+                    output_index: 0,
+                    amount: 50,
+                    height: 100,
+                    key_image: Some(key_image_hex),
+                    spent_by_key_image_height: None,
+                    state: crate::state::store::OutputState::Unspent,
+                    reservation: None,
+                    subaddress_major: 0,
+                    subaddress_minor: 0,
+                    wallet_output_hex: Some("aa".to_string()),
+                    address: Some("48a".to_string()),
+                    note: None,
+                }],
+                None,
+            )
+            .unwrap();
+        scanner.set_current_height(120);
+
+        assert_eq!(scanner.get_balance("thorpub1vault"), (50, 50));
+
+        let tx = Transaction::<Pruned>::V2 {
+            prefix: TransactionPrefix {
+                additional_timelock: Timelock::None,
+                inputs: vec![Input::ToKey {
+                    amount: None,
+                    key_offsets: vec![1],
+                    key_image,
+                }],
+                outputs: vec![],
+                extra: vec![],
+            },
+            proofs: None,
+        };
+
+        let spent = scanner.mark_spent_by_key_images("thorpub1vault", &[tx], 121);
+        assert_eq!(spent, vec![("tx-spend".to_string(), 0)]);
+        assert_eq!(scanner.get_balance("thorpub1vault"), (0, 0));
+
+        let outputs = scanner.get_all_outputs("thorpub1vault");
+        assert_eq!(outputs[0].state, crate::state::store::OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(121));
     }
 }

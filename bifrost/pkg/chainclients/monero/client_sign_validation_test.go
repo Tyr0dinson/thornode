@@ -133,18 +133,71 @@ func TestValidateOutboundObservationCallsSidecar(t *testing.T) {
 	}
 }
 
+func TestValidateOutboundObservationWithoutTxKeysSkipsTxKeyAudit(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+
+	var outboundValidateCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			outboundValidateCalls++
+			t.Fatal("outbound tx-key validation should be skipped when tx keys are missing")
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		logger:      testLogger(),
+	}
+
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          common.TxID(strings.Repeat("b", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRChecksummedDummyAddress('4')),
+			ToAddress:   testOutboundXMRDestination(),
+			Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(55))),
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(3))},
+			Memo:        "OUT:" + strings.Repeat("C", 64),
+		},
+		100,
+		vaultPubKey,
+		0,
+	)
+
+	if err := c.ValidateOutboundObservation(obsTx); err != nil {
+		t.Fatalf("validate outbound observation without tx keys: %v", err)
+	}
+	if outboundValidateCalls != 0 {
+		t.Fatalf("unexpected outbound validate calls: %d", outboundValidateCalls)
+	}
+}
+
 func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
 	ckpt, _ := json.Marshal(signedTxPayload{
-		TxHash:      strings.Repeat("c", 64),
-		TxMetadata:  "deadbeef",
+		TxHash:       strings.Repeat("c", 64),
+		TxMetadata:   "deadbeef",
 		AmountAtomic: 1,
-		FeeAtomic:   1,
-		MsgID:       "msg-id",
-		TxKeys:      []string{strings.Repeat("1", 64)},
+		FeeAtomic:    1,
+		MsgID:        "msg-id",
+		TxKeys:       []string{strings.Repeat("1", 64)},
 	})
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
