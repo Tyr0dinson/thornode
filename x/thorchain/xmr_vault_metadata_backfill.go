@@ -106,54 +106,70 @@ func applyObservedVoterXMRMetadataBackfill(
 	}
 	candidates = append(candidates, voter.Txs...)
 
-	for _, observedTx := range candidates {
-		if observedTx.IsEmpty() || !observedTx.IsFinal() || !observedTx.Tx.Chain.Equals(common.XMRChain) {
+	var target *common.ObservedTx
+	hasFinalised := false
+	for i := range candidates {
+		observedTx := candidates[i]
+		if observedTx.IsEmpty() || !observedTx.Tx.Chain.Equals(common.XMRChain) {
 			continue
 		}
-		if len(observedTx.TxKeys) == 0 && len(observedTx.XmrKeyImages) == 0 {
-			continue
+		if target == nil {
+			target = &candidates[i]
 		}
-
-		vault, err := loadCachedVaultForBackfill(ctx, k, vaultCache, observedTx.ObservedPubKey)
-		if err != nil {
-			return err
+		if observedTx.IsFinal() {
+			hasFinalised = true
+			target = &candidates[i]
 		}
-		if vault == nil || !vault.IsAsgard() {
-			continue
-		}
-
-		beforeKeyImageCount := len(vault.KeyImagesXmr)
-		beforeTxKeyRefs, beforeTxKeyCount := countVaultXMRTxKeys(*vault)
-
-		if len(observedTx.TxKeys) > 0 {
-			appendVaultXMRTxKeys(vault, observedTx.Tx.ID.String(), observedTx.TxKeys)
-		}
-		if len(observedTx.XmrKeyImages) > 0 {
-			appendVaultXMRKeyImages(vault, observedTx.XmrKeyImages)
-		}
-
-		afterTxKeyRefs, afterTxKeyCount := countVaultXMRTxKeys(*vault)
-		afterKeyImageCount := len(vault.KeyImagesXmr)
-
-		if afterTxKeyRefs == beforeTxKeyRefs && afterTxKeyCount == beforeTxKeyCount && afterKeyImageCount == beforeKeyImageCount {
-			continue
-		}
-
-		vaultKey := observedTx.ObservedPubKey.String()
-		touchedVaults[vaultKey] = struct{}{}
-		stats.keyImagesAdded += afterKeyImageCount - beforeKeyImageCount
-		stats.txKeyRefsAdded += afterTxKeyRefs - beforeTxKeyRefs
-		stats.txKeysAdded += afterTxKeyCount - beforeTxKeyCount
-
-		ctx.Logger().Info(
-			"backfilled missing XMR vault metadata from observed voter",
-			"vault_pubkey", vaultKey,
-			"txid", observedTx.Tx.ID.String(),
-			"added_key_images", afterKeyImageCount-beforeKeyImageCount,
-			"added_tx_key_refs", afterTxKeyRefs-beforeTxKeyRefs,
-			"added_tx_keys", afterTxKeyCount-beforeTxKeyCount,
-		)
 	}
+	if !hasFinalised || target == nil {
+		return nil
+	}
+
+	observedTx := *target
+	txKeys, keyImages := collectObservedVoterXMRMetadata(voter, observedTx)
+	if len(txKeys) == 0 && len(keyImages) == 0 {
+		return nil
+	}
+
+	vault, err := loadCachedVaultForBackfill(ctx, k, vaultCache, observedTx.ObservedPubKey)
+	if err != nil {
+		return err
+	}
+	if vault == nil || !vault.IsAsgard() {
+		return nil
+	}
+
+	beforeKeyImageCount := len(vault.KeyImagesXmr)
+	beforeTxKeyRefs, beforeTxKeyCount := countVaultXMRTxKeys(*vault)
+
+	if len(txKeys) > 0 {
+		appendVaultXMRTxKeys(vault, observedTx.Tx.ID.String(), txKeys)
+	}
+	if len(keyImages) > 0 {
+		appendVaultXMRKeyImages(vault, keyImages)
+	}
+
+	afterTxKeyRefs, afterTxKeyCount := countVaultXMRTxKeys(*vault)
+	afterKeyImageCount := len(vault.KeyImagesXmr)
+
+	if afterTxKeyRefs == beforeTxKeyRefs && afterTxKeyCount == beforeTxKeyCount && afterKeyImageCount == beforeKeyImageCount {
+		return nil
+	}
+
+	vaultKey := observedTx.ObservedPubKey.String()
+	touchedVaults[vaultKey] = struct{}{}
+	stats.keyImagesAdded += afterKeyImageCount - beforeKeyImageCount
+	stats.txKeyRefsAdded += afterTxKeyRefs - beforeTxKeyRefs
+	stats.txKeysAdded += afterTxKeyCount - beforeTxKeyCount
+
+	ctx.Logger().Info(
+		"backfilled missing XMR vault metadata from observed voter",
+		"vault_pubkey", vaultKey,
+		"txid", observedTx.Tx.ID.String(),
+		"added_key_images", afterKeyImageCount-beforeKeyImageCount,
+		"added_tx_key_refs", afterTxKeyRefs-beforeTxKeyRefs,
+		"added_tx_keys", afterTxKeyCount-beforeTxKeyCount,
+	)
 
 	return nil
 }

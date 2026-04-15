@@ -5,7 +5,7 @@ package thorchain
 
 import "gitlab.com/thorchain/thornode/v3/common/cosmos"
 
-const xmrVaultMetadataBackfillMimirKey = "XMRVaultMetadataBackfillV1"
+const xmrVaultMetadataBackfillMimirKey = "XMRVaultMetadataBackfillV2"
 
 func runChainnetXMRVaultMetadataBackfillOnce(ctx cosmos.Context, mgr Manager) error {
 	if mgr == nil || mgr.Keeper() == nil {

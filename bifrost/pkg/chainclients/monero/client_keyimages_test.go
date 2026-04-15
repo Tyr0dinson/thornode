@@ -1060,6 +1060,65 @@ func TestValidateObservedTxInAppliesValidatedKeyImages(t *testing.T) {
 	assert.Equal(t, "ki-1", applied[1].KeyImage)
 }
 
+func TestValidateObservedTxInRejectsForgedKeyImagesWithoutApplying(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("d", 64)
+
+	var validateCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			require.Equal(t, "all", r.URL.Query().Get("view"))
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100},
+				},
+			})
+		case r.URL.Path == "/v1/monero/key-image/validate":
+			validateCalls++
+			_ = json.NewEncoder(w).Encode(xmrFrostKeyImageValidateResponse{Valid: false})
+		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			t.Fatal("apply-key-images should not be called when key-image validation fails")
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.NewTx(
+			common.TxID(txHash),
+			common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+			vaultAddr,
+			common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			"SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+		),
+		BlockHeight:    110,
+		FinaliseHeight: 110,
+		ObservedPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+
+	err = c.ValidateObservedTxIn(obsTx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid")
+	assert.Equal(t, 1, validateCalls)
+}
+
 func TestValidateObservedTxInAppliesValidatedKeyImagesForFinalMigrateInbound(t *testing.T) {
 	t.Parallel()
 
@@ -1270,6 +1329,72 @@ func TestValidateOutboundObservationAppliesValidatedKeyImagesForFinalOutboundCha
 	defer mu.Unlock()
 	require.Len(t, applied, 1)
 	assert.Equal(t, uint32(0), applied[0].OutputIndex)
+}
+
+func TestValidateOutboundObservationRejectsForgedKeyImagesWithoutApplying(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("i", 64)
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("external-destination")))
+
+	var outboundValidateCalls int
+	var validateCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			outboundValidateCalls++
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 1})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100},
+				},
+			})
+		case r.URL.Path == "/v1/monero/key-image/validate":
+			validateCalls++
+			_ = json.NewEncoder(w).Encode(xmrFrostKeyImageValidateResponse{Valid: false})
+		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			t.Fatal("apply-key-images should not be called when outbound key-image validation fails")
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.NewTx(
+			common.TxID(txHash),
+			vaultAddr,
+			destination,
+			common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			"OUT:EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+		),
+		BlockHeight:    110,
+		FinaliseHeight: 110,
+		ObservedPubKey: vaultPubKey,
+		TxKeys:         []string{strings.Repeat("1", 64)},
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+
+	err = c.ValidateOutboundObservation(obsTx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid")
+	assert.Equal(t, 1, outboundValidateCalls)
+	assert.Equal(t, 1, validateCalls)
 }
 
 func TestValidateOutboundObservationRequiresKeyImagesForFinalOutboundChange(t *testing.T) {
@@ -1919,7 +2044,7 @@ func TestCatchupTxKeysReadsVaultHistoryAndReplaysOutboundAudit(t *testing.T) {
 	assert.Equal(t, expectedAmount, requests[0].Amount)
 	assert.Equal(t, expectedFee, requests[0].Fee)
 	assert.Equal(t, "OUT:"+parentTxHash, requests[0].Memo)
-	assert.False(t, requests[0].Reconcile)
+	assert.True(t, requests[0].Reconcile)
 }
 
 func TestCatchupTxKeysReplaysAfterSignerReset(t *testing.T) {
@@ -2137,6 +2262,130 @@ func TestCatchupTxKeysPrunesStaleSignerOutboundsBeforeReplay(t *testing.T) {
 	assert.True(t, pruneRequests[0].TxKeyBackedOnly)
 	require.Len(t, validateRequests, 1)
 	assert.Equal(t, txHash, validateRequests[0].TxHash)
+}
+
+func TestCatchupTxKeysReplaysOutboundAuditInObservedHeightOrder(t *testing.T) {
+	t.Parallel()
+
+	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	olderTxHash := strings.Repeat("1", 64)
+	newerTxHash := strings.Repeat("2", 64)
+	olderParentTxHash := strings.Repeat("3", 64)
+	newerParentTxHash := strings.Repeat("4", 64)
+	olderTxKey := strings.Repeat("5", 64)
+	newerTxKey := strings.Repeat("6", 64)
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("tx-key-order-destination")))
+
+	var mu sync.Mutex
+	var requests []xmrFrostValidateOutboundRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			var req xmrFrostValidateOutboundRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			requests = append(requests, req)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/transfers":
+			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	bridge := &mockMoneroBridge{
+		vaultByPubKey: map[string]ttypes.Vault{
+			frostKey.String(): {
+				PubKeyFrost: frostKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+				TxKeysXmr: []*common.XmrTxKeyRef{
+					{TxHash: newerTxHash, TxKeys: []string{newerTxKey}},
+					{TxHash: olderTxHash, TxKeys: []string{olderTxKey}},
+				},
+			},
+		},
+		observedTxVoterByID: map[string]*ttypes.QueryObservedTxVoter{
+			olderTxHash: {
+				TxID: common.TxID(olderTxHash),
+				Tx: ttypes.QueryObservedTx{
+					Tx: common.NewTx(
+						common.TxID(olderTxHash),
+						common.Address(common.XMRUnknownSenderAddress(olderTxHash, vaultAddr.String())),
+						vaultAddr,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+olderParentTxHash,
+					),
+					ObservedPubKey: frostKey,
+					BlockHeight:    100,
+				},
+			},
+			newerTxHash: {
+				TxID: common.TxID(newerTxHash),
+				Tx: ttypes.QueryObservedTx{
+					Tx: common.NewTx(
+						common.TxID(newerTxHash),
+						common.Address(common.XMRUnknownSenderAddress(newerTxHash, vaultAddr.String())),
+						vaultAddr,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+newerParentTxHash,
+					),
+					ObservedPubKey: frostKey,
+					BlockHeight:    200,
+				},
+			},
+		},
+		txStatusByID: map[string]*ttypes.QueryTxStatusResponse{
+			olderParentTxHash: {
+				OutTxs: common.Txs{
+					common.NewTx(
+						common.TxID(olderTxHash),
+						vaultAddr,
+						destination,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+olderParentTxHash,
+					),
+				},
+			},
+			newerParentTxHash: {
+				OutTxs: common.Txs{
+					common.NewTx(
+						common.TxID(newerTxHash),
+						vaultAddr,
+						destination,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+newerParentTxHash,
+					),
+				},
+			},
+		},
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		logger:          testLogger(),
+		thorchainBridge: bridge,
+	}
+
+	c.catchupTxKeys()
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, requests, 2)
+	assert.Equal(t, olderTxHash, requests[0].TxHash)
+	assert.Equal(t, newerTxHash, requests[1].TxHash)
+	assert.True(t, requests[0].Reconcile)
+	assert.True(t, requests[1].Reconcile)
 }
 
 func TestPrepareObservedTxInItemPropagatesKeyImageBlame(t *testing.T) {

@@ -1015,11 +1015,12 @@ func deriveAuthBearer(seedPhrase string) string {
 }
 
 type xmrFrostOutboundMeta struct {
-	FromAddress string
-	ToAddress   string
-	Amount      uint64
-	Fee         uint64
-	Memo        string
+	FromAddress    string
+	ToAddress      string
+	Amount         uint64
+	Fee            uint64
+	Memo           string
+	ObservedHeight int64
 }
 
 type xmrFrostVaultKeysEntry struct {

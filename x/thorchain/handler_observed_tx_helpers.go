@@ -752,6 +752,9 @@ func handleObservedTxOutQuorum(
 		}
 	}
 
+	hasFinalised := voter.HasFinalised(activeNodeAccounts)
+	xmrTxKeys, xmrKeyImages := collectObservedVoterXMRMetadata(voter, tx)
+
 	// If sending from one of our vaults, decrement coins
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
@@ -771,11 +774,11 @@ func handleObservedTxOutQuorum(
 			}
 			vault.OutboundTxCount++
 		}
-		if vault.IsAsgard() && tx.IsFinal() && tx.Tx.Chain.Equals(common.XMRChain) && len(tx.TxKeys) > 0 {
-			appendVaultXMRTxKeys(&vault, tx.Tx.ID.String(), tx.TxKeys)
+		if vault.IsAsgard() && hasFinalised && tx.Tx.Chain.Equals(common.XMRChain) && len(xmrTxKeys) > 0 {
+			appendVaultXMRTxKeys(&vault, tx.Tx.ID.String(), xmrTxKeys)
 		}
-		if vault.IsAsgard() && tx.IsFinal() && tx.Tx.Chain.Equals(common.XMRChain) && len(tx.XmrKeyImages) > 0 {
-			appendVaultXMRKeyImages(&vault, tx.XmrKeyImages)
+		if vault.IsAsgard() && hasFinalised && tx.Tx.Chain.Equals(common.XMRChain) && len(xmrKeyImages) > 0 {
+			appendVaultXMRKeyImages(&vault, xmrKeyImages)
 		}
 
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
@@ -811,6 +814,70 @@ func handleObservedTxOutQuorum(
 	ctx.Logger().Info("tx out processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+func collectObservedVoterXMRMetadata(voter ObservedTxVoter, observedTx common.ObservedTx) ([]string, []*common.XmrKeyImageProof) {
+	if observedTx.IsEmpty() || !observedTx.Tx.Chain.Equals(common.XMRChain) || observedTx.ObservedPubKey.IsEmpty() {
+		return nil, nil
+	}
+
+	candidates := make([]common.ObservedTx, 0, len(voter.Txs)+2)
+	candidates = append(candidates, observedTx)
+	if !voter.Tx.IsEmpty() {
+		candidates = append(candidates, voter.Tx)
+	}
+	candidates = append(candidates, voter.Txs...)
+
+	txKeys := make([]string, 0)
+	seenTxKeys := make(map[string]struct{})
+	keyImages := make([]*common.XmrKeyImageProof, 0)
+	seenKeyImages := make(map[string]struct{})
+
+	targetTxID := strings.ToLower(strings.TrimSpace(observedTx.Tx.ID.String()))
+	for _, candidate := range candidates {
+		if candidate.IsEmpty() || !candidate.Tx.Chain.Equals(common.XMRChain) {
+			continue
+		}
+		if !candidate.ObservedPubKey.Equals(observedTx.ObservedPubKey) {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(candidate.Tx.ID.String())) != targetTxID {
+			continue
+		}
+
+		for _, txKey := range candidate.TxKeys {
+			txKey = strings.TrimSpace(txKey)
+			if txKey == "" {
+				continue
+			}
+			normalized := strings.ToLower(txKey)
+			if _, ok := seenTxKeys[normalized]; ok {
+				continue
+			}
+			seenTxKeys[normalized] = struct{}{}
+			txKeys = append(txKeys, txKey)
+		}
+
+		for _, proof := range candidate.XmrKeyImages {
+			if proof == nil {
+				continue
+			}
+			key := fmt.Sprintf(
+				"%s:%d:%s",
+				strings.ToLower(strings.TrimSpace(proof.TxHash)),
+				proof.OutputIndex,
+				strings.ToLower(strings.TrimSpace(proof.KeyImage)),
+			)
+			if _, ok := seenKeyImages[key]; ok {
+				continue
+			}
+			seenKeyImages[key] = struct{}{}
+			cloned := *proof
+			keyImages = append(keyImages, &cloned)
+		}
+	}
+
+	return txKeys, keyImages
 }
 
 func appendVaultXMRKeyImages(vault *Vault, proofs []*common.XmrKeyImageProof) {

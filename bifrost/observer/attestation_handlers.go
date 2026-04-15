@@ -21,6 +21,9 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 	if err := requireXMRAttestationMetadata(*obsTx, inbound); err != nil {
 		return err
 	}
+	if err := s.requireXMRFinalInboundPropagation(*obsTx, inbound); err != nil {
+		return err
+	}
 	if err := s.requireXMRFinalOutboundPropagation(*obsTx, inbound); err != nil {
 		return err
 	}

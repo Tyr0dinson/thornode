@@ -890,6 +890,44 @@ func TestXMRFinalInboundAttestationRequiresKeyImages(t *testing.T) {
 	})
 }
 
+func TestAttestObservedTxGatesFinalXMRInboundOnValidatedKeyImages(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+
+	var validateCalls int
+	ag.observerValidateInboundXMRKeyImages = func(tx common.ObservedTx) error {
+		validateCalls++
+		return fmt.Errorf("forged key image proof")
+	}
+
+	obsTx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:          common.TxID(stringsRepeat("8", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 100,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: stringsRepeat("8", 64), OutputIndex: 0, KeyImage: "ki-0", ProofC: "c-0", ProofS: "s-0"},
+		},
+	}
+
+	err := ag.AttestObservedTx(context.Background(), obsTx, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not ready")
+	assert.Equal(t, 1, validateCalls)
+
+	k, keyErr := observedTxKey(*obsTx, false, true)
+	require.NoError(t, keyErr)
+
+	ag.mu.Lock()
+	_, exists := ag.observedTxs[k]
+	ag.mu.Unlock()
+	assert.False(t, exists, "finalized xmr inbound should not enter attestation state until key-image validation succeeds")
+}
+
 func TestAttestObservedTxGatesFinalXMROutboundOnValidatedMetadata(t *testing.T) {
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
@@ -960,6 +998,55 @@ func TestSendObservedTxAttestationsToThornodeGatesFinalXMROutboundOnValidatedMet
 	ag.sendObservedTxAttestationsToThornode(context.Background(), *obsTx, state, false, false, true)
 
 	assert.False(t, called, "finalized xmr outbound should not be sent before validator accepts propagated metadata")
+	for _, att := range state.attestations {
+		assert.False(t, att.sent)
+	}
+}
+
+func TestSendObservedTxAttestationsToThornodeGatesFinalXMRInboundOnValidatedKeyImages(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+
+	var validateCalls int
+	ag.observerValidateInboundXMRKeyImages = func(tx common.ObservedTx) error {
+		validateCalls++
+		return fmt.Errorf("forged key image proof")
+	}
+
+	obsTx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:          common.TxID(stringsRepeat("7", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 100,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: stringsRepeat("7", 64), OutputIndex: 0, KeyImage: "ki-0", ProofC: "c-0", ProofS: "s-0"},
+		},
+	}
+
+	state := ag.observedTxsPool.NewAttestationState(obsTx)
+	state.attestations = []attestationSentState{
+		{
+			attestation: &common.Attestation{
+				PubKey:    []byte("pubkey1"),
+				Signature: []byte("sig1"),
+			},
+		},
+	}
+
+	called := false
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		called = true
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	ag.sendObservedTxAttestationsToThornode(context.Background(), *obsTx, state, true, false, true)
+
+	assert.False(t, called, "finalized xmr inbound should not be sent before key-image validation succeeds")
+	assert.Equal(t, 1, validateCalls)
 	for _, att := range state.attestations {
 		assert.False(t, att.sent)
 	}

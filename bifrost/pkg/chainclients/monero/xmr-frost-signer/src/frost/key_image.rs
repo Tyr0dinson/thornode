@@ -704,4 +704,80 @@ mod tests {
 
         assert_eq!(derived, challenge);
     }
+
+    #[test]
+    fn validate_roundtrip_rejects_forged_key_image() {
+        let secret = dfg::Scalar(Scalar::from(5u64));
+        let nonce = dfg::Scalar(Scalar::from(9u64));
+        let output_key = dfg::EdwardsPoint::generator() * secret;
+        let key_image_generator = dfg::EdwardsPoint(biased_hash_to_point(output_key.to_bytes()));
+        let key_image = key_image_generator * secret;
+        let r_g = dfg::EdwardsPoint::generator() * nonce;
+        let r_h = key_image_generator * nonce;
+        let msg = b"key-image|vault|tx|1";
+
+        let mut signer_view = KeyImageAlgorithm::new(output_key.0);
+        signer_view.transcript.domain_separate(b"key_image");
+        signer_view
+            .transcript
+            .append_message(b"participant", Participant::new(1).unwrap().to_bytes());
+        signer_view
+            .transcript
+            .append_message(b"key_image_share", key_image.to_bytes());
+
+        let challenge = signer_view.challenge_for(output_key, &[vec![r_g, r_h]], key_image, msg);
+        let response = nonce + (challenge * secret);
+        let forged_key_image = key_image + dfg::EdwardsPoint::generator();
+
+        let verifier_view = KeyImageAlgorithm::new(output_key.0);
+        let derived = verifier_view.challenge_for(
+            output_key,
+            &[vec![
+                (dfg::EdwardsPoint::generator() * response) - (output_key * challenge),
+                (key_image_generator * response) - (forged_key_image * challenge),
+            ]],
+            forged_key_image,
+            msg,
+        );
+
+        assert_ne!(derived, challenge);
+    }
+
+    #[test]
+    fn validate_roundtrip_rejects_forged_response() {
+        let secret = dfg::Scalar(Scalar::from(5u64));
+        let nonce = dfg::Scalar(Scalar::from(9u64));
+        let output_key = dfg::EdwardsPoint::generator() * secret;
+        let key_image_generator = dfg::EdwardsPoint(biased_hash_to_point(output_key.to_bytes()));
+        let key_image = key_image_generator * secret;
+        let r_g = dfg::EdwardsPoint::generator() * nonce;
+        let r_h = key_image_generator * nonce;
+        let msg = b"key-image|vault|tx|1";
+
+        let mut signer_view = KeyImageAlgorithm::new(output_key.0);
+        signer_view.transcript.domain_separate(b"key_image");
+        signer_view
+            .transcript
+            .append_message(b"participant", Participant::new(1).unwrap().to_bytes());
+        signer_view
+            .transcript
+            .append_message(b"key_image_share", key_image.to_bytes());
+
+        let challenge = signer_view.challenge_for(output_key, &[vec![r_g, r_h]], key_image, msg);
+        let response = nonce + (challenge * secret);
+        let forged_response = response + dfg::Scalar(Scalar::ONE);
+
+        let verifier_view = KeyImageAlgorithm::new(output_key.0);
+        let derived = verifier_view.challenge_for(
+            output_key,
+            &[vec![
+                (dfg::EdwardsPoint::generator() * forged_response) - (output_key * challenge),
+                (key_image_generator * forged_response) - (key_image * challenge),
+            ]],
+            key_image,
+            msg,
+        );
+
+        assert_ne!(derived, challenge);
+    }
 }

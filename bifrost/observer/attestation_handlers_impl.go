@@ -47,6 +47,19 @@ func requireXMRAttestationMetadata(obsTx common.ObservedTx, inbound bool) error 
 	return requireXMRFinalInboundKeyImages(obsTx, inbound)
 }
 
+func (s *AttestationGossip) requireXMRFinalInboundPropagation(obsTx common.ObservedTx, inbound bool) error {
+	if !inbound || !obsTx.Tx.Chain.Equals(common.XMRChain) || !obsTx.IsFinal() {
+		return nil
+	}
+	if s.observerValidateInboundXMRKeyImages == nil {
+		return nil
+	}
+	if err := s.observerValidateInboundXMRKeyImages(obsTx); err != nil {
+		return fmt.Errorf("xmr finalized inbound attestation is not ready for %s: %w", obsTx.Tx.ID, err)
+	}
+	return nil
+}
+
 func (s *AttestationGossip) requireXMRFinalOutboundPropagation(obsTx common.ObservedTx, inbound bool) error {
 	if inbound || !obsTx.Tx.Chain.Equals(common.XMRChain) || !obsTx.IsFinal() {
 		return nil
@@ -280,6 +293,13 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 			Err(err).
 			Str("tx_id", tx.Tx.ID.String()).
 			Msg("refusing to send xmr quorum tx without required metadata")
+		return
+	}
+	if err := s.requireXMRFinalInboundPropagation(tx, inbound); err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("tx_id", tx.Tx.ID.String()).
+			Msg("refusing to send finalized xmr inbound before key-image validation succeeds")
 		return
 	}
 	if err := s.requireXMRFinalOutboundPropagation(tx, inbound); err != nil {

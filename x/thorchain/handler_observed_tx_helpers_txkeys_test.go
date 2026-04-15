@@ -102,3 +102,66 @@ func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTx
 	c.Assert(vault.TxKeysXmr[0].TxHash, Equals, txID.String())
 	c.Assert(vault.TxKeysXmr[0].TxKeys, DeepEquals, []string{"key-a", "key-b"})
 }
+
+func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTxKeysFromNonFinalObservationMetadata(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
+		common.XMRChain.String(),
+	}, []ChainContract{})
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(5*common.One)),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	finalObserved := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          txID,
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+			},
+			Gas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
+			},
+			Memo: "OUT:" + GetRandomTxHash().String(),
+		},
+		BlockHeight:    2048,
+		FinaliseHeight: 2048,
+		ObservedPubKey: vaultPubKey,
+	}
+	nonFinalWithMetadata := finalObserved
+	nonFinalWithMetadata.BlockHeight = 2047
+	nonFinalWithMetadata.TxKeys = []string{"key-a", "key-b"}
+
+	voter := ObservedTxVoter{
+		TxID:            txID,
+		Tx:              finalObserved,
+		Txs:             common.ObservedTxs{finalObserved, nonFinalWithMetadata},
+		Height:          finalObserved.BlockHeight,
+		FinalisedHeight: finalObserved.BlockHeight,
+	}
+
+	err := handleObservedTxOutQuorum(
+		ctx,
+		mgr,
+		cosmos.AccAddress{},
+		NodeAccounts{},
+		func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) { return nil, errKaboom },
+		nonFinalWithMetadata,
+		voter,
+		nil,
+		true,
+	)
+	c.Assert(err, IsNil)
+
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.TxKeysXmr, HasLen, 1)
+	c.Assert(vault.TxKeysXmr[0].TxHash, Equals, txID.String())
+	c.Assert(vault.TxKeysXmr[0].TxKeys, DeepEquals, []string{"key-a", "key-b"})
+}

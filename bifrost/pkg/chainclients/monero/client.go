@@ -659,8 +659,13 @@ func (c *Client) catchupTxKeys() {
 			continue
 		}
 
+		type catchupOutbound struct {
+			ref  xmrTxKeyCatchupRef
+			meta xmrFrostOutboundMeta
+		}
+
+		ordered := make([]catchupOutbound, 0, len(batch))
 		pending := false
-		applied := 0
 		for _, ref := range batch {
 			meta, metaErr := c.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash)
 			if metaErr != nil {
@@ -671,22 +676,42 @@ func (c *Client) catchupTxKeys() {
 				pending = true
 				break
 			}
+			ordered = append(ordered, catchupOutbound{ref: ref, meta: meta})
+		}
 
+		sort.SliceStable(ordered, func(i, j int) bool {
+			leftHeight := ordered[i].meta.ObservedHeight
+			rightHeight := ordered[j].meta.ObservedHeight
+			if leftHeight == rightHeight {
+				return strings.ToLower(strings.TrimSpace(ordered[i].ref.txHash)) <
+					strings.ToLower(strings.TrimSpace(ordered[j].ref.txHash))
+			}
+			if leftHeight <= 0 {
+				return false
+			}
+			if rightHeight <= 0 {
+				return true
+			}
+			return leftHeight < rightHeight
+		})
+
+		applied := 0
+		for _, outbound := range ordered {
 			_, applyErr := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
 				VaultPubKey: vaultPubKey.String(),
-				TxHash:      ref.txHash,
-				TxKeys:      append([]string(nil), ref.txKeys...),
-				FromAddress: meta.FromAddress,
-				ToAddress:   meta.ToAddress,
-				Amount:      meta.Amount,
-				Fee:         meta.Fee,
-				Memo:        meta.Memo,
-				Reconcile:   false,
+				TxHash:      outbound.ref.txHash,
+				TxKeys:      append([]string(nil), outbound.ref.txKeys...),
+				FromAddress: outbound.meta.FromAddress,
+				ToAddress:   outbound.meta.ToAddress,
+				Amount:      outbound.meta.Amount,
+				Fee:         outbound.meta.Fee,
+				Memo:        outbound.meta.Memo,
+				Reconcile:   true,
 			})
 			if applyErr != nil {
 				c.logger.Err(applyErr).
 					Str("vault", vaultPubKey.String()).
-					Str("tx_hash", ref.txHash).
+					Str("tx_hash", outbound.ref.txHash).
 					Msg("xmr tx-key catchup: failed to replay outbound audit record")
 				pending = true
 				break
@@ -737,15 +762,17 @@ func (c *Client) getTxKeyCatchupOutboundMeta(vaultPubKey common.PubKey, txHash s
 	if meta, ok, err := c.txKeyCatchupCanonicalOutboundMeta(vaultPubKey, txHash, observed.Tx.Memo); err != nil {
 		return xmrFrostOutboundMeta{}, err
 	} else if ok {
+		meta.ObservedHeight = observed.BlockHeight
 		return meta, nil
 	}
 
 	return xmrFrostOutboundMeta{
-		FromAddress: observed.Tx.FromAddress.String(),
-		ToAddress:   observed.Tx.ToAddress.String(),
-		Amount:      amountAtomic,
-		Fee:         feeAtomic,
-		Memo:        observed.Tx.Memo,
+		FromAddress:    observed.Tx.FromAddress.String(),
+		ToAddress:      observed.Tx.ToAddress.String(),
+		Amount:         amountAtomic,
+		Fee:            feeAtomic,
+		Memo:           observed.Tx.Memo,
+		ObservedHeight: observed.BlockHeight,
 	}, nil
 }
 

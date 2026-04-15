@@ -123,3 +123,64 @@ func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromHistoric
 	c.Assert(stats.txKeyRefsAdded, Equals, 0)
 	c.Assert(stats.txKeysAdded, Equals, 0)
 }
+
+func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromNonFinalObservationMetadata(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
+		common.XMRChain.String(),
+	}, nil)
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One)),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	finalObserved := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          txID,
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault-out"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+			},
+			Gas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
+			},
+			Memo: "OUT:" + GetRandomTxHash().String(),
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 100,
+		ObservedPubKey: vaultPubKey,
+	}
+	nonFinalWithMetadata := finalObserved
+	nonFinalWithMetadata.BlockHeight = 99
+	nonFinalWithMetadata.TxKeys = []string{"tx-key-1"}
+	nonFinalWithMetadata.XmrKeyImages = []*common.XmrKeyImageProof{
+		{TxHash: txID.String(), OutputIndex: 1, KeyImage: "ki-out", ProofC: "c1", ProofS: "s1"},
+	}
+	mgr.Keeper().SetObservedTxOutVoter(ctx, ObservedTxVoter{
+		TxID:            txID,
+		Tx:              finalObserved,
+		Txs:             common.ObservedTxs{finalObserved, nonFinalWithMetadata},
+		Height:          100,
+		FinalisedHeight: 100,
+	})
+
+	stats, err := backfillXMRVaultMetadata(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(stats.vaultsTouched, Equals, 1)
+	c.Assert(stats.keyImagesAdded, Equals, 1)
+	c.Assert(stats.txKeyRefsAdded, Equals, 1)
+	c.Assert(stats.txKeysAdded, Equals, 1)
+
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.KeyImagesXmr, HasLen, 1)
+	c.Assert(vault.KeyImagesXmr[0].TxHash, Equals, txID.String())
+	c.Assert(vault.TxKeysXmr, HasLen, 1)
+	c.Assert(vault.TxKeysXmr[0].TxHash, Equals, txID.String())
+	c.Assert(vault.TxKeysXmr[0].TxKeys, DeepEquals, []string{"tx-key-1"})
+}
