@@ -2988,3 +2988,267 @@ func (s *NetworkManagerTestSuite) TestSkimsApplyBeforePerChainBucketing(c *C) {
 		Commentf("global BondRewardRune with skims (%s) should be less than without (%s)",
 			networkWithSkim.BondRewardRune, baselineBondReward))
 }
+
+func (s *NetworkManagerTestSuite) TestBondInvariantMultiBlock(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	k := mgr.Keeper()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Fund reserve
+	FundModule(c, ctx, k, ReserveName, 100_000*common.One)
+
+	// Create active node with bond
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(1000 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+
+	// Fund bond module to match node bond
+	FundModule(c, ctx, k, BondName, 1000*common.One)
+
+	// Create ETH and BTC pools
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(500 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(500 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(500 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(500 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	// Create vault with both chains
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.ETHChain, common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{na1.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(500*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(500*common.One)),
+	)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	checkBondInvariant := func(height int64) {
+		bondedRune := cosmos.ZeroUint()
+		naIter := k.GetNodeAccountIterator(ctx)
+		for ; naIter.Valid(); naIter.Next() {
+			var na types.NodeAccount
+			k.Cdc().MustUnmarshal(naIter.Value(), &na)
+			bondedRune = bondedRune.Add(na.Bond)
+		}
+		naIter.Close()
+
+		network, _ := k.GetNetwork(ctx)
+		chainIncomeRune := cosmos.ZeroUint()
+		for _, ci := range network.ChainIncome {
+			chainIncomeRune = chainIncomeRune.Add(ci.Amount)
+		}
+		expectedRune := bondedRune.Add(network.BondRewardRune).Add(chainIncomeRune)
+		bondModuleRune := k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
+
+		c.Assert(expectedRune.String(), Equals, bondModuleRune.String(),
+			Commentf("bond invariant broken at height %d: expected=%s actual=%s diff=%s",
+				height, expectedRune, bondModuleRune,
+				common.SafeSub(bondModuleRune, expectedRune)))
+	}
+
+	// Run UpdateNetwork for many blocks with liquidity fees
+	for i := int64(1); i <= 500; i++ {
+		ctx = ctx.WithBlockHeight(i)
+
+		// Add liquidity fees each block (varying amounts)
+		ethFee := cosmos.NewUint(uint64(100 + i%50))
+		btcFee := cosmos.NewUint(uint64(200 + i%30))
+		c.Assert(k.AddToLiquidityFees(ctx, common.ETHAsset, ethFee), IsNil)
+		c.Assert(k.AddToLiquidityFees(ctx, common.BTCAsset, btcFee), IsNil)
+
+		c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+
+		// Check invariant every 10 blocks
+		if i%10 == 0 {
+			checkBondInvariant(i)
+		}
+	}
+
+	// Final check
+	checkBondInvariant(500)
+
+	// Now simulate churn: distribute chain bond rewards and check invariant
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(vm.distributeChainBondRewards(ctx, mgr), IsNil)
+	checkBondInvariant(500)
+}
+
+func (s *NetworkManagerTestSuite) TestBondInvariantWithNativePoolFees(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	k := mgr.Keeper()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	FundModule(c, ctx, k, ReserveName, 100_000*common.One)
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(1000 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+	FundModule(c, ctx, k, BondName, 1000*common.One)
+
+	// External chain pool
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(500 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(500 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	// Native RUNE pool (trade account pool)
+	runePool := NewPool()
+	runePool.Asset = common.RuneAsset()
+	runePool.BalanceRune = cosmos.NewUint(100 * common.One)
+	runePool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	runePool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, runePool), IsNil)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{na1.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(500*common.One)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	checkBondInvariant := func(height int64) {
+		bondedRune := cosmos.ZeroUint()
+		naIter := k.GetNodeAccountIterator(ctx)
+		for ; naIter.Valid(); naIter.Next() {
+			var na types.NodeAccount
+			k.Cdc().MustUnmarshal(naIter.Value(), &na)
+			bondedRune = bondedRune.Add(na.Bond)
+		}
+		naIter.Close()
+
+		network, _ := k.GetNetwork(ctx)
+		chainIncomeRune := cosmos.ZeroUint()
+		for _, ci := range network.ChainIncome {
+			chainIncomeRune = chainIncomeRune.Add(ci.Amount)
+		}
+		expectedRune := bondedRune.Add(network.BondRewardRune).Add(chainIncomeRune)
+		bondModuleRune := k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
+
+		c.Assert(expectedRune.String(), Equals, bondModuleRune.String(),
+			Commentf("bond invariant broken at height %d: expected=%s actual=%s diff=%s",
+				height, expectedRune, bondModuleRune,
+				common.SafeSub(bondModuleRune, expectedRune)))
+	}
+
+	// Run with both ETH fees and native RUNE pool fees
+	for i := int64(1); i <= 200; i++ {
+		ctx = ctx.WithBlockHeight(i)
+		c.Assert(k.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(500)), IsNil)
+		c.Assert(k.AddToLiquidityFees(ctx, common.RuneAsset(), cosmos.NewUint(300)), IsNil)
+		c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+		if i%10 == 0 {
+			checkBondInvariant(i)
+		}
+	}
+	checkBondInvariant(200)
+
+	// Distribute chain bond rewards (churn) and check again
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(vm.distributeChainBondRewards(ctx, mgr), IsNil)
+	checkBondInvariant(200)
+}
+
+func (s *NetworkManagerTestSuite) TestBondInvariantFullChurnCycle(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	k := mgr.Keeper()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	FundModule(c, ctx, k, ReserveName, 100_000*common.One)
+
+	// Create 4 active nodes with varying bonds
+	nodes := make([]NodeAccount, 4)
+	totalBondAmt := uint64(0)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		bond := uint64((100 + i*50) * common.One)
+		nodes[i].Bond = cosmos.NewUint(bond)
+		nodes[i].ActiveBlockHeight = 1
+		c.Assert(k.SetNodeAccount(ctx, nodes[i]), IsNil)
+		totalBondAmt += bond
+	}
+	FundModule(c, ctx, k, BondName, totalBondAmt)
+
+	// Create pools on multiple chains
+	for _, asset := range []common.Asset{common.ETHAsset, common.BTCAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(500 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(500 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+
+	// Create vault with all nodes as members
+	membership := make([]string, len(nodes))
+	for i, na := range nodes {
+		membership[i] = na.PubKeySet.Secp256k1.String()
+	}
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.ETHChain, common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = membership
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(500*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(500*common.One)),
+	)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	checkBondInvariant := func(height int64) {
+		bondedRune := cosmos.ZeroUint()
+		naIter := k.GetNodeAccountIterator(ctx)
+		for ; naIter.Valid(); naIter.Next() {
+			var na types.NodeAccount
+			k.Cdc().MustUnmarshal(naIter.Value(), &na)
+			bondedRune = bondedRune.Add(na.Bond)
+		}
+		naIter.Close()
+
+		network, _ := k.GetNetwork(ctx)
+		chainIncomeRune := cosmos.ZeroUint()
+		for _, ci := range network.ChainIncome {
+			chainIncomeRune = chainIncomeRune.Add(ci.Amount)
+		}
+		expectedRune := bondedRune.Add(network.BondRewardRune).Add(chainIncomeRune)
+		bondModuleRune := k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
+
+		c.Assert(expectedRune.String(), Equals, bondModuleRune.String(),
+			Commentf("bond invariant broken at height %d: expected=%s actual=%s oversolvent=%s insolvent=%s",
+				height, expectedRune, bondModuleRune,
+				common.SafeSub(bondModuleRune, expectedRune),
+				common.SafeSub(expectedRune, bondModuleRune)))
+	}
+
+	// Simulate 500 blocks with liquidity fees
+	for i := int64(1); i <= 500; i++ {
+		ctx = ctx.WithBlockHeight(i)
+		c.Assert(k.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(uint64(300+i%100))), IsNil)
+		c.Assert(k.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(uint64(200+i%70))), IsNil)
+		c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	}
+	checkBondInvariant(500)
+
+	// Simulate churn: distribute all rewards
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// Distribute emission rewards (BondRewardRune) to nodes
+	c.Assert(vm.distributeBondReward(ctx, mgr), IsNil)
+	checkBondInvariant(500)
+
+	// Distribute per-chain rewards (ChainIncome) to nodes
+	c.Assert(vm.distributeChainBondRewards(ctx, mgr), IsNil)
+	checkBondInvariant(500)
+}
