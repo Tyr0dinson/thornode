@@ -940,8 +940,8 @@ func (vm *ValidatorMgr) distributeChainBondRewards(ctx cosmos.Context, mgr Manag
 			totalUndistributed = totalUndistributed.Add(undistributed)
 		}
 
-		if err := vm.k.ZeroChainIncome(ctx, chain); err != nil {
-			resultErr = errors.Join(resultErr, err)
+		if zeroErr := vm.k.ZeroChainIncome(ctx, chain); zeroErr != nil {
+			resultErr = errors.Join(resultErr, zeroErr)
 		}
 	}
 
@@ -951,8 +951,8 @@ func (vm *ValidatorMgr) distributeChainBondRewards(ctx cosmos.Context, mgr Manag
 			return fmt.Errorf("fail to re-read network for undistributed chain income: %w", err)
 		}
 		network.BondRewardRune = network.BondRewardRune.Add(totalUndistributed)
-		if err := vm.k.SetNetwork(ctx, network); err != nil {
-			return fmt.Errorf("fail to save network after undistributed chain income: %w", err)
+		if setErr := vm.k.SetNetwork(ctx, network); setErr != nil {
+			return fmt.Errorf("fail to save network after undistributed chain income: %w", setErr)
 		}
 	}
 
