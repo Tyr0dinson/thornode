@@ -177,6 +177,8 @@ pub struct OutgoingTransferRecord {
     pub tx_hex: String,
     #[serde(default)]
     pub tx_keys: Vec<String>,
+    #[serde(default)]
+    pub registered_inventory: bool,
     pub msg_id: String,
     pub vault_pub_key: String,
     pub from_address: String,
@@ -199,6 +201,7 @@ impl OutgoingTransferRecord {
         self.tx_hash == other.tx_hash
             && self.tx_hex == other.tx_hex
             && self.tx_keys == other.tx_keys
+            && self.registered_inventory == other.registered_inventory
             && self.msg_id == other.msg_id
             && self.vault_pub_key == other.vault_pub_key
             && self.from_address == other.from_address
@@ -1007,6 +1010,7 @@ impl Store {
         vault_pub_key: &str,
         tx_hash: &str,
         tx_keys: &[String],
+        registered_inventory: bool,
         from_address: &str,
         memo: &str,
     ) -> Result<()> {
@@ -1018,6 +1022,9 @@ impl Store {
         let mut record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
         if !tx_keys.is_empty() {
             record.tx_keys = tx_keys.to_vec();
+        }
+        if registered_inventory {
+            record.registered_inventory = true;
         }
         if !from_address.trim().is_empty() {
             record.from_address = from_address.trim().to_string();
@@ -1885,6 +1892,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
+            registered_inventory: true,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault".to_string(),
             from_address: "48from".to_string(),
@@ -1948,6 +1956,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
+            registered_inventory: true,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault".to_string(),
             from_address: "48from".to_string(),
@@ -1967,6 +1976,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
+            registered_inventory: true,
             msg_id: "msg2".to_string(),
             vault_pub_key: "thorpub1vault".to_string(),
             from_address: "48from".to_string(),
@@ -2006,6 +2016,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
+            registered_inventory: true,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: "48from-a".to_string(),
@@ -2025,6 +2036,7 @@ mod tests {
             tx_hash: "hash2".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["22".repeat(32)],
+            registered_inventory: true,
             msg_id: "msg2".to_string(),
             vault_pub_key: "thorpub1vault-b".to_string(),
             from_address: "48from-b".to_string(),
@@ -2065,6 +2077,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
+            registered_inventory: true,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: "48from-a".to_string(),
@@ -2111,6 +2124,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
+            registered_inventory: true,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: "48from-a".to_string(),
@@ -2171,6 +2185,7 @@ mod tests {
             tx_hash: "hash1".to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec![],
+            registered_inventory: false,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: String::new(),
@@ -2193,12 +2208,14 @@ mod tests {
                 "thorpub1vault-a",
                 "hash1",
                 &["11".repeat(32)],
+                true,
                 "48from-a",
                 "OUT:ABC",
             )
             .unwrap();
 
         record.tx_keys = vec!["11".repeat(32)];
+        record.registered_inventory = true;
         record.from_address = "48from-a".to_string();
         record.memo = "OUT:ABC".to_string();
 

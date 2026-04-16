@@ -3535,7 +3535,7 @@ fn build_vault_inventory_fingerprint(
         .iter()
         .filter_map(|record| {
             let tx_hash = normalize_tx_hash(&record.tx_hash);
-            if tx_hash.is_empty() || record.tx_keys.is_empty() {
+            if tx_hash.is_empty() || record.tx_keys.is_empty() || !record.registered_inventory {
                 return None;
             }
             Some((tx_hash, normalized_tx_keys(&record.tx_keys)))
@@ -3561,6 +3561,9 @@ fn outgoing_record_matches_registered_tx_key(
     entry: &crate::api::types::RegisterTxKeyEntry,
 ) -> bool {
     if !record.status.eq_ignore_ascii_case(OUTGOING_STATUS_MINED) {
+        return false;
+    }
+    if !record.registered_inventory {
         return false;
     }
     if normalized_tx_keys(&record.tx_keys) != normalized_tx_keys(&entry.tx_keys) {
@@ -3597,6 +3600,7 @@ fn register_tx_key_entry_as_validate_request(
         vault_pub_key: vault_pub_key.to_string(),
         tx_hash: entry.tx_hash,
         tx_keys: entry.tx_keys,
+        registered_inventory: true,
         from_address: entry.from_address,
         to_address: entry.to_address,
         amount: entry.amount,
@@ -3796,6 +3800,7 @@ async fn validate_outbound_request(
             &vault_pub_key,
             &tx_hash,
             &req.tx_keys,
+            req.registered_inventory,
             &from_address,
             req.memo.as_deref().unwrap_or_default(),
         ) {
@@ -3838,6 +3843,7 @@ async fn validate_outbound_request(
         tx_hash: tx_hash.clone(),
         tx_hex,
         tx_keys: req.tx_keys.clone(),
+        registered_inventory: req.registered_inventory,
         msg_id: format!("attestation:{tx_hash}"),
         vault_pub_key: vault_pub_key.clone(),
         from_address,
@@ -4069,7 +4075,11 @@ pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoR
         };
         let registered_tx_key_count = outgoing
             .iter()
-            .filter(|record| !record.tx_keys.is_empty() && !record.tx_hash.trim().is_empty())
+            .filter(|record| {
+                record.registered_inventory
+                    && !record.tx_keys.is_empty()
+                    && !record.tx_hash.trim().is_empty()
+            })
             .count();
         entries.push(crate::api::types::VaultStateEntry {
             inventory_fingerprint: build_vault_inventory_fingerprint(
@@ -4934,6 +4944,7 @@ mod tests {
             tx_hash: tx_hash.to_string(),
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec![],
+            registered_inventory: false,
             msg_id: "msg-id".to_string(),
             vault_pub_key: vault_pub_key.to_string(),
             from_address: from.to_string(),
@@ -6814,6 +6825,7 @@ mod tests {
             1,
         );
         retained.tx_keys = vec!["11".repeat(32)];
+        retained.registered_inventory = true;
         state
             .store
             .save_outgoing_transfer(&retained)
@@ -6849,6 +6861,69 @@ mod tests {
         assert_eq!(outgoing.len(), 1);
         assert_eq!(outgoing[0].tx_hash, retained.tx_hash);
         assert_eq!(outgoing[0].tx_keys, retained.tx_keys);
+    }
+
+    #[tokio::test]
+    async fn list_vault_states_ignores_local_attestation_tx_keys() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        state
+            .store
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                "48vault-reset",
+                "test",
+                321,
+            )
+            .expect("failed to register vault");
+
+        let mut registered = sample_outgoing(
+            "abababababababababababababababababababababababababababababababab",
+            VALID_VAULT_PUB_KEY,
+            "48from",
+            "48to",
+            1,
+        );
+        registered.tx_keys = vec!["11".repeat(32)];
+        registered.registered_inventory = true;
+        state
+            .store
+            .save_outgoing_transfer(&registered)
+            .expect("failed to seed registered tx-key outbound");
+
+        let mut local = sample_outgoing(
+            "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            VALID_VAULT_PUB_KEY,
+            "48from",
+            "48to",
+            2,
+        );
+        local.tx_keys = vec!["22".repeat(32)];
+        state
+            .store
+            .save_outgoing_transfer(&local)
+            .expect("failed to seed locally validated outbound");
+
+        let response = list_vault_states(State(state.clone()))
+            .await
+            .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let vaults = body["vaults"]
+            .as_array()
+            .expect("vaults should be an array");
+        assert_eq!(vaults.len(), 1);
+        assert_eq!(vaults[0]["registered_tx_key_count"], serde_json::json!(1));
+        assert_eq!(
+            vaults[0]["inventory_fingerprint"],
+            serde_json::json!(build_vault_inventory_fingerprint(
+                VALID_VAULT_PUB_KEY,
+                321,
+                &[],
+                &[registered, local],
+            ))
+        );
     }
 
     #[tokio::test]
@@ -7859,6 +7934,7 @@ mod tests {
                 vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
                 tx_hash: tx_hash.to_string(),
                 tx_keys: synthetic.tx_keys.clone(),
+                registered_inventory: false,
                 from_address: None,
                 to_address: synthetic.to_address.clone(),
                 amount: synthetic.amount,
@@ -7881,6 +7957,7 @@ mod tests {
             .expect("failed to load outgoing transfer")
             .expect("outgoing transfer should exist");
         assert_eq!(saved.tx_keys, synthetic.tx_keys);
+        assert!(!saved.registered_inventory);
         assert_eq!(saved.to_address, synthetic.to_address);
         assert_eq!(saved.amount, synthetic.amount);
         assert_eq!(saved.fee, synthetic.fee);
@@ -7973,6 +8050,7 @@ mod tests {
                 vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
                 tx_hash: tx_hash.to_string(),
                 tx_keys: synthetic.tx_keys.clone(),
+                registered_inventory: false,
                 from_address: None,
                 to_address: synthetic.to_address.clone(),
                 amount: synthetic.amount,

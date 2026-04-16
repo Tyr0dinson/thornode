@@ -307,6 +307,8 @@ pub struct ValidateOutboundRequest {
     pub vault_pub_key: String,
     pub tx_hash: String,
     pub tx_keys: Vec<String>,
+    #[serde(default)]
+    pub registered_inventory: bool,
     pub from_address: Option<String>,
     pub to_address: String,
     pub amount: u64,
