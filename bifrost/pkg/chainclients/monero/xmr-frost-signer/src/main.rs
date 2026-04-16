@@ -165,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/monero/broadcast", post(api::routes::broadcast))
         // Scanner / Balance
         .route(REGISTER_VAULT_ROUTE, post(api::routes::register_vault))
+        .route("/v1/monero/vaults", get(api::routes::list_vault_states))
         .route(BALANCE_ROUTE, get(api::routes::get_balance))
         .route("/v1/monero/transfers", get(api::routes::get_transfers))
         .route(

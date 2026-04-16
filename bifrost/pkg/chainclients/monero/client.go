@@ -1,11 +1,13 @@
 package monero
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -206,6 +208,9 @@ type Client struct {
 	emptyVaultLock          sync.Mutex
 	consolidationStateMu    sync.Mutex
 	consolidationState      map[string]xmrConsolidationVaultState
+	stateSyncMu             sync.Mutex
+	trackedVaultSyncMu      sync.Mutex
+	trackedVaultSyncState   map[string]string
 	keyImageCatchupMu       sync.Mutex
 	keyImageCatchupState    map[string]xmrKeyImageCatchupState
 	txKeyCatchupMu          sync.Mutex
@@ -292,6 +297,7 @@ func NewClient(
 		asgardAddresses:         make([]common.Address, 0),
 		vaultLocks:              make(map[string]*sync.Mutex),
 		consolidationState:      make(map[string]xmrConsolidationVaultState),
+		trackedVaultSyncState:   make(map[string]string),
 		keyImageCatchupState:    make(map[string]xmrKeyImageCatchupState),
 		consolidateInProgress:   atomic.NewBool(false),
 		lastConsolidationHeight: atomic.NewInt64(0),
@@ -457,6 +463,9 @@ func (c *Client) Start(
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
 	c.ensureConsolidationState()
+	if err := c.syncXMRState(); err != nil {
+		c.logger.Warn().Err(err).Msg("xmr startup state sync failed; continuing and retrying in background")
+	}
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.scanner.SetErrataQueue(globalErrataQueue)
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
@@ -465,9 +474,7 @@ func (c *Client) Start(
 	c.wg.Add(1)
 	go c.consolidationRunner()
 	c.wg.Add(1)
-	go c.keyImagesSyncRunner()
-	c.wg.Add(1)
-	go c.txKeysSyncRunner()
+	go c.xmrStateSyncRunner()
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -512,10 +519,12 @@ func (c *Client) restoreFrostKeysFromRecoveryFiles() {
 	}
 }
 
-func (c *Client) keyImagesSyncRunner() {
+func (c *Client) xmrStateSyncRunner() {
 	defer c.wg.Done()
 
-	c.catchupKeyImages()
+	if err := c.syncXMRState(); err != nil {
+		c.logger.Warn().Err(err).Msg("xmr state sync failed; retrying on next tick")
+	}
 
 	ticker := time.NewTicker(constants.ThorchainBlockTime * 10)
 	defer ticker.Stop()
@@ -525,9 +534,47 @@ func (c *Client) keyImagesSyncRunner() {
 		case <-c.stopchan:
 			return
 		case <-ticker.C:
-			c.catchupKeyImages()
+			if err := c.syncXMRState(); err != nil {
+				c.logger.Warn().Err(err).Msg("xmr state sync failed; retrying on next tick")
+			}
 		}
 	}
+}
+
+func (c *Client) syncXMRState() error {
+	if c.thorchainBridge == nil || c.frostSigner == nil {
+		return nil
+	}
+
+	c.stateSyncMu.Lock()
+	defer c.stateSyncMu.Unlock()
+
+	vaults, err := c.trackedXMRVaultsForKeyImageCatchup()
+	if err != nil {
+		return fmt.Errorf("failed to get tracked xmr vaults: %w", err)
+	}
+
+	vaultStates, err := c.syncTrackedVaultRegistrations(vaults)
+	if err != nil {
+		return err
+	}
+	if hasPendingVaultRescans(vaultStates) {
+		updated, progressErr := c.drivePendingScannerRescans(vaultStates)
+		if progressErr != nil {
+			return progressErr
+		}
+		vaultStates = updated
+		if hasPendingVaultRescans(vaultStates) {
+			c.logger.Info().
+				Int("pending_vaults", countPendingVaultRescans(vaultStates)).
+				Msg("xmr state sync: scanner rescans still pending; deferring metadata catchup until next tick")
+			return nil
+		}
+	}
+
+	c.catchupKeyImagesForVaults(vaults)
+	c.catchupTxKeysForVaults(vaults)
+	return nil
 }
 
 func (c *Client) catchupKeyImages() {
@@ -539,6 +586,10 @@ func (c *Client) catchupKeyImages() {
 		c.logger.Err(err).Msg("xmr key-image catchup: failed to get tracked xmr vaults")
 		return
 	}
+	c.catchupKeyImagesForVaults(vaults)
+}
+
+func (c *Client) catchupKeyImagesForVaults(vaults ttypes.Vaults) {
 	for _, vault := range vaults {
 		vaultPubKey := keyImageCatchupVaultPubKey(vault)
 		if vaultPubKey.IsEmpty() {
@@ -586,24 +637,6 @@ func (c *Client) catchupKeyImages() {
 	}
 }
 
-func (c *Client) txKeysSyncRunner() {
-	defer c.wg.Done()
-
-	c.catchupTxKeys()
-
-	ticker := time.NewTicker(constants.ThorchainBlockTime * 10)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.stopchan:
-			return
-		case <-ticker.C:
-			c.catchupTxKeys()
-		}
-	}
-}
-
 func (c *Client) catchupTxKeys() {
 	if c.thorchainBridge == nil || c.frostSigner == nil {
 		return
@@ -613,6 +646,10 @@ func (c *Client) catchupTxKeys() {
 		c.logger.Err(err).Msg("xmr tx-key catchup: failed to get tracked xmr vaults")
 		return
 	}
+	c.catchupTxKeysForVaults(vaults)
+}
+
+func (c *Client) catchupTxKeysForVaults(vaults ttypes.Vaults) {
 	for _, vault := range vaults {
 		vaultPubKey := keyImageCatchupVaultPubKey(vault)
 		if vaultPubKey.IsEmpty() {
@@ -994,6 +1031,246 @@ func keyImageCatchupVaultPubKey(vault ttypes.Vault) common.PubKey {
 		vaultPubKey = vault.PubKeyEddsa
 	}
 	return vaultPubKey
+}
+
+func xmrVaultInventoryFingerprint(vault ttypes.Vault) string {
+	var builder strings.Builder
+	builder.WriteString(keyImageCatchupVaultPubKey(vault).String())
+	builder.WriteString("|")
+	builder.WriteString(strconv.FormatInt(vault.VaultCreationHeightXmr, 10))
+
+	keyImages := makeApplyKeyImageRefs(vault.KeyImagesXmr)
+	sort.Slice(keyImages, func(i, j int) bool {
+		if keyImages[i].TxHash == keyImages[j].TxHash {
+			if keyImages[i].OutputIndex == keyImages[j].OutputIndex {
+				return keyImages[i].KeyImage < keyImages[j].KeyImage
+			}
+			return keyImages[i].OutputIndex < keyImages[j].OutputIndex
+		}
+		return keyImages[i].TxHash < keyImages[j].TxHash
+	})
+	for _, ref := range keyImages {
+		builder.WriteString("|ki:")
+		builder.WriteString(strings.ToLower(strings.TrimSpace(ref.TxHash)))
+		builder.WriteString(":")
+		builder.WriteString(strconv.FormatUint(uint64(ref.OutputIndex), 10))
+		builder.WriteString(":")
+		builder.WriteString(strings.ToLower(strings.TrimSpace(ref.KeyImage)))
+	}
+
+	txRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+	sort.Slice(txRefs, func(i, j int) bool {
+		if txRefs[i].txHash == txRefs[j].txHash {
+			leftKeys := normalizeTxKeyValues(txRefs[i].txKeys)
+			rightKeys := normalizeTxKeyValues(txRefs[j].txKeys)
+			leftJoined := strings.Join(leftKeys, ",")
+			rightJoined := strings.Join(rightKeys, ",")
+			return leftJoined < rightJoined
+		}
+		return txRefs[i].txHash < txRefs[j].txHash
+	})
+	for _, ref := range txRefs {
+		builder.WriteString("|tx:")
+		builder.WriteString(strings.ToLower(strings.TrimSpace(ref.txHash)))
+		builder.WriteString(":")
+		builder.WriteString(strings.Join(normalizeTxKeyValues(ref.txKeys), ","))
+	}
+
+	sum := sha256.Sum256([]byte(builder.String()))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func (c *Client) trackedVaultSyncFingerprint(vaultPubKey string) (string, bool) {
+	c.trackedVaultSyncMu.Lock()
+	defer c.trackedVaultSyncMu.Unlock()
+	fingerprint, ok := c.trackedVaultSyncState[vaultPubKey]
+	return fingerprint, ok
+}
+
+func (c *Client) replaceTrackedVaultSyncFingerprints(next map[string]string) {
+	c.trackedVaultSyncMu.Lock()
+	defer c.trackedVaultSyncMu.Unlock()
+	c.trackedVaultSyncState = next
+}
+
+func hasPendingVaultRescans(states []xmrFrostVaultStateEntry) bool {
+	return countPendingVaultRescans(states) > 0
+}
+
+func countPendingVaultRescans(states []xmrFrostVaultStateEntry) int {
+	pending := 0
+	for _, state := range states {
+		if state.Rescan {
+			pending++
+		}
+	}
+	return pending
+}
+
+func mapVaultRescanHeights(states []xmrFrostVaultStateEntry) map[string]uint64 {
+	out := make(map[string]uint64, len(states))
+	for _, state := range states {
+		if state.ScanHeight != nil {
+			out[state.VaultPubKey] = *state.ScanHeight
+			continue
+		}
+		out[state.VaultPubKey] = 0
+	}
+	return out
+}
+
+func vaultRescanProgressed(before, after []xmrFrostVaultStateEntry) bool {
+	beforeHeights := mapVaultRescanHeights(before)
+	for _, state := range after {
+		if !state.Rescan {
+			if _, ok := beforeHeights[state.VaultPubKey]; ok {
+				return true
+			}
+			continue
+		}
+		if height, ok := beforeHeights[state.VaultPubKey]; ok && state.ScanHeight != nil && *state.ScanHeight > height {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrostVaultStateEntry, error) {
+	stateAvailable := true
+	stateResp, err := c.frostSigner.ListVaultStates()
+	if err != nil {
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			stateAvailable = false
+			stateResp = xmrFrostVaultStatesResponse{}
+		} else {
+			return nil, fmt.Errorf("failed to load xmr sidecar vault states: %w", err)
+		}
+	}
+
+	stateMap := make(map[string]xmrFrostVaultStateEntry, len(stateResp.Vaults))
+	for _, state := range stateResp.Vaults {
+		stateMap[strings.TrimSpace(state.VaultPubKey)] = state
+	}
+
+	needsRefresh := false
+	nextFingerprints := make(map[string]string, len(vaults))
+	for _, vault := range vaults {
+		vaultPubKey := keyImageCatchupVaultPubKey(vault)
+		if vaultPubKey.IsEmpty() {
+			continue
+		}
+
+		fingerprint := xmrVaultInventoryFingerprint(vault)
+		nextFingerprints[vaultPubKey.String()] = fingerprint
+
+		_, registeredInState := stateMap[vaultPubKey.String()]
+		if stateAvailable {
+			if previous, ok := c.trackedVaultSyncFingerprint(vaultPubKey.String()); ok && previous == fingerprint && registeredInState {
+				continue
+			}
+		}
+
+		txKeyEntries, txKeyErr := txKeyEntriesFromVault(c.thorchainBridge, c.chain, vault)
+		if txKeyErr != nil {
+			return nil, fmt.Errorf("failed to build tx-key registration inventory for vault %s: %w", vaultPubKey.String(), txKeyErr)
+		}
+
+		registration, regErr := ensureFrostVaultRegisteredWithInventory(
+			c.logger,
+			c.frostSigner,
+			c.chain,
+			vaultPubKey,
+			c.localVaultBootstrap,
+			"bifrost_state_sync",
+			vault.VaultCreationHeightXmr,
+			keyImageRefsFromVault(vault),
+			txKeyEntries,
+		)
+		if regErr != nil {
+			return nil, fmt.Errorf("failed to register vault %s: %w", vaultPubKey.String(), regErr)
+		}
+		needsRefresh = true
+		if registration.Registered && vault.VaultCreationHeightXmr > 0 {
+			if err := c.frostSigner.ResetScanner(vaultPubKey.String(), vault.VaultCreationHeightXmr); err != nil {
+				return nil, fmt.Errorf("failed to reset scanner for vault %s from birthday %d: %w", vaultPubKey.String(), vault.VaultCreationHeightXmr, err)
+			}
+		}
+	}
+
+	c.replaceTrackedVaultSyncFingerprints(nextFingerprints)
+
+	if !needsRefresh {
+		return stateResp.Vaults, nil
+	}
+
+	updated, err := c.frostSigner.ListVaultStates()
+	if err != nil {
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to load xmr sidecar vault states: %w", err)
+	}
+	return updated.Vaults, nil
+}
+
+func (c *Client) drivePendingScannerRescans(states []xmrFrostVaultStateEntry) ([]xmrFrostVaultStateEntry, error) {
+	if len(states) == 0 || !hasPendingVaultRescans(states) {
+		return states, nil
+	}
+
+	const maxRescanBatchesPerTick = 8
+
+	current := states
+	reorgWindow := int64(0)
+	if c.scanner != nil {
+		reorgWindow = c.scanner.maxReorgRescan
+	}
+
+	for batch := 0; batch < maxRescanBatchesPerTick; batch++ {
+		chainHeight, err := c.frostSigner.GetChainHeight()
+		if err != nil {
+			return current, fmt.Errorf("failed to query xmr chain height while driving rescans: %w", err)
+		}
+		if chainHeight < 0 {
+			return current, nil
+		}
+
+		block, err := c.frostSigner.GetChainBlock(chainHeight)
+		if err != nil {
+			if errors.Is(err, ErrFrostUnavailableBlock) {
+				return current, nil
+			}
+			return current, fmt.Errorf("failed to query xmr chain block %d while driving rescans: %w", chainHeight, err)
+		}
+
+		if _, err := c.frostSigner.SyncTransfersByHeight(
+			chainHeight,
+			chainHeight,
+			block.Hash,
+			block.PreviousHash,
+			reorgWindow,
+		); err != nil {
+			if isFrostScannerHashMismatchErr(err) {
+				return current, nil
+			}
+			return current, fmt.Errorf("failed to drive xmr scanner rescan at tip %d: %w", chainHeight, err)
+		}
+
+		updated, err := c.frostSigner.ListVaultStates()
+		if err != nil {
+			return current, fmt.Errorf("failed to refresh xmr sidecar vault states after rescan batch: %w", err)
+		}
+		current = updated.Vaults
+		if !hasPendingVaultRescans(current) {
+			return current, nil
+		}
+		if !vaultRescanProgressed(states, current) {
+			return current, nil
+		}
+		states = current
+	}
+
+	return current, nil
 }
 
 func xmrOutputRefKey(txHash string, outputIndex uint32) string {

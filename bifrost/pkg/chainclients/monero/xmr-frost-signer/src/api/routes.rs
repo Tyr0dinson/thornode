@@ -3808,6 +3808,57 @@ pub async fn list_vault_keys(State(state): State<Arc<AppState>>) -> impl IntoRes
     )
 }
 
+pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut vaults = match state.store.list_vaults() {
+        Ok(v) => v,
+        Err(e) => {
+            error!(error = %e, "failed to list vaults");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!("failed to list vaults: {e}"))),
+            );
+        }
+    };
+
+    vaults.sort_by(|left, right| left.vault_pub_key.cmp(&right.vault_pub_key));
+
+    let mut entries = Vec::with_capacity(vaults.len());
+    for vault in vaults {
+        let scan_height = match state.store.load_scan_height(&vault.vault_pub_key) {
+            Ok(height) => height,
+            Err(e) => {
+                error!(
+                    error = %e,
+                    vault = %vault.vault_pub_key,
+                    "failed to load scan height while listing vault states"
+                );
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to load scan height for {}: {e}",
+                        vault.vault_pub_key
+                    ))),
+                );
+            }
+        };
+        entries.push(crate::api::types::VaultStateEntry {
+            vault_pub_key: vault.vault_pub_key,
+            address: vault.address,
+            birthday: vault.birthday,
+            rescan: vault.rescan,
+            scan_height,
+        });
+    }
+
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::to_value(crate::api::types::ListVaultStatesResponse { vaults: entries })
+                .unwrap(),
+        ),
+    )
+}
+
 pub async fn key_export(
     State(state): State<Arc<AppState>>,
     Path(vault_pub_key): Path<String>,

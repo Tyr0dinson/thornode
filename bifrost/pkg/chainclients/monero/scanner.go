@@ -3,6 +3,7 @@ package monero
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -63,8 +64,6 @@ type Scanner struct {
 	observedOutgoingMu     sync.RWMutex
 	observedOutgoingByTxID map[string]observedOutgoingTx
 
-	scannerResetOnce map[string]bool
-
 	mempoolMu   sync.Mutex
 	mempoolSeen map[string]struct{}
 }
@@ -97,7 +96,6 @@ func NewScanner(
 		manualAddrByPK:         make(map[string]string),
 		manualPKByAddr:         make(map[string]common.PubKey),
 		observedOutgoingByTxID: make(map[string]observedOutgoingTx),
-		scannerResetOnce:       make(map[string]bool),
 		mempoolSeen:            make(map[string]struct{}),
 	}
 }
@@ -842,36 +840,15 @@ func (s *Scanner) refreshAsgardLookup() error {
 		if observedVault.IsEmpty() {
 			continue
 		}
-		creationHeight := vault.VaultCreationHeightXmr
-		txKeyEntries, txKeyErr := txKeyEntriesFromVault(s.bridge, s.chain, vault)
-		if txKeyErr != nil {
-			return fmt.Errorf("fail to build tx-key registration inventory for vault %s: %w", frostKey.String(), txKeyErr)
-		}
-		registration, addrErr := ensureFrostVaultRegisteredWithInventory(
-			s.logger,
-			s.frostSigner,
-			s.chain,
-			frostKey,
-			s.localVaultBootstrap,
-			"bifrost_scanner",
-			creationHeight,
-			keyImageRefsFromVault(vault),
-			txKeyEntries,
-		)
-		if addrErr != nil {
-			return fmt.Errorf("fail to register vault %s: %w", frostKey.String(), addrErr)
-		}
-		if registration.Registered && creationHeight > 0 && !s.scannerResetOnce[frostKey.String()] {
-			s.scannerResetOnce[frostKey.String()] = true
-			if err := s.frostSigner.ResetScanner(frostKey.String(), creationHeight); err != nil {
-				return fmt.Errorf("fail to reset scanner for vault %s from birthday %d: %w", frostKey.String(), creationHeight, err)
-			}
-		}
-		if registration.Address.IsEmpty() {
-			s.logger.Debug().Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with empty derived address")
+		address, addrErr := observedVault.GetAddress(s.chain)
+		if addrErr != nil || address.IsEmpty() {
+			s.logger.Debug().
+				Err(addrErr).
+				Str("vault_pubkey", observedVault.String()).
+				Msg("skip asgard vault with invalid derived address")
 			continue
 		}
-		lookup[registration.Address.String()] = observedVault
+		lookup[address.String()] = observedVault
 	}
 
 	s.asgardMu.Lock()
@@ -961,6 +938,26 @@ func mapVaults(lookup map[string]ttypes.Vault) ttypes.Vaults {
 	for _, vault := range lookup {
 		vaults = append(vaults, vault)
 	}
+	sort.Slice(vaults, func(i, j int) bool {
+		left := strings.TrimSpace(keyImageCatchupVaultPubKey(vaults[i]).String())
+		right := strings.TrimSpace(keyImageCatchupVaultPubKey(vaults[j]).String())
+		if left == right {
+			left = strings.TrimSpace(vaults[i].PubKeyFrost.String())
+			right = strings.TrimSpace(vaults[j].PubKeyFrost.String())
+		}
+		if left == right {
+			left = strings.TrimSpace(vaults[i].PubKeyEddsa.String())
+			right = strings.TrimSpace(vaults[j].PubKeyEddsa.String())
+		}
+		if left == right {
+			left = strings.TrimSpace(vaults[i].PubKey.String())
+			right = strings.TrimSpace(vaults[j].PubKey.String())
+		}
+		if left == right {
+			return vaults[i].VaultCreationHeightXmr < vaults[j].VaultCreationHeightXmr
+		}
+		return left < right
+	})
 	return vaults
 }
 

@@ -40,6 +40,7 @@ type FrostSigner struct {
 	keyImageCombinePath  string
 	keyImageValidatePath string
 	validatePath         string
+	vaultStatePath       string
 	outgoingStatePath    string
 	outgoingPrunePath    string
 	clearSessionsPath    string
@@ -312,6 +313,18 @@ type xmrFrostTransferEntry struct {
 	Locked        bool     `json:"locked"`
 }
 
+type xmrFrostVaultStateEntry struct {
+	VaultPubKey string  `json:"vault_pub_key"`
+	Address     string  `json:"address"`
+	Birthday    uint64  `json:"birthday"`
+	Rescan      bool    `json:"rescan"`
+	ScanHeight  *uint64 `json:"scan_height,omitempty"`
+}
+
+type xmrFrostVaultStatesResponse struct {
+	Vaults []xmrFrostVaultStateEntry `json:"vaults"`
+}
+
 type xmrFrostTransfersResponse struct {
 	Incoming []xmrFrostTransferEntry `json:"incoming"`
 	Outgoing []xmrFrostTransferEntry `json:"outgoing"`
@@ -552,6 +565,7 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 		keyImageCombinePath:  "/v1/monero/key-image/combine",
 		keyImageValidatePath: "/v1/monero/key-image/validate",
 		validatePath:         "/v1/monero/outbounds/validate",
+		vaultStatePath:       "/v1/monero/vaults",
 		outgoingStatePath:    "/v1/monero/outbounds",
 		outgoingPrunePath:    "/v1/monero/outbounds/prune",
 		clearSessionsPath:    "/v1/monero/sessions/clear",
@@ -834,6 +848,14 @@ func (s *FrostSigner) GetTransfersByHeight(height int64) (xmrFrostTransfersRespo
 	path := fmt.Sprintf("%s?height=%d", s.transfersPath, height)
 	if err := s.callGet(path, &out); err != nil {
 		return xmrFrostTransfersResponse{}, fmt.Errorf("fail to call frost transfers endpoint: %w", err)
+	}
+	return out, nil
+}
+
+func (s *FrostSigner) ListVaultStates() (xmrFrostVaultStatesResponse, error) {
+	var out xmrFrostVaultStatesResponse
+	if err := s.callGet(s.vaultStatePath, &out); err != nil {
+		return xmrFrostVaultStatesResponse{}, fmt.Errorf("fail to call frost vault state endpoint: %w", err)
 	}
 	return out, nil
 }

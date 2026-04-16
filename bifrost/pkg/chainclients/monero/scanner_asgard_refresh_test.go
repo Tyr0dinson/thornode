@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 
 	"github.com/rs/zerolog/log"
@@ -16,18 +17,7 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// TestRefreshAsgardRegistersOnlyFrostKey validates that refreshAsgardLookup
-// calls ensureFrostVaultRegistered with the frost key, not the eddsa key.
-//
-// The bug: if the eddsa key is registered, the sidecar returns 500 (conflict
-// with the existing frost key registration). refreshAsgardLookup returns an
-// error. fetchTransfersByHeight previously returned (nil, nil) on this error,
-// causing the bifrost to silently advance past the block without scanning it.
-// Outputs in that block are lost forever.
-//
-// This test verifies the registration path uses the correct key by checking
-// which vault_pub_key arrives at the sidecar's register endpoint.
-func TestRefreshAsgardRegistersOnlyFrostKey(t *testing.T) {
+func TestEnsureFrostVaultRegisteredUsesProvidedVaultKey(t *testing.T) {
 	t.Parallel()
 
 	frostKey := testVaultPubKey(t, "frost-scanner-reg")
@@ -36,50 +26,53 @@ func TestRefreshAsgardRegistersOnlyFrostKey(t *testing.T) {
 	var registeredKeys []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/monero/vaults/register" {
-			var req xmrFrostRegisterVaultRequest
-			_ = json.NewDecoder(r.Body).Decode(&req)
-			registeredKeys = append(registeredKeys, req.VaultPubKey)
-
-			if req.VaultPubKey == eddsaKey.String() {
-				t.Errorf("BUG: eddsa key %s was sent to sidecar register-vault — "+
-					"this will cause a 500 conflict and block the scanner", eddsaKey.String())
-				http.Error(w, `{"error":"already registered with different mapping"}`, http.StatusInternalServerError)
-				return
-			}
-
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+		if r.URL.Path != "/v1/monero/vaults/register" {
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "not found", http.StatusNotFound)
+
+		var req xmrFrostRegisterVaultRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		registeredKeys = append(registeredKeys, req.VaultPubKey)
+
+		if req.VaultPubKey == eddsaKey.String() {
+			t.Fatalf("unexpected eddsa key registration: %s", eddsaKey.String())
+		}
+
+		_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
 	}))
 	defer server.Close()
 
 	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
-	// Simulate what refreshAsgardLookup does: call ensureFrostVaultRegistered
-	// with the frost key (correct) vs eddsa key (buggy).
 	_, err = ensureFrostVaultRegistered(
 		testLogger(),
 		signer,
-		"XMR",
+		common.XMRChain,
 		frostKey,
 		nil,
 		"test",
 		0,
 	)
-	require.NoError(t, err, "frost key registration should succeed")
+	require.NoError(t, err)
 
-	assert.Equal(t, 1, len(registeredKeys))
-	assert.Equal(t, frostKey.String(), registeredKeys[0],
-		"only the frost key should be registered on the sidecar")
+	require.Equal(t, []string{frostKey.String()}, registeredKeys)
 }
 
-func TestRefreshAsgardResetsNewlyTrackedVaultFromBirthday(t *testing.T) {
+func TestRefreshAsgardLookupTracksDerivedFrostVaultAddresses(t *testing.T) {
 	t.Parallel()
 
+	currentVaultPubKey, currentVaultAddr := testVaultPubKeyAndAddress(t)
 	inactiveVaultPubKey, inactiveVaultAddr := testVaultPubKeyAndAddress(t)
+
+	currentVault := ttypes.Vault{
+		PubKey:                 currentVaultPubKey,
+		PubKeyEddsa:            currentVaultPubKey,
+		PubKeyFrost:            currentVaultPubKey,
+		Status:                 ttypes.VaultStatus_ActiveVault,
+		VaultCreationHeightXmr: 50,
+	}
 	inactiveVault := ttypes.Vault{
 		PubKey:                 inactiveVaultPubKey,
 		PubKeyEddsa:            inactiveVaultPubKey,
@@ -88,101 +81,65 @@ func TestRefreshAsgardResetsNewlyTrackedVaultFromBirthday(t *testing.T) {
 		VaultCreationHeightXmr: 25,
 	}
 
-	var registeredVaults []string
-	var resetVaults []string
-	var resetHeights []int64
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/v1/monero/vaults/register":
-			var req xmrFrostRegisterVaultRequest
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			registeredVaults = append(registeredVaults, req.VaultPubKey)
-			require.Equal(t, inactiveVaultAddr.String(), req.Address)
-			require.Equal(t, int64(25), req.VaultCreationHeight)
-			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true}))
-		case "/v1/monero/scanner/reset":
-			var req struct {
-				VaultPubKey    string `json:"vault_pub_key"`
-				BirthdayHeight int64  `json:"birthday_height"`
-			}
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			resetVaults = append(resetVaults, req.VaultPubKey)
-			resetHeights = append(resetHeights, req.BirthdayHeight)
-			w.WriteHeader(http.StatusOK)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	require.NoError(t, err)
-
 	bridge := &scannerTrackedVaultBridge{
-		asgards: nil,
-		pubKeys: []thorclient.PubKeyContractAddressPair{
-			{PubKey: inactiveVaultPubKey, Algo: common.SigningAlgoEd25519, Inactive: true},
-		},
+		asgards: ttypes.Vaults{currentVault},
+		pubKeys: scannerTrackedVaultPubKeys(currentVaultPubKey, inactiveVaultPubKey),
 		vaultByKey: map[string]ttypes.Vault{
+			currentVaultPubKey.String():  currentVault,
 			inactiveVaultPubKey.String(): inactiveVault,
 		},
 	}
 
-	scanner := NewScanner(log.Logger, signer, bridge, common.XMRChain, common.EmptyPubKey, 72)
+	scanner := NewScanner(log.Logger, nil, bridge, common.XMRChain, common.EmptyPubKey, 72)
 	require.NoError(t, scanner.refreshAsgardLookup())
 
-	require.Equal(t, []string{inactiveVaultPubKey.String()}, registeredVaults)
-	require.Equal(t, []string{inactiveVaultPubKey.String()}, resetVaults)
-	require.Equal(t, []int64{25}, resetHeights)
+	currentMapped, ok := scanner.getVaultForAddress(currentVaultAddr.String())
+	require.True(t, ok)
+	assert.Equal(t, currentVaultPubKey, currentMapped)
+
+	inactiveMapped, ok := scanner.getVaultForAddress(inactiveVaultAddr.String())
+	require.True(t, ok)
+	assert.Equal(t, inactiveVaultPubKey, inactiveMapped)
 }
 
-func TestRefreshAsgardSkipsResetForAlreadyRegisteredVault(t *testing.T) {
+func TestMapVaultsReturnsDeterministicOrder(t *testing.T) {
 	t.Parallel()
 
-	inactiveVaultPubKey, inactiveVaultAddr := testVaultPubKeyAndAddress(t)
-	inactiveVault := ttypes.Vault{
-		PubKey:                 inactiveVaultPubKey,
-		PubKeyEddsa:            inactiveVaultPubKey,
-		PubKeyFrost:            inactiveVaultPubKey,
-		Status:                 ttypes.VaultStatus_InactiveVault,
-		VaultCreationHeightXmr: 25,
+	vaultA, _ := testVaultPubKeyAndAddress(t)
+	vaultB, _ := testVaultPubKeyAndAddress(t)
+	vaultC, _ := testVaultPubKeyAndAddress(t)
+
+	lookup := map[string]ttypes.Vault{
+		vaultB.String(): {PubKeyFrost: vaultB},
+		vaultC.String(): {PubKeyFrost: vaultC},
+		vaultA.String(): {PubKeyFrost: vaultA},
 	}
 
-	resetCalls := 0
+	vaults := mapVaults(lookup)
+	require.Len(t, vaults, 3)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/v1/monero/vaults/register":
-			var req xmrFrostRegisterVaultRequest
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			require.Equal(t, inactiveVaultAddr.String(), req.Address)
-			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: false}))
-		case "/v1/monero/scanner/reset":
-			resetCalls++
-			w.WriteHeader(http.StatusOK)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	require.NoError(t, err)
-
-	bridge := &scannerTrackedVaultBridge{
-		asgards: nil,
-		pubKeys: []thorclient.PubKeyContractAddressPair{
-			{PubKey: inactiveVaultPubKey, Algo: common.SigningAlgoEd25519, Inactive: true},
-		},
-		vaultByKey: map[string]ttypes.Vault{
-			inactiveVaultPubKey.String(): inactiveVault,
-		},
+	got := []string{
+		vaults[0].PubKeyFrost.String(),
+		vaults[1].PubKeyFrost.String(),
+		vaults[2].PubKeyFrost.String(),
 	}
+	want := append([]string(nil), vaultA.String(), vaultB.String(), vaultC.String())
+	sort.Strings(want)
 
-	scanner := NewScanner(log.Logger, signer, bridge, common.XMRChain, common.EmptyPubKey, 72)
-	require.NoError(t, scanner.refreshAsgardLookup())
-	assert.Equal(t, 0, resetCalls)
+	assert.Equal(t, want, got)
+}
+
+func scannerTrackedVaultPubKeys(keys ...common.PubKey) []thorclient.PubKeyContractAddressPair {
+	pairs := make([]thorclient.PubKeyContractAddressPair, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, thorclient.PubKeyContractAddressPair{
+			PubKey:   key,
+			Algo:     common.SigningAlgoEd25519,
+			Inactive: false,
+		})
+	}
+	if len(pairs) > 1 {
+		pairs[1].Inactive = true
+	}
+	return pairs
 }

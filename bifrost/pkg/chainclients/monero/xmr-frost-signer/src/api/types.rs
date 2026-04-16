@@ -403,6 +403,21 @@ pub struct ListVaultKeysResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct VaultStateEntry {
+    pub vault_pub_key: String,
+    pub address: String,
+    pub birthday: u64,
+    pub rescan: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scan_height: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListVaultStatesResponse {
+    pub vaults: Vec<VaultStateEntry>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct FeeRateResponse {
     pub fee_rate_per_weight: u64,
 }
