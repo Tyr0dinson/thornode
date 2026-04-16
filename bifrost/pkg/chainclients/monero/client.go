@@ -432,6 +432,49 @@ func (c *Client) getCachedXMRKeyImageProofs(vaultPubKey common.PubKey, txHash st
 	return cloneXMRKeyImageProofs(entry.proofs), true
 }
 
+func (c *Client) applyLocalXMRKeyImageProofs(
+	vaultPubKey common.PubKey,
+	txHash string,
+	proofs []*common.XmrKeyImageProof,
+	reconcile bool,
+) error {
+	normalizedProofs := canonicalXMRKeyImageProofs(proofs)
+	if len(normalizedProofs) == 0 {
+		return nil
+	}
+
+	applyRefs := make([]xmrFrostApplyKeyImageRef, 0, len(normalizedProofs))
+	for _, proof := range normalizedProofs {
+		if proof == nil {
+			continue
+		}
+		applyRefs = append(applyRefs, xmrFrostApplyKeyImageRef{
+			TxHash:      proof.TxHash,
+			OutputIndex: proof.OutputIndex,
+			KeyImage:    proof.KeyImage,
+		})
+	}
+	if len(applyRefs) == 0 {
+		return nil
+	}
+
+	result, err := c.frostSigner.ApplyKeyImages(vaultPubKey.String(), applyRefs, reconcile)
+	if err != nil {
+		return fmt.Errorf("fail to apply locally generated XMR key-images: %w", err)
+	}
+	if result.NotFound > 0 {
+		return fmt.Errorf("locally generated XMR key-images missing %d outputs", result.NotFound)
+	}
+	c.logger.Info().
+		Str("vault_pub_key", vaultPubKey.String()).
+		Str("tx_hash", txHash).
+		Bool("reconcile", reconcile).
+		Int("applied", result.Applied).
+		Int("not_found", result.NotFound).
+		Msg("applied locally generated XMR key-images")
+	return nil
+}
+
 func (c *Client) putCachedXMRKeyImageProofs(vaultPubKey common.PubKey, txHash string, outputs []xmrFrostOutputEntry, proofs []*common.XmrKeyImageProof) {
 	cacheKey := xmrKeyImageProofCacheKey(vaultPubKey, txHash, outputs)
 	c.keyImageProofCacheMu.Lock()
@@ -724,6 +767,19 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
+		if err := c.applyLocalXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, cachedProofs, true); err != nil {
+			c.logger.Info().
+				Err(err).
+				Str("vault", ceremonyCtx.vaultPubKey.String()).
+				Str("tx_hash", backlogHeadTxHash).
+				Msg("xmr key-image backlog: cached proofs exist but failed to reapply them locally")
+			return
+		}
+		c.logger.Info().
+			Str("vault", ceremonyCtx.vaultPubKey.String()).
+			Str("tx_hash", backlogHeadTxHash).
+			Int("proof_count", len(cachedProofs)).
+			Msg("xmr key-image backlog: reapplied cached proof set locally")
 		return
 	}
 
@@ -3234,6 +3290,14 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, nil
 	}
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs); ok && len(cachedProofs) == len(outputs) {
+		if err := c.applyLocalXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), cachedProofs, true); err != nil {
+			c.logger.Info().
+				Err(err).
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Msg("cached finalized XMR key-images failed local reapply; will retry")
+			return nil, false, nil
+		}
 		item.XmrKeyImages = cachedProofs
 		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
@@ -3891,31 +3955,8 @@ func (c *Client) generateObservedTxKeyImages(
 		Str("tx_hash", txHash).
 		Int("proof_count", len(proofs)).
 		Msg("completed XMR key-image generation batch")
-	applyRefs := make([]xmrFrostApplyKeyImageRef, 0, len(proofs))
-	for _, proof := range proofs {
-		if proof == nil {
-			continue
-		}
-		applyRefs = append(applyRefs, xmrFrostApplyKeyImageRef{
-			TxHash:      proof.TxHash,
-			OutputIndex: proof.OutputIndex,
-			KeyImage:    proof.KeyImage,
-		})
-	}
-	if len(applyRefs) > 0 {
-		result, err := c.frostSigner.ApplyKeyImages(vaultPubKey.String(), applyRefs, false)
-		if err != nil {
-			return nil, fmt.Errorf("fail to apply locally generated XMR key-images: %w", err)
-		}
-		if result.NotFound > 0 {
-			return nil, fmt.Errorf("locally generated XMR key-images missing %d outputs", result.NotFound)
-		}
-		c.logger.Info().
-			Str("vault_pub_key", vaultPubKey.String()).
-			Str("tx_hash", txHash).
-			Int("applied", result.Applied).
-			Int("not_found", result.NotFound).
-			Msg("applied locally generated XMR key-images")
+	if err := c.applyLocalXMRKeyImageProofs(vaultPubKey, txHash, proofs, true); err != nil {
+		return nil, err
 	}
 	return canonicalXMRKeyImageProofs(proofs), nil
 }

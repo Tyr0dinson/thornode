@@ -319,7 +319,7 @@ func TestDriveLocalKeyImageBacklogCachesProofsForLaterObservation(t *testing.T) 
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/apply-key-images":
 			var req xmrFrostApplyKeyImagesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			require.False(t, req.Reconcile)
+			require.True(t, req.Reconcile)
 
 			mu.Lock()
 			for i := range outputs {
@@ -408,6 +408,103 @@ func TestDriveLocalKeyImageBacklogCachesProofsForLaterObservation(t *testing.T) 
 	tssServer.mu.Lock()
 	require.Len(t, tssServer.reqs, 1)
 	tssServer.mu.Unlock()
+
+	c.driveLocalKeyImageBacklogForVaults(ttypes.Vaults{vault})
+
+	tssServer.mu.Lock()
+	require.Len(t, tssServer.reqs, 2)
+	assert.Equal(t, newTxHash, tssServer.reqs[1].TxHash)
+	tssServer.mu.Unlock()
+}
+
+func TestDriveLocalKeyImageBacklogReappliesCachedProofsAfterStateReset(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	oldTxHash := strings.Repeat("h", 64)
+	newTxHash := strings.Repeat("i", 64)
+
+	var mu sync.Mutex
+	outputs := []xmrFrostOutputEntry{
+		{TxHash: oldTxHash, OutputIndex: 0, Amount: 15, Height: 100},
+		{TxHash: newTxHash, OutputIndex: 0, Amount: 12, Height: 101},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/apply-key-images"):
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			for i := range outputs {
+				for _, ref := range req.KeyImages {
+					if !strings.EqualFold(outputs[i].TxHash, ref.TxHash) || outputs[i].OutputIndex != ref.OutputIndex {
+						continue
+					}
+					keyImage := strings.ToLower(strings.TrimSpace(ref.KeyImage))
+					outputs[i].KeyImage = keyImage
+				}
+			}
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			require.Equal(t, "all", r.URL.Query().Get("view"))
+			mu.Lock()
+			resp := append([]xmrFrostOutputEntry(nil), outputs...)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: resp})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
+		Membership:  []string{"member-a", "member-b", "member-c"},
+	}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): vault,
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	c.driveLocalKeyImageBacklogForVaults(ttypes.Vaults{vault})
+
+	tssServer.mu.Lock()
+	require.Len(t, tssServer.reqs, 1)
+	assert.Equal(t, oldTxHash, tssServer.reqs[0].TxHash)
+	tssServer.mu.Unlock()
+
+	mu.Lock()
+	outputs[0].KeyImage = ""
+	mu.Unlock()
+
+	c.driveLocalKeyImageBacklogForVaults(ttypes.Vaults{vault})
+
+	tssServer.mu.Lock()
+	require.Len(t, tssServer.reqs, 1)
+	tssServer.mu.Unlock()
+
+	mu.Lock()
+	require.NotEmpty(t, outputs[0].KeyImage)
+	require.Empty(t, outputs[1].KeyImage)
+	mu.Unlock()
 
 	c.driveLocalKeyImageBacklogForVaults(ttypes.Vaults{vault})
 
@@ -1177,7 +1274,7 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *test
 	assert.Equal(t, txHash, applyReqs[0].KeyImages[0].TxHash)
 	assert.Equal(t, uint32(0), applyReqs[0].KeyImages[0].OutputIndex)
 	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", applyReqs[0].KeyImages[0].KeyImage)
-	assert.False(t, applyReqs[0].Reconcile)
+	assert.True(t, applyReqs[0].Reconcile)
 }
 
 func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testing.T) {
