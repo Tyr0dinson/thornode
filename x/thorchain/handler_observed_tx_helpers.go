@@ -636,6 +636,11 @@ func handleObservedTxOutQuorum(
 ) error {
 	// check whether the tx has consensus
 	if !isQuorum {
+		if tx.Tx.Chain.Equals(common.XMRChain) && voter.HasFinalised(activeNodeAccounts) {
+			if err := persistObservedVoterXMRMetadata(ctx, mgr.Keeper(), voter); err != nil {
+				ctx.Logger().Error("fail to persist late XMR outbound metadata", "error", err, "txid", tx.Tx.ID)
+			}
+		}
 		if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 			// we've already process the transaction, but we should still
 			// update the observing addresses

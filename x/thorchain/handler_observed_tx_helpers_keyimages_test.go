@@ -109,3 +109,68 @@ func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRKe
 	c.Assert(vault.KeyImagesXmr[0].OutputIndex, Equals, uint32(0))
 	c.Assert(vault.KeyImagesXmr[0].KeyImage, Equals, "ki-a")
 }
+
+func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumBackfillsLateXMRKeyImagesAfterFinalization(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
+		common.XMRChain.String(),
+	}, []ChainContract{})
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(5*common.One)),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	finalObserved := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          txID,
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+			},
+			Gas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
+			},
+			Memo: "OUT:" + GetRandomTxHash().String(),
+		},
+		BlockHeight:    4096,
+		FinaliseHeight: 4096,
+		ObservedPubKey: vaultPubKey,
+	}
+	lateMetadata := finalObserved
+	lateMetadata.XmrKeyImages = []*common.XmrKeyImageProof{
+		{TxHash: txID.String(), OutputIndex: 0, KeyImage: "ki-a", ProofC: "c0", ProofS: "s0"},
+	}
+
+	voter := ObservedTxVoter{
+		TxID:            txID,
+		Tx:              finalObserved,
+		Txs:             common.ObservedTxs{finalObserved, lateMetadata},
+		Height:          finalObserved.BlockHeight,
+		FinalisedHeight: finalObserved.BlockHeight,
+	}
+
+	err := handleObservedTxOutQuorum(
+		ctx,
+		mgr,
+		cosmos.AccAddress{},
+		NodeAccounts{},
+		func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) { return nil, errKaboom },
+		lateMetadata,
+		voter,
+		nil,
+		false,
+	)
+	c.Assert(err, IsNil)
+
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.KeyImagesXmr, HasLen, 1)
+	c.Assert(vault.KeyImagesXmr[0].TxHash, Equals, txID.String())
+	c.Assert(vault.KeyImagesXmr[0].OutputIndex, Equals, uint32(0))
+	c.Assert(vault.KeyImagesXmr[0].KeyImage, Equals, "ki-a")
+}

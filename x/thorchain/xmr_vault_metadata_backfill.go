@@ -92,6 +92,37 @@ func backfillXMRVaultMetadata(ctx cosmos.Context, mgr Manager) (xmrVaultMetadata
 	return stats, nil
 }
 
+func persistObservedVoterXMRMetadata(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter) error {
+	if k == nil {
+		return nil
+	}
+
+	vaultCache := make(map[string]*Vault)
+	touchedVaults := make(map[string]struct{})
+	if err := applyObservedVoterXMRMetadataBackfill(
+		ctx,
+		k,
+		voter,
+		vaultCache,
+		touchedVaults,
+		&xmrVaultMetadataBackfillStats{},
+	); err != nil {
+		return err
+	}
+
+	for key := range touchedVaults {
+		vault := vaultCache[key]
+		if vault == nil {
+			continue
+		}
+		if err := k.SetVault(ctx, *vault); err != nil {
+			return fmt.Errorf("fail to save XMR metadata backfill vault %s: %w", vault.PubKey.String(), err)
+		}
+	}
+
+	return nil
+}
+
 func applyObservedVoterXMRMetadataBackfill(
 	ctx cosmos.Context,
 	k keeper.Keeper,
