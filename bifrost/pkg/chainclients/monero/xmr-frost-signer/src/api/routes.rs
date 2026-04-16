@@ -485,6 +485,58 @@ fn apply_registered_key_image_inventory(
     Ok(())
 }
 
+fn persist_rescan_block_state(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    height: u64,
+    block_hash: &str,
+    parent_hash: &str,
+    block_transactions: &[Transaction<Pruned>],
+    added_outputs: &[TrackedOutput],
+) -> Result<PersistScannedBlockResult, String> {
+    let mut spent_key_images: Vec<String> = collect_spent_key_images(block_transactions)
+        .into_iter()
+        .collect();
+    spent_key_images.sort();
+
+    let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
+    state
+        .store
+        .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
+        .map_err(|e| format!("failed to persist rescan outputs after scanner sync: {e}"))?;
+
+    let added_refs: Vec<OutputRef> = added_outputs
+        .iter()
+        .map(|output| OutputRef {
+            tx_hash: output.tx_hash.clone(),
+            output_index: output.output_index,
+        })
+        .collect();
+    state
+        .store
+        .save_scan_block_meta(
+            vault_pub_key,
+            &ScanBlockMeta {
+                height,
+                block_hash: normalize_tx_hash(block_hash),
+                parent_hash: normalize_tx_hash(parent_hash),
+                added_outputs: added_refs.clone(),
+                spent_key_images,
+                spent_by_key_images: Vec::new(),
+            },
+        )
+        .map_err(|e| format!("failed to persist rescan scan block metadata: {e}"))?;
+    state
+        .store
+        .save_scan_height(vault_pub_key, height)
+        .map_err(|e| format!("failed to persist rescan scan height: {e}"))?;
+
+    Ok(PersistScannedBlockResult {
+        added_refs,
+        outputs_after_scan,
+    })
+}
+
 fn persist_scanned_block_state(
     state: &Arc<AppState>,
     vault_pub_key: &str,
@@ -2387,6 +2439,7 @@ pub async fn scanner_sync(
                 .flatten()
                 .unwrap_or(vault.birthday);
             let tip = std::cmp::max(effective_height, rescan_chain_tip);
+            let mut advanced = false;
             if vault_scan_height < tip {
                 let end = rescan_target_height(vault_scan_height, effective_height, tip);
                 info!(
@@ -2432,7 +2485,7 @@ pub async fn scanner_sync(
                             }
                         }
                     }
-                    if let Err(e) = persist_scanned_block_state(
+                    if let Err(e) = persist_rescan_block_state(
                         &state,
                         &vault.vault_pub_key,
                         h,
@@ -2440,10 +2493,41 @@ pub async fn scanner_sync(
                         &parent_hash,
                         &block_transactions,
                         &added,
-                        reorg_window,
                     ) {
                         warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: failed to persist block state, stopping batch");
                         break;
+                    }
+                    advanced = true;
+                }
+                if advanced {
+                    if let Err(e) =
+                        apply_registered_key_image_inventory(&state, &vault.vault_pub_key, true)
+                    {
+                        warn!(
+                            error = %e,
+                            vault = %vault.vault_pub_key,
+                            "rescan: failed to reconcile registered key-image inventory after batch"
+                        );
+                    } else {
+                        let reconciled_height = state
+                            .store
+                            .load_scan_height(&vault.vault_pub_key)
+                            .ok()
+                            .flatten()
+                            .unwrap_or(vault_scan_height);
+                        let min_height =
+                            reconciled_height.saturating_sub(reorg_window.saturating_sub(1));
+                        if let Err(e) = state
+                            .store
+                            .prune_scan_block_meta_before(&vault.vault_pub_key, min_height)
+                        {
+                            warn!(
+                                error = %e,
+                                vault = %vault.vault_pub_key,
+                                min_height,
+                                "rescan: failed to prune scan block metadata after key-image reconcile"
+                            );
+                        }
                     }
                 }
                 // Check if caught up
@@ -3415,6 +3499,58 @@ fn normalized_tx_keys(keys: &[String]) -> Vec<String> {
     normalized
 }
 
+fn build_vault_inventory_fingerprint(
+    vault_pub_key: &str,
+    birthday: u64,
+    registered_key_images: &[RegisteredKeyImageRef],
+    outgoing: &[crate::state::store::OutgoingTransferRecord],
+) -> String {
+    let mut builder = String::new();
+    builder.push_str(vault_pub_key);
+    builder.push('|');
+    builder.push_str(&birthday.to_string());
+
+    let mut key_images = registered_key_images.to_vec();
+    key_images.sort_by(|left, right| {
+        left.tx_hash
+            .cmp(&right.tx_hash)
+            .then(left.output_index.cmp(&right.output_index))
+            .then(left.key_image.cmp(&right.key_image))
+    });
+    for entry in key_images {
+        builder.push_str("|ki:");
+        builder.push_str(&normalize_tx_hash(&entry.tx_hash));
+        builder.push(':');
+        builder.push_str(&entry.output_index.to_string());
+        builder.push(':');
+        builder.push_str(&entry.key_image.trim().to_ascii_lowercase());
+    }
+
+    let mut tx_entries: Vec<(String, Vec<String>)> = outgoing
+        .iter()
+        .filter_map(|record| {
+            let tx_hash = normalize_tx_hash(&record.tx_hash);
+            if tx_hash.is_empty() || record.tx_keys.is_empty() {
+                return None;
+            }
+            Some((tx_hash, normalized_tx_keys(&record.tx_keys)))
+        })
+        .collect();
+    tx_entries.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then(left.1.join(",").cmp(&right.1.join(",")))
+    });
+    for (tx_hash, tx_keys) in tx_entries {
+        builder.push_str("|tx:");
+        builder.push_str(&tx_hash);
+        builder.push(':');
+        builder.push_str(&tx_keys.join(","));
+    }
+
+    hex::encode(Sha256::digest(builder.as_bytes()))
+}
+
 fn outgoing_record_matches_registered_tx_key(
     record: &crate::state::store::OutgoingTransferRecord,
     entry: &crate::api::types::RegisterTxKeyEntry,
@@ -3891,7 +4027,54 @@ pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoR
                 );
             }
         };
+        let registered_key_images =
+            match state.store.load_registered_key_images(&vault.vault_pub_key) {
+                Ok(key_images) => key_images,
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        vault = %vault.vault_pub_key,
+                        "failed to load registered key images while listing vault states"
+                    );
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json(format!(
+                            "failed to load registered key images for {}: {e}",
+                            vault.vault_pub_key
+                        ))),
+                    );
+                }
+            };
+        let outgoing = match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
+            Ok(records) => records,
+            Err(e) => {
+                error!(
+                    error = %e,
+                    vault = %vault.vault_pub_key,
+                    "failed to load outgoing transfers while listing vault states"
+                );
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(error_json(format!(
+                        "failed to load outgoing transfers for {}: {e}",
+                        vault.vault_pub_key
+                    ))),
+                );
+            }
+        };
+        let registered_tx_key_count = outgoing
+            .iter()
+            .filter(|record| !record.tx_keys.is_empty() && !record.tx_hash.trim().is_empty())
+            .count();
         entries.push(crate::api::types::VaultStateEntry {
+            inventory_fingerprint: build_vault_inventory_fingerprint(
+                &vault.vault_pub_key,
+                vault.birthday,
+                &registered_key_images,
+                &outgoing,
+            ),
+            registered_key_image_count: registered_key_images.len(),
+            registered_tx_key_count,
             vault_pub_key: vault.vault_pub_key,
             address: vault.address,
             birthday: vault.birthday,
@@ -5188,6 +5371,87 @@ mod tests {
         assert_eq!(outputs[0].key_image.as_deref(), Some(key_image.as_str()));
         assert_eq!(outputs[0].state, OutputState::Spent);
         assert_eq!(outputs[0].spent_by_key_image_height, Some(121));
+    }
+
+    #[test]
+    fn persist_rescan_block_state_preserves_historical_spend_meta_until_reconcile() {
+        let key_image = test_key_image_hex(13);
+        let mut output = TrackedOutput {
+            tx_hash: "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd".to_string(),
+            output_index: 0,
+            amount: 50,
+            height: 100,
+            key_image: None,
+            spent_by_key_image_height: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("aa".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(vec![output.clone()]);
+        state
+            .store
+            .save_outputs(
+                &vault_pub_key,
+                &state.scanner.lock().get_all_outputs(&vault_pub_key),
+            )
+            .expect("failed to seed outputs");
+        state
+            .store
+            .save_registered_key_images(
+                &vault_pub_key,
+                &[RegisteredKeyImageRef {
+                    tx_hash: output.tx_hash.clone(),
+                    output_index: output.output_index,
+                    key_image: key_image.clone(),
+                }],
+            )
+            .expect("failed to seed registered key image inventory");
+
+        for height in 101..=250 {
+            let block_transactions = if height == 110 {
+                vec![
+                    parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(13))
+                        .expect("failed to build test transaction"),
+                ]
+            } else {
+                Vec::new()
+            };
+            persist_rescan_block_state(
+                &state,
+                &vault_pub_key,
+                height,
+                &format!("hash{height}"),
+                &format!("hash{}", height - 1),
+                &block_transactions,
+                &[],
+            )
+            .expect("failed to persist rescan block state");
+        }
+
+        let historical_meta = state
+            .store
+            .load_scan_block_meta(&vault_pub_key, 110)
+            .expect("failed to load preserved rescan metadata");
+        assert!(
+            historical_meta.is_some(),
+            "historical rescan spend metadata should remain until reconcile"
+        );
+
+        apply_registered_key_image_inventory(&state, &vault_pub_key, true)
+            .expect("failed to reconcile registered key images after rescan");
+        let outputs = state
+            .store
+            .load_outputs(&vault_pub_key)
+            .expect("failed to load outputs after reconcile");
+        output.key_image = Some(key_image.clone());
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].key_image.as_deref(), Some(key_image.as_str()));
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(110));
     }
 
     #[tokio::test]

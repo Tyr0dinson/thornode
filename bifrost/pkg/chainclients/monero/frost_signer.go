@@ -314,11 +314,14 @@ type xmrFrostTransferEntry struct {
 }
 
 type xmrFrostVaultStateEntry struct {
-	VaultPubKey string  `json:"vault_pub_key"`
-	Address     string  `json:"address"`
-	Birthday    uint64  `json:"birthday"`
-	Rescan      bool    `json:"rescan"`
-	ScanHeight  *uint64 `json:"scan_height,omitempty"`
+	VaultPubKey             string  `json:"vault_pub_key"`
+	Address                 string  `json:"address"`
+	Birthday                uint64  `json:"birthday"`
+	Rescan                  bool    `json:"rescan"`
+	ScanHeight              *uint64 `json:"scan_height,omitempty"`
+	InventoryFingerprint    string  `json:"inventory_fingerprint,omitempty"`
+	RegisteredKeyImageCount int     `json:"registered_key_image_count,omitempty"`
+	RegisteredTxKeyCount    int     `json:"registered_tx_key_count,omitempty"`
 }
 
 type xmrFrostVaultStatesResponse struct {

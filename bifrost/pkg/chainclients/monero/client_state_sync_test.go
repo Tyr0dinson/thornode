@@ -149,6 +149,7 @@ func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing
 			{TxHash: txHash, TxKeys: []string{txKey}},
 		},
 	}
+	expectedFingerprint := xmrVaultInventoryFingerprint(vault)
 
 	bridge := &countingStateSyncBridge{
 		mockMoneroBridge: mockMoneroBridge{
@@ -202,8 +203,9 @@ func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing
 			resp := xmrFrostVaultStatesResponse{}
 			if registered {
 				resp.Vaults = []xmrFrostVaultStateEntry{{
-					VaultPubKey: vaultPubKey.String(),
-					Address:     vaultAddr.String(),
+					VaultPubKey:          vaultPubKey.String(),
+					Address:              vaultAddr.String(),
+					InventoryFingerprint: expectedFingerprint,
 				}}
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(resp))
@@ -243,6 +245,68 @@ func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing
 	defer bridge.mu.Unlock()
 	assert.Equal(t, 1, bridge.observedTxCalls)
 	assert.Equal(t, 1, bridge.txStatusCalls)
+}
+
+func TestSyncTrackedVaultRegistrationsReregistersWhenSignerInventoryFingerprintMismatches(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vault := ttypes.Vault{
+		PubKey:                 vaultPubKey,
+		PubKeyEddsa:            vaultPubKey,
+		PubKeyFrost:            vaultPubKey,
+		Status:                 ttypes.VaultStatus_ActiveVault,
+		VaultCreationHeightXmr: 25,
+	}
+	expectedFingerprint := xmrVaultInventoryFingerprint(vault)
+
+	var mu sync.Mutex
+	registerCalls := 0
+	vaultStates := xmrFrostVaultStatesResponse{
+		Vaults: []xmrFrostVaultStateEntry{{
+			VaultPubKey:          vaultPubKey.String(),
+			Address:              vaultAddr.String(),
+			Birthday:             25,
+			InventoryFingerprint: "stale-fingerprint",
+		}},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/vaults":
+			mu.Lock()
+			defer mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(vaultStates))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+			mu.Lock()
+			registerCalls++
+			vaultStates.Vaults[0].InventoryFingerprint = expectedFingerprint
+			mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:                 common.XMRChain,
+		frostSigner:           signer,
+		logger:                testLogger(),
+		trackedVaultSyncState: map[string]string{vaultPubKey.String(): expectedFingerprint},
+	}
+
+	_, err = client.syncTrackedVaultRegistrations(ttypes.Vaults{vault})
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, registerCalls)
+	assert.Equal(t, expectedFingerprint, vaultStates.Vaults[0].InventoryFingerprint)
 }
 
 func TestDrivePendingScannerRescansUsesScannerSyncPath(t *testing.T) {

@@ -1163,9 +1163,13 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 		fingerprint := xmrVaultInventoryFingerprint(vault)
 		nextFingerprints[vaultPubKey.String()] = fingerprint
 
-		_, registeredInState := stateMap[vaultPubKey.String()]
+		stateEntry, registeredInState := stateMap[vaultPubKey.String()]
 		if stateAvailable {
-			if previous, ok := c.trackedVaultSyncFingerprint(vaultPubKey.String()); ok && previous == fingerprint && registeredInState {
+			inventoryMatches := registeredInState &&
+				strings.EqualFold(strings.TrimSpace(stateEntry.InventoryFingerprint), fingerprint)
+			if previous, ok := c.trackedVaultSyncFingerprint(vaultPubKey.String()); ok &&
+				previous == fingerprint &&
+				inventoryMatches {
 				continue
 			}
 		}

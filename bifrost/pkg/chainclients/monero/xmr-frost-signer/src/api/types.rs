@@ -410,6 +410,10 @@ pub struct VaultStateEntry {
     pub rescan: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scan_height: Option<u64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub inventory_fingerprint: String,
+    pub registered_key_image_count: usize,
+    pub registered_tx_key_count: usize,
 }
 
 #[derive(Debug, Serialize)]
