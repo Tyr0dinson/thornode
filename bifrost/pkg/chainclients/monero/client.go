@@ -858,7 +858,7 @@ func (c *Client) ensureHistoricalXMROutboundReplayRecord(vault ttypes.Vault, txH
 		return
 	}
 
-	meta, err := c.getTxKeyCatchupOutboundMeta(vaultPubKey, normalizedHash)
+	meta, err := c.getTxKeyCatchupOutboundMeta(vaultPubKey, normalizedHash, observedHeight)
 	if err != nil {
 		c.logger.Debug().
 			Err(err).
@@ -992,7 +992,7 @@ func (c *Client) catchupTxKeysForVaults(vaults ttypes.Vaults) {
 		ordered := make([]catchupOutbound, 0, len(batch))
 		pending := false
 		for _, ref := range batch {
-			meta, metaErr := c.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash)
+			meta, metaErr := c.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash, 0)
 			if metaErr != nil {
 				c.logger.Err(metaErr).
 					Str("vault", vaultPubKey.String()).
@@ -1055,50 +1055,111 @@ func (c *Client) catchupTxKeysForVaults(vaults ttypes.Vaults) {
 	}
 }
 
-func (c *Client) getTxKeyCatchupOutboundMeta(vaultPubKey common.PubKey, txHash string) (xmrFrostOutboundMeta, error) {
-	voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
-	if err != nil {
-		return xmrFrostOutboundMeta{}, fmt.Errorf("fail to get observed tx voter for %s: %w", txHash, err)
-	}
-
-	observed, err := selectObservedOutboundForVault(voter, txHash, vaultPubKey)
-	if err != nil {
-		return xmrFrostOutboundMeta{}, err
-	}
-
-	amountAtomic, err := xmrThorchainAmountToAtomic(observed.Tx.Coins.GetCoin(common.XMRAsset).Amount)
-	if err != nil {
-		return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound amount to atomic for %s: %w", txHash, err)
-	}
-
-	var feeAtomic uint64
-	gasCoin := observed.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
-	if !gasCoin.IsEmpty() {
-		feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
+func (c *Client) getTxKeyCatchupOutboundMeta(vaultPubKey common.PubKey, txHash string, observedHeightHint uint64) (xmrFrostOutboundMeta, error) {
+	var primaryErr error
+	if c.thorchainBridge != nil {
+		voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
 		if err != nil {
-			return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound fee to atomic for %s: %w", txHash, err)
+			primaryErr = fmt.Errorf("fail to get observed tx voter for %s: %w", txHash, err)
+		} else {
+			observed, err := selectObservedOutboundForVault(voter, txHash, vaultPubKey)
+			if err != nil {
+				primaryErr = err
+			} else {
+				amountAtomic, err := xmrThorchainAmountToAtomic(observed.Tx.Coins.GetCoin(common.XMRAsset).Amount)
+				if err != nil {
+					return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound amount to atomic for %s: %w", txHash, err)
+				}
+
+				var feeAtomic uint64
+				gasCoin := observed.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
+				if !gasCoin.IsEmpty() {
+					feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
+					if err != nil {
+						return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound fee to atomic for %s: %w", txHash, err)
+					}
+				}
+
+				if observed.Tx.ToAddress.IsEmpty() {
+					return xmrFrostOutboundMeta{}, fmt.Errorf("observed xmr outbound %s is missing destination address", txHash)
+				}
+
+				if meta, ok, err := c.txKeyCatchupCanonicalOutboundMeta(vaultPubKey, txHash, observed.Tx.Memo); err != nil {
+					return xmrFrostOutboundMeta{}, err
+				} else if ok {
+					meta.ObservedHeight = observed.BlockHeight
+					return meta, nil
+				}
+
+				return xmrFrostOutboundMeta{
+					FromAddress:    observed.Tx.FromAddress.String(),
+					ToAddress:      observed.Tx.ToAddress.String(),
+					Amount:         amountAtomic,
+					Fee:            feeAtomic,
+					Memo:           observed.Tx.Memo,
+					ObservedHeight: observed.BlockHeight,
+				}, nil
+			}
 		}
 	}
 
-	if observed.Tx.ToAddress.IsEmpty() {
-		return xmrFrostOutboundMeta{}, fmt.Errorf("observed xmr outbound %s is missing destination address", txHash)
-	}
-
-	if meta, ok, err := c.txKeyCatchupCanonicalOutboundMeta(vaultPubKey, txHash, observed.Tx.Memo); err != nil {
+	if meta, ok, err := c.txKeyCatchupFallbackOutboundMeta(vaultPubKey, txHash, observedHeightHint); err != nil {
 		return xmrFrostOutboundMeta{}, err
 	} else if ok {
-		meta.ObservedHeight = observed.BlockHeight
 		return meta, nil
 	}
 
-	return xmrFrostOutboundMeta{
-		FromAddress:    observed.Tx.FromAddress.String(),
-		ToAddress:      observed.Tx.ToAddress.String(),
-		Amount:         amountAtomic,
-		Fee:            feeAtomic,
-		Memo:           observed.Tx.Memo,
-		ObservedHeight: observed.BlockHeight,
-	}, nil
+	if primaryErr != nil {
+		return xmrFrostOutboundMeta{}, primaryErr
+	}
+	return xmrFrostOutboundMeta{}, fmt.Errorf("no outbound metadata available for %s", txHash)
+}
+
+func (c *Client) txKeyCatchupFallbackOutboundMeta(
+	vaultPubKey common.PubKey,
+	txHash string,
+	observedHeightHint uint64,
+) (xmrFrostOutboundMeta, bool, error) {
+	if c == nil || c.frostSigner == nil || c.thorchainBridge == nil || observedHeightHint == 0 {
+		return xmrFrostOutboundMeta{}, false, nil
+	}
+
+	transfers, err := c.frostSigner.GetTransfersByHeight(int64(observedHeightHint))
+	if err != nil {
+		return xmrFrostOutboundMeta{}, false, fmt.Errorf("fail to load xmr tracked transfers for %s at height %d: %w", txHash, observedHeightHint, err)
+	}
+
+	vaultKey := strings.TrimSpace(vaultPubKey.String())
+	for _, transfer := range append(transfers.Incoming, transfers.Outgoing...) {
+		if !strings.EqualFold(strings.TrimSpace(transfer.TxID), txHash) {
+			continue
+		}
+		if vaultKey != "" && strings.TrimSpace(transfer.VaultPubKey) != "" &&
+			!strings.EqualFold(strings.TrimSpace(transfer.VaultPubKey), vaultKey) {
+			continue
+		}
+		memoText := strings.TrimSpace(transfer.Note)
+		if memoText == "" {
+			continue
+		}
+
+		meta, ok, err := c.txKeyCatchupCanonicalOutboundMeta(vaultPubKey, txHash, memoText)
+		if err != nil {
+			return xmrFrostOutboundMeta{}, false, err
+		}
+		if !ok {
+			continue
+		}
+		if meta.ObservedHeight == 0 {
+			meta.ObservedHeight = int64(transfer.Height)
+		}
+		if meta.ObservedHeight == 0 {
+			meta.ObservedHeight = int64(observedHeightHint)
+		}
+		return meta, true, nil
+	}
+
+	return xmrFrostOutboundMeta{}, false, nil
 }
 
 func (c *Client) txKeyCatchupCanonicalOutboundMeta(vaultPubKey common.PubKey, txHash, memoText string) (xmrFrostOutboundMeta, bool, error) {
@@ -1117,6 +1178,14 @@ func (c *Client) txKeyCatchupCanonicalOutboundMeta(vaultPubKey common.PubKey, tx
 	}
 
 	meta, found, err := c.txKeyCatchupMetaFromTxStatus(vaultPubKey, txHash, status)
+	if err != nil {
+		return xmrFrostOutboundMeta{}, false, err
+	}
+	if found {
+		return meta, true, nil
+	}
+
+	meta, found, err = c.txKeyCatchupMetaFromPlannedTxStatus(vaultPubKey, txHash, memoText, parsedMemo, status)
 	if err != nil {
 		return xmrFrostOutboundMeta{}, false, err
 	}
@@ -1188,6 +1257,80 @@ func (c *Client) txKeyCatchupMetaFromTxStatus(
 	}
 
 	return xmrFrostOutboundMeta{}, false, nil
+}
+
+func (c *Client) txKeyCatchupMetaFromPlannedTxStatus(
+	vaultPubKey common.PubKey,
+	txHash string,
+	memoText string,
+	parsedMemo memo.Memo,
+	status *ttypes.QueryTxStatusResponse,
+) (xmrFrostOutboundMeta, bool, error) {
+	if status == nil || c == nil || c.frostSigner == nil {
+		return xmrFrostOutboundMeta{}, false, nil
+	}
+
+	isRefund := parsedMemo.GetType() == memo.TxRefund
+	matching := make([]*ttypes.PlannedOutTx, 0, len(status.PlannedOutTxs))
+	for _, planned := range status.PlannedOutTxs {
+		if planned == nil || !strings.EqualFold(strings.TrimSpace(planned.Chain), common.XMRChain.String()) {
+			continue
+		}
+		if planned.Refund != isRefund {
+			continue
+		}
+		matching = append(matching, planned)
+	}
+	if len(matching) == 0 {
+		return xmrFrostOutboundMeta{}, false, nil
+	}
+	if len(matching) > 1 {
+		return xmrFrostOutboundMeta{}, false, fmt.Errorf(
+			"planned xmr outbounds for %s are ambiguous (%d candidates)",
+			txHash,
+			len(matching),
+		)
+	}
+	if matching[0].Coin == nil {
+		return xmrFrostOutboundMeta{}, false, fmt.Errorf("planned xmr outbound %s is missing coin metadata", txHash)
+	}
+	if strings.TrimSpace(matching[0].ToAddress) == "" {
+		return xmrFrostOutboundMeta{}, false, fmt.Errorf("planned xmr outbound %s is missing destination address", txHash)
+	}
+
+	chainTx, err := c.frostSigner.GetChainTxInfo(txHash)
+	if err != nil {
+		return xmrFrostOutboundMeta{}, false, fmt.Errorf("fail to load mined xmr tx metadata for %s: %w", txHash, err)
+	}
+
+	amountAtomic, err := xmrThorchainAmountToAtomic(matching[0].Coin.Amount)
+	if err != nil {
+		return xmrFrostOutboundMeta{}, false, fmt.Errorf(
+			"fail to convert planned xmr outbound amount to atomic for %s: %w",
+			txHash,
+			err,
+		)
+	}
+
+	fromAddress := strings.TrimSpace(c.getVaultAddress(vaultPubKey))
+	if fromAddress == "" {
+		fromAddress = strings.TrimSpace(c.GetAddress(vaultPubKey))
+	}
+	if fromAddress == "" {
+		return xmrFrostOutboundMeta{}, false, fmt.Errorf("fail to resolve vault address for planned xmr outbound %s", txHash)
+	}
+
+	meta := xmrFrostOutboundMeta{
+		FromAddress: fromAddress,
+		ToAddress:   strings.TrimSpace(matching[0].ToAddress),
+		Amount:      amountAtomic,
+		Fee:         chainTx.Fee,
+		Memo:        strings.TrimSpace(memoText),
+	}
+	if chainTx.BlockHeight != nil {
+		meta.ObservedHeight = int64(*chainTx.BlockHeight)
+	}
+	return meta, true, nil
 }
 
 func selectObservedOutboundForVault(

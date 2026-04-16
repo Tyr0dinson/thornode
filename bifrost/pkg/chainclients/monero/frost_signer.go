@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +87,31 @@ type moneroDaemonJSONRPCResponse struct {
 type moneroDaemonRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+type moneroDaemonGetTransactionsRequest struct {
+	TxHashes     []string `json:"txs_hashes"`
+	DecodeAsJSON bool     `json:"decode_as_json"`
+}
+
+type moneroDaemonGetTransactionsResponse struct {
+	Txs      []moneroDaemonTxEntry `json:"txs"`
+	MissedTx []string              `json:"missed_tx"`
+	Status   string                `json:"status"`
+}
+
+type moneroDaemonTxEntry struct {
+	TxHash      string  `json:"tx_hash"`
+	AsHex       string  `json:"as_hex"`
+	AsJSON      string  `json:"as_json"`
+	BlockHeight *uint64 `json:"block_height"`
+	InPool      *bool   `json:"in_pool"`
+}
+
+type moneroDaemonParsedTx struct {
+	RctSignatures struct {
+		TxnFee json.RawMessage `json:"txnFee"`
+	} `json:"rct_signatures"`
 }
 
 func (e *moneroDaemonRPCError) Error() string {
@@ -266,6 +292,12 @@ type xmrFrostBroadcastRequest struct {
 
 type xmrFrostBroadcastResponse struct {
 	TxHash string `json:"tx_hash"`
+}
+
+type xmrFrostChainTxInfo struct {
+	TxHash      string
+	BlockHeight *uint64
+	Fee         uint64
 }
 
 // Scanner/balance response types from the sidecar
@@ -1054,6 +1086,55 @@ func (s *FrostSigner) TxExists(txHash string) (bool, error) {
 	return out.Exists, nil
 }
 
+func (s *FrostSigner) GetChainTxInfo(txHash string) (xmrFrostChainTxInfo, error) {
+	normalized := strings.TrimSpace(txHash)
+	if normalized == "" {
+		return xmrFrostChainTxInfo{}, fmt.Errorf("tx hash is empty")
+	}
+	if !s.hasDaemonRPC() {
+		return xmrFrostChainTxInfo{}, fmt.Errorf("monero daemon rpc is not configured")
+	}
+
+	var out moneroDaemonGetTransactionsResponse
+	if err := s.callDaemonJSON("/get_transactions", moneroDaemonGetTransactionsRequest{
+		TxHashes:     []string{normalized},
+		DecodeAsJSON: true,
+	}, &out); err != nil {
+		return xmrFrostChainTxInfo{}, fmt.Errorf("fail to query monero daemon transaction %s: %w", normalized, err)
+	}
+
+	for _, missed := range out.MissedTx {
+		if strings.EqualFold(strings.TrimSpace(missed), normalized) {
+			return xmrFrostChainTxInfo{}, fmt.Errorf("transaction %s not found", normalized)
+		}
+	}
+
+	for _, entry := range out.Txs {
+		if !strings.EqualFold(strings.TrimSpace(entry.TxHash), normalized) {
+			continue
+		}
+		var parsed moneroDaemonParsedTx
+		if strings.TrimSpace(entry.AsJSON) == "" {
+			return xmrFrostChainTxInfo{}, fmt.Errorf("daemon transaction %s is missing json metadata", normalized)
+		}
+		if err := json.Unmarshal([]byte(entry.AsJSON), &parsed); err != nil {
+			return xmrFrostChainTxInfo{}, fmt.Errorf("fail to parse daemon transaction %s metadata: %w", normalized, err)
+		}
+		fee, err := parseMoneroDaemonUint(parsed.RctSignatures.TxnFee)
+		if err != nil {
+			return xmrFrostChainTxInfo{}, fmt.Errorf("fail to parse daemon transaction %s fee: %w", normalized, err)
+		}
+
+		return xmrFrostChainTxInfo{
+			TxHash:      strings.TrimSpace(entry.TxHash),
+			BlockHeight: entry.BlockHeight,
+			Fee:         fee,
+		}, nil
+	}
+
+	return xmrFrostChainTxInfo{}, fmt.Errorf("transaction %s not found", normalized)
+}
+
 func (s *FrostSigner) ValidateOutbound(req xmrFrostValidateOutboundRequest) (xmrFrostValidateOutboundResponse, error) {
 	var out xmrFrostValidateOutboundResponse
 	if err := s.call(http.MethodPost, s.validatePath, req, &out); err != nil {
@@ -1281,6 +1362,71 @@ func (s *FrostSigner) callDaemonJSONRPC(method string, params any, out any) erro
 		return fmt.Errorf("fail to unmarshal monero daemon rpc result: %w", err)
 	}
 	return nil
+}
+
+func (s *FrostSigner) callDaemonJSON(path string, payload any, out any) error {
+	if !s.hasDaemonRPC() {
+		return fmt.Errorf("monero daemon rpc is not configured")
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("fail to marshal monero daemon request payload: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, s.daemonEndpoint+path, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("fail to create monero daemon request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.bearer != "" {
+		req.Header.Set("Authorization", s.bearer)
+	} else if s.username != "" {
+		req.SetBasicAuth(s.username, s.password)
+	}
+
+	resp, err := s.daemonClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fail to call monero daemon endpoint %s: %w", path, err)
+	}
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	respBody, err := readBoundedResponseBody(resp.Body, maxFrostResponseBytes)
+	if err != nil {
+		return fmt.Errorf("fail to read monero daemon response: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("monero daemon endpoint %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	if out == nil {
+		return nil
+	}
+	if len(respBody) == 0 {
+		return fmt.Errorf("monero daemon endpoint %s returned empty response body", path)
+	}
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return fmt.Errorf("fail to unmarshal monero daemon response: %w", err)
+	}
+	return nil
+}
+
+func parseMoneroDaemonUint(raw json.RawMessage) (uint64, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return 0, fmt.Errorf("numeric field is empty")
+	}
+	if unquoted, err := strconv.Unquote(trimmed); err == nil {
+		trimmed = strings.TrimSpace(unquoted)
+	}
+	value, err := strconv.ParseUint(trimmed, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
 }
 
 func (s *FrostSigner) callGet(path string, out any) error {

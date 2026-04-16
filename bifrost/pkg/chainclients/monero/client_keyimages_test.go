@@ -32,6 +32,10 @@ type keyImageTestBridge struct {
 	version semver.Version
 }
 
+func ptrUint64(v uint64) *uint64 {
+	return &v
+}
+
 func (b *keyImageTestBridge) GetThorchainVersion() (semver.Version, error) {
 	if b.version.Equals(semver.Version{}) {
 		return semver.MustParse("3.0.0"), nil
@@ -745,6 +749,144 @@ func TestDriveLocalKeyImageBacklogRehydratesHistoricalOutboundReplayRecord(t *te
 	assert.Equal(t, uint64(100), rehydrateReqs[0].ObservedHeight)
 	assert.Equal(t, []string{txKey}, rehydrateReqs[0].TxKeys)
 	assert.True(t, rehydrateReqs[0].RegisteredInventory)
+	mu.Unlock()
+}
+
+func TestDriveLocalKeyImageBacklogRehydratesHistoricalOutboundReplayRecordFromTransferNote(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("c", 64)
+	parentTxHash := strings.Repeat("d", 64)
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("rehydrate-planned-destination")))
+	feeAtomic := uint64(777)
+
+	var (
+		mu            sync.Mutex
+		outputs       = []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0, Amount: 15, Height: 100}}
+		rehydrateReqs []xmrFrostRehydrateObservedOutboundRequest
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/apply-key-images"):
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			for i := range outputs {
+				for _, ref := range req.KeyImages {
+					if !strings.EqualFold(outputs[i].TxHash, ref.TxHash) || outputs[i].OutputIndex != ref.OutputIndex {
+						continue
+					}
+					outputs[i].KeyImage = strings.ToLower(strings.TrimSpace(ref.KeyImage))
+				}
+			}
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			require.Equal(t, "all", r.URL.Query().Get("view"))
+			mu.Lock()
+			resp := append([]xmrFrostOutputEntry(nil), outputs...)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: resp})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/transfers"):
+			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{
+				Incoming: []xmrFrostTransferEntry{{
+					TxID:        txHash,
+					Address:     vaultAddr.String(),
+					VaultPubKey: vaultPubKey.String(),
+					Height:      100,
+					Note:        "OUT:" + parentTxHash,
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/rehydrate":
+			var req xmrFrostRehydrateObservedOutboundRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			rehydrateReqs = append(rehydrateReqs, req)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostRehydrateObservedOutboundResponse{Rehydrated: true})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	daemonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/get_transactions", r.URL.Path)
+
+		var req moneroDaemonGetTransactionsRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		require.Equal(t, []string{txHash}, req.TxHashes)
+		require.True(t, req.DecodeAsJSON)
+
+		_ = json.NewEncoder(w).Encode(moneroDaemonGetTransactionsResponse{
+			Txs: []moneroDaemonTxEntry{{
+				TxHash:      txHash,
+				AsJSON:      fmt.Sprintf(`{"rct_signatures":{"txnFee":%d}}`, feeAtomic),
+				BlockHeight: ptrUint64(100),
+			}},
+			Status: "OK",
+		})
+	}))
+	defer daemonServer.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{RPCHost: daemonServer.URL}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
+		Membership:  []string{"member-a", "member-b", "member-c"},
+	}
+	plannedCoin := common.NewCoin(common.XMRAsset, cosmos.NewUint(123))
+	bridge := &keyImageTestBridge{
+		mockMoneroBridge: mockMoneroBridge{
+			vaultByPubKey: map[string]ttypes.Vault{
+				vaultPubKey.String(): vault,
+			},
+			txStatusByID: map[string]*ttypes.QueryTxStatusResponse{
+				parentTxHash: {
+					PlannedOutTxs: []*ttypes.PlannedOutTx{{
+						Chain:     common.XMRChain.String(),
+						ToAddress: destination.String(),
+						Coin:      &plannedCoin,
+						Refund:    false,
+					}},
+				},
+			},
+		},
+		version: semver.MustParse("3.0.0"),
+	}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: bridge,
+		logger:          testLogger(),
+	}
+
+	c.driveLocalKeyImageBacklogForVaults(ttypes.Vaults{vault})
+
+	tssServer.mu.Lock()
+	require.Len(t, tssServer.reqs, 1)
+	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
+	tssServer.mu.Unlock()
+
+	mu.Lock()
+	require.Len(t, rehydrateReqs, 1)
+	assert.Equal(t, vaultPubKey.String(), rehydrateReqs[0].VaultPubKey)
+	assert.Equal(t, txHash, rehydrateReqs[0].TxHash)
+	assert.Equal(t, vaultAddr.String(), rehydrateReqs[0].FromAddress)
+	assert.Equal(t, destination.String(), rehydrateReqs[0].ToAddress)
+	assert.Equal(t, uint64(123*moneroAtomicToThorchain), rehydrateReqs[0].Amount)
+	assert.Equal(t, feeAtomic, rehydrateReqs[0].Fee)
+	assert.Equal(t, "OUT:"+parentTxHash, rehydrateReqs[0].Memo)
+	assert.Equal(t, uint64(100), rehydrateReqs[0].ObservedHeight)
+	assert.False(t, rehydrateReqs[0].RegisteredInventory)
 	mu.Unlock()
 }
 

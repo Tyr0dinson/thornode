@@ -98,7 +98,7 @@ func txKeyEntriesFromVault(
 	}
 	entries := make([]xmrFrostRegisterTxKeyEntry, 0, len(vault.TxKeysXmr))
 	for _, ref := range makeTxKeyCatchupRefs(vault.TxKeysXmr) {
-		meta, err := helper.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash)
+		meta, err := helper.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash, 0)
 		if err != nil {
 			return nil, fmt.Errorf("fail to build tx-key registration metadata for %s: %w", ref.txHash, err)
 		}
