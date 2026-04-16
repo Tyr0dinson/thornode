@@ -891,6 +891,28 @@ impl Store {
         Ok(removed)
     }
 
+    pub fn clear_outgoing_transfers_without_tx_keys(&self, vault_pub_key: &str) -> Result<usize> {
+        let tree = self.db.open_tree("outgoing_transfers")?;
+        let prefix = format!("{}:", vault_pub_key);
+        let mut keys = Vec::new();
+
+        for item in tree.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = item?;
+            let record: OutgoingTransferRecord = serde_json::from_slice(&value)?;
+            if !record.tx_keys.is_empty() {
+                continue;
+            }
+            keys.push(key);
+        }
+
+        let removed = keys.len();
+        for key in keys {
+            tree.remove(key)?;
+        }
+        tree.flush()?;
+        Ok(removed)
+    }
+
     pub fn prune_outgoing_transfers(
         &self,
         vault_pub_key: &str,
@@ -2032,6 +2054,52 @@ mod tests {
             .load_outgoing_transfer("thorpub1vault-b", "hash2")
             .unwrap()
             .is_some());
+    }
+
+    #[test]
+    fn clear_outgoing_transfers_without_tx_keys_preserves_registered_tx_key_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        let tx_key_backed = OutgoingTransferRecord {
+            tx_hash: "hash1".to_string(),
+            tx_hex: "deadbeef".to_string(),
+            tx_keys: vec!["11".repeat(32)],
+            msg_id: "msg1".to_string(),
+            vault_pub_key: "thorpub1vault-a".to_string(),
+            from_address: "48from-a".to_string(),
+            to_address: "48to-a".to_string(),
+            amount: 42,
+            fee: 2,
+            memo: "OUT:ABC".to_string(),
+            planned_height: 12,
+            observed_height: Some(12),
+            status: "observed_mined".to_string(),
+            broadcasted_at: None,
+            observed_at: None,
+            reported_effective_height: None,
+            created_at: 123,
+        };
+        let mut ephemeral = tx_key_backed.clone();
+        ephemeral.tx_hash = "hash2".to_string();
+        ephemeral.tx_keys.clear();
+        ephemeral.created_at = 124;
+
+        store.save_outgoing_transfer(&tx_key_backed).unwrap();
+        store.save_outgoing_transfer(&ephemeral).unwrap();
+
+        let removed = store
+            .clear_outgoing_transfers_without_tx_keys("thorpub1vault-a")
+            .unwrap();
+        assert_eq!(removed, 1);
+        assert!(store
+            .load_outgoing_transfer("thorpub1vault-a", "hash1")
+            .unwrap()
+            .is_some());
+        assert!(store
+            .load_outgoing_transfer("thorpub1vault-a", "hash2")
+            .unwrap()
+            .is_none());
     }
 
     #[test]

@@ -3009,8 +3009,13 @@ pub async fn scanner_reset(
         );
     }
 
-    if let Err(e) = state.store.clear_outgoing_transfers(&vault_pub_key) {
-        error!(error = %e, vault = %vault_pub_key, "failed to clear outgoing transfers during scanner reset");
+    // Preserve THOR-sourced tx-key inventory across rescans. Reset should only
+    // clear ephemeral outbound history that cannot be deterministically rebuilt.
+    if let Err(e) = state
+        .store
+        .clear_outgoing_transfers_without_tx_keys(&vault_pub_key)
+    {
+        error!(error = %e, vault = %vault_pub_key, "failed to clear ephemeral outgoing transfers during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(e.to_string())),
@@ -6789,7 +6794,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scanner_reset_clears_outgoing_transfer_history_for_vault() {
+    async fn scanner_reset_preserves_tx_key_inventory_for_vault() {
         let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
         state
             .store
@@ -6801,16 +6806,28 @@ mod tests {
                 321,
             )
             .expect("failed to register vault");
+        let mut retained = sample_outgoing(
+            "abababababababababababababababababababababababababababababababab",
+            VALID_VAULT_PUB_KEY,
+            "48from",
+            "48to",
+            1,
+        );
+        retained.tx_keys = vec!["11".repeat(32)];
+        state
+            .store
+            .save_outgoing_transfer(&retained)
+            .expect("failed to seed tx-key-backed outgoing transfer");
         state
             .store
             .save_outgoing_transfer(&sample_outgoing(
-                "abababababababababababababababababababababababababababababababab",
+                "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
                 VALID_VAULT_PUB_KEY,
                 "48from",
                 "48to",
-                1,
+                2,
             ))
-            .expect("failed to seed outgoing transfer");
+            .expect("failed to seed ephemeral outgoing transfer");
 
         let response = scanner_reset(
             State(state.clone()),
@@ -6829,7 +6846,9 @@ mod tests {
             .store
             .load_outgoing_transfers(VALID_VAULT_PUB_KEY)
             .expect("failed to load outgoing transfers");
-        assert!(outgoing.is_empty());
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(outgoing[0].tx_hash, retained.tx_hash);
+        assert_eq!(outgoing[0].tx_keys, retained.tx_keys);
     }
 
     #[tokio::test]
