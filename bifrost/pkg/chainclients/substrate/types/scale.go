@@ -41,27 +41,31 @@ func EncodeCompactUint(v cosmos.Uint) []byte {
 	return encodeCompactBigInt(bigInt)
 }
 
-// encodeCompactBigInt encodes a big.Int as a big-integer compact SCALE value.
+// encodeCompactBigInt encodes a non-negative big.Int as a SCALE compact
+// "big-integer" mode value.
+//
+// Preconditions (guaranteed by current callers — must be preserved if new
+// callers are added):
+//   - v is non-negative. cosmos.Uint prevents negative values at construction,
+//     so EncodeCompactUint cannot produce one. big.Int.Bytes() would silently
+//     drop the sign otherwise, producing a wrong-but-valid encoding.
+//   - v fits in 4..67 bytes. cosmos.Uint is capped at 2^256 (32 bytes) by the
+//     Cosmos SDK, and EncodeCompactUint only reaches this helper for values
+//     that don't fit the 1/2/4-byte modes (≥ 2^30, i.e., ≥ 4 bytes). Values
+//     larger than 2^536 (≥ 68 bytes) cannot be represented in SCALE compact
+//     mode at all — the prefix length field is 6 bits.
 func encodeCompactBigInt(v *big.Int) []byte {
-	// Convert big.Int to little-endian bytes
-	// big.Int.Bytes() returns big-endian, so we reverse
+	// big.Int.Bytes() returns the absolute value in big-endian with no
+	// leading zero bytes. Reverse for little-endian.
 	bigEndian := v.Bytes()
 	length := len(bigEndian)
-
 	littleEndian := make([]byte, length)
 	for i := range bigEndian {
 		littleEndian[length-1-i] = bigEndian[i]
 	}
 
-	// Trim trailing zero bytes
-	index := length
-	for index > 0 && littleEndian[index-1] == 0 {
-		index--
-	}
-	littleEndian = littleEndian[:index]
-
 	// prefix byte: upper 6 bits = (byte_length - 4), lower 2 bits = 0b11
-	prefix := byte((index-4)<<2) | 0x03
+	prefix := byte((length-4)<<2) | 0x03
 	return append([]byte{prefix}, littleEndian...)
 }
 

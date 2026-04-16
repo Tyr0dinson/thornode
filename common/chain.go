@@ -299,9 +299,13 @@ func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 	return coin
 }
 
-// NativeGasToThorCoinCeil converts native gas units to Coin
-// with THORChain units (1e8). It adds 1 to amount if the conversion would
-// floor() the result.
+// NativeGasToThorCoinCeil converts native gas units to Coin with THORChain
+// units (1e8).
+//
+// For chains whose gas asset has more decimals than THORChain,
+// floor-division in NativeGasToThorCoin can drop sub-1e8 precision.
+// In this case we always add 1 unit to avoid under-reporting which could
+// mis-state vault solvency and risk failed broadcasts.
 func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
 	coin := c.NativeGasToThorCoin(native)
 	if c.GetGasAssetDecimal() > THORChainDecimals {
@@ -518,10 +522,12 @@ func (c Chain) SS58Prefix() byte {
 
 func (c Chain) ExistentialDeposit() cosmos.Uint {
 	switch c {
-	case XRPChain, TAOChain:
+	case XRPChain:
 		return c.DustThreshold()
 	case DOTChain:
 		return cosmos.NewUint(One)
+	case TAOChain:
+		return cosmos.NewUint(50) // 500 rao
 	default:
 		return cosmos.ZeroUint()
 	}

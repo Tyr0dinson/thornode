@@ -35,8 +35,6 @@ import (
 type Client struct {
 	*generic.Client
 	logger              zerolog.Logger
-	config              tcconfig.BifrostChainConfiguration
-	bridge              thorclient.ThorchainBridge
 	storage             *blockscanner.BlockScannerStorage
 	blockScanner        *blockscanner.BlockScanner
 	chainScanner        *Scanner
@@ -73,8 +71,6 @@ func NewClient(
 
 	c := &Client{
 		logger:   logger,
-		config:   config,
-		bridge:   bridge,
 		wg:       &sync.WaitGroup{},
 		stopchan: make(chan struct{}),
 		nonces:   make(map[string]nonceMetadata),
@@ -83,10 +79,10 @@ func NewClient(
 	var err error
 
 	var path string
-	if len(c.config.BlockScanner.DBPath) > 0 {
-		path = fmt.Sprintf("%s/%s", c.config.BlockScanner.DBPath, c.config.BlockScanner.ChainID)
+	if len(config.BlockScanner.DBPath) > 0 {
+		path = fmt.Sprintf("%s/%s", config.BlockScanner.DBPath, config.BlockScanner.ChainID)
 	}
-	c.storage, err = blockscanner.NewBlockScannerStorage(path, c.config.ScannerLevelDB)
+	c.storage, err = blockscanner.NewBlockScannerStorage(path, config.ScannerLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scan storage: %w", err)
 	}
@@ -104,7 +100,7 @@ func NewClient(
 	)
 
 	c.chainScanner, err = NewScanner(
-		c.config.BlockScanner,
+		config.BlockScanner,
 		c.ReportSolvency,
 		c.rpcClient,
 	)
@@ -113,7 +109,7 @@ func NewClient(
 	}
 
 	c.blockScanner, err = blockscanner.NewBlockScanner(
-		c.config.BlockScanner,
+		config.BlockScanner,
 		c.storage,
 		metrics,
 		bridge,
@@ -138,7 +134,7 @@ func (c *Client) Start(
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.Client.Start()
 	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.GetBridge(), c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
 // Stop stops the Substrate chain client.
@@ -152,16 +148,6 @@ func (c *Client) Stop() {
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *Client) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
-}
-
-// GetConfig returns the chain configuration.
-func (c *Client) GetConfig() tcconfig.BifrostChainConfiguration {
-	return c.config
-}
-
-// GetChain returns the chain.
-func (c *Client) GetChain() common.Chain {
-	return c.config.ChainID
 }
 
 // GetHeight returns the current block height.
@@ -181,7 +167,7 @@ func (c *Client) RollbackBlockScanner() error {
 
 // GetAddress returns the address for the given public key.
 func (c *Client) GetAddress(pubkey common.PubKey) string {
-	addr, err := pubkey.GetAddress(c.config.ChainID)
+	addr, err := pubkey.GetAddress(c.GetChain())
 	if err != nil {
 		c.logger.Err(err).Str("pub_key", pubkey.String()).Msg("failed to get pool address")
 		return ""
@@ -234,14 +220,14 @@ func (c *Client) ReportSolvency(height int64) error {
 		return nil
 	}
 
-	asgardVaults, err := c.bridge.GetAsgards()
+	asgardVaults, err := c.GetBridge().GetAsgards()
 	if err != nil {
 		return fmt.Errorf("failed to get asgards: %w", err)
 	}
 
 	// 1x estimated gas cost breathing room, converted to THORChain (1e8) units.
 	_, fee := c.chainScanner.GetNetworkFee()
-	currentGasFee := c.config.ChainID.NativeGasToThorchain(cosmos.NewUint(fee))
+	currentGasFee := c.GetChain().NativeGasToThorchain(cosmos.NewUint(fee))
 
 	// Separate insolvent from solvent vaults.
 	msgs := make([]ttypes.Solvency, 0, len(asgardVaults))
@@ -262,7 +248,7 @@ func (c *Client) ReportSolvency(height int64) error {
 
 		msg := ttypes.Solvency{
 			Height: height,
-			Chain:  c.config.ChainID,
+			Chain:  c.GetChain(),
 			PubKey: asgardVaults[i].PubKey,
 			Coins:  acct.Coins,
 		}

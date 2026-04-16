@@ -68,8 +68,6 @@ func NewScanner(
 		solvencyReporter: solvencyReporter,
 	}
 
-	s.currentFee.Swap(s.params.DefaultFee)
-
 	rv, err := rpcClient.GetRuntimeVersion("")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime version: %w", err)
@@ -212,7 +210,11 @@ func (s *Scanner) FetchMemPool(_ int64) (ttypes.TxIn, error) {
 
 // GetNetworkFee returns the current network fee estimate.
 func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return 1, s.currentFee.Load()
+	fee := s.currentFee.Load()
+	if fee == 0 {
+		fee = s.params.DefaultFee
+	}
+	return 1, fee
 }
 
 // getExtrinsicResults queries System::Events and determines which extrinsics succeeded.

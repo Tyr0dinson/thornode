@@ -201,7 +201,6 @@ func newTestClient(rpcClient *rpc.Client) *Client {
 	return &Client{
 		Client:    genericClient,
 		logger:    log.Logger,
-		config:    chainConfig,
 		rpcClient: rpcClient,
 		nonces:    make(map[string]nonceMetadata),
 		chainScanner: &Scanner{

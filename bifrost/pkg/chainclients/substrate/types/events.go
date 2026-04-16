@@ -3,6 +3,9 @@ package types
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
+
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // Known event data sizes for Substrate runtimes.
@@ -124,7 +127,24 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 		if isApplyExtrinsic && palletIdx == pallets.TransactionPaymentPalletIndex && eventIdx == 0x00 {
 			// Technically just storing u64 which is fine for fee amounts
 			if dataSize >= sizeAccountID+sizeBalance {
-				fees[extrinsicIdx] = binary.LittleEndian.Uint64(data[pos+sizeAccountID : pos+sizeAccountID+sizeBalance])
+				part := data[pos+sizeAccountID : pos+sizeAccountID+sizeBalance]
+
+				switch sizeBalance {
+				case 8:
+					fees[extrinsicIdx] = binary.LittleEndian.Uint64(part)
+				case 16:
+					var amount cosmos.Uint
+					amount, err = cosmos.ParseUint128(part)
+					if err != nil {
+						return results, fees, fmt.Errorf("failed to parse amount: %w", err)
+					}
+
+					if amount.GT(cosmos.NewUint(math.MaxUint64)) {
+						return results, fees, fmt.Errorf("amount greater than max uint: %s", amount.String())
+					}
+
+					fees[extrinsicIdx] = amount.Uint64()
+				}
 			}
 		}
 

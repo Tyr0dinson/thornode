@@ -1,3 +1,8 @@
+// Package generic provides shared implementation for TSS-capable chain
+// clients. Concrete chain clients embed *Client to inherit key management,
+// signing, the signer cache, and the standard THORChain bridge wiring,
+// and implement chain-specific behavior (block scanning, tx construction,
+// broadcast) on top.
 package generic
 
 import (
@@ -21,6 +26,9 @@ import (
 	thormemo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
+// Client bundles the shared state needed by TSS-capable chain clients:
+// config, bridge, logger, TSS signer, local signer, and signer cache.
+// It is safe for concurrent use — all embedded managers are thread-safe.
 type Client struct {
 	logger             zerolog.Logger
 	config             thorconfig.BifrostChainConfiguration
@@ -30,6 +38,9 @@ type Client struct {
 	signerCacheManager *signercache.CacheManager
 }
 
+// NewClient wires up the TSS and local key managers and the signer cache
+// over the given leveldb. Returns an error if any sub-component fails to
+// initialize; the returned *Client is ready to Start.
 func NewClient(
 	logger zerolog.Logger,
 	keys *thorclient.Keys,
@@ -64,30 +75,47 @@ func NewClient(
 	return c, nil
 }
 
+// Start launches the TSS key manager. Not idempotent — call exactly once
+// per Client; pair with Stop.
 func (c *Client) Start() {
 	c.tssKeyManager.Start()
 }
 
+// Stop shuts down the TSS key manager. Safe to call once after Start.
 func (c *Client) Stop() {
 	c.tssKeyManager.Stop()
 }
 
+// GetChain returns the chain this client serves.
 func (c *Client) GetChain() common.Chain {
 	return c.config.ChainID
 }
 
+// GetGasAsset returns the chain's native gas asset.
 func (c *Client) GetGasAsset() common.Asset {
-	return c.config.ChainID.GetGasAsset()
+	return c.GetChain().GetGasAsset()
 }
 
+// GetConfig returns the bifrost chain configuration.
 func (c *Client) GetConfig() thorconfig.BifrostChainConfiguration {
 	return c.config
 }
 
+// GetBridge returns the THORChain bridge used.
+func (c *Client) GetBridge() thorclient.ThorchainBridge {
+	return c.bridge
+}
+
+// GetPubKey returns the local signer's public key.
 func (c *Client) GetPubKey() common.PubKey {
 	return c.localKeyManager.PubKey()
 }
 
+// Sign signs data for the vault identified by txOutItem.VaultPubKey.
+// Routes to the local signer when the vault address matches this node's
+// local key, otherwise to TSS. Verifies the resulting signature against
+// the vault pubkey before returning. On TSS failure with blame, posts
+// the blame to THORChain and returns the original error.
 func (c *Client) Sign(
 	data []byte,
 	txOutItem types.TxOutItem,
@@ -106,11 +134,18 @@ func (c *Client) Sign(
 			return nil, fmt.Errorf("failed to sign data: %w", err)
 		}
 	} else {
-		signature, _, err = c.tssKeyManager.RemoteSign(
+		algo := c.GetChain().GetSigningAlgo()
+
+		var recovery []byte
+		signature, recovery, err = c.tssKeyManager.RemoteSign(
 			data,
-			c.config.ChainID.GetSigningAlgo(),
+			algo,
 			vaultPubKey.String(),
 		)
+
+		if algo == common.SigningAlgoSecp256k1 && err == nil && signature != nil {
+			signature = append(signature, recovery...)
+		}
 	}
 
 	if err != nil {
@@ -141,17 +176,24 @@ func (c *Client) Sign(
 	}
 
 	pubKey := txOutItem.GetVaultPubKey()
-
-	switch c.GetChain().GetSigningAlgo() {
+	algo := c.GetChain().GetSigningAlgo()
+	switch algo {
 	case common.SigningAlgoSecp256k1:
 		err = verifySecp256k1(data, signature, pubKey)
 	case common.SigningAlgoEd25519:
 		err = verifyEd25519(data, signature, pubKey)
+	default:
+		err = fmt.Errorf("unsupported signing algo: %s", algo)
 	}
 
-	return signature, err
+	if err != nil {
+		return nil, err
+	}
+
+	return signature, nil
 }
 
+// verifySecp256k1 checks that sig was produced by pub's secp256k1 key.
 func verifySecp256k1(msg, sig []byte, pub common.PubKey) error {
 	sigPub, err := crypto.Ecrecover(msg, sig)
 	if err != nil {
@@ -172,6 +214,7 @@ func verifySecp256k1(msg, sig []byte, pub common.PubKey) error {
 	return nil
 }
 
+// verifyEd25519 checks that sig was produced by pub's ed25519 key.
 func verifyEd25519(msg, sig []byte, pub common.PubKey) error {
 	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pub.String())
 	if err != nil {
@@ -190,8 +233,8 @@ func verifyEd25519(msg, sig []byte, pub common.PubKey) error {
 	return nil
 }
 
-// solvency
-
+// ShouldReportSolvency returns true when height is a multiple of
+// config.SolvencyBlocks. Returns false when SolvencyBlocks is non-positive.
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	if c.config.SolvencyBlocks <= 0 {
 		return false
@@ -199,12 +242,12 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 	return height%c.config.SolvencyBlocks == 0
 }
 
-// cache manager
-
+// SetSigned records that txOutItem has been broadcast with the given
+// txId, preventing re-signs. Logs and swallows cache errors.
 func (c *Client) SetSigned(txOutItem types.TxOutItem, txId string) {
 	err := c.signerCacheManager.SetSigned(
 		txOutItem.CacheHash(),
-		txOutItem.CacheVault(c.config.ChainID),
+		txOutItem.CacheVault(c.GetChain()),
 		txId,
 	)
 	if err != nil {
@@ -214,12 +257,16 @@ func (c *Client) SetSigned(txOutItem types.TxOutItem, txId string) {
 	}
 }
 
+// HasSigned reports whether txOutItem has already been broadcast by this
+// node, per the signer cache.
 func (c *Client) HasSigned(txOutItem types.TxOutItem) bool {
 	return c.signerCacheManager.HasSigned(txOutItem.CacheHash())
 }
 
+// GetLatestTxForVault returns the last observed inbound tx id and the
+// last broadcast outbound tx id for the given vault on this chain.
 func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
-	chain := c.config.ChainID.String()
+	chain := c.GetChain().String()
 
 	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(
 		types.InboundCacheKey(vault, chain),
@@ -235,6 +282,9 @@ func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
 	return lastObserved, lastBroadCasted, err
 }
 
+// OnObservedTxIn records an outbound-memo inbound in the signer cache
+// so future outbounds with the same memo are deduplicated. No-op for
+// inbounds whose memo doesn't parse or doesn't carry an outbound txid.
 func (c *Client) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 	memo, err := thormemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
@@ -249,7 +299,7 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 		return
 	}
 
-	chain := c.config.ChainID
+	chain := c.GetChain()
 
 	cacheHash := txIn.CacheHash(chain, memo.GetTxID().String())
 	cacheVault := txIn.CacheVault(chain)

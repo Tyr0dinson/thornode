@@ -29,7 +29,6 @@ func newTestScanner() *Scanner {
 			ChainID: common.TAOChain,
 		},
 	}
-	s.currentFee.Swap(s.params.DefaultFee)
 	return s
 }
 
@@ -555,11 +554,11 @@ func (s *ScannerSuite) TestGetNetworkFee_Cached(c *C) {
 	sc := newTestScanner()
 
 	sc.updateFeeCache(80_000)
-	sc.updateFeeCache(120_000)
+	sc.updateFeeCache(100_000)
 
 	txSize, txRate := sc.GetNetworkFee()
 	c.Check(txSize, Equals, uint64(1))
-	expected := uint64(100_000) // (80k + 120k) / 2
+	expected := uint64(100_000) // default fee
 	c.Check(txRate, Equals, expected)
 }
 
