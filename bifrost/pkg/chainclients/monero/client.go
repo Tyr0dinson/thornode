@@ -3013,30 +3013,17 @@ func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
 
 	trackedOutboundChange := len(tx.XmrKeyImages) > 0
 	if len(tx.TxKeys) > 0 {
-		amountAtomic, err := xmrThorchainAmountToAtomic(tx.Tx.Coins.GetCoin(common.XMRAsset).Amount)
-		if err != nil {
-			return fmt.Errorf("fail to convert xmr outbound amount to atomic: %w", err)
-		}
-		var feeAtomic uint64
-		gasCoin := tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
-		if !gasCoin.IsEmpty() {
-			feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
-			if err != nil {
-				return fmt.Errorf("fail to convert xmr outbound fee to atomic: %w", err)
-			}
-		}
-
-		validateResp, err := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
-			VaultPubKey: tx.ObservedPubKey.String(),
-			TxHash:      tx.Tx.ID.String(),
-			TxKeys:      append([]string(nil), tx.TxKeys...),
-			FromAddress: tx.Tx.FromAddress.String(),
-			ToAddress:   tx.Tx.ToAddress.String(),
-			Amount:      amountAtomic,
-			Fee:         feeAtomic,
-			Memo:        tx.Tx.Memo,
-			Reconcile:   true,
-		})
+		validateResp, err := c.validateXMRTrackedOutboundChange(
+			tx.ObservedPubKey,
+			tx.Tx.ID.String(),
+			tx.TxKeys,
+			tx.Tx.FromAddress.String(),
+			tx.Tx.ToAddress.String(),
+			tx.Tx.Coins,
+			tx.Tx.Gas,
+			tx.Tx.Memo,
+			true,
+		)
 		if err != nil {
 			return fmt.Errorf("fail to validate xmr outbound via sidecar: %w", err)
 		}
@@ -3049,6 +3036,44 @@ func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
 			Msg("skipping xmr tx-key outbound audit; validating finalized key-images only")
 	}
 	return c.validateObservedTxKeyImages(tx, false, trackedOutboundChange)
+}
+
+func (c *Client) validateXMRTrackedOutboundChange(
+	vaultPubKey common.PubKey,
+	txHash string,
+	txKeys []string,
+	fromAddress string,
+	toAddress string,
+	coins common.Coins,
+	gas common.Gas,
+	memo string,
+	reconcile bool,
+) (xmrFrostValidateOutboundResponse, error) {
+	amountAtomic, err := xmrThorchainAmountToAtomic(coins.GetCoin(common.XMRAsset).Amount)
+	if err != nil {
+		return xmrFrostValidateOutboundResponse{}, fmt.Errorf("fail to convert xmr outbound amount to atomic: %w", err)
+	}
+
+	var feeAtomic uint64
+	gasCoin := gas.ToCoins().GetCoin(common.XMRAsset)
+	if !gasCoin.IsEmpty() {
+		feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
+		if err != nil {
+			return xmrFrostValidateOutboundResponse{}, fmt.Errorf("fail to convert xmr outbound fee to atomic: %w", err)
+		}
+	}
+
+	return c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
+		VaultPubKey: vaultPubKey.String(),
+		TxHash:      txHash,
+		TxKeys:      append([]string(nil), txKeys...),
+		FromAddress: fromAddress,
+		ToAddress:   toAddress,
+		Amount:      amountAtomic,
+		Fee:         feeAtomic,
+		Memo:        memo,
+		Reconcile:   reconcile,
+	})
 }
 
 func (c *Client) ExportFrostKeyshare(groupKey common.PubKey) ([]byte, error) {
@@ -3102,6 +3127,25 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return item, true, nil
 	}
 
+	trackedOutboundChange := len(item.XmrKeyImages) > 0
+	if isOutboundFromVault && len(item.TxKeys) > 0 {
+		validateResp, validateErr := c.validateXMRTrackedOutboundChange(
+			item.ObservedVaultPubKey,
+			item.Tx,
+			item.TxKeys,
+			item.Sender,
+			item.To,
+			item.Coins,
+			item.Gas,
+			item.Memo,
+			true,
+		)
+		if validateErr != nil {
+			return nil, false, fmt.Errorf("fail to validate xmr outbound via sidecar: %w", validateErr)
+		}
+		trackedOutboundChange = trackedOutboundChange || validateResp.Tracked
+	}
+
 	ceremonyCtx, err := c.resolveXMRKeyImageCeremonyContext(item.ObservedVaultPubKey)
 	if err != nil {
 		return nil, false, fmt.Errorf("fail to resolve XMR vault signing members: %w", err)
@@ -3151,6 +3195,14 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	}
 	if len(outputs) == 0 {
 		if isOutboundFromVault {
+			if trackedOutboundChange {
+				c.logger.Info().
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+					Str("memo", item.Memo).
+					Msg("finalized XMR outbound expects tracked vault-owned change outputs locally; retrying key-image preparation later")
+				return nil, false, nil
+			}
 			c.logger.Info().
 				Str("tx_hash", normalizeTxID(item.Tx)).
 				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
