@@ -173,6 +173,10 @@ async fn main() -> anyhow::Result<()> {
             post(api::routes::validate_outbound),
         )
         .route(
+            "/v1/monero/outbounds/rehydrate",
+            post(api::routes::rehydrate_observed_outbound),
+        )
+        .route(
             "/v1/monero/outbounds/prune",
             post(api::routes::prune_outbounds),
         )

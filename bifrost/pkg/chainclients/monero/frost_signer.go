@@ -28,33 +28,34 @@ type FrostSigner struct {
 
 	daemonEndpoint string
 
-	dkgRound1Path        string
-	dkgRound2Path        string
-	dkgRound3Path        string
-	dkgFinalizePath      string
-	signPreparePath      string
-	signPartialPath      string
-	signCombinePath      string
-	keyImagePreparePath  string
-	keyImagePartialPath  string
-	keyImageCombinePath  string
-	keyImageValidatePath string
-	validatePath         string
-	vaultStatePath       string
-	outgoingStatePath    string
-	outgoingPrunePath    string
-	clearSessionsPath    string
-	broadcastPath        string
-	balancePath          string
-	transfersPath        string
-	scannerSyncPath      string
-	addressesPath        string
-	outputsPath          string
-	registerPath         string
-	feeRatePath          string
-	chainHeightPath      string
-	chainBlockPath       string
-	chainTxPath          string
+	dkgRound1Path         string
+	dkgRound2Path         string
+	dkgRound3Path         string
+	dkgFinalizePath       string
+	signPreparePath       string
+	signPartialPath       string
+	signCombinePath       string
+	keyImagePreparePath   string
+	keyImagePartialPath   string
+	keyImageCombinePath   string
+	keyImageValidatePath  string
+	validatePath          string
+	outgoingRehydratePath string
+	vaultStatePath        string
+	outgoingStatePath     string
+	outgoingPrunePath     string
+	clearSessionsPath     string
+	broadcastPath         string
+	balancePath           string
+	transfersPath         string
+	scannerSyncPath       string
+	addressesPath         string
+	outputsPath           string
+	registerPath          string
+	feeRatePath           string
+	chainHeightPath       string
+	chainBlockPath        string
+	chainTxPath           string
 
 	client       *http.Client
 	daemonClient *http.Client
@@ -371,6 +372,23 @@ type xmrFrostValidateOutboundResponse struct {
 	NotFound int  `json:"not_found"`
 }
 
+type xmrFrostRehydrateObservedOutboundRequest struct {
+	VaultPubKey         string   `json:"vault_pub_key"`
+	TxHash              string   `json:"tx_hash"`
+	TxKeys              []string `json:"tx_keys,omitempty"`
+	RegisteredInventory bool     `json:"registered_inventory,omitempty"`
+	FromAddress         string   `json:"from_address,omitempty"`
+	ToAddress           string   `json:"to_address"`
+	Amount              uint64   `json:"amount"`
+	Fee                 uint64   `json:"fee,omitempty"`
+	Memo                string   `json:"memo,omitempty"`
+	ObservedHeight      uint64   `json:"observed_height"`
+}
+
+type xmrFrostRehydrateObservedOutboundResponse struct {
+	Rehydrated bool `json:"rehydrated"`
+}
+
 type xmrFrostPruneOutgoingTransfersRequest struct {
 	VaultPubKey       string   `json:"vault_pub_key"`
 	TxHashes          []string `json:"tx_hashes"`
@@ -556,33 +574,34 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 		endpoint:       endpoint,
 		daemonEndpoint: daemonEndpoint,
 
-		dkgRound1Path:        "/v1/monero/dkg/round1",
-		dkgRound2Path:        "/v1/monero/dkg/round2",
-		dkgRound3Path:        "/v1/monero/dkg/round3",
-		dkgFinalizePath:      "/v1/monero/dkg/finalize",
-		signPreparePath:      "/v1/monero/sign/prepare",
-		signPartialPath:      "/v1/monero/sign/partial",
-		signCombinePath:      "/v1/monero/sign/combine",
-		keyImagePreparePath:  "/v1/monero/key-image/prepare",
-		keyImagePartialPath:  "/v1/monero/key-image/partial",
-		keyImageCombinePath:  "/v1/monero/key-image/combine",
-		keyImageValidatePath: "/v1/monero/key-image/validate",
-		validatePath:         "/v1/monero/outbounds/validate",
-		vaultStatePath:       "/v1/monero/vaults",
-		outgoingStatePath:    "/v1/monero/outbounds",
-		outgoingPrunePath:    "/v1/monero/outbounds/prune",
-		clearSessionsPath:    "/v1/monero/sessions/clear",
-		broadcastPath:        "/v1/monero/broadcast",
-		balancePath:          "/v1/monero/balance",
-		transfersPath:        "/v1/monero/transfers",
-		scannerSyncPath:      "/v1/monero/scanner/sync",
-		addressesPath:        "/v1/monero/addresses",
-		outputsPath:          "/v1/monero/outputs",
-		registerPath:         "/v1/monero/vaults/register",
-		feeRatePath:          "/v1/monero/fee-rate",
-		chainHeightPath:      "/v1/monero/chain/height",
-		chainBlockPath:       "/v1/monero/chain/block",
-		chainTxPath:          "/v1/monero/chain/tx",
+		dkgRound1Path:         "/v1/monero/dkg/round1",
+		dkgRound2Path:         "/v1/monero/dkg/round2",
+		dkgRound3Path:         "/v1/monero/dkg/round3",
+		dkgFinalizePath:       "/v1/monero/dkg/finalize",
+		signPreparePath:       "/v1/monero/sign/prepare",
+		signPartialPath:       "/v1/monero/sign/partial",
+		signCombinePath:       "/v1/monero/sign/combine",
+		keyImagePreparePath:   "/v1/monero/key-image/prepare",
+		keyImagePartialPath:   "/v1/monero/key-image/partial",
+		keyImageCombinePath:   "/v1/monero/key-image/combine",
+		keyImageValidatePath:  "/v1/monero/key-image/validate",
+		validatePath:          "/v1/monero/outbounds/validate",
+		outgoingRehydratePath: "/v1/monero/outbounds/rehydrate",
+		vaultStatePath:        "/v1/monero/vaults",
+		outgoingStatePath:     "/v1/monero/outbounds",
+		outgoingPrunePath:     "/v1/monero/outbounds/prune",
+		clearSessionsPath:     "/v1/monero/sessions/clear",
+		broadcastPath:         "/v1/monero/broadcast",
+		balancePath:           "/v1/monero/balance",
+		transfersPath:         "/v1/monero/transfers",
+		scannerSyncPath:       "/v1/monero/scanner/sync",
+		addressesPath:         "/v1/monero/addresses",
+		outputsPath:           "/v1/monero/outputs",
+		registerPath:          "/v1/monero/vaults/register",
+		feeRatePath:           "/v1/monero/fee-rate",
+		chainHeightPath:       "/v1/monero/chain/height",
+		chainBlockPath:        "/v1/monero/chain/block",
+		chainTxPath:           "/v1/monero/chain/tx",
 
 		client:       &http.Client{Timeout: timeout},
 		daemonClient: &http.Client{Timeout: timeout},
@@ -1039,6 +1058,14 @@ func (s *FrostSigner) ValidateOutbound(req xmrFrostValidateOutboundRequest) (xmr
 	var out xmrFrostValidateOutboundResponse
 	if err := s.call(http.MethodPost, s.validatePath, req, &out); err != nil {
 		return xmrFrostValidateOutboundResponse{}, fmt.Errorf("fail to call frost validate-outbound endpoint: %w", err)
+	}
+	return out, nil
+}
+
+func (s *FrostSigner) RehydrateObservedOutbound(req xmrFrostRehydrateObservedOutboundRequest) (xmrFrostRehydrateObservedOutboundResponse, error) {
+	var out xmrFrostRehydrateObservedOutboundResponse
+	if err := s.call(http.MethodPost, s.outgoingRehydratePath, req, &out); err != nil {
+		return xmrFrostRehydrateObservedOutboundResponse{}, fmt.Errorf("fail to call frost rehydrate-outbound endpoint: %w", err)
 	}
 	return out, nil
 }

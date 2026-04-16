@@ -1055,6 +1055,23 @@ impl Store {
         Ok(())
     }
 
+    pub fn reset_outgoing_transfer_reported(
+        &self,
+        vault_pub_key: &str,
+        tx_hash: &str,
+    ) -> Result<()> {
+        let tree = self.db.open_tree("outgoing_transfers")?;
+        let key = format!("{}:{}", vault_pub_key, tx_hash);
+        let Some(raw) = tree.get(key.as_bytes())? else {
+            return Ok(());
+        };
+        let mut record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
+        record.reported_effective_height = None;
+        tree.insert(key.as_bytes(), serde_json::to_vec(&record)?)?;
+        tree.flush()?;
+        Ok(())
+    }
+
     // ---- Output reservation lifecycle ----
 
     pub fn reserve_outputs(

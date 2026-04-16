@@ -753,6 +753,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	backlogHeadTxHash := normalizeTxID(backlogOutputs[0].TxHash)
 	txOutputs := filterVaultOutputsForTx(allOutputs, backlogHeadTxHash)
 	pendingOutputs := xmrOutputsMissingKeyImages(txOutputs)
+	finaliseHeight := int64(backlogOutputs[0].Height)
 	if len(txOutputs) == 0 || len(pendingOutputs) == 0 {
 		return
 	}
@@ -780,10 +781,10 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 			Str("tx_hash", backlogHeadTxHash).
 			Int("proof_count", len(cachedProofs)).
 			Msg("xmr key-image backlog: reapplied cached proof set locally")
+		c.ensureHistoricalXMROutboundReplayRecord(vault, backlogHeadTxHash, uint64(finaliseHeight))
 		return
 	}
 
-	finaliseHeight := int64(backlogOutputs[0].Height)
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
@@ -829,6 +830,79 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		Str("tx_hash", backlogHeadTxHash).
 		Int("proof_count", len(proofs)).
 		Msg("xmr key-image backlog: cached locally generated proof set")
+	c.ensureHistoricalXMROutboundReplayRecord(vault, backlogHeadTxHash, uint64(finaliseHeight))
+}
+
+func xmrVaultTxKeysForHash(vault ttypes.Vault, txHash string) []string {
+	normalizedHash := normalizeTxID(txHash)
+	if normalizedHash == "" {
+		return nil
+	}
+	for _, ref := range vault.TxKeysXmr {
+		if ref == nil || !strings.EqualFold(strings.TrimSpace(ref.TxHash), normalizedHash) {
+			continue
+		}
+		return normalizeTxKeyValues(ref.TxKeys)
+	}
+	return nil
+}
+
+func (c *Client) ensureHistoricalXMROutboundReplayRecord(vault ttypes.Vault, txHash string, observedHeight uint64) {
+	if c == nil || c.frostSigner == nil || c.thorchainBridge == nil {
+		return
+	}
+
+	vaultPubKey := keyImageCatchupVaultPubKey(vault)
+	normalizedHash := normalizeTxID(txHash)
+	if vaultPubKey.IsEmpty() || normalizedHash == "" {
+		return
+	}
+
+	meta, err := c.getTxKeyCatchupOutboundMeta(vaultPubKey, normalizedHash)
+	if err != nil {
+		c.logger.Debug().
+			Err(err).
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", normalizedHash).
+			Msg("xmr key-image backlog: no historical outbound metadata available for replay record")
+		return
+	}
+
+	txKeys := xmrVaultTxKeysForHash(vault, normalizedHash)
+	rehydrateHeight := observedHeight
+	if meta.ObservedHeight > 0 {
+		rehydrateHeight = uint64(meta.ObservedHeight)
+	}
+	if rehydrateHeight == 0 {
+		return
+	}
+
+	_, err = c.frostSigner.RehydrateObservedOutbound(xmrFrostRehydrateObservedOutboundRequest{
+		VaultPubKey:         vaultPubKey.String(),
+		TxHash:              normalizedHash,
+		TxKeys:              txKeys,
+		RegisteredInventory: len(txKeys) > 0,
+		FromAddress:         meta.FromAddress,
+		ToAddress:           meta.ToAddress,
+		Amount:              meta.Amount,
+		Fee:                 meta.Fee,
+		Memo:                meta.Memo,
+		ObservedHeight:      rehydrateHeight,
+	})
+	if err != nil {
+		c.logger.Info().
+			Err(err).
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", normalizedHash).
+			Msg("xmr key-image backlog: failed to rehydrate historical outbound replay record")
+		return
+	}
+
+	c.logger.Info().
+		Str("vault", vaultPubKey.String()).
+		Str("tx_hash", normalizedHash).
+		Int("tx_key_count", len(txKeys)).
+		Msg("xmr key-image backlog: rehydrated historical outbound replay record")
 }
 
 func (c *Client) catchupTxKeys() {

@@ -327,6 +327,28 @@ pub struct ValidateOutboundResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RehydrateObservedOutboundRequest {
+    pub vault_pub_key: String,
+    pub tx_hash: String,
+    #[serde(default)]
+    pub tx_keys: Vec<String>,
+    #[serde(default)]
+    pub registered_inventory: bool,
+    pub from_address: Option<String>,
+    pub to_address: String,
+    pub amount: u64,
+    #[serde(default)]
+    pub fee: u64,
+    pub memo: Option<String>,
+    pub observed_height: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RehydrateObservedOutboundResponse {
+    pub rehydrated: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PruneOutgoingTransfersRequest {
     pub vault_pub_key: String,
     #[serde(default)]
