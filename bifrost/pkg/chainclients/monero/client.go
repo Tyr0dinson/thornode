@@ -573,6 +573,7 @@ func (c *Client) syncXMRState() error {
 	}
 
 	c.catchupKeyImagesForVaults(vaults)
+	c.driveLocalKeyImageBacklogForVaults(vaults)
 	c.catchupTxKeysForVaults(vaults)
 	return nil
 }
@@ -635,6 +636,141 @@ func (c *Client) catchupKeyImagesForVaults(vaults ttypes.Vaults) {
 			Int("total", len(refs)).
 			Msg("xmr key-image catchup: applied key-images from thorchain")
 	}
+}
+
+func (c *Client) driveLocalKeyImageBacklogForVaults(vaults ttypes.Vaults) {
+	if c.frostSigner == nil || c.tssServer == nil || c.thorchainBridge == nil {
+		return
+	}
+
+	version, err := c.thorchainBridge.GetThorchainVersion()
+	if err != nil {
+		c.logger.Debug().Err(err).Msg("xmr key-image backlog: failed to resolve thornode version")
+		return
+	}
+
+	for _, vault := range vaults {
+		c.driveLocalKeyImageBacklogForVault(vault, version.String())
+	}
+}
+
+func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version string) {
+	vaultPubKey := keyImageCatchupVaultPubKey(vault)
+	if vaultPubKey.IsEmpty() {
+		return
+	}
+
+	ceremonyCtx, err := c.resolveXMRKeyImageCeremonyContext(vaultPubKey)
+	if err != nil {
+		c.logger.Debug().
+			Err(err).
+			Str("vault", vaultPubKey.String()).
+			Msg("xmr key-image backlog: failed to resolve ceremony context")
+		return
+	}
+
+	if !c.localNodeIsVaultSigner(ceremonyCtx.members) {
+		return
+	}
+
+	if readiness, ok := c.tssServer.(xmrKeyImagePeerReadiness); ok {
+		missingPeers, readinessErr := readiness.MissingPeerAddresses(ceremonyCtx.members)
+		if readinessErr != nil {
+			c.logger.Debug().
+				Err(readinessErr).
+				Str("vault", ceremonyCtx.vaultPubKey.String()).
+				Msg("xmr key-image backlog: failed to inspect signer peer readiness")
+			return
+		}
+		if len(missingPeers) > 0 {
+			c.logger.Info().
+				Str("vault", ceremonyCtx.vaultPubKey.String()).
+				Strs("missing_signer_pub_keys", missingPeers).
+				Msg("xmr key-image backlog: waiting for signer peer discovery")
+			return
+		}
+	}
+
+	allOutputs, err := c.frostSigner.GetAllOutputs(ceremonyCtx.vaultPubKey.String())
+	if err != nil {
+		c.logger.Debug().
+			Err(err).
+			Str("vault", ceremonyCtx.vaultPubKey.String()).
+			Msg("xmr key-image backlog: failed to query tracked outputs")
+		return
+	}
+
+	backlogOutputs := xmrOutputsMissingKeyImages(allOutputs)
+	if len(backlogOutputs) == 0 {
+		return
+	}
+
+	backlogHeadTxHash := normalizeTxID(backlogOutputs[0].TxHash)
+	txOutputs := filterVaultOutputsForTx(allOutputs, backlogHeadTxHash)
+	pendingOutputs := xmrOutputsMissingKeyImages(txOutputs)
+	if len(txOutputs) == 0 || len(pendingOutputs) == 0 {
+		return
+	}
+	if len(pendingOutputs) != len(txOutputs) {
+		c.logger.Info().
+			Str("vault", ceremonyCtx.vaultPubKey.String()).
+			Str("tx_hash", backlogHeadTxHash).
+			Int("tracked_output_count", len(txOutputs)).
+			Int("missing_key_image_output_count", len(pendingOutputs)).
+			Msg("xmr key-image backlog: waiting for coherent local proof state")
+		return
+	}
+
+	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
+		return
+	}
+
+	finaliseHeight := int64(backlogOutputs[0].Height)
+	c.logger.Info().
+		Str("vault", ceremonyCtx.vaultPubKey.String()).
+		Str("tx_hash", backlogHeadTxHash).
+		Int("pending_key_image_output_count", len(pendingOutputs)).
+		Int64("requested_finalise_height", finaliseHeight).
+		Msg("driving local xmr key-image backlog head")
+
+	proofs, err := c.generateObservedTxKeyImages(
+		ceremonyCtx.vaultPubKey,
+		backlogHeadTxHash,
+		pendingOutputs,
+		ceremonyCtx.members,
+		finaliseHeight,
+		version,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, errXMRKeyImageNotActiveSigner):
+			c.logger.Info().
+				Err(err).
+				Str("vault", ceremonyCtx.vaultPubKey.String()).
+				Str("tx_hash", backlogHeadTxHash).
+				Msg("xmr key-image backlog: waiting for active signer subset")
+		case isTransientXMRKeyImageCeremonyError(err):
+			c.logger.Info().
+				Err(err).
+				Str("vault", ceremonyCtx.vaultPubKey.String()).
+				Str("tx_hash", backlogHeadTxHash).
+				Msg("xmr key-image backlog: transient ceremony failure; will retry")
+		default:
+			c.logger.Warn().
+				Err(err).
+				Str("vault", ceremonyCtx.vaultPubKey.String()).
+				Str("tx_hash", backlogHeadTxHash).
+				Msg("xmr key-image backlog: failed to generate local proof set")
+		}
+		return
+	}
+
+	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs, proofs)
+	c.logger.Info().
+		Str("vault", ceremonyCtx.vaultPubKey.String()).
+		Str("tx_hash", backlogHeadTxHash).
+		Int("proof_count", len(proofs)).
+		Msg("xmr key-image backlog: cached locally generated proof set")
 }
 
 func (c *Client) catchupTxKeys() {
@@ -3028,6 +3164,15 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("finalized XMR inbound has no tracked outputs locally yet; retrying key-image preparation later")
 		return nil, false, nil
 	}
+	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs); ok && len(cachedProofs) == len(outputs) {
+		item.XmrKeyImages = cachedProofs
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Int("proof_count", len(cachedProofs)).
+			Msg("reusing cached XMR key-images for finalized observation")
+		return item, true, nil
+	}
 	if len(pendingOutputs) == 0 {
 		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
@@ -3054,16 +3199,6 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Int("pending_key_image_tx_count", xmrPendingKeyImageTxCount(backlogOutputs)).
 			Msg("waiting for earlier XMR key-image backlog item before finalized observation")
 		return nil, false, nil
-	}
-
-	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), pendingOutputs); ok {
-		item.XmrKeyImages = cachedProofs
-		c.logger.Info().
-			Str("tx_hash", normalizeTxID(item.Tx)).
-			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
-			Int("proof_count", len(cachedProofs)).
-			Msg("reusing cached XMR key-images for finalized observation")
-		return item, true, nil
 	}
 
 	version, err := c.thorchainBridge.GetThorchainVersion()
