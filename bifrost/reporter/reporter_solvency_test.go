@@ -829,6 +829,56 @@ func (s *SolvencySuite) TestCollectReportsAllSolventWhenScannerDown(c *C) {
 	c.Assert(reported[otherSolventVault.PubKey.String()], Equals, true)
 }
 
+// TestCollectAllSolventUsesChainVaultCount verifies unrelated Asgard vaults do
+// not prevent a chain reporter from emitting the auto-unhalt all-solvent report.
+func (s *SolvencySuite) TestCollectAllSolventUsesChainVaultCount(c *C) {
+	secpPubKey := ctypes.GetRandomPubKey()
+	eddsaPubKey := ctypes.GetRandomEd25519PubKey()
+	solVault := ctypes.Vault{
+		PubKey:      secpPubKey,
+		PubKeyEddsa: eddsaPubKey,
+		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	btcVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(2_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{solVault, btcVault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.SOLChain,
+		blockScannerIsHealthy: false,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 1,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 40,
+			},
+		},
+		accounts: map[string]common.Account{
+			eddsaPubKey.String(): {Coins: solVault.Coins},
+		},
+		chainHeight: 200,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	reporter.setLastSolvencyCheckHeight(0)
+
+	batch, err := reporter.Collect(fromRunner, client.chainHeight)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 1)
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, client.chainHeight)
+
+	msg, ok := batch[0].(*ctypes.MsgSolvency)
+	c.Assert(ok, Equals, true)
+	c.Assert(msg.PubKey.Equals(solVault.PubKey), Equals, true)
+	c.Assert(msg.Chain.Equals(common.SOLChain), Equals, true)
+}
+
 // TestCollectAllSolventPathRequiresRunner verifies the auto-unhalt "all solvent"
 // branch cannot be reached by block-scanner-triggered collects.
 func (s *SolvencySuite) TestCollectAllSolventPathRequiresRunner(c *C) {

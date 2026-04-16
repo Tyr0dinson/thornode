@@ -2252,6 +2252,9 @@ func (o *Observer) waitForReporterShutdown() bool {
 
 	done := make(chan struct{})
 	go func() {
+		// If shutdown times out, this goroutine can remain blocked on Wait.
+		// Observer shutdown is terminal, so prefer bounded Stop latency over
+		// waiting indefinitely for stuck reporter work.
 		o.wg.Wait()
 		close(done)
 	}()

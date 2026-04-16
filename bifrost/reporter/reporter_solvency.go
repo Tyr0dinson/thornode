@@ -56,13 +56,23 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 		return nil, fmt.Errorf("invalid report height: %d", height)
 	}
 
-	msgs := make(ReportBatch, 0, len(asgardVaults))
-	solventMsgs := make(ReportBatch, 0, len(asgardVaults))
-	processedVaults := 0
-	msgHeight := solvencyMsgHeight(r.client.GetChain(), height)
-	queryHeight := big.NewInt(height)
+	// Build a chain-specific Asgard vault list before calling AlgoPubKey or GetAccount, 
+	// so unrelated vaults are skipped early
+	chain := r.client.GetChain()
+	chainVaults := make(types.Vaults, 0, len(asgardVaults))
 	for _, asgard := range asgardVaults {
-		accountPubKey, err := asgard.AlgoPubKey(r.client.GetChain())
+		if asgard.HasFundsForChain(chain) {
+			chainVaults = append(chainVaults, asgard)
+		}
+	}
+
+	msgs := make(ReportBatch, 0, len(chainVaults))
+	solventMsgs := make(ReportBatch, 0, len(chainVaults))
+	processedVaults := 0
+	msgHeight := solvencyMsgHeight(chain, height)
+	queryHeight := big.NewInt(height)
+	for _, asgard := range chainVaults {
+		accountPubKey, err := asgard.AlgoPubKey(chain)
 		if err != nil {
 			r.logger.Err(err).Stringer("vault", asgard.PubKey).Msg("fail to get chain-specific vault pubkey for account lookup")
 			continue
@@ -100,17 +110,18 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	//
-	// Note: only report "all solvent" when every vault was successfully checked,
-	// to avoid clearing a solvency halt on partial data. This matches the legacy
-	// behavior where only the auto-unhalt runner could reach this path.
+	// Note: only report "all solvent" when every chain-specific vault was
+	// successfully checked, to avoid clearing a solvency halt on partial data.
+	// This matches the legacy behavior where only the auto-unhalt runner could
+	// reach this path.
 	solvent := false
-	// Treat an empty Asgard set as an incomplete check so transient bridge/RPC
-	// glitches do not consume the next cadence window.
-	allVaultsProcessed := len(asgardVaults) > 0 && processedVaults == len(asgardVaults)
+	// Treat an empty chain-specific Asgard set as an incomplete check so transient
+	// bridge/RPC glitches do not consume the next cadence window.
+	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
 	if from == fromRunner &&
 		!r.client.IsBlockScannerHealthy() &&
 		allVaultsProcessed &&
-		len(solventMsgs) == len(asgardVaults) {
+		len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}
