@@ -191,7 +191,6 @@ func Init() {
 	assert(viper.BindEnv(
 		"bifrost.chains.XMR.rpc_host",
 		"XMR_DAEMON_URL",
-		"XMR_HOST",
 	))
 	assert(viper.BindEnv(
 		"bifrost.chains.XMR.chain_host",

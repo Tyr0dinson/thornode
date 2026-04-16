@@ -61,24 +61,17 @@ func (Test) TestXMRSignerEndpointDefault(c *C) {
 
 func (Test) TestXMRDaemonURLOverridesBifrostRPCHost(c *C) {
 	prevXMRDaemonURL, hadXMRDaemonURL := os.LookupEnv("XMR_DAEMON_URL")
-	prevXMRHost, hadXMRHost := os.LookupEnv("XMR_HOST")
 	defer func() {
 		if hadXMRDaemonURL {
 			c.Assert(os.Setenv("XMR_DAEMON_URL", prevXMRDaemonURL), IsNil)
 		} else {
 			c.Assert(os.Unsetenv("XMR_DAEMON_URL"), IsNil)
 		}
-		if hadXMRHost {
-			c.Assert(os.Setenv("XMR_HOST", prevXMRHost), IsNil)
-		} else {
-			c.Assert(os.Unsetenv("XMR_HOST"), IsNil)
-		}
 		viper.Reset()
 	}()
 
 	viper.Reset()
 	c.Assert(os.Setenv("XMR_DAEMON_URL", "http://daemon.example:18081"), IsNil)
-	c.Assert(os.Unsetenv("XMR_HOST"), IsNil)
 
 	Init()
 
