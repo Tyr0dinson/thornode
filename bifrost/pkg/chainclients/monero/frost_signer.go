@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,34 +28,33 @@ type FrostSigner struct {
 
 	daemonEndpoint string
 
-	dkgRound1Path         string
-	dkgRound2Path         string
-	dkgRound3Path         string
-	dkgFinalizePath       string
-	signPreparePath       string
-	signPartialPath       string
-	signCombinePath       string
-	keyImagePreparePath   string
-	keyImagePartialPath   string
-	keyImageCombinePath   string
-	keyImageValidatePath  string
-	validatePath          string
-	outgoingRehydratePath string
-	vaultStatePath        string
-	outgoingStatePath     string
-	outgoingPrunePath     string
-	clearSessionsPath     string
-	broadcastPath         string
-	balancePath           string
-	transfersPath         string
-	scannerSyncPath       string
-	addressesPath         string
-	outputsPath           string
-	registerPath          string
-	feeRatePath           string
-	chainHeightPath       string
-	chainBlockPath        string
-	chainTxPath           string
+	dkgRound1Path        string
+	dkgRound2Path        string
+	dkgRound3Path        string
+	dkgFinalizePath      string
+	signPreparePath      string
+	signPartialPath      string
+	signCombinePath      string
+	keyImagePreparePath  string
+	keyImagePartialPath  string
+	keyImageCombinePath  string
+	keyImageValidatePath string
+	validatePath         string
+	vaultStatePath       string
+	outgoingStatePath    string
+	outgoingPrunePath    string
+	clearSessionsPath    string
+	broadcastPath        string
+	balancePath          string
+	transfersPath        string
+	scannerSyncPath      string
+	addressesPath        string
+	outputsPath          string
+	registerPath         string
+	feeRatePath          string
+	chainHeightPath      string
+	chainBlockPath       string
+	chainTxPath          string
 
 	client       *http.Client
 	daemonClient *http.Client
@@ -87,31 +85,6 @@ type moneroDaemonJSONRPCResponse struct {
 type moneroDaemonRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-}
-
-type moneroDaemonGetTransactionsRequest struct {
-	TxHashes     []string `json:"txs_hashes"`
-	DecodeAsJSON bool     `json:"decode_as_json"`
-}
-
-type moneroDaemonGetTransactionsResponse struct {
-	Txs      []moneroDaemonTxEntry `json:"txs"`
-	MissedTx []string              `json:"missed_tx"`
-	Status   string                `json:"status"`
-}
-
-type moneroDaemonTxEntry struct {
-	TxHash      string  `json:"tx_hash"`
-	AsHex       string  `json:"as_hex"`
-	AsJSON      string  `json:"as_json"`
-	BlockHeight *uint64 `json:"block_height"`
-	InPool      *bool   `json:"in_pool"`
-}
-
-type moneroDaemonParsedTx struct {
-	RctSignatures struct {
-		TxnFee json.RawMessage `json:"txnFee"`
-	} `json:"rct_signatures"`
 }
 
 func (e *moneroDaemonRPCError) Error() string {
@@ -294,12 +267,6 @@ type xmrFrostBroadcastResponse struct {
 	TxHash string `json:"tx_hash"`
 }
 
-type xmrFrostChainTxInfo struct {
-	TxHash      string
-	BlockHeight *uint64
-	Fee         uint64
-}
-
 // Scanner/balance response types from the sidecar
 type xmrFrostBalanceResponse struct {
 	Balance          uint64  `json:"balance"`
@@ -402,23 +369,6 @@ type xmrFrostValidateOutboundResponse struct {
 	Tracked  bool `json:"tracked"`
 	Marked   int  `json:"marked"`
 	NotFound int  `json:"not_found"`
-}
-
-type xmrFrostRehydrateObservedOutboundRequest struct {
-	VaultPubKey         string   `json:"vault_pub_key"`
-	TxHash              string   `json:"tx_hash"`
-	TxKeys              []string `json:"tx_keys,omitempty"`
-	RegisteredInventory bool     `json:"registered_inventory,omitempty"`
-	FromAddress         string   `json:"from_address,omitempty"`
-	ToAddress           string   `json:"to_address"`
-	Amount              uint64   `json:"amount"`
-	Fee                 uint64   `json:"fee,omitempty"`
-	Memo                string   `json:"memo,omitempty"`
-	ObservedHeight      uint64   `json:"observed_height"`
-}
-
-type xmrFrostRehydrateObservedOutboundResponse struct {
-	Rehydrated bool `json:"rehydrated"`
 }
 
 type xmrFrostPruneOutgoingTransfersRequest struct {
@@ -606,34 +556,33 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 		endpoint:       endpoint,
 		daemonEndpoint: daemonEndpoint,
 
-		dkgRound1Path:         "/v1/monero/dkg/round1",
-		dkgRound2Path:         "/v1/monero/dkg/round2",
-		dkgRound3Path:         "/v1/monero/dkg/round3",
-		dkgFinalizePath:       "/v1/monero/dkg/finalize",
-		signPreparePath:       "/v1/monero/sign/prepare",
-		signPartialPath:       "/v1/monero/sign/partial",
-		signCombinePath:       "/v1/monero/sign/combine",
-		keyImagePreparePath:   "/v1/monero/key-image/prepare",
-		keyImagePartialPath:   "/v1/monero/key-image/partial",
-		keyImageCombinePath:   "/v1/monero/key-image/combine",
-		keyImageValidatePath:  "/v1/monero/key-image/validate",
-		validatePath:          "/v1/monero/outbounds/validate",
-		outgoingRehydratePath: "/v1/monero/outbounds/rehydrate",
-		vaultStatePath:        "/v1/monero/vaults",
-		outgoingStatePath:     "/v1/monero/outbounds",
-		outgoingPrunePath:     "/v1/monero/outbounds/prune",
-		clearSessionsPath:     "/v1/monero/sessions/clear",
-		broadcastPath:         "/v1/monero/broadcast",
-		balancePath:           "/v1/monero/balance",
-		transfersPath:         "/v1/monero/transfers",
-		scannerSyncPath:       "/v1/monero/scanner/sync",
-		addressesPath:         "/v1/monero/addresses",
-		outputsPath:           "/v1/monero/outputs",
-		registerPath:          "/v1/monero/vaults/register",
-		feeRatePath:           "/v1/monero/fee-rate",
-		chainHeightPath:       "/v1/monero/chain/height",
-		chainBlockPath:        "/v1/monero/chain/block",
-		chainTxPath:           "/v1/monero/chain/tx",
+		dkgRound1Path:        "/v1/monero/dkg/round1",
+		dkgRound2Path:        "/v1/monero/dkg/round2",
+		dkgRound3Path:        "/v1/monero/dkg/round3",
+		dkgFinalizePath:      "/v1/monero/dkg/finalize",
+		signPreparePath:      "/v1/monero/sign/prepare",
+		signPartialPath:      "/v1/monero/sign/partial",
+		signCombinePath:      "/v1/monero/sign/combine",
+		keyImagePreparePath:  "/v1/monero/key-image/prepare",
+		keyImagePartialPath:  "/v1/monero/key-image/partial",
+		keyImageCombinePath:  "/v1/monero/key-image/combine",
+		keyImageValidatePath: "/v1/monero/key-image/validate",
+		validatePath:         "/v1/monero/outbounds/validate",
+		vaultStatePath:       "/v1/monero/vaults",
+		outgoingStatePath:    "/v1/monero/outbounds",
+		outgoingPrunePath:    "/v1/monero/outbounds/prune",
+		clearSessionsPath:    "/v1/monero/sessions/clear",
+		broadcastPath:        "/v1/monero/broadcast",
+		balancePath:          "/v1/monero/balance",
+		transfersPath:        "/v1/monero/transfers",
+		scannerSyncPath:      "/v1/monero/scanner/sync",
+		addressesPath:        "/v1/monero/addresses",
+		outputsPath:          "/v1/monero/outputs",
+		registerPath:         "/v1/monero/vaults/register",
+		feeRatePath:          "/v1/monero/fee-rate",
+		chainHeightPath:      "/v1/monero/chain/height",
+		chainBlockPath:       "/v1/monero/chain/block",
+		chainTxPath:          "/v1/monero/chain/tx",
 
 		client:       &http.Client{Timeout: timeout},
 		daemonClient: &http.Client{Timeout: timeout},
@@ -1086,67 +1035,10 @@ func (s *FrostSigner) TxExists(txHash string) (bool, error) {
 	return out.Exists, nil
 }
 
-func (s *FrostSigner) GetChainTxInfo(txHash string) (xmrFrostChainTxInfo, error) {
-	normalized := strings.TrimSpace(txHash)
-	if normalized == "" {
-		return xmrFrostChainTxInfo{}, fmt.Errorf("tx hash is empty")
-	}
-	if !s.hasDaemonRPC() {
-		return xmrFrostChainTxInfo{}, fmt.Errorf("monero daemon rpc is not configured")
-	}
-
-	var out moneroDaemonGetTransactionsResponse
-	if err := s.callDaemonJSON("/get_transactions", moneroDaemonGetTransactionsRequest{
-		TxHashes:     []string{normalized},
-		DecodeAsJSON: true,
-	}, &out); err != nil {
-		return xmrFrostChainTxInfo{}, fmt.Errorf("fail to query monero daemon transaction %s: %w", normalized, err)
-	}
-
-	for _, missed := range out.MissedTx {
-		if strings.EqualFold(strings.TrimSpace(missed), normalized) {
-			return xmrFrostChainTxInfo{}, fmt.Errorf("transaction %s not found", normalized)
-		}
-	}
-
-	for _, entry := range out.Txs {
-		if !strings.EqualFold(strings.TrimSpace(entry.TxHash), normalized) {
-			continue
-		}
-		var parsed moneroDaemonParsedTx
-		if strings.TrimSpace(entry.AsJSON) == "" {
-			return xmrFrostChainTxInfo{}, fmt.Errorf("daemon transaction %s is missing json metadata", normalized)
-		}
-		if err := json.Unmarshal([]byte(entry.AsJSON), &parsed); err != nil {
-			return xmrFrostChainTxInfo{}, fmt.Errorf("fail to parse daemon transaction %s metadata: %w", normalized, err)
-		}
-		fee, err := parseMoneroDaemonUint(parsed.RctSignatures.TxnFee)
-		if err != nil {
-			return xmrFrostChainTxInfo{}, fmt.Errorf("fail to parse daemon transaction %s fee: %w", normalized, err)
-		}
-
-		return xmrFrostChainTxInfo{
-			TxHash:      strings.TrimSpace(entry.TxHash),
-			BlockHeight: entry.BlockHeight,
-			Fee:         fee,
-		}, nil
-	}
-
-	return xmrFrostChainTxInfo{}, fmt.Errorf("transaction %s not found", normalized)
-}
-
 func (s *FrostSigner) ValidateOutbound(req xmrFrostValidateOutboundRequest) (xmrFrostValidateOutboundResponse, error) {
 	var out xmrFrostValidateOutboundResponse
 	if err := s.call(http.MethodPost, s.validatePath, req, &out); err != nil {
 		return xmrFrostValidateOutboundResponse{}, fmt.Errorf("fail to call frost validate-outbound endpoint: %w", err)
-	}
-	return out, nil
-}
-
-func (s *FrostSigner) RehydrateObservedOutbound(req xmrFrostRehydrateObservedOutboundRequest) (xmrFrostRehydrateObservedOutboundResponse, error) {
-	var out xmrFrostRehydrateObservedOutboundResponse
-	if err := s.call(http.MethodPost, s.outgoingRehydratePath, req, &out); err != nil {
-		return xmrFrostRehydrateObservedOutboundResponse{}, fmt.Errorf("fail to call frost rehydrate-outbound endpoint: %w", err)
 	}
 	return out, nil
 }
@@ -1362,71 +1254,6 @@ func (s *FrostSigner) callDaemonJSONRPC(method string, params any, out any) erro
 		return fmt.Errorf("fail to unmarshal monero daemon rpc result: %w", err)
 	}
 	return nil
-}
-
-func (s *FrostSigner) callDaemonJSON(path string, payload any, out any) error {
-	if !s.hasDaemonRPC() {
-		return fmt.Errorf("monero daemon rpc is not configured")
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("fail to marshal monero daemon request payload: %w", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, s.daemonEndpoint+path, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("fail to create monero daemon request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if s.bearer != "" {
-		req.Header.Set("Authorization", s.bearer)
-	} else if s.username != "" {
-		req.SetBasicAuth(s.username, s.password)
-	}
-
-	resp, err := s.daemonClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("fail to call monero daemon endpoint %s: %w", path, err)
-	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
-
-	respBody, err := readBoundedResponseBody(resp.Body, maxFrostResponseBytes)
-	if err != nil {
-		return fmt.Errorf("fail to read monero daemon response: %w", err)
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("monero daemon endpoint %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-	if out == nil {
-		return nil
-	}
-	if len(respBody) == 0 {
-		return fmt.Errorf("monero daemon endpoint %s returned empty response body", path)
-	}
-	if err := json.Unmarshal(respBody, out); err != nil {
-		return fmt.Errorf("fail to unmarshal monero daemon response: %w", err)
-	}
-	return nil
-}
-
-func parseMoneroDaemonUint(raw json.RawMessage) (uint64, error) {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
-		return 0, fmt.Errorf("numeric field is empty")
-	}
-	if unquoted, err := strconv.Unquote(trimmed); err == nil {
-		trimmed = strings.TrimSpace(unquoted)
-	}
-	value, err := strconv.ParseUint(trimmed, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return value, nil
 }
 
 func (s *FrostSigner) callGet(path string, out any) error {
