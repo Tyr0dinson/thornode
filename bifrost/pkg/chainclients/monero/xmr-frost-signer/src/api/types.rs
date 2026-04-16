@@ -65,9 +65,9 @@ pub struct RegisterVaultRequest {
     #[serde(default)]
     pub birthday: Option<u64>,
     #[serde(default)]
-    pub key_images: Vec<KeyImageEntry>,
+    pub key_images: Option<Vec<KeyImageEntry>>,
     #[serde(default)]
-    pub tx_keys: Vec<RegisterTxKeyEntry>,
+    pub tx_keys: Option<Vec<RegisterTxKeyEntry>>,
 }
 
 #[derive(Debug, Serialize)]

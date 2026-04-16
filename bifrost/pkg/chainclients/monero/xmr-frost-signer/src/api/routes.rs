@@ -930,60 +930,67 @@ pub async fn register_vault(
         }
     };
 
-    let key_images: Vec<RegisteredKeyImageRef> = req
-        .key_images
-        .into_iter()
-        .filter_map(|entry| {
-            let tx_hash = normalize_tx_hash(&entry.tx_hash);
-            let key_image = entry.key_image.trim().to_ascii_lowercase();
-            if tx_hash.is_empty() || key_image.is_empty() {
-                return None;
-            }
-            Some(RegisteredKeyImageRef {
-                tx_hash,
-                output_index: entry.output_index,
-                key_image,
+    // Plain vault registration calls (balance/account/consolidation paths) do
+    // not carry inventory. Treat omitted inventory as "preserve existing"
+    // rather than "clear and reconcile", otherwise a generic re-registration
+    // can wipe previously synchronized key-images and tx-keys.
+    if let Some(key_images) = req.key_images {
+        let key_images: Vec<RegisteredKeyImageRef> = key_images
+            .into_iter()
+            .filter_map(|entry| {
+                let tx_hash = normalize_tx_hash(&entry.tx_hash);
+                let key_image = entry.key_image.trim().to_ascii_lowercase();
+                if tx_hash.is_empty() || key_image.is_empty() {
+                    return None;
+                }
+                Some(RegisteredKeyImageRef {
+                    tx_hash,
+                    output_index: entry.output_index,
+                    key_image,
+                })
             })
-        })
-        .collect();
-    if let Err(e) = state
-        .store
-        .save_registered_key_images(&vault_pub_key, &key_images)
-    {
-        error!(
-            error = %e,
-            vault = %vault_pub_key,
-            "failed to persist registered key image inventory"
-        );
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(format!(
-                "failed to persist registered key image inventory: {e}"
-            ))),
-        );
+            .collect();
+        if let Err(e) = state
+            .store
+            .save_registered_key_images(&vault_pub_key, &key_images)
+        {
+            error!(
+                error = %e,
+                vault = %vault_pub_key,
+                "failed to persist registered key image inventory"
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to persist registered key image inventory: {e}"
+                ))),
+            );
+        }
+        if let Err(e) = apply_registered_key_image_inventory(&state, &vault_pub_key, true) {
+            error!(
+                error = %e,
+                vault = %vault_pub_key,
+                "failed to reconcile registered key image inventory"
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to reconcile registered key image inventory: {e}"
+                ))),
+            );
+        }
     }
-    if let Err(e) = apply_registered_key_image_inventory(&state, &vault_pub_key, true) {
-        error!(
-            error = %e,
-            vault = %vault_pub_key,
-            "failed to reconcile registered key image inventory"
-        );
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(format!(
-                "failed to reconcile registered key image inventory: {e}"
-            ))),
-        );
-    }
-    if let Err((status, response)) =
-        reconcile_registered_tx_key_inventory(&state, &vault_pub_key, req.tx_keys).await
-    {
-        error!(
-            vault = %vault_pub_key,
-            status = %status,
-            "failed to reconcile registered tx-key inventory"
-        );
-        return (status, Json(response));
+    if let Some(tx_keys) = req.tx_keys {
+        if let Err((status, response)) =
+            reconcile_registered_tx_key_inventory(&state, &vault_pub_key, tx_keys).await
+        {
+            error!(
+                vault = %vault_pub_key,
+                status = %status,
+                "failed to reconcile registered tx-key inventory"
+            );
+            return (status, Json(response));
+        }
     }
 
     (
@@ -5576,8 +5583,8 @@ mod tests {
                 source: Some("test".to_string()),
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: None,
-                key_images: vec![],
-                tx_keys: vec![],
+                key_images: None,
+                tx_keys: None,
             }),
         )
         .await
@@ -5620,12 +5627,12 @@ mod tests {
                 source: Some("test".to_string()),
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: Some(100),
-                key_images: vec![KeyImageEntry {
+                key_images: Some(vec![KeyImageEntry {
                     tx_hash: tx_hash.to_string(),
                     output_index: 0,
                     key_image: key_image.clone(),
-                }],
-                tx_keys: vec![],
+                }]),
+                tx_keys: None,
             }),
         )
         .await
@@ -5712,8 +5719,8 @@ mod tests {
                 source: Some("test".to_string()),
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: Some(100),
-                key_images: vec![],
-                tx_keys: vec![RegisterTxKeyEntry {
+                key_images: None,
+                tx_keys: Some(vec![RegisterTxKeyEntry {
                     tx_hash: tx_hash.to_string(),
                     tx_keys: expected_tx_keys.clone(),
                     from_address: None,
@@ -5721,7 +5728,7 @@ mod tests {
                     amount: expected_amount,
                     fee: expected_fee,
                     memo: Some("OUT:parent".to_string()),
-                }],
+                }]),
             }),
         )
         .await
@@ -5742,6 +5749,92 @@ mod tests {
         assert_eq!(records[0].memo, "OUT:parent");
         assert_eq!(records[0].status, OUTGOING_STATUS_MINED);
         assert_eq!(records[0].observed_height, Some(111));
+    }
+
+    #[tokio::test]
+    async fn register_vault_without_inventory_preserves_existing_metadata() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let group_key = xmr::group_key_hex_from_spend_seed_hex(BOOTSTRAP_SPEND_KEY_HEX)
+            .expect("group key should derive");
+        let address = xmr::derive_vault_address(&group_key, state.chain_network)
+            .expect("address should derive");
+        let vault_pub_key = BOOTSTRAP_VAULT_PUB_KEY;
+        let tx_hash =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string();
+        let key_image = test_key_image_hex(23);
+        let tx_key = "11".repeat(32);
+
+        state
+            .store
+            .save_registered_key_images(
+                vault_pub_key,
+                &[RegisteredKeyImageRef {
+                    tx_hash: tx_hash.clone(),
+                    output_index: 0,
+                    key_image: key_image.clone(),
+                }],
+            )
+            .expect("registered key images should save");
+
+        let mut output = sample_output(&tx_hash, 0, OutputState::Unspent);
+        output.key_image = Some(key_image.clone());
+        state
+            .store
+            .save_outputs(vault_pub_key, std::slice::from_ref(&output))
+            .expect("outputs should save");
+
+        let mut outgoing = sample_outgoing(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            vault_pub_key,
+            "48from",
+            "48to",
+            111,
+        );
+        outgoing.tx_keys = vec![tx_key.clone()];
+        state
+            .store
+            .save_outgoing_transfer(&outgoing)
+            .expect("outgoing transfer should save");
+
+        let response = register_vault(
+            State(state.clone()),
+            Json(RegisterVaultRequest {
+                vault_pub_key: vault_pub_key.to_string(),
+                group_key,
+                address,
+                source: Some("test".to_string()),
+                spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
+                birthday: Some(100),
+                key_images: None,
+                tx_keys: None,
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+
+        let stored = state
+            .store
+            .load_registered_key_images(vault_pub_key)
+            .expect("registered key images should load");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].tx_hash, tx_hash);
+        assert_eq!(stored[0].key_image, key_image);
+
+        let outputs = state
+            .store
+            .load_outputs(vault_pub_key)
+            .expect("outputs should load");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].key_image.as_deref(), Some(key_image.as_str()));
+
+        let records = state
+            .store
+            .load_outgoing_transfers(vault_pub_key)
+            .expect("outgoing transfers should load");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tx_keys, vec![tx_key]);
     }
 
     #[test]
@@ -6833,8 +6926,8 @@ mod tests {
                 source: Some("test".to_string()),
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: Some(120),
-                key_images: vec![],
-                tx_keys: vec![],
+                key_images: None,
+                tx_keys: None,
             }),
         )
         .await
