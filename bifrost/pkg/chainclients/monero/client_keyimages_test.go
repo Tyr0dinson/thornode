@@ -1277,6 +1277,94 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *test
 	assert.True(t, applyReqs[0].Reconcile)
 }
 
+func TestPrepareObservedTxInItemRegeneratesProofsForFinalOutboundChangeWithExistingLocalKeyImages(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("d", 64)
+	destination := common.XMRSeededDummyAddress('8', []byte("external-destination-existing-key-image"))
+	expectedKeyImage := strings.ToLower(txHash) + "-ki-0"
+	var applyReqs []xmrFrostApplyKeyImagesRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/monero/outputs/apply-key-images":
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			applyReqs = append(applyReqs, req)
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		default:
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{{
+					TxHash:      txHash,
+					OutputIndex: 0,
+					Amount:      10,
+					Height:      100,
+					KeyImage:    expectedKeyImage,
+				}},
+			})
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination,
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "OUT:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Len(t, prepared.XmrKeyImages, 1)
+	assert.Equal(t, txHash, prepared.XmrKeyImages[0].TxHash)
+	assert.Equal(t, uint32(0), prepared.XmrKeyImages[0].OutputIndex)
+	assert.Equal(t, expectedKeyImage, prepared.XmrKeyImages[0].KeyImage)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	require.Len(t, tssServer.reqs, 1)
+	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
+	require.Len(t, applyReqs, 1)
+	require.Len(t, applyReqs[0].KeyImages, 1)
+	assert.Equal(t, txHash, applyReqs[0].KeyImages[0].TxHash)
+	assert.Equal(t, uint32(0), applyReqs[0].KeyImages[0].OutputIndex)
+	assert.Equal(t, expectedKeyImage, applyReqs[0].KeyImages[0].KeyImage)
+	assert.True(t, applyReqs[0].Reconcile)
+}
+
 func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testing.T) {
 	t.Parallel()
 

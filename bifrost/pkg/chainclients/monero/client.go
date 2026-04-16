@@ -3307,12 +3307,53 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return item, true, nil
 	}
 	if len(pendingOutputs) == 0 {
+		version, err := c.thorchainBridge.GetThorchainVersion()
+		if err != nil {
+			return nil, false, fmt.Errorf("fail to resolve thorchain version for existing XMR key-images: %w", err)
+		}
+
 		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
 			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
 			Int("tracked_output_count", len(outputs)).
-			Msg("tracked XMR outputs already have local key-images; waiting for finalized proof propagation")
-		return nil, false, nil
+			Int64("finalise_height", finaliseHeight).
+			Str("memo", item.Memo).
+			Msg("tracked XMR outputs already have local key-images; regenerating finalized proof set")
+		proofs, err := c.generateObservedTxKeyImages(
+			ceremonyCtx.vaultPubKey,
+			normalizeTxID(item.Tx),
+			outputs,
+			ceremonyCtx.members,
+			finaliseHeight,
+			version.String(),
+		)
+		if err != nil {
+			if errors.Is(err, errXMRKeyImageNotActiveSigner) {
+				c.logger.Info().
+					Err(err).
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+					Msg("waiting for finalized XMR key-image proofs from the active signer subset")
+				return nil, false, nil
+			}
+			if isTransientXMRKeyImageCeremonyError(err) {
+				c.logger.Info().
+					Err(err).
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+					Msg("transient XMR key-image proof regeneration failure; retrying finalized observation later")
+				return nil, false, nil
+			}
+			return nil, false, err
+		}
+		c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs, proofs)
+		item.XmrKeyImages = proofs
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Int("proof_count", len(proofs)).
+			Msg("regenerated XMR key-images for finalized observation from tracked outputs")
+		return item, true, nil
 	}
 	if len(pendingOutputs) != len(outputs) {
 		c.logger.Info().
