@@ -1180,7 +1180,8 @@ func (s *HandlerObservedTxInSuite) TestMemoUsageTracking(c *C) {
 
 	// Test duplicate tracking - same txID called again should not increase count
 	testTx3 := common.NewTx(txID1, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:12345")
-	fetchMemoFromReference(ctx, mgr, asset, testTx3, 18) // Call with same txID1 again
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx3, 18) // Call with same txID1 again
+	c.Check(memo, check.Equals, "test memo", check.Commentf("Duplicate fetches for the same tx should remain idempotent"))
 	updatedMemo, err = mgr.Keeper().GetReferenceMemo(ctx, asset, "12345")
 	c.Assert(err, check.IsNil)
 	c.Check(updatedMemo.GetUsageCount(), check.Equals, int64(2), check.Commentf("Duplicate tracking should not increase count"))
