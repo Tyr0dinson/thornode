@@ -33,6 +33,8 @@ $BINARY \
   --one \
   --validator \
   --force-authoring \
+  --state-pruning archive \
+  --blocks-pruning archive \
   --rpc-port 9944 \
   --rpc-cors=all \
   --unsafe-rpc-external
