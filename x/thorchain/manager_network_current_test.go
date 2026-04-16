@@ -3193,3 +3193,48 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewardsPOLReserveHighBPSClamping(
 	c.Check(polReserveDeduct.LT(naivePOLShare), Equals, true,
 		Commentf("polReserveDeduct %s should be less than naive %s", polReserveDeduct.String(), naivePOLShare.String()))
 }
+
+func (s *NetworkManagerTestSuite) TestTriggerKeygenSkipsMatchingInitVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// Create two active node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+
+	nas := NodeAccounts{na1, na2}
+
+	// First keygen should succeed (no existing init vault)
+	c.Assert(nmgr.TriggerKeygen(ctx, nas), IsNil)
+
+	// Verify keygen block was created with one keygen
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, 100)
+	c.Assert(err, IsNil)
+	c.Assert(len(keygenBlock.Keygens), Equals, 1)
+
+	// Simulate a successful keygen by creating an init vault with matching membership
+	members := make(common.PubKeys, len(nas))
+	for i, na := range nas {
+		members[i] = na.PubKeySet.Secp256k1
+	}
+	vault := NewVault(105, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = members.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Retry keygen at a new height - should skip because matching init vault exists
+	ctx = ctx.WithBlockHeight(200)
+	c.Assert(nmgr.TriggerKeygen(ctx, nas), IsNil)
+
+	// No keygen block should be created at height 200 (skipped)
+	keygenBlock2, err := mgr.Keeper().GetKeygenBlock(ctx, 200)
+	c.Assert(err, IsNil)
+	c.Assert(len(keygenBlock2.Keygens), Equals, 0)
+
+	// Init vault should still exist
+	initVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(initVaults), Equals, 1)
+}

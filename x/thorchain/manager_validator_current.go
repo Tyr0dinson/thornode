@@ -188,10 +188,55 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		return err
 	}
 	if ok {
-		for _, nodeAccSet := range vm.splitNext(ctx, next, asgardSize) {
+		groups := vm.splitNext(ctx, next, asgardSize)
+		for _, nodeAccSet := range groups {
 			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
 				return err
 			}
+		}
+
+		// Clean up stale init vaults that don't match any planned keygen
+		// group. This is done here (after all TriggerKeygen calls) rather
+		// than inside TriggerKeygen, because TriggerKeygen is called once
+		// per group and would not have visibility into all planned groups.
+		if err := vm.cleanupStaleInitVaults(ctx, groups); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cleanupStaleInitVaults marks fundless init vaults as inactive if they don't
+// match any of the planned keygen groups. This preserves init vaults from
+// in-progress keygen ceremonies whose membership matches a current group,
+// preventing churn retries from destroying valid partially-completed keygens.
+func (vm *ValidatorMgr) cleanupStaleInitVaults(ctx cosmos.Context, groups []NodeAccounts) error {
+	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
+	if err != nil {
+		return fmt.Errorf("fail to get init vaults: %w", err)
+	}
+	for _, v := range initVaults {
+		if v.HasFunds() {
+			continue
+		}
+		matchesGroup := false
+		for _, nodeAccSet := range groups {
+			members := make(common.PubKeys, len(nodeAccSet))
+			for i, na := range nodeAccSet {
+				members[i] = na.PubKeySet.Secp256k1
+			}
+			if v.MembershipEquals(members) {
+				matchesGroup = true
+				break
+			}
+		}
+		if matchesGroup {
+			ctx.Logger().Info("preserving init vault matching planned keygen group", "pubkey", v.PubKey)
+			continue
+		}
+		v.UpdateStatus(InactiveVault, ctx.BlockHeight())
+		if err := vm.k.SetVault(ctx, v); err != nil {
+			ctx.Logger().Error("fail to save vault", "error", err)
 		}
 	}
 	return nil

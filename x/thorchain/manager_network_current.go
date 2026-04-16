@@ -1390,7 +1390,7 @@ func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 		keygenBlock.Keygens = append(keygenBlock.Keygens, keygen)
 	}
 
-	// check if we already have a an active vault with the same membership,
+	// check if we already have an active vault with the same membership,
 	// skip if we do
 	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
@@ -1403,22 +1403,20 @@ func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 		}
 	}
 
-	vm.k.SetKeygenBlock(ctx, keygenBlock)
-	// clear the init vault
+	// check if we already have an init vault with the same membership from
+	// an in-progress keygen ceremony, skip to avoid duplicate keygens
 	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
 	if err != nil {
-		ctx.Logger().Error("fail to get init vault", "error", err)
-		return nil
+		return fmt.Errorf("fail to get init vaults: %w", err)
 	}
-	for _, v := range initVaults {
-		if v.HasFunds() {
-			continue
-		}
-		v.UpdateStatus(InactiveVault, ctx.BlockHeight())
-		if err := vm.k.SetVault(ctx, v); err != nil {
-			ctx.Logger().Error("fail to save vault", "error", err)
+	for _, vault := range initVaults {
+		if vault.MembershipEquals(keygen.GetMembers()) {
+			ctx.Logger().Info("skip keygen due to init vault already existing from in-progress keygen")
+			return nil
 		}
 	}
+
+	vm.k.SetKeygenBlock(ctx, keygenBlock)
 	return nil
 }
 

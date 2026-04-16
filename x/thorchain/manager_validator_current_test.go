@@ -1047,3 +1047,84 @@ func (vts *ValidatorMgrTestSuite) TestMarkMissingActors_MimirDisabled(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(nodeAfter.LeaveScore, Equals, uint64(0), Commentf("Node should not be marked when MissingBlockChurnOut is disabled"))
 }
+
+func (vts *ValidatorMgrTestSuite) TestCleanupStaleInitVaults(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(200)
+	validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// Create two groups of node accounts (simulating multi-asgard)
+	groupA := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	groupB := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	// Create an init vault matching group A (from a prior successful keygen)
+	membersA := make(common.PubKeys, len(groupA))
+	for i, na := range groupA {
+		membersA[i] = na.PubKeySet.Secp256k1
+	}
+	vaultA := NewVault(150, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vaultA.Membership = membersA.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultA), IsNil)
+
+	// Create a stale init vault from an old keygen (membership doesn't match any group)
+	staleVault := NewVault(100, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	staleVault.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, staleVault), IsNil)
+
+	// Verify we start with 2 init vaults
+	initVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(initVaults), Equals, 2)
+
+	// Run cleanup with groups A and B
+	groups := []NodeAccounts{groupA, groupB}
+	c.Assert(validatorMgr.cleanupStaleInitVaults(ctx, groups), IsNil)
+
+	// The init vault matching group A should be preserved
+	initVaults, err = mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(initVaults), Equals, 1)
+	c.Assert(initVaults[0].PubKey.Equals(vaultA.PubKey), Equals, true)
+
+	// The stale vault should now be inactive
+	inactiveVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, InactiveVault)
+	c.Assert(err, IsNil)
+	found := false
+	for _, v := range inactiveVaults {
+		if v.PubKey.Equals(staleVault.PubKey) {
+			found = true
+			break
+		}
+	}
+	c.Assert(found, Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestCleanupPreservesInitVaultWithFunds(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(200)
+	validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// Create an init vault with funds that doesn't match any group
+	fundedVault := NewVault(100, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	fundedVault.Membership = []string{GetRandomPubKey().String()}
+	fundedVault.AddFunds(common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, fundedVault), IsNil)
+
+	// Cleanup should preserve it because it has funds
+	c.Assert(validatorMgr.cleanupStaleInitVaults(ctx, []NodeAccounts{}), IsNil)
+
+	initVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(initVaults), Equals, 1)
+}
