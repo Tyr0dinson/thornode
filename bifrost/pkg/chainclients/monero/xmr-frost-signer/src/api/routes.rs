@@ -9,6 +9,7 @@ use axum::{
 };
 use bech32::{decode as bech32_decode, FromBase32};
 use monero_wallet::rpc::Rpc;
+use monero_wallet::transaction::{Input, Pruned, Transaction};
 use rand::rngs::OsRng;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
@@ -403,6 +404,244 @@ fn stored_scan_height_or_birthday(
         .or_else(|| (birthday > 0).then_some(birthday))
         .or(Some(0))
         .ok_or_else(|| format!("failed to determine scan height for vault {vault_pub_key}"))
+}
+
+struct PersistScannedBlockResult {
+    added_refs: Vec<OutputRef>,
+    outputs_after_scan: Vec<TrackedOutput>,
+}
+
+fn parse_pruned_transaction_hex(tx_hex: &str) -> Result<Transaction<Pruned>, String> {
+    let tx_hex = tx_hex.trim();
+    if tx_hex.is_empty() {
+        return Err("tx_hex must not be empty".to_string());
+    }
+    let bytes = hex::decode(tx_hex).map_err(|e| format!("tx_hex is not valid hex: {e}"))?;
+    Transaction::<Pruned>::read(&mut bytes.as_slice())
+        .map_err(|e| format!("failed to decode pruned transaction: {e}"))
+}
+
+fn collect_spent_key_images(transactions: &[Transaction<Pruned>]) -> HashSet<String> {
+    transactions
+        .iter()
+        .flat_map(|tx| tx.prefix().inputs.iter())
+        .filter_map(|input| match input {
+            Input::ToKey { key_image, .. } => {
+                Some(hex::encode(key_image.compress().to_bytes()).to_ascii_lowercase())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn persist_scanned_block_state(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    height: u64,
+    block_hash: &str,
+    parent_hash: &str,
+    block_transactions: &[Transaction<Pruned>],
+    added_outputs: &[TrackedOutput],
+    reorg_window: u64,
+) -> Result<PersistScannedBlockResult, String> {
+    let mut spent_key_images: Vec<String> = collect_spent_key_images(block_transactions)
+        .into_iter()
+        .collect();
+    spent_key_images.sort();
+    let spent_by_key_images: Vec<OutputRef> = {
+        let mut scanner = state.scanner.lock();
+        scanner
+            .mark_spent_key_images(vault_pub_key, &spent_key_images, height)
+            .0
+            .into_iter()
+            .map(|(tx_hash, output_index)| OutputRef {
+                tx_hash,
+                output_index,
+            })
+            .collect::<Vec<_>>()
+    };
+    let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
+    state
+        .store
+        .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
+        .map_err(|e| format!("failed to persist outputs after scanner sync: {e}"))?;
+
+    let added_refs: Vec<OutputRef> = added_outputs
+        .iter()
+        .map(|output| OutputRef {
+            tx_hash: output.tx_hash.clone(),
+            output_index: output.output_index,
+        })
+        .collect();
+    state
+        .store
+        .save_scan_block_meta(
+            vault_pub_key,
+            &ScanBlockMeta {
+                height,
+                block_hash: normalize_tx_hash(block_hash),
+                parent_hash: normalize_tx_hash(parent_hash),
+                added_outputs: added_refs.clone(),
+                spent_key_images: spent_key_images.clone(),
+                spent_by_key_images,
+            },
+        )
+        .map_err(|e| format!("failed to persist scan block metadata after scanner sync: {e}"))?;
+    state
+        .store
+        .save_scan_height(vault_pub_key, height)
+        .map_err(|e| format!("failed to persist scan height after scanner sync: {e}"))?;
+
+    let min_height = height.saturating_sub(reorg_window.saturating_sub(1));
+    if let Err(e) = state
+        .store
+        .prune_scan_block_meta_before(vault_pub_key, min_height)
+    {
+        warn!(
+            error = %e,
+            vault = %vault_pub_key,
+            min_height,
+            "failed to prune scan block metadata after scanner sync"
+        );
+    }
+
+    Ok(PersistScannedBlockResult {
+        added_refs,
+        outputs_after_scan,
+    })
+}
+
+fn replay_reconciled_key_image_spends(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    key_images: &[(String, u32, String)],
+) -> Result<(), String> {
+    if key_images.is_empty() {
+        return Ok(());
+    }
+
+    let requested_refs: HashSet<(String, u32)> = key_images
+        .iter()
+        .map(|(tx_hash, output_index, _)| (normalize_tx_hash(tx_hash), *output_index))
+        .collect();
+    if requested_refs.is_empty() {
+        return Ok(());
+    }
+
+    let outputs = state
+        .store
+        .load_outputs(vault_pub_key)
+        .map_err(|e| format!("failed to load outputs before key-image replay: {e}"))?;
+    let scan_height = state
+        .store
+        .load_scan_height(vault_pub_key)
+        .map_err(|e| format!("failed to load scan height before key-image replay: {e}"))?
+        .unwrap_or_else(|| state.scanner.lock().current_height());
+
+    let mut replay_from = None;
+    let mut candidate_key_images = HashSet::new();
+    for output in &outputs {
+        if !requested_refs.contains(&(normalize_tx_hash(&output.tx_hash), output.output_index)) {
+            continue;
+        }
+        if output.spent_by_key_image_height.is_some() {
+            continue;
+        }
+        let Some(key_image) = output
+            .key_image
+            .as_ref()
+            .map(|key_image| key_image.trim().to_ascii_lowercase())
+        else {
+            continue;
+        };
+        if key_image.is_empty() {
+            continue;
+        }
+        candidate_key_images.insert(key_image);
+        let start = output.height.saturating_add(1);
+        replay_from = Some(replay_from.map_or(start, |current: u64| current.min(start)));
+    }
+
+    let Some(replay_from) = replay_from else {
+        return Ok(());
+    };
+    if replay_from > scan_height {
+        return Ok(());
+    }
+
+    info!(
+        vault = %vault_pub_key,
+        from = replay_from,
+        to = scan_height,
+        requested_outputs = requested_refs.len(),
+        replay_key_images = candidate_key_images.len(),
+        "replaying historical XMR spends after key-image reconcile"
+    );
+
+    for height in replay_from..=scan_height {
+        let Some(mut meta) = state
+            .store
+            .load_scan_block_meta(vault_pub_key, height)
+            .map_err(|e| {
+                format!("failed to load scan block meta {height} during key-image replay: {e}")
+            })?
+        else {
+            continue;
+        };
+        let relevant_key_images: Vec<String> = meta
+            .spent_key_images
+            .iter()
+            .map(|key_image| key_image.trim().to_ascii_lowercase())
+            .filter(|key_image| candidate_key_images.contains(key_image))
+            .collect();
+        if relevant_key_images.is_empty() {
+            continue;
+        }
+
+        let resolved_refs: Vec<OutputRef> = {
+            let mut scanner = state.scanner.lock();
+            scanner
+                .mark_spent_key_images(vault_pub_key, &relevant_key_images, height)
+                .0
+                .into_iter()
+                .map(|(tx_hash, output_index)| OutputRef {
+                    tx_hash,
+                    output_index,
+                })
+                .collect()
+        };
+        state
+            .store
+            .mark_spent_key_images(vault_pub_key, &relevant_key_images, height)
+            .map_err(|e| {
+                format!("failed to persist replayed key-image spends at height {height}: {e}")
+            })?;
+
+        if !resolved_refs.is_empty() {
+            let mut known_refs: HashSet<(String, u32)> = meta
+                .spent_by_key_images
+                .iter()
+                .map(|r| (normalize_tx_hash(&r.tx_hash), r.output_index))
+                .collect();
+            let mut changed = false;
+            for r in resolved_refs {
+                if known_refs.insert((normalize_tx_hash(&r.tx_hash), r.output_index)) {
+                    meta.spent_by_key_images.push(r);
+                    changed = true;
+                }
+            }
+            if changed {
+                state
+                    .store
+                    .save_scan_block_meta(vault_pub_key, &meta)
+                    .map_err(|e| {
+                        format!("failed to persist replayed spend refs for block {height}: {e}")
+                    })?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // ---- DKG Routes ----
@@ -2011,6 +2250,10 @@ pub async fn scanner_sync(
                             break;
                         }
                     };
+                    let block_hash = normalize_tx_hash(&hex::encode(rescan_block.block.hash()));
+                    let parent_hash =
+                        normalize_tx_hash(&hex::encode(rescan_block.block.header.previous));
+                    let block_transactions = rescan_block.transactions.clone();
                     let added = match state.scanner.lock().scan_block_for_vault_with_added(
                         &vault.vault_pub_key,
                         h,
@@ -2034,12 +2277,19 @@ pub async fn scanner_sync(
                             }
                         }
                     }
-                    // Persist after each block
-                    let all_outputs = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
-                    let _ = state
-                        .store
-                        .merge_scanned_outputs(&vault.vault_pub_key, &all_outputs);
-                    let _ = state.store.save_scan_height(&vault.vault_pub_key, h);
+                    if let Err(e) = persist_scanned_block_state(
+                        &state,
+                        &vault.vault_pub_key,
+                        h,
+                        &block_hash,
+                        &parent_hash,
+                        &block_transactions,
+                        &added,
+                        reorg_window,
+                    ) {
+                        warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: failed to persist block state, stopping batch");
+                        break;
+                    }
                 }
                 // Check if caught up
                 let new_height = state
@@ -2145,6 +2395,7 @@ pub async fn scanner_sync(
                     block_hash: req.block_hash.trim().to_string(),
                     parent_hash: req.parent_hash.trim().to_string(),
                     added_outputs: existing_refs,
+                    spent_key_images: Vec::new(),
                     spent_by_key_images: Vec::new(),
                 };
                 let _ = state
@@ -2332,87 +2583,27 @@ pub async fn scanner_sync(
                     );
                 }
             };
-            let spent_by_key_images: Vec<OutputRef> = {
-                let mut scanner = state.scanner.lock();
-                scanner
-                    .mark_spent_by_key_images(&vault.vault_pub_key, &block_transactions, req.height)
-                    .into_iter()
-                    .map(|(tx_hash, output_index)| OutputRef {
-                        tx_hash,
-                        output_index,
-                    })
-                    .collect()
-            };
-            let outputs_after_scan = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
-            if let Err(e) = state
-                .store
-                .merge_scanned_outputs(&vault.vault_pub_key, &outputs_after_scan)
-            {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    "failed to persist outputs after scanner sync"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
-            }
-            let added_refs: Vec<OutputRef> = added_outputs
-                .iter()
-                .map(|output| OutputRef {
-                    tx_hash: output.tx_hash.clone(),
-                    output_index: output.output_index,
-                })
-                .collect();
-            if let Err(e) = state.store.save_scan_block_meta(
+            let persisted = match persist_scanned_block_state(
+                &state,
                 &vault.vault_pub_key,
-                &ScanBlockMeta {
-                    height: req.height,
-                    block_hash: req.block_hash.trim().to_string(),
-                    parent_hash: req.parent_hash.trim().to_string(),
-                    added_outputs: added_refs.clone(),
-                    spent_by_key_images,
-                },
+                req.height,
+                req.block_hash.trim(),
+                req.parent_hash.trim(),
+                &block_transactions,
+                &added_outputs,
+                reorg_window,
             ) {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    height = req.height,
-                    "failed to persist scan block metadata after scanner sync"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
-            }
-            if let Err(e) = state
-                .store
-                .save_scan_height(&vault.vault_pub_key, req.height)
-            {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    height = req.height,
-                    "failed to persist scan height after scanner sync"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
-            }
-            let min_height = req.height.saturating_sub(reorg_window.saturating_sub(1));
-            if let Err(e) = state
-                .store
-                .prune_scan_block_meta_before(&vault.vault_pub_key, min_height)
-            {
-                warn!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    min_height,
-                    "failed to prune scan block metadata after scanner sync"
-                );
-            }
+                Ok(result) => result,
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        vault = %vault.vault_pub_key,
+                        height = req.height,
+                        "failed to persist scanner sync state"
+                    );
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
+                }
+            };
             // Include outputs newly discovered by this scan.
             incoming.extend(
                 added_outputs
@@ -2430,14 +2621,17 @@ pub async fn scanner_sync(
             // (e.g. found by the background scanner) but not by this scan call.
             // Without this, outputs discovered by the background scanner race
             // ahead of bifrost's scanner_sync and are never reported as incoming.
-            let added_set: HashSet<(String, u32)> = added_refs
+            let added_set: HashSet<(String, u32)> = persisted
+                .added_refs
                 .iter()
                 .map(|r| (r.tx_hash.clone(), r.output_index))
                 .collect();
-            let store_refs_at_height = output_refs_at_height(&outputs_after_scan, req.height);
+            let store_refs_at_height =
+                output_refs_at_height(&persisted.outputs_after_scan, req.height);
             for sref in &store_refs_at_height {
                 if !added_set.contains(&(sref.tx_hash.clone(), sref.output_index)) {
-                    if let Some(output) = outputs_after_scan
+                    if let Some(output) = persisted
+                        .outputs_after_scan
                         .iter()
                         .find(|o| o.tx_hash == sref.tx_hash && o.output_index == sref.output_index)
                     {
@@ -2996,10 +3190,40 @@ pub async fn apply_key_images(
         }
     };
 
-    let outputs_after = match state.store.load_outputs(&vault_pub_key) {
+    let outputs_after_apply = match state.store.load_outputs(&vault_pub_key) {
         Ok(outputs) => outputs,
         Err(e) => {
             error!(error = %e, vault = vault_pub_key, "failed to reload outputs after apply-key-images");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!("failed to reload outputs: {e}"))),
+            );
+        }
+    };
+    {
+        let mut scanner = state.scanner.lock();
+        scanner.merge_output_states(&vault_pub_key, &outputs_after_apply);
+    }
+    if req.reconcile {
+        if let Err(e) = replay_reconciled_key_image_spends(&state, &vault_pub_key, &key_images) {
+            error!(
+                error = %e,
+                vault = vault_pub_key,
+                "failed to replay historical spends after apply-key-images reconcile"
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to replay historical spends after key-image reconcile: {e}"
+                ))),
+            );
+        }
+    }
+
+    let outputs_after = match state.store.load_outputs(&vault_pub_key) {
+        Ok(outputs) => outputs,
+        Err(e) => {
+            error!(error = %e, vault = vault_pub_key, "failed to reload outputs after key-image replay");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(error_json(format!("failed to reload outputs: {e}"))),
@@ -4172,6 +4396,7 @@ mod tests {
 
     use axum::{body::to_bytes, http::Uri, response::IntoResponse};
     use curve25519_dalek::{constants::ED25519_BASEPOINT_TABLE, Scalar};
+    use monero_wallet::transaction::{Input, Pruned, Timelock, Transaction, TransactionPrefix};
     use tempfile::TempDir;
 
     const VALID_VAULT_PUB_KEY: &str =
@@ -4256,6 +4481,31 @@ mod tests {
     fn test_group_key_hex() -> String {
         let base = Scalar::from(7u64);
         hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes())
+    }
+
+    fn point_from_scalar(value: u64) -> curve25519_dalek::edwards::EdwardsPoint {
+        &Scalar::from(value) * ED25519_BASEPOINT_TABLE
+    }
+
+    fn test_key_image_hex(value: u64) -> String {
+        hex::encode(point_from_scalar(value).compress().to_bytes())
+    }
+
+    fn test_pruned_tx_hex_with_key_image(value: u64) -> String {
+        let tx = Transaction::<Pruned>::V2 {
+            prefix: TransactionPrefix {
+                additional_timelock: Timelock::None,
+                inputs: vec![Input::ToKey {
+                    amount: None,
+                    key_offsets: vec![1],
+                    key_image: point_from_scalar(value),
+                }],
+                outputs: vec![],
+                extra: vec![],
+            },
+            proofs: None,
+        };
+        hex::encode(tx.serialize())
     }
 
     fn outputs_test_state(
@@ -4478,6 +4728,171 @@ mod tests {
     }
 
     #[test]
+    fn persist_scanned_block_state_marks_spends_and_persists_meta() {
+        let key_image = test_key_image_hex(9);
+        let output = TrackedOutput {
+            tx_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            output_index: 0,
+            amount: 50,
+            height: 100,
+            key_image: Some(key_image),
+            spent_by_key_image_height: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("aa".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(vec![output.clone()]);
+        state
+            .store
+            .save_outputs(
+                &vault_pub_key,
+                &state.scanner.lock().get_all_outputs(&vault_pub_key),
+            )
+            .expect("failed to seed outputs");
+
+        let block_transactions =
+            vec![
+                parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(9))
+                    .expect("failed to build test transaction"),
+            ];
+        let persisted = persist_scanned_block_state(
+            &state,
+            &vault_pub_key,
+            121,
+            "hash121",
+            "hash120",
+            &block_transactions,
+            &[],
+            120,
+        )
+        .expect("failed to persist scanned block state");
+        assert!(persisted.added_refs.is_empty());
+
+        let outputs = state
+            .store
+            .load_outputs(&vault_pub_key)
+            .expect("failed to load outputs");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(121));
+
+        let meta = state
+            .store
+            .load_scan_block_meta(&vault_pub_key, 121)
+            .expect("failed to load scan block meta")
+            .expect("scan block meta missing");
+        assert_eq!(meta.height, 121);
+        assert_eq!(meta.block_hash, "hash121");
+        assert_eq!(meta.parent_hash, "hash120");
+        assert_eq!(meta.added_outputs.len(), 0);
+        assert_eq!(meta.spent_key_images, vec![test_key_image_hex(9)]);
+        assert_eq!(meta.spent_by_key_images.len(), 1);
+        assert_eq!(meta.spent_by_key_images[0].tx_hash, output.tx_hash);
+        assert_eq!(
+            meta.spent_by_key_images[0].output_index,
+            output.output_index
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_key_images_reconcile_replays_historical_spends() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let vault_pub_key = VALID_VAULT_PUB_KEY.to_string();
+        let mut output = sample_output(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            0,
+            OutputState::Unspent,
+        );
+        output.height = 119;
+        output.key_image = None;
+
+        state
+            .scanner
+            .lock()
+            .register_vault(
+                &vault_pub_key,
+                &test_group_key_hex(),
+                crate::config::ChainNetworkMode::Mocknet,
+                vec![output.clone()],
+                Some(119),
+            )
+            .expect("failed to register scanner vault");
+        state.scanner.lock().set_current_height(120);
+        state
+            .store
+            .save_outputs(&vault_pub_key, &[output.clone()])
+            .expect("failed to seed outputs");
+        state
+            .store
+            .save_scan_height(&vault_pub_key, 120)
+            .expect("failed to seed scan height");
+        state
+            .store
+            .save_scan_block_meta(
+                &vault_pub_key,
+                &ScanBlockMeta {
+                    height: 120,
+                    block_hash: "hash120".to_string(),
+                    parent_hash: "hash119".to_string(),
+                    added_outputs: vec![],
+                    spent_key_images: vec![test_key_image_hex(7)],
+                    spent_by_key_images: vec![],
+                },
+            )
+            .expect("failed to seed scan block metadata");
+
+        let response = apply_key_images(
+            State(state.clone()),
+            Json(crate::api::types::ApplyKeyImagesRequest {
+                vault_pub_key: vault_pub_key.clone(),
+                reconcile: true,
+                spend: false,
+                spent_height: None,
+                key_images: vec![crate::api::types::KeyImageEntry {
+                    tx_hash: output.tx_hash.clone(),
+                    output_index: output.output_index,
+                    key_image: test_key_image_hex(7),
+                }],
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        assert_eq!(body["applied"], serde_json::json!(1));
+        assert_eq!(body["not_found"], serde_json::json!(0));
+
+        let outputs = state
+            .store
+            .load_outputs(&vault_pub_key)
+            .expect("failed to reload outputs");
+        let expected_key_image = test_key_image_hex(7);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(120));
+        assert_eq!(
+            outputs[0].key_image.as_deref(),
+            Some(expected_key_image.as_str())
+        );
+        let meta = state
+            .store
+            .load_scan_block_meta(&vault_pub_key, 120)
+            .expect("failed to load scan block metadata")
+            .expect("scan block metadata missing");
+        assert_eq!(meta.spent_key_images, vec![expected_key_image]);
+        assert_eq!(meta.spent_by_key_images.len(), 1);
+        assert_eq!(meta.spent_by_key_images[0].tx_hash, output.tx_hash);
+        assert_eq!(
+            meta.spent_by_key_images[0].output_index,
+            output.output_index
+        );
+    }
+
+    #[test]
     fn build_mempool_outgoing_entries_filters_and_normalizes_hashes() {
         let records = vec![
             sample_outgoing(
@@ -4632,6 +5047,7 @@ mod tests {
                     block_hash: "hash120".to_string(),
                     parent_hash: "hash119".to_string(),
                     added_outputs: vec![],
+                    spent_key_images: vec![],
                     spent_by_key_images: vec![],
                 },
             )
@@ -5447,6 +5863,7 @@ mod tests {
                         tx_hash: output.tx_hash.clone(),
                         output_index: output.output_index,
                     }],
+                    spent_key_images: vec![],
                     spent_by_key_images: vec![],
                 },
             )
@@ -5668,6 +6085,7 @@ mod tests {
                     block_hash: "hash120".to_string(),
                     parent_hash: "hash119".to_string(),
                     added_outputs: vec![],
+                    spent_key_images: vec![],
                     spent_by_key_images: vec![],
                 },
             )
@@ -6017,6 +6435,7 @@ mod tests {
                     block_hash: "hash109".to_string(),
                     parent_hash: "hash108".to_string(),
                     added_outputs: vec![],
+                    spent_key_images: vec![],
                     spent_by_key_images: vec![],
                 },
             )
@@ -6030,6 +6449,7 @@ mod tests {
                     block_hash: "hash115".to_string(),
                     parent_hash: "hash114".to_string(),
                     added_outputs: vec![],
+                    spent_key_images: vec![],
                     spent_by_key_images: vec![],
                 },
             )

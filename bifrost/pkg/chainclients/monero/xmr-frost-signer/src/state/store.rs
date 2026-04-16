@@ -277,6 +277,8 @@ pub struct ScanBlockMeta {
     pub parent_hash: String,
     pub added_outputs: Vec<OutputRef>,
     #[serde(default)]
+    pub spent_key_images: Vec<String>,
+    #[serde(default)]
     pub spent_by_key_images: Vec<OutputRef>,
 }
 
@@ -2615,6 +2617,7 @@ mod tests {
                         tx_hash: output_a.tx_hash.clone(),
                         output_index: output_a.output_index,
                     }],
+                    spent_key_images: Vec::new(),
                     spent_by_key_images: Vec::new(),
                 },
             )
@@ -2630,6 +2633,7 @@ mod tests {
                         tx_hash: output_b.tx_hash.clone(),
                         output_index: output_b.output_index,
                     }],
+                    spent_key_images: Vec::new(),
                     spent_by_key_images: Vec::new(),
                 },
             )
@@ -2812,6 +2816,7 @@ mod tests {
                         block_hash: format!("h{height}"),
                         parent_hash: format!("h{}", height.saturating_sub(1)),
                         added_outputs: Vec::new(),
+                        spent_key_images: Vec::new(),
                         spent_by_key_images: Vec::new(),
                     },
                 )
