@@ -768,7 +768,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
-		if err := c.applyLocalXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, cachedProofs, true); err != nil {
+		if err := c.applyLocalXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, cachedProofs, false); err != nil {
 			c.logger.Info().
 				Err(err).
 				Str("vault", ceremonyCtx.vaultPubKey.String()).
@@ -3364,7 +3364,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, nil
 	}
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs); ok && len(cachedProofs) == len(outputs) {
-		if err := c.applyLocalXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), cachedProofs, true); err != nil {
+		if err := c.applyLocalXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), cachedProofs, false); err != nil {
 			c.logger.Info().
 				Err(err).
 				Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4070,7 +4070,7 @@ func (c *Client) generateObservedTxKeyImages(
 		Str("tx_hash", txHash).
 		Int("proof_count", len(proofs)).
 		Msg("completed XMR key-image generation batch")
-	if err := c.applyLocalXMRKeyImageProofs(vaultPubKey, txHash, proofs, true); err != nil {
+	if err := c.applyLocalXMRKeyImageProofs(vaultPubKey, txHash, proofs, false); err != nil {
 		return nil, err
 	}
 	return canonicalXMRKeyImageProofs(proofs), nil
