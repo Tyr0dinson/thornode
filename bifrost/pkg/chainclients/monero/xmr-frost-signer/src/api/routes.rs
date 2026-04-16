@@ -23,7 +23,8 @@ use crate::frost::key_image::KeyImageCoordinator;
 use crate::frost::keys::ThresholdKeyShare;
 use crate::frost::sign::SignCoordinator;
 use crate::state::store::{
-    IdempotencyClaimResult, OutputRef, OutputState, ScanBlockMeta, TrackedOutput,
+    IdempotencyClaimResult, OutputRef, OutputState, RegisteredKeyImageRef, ScanBlockMeta,
+    TrackedOutput,
 };
 use crate::tx::builder;
 use crate::tx::daemon::DaemonClient;
@@ -434,6 +435,56 @@ fn collect_spent_key_images(transactions: &[Transaction<Pruned>]) -> HashSet<Str
         .collect()
 }
 
+fn load_registered_key_image_inventory(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+) -> Result<Vec<(String, u32, String)>, String> {
+    state
+        .store
+        .load_registered_key_images(vault_pub_key)
+        .map_err(|e| format!("failed to load registered key image inventory: {e}"))
+        .map(|refs| {
+            refs.into_iter()
+                .map(|entry| (entry.tx_hash, entry.output_index, entry.key_image))
+                .collect()
+        })
+}
+
+fn apply_registered_key_image_inventory(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    reconcile: bool,
+) -> Result<(), String> {
+    let key_images = load_registered_key_image_inventory(state, vault_pub_key)?;
+    {
+        let mut scanner = state.scanner.lock();
+        let _ = scanner.apply_key_images(vault_pub_key, &key_images, reconcile);
+    }
+    state
+        .store
+        .apply_key_images(vault_pub_key, &key_images, reconcile)
+        .map_err(|e| format!("failed to apply registered key image inventory: {e}"))?;
+
+    let outputs_after_apply = state.store.load_outputs(vault_pub_key).map_err(|e| {
+        format!("failed to reload outputs after applying registered key images: {e}")
+    })?;
+    {
+        let mut scanner = state.scanner.lock();
+        scanner.merge_output_states(vault_pub_key, &outputs_after_apply);
+    }
+
+    if reconcile {
+        replay_reconciled_key_image_spends(state, vault_pub_key, &key_images)?;
+        let outputs_after_replay = state.store.load_outputs(vault_pub_key).map_err(|e| {
+            format!("failed to reload outputs after replaying registered key images: {e}")
+        })?;
+        let mut scanner = state.scanner.lock();
+        scanner.merge_output_states(vault_pub_key, &outputs_after_replay);
+    }
+
+    Ok(())
+}
+
 fn persist_scanned_block_state(
     state: &Arc<AppState>,
     vault_pub_key: &str,
@@ -444,6 +495,8 @@ fn persist_scanned_block_state(
     added_outputs: &[TrackedOutput],
     reorg_window: u64,
 ) -> Result<PersistScannedBlockResult, String> {
+    apply_registered_key_image_inventory(state, vault_pub_key, false)?;
+
     let mut spent_key_images: Vec<String> = collect_spent_key_images(block_transactions)
         .into_iter()
         .collect();
@@ -858,7 +911,7 @@ pub async fn register_vault(
         return (status, Json(response));
     }
 
-    match ensure_registered_vault_state(
+    let registered = match ensure_registered_vault_state(
         &state,
         &vault_pub_key,
         &group_key,
@@ -866,19 +919,67 @@ pub async fn register_vault(
         source,
         req.birthday,
     ) {
-        Ok(registered) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(RegisterVaultResponse { registered }).unwrap()),
-        ),
+        Ok(registered) => registered,
         Err(e) => {
             error!(
                 error = %e,
                 vault = %vault_pub_key,
                 "runtime vault registration failed"
             );
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)))
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
         }
+    };
+
+    let key_images: Vec<RegisteredKeyImageRef> = req
+        .key_images
+        .into_iter()
+        .filter_map(|entry| {
+            let tx_hash = normalize_tx_hash(&entry.tx_hash);
+            let key_image = entry.key_image.trim().to_ascii_lowercase();
+            if tx_hash.is_empty() || key_image.is_empty() {
+                return None;
+            }
+            Some(RegisteredKeyImageRef {
+                tx_hash,
+                output_index: entry.output_index,
+                key_image,
+            })
+        })
+        .collect();
+    if let Err(e) = state
+        .store
+        .save_registered_key_images(&vault_pub_key, &key_images)
+    {
+        error!(
+            error = %e,
+            vault = %vault_pub_key,
+            "failed to persist registered key image inventory"
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(format!(
+                "failed to persist registered key image inventory: {e}"
+            ))),
+        );
     }
+    if let Err(e) = apply_registered_key_image_inventory(&state, &vault_pub_key, true) {
+        error!(
+            error = %e,
+            vault = %vault_pub_key,
+            "failed to reconcile registered key image inventory"
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(format!(
+                "failed to reconcile registered key image inventory: {e}"
+            ))),
+        );
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::to_value(RegisterVaultResponse { registered }).unwrap()),
+    )
 }
 
 // ---- Signing Routes ----
@@ -4798,6 +4899,71 @@ mod tests {
         );
     }
 
+    #[test]
+    fn persist_scanned_block_state_uses_registered_key_image_inventory() {
+        let key_image = test_key_image_hex(11);
+        let output = TrackedOutput {
+            tx_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            output_index: 0,
+            amount: 50,
+            height: 100,
+            key_image: None,
+            spent_by_key_image_height: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("aa".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(vec![output.clone()]);
+        state
+            .store
+            .save_outputs(
+                &vault_pub_key,
+                &state.scanner.lock().get_all_outputs(&vault_pub_key),
+            )
+            .expect("failed to seed outputs");
+        state
+            .store
+            .save_registered_key_images(
+                &vault_pub_key,
+                &[RegisteredKeyImageRef {
+                    tx_hash: output.tx_hash.clone(),
+                    output_index: output.output_index,
+                    key_image: key_image.clone(),
+                }],
+            )
+            .expect("failed to seed registered key image inventory");
+
+        let block_transactions =
+            vec![
+                parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(11))
+                    .expect("failed to build test transaction"),
+            ];
+        persist_scanned_block_state(
+            &state,
+            &vault_pub_key,
+            121,
+            "hash121",
+            "hash120",
+            &block_transactions,
+            &[],
+            120,
+        )
+        .expect("failed to persist scanned block state");
+
+        let outputs = state
+            .store
+            .load_outputs(&vault_pub_key)
+            .expect("failed to load outputs");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].key_image.as_deref(), Some(key_image.as_str()));
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(121));
+    }
+
     #[tokio::test]
     async fn apply_key_images_reconcile_replays_historical_spends() {
         let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
@@ -5191,6 +5357,7 @@ mod tests {
                 source: Some("test".to_string()),
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: None,
+                key_images: vec![],
             }),
         )
         .await
@@ -5212,6 +5379,47 @@ mod tests {
                 .expect("group key should be readable"),
             BOOTSTRAP_GROUP_KEY_HEX
         );
+    }
+
+    #[tokio::test]
+    async fn register_vault_persists_registered_key_image_inventory() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let group_key = xmr::group_key_hex_from_spend_seed_hex(BOOTSTRAP_SPEND_KEY_HEX)
+            .expect("group key should derive");
+        let address = xmr::derive_vault_address(&group_key, state.chain_network)
+            .expect("address should derive");
+        let key_image = test_key_image_hex(17);
+        let tx_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+        let response = register_vault(
+            State(state.clone()),
+            Json(RegisterVaultRequest {
+                vault_pub_key: BOOTSTRAP_VAULT_PUB_KEY.to_string(),
+                group_key,
+                address,
+                source: Some("test".to_string()),
+                spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
+                birthday: Some(100),
+                key_images: vec![KeyImageEntry {
+                    tx_hash: tx_hash.to_string(),
+                    output_index: 0,
+                    key_image: key_image.clone(),
+                }],
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+
+        let stored = state
+            .store
+            .load_registered_key_images(BOOTSTRAP_VAULT_PUB_KEY)
+            .expect("registered key images should load");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].tx_hash, tx_hash);
+        assert_eq!(stored[0].output_index, 0);
+        assert_eq!(stored[0].key_image, key_image);
     }
 
     #[test]
@@ -6303,6 +6511,7 @@ mod tests {
                 source: Some("test".to_string()),
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: Some(120),
+                key_images: vec![],
             }),
         )
         .await

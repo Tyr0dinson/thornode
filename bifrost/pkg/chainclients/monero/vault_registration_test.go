@@ -55,6 +55,88 @@ func TestVaultPubKeyFromGroupKeyHex(t *testing.T) {
 	}
 }
 
+func TestEnsureFrostVaultRegisteredWithKeyImagesIncludesThorInventory(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "ensure-xmr-vault-key-images")
+	address, err := vaultPubKey.GetAddress(common.XMRChain)
+	if err != nil {
+		t.Fatalf("derive address: %v", err)
+	}
+	expectedGroupKey, err := groupKeyHexFromVaultPubKey(vaultPubKey)
+	if err != nil {
+		t.Fatalf("group key: %v", err)
+	}
+
+	expectedRefs := []xmrFrostApplyKeyImageRef{
+		{TxHash: strings.Repeat("a", 64), OutputIndex: 0, KeyImage: strings.Repeat("1", 64)},
+		{TxHash: strings.Repeat("b", 64), OutputIndex: 1, KeyImage: strings.Repeat("2", 64)},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/monero/vaults/register":
+			var req xmrFrostRegisterVaultRequest
+			if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+				return
+			}
+			if req.VaultPubKey != vaultPubKey.String() {
+				http.Error(w, "unexpected vault pubkey", http.StatusBadRequest)
+				return
+			}
+			if req.GroupKey != expectedGroupKey {
+				http.Error(w, "unexpected group key", http.StatusBadRequest)
+				return
+			}
+			if req.Address != address.String() {
+				http.Error(w, "unexpected address", http.StatusBadRequest)
+				return
+			}
+			if len(req.KeyImages) != len(expectedRefs) {
+				http.Error(w, "unexpected key image count", http.StatusBadRequest)
+				return
+			}
+			for i := range expectedRefs {
+				if req.KeyImages[i] != expectedRefs[i] {
+					http.Error(w, "unexpected key image ref", http.StatusBadRequest)
+					return
+				}
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	registration, err := ensureFrostVaultRegisteredWithKeyImages(
+		log.Logger,
+		signer,
+		common.XMRChain,
+		vaultPubKey,
+		nil,
+		"bifrost",
+		123,
+		expectedRefs,
+	)
+	if err != nil {
+		t.Fatalf("ensureFrostVaultRegisteredWithKeyImages failed: %v", err)
+	}
+	if !registration.Address.Equals(address) {
+		t.Fatalf("expected address %s, got %s", address, registration.Address)
+	}
+	if !registration.Registered {
+		t.Fatal("expected registered=true")
+	}
+}
+
 func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 	t.Parallel()
 

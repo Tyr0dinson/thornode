@@ -843,7 +843,7 @@ func (s *Scanner) refreshAsgardLookup() error {
 			continue
 		}
 		creationHeight := vault.VaultCreationHeightXmr
-		registration, addrErr := ensureFrostVaultRegistered(
+		registration, addrErr := ensureFrostVaultRegisteredWithKeyImages(
 			s.logger,
 			s.frostSigner,
 			s.chain,
@@ -851,6 +851,7 @@ func (s *Scanner) refreshAsgardLookup() error {
 			s.localVaultBootstrap,
 			"bifrost_scanner",
 			creationHeight,
+			keyImageRefsFromVault(vault),
 		)
 		if addrErr != nil {
 			return fmt.Errorf("fail to register vault %s: %w", frostKey.String(), addrErr)

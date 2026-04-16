@@ -64,6 +64,8 @@ pub struct RegisterVaultRequest {
     pub spend_key_hex: Option<String>,
     #[serde(default)]
     pub birthday: Option<u64>,
+    #[serde(default)]
+    pub key_images: Vec<KeyImageEntry>,
 }
 
 #[derive(Debug, Serialize)]

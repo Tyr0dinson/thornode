@@ -210,6 +210,13 @@ impl OutgoingTransferRecord {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct RegisteredKeyImageRef {
+    pub tx_hash: String,
+    pub output_index: u32,
+    pub key_image: String,
+}
+
 fn enforce_private_dir_permissions(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -597,6 +604,53 @@ impl Store {
         tree.insert(vault_pub_key.as_bytes(), value)?;
         tree.flush()?;
         Ok(())
+    }
+
+    pub fn save_registered_key_images(
+        &self,
+        vault_pub_key: &str,
+        key_images: &[RegisteredKeyImageRef],
+    ) -> Result<()> {
+        let tree = self.db.open_tree("registered_key_images")?;
+        let mut normalized = Vec::with_capacity(key_images.len());
+        for key_image in key_images {
+            let tx_hash = key_image.tx_hash.trim().to_ascii_lowercase();
+            let key_image_value = key_image.key_image.trim().to_ascii_lowercase();
+            if tx_hash.is_empty() || key_image_value.is_empty() {
+                continue;
+            }
+            normalized.push(RegisteredKeyImageRef {
+                tx_hash,
+                output_index: key_image.output_index,
+                key_image: key_image_value,
+            });
+        }
+        normalized.sort_by(|left, right| {
+            left.tx_hash
+                .cmp(&right.tx_hash)
+                .then(left.output_index.cmp(&right.output_index))
+                .then(left.key_image.cmp(&right.key_image))
+        });
+        normalized.dedup_by(|left, right| {
+            left.tx_hash == right.tx_hash
+                && left.output_index == right.output_index
+                && left.key_image == right.key_image
+        });
+        tree.insert(vault_pub_key.as_bytes(), serde_json::to_vec(&normalized)?)?;
+        tree.flush()?;
+        Ok(())
+    }
+
+    pub fn load_registered_key_images(
+        &self,
+        vault_pub_key: &str,
+    ) -> Result<Vec<RegisteredKeyImageRef>> {
+        let tree = self.db.open_tree("registered_key_images")?;
+        let Some(raw) = tree.get(vault_pub_key.as_bytes())? else {
+            return Ok(Vec::new());
+        };
+        let key_images: Vec<RegisteredKeyImageRef> = serde_json::from_slice(&raw)?;
+        Ok(key_images)
     }
 
     /// Merge scanner-produced outputs into the store, preserving any

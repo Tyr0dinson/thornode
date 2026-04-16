@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func groupKeyHexFromVaultPubKey(vaultPubKey common.PubKey) (string, error) {
@@ -51,6 +52,31 @@ type frostVaultRegistrationResult struct {
 	Registered bool
 }
 
+func keyImageRefsFromVault(vault ttypes.Vault) []xmrFrostApplyKeyImageRef {
+	if len(vault.KeyImagesXmr) == 0 {
+		return nil
+	}
+
+	refs := make([]xmrFrostApplyKeyImageRef, 0, len(vault.KeyImagesXmr))
+	for _, ref := range vault.KeyImagesXmr {
+		if ref == nil {
+			continue
+		}
+		txHash := strings.TrimSpace(ref.TxHash)
+		keyImage := strings.TrimSpace(ref.KeyImage)
+		if txHash == "" || keyImage == "" {
+			continue
+		}
+		refs = append(refs, xmrFrostApplyKeyImageRef{
+			TxHash:      txHash,
+			OutputIndex: ref.OutputIndex,
+			KeyImage:    keyImage,
+		})
+	}
+
+	return refs
+}
+
 func ensureFrostVaultRegistered(
 	logger zerolog.Logger,
 	signer *FrostSigner,
@@ -59,6 +85,28 @@ func ensureFrostVaultRegistered(
 	bootstrap *frostVaultBootstrap,
 	source string,
 	birthday int64,
+) (frostVaultRegistrationResult, error) {
+	return ensureFrostVaultRegisteredWithKeyImages(
+		logger,
+		signer,
+		chain,
+		vaultPubKey,
+		bootstrap,
+		source,
+		birthday,
+		nil,
+	)
+}
+
+func ensureFrostVaultRegisteredWithKeyImages(
+	logger zerolog.Logger,
+	signer *FrostSigner,
+	chain common.Chain,
+	vaultPubKey common.PubKey,
+	bootstrap *frostVaultBootstrap,
+	source string,
+	birthday int64,
+	keyImages []xmrFrostApplyKeyImageRef,
 ) (frostVaultRegistrationResult, error) {
 	if signer == nil {
 		return frostVaultRegistrationResult{}, fmt.Errorf("frost signer is not initialized")
@@ -86,6 +134,7 @@ func ensureFrostVaultRegistered(
 		Address:             address.String(),
 		Source:              source,
 		VaultCreationHeight: birthday,
+		KeyImages:           append([]xmrFrostApplyKeyImageRef(nil), keyImages...),
 	}
 	if spendKeyHex, ok := bootstrap.spendKeyHexFor(vaultPubKey); ok {
 		req.SpendKeyHex = strings.TrimSpace(spendKeyHex)
