@@ -56,7 +56,7 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 		return nil, fmt.Errorf("invalid report height: %d", height)
 	}
 
-	// Build a chain-specific Asgard vault list before calling AlgoPubKey or GetAccount, 
+	// Build a chain-specific Asgard vault list before calling AlgoPubKey or GetAccount,
 	// so unrelated vaults are skipped early
 	chain := r.client.GetChain()
 	chainVaults := make(types.Vaults, 0, len(asgardVaults))
