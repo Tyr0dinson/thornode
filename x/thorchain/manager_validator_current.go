@@ -492,6 +492,15 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 
 	validators := make([]abci.ValidatorUpdate, 0, len(newNodes)+len(removedNodes))
 	for _, na := range newNodes {
+		// Re-read from store: distributeBondReward above may have modified
+		// this node's bond (e.g. chain income distribution to new vault
+		// members). Using the stale copy from getChangedNodes would
+		// overwrite the updated bond and break the bond invariant.
+		na, err = vm.k.GetNodeAccount(ctx, na.NodeAddress)
+		if err != nil {
+			ctx.Logger().Error("fail to get node account from key value store", "node address", na.NodeAddress)
+			continue
+		}
 		ctx.EventManager().EmitEvent(
 			cosmos.NewEvent("UpdateNodeAccountStatus",
 				cosmos.NewAttribute("Address", na.NodeAddress.String()),
@@ -695,11 +704,6 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	}
 	lastNodeOperatorProviderBond := nodeOperatorProvider.Bond
 
-	ctx.Logger().Error("DEBUG payNodeAccountBondAward", "node", na.NodeAddress,
-		"reward", reward, "totalBondReward", totalBondReward,
-		"earnedBlocks", earnedBlocks, "totalActiveBlocks", totalActiveBlocks,
-		"slashPts", slashPts, "preBond", na.Bond, "preBondRewardRune", network.BondRewardRune)
-
 	// Add to their bond the amount rewarded
 	na.Bond = na.Bond.Add(reward)
 
@@ -873,18 +877,6 @@ func (vm *ValidatorMgr) ragnarokProtocolStage2(ctx cosmos.Context, nth int64, mg
 }
 
 func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) error {
-	// DEBUG: capture pre-distribution state
-	{
-		preNet, _ := vm.k.GetNetwork(ctx)
-		preCIRune := cosmos.ZeroUint()
-		for _, ci := range preNet.ChainIncome {
-			preCIRune = preCIRune.Add(ci.Amount)
-			ctx.Logger().Error("DEBUG distributeBondReward PRE chain income", "chain", ci.Chain, "amount", ci.Amount)
-		}
-		ctx.Logger().Error("DEBUG distributeBondReward PRE", "height", ctx.BlockHeight(),
-			"BondRewardRune", preNet.BondRewardRune, "totalChainIncome", preCIRune)
-	}
-
 	var resultErr error
 	active, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
@@ -919,38 +911,8 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 		}
 	}
 
-	// DEBUG: capture state between emission and chain income distribution
-	{
-		midNet, _ := vm.k.GetNetwork(ctx)
-		ctx.Logger().Error("DEBUG distributeBondReward MID (after emission, before chain income)", "height", ctx.BlockHeight(),
-			"BondRewardRune", midNet.BondRewardRune)
-	}
-
 	if err := vm.distributeChainBondRewards(ctx, mgr); err != nil {
 		resultErr = errors.Join(resultErr, err)
-	}
-
-	// DEBUG: capture post-distribution state
-	{
-		postNet, _ := vm.k.GetNetwork(ctx)
-		postCIRune := cosmos.ZeroUint()
-		for _, ci := range postNet.ChainIncome {
-			postCIRune = postCIRune.Add(ci.Amount)
-		}
-		bondedRune := cosmos.ZeroUint()
-		naIter := vm.k.GetNodeAccountIterator(ctx)
-		for ; naIter.Valid(); naIter.Next() {
-			var na NodeAccount
-			vm.k.Cdc().MustUnmarshal(naIter.Value(), &na)
-			bondedRune = bondedRune.Add(na.Bond)
-		}
-		naIter.Close()
-		expected := bondedRune.Add(postNet.BondRewardRune).Add(postCIRune)
-		bondMod := vm.k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
-		drift := common.SafeSub(bondMod, expected)
-		ctx.Logger().Error("DEBUG distributeBondReward POST", "height", ctx.BlockHeight(),
-			"BondRewardRune", postNet.BondRewardRune, "totalChainIncome", postCIRune,
-			"bondedRune", bondedRune, "bondModule", bondMod, "expected", expected, "drift", drift)
 	}
 
 	return resultErr

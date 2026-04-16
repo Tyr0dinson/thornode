@@ -191,21 +191,12 @@ func BondInvariant(k KVStore) common.Invariant {
 			diff := expectedRune.Sub(bondModuleRune)
 			coin, _ := common.NewCoin(common.RuneAsset(), diff).Native()
 			msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
-			ctx.Logger().Error("BOND INVARIANT BROKEN",
-				"type", "insolvent", "diff", diff,
-				"bondModule", bondModuleRune, "expected", expectedRune,
-				"bondedRune", bondedRune, "bondRewardRune", bondRewardRune,
-				"chainIncomeRune", chainIncomeRune, "height", ctx.BlockHeight())
+
 		} else if expectedRune.LT(bondModuleRune) {
 			broken = true
 			diff := bondModuleRune.Sub(expectedRune)
 			coin, _ := common.NewCoin(common.RuneAsset(), diff).Native()
 			msg = append(msg, fmt.Sprintf("oversolvent: %s", coin))
-			ctx.Logger().Error("BOND INVARIANT BROKEN",
-				"type", "oversolvent", "diff", diff,
-				"bondModule", bondModuleRune, "expected", expectedRune,
-				"bondedRune", bondedRune, "bondRewardRune", bondRewardRune,
-				"chainIncomeRune", chainIncomeRune, "height", ctx.BlockHeight())
 		}
 
 		return msg, broken

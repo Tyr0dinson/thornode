@@ -1839,40 +1839,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 	}
 	network.TotalBondUnits = network.TotalBondUnits.Add(cosmos.NewUint(uint64(i))) // Add 1 unit for each active Node
 
-	if err := vm.k.SetNetwork(ctx, network); err != nil {
-		return err
-	}
-
-	// Temporary per-block bond invariant drift check.
-	{
-		bondedRune := cosmos.ZeroUint()
-		naIter := vm.k.GetNodeAccountIterator(ctx)
-		for ; naIter.Valid(); naIter.Next() {
-			var na NodeAccount
-			vm.k.Cdc().MustUnmarshal(naIter.Value(), &na)
-			bondedRune = bondedRune.Add(na.Bond)
-		}
-		naIter.Close()
-		freshNet, _ := vm.k.GetNetwork(ctx)
-		chainIncomeRune := cosmos.ZeroUint()
-		for _, ci := range freshNet.ChainIncome {
-			chainIncomeRune = chainIncomeRune.Add(ci.Amount)
-		}
-		expectedRune := bondedRune.Add(freshNet.BondRewardRune).Add(chainIncomeRune)
-		bondModuleRune := vm.k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
-		if !expectedRune.Equal(bondModuleRune) {
-			diff := common.SafeSub(bondModuleRune, expectedRune)
-			ctx.Logger().Error("BOND DRIFT after UpdateNetwork",
-				"height", ctx.BlockHeight(),
-				"bondModule", bondModuleRune, "expected", expectedRune,
-				"oversolvent", diff,
-				"bondedRune", bondedRune,
-				"bondRewardRune", freshNet.BondRewardRune,
-				"chainIncome", chainIncomeRune)
-		}
-	}
-
-	return nil
+	return vm.k.SetNetwork(ctx, network)
 }
 
 // Pays out Rewards
