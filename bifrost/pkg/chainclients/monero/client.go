@@ -4201,6 +4201,7 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trac
 	if result.NotFound > 0 {
 		return fmt.Errorf("validated XMR key-images missing %d local outputs", result.NotFound)
 	}
+	c.putCachedXMRKeyImageProofs(canonicalVaultPubKey, tx.Tx.ID.String(), outputs, normalizedProofs)
 	c.logger.Info().
 		Str("tx_hash", tx.Tx.ID.String()).
 		Str("canonical_vault_pub_key", canonicalVaultPubKey.String()).

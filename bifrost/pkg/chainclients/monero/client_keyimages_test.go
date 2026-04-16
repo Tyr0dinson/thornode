@@ -1683,6 +1683,122 @@ func TestValidateOutboundObservationAppliesValidatedKeyImagesForFinalOutboundCha
 	assert.Equal(t, uint32(0), applied[0].OutputIndex)
 }
 
+func TestValidateOutboundObservationCachesValidatedKeyImagesForReplay(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("q", 64)
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("cached-outbound-destination")))
+
+	var mu sync.Mutex
+	var applyReqs []xmrFrostApplyKeyImagesRequest
+	var outboundValidateCalls int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			outboundValidateCalls++
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 1})
+		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			applyReqs = append(applyReqs, req)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100},
+				},
+			})
+		case r.URL.Path == "/v1/monero/key-image/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostKeyImageValidateResponse{Valid: true})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.NewTx(
+			common.TxID(txHash),
+			vaultAddr,
+			destination,
+			common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			"OUT:QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ",
+		),
+		BlockHeight:    110,
+		FinaliseHeight: 110,
+		ObservedPubKey: vaultPubKey,
+		TxKeys:         []string{strings.Repeat("1", 64)},
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+
+	require.NoError(t, c.ValidateOutboundObservation(obsTx))
+
+	item := &stypes.TxInItem{
+		BlockHeight:         110,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                obsTx.Tx.Memo,
+		TxKeys:              append([]string(nil), obsTx.TxKeys...),
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Len(t, prepared.XmrKeyImages, 1)
+	assert.Equal(t, txHash, prepared.XmrKeyImages[0].TxHash)
+	assert.Equal(t, uint32(0), prepared.XmrKeyImages[0].OutputIndex)
+	assert.Equal(t, "ki-0", prepared.XmrKeyImages[0].KeyImage)
+	assert.GreaterOrEqual(t, outboundValidateCalls, 2)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	assert.Empty(t, tssServer.reqs)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, applyReqs, 2)
+	assert.False(t, applyReqs[0].Reconcile)
+	assert.True(t, applyReqs[1].Reconcile)
+}
+
 func TestValidateOutboundObservationAppliesValidatedKeyImagesWithoutTxKeys(t *testing.T) {
 	t.Parallel()
 
