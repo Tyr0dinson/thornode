@@ -921,18 +921,29 @@ func (s *FrostSigner) GetAddresses(vaultPubKey string) ([]string, error) {
 }
 
 func (s *FrostSigner) GetOutputs(vaultPubKey string) ([]xmrFrostOutputEntry, error) {
-	return s.getOutputs(vaultPubKey, "")
+	return s.getOutputs(vaultPubKey, "", "")
 }
 
 func (s *FrostSigner) GetAllOutputs(vaultPubKey string) ([]xmrFrostOutputEntry, error) {
-	return s.getOutputs(vaultPubKey, "all")
+	return s.getOutputs(vaultPubKey, "all", "")
 }
 
-func (s *FrostSigner) getOutputs(vaultPubKey, view string) ([]xmrFrostOutputEntry, error) {
+func (s *FrostSigner) GetAllPersistedOutputs(vaultPubKey string) ([]xmrFrostOutputEntry, error) {
+	return s.getOutputs(vaultPubKey, "all", "store")
+}
+
+func (s *FrostSigner) getOutputs(vaultPubKey, view, source string) ([]xmrFrostOutputEntry, error) {
 	var out xmrFrostOutputsResponse
 	path := s.outputsPath + "/" + url.PathEscape(vaultPubKey)
+	values := url.Values{}
 	if view != "" {
-		path += "?view=" + url.QueryEscape(view)
+		values.Set("view", view)
+	}
+	if source != "" {
+		values.Set("source", source)
+	}
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 	if err := s.callGet(path, &out); err != nil {
 		return nil, fmt.Errorf("fail to call frost outputs endpoint: %w", err)

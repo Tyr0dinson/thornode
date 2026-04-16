@@ -1321,7 +1321,10 @@ func sameNormalizedTxKeyValues(left, right []string) bool {
 }
 
 func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostApplyKeyImageRef) (bool, error) {
-	outputs, err := c.frostSigner.GetAllOutputs(vaultPubKey)
+	// Replay verification must use persisted sidecar state. The scanner's
+	// in-memory view can momentarily lag behind concurrent scanner_sync work,
+	// which causes false "pending" results and blocks tx-key propagation.
+	outputs, err := c.frostSigner.GetAllPersistedOutputs(vaultPubKey)
 	if err != nil {
 		return false, err
 	}

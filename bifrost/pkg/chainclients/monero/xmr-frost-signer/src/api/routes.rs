@@ -2004,10 +2004,25 @@ impl Default for OutputsView {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputsSource {
+    Scanner,
+    Store,
+}
+
+impl Default for OutputsSource {
+    fn default() -> Self {
+        Self::Scanner
+    }
+}
+
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct OutputsQuery {
     #[serde(default)]
     pub view: OutputsView,
+    #[serde(default)]
+    pub source: OutputsSource,
 }
 
 const MEMPOOL_TRANSFER_BATCH_SIZE: usize = 100;
@@ -2219,6 +2234,28 @@ fn outputs_for_view(
         OutputsView::Spendable => scanner.get_outputs(vault_pub_key),
         OutputsView::All => scanner.get_all_outputs(vault_pub_key),
     }
+}
+
+fn stored_outputs_for_view(
+    state: &AppState,
+    vault_pub_key: &str,
+    view: OutputsView,
+) -> Result<Vec<TrackedOutput>, String> {
+    let outputs = state
+        .store
+        .load_outputs(vault_pub_key)
+        .map_err(|e| format!("failed to load outputs: {e}"))?;
+
+    Ok(match view {
+        OutputsView::All => outputs,
+        OutputsView::Spendable => {
+            let current_height = state.scanner.lock().current_height();
+            outputs
+                .into_iter()
+                .filter(|output| output.is_available_for_spend_at(current_height))
+                .collect()
+        }
+    })
 }
 
 fn output_entry_from_tracked(o: TrackedOutput) -> OutputEntry {
@@ -3106,9 +3143,15 @@ pub async fn get_outputs(
     Path(vault_pub_key): Path<String>,
     Query(query): Query<OutputsQuery>,
 ) -> impl IntoResponse {
-    let outputs = {
-        let scanner = state.scanner.lock();
-        outputs_for_view(&scanner, &vault_pub_key, query.view)
+    let outputs = match query.source {
+        OutputsSource::Scanner => {
+            let scanner = state.scanner.lock();
+            outputs_for_view(&scanner, &vault_pub_key, query.view)
+        }
+        OutputsSource::Store => match stored_outputs_for_view(&state, &vault_pub_key, query.view) {
+            Ok(outputs) => outputs,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+        },
     };
 
     let entries: Vec<OutputEntry> = outputs.into_iter().map(output_entry_from_tracked).collect();
@@ -7080,6 +7123,46 @@ mod tests {
         assert_eq!(seen.get("unspent"), Some(&false));
         assert_eq!(seen.get("reserved"), Some(&false));
         assert_eq!(seen.get("spent"), Some(&true));
+    }
+
+    #[tokio::test]
+    async fn get_outputs_source_store_reads_persisted_outputs() {
+        let scanner_outputs = vec![sample_output(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            0,
+            OutputState::Unspent,
+        )];
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(scanner_outputs);
+
+        let mut persisted = sample_output(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            0,
+            OutputState::Spent,
+        );
+        persisted.key_image = Some("persisted-key-image".to_string());
+        state
+            .store
+            .save_outputs(&vault_pub_key, &[persisted])
+            .expect("failed to seed persisted outputs");
+
+        let uri: Uri = format!("/v1/monero/outputs/{vault_pub_key}?view=all&source=store")
+            .parse()
+            .expect("invalid test uri");
+        let query = Query::<OutputsQuery>::try_from_uri(&uri)
+            .expect("failed to parse persisted outputs query");
+        let (status, body) = do_get(state, vault_pub_key, query).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let entries = body["outputs"]
+            .as_array()
+            .expect("outputs should be an array");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["state"], serde_json::json!("spent"));
+        assert_eq!(entries[0]["spent"], serde_json::json!(true));
+        assert_eq!(
+            entries[0]["key_image"],
+            serde_json::json!("persisted-key-image")
+        );
     }
 
     #[tokio::test]

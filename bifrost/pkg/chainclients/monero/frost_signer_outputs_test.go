@@ -86,6 +86,43 @@ func TestFrostSignerGetAllOutputsRequestsAllView(t *testing.T) {
 	}
 }
 
+func TestFrostSignerGetAllPersistedOutputsRequestsStoreSource(t *testing.T) {
+	t.Parallel()
+
+	expectedPath := "/v1/monero/outputs/thorpub1vault"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != expectedPath {
+			http.Error(w, "unexpected path: "+r.URL.EscapedPath(), http.StatusNotFound)
+			return
+		}
+		if got := r.URL.Query().Get("view"); got != "all" {
+			http.Error(w, "unexpected view: "+got, http.StatusBadRequest)
+			return
+		}
+		if got := r.URL.Query().Get("source"); got != "store" {
+			http.Error(w, "unexpected source: "+got, http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+			Outputs: []xmrFrostOutputEntry{{TxHash: strings.Repeat("b", 64), OutputIndex: 1}},
+		})
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	outputs, err := signer.GetAllPersistedOutputs("thorpub1vault")
+	if err != nil {
+		t.Fatalf("GetAllPersistedOutputs failed: %v", err)
+	}
+	if len(outputs) != 1 {
+		t.Fatalf("expected one output, got %d", len(outputs))
+	}
+}
+
 func TestFrostSignerGetOutputsHTTPError(t *testing.T) {
 	t.Parallel()
 
