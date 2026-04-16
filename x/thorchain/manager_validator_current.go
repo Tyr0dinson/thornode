@@ -916,6 +916,7 @@ func (vm *ValidatorMgr) distributeChainBondRewards(ctx cosmos.Context, mgr Manag
 	}
 
 	var resultErr error
+	totalUndistributed := cosmos.ZeroUint()
 	for _, ci := range network.ChainIncome {
 		if ci.Amount.IsZero() {
 			continue
@@ -926,23 +927,42 @@ func (vm *ValidatorMgr) distributeChainBondRewards(ctx cosmos.Context, mgr Manag
 			continue
 		}
 
-		if err := vm.distributeChainIncome(ctx, mgr, chain, ci.Amount); err != nil {
+		var distributed cosmos.Uint
+		distributed, err = vm.distributeChainIncome(ctx, mgr, chain, ci.Amount)
+		if err != nil {
 			resultErr = errors.Join(resultErr, err)
 			ctx.Logger().Error("fail to distribute chain income", "chain", chain, "error", err)
 			continue
+		}
+
+		undistributed := common.SafeSub(ci.Amount, distributed)
+		if !undistributed.IsZero() {
+			totalUndistributed = totalUndistributed.Add(undistributed)
 		}
 
 		if err := vm.k.ZeroChainIncome(ctx, chain); err != nil {
 			resultErr = errors.Join(resultErr, err)
 		}
 	}
+
+	if !totalUndistributed.IsZero() {
+		network, err = vm.k.GetNetwork(ctx)
+		if err != nil {
+			return fmt.Errorf("fail to re-read network for undistributed chain income: %w", err)
+		}
+		network.BondRewardRune = network.BondRewardRune.Add(totalUndistributed)
+		if err := vm.k.SetNetwork(ctx, network); err != nil {
+			return fmt.Errorf("fail to save network after undistributed chain income: %w", err)
+		}
+	}
+
 	return resultErr
 }
 
-func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, chain common.Chain, totalReward cosmos.Uint) error {
+func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, chain common.Chain, totalReward cosmos.Uint) (cosmos.Uint, error) {
 	vaults, err := vm.k.GetActiveAsgardVaultsByChain(ctx, chain)
 	if err != nil {
-		return fmt.Errorf("fail to get active vaults for chain %s: %w", chain, err)
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get active vaults for chain %s: %w", chain, err)
 	}
 
 	seen := make(map[string]struct{})
@@ -966,15 +986,16 @@ func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, c
 	}
 
 	if len(chainNodes) == 0 {
-		return nil
+		return cosmos.ZeroUint(), nil
 	}
 
 	chainTotalEffBond, chainBondCap := getTotalEffectiveBond(chainNodes)
 	if chainTotalEffBond.IsZero() {
-		return nil
+		return cosmos.ZeroUint(), nil
 	}
 
 	distributed := cosmos.ZeroUint()
+	paid := cosmos.ZeroUint()
 	for i, na := range chainNodes {
 		effBond := na.Bond
 		if effBond.GT(chainBondCap) {
@@ -996,8 +1017,9 @@ func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, c
 			ctx.Logger().Error("fail to pay chain reward", "node", na.NodeAddress, "chain", chain, "error", err)
 			continue
 		}
+		paid = paid.Add(reward)
 	}
-	return nil
+	return paid, nil
 }
 
 func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeAccount, reward cosmos.Uint) error {
