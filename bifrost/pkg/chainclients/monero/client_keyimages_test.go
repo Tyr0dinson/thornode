@@ -595,6 +595,79 @@ func TestPrepareObservedTxInItemDefersTrackedOutboundUntilChangeOutputsMateriali
 	require.Len(t, tssServer.reqs, 0)
 }
 
+func TestPrepareObservedTxInItemWaitsForLocalVaultRescan(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("y", 64)
+	destination := common.XMRSeededDummyAddress('8', []byte("rescan-wait-destination"))
+	scanHeight := uint64(95)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 0})
+		case r.URL.Path == "/v1/monero/vaults":
+			_ = json.NewEncoder(w).Encode(xmrFrostVaultStatesResponse{
+				Vaults: []xmrFrostVaultStateEntry{{
+					VaultPubKey: vaultPubKey.String(),
+					Rescan:      true,
+					ScanHeight:  &scanHeight,
+				}},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination,
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "OUT:YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY",
+		TxKeys:              []string{strings.Repeat("1", 64)},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	require.Len(t, tssServer.reqs, 0)
+}
+
 func TestPrepareObservedTxInItemWaitsForPeerDiscoveryBeforeKeyImageCeremony(t *testing.T) {
 	t.Parallel()
 
@@ -1797,6 +1870,61 @@ func TestValidateOutboundObservationAllowsFinalOutboundWithoutChange(t *testing.
 	}
 
 	require.NoError(t, c.ValidateOutboundObservation(obsTx))
+}
+
+func TestValidateOutboundObservationWaitsForLocalVaultRescan(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("m", 64)
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("external-rescan-wait")))
+	scanHeight := uint64(99)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 1})
+		case r.URL.Path == "/v1/monero/vaults":
+			_ = json.NewEncoder(w).Encode(xmrFrostVaultStatesResponse{
+				Vaults: []xmrFrostVaultStateEntry{{
+					VaultPubKey: vaultPubKey.String(),
+					Rescan:      true,
+					ScanHeight:  &scanHeight,
+				}},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.NewTx(
+			common.TxID(txHash),
+			vaultAddr,
+			destination,
+			common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			"OUT:MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM",
+		),
+		BlockHeight:    110,
+		FinaliseHeight: 110,
+		ObservedPubKey: vaultPubKey,
+		TxKeys:         []string{strings.Repeat("1", 64)},
+	}
+
+	err = c.ValidateOutboundObservation(obsTx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "waiting for local scanner replay")
 }
 
 func TestCatchupKeyImagesReadsFromVaultAndCallsSidecar(t *testing.T) {

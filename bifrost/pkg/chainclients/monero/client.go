@@ -451,7 +451,9 @@ func isTransientXMRKeyImageCeremonyError(err error) bool {
 	}
 	errText := err.Error()
 	return strings.Contains(errText, "leader not reachable") ||
-		strings.Contains(errText, "fail to join party, timeout")
+		strings.Contains(errText, "fail to join party, timeout") ||
+		strings.Contains(errText, "timeout waiting for preprocess payloads and transcript verifications") ||
+		(strings.Contains(errText, "tracked output ") && strings.Contains(errText, " not found"))
 }
 
 var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not active")
@@ -3158,6 +3160,21 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("canonicalized XMR key-image vault context")
 		item.ObservedVaultPubKey = ceremonyCtx.vaultPubKey
 	}
+	rescanPending, scanHeight, err := c.localXMRVaultRescanPending(ceremonyCtx.vaultPubKey)
+	if err != nil {
+		return nil, false, fmt.Errorf("fail to inspect local XMR scanner replay state: %w", err)
+	}
+	if rescanPending {
+		logEvent := c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Int64("finalise_height", finaliseHeight)
+		if scanHeight != nil {
+			logEvent = logEvent.Uint64("scan_height", *scanHeight)
+		}
+		logEvent.Msg("waiting for local XMR scanner replay before finalized key-image observation")
+		return nil, false, nil
+	}
 	if !c.localNodeIsVaultSigner(ceremonyCtx.members) {
 		c.logger.Debug().
 			Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4063,6 +4080,16 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trac
 		}
 		canonicalVaultPubKey = ceremonyCtx.vaultPubKey
 	}
+	rescanPending, _, err := c.localXMRVaultRescanPending(canonicalVaultPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to inspect local XMR scanner replay state: %w", err)
+	}
+	if rescanPending {
+		if inbound {
+			return fmt.Errorf("xmr finalized inbound is waiting for local scanner replay for %s", tx.Tx.ID)
+		}
+		return fmt.Errorf("xmr finalized outbound is waiting for local scanner replay for %s", tx.Tx.ID)
+	}
 
 	outputs, err := c.collectVaultOutputsForTx(canonicalVaultPubKey, tx.Tx.ID.String())
 	if err != nil {
@@ -4141,6 +4168,30 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trac
 		Int("not_found", result.NotFound).
 		Msg("validated and applied finalized XMR key-images")
 	return nil
+}
+
+func (c *Client) localXMRVaultRescanPending(vaultPubKey common.PubKey) (bool, *uint64, error) {
+	if c.frostSigner == nil || vaultPubKey.IsEmpty() {
+		return false, nil, nil
+	}
+
+	stateResp, err := c.frostSigner.ListVaultStates()
+	if err != nil {
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			return false, nil, nil
+		}
+		return false, nil, err
+	}
+
+	vaultKey := strings.TrimSpace(vaultPubKey.String())
+	for _, state := range stateResp.Vaults {
+		if strings.TrimSpace(state.VaultPubKey) != vaultKey {
+			continue
+		}
+		return state.Rescan, state.ScanHeight, nil
+	}
+
+	return false, nil, nil
 }
 
 func (c *Client) RollbackBlockScanner() error {
