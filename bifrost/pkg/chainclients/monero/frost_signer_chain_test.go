@@ -120,6 +120,40 @@ func TestFrostSignerUsesRawAuthorizationHeaderForSidecarAndDaemon(t *testing.T) 
 	}
 }
 
+func TestFrostSignerBearerTakesPrecedenceOverConfiguredBasicAuth(t *testing.T) {
+	t.Parallel()
+
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/monero/chain/height" {
+			http.Error(w, "unexpected path: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 123})
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{
+			UserName:            "thorchain",
+			Password:            "password",
+			AuthorizationBearer: "test raw seed phrase",
+		},
+		server.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	if _, err := signer.GetChainHeight(); err != nil {
+		t.Fatalf("GetChainHeight failed: %v", err)
+	}
+	if authHeader != "test raw seed phrase" {
+		t.Fatalf("expected bearer Authorization header to win over basic auth, got %q", authHeader)
+	}
+}
+
 func TestFrostSignerGetChainHeightUsesDaemonRPCWhenConfigured(t *testing.T) {
 	t.Parallel()
 

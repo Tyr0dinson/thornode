@@ -1198,8 +1198,7 @@ func (s *FrostSigner) callDaemonJSONRPC(method string, params any, out any) erro
 	req.Header.Set("Content-Type", "application/json")
 	if s.bearer != "" {
 		req.Header.Set("Authorization", s.bearer)
-	}
-	if s.username != "" {
+	} else if s.username != "" {
 		req.SetBasicAuth(s.username, s.password)
 	}
 
@@ -1250,8 +1249,7 @@ func (s *FrostSigner) callGet(path string, out any) error {
 	}
 	if s.bearer != "" {
 		req.Header.Set("Authorization", s.bearer)
-	}
-	if s.username != "" {
+	} else if s.username != "" {
 		req.SetBasicAuth(s.username, s.password)
 	}
 
@@ -1320,8 +1318,7 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 	req.Header.Set("Content-Type", "application/json")
 	if s.bearer != "" {
 		req.Header.Set("Authorization", s.bearer)
-	}
-	if s.username != "" {
+	} else if s.username != "" {
 		req.SetBasicAuth(s.username, s.password)
 	}
 
