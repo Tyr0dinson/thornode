@@ -134,6 +134,9 @@ func TestObserverRoundTrip(t *testing.T) {
 	obs.chains[common.BCHChain] = &mockChainClient{}
 	obs.chains[common.ETHChain] = &mockChainClient{}
 	obs.chains[common.LTCChain] = &mockChainClient{}
+	obs.chains[common.BTCChain] = &mockChainClient{}
+	obs.chains[common.DOGEChain] = &mockChainClient{}
+	obs.chains[common.BSCChain] = &mockChainClient{}
 
 	for _, tx := range txs {
 		err = obs.storage.AddOrUpdateTx(tx)

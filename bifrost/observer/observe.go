@@ -244,6 +244,7 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 	madeChanges := false
 
 	isFinal := tx.IsFinal()
+	retainFinalOnDeck := o.shouldRetainFinalObservedTxOnDeck(tx)
 
 	o.lock.Lock()
 	defer o.lock.Unlock()
@@ -263,24 +264,31 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 			continue
 		}
 		if isFinal {
-			o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
-			// if the tx is in the tx array, and it is final, remove it from the tx array.
-			deck.TxArray = slices.Delete(deck.TxArray, j, j+1)
-			if len(deck.TxArray) == 0 {
-				o.logger.Debug().Msgf("deck is empty, removing from ondeck")
-
-				// if the deck is empty after removing, remove it from ondeck.
-				delete(o.onDeck, k)
-				if err := o.storage.RemoveTx(deck, tx.FinaliseHeight); err != nil {
-					o.logger.Error().Err(err).Msg("fail to remove tx from storage")
-				}
-			} else {
-				if j == 0 {
-					// update block confirmation count
-					deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
-				}
+			if retainFinalOnDeck {
+				o.logger.Debug().Msgf("tx final %s - %s retained on tx array for xmr metadata retry", tx.Tx.Chain, tx.Tx.ID)
 				if err := o.storage.AddOrUpdateTx(deck); err != nil {
 					o.logger.Error().Err(err).Msg("fail to update tx in storage")
+				}
+			} else {
+				o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
+				// if the tx is in the tx array, and it is final, remove it from the tx array.
+				deck.TxArray = slices.Delete(deck.TxArray, j, j+1)
+				if len(deck.TxArray) == 0 {
+					o.logger.Debug().Msgf("deck is empty, removing from ondeck")
+
+					// if the deck is empty after removing, remove it from ondeck.
+					delete(o.onDeck, k)
+					if err := o.storage.RemoveTx(deck, tx.FinaliseHeight); err != nil {
+						o.logger.Error().Err(err).Msg("fail to remove tx from storage")
+					}
+				} else {
+					if j == 0 {
+						// update block confirmation count
+						deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
+					}
+					if err := o.storage.AddOrUpdateTx(deck); err != nil {
+						o.logger.Error().Err(err).Msg("fail to update tx in storage")
+					}
 				}
 			}
 		} else {
@@ -319,6 +327,38 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 		Str("gas", common.Coins(tx.Tx.Gas).String()).
 		Str("observed_vault_pubkey", tx.ObservedPubKey.String()).
 		Msg("observed tx committed to thorchain")
+}
+
+func (o *Observer) shouldRetainFinalObservedTxOnDeck(tx common.ObservedTx) bool {
+	if !tx.IsFinal() || !tx.Tx.Chain.Equals(common.XMRChain) {
+		return false
+	}
+
+	chain, err := o.getChain(tx.Tx.Chain)
+	if err != nil {
+		o.logger.Error().
+			Err(err).
+			Str("tx_id", tx.Tx.ID.String()).
+			Str("chain", tx.Tx.Chain.String()).
+			Msg("failed to retrieve chain client for finalized XMR commit validation")
+		return false
+	}
+
+	validator, ok := chain.(chainclienttypes.ObservedTxInValidator)
+	if !ok {
+		return false
+	}
+
+	if err := validator.ValidateObservedTxIn(tx); err != nil {
+		o.logger.Info().
+			Err(err).
+			Str("tx_id", tx.Tx.ID.String()).
+			Str("chain", tx.Tx.Chain.String()).
+			Msg("keeping finalized XMR observation on deck until local validation succeeds")
+		return true
+	}
+
+	return false
 }
 
 func (o *Observer) sendDeck(ctx context.Context) {
