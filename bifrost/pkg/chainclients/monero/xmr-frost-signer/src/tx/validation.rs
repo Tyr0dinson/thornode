@@ -332,6 +332,7 @@ fn commitment_mask(derivations: &OutputDerivations) -> Scalar {
 }
 
 #[cfg(test)]
+#[derive(Clone)]
 pub(crate) struct SyntheticOutboundCase {
     pub tx_hex: String,
     pub tx_keys: Vec<String>,

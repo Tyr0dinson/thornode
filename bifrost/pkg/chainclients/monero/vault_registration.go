@@ -8,6 +8,7 @@ import (
 	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/rs/zerolog"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -77,6 +78,44 @@ func keyImageRefsFromVault(vault ttypes.Vault) []xmrFrostApplyKeyImageRef {
 	return refs
 }
 
+func txKeyEntriesFromVault(
+	bridge thorclient.ThorchainBridge,
+	chain common.Chain,
+	vault ttypes.Vault,
+) ([]xmrFrostRegisterTxKeyEntry, error) {
+	if bridge == nil || len(vault.TxKeysXmr) == 0 {
+		return nil, nil
+	}
+
+	vaultPubKey := keyImageCatchupVaultPubKey(vault)
+	if vaultPubKey.IsEmpty() {
+		return nil, nil
+	}
+
+	helper := &Client{
+		chain:           chain,
+		thorchainBridge: bridge,
+	}
+	entries := make([]xmrFrostRegisterTxKeyEntry, 0, len(vault.TxKeysXmr))
+	for _, ref := range makeTxKeyCatchupRefs(vault.TxKeysXmr) {
+		meta, err := helper.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash)
+		if err != nil {
+			return nil, fmt.Errorf("fail to build tx-key registration metadata for %s: %w", ref.txHash, err)
+		}
+		entries = append(entries, xmrFrostRegisterTxKeyEntry{
+			TxHash:      ref.txHash,
+			TxKeys:      append([]string(nil), ref.txKeys...),
+			FromAddress: meta.FromAddress,
+			ToAddress:   meta.ToAddress,
+			Amount:      meta.Amount,
+			Fee:         meta.Fee,
+			Memo:        meta.Memo,
+		})
+	}
+
+	return entries, nil
+}
+
 func ensureFrostVaultRegistered(
 	logger zerolog.Logger,
 	signer *FrostSigner,
@@ -108,6 +147,30 @@ func ensureFrostVaultRegisteredWithKeyImages(
 	birthday int64,
 	keyImages []xmrFrostApplyKeyImageRef,
 ) (frostVaultRegistrationResult, error) {
+	return ensureFrostVaultRegisteredWithInventory(
+		logger,
+		signer,
+		chain,
+		vaultPubKey,
+		bootstrap,
+		source,
+		birthday,
+		keyImages,
+		nil,
+	)
+}
+
+func ensureFrostVaultRegisteredWithInventory(
+	logger zerolog.Logger,
+	signer *FrostSigner,
+	chain common.Chain,
+	vaultPubKey common.PubKey,
+	bootstrap *frostVaultBootstrap,
+	source string,
+	birthday int64,
+	keyImages []xmrFrostApplyKeyImageRef,
+	txKeyEntries []xmrFrostRegisterTxKeyEntry,
+) (frostVaultRegistrationResult, error) {
 	if signer == nil {
 		return frostVaultRegistrationResult{}, fmt.Errorf("frost signer is not initialized")
 	}
@@ -135,6 +198,7 @@ func ensureFrostVaultRegisteredWithKeyImages(
 		Source:              source,
 		VaultCreationHeight: birthday,
 		KeyImages:           append([]xmrFrostApplyKeyImageRef(nil), keyImages...),
+		TxKeyEntries:        append([]xmrFrostRegisterTxKeyEntry(nil), txKeyEntries...),
 	}
 	if spendKeyHex, ok := bootstrap.spendKeyHexFor(vaultPubKey); ok {
 		req.SpendKeyHex = strings.TrimSpace(spendKeyHex)

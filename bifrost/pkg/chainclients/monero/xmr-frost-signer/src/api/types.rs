@@ -66,11 +66,25 @@ pub struct RegisterVaultRequest {
     pub birthday: Option<u64>,
     #[serde(default)]
     pub key_images: Vec<KeyImageEntry>,
+    #[serde(default)]
+    pub tx_keys: Vec<RegisterTxKeyEntry>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct RegisterVaultResponse {
     pub registered: bool,
+}
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct RegisterTxKeyEntry {
+    pub tx_hash: String,
+    pub tx_keys: Vec<String>,
+    pub from_address: Option<String>,
+    pub to_address: String,
+    pub amount: u64,
+    #[serde(default)]
+    pub fee: u64,
+    pub memo: Option<String>,
 }
 
 // ---- Signing Request/Response types ----

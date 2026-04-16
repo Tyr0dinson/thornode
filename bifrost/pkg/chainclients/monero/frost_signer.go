@@ -274,17 +274,28 @@ type xmrFrostBalanceResponse struct {
 }
 
 type xmrFrostRegisterVaultRequest struct {
-	VaultPubKey         string                     `json:"vault_pub_key"`
-	GroupKey            string                     `json:"group_key"`
-	Address             string                     `json:"address"`
-	SpendKeyHex         string                     `json:"spend_key_hex,omitempty"`
-	Source              string                     `json:"source,omitempty"`
-	VaultCreationHeight int64                      `json:"birthday,omitempty"`
-	KeyImages           []xmrFrostApplyKeyImageRef `json:"key_images,omitempty"`
+	VaultPubKey         string                       `json:"vault_pub_key"`
+	GroupKey            string                       `json:"group_key"`
+	Address             string                       `json:"address"`
+	SpendKeyHex         string                       `json:"spend_key_hex,omitempty"`
+	Source              string                       `json:"source,omitempty"`
+	VaultCreationHeight int64                        `json:"birthday,omitempty"`
+	KeyImages           []xmrFrostApplyKeyImageRef   `json:"key_images,omitempty"`
+	TxKeyEntries        []xmrFrostRegisterTxKeyEntry `json:"tx_keys,omitempty"`
 }
 
 type xmrFrostRegisterVaultResponse struct {
 	Registered bool `json:"registered"`
+}
+
+type xmrFrostRegisterTxKeyEntry struct {
+	TxHash      string   `json:"tx_hash"`
+	TxKeys      []string `json:"tx_keys"`
+	FromAddress string   `json:"from_address,omitempty"`
+	ToAddress   string   `json:"to_address"`
+	Amount      uint64   `json:"amount"`
+	Fee         uint64   `json:"fee,omitempty"`
+	Memo        string   `json:"memo,omitempty"`
 }
 
 type xmrFrostTransferEntry struct {

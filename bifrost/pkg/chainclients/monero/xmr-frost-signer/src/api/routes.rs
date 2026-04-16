@@ -975,6 +975,16 @@ pub async fn register_vault(
             ))),
         );
     }
+    if let Err((status, response)) =
+        reconcile_registered_tx_key_inventory(&state, &vault_pub_key, req.tx_keys).await
+    {
+        error!(
+            vault = %vault_pub_key,
+            status = %status,
+            "failed to reconcile registered tx-key inventory"
+        );
+        return (status, Json(response));
+    }
 
     (
         StatusCode::OK,
@@ -3345,38 +3355,98 @@ pub async fn apply_key_images(
     )
 }
 
-pub async fn validate_outbound(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<crate::api::types::ValidateOutboundRequest>,
-) -> impl IntoResponse {
+fn normalized_tx_keys(keys: &[String]) -> Vec<String> {
+    let mut normalized: Vec<String> = keys
+        .iter()
+        .map(|key| key.trim().to_ascii_lowercase())
+        .filter(|key| !key.is_empty())
+        .collect();
+    normalized.sort();
+    normalized
+}
+
+fn outgoing_record_matches_registered_tx_key(
+    record: &crate::state::store::OutgoingTransferRecord,
+    entry: &crate::api::types::RegisterTxKeyEntry,
+) -> bool {
+    if !record.status.eq_ignore_ascii_case(OUTGOING_STATUS_MINED) {
+        return false;
+    }
+    if normalized_tx_keys(&record.tx_keys) != normalized_tx_keys(&entry.tx_keys) {
+        return false;
+    }
+    if !record
+        .to_address
+        .eq_ignore_ascii_case(entry.to_address.trim())
+    {
+        return false;
+    }
+    if record.amount != entry.amount || record.fee != entry.fee {
+        return false;
+    }
+
+    let entry_from = entry.from_address.as_deref().unwrap_or_default().trim();
+    if !entry_from.is_empty() && !record.from_address.eq_ignore_ascii_case(entry_from) {
+        return false;
+    }
+
+    let entry_memo = entry.memo.as_deref().unwrap_or_default().trim();
+    if !entry_memo.is_empty() && record.memo.trim() != entry_memo {
+        return false;
+    }
+
+    true
+}
+
+fn register_tx_key_entry_as_validate_request(
+    vault_pub_key: &str,
+    entry: crate::api::types::RegisterTxKeyEntry,
+) -> crate::api::types::ValidateOutboundRequest {
+    crate::api::types::ValidateOutboundRequest {
+        vault_pub_key: vault_pub_key.to_string(),
+        tx_hash: entry.tx_hash,
+        tx_keys: entry.tx_keys,
+        from_address: entry.from_address,
+        to_address: entry.to_address,
+        amount: entry.amount,
+        fee: entry.fee,
+        memo: entry.memo,
+        reconcile: true,
+    }
+}
+
+async fn validate_outbound_request(
+    state: &Arc<AppState>,
+    req: crate::api::types::ValidateOutboundRequest,
+) -> Result<crate::api::types::ValidateOutboundResponse, (StatusCode, serde_json::Value)> {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
-            Json(error_json("vault_pub_key is required")),
-        );
+            error_json("vault_pub_key is required"),
+        ));
     }
 
     let tx_hash = normalize_tx_hash(&req.tx_hash);
     if !is_valid_chain_tx_hash(&tx_hash) {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
-            Json(error_json("tx_hash must be a 64-character hex string")),
-        );
+            error_json("tx_hash must be a 64-character hex string"),
+        ));
     }
     if req.tx_keys.is_empty() {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
-            Json(error_json("tx_keys must not be empty")),
-        );
+            error_json("tx_keys must not be empty"),
+        ));
     }
 
     let to_address = req.to_address.trim().to_string();
     if to_address.is_empty() {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
-            Json(error_json("to_address is required")),
-        );
+            error_json("to_address is required"),
+        ));
     }
 
     let owned_addresses = {
@@ -3384,12 +3454,12 @@ pub async fn validate_outbound(
         scanner.get_addresses(&vault_pub_key)
     };
     if owned_addresses.is_empty() {
-        return (
+        return Err((
             StatusCode::NOT_FOUND,
-            Json(error_json(format!(
+            error_json(format!(
                 "no registered addresses found for vault {vault_pub_key}"
-            ))),
-        );
+            )),
+        ));
     }
 
     let from_address = req
@@ -3403,24 +3473,22 @@ pub async fn validate_outbound(
             .iter()
             .any(|address| address.eq_ignore_ascii_case(&from_address))
     {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
-            Json(error_json(
-                "from_address does not belong to the provided vault",
-            )),
-        );
+            error_json("from_address does not belong to the provided vault"),
+        ));
     }
 
     let daemon_result = match state.daemon.get_transactions(&[tx_hash.clone()]).await {
         Ok(result) => result,
         Err(e) => {
             error!(error = %e, tx_hash, "failed to query daemon transaction");
-            return (
+            return Err((
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!(
+                error_json(format!(
                     "daemon transaction query unavailable for {tx_hash}: {e}"
-                ))),
-            );
+                )),
+            ));
         }
     };
 
@@ -3438,28 +3506,28 @@ pub async fn validate_outbound(
                 .iter()
                 .any(|hash| hash_matches(hash, &tx_hash))
             {
-                return (
+                return Err((
                     StatusCode::NOT_FOUND,
-                    Json(error_json(format!("transaction {tx_hash} not found"))),
-                );
+                    error_json(format!("transaction {tx_hash} not found")),
+                ));
             }
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
+                error_json(format!(
                     "ambiguous daemon get_transactions response for {tx_hash}"
-                ))),
-            );
+                )),
+            ));
         }
     };
 
     let tx_hex = tx_entry.as_hex.trim().to_string();
     if tx_hex.is_empty() {
-        return (
+        return Err((
             StatusCode::BAD_GATEWAY,
-            Json(error_json(format!(
+            error_json(format!(
                 "daemon returned empty tx hex for transaction {tx_hash}"
-            ))),
-        );
+            )),
+        ));
     }
 
     let validated = match validation::validate_outbound_transaction(
@@ -3481,12 +3549,10 @@ pub async fn validate_outbound(
                 fee = req.fee,
                 "outbound tx-key validation failed"
             );
-            return (
+            return Err((
                 StatusCode::BAD_REQUEST,
-                Json(error_json(format!(
-                    "failed to validate outbound transaction: {e}"
-                ))),
-            );
+                error_json(format!("failed to validate outbound transaction: {e}")),
+            ));
         }
     };
 
@@ -3494,32 +3560,32 @@ pub async fn validate_outbound(
         Ok(record) => record,
         Err(e) => {
             error!(error = %e, vault = vault_pub_key, tx_hash, "failed to load existing outgoing transfer");
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to load outgoing transfer: {e}"))),
-            );
+                error_json(format!("failed to load outgoing transfer: {e}")),
+            ));
         }
     };
 
     if let Some(record) = existing.as_ref() {
         if !record.tx_keys.is_empty() && record.tx_keys != req.tx_keys {
-            return (
+            return Err((
                 StatusCode::CONFLICT,
-                Json(error_json(format!(
+                error_json(format!(
                     "existing outgoing transfer for {tx_hash} has different tx_keys"
-                ))),
-            );
+                )),
+            ));
         }
         if !record.to_address.eq_ignore_ascii_case(&to_address)
             || record.amount != req.amount
             || record.fee != req.fee
         {
-            return (
+            return Err((
                 StatusCode::CONFLICT,
-                Json(error_json(format!(
+                error_json(format!(
                     "existing outgoing transfer for {tx_hash} conflicts with outbound metadata"
-                ))),
-            );
+                )),
+            ));
         }
     }
 
@@ -3543,12 +3609,10 @@ pub async fn validate_outbound(
             req.memo.as_deref().unwrap_or_default(),
         ) {
             error!(error = %e, vault = vault_pub_key, tx_hash, "failed to update existing outgoing transfer metadata");
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
-                    "failed to update outgoing transfer metadata: {e}"
-                ))),
-            );
+                error_json(format!("failed to update outgoing transfer metadata: {e}")),
+            ));
         }
         if let Err(e) = state.store.update_outgoing_transfer_status(
             &vault_pub_key,
@@ -3559,12 +3623,10 @@ pub async fn validate_outbound(
             None,
         ) {
             error!(error = %e, vault = vault_pub_key, tx_hash, "failed to update existing outgoing transfer status");
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
-                    "failed to update outgoing transfer status: {e}"
-                ))),
-            );
+                error_json(format!("failed to update outgoing transfer status: {e}")),
+            ));
         }
 
         let marked = if req.reconcile && record.tx_keys.is_empty() {
@@ -3572,17 +3634,11 @@ pub async fn validate_outbound(
         } else {
             0
         };
-        return (
-            StatusCode::OK,
-            Json(
-                serde_json::to_value(crate::api::types::ValidateOutboundResponse {
-                    tracked: validated.tracked_owned_output,
-                    marked,
-                    not_found: 0,
-                })
-                .unwrap(),
-            ),
-        );
+        return Ok(crate::api::types::ValidateOutboundResponse {
+            tracked: validated.tracked_owned_output,
+            marked,
+            not_found: 0,
+        });
     }
 
     let (marked, not_found) = (0usize, 0usize);
@@ -3608,12 +3664,10 @@ pub async fn validate_outbound(
     };
     if let Err(e) = state.store.save_outgoing_transfer(&record) {
         error!(error = %e, vault = vault_pub_key, tx_hash, "failed to persist tx-key validated outgoing transfer");
-        return (
+        return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(format!(
-                "failed to persist outgoing transfer: {e}"
-            ))),
-        );
+            error_json(format!("failed to persist outgoing transfer: {e}")),
+        ));
     }
 
     info!(
@@ -3625,17 +3679,88 @@ pub async fn validate_outbound(
         "validated outbound via tx keys without mutating local spend state"
     );
 
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(crate::api::types::ValidateOutboundResponse {
-                tracked: validated.tracked_owned_output,
-                marked,
-                not_found,
-            })
-            .unwrap(),
+    Ok(crate::api::types::ValidateOutboundResponse {
+        tracked: validated.tracked_owned_output,
+        marked,
+        not_found,
+    })
+}
+
+async fn reconcile_registered_tx_key_inventory(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    tx_key_entries: Vec<crate::api::types::RegisterTxKeyEntry>,
+) -> Result<(), (StatusCode, serde_json::Value)> {
+    let existing = state
+        .store
+        .load_outgoing_transfers(vault_pub_key)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error_json(format!("failed to load outgoing transfers: {e}")),
+            )
+        })?;
+    let existing_by_hash: HashMap<String, crate::state::store::OutgoingTransferRecord> = existing
+        .into_iter()
+        .filter(|record| !record.tx_hash.trim().is_empty())
+        .map(|record| (normalize_tx_hash(&record.tx_hash), record))
+        .collect();
+
+    let mut retained_hashes = HashSet::new();
+    for entry in tx_key_entries {
+        let normalized_hash = normalize_tx_hash(&entry.tx_hash);
+        if normalized_hash.is_empty() {
+            continue;
+        }
+        retained_hashes.insert(normalized_hash.clone());
+        if existing_by_hash
+            .get(&normalized_hash)
+            .is_some_and(|record| outgoing_record_matches_registered_tx_key(record, &entry))
+        {
+            continue;
+        }
+        validate_outbound_request(
+            state,
+            register_tx_key_entry_as_validate_request(vault_pub_key, entry),
+        )
+        .await?;
+    }
+
+    let stale_hashes: HashSet<String> = existing_by_hash
+        .iter()
+        .filter_map(|(tx_hash, record)| {
+            if record.tx_keys.is_empty() || retained_hashes.contains(tx_hash) {
+                return None;
+            }
+            Some(tx_hash.clone())
+        })
+        .collect();
+    if !stale_hashes.is_empty() {
+        state
+            .store
+            .prune_outgoing_transfers(vault_pub_key, &stale_hashes, false, true)
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    error_json(format!("failed to prune stale tx-key outbounds: {e}")),
+                )
+            })?;
+    }
+
+    Ok(())
+}
+
+pub async fn validate_outbound(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<crate::api::types::ValidateOutboundRequest>,
+) -> impl IntoResponse {
+    match validate_outbound_request(&state, req).await {
+        Ok(response) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(response).unwrap()),
         ),
-    )
+        Err((status, response)) => (status, Json(response)),
+    }
 }
 
 pub async fn list_vault_keys(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -5358,6 +5483,7 @@ mod tests {
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: None,
                 key_images: vec![],
+                tx_keys: vec![],
             }),
         )
         .await
@@ -5405,6 +5531,7 @@ mod tests {
                     output_index: 0,
                     key_image: key_image.clone(),
                 }],
+                tx_keys: vec![],
             }),
         )
         .await
@@ -5420,6 +5547,107 @@ mod tests {
         assert_eq!(stored[0].tx_hash, tx_hash);
         assert_eq!(stored[0].output_index, 0);
         assert_eq!(stored[0].key_image, key_image);
+    }
+
+    #[tokio::test]
+    async fn register_vault_applies_registered_tx_key_inventory() {
+        let tx_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let synthetic = crate::tx::validation::synthetic_untracked_outbound_case_for_tests();
+        let expected_tx_hex = synthetic.tx_hex.clone();
+        let expected_tx_keys = synthetic.tx_keys.clone();
+        let expected_to_address = synthetic.to_address.clone();
+        let expected_amount = synthetic.amount;
+        let expected_fee = synthetic.fee;
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/get_transactions",
+                axum::routing::post(move |Json(req): Json<serde_json::Value>| {
+                    let tx_hex = expected_tx_hex.clone();
+                    async move {
+                        let requested = req
+                            .get("txs_hashes")
+                            .and_then(serde_json::Value::as_array)
+                            .and_then(|hashes| hashes.first())
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_ascii_lowercase();
+                        if requested == tx_hash {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "txs": [{
+                                        "tx_hash": tx_hash,
+                                        "as_hex": tx_hex,
+                                        "block_height": 111,
+                                        "in_pool": false
+                                    }],
+                                    "status": "OK"
+                                })),
+                            )
+                        } else {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "txs": [],
+                                    "missed_tx": [requested],
+                                    "status": "OK"
+                                })),
+                            )
+                        }
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+        let group_key = xmr::group_key_hex_from_spend_seed_hex(BOOTSTRAP_SPEND_KEY_HEX)
+            .expect("group key should derive");
+        let address = xmr::derive_vault_address(&group_key, state.chain_network)
+            .expect("address should derive");
+
+        let response = register_vault(
+            State(state.clone()),
+            Json(RegisterVaultRequest {
+                vault_pub_key: BOOTSTRAP_VAULT_PUB_KEY.to_string(),
+                group_key,
+                address,
+                source: Some("test".to_string()),
+                spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
+                birthday: Some(100),
+                key_images: vec![],
+                tx_keys: vec![RegisterTxKeyEntry {
+                    tx_hash: tx_hash.to_string(),
+                    tx_keys: expected_tx_keys.clone(),
+                    from_address: None,
+                    to_address: expected_to_address.clone(),
+                    amount: expected_amount,
+                    fee: expected_fee,
+                    memo: Some("OUT:parent".to_string()),
+                }],
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+
+        let records = state
+            .store
+            .load_outgoing_transfers(BOOTSTRAP_VAULT_PUB_KEY)
+            .expect("outgoing transfers should load");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tx_hash, tx_hash);
+        assert_eq!(records[0].tx_keys, expected_tx_keys);
+        assert_eq!(records[0].to_address, expected_to_address);
+        assert_eq!(records[0].amount, expected_amount);
+        assert_eq!(records[0].fee, expected_fee);
+        assert_eq!(records[0].memo, "OUT:parent");
+        assert_eq!(records[0].status, OUTGOING_STATUS_MINED);
+        assert_eq!(records[0].observed_height, Some(111));
     }
 
     #[test]
@@ -6512,6 +6740,7 @@ mod tests {
                 spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
                 birthday: Some(120),
                 key_images: vec![],
+                tx_keys: vec![],
             }),
         )
         .await

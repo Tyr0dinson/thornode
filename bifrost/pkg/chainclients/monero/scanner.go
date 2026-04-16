@@ -843,7 +843,11 @@ func (s *Scanner) refreshAsgardLookup() error {
 			continue
 		}
 		creationHeight := vault.VaultCreationHeightXmr
-		registration, addrErr := ensureFrostVaultRegisteredWithKeyImages(
+		txKeyEntries, txKeyErr := txKeyEntriesFromVault(s.bridge, s.chain, vault)
+		if txKeyErr != nil {
+			return fmt.Errorf("fail to build tx-key registration inventory for vault %s: %w", frostKey.String(), txKeyErr)
+		}
+		registration, addrErr := ensureFrostVaultRegisteredWithInventory(
 			s.logger,
 			s.frostSigner,
 			s.chain,
@@ -852,6 +856,7 @@ func (s *Scanner) refreshAsgardLookup() error {
 			"bifrost_scanner",
 			creationHeight,
 			keyImageRefsFromVault(vault),
+			txKeyEntries,
 		)
 		if addrErr != nil {
 			return fmt.Errorf("fail to register vault %s: %w", frostKey.String(), addrErr)

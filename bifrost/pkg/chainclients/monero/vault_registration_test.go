@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -72,6 +73,17 @@ func TestEnsureFrostVaultRegisteredWithKeyImagesIncludesThorInventory(t *testing
 		{TxHash: strings.Repeat("a", 64), OutputIndex: 0, KeyImage: strings.Repeat("1", 64)},
 		{TxHash: strings.Repeat("b", 64), OutputIndex: 1, KeyImage: strings.Repeat("2", 64)},
 	}
+	expectedTxKeys := []xmrFrostRegisterTxKeyEntry{
+		{
+			TxHash:      strings.Repeat("c", 64),
+			TxKeys:      []string{strings.Repeat("3", 64)},
+			FromAddress: address.String(),
+			ToAddress:   "48dest",
+			Amount:      123,
+			Fee:         7,
+			Memo:        "OUT:parent",
+		},
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -104,6 +116,22 @@ func TestEnsureFrostVaultRegisteredWithKeyImagesIncludesThorInventory(t *testing
 					return
 				}
 			}
+			if len(req.TxKeyEntries) != len(expectedTxKeys) {
+				http.Error(w, "unexpected tx-key entry count", http.StatusBadRequest)
+				return
+			}
+			for i := range expectedTxKeys {
+				if req.TxKeyEntries[i].TxHash != expectedTxKeys[i].TxHash ||
+					!reflect.DeepEqual(req.TxKeyEntries[i].TxKeys, expectedTxKeys[i].TxKeys) ||
+					req.TxKeyEntries[i].FromAddress != expectedTxKeys[i].FromAddress ||
+					req.TxKeyEntries[i].ToAddress != expectedTxKeys[i].ToAddress ||
+					req.TxKeyEntries[i].Amount != expectedTxKeys[i].Amount ||
+					req.TxKeyEntries[i].Fee != expectedTxKeys[i].Fee ||
+					req.TxKeyEntries[i].Memo != expectedTxKeys[i].Memo {
+					http.Error(w, "unexpected tx-key entry", http.StatusBadRequest)
+					return
+				}
+			}
 			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
 		default:
 			http.NotFound(w, r)
@@ -116,7 +144,7 @@ func TestEnsureFrostVaultRegisteredWithKeyImagesIncludesThorInventory(t *testing
 		t.Fatalf("new frost signer: %v", err)
 	}
 
-	registration, err := ensureFrostVaultRegisteredWithKeyImages(
+	registration, err := ensureFrostVaultRegisteredWithInventory(
 		log.Logger,
 		signer,
 		common.XMRChain,
@@ -125,6 +153,7 @@ func TestEnsureFrostVaultRegisteredWithKeyImagesIncludesThorInventory(t *testing
 		"bifrost",
 		123,
 		expectedRefs,
+		expectedTxKeys,
 	)
 	if err != nil {
 		t.Fatalf("ensureFrostVaultRegisteredWithKeyImages failed: %v", err)
