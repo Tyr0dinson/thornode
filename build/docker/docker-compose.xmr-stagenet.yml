@@ -70,7 +70,7 @@ x-bifrost-env: &bifrost-env
   BIFROST_SIGNER_KEYSIGN_TIMEOUT: "8s"
   <<: *disabled-chains
   BIFROST_CHAINS_XMR_DISABLED: "false"
-  BIFROST_CHAINS_XMR_RPC_HOST: *xmr-daemon-url
+  XMR_DAEMON_URL: *xmr-daemon-url
   BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
 

@@ -265,7 +265,7 @@ services:
 
       # enable xmr
       BIFROST_CHAINS_XMR_DISABLED: "${BIFROST_CHAINS_XMR_DISABLED:-false}"
-      BIFROST_CHAINS_XMR_RPC_HOST: http://monero-daemon:18081
+      XMR_DAEMON_URL: http://monero-daemon:18081
       BIFROST_CHAINS_XMR_CHAIN_HOST: http://monero-wallet-rpc:18082
       BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
       BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
