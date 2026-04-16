@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	stdatomic "sync/atomic"
 	"time"
 
 	feegranttypes "cosmossdk.io/x/feegrant"
@@ -107,7 +108,7 @@ type CosmosBlockScanner struct {
 	// Guards feeCache/lastFee between FetchTxs prefetch updates and solvency/network-fee readers.
 	networkFeeMu sync.Mutex
 	feeCache     []sdkmath.Uint
-	lastFee      sdkmath.Uint
+	lastFee      stdatomic.Uint64
 
 	// gasCacheTransactions configures how many observed fee-paying txs are required
 	// before fee averaging/network fee updates begin.
@@ -168,7 +169,6 @@ func NewCosmosBlockScanner(
 		txConfig:             txConfig,
 		rpc:                  rpcClient,
 		feeCache:             make([]sdkmath.Uint, 0, gasCacheTransactions),
-		lastFee:              sdkmath.NewUint(0),
 		bridge:               bridge,
 		pubkeyMgr:            pubkeyMgr,
 		solvencyReporter:     solvencyReporter,
@@ -196,24 +196,19 @@ func (c *CosmosBlockScanner) GetHeight() (int64, error) {
 
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (c *CosmosBlockScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return 1, c.getLastFee().Uint64()
+	return 1, c.lastFee.Load()
 }
 
 func (c *CosmosBlockScanner) getLastFee() sdkmath.Uint {
-	// Solvency/network-fee readers can run while FetchTxs prefetch goroutines update lastFee.
-	c.networkFeeMu.Lock()
-	defer c.networkFeeMu.Unlock()
-	if c.lastFee.IsNil() {
-		return sdkmath.ZeroUint()
-	}
-	return c.lastFee
+	return sdkmath.NewUint(c.lastFee.Load())
 }
 
 func (c *CosmosBlockScanner) setLastFee(fee sdkmath.Uint) {
-	// Tests set lastFee directly; use the same lock as FetchTxs updates and solvency reads.
-	c.networkFeeMu.Lock()
-	defer c.networkFeeMu.Unlock()
-	c.lastFee = fee
+	c.lastFee.Store(fee.Uint64())
+}
+
+func (c *CosmosBlockScanner) lastFeeIsZero() bool {
+	return c.lastFee.Load() == 0
 }
 
 // FetchMemPool returns nothing since we are only concerned about finalized transactions in Cosmos
@@ -348,16 +343,13 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 		}
 
 		// skip fee if less than 1 resolution away from the last
-		lastFee := c.lastFee
-		if lastFee.IsNil() {
-			lastFee = sdkmath.ZeroUint()
-		}
+		lastFee := c.getLastFee()
 		feeDelta := sdkmath.MaxUint(lastFee, gasFee).Sub(sdkmath.MinUint(lastFee, gasFee))
 		if feeDelta.LTE(sdkmath.NewUint(uint64(c.cfg.GasPriceResolution))) {
 			return false, nil
 		}
 
-		c.lastFee = gasFee
+		c.setLastFee(gasFee)
 		// NOTE: We post the fee to the network as the transaction rate (in gas rate units),
 		// and set the transaction size 1 to ensure the MaxGas in the generated TxOut
 		// contains the correct fee. We previously could not pass the proper size and rate

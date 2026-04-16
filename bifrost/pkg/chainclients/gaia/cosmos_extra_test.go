@@ -533,7 +533,6 @@ func (s *ExtraTestSuite) TestFetchTxs(c *C) {
 		rpc:                   &mockTendermintRPC{},
 		cdc:                   cdc,
 		feeCache:              feeCache,
-		lastFee:               sdkmath.NewUint(0),
 		globalNetworkFeeQueue: feeQueue,
 	}
 

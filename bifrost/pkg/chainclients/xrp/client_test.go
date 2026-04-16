@@ -309,12 +309,13 @@ func (s *XrpTestSuite) TestGetGasEstimateForSolvency(c *C) {
 		cfg: config.BifrostChainConfiguration{
 			ChainID: common.XRPChain,
 		},
-		xrpScanner: testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.NewUint(12)), // drops
+		xrpScanner: &XrpBlockScanner{},
 		thorchainBridge: &mockNetworkFeeBridge{
 			size: 1,
 			rate: 999, // should be ignored when scanner fee is set
 		},
 	}
+	clientWithScannerFee.xrpScanner.setLastFee(sdkmath.NewUint(12)) // drops
 	got := clientWithScannerFee.GetGasEstimateForSolvency()
 	c.Assert(got.Equal(cosmos.NewUint(1200)), Equals, true) // 12 drops => 1200 (1e8 units)
 
@@ -322,7 +323,7 @@ func (s *XrpTestSuite) TestGetGasEstimateForSolvency(c *C) {
 		cfg: config.BifrostChainConfiguration{
 			ChainID: common.XRPChain,
 		},
-		xrpScanner: testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.ZeroUint()),
+		xrpScanner: &XrpBlockScanner{},
 		thorchainBridge: &mockNetworkFeeBridge{
 			size: 1,
 			rate: 10, // drops
@@ -335,7 +336,7 @@ func (s *XrpTestSuite) TestGetGasEstimateForSolvency(c *C) {
 		cfg: config.BifrostChainConfiguration{
 			ChainID: common.XRPChain,
 		},
-		xrpScanner: testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.ZeroUint()),
+		xrpScanner: &XrpBlockScanner{},
 		thorchainBridge: &mockNetworkFeeBridge{
 			size: 0,
 			rate: 0,
