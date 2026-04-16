@@ -1908,11 +1908,14 @@ pub async fn broadcast(
                 let is_double_spend = resp.double_spend.unwrap_or(false);
                 let status_lower = resp.status.to_ascii_lowercase();
                 let reason_lower = reason.to_ascii_lowercase();
+                // "not relayed" is ambiguous: monerod can return it for a tx
+                // that really is already in pool/chain, but it can also mean
+                // the broadcast was rejected and the tx never became visible.
+                // Only treat it as success after a positive lookup below.
                 let mut already_known = is_double_spend
                     || status_lower.contains("already")
                     || reason_lower.contains("already")
-                    || reason_lower.contains("double spend")
-                    || reason_lower.contains("not relayed");
+                    || reason_lower.contains("double spend");
 
                 // Positive lookup fallback: when monerod returns Failed with
                 // an empty/ambiguous reason for an already-known tx, query the
@@ -6451,6 +6454,113 @@ mod tests {
             body["error"].as_str().unwrap_or_default(),
             "daemon broadcast returned success without tx hash"
         );
+    }
+
+    #[tokio::test]
+    async fn broadcast_not_relayed_without_positive_lookup_returns_error() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(
+                axum::Router::new()
+                    .route(
+                        "/send_raw_transaction",
+                        axum::routing::post(|| async {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "Failed",
+                                    "reason": "not relayed",
+                                })),
+                            )
+                        }),
+                    )
+                    .route(
+                        "/get_transactions",
+                        axum::routing::post(|| async {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "OK",
+                                    "missed_tx": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                                })),
+                            )
+                        }),
+                    ),
+            )
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let req = BroadcastRequest {
+            tx_hex: "deadbeef".to_string(),
+            tx_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+            msg_id: "msg-broadcast-not-relayed-missing".to_string(),
+        };
+        let response = broadcast(State(state), Json(req)).await.into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"].as_str().unwrap_or_default(), "not relayed");
+    }
+
+    #[tokio::test]
+    async fn broadcast_not_relayed_with_positive_lookup_returns_success() {
+        let daemon_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(
+                axum::Router::new()
+                    .route(
+                        "/send_raw_transaction",
+                        axum::routing::post(|| async {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "Failed",
+                                    "reason": "not relayed",
+                                })),
+                            )
+                        }),
+                    )
+                    .route(
+                        "/get_transactions",
+                        axum::routing::post(move || async move {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "OK",
+                                    "txs": [{
+                                        "tx_hash": daemon_hash,
+                                        "as_hex": "deadbeef",
+                                        "as_json": null,
+                                        "block_height": null,
+                                        "in_pool": true,
+                                    }],
+                                })),
+                            )
+                        }),
+                    ),
+            )
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let req = BroadcastRequest {
+            tx_hex: "deadbeef".to_string(),
+            tx_hash: daemon_hash.to_string(),
+            vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+            msg_id: "msg-broadcast-not-relayed-found".to_string(),
+        };
+        let response = broadcast(State(state), Json(req)).await.into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["tx_hash"].as_str().unwrap_or_default(), daemon_hash);
     }
 
     #[tokio::test]
