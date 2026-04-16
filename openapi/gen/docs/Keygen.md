@@ -7,6 +7,7 @@ Name | Type | Description | Notes
 **Id** | Pointer to **string** |  | [optional] 
 **Type** | Pointer to **string** |  | [optional] 
 **Members** | Pointer to **[]string** |  | [optional] 
+**TargetChains** | Pointer to **[]string** |  | [optional] 
 
 ## Methods
 
@@ -101,6 +102,31 @@ SetMembers sets Members field to given value.
 `func (o *Keygen) HasMembers() bool`
 
 HasMembers returns a boolean if a field has been set.
+
+### GetTargetChains
+
+`func (o *Keygen) GetTargetChains() []string`
+
+GetTargetChains returns the TargetChains field if non-nil, zero value otherwise.
+
+### GetTargetChainsOk
+
+`func (o *Keygen) GetTargetChainsOk() (*[]string, bool)`
+
+GetTargetChainsOk returns a tuple with the TargetChains field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetTargetChains
+
+`func (o *Keygen) SetTargetChains(v []string)`
+
+SetTargetChains sets TargetChains field to given value.
+
+### HasTargetChains
+
+`func (o *Keygen) HasTargetChains() bool`
+
+HasTargetChains returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

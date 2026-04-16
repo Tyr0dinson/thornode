@@ -6632,12 +6632,18 @@ components:
         keygen_block:
           height: 0
           keygens:
-          - members:
+          - target_chains:
+            - target_chains
+            - target_chains
+            members:
             - members
             - members
             id: id
             type: type
-          - members:
+          - target_chains:
+            - target_chains
+            - target_chains
+            members:
             - members
             - members
             id: id
@@ -8233,6 +8239,9 @@ components:
       type: object
     keygen:
       example:
+        target_chains:
+        - target_chains
+        - target_chains
         members:
         - members
         - members
@@ -8248,18 +8257,30 @@ components:
             description: pubkeys of the keygen block member nodes
             type: string
           type: array
+        target_chains:
+          items:
+            description: chains the resulting vault will support; empty means all
+              chains
+            type: string
+          type: array
       title: keygen
       type: object
     KeygenBlock:
       example:
         height: 0
         keygens:
-        - members:
+        - target_chains:
+          - target_chains
+          - target_chains
+          members:
           - members
           - members
           id: id
           type: type
-        - members:
+        - target_chains:
+          - target_chains
+          - target_chains
+          members:
           - members
           - members
           id: id

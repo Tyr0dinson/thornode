@@ -19,6 +19,7 @@ type Keygen struct {
 	Id *string `json:"id,omitempty"`
 	Type *string `json:"type,omitempty"`
 	Members []string `json:"members,omitempty"`
+	TargetChains []string `json:"target_chains,omitempty"`
 }
 
 // NewKeygen instantiates a new Keygen object
@@ -134,6 +135,38 @@ func (o *Keygen) SetMembers(v []string) {
 	o.Members = v
 }
 
+// GetTargetChains returns the TargetChains field value if set, zero value otherwise.
+func (o *Keygen) GetTargetChains() []string {
+	if o == nil || o.TargetChains == nil {
+		var ret []string
+		return ret
+	}
+	return o.TargetChains
+}
+
+// GetTargetChainsOk returns a tuple with the TargetChains field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Keygen) GetTargetChainsOk() ([]string, bool) {
+	if o == nil || o.TargetChains == nil {
+		return nil, false
+	}
+	return o.TargetChains, true
+}
+
+// HasTargetChains returns a boolean if a field has been set.
+func (o *Keygen) HasTargetChains() bool {
+	if o != nil && o.TargetChains != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetTargetChains gets a reference to the given []string and assigns it to the TargetChains field.
+func (o *Keygen) SetTargetChains(v []string) {
+	o.TargetChains = v
+}
+
 func (o Keygen) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Id != nil {
@@ -144,6 +177,9 @@ func (o Keygen) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.Members != nil {
 		toSerialize["members"] = o.Members
+	}
+	if o.TargetChains != nil {
+		toSerialize["target_chains"] = o.TargetChains
 	}
 	return json.Marshal(toSerialize)
 }
