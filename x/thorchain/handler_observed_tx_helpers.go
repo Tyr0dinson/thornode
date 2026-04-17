@@ -1175,10 +1175,7 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 		if !refMemo.IsExpired(ctx.BlockHeight(), ttl) {
 			// Check usage limit
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
-			// Repeated reads for the same tx must stay idempotent even after the memo
-			// has reached its usage cap; otherwise a replayed observation can resolve
-			// differently from the original successful lookup.
-			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse && !refMemo.HasBeenUsedBy(tx.ID) {
+			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
 				ctx.Logger().Info("reference memo usage limit exceeded in fetchMemoFromReference", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse)
 				// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
 				// to maintain a record of who tried to use the reference memo, even if the attempt was invalid.
