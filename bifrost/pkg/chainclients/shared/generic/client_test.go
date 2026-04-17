@@ -1,7 +1,9 @@
 package generic
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cometbft/cometbft/crypto"
@@ -11,6 +13,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
+	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
@@ -23,6 +26,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/config"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	. "gopkg.in/check.v1"
 )
@@ -36,10 +40,37 @@ type ClientSuite struct {
 
 type mockBridge struct {
 	thorclient.ThorchainBridge
+	lastBlame  stypes.Blame
+	lastHeight int64
+	lastMemo   string
+	lastCoins  common.Coins
+	lastPubKey common.PubKey
+	callCount  int
+	postErr    error
+}
+
+func (m *mockBridge) PostKeysignFailure(
+	blame stypes.Blame,
+	height int64,
+	memo string,
+	coins common.Coins,
+	pubkey common.PubKey,
+) (common.TxID, error) {
+	m.callCount++
+	m.lastBlame = blame
+	m.lastHeight = height
+	m.lastMemo = memo
+	m.lastCoins = coins
+	m.lastPubKey = pubkey
+	if m.postErr != nil {
+		return common.BlankTxID, m.postErr
+	}
+	return "MOCKTXID", nil
 }
 
 type mockTssKeyManager struct {
 	keyManager LocalKeyManager
+	forcedErr  error
 }
 
 func (m *mockTssKeyManager) GetPrivKey() crypto.PrivKey          { return nil }
@@ -56,9 +87,9 @@ func (m *mockTssKeyManager) RemoteSign(
 	algo common.SigningAlgo,
 	_ string,
 ) ([]byte, []byte, error) {
-	// if m.forcedErr != nil {
-	// 	return nil, nil, m.forcedErr
-	// }
+	if m.forcedErr != nil {
+		return nil, nil, m.forcedErr
+	}
 	sig, err := m.keyManager.Sign(msg)
 	if err != nil {
 		return nil, nil, err
@@ -109,7 +140,11 @@ func newKeys(name, pass string, c *C) *thorclient.Keys {
 	return thorclient.NewKeysWithKeybase(kb, name, pass)
 }
 
-func (s *ClientSuite) newClient(chain common.Chain, c *C) (*Client, common.PubKeySet) {
+func (s *ClientSuite) setUpForTest(
+	chain common.Chain,
+	forcedErr error,
+	c *C,
+) (*Client, common.PubKeySet) {
 	localKeyManager, err := NewLocalKeyManager(s.localKeys, chain)
 	c.Assert(err, IsNil)
 
@@ -121,9 +156,12 @@ func (s *ClientSuite) newClient(chain common.Chain, c *C) (*Client, common.PubKe
 		config: config.BifrostChainConfiguration{
 			ChainID: chain,
 		},
-		bridge:          mockBridge{},
-		tssKeyManager:   &mockTssKeyManager{keyManager: vaultKeyManager},
+		bridge:          &mockBridge{},
 		localKeyManager: localKeyManager,
+		tssKeyManager: &mockTssKeyManager{
+			keyManager: vaultKeyManager,
+			forcedErr:  forcedErr,
+		},
 	}
 
 	db, err := leveldb.Open(storage.NewMemStorage(), nil)
@@ -171,13 +209,12 @@ func (s *ClientSuite) TestSign(c *C) {
 	}
 
 	for _, tc := range testCases {
-		client, vaultPubKeys := s.newClient(tc.Chain, c)
+		client, vaultPubKeys := s.setUpForTest(tc.Chain, nil, c)
+		label := Commentf("chain=%s local=%v", tc.Chain, tc.Local)
 
 		txOutItem := types.TxOutItem{
 			Chain: tc.Chain,
 		}
-
-		label := Commentf("chain=%s local=%v", tc.Chain, tc.Local)
 
 		var verifyPubKey common.PubKey
 		if tc.Local {
@@ -225,7 +262,7 @@ func (s *ClientSuite) TestSign(c *C) {
 }
 
 func (s *ClientSuite) TestVerify(c *C) {
-	client, vaultPubKeys := s.newClient(common.BTCChain, c)
+	client, vaultPubKeys := s.setUpForTest(common.BTCChain, nil, c)
 
 	txOutItem := types.TxOutItem{
 		Chain:            common.BTCChain,
@@ -245,4 +282,188 @@ func (s *ClientSuite) TestVerify(c *C) {
 	c.Assert(verifyEd25519(nil, sig, vaultPubKeys.Ed25519), NotNil)
 	c.Assert(verifyEd25519(msg, nil, vaultPubKeys.Ed25519), NotNil)
 	c.Assert(verifyEd25519(msg, sig, common.EmptyPubKey), NotNil)
+}
+
+func (s *ClientSuite) TestSignErrors(c *C) {
+	blameNodes := []stypes.Node{{
+		Pubkey:         "",
+		BlameData:      nil,
+		BlameSignature: nil,
+	}}
+
+	testCases := []struct {
+		Case              string
+		ForcedError       error
+		BridgeError       error
+		ExpectForcedError bool
+		ExpectMultiError  bool
+		ExpectPostCalled  bool
+	}{
+		{
+			Case:              "blame forwarded",
+			ForcedError:       tss.KeysignError{Blame: stypes.Blame{BlameNodes: blameNodes}},
+			ExpectForcedError: true,
+			ExpectPostCalled:  true,
+		},
+		{
+			Case:              "empty blame",
+			ForcedError:       tss.KeysignError{Blame: stypes.Blame{}}, // no BlameNodes
+			ExpectForcedError: true,
+			ExpectPostCalled:  false,
+		},
+		{
+			Case:             "post fails",
+			ForcedError:      tss.KeysignError{Blame: stypes.Blame{BlameNodes: blameNodes}},
+			BridgeError:      fmt.Errorf("post failed"),
+			ExpectMultiError: true,
+			ExpectPostCalled: true,
+		},
+		{
+			Case:              "non-keysign error",
+			ForcedError:       fmt.Errorf("rpc down"),
+			ExpectForcedError: true,
+			ExpectPostCalled:  false,
+		},
+	}
+
+	for i, tc := range testCases {
+		client, vaultPubKeys := s.setUpForTest(common.BTCChain, tc.ForcedError, c)
+		bridge, ok := client.bridge.(*mockBridge)
+		c.Assert(ok, Equals, true)
+		bridge.postErr = tc.BridgeError
+		label := Commentf("case=%s", tc.Case)
+
+		height := int64(i+1) * 1000
+		hash := sha256.Sum256([]byte(tc.Case))
+		coin := common.NewCoin(client.GetGasAsset(), cosmos.NewUint(12345))
+
+		txOutItem := types.TxOutItem{
+			Chain:            client.GetChain(),
+			VaultPubKey:      vaultPubKeys.Secp256k1,
+			VaultPubKeyEddsa: vaultPubKeys.Ed25519,
+			Height:           height,
+			Memo:             fmt.Sprintf("OUT:%X", hash),
+			Coins:            common.Coins{coin},
+		}
+
+		sig, err := client.Sign(hash[:], txOutItem)
+		c.Assert(sig, IsNil)
+		c.Assert(err, NotNil)
+
+		if tc.ExpectForcedError {
+			c.Assert(err, DeepEquals, tc.ForcedError, label)
+		}
+
+		if tc.ExpectMultiError {
+			expected := multierror.Append(tc.ForcedError, tc.BridgeError)
+			c.Assert(err, DeepEquals, expected, label)
+		}
+
+		if tc.ExpectPostCalled {
+			c.Assert(bridge.callCount, Equals, 1, label)
+			c.Assert(bridge.lastHeight, Equals, height, label)
+			c.Assert(bridge.lastMemo, Equals, txOutItem.Memo, label)
+			c.Assert(bridge.lastCoins, DeepEquals, txOutItem.Coins, label)
+			c.Assert(bridge.lastPubKey.Equals(txOutItem.VaultPubKey), Equals, true, label)
+			c.Assert(bridge.lastBlame.BlameNodes, DeepEquals, blameNodes, label)
+		} else {
+			c.Assert(bridge.callCount, Equals, 0, label)
+		}
+	}
+}
+
+func (s *ClientSuite) TestOnObservedTxIn(c *C) {
+	inboundHash := strings.Repeat("A", 64)
+
+	testCases := []struct {
+		Case         string
+		Memo         string
+		ExpectCached bool
+	}{
+		{
+			Case:         "unparsable memo",
+			Memo:         "garbage",
+			ExpectCached: false,
+		},
+		{
+			Case:         "non-outbound memo (swap)",
+			Memo:         "SWAP:BTC.BTC:tb1qxyz",
+			ExpectCached: false,
+		},
+		{
+			Case:         "outbound memo with empty txid",
+			Memo:         "OUT:",
+			ExpectCached: false,
+		},
+		{
+			Case:         "valid outbound memo",
+			Memo:         "OUT:" + inboundHash,
+			ExpectCached: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		client, _ := s.setUpForTest(common.BTCChain, nil, c)
+		label := Commentf("case=%s", tc.Case)
+
+		txInItem := types.TxInItem{
+			Tx:   "MOCKTXID",
+			Memo: tc.Memo,
+		}
+
+		client.OnObservedTxIn(txInItem, 0)
+
+		// For negative cases this hash should not exist.
+		cacheHash := txInItem.CacheHash(client.GetChain(), inboundHash)
+		c.Assert(
+			client.signerCacheManager.HasSigned(cacheHash),
+			Equals, tc.ExpectCached, label,
+		)
+	}
+}
+
+func (s *ClientSuite) TestSignerCache(c *C) {
+	client, vaultPubKeys := s.setUpForTest(common.BTCChain, nil, c)
+
+	txOutItem := types.TxOutItem{
+		Chain:       common.BTCChain,
+		VaultPubKey: vaultPubKeys.Secp256k1,
+		ToAddress:   "bc1qabc",
+		Memo:        "OUT:1234",
+		Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100))},
+	}
+
+	c.Assert(client.HasSigned(txOutItem), Equals, false)
+
+	client.SetSigned(txOutItem, "TXID123")
+	c.Assert(client.HasSigned(txOutItem), Equals, true)
+
+	// Populate inbound cache, needed for GetLatestTxForVault
+	txInItem := types.TxInItem{
+		Tx:                  "INBOUND_TXID",
+		Memo:                "OUT:" + strings.Repeat("A", 64),
+		ObservedVaultPubKey: vaultPubKeys.Secp256k1,
+	}
+	client.OnObservedTxIn(txInItem, 0)
+
+	// GetLatestTxForVault returns inbound (empty here) + broadcast
+	observed, broadcast, err := client.GetLatestTxForVault(vaultPubKeys.Secp256k1.String())
+	c.Assert(err, IsNil)
+	c.Assert(observed, Equals, txInItem.Tx)
+	c.Assert(broadcast, Equals, "TXID123")
+}
+
+func (s *ClientSuite) TestShouldReportSolvency(c *C) {
+	client, _ := s.setUpForTest(common.BTCChain, nil, c)
+
+	client.config.SolvencyBlocks = -100
+	c.Assert(client.ShouldReportSolvency(100), Equals, false)
+
+	client.config.SolvencyBlocks = 0
+	c.Assert(client.ShouldReportSolvency(100), Equals, false)
+
+	client.config.SolvencyBlocks = 10
+	c.Assert(client.ShouldReportSolvency(100), Equals, true)
+	c.Assert(client.ShouldReportSolvency(101), Equals, false)
+	c.Assert(client.ShouldReportSolvency(0), Equals, true)
 }

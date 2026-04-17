@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -514,35 +515,6 @@ func (s *ScannerSuite) TestExtrinsicHashConsistency(c *C) {
 // Fee cache tests
 // ---------------------------------------------------------------------------
 
-func (s *ScannerSuite) TestUpdateFeeCache(c *C) {
-	sc := newTestScanner()
-
-	sc.updateFeeCache(100_000)
-	sc.updateFeeCache(200_000)
-	sc.updateFeeCache(150_000)
-
-	sc.mu.RLock()
-	cacheLen := len(sc.feeCache)
-	sc.mu.RUnlock()
-
-	c.Check(cacheLen, Equals, 3)
-}
-
-func (s *ScannerSuite) TestUpdateFeeCacheOverflow(c *C) {
-	sc := newTestScanner()
-
-	// Fill past cache size
-	for i := 0; i < FeeCacheSize+50; i++ {
-		sc.updateFeeCache(uint64(1000 + i))
-	}
-
-	sc.mu.RLock()
-	cacheLen := len(sc.feeCache)
-	sc.mu.RUnlock()
-
-	c.Check(cacheLen, Equals, FeeCacheSize)
-}
-
 func (s *ScannerSuite) TestGetNetworkFee_Default(c *C) {
 	sc := newTestScanner()
 	txSize, txRate := sc.GetNetworkFee()
@@ -550,16 +522,31 @@ func (s *ScannerSuite) TestGetNetworkFee_Default(c *C) {
 	c.Check(txRate, Equals, ChainParams[common.TAOChain].DefaultFee)
 }
 
-func (s *ScannerSuite) TestGetNetworkFee_Cached(c *C) {
-	sc := newTestScanner()
-
-	sc.updateFeeCache(80_000)
-	sc.updateFeeCache(100_000)
+func (s *ScannerSuite) TestGetNetworkFee(c *C) {
+	sc, ch := newTestScannerWithFeeQueue(1)
 
 	txSize, txRate := sc.GetNetworkFee()
 	c.Check(txSize, Equals, uint64(1))
-	expected := uint64(100_000) // default fee
-	c.Check(txRate, Equals, expected)
+	c.Check(txRate, Equals, uint64(100_000)) // default fee
+
+	for range FeeCacheSize {
+		sc.updateFeeCache(80_000)
+	}
+	c.Assert(sc.feeCache, HasLen, FeeCacheSize)
+
+	// currentFee not updated yet
+	c.Check(txRate, Equals, uint64(100_000))
+
+	sc.updateNetworkFee(int64(FeeUpdatePeriod))
+	<-ch // drain channel
+
+	txSize, txRate = sc.GetNetworkFee()
+	c.Check(txSize, Equals, uint64(1))
+	c.Check(txRate, Equals, uint64(80_000))
+
+	// check overflow handling
+	sc.updateFeeCache(80_000)
+	c.Assert(sc.feeCache, HasLen, FeeCacheSize)
 }
 
 // ---------------------------------------------------------------------------
