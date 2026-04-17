@@ -93,6 +93,11 @@ impl Scanner {
         self.vault_states.contains_key(vault_pub_key)
     }
 
+    pub fn remove_vault(&mut self, vault_pub_key: &str) {
+        self.vault_states.remove(vault_pub_key);
+        self.vault_health.remove(vault_pub_key);
+    }
+
     pub fn set_vault_health(&mut self, vault_pub_key: &str, healthy: bool) {
         self.vault_health.insert(vault_pub_key.to_string(), healthy);
     }

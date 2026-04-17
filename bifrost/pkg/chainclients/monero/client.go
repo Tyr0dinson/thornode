@@ -1315,7 +1315,7 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 			return nil, fmt.Errorf("failed to build tx-key registration inventory for vault %s: %w", vaultPubKey.String(), txKeyErr)
 		}
 
-		registration, regErr := ensureFrostVaultRegisteredWithInventory(
+		_, regErr := ensureFrostVaultRegisteredWithInventory(
 			c.logger,
 			c.frostSigner,
 			c.chain,
@@ -1330,11 +1330,6 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 			return nil, fmt.Errorf("failed to register vault %s: %w", vaultPubKey.String(), regErr)
 		}
 		needsRefresh = true
-		if registration.Registered && vault.VaultCreationHeightXmr > 0 {
-			if err := c.frostSigner.ResetScanner(vaultPubKey.String(), vault.VaultCreationHeightXmr); err != nil {
-				return nil, fmt.Errorf("failed to reset scanner for vault %s from birthday %d: %w", vaultPubKey.String(), vault.VaultCreationHeightXmr, err)
-			}
-		}
 	}
 
 	c.replaceTrackedVaultSyncFingerprints(nextFingerprints)

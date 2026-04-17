@@ -407,8 +407,21 @@ fn stored_scan_height_or_birthday(
         .ok_or_else(|| format!("failed to determine scan height for vault {vault_pub_key}"))
 }
 
-struct PersistScannedBlockResult {
-    added_refs: Vec<OutputRef>,
+/// One block's worth of scan output bundled for batched commit.
+///
+/// `spent_key_images` are raw key-images observed in the block's transaction inputs,
+/// not yet matched against any output. `added_outputs` are the vault outputs newly
+/// discovered by the wallet scanner at `height`.
+struct ScannedBlockEntry {
+    height: u64,
+    block_hash: String,
+    parent_hash: String,
+    spent_key_images: Vec<String>,
+    added_outputs: Vec<TrackedOutput>,
+}
+
+struct CommitBatchResult {
+    added_refs_per_block: Vec<Vec<OutputRef>>,
     outputs_after_scan: Vec<TrackedOutput>,
 }
 
@@ -485,119 +498,88 @@ fn apply_registered_key_image_inventory(
     Ok(())
 }
 
-fn persist_rescan_block_state(
+/// Unified scan-batch commit. One operation for N blocks (N=1 for normal scan,
+/// up to RESCAN_MAX_BLOCKS_PER_SYNC for rescan). Preserves the distinction between
+/// LOADING a key-image (attaching metadata to a tracked output) and MARKING a
+/// key-image as SPENT (which requires observing the key-image in a block's
+/// transaction input).
+///
+///   Phase 1 (per block): persist outputs + ScanBlockMeta (recording observed
+///     spent_key_images, leaving spent_by_key_images empty) + scan_height.
+///     No spend marking: a newly-scanned output may not yet have its key_image
+///     bound from registered inventory.
+///
+///   Phase 2 (per batch, LOAD): apply registered key-image inventory with
+///     reconcile=true — binds key_image metadata to tracked outputs and heals
+///     legacy state. This NEVER marks an output as spent.
+///
+///   Phase 3 (per batch, MARK SPENT): replay persisted ScanBlockMeta against
+///     the freshly-loaded key_images — for every historical block whose
+///     spent_key_images intersect tracked outputs, mark those outputs Spent at
+///     the observing block's height and backfill meta.spent_by_key_images.
+///     Folded into apply_registered_key_image_inventory via reconcile=true.
+///
+///   Phase 4: prune scan block metadata beyond the reorg window.
+fn commit_scan_batch(
     state: &Arc<AppState>,
     vault_pub_key: &str,
-    height: u64,
-    block_hash: &str,
-    parent_hash: &str,
-    block_transactions: &[Transaction<Pruned>],
-    added_outputs: &[TrackedOutput],
-) -> Result<PersistScannedBlockResult, String> {
-    let mut spent_key_images: Vec<String> = collect_spent_key_images(block_transactions)
-        .into_iter()
-        .collect();
-    spent_key_images.sort();
-
-    let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
-    state
-        .store
-        .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
-        .map_err(|e| format!("failed to persist rescan outputs after scanner sync: {e}"))?;
-
-    let added_refs: Vec<OutputRef> = added_outputs
-        .iter()
-        .map(|output| OutputRef {
-            tx_hash: output.tx_hash.clone(),
-            output_index: output.output_index,
-        })
-        .collect();
-    state
-        .store
-        .save_scan_block_meta(
-            vault_pub_key,
-            &ScanBlockMeta {
-                height,
-                block_hash: normalize_tx_hash(block_hash),
-                parent_hash: normalize_tx_hash(parent_hash),
-                added_outputs: added_refs.clone(),
-                spent_key_images,
-                spent_by_key_images: Vec::new(),
-            },
-        )
-        .map_err(|e| format!("failed to persist rescan scan block metadata: {e}"))?;
-    state
-        .store
-        .save_scan_height(vault_pub_key, height)
-        .map_err(|e| format!("failed to persist rescan scan height: {e}"))?;
-
-    Ok(PersistScannedBlockResult {
-        added_refs,
-        outputs_after_scan,
-    })
-}
-
-fn persist_scanned_block_state(
-    state: &Arc<AppState>,
-    vault_pub_key: &str,
-    height: u64,
-    block_hash: &str,
-    parent_hash: &str,
-    block_transactions: &[Transaction<Pruned>],
-    added_outputs: &[TrackedOutput],
+    blocks: &[ScannedBlockEntry],
     reorg_window: u64,
-) -> Result<PersistScannedBlockResult, String> {
-    apply_registered_key_image_inventory(state, vault_pub_key, false)?;
+) -> Result<CommitBatchResult, String> {
+    let mut added_refs_per_block = Vec::with_capacity(blocks.len());
 
-    let mut spent_key_images: Vec<String> = collect_spent_key_images(block_transactions)
-        .into_iter()
-        .collect();
-    spent_key_images.sort();
-    let spent_by_key_images: Vec<OutputRef> = {
-        let mut scanner = state.scanner.lock();
-        scanner
-            .mark_spent_key_images(vault_pub_key, &spent_key_images, height)
-            .0
-            .into_iter()
-            .map(|(tx_hash, output_index)| OutputRef {
-                tx_hash,
-                output_index,
+    for entry in blocks {
+        let mut spent_key_images: Vec<String> = entry
+            .spent_key_images
+            .iter()
+            .map(|key_image| key_image.trim().to_ascii_lowercase())
+            .filter(|key_image| !key_image.is_empty())
+            .collect();
+        spent_key_images.sort();
+        spent_key_images.dedup();
+
+        let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
+        state
+            .store
+            .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
+            .map_err(|e| format!("failed to persist outputs after scanner sync: {e}"))?;
+
+        let added_refs: Vec<OutputRef> = entry
+            .added_outputs
+            .iter()
+            .map(|output| OutputRef {
+                tx_hash: output.tx_hash.clone(),
+                output_index: output.output_index,
             })
-            .collect::<Vec<_>>()
-    };
-    let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
-    state
-        .store
-        .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
-        .map_err(|e| format!("failed to persist outputs after scanner sync: {e}"))?;
+            .collect();
+        state
+            .store
+            .save_scan_block_meta(
+                vault_pub_key,
+                &ScanBlockMeta {
+                    height: entry.height,
+                    block_hash: normalize_tx_hash(&entry.block_hash),
+                    parent_hash: normalize_tx_hash(&entry.parent_hash),
+                    added_outputs: added_refs.clone(),
+                    spent_key_images,
+                    spent_by_key_images: Vec::new(),
+                },
+            )
+            .map_err(|e| {
+                format!("failed to persist scan block metadata after scanner sync: {e}")
+            })?;
+        state
+            .store
+            .save_scan_height(vault_pub_key, entry.height)
+            .map_err(|e| format!("failed to persist scan height after scanner sync: {e}"))?;
 
-    let added_refs: Vec<OutputRef> = added_outputs
-        .iter()
-        .map(|output| OutputRef {
-            tx_hash: output.tx_hash.clone(),
-            output_index: output.output_index,
-        })
-        .collect();
-    state
-        .store
-        .save_scan_block_meta(
-            vault_pub_key,
-            &ScanBlockMeta {
-                height,
-                block_hash: normalize_tx_hash(block_hash),
-                parent_hash: normalize_tx_hash(parent_hash),
-                added_outputs: added_refs.clone(),
-                spent_key_images: spent_key_images.clone(),
-                spent_by_key_images,
-            },
-        )
-        .map_err(|e| format!("failed to persist scan block metadata after scanner sync: {e}"))?;
-    state
-        .store
-        .save_scan_height(vault_pub_key, height)
-        .map_err(|e| format!("failed to persist scan height after scanner sync: {e}"))?;
+        added_refs_per_block.push(added_refs);
+    }
 
-    let min_height = height.saturating_sub(reorg_window.saturating_sub(1));
+    apply_registered_key_image_inventory(state, vault_pub_key, true)?;
+
+    let top_height = blocks.last().map(|entry| entry.height).unwrap_or(0);
+    let min_height = top_height.saturating_sub(reorg_window.saturating_sub(1));
     if let Err(e) = state
         .store
         .prune_scan_block_meta_before(vault_pub_key, min_height)
@@ -610,8 +592,13 @@ fn persist_scanned_block_state(
         );
     }
 
-    Ok(PersistScannedBlockResult {
-        added_refs,
+    let outputs_after_scan = state
+        .store
+        .load_outputs(vault_pub_key)
+        .map_err(|e| format!("failed to reload outputs after commit_scan_batch: {e}"))?;
+
+    Ok(CommitBatchResult {
+        added_refs_per_block,
         outputs_after_scan,
     })
 }
@@ -2433,7 +2420,12 @@ pub async fn scanner_sync(
     };
 
     for vault in &vaults {
-        // If vault is in rescan mode, self-scan from stored height to chain tip
+        // If vault is in rescan mode, self-scan from stored height to chain tip.
+        // When rescan is already at tip (e.g. a freshly-registered vault whose
+        // birthday equals the current height), flip rescan=false and fall
+        // through to normal scan so this same request still processes the
+        // block via the normal path. When an actual batch runs, skip normal
+        // scan for this cycle — the next scanner_sync will pick it up.
         if vault.rescan {
             let vault_scan_height = state
                 .store
@@ -2442,8 +2434,13 @@ pub async fn scanner_sync(
                 .flatten()
                 .unwrap_or(vault.birthday);
             let tip = std::cmp::max(effective_height, rescan_chain_tip);
-            let mut advanced = false;
-            if vault_scan_height < tip {
+            if vault_scan_height >= tip {
+                info!(vault = %vault.vault_pub_key, "rescan complete — already at chain tip");
+                let _ = state
+                    .store
+                    .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                // Fall through to normal scan below.
+            } else {
                 let end = rescan_target_height(vault_scan_height, effective_height, tip);
                 info!(
                     vault = %vault.vault_pub_key,
@@ -2453,6 +2450,7 @@ pub async fn scanner_sync(
                     validated_height = effective_height,
                     "rescan: scanning blocks for vault"
                 );
+                let mut batch: Vec<ScannedBlockEntry> = Vec::new();
                 for h in (vault_scan_height + 1)..=end {
                     let rescan_block = match rpc.get_scannable_block_by_number(h as usize).await {
                         Ok(b) => b,
@@ -2488,49 +2486,29 @@ pub async fn scanner_sync(
                             }
                         }
                     }
-                    if let Err(e) = persist_rescan_block_state(
+                    let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
+                        .into_iter()
+                        .collect();
+                    batch.push(ScannedBlockEntry {
+                        height: h,
+                        block_hash,
+                        parent_hash,
+                        spent_key_images,
+                        added_outputs: added,
+                    });
+                }
+                if !batch.is_empty() {
+                    if let Err(e) = commit_scan_batch(
                         &state,
                         &vault.vault_pub_key,
-                        h,
-                        &block_hash,
-                        &parent_hash,
-                        &block_transactions,
-                        &added,
+                        &batch,
+                        reorg_window,
                     ) {
-                        warn!(error = %e, vault = %vault.vault_pub_key, height = h, "rescan: failed to persist block state, stopping batch");
-                        break;
-                    }
-                    advanced = true;
-                }
-                if advanced {
-                    if let Err(e) =
-                        apply_registered_key_image_inventory(&state, &vault.vault_pub_key, true)
-                    {
                         warn!(
                             error = %e,
                             vault = %vault.vault_pub_key,
-                            "rescan: failed to reconcile registered key-image inventory after batch"
+                            "rescan: failed to commit scan batch"
                         );
-                    } else {
-                        let reconciled_height = state
-                            .store
-                            .load_scan_height(&vault.vault_pub_key)
-                            .ok()
-                            .flatten()
-                            .unwrap_or(vault_scan_height);
-                        let min_height =
-                            reconciled_height.saturating_sub(reorg_window.saturating_sub(1));
-                        if let Err(e) = state
-                            .store
-                            .prune_scan_block_meta_before(&vault.vault_pub_key, min_height)
-                        {
-                            warn!(
-                                error = %e,
-                                vault = %vault.vault_pub_key,
-                                min_height,
-                                "rescan: failed to prune scan block metadata after key-image reconcile"
-                            );
-                        }
                     }
                 }
                 // Check if caught up
@@ -2547,14 +2525,9 @@ pub async fn scanner_sync(
                             .store
                             .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
                 }
-            } else {
-                info!(vault = %vault.vault_pub_key, "rescan complete — already at chain tip");
-                let _ = state
-                    .store
-                    .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                // Skip normal scan while an active rescan batch is in progress.
+                continue;
             }
-            // Skip normal scan for this vault during rescan
-            continue;
         }
 
         let mut outputs = match state.store.load_outputs(&vault.vault_pub_key) {
@@ -2825,14 +2798,20 @@ pub async fn scanner_sync(
                     );
                 }
             };
-            let persisted = match persist_scanned_block_state(
+            let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
+                .into_iter()
+                .collect();
+            let batch = vec![ScannedBlockEntry {
+                height: req.height,
+                block_hash: req.block_hash.trim().to_string(),
+                parent_hash: req.parent_hash.trim().to_string(),
+                spent_key_images,
+                added_outputs: added_outputs.clone(),
+            }];
+            let persisted = match commit_scan_batch(
                 &state,
                 &vault.vault_pub_key,
-                req.height,
-                req.block_hash.trim(),
-                req.parent_hash.trim(),
-                &block_transactions,
-                &added_outputs,
+                &batch,
                 reorg_window,
             ) {
                 Ok(result) => result,
@@ -2863,8 +2842,12 @@ pub async fn scanner_sync(
             // (e.g. found by the background scanner) but not by this scan call.
             // Without this, outputs discovered by the background scanner race
             // ahead of bifrost's scanner_sync and are never reported as incoming.
-            let added_set: HashSet<(String, u32)> = persisted
-                .added_refs
+            let batch_added_refs = persisted
+                .added_refs_per_block
+                .first()
+                .cloned()
+                .unwrap_or_default();
+            let added_set: HashSet<(String, u32)> = batch_added_refs
                 .iter()
                 .map(|r| (r.tx_hash.clone(), r.output_index))
                 .collect();
@@ -2971,28 +2954,10 @@ pub async fn scanner_reset(
         );
     }
 
-    let vault = match state.store.list_vaults() {
-        Ok(vaults) => vaults
-            .into_iter()
-            .find(|v| v.vault_pub_key == vault_pub_key),
-        Err(e) => {
-            error!(error = %e, "failed to list vaults for scanner reset");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(e.to_string())),
-            );
-        }
-    };
-    let vault = match vault {
-        Some(v) => v,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(error_json(format!("vault {} not found", vault_pub_key))),
-            )
-        }
-    };
-
+    // True clean slate: wipe every piece of vault-scoped state. After this,
+    // the caller MUST re-register the vault via /register_vault (with full
+    // inventory) before any further operation. FROST keyshares live in the
+    // on-disk `keys/<pubkey>.frost` file and are never touched by reset.
     if let Err(e) = state.store.save_outputs(&vault_pub_key, &[]) {
         error!(error = %e, vault = %vault_pub_key, "failed to clear outputs during scanner reset");
         return (
@@ -3012,60 +2977,50 @@ pub async fn scanner_reset(
         );
     }
 
-    // Preserve THOR-sourced tx-key inventory across rescans. Reset should only
-    // clear ephemeral outbound history that cannot be deterministically rebuilt.
     if let Err(e) = state
         .store
-        .clear_outgoing_transfers_without_tx_keys(&vault_pub_key)
+        .save_registered_key_images(&vault_pub_key, &[])
     {
-        error!(error = %e, vault = %vault_pub_key, "failed to clear ephemeral outgoing transfers during scanner reset");
+        error!(error = %e, vault = %vault_pub_key, "failed to clear registered key image inventory during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(e.to_string())),
         );
     }
 
-    let birthday = req.birthday_height;
-    if let Err(e) = state.store.save_scan_height(&vault_pub_key, birthday) {
-        error!(error = %e, vault = %vault_pub_key, birthday, "failed to set scan height during scanner reset");
+    if let Err(e) = state.store.clear_outgoing_transfers(&vault_pub_key) {
+        error!(error = %e, vault = %vault_pub_key, "failed to clear outgoing transfers during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(e.to_string())),
         );
     }
 
-    if let Err(e) = state.scanner.lock().register_vault(
-        &vault_pub_key,
-        &vault.group_key,
-        state.chain_network,
-        vec![],
-        Some(birthday),
-    ) {
-        error!(error = %e, vault = %vault_pub_key, "failed to re-register vault during scanner reset");
+    if let Err(e) = state.store.save_scan_height(&vault_pub_key, 0) {
+        error!(error = %e, vault = %vault_pub_key, "failed to clear scan height during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(e.to_string())),
         );
     }
 
-    // Set rescan flag so scanner_sync will self-scan from birthday
-    if let Err(e) = state.store.set_vault_rescan(&vault_pub_key, true, birthday) {
-        error!(error = %e, vault = %vault_pub_key, "failed to set rescan flag during scanner reset");
+    if let Err(e) = state.store.delete_vault(&vault_pub_key) {
+        error!(error = %e, vault = %vault_pub_key, "failed to delete vault record during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(e.to_string())),
         );
     }
 
-    info!(vault = %vault_pub_key, birthday, "scanner reset complete — rescan enabled from birthday");
+    state.scanner.lock().remove_vault(&vault_pub_key);
+
+    info!(vault = %vault_pub_key, "scanner reset complete — vault fully purged, awaiting re-registration");
 
     (
         StatusCode::OK,
         Json(serde_json::json!({
             "vault_pub_key": vault_pub_key,
-            "birthday_height": birthday,
             "status": "reset",
-            "rescan": true
         })),
     )
 }
@@ -5257,14 +5212,14 @@ mod tests {
     }
 
     #[test]
-    fn persist_scanned_block_state_marks_spends_and_persists_meta() {
+    fn commit_scan_batch_single_block_marks_spends_and_persists_meta() {
         let key_image = test_key_image_hex(9);
         let output = TrackedOutput {
             tx_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             output_index: 0,
             amount: 50,
             height: 100,
-            key_image: Some(key_image),
+            key_image: Some(key_image.clone()),
             spent_by_key_image_height: None,
             state: OutputState::Unspent,
             reservation: None,
@@ -5282,24 +5237,37 @@ mod tests {
                 &state.scanner.lock().get_all_outputs(&vault_pub_key),
             )
             .expect("failed to seed outputs");
+        state
+            .store
+            .save_registered_key_images(
+                &vault_pub_key,
+                &[RegisteredKeyImageRef {
+                    tx_hash: output.tx_hash.clone(),
+                    output_index: output.output_index,
+                    key_image: key_image.clone(),
+                }],
+            )
+            .expect("failed to seed registered key image inventory");
 
         let block_transactions =
             vec![
                 parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(9))
                     .expect("failed to build test transaction"),
             ];
-        let persisted = persist_scanned_block_state(
-            &state,
-            &vault_pub_key,
-            121,
-            "hash121",
-            "hash120",
-            &block_transactions,
-            &[],
-            120,
-        )
-        .expect("failed to persist scanned block state");
-        assert!(persisted.added_refs.is_empty());
+        let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
+            .into_iter()
+            .collect();
+        let batch = vec![ScannedBlockEntry {
+            height: 121,
+            block_hash: "hash121".to_string(),
+            parent_hash: "hash120".to_string(),
+            spent_key_images,
+            added_outputs: Vec::new(),
+        }];
+        let persisted = commit_scan_batch(&state, &vault_pub_key, &batch, 120)
+            .expect("failed to commit scan batch");
+        assert_eq!(persisted.added_refs_per_block.len(), 1);
+        assert!(persisted.added_refs_per_block[0].is_empty());
 
         let outputs = state
             .store
@@ -5328,7 +5296,7 @@ mod tests {
     }
 
     #[test]
-    fn persist_scanned_block_state_uses_registered_key_image_inventory() {
+    fn commit_scan_batch_loads_key_image_from_registered_inventory_and_marks_spent() {
         let key_image = test_key_image_hex(11);
         let output = TrackedOutput {
             tx_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
@@ -5370,17 +5338,18 @@ mod tests {
                 parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(11))
                     .expect("failed to build test transaction"),
             ];
-        persist_scanned_block_state(
-            &state,
-            &vault_pub_key,
-            121,
-            "hash121",
-            "hash120",
-            &block_transactions,
-            &[],
-            120,
-        )
-        .expect("failed to persist scanned block state");
+        let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
+            .into_iter()
+            .collect();
+        let batch = vec![ScannedBlockEntry {
+            height: 121,
+            block_hash: "hash121".to_string(),
+            parent_hash: "hash120".to_string(),
+            spent_key_images,
+            added_outputs: Vec::new(),
+        }];
+        commit_scan_batch(&state, &vault_pub_key, &batch, 120)
+            .expect("failed to commit scan batch");
 
         let outputs = state
             .store
@@ -5393,7 +5362,7 @@ mod tests {
     }
 
     #[test]
-    fn persist_rescan_block_state_preserves_historical_spend_meta_until_reconcile() {
+    fn commit_scan_batch_multi_block_marks_historical_spend_in_rescan_window() {
         let key_image = test_key_image_hex(13);
         let mut output = TrackedOutput {
             tx_hash: "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd".to_string(),
@@ -5430,42 +5399,33 @@ mod tests {
             )
             .expect("failed to seed registered key image inventory");
 
+        let mut batch: Vec<ScannedBlockEntry> = Vec::new();
         for height in 101..=250 {
-            let block_transactions = if height == 110 {
-                vec![
-                    parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(13))
-                        .expect("failed to build test transaction"),
-                ]
+            let spent_key_images: Vec<String> = if height == 110 {
+                let txs =
+                    vec![
+                        parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(13))
+                            .expect("failed to build test transaction"),
+                    ];
+                collect_spent_key_images(&txs).into_iter().collect()
             } else {
                 Vec::new()
             };
-            persist_rescan_block_state(
-                &state,
-                &vault_pub_key,
+            batch.push(ScannedBlockEntry {
                 height,
-                &format!("hash{height}"),
-                &format!("hash{}", height - 1),
-                &block_transactions,
-                &[],
-            )
-            .expect("failed to persist rescan block state");
+                block_hash: format!("hash{height}"),
+                parent_hash: format!("hash{}", height - 1),
+                spent_key_images,
+                added_outputs: Vec::new(),
+            });
         }
+        commit_scan_batch(&state, &vault_pub_key, &batch, 120)
+            .expect("failed to commit scan batch");
 
-        let historical_meta = state
-            .store
-            .load_scan_block_meta(&vault_pub_key, 110)
-            .expect("failed to load preserved rescan metadata");
-        assert!(
-            historical_meta.is_some(),
-            "historical rescan spend metadata should remain until reconcile"
-        );
-
-        apply_registered_key_image_inventory(&state, &vault_pub_key, true)
-            .expect("failed to reconcile registered key images after rescan");
         let outputs = state
             .store
             .load_outputs(&vault_pub_key)
-            .expect("failed to load outputs after reconcile");
+            .expect("failed to load outputs after commit");
         output.key_image = Some(key_image.clone());
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].key_image.as_deref(), Some(key_image.as_str()));
@@ -6915,7 +6875,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scanner_reset_preserves_tx_key_inventory_for_vault() {
+    async fn scanner_reset_wipes_all_vault_state_except_frost_keyshares() {
         let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
         state
             .store
@@ -6927,6 +6887,48 @@ mod tests {
                 321,
             )
             .expect("failed to register vault");
+
+        state
+            .store
+            .save_outputs(
+                VALID_VAULT_PUB_KEY,
+                &[sample_output(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    0,
+                    OutputState::Unspent,
+                )],
+            )
+            .expect("failed to seed outputs");
+        state
+            .store
+            .save_registered_key_images(
+                VALID_VAULT_PUB_KEY,
+                &[RegisteredKeyImageRef {
+                    tx_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        .to_string(),
+                    output_index: 0,
+                    key_image: test_key_image_hex(3),
+                }],
+            )
+            .expect("failed to seed registered key images");
+        state
+            .store
+            .save_scan_block_meta(
+                VALID_VAULT_PUB_KEY,
+                &ScanBlockMeta {
+                    height: 400,
+                    block_hash: "hash400".to_string(),
+                    parent_hash: "hash399".to_string(),
+                    added_outputs: vec![],
+                    spent_key_images: vec![test_key_image_hex(3)],
+                    spent_by_key_images: vec![],
+                },
+            )
+            .expect("failed to seed scan block meta");
+        state
+            .store
+            .save_scan_height(VALID_VAULT_PUB_KEY, 400)
+            .expect("failed to seed scan height");
         let mut retained = sample_outgoing(
             "abababababababababababababababababababababababababababababababab",
             VALID_VAULT_PUB_KEY,
@@ -6951,6 +6953,19 @@ mod tests {
             ))
             .expect("failed to seed ephemeral outgoing transfer");
 
+        // Seed scanner in-memory state so we can confirm it gets dropped.
+        state
+            .scanner
+            .lock()
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                crate::config::ChainNetworkMode::Mocknet,
+                vec![],
+                Some(321),
+            )
+            .expect("failed to register scanner state");
+
         let response = scanner_reset(
             State(state.clone()),
             Json(crate::api::types::ScannerResetRequest {
@@ -6964,13 +6979,61 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"].as_str(), Some("reset"));
 
+        let outputs = state
+            .store
+            .load_outputs(VALID_VAULT_PUB_KEY)
+            .expect("failed to load outputs");
+        assert!(outputs.is_empty(), "outputs should be cleared on reset");
+
+        let key_images = state
+            .store
+            .load_registered_key_images(VALID_VAULT_PUB_KEY)
+            .expect("failed to load registered key images");
+        assert!(
+            key_images.is_empty(),
+            "registered key-image inventory should be cleared on reset"
+        );
+
+        let meta = state
+            .store
+            .load_scan_block_meta(VALID_VAULT_PUB_KEY, 400)
+            .expect("failed to load scan block meta after reset");
+        assert!(meta.is_none(), "scan block meta should be cleared on reset");
+
+        let scan_height = state
+            .store
+            .load_scan_height(VALID_VAULT_PUB_KEY)
+            .expect("failed to load scan height");
+        assert_eq!(
+            scan_height,
+            Some(0),
+            "scan height should be cleared on reset"
+        );
+
         let outgoing = state
             .store
             .load_outgoing_transfers(VALID_VAULT_PUB_KEY)
             .expect("failed to load outgoing transfers");
-        assert_eq!(outgoing.len(), 1);
-        assert_eq!(outgoing[0].tx_hash, retained.tx_hash);
-        assert_eq!(outgoing[0].tx_keys, retained.tx_keys);
+        assert!(
+            outgoing.is_empty(),
+            "all outgoing transfers (including tx-key backed) should be cleared on reset"
+        );
+
+        let vault = state
+            .store
+            .list_vaults()
+            .expect("failed to list vaults")
+            .into_iter()
+            .find(|v| v.vault_pub_key == VALID_VAULT_PUB_KEY);
+        assert!(
+            vault.is_none(),
+            "vault record should be deleted on reset — bifrost must re-register"
+        );
+
+        assert!(
+            !state.scanner.lock().has_vault(VALID_VAULT_PUB_KEY),
+            "in-memory scanner state should be dropped on reset"
+        );
     }
 
     #[tokio::test]

@@ -424,13 +424,20 @@ impl Store {
         birthday: u64,
     ) -> Result<bool> {
         let tree = self.db.open_tree("vaults")?;
+        // A fresh registration with a non-zero birthday implies the vault
+        // needs to rescan from that birthday forward — either it was just
+        // formed (birthday ≈ chain tip, rescan is a cheap no-op) or bifrost
+        // just wiped it for a full historical rescan. Either way, default
+        // to rescan=true so the caller never has to flip it in a second
+        // round trip.
+        let rescan = birthday > 0;
         let record = VaultRecord {
             vault_pub_key: vault_pub_key.to_string(),
             group_key: group_key.to_string(),
             address: address.to_string(),
             source: source.to_string(),
             registered_at: chrono::Utc::now().timestamp(),
-            rescan: false,
+            rescan,
             birthday,
         };
         let value = serde_json::to_vec(&record)?;
@@ -504,6 +511,15 @@ impl Store {
             tree.flush()?;
         }
         Ok(())
+    }
+
+    pub fn delete_vault(&self, vault_pub_key: &str) -> Result<bool> {
+        let tree = self.db.open_tree("vaults")?;
+        let removed = tree.remove(vault_pub_key.as_bytes())?.is_some();
+        if removed {
+            tree.flush()?;
+        }
+        Ok(removed)
     }
 
     /// Get a registered vault.

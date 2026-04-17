@@ -37,7 +37,7 @@ func (b *countingStateSyncBridge) GetTxStatus(txID string) (*ttypes.QueryTxStatu
 	return b.mockMoneroBridge.GetTxStatus(txID)
 }
 
-func TestSyncTrackedVaultRegistrationsRegistersAndResetsNewVaultFromBirthday(t *testing.T) {
+func TestSyncTrackedVaultRegistrationsRegistersNewVaultInRescanMode(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -51,10 +51,7 @@ func TestSyncTrackedVaultRegistrationsRegistersAndResetsNewVaultFromBirthday(t *
 
 	var mu sync.Mutex
 	var registerReqs []xmrFrostRegisterVaultRequest
-	var resetReqs []struct {
-		VaultPubKey    string `json:"vault_pub_key"`
-		BirthdayHeight int64  `json:"birthday_height"`
-	}
+	var resetReqs int
 	vaultStates := xmrFrostVaultStatesResponse{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,30 +66,21 @@ func TestSyncTrackedVaultRegistrationsRegistersAndResetsNewVaultFromBirthday(t *
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			mu.Lock()
 			registerReqs = append(registerReqs, req)
+			// Fresh registration in the sidecar auto-enters rescan mode when
+			// the vault has a non-zero birthday (store.register_vault default).
+			scanHeight := uint64(req.VaultCreationHeight)
 			vaultStates.Vaults = []xmrFrostVaultStateEntry{{
 				VaultPubKey: req.VaultPubKey,
 				Address:     req.Address,
 				Birthday:    uint64(req.VaultCreationHeight),
-				Rescan:      false,
+				Rescan:      req.VaultCreationHeight > 0,
+				ScanHeight:  &scanHeight,
 			}}
 			mu.Unlock()
 			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true}))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/reset":
-			var req struct {
-				VaultPubKey    string `json:"vault_pub_key"`
-				BirthdayHeight int64  `json:"birthday_height"`
-			}
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			mu.Lock()
-			resetReqs = append(resetReqs, req)
-			scanHeight := uint64(req.BirthdayHeight)
-			vaultStates.Vaults = []xmrFrostVaultStateEntry{{
-				VaultPubKey: req.VaultPubKey,
-				Address:     vaultAddr.String(),
-				Birthday:    uint64(req.BirthdayHeight),
-				Rescan:      true,
-				ScanHeight:  &scanHeight,
-			}}
+			resetReqs++
 			mu.Unlock()
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -116,7 +104,7 @@ func TestSyncTrackedVaultRegistrationsRegistersAndResetsNewVaultFromBirthday(t *
 	require.Len(t, states, 1)
 	assert.Equal(t, vaultPubKey.String(), states[0].VaultPubKey)
 	assert.Equal(t, vaultAddr.String(), states[0].Address)
-	assert.True(t, states[0].Rescan)
+	assert.True(t, states[0].Rescan, "fresh registration with non-zero birthday must be in rescan mode")
 	require.NotNil(t, states[0].ScanHeight)
 	assert.Equal(t, uint64(25), *states[0].ScanHeight)
 
@@ -126,9 +114,7 @@ func TestSyncTrackedVaultRegistrationsRegistersAndResetsNewVaultFromBirthday(t *
 	assert.Equal(t, vaultPubKey.String(), registerReqs[0].VaultPubKey)
 	assert.Equal(t, vaultAddr.String(), registerReqs[0].Address)
 	assert.Equal(t, int64(25), registerReqs[0].VaultCreationHeight)
-	require.Len(t, resetReqs, 1)
-	assert.Equal(t, vaultPubKey.String(), resetReqs[0].VaultPubKey)
-	assert.Equal(t, int64(25), resetReqs[0].BirthdayHeight)
+	assert.Equal(t, 0, resetReqs, "bifrost must not call reset in the sync flow — sidecar defaults rescan=true on fresh register")
 }
 
 func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing.T) {
