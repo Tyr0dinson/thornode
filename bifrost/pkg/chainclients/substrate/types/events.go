@@ -83,14 +83,20 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 		var extrinsicIdx uint32
 		isApplyExtrinsic := phaseVariant == 0x00
 
-		if isApplyExtrinsic {
+		switch phaseVariant {
+		case 0x00:
 			if pos+4 > len(data) {
 				return results, fees, fmt.Errorf("events data too short for extrinsic index at event %d", i)
 			}
 			extrinsicIdx = binary.LittleEndian.Uint32(data[pos : pos+4])
 			pos += 4
+		case 0x01, 0x02:
+			// Phase::Finalization (0x01) and Phase::Initialization (0x02) have no extra data
+		default:
+			// Unknown phase variant — stop parsing and return what we have, matching
+			// the "unknown event" behavior below.
+			return results, fees, nil
 		}
-		// Phase::Finalization (0x01) and Phase::Initialization (0x02) have no extra data
 
 		// Event ID: pallet_index + event_index
 		if pos+2 > len(data) {

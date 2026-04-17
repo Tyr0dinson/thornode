@@ -1,7 +1,6 @@
 package substrate
 
 import (
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -307,9 +306,7 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	// Get memo for parsing
 	memoForParsing := tx.GetMemo()
 	var memoObj mem.Memo
-	if memoForParsing == "" {
-		memoObj = mem.NewOutboundMemo(tx.InHash)
-	} else {
+	if memoForParsing != "" {
 		memoObj, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to parse memo(%s): %w", memoForParsing, err)
@@ -489,11 +486,6 @@ func (c *Client) createAndSignExtrinsic(
 	sig, err = c.Sign(signingData, tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
-	}
-
-	// Verify signature
-	if !ed25519.Verify(vaultPubkeyBytes, signingData, sig) {
-		return nil, errors.New("signature verification failed")
 	}
 
 	// Assemble the signed extrinsic

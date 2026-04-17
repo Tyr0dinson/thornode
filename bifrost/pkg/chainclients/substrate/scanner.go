@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -653,11 +654,18 @@ func (s *Scanner) updateNetworkFee(height int64) {
 		return
 	}
 
-	s.globalNetworkFeeQueue <- common.NetworkFee{
+	networkFee := common.NetworkFee{
 		Chain:           s.cfg.ChainID,
 		Height:          height,
 		TransactionSize: 1,
 		TransactionRate: fee,
+	}
+
+	select {
+	case s.globalNetworkFeeQueue <- networkFee:
+	case <-time.After(constants.ThorchainBlockTime):
+		s.logger.Error().Msg("timeout sending network fee to THORChain")
+		return
 	}
 
 	s.currentFee.Swap(fee)

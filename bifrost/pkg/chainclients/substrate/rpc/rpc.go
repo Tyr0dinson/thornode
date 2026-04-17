@@ -89,9 +89,12 @@ func (c *Client) call(method string, params []interface{}) (json.RawMessage, err
 	}
 
 	const maxResponseSize = 16 << 20 // 16 MB
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if int64(len(respBody)) > maxResponseSize {
+		return nil, fmt.Errorf("rpc response exceeds %d bytes", maxResponseSize)
 	}
 
 	var rpcResp jsonRPCResponse
