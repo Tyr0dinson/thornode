@@ -105,6 +105,8 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) 
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 0})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/apply-key-images":
 			var req xmrFrostApplyKeyImagesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -784,6 +786,7 @@ func TestPrepareObservedTxInItemIgnoresResolvedEarlierVaultKeyImageBacklog(t *te
 		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 		ObservedVaultPubKey: vaultPubKey,
 		Memo:                "OUT:" + strings.Repeat("2", 64),
+		TxKeys:              []string{strings.Repeat("1", 64)},
 	}
 
 	prepared, include, err := c.PrepareObservedTxInItem(item, true, 111)
@@ -1039,6 +1042,8 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *test
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 0})
 		case "/v1/monero/outputs/apply-key-images":
 			var req xmrFrostApplyKeyImagesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1087,6 +1092,7 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *test
 		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 		ObservedVaultPubKey: vaultPubKey,
 		Memo:                "OUT:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+		TxKeys:              []string{strings.Repeat("1", 64)},
 	}
 
 	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
@@ -1115,7 +1121,14 @@ func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testin
 	destination := common.XMRSeededDummyAddress('8', []byte("external-without-change"))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: false, Marked: 0})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
 	}))
 	defer server.Close()
 
@@ -1153,6 +1166,7 @@ func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testin
 		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 		ObservedVaultPubKey: vaultPubKey,
 		Memo:                "OUT:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+		TxKeys:              []string{strings.Repeat("1", 64)},
 	}
 
 	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
@@ -1160,6 +1174,72 @@ func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testin
 	require.True(t, include)
 	require.NotNil(t, prepared)
 	require.Empty(t, prepared.XmrKeyImages)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	assert.Empty(t, tssServer.reqs)
+}
+
+func TestPrepareObservedTxInItemDefersFinalOutboundUntilTxKeysPropagate(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("y", 64)
+	destination := common.XMRSeededDummyAddress('8', []byte("missing-txkeys-destination"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination,
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "OUT:YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY",
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
 
 	tssServer.mu.Lock()
 	defer tssServer.mu.Unlock()
@@ -1513,7 +1593,7 @@ func TestValidateOutboundObservationAppliesValidatedKeyImagesForFinalOutboundCha
 	assert.Equal(t, uint32(0), applied[0].OutputIndex)
 }
 
-func TestValidateOutboundObservationAppliesValidatedKeyImagesWithoutTxKeys(t *testing.T) {
+func TestValidateOutboundObservationRejectsMissingTxKeysEvenWithKeyImages(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -1529,7 +1609,7 @@ func TestValidateOutboundObservationAppliesValidatedKeyImagesWithoutTxKeys(t *te
 		switch {
 		case r.URL.Path == "/v1/monero/outbounds/validate":
 			outboundValidateCalls++
-			t.Fatal("outbound tx-key validation should be skipped when tx keys are missing")
+			t.Fatal("outbound tx-key validation should not be attempted when tx keys are missing")
 		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
 			var req xmrFrostApplyKeyImagesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1579,14 +1659,15 @@ func TestValidateOutboundObservationAppliesValidatedKeyImagesWithoutTxKeys(t *te
 		},
 	}
 
-	require.NoError(t, c.ValidateOutboundObservation(obsTx))
+	err = c.ValidateOutboundObservation(obsTx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing tx keys")
 	assert.Equal(t, 0, outboundValidateCalls)
-	assert.Equal(t, 1, validateCalls)
+	assert.Equal(t, 0, validateCalls)
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.Len(t, applied, 1)
-	assert.Equal(t, uint32(0), applied[0].OutputIndex)
+	require.Empty(t, applied)
 }
 
 func TestValidateOutboundObservationRejectsForgedKeyImagesWithoutApplying(t *testing.T) {

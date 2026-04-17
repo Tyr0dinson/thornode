@@ -133,7 +133,78 @@ func TestValidateOutboundObservationCallsSidecar(t *testing.T) {
 	}
 }
 
-func TestValidateOutboundObservationWithoutTxKeysSkipsTxKeyAudit(t *testing.T) {
+func TestValidateOutboundObservationCanonicalizesVaultPubKeyForSidecarTxKeyAudit(t *testing.T) {
+	t.Parallel()
+
+	observedVaultPubKey := common.PubKey("cthorpub1observedvault")
+	canonicalVaultPubKey := common.PubKey("cthorpub1canonicalvault")
+
+	var captured xmrFrostValidateOutboundRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: false, Marked: 0})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					observedVaultPubKey.String(): {
+						PubKey:      observedVaultPubKey,
+						PubKeyEddsa: observedVaultPubKey,
+						PubKeyFrost: canonicalVaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+		},
+		logger: testLogger(),
+	}
+
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          common.TxID(strings.Repeat("c", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRChecksummedDummyAddress('4')),
+			ToAddress:   testOutboundXMRDestination(),
+			Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(55))),
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(3))},
+			Memo:        "OUT:" + strings.Repeat("D", 64),
+		},
+		100,
+		observedVaultPubKey,
+		0,
+	)
+	obsTx.TxKeys = []string{strings.Repeat("1", 64)}
+
+	if err := c.ValidateOutboundObservation(obsTx); err != nil {
+		t.Fatalf("validate outbound observation: %v", err)
+	}
+	if captured.VaultPubKey != canonicalVaultPubKey.String() {
+		t.Fatalf("expected canonical vault pubkey %s, got %s", canonicalVaultPubKey, captured.VaultPubKey)
+	}
+}
+
+func TestValidateOutboundObservationRejectsMissingTxKeys(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
@@ -178,8 +249,12 @@ func TestValidateOutboundObservationWithoutTxKeysSkipsTxKeyAudit(t *testing.T) {
 		0,
 	)
 
-	if err := c.ValidateOutboundObservation(obsTx); err != nil {
-		t.Fatalf("validate outbound observation without tx keys: %v", err)
+	err = c.ValidateOutboundObservation(obsTx)
+	if err == nil {
+		t.Fatalf("expected missing tx keys error")
+	}
+	if !strings.Contains(err.Error(), "missing tx keys") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if outboundValidateCalls != 0 {
 		t.Fatalf("unexpected outbound validate calls: %d", outboundValidateCalls)
