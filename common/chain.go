@@ -525,9 +525,9 @@ func (c Chain) ExistentialDeposit() cosmos.Uint {
 	case XRPChain:
 		return c.DustThreshold()
 	case DOTChain:
-		return cosmos.NewUint(One)
+		return cosmos.NewUint(One) // 1 DOT
 	case TAOChain:
-		return cosmos.NewUint(50) // 500 rao
+		return cosmos.NewUint(50) // 0.0000005 TAO
 	default:
 		return cosmos.ZeroUint()
 	}

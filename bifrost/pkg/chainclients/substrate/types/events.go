@@ -123,7 +123,8 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 
 		sizeBalance := pallets.BalanceSize
 
-		// Extract actual fee from TransactionPayment::TransactionFeePaid
+		// TransactionFeePaid event layout: who(AccountId32) + actual_fee(Balance) + tip(Balance).
+		// We extract actual_fee (first balance after AccountId) and store as u64.
 		if isApplyExtrinsic && palletIdx == pallets.TransactionPaymentPalletIndex && eventIdx == 0x00 {
 			// Technically just storing u64 which is fine for fee amounts
 			if dataSize >= sizeAccountID+sizeBalance {

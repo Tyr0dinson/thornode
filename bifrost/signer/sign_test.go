@@ -494,7 +494,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	tois := sign.storage.List()
 	c.Assert(err, IsNil)
 	c.Assert(tois, HasLen, 1)
-	c.Assert(tois[0].Checkpoint, IsNil)
+	c.Assert(tois[0].Checkpoint, DeepEquals, []byte(msg))
 	c.Assert(len(tois[0].SignedTx), Equals, 64)
 
 	// second attempt should not sign and still fail broadcast
@@ -506,7 +506,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	tois = sign.storage.List()
 	c.Assert(err, IsNil)
 	c.Assert(tois, HasLen, 1)
-	c.Assert(tois[0].Checkpoint, IsNil)
+	c.Assert(tois[0].Checkpoint, DeepEquals, []byte(msg))
 	c.Assert(len(tois[0].SignedTx), Equals, 64)
 
 	// third attempt should not sign and succeed broadcast

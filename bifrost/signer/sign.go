@@ -683,6 +683,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 		// store immediately after a successful sign so the signed payload is saved even if broadcast crashes
 		item.SignedTx = signedTx
+		item.Checkpoint = checkpoint // persist for mortal-era re-sign detection on retry
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
 		}

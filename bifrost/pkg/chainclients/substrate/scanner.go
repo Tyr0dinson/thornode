@@ -559,8 +559,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 			if hasTransfer {
 				return nil, fmt.Errorf("batch_all contains multiple transfer calls")
 			}
-			transferData = data[pos:]
-			hasTransfer = true
+			start := pos
 
 			// Validate MultiAddress variant before advancing
 			if pos >= len(data) {
@@ -580,6 +579,9 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 				return nil, fmt.Errorf("failed to skip transfer amount: %w", err)
 			}
 			pos += consumed
+
+			transferData = data[start:pos]
+			hasTransfer = true
 		default:
 			// Unknown call in batch — we can't determine its size, so stop parsing.
 			// Any transfer + memo already captured will still be used.
