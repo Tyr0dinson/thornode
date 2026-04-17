@@ -129,6 +129,15 @@ func (s *UtilsSuite) TestSignedTxItems(c *C) {
 
 	// Remove non-existent item should not error
 	c.Assert(accessor.RemoveSignedTxItem("0xnonexistent"), IsNil)
+
+	// ProcessSignedTxItems should delete items as part of the same locked iteration.
+	c.Assert(accessor.ProcessSignedTxItems(func(item types.SignedTxItem) (bool, bool, error) {
+		c.Assert(item.Hash, Equals, "0xdef456")
+		return true, false, nil
+	}), IsNil)
+	items, err = accessor.GetSignedTxItems()
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 0)
 }
 
 // ----- TokenManager additional tests -----

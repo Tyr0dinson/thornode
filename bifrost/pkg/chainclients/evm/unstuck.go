@@ -62,12 +62,9 @@ func (c *EVMClient) unstuckAction() {
 	rescheduleBufferBlocks := config.GetBifrost().Signer.RescheduleBufferBlocks
 	txWaitBlocks := signingPeriod - rescheduleBufferBlocks
 
-	signedTxItems, err := c.evmScanner.blockMetaAccessor.GetSignedTxItems()
-	if err != nil {
-		c.logger.Err(err).Msg("failed to get all signed tx items")
-		return
-	}
-	for _, item := range signedTxItems {
+	// ProcessSignedTxItems serializes list-process-remove so scanner cleanup
+	// cannot interleave with unstuck decisions for the same signed item.
+	if err := c.evmScanner.blockMetaAccessor.ProcessSignedTxItems(func(item evmtypes.SignedTxItem) (bool, bool, error) {
 		clog := c.logger.With().
 			Str("txid", item.Hash).
 			Str("vault", item.VaultPubKey).
@@ -77,12 +74,12 @@ func (c *EVMClient) unstuckAction() {
 		// this should not possible, but just skip it
 		if item.Height > height {
 			clog.Warn().Msg("signed outbound height greater than current thorchain height")
-			continue
+			return false, false, nil
 		}
 
 		if (height - item.Height) < txWaitBlocks {
 			// not time yet, continue to wait for this tx to commit
-			continue
+			return false, false, nil
 		}
 
 		// only attempt unstuck during the reschedule buffer of the signing period
@@ -90,25 +87,24 @@ func (c *EVMClient) unstuckAction() {
 			periodBlock := (height - item.TxOutItem.Height) % signingPeriod
 			if signingPeriod-periodBlock > rescheduleBufferBlocks {
 				clog.Warn().Msg("waiting for start of reschedule buffer blocks to unstuck")
-				continue
+				return false, false, nil
 			}
 		}
 
 		clog.Warn().Msg("attempting unstuck")
 
-		err = c.unstuckTx(clog, item)
-		if err != nil {
-			clog.Err(err).Msg("failed to unstuck tx")
+		unstuckErr := c.unstuckTx(clog, item)
+		if unstuckErr != nil {
+			clog.Err(unstuckErr).Msg("failed to unstuck tx")
 			// Break on error so that if a keysign fails from members getting out of sync
 			// (for multiple cancel transactions)
 			// all vault members will together next try to keysign the first item in the list.
-			break
+			return false, true, nil
 		}
 
-		// remove stuck transaction from block meta
-		if err = c.evmScanner.blockMetaAccessor.RemoveSignedTxItem(item.Hash); err != nil {
-			clog.Err(err).Msg("failed to remove block meta tx item")
-		}
+		return true, false, nil
+	}); err != nil {
+		c.logger.Err(err).Msg("failed to process signed tx items")
 	}
 }
 

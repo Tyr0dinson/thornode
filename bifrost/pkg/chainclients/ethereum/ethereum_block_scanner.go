@@ -445,28 +445,18 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 }
 
 func (e *ETHScanner) onObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
-	blockMeta, err := e.blockMetaAccessor.GetBlockMeta(blockHeight)
-	if err != nil {
-		e.logger.Err(err).Msgf("fail to get block meta on block height(%d)", blockHeight)
-		return
-	}
-
-	if blockMeta == nil {
-		e.logger.Error().Msgf("block meta for height:%d is nil", blockHeight)
-		return
-	}
-	for _, item := range blockMeta.Transactions {
-		if item.Hash == txIn.Tx {
-			return
-		}
-	}
-
-	blockMeta.Transactions = append(blockMeta.Transactions, types.TransactionMeta{
+	// Append inside the accessor so observer, scanner, and reorg paths cannot
+	// lose updates through separate GetBlockMeta and SaveBlockMeta calls.
+	found, err := e.blockMetaAccessor.AppendBlockMetaTransaction(blockHeight, types.TransactionMeta{
 		Hash:        txIn.Tx,
 		BlockHeight: blockHeight,
 	})
-	if err = e.blockMetaAccessor.SaveBlockMeta(blockHeight, blockMeta); err != nil {
-		e.logger.Err(err).Msgf("fail to save block meta to storage,block height(%d)", blockHeight)
+	if err != nil {
+		e.logger.Err(err).Msgf("fail to append observed tx to block meta, block height(%d)", blockHeight)
+		return
+	}
+	if !found {
+		e.logger.Error().Msgf("block meta for height:%d is nil", blockHeight)
 	}
 }
 
@@ -523,12 +513,11 @@ func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
 // the transaction had been removed from chain, chain client should report to thorchain
 // []int64 is the block heights that need to be rescanned
 func (e *ETHScanner) reprocessTxs() ([]int64, error) {
-	blockMetas, err := e.blockMetaAccessor.GetBlockMetas()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get block metas from local storage: %w", err)
-	}
 	var rescanBlockHeights []int64
-	for _, blockMeta := range blockMetas {
+	var errataBlocks []stypes.ErrataBlock
+	// UpdateBlockMetas owns the read-modify-save sequence while reorg handling
+	// rewrites hashes and transaction lists for each cached block.
+	err := e.blockMetaAccessor.UpdateBlockMetas(func(blockMeta *types.BlockMeta) (bool, error) {
 		metaTxs := make([]types.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
 		for _, tx := range blockMeta.Transactions {
@@ -544,18 +533,17 @@ func (e *ETHScanner) reprocessTxs() ([]int64, error) {
 			})
 		}
 		if len(errataTxs) > 0 {
-			e.globalErrataQueue <- stypes.ErrataBlock{
+			errataBlocks = append(errataBlocks, stypes.ErrataBlock{
 				Height: blockMeta.Height,
 				Txs:    errataTxs,
-			}
+			})
 		}
 		// Let's get the block again to fix the block hash
-		var block *etypes.Header
-		block, err = e.getHeader(blockMeta.Height)
-		if err != nil {
-			e.logger.Err(err).Msgf("fail to get block verbose tx result: %d", blockMeta.Height)
+		block, headerErr := e.getHeader(blockMeta.Height)
+		if headerErr != nil {
+			e.logger.Err(headerErr).Msgf("fail to get block verbose tx result: %d", blockMeta.Height)
 			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
-			continue
+			return false, nil
 		}
 		if !strings.EqualFold(blockMeta.BlockHash, block.Hash().Hex()) {
 			// if the block hash is different as previously recorded , then the block should be rescanned
@@ -564,9 +552,14 @@ func (e *ETHScanner) reprocessTxs() ([]int64, error) {
 		blockMeta.PreviousHash = block.ParentHash.Hex()
 		blockMeta.BlockHash = block.Hash().Hex()
 		blockMeta.Transactions = metaTxs
-		if err = e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
-			e.logger.Err(err).Msgf("fail to save block meta of height: %d ", blockMeta.Height)
-		}
+		return true, nil
+	})
+	// Queue sends can block, so send errata after releasing the accessor lock.
+	for _, errataBlock := range errataBlocks {
+		e.globalErrataQueue <- errataBlock
+	}
+	if err != nil {
+		return rescanBlockHeights, fmt.Errorf("fail to update block metas from local storage: %w", err)
 	}
 	return rescanBlockHeights, nil
 }

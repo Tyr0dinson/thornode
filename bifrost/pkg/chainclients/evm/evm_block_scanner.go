@@ -720,12 +720,11 @@ func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) 
 //
 // The []int64 return value represents the block heights to be rescanned.
 func (e *EVMScanner) reprocessTxs() ([]int64, error) {
-	blockMetas, err := e.blockMetaAccessor.GetBlockMetas()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get block metas from local storage: %w", err)
-	}
 	var rescanBlockHeights []int64
-	for _, blockMeta := range blockMetas {
+	var errataBlocks []stypes.ErrataBlock
+	// UpdateBlockMetas owns the read-modify-save sequence while reorg handling
+	// rewrites hashes and transaction lists for each cached block.
+	err := e.blockMetaAccessor.UpdateBlockMetas(func(blockMeta *types.BlockMeta) (bool, error) {
 		metaTxs := make([]types.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
 		for _, tx := range blockMeta.Transactions {
@@ -742,23 +741,22 @@ func (e *EVMScanner) reprocessTxs() ([]int64, error) {
 			})
 		}
 		if len(errataTxs) > 0 {
-			e.globalErrataQueue <- stypes.ErrataBlock{
+			errataBlocks = append(errataBlocks, stypes.ErrataBlock{
 				Height: blockMeta.Height,
 				Txs:    errataTxs,
-			}
+			})
 		}
 
 		// fetch the header header to determine if the hash has changed and requires rescan
-		var header *etypes.Header
-		header, err = e.ethRpc.GetHeader(blockMeta.Height)
-		if err != nil {
-			e.logger.Err(err).
+		header, headerErr := e.ethRpc.GetHeader(blockMeta.Height)
+		if headerErr != nil {
+			e.logger.Err(headerErr).
 				Int64("height", blockMeta.Height).
 				Msg("fail to get block header to check for reorg")
 
 			// err on the side of caution and rescan the block
 			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
-			continue
+			return false, nil
 		}
 
 		// if the block hash is different than previously recorded, rescan the block
@@ -770,9 +768,14 @@ func (e *EVMScanner) reprocessTxs() ([]int64, error) {
 		blockMeta.PreviousHash = header.ParentHash.Hex()
 		blockMeta.BlockHash = header.Hash().Hex()
 		blockMeta.Transactions = metaTxs
-		if err = e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
-			e.logger.Err(err).Int64("height", blockMeta.Height).Msg("fail to save block meta")
-		}
+		return true, nil
+	})
+	// Queue sends can block, so send errata after releasing the accessor lock.
+	for _, errataBlock := range errataBlocks {
+		e.globalErrataQueue <- errataBlock
+	}
+	if err != nil {
+		return rescanBlockHeights, fmt.Errorf("fail to update block metas from local storage: %w", err)
 	}
 	return rescanBlockHeights, nil
 }

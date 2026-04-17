@@ -102,3 +102,56 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaAccessor(c *C) {
 	c.Assert(allBlockMetas, HasLen, 25)
 	c.Assert(db.Close(), IsNil)
 }
+
+// TestBlockMetaUpdates covers the accessor-owned helpers for locked block meta updates.
+func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaUpdates(c *C) {
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	c.Assert(err, IsNil)
+	defer db.Close()
+
+	blockMetaAccessor, err := NewLevelDBBlockMetaAccessor(PrefixBlockMeta, PrefixSignedTxItem, db)
+	c.Assert(err, IsNil)
+
+	block, err := CreateBlock(100)
+	c.Assert(err, IsNil)
+	blockMeta := evmtypes.NewBlockMeta(block, stypes.TxIn{
+		TxArray: []*stypes.TxInItem{{Tx: "0xfirst"}},
+	})
+	c.Assert(blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+
+	found, err := blockMetaAccessor.AppendBlockMetaTransaction(blockMeta.Height, evmtypes.TransactionMeta{
+		Hash:        "0xsecond",
+		BlockHeight: blockMeta.Height,
+	})
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+
+	found, err = blockMetaAccessor.AppendBlockMetaTransaction(404, evmtypes.TransactionMeta{
+		Hash:        "0xmissing",
+		BlockHeight: 404,
+	})
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, false)
+
+	found, err = blockMetaAccessor.AppendBlockMetaTransaction(blockMeta.Height, evmtypes.TransactionMeta{
+		Hash:        "0xsecond",
+		BlockHeight: blockMeta.Height,
+	})
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+
+	blockMeta, err = blockMetaAccessor.GetBlockMeta(blockMeta.Height)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.Transactions, HasLen, 2)
+
+	err = blockMetaAccessor.UpdateBlockMetas(func(blockMeta *evmtypes.BlockMeta) (bool, error) {
+		blockMeta.BlockHash = "updated"
+		return true, nil
+	})
+	c.Assert(err, IsNil)
+
+	blockMeta, err = blockMetaAccessor.GetBlockMeta(blockMeta.Height)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, "updated")
+}
