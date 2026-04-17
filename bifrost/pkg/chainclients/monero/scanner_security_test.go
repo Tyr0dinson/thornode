@@ -468,6 +468,174 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 	}
 }
 
+func TestFetchTxsSkipsConsolidateSelfSendWithoutOutgoingRecord(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("e", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     vaultAddr.String(),
+				VaultPubKey: vaultPubKey.String(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "consolidate",
+			},
+		},
+		nil,
+		[]string{vaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{
+				PubKeyEddsa: vaultPubKey,
+				PubKey:      vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 0 {
+		t.Fatalf("expected consolidate self-send observation to be skipped, got %d items", len(txIn.TxArray))
+	}
+}
+
+func TestFetchTxsSkipsRetiringMigrateChangeWithoutOutgoingRecord(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("f", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     vaultAddr.String(),
+				VaultPubKey: vaultPubKey.String(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "MIGRATE:100",
+			},
+		},
+		nil,
+		[]string{vaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{
+				PubKeyEddsa: vaultPubKey,
+				PubKey:      vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_RetiringVault,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 0 {
+		t.Fatalf("expected retiring migrate change observation to be skipped, got %d items", len(txIn.TxArray))
+	}
+}
+
+func TestFetchTxsKeepsActiveMigrateInboundWithoutOutgoingRecord(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("1", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     vaultAddr.String(),
+				VaultPubKey: vaultPubKey.String(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "MIGRATE:100",
+			},
+		},
+		nil,
+		[]string{vaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{
+				PubKeyEddsa: vaultPubKey,
+				PubKey:      vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected active migrate inbound to be preserved, got %d items", len(txIn.TxArray))
+	}
+	if txIn.TxArray[0].To != vaultAddr.String() {
+		t.Fatalf("expected migrate inbound destination %s, got %s", vaultAddr, txIn.TxArray[0].To)
+	}
+}
+
 func TestFetchTxsFailsClosedOnReorgProcessingError(t *testing.T) {
 	t.Parallel()
 

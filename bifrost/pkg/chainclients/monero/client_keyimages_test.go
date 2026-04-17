@@ -1032,6 +1032,66 @@ func TestPrepareObservedTxInItemSkipsOutboundMemoChangeObservation(t *testing.T)
 	assert.Empty(t, tssServer.reqs)
 }
 
+func TestPrepareObservedTxInItemSkipsRetiringMigrateChangeObservation(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("m", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+			Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 1, Amount: 10, Height: 100}},
+		})
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Status:      ttypes.VaultStatus_RetiringVault,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+		To:                  vaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "MIGRATE:123",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	assert.False(t, include)
+	assert.Nil(t, prepared)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	assert.Empty(t, tssServer.reqs)
+}
+
 func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *testing.T) {
 	t.Parallel()
 
@@ -1503,6 +1563,62 @@ func TestValidateObservedTxInSkipsOutboundMemoChangeObservation(t *testing.T) {
 			common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
 			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 			"OUT:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+		),
+		BlockHeight:    110,
+		FinaliseHeight: 110,
+		ObservedPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 1, KeyImage: "ki-1", ProofC: "c1", ProofS: "s1"},
+		},
+	}
+
+	require.NoError(t, c.ValidateObservedTxIn(obsTx))
+	assert.False(t, validateCalled)
+}
+
+func TestValidateObservedTxInSkipsConsolidateChangeObservation(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("n", 64)
+
+	validateCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/monero/key-image/validate":
+			validateCalled = true
+			_ = json.NewEncoder(w).Encode(xmrFrostKeyImageValidateResponse{Valid: true})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{TxHash: txHash, OutputIndex: 1, Amount: 20, Height: 100},
+				},
+			})
+		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			t.Fatal("apply-key-images should not be called for consolidate change observation")
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.NewTx(
+			common.TxID(txHash),
+			common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+			vaultAddr,
+			common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			"consolidate",
 		),
 		BlockHeight:    110,
 		FinaliseHeight: 110,

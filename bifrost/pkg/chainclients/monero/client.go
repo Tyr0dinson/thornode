@@ -3104,7 +3104,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	if !isInboundToVault && !isOutboundFromVault {
 		return item, true, nil
 	}
-	if isInboundToVault && isOutboundObservationMemo(item.Memo) && !c.isKnownVaultAddress(item.Sender) {
+	if isInboundToVault && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
 		c.logger.Debug().
 			Str("tx_hash", normalizeTxID(item.Tx)).
 			Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
@@ -3945,6 +3945,37 @@ func isOutboundObservationMemo(memoText string) bool {
 	return parsedMemo.IsOutbound()
 }
 
+func (c *Client) shouldSkipObservedXMRInboundChange(
+	memoText string,
+	sender string,
+	observedVaultPubKey common.PubKey,
+) bool {
+	parsedMemo, err := memo.ParseMemo(common.LatestVersion, strings.TrimSpace(memoText))
+	if err != nil {
+		return false
+	}
+
+	if parsedMemo.IsOutbound() {
+		return !c.isKnownVaultAddress(sender)
+	}
+
+	switch parsedMemo.GetType() {
+	case memo.TxConsolidate:
+		return true
+	case memo.TxMigrate:
+		if observedVaultPubKey.IsEmpty() || c.thorchainBridge == nil {
+			return false
+		}
+		vault, err := c.thorchainBridge.GetVault(observedVaultPubKey.String())
+		if err != nil {
+			return false
+		}
+		return vault.IsRetiring()
+	default:
+		return false
+	}
+}
+
 func (c *Client) hasObservedXMROutbound(txIn stypes.TxIn) bool {
 	for _, item := range txIn.TxArray {
 		if item == nil {
@@ -4071,7 +4102,7 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trac
 		if !c.isObservedTxInboundToVault(tx) {
 			return nil
 		}
-		if isOutboundObservationMemo(tx.Tx.Memo) && !c.isKnownVaultAddress(tx.Tx.FromAddress.String()) {
+		if c.shouldSkipObservedXMRInboundChange(tx.Tx.Memo, tx.Tx.FromAddress.String(), tx.ObservedPubKey) {
 			return nil
 		}
 	} else if !c.isObservedTxOutboundFromVault(tx) {

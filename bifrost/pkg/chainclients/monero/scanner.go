@@ -361,7 +361,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 			}
 			memoText = strings.TrimSpace(memoText)
 		}
-		if shouldSkipIncomingVaultTransfer(memoText) {
+		if s.shouldSkipIncomingVaultTransfer(vaultPubKey, memoText) {
 			s.logger.Debug().
 				Str("txid", transfer.TxID).
 				Str("vault_pub_key", vaultPubKey.String()).
@@ -1148,12 +1148,30 @@ func unknownSenderAddress(txID, to string) string {
 	return common.XMRUnknownSenderAddress(txID, to)
 }
 
-func shouldSkipIncomingVaultTransfer(memoText string) bool {
+func (s *Scanner) shouldSkipIncomingVaultTransfer(vaultPubKey common.PubKey, memoText string) bool {
 	parsedMemo, err := memo.ParseMemo(common.LatestVersion, strings.TrimSpace(memoText))
 	if err != nil {
 		return false
 	}
-	return parsedMemo.IsOutbound()
+	if parsedMemo.IsOutbound() {
+		return true
+	}
+
+	switch parsedMemo.GetType() {
+	case memo.TxConsolidate:
+		return true
+	case memo.TxMigrate:
+		if vaultPubKey.IsEmpty() {
+			return false
+		}
+		vault, err := s.loadVaultForPubKey(vaultPubKey)
+		if err != nil {
+			return false
+		}
+		return vault.IsRetiring()
+	default:
+		return false
+	}
 }
 
 func (s *Scanner) resolveIncomingKnownSender(
