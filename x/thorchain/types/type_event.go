@@ -476,6 +476,9 @@ func (m *EventBond) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("bond_type", m.BondType.String()),
 		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
 		cosmos.NewAttribute("bond_address", m.BondAddress.String()))
+	if m.Chain != "" {
+		evt = evt.AppendAttributes(cosmos.NewAttribute("chain", m.Chain))
+	}
 	evt = evt.AppendAttributes(m.TxIn.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }

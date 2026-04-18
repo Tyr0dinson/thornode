@@ -1042,7 +1042,7 @@ func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, c
 			continue
 		}
 
-		if err := vm.payChainReward(ctx, mgr, na, reward); err != nil {
+		if err := vm.payChainReward(ctx, mgr, na, reward, chain); err != nil {
 			ctx.Logger().Error("fail to pay chain reward", "node", na.NodeAddress, "chain", chain, "error", err)
 			continue
 		}
@@ -1051,7 +1051,7 @@ func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, c
 	return paid, nil
 }
 
-func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeAccount, reward cosmos.Uint) error {
+func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeAccount, reward cosmos.Uint, chain common.Chain) error {
 	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
 	if err != nil {
 		return fmt.Errorf("fail to get bond providers(%s): %w", na.NodeAddress, err)
@@ -1091,6 +1091,7 @@ func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeA
 		return fmt.Errorf("fail to save bond providers(%s): %w", bp.NodeAddress, err)
 	}
 	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
+	bondRewardEvent.Chain = chain.String()
 	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}

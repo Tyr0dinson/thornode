@@ -304,6 +304,9 @@ message EventBond {
   bytes bond_address = 5
       [ (gogoproto.casttype) =
             "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
+  // chain identifies the source chain for per-chain BondReward events
+  // distributed from ChainIncome. Empty for the global emission path.
+  string chain = 6;
 }
 
 message EventReBond {

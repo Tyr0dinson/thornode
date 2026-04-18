@@ -1397,6 +1397,29 @@ func (vts *ValidatorMgrTestSuite) TestDistributeChainBondRewardsMultiChain(c *C)
 	ethIncome, err := k.GetChainIncome(ctx, common.ETHChain)
 	c.Assert(err, IsNil)
 	c.Assert(ethIncome.IsZero(), Equals, true)
+
+	// Bond reward events must carry the originating chain so indexers can
+	// distinguish per-chain rewards from global emission rewards.
+	chainAttrs := map[string]int{}
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type != "bond" {
+			continue
+		}
+		var bondTypeAttr, chainAttr string
+		for _, a := range evt.Attributes {
+			switch a.Key {
+			case "bond_type":
+				bondTypeAttr = a.Value
+			case "chain":
+				chainAttr = a.Value
+			}
+		}
+		if bondTypeAttr == BondReward.String() && chainAttr != "" {
+			chainAttrs[chainAttr]++
+		}
+	}
+	c.Assert(chainAttrs[common.BTCChain.String()], Equals, 1)
+	c.Assert(chainAttrs[common.ETHChain.String()], Equals, 1)
 }
 
 func (vts *ValidatorMgrTestSuite) TestDistributeChainBondRewardsBondOverCap(c *C) {
