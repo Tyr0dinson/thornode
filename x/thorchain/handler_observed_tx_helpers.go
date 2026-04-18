@@ -102,7 +102,9 @@ func processTxInAttestation(
 			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
+			// ChainIncome forfeiture is deferred to final consensus to avoid
+			// draining the chain-income bucket twice per observation lifecycle
+			// (once at non-final, once at final consensus).
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
@@ -480,7 +482,9 @@ func processTxOutAttestation(
 			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
+			// ChainIncome forfeiture is deferred to final consensus to avoid
+			// draining the chain-income bucket twice per observation lifecycle
+			// (once at non-final, once at final consensus).
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
