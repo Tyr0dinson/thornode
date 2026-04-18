@@ -209,6 +209,24 @@ func (EventSuite) TestEventBond(c *C) {
 	events, err := e.Events()
 	c.Check(err, IsNil)
 	c.Check(events, NotNil)
+	// No chain attribute for the default (global/non-chain) bond event.
+	for _, a := range events[0].Attributes {
+		c.Check(a.Key, Not(Equals), "chain")
+	}
+
+	// When Chain is set (e.g. per-chain BondReward from distributeChainIncome),
+	// the emitted event must carry a chain attribute for indexers.
+	e = NewEventBond(cosmos.NewUint(100), BondType_bond_reward, common.Tx{}, &NodeAccount{}, nil)
+	e.Chain = common.BTCChain.String()
+	events, err = e.Events()
+	c.Check(err, IsNil)
+	chainAttr := ""
+	for _, a := range events[0].Attributes {
+		if a.Key == "chain" {
+			chainAttr = a.Value
+		}
+	}
+	c.Check(chainAttr, Equals, common.BTCChain.String())
 }
 
 func (EventSuite) TestEventReBond(c *C) {
