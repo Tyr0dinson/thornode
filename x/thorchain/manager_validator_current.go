@@ -1091,7 +1091,7 @@ func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeA
 		return fmt.Errorf("fail to save bond providers(%s): %w", bp.NodeAddress, err)
 	}
 	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
-	bondRewardEvent.Chain = chain.String()
+	bondRewardEvent.RewardChain = chain.String()
 	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}

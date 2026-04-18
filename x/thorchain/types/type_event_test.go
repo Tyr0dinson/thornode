@@ -209,24 +209,27 @@ func (EventSuite) TestEventBond(c *C) {
 	events, err := e.Events()
 	c.Check(err, IsNil)
 	c.Check(events, NotNil)
-	// No chain attribute for the default (global/non-chain) bond event.
+	// Default bond event (no RewardChain) must not emit a reward_chain attribute.
 	for _, a := range events[0].Attributes {
-		c.Check(a.Key, Not(Equals), "chain")
+		c.Check(a.Key, Not(Equals), "reward_chain")
 	}
 
-	// When Chain is set (e.g. per-chain BondReward from distributeChainIncome),
-	// the emitted event must carry a chain attribute for indexers.
+	// When RewardChain is set (e.g. per-chain BondReward from
+	// distributeChainIncome), the emitted event must carry a reward_chain
+	// attribute so indexers can distinguish per-chain rewards from the
+	// global emission path. The name is intentionally distinct from the
+	// tx-level "chain" attribute emitted by the embedded Tx.
 	e = NewEventBond(cosmos.NewUint(100), BondType_bond_reward, common.Tx{}, &NodeAccount{}, nil)
-	e.Chain = common.BTCChain.String()
+	e.RewardChain = common.BTCChain.String()
 	events, err = e.Events()
 	c.Check(err, IsNil)
-	chainAttr := ""
+	rewardChainAttr := ""
 	for _, a := range events[0].Attributes {
-		if a.Key == "chain" {
-			chainAttr = a.Value
+		if a.Key == "reward_chain" {
+			rewardChainAttr = a.Value
 		}
 	}
-	c.Check(chainAttr, Equals, common.BTCChain.String())
+	c.Check(rewardChainAttr, Equals, common.BTCChain.String())
 }
 
 func (EventSuite) TestEventReBond(c *C) {
