@@ -233,6 +233,19 @@ func (vm *ValidatorMgr) partitionByChainSupport(ctx cosmos.Context, mgr Manager,
 	partMap := make(map[string]*entry)
 	for _, na := range nas {
 		chains := getNodeSupportedChains(ctx, mgr, na)
+		// Every keygen partition must cover THORChain — vaults without RUNE
+		// support cannot participate in consensus. Defensively force-include
+		// it here in case a node's effective chain list somehow omits it.
+		hasTHOR := false
+		for _, c := range chains {
+			if c.Equals(common.THORChain) {
+				hasTHOR = true
+				break
+			}
+		}
+		if !hasTHOR {
+			chains = append(chains, common.THORChain)
+		}
 		sort.Slice(chains, func(i, j int) bool {
 			return chains[i].String() < chains[j].String()
 		})

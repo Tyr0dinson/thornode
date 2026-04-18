@@ -5,6 +5,7 @@ import (
 
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
@@ -40,6 +41,13 @@ func (h RemoveNodeChainSupportHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*c
 func (h RemoveNodeChainSupportHandler) validate(ctx cosmos.Context, msg MsgRemoveNodeChainSupport) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
+	}
+
+	// THORChain is the native chain and must remain in every node's effective
+	// chain set; otherwise partitionByChainSupport can produce a keygen
+	// partition without RUNE support.
+	if msg.Chain.Equals(common.THORChain) {
+		return cosmos.ErrUnknownRequest("cannot remove THORChain from a node's supported chains")
 	}
 
 	na, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.Signer)

@@ -47,6 +47,18 @@ func (s *HandlerRemoveNodeChainSupportSuite) TestValidate(c *C) {
 	msg = NewMsgRemoveNodeChainSupport(common.BTCChain, singleChainNode.NodeAddress)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err, NotNil)
+
+	// invalid: cannot remove THORChain (native chain must always be present)
+	thorNode := GetRandomValidatorNode(NodeActive)
+	thorNode.SupportedChains = []string{
+		common.THORChain.String(),
+		common.BTCChain.String(),
+		common.ETHChain.String(),
+	}
+	c.Assert(k.SetNodeAccount(ctx, thorNode), IsNil)
+	msg = NewMsgRemoveNodeChainSupport(common.THORChain, thorNode.NodeAddress)
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, NotNil)
 }
 
 func (s *HandlerRemoveNodeChainSupportSuite) TestValidateMinNodeChainSupport(c *C) {

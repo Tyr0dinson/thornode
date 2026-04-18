@@ -1073,7 +1073,16 @@ func (vts *ValidatorMgrTestSuite) TestPartitionByChainSupport_SinglePartition(c 
 	partitions := vm.partitionByChainSupport(ctx, mgr, nas)
 	c.Assert(len(partitions), Equals, 1)
 	c.Assert(len(partitions[0].nodes), Equals, 5)
-	c.Assert(len(partitions[0].chains), Equals, 2)
+	// Vault chains (BTC, ETH) plus defensive THORChain inclusion.
+	c.Assert(len(partitions[0].chains), Equals, 3)
+	hasTHOR := false
+	for _, ch := range partitions[0].chains {
+		if ch.Equals(common.THORChain) {
+			hasTHOR = true
+			break
+		}
+	}
+	c.Assert(hasTHOR, Equals, true)
 }
 
 func (vts *ValidatorMgrTestSuite) TestPartitionByChainSupport_TwoPartitions(c *C) {
@@ -1108,12 +1117,13 @@ func (vts *ValidatorMgrTestSuite) TestPartitionByChainSupport_TwoPartitions(c *C
 	partitions := vm.partitionByChainSupport(ctx, mgr, all)
 	c.Assert(len(partitions), Equals, 2)
 
-	// Partitions are sorted by chain key: "BTC" < "BTC,ETH"
-	c.Assert(len(partitions[0].nodes), Equals, 2) // BTC only
-	c.Assert(len(partitions[0].chains), Equals, 1)
-	c.Assert(partitions[0].chains[0], Equals, common.BTCChain)
+	// THORChain is force-included in every partition. Sort order by
+	// comma-joined chain string: "BTC,ETH,THOR" < "BTC,THOR", so
+	// the BTC+ETH partition sorts first.
+	c.Assert(len(partitions[0].nodes), Equals, 3) // BTC+ETH
+	c.Assert(len(partitions[0].chains), Equals, 3)
 
-	c.Assert(len(partitions[1].nodes), Equals, 3) // BTC+ETH
+	c.Assert(len(partitions[1].nodes), Equals, 2) // BTC only (+ THORChain)
 	c.Assert(len(partitions[1].chains), Equals, 2)
 }
 
@@ -1171,7 +1181,8 @@ func (vts *ValidatorMgrTestSuite) TestChurnPartitionBelowMinimumExcluded(c *C) {
 	c.Assert(triggeredCount, Equals, 1)
 	c.Assert(len(networkMgrDummy.keygens), Equals, 1)
 	c.Assert(len(networkMgrDummy.keygens[0]), Equals, 5)
-	c.Assert(len(networkMgrDummy.keygenChains[0]), Equals, 2) // BTC+ETH
+	// BTC+ETH + defensive THORChain inclusion.
+	c.Assert(len(networkMgrDummy.keygenChains[0]), Equals, 3)
 }
 
 func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToOptOuts(c *C) {
