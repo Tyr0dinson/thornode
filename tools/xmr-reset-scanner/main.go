@@ -184,18 +184,27 @@ func resolveSignerAccess(opts toolOptions) (signerAccess, error) {
 
 func discoverVaults(opts toolOptions, signer *monero.FrostSigner) ([]localVault, error) {
 	if opts.vaultPubKey != "" {
+		requestedPubKey := strings.TrimSpace(opts.vaultPubKey)
 		birthday := opts.height
-		if birthday <= 0 {
-			vault, err := fetchVault(opts.apiURL, opts.vaultPubKey)
-			if err != nil {
+		pubKey := requestedPubKey
+		vault, err := fetchVault(opts.apiURL, requestedPubKey)
+		if err != nil {
+			if birthday <= 0 || !looksLikeCanonicalXMRVaultPubKey(requestedPubKey) {
 				return nil, err
 			}
-			birthday = vault.VaultCreationHeightXmr
+		} else {
+			if !hasChain(vault.Chains, "XMR") {
+				return nil, fmt.Errorf("vault %s is not an XMR vault", requestedPubKey)
+			}
+			pubKey = canonicalXMRVaultPubKey(vault, requestedPubKey)
+			if birthday <= 0 {
+				birthday = vault.VaultCreationHeightXmr
+			}
 		}
 		if birthday <= 0 {
-			return nil, fmt.Errorf("vault %s has no XMR birthday recorded", opts.vaultPubKey)
+			return nil, fmt.Errorf("vault %s has no XMR birthday recorded", requestedPubKey)
 		}
-		return []localVault{{PubKey: strings.TrimSpace(opts.vaultPubKey), Birthday: birthday}}, nil
+		return []localVault{{PubKey: pubKey, Birthday: birthday}}, nil
 	}
 
 	keys, err := signer.ListVaultKeys()
@@ -206,23 +215,23 @@ func discoverVaults(opts toolOptions, signer *monero.FrostSigner) ([]localVault,
 	vaults := make([]localVault, 0, len(keys))
 	seen := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
-		pubKey := strings.TrimSpace(key.VaultPubKey)
-		if pubKey == "" || !key.HasFrostKeys {
+		requestedPubKey := strings.TrimSpace(key.VaultPubKey)
+		if requestedPubKey == "" || !key.HasFrostKeys {
 			continue
 		}
-		if _, ok := seen[pubKey]; ok {
-			continue
-		}
-		seen[pubKey] = struct{}{}
-
-		vault, err := fetchVault(opts.apiURL, pubKey)
+		vault, err := fetchVault(opts.apiURL, requestedPubKey)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", pubKey, err)
+			fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", requestedPubKey, err)
 			continue
 		}
 		if !hasChain(vault.Chains, "XMR") {
 			continue
 		}
+		pubKey := canonicalXMRVaultPubKey(vault, requestedPubKey)
+		if _, ok := seen[pubKey]; ok {
+			continue
+		}
+		seen[pubKey] = struct{}{}
 		if vault.VaultCreationHeightXmr <= 0 {
 			fmt.Fprintf(os.Stderr, "Skipping %s: no XMR birthday recorded\n", pubKey)
 			continue
@@ -258,6 +267,20 @@ func fetchVault(apiURL, pubKey string) (vaultSummary, error) {
 		return vaultSummary{}, fmt.Errorf("decode %s: %w", url, err)
 	}
 	return out, nil
+}
+
+func canonicalXMRVaultPubKey(vault vaultSummary, fallback string) string {
+	if pubKey := strings.TrimSpace(vault.PubKeyFrost); pubKey != "" {
+		return pubKey
+	}
+	if pubKey := strings.TrimSpace(vault.PubKeyEddsa); pubKey != "" {
+		return pubKey
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func looksLikeCanonicalXMRVaultPubKey(pubKey string) bool {
+	return strings.HasPrefix(strings.TrimSpace(pubKey), "cthorpub1zcjd")
 }
 
 func hasChain(chains []string, target string) bool {

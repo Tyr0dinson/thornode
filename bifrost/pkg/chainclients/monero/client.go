@@ -1109,48 +1109,20 @@ func selectObservedOutboundForVault(
 
 func (c *Client) trackedXMRVaultsForKeyImageCatchup() (ttypes.Vaults, error) {
 	if c.scanner != nil {
-		return c.scanner.trackedXMRVaults()
+		return c.scanner.asgardXMRVaults()
 	}
 
-	vaults, err := c.thorchainBridge.GetAsgards()
+	return asgardXMRVaults(c.thorchainBridge)
+}
+
+func asgardXMRVaults(bridge thorclient.ThorchainBridge) (ttypes.Vaults, error) {
+	vaults, err := bridge.GetAsgards()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get asgards: %w", err)
 	}
 
 	lookup := make(map[string]ttypes.Vault)
 	for _, vault := range vaults {
-		vaultPubKey := keyImageCatchupVaultPubKey(vault)
-		if vaultPubKey.IsEmpty() {
-			continue
-		}
-		lookup[vaultPubKey.String()] = vault
-	}
-
-	pubKeys, err := c.thorchainBridge.GetPubKeys()
-	if err != nil {
-		c.logger.Debug().Err(err).Msg("xmr key-image catchup: falling back to current asgard vaults")
-		return mapVaults(lookup), nil
-	}
-
-	requested := make(map[string]struct{})
-	for _, pair := range pubKeys {
-		if pair.Algo != common.SigningAlgoEd25519 || !pair.Inactive || pair.PubKey.IsEmpty() {
-			continue
-		}
-		pubKeyString := pair.PubKey.String()
-		if _, ok := requested[pubKeyString]; ok {
-			continue
-		}
-		requested[pubKeyString] = struct{}{}
-
-		vault, loadErr := c.thorchainBridge.GetVault(pubKeyString)
-		if loadErr != nil {
-			c.logger.Debug().
-				Err(loadErr).
-				Str("vault_pubkey", pubKeyString).
-				Msg("xmr key-image catchup: skip inactive vault pubkey")
-			continue
-		}
 		vaultPubKey := keyImageCatchupVaultPubKey(vault)
 		if vaultPubKey.IsEmpty() {
 			continue

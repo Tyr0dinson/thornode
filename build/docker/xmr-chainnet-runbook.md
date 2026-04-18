@@ -421,7 +421,14 @@ Important scope note:
 
 - `--all-vaults` means all XMR vaults with `has_frost_keys=true` on that signer
 - it does not reset every historical XMR vault record in thornode
+- it is useful for signer-local recovery, but it is not the right command for a full cluster-wide replay
 - for a cluster-wide sidecar rebuild, run the reset against each signer container and each target vault pubkey you want rebuilt everywhere
+
+Recommended full reset flow:
+
+1. Query thornode for the canonical XMR vault pubkeys you want rebuilt.
+2. Run `--vault-pubkey` for each target vault on every signer container.
+3. Do not rely on `--all-vaults` for this, because some signers can legitimately have tracked vault state without local FROST key material for the vault.
 
 Cluster-wide reset for two tracked vaults on all 7 signers:
 
@@ -437,6 +444,27 @@ for signer in "${SIGNERS[@]}"; do
   done
 done
 ```
+
+Example: pull the canonical XMR vault pubkeys from thornode first, then run the full reset:
+
+```bash
+SIGNERS=(docker-xmr-frost-signer-1 docker-xmr-frost-signer-cat-1 docker-xmr-frost-signer-fox-1 docker-xmr-frost-signer-goat-1 docker-xmr-frost-signer-whale-1 docker-xmr-frost-signer-wolf-1 docker-xmr-frost-signer-eagle-1)
+mapfile -t VAULTS < <(
+  curl -s http://localhost:1317/thorchain/vaults/asgard |
+    jq -r '.[] | select(.chains[]? == "XMR") | select((.vault_creation_height_xmr // "0") != "0") | (.pub_key_frost // .pub_key_eddsa // .pub_key)' |
+    sort -u
+)
+for signer in "${SIGNERS[@]}"; do
+  for vault in "${VAULTS[@]}"; do
+    build/docker/xmr-reset-scanner.sh \
+      --chain-network chainnet \
+      --signer-container "$signer" \
+      --vault-pubkey "$vault"
+  done
+done
+```
+
+`--vault-pubkey` now canonicalizes through thornode as well, but the query above keeps the operator-visible vault list aligned with what the sidecars actually track.
 
 Dry run first if needed:
 

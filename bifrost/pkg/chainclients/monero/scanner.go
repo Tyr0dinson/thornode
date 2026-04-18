@@ -860,18 +860,14 @@ func (s *Scanner) refreshAsgardLookup() error {
 }
 
 func (s *Scanner) trackedXMRVaults() (ttypes.Vaults, error) {
-	vaults, err := s.bridge.GetAsgards()
+	vaults, err := s.asgardXMRVaults()
 	if err != nil {
-		return nil, fmt.Errorf("fail to get asgards: %w", err)
+		return nil, err
 	}
 
-	lookup := make(map[string]ttypes.Vault)
+	lookup := make(map[string]ttypes.Vault, len(vaults))
 	for _, vault := range vaults {
-		s.cacheVault(vault)
-		if vault.PubKeyFrost.IsEmpty() {
-			continue
-		}
-		lookup[vault.PubKeyFrost.String()] = vault
+		lookup[keyImageCatchupVaultPubKey(vault).String()] = vault
 	}
 
 	pubKeys, err := s.bridge.GetPubKeys()
@@ -887,6 +883,24 @@ func (s *Scanner) trackedXMRVaults() (ttypes.Vaults, error) {
 			continue
 		}
 		if vault.PubKeyFrost.IsEmpty() || !vault.PubKeyFrost.Equals(pair.PubKey) {
+			continue
+		}
+		lookup[vault.PubKeyFrost.String()] = vault
+	}
+
+	return mapVaults(lookup), nil
+}
+
+func (s *Scanner) asgardXMRVaults() (ttypes.Vaults, error) {
+	vaults, err := s.bridge.GetAsgards()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get asgards: %w", err)
+	}
+
+	lookup := make(map[string]ttypes.Vault)
+	for _, vault := range vaults {
+		s.cacheVault(vault)
+		if vault.PubKeyFrost.IsEmpty() {
 			continue
 		}
 		lookup[vault.PubKeyFrost.String()] = vault

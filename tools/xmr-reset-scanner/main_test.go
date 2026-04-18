@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -11,11 +12,14 @@ import (
 func TestRunResetsScannerWithoutDrivingSync(t *testing.T) {
 	t.Parallel()
 
+	const canonicalVaultPubKey = "cthorpub1zcjdruntestvault"
 	var resetCalls atomic.Int32
 	var syncCalls atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/thorchain/vault/thorpub1testvault":
+			fmt.Fprint(w, `{"pub_key_frost":"`+canonicalVaultPubKey+`","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652000}`)
 		case "/v1/monero/scanner/reset":
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST reset, got %s", r.Method)
@@ -28,7 +32,7 @@ func TestRunResetsScannerWithoutDrivingSync(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatalf("decode reset request: %v", err)
 			}
-			if req.VaultPubKey != "thorpub1testvault" {
+			if req.VaultPubKey != canonicalVaultPubKey {
 				t.Fatalf("unexpected vault pubkey %q", req.VaultPubKey)
 			}
 			if req.BirthdayHeight != 3652000 {
@@ -45,6 +49,7 @@ func TestRunResetsScannerWithoutDrivingSync(t *testing.T) {
 	defer server.Close()
 
 	err := run(toolOptions{
+		apiURL:         server.URL,
 		chainNetwork:   "mocknet",
 		signerEndpoint: server.URL,
 		signerSeed:     "seed",
@@ -68,6 +73,10 @@ func TestRunDryRunSkipsReset(t *testing.T) {
 
 	var resetCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/thorchain/vault/thorpub1testvault" {
+			fmt.Fprint(w, `{"pub_key_frost":"cthorpub1zcjddryruntestvault","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652000}`)
+			return
+		}
 		if r.URL.Path == "/v1/monero/scanner/reset" {
 			resetCalls.Add(1)
 		}
@@ -76,6 +85,7 @@ func TestRunDryRunSkipsReset(t *testing.T) {
 	defer server.Close()
 
 	err := run(toolOptions{
+		apiURL:         server.URL,
 		chainNetwork:   "mocknet",
 		signerEndpoint: server.URL,
 		signerSeed:     "seed",
@@ -89,6 +99,91 @@ func TestRunDryRunSkipsReset(t *testing.T) {
 
 	if resetCalls.Load() != 0 {
 		t.Fatalf("expected no reset calls during dry-run, got %d", resetCalls.Load())
+	}
+}
+
+func TestDiscoverVaultsCanonicalizesVaultPubKey(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"pub_key_frost":"cthorpub1zcjduepqa7canonical","pub_key_eddsa":"","chains":["BTC","XMR"],"vault_creation_height_xmr":3652752}`)
+	}))
+	defer server.Close()
+
+	vaults, err := discoverVaults(toolOptions{
+		apiURL:      server.URL,
+		vaultPubKey: "cthorpub1addwngeneric",
+	}, nil)
+	if err != nil {
+		t.Fatalf("discoverVaults returned error: %v", err)
+	}
+	if len(vaults) != 1 {
+		t.Fatalf("expected 1 vault, got %d", len(vaults))
+	}
+	if got := vaults[0].PubKey; got != "cthorpub1zcjduepqa7canonical" {
+		t.Fatalf("expected canonical pubkey, got %q", got)
+	}
+	if got := vaults[0].Birthday; got != 3652752 {
+		t.Fatalf("expected birthday 3652752, got %d", got)
+	}
+}
+
+func TestDiscoverVaultsKeepsHeightOverrideWhileCanonicalizing(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"pub_key_frost":"cthorpub1zcjduepqdgcanonical","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652752}`)
+	}))
+	defer server.Close()
+
+	vaults, err := discoverVaults(toolOptions{
+		apiURL:      server.URL,
+		vaultPubKey: "cthorpub1addwngeneric",
+		height:      3653000,
+	}, nil)
+	if err != nil {
+		t.Fatalf("discoverVaults returned error: %v", err)
+	}
+	if len(vaults) != 1 {
+		t.Fatalf("expected 1 vault, got %d", len(vaults))
+	}
+	if got := vaults[0].PubKey; got != "cthorpub1zcjduepqdgcanonical" {
+		t.Fatalf("expected canonical pubkey, got %q", got)
+	}
+	if got := vaults[0].Birthday; got != 3653000 {
+		t.Fatalf("expected override birthday 3653000, got %d", got)
+	}
+}
+
+func TestDiscoverVaultsAllowsCanonicalOverrideWithoutAPI(t *testing.T) {
+	t.Parallel()
+
+	vaults, err := discoverVaults(toolOptions{
+		apiURL:      "http://127.0.0.1:1",
+		vaultPubKey: "cthorpub1zcjduepqcanonical",
+		height:      3653000,
+	}, nil)
+	if err != nil {
+		t.Fatalf("discoverVaults returned error: %v", err)
+	}
+	if len(vaults) != 1 {
+		t.Fatalf("expected 1 vault, got %d", len(vaults))
+	}
+	if got := vaults[0].PubKey; got != "cthorpub1zcjduepqcanonical" {
+		t.Fatalf("expected canonical pubkey, got %q", got)
+	}
+}
+
+func TestDiscoverVaultsRejectsGenericOverrideWithoutAPI(t *testing.T) {
+	t.Parallel()
+
+	_, err := discoverVaults(toolOptions{
+		apiURL:      "http://127.0.0.1:1",
+		vaultPubKey: "cthorpub1addwngeneric",
+		height:      3653000,
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error for generic pubkey without API canonicalization")
 	}
 }
 

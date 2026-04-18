@@ -461,10 +461,22 @@ impl Store {
                 if same_mapping {
                     if birthday > 0 && existing_record.birthday != birthday {
                         let mut updated_record = existing_record.clone();
+                        let rewind_from_zero_birthday = existing_record.birthday == 0;
                         updated_record.birthday = birthday;
+                        if rewind_from_zero_birthday {
+                            updated_record.rescan = true;
+                        }
                         tree.insert(key, serde_json::to_vec(&updated_record)?)?;
                         tree.flush()?;
-                        info!(vault = vault_pub_key, birthday, "backfilled vault birthday");
+                        if rewind_from_zero_birthday {
+                            self.delete_scan_height(vault_pub_key)?;
+                            info!(
+                                vault = vault_pub_key,
+                                birthday, "backfilled vault birthday and rewound scan height"
+                            );
+                        } else {
+                            info!(vault = vault_pub_key, birthday, "backfilled vault birthday");
+                        }
                     }
                     Ok(false)
                 } else {
@@ -1720,6 +1732,13 @@ impl Store {
         Ok(())
     }
 
+    pub fn delete_scan_height(&self, vault_pub_key: &str) -> Result<()> {
+        let tree = self.db.open_tree("scan_heights")?;
+        tree.remove(vault_pub_key.as_bytes())?;
+        tree.flush()?;
+        Ok(())
+    }
+
     /// Load the last scanned height for a vault.
     pub fn load_scan_height(&self, vault_pub_key: &str) -> Result<Option<u64>> {
         let tree = self.db.open_tree("scan_heights")?;
@@ -1852,6 +1871,7 @@ mod tests {
         assert!(store
             .register_vault("vault-a", "group-a", "addr-a", "test", 0)
             .unwrap());
+        store.save_scan_height("vault-a", 999).unwrap();
         let record = store
             .get_vault("vault-a")
             .unwrap()
@@ -1866,6 +1886,8 @@ mod tests {
             .unwrap()
             .expect("vault should exist after birthday backfill");
         assert_eq!(record.birthday, 123);
+        assert!(record.rescan);
+        assert_eq!(store.load_scan_height("vault-a").unwrap(), None);
     }
 
     #[test]

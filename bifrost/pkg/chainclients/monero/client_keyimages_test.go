@@ -2055,7 +2055,7 @@ func TestCatchupKeyImagesReadsFromVaultAndCallsSidecar(t *testing.T) {
 	assert.Equal(t, "ki_b", capturedRefs[1].KeyImage)
 }
 
-func TestCatchupKeyImagesLoadsInactiveVaultsViaPubKeys(t *testing.T) {
+func TestCatchupKeyImagesSkipsInactiveVaultsOutsideAsgardSet(t *testing.T) {
 	t.Parallel()
 
 	frostKey := testVaultPubKey(t, "frost-key-image-inactive")
@@ -2112,10 +2112,8 @@ func TestCatchupKeyImagesLoadsInactiveVaultsViaPubKeys(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, frostKey.String(), capturedVault)
-	require.Len(t, capturedRefs, 1)
-	assert.Equal(t, "retired_a", capturedRefs[0].TxHash)
-	assert.Equal(t, "ki_retired_a", capturedRefs[0].KeyImage)
+	assert.Empty(t, capturedVault)
+	assert.Empty(t, capturedRefs)
 }
 
 func TestCatchupKeyImagesSkipsUnchangedHistoryAndSendsOnlyDelta(t *testing.T) {
@@ -2974,6 +2972,99 @@ func TestCatchupTxKeysReplaysOutboundAuditInObservedHeightOrder(t *testing.T) {
 	assert.Equal(t, newerTxHash, requests[1].TxHash)
 	assert.True(t, requests[0].Reconcile)
 	assert.True(t, requests[1].Reconcile)
+}
+
+func TestCatchupTxKeysSkipsInactiveVaultsOutsideAsgardSet(t *testing.T) {
+	t.Parallel()
+
+	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("a", 64)
+	parentTxHash := strings.Repeat("b", 64)
+	txKey := strings.Repeat("1", 64)
+	destination := testOutboundXMRDestination()
+
+	var mu sync.Mutex
+	var requests []xmrFrostValidateOutboundRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			var req xmrFrostValidateOutboundRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			requests = append(requests, req)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/transfers":
+			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	vault := ttypes.Vault{
+		PubKeyFrost: frostKey,
+		Status:      ttypes.VaultStatus_InactiveVault,
+		TxKeysXmr: []*common.XmrTxKeyRef{
+			{TxHash: txHash, TxKeys: []string{txKey}},
+		},
+	}
+	bridge := &mockMoneroBridge{
+		asgards:       ttypes.Vaults{},
+		vaultByPubKey: map[string]ttypes.Vault{frostKey.String(): vault},
+		pubKeys: []thorclient.PubKeyContractAddressPair{{
+			PubKey:   frostKey,
+			Algo:     common.SigningAlgoEd25519,
+			Inactive: true,
+		}},
+		observedTxVoterByID: map[string]*ttypes.QueryObservedTxVoter{
+			txHash: {
+				TxID: common.TxID(txHash),
+				Tx: ttypes.QueryObservedTx{
+					Tx: common.NewTx(
+						common.TxID(txHash),
+						common.Address(common.XMRUnknownSenderAddress(txHash, vaultAddr.String())),
+						vaultAddr,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+parentTxHash,
+					),
+					ObservedPubKey: frostKey,
+				},
+			},
+		},
+		txStatusByID: map[string]*ttypes.QueryTxStatusResponse{
+			parentTxHash: {
+				OutTxs: common.Txs{
+					common.NewTx(
+						common.TxID(txHash),
+						vaultAddr,
+						destination,
+						common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+						nil,
+						"OUT:"+parentTxHash,
+					),
+				},
+			},
+		},
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		logger:          testLogger(),
+		thorchainBridge: bridge,
+	}
+
+	c.catchupTxKeys()
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Empty(t, requests)
 }
 
 func TestPrepareObservedTxInItemPropagatesKeyImageBlame(t *testing.T) {

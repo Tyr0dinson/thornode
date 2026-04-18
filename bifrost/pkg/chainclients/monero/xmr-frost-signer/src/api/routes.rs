@@ -363,7 +363,8 @@ fn ensure_registered_vault_state(
     let stored_scan_height = state
         .store
         .load_scan_height(vault_pub_key)
-        .map_err(|e| format!("failed to load vault scan height: {e}"))?;
+        .map_err(|e| format!("failed to load vault scan height: {e}"))?
+        .filter(|height| *height > 0);
     if stored_scan_height.is_none() && birthday_height > 0 {
         state
             .store
@@ -402,6 +403,7 @@ fn stored_scan_height_or_birthday(
         .store
         .load_scan_height(vault_pub_key)
         .map_err(|e| format!("failed to load vault scan height: {e}"))?
+        .filter(|height| *height > 0)
         .or_else(|| (birthday > 0).then_some(birthday))
         .or(Some(0))
         .ok_or_else(|| format!("failed to determine scan height for vault {vault_pub_key}"))
@@ -2486,9 +2488,10 @@ pub async fn scanner_sync(
                             }
                         }
                     }
-                    let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
-                        .into_iter()
-                        .collect();
+                    let spent_key_images: Vec<String> =
+                        collect_spent_key_images(&block_transactions)
+                            .into_iter()
+                            .collect();
                     batch.push(ScannedBlockEntry {
                         height: h,
                         block_hash,
@@ -2498,12 +2501,9 @@ pub async fn scanner_sync(
                     });
                 }
                 if !batch.is_empty() {
-                    if let Err(e) = commit_scan_batch(
-                        &state,
-                        &vault.vault_pub_key,
-                        &batch,
-                        reorg_window,
-                    ) {
+                    if let Err(e) =
+                        commit_scan_batch(&state, &vault.vault_pub_key, &batch, reorg_window)
+                    {
                         warn!(
                             error = %e,
                             vault = %vault.vault_pub_key,
@@ -2808,23 +2808,19 @@ pub async fn scanner_sync(
                 spent_key_images,
                 added_outputs: added_outputs.clone(),
             }];
-            let persisted = match commit_scan_batch(
-                &state,
-                &vault.vault_pub_key,
-                &batch,
-                reorg_window,
-            ) {
-                Ok(result) => result,
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        vault = %vault.vault_pub_key,
-                        height = req.height,
-                        "failed to persist scanner sync state"
-                    );
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-                }
-            };
+            let persisted =
+                match commit_scan_batch(&state, &vault.vault_pub_key, &batch, reorg_window) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        error!(
+                            error = %e,
+                            vault = %vault.vault_pub_key,
+                            height = req.height,
+                            "failed to persist scanner sync state"
+                        );
+                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
+                    }
+                };
             // Include outputs newly discovered by this scan.
             incoming.extend(
                 added_outputs
@@ -2977,10 +2973,7 @@ pub async fn scanner_reset(
         );
     }
 
-    if let Err(e) = state
-        .store
-        .save_registered_key_images(&vault_pub_key, &[])
-    {
+    if let Err(e) = state.store.save_registered_key_images(&vault_pub_key, &[]) {
         error!(error = %e, vault = %vault_pub_key, "failed to clear registered key image inventory during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -2996,8 +2989,8 @@ pub async fn scanner_reset(
         );
     }
 
-    if let Err(e) = state.store.save_scan_height(&vault_pub_key, 0) {
-        error!(error = %e, vault = %vault_pub_key, "failed to clear scan height during scanner reset");
+    if let Err(e) = state.store.delete_scan_height(&vault_pub_key) {
+        error!(error = %e, vault = %vault_pub_key, "failed to delete scan height during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(e.to_string())),
@@ -5402,11 +5395,10 @@ mod tests {
         let mut batch: Vec<ScannedBlockEntry> = Vec::new();
         for height in 101..=250 {
             let spent_key_images: Vec<String> = if height == 110 {
-                let txs =
-                    vec![
-                        parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(13))
-                            .expect("failed to build test transaction"),
-                    ];
+                let txs = vec![
+                    parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(13))
+                        .expect("failed to build test transaction"),
+                ];
                 collect_spent_key_images(&txs).into_iter().collect()
             } else {
                 Vec::new()
@@ -5891,6 +5883,44 @@ mod tests {
         assert_eq!(stored[0].tx_hash, tx_hash);
         assert_eq!(stored[0].output_index, 0);
         assert_eq!(stored[0].key_image, key_image);
+    }
+
+    #[tokio::test]
+    async fn register_vault_replaces_zero_scan_height_with_birthday() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let group_key = xmr::group_key_hex_from_spend_seed_hex(BOOTSTRAP_SPEND_KEY_HEX)
+            .expect("group key should derive");
+        let address = xmr::derive_vault_address(&group_key, state.chain_network)
+            .expect("address should derive");
+
+        state
+            .store
+            .save_scan_height(BOOTSTRAP_VAULT_PUB_KEY, 0)
+            .expect("stale zero scan height should save");
+
+        let response = register_vault(
+            State(state.clone()),
+            Json(RegisterVaultRequest {
+                vault_pub_key: BOOTSTRAP_VAULT_PUB_KEY.to_string(),
+                group_key,
+                address,
+                source: Some("test".to_string()),
+                spend_key_hex: Some(BOOTSTRAP_SPEND_KEY_HEX.to_string()),
+                birthday: Some(321),
+                key_images: None,
+                tx_keys: None,
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+
+        let persisted_height = state
+            .store
+            .load_scan_height(BOOTSTRAP_VAULT_PUB_KEY)
+            .expect("scan height load should succeed");
+        assert_eq!(persisted_height, Some(321));
     }
 
     #[tokio::test]
@@ -7004,11 +7034,7 @@ mod tests {
             .store
             .load_scan_height(VALID_VAULT_PUB_KEY)
             .expect("failed to load scan height");
-        assert_eq!(
-            scan_height,
-            Some(0),
-            "scan height should be cleared on reset"
-        );
+        assert_eq!(scan_height, None, "scan height should be deleted on reset");
 
         let outgoing = state
             .store
