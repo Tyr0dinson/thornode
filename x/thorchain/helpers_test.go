@@ -2443,3 +2443,151 @@ func (s *HelperSuite) TestComputeChainTelemetry(c *C) {
 	entries = computeChainTelemetry(ctx, mgr, Vaults{}, activeNodes6)
 	c.Assert(len(entries), Equals, 0)
 }
+
+// --- isNodeInRagnarokingChainVault ---------------------------------------
+
+// errGetPoolsKeeper fails GetPools.
+type errGetPoolsKeeper struct{ keeper.KVStoreDummy }
+
+func (k errGetPoolsKeeper) GetPools(_ cosmos.Context) (Pools, error) {
+	return nil, errKaboom
+}
+
+// errGetVaultsByStatusKeeper returns one ragnaroking pool and fails
+// GetAsgardVaultsByStatus so the vault-iteration branch reports an error.
+type errGetVaultsByStatusKeeper struct {
+	keeper.KVStoreDummy
+	pool Pool
+}
+
+func (k errGetVaultsByStatusKeeper) GetPools(_ cosmos.Context) (Pools, error) {
+	return Pools{k.pool}, nil
+}
+
+func (k errGetVaultsByStatusKeeper) GetPoolRagnarokStart(_ cosmos.Context, _ common.Asset) (int64, error) {
+	return 100, nil
+}
+
+func (k errGetVaultsByStatusKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
+	return nil, errKaboom
+}
+
+func (s *HelperSuite) TestIsNodeInRagnarokingChainVault(c *C) {
+	// Case 1: no ragnaroking pools → false
+	ctx, mgr := setupManagerForTest(c)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	got, err := isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, false)
+
+	// Case 2: ragnaroking chain, node not in any vault → false
+	ctx, mgr = setupManagerForTest(c)
+	na = GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	btcPool = NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolStaged
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	mgr.Keeper().SetPoolRagnarokStart(ctx, common.BTCAsset)
+	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, false)
+
+	// Case 3: node in ActiveVault carrying the ragnaroking chain → true
+	ctx, mgr = setupManagerForTest(c)
+	na = GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	v := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	v.Membership = common.PubKeys{na.PubKeySet.Secp256k1, GetRandomPubKey()}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
+	btcPool = NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolStaged
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	mgr.Keeper().SetPoolRagnarokStart(ctx, common.BTCAsset)
+	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, true)
+
+	// Case 4: node only in RetiringVault carrying the ragnaroking chain → true
+	ctx, mgr = setupManagerForTest(c)
+	na = GetRandomValidatorNode(NodeStandby)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	active := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(mgr.Keeper().SetVault(ctx, active), IsNil)
+	retiring := NewVault(1000, RetiringVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	retiring.Membership = common.PubKeys{na.PubKeySet.Secp256k1, GetRandomPubKey()}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	btcPool = NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolStaged
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	mgr.Keeper().SetPoolRagnarokStart(ctx, common.BTCAsset)
+	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, true)
+
+	// Case 5: node in vault that does NOT carry the ragnaroking chain → false
+	ctx, mgr = setupManagerForTest(c)
+	na = GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	ethVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	ethVault.Membership = common.PubKeys{na.PubKeySet.Secp256k1}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+	btcPool = NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolStaged
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	mgr.Keeper().SetPoolRagnarokStart(ctx, common.BTCAsset)
+	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, false)
+
+	// Case 6: node in two vaults — only the non-ragnaroking vault has membership → false
+	ctx, mgr = setupManagerForTest(c)
+	na = GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	ethVault = NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	ethVault.Membership = common.PubKeys{na.PubKeySet.Secp256k1}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+	btcVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = common.PubKeys{GetRandomPubKey()}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+	btcPool = NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolStaged
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	mgr.Keeper().SetPoolRagnarokStart(ctx, common.BTCAsset)
+	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, false)
+
+	// Case 7: GetPools error propagates
+	ctx, mgr = setupManagerForTest(c)
+	mgr.K = errGetPoolsKeeper{}
+	na = GetRandomValidatorNode(NodeActive)
+	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, NotNil)
+	c.Assert(got, Equals, false)
+
+	// Case 8: GetAsgardVaultsByStatus error propagates
+	ctx, mgr = setupManagerForTest(c)
+	vaultsErrPool := NewPool()
+	vaultsErrPool.Asset = common.BTCAsset
+	mgr.K = errGetVaultsByStatusKeeper{pool: vaultsErrPool}
+	na = GetRandomValidatorNode(NodeActive)
+	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
+	c.Assert(err, NotNil)
+	c.Assert(got, Equals, false)
+}
