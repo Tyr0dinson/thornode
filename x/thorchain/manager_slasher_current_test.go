@@ -1594,4 +1594,33 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 	c.Assert(income.Equal(cosmos.NewUint(300)), Equals, true, Commentf("expected 300, got %s", income))
 	// BondRewardRune was 50, should now be 50 + 600 = 650
 	c.Assert(k.network.BondRewardRune.Equal(cosmos.NewUint(650)), Equals, true, Commentf("expected 650, got %s", k.network.BondRewardRune))
+
+	// Case 7: compounding — multiple consensus events in a single block drain
+	// the same chain-income bucket sequentially. Each call reads the post-
+	// drain remainder, so forfeitures compound across calls.
+	k.chainIncomes["BTC"] = cosmos.NewUint(900)
+	k.network.BondRewardRune = cosmos.ZeroUint()
+	// First forfeit: share = 900/3 = 300; 1 non-signer; forfeiture = 300; remainder = 600.
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	income, err = k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.Equal(cosmos.NewUint(600)), Equals, true, Commentf("after 1st forfeit, expected 600, got %s", income))
+	c.Assert(k.network.BondRewardRune.Equal(cosmos.NewUint(300)), Equals, true, Commentf("after 1st forfeit, expected 300 in BondRewardRune, got %s", k.network.BondRewardRune))
+
+	// Second forfeit on the already-depleted bucket: share = 600/3 = 200;
+	// 1 non-signer; forfeiture = 200; remainder = 400.
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	income, err = k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.Equal(cosmos.NewUint(400)), Equals, true, Commentf("after 2nd forfeit, expected 400, got %s", income))
+	// Cumulative BondRewardRune = 300 + 200 = 500.
+	c.Assert(k.network.BondRewardRune.Equal(cosmos.NewUint(500)), Equals, true, Commentf("cumulative, expected 500 in BondRewardRune, got %s", k.network.BondRewardRune))
+
+	// Third forfeit compounds further: share = 400/3 = 133; forfeiture = 133;
+	// confirms the geometric decay holds.
+	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	income, err = k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.Equal(cosmos.NewUint(267)), Equals, true, Commentf("after 3rd forfeit, expected 267, got %s", income))
+	c.Assert(k.network.BondRewardRune.Equal(cosmos.NewUint(633)), Equals, true, Commentf("cumulative, expected 633 in BondRewardRune, got %s", k.network.BondRewardRune))
 }
