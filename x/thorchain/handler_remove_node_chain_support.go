@@ -72,9 +72,26 @@ func (h RemoveNodeChainSupportHandler) validate(ctx cosmos.Context, msg MsgRemov
 		return cosmos.ErrUnknownRequest(fmt.Sprintf("chain %s is not in node's supported chains", msg.Chain))
 	}
 
-	minSupport := h.mgr.Keeper().GetConfigInt64(ctx, constants.MinNodeChainSupport)
-	if int64(len(effectiveChains))-1 < minSupport {
-		return cosmos.ErrUnknownRequest(fmt.Sprintf("removing chain %s would drop below minimum chain support (%d)", msg.Chain, minSupport))
+	// If the node has an explicit list and removing this chain would empty
+	// it, the node reverts to the implicit "all chains" default. That mode
+	// covers every chain in common.AllChains and is always above any
+	// sensible MinNodeChainSupport floor, so we let it through.
+	revertingToImplicit := false
+	if len(na.SupportedChains) > 0 {
+		remaining := 0
+		for _, c := range na.SupportedChains {
+			if c != chainStr {
+				remaining++
+			}
+		}
+		revertingToImplicit = remaining == 0
+	}
+
+	if !revertingToImplicit {
+		minSupport := h.mgr.Keeper().GetConfigInt64(ctx, constants.MinNodeChainSupport)
+		if int64(len(effectiveChains))-1 < minSupport {
+			return cosmos.ErrUnknownRequest(fmt.Sprintf("removing chain %s would drop below minimum chain support (%d)", msg.Chain, minSupport))
+		}
 	}
 
 	return nil

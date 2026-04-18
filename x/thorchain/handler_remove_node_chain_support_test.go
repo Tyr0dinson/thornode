@@ -40,13 +40,14 @@ func (s *HandlerRemoveNodeChainSupportSuite) TestValidate(c *C) {
 	err = handler.validate(ctx, *msg)
 	c.Assert(err, NotNil)
 
-	// invalid: removing would drop below MinNodeChainSupport
+	// valid: removing the last explicit chain reverts the node to the implicit
+	// "all chains" default, bypassing the MinNodeChainSupport floor.
 	singleChainNode := GetRandomValidatorNode(NodeActive)
 	singleChainNode.SupportedChains = []string{common.BTCChain.String()}
 	c.Assert(k.SetNodeAccount(ctx, singleChainNode), IsNil)
 	msg = NewMsgRemoveNodeChainSupport(common.BTCChain, singleChainNode.NodeAddress)
 	err = handler.validate(ctx, *msg)
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 
 	// invalid: cannot remove THORChain (native chain must always be present)
 	thorNode := GetRandomValidatorNode(NodeActive)
@@ -114,6 +115,25 @@ func (s *HandlerRemoveNodeChainSupportSuite) TestHandle(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(na.SupportedChains), Equals, 1)
 	c.Assert(na.SupportedChains[0], Equals, common.DOGEChain.String())
+}
+
+func (s *HandlerRemoveNodeChainSupportSuite) TestHandleRevertToImplicitAllChains(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	handler := NewRemoveNodeChainSupportHandler(NewDummyMgrWithKeeper(k))
+
+	// Node explicitly supports one chain — removing it should revert to the
+	// implicit "all chains" default, leaving SupportedChains empty in state.
+	node := GetRandomValidatorNode(NodeActive)
+	node.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(k.SetNodeAccount(ctx, node), IsNil)
+
+	msg := NewMsgRemoveNodeChainSupport(common.BTCChain, node.NodeAddress)
+	c.Assert(handler.validate(ctx, *msg), IsNil)
+	c.Assert(handler.handle(ctx, *msg), IsNil)
+
+	na, err := k.GetNodeAccount(ctx, node.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(len(na.SupportedChains), Equals, 0)
 }
 
 func (s *HandlerRemoveNodeChainSupportSuite) TestHandleMaterializeEmptyChains(c *C) {
