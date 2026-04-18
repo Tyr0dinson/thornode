@@ -998,6 +998,13 @@ func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, c
 		return cosmos.ZeroUint(), nil
 	}
 
+	// sort by NodeAddress so the remainder-to-last assignment below is
+	// deterministic across vault-membership reshuffles, matching the
+	// canonical ordering used by getChainConsensusParticipants.
+	sort.Slice(chainNodes, func(i, j int) bool {
+		return chainNodes[i].NodeAddress.String() < chainNodes[j].NodeAddress.String()
+	})
+
 	chainTotalEffBond, chainBondCap := getTotalEffectiveBond(chainNodes)
 	if chainTotalEffBond.IsZero() {
 		return cosmos.ZeroUint(), nil
