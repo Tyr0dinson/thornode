@@ -1448,3 +1448,72 @@ func (vts *ValidatorMgrTestSuite) TestDistributeChainBondRewardsBondOverCap(c *C
 	// na3 should have less
 	c.Assert(reward3.LT(reward1), Equals, true)
 }
+
+func (vts *ValidatorMgrTestSuite) TestDistributeChainBondRewardsPartialFailure(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.Bond = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+
+	// Pre-populate na2's bond providers with an unrelated address.
+	// passiveBackfill skips when providers are non-empty, and payChainReward
+	// fails because na2.BondAddress is not listed as a provider.
+	otherAddr := GetRandomBech32Addr()
+	bp2 := NewBondProviders(na2.NodeAddress)
+	bp2.Providers = []BondProvider{NewBondProvider(otherAddr)}
+	c.Assert(k.SetBondProviders(ctx, bp2), IsNil)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{
+		na1.PubKeySet.Secp256k1.String(),
+		na2.PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	FundModule(c, ctx, k, BondName, 200*common.One)
+
+	chainReward := cosmos.NewUint(10 * common.One)
+	c.Assert(k.AddChainIncome(ctx, common.BTCChain, chainReward), IsNil)
+
+	networkBefore, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	initialBondReward := networkBefore.BondRewardRune
+
+	// With equal bonds, each node is allocated chainReward/2 = 5*common.One.
+	// The failure on na2 leaves half the reward undistributed.
+	expectedUndistributed := cosmos.NewUint(5 * common.One)
+
+	c.Assert(vm.distributeChainBondRewards(ctx, mgr), IsNil)
+
+	// na1 should have grown (received its share); na2 should be untouched.
+	na1After, err := k.GetNodeAccount(ctx, na1.NodeAddress)
+	c.Assert(err, IsNil)
+	na2After, err := k.GetNodeAccount(ctx, na2.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na1After.Bond.GT(na1.Bond), Equals, true, Commentf("na1 bond should have grown"))
+	c.Assert(na2After.Bond.String(), Equals, na2.Bond.String(), Commentf("na2 bond should be unchanged"))
+
+	// The undistributed share must be swept into the global BondRewardRune,
+	// not silently lost.
+	networkAfter, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(
+		networkAfter.BondRewardRune.String(),
+		Equals,
+		initialBondReward.Add(expectedUndistributed).String(),
+	)
+
+	// chain income is zeroed regardless of the partial failure
+	income, err := k.GetChainIncome(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(income.IsZero(), Equals, true)
+}
