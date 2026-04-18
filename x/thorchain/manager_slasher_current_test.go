@@ -1540,7 +1540,9 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 	}
 	slasher.keeper = k
 	mgr.K = k
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	// Vault membership = 3 (addr1, addr2, addr3). nonSigners derived from signers by caller.
+	btcTotal := 3
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{addr3}, btcTotal)
 	income, err := k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Assert(income.IsZero(), Equals, true)
@@ -1549,7 +1551,7 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 	// Case 2: normal forfeiture — 1 of 3 non-signers, income = 300
 	k.chainIncomes["BTC"] = cosmos.NewUint(300)
 	k.network.BondRewardRune = cosmos.ZeroUint()
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{addr3}, btcTotal)
 	income, err = k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	// per-node share = 300/3 = 100; 1 non-signer; forfeiture = 100; remainder = 200
@@ -1559,16 +1561,16 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 	// Case 3: all signed — no non-signers, no forfeiture
 	k.chainIncomes["BTC"] = cosmos.NewUint(300)
 	k.network.BondRewardRune = cosmos.ZeroUint()
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2, addr3})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{}, btcTotal)
 	income, err = k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Assert(income.Equal(cosmos.NewUint(300)), Equals, true, Commentf("expected 300 (no forfeiture), got %s", income))
 	c.Assert(k.network.BondRewardRune.IsZero(), Equals, true)
 
-	// Case 4: no participants for chain — no-op
+	// Case 4: no participants for chain — no-op (totalParticipants = 0)
 	k.chainIncomes["DOGE"] = cosmos.NewUint(500)
 	k.network.BondRewardRune = cosmos.ZeroUint()
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.DOGEChain, []cosmos.AccAddress{addr1})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.DOGEChain, []cosmos.AccAddress{addr1}, 0)
 	income, err = k.GetChainIncome(ctx, common.DOGEChain)
 	c.Assert(err, IsNil)
 	c.Assert(income.Equal(cosmos.NewUint(500)), Equals, true, Commentf("expected 500 (no participants), got %s", income))
@@ -1577,7 +1579,7 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 	k.chainIncomes["BTC"] = cosmos.NewUint(1)
 	k.network.BondRewardRune = cosmos.ZeroUint()
 	// Only addr1 signs; addr2 and addr3 are non-signers (2 of 3)
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{addr2, addr3}, btcTotal)
 	income, err = k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	// per-node share = 1/3 = 0 (integer division); forfeiture = 0; income unchanged
@@ -1587,7 +1589,7 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 	// Case 6: 2 of 3 non-signers with sufficient income
 	k.chainIncomes["BTC"] = cosmos.NewUint(900)
 	k.network.BondRewardRune = cosmos.NewUint(50)
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{addr2, addr3}, btcTotal)
 	income, err = k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	// per-node share = 900/3 = 300; 2 non-signers; forfeiture = 600; remainder = 300
@@ -1601,7 +1603,7 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 	k.chainIncomes["BTC"] = cosmos.NewUint(900)
 	k.network.BondRewardRune = cosmos.ZeroUint()
 	// First forfeit: share = 900/3 = 300; 1 non-signer; forfeiture = 300; remainder = 600.
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{addr3}, btcTotal)
 	income, err = k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Assert(income.Equal(cosmos.NewUint(600)), Equals, true, Commentf("after 1st forfeit, expected 600, got %s", income))
@@ -1609,7 +1611,7 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 
 	// Second forfeit on the already-depleted bucket: share = 600/3 = 200;
 	// 1 non-signer; forfeiture = 200; remainder = 400.
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{addr3}, btcTotal)
 	income, err = k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Assert(income.Equal(cosmos.NewUint(400)), Equals, true, Commentf("after 2nd forfeit, expected 400, got %s", income))
@@ -1618,7 +1620,7 @@ func (s *SlashingSuite) TestForfeitChainIncomeForNonSigners(c *C) {
 
 	// Third forfeit compounds further: share = 400/3 = 133; forfeiture = 133;
 	// confirms the geometric decay holds.
-	slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, common.BTCChain, []cosmos.AccAddress{addr1, addr2})
+	slasher.ForfeitChainIncomeForNonSigners(ctx, common.BTCChain, []cosmos.AccAddress{addr3}, btcTotal)
 	income, err = k.GetChainIncome(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Assert(income.Equal(cosmos.NewUint(267)), Equals, true, Commentf("after 3rd forfeit, expected 267, got %s", income))

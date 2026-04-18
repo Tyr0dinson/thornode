@@ -1822,17 +1822,36 @@ func getChainConsensusNodeAccounts(ctx cosmos.Context, mgr Manager, chain common
 		}
 	}
 	if len(result) == 0 {
+		// Chain has participants (vault members) but none overlap with the
+		// active validator set. This is an anomalous state — e.g. keeper
+		// consistency drift between vault index and validator index. Fall
+		// back to all-active to keep consensus making progress, but log it
+		// so the widening is auditable rather than silent.
+		ctx.Logger().Error(
+			"chain consensus participants do not overlap with active validators, falling back to all-active",
+			"chain", chain,
+			"chain_participants", len(participants),
+			"active_validators", len(allActiveNAs),
+		)
 		return allActiveNAs
 	}
 	return result
 }
 
-func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress, chain common.Chain) []cosmos.AccAddress {
-	participants := getChainConsensusParticipants(ctx, mgr, chain)
+// getChainAwareNonSigners returns the chain-scoped non-signers and the number
+// of chain-specific consensus participants. When the chain has no vault
+// participants the nonSigners list falls back to active validators (so slash
+// points still apply), but the returned chainParticipantCount is 0 — signalling
+// that no chain-denominated pro-rata accounting can be performed. Callers that
+// need that denominator (e.g. ForfeitChainIncomeForNonSigners) can skip work
+// without re-fetching vaults.
+func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress, chain common.Chain) ([]cosmos.AccAddress, int) {
+	chainParticipants := getChainConsensusParticipants(ctx, mgr, chain)
+	participants := chainParticipants
 	if len(participants) == 0 {
 		active, err := mgr.Keeper().ListActiveValidators(ctx)
 		if err != nil {
-			return nil
+			return nil, 0
 		}
 		participants = make([]cosmos.AccAddress, len(active))
 		for i, na := range active {
@@ -1849,7 +1868,7 @@ func getChainAwareNonSigners(ctx cosmos.Context, mgr Manager, signers []cosmos.A
 			nonSigners = append(nonSigners, p)
 		}
 	}
-	return nonSigners
+	return nonSigners, len(chainParticipants)
 }
 
 func validateActiveAsgardExists(ctx cosmos.Context, mgr Manager, chain common.Chain) error {

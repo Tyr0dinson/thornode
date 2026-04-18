@@ -1939,25 +1939,29 @@ func (s *HelperSuite) TestGetChainAwareNonSigners(c *C) {
 	mgr.K = k
 
 	// Case 1: all participants signed — no non-signers
-	nonSigners := getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, addr2, addr3}, common.BTCChain)
+	nonSigners, totalParticipants := getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, addr2, addr3}, common.BTCChain)
 	c.Assert(len(nonSigners), Equals, 0)
+	c.Assert(totalParticipants, Equals, 3)
 
 	// Case 2: one participant did not sign
-	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, addr2}, common.BTCChain)
+	nonSigners, totalParticipants = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, addr2}, common.BTCChain)
 	c.Assert(len(nonSigners), Equals, 1)
 	c.Assert(nonSigners[0].Equals(addr3), Equals, true)
+	c.Assert(totalParticipants, Equals, 3)
 
 	// Case 3: no one signed — all are non-signers
-	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{}, common.BTCChain)
+	nonSigners, totalParticipants = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{}, common.BTCChain)
 	c.Assert(len(nonSigners), Equals, 3)
+	c.Assert(totalParticipants, Equals, 3)
 
-	// Case 4: chain with no vault members — no non-signers
-	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1}, common.DOGEChain)
+	// Case 4: chain with no vault members — no non-signers, totalParticipants=0
+	nonSigners, totalParticipants = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1}, common.DOGEChain)
 	c.Assert(len(nonSigners), Equals, 0)
+	c.Assert(totalParticipants, Equals, 0)
 
 	// Case 5: signers include addresses NOT in the chain's vault — ignored
 	extraAddr := types.GetRandomBech32Addr()
-	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, extraAddr}, common.BTCChain)
+	nonSigners, _ = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr1, extraAddr}, common.BTCChain)
 	c.Assert(len(nonSigners), Equals, 2)
 	nsSet := make(map[string]bool)
 	for _, ns := range nonSigners {
@@ -1983,12 +1987,12 @@ func (s *HelperSuite) TestGetChainAwareNonSigners(c *C) {
 	}
 	mgr.K = k2
 	// addr2 signed for BTC — only addr1 is a non-signer for BTC
-	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr2}, common.BTCChain)
+	nonSigners, _ = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr2}, common.BTCChain)
 	c.Assert(len(nonSigners), Equals, 1)
 	c.Assert(nonSigners[0].Equals(addr1), Equals, true)
 
 	// addr2 signed for ETH — only addr3 is a non-signer for ETH
-	nonSigners = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr2}, common.ETHChain)
+	nonSigners, _ = getChainAwareNonSigners(ctx, mgr, []cosmos.AccAddress{addr2}, common.ETHChain)
 	c.Assert(len(nonSigners), Equals, 1)
 	c.Assert(nonSigners[0].Equals(addr3), Equals, true)
 }

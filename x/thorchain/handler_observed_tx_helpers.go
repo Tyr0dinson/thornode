@@ -71,10 +71,10 @@ func processTxInAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
+			nonSigners, totalParticipants := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
+			slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
@@ -99,7 +99,7 @@ func processTxInAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
+			nonSigners, _ := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// ChainIncome forfeiture is deferred to final consensus to avoid
@@ -435,10 +435,10 @@ func processTxOutAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
+			nonSigners, totalParticipants := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			slasher.ForfeitChainIncomeForNonSigners(ctx, mgr, tx.Tx.Chain, signers)
+			slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
@@ -479,7 +479,7 @@ func processTxOutAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetConsensusSigners()
-			nonSigners := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
+			nonSigners, _ := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// ChainIncome forfeiture is deferred to final consensus to avoid

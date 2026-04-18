@@ -941,17 +941,17 @@ func (s *SlasherImpl) DecSlashPoints(ctx cosmos.Context, point int64, addresses 
 	}
 }
 
-// ForfeitChainIncomeForNonSigners identifies chain-specific non-signers and
-// forfeits their pro-rata share of the chain's pending income bucket, moving
-// the forfeited amount to the global reserve reward bucket (BondRewardRune).
-func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, mgr Manager, chain common.Chain, signers []cosmos.AccAddress) {
-	nonSigners := getChainAwareNonSigners(ctx, mgr, signers, chain)
-	if len(nonSigners) == 0 {
-		return
-	}
-
-	participants := getChainConsensusParticipants(ctx, mgr, chain)
-	if len(participants) == 0 {
+// ForfeitChainIncomeForNonSigners forfeits the pro-rata share of the chain's
+// pending income bucket belonging to the supplied non-signers and moves the
+// forfeited amount to the global reserve reward bucket (BondRewardRune).
+//
+// nonSigners and totalParticipants are expected to be pre-computed by the
+// caller (typically via getChainAwareNonSigners, which returns both in one
+// pass) so we avoid re-fetching vault membership on the hot consensus path.
+// A zero totalParticipants means the chain has no vault participants and no
+// pro-rata accounting is possible; the call becomes a no-op.
+func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain common.Chain, nonSigners []cosmos.AccAddress, totalParticipants int) {
+	if len(nonSigners) == 0 || totalParticipants == 0 {
 		return
 	}
 
@@ -964,8 +964,8 @@ func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, mgr Ma
 		return
 	}
 
-	totalParticipants := cosmos.NewUint(uint64(len(participants)))
-	perNodeShare := chainIncome.Quo(totalParticipants)
+	totalParticipantsU := cosmos.NewUint(uint64(totalParticipants))
+	perNodeShare := chainIncome.Quo(totalParticipantsU)
 	if perNodeShare.IsZero() {
 		return
 	}
@@ -1003,7 +1003,7 @@ func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, mgr Ma
 	ctx.Logger().Debug("chain income forfeited for non-signers",
 		"chain", chain,
 		"non_signers", len(nonSigners),
-		"participants", len(participants),
+		"participants", totalParticipants,
 		"forfeited", totalForfeiture,
 	)
 }

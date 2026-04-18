@@ -1639,17 +1639,10 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 	marketingFundSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.MarketingFundSystemIncomeBps)
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
 
-	// Compute blockReward (emission) for per-chain income bucketing.
-	// Uses the same emissionCurve (possibly overridden above) that calcBlockRewards receives.
-	var blockReward cosmos.Uint
-	if emissionCurve > 0 && blocksPerYear > 0 {
-		trD := cosmos.NewDec(int64(totalReserve.Uint64()))
-		ecD := cosmos.NewDec(emissionCurve)
-		bpyD := cosmos.NewDec(blocksPerYear)
-		blockReward = cosmos.NewUint(uint64(trD.Quo(ecD).Quo(bpyD).RoundInt64()))
-	} else {
-		blockReward = cosmos.ZeroUint()
-	}
+	// Compute blockReward (emission) for per-chain income bucketing. Shares the
+	// same helper as calcBlockRewards so the emission formula has one source of
+	// truth.
+	blockReward := vm.calcBlockReward(ctx, totalReserve, emissionCurve, blocksPerYear)
 
 	bondReward, totalPoolRewards, lpShare, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct := vm.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
@@ -1865,6 +1858,21 @@ func (vm *NetworkMgr) calcPoolDeficit(lpDeficit, totalFees, poolFees cosmos.Uint
 	return common.GetSafeShare(poolFees, totalFees, lpDeficit)
 }
 
+// calcBlockReward returns the per-block RUNE emission from the reserve for the
+// supplied emissionCurve / blocksPerYear. Single source of truth so callers in
+// UpdateNetwork and calcBlockRewards stay in sync if the emission formula
+// changes.
+func (vm *NetworkMgr) calcBlockReward(ctx cosmos.Context, totalReserve cosmos.Uint, emissionCurve, blocksPerYear int64) cosmos.Uint {
+	if emissionCurve <= 0 || blocksPerYear <= 0 {
+		ctx.Logger().Error("invalid emission curve or blocks per year", "emissionCurve", emissionCurve, "blocksPerYear", blocksPerYear)
+		return cosmos.ZeroUint()
+	}
+	trD := cosmos.NewDec(int64(totalReserve.Uint64()))
+	ecD := cosmos.NewDec(emissionCurve)
+	bpyD := cosmos.NewDec(blocksPerYear)
+	return cosmos.NewUint(uint64(trD.Quo(ecD).Quo(bpyD).RoundInt64()))
+}
+
 // Calculate the block rewards that bonders and liquidity providers should receive
 func (vm *NetworkMgr) calcBlockRewards(
 	ctx cosmos.Context,
@@ -1888,19 +1896,13 @@ func (vm *NetworkMgr) calcBlockRewards(
 	tcyStakeDeduct cosmos.Uint,
 	marketingFundDeduct cosmos.Uint,
 ) {
-	// Block Rewards will take the latest reserve, divide it by the emission
-	// curve factor, then divide by blocks per year
-	trD := cosmos.NewDec(int64(totalReserve.Uint64()))
-	ecD := cosmos.NewDec(emissionCurve)
-	bpyD := cosmos.NewDec(blocksPerYear)
 	// Defensive check: ensure emission curve and blocks per year are positive
 	if emissionCurve <= 0 || blocksPerYear <= 0 {
 		ctx.Logger().Error("invalid emission curve or blocks per year", "emissionCurve", emissionCurve, "blocksPerYear", blocksPerYear)
 		// Return zero rewards if config is invalid
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()
 	}
-	blockRewardD := trD.Quo(ecD).Quo(bpyD)
-	blockReward := cosmos.NewUint(uint64((blockRewardD).RoundInt64()))
+	blockReward := vm.calcBlockReward(ctx, totalReserve, emissionCurve, blocksPerYear)
 
 	systemIncome := blockReward.Add(totalLiquidityFees) // Get total system income for block
 	devFundSystemIncomeBpsUint := cosmos.SafeUintFromInt64(devFundSystemIncomeBps)
