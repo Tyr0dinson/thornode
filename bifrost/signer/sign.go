@@ -1364,7 +1364,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInIte
 	if hasSignedRetry {
 		s.logger.Info().Str("memo", tx.Memo).Msg("retrying broadcast of already signed tx")
 		signedTx = item.SignedTx
-		observation = append(observation, item.Observation)
+		if item.Observation != nil {
+			observation = append(observation, item.Observation)
+		}
 	} else {
 		tx.SigningID = item.Key()
 		startKeySign := time.Now()
@@ -1384,7 +1386,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInIte
 		// most chains return nil, while XMR uses the observation to carry spent
 		// refs that must survive until import/observation is durable.
 		item.SignedTx = signedTx
-		item.Observation = observation
+		if len(observation) > 0 {
+			item.Observation = observation[0]
+		}
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
 			// Never broadcast an unpersisted signature, but hand the signed result
@@ -1424,7 +1428,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInIte
 
 		// store the signed tx for the next retry
 		item.SignedTx = signedTx
-		observation = append(observation, item.Observation)
+		if len(observation) > 0 {
+			item.Observation = observation[0]
+		}
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with signed tx")
 		}
