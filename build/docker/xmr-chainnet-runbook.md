@@ -419,16 +419,14 @@ build/docker/xmr-reset-scanner.sh \
 
 Important scope note:
 
-- `--all-vaults` means all XMR vaults with `has_frost_keys=true` on that signer
-- it does not reset every historical XMR vault record in thornode
-- it is useful for signer-local recovery, but it is not the right command for a full cluster-wide replay
-- for a cluster-wide sidecar rebuild, run the reset against each signer container and each target vault pubkey you want rebuilt everywhere
+- `--all-vaults` resets every XMR vault the sidecar has registered, regardless of whether this node holds FROST keyshares for that vault. Non-signing nodes must rescan member-less vaults too so they can validate and co-attest to key-image observations produced by the signing subset.
+- it does not reset every historical XMR vault record in thornode — only vaults the sidecar already knows about
+- for a cluster-wide sidecar rebuild, run `--all-vaults` against each signer container; alternatively run `--vault-pubkey` per target
 
 Recommended full reset flow:
 
-1. Query thornode for the canonical XMR vault pubkeys you want rebuilt.
-2. Run `--vault-pubkey` for each target vault on every signer container.
-3. Do not rely on `--all-vaults` for this, because some signers can legitimately have tracked vault state without local FROST key material for the vault.
+1. Run `--all-vaults` on every signer container to rescan every registered XMR vault.
+2. Optionally use `--vault-pubkey` to scope the reset to a specific vault when only one is suspect.
 
 Cluster-wide reset for two tracked vaults on all 7 signers:
 

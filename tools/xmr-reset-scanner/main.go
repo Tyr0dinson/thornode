@@ -216,9 +216,15 @@ func discoverVaults(opts toolOptions, signer *monero.FrostSigner) ([]localVault,
 	seen := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
 		requestedPubKey := strings.TrimSpace(key.VaultPubKey)
-		if requestedPubKey == "" || !key.HasFrostKeys {
+		if requestedPubKey == "" {
 			continue
 		}
+		// Rescan every XMR vault the sidecar knows about, whether or not this
+		// node holds FROST keyshares for it. Non-signing nodes still need to
+		// scan member-less vaults so they can validate and co-attest to
+		// key-image observations produced by the signing subset — without that,
+		// finalized XMR observations never reach supermajority and the vault
+		// metadata never gets the derived key-image.
 		vault, err := fetchVault(opts.apiURL, requestedPubKey)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", requestedPubKey, err)

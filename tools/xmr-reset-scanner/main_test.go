@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero"
+	"gitlab.com/thorchain/thornode/v3/config"
 )
 
 func TestRunResetsScannerWithoutDrivingSync(t *testing.T) {
@@ -184,6 +187,58 @@ func TestDiscoverVaultsRejectsGenericOverrideWithoutAPI(t *testing.T) {
 	}, nil)
 	if err == nil {
 		t.Fatal("expected error for generic pubkey without API canonicalization")
+	}
+}
+
+// Non-signing nodes still need to rescan vaults they aren't FROST members of,
+// because they must validate key-image attestations from the signing subset
+// before co-attesting to the finalized XMR observation. If --all-vaults filters
+// these out, consensus on the finalized=true observation never reaches
+// supermajority and the derived key-image never lands in vault metadata.
+func TestDiscoverVaultsAllVaultsIncludesNonMemberVaults(t *testing.T) {
+	t.Parallel()
+
+	const memberVault = "cthorpub1zcjduepqmembervault"
+	const nonMemberVault = "cthorpub1zcjduepqnonmembervault"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/monero/keys":
+			fmt.Fprintf(w, `{"vaults":[`+
+				`{"vault_pub_key":"%s","has_frost_keys":true},`+
+				`{"vault_pub_key":"%s","has_frost_keys":false}`+
+				`]}`, memberVault, nonMemberVault)
+		case "/thorchain/vault/" + memberVault:
+			fmt.Fprintf(w, `{"pub_key_frost":"%s","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652000}`, memberVault)
+		case "/thorchain/vault/" + nonMemberVault:
+			fmt.Fprintf(w, `{"pub_key_frost":"%s","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3653000}`, nonMemberVault)
+		default:
+			http.Error(w, "unexpected path: "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := monero.NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("NewFrostSignerWithEndpoint: %v", err)
+	}
+
+	vaults, err := discoverVaults(toolOptions{apiURL: server.URL}, signer)
+	if err != nil {
+		t.Fatalf("discoverVaults returned error: %v", err)
+	}
+	if len(vaults) != 2 {
+		t.Fatalf("expected both member and non-member vaults, got %d: %+v", len(vaults), vaults)
+	}
+	pubKeys := map[string]bool{}
+	for _, v := range vaults {
+		pubKeys[v.PubKey] = true
+	}
+	if !pubKeys[memberVault] {
+		t.Fatalf("expected member vault %s in result", memberVault)
+	}
+	if !pubKeys[nonMemberVault] {
+		t.Fatalf("expected non-member vault %s in result (has_frost_keys=false must not be filtered)", nonMemberVault)
 	}
 }
 
