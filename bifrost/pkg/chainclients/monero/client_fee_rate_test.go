@@ -43,6 +43,7 @@ func newFeeRateTestClient(t *testing.T, tssServer *consolidationTSS, vaultPubKey
 
 	return &Client{
 		chain:              common.XMRChain,
+		localNodePubKey:    common.PubKey("member-a"),
 		frostSigner:        frostSigner,
 		tssServer:          tssServer,
 		signerCacheManager: newTestSignerCacheManager(t),

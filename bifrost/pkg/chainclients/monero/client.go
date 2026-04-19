@@ -107,6 +107,10 @@ type keyImageBacklogError struct {
 	active bool
 }
 
+type xmrSyncingToTipError struct {
+	reason string
+}
+
 const xmrDefaultMaxConfirmationCap uint64 = 30 // ~1 hour at 2-minute XMR blocks
 
 func (e *lockedOutputsError) Error() string {
@@ -123,6 +127,15 @@ func (e *keyImageBacklogError) Error() string {
 }
 
 func (e *keyImageBacklogError) RetryAfterNextBlock() bool { return true }
+
+func (e *xmrSyncingToTipError) Error() string {
+	if strings.TrimSpace(e.reason) == "" {
+		return "xmr node is still syncing_to_tip"
+	}
+	return fmt.Sprintf("xmr node is still syncing_to_tip: %s", e.reason)
+}
+
+func (e *xmrSyncingToTipError) RetryAfterNextBlock() bool { return true }
 
 type xmrConsolidationSettings struct {
 	Enabled             bool
@@ -219,6 +232,9 @@ type Client struct {
 	keyImageCeremonyGate    *xmrKeyImageCeremonyGate
 	keyImageProofCacheMu    sync.Mutex
 	keyImageProofCache      map[string]xmrKeyImageProofCacheEntry
+	keyImageWorkStore       *xmrKeyImageWorkStateStore
+	activeXMRWorkMu         sync.Mutex
+	activeXMRWorkItem       *xmrWorkItem
 	consolidateInProgress   *atomic.Bool
 	lastConsolidationHeight *atomic.Int64
 	lastSolvencyCheckHeight *atomic.Int64
@@ -318,6 +334,10 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create scanner storage: %w", err)
 	}
+	c.keyImageWorkStore, err = newXMRKeyImageWorkStateStore(c.storage.GetInternalDb())
+	if err != nil {
+		return nil, fmt.Errorf("fail to create xmr key-image work state store: %w", err)
+	}
 
 	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, c.storage, m, c.thorchainBridge, c.scanner)
 	if err != nil {
@@ -385,6 +405,114 @@ func (c *Client) pendingXMRKeyImageBacklog() (queued uint64, active bool) {
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	return gate.queued, gate.active
+}
+
+func (c *Client) setActiveXMRWorkItem(item *xmrWorkItem) {
+	c.activeXMRWorkMu.Lock()
+	defer c.activeXMRWorkMu.Unlock()
+	if item == nil {
+		c.activeXMRWorkItem = nil
+		return
+	}
+	cp := *item
+	c.activeXMRWorkItem = &cp
+}
+
+func (c *Client) getActiveXMRWorkItem() *xmrWorkItem {
+	c.activeXMRWorkMu.Lock()
+	defer c.activeXMRWorkMu.Unlock()
+	if c.activeXMRWorkItem == nil {
+		return nil
+	}
+	cp := *c.activeXMRWorkItem
+	return &cp
+}
+
+func (c *Client) xmrLocalCapability(members []string, syncState xmrSyncState) (xmrLocalCapability, error) {
+	capability := xmrLocalCapability{
+		NodeStatus: ttypes.NodeStatus_Unknown,
+		Role:       xmrNodeRoleUnknown,
+		SyncState:  syncState,
+	}
+	if c.thorchainBridge == nil {
+		return capability, nil
+	}
+
+	nodeStatus, err := c.thorchainBridge.FetchNodeStatus()
+	if err != nil {
+		return capability, fmt.Errorf("fail to resolve local thor node status: %w", err)
+	}
+	capability.NodeStatus = nodeStatus
+	capability.IsVaultSigner = c.localNodeIsVaultSigner(members)
+
+	switch nodeStatus {
+	case ttypes.NodeStatus_Active:
+		capability.CanAttest = true
+		if capability.IsVaultSigner {
+			capability.Role = xmrNodeRoleActiveSigner
+			capability.CanOriginate = syncState == xmrSyncStateAtTip
+		} else {
+			capability.Role = xmrNodeRoleActiveWatchOnly
+		}
+	case ttypes.NodeStatus_Standby:
+		capability.Role = xmrNodeRoleStandbyWatchOnly
+	default:
+		if capability.IsVaultSigner {
+			capability.Role = xmrNodeRoleActiveSigner
+		} else {
+			capability.Role = xmrNodeRoleStandbyWatchOnly
+		}
+	}
+
+	return capability, nil
+}
+
+func (c *Client) xmrLocalSyncState(states []xmrFrostVaultStateEntry) (xmrSyncState, string, error) {
+	if c.frostSigner == nil {
+		return xmrSyncStateSyncingToTip, "xmr frost signer is not initialized", nil
+	}
+	if states == nil {
+		stateResp, err := c.frostSigner.ListVaultStates()
+		if err != nil && !isFrostHTTPStatus(err, http.StatusNotFound) {
+			return xmrSyncStateSyncingToTip, "failed to load xmr vault states", err
+		}
+		states = stateResp.Vaults
+	}
+	for _, state := range states {
+		if state.Rescan {
+			return xmrSyncStateSyncingToTip, fmt.Sprintf("vault %s is syncing_to_tip", strings.TrimSpace(state.VaultPubKey)), nil
+		}
+	}
+	if c.scanner == nil || c.scanner.frostSigner == nil || c.scanner.bridge == nil {
+		if pending, reason, err := c.xmrHasPendingReplayWork(); pending || err != nil {
+			if err != nil {
+				return xmrSyncStateSyncingToTip, "failed to inspect xmr replay work", err
+			}
+			return xmrSyncStateSyncingToTip, reason, nil
+		}
+		return xmrSyncStateAtTip, "", nil
+	}
+	if c.blockScanner != nil && !c.blockScanner.IsHealthy() {
+		return xmrSyncStateSyncingToTip, "xmr scanner is unhealthy or catching up", nil
+	}
+
+	scannerHeight := c.scanner.CurrentHeight()
+	chainHeight, err := c.GetHeight()
+	if err != nil {
+		return xmrSyncStateSyncingToTip, "failed to query xmr chain tip", err
+	}
+	if scannerHeight <= 0 || chainHeight <= 0 || scannerHeight != chainHeight {
+		return xmrSyncStateSyncingToTip, fmt.Sprintf("xmr scanner is not at tip (scan=%d tip=%d)", scannerHeight, chainHeight), nil
+	}
+
+	if pending, reason, err := c.xmrHasPendingReplayWork(); pending || err != nil {
+		if err != nil {
+			return xmrSyncStateSyncingToTip, "failed to inspect xmr replay work", err
+		}
+		return xmrSyncStateSyncingToTip, reason, nil
+	}
+
+	return xmrSyncStateAtTip, "", nil
 }
 
 func xmrKeyImageProofCacheKey(vaultPubKey common.PubKey, txHash string, outputs []xmrFrostOutputEntry) string {
@@ -575,6 +703,7 @@ func (c *Client) syncXMRState() error {
 	c.catchupKeyImagesForVaults(vaults)
 	c.driveLocalKeyImageBacklogForVaults(vaults)
 	c.catchupTxKeysForVaults(vaults)
+	c.logXMRVaultLocalStatuses(vaultStates)
 	return nil
 }
 
@@ -642,6 +771,18 @@ func (c *Client) driveLocalKeyImageBacklogForVaults(vaults ttypes.Vaults) {
 	if c.frostSigner == nil || c.tssServer == nil || c.thorchainBridge == nil {
 		return
 	}
+	syncState, syncReason, err := c.xmrLocalSyncState(nil)
+	if err != nil {
+		c.logger.Debug().Err(err).Msg("xmr key-image backlog: failed to resolve local sync state")
+		return
+	}
+	if syncState != xmrSyncStateAtTip {
+		c.logger.Info().
+			Str("sync_state", string(syncState)).
+			Str("reason", syncReason).
+			Msg("xmr key-image backlog: deferring origination while node is syncing_to_tip")
+		return
+	}
 
 	version, err := c.thorchainBridge.GetThorchainVersion()
 	if err != nil {
@@ -650,11 +791,11 @@ func (c *Client) driveLocalKeyImageBacklogForVaults(vaults ttypes.Vaults) {
 	}
 
 	for _, vault := range vaults {
-		c.driveLocalKeyImageBacklogForVault(vault, version.String())
+		c.driveLocalKeyImageBacklogForVault(vault, version.String(), syncState, syncReason)
 	}
 }
 
-func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version string) {
+func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version string, syncState xmrSyncState, syncReason string) {
 	vaultPubKey := keyImageCatchupVaultPubKey(vault)
 	if vaultPubKey.IsEmpty() {
 		return
@@ -669,7 +810,21 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		return
 	}
 
-	if !c.localNodeIsVaultSigner(ceremonyCtx.members) {
+	capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState)
+	if capErr != nil {
+		c.logger.Debug().
+			Err(capErr).
+			Str("vault", ceremonyCtx.vaultPubKey.String()).
+			Msg("xmr key-image backlog: failed to resolve local capability")
+		return
+	}
+	if !capability.CanOriginate {
+		c.logger.Debug().
+			Str("vault", ceremonyCtx.vaultPubKey.String()).
+			Str("role", string(capability.Role)).
+			Str("sync_state", string(capability.SyncState)).
+			Str("reason", syncReason).
+			Msg("xmr key-image backlog: local node is not allowed to originate work")
 		return
 	}
 
@@ -725,7 +880,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		return
 	}
 
-	finaliseHeight := int64(backlogOutputs[0].Height)
+	finaliseHeight := c.resolveXMRKeyImageAnchorHeight(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
@@ -739,6 +894,8 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		pendingOutputs,
 		ceremonyCtx.members,
 		finaliseHeight,
+		xmrWorkKindReplayKeyImage,
+		xmrFinalizePhaseKeyImage,
 		version,
 	)
 	if err != nil {
@@ -1108,8 +1265,11 @@ func selectObservedOutboundForVault(
 }
 
 func (c *Client) trackedXMRVaultsForKeyImageCatchup() (ttypes.Vaults, error) {
-	if c.scanner != nil {
+	if c.scanner != nil && c.scanner.bridge != nil {
 		return c.scanner.asgardXMRVaults()
+	}
+	if c.thorchainBridge == nil {
+		return nil, nil
 	}
 
 	return asgardXMRVaults(c.thorchainBridge)
@@ -1753,6 +1913,334 @@ func hasTxKeyCatchupPrefix(full, prefix []xmrTxKeyCatchupRef) bool {
 		}
 	}
 	return true
+}
+
+func xmrVaultStateIndex(states []xmrFrostVaultStateEntry) map[string]xmrFrostVaultStateEntry {
+	index := make(map[string]xmrFrostVaultStateEntry, len(states))
+	for _, state := range states {
+		index[strings.TrimSpace(state.VaultPubKey)] = state
+	}
+	return index
+}
+
+func (c *Client) xmrHasPendingReplayWork() (bool, string, error) {
+	if c.hasPendingXMRKeyImageCatchup() {
+		return true, "xmr key-image replay is still pending", nil
+	}
+	if c.hasPendingXMRTxKeyCatchup() {
+		return true, "xmr tx-key replay is still pending", nil
+	}
+	if c.thorchainBridge == nil || c.frostSigner == nil {
+		return false, "", nil
+	}
+
+	vaults, err := c.trackedXMRVaultsForKeyImageCatchup()
+	if err != nil {
+		return false, "", err
+	}
+	for _, vault := range vaults {
+		vaultPubKey := keyImageCatchupVaultPubKey(vault)
+		if vaultPubKey.IsEmpty() {
+			continue
+		}
+
+		keyImageRefs := makeApplyKeyImageRefs(vault.KeyImagesXmr)
+		if len(keyImageRefs) > 0 {
+			needsReplay, replayErr := c.keyImageCatchupNeedsReplay(vaultPubKey.String(), keyImageRefs)
+			if replayErr != nil {
+				return false, "", replayErr
+			}
+			if needsReplay {
+				return true, fmt.Sprintf("xmr key-image replay pending for vault %s", vaultPubKey.String()), nil
+			}
+		}
+
+		txKeyRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+		if len(txKeyRefs) > 0 {
+			stateCheck, replayErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), txKeyRefs)
+			if replayErr != nil {
+				return false, "", replayErr
+			}
+			if stateCheck.needsReplay {
+				return true, fmt.Sprintf("xmr tx-key replay pending for vault %s", vaultPubKey.String()), nil
+			}
+		}
+	}
+
+	return false, "", nil
+}
+
+func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrVaultLocalStatus, error) {
+	trackedVaults, err := c.trackedXMRVaultsForKeyImageCatchup()
+	if err != nil {
+		return nil, err
+	}
+	syncState, _, err := c.xmrLocalSyncState(states)
+	if err != nil {
+		return nil, err
+	}
+	stateIndex := xmrVaultStateIndex(states)
+	pendingFinalizeCounts := make(map[string]int)
+	if c.keyImageWorkStore != nil {
+		workItems, workErr := c.keyImageWorkStore.list()
+		if workErr != nil {
+			return nil, workErr
+		}
+		for _, workItem := range workItems {
+			if workItem.Kind != xmrWorkKindFinalizeObservation {
+				continue
+			}
+			vaultPubKey := strings.TrimSpace(workItem.VaultPubKey)
+			if vaultPubKey == "" {
+				continue
+			}
+			pendingFinalizeCounts[vaultPubKey]++
+		}
+	}
+	statuses := make([]xmrVaultLocalStatus, 0, len(trackedVaults))
+	for _, vault := range trackedVaults {
+		vaultPubKey := keyImageCatchupVaultPubKey(vault)
+		if vaultPubKey.IsEmpty() {
+			continue
+		}
+		ceremonyCtx, ctxErr := c.resolveXMRKeyImageCeremonyContext(vaultPubKey)
+		if ctxErr != nil {
+			return nil, ctxErr
+		}
+		capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState)
+		if capErr != nil {
+			return nil, capErr
+		}
+
+		var pendingKeyImageReplayCount int
+		keyImageRefs := makeApplyKeyImageRefs(vault.KeyImagesXmr)
+		if len(keyImageRefs) > 0 {
+			needsReplay, replayErr := c.keyImageCatchupNeedsReplay(vaultPubKey.String(), keyImageRefs)
+			if replayErr != nil {
+				return nil, replayErr
+			}
+			if needsReplay {
+				pendingKeyImageReplayCount = len(keyImageRefs)
+			}
+		}
+
+		var pendingTxKeyReplayCount int
+		txKeyRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+		if len(txKeyRefs) > 0 {
+			replayState, replayErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), txKeyRefs)
+			if replayErr != nil {
+				return nil, replayErr
+			}
+			if replayState.needsReplay {
+				pendingTxKeyReplayCount = len(txKeyRefs)
+			}
+		}
+
+		outputs, outputErr := c.frostSigner.GetAllOutputs(vaultPubKey.String())
+		if outputErr != nil && !isFrostHTTPStatus(outputErr, http.StatusNotFound) {
+			return nil, outputErr
+		}
+		pendingOutputs := xmrOutputsMissingKeyImages(outputs)
+		activeWorkItem := c.getActiveXMRWorkItem()
+		if activeWorkItem != nil && !strings.EqualFold(strings.TrimSpace(activeWorkItem.VaultPubKey), vaultPubKey.String()) {
+			activeWorkItem = nil
+		}
+
+		stateEntry := stateIndex[vaultPubKey.String()]
+		status := xmrVaultLocalStatus{
+			VaultPubKey:                vaultPubKey.String(),
+			SyncState:                  syncState,
+			Role:                       capability.Role,
+			RegisteredKeyImageCount:    stateEntry.RegisteredKeyImageCount,
+			RegisteredTxKeyCount:       stateEntry.RegisteredTxKeyCount,
+			PendingKeyImageReplayCount: pendingKeyImageReplayCount,
+			PendingTxKeyReplayCount:    pendingTxKeyReplayCount,
+			PendingKeyImageOutputCount: len(pendingOutputs),
+			PendingKeyImageTxCount:     xmrPendingKeyImageTxCount(pendingOutputs),
+			PendingFinalizePhaseCount:  pendingFinalizeCounts[vaultPubKey.String()],
+			ActiveWorkItem:             activeWorkItem,
+		}
+		statuses = append(statuses, status)
+	}
+
+	return statuses, nil
+}
+
+func (c *Client) logXMRVaultLocalStatuses(states []xmrFrostVaultStateEntry) {
+	statuses, err := c.xmrVaultLocalStatuses(states)
+	if err != nil {
+		c.logger.Debug().Err(err).Msg("xmr state sync: failed to derive local vault status")
+		return
+	}
+
+	for _, status := range statuses {
+		event := c.logger.Debug()
+		if status.SyncState != xmrSyncStateAtTip ||
+			status.PendingKeyImageReplayCount > 0 ||
+			status.PendingTxKeyReplayCount > 0 ||
+			status.PendingKeyImageOutputCount > 0 ||
+			status.PendingFinalizePhaseCount > 0 ||
+			status.ActiveWorkItem != nil {
+			event = c.logger.Info()
+		}
+		event = event.
+			Str("vault_pub_key", status.VaultPubKey).
+			Str("sync_state", string(status.SyncState)).
+			Str("role", string(status.Role)).
+			Int("registered_key_images", status.RegisteredKeyImageCount).
+			Int("registered_tx_keys", status.RegisteredTxKeyCount).
+			Int("pending_key_image_replay", status.PendingKeyImageReplayCount).
+			Int("pending_tx_key_replay", status.PendingTxKeyReplayCount).
+			Int("pending_key_image_outputs", status.PendingKeyImageOutputCount).
+			Int("pending_key_image_txs", status.PendingKeyImageTxCount).
+			Int("pending_finalize_phases", status.PendingFinalizePhaseCount)
+		if status.ActiveWorkItem != nil {
+			event = event.
+				Str("active_work_id", status.ActiveWorkItem.ID).
+				Str("active_work_kind", string(status.ActiveWorkItem.Kind)).
+				Str("active_work_phase", string(status.ActiveWorkItem.Phase)).
+				Int64("active_work_anchor_height", status.ActiveWorkItem.AnchorHeight).
+				Int64("active_work_leader_epoch_height", status.ActiveWorkItem.LeaderEpochHeight)
+		}
+		event.Msg("xmr local vault status")
+	}
+}
+
+func xmrObservedTxAnchorHeight(voter *ttypes.QueryObservedTxVoter, txHash string, fallback int64) int64 {
+	if voter == nil {
+		return fallback
+	}
+	normalizedHash := normalizeTxID(txHash)
+	candidates := make([]*ttypes.QueryObservedTx, 0, len(voter.Txs)+1)
+	if !voter.Tx.Tx.IsEmpty() {
+		candidates = append(candidates, &voter.Tx)
+	}
+	for i := range voter.Txs {
+		candidates = append(candidates, &voter.Txs[i])
+	}
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.Tx.IsEmpty() || !candidate.Tx.Chain.Equals(common.XMRChain) {
+			continue
+		}
+		if !strings.EqualFold(candidate.Tx.ID.String(), normalizedHash) {
+			continue
+		}
+		if candidate.BlockHeight > 0 {
+			return candidate.BlockHeight
+		}
+	}
+	if voter.FinalisedHeight > 0 {
+		return voter.FinalisedHeight
+	}
+	if voter.Height > 0 {
+		return voter.Height
+	}
+	return fallback
+}
+
+func (c *Client) resolveXMRKeyImageAnchorHeight(vaultPubKey common.PubKey, txHash string, fallback int64) int64 {
+	if c.thorchainBridge == nil || strings.TrimSpace(txHash) == "" {
+		return fallback
+	}
+	voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
+	if err != nil {
+		return fallback
+	}
+	if meta, ok, metaErr := c.txKeyCatchupCanonicalOutboundMeta(vaultPubKey, txHash, voter.Tx.Tx.Memo); metaErr == nil && ok && meta.ObservedHeight > 0 {
+		return meta.ObservedHeight
+	}
+	return xmrObservedTxAnchorHeight(voter, txHash, fallback)
+}
+
+func (c *Client) ensureXMRKeyImageWorkItem(
+	vaultPubKey common.PubKey,
+	txHash string,
+	outputIndex uint32,
+	anchorHeight int64,
+	kind xmrWorkKind,
+	phase xmrFinalizePhase,
+) (xmrWorkItem, error) {
+	item := xmrWorkItem{
+		ID:           xmrKeyImageWorkID(vaultPubKey, txHash, outputIndex),
+		Kind:         kind,
+		Phase:        phase,
+		VaultPubKey:  strings.TrimSpace(vaultPubKey.String()),
+		TxHash:       normalizeTxID(txHash),
+		AnchorHeight: anchorHeight,
+	}
+	item.OutputIndex = new(uint32)
+	*item.OutputIndex = outputIndex
+	if c.keyImageWorkStore == nil {
+		item.LeaderEpochHeight = xmrInitialLeaderEpochHeight(anchorHeight)
+		return item, nil
+	}
+
+	stored, ok, err := c.keyImageWorkStore.get(item.ID)
+	if err != nil {
+		return xmrWorkItem{}, err
+	}
+	if !ok {
+		item.LeaderEpochHeight = xmrInitialLeaderEpochHeight(anchorHeight)
+		if err := c.keyImageWorkStore.put(item); err != nil {
+			return xmrWorkItem{}, err
+		}
+		return item, nil
+	}
+
+	if stored.AnchorHeight <= 0 && anchorHeight > 0 {
+		stored.AnchorHeight = anchorHeight
+	}
+	if stored.LeaderEpochHeight <= 0 {
+		stored.LeaderEpochHeight = xmrInitialLeaderEpochHeight(stored.AnchorHeight)
+	}
+	stored.Kind = kind
+	stored.Phase = phase
+	stored.VaultPubKey = strings.TrimSpace(vaultPubKey.String())
+	stored.TxHash = normalizeTxID(txHash)
+	if stored.OutputIndex == nil {
+		stored.OutputIndex = new(uint32)
+		*stored.OutputIndex = outputIndex
+	}
+	if err := c.keyImageWorkStore.put(stored); err != nil {
+		return xmrWorkItem{}, err
+	}
+	return stored, nil
+}
+
+func (c *Client) rotateXMRKeyImageLeaderEpoch(item xmrWorkItem, currentHeight int64) (xmrWorkItem, error) {
+	if c.keyImageWorkStore == nil || currentHeight <= 0 || item.AttemptCount <= 0 {
+		return item, nil
+	}
+	if item.LeaderEpochHeight <= 0 {
+		item.LeaderEpochHeight = xmrInitialLeaderEpochHeight(item.AnchorHeight)
+	}
+	if currentHeight < item.LeaderEpochHeight+xmrLeaderEpochWindowBlocks {
+		return item, nil
+	}
+	for currentHeight >= item.LeaderEpochHeight+xmrLeaderEpochWindowBlocks {
+		item.LeaderEpochHeight += xmrLeaderEpochWindowBlocks
+	}
+	if err := c.keyImageWorkStore.put(item); err != nil {
+		return xmrWorkItem{}, err
+	}
+	return item, nil
+}
+
+func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight int64, errText string) error {
+	item.LastAttemptHeight = currentHeight
+	item.AttemptCount++
+	item.LastError = strings.TrimSpace(errText)
+	if c.keyImageWorkStore == nil {
+		return nil
+	}
+	return c.keyImageWorkStore.put(item)
+}
+
+func (c *Client) completeXMRKeyImageWorkItem(item xmrWorkItem) error {
+	if c.keyImageWorkStore == nil {
+		return nil
+	}
+	return c.keyImageWorkStore.delete(item.ID)
 }
 
 func hasApplyKeyImagePrefix(full, prefix []xmrFrostApplyKeyImageRef) bool {
@@ -2538,6 +3026,24 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if memberErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve vault signing members for FROST signing: %w", memberErr)
 	}
+	syncState, syncReason, syncErr := c.xmrLocalSyncState(nil)
+	if syncErr != nil {
+		return nil, nil, nil, fmt.Errorf("fail to resolve local xmr sync state before keysign: %w", syncErr)
+	}
+	capability, capErr := c.xmrLocalCapability(members, syncState)
+	if capErr != nil {
+		return nil, nil, nil, fmt.Errorf("fail to resolve local xmr capability before keysign: %w", capErr)
+	}
+	if !capability.CanOriginate {
+		c.logger.Info().
+			Str("vault_pub_key", signReqCtx.vaultPubKey.String()).
+			Str("memo", tx.Memo).
+			Str("sync_state", string(capability.SyncState)).
+			Str("role", string(capability.Role)).
+			Str("reason", syncReason).
+			Msg("deferring XMR keysign while local node is not allowed to originate work")
+		return nil, nil, nil, &xmrSyncingToTipError{reason: syncReason}
+	}
 	if queued, active := c.pendingXMRKeyImageBacklog(); queued > 0 || active {
 		c.logger.Info().
 			Str("vault_pub_key", signReqCtx.vaultPubKey.String()).
@@ -3141,13 +3647,22 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("canonicalized XMR key-image vault context")
 		item.ObservedVaultPubKey = ceremonyCtx.vaultPubKey
 	}
-	if !c.localNodeIsVaultSigner(ceremonyCtx.members) {
-		c.logger.Debug().
+	syncState, syncReason, syncErr := c.xmrLocalSyncState(nil)
+	if syncErr != nil {
+		return nil, false, fmt.Errorf("fail to resolve local xmr sync state for finalized observation: %w", syncErr)
+	}
+	capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState)
+	if capErr != nil {
+		return nil, false, fmt.Errorf("fail to resolve local xmr capability for finalized observation: %w", capErr)
+	}
+	if !capability.CanOriginate {
+		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
 			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
-			Str("local_node_pub_key", c.localNodePubKey.String()).
-			Strs("signer_pub_keys", ceremonyCtx.members).
-			Msg("skipping XMR key-image generation; local node not in signer set")
+			Str("role", string(capability.Role)).
+			Str("sync_state", string(capability.SyncState)).
+			Str("reason", syncReason).
+			Msg("waiting for a locally ready XMR originator before finalized key-image observation")
 		return nil, false, nil
 	}
 	if readiness, ok := c.tssServer.(xmrKeyImagePeerReadiness); ok {
@@ -3251,7 +3766,16 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		Int64("finalise_height", finaliseHeight).
 		Str("memo", item.Memo).
 		Msg("preparing finalized XMR observation for key-image generation")
-	proofs, err := c.generateObservedTxKeyImages(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), pendingOutputs, ceremonyCtx.members, finaliseHeight, version.String())
+	proofs, err := c.generateObservedTxKeyImages(
+		ceremonyCtx.vaultPubKey,
+		normalizeTxID(item.Tx),
+		pendingOutputs,
+		ceremonyCtx.members,
+		finaliseHeight,
+		xmrWorkKindFinalizeObservation,
+		xmrFinalizePhaseKeyImage,
+		version.String(),
+	)
 	if err != nil {
 		if errors.Is(err, errXMRKeyImageNotActiveSigner) {
 			c.logger.Info().
@@ -3797,6 +4321,8 @@ func (c *Client) generateObservedTxKeyImages(
 	outputs []xmrFrostOutputEntry,
 	members []string,
 	finaliseHeight int64,
+	workKind xmrWorkKind,
+	workPhase xmrFinalizePhase,
 	version string,
 ) ([]*common.XmrKeyImageProof, error) {
 	queuedBefore, activeBefore := c.pendingXMRKeyImageBacklog()
@@ -3817,6 +4343,7 @@ func (c *Client) generateObservedTxKeyImages(
 		Bool("active_after_acquire", activeAfterAcquire).
 		Msg("acquired XMR key-image generation slot")
 	defer func() {
+		c.setActiveXMRWorkItem(nil)
 		release()
 		queuedAfterRelease, activeAfterRelease := c.pendingXMRKeyImageBacklog()
 		c.logger.Info().
@@ -3827,13 +4354,39 @@ func (c *Client) generateObservedTxKeyImages(
 			Msg("released XMR key-image generation slot")
 	}()
 
+	currentThorHeight := finaliseHeight
+	if c.thorchainBridge != nil {
+		if h, err := c.thorchainBridge.GetBlockHeight(); err == nil && h > 0 {
+			currentThorHeight = h
+		}
+	}
+
 	proofs := make([]*common.XmrKeyImageProof, 0, len(outputs))
+	completedWorkItems := make([]xmrWorkItem, 0, len(outputs))
 	for _, output := range outputs {
+		workItem, workErr := c.ensureXMRKeyImageWorkItem(
+			vaultPubKey,
+			txHash,
+			output.OutputIndex,
+			finaliseHeight,
+			workKind,
+			workPhase,
+		)
+		if workErr != nil {
+			return nil, fmt.Errorf("fail to initialize XMR key-image work item for %s:%d: %w", txHash, output.OutputIndex, workErr)
+		}
+		workItem, workErr = c.rotateXMRKeyImageLeaderEpoch(workItem, currentThorHeight)
+		if workErr != nil {
+			return nil, fmt.Errorf("fail to rotate XMR key-image leader epoch for %s:%d: %w", txHash, output.OutputIndex, workErr)
+		}
+		c.setActiveXMRWorkItem(&workItem)
 		c.logger.Info().
 			Str("vault_pub_key", vaultPubKey.String()).
 			Str("tx_hash", txHash).
 			Uint32("output_index", output.OutputIndex).
 			Int64("requested_finalise_height", finaliseHeight).
+			Int64("leader_epoch_height", workItem.LeaderEpochHeight).
+			Str("work_id", workItem.ID).
 			Strs("signer_pub_keys", members).
 			Msg("starting XMR key-image generation")
 		resp, err := c.tssServer.FrostKeyImage(tssp.FrostKeyImageRequest{
@@ -3841,14 +4394,16 @@ func (c *Client) generateObservedTxKeyImages(
 			TxHash:        txHash,
 			OutputIndex:   output.OutputIndex,
 			SignerPubKeys: members,
-			BlockHeight:   finaliseHeight,
+			BlockHeight:   workItem.LeaderEpochHeight,
 			Version:       version,
 		}, newFrostSignerAdapter(c.frostSigner))
 		if err != nil {
+			_ = c.recordXMRKeyImageWorkAttempt(workItem, currentThorHeight, err.Error())
 			return nil, fmt.Errorf("fail to execute XMR key-image ceremony for %s:%d: %w", txHash, output.OutputIndex, err)
 		}
 		if resp.Status != gotsscommon.Success {
 			failReason := strings.TrimSpace(resp.Blame.FailReason)
+			_ = c.recordXMRKeyImageWorkAttempt(workItem, currentThorHeight, failReason)
 			if failReason == "local signer is not in active signer set" || failReason == "local signer is not in participant set" {
 				return nil, fmt.Errorf("%w for %s:%d: %s", errXMRKeyImageNotActiveSigner, txHash, output.OutputIndex, failReason)
 			}
@@ -3870,6 +4425,7 @@ func (c *Client) generateObservedTxKeyImages(
 			ProofC:      strings.ToLower(strings.TrimSpace(resp.ProofC)),
 			ProofS:      strings.ToLower(strings.TrimSpace(resp.ProofS)),
 		})
+		completedWorkItems = append(completedWorkItems, workItem)
 	}
 	c.logger.Info().
 		Str("vault_pub_key", vaultPubKey.String()).
@@ -3901,6 +4457,15 @@ func (c *Client) generateObservedTxKeyImages(
 			Int("applied", result.Applied).
 			Int("not_found", result.NotFound).
 			Msg("applied locally generated XMR key-images")
+	}
+	for _, workItem := range completedWorkItems {
+		if err := c.completeXMRKeyImageWorkItem(workItem); err != nil {
+			c.logger.Warn().
+				Err(err).
+				Str("vault_pub_key", workItem.VaultPubKey).
+				Str("tx_hash", workItem.TxHash).
+				Msg("failed to clear completed XMR key-image work item")
+		}
 	}
 	return canonicalXMRKeyImageProofs(proofs), nil
 }
@@ -4272,30 +4837,16 @@ func (c *Client) xmrSolvencySystemIdle() (bool, string, error) {
 	if c.frostSigner == nil {
 		return false, "xmr frost signer is not initialized", nil
 	}
-	if c.blockScanner != nil && !c.blockScanner.IsHealthy() {
-		return false, "xmr scanner is unhealthy or catching up", nil
-	}
-
-	scannerHeight := c.scanner.CurrentHeight()
-	chainHeight, err := c.GetHeight()
+	syncState, reason, err := c.xmrLocalSyncState(nil)
 	if err != nil {
-		return false, "failed to query xmr chain tip", err
+		return false, "failed to resolve xmr sync state", err
 	}
-	if scannerHeight <= 0 || chainHeight <= 0 {
-		return false, fmt.Sprintf("xmr scanner height unavailable (scan=%d tip=%d)", scannerHeight, chainHeight), nil
-	}
-	if scannerHeight != chainHeight {
-		return false, fmt.Sprintf("xmr scanner is not at tip (scan=%d tip=%d)", scannerHeight, chainHeight), nil
+	if syncState != xmrSyncStateAtTip {
+		return false, reason, nil
 	}
 
 	if queued, active := c.pendingXMRKeyImageBacklog(); queued > 0 || active {
 		return false, fmt.Sprintf("xmr key-image queue not empty (queued=%d active=%t)", queued, active), nil
-	}
-	if c.hasPendingXMRKeyImageCatchup() {
-		return false, "xmr key-image catchup is still pending", nil
-	}
-	if c.hasPendingXMRTxKeyCatchup() {
-		return false, "xmr tx-key catchup is still pending", nil
 	}
 
 	pending, reason, err := c.xmrSolvencyHasPendingOutboundWork()

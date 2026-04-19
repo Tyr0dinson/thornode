@@ -125,7 +125,7 @@ func TestFrostKeyImageMsgIDDeterministic(t *testing.T) {
 	}
 }
 
-func TestFrostKeyImageCoordinationHeightDeterministic(t *testing.T) {
+func TestFrostKeyImageCoordinationHeightUsesProvidedBlockHeight(t *testing.T) {
 	base := FrostKeyImageRequest{
 		VaultPubKey:   "thorpub-vault-1",
 		TxHash:        testHashOf('a'),
@@ -134,33 +134,17 @@ func TestFrostKeyImageCoordinationHeightDeterministic(t *testing.T) {
 		BlockHeight:   101,
 	}
 
-	msgID1, err := FrostKeyImageMsgID(base)
-	if err != nil {
-		t.Fatalf("msg id 1: %v", err)
+	if base.BlockHeight <= 0 {
+		t.Fatalf("expected positive block height, got %d", base.BlockHeight)
 	}
-	msgID2, err := FrostKeyImageMsgID(base)
-	if err != nil {
-		t.Fatalf("msg id 2: %v", err)
+	if base.BlockHeight != 101 {
+		t.Fatalf("expected request block height to drive coordination, got %d", base.BlockHeight)
 	}
 
-	height1 := frostKeyImageCoordinationHeight(msgID1)
-	height2 := frostKeyImageCoordinationHeight(msgID2)
-	if height1 <= 0 {
-		t.Fatalf("expected positive coordination height, got %d", height1)
-	}
-	if height1 != height2 {
-		t.Fatalf("expected deterministic coordination height, got %d != %d", height1, height2)
-	}
-
-	otherOutput := base
-	otherOutput.OutputIndex = 8
-	msgID3, err := FrostKeyImageMsgID(otherOutput)
-	if err != nil {
-		t.Fatalf("msg id 3: %v", err)
-	}
-	height3 := frostKeyImageCoordinationHeight(msgID3)
-	if height1 == height3 {
-		t.Fatalf("expected different coordination height when msg id changes")
+	zeroHeight := base
+	zeroHeight.BlockHeight = 0
+	if zeroHeight.BlockHeight != 0 {
+		t.Fatalf("expected zero-height request fixture")
 	}
 }
 

@@ -27,14 +27,16 @@ import (
 type keysignFailureBridge struct {
 	thorclient.ThorchainBridge
 
-	calls      int
-	lastBlame  ttypes.Blame
-	lastHeight int64
-	lastMemo   string
-	lastCoins  common.Coins
-	lastPubKey common.PubKey
-	retErr     error
-	vaults     map[string]ttypes.Vault
+	calls       int
+	lastBlame   ttypes.Blame
+	lastHeight  int64
+	lastMemo    string
+	lastCoins   common.Coins
+	lastPubKey  common.PubKey
+	retErr      error
+	vaults      map[string]ttypes.Vault
+	nodeStatus  ttypes.NodeStatus
+	blockHeight int64
 }
 
 func (b *keysignFailureBridge) GetVault(pubkey string) (ttypes.Vault, error) {
@@ -65,6 +67,17 @@ func (b *keysignFailureBridge) GetThorchainVersion() (semver.Version, error) {
 
 func (b *keysignFailureBridge) GetMimir(_ string) (int64, error) {
 	return -1, nil
+}
+
+func (b *keysignFailureBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
+	if b.nodeStatus == ttypes.NodeStatus_Unknown {
+		return ttypes.NodeStatus_Active, nil
+	}
+	return b.nodeStatus, nil
+}
+
+func (b *keysignFailureBridge) GetBlockHeight() (int64, error) {
+	return b.blockHeight, nil
 }
 
 func (b *keysignFailureBridge) PostKeysignFailure(
@@ -553,5 +566,89 @@ func TestSignTxDefersWhileXMRKeyImageBacklogIsActive(t *testing.T) {
 	}
 	if bridge.calls != 0 {
 		t.Fatalf("expected PostKeysignFailure not to be called for key-image backlog deferral, got %d calls", bridge.calls)
+	}
+}
+
+func TestSignTxDefersWhileXMRSyncingToTip(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
+	bridge := &keysignFailureBridge{
+		vaults: map[string]ttypes.Vault{
+			vaultPubKey.String(): {
+				PubKey:      vaultPubKey,
+				PubKeyEddsa: vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+				StatusSince: 12000,
+				Membership:  []string{"member-a"},
+			},
+		},
+		nodeStatus: ttypes.NodeStatus_Active,
+	}
+
+	tssServer := &mockFrostTssServer{
+		resp: tssp.FrostKeySignResponse{
+			Status: gotsscommon.Success,
+		},
+	}
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:         10 * moneroAtomicToThorchain,
+			UnlockedBalance: 10 * moneroAtomicToThorchain,
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:              common.XMRChain,
+		localNodePubKey:    common.PubKey("member-a"),
+		frostSigner:        frostSigner,
+		tssServer:          tssServer,
+		signerCacheManager: newTestSignerCacheManager(t),
+		thorchainBridge:    bridge,
+		keyImageCatchupState: map[string]xmrKeyImageCatchupState{
+			vaultPubKey.String(): {pending: true},
+		},
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddress,
+		},
+	}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        testOutboundXMRDestination(),
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+		},
+		Memo: "OUT:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+	}
+
+	_, _, _, signErr := c.SignTx(tx, 444)
+	if signErr == nil {
+		t.Fatalf("expected SignTx error")
+	}
+	var retryErr interface {
+		error
+		RetryAfterNextBlock() bool
+	}
+	if !errors.As(signErr, &retryErr) {
+		t.Fatalf("expected retry-after-next-block error, got: %T %v", signErr, signErr)
+	}
+	if !retryErr.RetryAfterNextBlock() {
+		t.Fatalf("expected syncing_to_tip deferral to request retry after next block")
+	}
+	if !strings.Contains(signErr.Error(), "syncing_to_tip") {
+		t.Fatalf("expected syncing_to_tip error, got %v", signErr)
+	}
+	if tssServer.calls != 0 {
+		t.Fatalf("expected keysign not to start while syncing_to_tip, got %d TSS calls", tssServer.calls)
 	}
 }

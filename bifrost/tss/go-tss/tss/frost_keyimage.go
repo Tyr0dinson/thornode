@@ -1,11 +1,8 @@
 package tss
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +19,6 @@ import (
 )
 
 const frostKeyImageMsgIDDomain = "thorchain-frost-keyimage-msgid-v1"
-const frostKeyImageCoordinationHeightDomain = "thorchain-frost-keyimage-coordination-height-v1"
 
 type FrostKeyImageCoordinator struct {
 	logger           zerolog.Logger
@@ -79,15 +75,6 @@ func FrostKeyImageMsgID(req FrostKeyImageRequest) (string, error) {
 	return tcommon.MsgToHashString([]byte(canonical))
 }
 
-func frostKeyImageCoordinationHeight(msgID string) int64 {
-	sum := sha256.Sum256([]byte(frostKeyImageCoordinationHeightDomain + "\n" + strings.TrimSpace(msgID)))
-	height := int64(binary.BigEndian.Uint64(sum[:8]) & uint64(math.MaxInt64))
-	if height <= 0 {
-		return 1
-	}
-	return height
-}
-
 func (t *TssServer) FrostKeyImage(req FrostKeyImageRequest, sidecar FrostSidecarClient) (FrostKeyImageResponse, error) {
 	if sidecar == nil {
 		return FrostKeyImageResponse{}, fmt.Errorf("frost sidecar client is nil")
@@ -99,7 +86,10 @@ func (t *TssServer) FrostKeyImage(req FrostKeyImageRequest, sidecar FrostSidecar
 	if err != nil {
 		return FrostKeyImageResponse{}, fmt.Errorf("fail to compute frost key image msgID: %w", err)
 	}
-	coordinationHeight := frostKeyImageCoordinationHeight(msgID)
+	coordinationHeight := req.BlockHeight
+	if coordinationHeight <= 0 {
+		coordinationHeight = 1
+	}
 	threshold, err := conversion.GetThreshold(len(req.SignerPubKeys))
 	if err != nil {
 		return FrostKeyImageResponse{}, fmt.Errorf("fail to compute frost threshold: %w", err)

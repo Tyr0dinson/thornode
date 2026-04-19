@@ -13,6 +13,8 @@ import (
 	"github.com/blang/semver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/storage"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -97,6 +99,53 @@ func (m *mockKeyImagePeerReadinessTssServer) MissingPeerAddresses(_ []string) ([
 	return append([]string(nil), m.missing...), nil
 }
 
+type rotatingKeyImageTssServer struct {
+	tssp.Server
+	mu   sync.Mutex
+	reqs []tssp.FrostKeyImageRequest
+}
+
+func (m *rotatingKeyImageTssServer) FrostKeyImage(req tssp.FrostKeyImageRequest, _ tssp.FrostSidecarClient) (tssp.FrostKeyImageResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reqs = append(m.reqs, req)
+	if len(m.reqs) == 1 {
+		return tssp.FrostKeyImageResponse{
+			MsgID:       "msg-" + req.TxHash,
+			TxHash:      req.TxHash,
+			OutputIndex: req.OutputIndex,
+			Status:      gotsscommon.Fail,
+			Blame: gotssblame.Blame{
+				FailReason: "leader not reachable",
+			},
+		}, nil
+	}
+	return tssp.FrostKeyImageResponse{
+		MsgID:       "msg-" + req.TxHash,
+		TxHash:      req.TxHash,
+		OutputIndex: req.OutputIndex,
+		KeyImage:    strings.ToLower(req.TxHash) + "-ki-" + string(rune('0'+req.OutputIndex)),
+		ProofC:      "proof-c-" + string(rune('0'+req.OutputIndex)),
+		ProofS:      "proof-s-" + string(rune('0'+req.OutputIndex)),
+		Status:      gotsscommon.Success,
+	}, nil
+}
+
+func newTestXMRKeyImageWorkStateStore(t *testing.T) *xmrKeyImageWorkStateStore {
+	t.Helper()
+
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	store, err := newXMRKeyImageWorkStateStore(db)
+	require.NoError(t, err)
+	return store
+}
+
 func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) {
 	t.Parallel()
 
@@ -175,7 +224,7 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) 
 	tssServer.mu.Lock()
 	defer tssServer.mu.Unlock()
 	require.Len(t, tssServer.reqs, 2)
-	assert.Equal(t, int64(110), tssServer.reqs[0].BlockHeight)
+	assert.Equal(t, int64(1), tssServer.reqs[0].BlockHeight)
 	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
 }
 
@@ -529,6 +578,86 @@ func TestPrepareObservedTxInItemTreatsNotActiveSignerAsWaitForPeerProof(t *testi
 	require.False(t, include)
 	require.Nil(t, prepared)
 	assert.Equal(t, 1, tssServer.calls)
+}
+
+func TestPrepareObservedTxInItemRotatesKeyImageLeaderEpochAfterFailure(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("r", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100}},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &rotatingKeyImageTssServer{}
+	c := &Client{
+		chain:             common.XMRChain,
+		localNodePubKey:   common.PubKey("member-a"),
+		frostSigner:       signer,
+		tssServer:         tssServer,
+		keyImageWorkStore: newTestXMRKeyImageWorkStateStore(t),
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				blockHeight: 450,
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	newItem := func() *stypes.TxInItem {
+		return &stypes.TxInItem{
+			BlockHeight:         100,
+			Tx:                  txHash,
+			Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+			To:                  vaultAddr.String(),
+			Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+			Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			ObservedVaultPubKey: vaultPubKey,
+			Memo:                "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+		}
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(newItem(), true, 250)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+
+	prepared, include, err = c.PrepareObservedTxInItem(newItem(), true, 250)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Len(t, prepared.XmrKeyImages, 1)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	require.Len(t, tssServer.reqs, 2)
+	assert.Equal(t, int64(201), tssServer.reqs[0].BlockHeight)
+	assert.Equal(t, int64(401), tssServer.reqs[1].BlockHeight)
 }
 
 func TestPrepareObservedTxInItemDefersTrackedOutboundUntilChangeOutputsMaterialize(t *testing.T) {
@@ -912,7 +1041,7 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalMigrateInbound(t *test
 	defer tssServer.mu.Unlock()
 	require.Len(t, tssServer.reqs, 1)
 	assert.Equal(t, destVaultPubKey.String(), tssServer.reqs[0].VaultPubKey)
-	assert.Equal(t, int64(110), tssServer.reqs[0].BlockHeight)
+	assert.Equal(t, int64(1), tssServer.reqs[0].BlockHeight)
 }
 
 func TestPrepareObservedTxInItemSkipsFinalInboundForNonSigner(t *testing.T) {

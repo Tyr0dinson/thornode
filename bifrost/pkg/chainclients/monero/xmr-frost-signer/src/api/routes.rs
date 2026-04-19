@@ -4045,6 +4045,11 @@ pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoR
             address: vault.address,
             birthday: vault.birthday,
             rescan: vault.rescan,
+            sync_state: if vault.rescan {
+                "syncing_to_tip".to_string()
+            } else {
+                "at_tip".to_string()
+            },
             scan_height,
         });
     }
@@ -7114,6 +7119,7 @@ mod tests {
             .expect("vaults should be an array");
         assert_eq!(vaults.len(), 1);
         assert_eq!(vaults[0]["registered_tx_key_count"], serde_json::json!(1));
+        assert_eq!(vaults[0]["sync_state"], serde_json::json!("syncing_to_tip"));
         assert_eq!(
             vaults[0]["inventory_fingerprint"],
             serde_json::json!(build_vault_inventory_fingerprint(

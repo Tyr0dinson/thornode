@@ -318,6 +318,7 @@ type xmrFrostVaultStateEntry struct {
 	Address                 string  `json:"address"`
 	Birthday                uint64  `json:"birthday"`
 	Rescan                  bool    `json:"rescan"`
+	SyncState               string  `json:"sync_state,omitempty"`
 	ScanHeight              *uint64 `json:"scan_height,omitempty"`
 	InventoryFingerprint    string  `json:"inventory_fingerprint,omitempty"`
 	RegisteredKeyImageCount int     `json:"registered_key_image_count,omitempty"`
