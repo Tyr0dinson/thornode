@@ -412,13 +412,34 @@ func (b *AttestationBatcher) broadcastToAllPeers(ctx context.Context, batch comm
 	}
 
 	if len(peersToSend) == 0 {
-		b.logger.Debug().Msg("no peers to broadcast to")
+		b.logger.Warn().
+			Int("observed_tx_count", len(batch.AttestTxs)).
+			Int("network_fee_count", len(batch.AttestNetworkFees)).
+			Msg("attestation batch has no active-validator peers to broadcast to")
 		return
 	}
 
-	b.logger.Debug().
+	xmrFinalCount := 0
+	for _, at := range batch.AttestTxs {
+		if at == nil {
+			continue
+		}
+		if at.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
+			((at.Inbound && at.ObsTx.IsFinal() && len(at.ObsTx.XmrKeyImages) > 0) ||
+				(!at.Inbound && len(at.ObsTx.TxKeys) > 0)) {
+			xmrFinalCount++
+		}
+	}
+
+	logEvent := b.logger.Debug()
+	if xmrFinalCount > 0 {
+		logEvent = b.logger.Info()
+	}
+	logEvent.
 		Int("peer_count", len(peersToSend)).
 		Int("payload_bytes", len(payload)).
+		Int("observed_tx_count", len(batch.AttestTxs)).
+		Int("xmr_final_count", xmrFinalCount).
 		Msg("broadcasting attestation batch to peers")
 
 	// Launch each send operation in its own goroutine and don't wait for completion

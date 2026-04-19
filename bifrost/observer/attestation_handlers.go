@@ -53,6 +53,22 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 
 	s.batcher.AddObservedTx(msg)
 
+	// INFO-level breadcrumb specifically for XMR final attestations so we can
+	// trace whether locally-generated key-image / tx-key observations actually
+	// leave the originator. Deliberately narrow (XMR-only, final-only) to keep
+	// log volume tolerable while making the propagation path visible.
+	if obsTx.Tx.Chain.Equals(common.XMRChain) &&
+		((inbound && obsTx.IsFinal() && len(obsTx.XmrKeyImages) > 0) ||
+			(!inbound && len(obsTx.TxKeys) > 0)) {
+		s.logger.Info().
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Bool("inbound", inbound).
+			Bool("final", obsTx.IsFinal()).
+			Int("xmr_key_images", len(obsTx.XmrKeyImages)).
+			Int("tx_keys", len(obsTx.TxKeys)).
+			Msg("queued local XMR attestation for gossip")
+	}
+
 	return nil
 }
 

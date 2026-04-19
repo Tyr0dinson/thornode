@@ -144,6 +144,26 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		shouldValidateAndCoAttestInbound = !hasLocalObservedTxAttestation(state, s.pubKey)
 	}
 
+	// INFO-level breadcrumb for XMR final attestations so we can see which
+	// peers' attestations actually reach this node's gossip handler. Narrow
+	// to XMR final observations to keep log volume tolerable.
+	if obsTx.Tx.Chain.Equals(common.XMRChain) &&
+		((tx.Inbound && obsTx.IsFinal() && len(obsTx.XmrKeyImages) > 0) ||
+			(!tx.Inbound && len(obsTx.TxKeys) > 0)) {
+		fromLocal := bytes.Equal(tx.Attestation.PubKey, s.pubKey)
+		s.logger.Info().
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Bool("inbound", tx.Inbound).
+			Bool("final", obsTx.IsFinal()).
+			Int("xmr_key_images", len(obsTx.XmrKeyImages)).
+			Int("tx_keys", len(obsTx.TxKeys)).
+			Bool("from_local", fromLocal).
+			Bool("should_co_attest_inbound", shouldValidateAndCoAttestInbound).
+			Bool("should_co_attest_outbound", shouldValidateAndCoAttestOutbound).
+			Int("attestation_count", state.AttestationCount()).
+			Msg("received XMR attestation")
+	}
+
 	// Determine the number of validators needed for attestation
 	var total int
 	if k.AllowFutureObservation && !useActiveValidatorQuorumForObservedTx(obsTx, k.Inbound) {

@@ -838,13 +838,29 @@ func (o *Observer) applyXMRKeyImagesToDeck(tx common.ObservedTx) {
 		return
 	}
 
+	if o.lock.TryLock() {
+		defer o.lock.Unlock()
+		o.applyXMRKeyImagesToDeckLocked(tx)
+		return
+	}
+
+	// Finalized XMR inbound validation can run from the observer sendDeck path
+	// while the same mutex is already held. Defer the deck persistence so local
+	// attestation can continue and the proof set is still stored once the deck
+	// lock becomes available.
+	tx.XmrKeyImages = cloneXMRKeyImageProofs(tx.XmrKeyImages)
+	go func(tx common.ObservedTx) {
+		o.lock.Lock()
+		defer o.lock.Unlock()
+		o.applyXMRKeyImagesToDeckLocked(tx)
+	}(tx)
+}
+
+func (o *Observer) applyXMRKeyImagesToDeckLocked(tx common.ObservedTx) {
 	k := txInKey{
 		chain:  tx.Tx.Chain,
 		height: tx.FinaliseHeight,
 	}
-
-	o.lock.Lock()
-	defer o.lock.Unlock()
 
 	deck, ok := o.onDeck[k]
 	if !ok {
