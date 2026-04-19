@@ -758,12 +758,12 @@ func (s *CoverageBackfillSuite) TestGetPaymentAmount(c *C) {
 			common.NewCoin(common.BTCAsset, cosmos.NewUint(5000)),
 		},
 	}
-	amt := s.client.getPaymentAmount(tx)
+	amt := s.client.getPaymentAmount([]stypes.TxOutItem{tx})
 	c.Assert(int64(amt), Equals, int64(105000))
 
 	// Without MaxGas
 	tx.MaxGas = nil
-	amt = s.client.getPaymentAmount(tx)
+	amt = s.client.getPaymentAmount([]stypes.TxOutItem{tx})
 	c.Assert(int64(amt), Equals, int64(100000))
 
 	// ZEC chain ignores MaxGas
@@ -774,7 +774,7 @@ func (s *CoverageBackfillSuite) TestGetPaymentAmount(c *C) {
 	tx.Coins = common.Coins{
 		common.NewCoin(common.ZECAsset, cosmos.NewUint(100000)),
 	}
-	amt = s.client.getPaymentAmount(tx)
+	amt = s.client.getPaymentAmount([]stypes.TxOutItem{tx})
 	c.Assert(int64(amt), Equals, int64(100000)) // ZEC doesn't add gas
 	s.client.cfg.ChainID = common.BTCChain
 }
@@ -785,23 +785,16 @@ func (s *CoverageBackfillSuite) TestGetMaximumUtxosToSpend(c *C) {
 }
 
 func (s *CoverageBackfillSuite) TestGetGasCoin(c *C) {
-	tx := stypes.TxOutItem{
-		GasRate: 10,
-	}
-	gas := s.client.getGasCoin(tx, 250)
+	gas := s.client.getGasCoin(10, 250)
 	c.Assert(gas.Amount.Uint64(), Equals, uint64(2500))
 
 	// Zero gas rate - should try to get from storage
-	tx.GasRate = 0
-	gas = s.client.getGasCoin(tx, 250)
+	gas = s.client.getGasCoin(0, 250)
 	// With default fallback
 	c.Assert(gas.Asset, Equals, common.BTCAsset)
 }
 
 func (s *CoverageBackfillSuite) TestGetGasCoinWithDefaultSatsPerVByte(c *C) {
-	tx := stypes.TxOutItem{
-		GasRate: 0,
-	}
 	s.client.cfg.UTXO.DefaultSatsPerVByte = 50
 
 	// Store a zero fee so GetTransactionFee doesn't error (which causes early return).
@@ -810,7 +803,7 @@ func (s *CoverageBackfillSuite) TestGetGasCoinWithDefaultSatsPerVByte(c *C) {
 	err := s.client.temporalStorage.UpsertTransactionFee(0.0, 250)
 	c.Assert(err, IsNil)
 
-	gas := s.client.getGasCoin(tx, 100)
+	gas := s.client.getGasCoin(0, 100)
 	c.Assert(gas.Asset, Equals, common.BTCAsset)
 	// 50 sats/vbyte * 100 vbytes = 5000
 	c.Assert(gas.Amount.Uint64(), Equals, uint64(5000))
@@ -840,12 +833,12 @@ func (s *CoverageBackfillSuite) TestEstimateTxSize(c *C) {
 
 	// BTC (segwit)
 	s.client.cfg.ChainID = common.BTCChain
-	size := s.client.estimateTxSize(txes, [][]byte{memoScript}, make([]byte, 25), make([]byte, 25))
+	size := s.client.estimateTxSize(txes, [][]byte{memoScript}, [][]byte{make([]byte, 25)}, make([]byte, 25))
 	c.Assert(size > 0, Equals, true)
 
 	// DOGE (non-segwit)
 	s.client.cfg.ChainID = common.DOGEChain
-	sizeNonSegwit := s.client.estimateTxSize(txes, [][]byte{memoScript}, make([]byte, 25), make([]byte, 25))
+	sizeNonSegwit := s.client.estimateTxSize(txes, [][]byte{memoScript}, [][]byte{make([]byte, 25)}, make([]byte, 25))
 	c.Assert(sizeNonSegwit > 0, Equals, true)
 
 	// Restore
@@ -929,19 +922,23 @@ func (s *CoverageBackfillSuite) TestGetVaultLock(c *C) {
 
 func (s *CoverageBackfillSuite) TestSignTxWrongChain(c *C) {
 	tx := stypes.TxOutItem{
-		Chain: common.ETHChain,
+		Chain:       common.ETHChain,
+		VaultPubKey: s.client.nodePubKey,
 	}
-	_, _, _, err := s.client.SignTx(tx, 1)
-	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "wrong chain")
+	raw, checkpoint, txIn, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1)
+	c.Assert(err, IsNil)
+	c.Assert(raw, IsNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(txIn, IsNil)
 }
 
 func (s *CoverageBackfillSuite) TestSignTxEmptyCoins(c *C) {
 	tx := stypes.TxOutItem{
-		Chain: common.BTCChain,
-		Coins: common.Coins{},
+		Chain:       common.BTCChain,
+		VaultPubKey: s.client.nodePubKey,
+		Coins:       common.Coins{},
 	}
-	raw, checkpoint, txIn, err := s.client.SignTx(tx, 1)
+	raw, checkpoint, txIn, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(raw, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -1645,11 +1642,10 @@ func (s *SignerInternalSuite) SetUpTest(c *C) {
 }
 
 func (s *SignerInternalSuite) TestGetGasCoinZeroGasRate(c *C) {
-	tx := stypes.TxOutItem{GasRate: 0}
 	// With no transaction fee in storage and GasRate=0, first path returns
 	// NewCoin(asset, 0) because gasRate is 0 at the time of return.
 	// Then it tries temporal storage (which returns 0 fee), and then falls back to default.
-	gas := s.client.getGasCoin(tx, 100)
+	gas := s.client.getGasCoin(0, 100)
 	c.Assert(gas.Asset, Equals, common.BTCAsset)
 	// The result depends on whether temporal storage has a fee or not
 	// The important thing is the function covers all three code paths
@@ -1660,8 +1656,7 @@ func (s *SignerInternalSuite) TestGetGasCoinWithStoredFee(c *C) {
 	err := s.client.temporalStorage.UpsertTransactionFee(0.001, 250)
 	c.Assert(err, IsNil)
 
-	tx := stypes.TxOutItem{GasRate: 0}
-	gas := s.client.getGasCoin(tx, 100)
+	gas := s.client.getGasCoin(0, 100)
 	c.Assert(gas.Asset, Equals, common.BTCAsset)
 	c.Assert(gas.Amount.Uint64() > 0, Equals, true)
 }
@@ -1801,8 +1796,11 @@ func (s *CoverageBackfillSuite) TestSignTxInvalidToAddress(c *C) {
 		GasRate: 10,
 		Memo:    "test",
 	}
-	_, _, _, err := s.client.SignTx(tx, 1)
-	c.Assert(err, NotNil)
+	raw, checkpoint, txIn, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1)
+	c.Assert(err, IsNil)
+	c.Assert(raw, IsNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(txIn, IsNil)
 }
 
 func (s *CoverageBackfillSuite) TestExtractTxsWithRealBlock(c *C) {

@@ -32,7 +32,7 @@ func (m *mockBridge) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair,
 	return m.asgardPubKeys, m.asgardErr
 }
 
-func (m *mockBridge) PostKeysignFailure(_ types.Blame, _ int64, _ string, _ common.Coins, _ common.PubKey) (common.TxID, error) {
+func (m *mockBridge) PostKeysignFailure(_ types.Blame, _ string, _ common.Coins, _ common.PubKey) (common.TxID, error) {
 	return m.postKeysignTxID, m.postKeysignErr
 }
 
@@ -145,7 +145,7 @@ func (s *PostKeysignFailureSuite) TestPostKeysignFailure_NonKeysignError(c *C) {
 
 	// Non-KeysignError should be returned as-is
 	regularErr := errors.New("some random error")
-	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), 100, regularErr)
+	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), regularErr)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "some random error")
 }
@@ -157,7 +157,7 @@ func (s *PostKeysignFailureSuite) TestPostKeysignFailure_KeysignError_EmptyBlame
 		FailReason: "some failure",
 		BlameNodes: []types.Node{}, // empty
 	})
-	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), 100, keysignErr)
+	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), keysignErr)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "(?s).*fail to sign the message.*")
 }
@@ -171,7 +171,7 @@ func (s *PostKeysignFailureSuite) TestPostKeysignFailure_KeysignError_PostSucces
 		FailReason: "some failure",
 		BlameNodes: []types.Node{{Pubkey: "blame-node"}},
 	})
-	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), 100, keysignErr)
+	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), keysignErr)
 	// After successful post, the original keysign error is returned (not nil)
 	c.Assert(err, NotNil)
 	var keysignErr2 tss.KeysignError
@@ -187,7 +187,7 @@ func (s *PostKeysignFailureSuite) TestPostKeysignFailure_KeysignError_PostError(
 		FailReason: "some failure",
 		BlameNodes: []types.Node{{Pubkey: "blame-node"}},
 	})
-	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), 100, keysignErr)
+	err := PostKeysignFailure(bridge, tx, zerolog.Nop(), keysignErr)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "(?s).*fail to sign the message.*")
 	c.Assert(err.Error(), Matches, "(?s).*fail to post keysign failure.*")

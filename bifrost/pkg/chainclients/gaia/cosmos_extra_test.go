@@ -703,7 +703,7 @@ func (s *ExtraTestSuite) TestProcessOutboundTxInvalidVault(c *C) {
 	txOut := stypes.TxOutItem{
 		VaultPubKey: common.PubKey("invalid"),
 	}
-	_, err := cc.processOutboundTx(txOut, 1)
+	_, err := cc.processOutboundTx(txOut)
 	c.Assert(err, NotNil)
 }
 
@@ -918,7 +918,7 @@ func (s *ExtraTestSuite) TestProcessOutboundTxNonWhitelistedCoin(c *C) {
 	}
 
 	// Non-whitelisted coins are skipped, resulting in empty coins list
-	msg, err := cc.processOutboundTx(txOut, 1)
+	msg, err := cc.processOutboundTx(txOut)
 	c.Assert(err, IsNil)
 	c.Check(len(msg.Amount), Equals, 0)
 }
@@ -1048,7 +1048,7 @@ func (s *ExtraTestSuite) TestSignTxFullPath(c *C) {
 	}
 
 	// Sign with local key manager
-	txBytes, checkpoint, txIn, err := client.SignTx(txOut, 1)
+	txBytes, checkpoint, txIn, err := client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Check(len(txBytes) > 0, Equals, true)
 	c.Check(checkpoint, IsNil) // nil checkpoint on success
@@ -1057,7 +1057,7 @@ func (s *ExtraTestSuite) TestSignTxFullPath(c *C) {
 	// Already signed - should return nil
 	err = signerCacheMgr.SetSigned(txOut.CacheHash(), txOut.CacheVault(common.GAIAChain), "hash1")
 	c.Assert(err, IsNil)
-	txBytes, _, _, err = client.SignTx(txOut, 1)
+	txBytes, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Check(txBytes, IsNil)
 }
@@ -1124,7 +1124,7 @@ func (s *ExtraTestSuite) TestSignTxWithCheckpoint(c *C) {
 		Checkpoint:  checkpoint,
 	}
 
-	txBytes, _, txIn, err := client.SignTx(txOut, 1)
+	txBytes, _, txIn, err := client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Check(len(txBytes) > 0, Equals, true)
 	c.Check(txIn, NotNil)
@@ -1191,7 +1191,7 @@ func (s *ExtraTestSuite) TestSignTxNoGas(c *C) {
 		Checkpoint:  []byte(`{"AccountNumber":1,"SeqNumber":1,"BlockHeight":1}`),
 	}
 
-	_, _, _, err = client.SignTx(txOut, 1)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*one gas coin.*")
 }
@@ -1259,7 +1259,7 @@ func (s *ExtraTestSuite) TestSignTxWrongGasAsset(c *C) {
 		Checkpoint:  []byte(`{"AccountNumber":1,"SeqNumber":1,"BlockHeight":1}`),
 	}
 
-	_, _, _, err = client.SignTx(txOut, 1)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*gas coin asset must match.*")
 }
@@ -1325,7 +1325,7 @@ func (s *ExtraTestSuite) TestSignTxBadCheckpoint(c *C) {
 		Checkpoint:  []byte(`{invalid`),
 	}
 
-	_, _, _, err = client.SignTx(txOut, 1)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, NotNil)
 }
 
@@ -1720,7 +1720,7 @@ func (s *ExtraTestSuite) TestSignTxGetHeightError(c *C) {
 		InHash:      "hash",
 	}
 
-	_, _, _, err = client.SignTx(txOut, 1)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, NotNil)
 }
 
@@ -1869,7 +1869,7 @@ func (s *ExtraTestSuite) TestSignTxInsufficientBalance(c *C) {
 		InHash:      "hash",
 	}
 
-	_, _, _, err = client.SignTx(txOut, 1)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*insufficient vault balance.*")
 }
@@ -1940,7 +1940,7 @@ func (s *ExtraTestSuite) TestSignTxNonWhitelistedGas(c *C) {
 		Checkpoint:  []byte(`{"AccountNumber":1,"SeqNumber":1,"BlockHeight":1}`),
 	}
 
-	_, _, _, err = client.SignTx(txOut, 1)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*unable to pay fee.*")
 }
@@ -1967,7 +1967,7 @@ func (s *ExtraTestSuite) TestSignTxProcessOutboundError(c *C) {
 		MaxGas:      common.Gas{common.NewCoin(common.GAIAChain.GetGasAsset(), cosmos.NewUint(100))},
 	}
 
-	_, _, _, err = client.SignTx(txOut, 1)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, NotNil)
 }
 

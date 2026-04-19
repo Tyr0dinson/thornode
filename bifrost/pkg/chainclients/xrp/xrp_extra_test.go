@@ -677,7 +677,7 @@ func (s *XrpTestSuite) TestSignTxAlreadySigned(c *C) {
 	c.Assert(err, IsNil)
 
 	// Should return nil,nil,nil,nil for already signed
-	signedTx, checkpoint, txInItem, signErr := client.SignTx(txOut, 100)
+	signedTx, checkpoint, txInItem, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Check(signErr, IsNil)
 	c.Check(signedTx, IsNil)
 	c.Check(checkpoint, IsNil)
@@ -701,7 +701,7 @@ func (s *XrpTestSuite) TestSignTxProcessError(c *C) {
 		Coins:       common.Coins{}, // will fail processOutboundTx
 	}
 
-	_, _, _, signErr := client.SignTx(txOut, 100)
+	_, _, _, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Assert(signErr, NotNil)
 	c.Check(signErr.Error(), Matches, ".*cannot send more than 1 set of coins.*")
 }
@@ -922,17 +922,18 @@ func (s *XrpTestSuite) TestSignTxFullPath(c *C) {
 		InHash:      "hash",
 	}
 
-	signedTx, checkpoint, txIn, signErr := client.SignTx(txOut, 100)
+	signedTx, checkpoint, txIn, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Assert(signErr, IsNil)
 	c.Check(signedTx, NotNil)
 	c.Check(checkpoint, IsNil) // nil checkpoint since we got txIn
 	c.Check(txIn, NotNil)
-	c.Check(txIn.Memo, Equals, "OUT:txhash123")
-	c.Assert(txIn.Gas, HasLen, 1)
+	c.Assert(txIn, HasLen, 1)
+	c.Check(txIn[0].Memo, Equals, "OUT:txhash123")
+	c.Assert(txIn[0].Gas, HasLen, 1)
 	expectedGas := common.XRPChain.NativeGasToThorCoin(cosmos.NewUint(uint64(txOut.GasRate)))
-	c.Check(txIn.Gas[0].Amount.Equal(expectedGas.Amount), Equals, true)
-	c.Check(txIn.Gas[0].Amount.Uint64(), Equals, uint64(75000000))
-	c.Check(txIn.Gas[0].Decimals, Equals, expectedGas.Decimals)
+	c.Check(txIn[0].Gas[0].Amount.Equal(expectedGas.Amount), Equals, true)
+	c.Check(txIn[0].Gas[0].Amount.Uint64(), Equals, uint64(75000000))
+	c.Check(txIn[0].Gas[0].Decimals, Equals, expectedGas.Decimals)
 }
 
 // Test SignTx with checkpoint (deserialized metadata)
@@ -989,7 +990,7 @@ func (s *XrpTestSuite) TestSignTxWithCheckpoint(c *C) {
 		Checkpoint:  checkpointBytes,
 	}
 
-	signedTx, _, txIn, signErr := client.SignTx(txOut, 100)
+	signedTx, _, txIn, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Assert(signErr, IsNil)
 	c.Check(signedTx, NotNil)
 	c.Check(txIn, NotNil)
@@ -1037,7 +1038,7 @@ func (s *XrpTestSuite) TestSignTxBadCheckpoint(c *C) {
 		Checkpoint:  []byte("invalid json"),
 	}
 
-	_, _, _, signErr := client.SignTx(txOut, 100)
+	_, _, _, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Assert(signErr, NotNil)
 	c.Check(signErr.Error(), Matches, ".*invalid character.*")
 }
@@ -2283,7 +2284,7 @@ func (s *XrpTestSuite) TestBroadcastTxWithSignedTx(c *C) {
 		InHash:      "hash",
 	}
 
-	signedTx, _, _, signErr := client.SignTx(txOut, 100)
+	signedTx, _, _, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Assert(signErr, IsNil)
 	c.Assert(signedTx, NotNil)
 
@@ -2783,7 +2784,7 @@ func (s *XrpTestSuite) TestSignTxFetchesAccountFromChain(c *C) {
 		InHash:      "hash",
 	}
 
-	signedTx, checkpoint, txIn, signErr := client.SignTx(txOut, 100)
+	signedTx, checkpoint, txIn, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Assert(signErr, IsNil)
 	c.Check(signedTx, NotNil)
 	c.Check(checkpoint, IsNil)
@@ -2886,7 +2887,7 @@ func (s *XrpTestSuite) TestBroadcastTxFullFlow(c *C) {
 		InHash:      "broadcasthash",
 	}
 
-	signedTx, _, _, signErr := client.SignTx(txOut, 100)
+	signedTx, _, _, signErr := client.SignTx([]types.TxOutItem{txOut}, 100)
 	c.Assert(signErr, IsNil)
 	c.Assert(signedTx, NotNil)
 

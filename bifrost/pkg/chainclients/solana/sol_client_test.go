@@ -344,7 +344,6 @@ func TestTxSigFromRawTx(t *testing.T) {
 // solKeysignFailureCall captures a PostKeysignFailure invocation for assertions.
 type solKeysignFailureCall struct {
 	blame  types2.Blame
-	height int64
 	memo   string
 	coins  common.Coins
 	pubkey common.PubKey
@@ -394,7 +393,6 @@ func (m *mockSOLThorchainBridge) GetMimir(string) (int64, error) {
 func (m *mockSOLThorchainBridge) PostKeysignFailure(blame types2.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
 	m.postCalls = append(m.postCalls, solKeysignFailureCall{
 		blame:  blame,
-		height: height,
 		memo:   memo,
 		coins:  coins,
 		pubkey: pubkey,
@@ -463,14 +461,13 @@ func (s *SolTestSuite) TestSignSOLTx_PostKeysignFailureOnEdDSAFinalRound(c *C) {
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
 
-	result, checkpoint, obs, err := client.SignTx(tx, 123)
+	result, checkpoint, obs, err := client.SignTx([]stypes.TxOutItem{tx}, 123)
 	c.Assert(err, NotNil)
 	c.Assert(result, NotNil)
 	c.Assert(checkpoint, IsNil)
 	c.Assert(obs, IsNil)
 	c.Assert(errors.As(err, &tss.KeysignError{}), Equals, true)
 	c.Assert(bridge.postCalls, HasLen, 1)
-	c.Check(bridge.postCalls[0].height, Equals, int64(123))
 	c.Check(bridge.postCalls[0].memo, Equals, tx.Memo)
 	c.Check(bridge.postCalls[0].coins.String(), Equals, tx.Coins.String())
 	c.Check(bridge.postCalls[0].pubkey, Equals, tx.VaultPubKeyEddsa)
@@ -519,7 +516,7 @@ func (s *SolTestSuite) TestSignSOLTx_PostKeysignFailureUsesOriginalMemo(c *C) {
 		OriginalMemo: "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
 
-	result, checkpoint, obs, err := client.SignTx(tx, 123)
+	result, checkpoint, obs, err := client.SignTx([]stypes.TxOutItem{tx}, 123)
 	c.Assert(err, NotNil)
 	c.Assert(result, NotNil)
 	c.Assert(checkpoint, IsNil)
@@ -562,7 +559,7 @@ func (s *SolTestSuite) TestSignSOLTx_DoesNotPostKeysignFailureWithoutBlameNodes(
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
 
-	result, checkpoint, obs, err := client.SignTx(tx, 123)
+	result, checkpoint, obs, err := client.SignTx([]stypes.TxOutItem{tx}, 123)
 	c.Assert(err, NotNil)
 	c.Assert(result, NotNil)
 	c.Assert(checkpoint, IsNil)
@@ -742,7 +739,7 @@ func (s *SolTestSuite) TestSignTxUnexpiredCacheRespectedNoRPC(c *C) {
 		txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "cached-sig", expiry,
 	), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)                                                   // suppressed
 	c.Assert(rpc.getTxCalls, Equals, 0)                                       // no RPC lookup on fast path
@@ -770,7 +767,7 @@ func (s *SolTestSuite) TestSignTxExpiredEntryOnChainProtectsAgainstDoubleSpend(c
 		txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "slow-obs-sig", expired,
 	), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)             // did NOT re-sign
 	c.Assert(rpc.getTxCalls, Equals, 1) // RPC was consulted because expired
@@ -794,7 +791,7 @@ func (s *SolTestSuite) TestSignTxExpiredEntryRPCErrorRespectsCache(c *C) {
 		txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "cached-sig", expired,
 	), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)                                                   // respected cache
 	c.Assert(rpc.getTxCalls, Equals, 1)                                       // RPC attempted
@@ -818,7 +815,7 @@ func (s *SolTestSuite) TestSignTxLegacyCacheEntryRespected(c *C) {
 		txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "legacy-sig",
 	), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, IsNil) // suppressed by cache without RPC call
 	c.Assert(rpc.getTxCalls, Equals, 0)
@@ -1332,7 +1329,7 @@ func (s *SolTestSuite) TestSignTxExpiredEntryNotOnChainReSigns(c *C) {
 		txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "dropped-sig", expired,
 	), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)                                                   // re-signed
 	c.Assert(rpc.getTxCalls, Equals, 1)                                        // RPC verified first
@@ -1369,7 +1366,7 @@ func (s *SolTestSuite) TestBroadcastTxWritesExpiringCacheEntry(c *C) {
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 
 	txOut := newSolCacheTestTxOut(pub)
-	rawTx, _, _, err := e.SignTx(txOut, 1)
+	rawTx, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(rawTx, NotNil)
 

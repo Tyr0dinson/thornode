@@ -233,7 +233,7 @@ func (s *BackfillSuite) TestSignTxAlreadySigned(c *C) {
 	}
 
 	// Sign and broadcast to mark as signed
-	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 
@@ -241,7 +241,7 @@ func (s *BackfillSuite) TestSignTxAlreadySigned(c *C) {
 	c.Assert(err, IsNil)
 
 	// Second sign should return nil (already signed)
-	signed2, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed2, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed2, IsNil)
 }
@@ -265,7 +265,7 @@ func (s *BackfillSuite) TestSignTxNoRefBlocks(c *C) {
 		GasRate:     1,
 	}
 
-	_, _, _, err := s.client.SignTx(txOutItem, 1)
+	_, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "no ref blocks found")
 
@@ -287,7 +287,7 @@ func (s *BackfillSuite) TestSignTxMultipleCoins(c *C) {
 		GasRate:     1,
 	}
 
-	_, _, _, err := s.client.SignTx(txOutItem, 1)
+	_, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "multiple or no coins found")
 }
@@ -301,7 +301,7 @@ func (s *BackfillSuite) TestSignTxNoCoins(c *C) {
 		GasRate:     1,
 	}
 
-	_, _, _, err := s.client.SignTx(txOutItem, 1)
+	_, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "multiple or no coins found")
 }
@@ -317,7 +317,7 @@ func (s *BackfillSuite) TestSignTxEmptyCoin(c *C) {
 		GasRate:     1,
 	}
 
-	_, _, _, err := s.client.SignTx(txOutItem, 1)
+	_, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "coin is empty")
 }
@@ -344,7 +344,7 @@ func (s *BackfillSuite) TestSignTxTokenNotWhitelisted(c *C) {
 		GasRate:     1,
 	}
 
-	_, _, _, err := s.client.SignTx(txOutItem, 1)
+	_, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "token not whitelisted")
 }
@@ -373,7 +373,7 @@ func (s *BackfillSuite) TestSignTxTRC20(c *C) {
 		GasRate:     1,
 	}
 
-	signed, _, txIn, err := s.client.SignTx(txOutItem, 1)
+	signed, _, txIn, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(txIn, NotNil)
@@ -1619,7 +1619,7 @@ func (s *BackfillSuite) TestSignTxRefBlockSelection(c *C) {
 		GasRate:     1,
 	}
 
-	signed, _, txIn, err := s.client.SignTx(txOutItem, 1)
+	signed, _, txIn, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(txIn, NotNil)
@@ -1708,7 +1708,7 @@ func (s *BackfillSuite) TestSignTxTRC20ValidToken(c *C) {
 		Memo:        "test-trc20",
 	}
 
-	signed, _, txIn, err := s.client.SignTx(txOutItem, 1)
+	signed, _, txIn, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(txIn, NotNil)

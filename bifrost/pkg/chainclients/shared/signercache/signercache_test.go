@@ -7,6 +7,7 @@ import (
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
+	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
 )
 
@@ -69,6 +70,18 @@ func (m *mockStorageAccessor) SetLatestRecordedTx(vaultKey, transactionHash stri
 
 func (m *mockStorageAccessor) GetLatestRecordedTx(vaultKey string) (string, error) {
 	return m.getLatestRecordedTxVal, m.getLatestRecordedTxErr
+}
+
+func (m *mockStorageAccessor) SetCheckpoint(pubkey common.PubKey, data []byte) error {
+	return nil
+}
+
+func (m *mockStorageAccessor) GetCheckpoint(pubkey common.PubKey) ([]byte, error) {
+	return nil, nil
+}
+
+func (m *mockStorageAccessor) RemoveCheckpoint(pubkey common.PubKey) error {
+	return nil
 }
 
 func TestPackage(t *testing.T) { TestingT(t) }

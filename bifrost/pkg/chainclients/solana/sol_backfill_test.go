@@ -1000,7 +1000,7 @@ func (s *ClientBackfillSuite) TestSignTxNotSOLChain(c *C) {
 	defer server.Close()
 	client := s.makeClient(c, server)
 
-	_, _, _, err := client.SignTx(stypes.TxOutItem{Chain: common.BTCChain}, 1)
+	_, _, _, err := client.SignTx([]stypes.TxOutItem{{Chain: common.BTCChain}}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "tx chain is not solana")
 }
@@ -1012,7 +1012,7 @@ func (s *ClientBackfillSuite) TestSignTxEmptyToAddress(c *C) {
 	defer server.Close()
 	client := s.makeClient(c, server)
 
-	_, _, _, err := client.SignTx(stypes.TxOutItem{Chain: common.SOLChain, ToAddress: ""}, 1)
+	_, _, _, err := client.SignTx([]stypes.TxOutItem{{Chain: common.SOLChain, ToAddress: ""}}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "to address is empty")
 }
@@ -1024,10 +1024,10 @@ func (s *ClientBackfillSuite) TestSignTxEmptyVaultPubKey(c *C) {
 	defer server.Close()
 	client := s.makeClient(c, server)
 
-	_, _, _, err := client.SignTx(stypes.TxOutItem{
+	_, _, _, err := client.SignTx([]stypes.TxOutItem{{
 		Chain:     common.SOLChain,
 		ToAddress: "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
-	}, 1)
+	}}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "vault public key is empty")
 }
