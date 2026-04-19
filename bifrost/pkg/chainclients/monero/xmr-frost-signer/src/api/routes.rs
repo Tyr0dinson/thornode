@@ -39,6 +39,7 @@ pub struct AppState {
     pub signer: SignCoordinator,
     pub key_images: KeyImageCoordinator,
     pub scanner: parking_lot::Mutex<Scanner>,
+    pub scan_lifecycle: tokio::sync::Mutex<()>,
     pub daemon: DaemonClient,
     pub store: Arc<crate::state::Store>,
     pub chain_network: ChainNetworkMode,
@@ -942,6 +943,7 @@ pub async fn register_vault(
         .map(str::trim)
         .filter(|source| !source.is_empty())
         .unwrap_or("bifrost");
+    let _scan_lifecycle = state.scan_lifecycle.lock().await;
 
     if let Err((status, response)) = ensure_bootstrap_frost_key_material(
         &state,
@@ -2333,6 +2335,7 @@ pub async fn scanner_sync(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ScannerSyncRequest>,
 ) -> impl IntoResponse {
+    let _scan_lifecycle = state.scan_lifecycle.lock().await;
     if req.block_hash.trim().is_empty() || req.parent_hash.trim().is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -2620,6 +2623,9 @@ pub async fn scanner_sync(
             }
         }
 
+        let historical_height_pruned = stored_meta.is_none()
+            && scan_height > req.height
+            && scan_height.saturating_sub(req.height) >= reorg_window;
         let meta_matches = stored_meta.as_ref().is_some_and(|meta| {
             hash_matches(&meta.block_hash, &req.block_hash)
                 && hash_matches(&meta.parent_hash, &req.parent_hash)
@@ -2627,7 +2633,10 @@ pub async fn scanner_sync(
         let needs_rollback = stored_meta
             .as_ref()
             .is_some_and(|meta| !meta_matches && meta.height == req.height)
-            || (!meta_matches && stored_meta.is_none() && scan_height >= req.height);
+            || (!historical_height_pruned
+                && !meta_matches
+                && stored_meta.is_none()
+                && scan_height >= req.height);
 
         if needs_rollback {
             if let Err(e) = state
@@ -2689,7 +2698,15 @@ pub async fn scanner_sync(
             }
         }
 
-        if meta_matches {
+        if historical_height_pruned {
+            info!(
+                vault = %vault.vault_pub_key,
+                height = req.height,
+                scan_height,
+                reorg_window,
+                "skipping rollback for historical height outside retained scan metadata window"
+            );
+        } else if meta_matches {
             if let Some(mut meta) = stored_meta {
                 let discovered_refs = output_refs_at_height(&outputs, req.height);
                 let known_refs: HashSet<(String, u32)> = meta
@@ -2942,6 +2959,7 @@ pub async fn scanner_reset(
     State(state): State<Arc<AppState>>,
     Json(req): Json<crate::api::types::ScannerResetRequest>,
 ) -> impl IntoResponse {
+    let _scan_lifecycle = state.scan_lifecycle.lock().await;
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
         return (
@@ -5021,6 +5039,7 @@ mod tests {
             ),
             key_images: KeyImageCoordinator::new(store.clone(), 4),
             scanner: parking_lot::Mutex::new(scanner),
+            scan_lifecycle: tokio::sync::Mutex::new(()),
             daemon,
             store,
             chain_network: crate::config::ChainNetworkMode::Mocknet,
@@ -5067,6 +5086,7 @@ mod tests {
             ),
             key_images: KeyImageCoordinator::new(store.clone(), 4),
             scanner: parking_lot::Mutex::new(Scanner::new()),
+            scan_lifecycle: tokio::sync::Mutex::new(()),
             daemon,
             store,
             chain_network: crate::config::ChainNetworkMode::Mocknet,
@@ -7527,6 +7547,168 @@ mod tests {
             .load_scan_height(vault_pub_key)
             .expect("scan height load should succeed");
         assert_eq!(persisted_height, Some(120));
+    }
+
+    #[tokio::test]
+    async fn scanner_sync_skips_rollback_for_pruned_historical_height_without_meta() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/json_rpc",
+                axum::routing::post(|Json(req): Json<serde_json::Value>| async move {
+                    let method = req
+                        .get("method")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    match method {
+                        "get_block_header_by_height" => {
+                            let height = req
+                                .get("params")
+                                .and_then(|params| params.get("height"))
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or_default();
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "result": {
+                                        "block_header": {
+                                            "height": height,
+                                            "hash": format!("hash{height}"),
+                                            "prev_hash": format!("hash{}", height.saturating_sub(1)),
+                                            "timestamp": 1,
+                                            "major_version": 16,
+                                            "minor_version": 16,
+                                            "nonce": 1,
+                                            "reward": 1,
+                                            "num_txes": 0
+                                        }
+                                    }
+                                })),
+                            )
+                        }
+                        _ => (
+                            StatusCode::NOT_FOUND,
+                            Json(serde_json::json!({"error": "unsupported method"})),
+                        ),
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let old_output = TrackedOutput {
+            tx_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            output_index: 0,
+            amount: 500,
+            height: 120,
+            key_image: None,
+            spent_by_key_image_height: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("aa".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        let recent_output = TrackedOutput {
+            tx_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            output_index: 0,
+            amount: 700,
+            height: 350,
+            key_image: None,
+            spent_by_key_image_height: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("bb".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+
+        state
+            .store
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &test_group_key_hex(),
+                "48vault",
+                "test",
+                0,
+            )
+            .expect("register vault");
+        state
+            .store
+            .save_outputs(
+                VALID_VAULT_PUB_KEY,
+                &[old_output.clone(), recent_output.clone()],
+            )
+            .expect("save outputs");
+        state
+            .store
+            .save_scan_height(VALID_VAULT_PUB_KEY, 400)
+            .expect("save scan height");
+        state
+            .store
+            .save_scan_block_meta(
+                VALID_VAULT_PUB_KEY,
+                &ScanBlockMeta {
+                    height: 400,
+                    block_hash: "hash400".to_string(),
+                    parent_hash: "hash399".to_string(),
+                    added_outputs: vec![],
+                    spent_key_images: vec![],
+                    spent_by_key_images: vec![],
+                },
+            )
+            .expect("save recent scan block meta");
+
+        let response = scanner_sync(
+            State(state.clone()),
+            Json(ScannerSyncRequest {
+                height: 120,
+                tip_height: 9_999,
+                block_hash: "hash120".to_string(),
+                parent_hash: "hash119".to_string(),
+                reorg_window: 120,
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body: {body:?}");
+
+        let persisted_height = state
+            .store
+            .load_scan_height(VALID_VAULT_PUB_KEY)
+            .expect("scan height load should succeed");
+        assert_eq!(
+            persisted_height,
+            Some(400),
+            "historical scanner_sync outside the retained reorg window must not rewind scan height"
+        );
+
+        let outputs = state
+            .store
+            .load_outputs(VALID_VAULT_PUB_KEY)
+            .expect("outputs should still load");
+        assert_eq!(outputs.len(), 2);
+        assert!(
+            outputs
+                .iter()
+                .any(|output| output.tx_hash == old_output.tx_hash),
+            "historical output should remain present after pruned-height scanner_sync"
+        );
+        assert!(
+            outputs
+                .iter()
+                .any(|output| output.tx_hash == recent_output.tx_hash),
+            "recent output should remain present after pruned-height scanner_sync"
+        );
     }
 
     #[tokio::test]

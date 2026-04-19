@@ -123,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         signer,
         key_images,
         scanner: parking_lot::Mutex::new(scanner),
+        scan_lifecycle: tokio::sync::Mutex::new(()),
         daemon: daemon.clone(),
         store,
         chain_network: config.chain_network,
