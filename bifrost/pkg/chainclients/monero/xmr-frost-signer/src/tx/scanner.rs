@@ -54,6 +54,7 @@ struct VaultScanState {
     outputs: Vec<TrackedOutput>,
     last_height: u64,
     addresses: VaultAddresses,
+    group_key: String,
 }
 
 #[derive(Clone)]
@@ -117,6 +118,26 @@ impl Scanner {
         outputs: Vec<TrackedOutput>,
         last_height: Option<u64>,
     ) -> Result<()> {
+        // If the vault is already registered with the same group_key, do not
+        // rebuild the wallet_scanner or clobber in-memory outputs. A bifrost
+        // re-registration (e.g. inventory refresh) that arrives during an
+        // active rescan would otherwise replace the accumulating in-memory
+        // output set with whatever the store had when the call started —
+        // and the next commit_scan_batch would then persist the reduced set
+        // back over the full one, silently losing rescanned outputs.
+        if let Some(existing) = self.vault_states.get(vault_pub_key) {
+            if existing.group_key == group_key {
+                info!(
+                    vault = vault_pub_key,
+                    num_outputs = existing.outputs.len(),
+                    last_height = existing.last_height,
+                    "vault already registered; preserving scanner state"
+                );
+                self.vault_health.insert(vault_pub_key.to_string(), true);
+                return Ok(());
+            }
+        }
+
         let view_pair = xmr::view_pair_from_group_key_hex(group_key).with_context(|| {
             format!(
                 "failed to derive scanner view pair for vault {}",
@@ -159,6 +180,7 @@ impl Scanner {
                 outputs,
                 last_height: last_height.unwrap_or(0),
                 addresses,
+                group_key: group_key.to_string(),
             },
         );
         self.vault_health.insert(vault_pub_key.to_string(), true);
