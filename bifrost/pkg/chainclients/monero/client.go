@@ -1432,14 +1432,32 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 		nextFingerprints[vaultPubKey.String()] = fingerprint
 
 		stateEntry, registeredInState := stateMap[vaultPubKey.String()]
+		replayPending := false
 		if stateAvailable {
 			inventoryMatches := registeredInState &&
 				strings.EqualFold(strings.TrimSpace(stateEntry.InventoryFingerprint), fingerprint)
+			if inventoryMatches {
+				replayPending, err = c.watchedVaultInventoryReplayPending(vault, stateEntry)
+				if err != nil {
+					return nil, fmt.Errorf("failed to verify watched xmr vault inventory replay state for %s: %w", vaultPubKey.String(), err)
+				}
+			}
 			if previous, ok := c.trackedVaultSyncFingerprint(vaultPubKey.String()); ok &&
 				previous == fingerprint &&
-				inventoryMatches {
+				inventoryMatches &&
+				!replayPending {
 				continue
 			}
+		}
+
+		if replayPending {
+			c.clearKeyImageCatchupState(vaultPubKey.String())
+			c.clearTxKeyCatchupState(vaultPubKey.String())
+			c.logger.Info().
+				Str("vault", vaultPubKey.String()).
+				Int("key_images", len(vault.KeyImagesXmr)).
+				Int("tx_keys", len(vault.TxKeysXmr)).
+				Msg("xmr state sync: forcing watched vault inventory reapply because local signer state is behind thorchain")
 		}
 
 		txKeyEntries, txKeyErr := txKeyEntriesFromVault(c.thorchainBridge, c.chain, vault)
@@ -1538,6 +1556,46 @@ func (c *Client) drivePendingScannerRescans(states []xmrFrostVaultStateEntry) ([
 	}
 
 	return current, nil
+}
+
+func (c *Client) watchedVaultInventoryReplayPending(vault ttypes.Vault, stateEntry xmrFrostVaultStateEntry) (bool, error) {
+	if c == nil || c.frostSigner == nil {
+		return false, nil
+	}
+
+	vaultPubKey := keyImageCatchupVaultPubKey(vault)
+	if vaultPubKey.IsEmpty() {
+		return false, nil
+	}
+
+	if stateEntry.RegisteredKeyImageCount < len(vault.KeyImagesXmr) ||
+		stateEntry.RegisteredTxKeyCount < len(vault.TxKeysXmr) {
+		return true, nil
+	}
+
+	keyImageRefs := makeApplyKeyImageRefs(vault.KeyImagesXmr)
+	if len(keyImageRefs) > 0 {
+		needsReplay, err := c.keyImageCatchupNeedsReplay(vaultPubKey.String(), keyImageRefs)
+		if err != nil {
+			return false, err
+		}
+		if needsReplay {
+			return true, nil
+		}
+	}
+
+	txKeyRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+	if len(txKeyRefs) > 0 {
+		stateCheck, err := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), txKeyRefs)
+		if err != nil {
+			return false, err
+		}
+		if stateCheck.needsReplay {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func xmrOutputRefKey(txHash string, outputIndex uint32) string {

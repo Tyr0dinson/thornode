@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -192,9 +193,20 @@ func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing
 					VaultPubKey:          vaultPubKey.String(),
 					Address:              vaultAddr.String(),
 					InventoryFingerprint: expectedFingerprint,
+					RegisteredTxKeyCount: 1,
 				}}
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(resp))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+vaultPubKey.String():
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:              txHash,
+					TxKeys:              []string{txKey},
+					RegisteredInventory: true,
+					Status:              "observed_mined",
+				}},
+			}))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
 			mu.Lock()
 			registerCalls++
@@ -293,6 +305,203 @@ func TestSyncTrackedVaultRegistrationsReregistersWhenSignerInventoryFingerprintM
 	defer mu.Unlock()
 	assert.Equal(t, 1, registerCalls)
 	assert.Equal(t, expectedFingerprint, vaultStates.Vaults[0].InventoryFingerprint)
+}
+
+func TestSyncTrackedVaultRegistrationsReregistersWhenLocalKeyImageApplyLagsChainInventory(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("a", 64)
+	keyImage := strings.Repeat("b", 64)
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
+		Status:      ttypes.VaultStatus_RetiringVault,
+		KeyImagesXmr: []*common.XmrKeyImageRef{
+			{TxHash: txHash, OutputIndex: 1, KeyImage: keyImage},
+		},
+	}
+	expectedFingerprint := xmrVaultInventoryFingerprint(vault)
+
+	var mu sync.Mutex
+	registerCalls := 0
+	vaultStates := xmrFrostVaultStatesResponse{
+		Vaults: []xmrFrostVaultStateEntry{{
+			VaultPubKey:             vaultPubKey.String(),
+			Address:                 vaultAddr.String(),
+			InventoryFingerprint:    expectedFingerprint,
+			RegisteredKeyImageCount: 1,
+		}},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/vaults":
+			mu.Lock()
+			defer mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(vaultStates))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			assert.Equal(t, "all", r.URL.Query().Get("view"))
+			assert.Equal(t, "store", r.URL.Query().Get("source"))
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{{
+					TxHash:      txHash,
+					OutputIndex: 1,
+					Amount:      1,
+					Height:      100,
+					State:       "unspent",
+				}},
+			}))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+			mu.Lock()
+			registerCalls++
+			mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:                 common.XMRChain,
+		frostSigner:           signer,
+		logger:                testLogger(),
+		trackedVaultSyncState: map[string]string{vaultPubKey.String(): expectedFingerprint},
+	}
+
+	_, err = client.syncTrackedVaultRegistrations(ttypes.Vaults{vault})
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, registerCalls)
+}
+
+func TestSyncTrackedVaultRegistrationsReregistersWhenLocalTxKeyApplyLagsChainInventory(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("a", 64)
+	parentTxHash := strings.Repeat("b", 64)
+	txKey := strings.Repeat("1", 64)
+	destination := testOutboundXMRDestination()
+
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
+		Status:      ttypes.VaultStatus_RetiringVault,
+		TxKeysXmr: []*common.XmrTxKeyRef{
+			{TxHash: txHash, TxKeys: []string{txKey}},
+		},
+	}
+	expectedFingerprint := xmrVaultInventoryFingerprint(vault)
+
+	bridge := &countingStateSyncBridge{
+		mockMoneroBridge: mockMoneroBridge{
+			vaultByPubKey: map[string]ttypes.Vault{
+				vaultPubKey.String(): vault,
+			},
+			observedTxVoterByID: map[string]*ttypes.QueryObservedTxVoter{
+				txHash: {
+					TxID: common.TxID(txHash),
+					Tx: ttypes.QueryObservedTx{
+						Tx: common.NewTx(
+							common.TxID(txHash),
+							common.Address(common.XMRUnknownSenderAddress(txHash, vaultAddr.String())),
+							vaultAddr,
+							common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+							nil,
+							"OUT:"+parentTxHash,
+						),
+						ObservedPubKey: vaultPubKey,
+						BlockHeight:    100,
+					},
+				},
+			},
+			txStatusByID: map[string]*ttypes.QueryTxStatusResponse{
+				parentTxHash: {
+					OutTxs: common.Txs{
+						common.NewTx(
+							common.TxID(txHash),
+							vaultAddr,
+							destination,
+							common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+							nil,
+							"OUT:"+parentTxHash,
+						),
+					},
+				},
+			},
+		},
+	}
+
+	var mu sync.Mutex
+	registerCalls := 0
+	vaultStates := xmrFrostVaultStatesResponse{
+		Vaults: []xmrFrostVaultStateEntry{{
+			VaultPubKey:          vaultPubKey.String(),
+			Address:              vaultAddr.String(),
+			InventoryFingerprint: expectedFingerprint,
+			RegisteredTxKeyCount: 1,
+		}},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/vaults":
+			mu.Lock()
+			defer mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(vaultStates))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+vaultPubKey.String():
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:              txHash,
+					RegisteredInventory: true,
+					Status:              "observed_mined",
+				}},
+			}))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+			mu.Lock()
+			registerCalls++
+			mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:                 common.XMRChain,
+		frostSigner:           signer,
+		logger:                testLogger(),
+		thorchainBridge:       bridge,
+		trackedVaultSyncState: map[string]string{vaultPubKey.String(): expectedFingerprint},
+	}
+
+	_, err = client.syncTrackedVaultRegistrations(ttypes.Vaults{vault})
+	require.NoError(t, err)
+
+	mu.Lock()
+	assert.Equal(t, 1, registerCalls)
+	mu.Unlock()
+
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	assert.Equal(t, 1, bridge.observedTxCalls)
+	assert.Equal(t, 1, bridge.txStatusCalls)
 }
 
 func TestDrivePendingScannerRescansUsesScannerSyncPath(t *testing.T) {
