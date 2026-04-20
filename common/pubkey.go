@@ -23,6 +23,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 	"golang.org/x/crypto/blake2b"
 
@@ -210,6 +211,23 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			net = &bchchaincfg.MainNetParams
 		}
 		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+		}
+		addressString = addr.String()
+	case DASHChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		if err != nil {
+			return NoAddress, err
+		}
+		var net *chaincfg.Params
+		switch chainNetwork {
+		case MockNet:
+			net = &dashutil.RegressionNetParams
+		case MainNet, StageNet, ChainNet:
+			net = &dashutil.MainNetParams
+		}
+		addr, err := btcutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}

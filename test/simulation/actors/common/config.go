@@ -11,6 +11,7 @@ var SimChains = []common.Chain{
 	common.BASEChain,
 	common.BCHChain,
 	common.BTCChain,
+	common.DASHChain,
 	common.DOGEChain,
 	common.ETHChain,
 	common.GAIAChain,

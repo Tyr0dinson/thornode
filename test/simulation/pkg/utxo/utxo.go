@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -246,6 +247,10 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
+	case common.DASHChain:
+		// Dash tx format is Bitcoin-compatible (legacy, non-SegWit), so we
+		// sign the btcwire.MsgTx directly without a separate wire conversion.
+		stx = redeemTx
 	case common.ZECChain:
 		// signing is slightly different, using zecTx, no need to wire
 	default:
@@ -289,6 +294,8 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), amount, sourceScript, i)
 			case common.BTCChain:
 				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), amount, sourceScript, i)
+			case common.DASHChain:
+				err = c.signUTXODASH(stx.(*btcwire.MsgTx), amount, sourceScript, i)
 			case common.ZECChain:
 				err = c.signUTXOZEC(zecTx, amount, sourceScript, i)
 			default:
@@ -317,6 +324,9 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
 	case common.BTCChain:
 		redeemTx = btcToWire(stx.(*btcwire.MsgTx))
+	case common.DASHChain:
+		// stx is already the same *btcwire.MsgTx as redeemTx; nothing to convert.
+		redeemTx = stx.(*btcwire.MsgTx)
 	case common.ZECChain:
 		// using zecTx directly, no need to convert back
 	default:
@@ -361,7 +371,7 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	switch c.chain {
 	case common.DOGEChain, common.BCHChain:
 		maxFee = true // "allowHighFees"
-	case common.LTCChain, common.BTCChain:
+	case common.LTCChain, common.BTCChain, common.DASHChain:
 		maxFee = 10_000_000
 	}
 
@@ -399,6 +409,13 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 	case common.BTCChain:
 		var addr btcutil.Address
 		addr, err := btcutil.DecodeAddress(c.address.String(), c.getChainCfgBTC())
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
+		}
+		return btctxscript.PayToAddrScript(addr)
+	case common.DASHChain:
+		var addr btcutil.Address
+		addr, err := btcutil.DecodeAddress(c.address.String(), c.getChainCfgDASH())
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
 		}
@@ -481,6 +498,8 @@ func (c *Client) getGasSats() float64 {
 		return 0.0001
 	case common.ZECChain:
 		return 0.001
+	case common.DASHChain:
+		return 0.0001
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return 0.0
@@ -506,7 +525,7 @@ func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
 		return memoToScripts(memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
 	case common.LTCChain:
 		return memoToScripts(memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
-	case common.BTCChain, common.ZECChain:
+	case common.BTCChain, common.ZECChain, common.DASHChain:
 		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
 	default:
 		log.Fatal().Msg("unsupported chain")
@@ -647,6 +666,16 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
+	case common.DASHChain:
+		var outputAddr btcutil.Address
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		buf, err = btctxscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+		}
 	case common.ZECChain:
 		var outputAddr btcutil.Address
 		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
@@ -752,6 +781,18 @@ func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
 	}
 }
 
+func (c *Client) getChainCfgDASH() *btcchaincfg.Params {
+	switch common.CurrentChainNetwork {
+	case common.MockNet:
+		return &dashutil.RegressionNetParams
+	case common.MainNet, common.StageNet, common.ChainNet:
+		return &dashutil.MainNetParams
+	default:
+		log.Fatal().Msg("unsupported network")
+		return nil
+	}
+}
+
 // ------------------------------ signing ------------------------------
 
 func (c *Client) signUTXODOGE(redeemTx *dogewire.MsgTx, amount int64, sourceScript []byte, idx int) error {
@@ -831,6 +872,32 @@ func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, amount int64, sourceScript
 	}
 
 	redeemTx.TxIn[idx].Witness = witness
+	flag := btctxscript.StandardVerifyFlags
+	engine, err := btctxscript.NewEngine(sourceScript, redeemTx, idx, flag, nil, nil, amount)
+	if err != nil {
+		return fmt.Errorf("fail to create engine: %w", err)
+	}
+	if err = engine.Execute(); err != nil {
+		return fmt.Errorf("fail to execute the script: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) signUTXODASH(redeemTx *btcwire.MsgTx, amount int64, sourceScript []byte, idx int) error {
+	// Dash uses Bitcoin-compatible legacy ECDSA signing (no SegWit).
+	signable := btctxscript.NewPrivateKeySignable(c.privKey)
+	sig, err := btctxscript.RawTxInSignature(redeemTx, idx, sourceScript, btctxscript.SigHashAll, signable)
+	if err != nil {
+		return fmt.Errorf("fail to get signature: %w", err)
+	}
+
+	pkData := signable.GetPubKey().SerializeCompressed()
+	sigscript, err := btctxscript.NewScriptBuilder().AddData(sig).AddData(pkData).Script()
+	if err != nil {
+		return fmt.Errorf("fail to build signature script: %w", err)
+	}
+	redeemTx.TxIn[idx].SignatureScript = sigscript
+
 	flag := btctxscript.StandardVerifyFlags
 	engine, err := btctxscript.NewEngine(sourceScript, redeemTx, idx, flag, nil, nil, amount)
 	if err != nil {

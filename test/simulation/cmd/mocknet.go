@@ -46,6 +46,7 @@ var chainRPCs = map[common.Chain]string{
 	common.XRPChain:   "http://127.0.0.1:5005",
 	common.SOLChain:   "http://127.0.0.1:8899",
 	common.XMRChain:   envOrDefault("XMR_SIM_HELPER_ENDPOINT", "http://127.0.0.1:8284"),
+	common.DASHChain:  "http://localhost:19898",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -198,6 +199,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
+				{common.DASHChain, 300, 10},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
@@ -337,7 +339,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		// determine the amount of txs for seeding, to create multiple utxos
 		chainSeedTxs := 1
 		switch chain {
-		case common.BTCChain, common.LTCChain, common.BCHChain:
+		case common.BTCChain, common.LTCChain, common.BCHChain, common.DASHChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
 		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)

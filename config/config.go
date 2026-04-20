@@ -611,6 +611,7 @@ type Bifrost struct {
 		ZEC   BifrostChainConfiguration `mapstructure:"zec"`
 		SUI   BifrostChainConfiguration `mapstructure:"sui"`
 		ADA   BifrostChainConfiguration `mapstructure:"ada"`
+		DASH  BifrostChainConfiguration `mapstructure:"dash"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration    `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions             `mapstructure:"observer_leveldb"`
@@ -659,6 +660,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.ZECChain:   b.Chains.ZEC,
 		common.SUIChain:   b.Chains.SUI,
 		common.ADAChain:   b.Chains.ADA,
+		common.DASHChain:  b.Chains.DASH,
 	}
 }
 

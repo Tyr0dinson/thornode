@@ -22,6 +22,7 @@ bifrost:
       - AVAX
       - BCH
       - BTC
+      - DASH
       - DOGE
       - ETH
       - GAIA
@@ -585,6 +586,27 @@ bifrost:
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1
         max_mempool_ancestors: 0
+
+    dash:
+      <<: *default-chain
+      chain_id: DASH
+      block_scanner:
+        <<: *default-block-scanner
+        max_reorg_rescan_blocks: 288 # 12h at 2.5 min blocks
+        chain_id: DASH
+        gas_price_resolution: 10 # sats/vbyte
+        gas_cache_blocks: 10
+        observation_flexibility_blocks: 3
+        scan_mempool: true
+      mempool_tx_id_cache_size: 1_000_000
+      scanner_leveldb: *default-leveldb
+      min_confirmations: 0
+      utxo:
+        <<: *utxo
+        block_cache_count: 576
+        estimated_average_tx_size: 300
+        max_sats_per_vbyte: 9765
+        min_sats_per_vbyte: 2
 
     sui:
       <<: *default-chain

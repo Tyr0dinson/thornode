@@ -118,6 +118,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("decoded btc address has unexpected type %T", outputAddr)
 		}
 		outputAddrStr = btcAddr.String()
+	case common.DASHChain:
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		outputAddrStr = outputAddr.(btcutil.Address).String()
 	case common.ZECChain:
 		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
@@ -205,6 +211,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
+	case common.DASHChain:
+		// Dash tx format is Bitcoin-compatible (legacy, non-SegWit), so we
+		// sign against the btcwire.MsgTx directly without a separate wire
+		// conversion step.
+		stx = redeemTx
 	case common.ZECChain:
 		// signing is slightly different, using zecTx, no need to wire
 	default:
@@ -275,6 +286,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 					break
 				}
 				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
+			case common.DASHChain:
+				err = c.signUTXODASH(stx.(*btcwire.MsgTx), tx, amount, sourceScript, i, thorchainHeight)
 			case common.ZECChain:
 				signErr = c.signUTXOZEC(zecTx, tx, amount, sourceScript, i, thorchainHeight)
 			default:
@@ -323,6 +336,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, checkpointBytes, nil, fmt.Errorf("unexpected btc signed tx type %T", stx)
 		}
 		redeemTx = btcToWire(msgTx)
+	case common.DASHChain:
+		// stx is already the same *btcwire.MsgTx as redeemTx; nothing to convert.
+		redeemTx = stx.(*btcwire.MsgTx)
 	case common.ZECChain:
 		// using zecTx directly, no need to convert back
 	default:
@@ -483,7 +499,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		switch c.cfg.ChainID {
 		case common.DOGEChain, common.BCHChain:
 			maxFee = true // "allowHighFees"
-		case common.LTCChain, common.BTCChain:
+		case common.LTCChain, common.BTCChain, common.DASHChain:
 			maxFee = 10_000_000
 		}
 

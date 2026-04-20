@@ -208,6 +208,7 @@ services:
       - thornode
       - solana
       - polygon
+      - dash
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment: &bifrost-environment
@@ -241,6 +242,7 @@ services:
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_GAIA_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_LTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
+      BIFROST_CHAINS_DASH_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
@@ -261,6 +263,10 @@ services:
 
       # enable doge
       BIFROST_CHAINS_DOGE_DISABLED: "${BIFROST_CHAINS_DOGE_DISABLED:-false}"
+
+      # enable dash
+      BIFROST_CHAINS_DASH_DISABLED: "${BIFROST_CHAINS_DASH_DISABLED:-false}"
+      BIFROST_CHAINS_DASH_RPC_HOST: ${BIFROST_CHAINS_DASH_RPC_HOST:-dash:19898}
 
       # enable eth
       BIFROST_CHAINS_ETH_DISABLED: "${BIFROST_CHAINS_ETH_DISABLED:-false}"
@@ -666,6 +672,30 @@ services:
     volumes:
       - "./mocknet:/mocknet"
     entrypoint: "/mocknet/litecoin-entrypoint.sh"
+
+  # ------------------------------ dash ------------------------------
+
+  dash:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: dashpay/dashd:23.1.2
+    restart: unless-stopped
+    environment:
+      BLOCK_TIME: ${BLOCK_TIME:-1}
+      DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
+    ports:
+      - 19898:19898 # regtest RPC
+      - 19899:19899 # regtest P2P
+    volumes:
+      - "./mocknet:/mocknet"
+    entrypoint: "/mocknet/dash/entrypoint.sh"
+    healthcheck:
+      test: ["CMD", "/mocknet/dash/healthcheck.sh"]
+      interval: 2s
+      timeout: 10s
+      retries: 120
+      start_period: 30s
 
   # ------------------------------ ethereum ------------------------------
 

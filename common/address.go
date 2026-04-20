@@ -20,6 +20,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
@@ -101,8 +102,37 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
+	if IsValidDASHAddress(address) {
+		return Address(address), nil
+	}
+
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
+}
+
+// IsValidDASHAddress returns true if the address decodes as a Dash P2PKH or
+// P2SH address on mainnet, testnet, or regtest. Dash uses Bitcoin-style
+// base58check with different prefix bytes. Bare pubkey hex (compressed or
+// uncompressed, 66 / 130 chars) is rejected — btcutil.DecodeAddress accepts
+// those as P2PK for the caller's defaultNet, but THORChain treats them as
+// non-addresses across all chains.
+func IsValidDASHAddress(address string) bool {
+	for _, params := range []*chaincfg.Params{
+		&dashutil.MainNetParams,
+		&dashutil.RegressionNetParams,
+	} {
+		decoded, err := btcutil.DecodeAddress(address, params)
+		if err != nil {
+			continue
+		}
+
+		switch decoded.(type) {
+		case *btcutil.AddressPubKeyHash, *btcutil.AddressScriptHash:
+			return true
+		}
+	}
+
+	return false
 }
 
 func IsValidXRPAddress(address string) bool {
@@ -365,6 +395,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return IsValidSUIAddress(addr.String())
 	case ADAChain:
 		return IsValidADAAddress(addr.String())
+	case DASHChain:
+		return IsValidDASHAddress(addr.String())
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
@@ -373,7 +405,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain, DASHChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -528,6 +560,16 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 
 		if strings.HasPrefix(addrStr, "addr_test1") {
+			return MockNet
+		}
+	case DASHChain:
+		if _, err := btcutil.DecodeAddress(addr.String(), &dashutil.MainNetParams); err == nil {
+			return mainNetPredicate()
+		}
+		if _, err := btcutil.DecodeAddress(addr.String(), &dashutil.TestNetParams); err == nil {
+			return MockNet
+		}
+		if _, err := btcutil.DecodeAddress(addr.String(), &dashutil.RegressionNetParams); err == nil {
 			return MockNet
 		}
 	}

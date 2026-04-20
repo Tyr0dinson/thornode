@@ -43,6 +43,8 @@ var (
 	ZECAsset = Asset{Chain: ZECChain, Symbol: "ZEC", Ticker: "ZEC", Synth: false}
 	// XMRAsset XMR
 	XMRAsset = Asset{Chain: XMRChain, Symbol: "XMR", Ticker: "XMR", Synth: false}
+	// DASHAsset DASH
+	DASHAsset = Asset{Chain: DASHChain, Symbol: "DASH", Ticker: "DASH", Synth: false}
 	// POLAsset POL
 	POLAsset = Asset{Chain: POLChain, Symbol: "POL", Ticker: "POL", Synth: false}
 	// SUIAsset SUI
@@ -147,6 +149,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[ZECAsset.ShortCode()] = ZECAsset.String()
 	shorts[TAOAsset.ShortCode()] = TAOAsset.String()
 	shorts[DOTAsset.ShortCode()] = DOTAsset.String()
+	shorts[DASHAsset.ShortCode()] = DASHAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -373,6 +376,8 @@ func (a Asset) ShortCode() string {
 		return "do"
 	case "ADA.ADA":
 		return "ad"
+	case "DASH.DASH":
+		return "dh"
 	default:
 		return ""
 	}

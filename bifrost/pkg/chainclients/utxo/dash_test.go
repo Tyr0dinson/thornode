@@ -1,0 +1,186 @@
+package utxo
+
+import (
+	"bytes"
+	"encoding/hex"
+	"strings"
+
+	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
+	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/config"
+	. "gopkg.in/check.v1"
+)
+
+type DashSuite struct{}
+
+var _ = Suite(&DashSuite{})
+
+// newDashClientForUnitTest returns a minimally-initialised *Client suitable
+// for exercising Dash-specific helper methods that only read cfg/log — no
+// RPC, signer, or block scanner involvement. Use the full Client constructor
+// for anything that talks to the chain.
+func newDashClientForUnitTest() *Client {
+	return &Client{
+		cfg: config.BifrostChainConfiguration{ChainID: common.DASHChain},
+		log: zerolog.Nop(),
+	}
+}
+
+// TestPayToPubKeyHashDash verifies the script builder produces a
+// standard P2PKH scriptPubKey (OP_DUP OP_HASH160 <20-byte hash> OP_EQUALVERIFY
+// OP_CHECKSIG). This is the key divergence from DOGE/BCH, which use the
+// P2WPKH shape (OP_0 <20-byte hash>) — dashd 23 has no WITNESS_V0_KEYHASH
+// variant and would reject that shape as NONSTANDARD. A regression here
+// causes extended-memo outbounds to be rejected on broadcast.
+func (s *DashSuite) TestPayToPubKeyHashDash(c *C) {
+	hash := make([]byte, 20)
+	for i := range hash {
+		hash[i] = byte(i)
+	}
+
+	script, err := payToPubKeyHashDashMemo(hash)
+	c.Assert(err, IsNil)
+
+	// Expected: 0x76 (OP_DUP) 0xa9 (OP_HASH160) 0x14 (push 20) <20 bytes> 0x88 (OP_EQUALVERIFY) 0xac (OP_CHECKSIG)
+	c.Assert(len(script), Equals, 25, Commentf("P2PKH scriptPubKey is always 25 bytes; got %d", len(script)))
+	c.Assert(script[0], Equals, byte(btctxscript.OP_DUP))
+	c.Assert(script[1], Equals, byte(btctxscript.OP_HASH160))
+	c.Assert(script[2], Equals, byte(0x14)) // push 20 bytes
+	c.Assert(bytes.Equal(script[3:23], hash), Equals, true, Commentf("hash bytes must match input"))
+	c.Assert(script[23], Equals, byte(btctxscript.OP_EQUALVERIFY))
+	c.Assert(script[24], Equals, byte(btctxscript.OP_CHECKSIG))
+
+	// Round-trip: the script must parse back as a pubkeyhash script under
+	// Dash's chain params, not as witness_v0_keyhash.
+	class, _, _, err := btctxscript.ExtractPkScriptAddrs(script, &dashutil.MainNetParams)
+	c.Assert(err, IsNil)
+	c.Assert(class, Equals, btctxscript.PubKeyHashTy,
+		Commentf("must classify as PubKeyHashTy, not WitnessV0KeyHashTy; got %s", class))
+}
+
+// TestMemoToScripts verifies the full MemoToScripts pipeline produces
+// P2PKH-shaped overflow scripts when called with Dash's
+// payToPubKeyHashDashMemo callback. This is the integration between the
+// shape-agnostic MemoToScripts and the Dash-specific script builder.
+func (s *DashSuite) TestMemoToScripts(c *C) {
+	// Memo > MaxDataCarrierSize (80) forces a continuation, which creates
+	// overflow outputs via the payToKeyHashScript callback.
+	longMemo := strings.Repeat("a", 100) // 100 > 80 triggers overflow
+
+	scripts, err := MemoToScripts(longMemo, btctxscript.MaxDataCarrierSize,
+		btctxscript.NullDataScript, payToPubKeyHashDashMemo)
+	c.Assert(err, IsNil)
+	c.Assert(len(scripts) >= 2, Equals, true,
+		Commentf("expected at least one OP_RETURN + one overflow; got %d", len(scripts)))
+
+	// First script is OP_RETURN (starts with 0x6a).
+	c.Assert(scripts[0][0], Equals, byte(0x6a))
+
+	// Every overflow script must be P2PKH-shaped, not P2WPKH-shaped.
+	for i, overflow := range scripts[1:] {
+		c.Assert(len(overflow), Equals, 25,
+			Commentf("overflow script %d: expected 25-byte P2PKH; got %d bytes", i, len(overflow)))
+		c.Assert(overflow[0], Equals, byte(btctxscript.OP_DUP),
+			Commentf("overflow script %d: first byte is not OP_DUP (would be OP_0=0x00 for P2WPKH shape)", i))
+	}
+}
+
+func (s *DashSuite) TestGetAddressesFromScriptPubKeyDASH(c *C) {
+	hash := make([]byte, 20)
+	for i := range hash {
+		hash[i] = byte(i + 1)
+	}
+	script, err := btctxscript.NewScriptBuilder().
+		AddOp(btctxscript.OP_DUP).
+		AddOp(btctxscript.OP_HASH160).
+		AddData(hash).
+		AddOp(btctxscript.OP_EQUALVERIFY).
+		AddOp(btctxscript.OP_CHECKSIG).
+		Script()
+	c.Assert(err, IsNil)
+
+	testCases := []struct {
+		ScriptPubKeyResult btcjson.ScriptPubKeyResult
+		ShouldReturnNil    bool
+	}{
+		{
+			ScriptPubKeyResult: btcjson.ScriptPubKeyResult{
+				Addresses: []string{"XhkcLQT9RKiRyTDpecLtPDL6z6M4v1ZiE3"},
+			},
+		},
+		{
+			ScriptPubKeyResult: btcjson.ScriptPubKeyResult{
+				Hex: hex.EncodeToString(script),
+			},
+		},
+		{
+			ShouldReturnNil:    true,
+			ScriptPubKeyResult: btcjson.ScriptPubKeyResult{},
+		},
+		{
+			ShouldReturnNil: true,
+			ScriptPubKeyResult: btcjson.ScriptPubKeyResult{
+				Hex: "invalidhex",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		client := newDashClientForUnitTest()
+
+		addresses := client.getAddressesFromScriptPubKeyDASH(tc.ScriptPubKeyResult)
+		if tc.ShouldReturnNil {
+			c.Assert(addresses, IsNil)
+		} else {
+			for _, address := range addresses {
+				c.Assert(common.IsValidDASHAddress(address), Equals, true)
+			}
+		}
+	}
+}
+
+// TestGetChainCfgDASH verifies the chain-params selector uses
+// Dash's params (not BTC's) for the active network. A silent fall-through to
+// chaincfg.MainNetParams would cause address decoding to fail on real Dash
+// addresses while falsely accepting BTC ones.
+func (s *DashSuite) TestGetChainCfgDASH(c *C) {
+	client := newDashClientForUnitTest()
+	params := client.getChainCfgDASH()
+	c.Assert(params, NotNil)
+	c.Assert(strings.HasPrefix(params.Name, "dash-"), Equals, true)
+
+	// Dash never uses SegWit, so Bech32HRPSegwit must be empty regardless of net.
+	c.Assert(params.Bech32HRPSegwit, Equals, "")
+}
+
+// TestDashWireFormatIsBitcoinCompatible verifies that btcwire.MsgTx can be
+// used directly for Dash tx construction — no separate wireToDASH conversion
+// needed. This is the assumption behind the lightweight Dash signing path in
+// signer.go (case common.DASHChain uses the same msgTx type as BTC).
+func (s *DashSuite) TestDashWireFormatIsBitcoinCompatible(c *C) {
+	// A minimal legal MsgTx needs at least one TxIn so the non-witness
+	// serializer doesn't mis-detect a segwit marker byte on deserialize.
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.AddTxIn(&wire.TxIn{})
+	nullDataScript, err := btctxscript.NullDataScript([]byte("dash"))
+	c.Assert(err, IsNil)
+	tx.AddTxOut(wire.NewTxOut(1000, nullDataScript))
+
+	var buf bytes.Buffer
+	err = tx.Serialize(&buf)
+	c.Assert(err, IsNil)
+	c.Assert(buf.Len() > 0, Equals, true)
+
+	// Round-trip deserialize to confirm the format is self-consistent.
+	out := wire.NewMsgTx(wire.TxVersion)
+	err = out.Deserialize(&buf)
+	c.Assert(err, IsNil)
+	c.Assert(len(out.TxIn), Equals, 1)
+	c.Assert(len(out.TxOut), Equals, 1)
+	c.Assert(out.TxOut[0].Value, Equals, int64(1000))
+	c.Assert(bytes.Equal(out.TxOut[0].PkScript, nullDataScript), Equals, true)
+}

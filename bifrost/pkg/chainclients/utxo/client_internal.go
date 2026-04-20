@@ -248,7 +248,7 @@ func (c *Client) sendNetworkFee(height int64) error {
 		}
 		feeRate = uint64(bs.AverageFeeRate * common.One)
 
-	case common.LTCChain, common.BTCChain:
+	case common.LTCChain, common.BTCChain, common.DASHChain:
 		hash, err := c.rpc.GetBlockHash(height)
 		if err != nil {
 			return fmt.Errorf("fail to get block hash: %w", err)
@@ -453,6 +453,22 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		// there is no specific txscript package for zcash and vaults are
 		// using p2pkh only, which is compatible to btc
 		scriptType, addresses, requireSigs, err := btctxscript.ExtractPkScriptAddrs(buf, c.getChainCfgBTC())
+		if err != nil {
+			c.log.Err(err).Msg("fail to extract pub key script")
+			return false
+		}
+		switch scriptType {
+		case btctxscript.MultiSigTy:
+			return false
+		default:
+			return len(addresses) == 1 && requireSigs == 1
+		}
+
+	case common.DASHChain:
+		// Dash uses P2PKH/P2SH scripts identical to Bitcoin, so btctxscript
+		// parses them correctly provided the chain params have the right
+		// base58 prefix bytes (see dashutil).
+		scriptType, addresses, requireSigs, err := btctxscript.ExtractPkScriptAddrs(buf, c.getChainCfgDASH())
 		if err != nil {
 			c.log.Err(err).Msg("fail to extract pub key script")
 			return false
@@ -856,6 +872,13 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 	if c.cfg.ChainID.Equals(common.BTCChain) {
 		return c.getAddressesFromScriptPubKeyBTC(scriptPubKey)
 	}
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		// Dash v23 (Bitcoin Core 23.x) removed the scriptPubKey.addresses
+		// array from raw-tx JSON output; only the singular scriptPubKey.address
+		// is returned now, and the btcjson struct doesn't surface it. Fall
+		// back to local script parsing — same pattern as BTC above.
+		return c.getAddressesFromScriptPubKeyDASH(scriptPubKey)
+	}
 	return scriptPubKey.Addresses
 }
 
@@ -901,6 +924,9 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 		case common.BTCChain:
 			asm, err = btctxscript.DisasmString(buf)
 		case common.ZECChain:
+			asm, err = btctxscript.DisasmString(buf)
+		case common.DASHChain:
+			// Dash scripts are Bitcoin-compatible, so btctxscript handles disasm.
 			asm, err = btctxscript.DisasmString(buf)
 
 		default:

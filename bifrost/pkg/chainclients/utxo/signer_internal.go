@@ -281,6 +281,13 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
 		return btctxscript.PayToAddrScript(addr)
+	case common.DASHChain:
+		var addr btcutil.Address
+		addr, err = btcutil.DecodeAddress(sourceAddr.String(), c.getChainCfgDASH())
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
+		}
+		return btctxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
 		var addr btcutil.Address
@@ -367,7 +374,7 @@ func (c *Client) isSegwitChain() bool {
 	switch c.cfg.ChainID {
 	case common.BTCChain, common.LTCChain:
 		return true
-	case common.DOGEChain, common.BCHChain, common.ZECChain:
+	case common.DOGEChain, common.BCHChain, common.ZECChain, common.DASHChain:
 		return false
 	default:
 		c.log.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
@@ -507,6 +514,26 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
+	case common.DASHChain:
+		var outputAddr btcutil.Address
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		buf, err = btctxscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+		}
+		// Dash has no SegWit. Extended memos >80 bytes use the fake-address-dust
+		// pattern with P2PKH-shaped outputs (payToPubKeyHashDashMemo); DOGE/BCH
+		// use the P2WPKH shape, but dashd 23's TxoutType enum has no
+		// WITNESS_V0_KEYHASH variant so those outputs would be rejected as
+		// NONSTANDARD. getMemo on the observer side already handles the P2PKH
+		// overflow shape (client_internal.go: pubkeyhash scriptType branch).
+		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, payToPubKeyHashDashMemo)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+		}
 	case common.ZECChain:
 		var outputAddr btcutil.Address
 		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
@@ -600,18 +627,18 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	redeemTxOut := wire.NewTxOut(int64(coinToCustomer.Amount.Uint64()), buf)
 	redeemTx.AddTxOut(redeemTxOut)
 
-	// Calculate the total cost of P2WPKH outputs for extended memos
-	p2wpkhOutputsCost := int64(0)
+	// Calculate the total cost of extended-memo key-hash outputs (P2WPKH on
+	// segwit chains, P2PKH on DASH). P2WPKHOutputValue() is kept as the
+	// method name for backward compatibility; its value also matches P2PKH
+	// dust on DASH.
+	keyHashOutputsCost := int64(0)
 	if len(nullDataScripts) > 1 {
-		// Each P2WPKH output (nullDataScripts[1:]) costs P2WPKHOutputValue()
-		p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
+		keyHashOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
 	}
 
-	// balance to ourselves
-	// add output to pay the balance back ourselves
-	// Now properly account for P2WPKH outputs cost
-	balance := totalAmt - redeemTxOut.Value - int64(gasAmt) - p2wpkhOutputsCost
-	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), p2wpkhOutputsCost)
+	// balance to ourselves: account for key-hash outputs cost
+	balance := totalAmt - redeemTxOut.Value - int64(gasAmt) - keyHashOutputsCost
+	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, key_hash_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), keyHashOutputsCost)
 	if balance < 0 {
 		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
 	}
@@ -620,7 +647,9 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
 	}
 
-	// memo
+	// memo: OP_RETURN carries up to 80 bytes; overflow is split across
+	// key-hash outputs (P2WPKH shape on segwit chains, P2PKH shape on DASH).
+	// P2WPKHOutputValue() is reused to fund dust for both shapes.
 	if len(tx.Memo) != 0 {
 		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScripts[0]))
 		for _, script := range nullDataScripts[1:] {
@@ -631,10 +660,12 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	return redeemTx, individualAmounts, nil
 }
 
-// MemoToScripts converts a memo to UTXO scripts.
-// Up to 80 bytes in a single OP_RETURN output; for longer memos, 79 bytes plus '^' marker in OP_RETURN,
-// with remaining data in P2WPKH outputs (20 bytes each).
-func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToWitnessKeyHashScript func([]byte) ([]byte, error)) ([][]byte, error) {
+// MemoToScripts converts a memo to UTXO scripts. Up to 80 bytes go into a
+// single OP_RETURN output; for longer memos, the OP_RETURN carries 79 bytes
+// plus a '^' continuation marker, and the remainder is split across 20-byte
+// key-hash outputs (P2WPKH shape on segwit chains, P2PKH shape on DASH — the
+// caller chooses the output shape via payToKeyHashScript).
+func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToKeyHashScript func([]byte) ([]byte, error)) ([][]byte, error) {
 	if len(memo) == 0 {
 		return nil, nil
 	}
@@ -645,14 +676,14 @@ func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToWit
 
 	data := []byte(memo)
 
-	// Calculate number of scripts: 1 OP_RETURN + ceil(remaining_data / 20) P2WPKH outputs
+	// Calculate number of scripts: 1 OP_RETURN + ceil(remaining_data / 20) key-hash outputs
 	remainingDataSize := len(data)
 	if remainingDataSize > maxDataCarrierSize {
 		remainingDataSize -= (maxDataCarrierSize - 1) // Reserve 1 byte for '^'
 	} else {
 		remainingDataSize = 0
 	}
-	numScripts := 1 + (remainingDataSize+19)/20 // 1 for OP_RETURN, plus P2WPKH outputs (20 bytes each)
+	numScripts := 1 + (remainingDataSize+19)/20 // 1 for OP_RETURN, plus key-hash outputs (20 bytes each)
 	scripts := make([][]byte, 0, numScripts)
 
 	// First chunk OP_RETURN: up to 80 bytes; if > 80 bytes, 79 bytes + '^' marker
@@ -673,11 +704,11 @@ func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToWit
 	}
 	scripts = append(scripts, script)
 
-	// Remaining data (if any) goes into P2WPKH outputs, 20 bytes each
+	// Remaining data (if any) goes into key-hash outputs, 20 bytes each
 	if continuation {
 		remainingData := data[firstChunkSize:]
 		for i := 0; len(remainingData) > 0; i++ {
-			// Take up to 20 bytes for this P2WPKH output
+			// Take up to 20 bytes for this key-hash output
 			chunkSize := len(remainingData)
 			if chunkSize > 20 {
 				chunkSize = 20
@@ -686,11 +717,11 @@ func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToWit
 			copy(hash, remainingData[:chunkSize])
 			// Remaining bytes (if < 20) are padded with zeros, signaling the end
 			// (getMemo stops at a hash ending with "00")
-			p2wpkhScript, err := payToWitnessKeyHashScript(hash)
+			keyHashScript, err := payToKeyHashScript(hash)
 			if err != nil {
-				return nil, fmt.Errorf("fail to create P2WPKH script at index %d: %w", i, err)
+				return nil, fmt.Errorf("fail to create key-hash script at index %d: %w", i, err)
 			}
-			scripts = append(scripts, p2wpkhScript)
+			scripts = append(scripts, keyHashScript)
 			// Move to the next chunk
 			remainingData = remainingData[chunkSize:]
 		}
