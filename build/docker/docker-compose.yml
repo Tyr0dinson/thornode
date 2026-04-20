@@ -781,7 +781,7 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - chown -R serai:serai /home/serai/xmr-frost && exec runuser -u serai -- /bin/service
+      - chown -R serai:serai /home/serai/xmr-frost && exec runuser -u serai -- /usr/local/bin/xmr-frost-signer
     depends_on:
       monero-daemon:
         condition: service_healthy
@@ -842,7 +842,7 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - chown -R serai:serai /home/serai/xmr-sim && exec runuser -u serai -- /bin/service
+      - chown -R serai:serai /home/serai/xmr-sim && exec runuser -u serai -- /usr/local/bin/xmr-frost-signer
     depends_on:
       monero-daemon:
         condition: service_healthy

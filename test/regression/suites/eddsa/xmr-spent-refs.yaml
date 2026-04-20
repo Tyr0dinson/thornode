@@ -5,15 +5,25 @@
 type: create-blocks
 count: 1
 ---
-# Verify vault has XMR chain and no spent-output state yet
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify vault has XMR chain and EdDSA pubkey
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
-  - .|length == 1
-  - .[0].status == "ActiveVault"
-  - .[0].chains | index("XMR")
-  - (.[0].vault_creation_height_xmr // 0) == 0
-  - (.[0].spent_output_refs_xmr // []) | length == 0
+  - '[.[]|select((.chains | index("XMR")) != null)]|length == 1'
+  - .[]|select((.chains | index("XMR")) != null)|.status == "ActiveVault"
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("THOR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("XMR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|.pub_key_frost == "{{ pubkey_dog_eddsa }}"
+  - (.[]|select((.chains | index("XMR")) != null)|.vault_creation_height_xmr // 0) == 0
+  - (.[]|select((.chains | index("XMR")) != null)|.spent_output_refs_xmr // []) | length == 0
 ---
 # Deposit RUNE to swap for XMR (creates outbound in queue)
 type: tx-deposit
@@ -79,8 +89,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
-  - .[0].spent_output_refs_xmr | length == 2
-  - .[0].spent_output_refs_xmr[0].tx_hash == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
-  - (.[0].spent_output_refs_xmr[0].output_index // 0) == 0
-  - .[0].spent_output_refs_xmr[1].tx_hash == "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
-  - .[0].spent_output_refs_xmr[1].output_index == 1
+  - (.[]|select((.chains | index("XMR")) != null)|.spent_output_refs_xmr) | length == 2
+  - (.[]|select((.chains | index("XMR")) != null)|.spent_output_refs_xmr[0].tx_hash) == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+  - ((.[]|select((.chains | index("XMR")) != null)|.spent_output_refs_xmr[0].output_index) // 0) == 0
+  - (.[]|select((.chains | index("XMR")) != null)|.spent_output_refs_xmr[1].tx_hash) == "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
+  - (.[]|select((.chains | index("XMR")) != null)|.spent_output_refs_xmr[1].output_index) == 1

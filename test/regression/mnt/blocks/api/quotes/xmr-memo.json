@@ -117,6 +117,27 @@
         "mode": "EndBlock",
         "tcy_stake_reward": "0",
         "type": "rewards"
+      },
+      {
+        "amount": "0",
+        "bond_address": "",
+        "bond_type": "bond_reward",
+        "chain": "",
+        "coin": "",
+        "from": "",
+        "id": "",
+        "memo": "",
+        "mode": "EndBlock",
+        "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+        "to": "",
+        "type": "bond"
+      },
+      {
+        "Address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+        "Current:": "Active",
+        "Former:": "Unknown",
+        "mode": "EndBlock",
+        "type": "UpdateNodeAccountStatus"
       }
     ],
     "txs": []

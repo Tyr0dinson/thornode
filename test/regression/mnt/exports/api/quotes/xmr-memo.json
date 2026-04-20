@@ -199,8 +199,13 @@
       "bond_providers": [
         {
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-          "node_operator_fee": "0",
-          "providers": []
+          "node_operator_fee": "500",
+          "providers": [
+            {
+              "bond": "5000000000000",
+              "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+            }
+          ]
         }
       ],
       "chain_contracts": [],
@@ -244,7 +249,7 @@
         },
         {
           "chain": "XMR",
-          "transaction_fee_rate": "1",
+          "transaction_fee_rate": "10000",
           "transaction_size": "5000"
         }
       ],
@@ -314,36 +319,43 @@
         {
           "chains": [
             "THOR",
-            "BTC",
-            "LTC",
-            "BCH",
-            "BNB",
-            "ETH",
-            "DOGE",
-            "TERRA",
-            "AVAX",
-            "GAIA",
             "XMR"
           ],
           "coins": [
-            {
-              "amount": "100000000",
-              "asset": "BTC.BTC",
-              "decimals": "8"
-            },
             {
               "amount": "1000000000000",
               "asset": "XMR.XMR",
               "decimals": "12"
             }
           ],
-          "inbound_tx_count": "2",
+          "inbound_tx_count": "1",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
           "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
           "pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
           "pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
+          "routers": null,
+          "status": "ActiveVault",
+          "type": "AsgardVault"
+        },
+        {
+          "chains": [
+            "THOR",
+            "BTC"
+          ],
+          "coins": [
+            {
+              "amount": "100000000",
+              "asset": "BTC.BTC",
+              "decimals": "8"
+            }
+          ],
+          "inbound_tx_count": "1",
+          "membership": [
+            "tthorpub1addwnpepqwlkdxcyz8fnxk3xp0eqt89g6cxau2c4zp89yr2x2dy56s2zgu2jx3pmacu"
+          ],
+          "pub_key": "tthorpub1addwnpepqwlkdxcyz8fnxk3xp0eqt89g6cxau2c4zp89yr2x2dy56s2zgu2jx3pmacu",
           "routers": null,
           "status": "ActiveVault",
           "type": "AsgardVault"

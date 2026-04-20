@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "1"
+          "sequence": "2"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -130,7 +130,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200113162358",
+              "amount": "200114227861",
               "denom": "rune"
             }
           ]
@@ -139,7 +139,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000003656251",
+              "amount": "35000004546434",
               "denom": "rune"
             }
           ]
@@ -166,7 +166,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999985181391",
+              "amount": "4999983225705",
               "denom": "rune"
             }
           ]
@@ -211,7 +211,6 @@
       ],
       "chain_contracts": [],
       "last_chain_heights": [],
-      "last_signed_height": "2",
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
@@ -236,12 +235,16 @@
           "units": "100000000000"
         }
       ],
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "ENABLEADVSWAPQUEUE"
+        }
+      ],
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
-        "bond_reward_rune": "137231",
-        "total_bond_units": "3"
+        "bond_reward_rune": "181625",
+        "total_bond_units": "4"
       },
       "network_fees": [
         {
@@ -251,15 +254,20 @@
         },
         {
           "chain": "XMR",
-          "transaction_fee_rate": "1",
+          "transaction_fee_rate": "10000",
           "transaction_size": "5000"
         }
       ],
-      "nodeMimirs": [],
+      "nodeMimirs": [
+        {
+          "key": "ENABLEADVSWAPQUEUE",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        }
+      ],
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999985044160",
+          "bond": "4999983044080",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -276,30 +284,30 @@
           "actions": [
             {
               "chain": "XMR",
-              "clout_spent": "0",
               "coin": {
-                "amount": "997992690",
+                "amount": "997987384",
                 "asset": "XMR.XMR"
               },
-              "gas_rate": "1",
+              "gas_rate": "15000",
               "in_hash": "421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
               "max_gas": [
                 {
-                  "amount": "5000",
+                  "amount": "7500",
                   "asset": "XMR.XMR",
-                  "decimals": "12"
+                  "decimals": "8"
                 }
               ],
               "original_memo": "OUT:421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
               "to_address": "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejKB4XKtcf1e86oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGdtinVR",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
               "vault_pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ],
-          "finalised_height": "2",
-          "height": "2",
+          "finalised_height": "3",
+          "height": "3",
           "out_txs": null,
-          "outbound_height": "2",
+          "outbound_height": "3",
           "tx": {
             "tx": {
               "chain": "THOR",
@@ -350,7 +358,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100001065141",
+          "balance_rune": "100001597866",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -360,8 +368,8 @@
         {
           "LP_units": "100000000000",
           "asset": "XMR.XMR",
-          "balance_asset": "998902502310",
-          "balance_rune": "100112097217",
+          "balance_asset": "998902507616",
+          "balance_rune": "100112629995",
           "decimals": "12",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -395,28 +403,29 @@
       "trade_units": [],
       "tx_outs": [
         {
-          "height": "2",
+          "height": "3",
           "tx_array": [
             {
               "aggregator_target_limit": "0",
               "chain": "XMR",
               "clout_spent": "0",
               "coin": {
-                "amount": "997992690",
+                "amount": "997987384",
                 "asset": "XMR.XMR"
               },
-              "gas_rate": "1",
+              "gas_rate": "15000",
               "in_hash": "421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
               "max_gas": [
                 {
-                  "amount": "5000",
+                  "amount": "7500",
                   "asset": "XMR.XMR",
-                  "decimals": "12"
+                  "decimals": "8"
                 }
               ],
               "original_memo": "OUT:421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
               "to_address": "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejKB4XKtcf1e86oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGdtinVR",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
               "vault_pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ]
@@ -427,30 +436,16 @@
           "block_height": "2",
           "chains": [
             "THOR",
-            "BTC",
-            "LTC",
-            "BCH",
-            "BNB",
-            "ETH",
-            "DOGE",
-            "TERRA",
-            "AVAX",
-            "GAIA",
             "XMR"
           ],
           "coins": [
-            {
-              "amount": "100000000",
-              "asset": "BTC.BTC",
-              "decimals": "8"
-            },
             {
               "amount": "999900495000",
               "asset": "XMR.XMR",
               "decimals": "12"
             }
           ],
-          "inbound_tx_count": "2",
+          "inbound_tx_count": "1",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -521,5 +516,5 @@
       }
     }
   },
-  "initial_height": 4
+  "initial_height": 5
 }

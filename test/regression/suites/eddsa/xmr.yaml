@@ -5,6 +5,14 @@
 type: create-blocks
 count: 1
 ---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
@@ -13,7 +21,12 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
-  - map(select(.status == "ActiveVault") | .chains | index("XMR"))
+  - .|length == 1
+  - '[.[]|select((.chains | index("XMR")) != null)]|length == 1'
+  - .[]|select((.chains | index("XMR")) != null)|.status == "ActiveVault"
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("THOR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("XMR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|.pub_key_frost == "{{ pubkey_dog_eddsa }}"
 ---
 type: tx-deposit
 signer: {{ addr_thor_cat }}

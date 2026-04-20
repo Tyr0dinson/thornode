@@ -57,6 +57,16 @@ func export(out io.Writer, path string, routine int, failExportInvariants bool) 
 	appState, _ := export["app_state"].(map[string]any)
 	thorchain, _ := appState["thorchain"].(map[string]any)
 	delete(thorchain, "store_version")
+	if polReserveDeposits, ok := thorchain["pol_reserve_deposits"]; ok {
+		switch deposits := polReserveDeposits.(type) {
+		case nil:
+			delete(thorchain, "pol_reserve_deposits")
+		case []any:
+			if len(deposits) == 0 {
+				delete(thorchain, "pol_reserve_deposits")
+			}
+		}
+	}
 
 	// ignore node account version for comparison
 	nodeAccounts, _ := thorchain["node_accounts"].([]interface{})

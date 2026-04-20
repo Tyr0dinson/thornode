@@ -3,7 +3,7 @@
 ########################################################################################
 {{ template "default-state.yaml" }}
 ---
-{{ template "btc-xmr-pool-state.yaml" }}
+{{ template "btc-xmr-quote-pool-state.yaml" }}
 ---
 type: create-blocks
 count: 1
