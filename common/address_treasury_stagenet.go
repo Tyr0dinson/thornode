@@ -4,4 +4,4 @@
 package common
 
 // TreasuryAddress is the stagenet test address
-const TreasuryAddress = Address("sthor1g6pnmnyeg48yc3lg796plt0uw50qpp7humfggz")
+const TreasuryAddress = Address("sthor1wzegxe0rjvfpk337ggmtlj8d93vc446zsadvxv")
