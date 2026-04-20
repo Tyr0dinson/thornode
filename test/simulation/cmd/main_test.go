@@ -169,6 +169,25 @@ func TestMocknetBifrostDeclaresXMRChainNetwork(t *testing.T) {
 	}
 }
 
+func TestXMRSignerEntrypointSupportsRegistryAndLocalImages(t *testing.T) {
+	for _, path := range []string{
+		"build/docker/docker-compose.yml",
+		"build/docker/docker-compose.xmr-chainnet.yml",
+		"build/docker/docker-compose.xmr-stagenet.yml",
+	} {
+		compose := readRepoFile(t, path)
+		for _, snippet := range []string{
+			"/usr/local/bin/xmr-frost-signer",
+			"/bin/service",
+			`missing xmr-frost-signer entrypoint`,
+		} {
+			if !strings.Contains(compose, snippet) {
+				t.Fatalf("%s must contain %q so the XMR signer entrypoint works with both the local dev image and the registry image shape", path, snippet)
+			}
+		}
+	}
+}
+
 func TestMocknetDogecoinRaisesRPCWorkQueueDepth(t *testing.T) {
 	compose := readRepoFile(t, "build/docker/docker-compose.yml")
 	if !strings.Contains(compose, `- "./mocknet:/mocknet"`) {

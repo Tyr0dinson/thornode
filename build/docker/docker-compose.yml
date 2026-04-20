@@ -781,7 +781,12 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - chown -R serai:serai /home/serai/xmr-frost && exec runuser -u serai -- /usr/local/bin/xmr-frost-signer
+      - >-
+        chown -R serai:serai /home/serai/xmr-frost &&
+        exec runuser -u serai -- /bin/sh -lc 'if [ -x /usr/local/bin/xmr-frost-signer ];
+        then exec /usr/local/bin/xmr-frost-signer; elif [ -x /bin/service ]; then
+        exec /bin/service; else echo >&2 "missing xmr-frost-signer entrypoint";
+        exit 127; fi'
     depends_on:
       monero-daemon:
         condition: service_healthy
@@ -842,7 +847,12 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - chown -R serai:serai /home/serai/xmr-sim && exec runuser -u serai -- /usr/local/bin/xmr-frost-signer
+      - >-
+        chown -R serai:serai /home/serai/xmr-sim &&
+        exec runuser -u serai -- /bin/sh -lc 'if [ -x /usr/local/bin/xmr-frost-signer ];
+        then exec /usr/local/bin/xmr-frost-signer; elif [ -x /bin/service ]; then
+        exec /bin/service; else echo >&2 "missing xmr-frost-signer entrypoint";
+        exit 127; fi'
     depends_on:
       monero-daemon:
         condition: service_healthy
