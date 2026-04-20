@@ -56,7 +56,6 @@ volumes:
   bifrost-whale:
   bifrost-wolf:
   bifrost-eagle:
-  monero-daemon:
   xmr-frost-data:
   xmr-frost-data-cat:
   xmr-frost-data-fox:
@@ -152,33 +151,6 @@ x-logging: &logging
     max-file: "3"
 
 services:
-
-  # ================================ Monero mainnet ================================
-
-  monero-daemon:
-    image: sethsimmons/simple-monerod:v0.18.3.4
-    restart: unless-stopped
-    command:
-      - --rpc-bind-ip=0.0.0.0
-      - --rpc-bind-port=18081
-      - --confirm-external-bind
-      - --restricted-rpc
-      - --prune-blockchain
-      - --sync-pruned-blocks
-      - --bootstrap-daemon-address=nodes.hashvault.pro:18081
-      - --log-level=0
-    volumes:
-      - monero-daemon:/home/monero/.bitmonero
-    ports:
-      - "18081:18081"
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "-H", "Content-Type: application/json",
-             "-d", '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}',
-             "http://localhost:18081/json_rpc"]
-      interval: 60s
-      timeout: 10s
-      retries: 9999
-      start_period: 120s
 
   # ================================ FROST signers =================================
 
@@ -457,8 +429,6 @@ services:
     depends_on:
       thornode:
         condition: service_healthy
-      monero-daemon:
-        condition: service_healthy
       xmr-frost-signer:
         condition: service_healthy
     environment:
@@ -485,8 +455,6 @@ services:
     depends_on:
       thornode-cat:
         condition: service_healthy
-      monero-daemon:
-        condition: service_healthy
       xmr-frost-signer-cat:
         condition: service_healthy
     environment:
@@ -507,8 +475,6 @@ services:
     <<: *bifrost
     depends_on:
       thornode-fox:
-        condition: service_healthy
-      monero-daemon:
         condition: service_healthy
       xmr-frost-signer-fox:
         condition: service_healthy
@@ -531,8 +497,6 @@ services:
     depends_on:
       thornode-goat:
         condition: service_healthy
-      monero-daemon:
-        condition: service_healthy
       xmr-frost-signer-goat:
         condition: service_healthy
     environment:
@@ -553,8 +517,6 @@ services:
     <<: *bifrost
     depends_on:
       thornode-whale:
-        condition: service_healthy
-      monero-daemon:
         condition: service_healthy
       xmr-frost-signer-whale:
         condition: service_healthy
@@ -577,8 +539,6 @@ services:
     depends_on:
       thornode-wolf:
         condition: service_healthy
-      monero-daemon:
-        condition: service_healthy
       xmr-frost-signer-wolf:
         condition: service_healthy
     environment:
@@ -599,8 +559,6 @@ services:
     <<: *bifrost
     depends_on:
       thornode-eagle:
-        condition: service_healthy
-      monero-daemon:
         condition: service_healthy
       xmr-frost-signer-eagle:
         condition: service_healthy
