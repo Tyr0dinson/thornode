@@ -774,20 +774,19 @@ impl Store {
                         applied += 1;
                     }
                 } else if reconcile {
-                    let legacy_reconciled =
-                        output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
-                    let mut changed = false;
-                    if legacy_reconciled {
+                    // Heal legacy RECONCILED_KEY_IMAGE_SPEND_HEIGHT sentinels
+                    // written by older code paths. Do NOT strip key_images on
+                    // outputs not in the registered inventory — a locally
+                    // bound key_image was proven via FROST ceremony or
+                    // validated peer attestation and is authoritative even
+                    // before THORChain vault metadata has caught up.
+                    if output.spent_by_key_image_height
+                        == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+                    {
                         output.spent_by_key_image_height = None;
                         if output.state == OutputState::Spent {
                             output.state = OutputState::Unspent;
                         }
-                        changed = true;
-                    }
-                    if output.state == OutputState::Unspent && output.key_image.take().is_some() {
-                        changed = true;
-                    }
-                    if changed {
                         applied += 1;
                     }
                 }
@@ -2928,7 +2927,8 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_key_images_preserves_real_spends_and_clears_legacy_metadata_spends() {
+    fn reconcile_key_images_preserves_real_spends_and_local_bindings_and_clears_legacy_metadata_spends(
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
         let vault = "thorpub1vault";
@@ -2938,9 +2938,14 @@ mod tests {
         preserved.state = OutputState::Spent;
         preserved.spent_by_key_image_height = Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
 
-        let mut reverted = sample_scanned_output("tx-drop", 1);
-        reverted.key_image = Some("drop-image".to_string());
-        reverted.state = OutputState::Unspent;
+        // Locally-bound key_image on an output NOT in the current registered
+        // inventory — simulates a ceremony / validation apply that landed
+        // before THORChain vault metadata replay caught up. Must be
+        // preserved through reconcile=true, otherwise the bind is wiped
+        // before the inventory round trip completes.
+        let mut local_bind = sample_scanned_output("tx-local-bind", 1);
+        local_bind.key_image = Some("local-image".to_string());
+        local_bind.state = OutputState::Unspent;
 
         let mut spent_by_ref = sample_scanned_output("tx-spent-ref", 2);
         spent_by_ref.key_image = Some("old-image".to_string());
@@ -2948,12 +2953,12 @@ mod tests {
         spent_by_ref.spent_by_key_image_height = Some(123);
 
         store
-            .save_outputs(vault, &[preserved, spent_by_ref, reverted])
+            .save_outputs(vault, &[preserved, spent_by_ref, local_bind])
             .unwrap();
 
         let refs = vec![("tx-keep".to_string(), 0, "keep-image".to_string())];
         let (applied, not_found) = store.apply_key_images(vault, &refs, true).unwrap();
-        assert_eq!(applied, 2);
+        assert_eq!(applied, 1); // only the legacy-sentinel heal
         assert_eq!(not_found, 0);
 
         let outputs = store.load_outputs(vault).unwrap();
@@ -2967,10 +2972,14 @@ mod tests {
         assert_eq!(keep.state, OutputState::Unspent);
         assert_eq!(keep.spent_by_key_image_height, None);
 
-        let drop = by_tx.get("tx-drop").unwrap();
-        assert_eq!(drop.key_image, None);
-        assert_eq!(drop.spent_by_key_image_height, None);
-        assert_eq!(drop.state, OutputState::Unspent);
+        let local = by_tx.get("tx-local-bind").unwrap();
+        assert_eq!(
+            local.key_image.as_deref(),
+            Some("local-image"),
+            "locally-bound key_image must survive reconcile even when absent from registered inventory"
+        );
+        assert_eq!(local.spent_by_key_image_height, None);
+        assert_eq!(local.state, OutputState::Unspent);
 
         let spent = by_tx.get("tx-spent-ref").unwrap();
         assert_eq!(spent.key_image.as_deref(), Some("old-image"));

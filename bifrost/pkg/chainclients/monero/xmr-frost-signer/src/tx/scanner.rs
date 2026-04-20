@@ -518,24 +518,19 @@ impl Scanner {
                 if requested_refs.contains(&key) {
                     continue;
                 }
-                let legacy_reconciled =
-                    output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT);
-                let mut changed = false;
-                if legacy_reconciled {
+                // Heal the legacy RECONCILED_KEY_IMAGE_SPEND_HEIGHT sentinel
+                // written by older code paths. Do NOT strip the key_image
+                // itself — a locally-bound key_image was produced by a FROST
+                // ceremony we participated in (or validated against a peer's
+                // attestation), and a THORChain-inventory replay may simply
+                // have not yet observed the entry. Stripping here races with
+                // local-apply paths and wipes valid bindings before the
+                // onchain inventory catches up.
+                if output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT) {
                     output.spent_by_key_image_height = None;
                     if output.state == crate::state::store::OutputState::Spent {
                         output.state = crate::state::store::OutputState::Unspent;
                     }
-                    changed = true;
-                }
-                // Only clear stale metadata on currently unspent outputs. Keep
-                // reservations and chain-proven spends intact.
-                if output.state == crate::state::store::OutputState::Unspent
-                    && output.key_image.take().is_some()
-                {
-                    changed = true;
-                }
-                if changed {
                     applied += 1;
                 }
             }
@@ -785,7 +780,8 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_key_images_preserves_real_spends_and_clears_legacy_metadata_spends() {
+    fn reconcile_key_images_preserves_real_spends_and_local_bindings_and_clears_legacy_metadata_spends(
+    ) {
         let mut scanner = Scanner::new();
         let base = Scalar::from(7u64);
         let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
@@ -810,12 +806,17 @@ mod tests {
                         address: Some("48a".to_string()),
                         note: None,
                     },
+                    // Locally-bound key_image on an output NOT in the current
+                    // registered inventory — must survive reconcile=true
+                    // because it represents a proven ceremony / validation
+                    // bind that simply hasn't round-tripped through THORChain
+                    // vault metadata yet.
                     TrackedOutput {
-                        tx_hash: "tx-drop".to_string(),
+                        tx_hash: "tx-local-bind".to_string(),
                         output_index: 1,
                         amount: 20,
                         height: 11,
-                        key_image: Some("drop-image".to_string()),
+                        key_image: Some("local-image".to_string()),
                         spent_by_key_image_height: None,
                         state: crate::state::store::OutputState::Unspent,
                         reservation: None,
@@ -850,7 +851,7 @@ mod tests {
             &[("tx-keep".to_string(), 0, "keep-image".to_string())],
             true,
         );
-        assert_eq!(applied, 2);
+        assert_eq!(applied, 1); // only the legacy-sentinel heal
         assert_eq!(not_found, 0);
 
         let outputs = scanner.get_all_outputs("thorpub1vault");
@@ -864,10 +865,14 @@ mod tests {
         assert_eq!(keep.state, crate::state::store::OutputState::Unspent);
         assert_eq!(keep.spent_by_key_image_height, None);
 
-        let drop = by_tx.get("tx-drop").unwrap();
-        assert_eq!(drop.key_image, None);
-        assert_eq!(drop.spent_by_key_image_height, None);
-        assert_eq!(drop.state, crate::state::store::OutputState::Unspent);
+        let local = by_tx.get("tx-local-bind").unwrap();
+        assert_eq!(
+            local.key_image.as_deref(),
+            Some("local-image"),
+            "locally-bound key_image must survive reconcile even when absent from registered inventory"
+        );
+        assert_eq!(local.spent_by_key_image_height, None);
+        assert_eq!(local.state, crate::state::store::OutputState::Unspent);
 
         let spent = by_tx.get("tx-real-spent").unwrap();
         assert_eq!(spent.key_image.as_deref(), Some("real-image"));

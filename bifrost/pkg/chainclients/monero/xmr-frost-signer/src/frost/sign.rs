@@ -698,7 +698,12 @@ impl SignCoordinator {
                 tx_hash: tx_hash.clone(),
                 tx_hex: tx_hex.clone(),
                 tx_keys: tx_keys.clone(),
-                registered_inventory: false,
+                // The signer just produced this tx-key via FROST sign_combine;
+                // it is cryptographically authoritative and must count as
+                // registered inventory immediately so registered_tx_key_count
+                // reflects it without waiting for a THORChain vault-metadata
+                // round trip.
+                registered_inventory: true,
                 msg_id: session_msg_id,
                 vault_pub_key: vault_pub_key.clone(),
                 from_address,

@@ -3764,11 +3764,18 @@ async fn validate_outbound_request(
     let observed_at = observed_height.map(|_| chrono::Utc::now().timestamp());
 
     if let Some(record) = existing {
+        // A successful validate_outbound result means this node has
+        // cryptographically proven the tx-key against the daemon-fetched tx
+        // and the vault's owned addresses. That's authoritative — persist it
+        // as registered inventory regardless of what the caller asked, so
+        // the tx-key counts in registered_tx_key_count immediately and can
+        // feed later co-attestation paths even before THORChain's vault
+        // metadata round-trip completes.
         if let Err(e) = state.store.update_outgoing_transfer_audit_metadata(
             &vault_pub_key,
             &tx_hash,
             &req.tx_keys,
-            req.registered_inventory,
+            true,
             &from_address,
             req.memo.as_deref().unwrap_or_default(),
         ) {
@@ -3811,7 +3818,10 @@ async fn validate_outbound_request(
         tx_hash: tx_hash.clone(),
         tx_hex,
         tx_keys: req.tx_keys.clone(),
-        registered_inventory: req.registered_inventory,
+        // Validation success is cryptographic proof; mark registered
+        // inventory unconditionally so non-signer validators persist the
+        // tx-key alongside signer-produced records.
+        registered_inventory: true,
         msg_id: format!("attestation:{tx_hash}"),
         vault_pub_key: vault_pub_key.clone(),
         from_address,
@@ -8335,7 +8345,10 @@ mod tests {
             .expect("failed to load outgoing transfer")
             .expect("outgoing transfer should exist");
         assert_eq!(saved.tx_keys, synthetic.tx_keys);
-        assert!(!saved.registered_inventory);
+        // validate_outbound now forces registered_inventory=true on success
+        // (the proof is cryptographic), so the tx-key counts immediately
+        // without waiting for the THORChain vault-metadata round trip.
+        assert!(saved.registered_inventory);
         assert_eq!(saved.to_address, synthetic.to_address);
         assert_eq!(saved.amount, synthetic.amount);
         assert_eq!(saved.fee, synthetic.fee);
