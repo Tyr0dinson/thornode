@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	xmrLeaderEpochWindowBlocks = int64(200)
-	xmrKeyImageWorkStatePrefix = "xmr-keyimage-work-v1-"
+	xmrDefaultLeaderEpochWindowBlocks = int64(200)
+	xmrKeyImageWorkStatePrefix        = "xmr-keyimage-work-v1-"
 )
 
 type xmrSyncState string
@@ -33,6 +33,7 @@ const (
 	xmrNodeRoleActiveSelectedSigner xmrNodeRole = "active_selected_signer"
 	xmrNodeRoleActiveSigner         xmrNodeRole = "active_signer"
 	xmrNodeRoleActiveWatchOnly      xmrNodeRole = "active_watch_only"
+	xmrNodeRoleStandbyVaultSigner   xmrNodeRole = "standby_vault_signer"
 	xmrNodeRoleStandbyWatchOnly     xmrNodeRole = "standby_watch_only"
 )
 
@@ -110,11 +111,14 @@ func xmrKeyImageWorkID(vaultPubKey common.PubKey, txHash string, outputIndex uin
 	}, "|")
 }
 
-func xmrInitialLeaderEpochHeight(anchorHeight int64) int64 {
-	if anchorHeight <= 0 {
+func xmrLeaderEpochHeight(height, window int64) int64 {
+	if height <= 0 {
 		return 1
 	}
-	return ((anchorHeight-1)/xmrLeaderEpochWindowBlocks)*xmrLeaderEpochWindowBlocks + 1
+	if window <= 0 {
+		window = xmrDefaultLeaderEpochWindowBlocks
+	}
+	return ((height-1)/window)*window + 1
 }
 
 func (s *xmrKeyImageWorkStateStore) get(workID string) (xmrWorkItem, bool, error) {

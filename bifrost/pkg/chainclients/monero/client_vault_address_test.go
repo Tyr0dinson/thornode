@@ -17,6 +17,7 @@ type mockMoneroBridge struct {
 	pubKeys             []thorclient.PubKeyContractAddressPair
 	observedTxVoterByID map[string]*ttypes.QueryObservedTxVoter
 	txStatusByID        map[string]*ttypes.QueryTxStatusResponse
+	constants           map[string]int64
 	nodeStatus          ttypes.NodeStatus
 	blockHeight         int64
 }
@@ -99,6 +100,17 @@ func (m *mockMoneroBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
 
 func (m *mockMoneroBridge) GetBlockHeight() (int64, error) {
 	return m.blockHeight, nil
+}
+
+func (m *mockMoneroBridge) GetConstants() (map[string]int64, error) {
+	if m.constants == nil {
+		return nil, nil
+	}
+	out := make(map[string]int64, len(m.constants))
+	for key, value := range m.constants {
+		out[key] = value
+	}
+	return out, nil
 }
 
 func TestGetVaultAddressReturnsEmptyForUnknownVault(t *testing.T) {

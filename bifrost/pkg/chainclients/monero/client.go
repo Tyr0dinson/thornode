@@ -90,6 +90,7 @@ type signedTxPayload struct {
 
 type xmrValidatedSignRequest struct {
 	vaultPubKey  common.PubKey
+	vaultStatus  ttypes.VaultStatus
 	fromAddress  string
 	toAddress    string
 	amountAtomic uint64
@@ -428,7 +429,11 @@ func (c *Client) getActiveXMRWorkItem() *xmrWorkItem {
 	return &cp
 }
 
-func (c *Client) xmrLocalCapability(members []string, syncState xmrSyncState) (xmrLocalCapability, error) {
+func xmrVaultAllowsStandbyOrigination(status ttypes.VaultStatus) bool {
+	return status == ttypes.VaultStatus_RetiringVault || status == ttypes.VaultStatus_InactiveVault
+}
+
+func (c *Client) xmrLocalCapability(members []string, syncState xmrSyncState, vaultStatus ttypes.VaultStatus) (xmrLocalCapability, error) {
 	capability := xmrLocalCapability{
 		NodeStatus: ttypes.NodeStatus_Unknown,
 		Role:       xmrNodeRoleUnknown,
@@ -455,7 +460,12 @@ func (c *Client) xmrLocalCapability(members []string, syncState xmrSyncState) (x
 			capability.Role = xmrNodeRoleActiveWatchOnly
 		}
 	case ttypes.NodeStatus_Standby:
-		capability.Role = xmrNodeRoleStandbyWatchOnly
+		if capability.IsVaultSigner && xmrVaultAllowsStandbyOrigination(vaultStatus) {
+			capability.Role = xmrNodeRoleStandbyVaultSigner
+			capability.CanOriginate = syncState == xmrSyncStateAtTip
+		} else {
+			capability.Role = xmrNodeRoleStandbyWatchOnly
+		}
 	default:
 		if capability.IsVaultSigner {
 			capability.Role = xmrNodeRoleActiveSigner
@@ -810,7 +820,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		return
 	}
 
-	capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState)
+	capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState, ceremonyCtx.vaultStatus)
 	if capErr != nil {
 		c.logger.Debug().
 			Err(capErr).
@@ -2103,7 +2113,7 @@ func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrV
 		if ctxErr != nil {
 			return nil, ctxErr
 		}
-		capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState)
+		capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState, vault.Status)
 		if capErr != nil {
 			return nil, capErr
 		}
@@ -2267,7 +2277,7 @@ func (c *Client) ensureXMRKeyImageWorkItem(
 	item.OutputIndex = new(uint32)
 	*item.OutputIndex = outputIndex
 	if c.keyImageWorkStore == nil {
-		item.LeaderEpochHeight = xmrInitialLeaderEpochHeight(anchorHeight)
+		item.LeaderEpochHeight = xmrLeaderEpochHeight(anchorHeight, xmrDefaultLeaderEpochWindowBlocks)
 		return item, nil
 	}
 
@@ -2276,7 +2286,7 @@ func (c *Client) ensureXMRKeyImageWorkItem(
 		return xmrWorkItem{}, err
 	}
 	if !ok {
-		item.LeaderEpochHeight = xmrInitialLeaderEpochHeight(anchorHeight)
+		item.LeaderEpochHeight = xmrLeaderEpochHeight(anchorHeight, xmrDefaultLeaderEpochWindowBlocks)
 		if err := c.keyImageWorkStore.put(item); err != nil {
 			return xmrWorkItem{}, err
 		}
@@ -2287,7 +2297,7 @@ func (c *Client) ensureXMRKeyImageWorkItem(
 		stored.AnchorHeight = anchorHeight
 	}
 	if stored.LeaderEpochHeight <= 0 {
-		stored.LeaderEpochHeight = xmrInitialLeaderEpochHeight(stored.AnchorHeight)
+		stored.LeaderEpochHeight = xmrLeaderEpochHeight(stored.AnchorHeight, xmrDefaultLeaderEpochWindowBlocks)
 	}
 	stored.Kind = kind
 	stored.Phase = phase
@@ -2304,17 +2314,16 @@ func (c *Client) ensureXMRKeyImageWorkItem(
 }
 
 func (c *Client) rotateXMRKeyImageLeaderEpoch(item xmrWorkItem, currentHeight int64) (xmrWorkItem, error) {
-	if c.keyImageWorkStore == nil || currentHeight <= 0 || item.AttemptCount <= 0 {
+	if currentHeight <= 0 {
 		return item, nil
 	}
-	if item.LeaderEpochHeight <= 0 {
-		item.LeaderEpochHeight = xmrInitialLeaderEpochHeight(item.AnchorHeight)
-	}
-	if currentHeight < item.LeaderEpochHeight+xmrLeaderEpochWindowBlocks {
+	targetHeight := xmrLeaderEpochHeight(currentHeight, c.getSigningTransactionPeriod())
+	if item.LeaderEpochHeight == targetHeight {
 		return item, nil
 	}
-	for currentHeight >= item.LeaderEpochHeight+xmrLeaderEpochWindowBlocks {
-		item.LeaderEpochHeight += xmrLeaderEpochWindowBlocks
+	item.LeaderEpochHeight = targetHeight
+	if c.keyImageWorkStore == nil {
+		return item, nil
 	}
 	if err := c.keyImageWorkStore.put(item); err != nil {
 		return xmrWorkItem{}, err
@@ -3022,6 +3031,17 @@ func (c *Client) getChurnInterval() int64 {
 	return constants.GetConstantValues(semver.MustParse("0.0.0")).GetInt64Value(constants.ChurnInterval)
 }
 
+func (c *Client) getSigningTransactionPeriod() int64 {
+	if c.thorchainBridge != nil {
+		if consts, err := c.thorchainBridge.GetConstants(); err == nil {
+			if period := consts[constants.SigningTransactionPeriod.String()]; period > 0 {
+				return period
+			}
+		}
+	}
+	return constants.GetConstantValues(semver.MustParse("0.0.0")).GetInt64Value(constants.SigningTransactionPeriod)
+}
+
 func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
 	if !tx.Chain.Equals(c.chain) {
 		return nil, nil, nil, fmt.Errorf("cannot sign non-xmr tx on monero client: %s", tx.Chain)
@@ -3126,7 +3146,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if syncErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve local xmr sync state before keysign: %w", syncErr)
 	}
-	capability, capErr := c.xmrLocalCapability(members, syncState)
+	capability, capErr := c.xmrLocalCapability(members, syncState, signReqCtx.vaultStatus)
 	if capErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve local xmr capability before keysign: %w", capErr)
 	}
@@ -3307,8 +3327,18 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 		return xmrValidatedSignRequest{}, err
 	}
 
+	vaultStatus := ttypes.VaultStatus_InactiveVault
+	if c.thorchainBridge != nil {
+		vault, err := c.getVaultByPubKey(vaultPubKey)
+		if err != nil {
+			return xmrValidatedSignRequest{}, fmt.Errorf("fail to resolve xmr vault %s: %w", vaultPubKey.String(), err)
+		}
+		vaultStatus = vault.Status
+	}
+
 	return xmrValidatedSignRequest{
 		vaultPubKey:  vaultPubKey,
+		vaultStatus:  vaultStatus,
 		fromAddress:  fromAddress,
 		toAddress:    tx.ToAddress.String(),
 		amountAtomic: amountAtomic,
@@ -3764,7 +3794,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	if syncErr != nil {
 		return nil, false, fmt.Errorf("fail to resolve local xmr sync state for finalized observation: %w", syncErr)
 	}
-	capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState)
+	capability, capErr := c.xmrLocalCapability(ceremonyCtx.members, syncState, ceremonyCtx.vaultStatus)
 	if capErr != nil {
 		return nil, false, fmt.Errorf("fail to resolve local xmr capability for finalized observation: %w", capErr)
 	}
@@ -4196,6 +4226,7 @@ func (c *Client) vaultSigningMembers(vaultPubKey common.PubKey) ([]string, error
 
 type xmrKeyImageCeremonyContext struct {
 	vaultPubKey common.PubKey
+	vaultStatus ttypes.VaultStatus
 	members     []string
 }
 
@@ -4217,6 +4248,7 @@ func (c *Client) resolveXMRKeyImageCeremonyContext(vaultPubKey common.PubKey) (x
 	}
 	return xmrKeyImageCeremonyContext{
 		vaultPubKey: canonicalVaultPubKey,
+		vaultStatus: vault.Status,
 		members:     members,
 	}, nil
 }

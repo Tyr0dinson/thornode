@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -606,27 +607,31 @@ func TestPrepareObservedTxInItemRotatesKeyImageLeaderEpochAfterFailure(t *testin
 	require.NoError(t, err)
 
 	tssServer := &rotatingKeyImageTssServer{}
+	bridge := &keyImageTestBridge{
+		mockMoneroBridge: mockMoneroBridge{
+			blockHeight: 250,
+			constants: map[string]int64{
+				constants.SigningTransactionPeriod.String(): 40,
+			},
+			vaultByPubKey: map[string]ttypes.Vault{
+				vaultPubKey.String(): {
+					PubKey:      vaultPubKey,
+					PubKeyEddsa: vaultPubKey,
+					PubKeyFrost: vaultPubKey,
+					Membership:  []string{"member-a", "member-b", "member-c"},
+				},
+			},
+		},
+		version: semver.MustParse("3.0.0"),
+	}
 	c := &Client{
 		chain:             common.XMRChain,
 		localNodePubKey:   common.PubKey("member-a"),
 		frostSigner:       signer,
 		tssServer:         tssServer,
 		keyImageWorkStore: newTestXMRKeyImageWorkStateStore(t),
-		thorchainBridge: &keyImageTestBridge{
-			mockMoneroBridge: mockMoneroBridge{
-				blockHeight: 450,
-				vaultByPubKey: map[string]ttypes.Vault{
-					vaultPubKey.String(): {
-						PubKey:      vaultPubKey,
-						PubKeyEddsa: vaultPubKey,
-						PubKeyFrost: vaultPubKey,
-						Membership:  []string{"member-a", "member-b", "member-c"},
-					},
-				},
-			},
-			version: semver.MustParse("3.0.0"),
-		},
-		logger: testLogger(),
+		thorchainBridge:   bridge,
+		logger:            testLogger(),
 	}
 
 	newItem := func() *stypes.TxInItem {
@@ -647,6 +652,7 @@ func TestPrepareObservedTxInItemRotatesKeyImageLeaderEpochAfterFailure(t *testin
 	require.False(t, include)
 	require.Nil(t, prepared)
 
+	bridge.blockHeight = 290
 	prepared, include, err = c.PrepareObservedTxInItem(newItem(), true, 250)
 	require.NoError(t, err)
 	require.True(t, include)
@@ -656,8 +662,8 @@ func TestPrepareObservedTxInItemRotatesKeyImageLeaderEpochAfterFailure(t *testin
 	tssServer.mu.Lock()
 	defer tssServer.mu.Unlock()
 	require.Len(t, tssServer.reqs, 2)
-	assert.Equal(t, int64(201), tssServer.reqs[0].BlockHeight)
-	assert.Equal(t, int64(401), tssServer.reqs[1].BlockHeight)
+	assert.Equal(t, int64(241), tssServer.reqs[0].BlockHeight)
+	assert.Equal(t, int64(281), tssServer.reqs[1].BlockHeight)
 }
 
 func TestPrepareObservedTxInItemDefersTrackedOutboundUntilChangeOutputsMaterialize(t *testing.T) {
