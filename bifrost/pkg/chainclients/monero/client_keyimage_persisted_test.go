@@ -32,7 +32,7 @@ func TestKeyImageCatchupNeedsReplayUsesPersistedOutputs(t *testing.T) {
 				TxHash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				OutputIndex: 0,
 				KeyImage:    keyImage,
-				Spent:       false,
+				State:       "unspent",
 			}},
 		})
 	}))

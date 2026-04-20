@@ -260,6 +260,7 @@ pub struct OutgoingTransferStateEntry {
     pub tx_hash: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tx_keys: Vec<String>,
+    pub registered_inventory: bool,
     pub from_address: String,
     pub to_address: String,
     pub amount: u64,
@@ -290,7 +291,6 @@ pub struct OutputEntry {
     pub amount: u64,
     pub height: u64,
     pub key_image: Option<String>,
-    pub spent: bool,
     #[serde(default)]
     pub state: String,
     pub subaddress_major: u32,

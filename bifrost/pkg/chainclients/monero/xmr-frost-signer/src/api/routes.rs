@@ -2137,6 +2137,7 @@ fn outgoing_state_entry_from_record(
     crate::api::types::OutgoingTransferStateEntry {
         tx_hash: tx.tx_hash,
         tx_keys: tx.tx_keys,
+        registered_inventory: tx.registered_inventory,
         from_address: tx.from_address,
         to_address: tx.to_address,
         amount: tx.amount,
@@ -2312,7 +2313,6 @@ fn stored_outputs_for_view(
 }
 
 fn output_entry_from_tracked(o: TrackedOutput) -> OutputEntry {
-    let spent = o.is_spent();
     let state = match o.state {
         OutputState::Unspent => "unspent".to_string(),
         OutputState::Reserved => "reserved".to_string(),
@@ -2324,7 +2324,6 @@ fn output_entry_from_tracked(o: TrackedOutput) -> OutputEntry {
         amount: o.amount,
         height: o.height,
         key_image: o.key_image,
-        spent,
         state,
         subaddress_major: o.subaddress_major,
         subaddress_minor: o.subaddress_minor,
@@ -7912,7 +7911,6 @@ mod tests {
             .expect("outputs should be an array");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["state"], serde_json::json!("unspent"));
-        assert_eq!(entries[0]["spent"], serde_json::json!(false));
     }
 
     #[tokio::test]
@@ -7948,19 +7946,13 @@ mod tests {
             .expect("outputs should be an array");
         assert_eq!(entries.len(), 3);
 
-        let mut seen = HashMap::new();
+        let mut seen = HashSet::new();
         for entry in entries {
-            seen.insert(
-                entry["state"]
-                    .as_str()
-                    .expect("state should be a string")
-                    .to_string(),
-                entry["spent"].as_bool().expect("spent should be a bool"),
-            );
+            seen.insert(entry["state"].as_str().expect("state should be a string"));
         }
-        assert_eq!(seen.get("unspent"), Some(&false));
-        assert_eq!(seen.get("reserved"), Some(&false));
-        assert_eq!(seen.get("spent"), Some(&true));
+        assert!(seen.contains("unspent"));
+        assert!(seen.contains("reserved"));
+        assert!(seen.contains("spent"));
     }
 
     #[tokio::test]
@@ -7996,7 +7988,6 @@ mod tests {
             .expect("outputs should be an array");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["state"], serde_json::json!("spent"));
-        assert_eq!(entries[0]["spent"], serde_json::json!(true));
         assert_eq!(
             entries[0]["key_image"],
             serde_json::json!("persisted-key-image")

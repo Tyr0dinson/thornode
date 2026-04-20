@@ -27,7 +27,7 @@ func TestFrostSignerGetOutputs(t *testing.T) {
 					Amount:          12345,
 					Height:          77,
 					KeyImage:        "bbbb",
-					Spent:           false,
+					State:           "unspent",
 					SubaddressMajor: 2,
 					SubaddressMinor: 0,
 				},

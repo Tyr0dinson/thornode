@@ -337,6 +337,7 @@ type xmrFrostTransfersResponse struct {
 type xmrFrostOutgoingTransferStateEntry struct {
 	TxHash                  string   `json:"tx_hash"`
 	TxKeys                  []string `json:"tx_keys,omitempty"`
+	RegisteredInventory     bool     `json:"registered_inventory"`
 	FromAddress             string   `json:"from_address"`
 	ToAddress               string   `json:"to_address"`
 	Amount                  uint64   `json:"amount"`
@@ -401,10 +402,13 @@ type xmrFrostOutputEntry struct {
 	Amount          uint64 `json:"amount"`
 	Height          uint64 `json:"height"`
 	KeyImage        string `json:"key_image,omitempty"`
-	Spent           bool   `json:"spent"`
 	State           string `json:"state,omitempty"`
 	SubaddressMajor uint32 `json:"subaddress_major"`
 	SubaddressMinor uint32 `json:"subaddress_minor"`
+}
+
+func (o xmrFrostOutputEntry) IsSpent() bool {
+	return strings.EqualFold(strings.TrimSpace(o.State), "spent")
 }
 
 type xmrFrostOutputsResponse struct {

@@ -1607,7 +1607,7 @@ func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostA
 		wantKeyImage, wantedOutput := wanted[key]
 		hasSignerKeyImage := strings.TrimSpace(output.KeyImage) != ""
 		switch {
-		case !wantedOutput && hasSignerKeyImage && !output.Spent:
+		case !wantedOutput && hasSignerKeyImage && !output.IsSpent():
 			return true, nil
 		case !wantedOutput:
 			continue
@@ -1700,7 +1700,7 @@ func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatc
 		localKeys := normalizeTxKeyValues(record.TxKeys)
 		wantKeys, ok := wanted[txHash]
 		if !ok {
-			if len(localKeys) > 0 {
+			if len(localKeys) > 0 && record.RegisteredInventory {
 				removeSet[strings.TrimSpace(record.TxHash)] = struct{}{}
 				needsReplay = true
 			}
@@ -1734,6 +1734,39 @@ func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatc
 		needsReplay:  needsReplay,
 		removeHashes: removeHashes,
 	}, nil
+}
+
+func (c *Client) recoverLocalXMROutboundTxKeys(vaultPubKey common.PubKey, txHash string) ([]string, bool, error) {
+	if c == nil || c.frostSigner == nil || strings.TrimSpace(txHash) == "" {
+		return nil, false, nil
+	}
+
+	canonicalVaultPubKey, err := c.canonicalizeXMROutboundVaultPubKey(vaultPubKey, txHash)
+	if err != nil {
+		return nil, false, err
+	}
+
+	state, err := c.frostSigner.GetOutgoingTransferState(canonicalVaultPubKey.String())
+	if err != nil {
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	normalizedTxHash := normalizeTxID(txHash)
+	for _, record := range state.Outgoing {
+		if !strings.EqualFold(strings.TrimSpace(record.TxHash), normalizedTxHash) {
+			continue
+		}
+		txKeys := normalizeTxKeyValues(record.TxKeys)
+		if len(txKeys) == 0 {
+			return nil, false, nil
+		}
+		return txKeys, true, nil
+	}
+
+	return nil, false, nil
 }
 
 func makeTxKeyCatchupRefs(refs []*common.XmrTxKeyRef) []xmrTxKeyCatchupRef {
@@ -2671,7 +2704,7 @@ func countUnlockedOutputs(outputs []xmrFrostOutputEntry, currentHeight int64) in
 	}
 	count := int64(0)
 	for _, out := range outputs {
-		if out.Spent {
+		if out.IsSpent() {
 			continue
 		}
 		if currentHeight > 0 {
@@ -3581,6 +3614,23 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	isOutboundFromVault := c.isObservedOutboundFromVault(item)
 	if !isInboundToVault && !isOutboundFromVault {
 		return item, true, nil
+	}
+	if isOutboundFromVault && len(item.TxKeys) == 0 {
+		txKeys, recovered, recoverErr := c.recoverLocalXMROutboundTxKeys(item.ObservedVaultPubKey, item.Tx)
+		if recoverErr != nil {
+			c.logger.Warn().
+				Err(recoverErr).
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Msg("failed to recover missing XMR tx-keys from local signer state")
+		} else if recovered {
+			item.TxKeys = txKeys
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Int("tx_key_count", len(txKeys)).
+				Msg("recovered missing XMR tx-keys from local signer state")
+		}
 	}
 	if isInboundToVault && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
 		c.logger.Debug().

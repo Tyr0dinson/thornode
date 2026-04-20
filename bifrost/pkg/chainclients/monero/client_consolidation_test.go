@@ -317,7 +317,7 @@ func unlockedOutputs(height uint64, n int) []xmrFrostOutputEntry {
 			OutputIndex: uint32(i),
 			Amount:      1_000_000_000_000,
 			Height:      height,
-			Spent:       false,
+			State:       "unspent",
 		})
 	}
 	return out
