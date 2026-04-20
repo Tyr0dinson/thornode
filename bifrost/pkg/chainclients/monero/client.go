@@ -1665,9 +1665,14 @@ func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostA
 		wantKeyImage, wantedOutput := wanted[key]
 		hasSignerKeyImage := strings.TrimSpace(output.KeyImage) != ""
 		switch {
-		case !wantedOutput && hasSignerKeyImage && !output.IsSpent():
-			return true, nil
 		case !wantedOutput:
+			// A locally-bound key_image that isn't yet in THORChain inventory
+			// is the normal post-ceremony state while the attestation and
+			// consensus round-trip to the vault's key_images_xmr completes.
+			// It must NOT flip sync_state to syncing_to_tip, because doing
+			// so gates the backlog driver (including for this very vault)
+			// and creates a deadlock where the ceremony that would populate
+			// the inventory can never run.
 			continue
 		case !hasSignerKeyImage:
 			return true, nil
