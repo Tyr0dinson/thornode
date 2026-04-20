@@ -1297,6 +1297,30 @@ func xmrMaxGasToAtomic(maxGas common.Gas) (uint64, error) {
 	return xmrThorchainAmountToAtomic(xmrGasCoin.Amount)
 }
 
+func fallbackOutboundObservationFee(scanner *Scanner) uint64 {
+	if scanner == nil {
+		return 0
+	}
+
+	txSize, feeRate := scanner.GetNetworkFee()
+	if txSize == 0 || feeRate == 0 {
+		return 0
+	}
+
+	totalAtomic := uint64(0)
+	if feeRate > 0 && txSize > math.MaxUint64/feeRate {
+		totalAtomic = math.MaxUint64
+	} else {
+		totalAtomic = txSize * feeRate
+	}
+
+	fee := totalFeeAtomicToThorchain(totalAtomic)
+	if fee == 0 && totalAtomic > 0 {
+		return 1
+	}
+	return fee
+}
+
 func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, feeAtomic uint64, spentRefs []xmrFrostOutputRef) *stypes.TxInItem {
 	vaultPubKey := txVaultPubKey(tx)
 	from := c.getVaultAddress(vaultPubKey)
@@ -1310,7 +1334,7 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 
 	fee := feeAtomic / moneroAtomicToThorchain
 	if fee == 0 && c.scanner != nil {
-		_, fee = c.scanner.GetNetworkFee()
+		fee = fallbackOutboundObservationFee(c.scanner)
 	}
 	item := stypes.NewTxInItem(
 		height,

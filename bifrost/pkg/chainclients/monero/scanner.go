@@ -576,11 +576,11 @@ func totalFeeAtomicToThorchain(feeAtomic uint64) uint64 {
 	return feeAtomic / moneroAtomicToThorchain
 }
 
-func feeRateFromTotalThorchain(totalThorchain uint64) uint64 {
-	if totalThorchain == 0 {
+func feeRateFromTotalAtomic(totalAtomic uint64) uint64 {
+	if totalAtomic == 0 {
 		return 0
 	}
-	return (totalThorchain + typicalVaultOutboundWeight - 1) / typicalVaultOutboundWeight
+	return (totalAtomic + typicalVaultOutboundWeight - 1) / typicalVaultOutboundWeight
 }
 
 func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
@@ -588,11 +588,7 @@ func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 	if totalAtomic == 0 {
 		totalAtomic = defaultXMRFeeTotalThorchain * moneroAtomicToThorchain
 	}
-	totalThorchain := totalFeeAtomicToThorchain(totalAtomic)
-	if totalThorchain == 0 && totalAtomic > 0 {
-		totalThorchain = 1
-	}
-	return typicalVaultOutboundWeight, feeRateFromTotalThorchain(totalThorchain)
+	return typicalVaultOutboundWeight, feeRateFromTotalAtomic(totalAtomic)
 }
 
 func averageNetworkFeeFromBlock(reward uint64, txCount int) uint64 {

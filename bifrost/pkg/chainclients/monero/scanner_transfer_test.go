@@ -88,12 +88,12 @@ func TestGetNetworkFeeUsesTypicalWeightAndPerWeightRate(t *testing.T) {
 	if txSize != typicalVaultOutboundWeight {
 		t.Fatalf("expected tx size %d, got %d", typicalVaultOutboundWeight, txSize)
 	}
-	if feeRate != 3 {
-		t.Fatalf("expected fee rate 3 thorchain-units/weight, got %d", feeRate)
+	if feeRate != 30_000 {
+		t.Fatalf("expected fee rate 30000 piconero/weight, got %d", feeRate)
 	}
 }
 
-func TestGetNetworkFeeConvertsPiconeroToThorchainUnits(t *testing.T) {
+func TestGetNetworkFeePreservesNativePiconeroUnits(t *testing.T) {
 	s := &Scanner{
 		logger:             log.Logger,
 		currentBlockHeight: atomic.NewInt64(0),
@@ -104,11 +104,14 @@ func TestGetNetworkFeeConvertsPiconeroToThorchainUnits(t *testing.T) {
 	if txSize != typicalVaultOutboundWeight {
 		t.Fatalf("expected tx size %d, got %d", typicalVaultOutboundWeight, txSize)
 	}
-	if feeRate != 12 {
-		t.Fatalf("expected fee rate 12 thorchain-units/weight, got %d", feeRate)
+	if feeRate != 120_000 {
+		t.Fatalf("expected fee rate 120000 piconero/weight, got %d", feeRate)
 	}
-	if txSize*feeRate != 18_000 {
-		t.Fatalf("expected total network fee 18000 thorchain units, got %d", txSize*feeRate)
+	if txSize*feeRate != 180_000_000 {
+		t.Fatalf("expected total network fee 180000000 piconero, got %d", txSize*feeRate)
+	}
+	if totalFeeAtomicToThorchain(txSize*feeRate) != 18_000 {
+		t.Fatalf("expected total network fee 18000 thorchain units, got %d", totalFeeAtomicToThorchain(txSize*feeRate))
 	}
 }
 

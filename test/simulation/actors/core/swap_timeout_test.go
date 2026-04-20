@@ -105,6 +105,45 @@ func TestGetRecommendedMinAmountInFromError(t *testing.T) {
 	}
 }
 
+func TestRetryAmountAtRecommendedMin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		current sdkmath.Uint
+		min     sdkmath.Uint
+		want    sdkmath.Uint
+	}{
+		{
+			name:    "below minimum retries above recommended minimum",
+			current: sdkmath.NewUint(62500000),
+			min:     sdkmath.NewUint(11895824400),
+			want:    sdkmath.NewUint(11895824401),
+		},
+		{
+			name:    "exact minimum retries one unit higher",
+			current: sdkmath.NewUint(11895824400),
+			min:     sdkmath.NewUint(11895824400),
+			want:    sdkmath.NewUint(11895824401),
+		},
+		{
+			name:    "stale minimum still nudges current amount upward",
+			current: sdkmath.NewUint(11895824405),
+			min:     sdkmath.NewUint(11895824400),
+			want:    sdkmath.NewUint(11895824406),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := retryAmountAtRecommendedMin(tt.current, tt.min)
+			if !got.Equal(tt.want) {
+				t.Fatalf("expected retry amount %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestAmountWithEncodedRefAtOrAbove(t *testing.T) {
 	t.Parallel()
 

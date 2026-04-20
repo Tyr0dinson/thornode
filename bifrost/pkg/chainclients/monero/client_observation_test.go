@@ -54,3 +54,42 @@ func TestBuildOutboundObservationUsesOriginalMemo(t *testing.T) {
 		t.Fatalf("expected sender %s, got %s", vaultAddr, observation.Sender)
 	}
 }
+
+func TestBuildOutboundObservationConvertsFallbackNetworkFeeToThorchainUnits(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	client := &Client{
+		chain: common.XMRChain,
+		scanner: &Scanner{
+			currentBlockHeight: atomic.NewInt64(123),
+			lastFee:            atomic.NewUint64(120_000 * typicalVaultOutboundWeight),
+		},
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddr,
+		},
+	}
+
+	observation := client.buildOutboundObservation(
+		stypes.TxOutItem{
+			Chain:            common.XMRChain,
+			ToAddress:        common.Address(common.XMRChecksummedDummyAddress('8')),
+			Coins:            common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(123))),
+			OriginalMemo:     "OUT:" + strings.Repeat("C", 64),
+			VaultPubKey:      vaultPubKey,
+			VaultPubKeyEddsa: vaultPubKey,
+		},
+		strings.Repeat("b", 64),
+		0,
+		nil,
+	)
+	if observation == nil {
+		t.Fatal("expected outbound observation")
+	}
+	if len(observation.Gas) != 1 {
+		t.Fatalf("expected one gas coin, got %d", len(observation.Gas))
+	}
+	if observation.Gas[0].Amount.Uint64() != 18_000 {
+		t.Fatalf("expected fallback fee 18000 thorchain units, got %d", observation.Gas[0].Amount.Uint64())
+	}
+}

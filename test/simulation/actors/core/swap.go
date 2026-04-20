@@ -103,14 +103,21 @@ func getRecommendedMinAmountInFromError(err error) (sdkmath.Uint, bool) {
 	return sdkmath.NewUintFromString(matches[1]), true
 }
 
+func retryAmountAtRecommendedMin(currentAmount, minAmount sdkmath.Uint) sdkmath.Uint {
+	if currentAmount.GT(minAmount) {
+		return currentAmount.Add(sdkmath.OneUint())
+	}
+	return minAmount.Add(sdkmath.OneUint())
+}
+
 func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount sdkmath.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
 	currentAmount := amount
 	for attempt := 0; attempt < 4; attempt++ {
 		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, extended)
 		if err != nil {
 			minAmount, ok := getRecommendedMinAmountInFromError(err)
-			if ok && currentAmount.LT(minAmount) {
-				currentAmount = minAmount
+			if ok {
+				currentAmount = retryAmountAtRecommendedMin(currentAmount, minAmount)
 				continue
 			}
 			return openapi.QuoteSwapResponse{}, currentAmount, err

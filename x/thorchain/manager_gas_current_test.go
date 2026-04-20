@@ -385,19 +385,19 @@ func (GasManagerTestSuite) TestGetGasDetailsHighPrecisionAsset(c *C) {
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
 	gasMgr := newGasMgr(constAccessor, k)
 
-	networkFee := NewNetworkFee(common.XMRChain, 5000, 1)
+	networkFee := NewNetworkFee(common.XMRChain, 5000, 10_000)
 	c.Assert(k.SaveNetworkFee(ctx, common.XMRChain, networkFee), IsNil)
 
 	maxGasCoin, gasRate, err := gasMgr.GetGasDetails(ctx, common.XMRChain)
 	c.Assert(err, IsNil)
 	c.Assert(maxGasCoin.Asset.Equals(common.XMRAsset), Equals, true)
-	c.Assert(maxGasCoin.Amount.Uint64(), Equals, uint64(5000))
-	c.Assert(maxGasCoin.Decimals, Equals, int64(12))
-	c.Assert(gasRate, Equals, int64(1))
+	c.Assert(maxGasCoin.Amount.Uint64(), Equals, uint64(7500))
+	c.Assert(maxGasCoin.Decimals, Equals, int64(8))
+	c.Assert(gasRate, Equals, int64(15_000))
 
 	fee, err := gasMgr.GetAssetOutboundFee(ctx, common.XMRAsset, false)
 	c.Assert(err, IsNil)
-	// Lazy-init of outbound-fee-withheld targets 1x multiplier, so fee equals the base fee.
+	// Lazy-init of outbound-fee-withheld targets a 1x multiplier, so the fee equals the base fee.
 	c.Assert(fee.Uint64(), Equals, uint64(5000))
 }
 
@@ -425,7 +425,7 @@ func (GasManagerTestSuite) TestGasAssetPrecisionFactor(c *C) {
 		{chain: common.XRPChain, expected: 1_000_000},
 		{chain: common.BTCChain, expected: common.One},
 		{chain: common.SOLChain, expected: 1_000_000_000},
-		{chain: common.XMRChain, expected: 1_000_000_000_000},
+		{chain: common.XMRChain, expected: common.One},
 	}
 
 	for _, tc := range testCases {

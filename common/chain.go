@@ -257,9 +257,8 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 	return thorchain.Mul(gasRateUnitsPerOne).QuoUint64(One)
 }
 
-// GetGasAssetDecimal returns decimals for the gas asset of the given chain. Currently
-// Gaia is 1e6 and all others are 1e8. If an external chain's gas asset is larger than
-// 1e8, just return cosmos.DefaultCoinDecimals.
+// GetGasAssetDecimal returns the precision THORNode uses when storing gas-asset amounts.
+// External chains are normalized to 1e8 unless they use fewer decimals natively.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
 	case GAIAChain, NOBLEChain, TRONChain, ADAChain:
@@ -268,8 +267,6 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 6
 	case SOLChain, SUIChain:
 		return 9
-	case XMRChain:
-		return 12
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
