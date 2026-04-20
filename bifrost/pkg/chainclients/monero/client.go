@@ -1773,10 +1773,11 @@ func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatc
 		localKeys := normalizeTxKeyValues(record.TxKeys)
 		wantKeys, ok := wanted[txHash]
 		if !ok {
-			if len(localKeys) > 0 && record.RegisteredInventory {
-				removeSet[strings.TrimSpace(record.TxHash)] = struct{}{}
-				needsReplay = true
-			}
+			// A locally-bound tx-key ahead of on-chain inventory is WIP
+			// (signed locally or co-attested from a peer) waiting for the
+			// attestation pipeline to publish it. Do not flag it as stale
+			// replay work — that would gate the very origination that would
+			// close the pipeline, deadlocking sync_state at syncing_to_tip.
 			continue
 		}
 		if len(localKeys) == 0 {

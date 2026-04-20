@@ -2962,7 +2962,7 @@ func TestCatchupTxKeysReplaysAfterSignerReset(t *testing.T) {
 	assert.Equal(t, txHash, requests[1].TxHash)
 }
 
-func TestCatchupTxKeysPrunesStaleSignerOutboundsBeforeReplay(t *testing.T) {
+func TestCatchupTxKeysKeepsLocallyBoundTxKeysAheadOfInventory(t *testing.T) {
 	t.Parallel()
 
 	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -3079,11 +3079,12 @@ func TestCatchupTxKeysPrunesStaleSignerOutboundsBeforeReplay(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.Len(t, pruneRequests, 1)
-	assert.Equal(t, frostKey.String(), pruneRequests[0].VaultPubKey)
-	assert.Equal(t, []string{staleTxHash}, pruneRequests[0].TxHashes)
-	assert.True(t, pruneRequests[0].ObservedMinedOnly)
-	assert.True(t, pruneRequests[0].TxKeyBackedOnly)
+	// A locally-bound tx-key ahead of on-chain inventory (staleTxHash here)
+	// is WIP awaiting attestation propagation. Do not prune it and do not
+	// flag it as replay work — that would block the very origination path
+	// that publishes it to chain. Cluster self-heals once the pipeline
+	// closes.
+	assert.Empty(t, pruneRequests, "locally-bound tx-keys ahead of inventory must not trigger pruning")
 	require.Len(t, validateRequests, 1)
 	assert.Equal(t, txHash, validateRequests[0].TxHash)
 }
