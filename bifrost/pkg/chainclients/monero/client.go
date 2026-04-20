@@ -1773,11 +1773,6 @@ func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatc
 		localKeys := normalizeTxKeyValues(record.TxKeys)
 		wantKeys, ok := wanted[txHash]
 		if !ok {
-			// A locally-bound tx-key ahead of on-chain inventory is WIP
-			// (signed locally or co-attested from a peer) waiting for the
-			// attestation pipeline to publish it. Do not flag it as stale
-			// replay work — that would gate the very origination that would
-			// close the pipeline, deadlocking sync_state at syncing_to_tip.
 			continue
 		}
 		if len(localKeys) == 0 {
@@ -3867,15 +3862,11 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("reusing cached XMR key-images for finalized observation")
 		return item, true, nil
 	}
-	if len(pendingOutputs) == 0 {
-		c.logger.Info().
-			Str("tx_hash", normalizeTxID(item.Tx)).
-			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
-			Int("tracked_output_count", len(outputs)).
-			Msg("tracked XMR outputs already have local key-images; waiting for finalized proof propagation")
-		return nil, false, nil
+	ceremonyOutputs := pendingOutputs
+	if len(ceremonyOutputs) == 0 {
+		ceremonyOutputs = outputs
 	}
-	if len(pendingOutputs) != len(outputs) {
+	if len(pendingOutputs) != 0 && len(pendingOutputs) != len(outputs) {
 		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
 			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
@@ -3913,7 +3904,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	proofs, err := c.generateObservedTxKeyImages(
 		ceremonyCtx.vaultPubKey,
 		normalizeTxID(item.Tx),
-		pendingOutputs,
+		ceremonyOutputs,
 		ceremonyCtx.members,
 		finaliseHeight,
 		xmrWorkKindFinalizeObservation,
@@ -3939,7 +3930,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		}
 		return nil, false, err
 	}
-	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), pendingOutputs, proofs)
+	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), ceremonyOutputs, proofs)
 	item.XmrKeyImages = proofs
 	c.logger.Info().
 		Str("tx_hash", normalizeTxID(item.Tx)).

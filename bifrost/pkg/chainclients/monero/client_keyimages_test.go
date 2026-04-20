@@ -3079,12 +3079,7 @@ func TestCatchupTxKeysKeepsLocallyBoundTxKeysAheadOfInventory(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	// A locally-bound tx-key ahead of on-chain inventory (staleTxHash here)
-	// is WIP awaiting attestation propagation. Do not prune it and do not
-	// flag it as replay work — that would block the very origination path
-	// that publishes it to chain. Cluster self-heals once the pipeline
-	// closes.
-	assert.Empty(t, pruneRequests, "locally-bound tx-keys ahead of inventory must not trigger pruning")
+	assert.Empty(t, pruneRequests)
 	require.Len(t, validateRequests, 1)
 	assert.Equal(t, txHash, validateRequests[0].TxHash)
 }
