@@ -1251,15 +1251,15 @@ func selectObservedOutboundForVault(
 		}
 	}
 
-	if fallback != nil && vaultPubKey.IsEmpty() {
-		return fallback, nil
-	}
 	if fallback != nil {
-		return nil, fmt.Errorf(
-			"observed tx voter %s has no xmr outbound observation for vault %s",
-			txHash,
-			vaultPubKey.String(),
-		)
+		// The caller only needs tx-level metadata (from/to/amount/fee/memo),
+		// which is identical regardless of which vault's scanner recorded
+		// the observation. A MIGRATE outbound is typically observed against
+		// the RECEIVING vault (as an inbound) rather than the signing vault
+		// — rejecting here would abort the entire syncXMRState loop for the
+		// signing vault, preventing any inventory push (including unrelated
+		// key-images) from ever propagating to sidecars.
+		return fallback, nil
 	}
 	return nil, fmt.Errorf("observed tx voter %s has no xmr outbound observation", txHash)
 }
