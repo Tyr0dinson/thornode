@@ -3944,6 +3944,31 @@ func (c *Client) ValidateObservedTxIn(tx common.ObservedTx) error {
 	return c.validateObservedTxKeyImages(tx, true, false)
 }
 
+func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
+	if item == nil || c.thorchainBridge == nil {
+		return false
+	}
+	txHash := normalizeTxID(item.Tx)
+	if txHash == "" {
+		return false
+	}
+	vault, err := c.thorchainBridge.GetVault(item.ObservedVaultPubKey.String())
+	if err != nil {
+		return false
+	}
+	for _, ref := range vault.TxKeysXmr {
+		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
+			return true
+		}
+	}
+	for _, proof := range vault.KeyImagesXmr {
+		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Client) postKeysignFailure(tx stypes.TxOutItem, height int64, signErr error) error {
 	if signErr == nil || c.thorchainBridge == nil {
 		return signErr

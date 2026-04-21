@@ -721,6 +721,12 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 			// and the tx is not yet final, so we should not send it again.
 			continue
 		}
+		if reconciler, ok := chain.(chainclienttypes.DeckReconciler); ok {
+			if reconciler.IsDeckItemStale(item) {
+				invalidIndices = append(invalidIndices, i)
+				continue
+			}
+		}
 		if preparer, ok := chain.(chainclienttypes.ObservationPreparer); ok {
 			prepared, include, prepErr := preparer.PrepareObservedTxInItem(item, finalized, finaliseHeight)
 			if prepErr != nil {
