@@ -3304,7 +3304,7 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 		if err != nil {
 			return xmrValidatedSignRequest{}, fmt.Errorf("fail to parse outbound memo(%s): %w", memoForParsing, err)
 		}
-		if parsedMemo.IsInbound() {
+		if parsedMemo.IsInbound() && !parsedMemo.IsType(memo.TxNoOp) {
 			return xmrValidatedSignRequest{}, fmt.Errorf("inbound memo should not be used for outbound tx")
 		}
 	}
