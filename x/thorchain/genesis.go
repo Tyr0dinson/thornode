@@ -152,7 +152,7 @@ func DefaultGenesisState() GenesisState {
 		SwapQueueItems:          make([]MsgSwap, 0),
 		StreamingSwaps:          make([]StreamingSwap, 0),
 		NetworkFees:             make([]NetworkFee, 0),
-		ChainContracts:          make([]ChainContract, 0),
+		ChainContracts:          defaultChainContracts(),
 		THORNames:               make([]THORName, 0),
 		SwapperClout:            make([]SwapperClout, 0),
 		TradeAccounts:           make([]TradeAccount, 0),
