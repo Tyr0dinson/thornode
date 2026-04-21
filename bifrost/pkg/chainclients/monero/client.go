@@ -1134,8 +1134,14 @@ func (c *Client) getTxKeyCatchupOutboundMeta(vaultPubKey common.PubKey, txHash s
 		return meta, nil
 	}
 
+	fromAddress := observed.Tx.FromAddress.String()
+	if common.IsXMRUnknownSenderAddress(common.Address(fromAddress)) {
+		if vaultAddr, addrErr := vaultPubKey.GetAddress(common.XMRChain); addrErr == nil && !vaultAddr.IsEmpty() {
+			fromAddress = vaultAddr.String()
+		}
+	}
 	return xmrFrostOutboundMeta{
-		FromAddress:    observed.Tx.FromAddress.String(),
+		FromAddress:    fromAddress,
 		ToAddress:      observed.Tx.ToAddress.String(),
 		Amount:         amountAtomic,
 		Fee:            feeAtomic,
