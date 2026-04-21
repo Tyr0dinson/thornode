@@ -259,7 +259,11 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 	}
 
 	for j, txInItem := range deck.TxArray {
-		if !txInItem.EqualsObservedTx(tx) {
+		if isFinal {
+			if !txInItem.MatchesCommittedObservedTx(tx) {
+				continue
+			}
+		} else if !txInItem.EqualsObservedTx(tx) {
 			continue
 		}
 		if isFinal {

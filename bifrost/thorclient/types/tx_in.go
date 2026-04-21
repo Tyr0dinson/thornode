@@ -156,6 +156,20 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	return true
 }
 
+func (t *TxInItem) MatchesCommittedObservedTx(other common.ObservedTx) bool {
+	txId, err := common.NewTxID(t.Tx)
+	if err != nil {
+		return false
+	}
+	if !txId.Equals(other.Tx.ID) {
+		return false
+	}
+	if !t.ObservedVaultPubKey.Equals(other.ObservedPubKey) {
+		return false
+	}
+	return true
+}
+
 func (t *TxInItem) Copy() *TxInItem {
 	var txKeys []string
 	if len(t.TxKeys) > 0 {
