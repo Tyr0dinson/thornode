@@ -519,7 +519,8 @@ func (c *Client) xmrLocalSyncStateForVault(states []xmrFrostVaultStateEntry, tar
 	if err != nil {
 		return xmrSyncStateSyncingToTip, "failed to query xmr chain tip", err
 	}
-	if scannerHeight <= 0 || chainHeight <= 0 || scannerHeight != chainHeight {
+	const xmrScannerTipToleranceBlocks = 3
+	if scannerHeight <= 0 || chainHeight <= 0 || chainHeight-scannerHeight > xmrScannerTipToleranceBlocks {
 		return xmrSyncStateSyncingToTip, fmt.Sprintf("xmr scanner is not at tip (scan=%d tip=%d)", scannerHeight, chainHeight), nil
 	}
 

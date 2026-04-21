@@ -156,7 +156,7 @@ func TestXMRSolvencySystemIdleRejectsNonIdleStates(t *testing.T) {
 	t.Run("scanner behind tip", func(t *testing.T) {
 		c, server := newTestXMRSolvencyClient(t, 500, asgards, balanceByPK, nil)
 		defer server.Close()
-		c.scanner.currentBlockHeight.Store(499)
+		c.scanner.currentBlockHeight.Store(490)
 
 		idle, reason, err := c.xmrSolvencySystemIdle()
 		if err != nil {
