@@ -3,28 +3,29 @@
 
 package thorchain
 
+// RouterV6.1 stagenet deployment (CREATE2, same address on ETH/AVAX/BSC/BASE):
+//   https://etherscan.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//   https://snowtrace.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//   https://bscscan.com/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//   https://basescan.org/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//
+// *OldRouter holds the router currently active on our vault (seeded at
+// genesis via DefaultGenesisState().ChainContracts — see
+// default_chain_contracts_stagenet.go). *NewRouter is the upgrade target
+// consumed by RouterUpgradeController when MIMIR_UPGRADE_CONTRACT_<CHAIN>
+// is set. With no upgrade planned, newRouter is intentionally empty — if
+// the mimir is mistakenly set, common.NewAddress("") errors and the
+// controller short-circuits.
 var (
-	// ETH Router
-	// https://etherscan.io/address/0xB11a1735C2e3BCC5FC8c1d147fb64629d3d0caC5
-	ethOldRouter = `0xB11a1735C2e3BCC5FC8c1d147fb64629d3d0caC5`
-	// https://etherscan.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
-	ethNewRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	ethOldRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	ethNewRouter = ``
 
-	// AVAX Router
-	// https://snowtrace.io/address/0xd6a6c0b3bb4150a98a379811934e440989209db6
-	avaxOldRouter = `0xd6a6c0b3bb4150a98a379811934e440989209db6`
-	// https://snowtrace.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
-	avaxNewRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	avaxOldRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	avaxNewRouter = ``
 
-	// BSC Router
-	// https://bscscan.com/address/0x00335da4078f696b98ff619616f1c558e57b9e22
-	bscOldRouter = `0x00335da4078f696b98ff619616f1c558e57b9e22`
-	// https://bscscan.com/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
-	bscNewRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	bscOldRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	bscNewRouter = ``
 
-	// BASE Router
-	// https://basescan.org/address/0xe36dcbf3c0284f756935811d9b9e80829d39bdc5
-	baseOldRouter = `0xe36dcbf3c0284f756935811d9b9e80829d39bdc5`
-	// https://basescan.org/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
-	baseNewRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	baseOldRouter = `0x0DC6108C9225Ce93Da589B4CE83c104b34693117`
+	baseNewRouter = ``
 )
