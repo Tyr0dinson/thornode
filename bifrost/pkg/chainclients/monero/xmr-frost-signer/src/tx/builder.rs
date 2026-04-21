@@ -237,13 +237,9 @@ pub async fn build_unsigned_transaction(
 
     let mut fee = signable.necessary_fee();
     let final_amount = if sweep_if_final {
-        let spendable_total = u64::try_from(
-            selected_total.min(u128::from(requested_total)),
-        )
-        .unwrap_or(requested_total);
-        let mut send_amount = spendable_total
+        let mut send_amount = requested_total
             .checked_sub(fee)
-            .ok_or_else(|| anyhow::anyhow!("actual fee exceeds spendable total"))?;
+            .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))?;
         for _ in 0..2 {
             signable = build_signable_for_selection(
                 rpc,
@@ -261,9 +257,9 @@ pub async fn build_unsigned_transaction(
             )
             .await?;
             fee = signable.necessary_fee();
-            let adjusted_amount = spendable_total
+            let adjusted_amount = requested_total
                 .checked_sub(fee)
-                .ok_or_else(|| anyhow::anyhow!("actual fee exceeds spendable total"))?;
+                .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))?;
             if adjusted_amount == send_amount {
                 break;
             }
