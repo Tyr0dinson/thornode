@@ -3343,7 +3343,7 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 		return xmrValidatedSignRequest{}, fmt.Errorf("derived monero vault address %s is not on %s", fromAddress, c.chain.String())
 	}
 
-	if err = c.ensureXMRVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas); err != nil {
+	if err = c.ensureXMRVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas, shouldSweepXMRMigration(tx, xmrMaxGasToAtomicOrZero(tx.MaxGas))); err != nil {
 		return xmrValidatedSignRequest{}, err
 	}
 
@@ -3389,7 +3389,7 @@ func (c *Client) lookupFrostPubKeyFor(pk common.PubKey) common.PubKey {
 	return common.EmptyPubKey
 }
 
-func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic uint64, maxGas common.Gas) error {
+func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic uint64, maxGas common.Gas, sweepIfFinal bool) error {
 	if c.frostSigner == nil {
 		return nil
 	}
@@ -3431,6 +3431,9 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	}
 
 	if availableAtomic < requiredAtomic {
+		if sweepIfFinal && availableAtomic > maxGasAtomic {
+			return nil
+		}
 		totalAtomic := balance.Balance
 		lockedAtomic := totalAtomic - availableAtomic
 		if lockedAtomic > 0 {
@@ -3555,6 +3558,14 @@ func (c *Client) observeXMRActualFeeEstimate(height int64, feeRatePerWeight, fee
 		Uint64("rate", transactionRate).
 		Uint64("fee_atomic", feeAtomic).
 		Msg("posted observed XMR network fee estimate")
+}
+
+func xmrMaxGasToAtomicOrZero(maxGas common.Gas) uint64 {
+	v, err := xmrMaxGasToAtomic(maxGas)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 func shouldSweepXMRMigration(tx stypes.TxOutItem, maxGasAtomic uint64) bool {
