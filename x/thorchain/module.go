@@ -71,8 +71,13 @@ func (a AppModuleBasic) RegisterInterfaces(reg cdctypes.InterfaceRegistry) {
 }
 
 // DefaultGenesis returns default genesis state as raw bytes for the module.
+// Uses the local DefaultGenesisState (not types.DefaultGenesis which returns
+// an empty struct) so per-network defaults populated there — such as the
+// pre-seeded ChainContracts on stagenet — are reflected in the genesis.json
+// produced by `thornode init`.
 func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
-	return cdc.MustMarshalJSON(DefaultGenesis())
+	gs := DefaultGenesisState()
+	return cdc.MustMarshalJSON(&gs)
 }
 
 // ValidateGenesis check of the Genesis
