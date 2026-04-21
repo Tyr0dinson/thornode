@@ -117,7 +117,12 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 								ctx.Logger().Error("fail to get active xmr vault address for inactive refund reroute", "error", targetErr, "vault_pubkey", targetVault.PubKey.String(), "in_hash", tx.Tx.ID.String())
 							} else {
 								toi.ToAddress = targetAddr
-								toi.Memo = NewNoOpMemo("").String()
+								// Preserve refund semantics for outbound reconciliation, but leave the
+								// on-chain memo blank so the active vault does not see a synthetic noop.
+								if toi.OriginalMemo == "" {
+									toi.OriginalMemo = toi.Memo
+								}
+								toi.Memo = ""
 								usesSourceSender = false
 								ctx.Logger().Info("rerouting inactive xmr refund to active vault", "in_hash", tx.Tx.ID.String(), "source_vault", vault.PubKey.String(), "target_vault", targetVault.PubKey.String(), "target_address", targetAddr.String())
 							}

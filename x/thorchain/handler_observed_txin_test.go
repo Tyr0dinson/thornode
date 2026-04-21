@@ -224,7 +224,9 @@ func (s *HandlerObservedTxInSuite) TestXMRInactiveVaultUnknownSenderReroutesToAc
 	c.Assert(items, HasLen, 1)
 	c.Check(items[0].Chain.Equals(common.XMRChain), Equals, true)
 	c.Check(items[0].ToAddress.Equals(activeAddr), Equals, true)
-	c.Check(items[0].Memo, Equals, "noop")
+	c.Check(items[0].GetMemo(), Equals, NewRefundMemo(tx.Tx.ID).String())
+	c.Check(items[0].OriginalMemo, Equals, NewRefundMemo(tx.Tx.ID).String())
+	c.Check(items[0].Memo, Not(Equals), "noop")
 	c.Check(items[0].VaultPubKey.Equals(sourceVault.PubKey), Equals, true)
 	c.Check(items[0].VaultPubKeyFrost.Equals(sourceVault.PubKeyFrost), Equals, true)
 }
