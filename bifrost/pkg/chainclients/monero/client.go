@@ -478,6 +478,10 @@ func (c *Client) xmrLocalCapability(members []string, syncState xmrSyncState, va
 }
 
 func (c *Client) xmrLocalSyncState(states []xmrFrostVaultStateEntry) (xmrSyncState, string, error) {
+	return c.xmrLocalSyncStateForVault(states, common.EmptyPubKey)
+}
+
+func (c *Client) xmrLocalSyncStateForVault(states []xmrFrostVaultStateEntry, target common.PubKey) (xmrSyncState, string, error) {
 	if c.frostSigner == nil {
 		return xmrSyncStateSyncingToTip, "xmr frost signer is not initialized", nil
 	}
@@ -489,12 +493,16 @@ func (c *Client) xmrLocalSyncState(states []xmrFrostVaultStateEntry) (xmrSyncSta
 		states = stateResp.Vaults
 	}
 	for _, state := range states {
-		if state.Rescan {
-			return xmrSyncStateSyncingToTip, fmt.Sprintf("vault %s is syncing_to_tip", strings.TrimSpace(state.VaultPubKey)), nil
+		if !state.Rescan {
+			continue
 		}
+		if !target.IsEmpty() && strings.TrimSpace(state.VaultPubKey) != target.String() {
+			continue
+		}
+		return xmrSyncStateSyncingToTip, fmt.Sprintf("vault %s is syncing_to_tip", strings.TrimSpace(state.VaultPubKey)), nil
 	}
 	if c.scanner == nil || c.scanner.frostSigner == nil || c.scanner.bridge == nil {
-		if pending, reason, err := c.xmrHasPendingReplayWork(); pending || err != nil {
+		if pending, reason, err := c.xmrHasPendingReplayWorkForVault(target); pending || err != nil {
 			if err != nil {
 				return xmrSyncStateSyncingToTip, "failed to inspect xmr replay work", err
 			}
@@ -515,7 +523,7 @@ func (c *Client) xmrLocalSyncState(states []xmrFrostVaultStateEntry) (xmrSyncSta
 		return xmrSyncStateSyncingToTip, fmt.Sprintf("xmr scanner is not at tip (scan=%d tip=%d)", scannerHeight, chainHeight), nil
 	}
 
-	if pending, reason, err := c.xmrHasPendingReplayWork(); pending || err != nil {
+	if pending, reason, err := c.xmrHasPendingReplayWorkForVault(target); pending || err != nil {
 		if err != nil {
 			return xmrSyncStateSyncingToTip, "failed to inspect xmr replay work", err
 		}
@@ -2026,11 +2034,24 @@ func xmrVaultStateIndex(states []xmrFrostVaultStateEntry) map[string]xmrFrostVau
 }
 
 func (c *Client) xmrHasPendingReplayWork() (bool, string, error) {
-	if c.hasPendingXMRKeyImageCatchup() {
-		return true, "xmr key-image replay is still pending", nil
-	}
-	if c.hasPendingXMRTxKeyCatchup() {
-		return true, "xmr tx-key replay is still pending", nil
+	return c.xmrHasPendingReplayWorkForVault(common.EmptyPubKey)
+}
+
+func (c *Client) xmrHasPendingReplayWorkForVault(target common.PubKey) (bool, string, error) {
+	if target.IsEmpty() {
+		if c.hasPendingXMRKeyImageCatchup() {
+			return true, "xmr key-image replay is still pending", nil
+		}
+		if c.hasPendingXMRTxKeyCatchup() {
+			return true, "xmr tx-key replay is still pending", nil
+		}
+	} else {
+		if c.hasPendingXMRKeyImageCatchupForVault(target.String()) {
+			return true, fmt.Sprintf("xmr key-image replay pending for vault %s", target.String()), nil
+		}
+		if c.hasPendingXMRTxKeyCatchupForVault(target.String()) {
+			return true, fmt.Sprintf("xmr tx-key replay pending for vault %s", target.String()), nil
+		}
 	}
 	if c.thorchainBridge == nil || c.frostSigner == nil {
 		return false, "", nil
@@ -2043,6 +2064,9 @@ func (c *Client) xmrHasPendingReplayWork() (bool, string, error) {
 	for _, vault := range vaults {
 		vaultPubKey := keyImageCatchupVaultPubKey(vault)
 		if vaultPubKey.IsEmpty() {
+			continue
+		}
+		if !target.IsEmpty() && !vaultPubKey.Equals(target) {
 			continue
 		}
 
@@ -3138,7 +3162,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if memberErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve vault signing members for FROST signing: %w", memberErr)
 	}
-	syncState, syncReason, syncErr := c.xmrLocalSyncState(nil)
+	syncState, syncReason, syncErr := c.xmrLocalSyncStateForVault(nil, signReqCtx.vaultPubKey)
 	if syncErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve local xmr sync state before keysign: %w", syncErr)
 	}
@@ -3786,7 +3810,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("canonicalized XMR key-image vault context")
 		item.ObservedVaultPubKey = ceremonyCtx.vaultPubKey
 	}
-	syncState, syncReason, syncErr := c.xmrLocalSyncState(nil)
+	syncState, syncReason, syncErr := c.xmrLocalSyncStateForVault(nil, ceremonyCtx.vaultPubKey)
 	if syncErr != nil {
 		return nil, false, fmt.Errorf("fail to resolve local xmr sync state for finalized observation: %w", syncErr)
 	}
@@ -4933,6 +4957,13 @@ func (c *Client) hasPendingXMRKeyImageCatchup() bool {
 	return false
 }
 
+func (c *Client) hasPendingXMRKeyImageCatchupForVault(vaultPubKey string) bool {
+	c.keyImageCatchupMu.Lock()
+	defer c.keyImageCatchupMu.Unlock()
+	state, ok := c.keyImageCatchupState[vaultPubKey]
+	return ok && state.pending
+}
+
 func (c *Client) hasPendingXMRTxKeyCatchup() bool {
 	c.txKeyCatchupMu.Lock()
 	defer c.txKeyCatchupMu.Unlock()
@@ -4943,6 +4974,13 @@ func (c *Client) hasPendingXMRTxKeyCatchup() bool {
 		}
 	}
 	return false
+}
+
+func (c *Client) hasPendingXMRTxKeyCatchupForVault(vaultPubKey string) bool {
+	c.txKeyCatchupMu.Lock()
+	defer c.txKeyCatchupMu.Unlock()
+	state, ok := c.txKeyCatchupState[vaultPubKey]
+	return ok && state.pending
 }
 
 func (c *Client) xmrSolvencyHasPendingOutboundWork() (bool, string, error) {
