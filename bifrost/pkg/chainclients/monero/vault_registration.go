@@ -96,16 +96,24 @@ func txKeyEntriesFromVault(
 		chain:           chain,
 		thorchainBridge: bridge,
 	}
+	vaultAddress, err := vaultPubKey.GetAddress(chain)
+	if err != nil {
+		return nil, fmt.Errorf("fail to derive vault address for %s: %w", vaultPubKey.String(), err)
+	}
 	entries := make([]xmrFrostRegisterTxKeyEntry, 0, len(vault.TxKeysXmr))
 	for _, ref := range makeTxKeyCatchupRefs(vault.TxKeysXmr) {
 		meta, err := helper.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to build tx-key registration metadata for %s: %w", ref.txHash, err)
 		}
+		fromAddress := meta.FromAddress
+		if common.IsXMRUnknownSenderAddress(common.Address(fromAddress)) {
+			fromAddress = vaultAddress.String()
+		}
 		entries = append(entries, xmrFrostRegisterTxKeyEntry{
 			TxHash:      ref.txHash,
 			TxKeys:      append([]string(nil), ref.txKeys...),
-			FromAddress: meta.FromAddress,
+			FromAddress: fromAddress,
 			ToAddress:   meta.ToAddress,
 			Amount:      meta.Amount,
 			Fee:         meta.Fee,
