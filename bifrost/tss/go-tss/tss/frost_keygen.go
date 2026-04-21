@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -409,6 +410,12 @@ func (c *FrostKeygenCoordinator) Execute(
 	if failResp != nil {
 		return *failResp
 	}
+	if minMoneroHeight <= 0 {
+		return FrostKeygenResponse{
+			Status: tcommon.Fail,
+			Blame:  buildBlame("frost keygen result has no positive observed monero height", frostDKGRound3, nil),
+		}
+	}
 
 	expectedAddress := strings.TrimSpace(req.ExpectedAddr)
 	if expectedAddress != "" && expectedAddress != address {
@@ -435,11 +442,24 @@ func (c *FrostKeygenCoordinator) Execute(
 			Blame:  buildBlame("frost dkg finalize returned unsuccessful response", frostDKGRound3, nil),
 		}
 	}
+	keyBytesHex := strings.TrimSpace(finalizeResp.KeyBytesHex)
+	if keyBytesHex == "" {
+		return FrostKeygenResponse{
+			Status: tcommon.Fail,
+			Blame:  buildBlame("frost dkg finalize returned empty key bytes", frostDKGRound3, nil),
+		}
+	}
+	if _, err := hex.DecodeString(keyBytesHex); err != nil {
+		return FrostKeygenResponse{
+			Status: tcommon.Fail,
+			Blame:  buildBlame("frost dkg finalize returned invalid key bytes hex", frostDKGRound3, nil),
+		}
+	}
 
 	return FrostKeygenResponse{
 		Address:              address,
 		GroupKey:             groupKey,
-		KeyBytesHex:          finalizeResp.KeyBytesHex,
+		KeyBytesHex:          keyBytesHex,
 		ObservedMoneroHeight: minMoneroHeight,
 		Status:               tcommon.Success,
 		Blame:                blame.Blame{},
@@ -1123,6 +1143,9 @@ func normalizeDKGResultPayload(result FrostDKGResult) (FrostKeygenResponse, stri
 		if groupKey == "" {
 			return FrostKeygenResponse{}, "", fmt.Errorf("frost dkg success result has empty group key")
 		}
+		if result.ObservedMoneroHeight <= 0 {
+			return FrostKeygenResponse{}, "", fmt.Errorf("frost dkg success result has no positive observed monero height")
+		}
 		normalized.Address = address
 		normalized.GroupKey = strings.ToLower(groupKey)
 		normalized.ObservedMoneroHeight = result.ObservedMoneroHeight
@@ -1138,11 +1161,13 @@ func normalizeDKGResultPayload(result FrostDKGResult) (FrostKeygenResponse, stri
 		Status   tcommon.Status `json:"status"`
 		Address  string         `json:"address"`
 		GroupKey string         `json:"group_key"`
+		Height   int64          `json:"observed_monero_height"`
 		Blame    blame.Blame    `json:"blame"`
 	}{
 		Status:   normalized.Status,
 		Address:  normalized.Address,
 		GroupKey: normalized.GroupKey,
+		Height:   normalized.ObservedMoneroHeight,
 		Blame:    normalized.Blame,
 	})
 	if err != nil {

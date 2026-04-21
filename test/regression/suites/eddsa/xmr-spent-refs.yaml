@@ -13,7 +13,7 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
-# Verify vault has XMR chain and EdDSA pubkey
+# Verify vault has XMR chain and FROST pubkey
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:

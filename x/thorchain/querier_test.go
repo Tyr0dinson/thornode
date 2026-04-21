@@ -1303,6 +1303,7 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 	c.Assert(s.k.SetNodeAccount(s.ctx, node), IsNil)
 	vault := GetRandomVault()
 	vault.PubKey = node.PubKeySet.Secp256k1
+	vault.PubKeyFrost = GetRandomEd25519PubKey()
 	vault.Type = AsgardVault
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One*100)),
@@ -1329,6 +1330,7 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 
 	// Verify conformance to openapi spec
 	c.Assert(r.Asgard[0].PubKey, Equals, queryVaultPubkeys.Asgard[0].PubKey)
+	c.Assert(r.Asgard[0].GetPubKeyFrost(), Equals, queryVaultPubkeys.Asgard[0].PubKeyFrost)
 	c.Assert(*r.Asgard[0].Routers[0].Chain, Equals, queryVaultPubkeys.Asgard[0].Routers[0].Chain)
 	c.Assert(*r.Asgard[0].Routers[0].Router, Equals, queryVaultPubkeys.Asgard[0].Routers[0].Router)
 }

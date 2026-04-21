@@ -972,7 +972,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		return common.PubKeys{"pk1", "pk2", "pk3"}, nil
 	}
 
-	t.Run("callback fires for XMR outbound with spent refs", func(t *testing.T) {
+	t.Run("callback fires for locally attested XMR outbound with spent refs", func(t *testing.T) {
 		var callbackTx *common.ObservedTx
 		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
 			callbackTx = &tx
@@ -987,12 +987,11 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 			ObservedPubKey:  "pk1",
 			SpentOutputRefs: refs,
 		}
-		privKey := secp256k1.GenPrivKey()
 		att := common.AttestTx{
 			ObsTx:                  tx,
 			Inbound:                false,
 			AllowFutureObservation: true,
-			Attestation:            &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+			Attestation:            &common.Attestation{PubKey: ag.pubKey, Signature: []byte("sig")},
 		}
 		ag.handleObservedTxAttestation(context.Background(), att)
 
@@ -1001,6 +1000,29 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		require.NotNil(t, callbackTx)
 		assert.Equal(t, 2, len(callbackTx.SpentOutputRefs))
 		assert.Equal(t, "aaa111", callbackTx.SpentOutputRefs[0].TxHash)
+	})
+
+	t.Run("callback does not fire for peer XMR attestation before quorum commit", func(t *testing.T) {
+		var called bool
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+			called = true
+		})
+
+		tx := common.ObservedTx{
+			Tx:              common.Tx{ID: "xmr-peer-out-1", Chain: common.XMRChain},
+			ObservedPubKey:  "pk1",
+			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0}},
+		}
+		privKey := secp256k1.GenPrivKey()
+		att := common.AttestTx{
+			ObsTx:       tx,
+			Inbound:     false,
+			Attestation: &common.Attestation{PubKey: privKey.PubKey().Bytes(), Signature: []byte("sig")},
+		}
+		ag.handleObservedTxAttestation(context.Background(), att)
+
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, called)
 	})
 
 	t.Run("callback does not fire for non-XMR chain", func(t *testing.T) {

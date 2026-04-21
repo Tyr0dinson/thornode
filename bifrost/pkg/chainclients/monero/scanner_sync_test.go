@@ -69,6 +69,9 @@ func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch txs: %v", err)
 	}
+	if scanner.CurrentHeight() != 100 {
+		t.Fatalf("expected current height 100 after successful scan, got %d", scanner.CurrentHeight())
+	}
 	if captured.Height != 100 {
 		t.Fatalf("expected height 100, got %d", captured.Height)
 	}
@@ -138,6 +141,43 @@ func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
 	_, err = scanner.FetchTxs(200, 220)
 	if !errors.Is(err, btypes.ErrUnavailableBlock) {
 		t.Fatalf("expected unavailable block error, got %v", err)
+	}
+	if scanner.CurrentHeight() != 0 {
+		t.Fatalf("expected current height not to advance after failed scan, got %d", scanner.CurrentHeight())
+	}
+}
+
+func TestGetHeightDoesNotAdvanceProcessedHeight(t *testing.T) {
+	t.Parallel()
+
+	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height" {
+			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 321})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72)
+
+	height, err := scanner.GetHeight()
+	if err != nil {
+		t.Fatalf("get height: %v", err)
+	}
+	if height != 321 {
+		t.Fatalf("expected daemon height 321, got %d", height)
+	}
+	if scanner.CurrentHeight() != 0 {
+		t.Fatalf("expected processed height to remain 0, got %d", scanner.CurrentHeight())
 	}
 }
 

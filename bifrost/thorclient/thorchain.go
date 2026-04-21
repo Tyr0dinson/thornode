@@ -725,6 +725,21 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 			addressPairs = append(addressPairs, kp)
 		}
 
+		// process FROST pubkey if present
+		if v.PubKeyFrost != nil && *v.PubKeyFrost != "" {
+			kp := PubKeyContractAddressPair{
+				PubKey:     common.PubKey(*v.PubKeyFrost),
+				Contracts:  make(map[common.Chain]common.Address),
+				Algo:       common.SigningAlgoEd25519,
+				Membership: membership,
+				Inactive:   inactive,
+			}
+			for _, item := range v.Routers {
+				kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
+			}
+			addressPairs = append(addressPairs, kp)
+		}
+
 		// process secp256k1 pubkey
 		kp := PubKeyContractAddressPair{
 			PubKey:     common.PubKey(v.PubKey),
@@ -749,42 +764,6 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 		processVault(v, true)
 	}
 
-	// Enrich with FROST keys from /thorchain/vaults/asgard endpoint, since
-	// the openapi VaultPubkeysResponse doesn't yet expose pub_key_frost.
-	// Without this, the pubkeyMgr can't recognize XMR vault addresses
-	// derived from the FROST key, and inbound XMR observations are silently
-	// dropped at filterObservations.
-	asgards, asgardErr := b.GetAsgards()
-	if asgardErr == nil {
-		for _, vault := range asgards {
-			if vault.PubKeyFrost.IsEmpty() {
-				continue
-			}
-			frostKey := vault.PubKeyFrost
-			alreadyAdded := false
-			for _, p := range addressPairs {
-				if p.PubKey.Equals(frostKey) {
-					alreadyAdded = true
-					break
-				}
-			}
-			if alreadyAdded {
-				continue
-			}
-			kp := PubKeyContractAddressPair{
-				PubKey:     frostKey,
-				Contracts:  make(map[common.Chain]common.Address),
-				Algo:       common.SigningAlgoEd25519,
-				Membership: vault.GetMembership(),
-				Inactive:   vault.Status != stypes.VaultStatus_ActiveVault,
-			}
-			for _, r := range vault.Routers {
-				kp.Contracts[r.Chain] = r.Router
-			}
-			addressPairs = append(addressPairs, kp)
-		}
-	}
-
 	return addressPairs, nil
 }
 
@@ -803,6 +782,17 @@ func (b *thorchainBridge) GetAsgardPubKeys() ([]PubKeyContractAddressPair, error
 		if v.PubKeyEddsa != nil {
 			kp := PubKeyContractAddressPair{
 				PubKey:    common.PubKey(*v.PubKeyEddsa),
+				Contracts: make(map[common.Chain]common.Address),
+				Algo:      common.SigningAlgoEd25519,
+			}
+			for _, item := range v.Routers {
+				kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
+			}
+			addressPairs = append(addressPairs, kp)
+		}
+		if v.PubKeyFrost != nil && *v.PubKeyFrost != "" {
+			kp := PubKeyContractAddressPair{
+				PubKey:    common.PubKey(*v.PubKeyFrost),
 				Contracts: make(map[common.Chain]common.Address),
 				Algo:      common.SigningAlgoEd25519,
 			}

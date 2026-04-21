@@ -532,12 +532,9 @@ func TestRefactoredHandlersIntegration(t *testing.T) {
 	})
 }
 
-// TestXMRNonSignerCoAttestation verifies that a non-signing node automatically
-// co-attests to XMR outbound observations it receives from signing peers.
-// In a 2-of-3 threshold setup the two signers create attestations during
-// signing; the non-signer learns the observation via gossip and must add its
-// own vote so quorum can be reached.
-func TestXMRNonSignerCoAttestation(t *testing.T) {
+// TestXMRNonSignerDoesNotBlindCoAttest verifies that a non-signing node does
+// not sign a peer-supplied XMR outbound observation it cannot prove locally.
+func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 
 	origVerifySignature := verifySignature
@@ -581,7 +578,6 @@ func TestXMRNonSignerCoAttestation(t *testing.T) {
 
 	ag.handleObservedTxAttestation(context.Background(), peerAttestation)
 
-	// Give the async co-attestation goroutine time to run.
 	time.Sleep(200 * time.Millisecond)
 
 	k := observedTxKey(obsTx, false, false)
@@ -596,12 +592,12 @@ func TestXMRNonSignerCoAttestation(t *testing.T) {
 	count := state.AttestationCount()
 	state.mu.Unlock()
 
-	assert.Equal(t, 2, count, "should have 2 attestations: signer + non-signer co-attestation")
+	assert.Equal(t, 1, count, "should only retain the peer attestation")
 }
 
-// TestXMRCoAttestationSkipsNonXMR verifies that co-attestation only triggers
-// for XMR outbound transactions with SpentOutputRefs.
-func TestXMRCoAttestationSkipsNonXMR(t *testing.T) {
+// TestXMRBlindCoAttestationSkipsNonXMR verifies that non-XMR observations do
+// not trigger any extra local attestation.
+func TestXMRBlindCoAttestationSkipsNonXMR(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 
 	origVerifySignature := verifySignature
@@ -657,9 +653,9 @@ func TestXMRCoAttestationSkipsNonXMR(t *testing.T) {
 	assert.Equal(t, 1, count, "only the peer attestation — no co-attestation for non-XMR chains")
 }
 
-// TestXMRCoAttestationIdempotent verifies that receiving the same XMR outbound
-// attestation twice does not produce duplicate co-attestations.
-func TestXMRCoAttestationIdempotent(t *testing.T) {
+// TestXMRBlindCoAttestationIdempotent verifies that receiving the same XMR
+// outbound peer attestation twice does not add a local attestation.
+func TestXMRBlindCoAttestationIdempotent(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 
 	origVerifySignature := verifySignature
@@ -717,7 +713,7 @@ func TestXMRCoAttestationIdempotent(t *testing.T) {
 	count := state.AttestationCount()
 	state.mu.Unlock()
 
-	assert.Equal(t, 2, count, "should still be 2: signer + one co-attestation, no duplicates")
+	assert.Equal(t, 1, count, "should only retain one peer attestation")
 }
 
 func TestXMRObservedTxAttestationsWithDifferentSpentRefsUseDifferentBuckets(t *testing.T) {

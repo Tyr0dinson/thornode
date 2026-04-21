@@ -2,6 +2,7 @@ package monero
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -342,9 +343,9 @@ func (c *Client) catchupSpentOutputRefs() {
 	if c.thorchainBridge == nil || c.frostSigner == nil {
 		return
 	}
-	vaults, err := c.thorchainBridge.GetAsgards()
+	vaults, err := c.getSpentOutputCatchupVaults()
 	if err != nil {
-		c.logger.Err(err).Msg("xmr catchup: failed to get asgard vaults")
+		c.logger.Err(err).Msg("xmr catchup: failed to get vaults")
 		return
 	}
 	for _, vault := range vaults {
@@ -378,6 +379,36 @@ func (c *Client) catchupSpentOutputRefs() {
 			Int("not_found", result.NotFound).
 			Msg("xmr catchup: applied spent output refs from thorchain")
 	}
+}
+
+func (c *Client) getSpentOutputCatchupVaults() (ttypes.Vaults, error) {
+	if c.thorchainBridge == nil {
+		return nil, fmt.Errorf("thorchain bridge is nil")
+	}
+	pubKeys, err := c.thorchainBridge.GetPubKeys()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get vault pubkeys: %w", err)
+	}
+
+	vaults := make(ttypes.Vaults, 0, len(pubKeys))
+	seen := make(map[string]struct{}, len(pubKeys))
+	for _, pair := range pubKeys {
+		if pair.Algo != common.SigningAlgoSecp256k1 || pair.PubKey.IsEmpty() {
+			continue
+		}
+		key := pair.PubKey.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		vault, vaultErr := c.thorchainBridge.GetVault(key)
+		if vaultErr != nil {
+			return nil, fmt.Errorf("fail to get vault %s: %w", key, vaultErr)
+		}
+		vaults = append(vaults, vault)
+	}
+	return vaults, nil
 }
 
 func (c *Client) Stop() {
@@ -1681,10 +1712,17 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	}
 
 	c.setVaultAddressMapping(frostVaultPubKey, frostAddr)
+	keyshareHex := strings.TrimSpace(frostResp.KeyBytesHex)
+	if keyshareHex == "" {
+		return types.CustomKeygenResult{}, fmt.Errorf("FROST keygen returned empty recovery keyshare")
+	}
+	if _, err := hex.DecodeString(keyshareHex); err != nil {
+		return types.CustomKeygenResult{}, fmt.Errorf("FROST keygen returned invalid recovery keyshare hex: %w", err)
+	}
 	return types.CustomKeygenResult{
 		Address:              frostAddr,
 		PoolPubKeyFrost:      frostVaultPubKey,
-		FrostKeyshareHex:     strings.TrimSpace(frostResp.KeyBytesHex),
+		FrostKeyshareHex:     keyshareHex,
 		ObservedMoneroHeight: frostResp.ObservedMoneroHeight,
 	}, nil
 }

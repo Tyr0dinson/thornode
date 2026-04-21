@@ -347,7 +347,15 @@ func (s *ThorchainSuite) TestGetAsgards(c *C) {
 func (s *ThorchainSuite) TestGetPubKeys(c *C) {
 	pks, err := s.bridge.GetPubKeys()
 	c.Assert(err, IsNil)
-	c.Assert(pks, HasLen, 7)
+	c.Assert(pks, HasLen, 8)
+	foundFrost := false
+	for _, pk := range pks {
+		if pk.Algo == common.SigningAlgoEd25519 && pk.PubKey.String() == "tthorpub1zcjduepqfrostvaultpubkeyforxmrtest000000000000000000" {
+			foundFrost = true
+			break
+		}
+	}
+	c.Assert(foundFrost, Equals, true)
 }
 
 func (s *ThorchainSuite) TestPostNetworkFee(c *C) {

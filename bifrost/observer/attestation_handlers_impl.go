@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"fmt"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -43,32 +42,16 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		return
 	}
 
-	// Capture XMR spent refs for async application outside the lock.
-	// Only apply once per tx — multiple peers may attest to the same outbound.
+	// Capture locally produced XMR spent refs for async application outside the
+	// lock. Peer-supplied refs are applied only after THORChain commits quorum.
 	var applySpentRefs *common.ObservedTx
 	isXMROutboundWithRefs := obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound &&
 		len(obsTx.SpentOutputRefs) > 0 && len(obsTx.SpentOutputRefs) <= maxSpentOutputRefs
-	if isXMROutboundWithRefs && !state.spentRefsApplied {
+	isLocalAttestation := tx.Attestation != nil && bytes.Equal(tx.Attestation.PubKey, s.pubKey)
+	if isXMROutboundWithRefs && isLocalAttestation && !state.spentRefsApplied {
 		state.spentRefsApplied = true
 		cp := obsTx
 		applySpentRefs = &cp
-	}
-
-	// Check whether this node has already attested to this XMR outbound.
-	// Non-signing nodes cannot independently observe XMR outbounds via
-	// their scanner (the sidecar only stores OutgoingTransferRecord during
-	// signing). When we receive a peer attestation with SpentOutputRefs we
-	// co-attest so the non-signer's vote is counted toward quorum.
-	var shouldCoAttest bool
-	if isXMROutboundWithRefs && !bytes.Equal(tx.Attestation.PubKey, s.pubKey) {
-		localAlreadyAttested := false
-		for _, att := range state.attestations {
-			if bytes.Equal(att.attestation.PubKey, s.pubKey) {
-				localAlreadyAttested = true
-				break
-			}
-		}
-		shouldCoAttest = !localAlreadyAttested
 	}
 
 	// Determine the number of validators needed for attestation
@@ -101,61 +84,6 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	if applySpentRefs != nil && s.observerApplySpentOutputRefs != nil {
 		s.applySpentRefsAsync(*applySpentRefs)
 	}
-
-	// Co-attest to XMR outbounds that this node did not sign. The sidecar
-	// only populates OutgoingTransferRecord during signing, so non-signing
-	// nodes can never independently observe outbounds via the scanner.
-	// By co-attesting here, the non-signer adds its own signed vote to the
-	// quorum using the full observation (including SpentOutputRefs) received
-	// from the signing peer.
-	//
-	// Lock safety: this goroutine launches after state.mu is released (deferred
-	// above). attestObservedTxWithFutureFlag re-acquires s.mu → state.mu in
-	// the correct order via handleObservedTxAttestation, so no deadlock.
-	if shouldCoAttest {
-		cp := obsTx
-		go func() {
-			if err := s.attestObservedTxWithFutureFlag(ctx, &cp, false, tx.AllowFutureObservation); err != nil {
-				s.logger.Err(err).
-					Str("tx_id", cp.Tx.ID.String()).
-					Msg("failed to co-attest XMR outbound")
-			}
-		}()
-	}
-}
-
-// attestObservedTxWithFutureFlag creates and broadcasts a local attestation for
-// an observed tx, preserving the AllowFutureObservation flag from the original
-// signer. This is used by non-signing nodes to co-attest XMR outbounds.
-func (s *AttestationGossip) attestObservedTxWithFutureFlag(ctx context.Context, obsTx *common.ObservedTx, inbound, allowFutureObservation bool) error {
-	if !s.isActiveValidator(s.host.ID()) {
-		return fmt.Errorf("skipping co-attest: not active")
-	}
-
-	signBz, err := obsTx.GetSignablePayload()
-	if err != nil {
-		return fmt.Errorf("fail to marshal tx sign payload: %w", err)
-	}
-
-	signature, err := s.privKey.Sign(signBz)
-	if err != nil {
-		return fmt.Errorf("fail to sign tx sign payload: %w", err)
-	}
-
-	msg := common.AttestTx{
-		ObsTx:                  *obsTx,
-		Inbound:                inbound,
-		AllowFutureObservation: allowFutureObservation,
-		Attestation: &common.Attestation{
-			PubKey:    s.pubKey,
-			Signature: signature,
-		},
-	}
-
-	s.handleObservedTxAttestation(ctx, msg)
-	s.batcher.AddObservedTx(msg)
-
-	return nil
 }
 
 // sendObservedTxAttestationsToThornode sends attestations to thornode via gRPC

@@ -291,6 +291,7 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 				resp.Asgard = append(resp.Asgard, &types.VaultInfo{
 					PubKey:      vault.PubKey.String(),
 					PubKeyEddsa: vault.PubKeyEddsa.String(),
+					PubKeyFrost: vault.PubKeyFrost.String(),
 					Routers:     castVaultRouters(vault.Routers),
 					Membership:  vault.Membership,
 				})
@@ -315,6 +316,7 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 					resp.Inactive = append(resp.Inactive, &types.VaultInfo{
 						PubKey:      vault.PubKey.String(),
 						PubKeyEddsa: vault.PubKeyEddsa.String(),
+						PubKeyFrost: vault.PubKeyFrost.String(),
 						Routers:     castVaultRouters(vault.Routers),
 						Membership:  vault.Membership,
 					})

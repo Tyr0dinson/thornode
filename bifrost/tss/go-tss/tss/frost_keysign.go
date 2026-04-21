@@ -81,6 +81,10 @@ func FrostKeySignMsgID(req FrostKeySignRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fail to hash signer membership: %w", err)
 	}
+	requiredInputsHash, err := frostRequiredInputsHash(req.RequiredInputs)
+	if err != nil {
+		return "", fmt.Errorf("fail to hash required inputs: %w", err)
+	}
 
 	anchor := strings.TrimSpace(req.TxInHash)
 	if anchor == "" {
@@ -97,6 +101,9 @@ func FrostKeySignMsgID(req FrostKeySignRequest) (string, error) {
 		"to_address=" + toAddr,
 		"amount_atomic=" + strconv.FormatUint(req.AmountAtomic, 10),
 		"memo=" + req.Memo,
+		"fee_rate=" + strconv.FormatUint(req.FeeRate, 10),
+		"required_inputs_hash=" + requiredInputsHash,
+		"max_inputs=" + strconv.FormatInt(req.MaxInputs, 10),
 		"anchor=" + anchor,
 		"members_hash=" + membersHash,
 	}, "\n")
@@ -119,6 +126,31 @@ func frostSignerSetHash(signerPubKeys []string) (string, error) {
 	return tcommon.MsgToHashString([]byte(strings.Join(members, ",")))
 }
 
+func frostRequiredInputsHash(inputs []FrostSpentOutputRef) (string, error) {
+	normalized := make([]FrostSpentOutputRef, 0, len(inputs))
+	for _, input := range inputs {
+		txHash := strings.ToLower(strings.TrimSpace(input.TxHash))
+		if txHash == "" {
+			return "", fmt.Errorf("required input tx_hash is empty")
+		}
+		normalized = append(normalized, FrostSpentOutputRef{
+			TxHash:      txHash,
+			OutputIndex: input.OutputIndex,
+		})
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		if normalized[i].TxHash == normalized[j].TxHash {
+			return normalized[i].OutputIndex < normalized[j].OutputIndex
+		}
+		return normalized[i].TxHash < normalized[j].TxHash
+	})
+	buf, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return tcommon.MsgToHashString(buf)
+}
+
 func FrostPlanHash(req FrostKeySignRequest, msgID string) (string, error) {
 	msgID = strings.TrimSpace(msgID)
 	if msgID == "" {
@@ -136,6 +168,10 @@ func FrostPlanHash(req FrostKeySignRequest, msgID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fail to hash signer membership: %w", err)
 	}
+	requiredInputsHash, err := frostRequiredInputsHash(req.RequiredInputs)
+	if err != nil {
+		return "", fmt.Errorf("fail to hash required inputs: %w", err)
+	}
 	canonical := strings.Join([]string{
 		"domain=" + frostPlanHashDomain,
 		"msg_id=" + msgID,
@@ -143,6 +179,9 @@ func FrostPlanHash(req FrostKeySignRequest, msgID string) (string, error) {
 		"to_address=" + toAddress,
 		"amount_atomic=" + strconv.FormatUint(req.AmountAtomic, 10),
 		"memo=" + req.Memo,
+		"fee_rate=" + strconv.FormatUint(req.FeeRate, 10),
+		"required_inputs_hash=" + requiredInputsHash,
+		"max_inputs=" + strconv.FormatInt(req.MaxInputs, 10),
 		"signer_set_hash=" + signerSetHash,
 	}, "\n")
 	return tcommon.MsgToHashString([]byte(canonical))

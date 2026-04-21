@@ -12,6 +12,8 @@ import (
 type mockMoneroBridge struct {
 	thorclient.ThorchainBridge
 	vaultByPubKey map[string]ttypes.Vault
+	pubKeys       []thorclient.PubKeyContractAddressPair
+	pubKeysErr    error
 }
 
 func (m *mockMoneroBridge) GetVault(pubkey string) (ttypes.Vault, error) {
@@ -27,6 +29,26 @@ func (m *mockMoneroBridge) GetAsgards() (ttypes.Vaults, error) {
 		vaults = append(vaults, v)
 	}
 	return vaults, nil
+}
+
+func (m *mockMoneroBridge) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	if m.pubKeysErr != nil {
+		return nil, m.pubKeysErr
+	}
+	if m.pubKeys != nil {
+		return m.pubKeys, nil
+	}
+	pubKeys := make([]thorclient.PubKeyContractAddressPair, 0, len(m.vaultByPubKey))
+	for _, v := range m.vaultByPubKey {
+		if v.PubKey.IsEmpty() {
+			continue
+		}
+		pubKeys = append(pubKeys, thorclient.PubKeyContractAddressPair{
+			PubKey: v.PubKey,
+			Algo:   common.SigningAlgoSecp256k1,
+		})
+	}
+	return pubKeys, nil
 }
 
 func TestGetVaultAddressReturnsEmptyForUnknownVault(t *testing.T) {

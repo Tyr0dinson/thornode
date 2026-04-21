@@ -731,7 +731,6 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 	frostPubKey := GetRandomPubKey()
 	observedMoneroHeight := int64(777)
 	keygenTime := int64(1024)
-	observedMoneroHeight := int64(777)
 	msg, err := NewMsgTssPoolV3(
 		helper.members.Strings(),
 		poolPubKey,

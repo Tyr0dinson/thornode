@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -80,6 +81,55 @@ func TestCatchupSpentOutputRefsReadsFromVaultAndCallsSidecar(t *testing.T) {
 	assert.Equal(t, "spent_a", capturedRefs[0].TxHash)
 	assert.Equal(t, "spent_b", capturedRefs[1].TxHash)
 	assert.Equal(t, "spent_c", capturedRefs[2].TxHash)
+}
+
+func TestCatchupSpentOutputRefsIncludesInactiveVaultFromPubkeys(t *testing.T) {
+	t.Parallel()
+
+	frostKey := testVaultPubKey(t, "frost-inactive-catchup")
+	primaryKey := testVaultPubKey(t, "ecdsa-inactive-catchup")
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/monero/outputs/mark-spent":
+			calls++
+			_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: 1})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	vault := ttypes.Vault{
+		PubKey:      primaryKey,
+		PubKeyFrost: frostKey,
+		Status:      ttypes.VaultStatus_InactiveVault,
+		SpentOutputRefsXmr: []*common.OutputRef{
+			{TxHash: "inactive_spent", OutputIndex: 0},
+		},
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+		thorchainBridge: &mockMoneroBridge{
+			vaultByPubKey: map[string]ttypes.Vault{
+				primaryKey.String(): vault,
+			},
+			pubKeys: []thorclient.PubKeyContractAddressPair{
+				{PubKey: primaryKey, Algo: common.SigningAlgoSecp256k1, Inactive: true},
+			},
+		},
+	}
+
+	c.catchupSpentOutputRefs()
+
+	assert.Equal(t, 1, calls)
 }
 
 func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrost(t *testing.T) {

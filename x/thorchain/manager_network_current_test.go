@@ -702,8 +702,8 @@ func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C)
 	ctx = ctx.WithBlockHeight(interval)
 	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XMRChain, NetworkFee{
 		Chain:              common.XMRChain,
-		TransactionSize:    1,
-		TransactionFeeRate: 1,
+		TransactionSize:    5000,
+		TransactionFeeRate: 10000,
 	}), IsNil)
 
 	retiringVault := GetRandomVault()

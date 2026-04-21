@@ -86,6 +86,85 @@ func TestFrostKeySignMsgIDDeterministic(t *testing.T) {
 	}
 }
 
+func TestFrostKeySignIdentityIncludesSpendConstraints(t *testing.T) {
+	base := FrostKeySignRequest{
+		VaultPubKey:   "thorpub-vault-1",
+		ToAddress:     "48abc",
+		AmountAtomic:  12345,
+		Memo:          "OUT:1",
+		FeeRate:       10,
+		SignerPubKeys: []string{"thorpub-c", "thorpub-a", "thorpub-b"},
+		BlockHeight:   101,
+		RequiredInputs: []FrostSpentOutputRef{
+			{TxHash: "BBBB", OutputIndex: 1},
+			{TxHash: "aaaa", OutputIndex: 0},
+		},
+		MaxInputs: 4,
+	}
+
+	baseID, err := FrostKeySignMsgID(base)
+	if err != nil {
+		t.Fatalf("base msg id: %v", err)
+	}
+	reordered := base
+	reordered.RequiredInputs = []FrostSpentOutputRef{
+		{TxHash: "aaaa", OutputIndex: 0},
+		{TxHash: "BBBB", OutputIndex: 1},
+	}
+	reorderedID, err := FrostKeySignMsgID(reordered)
+	if err != nil {
+		t.Fatalf("reordered msg id: %v", err)
+	}
+	if baseID != reorderedID {
+		t.Fatalf("expected same msg id for reordered required inputs, got %q != %q", baseID, reorderedID)
+	}
+
+	changedFee := base
+	changedFee.FeeRate = 11
+	feeID, err := FrostKeySignMsgID(changedFee)
+	if err != nil {
+		t.Fatalf("fee msg id: %v", err)
+	}
+	if baseID == feeID {
+		t.Fatalf("expected fee rate to affect msg id")
+	}
+
+	changedRequired := base
+	changedRequired.RequiredInputs = []FrostSpentOutputRef{
+		{TxHash: "BBBB", OutputIndex: 2},
+		{TxHash: "aaaa", OutputIndex: 0},
+	}
+	requiredID, err := FrostKeySignMsgID(changedRequired)
+	if err != nil {
+		t.Fatalf("required input msg id: %v", err)
+	}
+	if baseID == requiredID {
+		t.Fatalf("expected required inputs to affect msg id")
+	}
+
+	changedMax := base
+	changedMax.MaxInputs = 5
+	maxID, err := FrostKeySignMsgID(changedMax)
+	if err != nil {
+		t.Fatalf("max inputs msg id: %v", err)
+	}
+	if baseID == maxID {
+		t.Fatalf("expected max inputs to affect msg id")
+	}
+
+	basePlan, err := FrostPlanHash(base, "fixed-msg-id")
+	if err != nil {
+		t.Fatalf("base plan hash: %v", err)
+	}
+	feePlan, err := FrostPlanHash(changedFee, "fixed-msg-id")
+	if err != nil {
+		t.Fatalf("fee plan hash: %v", err)
+	}
+	if basePlan == feePlan {
+		t.Fatalf("expected fee rate to affect plan hash")
+	}
+}
+
 func TestFrostKeySignMsgIDTxInHashRequestIDAndHeightFallback(t *testing.T) {
 	base := FrostKeySignRequest{
 		VaultPubKey:   "thorpub-vault-1",

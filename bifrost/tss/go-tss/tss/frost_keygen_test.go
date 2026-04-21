@@ -2,6 +2,7 @@ package tss
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,6 +29,8 @@ type mockFrostSidecarKeygen struct {
 	round2Err   error
 	round3Err   error
 	finalizeErr error
+	chainHeight int64
+	chainErr    error
 }
 
 func (m *mockFrostSidecarKeygen) FrostDKGRound1(req FrostSidecarDKGRound1Req) (FrostSidecarDKGRound1Resp, error) {
@@ -63,7 +66,10 @@ func (m *mockFrostSidecarKeygen) FrostDKGFinalize(req FrostSidecarDKGFinalizeReq
 }
 
 func (m *mockFrostSidecarKeygen) GetChainHeight() (int64, error) {
-	return 0, nil
+	if m.chainErr != nil {
+		return 0, m.chainErr
+	}
+	return m.chainHeight, nil
 }
 
 func newTestFrostKeygenCoordinator(localPubKey, msgID string, msgChan chan *p2p.Message, timeout time.Duration) *FrostKeygenCoordinator {
@@ -856,7 +862,8 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 			Address:  groupAddress,
 			GroupKey: groupKey,
 		},
-		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true},
+		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"},
+		chainHeight:  456,
 	}
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
@@ -931,6 +938,7 @@ func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 			GroupKey: groupKey,
 		},
 		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"},
+		chainHeight:  123,
 	}
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-single", make(chan *p2p.Message, 4), time.Second)
@@ -1000,6 +1008,7 @@ func TestFrostKeygenExecuteFailsWhenFinalizeUnsuccessful(t *testing.T) {
 			GroupKey: groupKey,
 		},
 		finalizeResp: FrostSidecarDKGFinalizeResp{Success: false},
+		chainHeight:  123,
 	}
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-finalize-fail", make(chan *p2p.Message, 4), time.Second)
@@ -1013,6 +1022,102 @@ func TestFrostKeygenExecuteFailsWhenFinalizeUnsuccessful(t *testing.T) {
 
 	if resp.Status != tcommon.Fail {
 		t.Fatalf("expected fail status when finalize is unsuccessful, got %d", resp.Status)
+	}
+	if len(sidecar.finalizeReqs) != 1 {
+		t.Fatalf("expected one finalize call, got %d", len(sidecar.finalizeReqs))
+	}
+}
+
+func TestFrostKeygenExecuteFailsWithoutPositiveMoneroHeight(t *testing.T) {
+	members := []string{testPubKeys[0]}
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+
+	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	localIndexKey := strconv.FormatUint(uint64(localIndex), 10)
+	groupAddress := "48xmrvaultaddress"
+	groupKey := strings.Repeat("ab", 32)
+
+	sidecar := &mockFrostSidecarKeygen{
+		round1Resp: FrostSidecarDKGRound1Resp{Commitments: "local-commitment"},
+		round2Resp: FrostSidecarDKGRound2Resp{
+			EncryptedShares: map[string]string{
+				localIndexKey: "local-share",
+			},
+		},
+		round3Resp: FrostSidecarDKGRound3Resp{
+			Address:  groupAddress,
+			GroupKey: groupKey,
+		},
+		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"},
+		chainErr:     errors.New("height unavailable"),
+	}
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-height-fail", make(chan *p2p.Message, 4), time.Second)
+	coord.sidecar = sidecar
+
+	resp := coord.Execute(FrostKeygenRequest{
+		VaultPubKey:   "thorpub-vault",
+		SignerPubKeys: members,
+		ExpectedAddr:  groupAddress,
+	}, activeSet, nil)
+
+	if resp.Status != tcommon.Fail {
+		t.Fatalf("expected fail status without positive height, got %d", resp.Status)
+	}
+	if len(sidecar.finalizeReqs) != 0 {
+		t.Fatalf("expected finalize not to run without positive height, got %d calls", len(sidecar.finalizeReqs))
+	}
+}
+
+func TestFrostKeygenExecuteFailsWithInvalidFinalizeKeyBytes(t *testing.T) {
+	members := []string{testPubKeys[0]}
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+
+	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	localIndexKey := strconv.FormatUint(uint64(localIndex), 10)
+	groupAddress := "48xmrvaultaddress"
+	groupKey := strings.Repeat("ab", 32)
+
+	sidecar := &mockFrostSidecarKeygen{
+		round1Resp: FrostSidecarDKGRound1Resp{Commitments: "local-commitment"},
+		round2Resp: FrostSidecarDKGRound2Resp{
+			EncryptedShares: map[string]string{
+				localIndexKey: "local-share",
+			},
+		},
+		round3Resp: FrostSidecarDKGRound3Resp{
+			Address:  groupAddress,
+			GroupKey: groupKey,
+		},
+		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "not-hex"},
+		chainHeight:  123,
+	}
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-keybytes-fail", make(chan *p2p.Message, 4), time.Second)
+	coord.sidecar = sidecar
+
+	resp := coord.Execute(FrostKeygenRequest{
+		VaultPubKey:   "thorpub-vault",
+		SignerPubKeys: members,
+		ExpectedAddr:  groupAddress,
+	}, activeSet, nil)
+
+	if resp.Status != tcommon.Fail {
+		t.Fatalf("expected fail status for invalid key bytes, got %d", resp.Status)
 	}
 	if len(sidecar.finalizeReqs) != 1 {
 		t.Fatalf("expected one finalize call, got %d", len(sidecar.finalizeReqs))

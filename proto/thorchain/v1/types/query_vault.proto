@@ -57,6 +57,7 @@ message VaultInfo {
   repeated VaultRouter routers = 2 [ (gogoproto.jsontag) = "routers" ];
   string pub_key_eddsa = 3 [ (gogoproto.jsontag) = "pub_key_eddsa" ];
   repeated string membership = 4;
+  string pub_key_frost = 5 [ (gogoproto.jsontag) = "pub_key_frost" ];
 }
 
 message VaultRouter {

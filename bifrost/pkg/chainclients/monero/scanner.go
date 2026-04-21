@@ -46,6 +46,7 @@ type Scanner struct {
 	solvencyReporter func(int64) error
 
 	currentBlockHeight *atomic.Int64
+	daemonTipHeight    *atomic.Int64
 	lastFee            *atomic.Uint64
 	globalErrataQueue  chan<- stypes.ErrataBlock
 	maxReorgRescan     int64
@@ -83,6 +84,7 @@ func NewScanner(
 		chain:                  chain,
 		localNodePubKey:        localNodePubKey,
 		currentBlockHeight:     atomic.NewInt64(0),
+		daemonTipHeight:        atomic.NewInt64(0),
 		lastFee:                atomic.NewUint64(0),
 		maxReorgRescan:         maxReorgRescan,
 		asgardLookup:           make(map[string]common.PubKey),
@@ -133,6 +135,9 @@ func (s *Scanner) GetVaultAddress(vaultPubKey common.PubKey) (string, bool) {
 }
 
 func (s *Scanner) CurrentHeight() int64 {
+	if s.currentBlockHeight == nil {
+		return 0
+	}
 	return s.currentBlockHeight.Load()
 }
 
@@ -230,7 +235,6 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 		return txIn, fmt.Errorf("fail to fetch monero block %d: %w", fetchHeight, err)
 	}
 
-	s.currentBlockHeight.Store(fetchHeight)
 	// Estimate vault outbound fee from monerod's per-weight fee rate x typical
 	// vault tx weight. Avoid block-coinbase averaging when possible because it
 	// mixes complex user txs and materially overestimates simple vault outbounds.
@@ -273,6 +277,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	if err = s.saveBlockMeta(block, fetchHeight, currentItems); err != nil {
 		return txIn, err
 	}
+	s.setCurrentHeight(fetchHeight)
 
 	if s.reorgStore != nil && s.maxReorgRescan > 0 {
 		pruneHeight := fetchHeight - s.maxReorgRescan - 1
@@ -566,8 +571,20 @@ func (s *Scanner) GetHeight() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	s.currentBlockHeight.Store(height)
+	s.setDaemonTipHeight(height)
 	return height, nil
+}
+
+func (s *Scanner) setCurrentHeight(height int64) {
+	if s.currentBlockHeight != nil {
+		s.currentBlockHeight.Store(height)
+	}
+}
+
+func (s *Scanner) setDaemonTipHeight(height int64) {
+	if s.daemonTipHeight != nil {
+		s.daemonTipHeight.Store(height)
+	}
 }
 
 const defaultXMRFeeTotalThorchain = 20000 // ~0.0002 XMR typical mainnet fee
@@ -607,7 +624,7 @@ func (s *Scanner) processReorg(block chainBlock, chainHeight int64) ([]*stypes.T
 	}
 	previousHeight := block.Height - 1
 	if block.Height <= 0 {
-		previousHeight = s.currentBlockHeight.Load() - 1
+		previousHeight = s.CurrentHeight() - 1
 	}
 	if previousHeight < 0 {
 		return nil, nil
@@ -703,8 +720,7 @@ func (s *Scanner) reConfirmTx(height int64) ([]int64, error) {
 		for _, tx := range blockMeta.CustomerTransactions {
 			txExists, confirmErr := s.frostSigner.TxExists(tx)
 			if confirmErr != nil {
-				s.logger.Debug().Err(confirmErr).Str("txid", tx).Msg("unable to confirm monero tx existence during reorg; skipping errata")
-				continue
+				return nil, fmt.Errorf("unable to confirm monero tx %s existence during reorg: %w", tx, confirmErr)
 			}
 			if txExists {
 				continue
