@@ -133,6 +133,7 @@ func DefaultGenesisState() GenesisState {
 		StreamingSwaps:          make([]StreamingSwap, 0),
 		NetworkFees:             make([]NetworkFee, 0),
 		ChainContracts:          defaultChainContracts(),
+		TcyClaimers:             defaultTCYClaimers(),
 		THORNames:               make([]THORName, 0),
 		SwapperClout:            make([]SwapperClout, 0),
 		TradeAccounts:           make([]TradeAccount, 0),
@@ -365,6 +366,13 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 	if data.LastObservedDynamicFeeEpochBlocks > 0 {
 		keeper.SetLastObservedDynamicFeeEpochBlocks(ctx, data.LastObservedDynamicFeeEpochBlocks)
+	}
+
+	// Per-network TCY bootstrap: on stagenet this mints 210M TCY and
+	// distributes to treasury + TCYClaiming module (matching the
+	// Migrate4to5 semantics but at genesis time). No-op on other nets.
+	if err := setupInitialTCYBalances(ctx, keeper); err != nil {
+		panic(err)
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
