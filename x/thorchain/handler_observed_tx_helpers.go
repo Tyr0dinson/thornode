@@ -843,10 +843,14 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 
 	k := mgr.Keeper()
 	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	searchPeriod := signingTransPeriod
+	if tx.Tx.Chain.Equals(common.XMRChain) {
+		searchPeriod = signingTransPeriod * xmrSigningPeriodMultiplier
+	}
 
 	// Search recent TxOut blocks for matching TxOutItem
 	// Use the same range logic as handler_common_outbound.go
-	earliestHeight := ctx.BlockHeight() - signingTransPeriod
+	earliestHeight := ctx.BlockHeight() - searchPeriod
 	if earliestHeight < 1 {
 		earliestHeight = 1
 	}

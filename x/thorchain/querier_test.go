@@ -1224,7 +1224,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesDoesNotAdvertiseRetiringXMRVault
 	c.Assert(xmrPubKey, Equals, "")
 }
 
-func (s *QuerierSuite) TestQueryInboundAddressesSkipsHybridXMRVaultWithoutDedicatedMonovault(c *C) {
+func (s *QuerierSuite) TestQueryInboundAddressesAcceptsXMRCapableVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	regularPubKey := GetRandomPubKey()
@@ -1240,7 +1240,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesSkipsHybridXMRVaultWithoutDedica
 		nil,
 		GetRandomPubKey(),
 	)
-	hybrid.PubKeyFrost = GetRandomPubKey()
+	hybrid.PubKeyFrost = getRandomXMRFrostPubKey(c)
 	c.Assert(mgr.Keeper().SetVault(ctx, hybrid), IsNil)
 
 	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
@@ -1260,7 +1260,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesSkipsHybridXMRVaultWithoutDedica
 	}
 
 	c.Assert(ethPubKey, Equals, regularPubKey.String())
-	c.Assert(xmrPubKey, Equals, "")
+	c.Assert(xmrPubKey, Equals, hybrid.PubKeyFrost.String())
 }
 
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
@@ -1488,7 +1488,7 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 		[]ChainContract{},
 		GetRandomEd25519PubKey(),
 	)
-	asgard.PubKeyFrost = GetRandomPubKey()
+	asgard.PubKeyFrost = GetRandomEd25519PubKey()
 	asgard.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
 	})

@@ -26,7 +26,7 @@ func splitAsgardGroupCount(validatorCount int, asgardSize int64) int {
 
 func hasDedicatedXMRMonovault(vaults Vaults) bool {
 	for _, vault := range vaults {
-		if vault.IsXMRMonovault() {
+		if vault.HasChain(common.XMRChain) {
 			return true
 		}
 	}
@@ -34,49 +34,39 @@ func hasDedicatedXMRMonovault(vaults Vaults) bool {
 }
 
 func shouldMaintainXMRMonovault(vaults Vaults, validatorCount int) bool {
-	// Multi-node genesis and steady-state churn both schedule the dedicated XMR
-	// monovault family. Keep maintaining it whenever validators exist or an
-	// existing dedicated family is already present in vault state.
+	// Multi-node genesis and steady-state churn both schedule an XMR-capable
+	// FROST vault. Keep maintaining it whenever validators exist or an existing
+	// XMR-capable vault is already present in vault state.
 	return validatorCount > 0 || hasDedicatedXMRMonovault(vaults)
 }
 
 func filterVaultsByChain(vaults Vaults, chain common.Chain) Vaults {
 	filtered := make(Vaults, 0, len(vaults))
 	for _, vault := range vaults {
-		if vault.HasChain(chain) {
+		if vaultCanSignChain(vault, chain) {
 			filtered = append(filtered, vault)
 		}
 	}
 	return filtered
 }
 
-func preferredActiveVaultsForChain(vaults Vaults, chain common.Chain) Vaults {
-	if !chain.Equals(common.XMRChain) {
-		return filterVaultsByChain(vaults, chain)
+func vaultCanSignChain(vault Vault, chain common.Chain) bool {
+	if !vault.HasChain(chain) {
+		return false
 	}
+	if _, err := vault.GetAddress(chain); err != nil {
+		return false
+	}
+	return true
+}
 
-	dedicated := make(Vaults, 0, len(vaults))
-	for _, vault := range vaults {
-		if vault.IsXMRMonovault() {
-			dedicated = append(dedicated, vault)
-		}
-	}
-	return dedicated
+func preferredActiveVaultsForChain(vaults Vaults, chain common.Chain) Vaults {
+	return filterVaultsByChain(vaults, chain)
 }
 
 func filterActiveVaultsForOutboundChain(vaults Vaults, chain common.Chain) Vaults {
-	if chain.Equals(common.XMRChain) {
-		return preferredActiveVaultsForChain(vaults, chain)
-	}
-
-	filtered := make(Vaults, 0, len(vaults))
-	for _, vault := range vaults {
-		if vault.IsXMRMonovault() {
-			continue
-		}
-		filtered = append(filtered, vault)
-	}
-	if len(filtered) > 0 {
+	filtered := preferredActiveVaultsForChain(vaults, chain)
+	if chain.Equals(common.XMRChain) || len(filtered) > 0 {
 		return filtered
 	}
 	return vaults
@@ -97,9 +87,9 @@ func keygenMatchesVault(keygen Keygen, vault Vault) bool {
 	}
 	switch keygen.Type {
 	case XMRMonovaultKeygen:
-		return vault.IsXMRMonovault()
+		return vault.HasChain(common.XMRChain)
 	case AsgardKeygen:
-		return !vault.IsXMRMonovault() && !vault.HasChain(common.XMRChain)
+		return !vault.HasChain(common.XMRChain)
 	default:
 		return false
 	}
@@ -144,9 +134,6 @@ func filterVaultsByKeygenType(vaults Vaults, keygenBlock KeygenBlock, keygenType
 
 func hasActiveNonXMRAsgardFamily(vaults Vaults) bool {
 	for _, vault := range vaults {
-		if vault.IsXMRMonovault() {
-			continue
-		}
 		if vault.HasChain(common.XMRChain) {
 			continue
 		}
@@ -158,14 +145,14 @@ func hasActiveNonXMRAsgardFamily(vaults Vaults) bool {
 func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, active Vaults, chain common.Chain, signingTransactionPeriod int64) (Vault, error) {
 	filtered := preferredActiveVaultsForChain(active, chain)
 	if chain == common.THORChain {
-		// Keep native THOR routing on ordinary Asgards when they exist. The
-		// dedicated XMR monovault also carries THOR for accounting/solvency, but
-		// it should not become the default THOR traffic target while regular
-		// Asgards are available.
+		// Keep native THOR routing on ordinary Asgards when they exist. Vaults
+		// that also serve the single-vault XMR chain carry THOR for accounting
+		// and solvency, but should not become the default THOR traffic target
+		// while regular Asgards are available.
 		filtered = append(Vaults(nil), active...)
 		regular := make(Vaults, 0, len(filtered))
 		for _, vault := range filtered {
-			if !vault.IsXMRMonovault() {
+			if !vault.HasChain(common.XMRChain) {
 				regular = append(regular, vault)
 			}
 		}

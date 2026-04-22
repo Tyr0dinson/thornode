@@ -688,6 +688,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			activeAsgards = tos.keeper.SortBySecurity(ctx, activeAsgards, signingTransactionPeriod)
+			activeAsgards = filterActiveVaultsForOutboundChain(activeAsgards, toi.Chain)
 
 			for i := range activeAsgards {
 				// having sorted by security, deduct the value of any assigned pending outbounds
@@ -704,6 +705,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			retiringAsgards = tos.keeper.SortBySecurity(ctx, retiringAsgards, signingTransactionPeriod)
+			retiringAsgards = filterActiveVaultsForOutboundChain(retiringAsgards, toi.Chain)
 
 			for i := range retiringAsgards {
 				// having sorted by security, deduct the value of any assigned pending outbounds

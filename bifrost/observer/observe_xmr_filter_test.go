@@ -57,6 +57,28 @@ func TestFilterObservationsXMRUsesObservedVaultPubKey(t *testing.T) {
 	require.True(t, filtered[0].ObservedVaultPubKey.Equals(poolPubKey))
 }
 
+func TestFilterObservationsXMRPreservesScannerAttributedVault(t *testing.T) {
+	t.Parallel()
+
+	poolPubKey := randomXMRObservedPubKey(t)
+	poolAddress, err := poolPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+	obs := &Observer{
+		pubkeyMgr: newXMRPubKeyMgr(t),
+	}
+	item := &types.TxInItem{
+		Tx:                  "xmr-inbound-scanner-attributed",
+		Sender:              common.XMRSeededDummyAddress('8', []byte("xmr-inbound-sender")),
+		To:                  poolAddress.String(),
+		ObservedVaultPubKey: poolPubKey,
+	}
+
+	filtered := obs.filterObservations(common.XMRChain, []*types.TxInItem{item}, false)
+	require.Len(t, filtered, 1)
+	require.Equal(t, item.Tx, filtered[0].Tx)
+	require.True(t, filtered[0].ObservedVaultPubKey.Equals(poolPubKey))
+}
+
 func TestFilterObservationsXMRSkipsSignedCache(t *testing.T) {
 	t.Parallel()
 

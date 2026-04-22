@@ -447,7 +447,7 @@ func (vts *ValidatorMgrTestSuite) TestGetChangedNodesDedupesSharedXMRMonovaultMe
 	c.Assert(mgr.Keeper().SetVault(ctx, regularVault), IsNil)
 
 	xmrMonovault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), []ChainContract{})
-	xmrMonovault.PubKeyFrost = GetRandomPubKey()
+	xmrMonovault.PubKeyFrost = GetRandomEd25519PubKey()
 	xmrMonovault.Membership = append(xmrMonovault.Membership, readyNode.PubKeySet.Secp256k1.String())
 	c.Assert(mgr.Keeper().SetVault(ctx, xmrMonovault), IsNil)
 
@@ -851,7 +851,7 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 
 	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
 	xmr.Membership = append(xmr.Membership, membership...)
-	xmr.PubKeyFrost = GetRandomPubKey()
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
 	c.Assert(k.SetVault(ctx, xmr), IsNil)
 
 	c.Assert(validatorMgr.churnInner(ctx), IsNil)

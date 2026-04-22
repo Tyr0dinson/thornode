@@ -300,7 +300,7 @@ func (s *SlashingSuite) TestInactiveXMRVaultDrainedRerouteUsesMonovault(c *C) {
 	xmrVault.Type = AsgardVault
 	xmrVault.Status = ActiveVault
 	xmrVault.Chains = common.Chains{common.THORChain, common.XMRChain}.Strings()
-	xmrVault.PubKeyFrost = GetRandomPubKey()
+	xmrVault.PubKeyFrost = GetRandomEd25519PubKey()
 	xmrVault.Coins = common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(50*common.One)),
 	}

@@ -12,10 +12,6 @@ import (
 
 const priceFeedsUpdateDelay = time.Millisecond * 100
 
-// maxSpentOutputRefs caps the number of spent output references accepted per
-// XMR outbound. Typical outbound: 2-4, consolidation: up to 16.
-const maxSpentOutputRefs = 32
-
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
 	obsTx := tx.ObsTx
@@ -36,20 +32,26 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 
 	defer state.mu.Unlock()
 
+	attestationCountBefore := state.AttestationCount()
+
 	// Add the attestation
 	if err := state.AddAttestation(tx.Attestation); err != nil {
 		s.logger.Error().Err(err).Msg("fail to add attestation")
 		return
 	}
+	isNewAttestation := state.AttestationCount() > attestationCountBefore
 
-	// Capture locally produced XMR spent refs for async application outside the
-	// lock. Peer-supplied refs are applied only after THORChain commits quorum.
+	// Import verified XMR outbound metadata into the local sidecar outside the
+	// lock. This does not add a local attestation; the scanner must later
+	// observe the sidecar-verified outbound before this node signs it.
 	var applySpentRefs *common.ObservedTx
 	isXMROutboundWithRefs := obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound &&
-		len(obsTx.SpentOutputRefs) > 0 && len(obsTx.SpentOutputRefs) <= maxSpentOutputRefs
+		len(obsTx.SpentOutputRefs) > 0 && len(obsTx.SpentOutputRefs) <= common.MaxXMRSpentOutputRefs
 	isLocalAttestation := tx.Attestation != nil && bytes.Equal(tx.Attestation.PubKey, s.pubKey)
-	if isXMROutboundWithRefs && isLocalAttestation && !state.spentRefsApplied {
-		state.spentRefsApplied = true
+	if isXMROutboundWithRefs && isNewAttestation && (isLocalAttestation || !state.spentRefsApplied) {
+		if isLocalAttestation {
+			state.spentRefsApplied = true
+		}
 		cp := obsTx
 		applySpentRefs = &cp
 	}

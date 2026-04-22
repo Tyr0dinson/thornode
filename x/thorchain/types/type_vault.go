@@ -66,8 +66,9 @@ func (m Vault) IsAsgard() bool {
 	return m.IsType(VaultType_AsgardVault)
 }
 
-// IsXMRMonovault returns true for the dedicated XMR vault family, which only
-// serves THOR+XMR instead of the regular split-Asgard chain set.
+// IsXMRMonovault is retained for legacy tests that assert the old dedicated
+// THOR+XMR shape. Runtime XMR routing should use chain capability/readiness
+// checks rather than this vault-topology predicate.
 func (m Vault) IsXMRMonovault() bool {
 	if !m.IsAsgard() {
 		return false

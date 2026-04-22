@@ -1135,8 +1135,7 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		Interface("tx", item.TxOutItem).
 		Msg("Signing transaction")
 
-	// a single keysign should not take longer than 5 minutes , regardless TSS or local
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), signingTimeoutForChain(item.TxOutItem.Chain))
 	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
 		return s.signAndBroadcast(item)
 	})
@@ -1198,6 +1197,14 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	if err = s.storage.Remove(item); err != nil {
 		s.logger.Error().Err(err).Msg("fail to update tx out store item")
 	}
+}
+
+func signingTimeoutForChain(chain common.Chain) time.Duration {
+	if chain.Equals(common.XMRChain) {
+		return 15 * time.Minute
+	}
+	// a single non-XMR keysign should not take longer than 5 minutes, regardless TSS or local
+	return 5 * time.Minute
 }
 
 func (s *Signer) applySpentOutputRefsFromObs(tx types.TxOutItem, obs *types.TxInItem) {

@@ -409,7 +409,7 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		!qtx.Inbound &&
 		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
 		len(qtx.ObsTx.SpentOutputRefs) > 0 &&
-		len(qtx.ObsTx.SpentOutputRefs) <= maxSpentOutputRefs {
+		len(qtx.ObsTx.SpentOutputRefs) <= common.MaxXMRSpentOutputRefs {
 		s.applySpentRefsAsync(qtx.ObsTx)
 	}
 

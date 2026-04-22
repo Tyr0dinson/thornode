@@ -9,6 +9,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+const MaxXMRSpentOutputRefs = 32
+
 // ObservedTxs a list of ObservedTx
 type ObservedTxs []ObservedTx
 
@@ -39,6 +41,36 @@ func (m *ObservedTx) Valid() error {
 	}
 	if m.FinaliseHeight <= 0 {
 		return errors.New("finalise block height can't be zero")
+	}
+	if err := ValidateSpentOutputRefs(m.Tx.Chain, m.SpentOutputRefs); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidateSpentOutputRefs(chain Chain, refs []*OutputRef) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	if !chain.Equals(XMRChain) {
+		return errors.New("spent output refs are only valid for XMR observed txs")
+	}
+	if len(refs) > MaxXMRSpentOutputRefs {
+		return fmt.Errorf("spent output refs exceeds max %d", MaxXMRSpentOutputRefs)
+	}
+	seen := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		if ref == nil {
+			return errors.New("spent output ref cannot be nil")
+		}
+		if strings.TrimSpace(ref.TxHash) == "" {
+			return errors.New("spent output ref tx hash cannot be empty")
+		}
+		key := spentOutputRefIdentity(ref)
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("duplicate spent output ref: %s", key)
+		}
+		seen[key] = struct{}{}
 	}
 	return nil
 }

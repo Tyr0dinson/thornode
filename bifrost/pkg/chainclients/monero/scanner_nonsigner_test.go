@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rs/zerolog/log"
@@ -17,12 +18,10 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// TestNonSignerCannotObserveOutbound demonstrates the bug: a node that did not
-// participate in FROST signing never receives the OutgoingTransferRecord from
-// its sidecar, so it cannot observe (and therefore attest to) outbound
-// transactions. In a 2-of-3 threshold setup the two signers see the outgoing
-// transfer while the non-signer sees an empty outgoing list.
-func TestNonSignerCannotObserveOutbound(t *testing.T) {
+// TestNonSignerCanObserveImportedOutbound verifies that a node which did not
+// participate in FROST signing can still observe the outbound after a
+// peer-signed attestation imports the sidecar-verified outbound metadata.
+func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -48,7 +47,8 @@ func TestNonSignerCannotObserveOutbound(t *testing.T) {
 	signerFrost := newMockFrostServer(t, 100, []xmrFrostTransferEntry{outboundTransfer})
 	defer signerFrost.Close()
 
-	// nonSignerFrost returns empty outgoing (non-signing node has no record).
+	// nonSignerFrost starts empty; MarkOutputsSpent imports the verified
+	// outbound record before the scanner is expected to attest locally.
 	nonSignerFrost := newMockFrostServer(t, 100, nil)
 	defer nonSignerFrost.Close()
 
@@ -69,8 +69,9 @@ func TestNonSignerCannotObserveOutbound(t *testing.T) {
 		t.Fatal("signer node should observe the outbound transfer but found none")
 	}
 
-	// --- Non-signer node: cannot observe the outbound (the bug) ---
+	// --- Non-signer node: should observe after sidecar import ---
 	nonSignerScanner := newTestScanner(t, nonSignerFrost.URL, vaultPubKey)
+	importOutboundRecord(t, nonSignerScanner.frostSigner, outboundTransfer)
 	nonSignerTxIn, err := nonSignerScanner.FetchTxs(100, 150)
 	if err != nil {
 		t.Fatalf("non-signer FetchTxs: %v", err)
@@ -83,16 +84,14 @@ func TestNonSignerCannotObserveOutbound(t *testing.T) {
 		}
 	}
 
-	// This assertion documents the bug: non-signer sees 0 outbounds while
-	// signer sees 1. Once the fix lands, flip this to require equality.
-	if nonSignerOutbound != 0 {
-		t.Fatalf("expected non-signer to see 0 outbounds (known bug), got %d", nonSignerOutbound)
+	if nonSignerOutbound != signerOutbound {
+		t.Fatalf("expected non-signer to match signer outbounds, signer=%d non-signer=%d", signerOutbound, nonSignerOutbound)
 	}
-	t.Logf("BUG CONFIRMED: signer observed %d outbound(s), non-signer observed %d", signerOutbound, nonSignerOutbound)
 }
 
 // TestTwoOfThreeSignerConsensus verifies that in a 2-of-3 setup both signers
-// produce identical observations while the non-signer diverges (empty).
+// produce identical observations and the non-signer catches up after importing
+// the sidecar-verified outbound metadata.
 func TestTwoOfThreeSignerConsensus(t *testing.T) {
 	t.Parallel()
 
@@ -133,6 +132,7 @@ func TestTwoOfThreeSignerConsensus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("signer2 FetchTxs: %v", err)
 	}
+	importOutboundRecord(t, ns.frostSigner, transfer)
 	txInNS, err := ns.FetchTxs(200, 250)
 	if err != nil {
 		t.Fatalf("non-signer FetchTxs: %v", err)
@@ -149,11 +149,8 @@ func TestTwoOfThreeSignerConsensus(t *testing.T) {
 		t.Fatal("both signers should observe the outbound")
 	}
 
-	// The non-signer should match but currently cannot.
-	if outboundNS == outbound1 {
-		t.Log("non-signer matches signers — bug is fixed!")
-	} else {
-		t.Logf("BUG: non-signer observed %d outbound(s), signers observed %d", outboundNS, outbound1)
+	if outboundNS != outbound1 {
+		t.Fatalf("non-signer should match signers after import, non-signer=%d signers=%d", outboundNS, outbound1)
 	}
 }
 
@@ -194,6 +191,29 @@ func countOutboundsFrom(items []*stypes.TxInItem, sender string) int {
 	return count
 }
 
+func importOutboundRecord(t *testing.T, signer *FrostSigner, transfer xmrFrostTransferEntry) {
+	t.Helper()
+	result, err := signer.MarkOutputsSpent(
+		transfer.VaultPubKey,
+		transfer.TxID,
+		[]xmrFrostOutputRef{{TxHash: strings.Repeat("11", 32), OutputIndex: 0}},
+		false,
+		&xmrFrostOutboundMeta{
+			FromAddress: transfer.FromAddress,
+			ToAddress:   transfer.Address,
+			Amount:      transfer.Amount,
+			Fee:         transfer.Fee,
+			Memo:        transfer.Note,
+		},
+	)
+	if err != nil {
+		t.Fatalf("import outbound record: %v", err)
+	}
+	if result.Marked == 0 {
+		t.Fatal("expected mark-spent import to mark at least one output")
+	}
+}
+
 func newTestScanner(t *testing.T, frostURL string, vaultPubKey common.PubKey) *Scanner {
 	t.Helper()
 	frostSigner, err := NewFrostSignerWithEndpoint(
@@ -209,6 +229,8 @@ func newTestScanner(t *testing.T, frostURL string, vaultPubKey common.PubKey) *S
 
 func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []xmrFrostTransferEntry) *httptest.Server {
 	t.Helper()
+	var mu sync.Mutex
+	currentOutgoing := append([]xmrFrostTransferEntry(nil), outgoing...)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -231,11 +253,36 @@ func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []xmrFrostTran
 			})
 
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
+			mu.Lock()
+			respOutgoing := append([]xmrFrostTransferEntry(nil), currentOutgoing...)
+			mu.Unlock()
 			resp := xmrFrostTransfersResponse{}
-			if outgoing != nil {
-				resp.Outgoing = outgoing
+			if respOutgoing != nil {
+				resp.Outgoing = respOutgoing
 			}
 			_ = json.NewEncoder(w).Encode(resp)
+
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/mark-spent":
+			var req xmrFrostMarkSpentRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid mark-spent request", http.StatusBadRequest)
+				return
+			}
+			if req.TxHash != "" && req.FromAddress != "" && req.ToAddress != "" && req.VaultPubKey != "" {
+				mu.Lock()
+				currentOutgoing = append(currentOutgoing, xmrFrostTransferEntry{
+					TxID:        req.TxHash,
+					Address:     req.ToAddress,
+					FromAddress: req.FromAddress,
+					VaultPubKey: req.VaultPubKey,
+					Amount:      req.Amount,
+					Fee:         req.Fee,
+					Height:      uint64(blockHeight),
+					Note:        req.Memo,
+				})
+				mu.Unlock()
+			}
+			_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: len(req.SpentRefs)})
 
 		default:
 			http.NotFound(w, r)

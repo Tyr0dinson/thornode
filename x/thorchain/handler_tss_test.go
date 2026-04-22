@@ -820,7 +820,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenRejectsMismatchedLatchedFields(c
 	helper.keeper.SetTssVoter(helper.ctx, voter)
 
 	mismatchedFrost := *msg
-	mismatchedFrost.PoolPubKeyFrost = GetRandomPubKey()
+	mismatchedFrost.PoolPubKeyFrost = GetRandomEd25519PubKey()
 	_, err = handler.Run(helper.ctx, &mismatchedFrost)
 	c.Assert(err, ErrorMatches, "invalid pool pubkey or monero height")
 

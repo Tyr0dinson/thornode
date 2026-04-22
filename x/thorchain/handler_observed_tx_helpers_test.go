@@ -633,6 +633,49 @@ func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundSingleMat
 	c.Assert(result, Equals, item.OriginalMemo)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExtendedXMRWindow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+
+	vaultPubKey := GetRandomPubKey()
+	vaultPubKeyFrost := getRandomXMRFrostPubKey(c)
+	toAddress, err := vaultPubKeyFrost.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	inHash, _ := common.NewTxID("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+	item := TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        toAddress,
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyFrost: vaultPubKeyFrost,
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(1000000)),
+		Memo:             "OUT:" + inHash.String(),
+		OriginalMemo:     "SWAP:XMR.XMR:" + toAddress.String(),
+		InHash:           inHash,
+		GasRate:          100,
+		MaxGas:           common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(10000))},
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	txOut := NewTxOut(75)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			Chain:     common.XMRChain,
+			ToAddress: toAddress,
+			Coins:     common.Coins{item.Coin},
+			Memo:      "",
+		},
+		ObservedPubKey: vaultPubKeyFrost,
+	}
+
+	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
+	c.Assert(result, Equals, item.OriginalMemo)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundNoMatch(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog/log"
@@ -114,4 +115,52 @@ func TestRefreshAsgardSkipsVaultWithoutPubKeyFrost(t *testing.T) {
 	require.NoError(t, scanner.refreshAsgardLookup(), "vaults without frost keys should be ignored, not registered")
 
 	assert.Equal(t, 0, registerCalls, "eddsa-only xmr vaults should not hit sidecar registration")
+}
+
+func TestFetchTxsObservesInactiveFrostVaultFromPubKeys(t *testing.T) {
+	t.Parallel()
+
+	secpKey := testVaultPubKey(t, "inactive-xmr-secp")
+	frostKey, frostAddr := testVaultPubKeyAndAddress(t)
+	txID := strings.Repeat("9", 64)
+
+	frostServer := newFrostTransfersServer(
+		t,
+		[]xmrFrostTransferEntry{{
+			TxID:        txID,
+			Address:     frostAddr.String(),
+			VaultPubKey: frostKey.String(),
+			Amount:      uint64(2 * moneroAtomicToThorchain),
+			Height:      100,
+			Note:        "REFUND:" + strings.Repeat("a", 64),
+		}},
+		nil,
+		[]string{frostAddr.String()},
+	)
+	defer frostServer.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, frostServer.URL)
+	require.NoError(t, err)
+
+	scanner := NewScanner(
+		log.Logger,
+		signer,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{},
+			pubkeyVaults: ttypes.Vaults{{
+				PubKey:      secpKey,
+				PubKeyFrost: frostKey,
+				Status:      ttypes.VaultStatus_InactiveVault,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 150)
+	require.NoError(t, err)
+	require.Len(t, txIn.TxArray, 1)
+	assert.Equal(t, frostKey, txIn.TxArray[0].ObservedVaultPubKey)
+	assert.Equal(t, frostAddr.String(), txIn.TxArray[0].To)
 }

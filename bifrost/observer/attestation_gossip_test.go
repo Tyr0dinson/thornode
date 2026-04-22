@@ -1002,7 +1002,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		assert.Equal(t, "aaa111", callbackTx.SpentOutputRefs[0].TxHash)
 	})
 
-	t.Run("callback does not fire for peer XMR attestation before quorum commit", func(t *testing.T) {
+	t.Run("callback imports peer XMR attestation before quorum commit", func(t *testing.T) {
 		var called bool
 		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
 			called = true
@@ -1022,7 +1022,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		ag.handleObservedTxAttestation(context.Background(), att)
 
 		time.Sleep(50 * time.Millisecond)
-		assert.False(t, called)
+		assert.True(t, called)
 	})
 
 	t.Run("callback does not fire for non-XMR chain", func(t *testing.T) {

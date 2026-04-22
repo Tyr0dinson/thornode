@@ -71,15 +71,13 @@ func TestVaultRegistrationFailurePropagatesError(t *testing.T) {
 		"error should indicate registration failure")
 }
 
-// TestRegistrationFailureCausesRefreshToFail verifies that when vault
-// registration fails for ANY vault during refreshAsgardLookup, the entire
-// refresh returns an error. A single vault's registration failure must block
-// scanning — otherwise the bifrost advances past blocks that vault has
-// outputs in.
+// TestRegistrationFailureSkipsOnlyBadVault verifies that a stale or malformed
+// XMR vault registration entry does not wedge scanner refresh for every other
+// vault. The failed vault is skipped; valid vaults remain usable.
 //
 // This test simulates the exact refreshAsgardLookup logic: iterate vaults,
-// call ensureFrostVaultRegistered, and verify the failure path.
-func TestRegistrationFailureCausesRefreshToFail(t *testing.T) {
+// call ensureFrostVaultRegistered, and verify the fail-open path.
+func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 	t.Parallel()
 
 	frostKey := testVaultPubKey(t, "frost-refresh-fail")
@@ -120,7 +118,7 @@ func TestRegistrationFailureCausesRefreshToFail(t *testing.T) {
 		{pubKey: badKey},
 	}
 
-	var refreshErr error
+	var registrationErrors int
 	for _, v := range vaults {
 		_, regErr := ensureFrostVaultRegistered(
 			testLogger(),
@@ -132,24 +130,14 @@ func TestRegistrationFailureCausesRefreshToFail(t *testing.T) {
 			0,
 		)
 		if regErr != nil {
-			// In the actual refreshAsgardLookup, this vault is skipped with
-			// `continue`. The bug: skipping means the vault's outputs at the
-			// requested block height are never scanned, and the bifrost
-			// advances past them.
-			//
-			// The registration failure itself is captured here. The defensive
-			// fix in fetchTransfersByHeight ensures that IF refreshAsgardLookup
-			// returns any error, the bifrost retries instead of advancing.
-			refreshErr = regErr
-			break
+			registrationErrors++
+			continue
 		}
 	}
-
-	require.Error(t, refreshErr,
-		"registration failure for any vault should cause refresh to fail")
 
 	// Verify: first vault registered successfully, second vault failed.
 	assert.Equal(t, 2, len(registeredKeys))
 	assert.Equal(t, frostKey.String(), registeredKeys[0])
 	assert.Equal(t, badKey.String(), registeredKeys[1])
+	assert.Equal(t, 1, registrationErrors)
 }

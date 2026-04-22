@@ -793,29 +793,31 @@ func (s *Scanner) refreshAsgardLookup() error {
 	}
 
 	lookup := make(map[string]common.PubKey)
+	seenVaults := make(map[string]struct{})
 	for _, vault := range vaults {
-		observedVault := vault.PubKeyFrost
-		if observedVault.IsEmpty() {
+		if addErr := s.addFrostVaultToLookup(lookup, seenVaults, vault.PubKeyFrost, vault.VaultCreationHeightXmr); addErr != nil {
+			s.logger.Debug().Err(addErr).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during asgard lookup refresh")
 			continue
 		}
-		creationHeight := vault.VaultCreationHeightXmr
-		derived, addrErr := ensureFrostVaultRegistered(
-			s.logger,
-			s.frostSigner,
-			s.chain,
-			observedVault,
-			s.localVaultBootstrap,
-			"bifrost_scanner",
-			creationHeight,
-		)
-		if addrErr != nil {
-			return fmt.Errorf("fail to register vault %s: %w", observedVault.String(), addrErr)
-		}
-		if derived.IsEmpty() {
-			s.logger.Debug().Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with empty derived address")
+	}
+
+	pubKeys, err := s.bridge.GetPubKeys()
+	if err != nil {
+		return fmt.Errorf("fail to get vault pubkeys: %w", err)
+	}
+	for _, pair := range pubKeys {
+		if pair.Algo != common.SigningAlgoSecp256k1 || pair.PubKey.IsEmpty() {
 			continue
 		}
-		lookup[derived.String()] = observedVault
+		vault, vaultErr := s.bridge.GetVault(pair.PubKey.String())
+		if vaultErr != nil {
+			s.logger.Debug().Err(vaultErr).Str("vault_pubkey", pair.PubKey.String()).Msg("skip xmr pubkey during asgard lookup refresh")
+			continue
+		}
+		if err := s.addFrostVaultToLookup(lookup, seenVaults, vault.PubKeyFrost, vault.VaultCreationHeightXmr); err != nil {
+			s.logger.Debug().Err(err).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during pubkey lookup refresh")
+			continue
+		}
 	}
 
 	s.asgardMu.Lock()
@@ -823,6 +825,41 @@ func (s *Scanner) refreshAsgardLookup() error {
 	s.asgardUpdated = time.Now()
 	s.asgardMu.Unlock()
 
+	return nil
+}
+
+func (s *Scanner) addFrostVaultToLookup(
+	lookup map[string]common.PubKey,
+	seenVaults map[string]struct{},
+	observedVault common.PubKey,
+	creationHeight int64,
+) error {
+	if observedVault.IsEmpty() {
+		return nil
+	}
+	key := observedVault.String()
+	if _, ok := seenVaults[key]; ok {
+		return nil
+	}
+	seenVaults[key] = struct{}{}
+
+	derived, addrErr := ensureFrostVaultRegistered(
+		s.logger,
+		s.frostSigner,
+		s.chain,
+		observedVault,
+		s.localVaultBootstrap,
+		"bifrost_scanner",
+		creationHeight,
+	)
+	if addrErr != nil {
+		return fmt.Errorf("fail to register vault %s: %w", observedVault.String(), addrErr)
+	}
+	if derived.IsEmpty() {
+		s.logger.Debug().Str("vault_pubkey", observedVault.String()).Msg("skip asgard vault with empty derived address")
+		return nil
+	}
+	lookup[derived.String()] = observedVault
 	return nil
 }
 

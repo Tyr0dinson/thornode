@@ -22,13 +22,46 @@ import (
 
 type scannerMemoBridge struct {
 	thorclient.ThorchainBridge
-	memoByTx map[string]string
-	errByTx  map[string]error
-	asgards  ttypes.Vaults
+	memoByTx     map[string]string
+	errByTx      map[string]error
+	asgards      ttypes.Vaults
+	pubkeyVaults ttypes.Vaults
 }
 
 func (b *scannerMemoBridge) GetAsgards() (ttypes.Vaults, error) {
 	return b.asgards, nil
+}
+
+func (b *scannerMemoBridge) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	vaults := append(ttypes.Vaults{}, b.asgards...)
+	vaults = append(vaults, b.pubkeyVaults...)
+
+	pairs := make([]thorclient.PubKeyContractAddressPair, 0, len(vaults))
+	for _, vault := range vaults {
+		if vault.PubKey.IsEmpty() {
+			continue
+		}
+		pairs = append(pairs, thorclient.PubKeyContractAddressPair{
+			PubKey:   vault.PubKey,
+			Algo:     common.SigningAlgoSecp256k1,
+			Inactive: vault.Status == ttypes.VaultStatus_InactiveVault,
+		})
+	}
+	return pairs, nil
+}
+
+func (b *scannerMemoBridge) GetVault(pubkey string) (ttypes.Vault, error) {
+	for _, vault := range b.asgards {
+		if vault.PubKey.String() == pubkey {
+			return vault, nil
+		}
+	}
+	for _, vault := range b.pubkeyVaults {
+		if vault.PubKey.String() == pubkey {
+			return vault, nil
+		}
+	}
+	return ttypes.Vault{}, errors.New("vault not found")
 }
 
 func (b *scannerMemoBridge) GetReferenceMemoByTxHash(hash string) (string, error) {

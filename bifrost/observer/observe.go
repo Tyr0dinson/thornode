@@ -597,6 +597,11 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
 	var txs []*types.TxInItem
 	for _, txInItem := range items {
+		var handled bool
+		txs, handled = o.appendPreAttributedXMRObservation(txs, txInItem, chain, memPool)
+		if handled {
+			continue
+		}
 		if o.pubkeyMgr == nil {
 			continue
 		}
@@ -637,6 +642,54 @@ func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInIte
 		}
 	}
 	return txs
+}
+
+func (o *Observer) appendPreAttributedXMRObservation(
+	txs []*types.TxInItem,
+	txInItem *types.TxInItem,
+	chain common.Chain,
+	memPool bool,
+) ([]*types.TxInItem, bool) {
+	if !chain.Equals(common.XMRChain) || txInItem.ObservedVaultPubKey.IsEmpty() {
+		return txs, false
+	}
+	vaultAddress, err := txInItem.ObservedVaultPubKey.GetAddress(chain)
+	if err != nil || vaultAddress.IsEmpty() {
+		return txs, false
+	}
+
+	vaultAddressString := vaultAddress.String()
+	senderMatches := txInItem.Sender == vaultAddressString
+	toMatches := txInItem.To == vaultAddressString
+	if !senderMatches && !toMatches {
+		return txs, false
+	}
+
+	if senderMatches {
+		tx := txInItem.Copy()
+		hasSigned := false
+		if o.signedTxOutCache != nil {
+			o.signedTxOutCacheMu.Lock()
+			hasSigned = o.signedTxOutCache.Contains(tx.Tx)
+			o.signedTxOutCacheMu.Unlock()
+		}
+		if !hasSigned {
+			txs = append(txs, tx)
+		}
+	}
+
+	// skip creating a duplicate cancel observation
+	if txInItem.Sender == txInItem.To && txInItem.Memo == "" {
+		return txs, true
+	}
+
+	// Inbound mempool attribution is intentionally unsupported unless the tx is
+	// internal and therefore already attributable as an outbound.
+	if toMatches && (!memPool || senderMatches) {
+		tx := txInItem.Copy()
+		txs = append(txs, tx)
+	}
+	return txs, true
 }
 
 func (o *Observer) processErrataTx(ctx context.Context) {

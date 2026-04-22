@@ -88,13 +88,13 @@ func (s *NetworkManagerTestSuite) TestRotateVaultXMRMonovaultRetiresOnlyXMRFamil
 	oldDedicatedXMR.Status = ActiveVault
 	oldDedicatedXMR.Type = AsgardVault
 	oldDedicatedXMR.Chains = xmrMonovaultChains().Strings()
-	oldDedicatedXMR.PubKeyFrost = GetRandomPubKey()
+	oldDedicatedXMR.PubKeyFrost = GetRandomEd25519PubKey()
 
 	newDedicatedXMR := GetRandomVault()
 	newDedicatedXMR.Status = InitVault
 	newDedicatedXMR.Type = AsgardVault
 	newDedicatedXMR.Chains = xmrMonovaultChains().Strings()
-	newDedicatedXMR.PubKeyFrost = GetRandomPubKey()
+	newDedicatedXMR.PubKeyFrost = GetRandomEd25519PubKey()
 
 	for _, vault := range []Vault{oldRegular, oldHybridXMR, oldDedicatedXMR, newDedicatedXMR} {
 		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
@@ -133,7 +133,7 @@ func (s *NetworkManagerTestSuite) TestTriggerKeygenIgnoresXMRMonovaultMembership
 	activeXMR.Type = AsgardVault
 	activeXMR.Chains = xmrMonovaultChains().Strings()
 	activeXMR.Membership = membership
-	activeXMR.PubKeyFrost = GetRandomPubKey()
+	activeXMR.PubKeyFrost = GetRandomEd25519PubKey()
 	c.Assert(mgr.Keeper().SetVault(ctx, activeXMR), IsNil)
 
 	c.Assert(networkMgr.TriggerKeygen(ctx, nas), IsNil)

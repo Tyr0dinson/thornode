@@ -404,7 +404,8 @@ func (c *Client) getSpentOutputCatchupVaults() (ttypes.Vaults, error) {
 
 		vault, vaultErr := c.thorchainBridge.GetVault(key)
 		if vaultErr != nil {
-			return nil, fmt.Errorf("fail to get vault %s: %w", key, vaultErr)
+			c.logger.Debug().Err(vaultErr).Str("vault_pubkey", key).Msg("xmr catchup: skip vault pubkey")
+			continue
 		}
 		vaults = append(vaults, vault)
 	}
@@ -703,7 +704,7 @@ func (c *Client) consolidateVault(
 			SigningID: fmt.Sprintf("xmr-consolidation:%s:%d:%d:%d", stateKey, thorchainHeight, attempt, amountAtomic),
 		}
 
-		rawTx, _, _, signErr := c.SignTx(txOutItem, thorchainHeight)
+		rawTx, _, observation, signErr := c.SignTx(txOutItem, thorchainHeight)
 		if signErr != nil {
 			lastErr = signErr
 			if !isRetryableConsolidationErr(signErr) {
@@ -716,6 +717,7 @@ func (c *Client) consolidateVault(
 			lastErr = errors.New("signed consolidation transaction is empty")
 			break
 		}
+		c.applySpentOutputRefsFromTxInItem(observation)
 
 		txHash, broadcastErr := c.BroadcastTx(txOutItem, rawTx)
 		if broadcastErr != nil {
@@ -753,6 +755,27 @@ func (c *Client) consolidateVault(
 			Int64("consecutive_failures", state.ConsecutiveFails).
 			Msg("xmr consolidation failed")
 	}
+}
+
+func (c *Client) applySpentOutputRefsFromTxInItem(obs *stypes.TxInItem) {
+	if obs == nil || len(obs.SpentOutputRefs) == 0 {
+		return
+	}
+	obsTx := common.NewObservedTx(
+		common.NewTx(
+			common.TxID(obs.Tx),
+			common.Address(obs.Sender),
+			common.Address(obs.To),
+			obs.Coins,
+			obs.Gas,
+			obs.Memo,
+		),
+		obs.BlockHeight,
+		obs.ObservedVaultPubKey,
+		0,
+	)
+	obsTx.SpentOutputRefs = obs.SpentOutputRefs
+	c.ApplySpentOutputRefs(obsTx)
 }
 
 func countUnlockedOutputs(outputs []xmrFrostOutputEntry, currentHeight int64) int64 {

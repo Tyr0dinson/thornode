@@ -644,10 +644,10 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				if len(targetVaults) == 0 && !chain.Equals(common.XMRChain) {
 					// Some churn/bootstrap paths still materialize regular Asgards without a
 					// fully populated external-chain list. In that case, keep migration on
-					// the regular Asgard family rather than stalling or ever targeting the
-					// dedicated XMR monovault.
+					// the regular Asgard family rather than stalling or ever targeting a
+					// vault that also serves the single-vault XMR chain.
 					for _, activeVault := range active {
-						if !activeVault.IsXMRMonovault() {
+						if !activeVault.HasChain(common.XMRChain) {
 							targetVaults = append(targetVaults, activeVault)
 						}
 					}
@@ -1321,10 +1321,10 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 		if !vault.MembershipEquals(keygen.GetMembers()) {
 			continue
 		}
-		if keygenType == XMRMonovaultKeygen && !vault.IsXMRMonovault() {
+		if keygenType == XMRMonovaultKeygen && !vault.HasChain(common.XMRChain) {
 			continue
 		}
-		if keygenType == AsgardKeygen && vault.IsXMRMonovault() {
+		if keygenType == AsgardKeygen && vault.HasChain(common.XMRChain) {
 			continue
 		}
 		if vault.Status == ActiveVault {
@@ -1363,10 +1363,10 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 	for _, asgard := range active {
 		conflicts := false
 		switch {
-		case vault.IsXMRMonovault():
+		case vault.HasChain(common.XMRChain):
 			conflicts = asgard.HasChain(common.XMRChain)
 		default:
-			if asgard.IsXMRMonovault() {
+			if asgard.HasChain(common.XMRChain) {
 				conflicts = false
 				break
 			}
