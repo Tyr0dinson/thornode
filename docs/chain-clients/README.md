@@ -35,7 +35,7 @@ Similarly, for EVM-based chains like Ethereum, Avalanche, and BSC, shared functi
 
 ## Monero (XMR) Client Notes
 
-Monero integration uses a dedicated Bifrost chain client (`monero/`) plus a local `xmr-frost-signer` sidecar for chain-specific cryptography and scanner state. On this branch the sidecar is consumed as a pre-built Docker image from `registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:boonew-xmr-wallet2-replay` by default, overridable via `XMR_FROST_SIGNER_IMAGE`.
+Monero integration uses a dedicated Bifrost chain client (`monero/`) plus a local `xmr-frost-signer` sidecar for chain-specific cryptography and scanner state. On this branch the sidecar is consumed as a pre-built Docker image from `registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:f4359da5` by default, overridable via `XMR_FROST_SIGNER_IMAGE`.
 
 - Keygen uses a custom FROST DKG path with explicit finalize (`/v1/monero/dkg/finalize`) before vault mapping/key persistence.
 - Outbound signing is a 3-step FROST API flow (`prepare` -> `partial` -> `combine`) with idempotent `msg_id`.

@@ -15,7 +15,7 @@ This repository is the canonical Rust-sidecar line for THORChain's Monero/XMR im
 - Default implementation branch: `rust-sidecar`
 - `develop` is retained only for upstream sync from `thorchain/thornode`
 - Supported XMR architecture here: Go Bifrost/go-tss plus the `xmr-frost-signer` Rust sidecar
-- The sidecar is consumed as a pre-built Docker image from `registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:boonew-xmr-wallet2-replay` by default in this branch, overridable via `XMR_FROST_SIGNER_IMAGE`
+- The sidecar is consumed as a pre-built Docker image from `registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:f4359da5` by default in this branch, overridable via `XMR_FROST_SIGNER_IMAGE`
 - The separate all-Go cutover line lives at [boonew/thornode-go](https://gitlab.com/boonew/thornode-go)
 
 ## THORNodes
