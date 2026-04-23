@@ -23,8 +23,8 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 		})
 
 		refs := []*common.OutputRef{
-			{TxHash: "spent1", OutputIndex: 0},
-			{TxHash: "spent2", OutputIndex: 1},
+			{TxHash: "spent1", OutputIndex: 0, KeyImage: "ki_spent1", SpendTxHash: "xmr-committed-1"},
+			{TxHash: "spent2", OutputIndex: 1, KeyImage: "ki_spent2", SpendTxHash: "xmr-committed-1"},
 		}
 		tx := common.ObservedTx{
 			Tx: common.Tx{
@@ -122,7 +122,7 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 				ID:    "xmr-inbound-1",
 				Chain: common.XMRChain,
 			},
-			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0}},
+			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0, KeyImage: "ki_x", SpendTxHash: "xmr-inbound-1"}},
 		}
 
 		qtx := common.QuorumTx{

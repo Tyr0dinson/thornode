@@ -357,27 +357,83 @@ func (c *Client) catchupSpentOutputRefs() {
 			continue
 		}
 
-		refs := make([]xmrFrostOutputRef, len(vault.SpentOutputRefsXmr))
-		for i, ref := range vault.SpentOutputRefsXmr {
-			refs[i] = xmrFrostOutputRef{
+		refsBySpendTx := make(map[string][]xmrFrostOutputRef)
+		for _, ref := range vault.SpentOutputRefsXmr {
+			spendTxHash := strings.TrimSpace(ref.SpendTxHash)
+			if spendTxHash == "" {
+				c.logger.Warn().
+					Str("vault", vaultPubKey.String()).
+					Str("input_tx_hash", ref.TxHash).
+					Uint32("output_index", ref.OutputIndex).
+					Msg("xmr catchup: skipping spent ref without spend tx hash")
+				continue
+			}
+			refsBySpendTx[spendTxHash] = append(refsBySpendTx[spendTxHash], xmrFrostOutputRef{
 				TxHash:      ref.TxHash,
 				OutputIndex: ref.OutputIndex,
-			}
+				KeyImage:    ref.KeyImage,
+				SpendTxHash: spendTxHash,
+			})
 		}
 
-		result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey.String(), "catchup", refs, true, nil)
-		if markErr != nil {
-			c.logger.Err(markErr).
+		for spendTxHash, refs := range refsBySpendTx {
+			outbound := c.xmrOutboundMetaFromObservedTx(spendTxHash)
+			result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey.String(), spendTxHash, refs, false, outbound)
+			if markErr != nil {
+				c.logger.Err(markErr).
+					Str("vault", vaultPubKey.String()).
+					Str("spend_tx_hash", spendTxHash).
+					Int("refs", len(refs)).
+					Msg("xmr catchup: failed to apply spent output refs")
+				continue
+			}
+			c.logger.Info().
 				Str("vault", vaultPubKey.String()).
-				Int("refs", len(refs)).
-				Msg("xmr catchup: failed to apply spent output refs")
-			continue
+				Str("spend_tx_hash", spendTxHash).
+				Int("marked", result.Marked).
+				Int("not_found", result.NotFound).
+				Msg("xmr catchup: applied spent output refs from thorchain")
 		}
-		c.logger.Info().
-			Str("vault", vaultPubKey.String()).
-			Int("marked", result.Marked).
-			Int("not_found", result.NotFound).
-			Msg("xmr catchup: applied spent output refs from thorchain")
+	}
+}
+
+func (c *Client) xmrOutboundMetaFromObservedTx(txHash string) *xmrFrostOutboundMeta {
+	if c.thorchainBridge == nil {
+		return nil
+	}
+	voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
+	if err != nil {
+		c.logger.Warn().Err(err).Str("tx_hash", txHash).Msg("xmr catchup: failed to load observed tx metadata")
+		return nil
+	}
+	observed := voter.GetTx()
+	if observed.GetTx().ID.IsEmpty() {
+		for _, candidate := range voter.GetTxs() {
+			if candidate.GetTx().ID.Equals(common.TxID(txHash)) {
+				observed = candidate
+				break
+			}
+		}
+	}
+	tx := observed.GetTx()
+	if tx.ID.IsEmpty() || !tx.Chain.Equals(common.XMRChain) {
+		return nil
+	}
+	var amount, fee uint64
+	xmrCoin := tx.Coins.GetCoin(common.XMRAsset)
+	if !xmrCoin.IsEmpty() {
+		amount, _ = xmrThorchainAmountToAtomic(xmrCoin.Amount)
+	}
+	gasCoin := tx.Gas.ToCoins().GetCoin(common.XMRAsset)
+	if !gasCoin.IsEmpty() {
+		fee, _ = xmrThorchainAmountToAtomic(gasCoin.Amount)
+	}
+	return &xmrFrostOutboundMeta{
+		FromAddress: tx.FromAddress.String(),
+		ToAddress:   tx.ToAddress.String(),
+		Amount:      amount,
+		Fee:         fee,
+		Memo:        tx.Memo,
 	}
 }
 
@@ -1137,6 +1193,8 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 			requiredInputs = append(requiredInputs, tssp.FrostSpentOutputRef{
 				TxHash:      ref.TxHash,
 				OutputIndex: ref.OutputIndex,
+				KeyImage:    ref.KeyImage,
+				SpendTxHash: ref.SpendTxHash,
 			})
 		}
 		c.logger.Info().Int("required_inputs", len(requiredInputs)).Msg("using checkpointed inputs for xmr signing retry")
@@ -1186,6 +1244,8 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		localSpentRefs = append(localSpentRefs, xmrFrostOutputRef{
 			TxHash:      ref.TxHash,
 			OutputIndex: ref.OutputIndex,
+			KeyImage:    ref.KeyImage,
+			SpendTxHash: ref.SpendTxHash,
 		})
 	}
 	payload := signedTxPayload{
@@ -1409,6 +1469,8 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 			refs[i] = &common.OutputRef{
 				TxHash:      ref.TxHash,
 				OutputIndex: ref.OutputIndex,
+				KeyImage:    ref.KeyImage,
+				SpendTxHash: txHash,
 			}
 		}
 		item.SpentOutputRefs = refs
@@ -1453,6 +1515,8 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 		refs[i] = xmrFrostOutputRef{
 			TxHash:      ref.TxHash,
 			OutputIndex: ref.OutputIndex,
+			KeyImage:    ref.KeyImage,
+			SpendTxHash: ref.SpendTxHash,
 		}
 	}
 

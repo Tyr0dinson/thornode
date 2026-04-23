@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -39,8 +37,8 @@ func (s *SpentOutputRefsFlowSuite) TestSpentRefsAccumulateViaQuorumHandler(c *C)
 
 	// Simulate an outbound observation keyed by the frost pubkey (as XMR does).
 	refs := []*common.OutputRef{
-		{TxHash: "aaa", OutputIndex: 0},
-		{TxHash: "bbb", OutputIndex: 1},
+		{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"},
+		{TxHash: "bbb", OutputIndex: 1, KeyImage: "ki_bbb", SpendTxHash: "spend_tx"},
 	}
 
 	// Apply spent refs as handleObservedTxOutQuorum does (lines 752-784),
@@ -50,10 +48,10 @@ func (s *SpentOutputRefsFlowSuite) TestSpentRefsAccumulateViaQuorumHandler(c *C)
 
 	existing := make(map[string]struct{}, len(v.SpentOutputRefsXmr))
 	for _, ref := range v.SpentOutputRefsXmr {
-		existing[ref.TxHash+":"+fmt.Sprint(ref.OutputIndex)] = struct{}{}
+		existing[common.SpentOutputRefIdentity(ref)] = struct{}{}
 	}
 	for _, ref := range refs {
-		key := ref.TxHash + ":" + fmt.Sprint(ref.OutputIndex)
+		key := common.SpentOutputRefIdentity(ref)
 		if _, ok := existing[key]; !ok {
 			v.SpentOutputRefsXmr = append(v.SpentOutputRefsXmr, ref)
 			existing[key] = struct{}{}
@@ -70,17 +68,17 @@ func (s *SpentOutputRefsFlowSuite) TestSpentRefsAccumulateViaQuorumHandler(c *C)
 
 	// Apply again with a duplicate and a new ref — dedup should work.
 	moreRefs := []*common.OutputRef{
-		{TxHash: "aaa", OutputIndex: 0},
-		{TxHash: "ccc", OutputIndex: 2},
+		{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"},
+		{TxHash: "ccc", OutputIndex: 2, KeyImage: "ki_ccc", SpendTxHash: "spend_tx"},
 	}
 	v2, err := k.GetVault(ctx, frostPubKey)
 	c.Assert(err, IsNil)
 	existing2 := make(map[string]struct{}, len(v2.SpentOutputRefsXmr))
 	for _, ref := range v2.SpentOutputRefsXmr {
-		existing2[ref.TxHash+":"+fmt.Sprint(ref.OutputIndex)] = struct{}{}
+		existing2[common.SpentOutputRefIdentity(ref)] = struct{}{}
 	}
 	for _, ref := range moreRefs {
-		key := ref.TxHash + ":" + fmt.Sprint(ref.OutputIndex)
+		key := common.SpentOutputRefIdentity(ref)
 		if _, ok := existing2[key]; !ok {
 			v2.SpentOutputRefsXmr = append(v2.SpentOutputRefsXmr, ref)
 			existing2[key] = struct{}{}
@@ -107,9 +105,9 @@ func (s *SpentOutputRefsFlowSuite) TestSpentRefsCatchupFromVaultState(c *C) {
 	vault := NewVaultV2(1, ActiveVault, AsgardVault, ecdsaPubKey, []string{common.XMRChain.String()}, nil, eddsaPubKey)
 	vault.PubKeyFrost = frostPubKey
 	vault.SpentOutputRefsXmr = []*common.OutputRef{
-		{TxHash: "spent1", OutputIndex: 0},
-		{TxHash: "spent2", OutputIndex: 1},
-		{TxHash: "spent3", OutputIndex: 2},
+		{TxHash: "spent1", OutputIndex: 0, KeyImage: "ki_1", SpendTxHash: "spend_tx"},
+		{TxHash: "spent2", OutputIndex: 1, KeyImage: "ki_2", SpendTxHash: "spend_tx"},
+		{TxHash: "spent3", OutputIndex: 2, KeyImage: "ki_3", SpendTxHash: "spend_tx"},
 	}
 	c.Assert(k.SetVault(ctx, vault), IsNil)
 

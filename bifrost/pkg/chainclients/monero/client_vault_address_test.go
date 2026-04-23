@@ -12,6 +12,7 @@ import (
 type mockMoneroBridge struct {
 	thorclient.ThorchainBridge
 	vaultByPubKey map[string]ttypes.Vault
+	observedByTx  map[string]*ttypes.QueryObservedTxVoter
 	pubKeys       []thorclient.PubKeyContractAddressPair
 	pubKeysErr    error
 }
@@ -49,6 +50,15 @@ func (m *mockMoneroBridge) GetPubKeys() ([]thorclient.PubKeyContractAddressPair,
 		})
 	}
 	return pubKeys, nil
+}
+
+func (m *mockMoneroBridge) GetObservedTxVoter(txID string) (*ttypes.QueryObservedTxVoter, error) {
+	if m.observedByTx != nil {
+		if voter, ok := m.observedByTx[txID]; ok {
+			return voter, nil
+		}
+	}
+	return nil, errors.New("observed tx voter not found")
 }
 
 func TestGetVaultAddressReturnsEmptyForUnknownVault(t *testing.T) {

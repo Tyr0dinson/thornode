@@ -723,13 +723,13 @@ func (TypeObservedTxSuite) TestGetConsensusTxDoesNotMixXMRSpentRefs(c *C) {
 
 	obTxA := common.NewObservedTx(tx, 1, observePoolAddr, 1)
 	obTxA.SpentOutputRefs = []*common.OutputRef{
-		{TxHash: "aaaa", OutputIndex: 0},
-		{TxHash: "bbbb", OutputIndex: 1},
+		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
 	}
 	obTxB := common.NewObservedTx(tx, 1, observePoolAddr, 1)
 	obTxB.SpentOutputRefs = []*common.OutputRef{
-		{TxHash: "cccc", OutputIndex: 0},
-		{TxHash: "dddd", OutputIndex: 1},
+		{TxHash: "cccc", OutputIndex: 0, KeyImage: "ki_cccc", SpendTxHash: txID.String()},
+		{TxHash: "dddd", OutputIndex: 1, KeyImage: "ki_dddd", SpendTxHash: txID.String()},
 	}
 
 	c.Assert(voter.Add(obTxA, nas[0].NodeAddress), Equals, true)
@@ -761,13 +761,13 @@ func (TypeObservedTxSuite) TestVoterMergesEquivalentXMRSpentRefsRegardlessOfOrde
 
 	obTxA := common.NewObservedTx(tx, 1, observePoolAddr, 1)
 	obTxA.SpentOutputRefs = []*common.OutputRef{
-		{TxHash: "aaaa", OutputIndex: 0},
-		{TxHash: "bbbb", OutputIndex: 1},
+		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
 	}
 	obTxB := common.NewObservedTx(tx, 1, observePoolAddr, 1)
 	obTxB.SpentOutputRefs = []*common.OutputRef{
-		{TxHash: "bbbb", OutputIndex: 1},
-		{TxHash: "aaaa", OutputIndex: 0},
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
+		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
 	}
 
 	c.Assert(voter.Add(obTxA, nas[0].NodeAddress), Equals, true)

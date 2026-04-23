@@ -99,6 +99,8 @@ func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutRejectsOversizedXMRSpentRefs
 		tx.SpentOutputRefs = append(tx.SpentOutputRefs, &common.OutputRef{
 			TxHash:      fmt.Sprintf("tx-%d", i),
 			OutputIndex: uint32(i),
+			KeyImage:    fmt.Sprintf("ki-%d", i),
+			SpendTxHash: tx.Tx.ID.String(),
 		})
 	}
 

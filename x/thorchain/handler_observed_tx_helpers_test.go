@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -1306,15 +1304,15 @@ func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersDoesNotMixXMRSpe
 	vaultPubKey := GetRandomPubKey()
 	obsTxA := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
 	obsTxA.SpentOutputRefs = []*common.OutputRef{
-		{TxHash: "aaaa", OutputIndex: 0},
-		{TxHash: "bbbb", OutputIndex: 1},
+		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
 	}
 	obsTxA.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String()}
 
 	obsTxB := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
 	obsTxB.SpentOutputRefs = []*common.OutputRef{
-		{TxHash: "cccc", OutputIndex: 0},
-		{TxHash: "dddd", OutputIndex: 1},
+		{TxHash: "cccc", OutputIndex: 0, KeyImage: "ki_cccc", SpendTxHash: txID.String()},
+		{TxHash: "dddd", OutputIndex: 1, KeyImage: "ki_dddd", SpendTxHash: txID.String()},
 	}
 	obsTxB.Signers = []string{nas[2].NodeAddress.String(), nas[3].NodeAddress.String()}
 
@@ -1409,18 +1407,18 @@ func (s *HandlerObservedTxHelpersSuite) TestSpentOutputRefsXmrAccumulation(c *C)
 	vault := NewVaultV2(1, ActiveVault, AsgardVault, vaultPubKey, []string{common.XMRChain.String()}, nil, vaultPubKey)
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	ref1 := &common.OutputRef{TxHash: "aaa", OutputIndex: 0}
-	ref2 := &common.OutputRef{TxHash: "bbb", OutputIndex: 1}
+	ref1 := &common.OutputRef{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"}
+	ref2 := &common.OutputRef{TxHash: "bbb", OutputIndex: 1, KeyImage: "ki_bbb", SpendTxHash: "spend_tx"}
 
 	applySpentRefs := func(refs []*common.OutputRef) {
 		v, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
 		c.Assert(err, IsNil)
 		existing := make(map[string]struct{}, len(v.SpentOutputRefsXmr))
 		for _, ref := range v.SpentOutputRefsXmr {
-			existing[ref.TxHash+":"+fmt.Sprint(ref.OutputIndex)] = struct{}{}
+			existing[common.SpentOutputRefIdentity(ref)] = struct{}{}
 		}
 		for _, ref := range refs {
-			key := ref.TxHash + ":" + fmt.Sprint(ref.OutputIndex)
+			key := common.SpentOutputRefIdentity(ref)
 			if _, ok := existing[key]; !ok {
 				v.SpentOutputRefsXmr = append(v.SpentOutputRefsXmr, ref)
 				existing[key] = struct{}{}
@@ -1436,7 +1434,10 @@ func (s *HandlerObservedTxHelpersSuite) TestSpentOutputRefsXmrAccumulation(c *C)
 	c.Assert(vault.SpentOutputRefsXmr[0].TxHash, Equals, "aaa")
 	c.Assert(vault.SpentOutputRefsXmr[1].TxHash, Equals, "bbb")
 
-	applySpentRefs([]*common.OutputRef{{TxHash: "aaa", OutputIndex: 0}, {TxHash: "ccc", OutputIndex: 2}})
+	applySpentRefs([]*common.OutputRef{
+		{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"},
+		{TxHash: "ccc", OutputIndex: 2, KeyImage: "ki_ccc", SpendTxHash: "spend_tx"},
+	})
 	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
 	c.Assert(err, IsNil)
 	c.Assert(len(vault.SpentOutputRefsXmr), Equals, 3, Commentf("duplicate ref should be deduped"))

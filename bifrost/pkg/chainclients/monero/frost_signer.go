@@ -177,6 +177,8 @@ type xmrFrostSignCombineResponse struct {
 type xmrFrostOutputRef struct {
 	TxHash      string `json:"tx_hash"`
 	OutputIndex uint32 `json:"output_index"`
+	KeyImage    string `json:"key_image,omitempty"`
+	SpendTxHash string `json:"spend_tx_hash,omitempty"`
 }
 
 type xmrFrostMarkSpentRequest struct {

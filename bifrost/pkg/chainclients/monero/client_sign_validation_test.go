@@ -49,7 +49,12 @@ func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
 	ckpt, _ := json.Marshal(xmrSignCheckpoint{
-		SpentOutputRefs: []xmrFrostOutputRef{{TxHash: "aabb", OutputIndex: 0}},
+		SpentOutputRefs: []xmrFrostOutputRef{{
+			TxHash:      "aabb",
+			OutputIndex: 0,
+			KeyImage:    "ki_aabb",
+			SpendTxHash: "spend_tx",
+		}},
 	})
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,

@@ -42,13 +42,13 @@ func (m *ObservedTx) Valid() error {
 	if m.FinaliseHeight <= 0 {
 		return errors.New("finalise block height can't be zero")
 	}
-	if err := ValidateSpentOutputRefs(m.Tx.Chain, m.SpentOutputRefs); err != nil {
+	if err := ValidateSpentOutputRefs(m.Tx.Chain, m.Tx.ID, m.SpentOutputRefs); err != nil {
 		return err
 	}
 	return nil
 }
 
-func ValidateSpentOutputRefs(chain Chain, refs []*OutputRef) error {
+func ValidateSpentOutputRefs(chain Chain, spendTxHash TxID, refs []*OutputRef) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -65,6 +65,15 @@ func ValidateSpentOutputRefs(chain Chain, refs []*OutputRef) error {
 		}
 		if strings.TrimSpace(ref.TxHash) == "" {
 			return errors.New("spent output ref tx hash cannot be empty")
+		}
+		if strings.TrimSpace(ref.KeyImage) == "" {
+			return errors.New("spent output ref key image cannot be empty")
+		}
+		if strings.TrimSpace(ref.SpendTxHash) == "" {
+			return errors.New("spent output ref spend tx hash cannot be empty")
+		}
+		if !TxID(ref.SpendTxHash).Equals(spendTxHash) {
+			return fmt.Errorf("spent output ref spend tx hash %s does not match observed tx %s", ref.SpendTxHash, spendTxHash)
 		}
 		key := spentOutputRefIdentity(ref)
 		if _, ok := seen[key]; ok {

@@ -87,6 +87,8 @@ message OutputRef {
 
   string tx_hash = 1;
   uint32 output_index = 2;
+  string key_image = 3;
+  string spend_tx_hash = 4;
 }
 
 message ObservedTx {

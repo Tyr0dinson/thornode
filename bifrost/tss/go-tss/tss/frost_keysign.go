@@ -136,10 +136,18 @@ func frostRequiredInputsHash(inputs []FrostSpentOutputRef) (string, error) {
 		normalized = append(normalized, FrostSpentOutputRef{
 			TxHash:      txHash,
 			OutputIndex: input.OutputIndex,
+			KeyImage:    strings.ToLower(strings.TrimSpace(input.KeyImage)),
+			SpendTxHash: strings.ToLower(strings.TrimSpace(input.SpendTxHash)),
 		})
 	}
 	sort.Slice(normalized, func(i, j int) bool {
 		if normalized[i].TxHash == normalized[j].TxHash {
+			if normalized[i].OutputIndex == normalized[j].OutputIndex {
+				if normalized[i].KeyImage == normalized[j].KeyImage {
+					return normalized[i].SpendTxHash < normalized[j].SpendTxHash
+				}
+				return normalized[i].KeyImage < normalized[j].KeyImage
+			}
 			return normalized[i].OutputIndex < normalized[j].OutputIndex
 		}
 		return normalized[i].TxHash < normalized[j].TxHash
@@ -1129,6 +1137,8 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 			normalizedRefs[i] = FrostSpentOutputRef{
 				TxHash:      strings.ToLower(strings.TrimSpace(ref.TxHash)),
 				OutputIndex: ref.OutputIndex,
+				KeyImage:    strings.ToLower(strings.TrimSpace(ref.KeyImage)),
+				SpendTxHash: strings.ToLower(strings.TrimSpace(ref.SpendTxHash)),
 			}
 		}
 		normalized.MsgID = payloadMsgID

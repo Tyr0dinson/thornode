@@ -698,7 +698,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "0F2CE0A44217EDC4BC46B0082062A4A06F0A5EA806DF0E89E66C627ECADDEBB5",
+      "data_hash": "03233D6ACA9411DD64B4EE7B9357BB1E92ACF5ECEF9F87EFD5D4DF838476A353",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -796,7 +796,7 @@
     ],
     "txs": [
       {
-        "hash": "1A6AEBA824571E967509542D227C9993079F77D13072B17807DF0B28C9692377",
+        "hash": "A0121BD8CC19A90370B69B4555EC84C7281A722813ADDAEB2AE9290FD6552D04",
         "tx": {
           "auth_info": {
             "fee": {
@@ -841,11 +841,15 @@
                     "signers": [],
                     "spent_output_refs": [
                       {
+                        "key_image": "1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa",
                         "output_index": 0,
+                        "spend_tx_hash": "0000000000000000000000000000000000000000000000000000000000000001",
                         "tx_hash": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
                       },
                       {
+                        "key_image": "2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb",
                         "output_index": 1,
+                        "spend_tx_hash": "0000000000000000000000000000000000000000000000000000000000000001",
                         "tx_hash": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
                       }
                     ],
@@ -881,7 +885,7 @@
             "unordered": false
           },
           "signatures": [
-            "O02sd5qpWGi2hlb4iTyyc+HfF/+NbLVQUG2v9sP77agZXcwhFGhAXuPC9kZlSYGQOxaaZr4SIarxiuUjDgC90g=="
+            "Bt1ij+4AoQMDF37r+jsfESOTDEKWdU9ptKNr1/vAPbAjgTOvBOcXk7u6Yt8gxS3ygi7r3g5j/mBFgPJDq6vf8A=="
           ]
         },
         "result": {
@@ -894,7 +898,7 @@
               "type": "tx"
             },
             {
-              "signature": "O02sd5qpWGi2hlb4iTyyc+HfF/+NbLVQUG2v9sP77agZXcwhFGhAXuPC9kZlSYGQOxaaZr4SIarxiuUjDgC90g==",
+              "signature": "Bt1ij+4AoQMDF37r+jsfESOTDEKWdU9ptKNr1/vAPbAjgTOvBOcXk7u6Yt8gxS3ygi7r3g5j/mBFgPJDq6vf8A==",
               "type": "tx"
             },
             {

@@ -454,10 +454,14 @@
           "routers": null,
           "spent_output_refs_xmr": [
             {
+              "key_image": "1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa",
+              "spend_tx_hash": "0000000000000000000000000000000000000000000000000000000000000001",
               "tx_hash": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
             },
             {
+              "key_image": "2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb",
               "output_index": 1,
+              "spend_tx_hash": "0000000000000000000000000000000000000000000000000000000000000001",
               "tx_hash": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
             }
           ],

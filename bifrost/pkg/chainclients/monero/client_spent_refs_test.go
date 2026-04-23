@@ -46,9 +46,9 @@ func TestBuildOutboundObservationIncludesSpentRefs(t *testing.T) {
 	}
 
 	spentRefs := []xmrFrostOutputRef{
-		{TxHash: "aaa111", OutputIndex: 0},
-		{TxHash: "bbb222", OutputIndex: 1},
-		{TxHash: "ccc333", OutputIndex: 2},
+		{TxHash: "aaa111", OutputIndex: 0, KeyImage: "ki_aaa"},
+		{TxHash: "bbb222", OutputIndex: 1, KeyImage: "ki_bbb"},
+		{TxHash: "ccc333", OutputIndex: 2, KeyImage: "ki_ccc"},
 	}
 
 	obs := c.buildOutboundObservation(tx, "txhash123", 5000000, spentRefs)
@@ -57,10 +57,14 @@ func TestBuildOutboundObservationIncludesSpentRefs(t *testing.T) {
 
 	assert.Equal(t, "aaa111", obs.SpentOutputRefs[0].TxHash)
 	assert.Equal(t, uint32(0), obs.SpentOutputRefs[0].OutputIndex)
+	assert.Equal(t, "ki_aaa", obs.SpentOutputRefs[0].KeyImage)
+	assert.Equal(t, "txhash123", obs.SpentOutputRefs[0].SpendTxHash)
 	assert.Equal(t, "bbb222", obs.SpentOutputRefs[1].TxHash)
 	assert.Equal(t, uint32(1), obs.SpentOutputRefs[1].OutputIndex)
+	assert.Equal(t, "ki_bbb", obs.SpentOutputRefs[1].KeyImage)
 	assert.Equal(t, "ccc333", obs.SpentOutputRefs[2].TxHash)
 	assert.Equal(t, uint32(2), obs.SpentOutputRefs[2].OutputIndex)
+	assert.Equal(t, "ki_ccc", obs.SpentOutputRefs[2].KeyImage)
 
 	assert.Equal(t, vaultPubKey, obs.ObservedVaultPubKey, "observation vault pubkey should be the frost key")
 }
@@ -132,8 +136,8 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	}
 
 	refs := []*common.OutputRef{
-		{TxHash: "spent_a", OutputIndex: 0},
-		{TxHash: "spent_b", OutputIndex: 3},
+		{TxHash: "spent_a", OutputIndex: 0, KeyImage: "ki_a", SpendTxHash: "XMRTX99"},
+		{TxHash: "spent_b", OutputIndex: 3, KeyImage: "ki_b", SpendTxHash: "XMRTX99"},
 	}
 	obsTx := common.NewObservedTx(
 		common.Tx{
@@ -160,8 +164,12 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	require.Equal(t, 2, len(capturedRefs))
 	assert.Equal(t, "spent_a", capturedRefs[0].TxHash)
 	assert.Equal(t, uint32(0), capturedRefs[0].OutputIndex)
+	assert.Equal(t, "ki_a", capturedRefs[0].KeyImage)
+	assert.Equal(t, "XMRTX99", capturedRefs[0].SpendTxHash)
 	assert.Equal(t, "spent_b", capturedRefs[1].TxHash)
 	assert.Equal(t, uint32(3), capturedRefs[1].OutputIndex)
+	assert.Equal(t, "ki_b", capturedRefs[1].KeyImage)
+	assert.Equal(t, "XMRTX99", capturedRefs[1].SpendTxHash)
 }
 
 // Test 2c: txVaultPubKey only accepts the frost vault key for XMR routing.

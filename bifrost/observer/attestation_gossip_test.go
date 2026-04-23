@@ -979,8 +979,8 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		})
 
 		refs := []*common.OutputRef{
-			{TxHash: "aaa111", OutputIndex: 0},
-			{TxHash: "bbb222", OutputIndex: 1},
+			{TxHash: "aaa111", OutputIndex: 0, KeyImage: "ki_aaa111", SpendTxHash: "xmr-out-1"},
+			{TxHash: "bbb222", OutputIndex: 1, KeyImage: "ki_bbb222", SpendTxHash: "xmr-out-1"},
 		}
 		tx := common.ObservedTx{
 			Tx:              common.Tx{ID: "xmr-out-1", Chain: common.XMRChain},
@@ -1011,7 +1011,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		tx := common.ObservedTx{
 			Tx:              common.Tx{ID: "xmr-peer-out-1", Chain: common.XMRChain},
 			ObservedPubKey:  "pk1",
-			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0}},
+			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0, KeyImage: "ki_x", SpendTxHash: "xmr-peer-out-1"}},
 		}
 		privKey := secp256k1.GenPrivKey()
 		att := common.AttestTx{
@@ -1057,7 +1057,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		tx := common.ObservedTx{
 			Tx:              common.Tx{ID: "xmr-in-1", Chain: common.XMRChain},
 			ObservedPubKey:  "pk1",
-			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0}},
+			SpentOutputRefs: []*common.OutputRef{{TxHash: "x", OutputIndex: 0, KeyImage: "ki_x", SpendTxHash: "xmr-in-1"}},
 		}
 		privKey := secp256k1.GenPrivKey()
 		att := common.AttestTx{
@@ -1101,8 +1101,8 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 func TestGetSignablePayloadConsistency(t *testing.T) {
 	refs := []*common.OutputRef{
-		{TxHash: "aaa", OutputIndex: 0},
-		{TxHash: "bbb", OutputIndex: 1},
+		{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "test-tx"},
+		{TxHash: "bbb", OutputIndex: 1, KeyImage: "ki_bbb", SpendTxHash: "test-tx"},
 	}
 	obsTx := common.ObservedTx{
 		Tx:              common.Tx{ID: "test-tx", Chain: common.XMRChain, Memo: "OUT:abc"},

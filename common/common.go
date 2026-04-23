@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/blang/semver"
 )
@@ -28,7 +29,7 @@ func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 		return txBz, nil
 	}
 
-	buf := make([]byte, 0, len(txBz)+len(o.SpentOutputRefs)*36)
+	buf := make([]byte, 0, len(txBz)+len(o.SpentOutputRefs)*128)
 	buf = append(buf, txBz...)
 	for _, ref := range normalizeSpentOutputRefs(o.SpentOutputRefs) {
 		refBz, marshalErr := ref.Marshal()
@@ -53,7 +54,18 @@ func spentOutputRefIdentity(ref *OutputRef) string {
 	if ref == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("%s:%d", ref.TxHash, ref.OutputIndex)
+	return fmt.Sprintf(
+		"%s:%d:%s:%s",
+		strings.ToLower(strings.TrimSpace(ref.TxHash)),
+		ref.OutputIndex,
+		strings.ToLower(strings.TrimSpace(ref.KeyImage)),
+		strings.ToLower(strings.TrimSpace(ref.SpendTxHash)),
+	)
+}
+
+// SpentOutputRefIdentity returns the canonical identity for an XMR spent-output reference.
+func SpentOutputRefIdentity(ref *OutputRef) string {
+	return spentOutputRefIdentity(ref)
 }
 
 func spentOutputRefsEqual(lhs, rhs []*OutputRef) bool {

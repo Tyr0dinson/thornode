@@ -196,7 +196,12 @@ func importOutboundRecord(t *testing.T, signer *FrostSigner, transfer xmrFrostTr
 	result, err := signer.MarkOutputsSpent(
 		transfer.VaultPubKey,
 		transfer.TxID,
-		[]xmrFrostOutputRef{{TxHash: strings.Repeat("11", 32), OutputIndex: 0}},
+		[]xmrFrostOutputRef{{
+			TxHash:      strings.Repeat("11", 32),
+			OutputIndex: 0,
+			KeyImage:    strings.Repeat("22", 32),
+			SpendTxHash: transfer.TxID,
+		}},
 		false,
 		&xmrFrostOutboundMeta{
 			FromAddress: transfer.FromAddress,

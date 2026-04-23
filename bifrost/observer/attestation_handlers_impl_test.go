@@ -555,8 +555,8 @@ func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
 		},
 		ObservedPubKey: "thorpub1addwnpepqtest",
 		SpentOutputRefs: []*common.OutputRef{
-			{TxHash: "aabb", OutputIndex: 0},
-			{TxHash: "ccdd", OutputIndex: 1},
+			{TxHash: "aabb", OutputIndex: 0, KeyImage: "ki_aabb", SpendTxHash: "xmr-outbound-tx-1"},
+			{TxHash: "ccdd", OutputIndex: 1, KeyImage: "ki_ccdd", SpendTxHash: "xmr-outbound-tx-1"},
 		},
 	}
 
@@ -676,7 +676,7 @@ func TestXMRBlindCoAttestationIdempotent(t *testing.T) {
 		},
 		ObservedPubKey: "thorpub1addwnpepqtest",
 		SpentOutputRefs: []*common.OutputRef{
-			{TxHash: "aabb", OutputIndex: 0},
+			{TxHash: "aabb", OutputIndex: 0, KeyImage: "ki_aabb", SpendTxHash: "xmr-outbound-dedup"},
 		},
 	}
 
@@ -728,16 +728,16 @@ func TestXMRObservedTxAttestationsWithDifferentSpentRefsUseDifferentBuckets(t *t
 		Tx:             baseTx,
 		ObservedPubKey: "thorpub1addwnpepqtest",
 		SpentOutputRefs: []*common.OutputRef{
-			{TxHash: "aaaa", OutputIndex: 0},
-			{TxHash: "bbbb", OutputIndex: 1},
+			{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: "xmr-conflicting-refs"},
+			{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: "xmr-conflicting-refs"},
 		},
 	}
 	obsTxB := common.ObservedTx{
 		Tx:             baseTx,
 		ObservedPubKey: "thorpub1addwnpepqtest",
 		SpentOutputRefs: []*common.OutputRef{
-			{TxHash: "cccc", OutputIndex: 0},
-			{TxHash: "dddd", OutputIndex: 1},
+			{TxHash: "cccc", OutputIndex: 0, KeyImage: "ki_cccc", SpendTxHash: "xmr-conflicting-refs"},
+			{TxHash: "dddd", OutputIndex: 1, KeyImage: "ki_dddd", SpendTxHash: "xmr-conflicting-refs"},
 		},
 	}
 

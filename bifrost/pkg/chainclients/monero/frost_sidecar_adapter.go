@@ -49,6 +49,8 @@ func frostOutputRefsToSigner(refs []tssp.FrostSpentOutputRef) []xmrFrostOutputRe
 		out = append(out, xmrFrostOutputRef{
 			TxHash:      ref.TxHash,
 			OutputIndex: ref.OutputIndex,
+			KeyImage:    ref.KeyImage,
+			SpendTxHash: ref.SpendTxHash,
 		})
 	}
 	return out
@@ -88,6 +90,8 @@ func (a *frostSignerAdapter) FrostSignCombine(req tssp.FrostSidecarCombineReq) (
 		spentRefs = append(spentRefs, tssp.FrostSpentOutputRef{
 			TxHash:      ref.TxHash,
 			OutputIndex: ref.OutputIndex,
+			KeyImage:    ref.KeyImage,
+			SpendTxHash: ref.SpendTxHash,
 		})
 	}
 	return tssp.FrostSidecarCombineResp{
