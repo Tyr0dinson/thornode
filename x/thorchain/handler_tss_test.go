@@ -744,7 +744,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 		keygenTime,
 		common.EmptyPubKey,
 		nil,
-		[]byte("backup"),
+		validTssKeyshareBackup(),
 		frostPubKey,
 		observedMoneroHeight,
 	)
@@ -808,7 +808,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenRejectsMismatchedLatchedFields(c
 		keygenTime,
 		common.EmptyPubKey,
 		nil,
-		[]byte("backup"),
+		validTssKeyshareBackup(),
 		frostPubKey,
 		observedMoneroHeight,
 	)
@@ -864,7 +864,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultRejectsMismatchedFrostKeyOrHeight(c *C
 		keygenTime,
 		common.EmptyPubKey,
 		nil,
-		[]byte("backup"),
+		validTssKeyshareBackup(),
 		frostPubKey,
 	)
 	c.Assert(err, IsNil)
@@ -893,7 +893,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultRejectsMismatchedFrostKeyOrHeight(c *C
 		keygenTime,
 		common.EmptyPubKey,
 		nil,
-		[]byte("backup"),
+		validTssKeyshareBackup(),
 		GetRandomPubKey(),
 	)
 	c.Assert(err, IsNil)
@@ -909,6 +909,14 @@ func setKeygenMemberNodeAccount(c *C, helper tssHandlerTestHelper, member common
 	na.PubKeySet.Secp256k1 = member
 	na.Bond = cosmos.NewUint(1000000 * common.One)
 	c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
+}
+
+func validTssKeyshareBackup() []byte {
+	backup := make([]byte, 2048)
+	for i := range backup {
+		backup[i] = byte(i)
+	}
+	return backup
 }
 
 func (s *HandlerTssSuite) TestAsgardKeygenWithReadyMembersFinalizesOnSuperMajority(c *C) {
@@ -1094,7 +1102,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultWaitsForRegularVaultRotation(c *C) {
 		keygenTime,
 		common.EmptyPubKey,
 		nil,
-		[]byte("backup"),
+		validTssKeyshareBackup(),
 		xmrFrostPubKey,
 	)
 	c.Assert(err, IsNil)

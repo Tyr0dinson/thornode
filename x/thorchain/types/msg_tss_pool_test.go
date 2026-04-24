@@ -101,6 +101,47 @@ func (s *MsgTssPoolSuite) TestMsgTssPool(c *C) {
 	c.Assert(xmrMsg.ValidateBasic(), IsNil)
 }
 
+func (s *MsgTssPoolSuite) TestMsgTssPoolFrostKeysharesBackupValidation(c *C) {
+	poolPk := GetRandomPubKey()
+	member := []string{GetRandomPubKey().String()}
+	addr, err := common.PubKey(member[0]).GetThorAddress()
+	c.Assert(err, IsNil)
+
+	validBackup := make([]byte, 357)
+	for i := range validBackup {
+		validBackup[i] = byte(i)
+	}
+
+	msg, err := NewMsgTssPoolV3(
+		member,
+		poolPk,
+		nil,
+		nil,
+		KeygenType_XMRMonovaultKeygen,
+		1,
+		nil,
+		common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings(),
+		addr,
+		1024,
+		poolPk,
+		nil,
+		validBackup,
+		poolPk,
+		1024,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(msg.ValidateBasic(), IsNil)
+
+	msg.KeysharesBackupFrost = []byte("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+	c.Assert(msg.ValidateBasic(), NotNil)
+
+	msg.KeysharesBackupFrost = []byte{1, 2, 3}
+	c.Assert(msg.ValidateBasic(), NotNil)
+
+	msg.KeysharesBackupFrost = make([]byte, 2048)
+	c.Assert(msg.ValidateBasic(), NotNil)
+}
+
 func (s *MsgTssPoolSuite) TestMsgTssPoolBlameNodesValidation(c *C) {
 	pk := GetRandomPubKey()
 	pks := []string{

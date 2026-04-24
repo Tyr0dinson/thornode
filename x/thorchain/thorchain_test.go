@@ -218,6 +218,10 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 
 	xmrVaultPk := GetRandomPubKey()
 	xmrFrostPk := GetRandomPubKey()
+	validFrostBackup := make([]byte, 2048)
+	for i := range validFrostBackup {
+		validFrostBackup[i] = byte(i)
+	}
 	xmrMsg, err := NewMsgTssPoolV2(
 		keygen.Members,
 		xmrVaultPk,
@@ -231,7 +235,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 		keygenTime,
 		common.EmptyPubKey,
 		nil,
-		[]byte("backup"),
+		validFrostBackup,
 		xmrFrostPk,
 	)
 	c.Assert(err, IsNil)

@@ -102,6 +102,56 @@ func TestSolvencyWatcherIgnoresPersistentPendingRagnarokHalts(t *testing.T) {
 	}
 }
 
+func TestSolvencyWatcherIgnoresPersistentActiveRagnarokHalts(t *testing.T) {
+	server, restore := setupSolvencyWatcherHTTPServer(
+		t,
+		func(path string, count int) string {
+			switch path {
+			case "/thorchain/mimir":
+				return `{"SOLVENCYHALTXMRCHAIN":1735,"RAGNAROK-XMR-XMR":1}`
+			case "/thorchain/queue/outbound":
+				return `[]`
+			default:
+				return `{}`
+			}
+		},
+	)
+	defer server.Close()
+	defer restore()
+
+	watcher := NewSolvencyHalt()
+	if err := watcher.Fn(nil); err != nil {
+		t.Fatalf("expected persistent active-ragnarok solvency halt to be ignored, got %v", err)
+	}
+}
+
+func TestSolvencyWatcherFailsPersistentHaltsWithoutMatchingRagnarok(t *testing.T) {
+	server, restore := setupSolvencyWatcherHTTPServer(
+		t,
+		func(path string, count int) string {
+			switch path {
+			case "/thorchain/mimir":
+				return `{"SOLVENCYHALTXMRCHAIN":1735,"RAGNAROK-BTC-BTC":1}`
+			case "/thorchain/queue/outbound":
+				return `[]`
+			default:
+				return `{}`
+			}
+		},
+	)
+	defer server.Close()
+	defer restore()
+
+	watcher := NewSolvencyHalt()
+	err := watcher.Fn(nil)
+	if err == nil {
+		t.Fatal("expected persistent XMR solvency halt without matching ragnarok to fail")
+	}
+	if !strings.Contains(err.Error(), "SOLVENCYHALTXMRCHAIN=1735") {
+		t.Fatalf("expected XMR solvency halt error, got %v", err)
+	}
+}
+
 func setupSolvencyWatcherTestServer(t *testing.T, responder func(count int) string) (*httptest.Server, func()) {
 	return setupSolvencyWatcherHTTPServer(t, func(path string, count int) string {
 		if path == "/thorchain/mimir" {

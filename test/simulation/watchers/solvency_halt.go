@@ -25,6 +25,22 @@ type outboundQueueItem struct {
 }
 
 func fetchActiveSolvencyHalts(cl *http.Client, endpoint string) (map[string]int64, error) {
+	mimirRes, err := fetchMimir(cl, endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	activeHalts := make(map[string]int64)
+	for k, v := range mimirRes {
+		if strings.HasPrefix(k, "SOLVENCYHALT") && v > 0 {
+			activeHalts[k] = v
+		}
+	}
+
+	return activeHalts, nil
+}
+
+func fetchMimir(cl *http.Client, endpoint string) (map[string]int64, error) {
 	resp, err := cl.Get(endpoint)
 	if err != nil {
 		return nil, err
@@ -39,14 +55,7 @@ func fetchActiveSolvencyHalts(cl *http.Client, endpoint string) (map[string]int6
 		return nil, err
 	}
 
-	activeHalts := make(map[string]int64)
-	for k, v := range mimirRes {
-		if strings.HasPrefix(k, "SOLVENCYHALT") && v > 0 {
-			activeHalts[k] = v
-		}
-	}
-
-	return activeHalts, nil
+	return mimirRes, nil
 }
 
 func fetchPendingRagnarokChains(cl *http.Client, endpoint string) (map[string]struct{}, error) {
@@ -78,6 +87,27 @@ func fetchPendingRagnarokChains(cl *http.Client, endpoint string) (map[string]st
 	return chains, nil
 }
 
+func fetchActiveRagnarokChains(cl *http.Client, endpoint string) (map[string]struct{}, error) {
+	mimirRes, err := fetchMimir(cl, endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	chains := make(map[string]struct{})
+	for k, v := range mimirRes {
+		if v <= 0 || !strings.HasPrefix(k, "RAGNAROK-") {
+			continue
+		}
+		asset := strings.TrimPrefix(k, "RAGNAROK-")
+		chain, _, _ := strings.Cut(asset, "-")
+		if chain != "" {
+			chains[chain] = struct{}{}
+		}
+	}
+
+	return chains, nil
+}
+
 func haltedChains(activeHalts map[string]int64) []string {
 	chains := make([]string, 0, len(activeHalts))
 	for k := range activeHalts {
@@ -92,13 +122,13 @@ func haltedChains(activeHalts map[string]int64) []string {
 	return chains
 }
 
-func allHaltedChainsHavePendingRagnarok(activeHalts map[string]int64, pendingChains map[string]struct{}) bool {
-	chains := haltedChains(activeHalts)
-	if len(chains) == 0 {
+func allHaltedChainsInSet(activeHalts map[string]int64, coveredChains map[string]struct{}) bool {
+	halted := haltedChains(activeHalts)
+	if len(halted) == 0 {
 		return false
 	}
-	for _, chain := range chains {
-		if _, ok := pendingChains[chain]; !ok {
+	for _, chain := range halted {
+		if _, ok := coveredChains[chain]; !ok {
 			return false
 		}
 	}
@@ -149,10 +179,20 @@ func NewSolvencyHalt() *Watcher {
 			pendingRagnarokChains, err := fetchPendingRagnarokChains(httpClient, queueEndpoint)
 			if err != nil {
 				cl.Error().Err(err).Msg("failed to get outbound queue response")
-			} else if allHaltedChainsHavePendingRagnarok(activeHalts, pendingRagnarokChains) {
+			} else if allHaltedChainsInSet(activeHalts, pendingRagnarokChains) {
 				cl.Warn().
 					Strs("chains", haltedChains(activeHalts)).
 					Msg("ignoring solvency halt while pending ragnarok outbounds drain")
+				return nil
+			}
+
+			activeRagnarokChains, err := fetchActiveRagnarokChains(httpClient, endpoint)
+			if err != nil {
+				cl.Error().Err(err).Msg("failed to get ragnarok mimir response")
+			} else if allHaltedChainsInSet(activeHalts, activeRagnarokChains) {
+				cl.Warn().
+					Strs("chains", haltedChains(activeHalts)).
+					Msg("ignoring solvency halt while active ragnarok drains")
 				return nil
 			}
 

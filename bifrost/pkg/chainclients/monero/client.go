@@ -316,9 +316,65 @@ func (c *Client) restoreFrostKeysFromRecoveryFiles() {
 			continue
 		}
 
-		_ = os.Remove(path)
+		if removeErr := wipeAndRemoveRecoveryFile(path); removeErr != nil {
+			c.logger.Error().
+				Err(removeErr).
+				Str("vault", vaultPubKeyStr).
+				Str("path", path).
+				Msg("xmr recovery: frost keyshare restored but failed to remove raw recovery file")
+			continue
+		}
 		c.logger.Info().Str("vault", vaultPubKeyStr).Msg("xmr recovery: frost keyshare restored and recovery file removed")
 	}
+}
+
+func wipeAndRemoveRecoveryFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat recovery file: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("recovery file is a directory")
+	}
+
+	size := info.Size()
+	if size > 0 {
+		f, openErr := os.OpenFile(path, os.O_WRONLY, 0)
+		if openErr != nil {
+			return fmt.Errorf("open recovery file for wipe: %w", openErr)
+		}
+		zeros := make([]byte, 4096)
+		remaining := size
+		for remaining > 0 {
+			n := int64(len(zeros))
+			if remaining < n {
+				n = remaining
+			}
+			nInt := int(n)
+			written, writeErr := f.Write(zeros[:nInt])
+			if writeErr != nil {
+				_ = f.Close()
+				return fmt.Errorf("wipe recovery file: %w", writeErr)
+			}
+			if written != nInt {
+				_ = f.Close()
+				return fmt.Errorf("wipe recovery file: short write")
+			}
+			remaining -= n
+		}
+		if err = f.Sync(); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("sync wiped recovery file: %w", err)
+		}
+		if err = f.Close(); err != nil {
+			return fmt.Errorf("close wiped recovery file: %w", err)
+		}
+	}
+
+	if err = os.Remove(path); err != nil {
+		return fmt.Errorf("remove recovery file: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) spentOutputRefsSyncRunner() {

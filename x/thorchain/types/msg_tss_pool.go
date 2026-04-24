@@ -21,7 +21,9 @@ const (
 	// MinKeysharesBackupEntropy was selected based on a few spot checks of the entropy in
 	// encrypted keyshares for mocknet, which were always greater than 7, this is just a
 	// sanity check and is safe to set lower.
-	MinKeysharesBackupEntropy float64 = 7
+	MinKeysharesBackupEntropy   float64 = 7
+	MinKeysharesBackupSize      int     = 1024
+	MinFrostKeysharesBackupSize int     = 256
 )
 
 // MatchMnemonic will match substrings that look like a 12+ word mnemonic.
@@ -168,39 +170,36 @@ func (m *MsgTssPool) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("cannot have duplicate chains")
 	}
 
-	if len(m.KeysharesBackup) != 0 {
-		// sanity check encrypted keyshares do not a mnemonic
-		if MatchMnemonic.Match(m.KeysharesBackup) {
-			return cosmos.ErrUnknownRequest("invalid keyshares backup")
-		}
-
-		// sanity check encrypted keyshares are over 1Kb
-		if len(m.KeysharesBackup) < 1024 {
-			return cosmos.ErrUnknownRequest("invalid keyshares backup")
-		}
-
-		// sanity check probability distribution of keyshares backup bytes
-		entropy := common.Entropy(m.KeysharesBackup)
-		// analyze-ignore(float-comparison)
-		if entropy < MinKeysharesBackupEntropy {
-			return cosmos.ErrUnknownRequest("invalid keyshares backup")
-		}
+	if err := validateKeysharesBackup(m.KeysharesBackup, "keyshares backup", MinKeysharesBackupSize); err != nil {
+		return err
+	}
+	if err := validateKeysharesBackup(m.KeysharesBackupEddsa, "eddsa keyshares backup", MinKeysharesBackupSize); err != nil {
+		return err
+	}
+	if err := validateKeysharesBackup(m.KeysharesBackupFrost, "frost keyshares backup", MinFrostKeysharesBackupSize); err != nil {
+		return err
 	}
 
-	if len(m.KeysharesBackupEddsa) != 0 {
-		if MatchMnemonic.Match(m.KeysharesBackupEddsa) {
-			return cosmos.ErrUnknownRequest("invalid eddsa keyshares backup")
-		}
+	return nil
+}
 
-		if len(m.KeysharesBackupEddsa) < 1024 {
-			return cosmos.ErrUnknownRequest("invalid eddsa keyshares backup")
-		}
+func validateKeysharesBackup(backup []byte, label string, minSize int) error {
+	if len(backup) == 0 {
+		return nil
+	}
 
-		entropy := common.Entropy(m.KeysharesBackupEddsa)
-		// analyze-ignore(float-comparison)
-		if entropy < MinKeysharesBackupEntropy {
-			return cosmos.ErrUnknownRequest("invalid eddsa keyshares backup")
-		}
+	if MatchMnemonic.Match(backup) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("invalid %s", label))
+	}
+
+	if len(backup) < minSize {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("invalid %s", label))
+	}
+
+	entropy := common.Entropy(backup)
+	// analyze-ignore(float-comparison)
+	if entropy < MinKeysharesBackupEntropy {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("invalid %s", label))
 	}
 
 	return nil
