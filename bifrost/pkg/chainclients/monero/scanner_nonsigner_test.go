@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -30,7 +31,7 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 	outboundAmount := uint64(5_000_000_000_000) // 0.5 XMR in piconero
 	outboundFee := uint64(30_000_000)           // typical fee
 
-	outboundTransfer := xmrFrostTransferEntry{
+	outboundTransfer := sidecar.Transfer{
 		TxID:          outboundTxID,
 		Address:       destAddr.String(),
 		FromAddress:   vaultAddr.String(),
@@ -44,7 +45,7 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 	}
 
 	// signerFrost returns the outgoing transfer (signing node has the record).
-	signerFrost := newMockFrostServer(t, 100, []xmrFrostTransferEntry{outboundTransfer})
+	signerFrost := newMockFrostServer(t, 100, []sidecar.Transfer{outboundTransfer})
 	defer signerFrost.Close()
 
 	// nonSignerFrost starts empty; MarkOutputsSpent imports the verified
@@ -71,7 +72,7 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 
 	// --- Non-signer node: should observe after sidecar import ---
 	nonSignerScanner := newTestScanner(t, nonSignerFrost.URL, vaultPubKey)
-	importOutboundRecord(t, nonSignerScanner.frostSigner, outboundTransfer)
+	importOutboundRecord(t, nonSignerScanner.sidecar, outboundTransfer)
 	nonSignerTxIn, err := nonSignerScanner.FetchTxs(100, 150)
 	if err != nil {
 		t.Fatalf("non-signer FetchTxs: %v", err)
@@ -100,7 +101,7 @@ func TestTwoOfThreeSignerConsensus(t *testing.T) {
 	destAddr := testOutboundXMRDestination()
 	memo := "OUT:" + strings.Repeat("ff", 32)
 
-	transfer := xmrFrostTransferEntry{
+	transfer := sidecar.Transfer{
 		TxID:          outboundTxID,
 		Address:       destAddr.String(),
 		FromAddress:   vaultAddr.String(),
@@ -113,9 +114,9 @@ func TestTwoOfThreeSignerConsensus(t *testing.T) {
 		Locked:        false,
 	}
 
-	signer1Frost := newMockFrostServer(t, 200, []xmrFrostTransferEntry{transfer})
+	signer1Frost := newMockFrostServer(t, 200, []sidecar.Transfer{transfer})
 	defer signer1Frost.Close()
-	signer2Frost := newMockFrostServer(t, 200, []xmrFrostTransferEntry{transfer})
+	signer2Frost := newMockFrostServer(t, 200, []sidecar.Transfer{transfer})
 	defer signer2Frost.Close()
 	nonSignerFrost := newMockFrostServer(t, 200, nil)
 	defer nonSignerFrost.Close()
@@ -132,7 +133,7 @@ func TestTwoOfThreeSignerConsensus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("signer2 FetchTxs: %v", err)
 	}
-	importOutboundRecord(t, ns.frostSigner, transfer)
+	importOutboundRecord(t, ns.sidecar, transfer)
 	txInNS, err := ns.FetchTxs(200, 250)
 	if err != nil {
 		t.Fatalf("non-signer FetchTxs: %v", err)
@@ -165,7 +166,7 @@ func TestNonSignerMissingFromAddressFailsClosed(t *testing.T) {
 	}
 
 	// Non-signer gets a transfer with empty from_address and vault_pub_key.
-	sender, pk := s.resolveOutgoingSender(xmrFrostTransferEntry{
+	sender, pk := s.resolveOutgoingSender(sidecar.Transfer{
 		TxID:        strings.Repeat("ab", 32),
 		Address:     vaultAddr.String(),
 		FromAddress: "",
@@ -191,19 +192,19 @@ func countOutboundsFrom(items []*stypes.TxInItem, sender string) int {
 	return count
 }
 
-func importOutboundRecord(t *testing.T, signer *FrostSigner, transfer xmrFrostTransferEntry) {
+func importOutboundRecord(t *testing.T, signer *sidecar.Client, transfer sidecar.Transfer) {
 	t.Helper()
-	result, err := signer.MarkOutputsSpent(
+	result, err := signer.MarkSpent(
 		transfer.VaultPubKey,
 		transfer.TxID,
-		[]xmrFrostOutputRef{{
+		[]sidecar.SpentRef{{
 			TxHash:      strings.Repeat("11", 32),
 			OutputIndex: 0,
 			KeyImage:    strings.Repeat("22", 32),
 			SpendTxHash: transfer.TxID,
 		}},
 		false,
-		&xmrFrostOutboundMeta{
+		&sidecar.OutboundMeta{
 			FromAddress: transfer.FromAddress,
 			ToAddress:   transfer.Address,
 			Amount:      transfer.Amount,
@@ -221,7 +222,7 @@ func importOutboundRecord(t *testing.T, signer *FrostSigner, transfer xmrFrostTr
 
 func newTestScanner(t *testing.T, frostURL string, vaultPubKey common.PubKey) *Scanner {
 	t.Helper()
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostURL,
 	)
@@ -232,15 +233,15 @@ func newTestScanner(t *testing.T, frostURL string, vaultPubKey common.PubKey) *S
 	return NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 72)
 }
 
-func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []xmrFrostTransferEntry) *httptest.Server {
+func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []sidecar.Transfer) *httptest.Server {
 	t.Helper()
 	var mu sync.Mutex
-	currentOutgoing := append([]xmrFrostTransferEntry(nil), outgoing...)
+	currentOutgoing := append([]sidecar.Transfer(nil), outgoing...)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
-			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: blockHeight + 50})
+			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: blockHeight + 50})
 
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
 			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
@@ -249,7 +250,7 @@ func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []xmrFrostTran
 				http.Error(w, "invalid height", http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
 				Hash:         fmt.Sprintf("hash-%d", height),
@@ -259,23 +260,23 @@ func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []xmrFrostTran
 
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
 			mu.Lock()
-			respOutgoing := append([]xmrFrostTransferEntry(nil), currentOutgoing...)
+			respOutgoing := append([]sidecar.Transfer(nil), currentOutgoing...)
 			mu.Unlock()
-			resp := xmrFrostTransfersResponse{}
+			resp := sidecar.Transfers{}
 			if respOutgoing != nil {
 				resp.Outgoing = respOutgoing
 			}
 			_ = json.NewEncoder(w).Encode(resp)
 
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/mark-spent":
-			var req xmrFrostMarkSpentRequest
+			var req sidecar.MarkSpentReq
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "invalid mark-spent request", http.StatusBadRequest)
 				return
 			}
 			if req.TxHash != "" && req.FromAddress != "" && req.ToAddress != "" && req.VaultPubKey != "" {
 				mu.Lock()
-				currentOutgoing = append(currentOutgoing, xmrFrostTransferEntry{
+				currentOutgoing = append(currentOutgoing, sidecar.Transfer{
 					TxID:        req.TxHash,
 					Address:     req.ToAddress,
 					FromAddress: req.FromAddress,
@@ -287,7 +288,7 @@ func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []xmrFrostTran
 				})
 				mu.Unlock()
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: len(req.SpentRefs)})
+			_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
 
 		default:
 			http.NotFound(w, r)

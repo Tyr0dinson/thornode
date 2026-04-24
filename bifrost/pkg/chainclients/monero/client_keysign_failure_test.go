@@ -6,6 +6,7 @@ import (
 
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -140,14 +141,14 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 			},
 		},
 	}
-	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+	balanceServer := newFrostBalanceServer(t, map[string]sidecar.Balance{
 		vaultPubKey.String(): {
 			Balance:         10 * moneroAtomicToThorchain,
 			UnlockedBalance: 10 * moneroAtomicToThorchain,
 		},
 	})
 	defer balanceServer.Close()
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 	c := &Client{
 		chain:              common.XMRChain,
 		localNodePubKey:    common.PubKey("member-a"),
-		frostSigner:        frostSigner,
+		sidecar:            frostSigner,
 		tssServer:          tssServer,
 		signerCacheManager: newTestSignerCacheManager(t),
 		thorchainBridge:    bridge,
@@ -216,14 +217,14 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 			},
 		},
 	}
-	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+	balanceServer := newFrostBalanceServer(t, map[string]sidecar.Balance{
 		vaultPubKey.String(): {
 			Balance:         10 * moneroAtomicToThorchain,
 			UnlockedBalance: 10 * moneroAtomicToThorchain,
 		},
 	})
 	defer balanceServer.Close()
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -231,7 +232,7 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 	c := &Client{
 		chain:              common.XMRChain,
 		localNodePubKey:    common.PubKey("member-a"),
-		frostSigner:        frostSigner,
+		sidecar:            frostSigner,
 		tssServer:          tssServer,
 		signerCacheManager: newTestSignerCacheManager(t),
 		thorchainBridge:    bridge,

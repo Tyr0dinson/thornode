@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -21,12 +22,12 @@ import (
 func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 	t.Parallel()
 
-	var captured xmrFrostScannerSyncRequest
+	var captured sidecar.SyncReq
 	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
-			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 150})
+			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 150})
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
 			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
 			height, err := strconv.ParseInt(rawHeight, 10, 64)
@@ -34,7 +35,7 @@ func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 				http.Error(w, "invalid height", http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
 				Hash:         fmt.Sprintf("hash-%d", height),
@@ -46,14 +47,14 @@ func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
+			_ = json.NewEncoder(w).Encode(sidecar.Transfers{})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -96,7 +97,7 @@ func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
-			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 220})
+			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 220})
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
 			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
 			height, err := strconv.ParseInt(rawHeight, 10, 64)
@@ -104,7 +105,7 @@ func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
 				http.Error(w, "invalid height", http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
 				Hash:         fmt.Sprintf("hash-%d", height),
@@ -122,7 +123,7 @@ func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
 	}))
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -153,14 +154,14 @@ func TestGetHeightDoesNotAdvanceProcessedHeight(t *testing.T) {
 	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height" {
-			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 321})
+			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 321})
 			return
 		}
 		http.NotFound(w, r)
 	}))
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -206,7 +207,7 @@ func TestFetchTxsPropagatesSidecarUnavailable(t *testing.T) {
 	}))
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)

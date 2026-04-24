@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
@@ -168,21 +169,21 @@ func (m *consolidationTSS) request() tssp.FrostKeySignRequest {
 type consolidationSidecar struct {
 	mu sync.Mutex
 
-	balanceByVault map[string]xmrFrostBalanceResponse
-	outputsByVault map[string][]xmrFrostOutputEntry
-	mempool        []xmrFrostTransferEntry
+	balanceByVault map[string]sidecar.Balance
+	outputsByVault map[string][]sidecar.Output
+	mempool        []sidecar.Transfer
 	feeRate        uint64
 	onOutputs      func()
 
 	broadcastCount int
-	lastBroadcast  xmrFrostBroadcastRequest
+	lastBroadcast  sidecar.BroadcastReq
 }
 
 func (s *consolidationSidecar) handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
-		_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+		_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 	case strings.HasPrefix(r.URL.Path, "/v1/monero/balance/"):
 		vault := strings.TrimPrefix(r.URL.Path, "/v1/monero/balance/")
 		s.mu.Lock()
@@ -196,31 +197,31 @@ func (s *consolidationSidecar) handler(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
 		vault := strings.TrimPrefix(r.URL.Path, "/v1/monero/outputs/")
 		s.mu.Lock()
-		outputs := append([]xmrFrostOutputEntry(nil), s.outputsByVault[vault]...)
+		outputs := append([]sidecar.Output(nil), s.outputsByVault[vault]...)
 		onOutputs := s.onOutputs
 		s.mu.Unlock()
 		if onOutputs != nil {
 			onOutputs()
 		}
-		_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+		_ = json.NewEncoder(w).Encode(sidecar.Outputs{
 			Outputs: outputs,
 		})
 	case strings.HasPrefix(r.URL.Path, "/v1/monero/transfers"):
 		s.mu.Lock()
-		outgoing := append([]xmrFrostTransferEntry(nil), s.mempool...)
+		outgoing := append([]sidecar.Transfer(nil), s.mempool...)
 		s.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{
+		_ = json.NewEncoder(w).Encode(sidecar.Transfers{
 			Outgoing: outgoing,
 		})
 	case r.URL.Path == "/v1/monero/fee-rate":
 		s.mu.Lock()
 		feeRate := s.feeRate
 		s.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(xmrFrostFeeRateResponse{
+		_ = json.NewEncoder(w).Encode(sidecar.FeeRate{
 			FeeRatePerWeight: feeRate,
 		})
 	case r.URL.Path == "/v1/monero/broadcast":
-		var req xmrFrostBroadcastRequest
+		var req sidecar.BroadcastReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -229,7 +230,7 @@ func (s *consolidationSidecar) handler(w http.ResponseWriter, r *http.Request) {
 		s.broadcastCount++
 		s.lastBroadcast = req
 		s.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{
+		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{
 			TxHash: "xmr-consolidation-hash",
 		})
 	default:
@@ -247,17 +248,17 @@ func newConsolidationClient(
 	t *testing.T,
 	bridge *consolidationBridge,
 	tssServer *consolidationTSS,
-	sidecar *consolidationSidecar,
+	ss *consolidationSidecar,
 	localNodePubKey common.PubKey,
 	vaultPubKey common.PubKey,
 	vaultAddr common.Address,
 ) *Client {
 	t.Helper()
 
-	server := httptest.NewServer(http.HandlerFunc(sidecar.handler))
+	server := httptest.NewServer(http.HandlerFunc(ss.handler))
 	t.Cleanup(server.Close)
 
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -268,23 +269,23 @@ func newConsolidationClient(
 		chain:                   common.XMRChain,
 		thorchainBridge:         bridge,
 		localNodePubKey:         localNodePubKey,
-		frostSigner:             frostSigner,
+		sidecar:                 frostSigner,
 		tssServer:               tssServer,
 		signerCacheManager:      newTestSignerCacheManager(t),
 		vaultAddressMap:         map[string]common.Address{vaultPubKey.String(): vaultAddr},
 		scanner:                 &Scanner{currentBlockHeight: atomic.NewInt64(100), lastFee: atomic.NewUint64(10)},
 		vaultLocks:              make(map[string]*sync.Mutex),
-		consolidationState:      make(map[string]xmrConsolidationVaultState),
+		consolidationState:      make(map[string]consolidationVaultState),
 		consolidateInProgress:   atomic.NewBool(false),
 		lastConsolidationHeight: atomic.NewInt64(0),
 	}
 	return c
 }
 
-func unlockedOutputs(height uint64, n int) []xmrFrostOutputEntry {
-	out := make([]xmrFrostOutputEntry, 0, n)
+func unlockedOutputs(height uint64, n int) []sidecar.Output {
+	out := make([]sidecar.Output, 0, n)
 	for i := 0; i < n; i++ {
-		out = append(out, xmrFrostOutputEntry{
+		out = append(out, sidecar.Output{
 			TxHash:      strings.Repeat("a", 63) + string(rune('a'+i)),
 			OutputIndex: uint32(i),
 			Amount:      1_000_000_000_000,
@@ -372,16 +373,16 @@ func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
 			},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -389,8 +390,8 @@ func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
 	if tssServer.callCount() != 1 {
 		t.Fatalf("expected one FrostKeySign call, got %d", tssServer.callCount())
 	}
-	if sidecar.broadcasts() != 1 {
-		t.Fatalf("expected one broadcast, got %d", sidecar.broadcasts())
+	if sc.broadcasts() != 1 {
+		t.Fatalf("expected one broadcast, got %d", sc.broadcasts())
 	}
 	req := tssServer.request()
 	if req.ToAddress != vaultAddr.String() {
@@ -471,20 +472,20 @@ func TestRunConsolidationPassUsesSpendableBalanceForAmount(t *testing.T) {
 		},
 	}
 	spendableAtomic := uint64(3_000_000_000_000)
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {
 				Balance:          5_000_000_000_000,
 				UnlockedBalance:  5_000_000_000_000,
 				SpendableBalance: uint64Ptr(spendableAtomic),
 			},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -530,20 +531,20 @@ func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.
 			{resp: tssp.FrostKeySignResponse{Status: tsscommon.Success, TxHash: "x", TxHex: "deadbeef", MsgID: "consolidation-msg-threshold"}},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {
 				Balance:          5_000_000_000_000,
 				UnlockedBalance:  5_000_000_000_000,
 				SpendableBalance: uint64Ptr(3_000_000_000_000),
 			},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -551,8 +552,8 @@ func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.
 	if tssServer.callCount() != 0 {
 		t.Fatalf("expected no FrostKeySign call when spendable balance is below threshold, got %d", tssServer.callCount())
 	}
-	if sidecar.broadcasts() != 0 {
-		t.Fatalf("expected no broadcast when spendable balance is below threshold, got %d", sidecar.broadcasts())
+	if sc.broadcasts() != 0 {
+		t.Fatalf("expected no broadcast when spendable balance is below threshold, got %d", sc.broadcasts())
 	}
 }
 
@@ -581,19 +582,19 @@ func TestRunConsolidationPassSkipsWhenMempoolOutgoingExists(t *testing.T) {
 			{resp: tssp.FrostKeySignResponse{Status: tsscommon.Success, TxHash: "x", TxHex: "deadbeef", MsgID: "consolidation-msg-skip"}},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
-		mempool: []xmrFrostTransferEntry{
+		mempool: []sidecar.Transfer{
 			{VaultPubKey: vaultPubKey.String(), FromAddress: vaultAddr.String()},
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -601,8 +602,8 @@ func TestRunConsolidationPassSkipsWhenMempoolOutgoingExists(t *testing.T) {
 	if tssServer.callCount() != 0 {
 		t.Fatalf("expected no FrostKeySign call, got %d", tssServer.callCount())
 	}
-	if sidecar.broadcasts() != 0 {
-		t.Fatalf("expected no broadcast, got %d", sidecar.broadcasts())
+	if sc.broadcasts() != 0 {
+		t.Fatalf("expected no broadcast, got %d", sc.broadcasts())
 	}
 }
 
@@ -639,16 +640,16 @@ func TestRunConsolidationPassRetiringVaultPreChurnTrigger(t *testing.T) {
 			},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -683,16 +684,16 @@ func TestRunConsolidationPassSkipsWhenNodeInactive(t *testing.T) {
 			{resp: tssp.FrostKeySignResponse{Status: tsscommon.Success, TxHash: "x", TxHex: "deadbeef", MsgID: "consolidation-msg-inactive"}},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -738,16 +739,16 @@ func TestRunConsolidationPassRetriesOnInsufficientFunds(t *testing.T) {
 			},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -755,8 +756,8 @@ func TestRunConsolidationPassRetriesOnInsufficientFunds(t *testing.T) {
 	if tssServer.callCount() != 2 {
 		t.Fatalf("expected two FrostKeySign calls, got %d", tssServer.callCount())
 	}
-	if sidecar.broadcasts() != 1 {
-		t.Fatalf("expected one broadcast after retry, got %d", sidecar.broadcasts())
+	if sc.broadcasts() != 1 {
+		t.Fatalf("expected one broadcast after retry, got %d", sc.broadcasts())
 	}
 }
 
@@ -794,17 +795,17 @@ func TestRunConsolidationPassHoldsVaultLockDuringPrechecks(t *testing.T) {
 		},
 	}
 	lockObservedUnlocked := atomic.NewBool(false)
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
-	sidecar.onOutputs = func() {
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
+	sc.onOutputs = func() {
 		lock := client.GetVaultLock(vaultPubKey.String())
 		if lock.TryLock() {
 			lockObservedUnlocked.Store(true)
@@ -845,16 +846,16 @@ func TestRunConsolidationPassBacksOffAcrossPasses(t *testing.T) {
 			{err: errors.New("insufficient funds while building tx")},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 	client.cfg.XMRConsolidationCheckIntervalBlocks = 1
 	client.cfg.XMRConsolidationCooldownBlocks = 2
 	client.cfg.XMRConsolidationMaxRetries = 1
@@ -909,16 +910,16 @@ func TestRunConsolidationPassStopsOnNonRetryableError(t *testing.T) {
 			{resp: tssp.FrostKeySignResponse{Status: tsscommon.Success, TxHash: "x", TxHex: "deadbeef", MsgID: "should-not-run"}},
 		},
 	}
-	sidecar := &consolidationSidecar{
-		balanceByVault: map[string]xmrFrostBalanceResponse{
+	sc := &consolidationSidecar{
+		balanceByVault: map[string]sidecar.Balance{
 			vaultPubKey.String(): {Balance: 5_000_000_000_000, UnlockedBalance: 5_000_000_000_000},
 		},
-		outputsByVault: map[string][]xmrFrostOutputEntry{
+		outputsByVault: map[string][]sidecar.Output{
 			vaultPubKey.String(): unlockedOutputs(50, 4),
 		},
 		feeRate: 10,
 	}
-	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	client := newConsolidationClient(t, bridge, tssServer, sc, localNodePubKey, vaultPubKey, vaultAddr)
 	client.cfg.XMRConsolidationCheckIntervalBlocks = 1
 	client.cfg.XMRConsolidationMaxRetries = 3
 
@@ -928,8 +929,8 @@ func TestRunConsolidationPassStopsOnNonRetryableError(t *testing.T) {
 	if tssServer.callCount() != 1 {
 		t.Fatalf("expected non-retryable failure to stop after one attempt, got %d", tssServer.callCount())
 	}
-	if sidecar.broadcasts() != 0 {
-		t.Fatalf("expected no broadcast on non-retryable signing failure, got %d", sidecar.broadcasts())
+	if sc.broadcasts() != 0 {
+		t.Fatalf("expected no broadcast on non-retryable signing failure, got %d", sc.broadcasts())
 	}
 }
 

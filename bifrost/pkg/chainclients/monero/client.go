@@ -27,6 +27,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
@@ -69,7 +70,7 @@ const (
 	defaultXMRConsolidationMinReserveAtomic    = uint64(50_000_000) // 0.00005 XMR (piconero)
 )
 
-var ErrFrostNotConfigured = errors.New("xmr frost signing requires signer_endpoint or api_host configuration")
+var ErrSidecarNotConfigured = errors.New("xmr frost signing requires signer_endpoint or api_host configuration")
 
 type signedTxPayload struct {
 	TxHash          string                `json:"tx_hash"`
@@ -78,21 +79,21 @@ type signedTxPayload struct {
 	MsgID           string                `json:"msg_id,omitempty"`
 	Eventuality     tssp.FrostEventuality `json:"eventuality,omitempty"`
 	Broadcasted     bool                  `json:"broadcasted,omitempty"`
-	SpentOutputRefs []xmrFrostOutputRef   `json:"spent_output_refs,omitempty"`
+	SpentOutputRefs []sidecar.SpentRef    `json:"spent_output_refs,omitempty"`
 }
 
-type xmrSignCheckpoint struct {
-	SpentOutputRefs []xmrFrostOutputRef `json:"spent_output_refs"`
+type signCheckpoint struct {
+	SpentOutputRefs []sidecar.SpentRef `json:"spent_output_refs"`
 }
 
-type xmrValidatedSignRequest struct {
+type validatedSignRequest struct {
 	vaultPubKey  common.PubKey
 	fromAddress  string
 	toAddress    string
 	amountAtomic uint64
 }
 
-type xmrConsolidationSettings struct {
+type consolidationSettings struct {
 	Enabled             bool
 	CheckIntervalBlocks int64
 	CooldownBlocks      int64
@@ -104,7 +105,7 @@ type xmrConsolidationSettings struct {
 	MaxRetries          int64
 }
 
-type xmrConsolidationVaultState struct {
+type consolidationVaultState struct {
 	LastAttemptHeight int64
 	LastSuccessHeight int64
 	LastTxHash        string
@@ -119,11 +120,11 @@ type Client struct {
 
 	thorchainBridge     thorclient.ThorchainBridge
 	localNodePubKey     common.PubKey
-	localVaultBootstrap *frostVaultBootstrap
+	vaultBootstrap      *vaultBootstrap
 	storage             *blockscanner.BlockScannerStorage
 	blockScanner        *blockscanner.BlockScanner
 	scanner             *Scanner
-	frostSigner         *FrostSigner
+	sidecar             *sidecar.Client
 	tssServer           tssp.Server
 	signerCacheManager  *signercache.CacheManager
 	vaultAddressStore   *VaultAddressStore
@@ -137,14 +138,14 @@ type Client struct {
 	lastAsgard              time.Time
 	consolidationInitOnce   sync.Once
 	consolidationSettingsMu sync.RWMutex
-	consolidationSettings   xmrConsolidationSettings
+	consolidationSettings   consolidationSettings
 	lastConsolidationConfig time.Time
 	hasConsolidationConfig  bool
 	vaultLockMu             sync.Mutex
 	vaultLocks              map[string]*sync.Mutex
 	emptyVaultLock          sync.Mutex
 	consolidationStateMu    sync.Mutex
-	consolidationState      map[string]xmrConsolidationVaultState
+	consolidationState      map[string]consolidationVaultState
 	consolidateInProgress   *atomic.Bool
 	lastConsolidationHeight *atomic.Int64
 	lastSolvencyCheckHeight *atomic.Int64
@@ -173,14 +174,14 @@ func NewClient(
 		return nil, errors.New("tss server is nil")
 	}
 	logger := log.With().Str("module", cfg.ChainID.String()).Logger()
-	frostSigner, err := NewFrostSigner(cfg)
+	sc, err := sidecar.NewClient(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create FROST signer: %w", err)
+		return nil, fmt.Errorf("fail to create sidecar client: %w", err)
 	}
-	if cleared, clearErr := frostSigner.ClearSessions(); clearErr != nil {
-		logger.Warn().Err(clearErr).Msg("fail to clear FROST sidecar sessions on bifrost startup; sidecar may carry stale state")
+	if cleared, clearErr := sc.ClearSessions(); clearErr != nil {
+		logger.Warn().Err(clearErr).Msg("fail to clear sidecar sessions on bifrost startup; sidecar may carry stale state")
 	} else if cleared > 0 {
-		logger.Info().Int("cleared", cleared).Msg("cleared stale FROST sidecar sessions on bifrost startup")
+		logger.Info().Int("cleared", cleared).Msg("cleared stale sidecar sessions on bifrost startup")
 	}
 
 	localNodePubKey := common.EmptyPubKey
@@ -196,12 +197,12 @@ func NewClient(
 		}
 	}
 
-	localVaultBootstrap, bootstrapErr := deriveLocalFrostVaultBootstrap(thorKeys)
+	vaultBootstrap, bootstrapErr := deriveVaultBootstrap(thorKeys)
 	if bootstrapErr != nil {
 		logger.Debug().Err(bootstrapErr).Msg("fail to derive local monero frost vault bootstrap material")
 	}
-	scanner := NewScanner(logger, frostSigner, bridge, cfg.ChainID, localNodePubKey, cfg.BlockScanner.MaxReorgRescanBlocks)
-	scanner.SetLocalVaultBootstrap(localVaultBootstrap)
+	scanner := NewScanner(logger, sc, bridge, cfg.ChainID, localNodePubKey, cfg.BlockScanner.MaxReorgRescanBlocks)
+	scanner.SetVaultBootstrap(vaultBootstrap)
 
 	c := &Client{
 		logger:                  logger,
@@ -209,13 +210,13 @@ func NewClient(
 		chain:                   cfg.ChainID,
 		thorchainBridge:         bridge,
 		localNodePubKey:         localNodePubKey,
-		localVaultBootstrap:     localVaultBootstrap,
+		vaultBootstrap:          vaultBootstrap,
 		scanner:                 scanner,
-		frostSigner:             frostSigner,
+		sidecar:                 sc,
 		tssServer:               tssServer,
 		asgardAddresses:         make([]common.Address, 0),
 		vaultLocks:              make(map[string]*sync.Mutex),
-		consolidationState:      make(map[string]xmrConsolidationVaultState),
+		consolidationState:      make(map[string]consolidationVaultState),
 		consolidateInProgress:   atomic.NewBool(false),
 		lastConsolidationHeight: atomic.NewInt64(0),
 		signerCacheManager:      nil,
@@ -280,12 +281,12 @@ func (c *Client) Start(
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		c.restoreFrostKeysFromRecoveryFiles()
+		c.restoreKeysharesFromRecoveryFiles()
 	}()
 }
 
-func (c *Client) restoreFrostKeysFromRecoveryFiles() {
-	if c.frostSigner == nil {
+func (c *Client) restoreKeysharesFromRecoveryFiles() {
+	if c.sidecar == nil {
 		return
 	}
 	pattern := filepath.Join(app.DefaultNodeHome, "frost-recovery-*.hex")
@@ -310,7 +311,7 @@ func (c *Client) restoreFrostKeysFromRecoveryFiles() {
 			continue
 		}
 
-		restoreErr := c.RestoreFrostKeyshare(vaultPubKey, string(keyHex))
+		restoreErr := c.RestoreKeyshare(vaultPubKey, string(keyHex))
 		if restoreErr != nil {
 			c.logger.Err(restoreErr).Str("vault", vaultPubKeyStr).Msg("xmr recovery: failed to restore frost keyshare")
 			continue
@@ -396,7 +397,7 @@ func (c *Client) spentOutputRefsSyncRunner() {
 }
 
 func (c *Client) catchupSpentOutputRefs() {
-	if c.thorchainBridge == nil || c.frostSigner == nil {
+	if c.thorchainBridge == nil || c.sidecar == nil {
 		return
 	}
 	vaults, err := c.getSpentOutputCatchupVaults()
@@ -413,7 +414,7 @@ func (c *Client) catchupSpentOutputRefs() {
 			continue
 		}
 
-		refsBySpendTx := make(map[string][]xmrFrostOutputRef)
+		refsBySpendTx := make(map[string][]sidecar.SpentRef)
 		for _, ref := range vault.SpentOutputRefsXmr {
 			spendTxHash := strings.TrimSpace(ref.SpendTxHash)
 			if spendTxHash == "" {
@@ -424,7 +425,7 @@ func (c *Client) catchupSpentOutputRefs() {
 					Msg("xmr catchup: skipping spent ref without spend tx hash")
 				continue
 			}
-			refsBySpendTx[spendTxHash] = append(refsBySpendTx[spendTxHash], xmrFrostOutputRef{
+			refsBySpendTx[spendTxHash] = append(refsBySpendTx[spendTxHash], sidecar.SpentRef{
 				TxHash:      ref.TxHash,
 				OutputIndex: ref.OutputIndex,
 				KeyImage:    ref.KeyImage,
@@ -433,8 +434,8 @@ func (c *Client) catchupSpentOutputRefs() {
 		}
 
 		for spendTxHash, refs := range refsBySpendTx {
-			outbound := c.xmrOutboundMetaFromObservedTx(spendTxHash)
-			result, markErr := c.frostSigner.MarkOutputsSpent(vaultPubKey.String(), spendTxHash, refs, false, outbound)
+			outbound := c.outboundMetaFromObservedTx(spendTxHash)
+			result, markErr := c.sidecar.MarkSpent(vaultPubKey.String(), spendTxHash, refs, false, outbound)
 			if markErr != nil {
 				c.logger.Err(markErr).
 					Str("vault", vaultPubKey.String()).
@@ -453,7 +454,7 @@ func (c *Client) catchupSpentOutputRefs() {
 	}
 }
 
-func (c *Client) xmrOutboundMetaFromObservedTx(txHash string) *xmrFrostOutboundMeta {
+func (c *Client) outboundMetaFromObservedTx(txHash string) *sidecar.OutboundMeta {
 	if c.thorchainBridge == nil {
 		return nil
 	}
@@ -478,13 +479,13 @@ func (c *Client) xmrOutboundMetaFromObservedTx(txHash string) *xmrFrostOutboundM
 	var amount, fee uint64
 	xmrCoin := tx.Coins.GetCoin(common.XMRAsset)
 	if !xmrCoin.IsEmpty() {
-		amount, _ = xmrThorchainAmountToAtomic(xmrCoin.Amount)
+		amount, _ = thorchainAmountToAtomic(xmrCoin.Amount)
 	}
 	gasCoin := tx.Gas.ToCoins().GetCoin(common.XMRAsset)
 	if !gasCoin.IsEmpty() {
-		fee, _ = xmrThorchainAmountToAtomic(gasCoin.Amount)
+		fee, _ = thorchainAmountToAtomic(gasCoin.Amount)
 	}
-	return &xmrFrostOutboundMeta{
+	return &sidecar.OutboundMeta{
 		FromAddress: tx.FromAddress.String(),
 		ToAddress:   tx.ToAddress.String(),
 		Amount:      amount,
@@ -552,7 +553,7 @@ func (c *Client) ensureConsolidationState() {
 			c.vaultLocks = make(map[string]*sync.Mutex)
 		}
 		if c.consolidationState == nil {
-			c.consolidationState = make(map[string]xmrConsolidationVaultState)
+			c.consolidationState = make(map[string]consolidationVaultState)
 		}
 	})
 }
@@ -609,7 +610,7 @@ func (c *Client) tryConsolidationPass() {
 
 func (c *Client) runConsolidationPass() error {
 	c.ensureConsolidationState()
-	if c.thorchainBridge == nil || c.frostSigner == nil || c.tssServer == nil {
+	if c.thorchainBridge == nil || c.sidecar == nil || c.tssServer == nil {
 		return nil
 	}
 	if c.localNodePubKey.IsEmpty() {
@@ -684,7 +685,7 @@ func (c *Client) shouldPreChurnConsolidate(vault ttypes.Vault, thorchainHeight, 
 func (c *Client) consolidateVault(
 	vault ttypes.Vault,
 	thorchainHeight int64,
-	settings xmrConsolidationSettings,
+	settings consolidationSettings,
 	triggerPeriodic bool,
 	triggerPreChurn bool,
 ) {
@@ -728,12 +729,12 @@ func (c *Client) consolidateVault(
 		return
 	}
 
-	if err = c.ensureFrostVaultRegistration(vaultPubKey); err != nil {
+	if err = c.ensureVaultRegistered(vaultPubKey); err != nil {
 		c.logger.Debug().Err(err).Str("vault_pubkey", stateKey).Msg("skip xmr consolidation: fail to register vault")
 		return
 	}
 
-	balance, err := c.frostSigner.GetBalance(stateKey)
+	balance, err := c.sidecar.Balance(stateKey)
 	if err != nil {
 		c.logger.Debug().Err(err).Str("vault_pubkey", stateKey).Msg("skip xmr consolidation: fail to query balance")
 		return
@@ -749,7 +750,7 @@ func (c *Client) consolidateVault(
 		return
 	}
 
-	outputs, err := c.frostSigner.GetOutputs(stateKey)
+	outputs, err := c.sidecar.Outputs(stateKey)
 	if err != nil {
 		c.logger.Debug().Err(err).Str("vault_pubkey", stateKey).Msg("skip xmr consolidation: fail to query outputs")
 		return
@@ -776,7 +777,7 @@ func (c *Client) consolidateVault(
 		return
 	}
 
-	feeRate, err := c.frostSigner.GetFeeRate()
+	feeRate, err := c.sidecar.FeeRate()
 	if err != nil {
 		c.logger.Debug().Err(err).Str("vault_pubkey", stateKey).Msg("skip xmr consolidation: fail to query fee rate")
 		return
@@ -841,7 +842,7 @@ func (c *Client) consolidateVault(
 			continue
 		}
 
-		c.setConsolidationVaultState(stateKey, xmrConsolidationVaultState{
+		c.setConsolidationVaultState(stateKey, consolidationVaultState{
 			LastAttemptHeight: thorchainHeight,
 			LastSuccessHeight: thorchainHeight,
 			LastTxHash:        txHash,
@@ -890,7 +891,7 @@ func (c *Client) applySpentOutputRefsFromTxInItem(obs *stypes.TxInItem) {
 	c.ApplySpentOutputRefs(obsTx)
 }
 
-func countUnlockedOutputs(outputs []xmrFrostOutputEntry, currentHeight int64) int64 {
+func countUnlockedOutputs(outputs []sidecar.Output, currentHeight int64) int64 {
 	if len(outputs) == 0 {
 		return 0
 	}
@@ -979,7 +980,7 @@ func isRetryableConsolidationErr(err error) bool {
 }
 
 func (c *Client) hasMempoolOutgoingForVault(vaultPubKey common.PubKey, vaultAddress string) (bool, error) {
-	resp, err := c.frostSigner.GetMemPoolTransfers()
+	resp, err := c.sidecar.Mempool()
 	if err != nil {
 		return false, err
 	}
@@ -996,21 +997,21 @@ func (c *Client) hasMempoolOutgoingForVault(vaultPubKey common.PubKey, vaultAddr
 	return false, nil
 }
 
-func (c *Client) getConsolidationVaultState(vaultPubKey string) xmrConsolidationVaultState {
+func (c *Client) getConsolidationVaultState(vaultPubKey string) consolidationVaultState {
 	c.ensureConsolidationState()
 	c.consolidationStateMu.Lock()
 	defer c.consolidationStateMu.Unlock()
 	return c.consolidationState[vaultPubKey]
 }
 
-func (c *Client) setConsolidationVaultState(vaultPubKey string, state xmrConsolidationVaultState) {
+func (c *Client) setConsolidationVaultState(vaultPubKey string, state consolidationVaultState) {
 	c.ensureConsolidationState()
 	c.consolidationStateMu.Lock()
 	c.consolidationState[vaultPubKey] = state
 	c.consolidationStateMu.Unlock()
 }
 
-func (c *Client) loadConsolidationSettings() xmrConsolidationSettings {
+func (c *Client) loadConsolidationSettings() consolidationSettings {
 	c.consolidationSettingsMu.RLock()
 	if c.hasConsolidationConfig && time.Since(c.lastConsolidationConfig) < constants.ThorchainBlockTime {
 		settings := c.consolidationSettings
@@ -1026,19 +1027,19 @@ func (c *Client) loadConsolidationSettings() xmrConsolidationSettings {
 	}
 
 	enabled := c.cfg.XMRConsolidationEnabled
-	if mimirEnabled, ok := c.getMimirValue(mimirXMRConsolidationEnabled); ok {
+	if mimirEnabled, ok := c.mimirInt64Raw(mimirXMRConsolidationEnabled); ok {
 		enabled = mimirEnabled > 0
 	}
-	settings := xmrConsolidationSettings{
+	settings := consolidationSettings{
 		Enabled:             enabled,
-		CheckIntervalBlocks: c.getMimirInt64(mimirXMRConsolidationCheckIntervalBlocks, fallbackInt64(c.cfg.XMRConsolidationCheckIntervalBlocks, defaultXMRConsolidationCheckIntervalBlocks)),
-		CooldownBlocks:      c.getMimirInt64(mimirXMRConsolidationCooldownBlocks, fallbackInt64(c.cfg.XMRConsolidationCooldownBlocks, defaultXMRConsolidationCooldownBlocks)),
-		MinUnlockedOutputs:  c.getMimirInt64(mimirXMRConsolidationMinUnlockedOutputs, fallbackInt64(c.cfg.XMRConsolidationMinUnlockedOutputs, defaultXMRConsolidationMinUnlockedOutputs)),
-		TargetOutputs:       c.getMimirInt64(mimirXMRConsolidationTargetOutputs, fallbackInt64(c.cfg.XMRConsolidationTargetOutputs, defaultXMRConsolidationTargetOutputs)),
-		MinUnlockedAtomic:   c.getMimirUint64(mimirXMRConsolidationMinUnlockedAtomic, fallbackUint64(c.cfg.XMRConsolidationMinUnlockedAtomic, defaultXMRConsolidationMinUnlockedAtomic)),
-		ReserveBps:          c.getMimirInt64(mimirXMRConsolidationReserveBps, fallbackInt64(c.cfg.XMRConsolidationReserveBps, defaultXMRConsolidationReserveBps)),
-		ChurnLookahead:      c.getMimirInt64(mimirXMRConsolidationChurnLookahead, fallbackInt64(c.cfg.XMRConsolidationChurnLookaheadBlocks, defaultXMRConsolidationChurnLookahead)),
-		MaxRetries:          c.getMimirInt64(mimirXMRConsolidationMaxRetries, fallbackInt64(c.cfg.XMRConsolidationMaxRetries, defaultXMRConsolidationMaxRetries)),
+		CheckIntervalBlocks: c.mimirInt64(mimirXMRConsolidationCheckIntervalBlocks, int64OrFallback(c.cfg.XMRConsolidationCheckIntervalBlocks, defaultXMRConsolidationCheckIntervalBlocks)),
+		CooldownBlocks:      c.mimirInt64(mimirXMRConsolidationCooldownBlocks, int64OrFallback(c.cfg.XMRConsolidationCooldownBlocks, defaultXMRConsolidationCooldownBlocks)),
+		MinUnlockedOutputs:  c.mimirInt64(mimirXMRConsolidationMinUnlockedOutputs, int64OrFallback(c.cfg.XMRConsolidationMinUnlockedOutputs, defaultXMRConsolidationMinUnlockedOutputs)),
+		TargetOutputs:       c.mimirInt64(mimirXMRConsolidationTargetOutputs, int64OrFallback(c.cfg.XMRConsolidationTargetOutputs, defaultXMRConsolidationTargetOutputs)),
+		MinUnlockedAtomic:   c.mimirUint64(mimirXMRConsolidationMinUnlockedAtomic, uint64OrFallback(c.cfg.XMRConsolidationMinUnlockedAtomic, defaultXMRConsolidationMinUnlockedAtomic)),
+		ReserveBps:          c.mimirInt64(mimirXMRConsolidationReserveBps, int64OrFallback(c.cfg.XMRConsolidationReserveBps, defaultXMRConsolidationReserveBps)),
+		ChurnLookahead:      c.mimirInt64(mimirXMRConsolidationChurnLookahead, int64OrFallback(c.cfg.XMRConsolidationChurnLookaheadBlocks, defaultXMRConsolidationChurnLookahead)),
+		MaxRetries:          c.mimirInt64(mimirXMRConsolidationMaxRetries, int64OrFallback(c.cfg.XMRConsolidationMaxRetries, defaultXMRConsolidationMaxRetries)),
 	}
 	if settings.CheckIntervalBlocks <= 0 {
 		settings.CheckIntervalBlocks = defaultXMRConsolidationCheckIntervalBlocks
@@ -1070,7 +1071,7 @@ func (c *Client) loadConsolidationSettings() xmrConsolidationSettings {
 	return settings
 }
 
-func (c *Client) getMimirValue(key string) (int64, bool) {
+func (c *Client) mimirInt64Raw(key string) (int64, bool) {
 	if c.thorchainBridge == nil {
 		return 0, false
 	}
@@ -1085,8 +1086,8 @@ func (c *Client) getMimirValue(key string) (int64, bool) {
 	return value, true
 }
 
-func (c *Client) getMimirInt64(key string, fallback int64) int64 {
-	value, ok := c.getMimirValue(key)
+func (c *Client) mimirInt64(key string, fallback int64) int64 {
+	value, ok := c.mimirInt64Raw(key)
 	if !ok {
 		return fallback
 	}
@@ -1096,22 +1097,22 @@ func (c *Client) getMimirInt64(key string, fallback int64) int64 {
 	return value
 }
 
-func (c *Client) getMimirUint64(key string, fallback uint64) uint64 {
-	value := c.getMimirInt64(key, int64(fallback))
+func (c *Client) mimirUint64(key string, fallback uint64) uint64 {
+	value := c.mimirInt64(key, int64(fallback))
 	if value <= 0 {
 		return fallback
 	}
 	return uint64(value)
 }
 
-func fallbackInt64(value, fallback int64) int64 {
+func int64OrFallback(value, fallback int64) int64 {
 	if value <= 0 {
 		return fallback
 	}
 	return value
 }
 
-func fallbackUint64(value, fallback uint64) uint64 {
+func uint64OrFallback(value, fallback uint64) uint64 {
 	if value == 0 {
 		return fallback
 	}
@@ -1163,11 +1164,11 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 		return "", fmt.Errorf("FROST signed tx payload missing vault_pub_key_frost")
 	}
 
-	if c.frostSigner == nil {
-		return "", fmt.Errorf("%w: signer engine is not initialized", ErrFrostNotConfigured)
+	if c.sidecar == nil {
+		return "", fmt.Errorf("%w: signer engine is not initialized", ErrSidecarNotConfigured)
 	}
 
-	resp, err := c.frostSigner.FrostBroadcast(xmrFrostBroadcastRequest{
+	resp, err := c.sidecar.Broadcast(sidecar.BroadcastReq{
 		TxHex:       payload.TxMetadata,
 		TxHash:      payload.TxHash,
 		VaultPubKey: vaultPubKey,
@@ -1191,8 +1192,8 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 }
 
 func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
-	if c.frostSigner == nil {
-		return nil, nil, nil, fmt.Errorf("%w: signer engine is not initialized", ErrFrostNotConfigured)
+	if c.sidecar == nil {
+		return nil, nil, nil, fmt.Errorf("%w: signer engine is not initialized", ErrSidecarNotConfigured)
 	}
 	if c.tssServer == nil {
 		return nil, nil, nil, errors.New("tss server is not initialized")
@@ -1204,7 +1205,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		c.logger.Info().Interface("tx", tx).Msg("transaction already signed, ignoring")
 		return nil, nil, nil, nil
 	}
-	signReqCtx, err := c.validateXMRSignTx(tx, height, true)
+	signReqCtx, err := c.validateSignTx(tx, height, true)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1240,7 +1241,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 
 	var requiredInputs []tssp.FrostSpentOutputRef
 	if len(tx.Checkpoint) > 0 {
-		var ckpt xmrSignCheckpoint
+		var ckpt signCheckpoint
 		ckptErr := json.Unmarshal(tx.Checkpoint, &ckpt)
 		if ckptErr != nil {
 			return nil, nil, nil, fmt.Errorf("fail to unmarshal xmr sign checkpoint: %w", ckptErr)
@@ -1270,7 +1271,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		MaxInputs:      maxInputs,
 		DustThreshold:  dustThreshold,
 	}
-	resp, err := c.tssServer.FrostKeySign(frostReq, newFrostSignerAdapter(c.frostSigner))
+	resp, err := c.tssServer.FrostKeySign(frostReq, sidecar.NewFrostAdapter(c.sidecar))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to execute FROST keysign: %w", err)
 	}
@@ -1295,9 +1296,9 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("invalid FROST eventuality: %w", validateErr)
 	}
 
-	var localSpentRefs []xmrFrostOutputRef
+	var localSpentRefs []sidecar.SpentRef
 	for _, ref := range resp.SpentOutputRefs {
-		localSpentRefs = append(localSpentRefs, xmrFrostOutputRef{
+		localSpentRefs = append(localSpentRefs, sidecar.SpentRef{
 			TxHash:      ref.TxHash,
 			OutputIndex: ref.OutputIndex,
 			KeyImage:    ref.KeyImage,
@@ -1317,7 +1318,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to encode FROST signed tx payload: %w", err)
 	}
-	ckptBytes, ckptErr := json.Marshal(xmrSignCheckpoint{SpentOutputRefs: localSpentRefs})
+	ckptBytes, ckptErr := json.Marshal(signCheckpoint{SpentOutputRefs: localSpentRefs})
 	if ckptErr != nil {
 		c.logger.Error().Err(ckptErr).Msg("fail to marshal xmr sign checkpoint")
 	}
@@ -1325,70 +1326,70 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	return signedTx, ckptBytes, observation, nil
 }
 
-func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, requireThorchainHeight bool) (xmrValidatedSignRequest, error) {
+func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requireThorchainHeight bool) (validatedSignRequest, error) {
 	if tx.ToAddress.IsEmpty() {
-		return xmrValidatedSignRequest{}, fmt.Errorf("to address is empty")
+		return validatedSignRequest{}, fmt.Errorf("to address is empty")
 	}
 	if !tx.ToAddress.IsChain(c.chain) {
-		return xmrValidatedSignRequest{}, fmt.Errorf("to address %s is not a valid %s address", tx.ToAddress.String(), c.chain.String())
+		return validatedSignRequest{}, fmt.Errorf("to address %s is not a valid %s address", tx.ToAddress.String(), c.chain.String())
 	}
 	// Accept all valid Monero address types: standard (4...), subaddress (8...), featured+guaranteed (C...)
 	// The Rust FROST sidecar performs the final network-mode validation, but
 	// Bifrost mirrors the same high-level destination policy to fail fast.
 	if requireThorchainHeight && thorchainHeight <= 0 {
-		return xmrValidatedSignRequest{}, fmt.Errorf("thorchain height must be greater than zero")
+		return validatedSignRequest{}, fmt.Errorf("thorchain height must be greater than zero")
 	}
 
 	memoForParsing := tx.GetMemo()
 	if memoForParsing != "" {
 		parsedMemo, err := memo.ParseMemo(common.LatestVersion, memoForParsing)
 		if err != nil {
-			return xmrValidatedSignRequest{}, fmt.Errorf("fail to parse outbound memo(%s): %w", memoForParsing, err)
+			return validatedSignRequest{}, fmt.Errorf("fail to parse outbound memo(%s): %w", memoForParsing, err)
 		}
 		if parsedMemo.IsInbound() {
-			return xmrValidatedSignRequest{}, fmt.Errorf("inbound memo should not be used for outbound tx")
+			return validatedSignRequest{}, fmt.Errorf("inbound memo should not be used for outbound tx")
 		}
 	}
 
 	if len(tx.Coins) != 1 {
-		return xmrValidatedSignRequest{}, fmt.Errorf("xmr signing requires exactly one coin, got %d", len(tx.Coins))
+		return validatedSignRequest{}, fmt.Errorf("xmr signing requires exactly one coin, got %d", len(tx.Coins))
 	}
 	xmrCoin := tx.Coins.GetCoin(common.XMRAsset)
 	if xmrCoin.IsEmpty() {
-		return xmrValidatedSignRequest{}, fmt.Errorf("xmr tx does not contain XMR coin")
+		return validatedSignRequest{}, fmt.Errorf("xmr tx does not contain XMR coin")
 	}
 	if xmrCoin.Amount.IsZero() {
-		return xmrValidatedSignRequest{}, fmt.Errorf("xmr outbound amount is zero")
+		return validatedSignRequest{}, fmt.Errorf("xmr outbound amount is zero")
 	}
-	amountAtomic, err := xmrThorchainAmountToAtomic(xmrCoin.Amount)
+	amountAtomic, err := thorchainAmountToAtomic(xmrCoin.Amount)
 	if err != nil {
-		return xmrValidatedSignRequest{}, fmt.Errorf("fail to convert xmr outbound amount for signing: %w", err)
+		return validatedSignRequest{}, fmt.Errorf("fail to convert xmr outbound amount for signing: %w", err)
 	}
 	if amountAtomic == 0 {
-		return xmrValidatedSignRequest{}, fmt.Errorf("xmr outbound amount converted to zero atomic units")
+		return validatedSignRequest{}, fmt.Errorf("xmr outbound amount converted to zero atomic units")
 	}
 
 	vaultPubKey := txVaultPubKey(tx)
 	if vaultPubKey.IsEmpty() {
-		return xmrValidatedSignRequest{}, fmt.Errorf("vault pubkey is empty")
+		return validatedSignRequest{}, fmt.Errorf("vault pubkey is empty")
 	}
-	fromAddress := strings.TrimSpace(c.getVaultAddress(vaultPubKey))
+	fromAddress := strings.TrimSpace(c.deriveVaultAddress(vaultPubKey))
 	if fromAddress == "" {
-		return xmrValidatedSignRequest{}, fmt.Errorf("fail to derive monero vault address from pubkey %s", vaultPubKey.String())
+		return validatedSignRequest{}, fmt.Errorf("fail to derive monero vault address from pubkey %s", vaultPubKey.String())
 	}
 	from, err := common.NewAddress(fromAddress)
 	if err != nil {
-		return xmrValidatedSignRequest{}, fmt.Errorf("derived monero vault address %s is invalid: %w", fromAddress, err)
+		return validatedSignRequest{}, fmt.Errorf("derived monero vault address %s is invalid: %w", fromAddress, err)
 	}
 	if !from.IsChain(c.chain) {
-		return xmrValidatedSignRequest{}, fmt.Errorf("derived monero vault address %s is not on %s", fromAddress, c.chain.String())
+		return validatedSignRequest{}, fmt.Errorf("derived monero vault address %s is not on %s", fromAddress, c.chain.String())
 	}
 
-	if err = c.ensureXMRVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas); err != nil {
-		return xmrValidatedSignRequest{}, err
+	if err = c.ensureVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas); err != nil {
+		return validatedSignRequest{}, err
 	}
 
-	return xmrValidatedSignRequest{
+	return validatedSignRequest{
 		vaultPubKey:  vaultPubKey,
 		fromAddress:  fromAddress,
 		toAddress:    tx.ToAddress.String(),
@@ -1396,22 +1397,22 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 	}, nil
 }
 
-func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic uint64, maxGas common.Gas) error {
-	if c.frostSigner == nil {
+func (c *Client) ensureVaultBalance(vaultPubKey common.PubKey, amountAtomic uint64, maxGas common.Gas) error {
+	if c.sidecar == nil {
 		return nil
 	}
 
-	if err := c.ensureFrostVaultRegistration(vaultPubKey); err != nil {
+	if err := c.ensureVaultRegistered(vaultPubKey); err != nil {
 		return err
 	}
 
-	balance, err := c.frostSigner.GetBalance(vaultPubKey.String())
+	balance, err := c.sidecar.Balance(vaultPubKey.String())
 	if err != nil {
 		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
 	}
 	availableAtomic := spendableBalanceAtomic(balance)
 
-	maxGasAtomic, err := xmrMaxGasToAtomic(maxGas)
+	maxGasAtomic, err := maxGasToAtomic(maxGas)
 	if err != nil {
 		return fmt.Errorf("fail to convert xmr max gas for balance guard: %w", err)
 	}
@@ -1442,7 +1443,7 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 	return nil
 }
 
-func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {
+func spendableBalanceAtomic(balance sidecar.Balance) uint64 {
 	availableAtomic := balance.UnlockedBalance
 	if availableAtomic > balance.Balance {
 		availableAtomic = balance.Balance
@@ -1456,7 +1457,7 @@ func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {
 	return availableAtomic
 }
 
-func xmrMaxGasToAtomic(maxGas common.Gas) (uint64, error) {
+func maxGasToAtomic(maxGas common.Gas) (uint64, error) {
 	if len(maxGas) == 0 {
 		return 0, nil
 	}
@@ -1464,7 +1465,7 @@ func xmrMaxGasToAtomic(maxGas common.Gas) (uint64, error) {
 	if xmrGasCoin.IsEmpty() || xmrGasCoin.Amount.IsZero() {
 		return 0, nil
 	}
-	return xmrThorchainAmountToAtomic(xmrGasCoin.Amount)
+	return thorchainAmountToAtomic(xmrGasCoin.Amount)
 }
 
 func fallbackOutboundObservationFee(scanner *Scanner) uint64 {
@@ -1491,9 +1492,9 @@ func fallbackOutboundObservationFee(scanner *Scanner) uint64 {
 	return fee
 }
 
-func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, feeAtomic uint64, spentRefs []xmrFrostOutputRef) *stypes.TxInItem {
+func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, feeAtomic uint64, spentRefs []sidecar.SpentRef) *stypes.TxInItem {
 	vaultPubKey := txVaultPubKey(tx)
-	from := c.getVaultAddress(vaultPubKey)
+	from := c.deriveVaultAddress(vaultPubKey)
 	height := int64(0)
 	if c.scanner != nil {
 		height = c.scanner.CurrentHeight()
@@ -1534,22 +1535,22 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 	return item
 }
 
-func (c *Client) ExportFrostKeyshare(groupKey common.PubKey) ([]byte, error) {
-	if c.frostSigner == nil {
+func (c *Client) ExportKeyshare(groupKey common.PubKey) ([]byte, error) {
+	if c.sidecar == nil {
 		return nil, fmt.Errorf("frost signer not configured")
 	}
-	hexKey, err := c.frostSigner.ExportFrostKeys(groupKey.String())
+	hexKey, err := c.sidecar.ExportKeys(groupKey.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to export frost keys for group key %s: %w", groupKey.String(), err)
 	}
 	return []byte(hexKey), nil
 }
 
-func (c *Client) RestoreFrostKeyshare(vaultPubKey common.PubKey, keyBytesHex string) error {
-	if c.frostSigner == nil {
+func (c *Client) RestoreKeyshare(vaultPubKey common.PubKey, keyBytesHex string) error {
+	if c.sidecar == nil {
 		return fmt.Errorf("frost signer not configured")
 	}
-	restored, err := c.frostSigner.RestoreFrostKeys(vaultPubKey.String(), keyBytesHex)
+	restored, err := c.sidecar.RestoreKeys(vaultPubKey.String(), keyBytesHex)
 	if err != nil {
 		return err
 	}
@@ -1560,15 +1561,15 @@ func (c *Client) RestoreFrostKeyshare(vaultPubKey common.PubKey, keyBytesHex str
 }
 
 func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
-	if c.frostSigner == nil || len(tx.SpentOutputRefs) == 0 {
+	if c.sidecar == nil || len(tx.SpentOutputRefs) == 0 {
 		return
 	}
 	vaultPubKey := tx.ObservedPubKey.String()
 	txHash := tx.Tx.ID.String()
 
-	refs := make([]xmrFrostOutputRef, len(tx.SpentOutputRefs))
+	refs := make([]sidecar.SpentRef, len(tx.SpentOutputRefs))
 	for i, ref := range tx.SpentOutputRefs {
-		refs[i] = xmrFrostOutputRef{
+		refs[i] = sidecar.SpentRef{
 			TxHash:      ref.TxHash,
 			OutputIndex: ref.OutputIndex,
 			KeyImage:    ref.KeyImage,
@@ -1576,18 +1577,18 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 		}
 	}
 
-	var outbound *xmrFrostOutboundMeta
+	var outbound *sidecar.OutboundMeta
 	if !tx.Tx.FromAddress.IsEmpty() && !tx.Tx.ToAddress.IsEmpty() {
 		var amount, fee uint64
 		xmrCoin := tx.Tx.Coins.GetCoin(common.XMRAsset)
 		if !xmrCoin.IsEmpty() {
-			amount, _ = xmrThorchainAmountToAtomic(xmrCoin.Amount)
+			amount, _ = thorchainAmountToAtomic(xmrCoin.Amount)
 		}
 		gasCoin := tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
 		if !gasCoin.IsEmpty() {
-			fee, _ = xmrThorchainAmountToAtomic(gasCoin.Amount)
+			fee, _ = thorchainAmountToAtomic(gasCoin.Amount)
 		}
-		outbound = &xmrFrostOutboundMeta{
+		outbound = &sidecar.OutboundMeta{
 			FromAddress: tx.Tx.FromAddress.String(),
 			ToAddress:   tx.Tx.ToAddress.String(),
 			Amount:      amount,
@@ -1596,12 +1597,12 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 		}
 	}
 
-	result, err := c.frostSigner.MarkOutputsSpent(vaultPubKey, txHash, refs, false, outbound)
+	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
 		// 404 indicates the sidecar's get_transactions race window — the
 		// catchup loop reconciles this on the next iteration, so log warn
 		// instead of error to avoid alarm noise.
-		if isFrostHTTPStatus(err, http.StatusNotFound) {
+		if sidecar.IsHTTPStatus(err, http.StatusNotFound) {
 			c.logger.Warn().
 				Str("tx_hash", txHash).
 				Str("vault", vaultPubKey).
@@ -1661,7 +1662,7 @@ func (c *Client) GetHeight() (int64, error) {
 }
 
 func (c *Client) GetAddress(poolPubKey common.PubKey) string {
-	if addr := c.getVaultAddress(poolPubKey); addr != "" {
+	if addr := c.deriveVaultAddress(poolPubKey); addr != "" {
 		return addr
 	}
 	addr, err := poolPubKey.GetAddress(c.chain)
@@ -1673,7 +1674,7 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 }
 
 func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error) {
-	if addr := c.getVaultAddress(poolPubKey); addr != "" {
+	if addr := c.deriveVaultAddress(poolPubKey); addr != "" {
 		return c.GetAccountByAddress(addr, height)
 	}
 
@@ -1688,7 +1689,7 @@ func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.A
 }
 
 func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account, error) {
-	if c.frostSigner == nil {
+	if c.sidecar == nil {
 		return common.Account{}, fmt.Errorf("xmr account query requires frost signer")
 	}
 	address = strings.TrimSpace(address)
@@ -1701,11 +1702,11 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 		return common.Account{}, fmt.Errorf("no vault pub key found for address %s", address)
 	}
 
-	if err := c.ensureFrostVaultRegistration(pubKey); err != nil {
+	if err := c.ensureVaultRegistered(pubKey); err != nil {
 		return common.Account{}, fmt.Errorf("fail to register monero vault for %s: %w", address, err)
 	}
 
-	balance, err := c.frostSigner.GetBalance(pubKey.String())
+	balance, err := c.sidecar.Balance(pubKey.String())
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get monero wallet balance for %s: %w", address, err)
 	}
@@ -1715,7 +1716,7 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	// toward the wallet's view of "what we own", otherwise every fresh inbound
 	// triggers a false-positive insolvency report during normal operation.
 	// Spendability for sign-time input selection is a separate concern handled
-	// by ensureXMRVaultBalance which uses spendableBalanceAtomic.
+	// by ensureVaultBalance which uses spendableBalanceAtomic.
 	amount := cosmos.NewUint(balance.Balance / moneroAtomicToThorchain)
 	return common.Account{
 		Sequence:      0,
@@ -1764,8 +1765,8 @@ func (c *Client) CustomKeygen() bool {
 }
 
 func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult, error) {
-	if c.frostSigner == nil {
-		return types.CustomKeygenResult{}, fmt.Errorf("%w: signer engine is not initialized", ErrFrostNotConfigured)
+	if c.sidecar == nil {
+		return types.CustomKeygenResult{}, fmt.Errorf("%w: signer engine is not initialized", ErrSidecarNotConfigured)
 	}
 	if c.tssServer == nil {
 		return types.CustomKeygenResult{}, fmt.Errorf("tss server is not initialized")
@@ -1786,7 +1787,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	if len(members) == 0 {
 		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires non-empty member set")
 	}
-	requestedVaultKey := xmrMonovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
+	requestedVaultKey := monovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
 	version := strings.TrimSpace(req.ThorchainVersion)
 	if version == "" && c.thorchainBridge != nil {
 		chainVersion, versionErr := c.thorchainBridge.GetThorchainVersion()
@@ -1800,7 +1801,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		SignerPubKeys: members,
 		BlockHeight:   req.BlockHeight,
 		Version:       version,
-	}, newFrostSignerAdapter(c.frostSigner))
+	}, sidecar.NewFrostAdapter(c.sidecar))
 	if err != nil {
 		c.logFailClosedCoordination("frost_tss_keygen", err)
 		return types.CustomKeygenResult{}, fmt.Errorf("fail to execute FROST keygen: %w", err)
@@ -1843,7 +1844,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		)
 	}
 
-	if _, err := c.frostSigner.RegisterVault(xmrFrostRegisterVaultRequest{
+	if _, err := c.sidecar.RegisterVault(sidecar.RegisterVaultReq{
 		VaultPubKey:         frostVaultPubKey.String(),
 		GroupKey:            groupKeyHex,
 		Address:             frostAddr.String(),
@@ -1870,7 +1871,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	}, nil
 }
 
-func xmrMonovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members []string) string {
+func monovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members []string) string {
 	var canonicalMembers []string
 	for _, member := range members {
 		member = strings.TrimSpace(member)
@@ -1977,7 +1978,7 @@ func (c *Client) GetConfirmationCount(txIn stypes.TxIn) int64 {
 	}
 
 	totalValue := txIn.GetTotalTransactionValue(common.XMRAsset, addresses)
-	coinbaseThorchain := xmrCoinbaseThorchain()
+	coinbaseThorchain := coinbaseThorchain()
 
 	// Apply mimir-configurable confirmation multiplier (same lever as UTXO/ETH chains).
 	// Default confMul = MaxBasisPts (10000) = 1x coinbase. Higher values reduce
@@ -1990,7 +1991,7 @@ func (c *Client) GetConfirmationCount(txIn stypes.TxIn) int64 {
 	if confValue.IsZero() {
 		confValue = cosmos.NewUint(coinbaseThorchain)
 	}
-	confirm := xmrConfirmationRequired(totalValue, confValue)
+	confirm := confirmationRequired(totalValue, confValue)
 
 	// Apply mimir-configurable max confirmation cap.
 	confirm, err = utxo.MaxConfAdjustment(confirm, c.GetChain().String(), c.thorchainBridge)
@@ -2176,12 +2177,12 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	return result, nil
 }
 
-func (c *Client) ensureFrostVaultRegistration(vaultPubKey common.PubKey) error {
-	if c.frostSigner == nil || vaultPubKey.IsEmpty() {
+func (c *Client) ensureVaultRegistered(vaultPubKey common.PubKey) error {
+	if c.sidecar == nil || vaultPubKey.IsEmpty() {
 		return nil
 	}
 
-	address, err := ensureFrostVaultRegistered(c.logger, c.frostSigner, c.chain, vaultPubKey, c.localVaultBootstrap, "bifrost", 0)
+	address, err := ensureVaultRegistered(c.logger, c.sidecar, c.chain, vaultPubKey, c.vaultBootstrap, "bifrost", 0)
 	if err != nil {
 		return err
 	}
@@ -2191,7 +2192,7 @@ func (c *Client) ensureFrostVaultRegistration(vaultPubKey common.PubKey) error {
 	return nil
 }
 
-func (c *Client) getVaultAddress(vaultPubKey common.PubKey) string {
+func (c *Client) deriveVaultAddress(vaultPubKey common.PubKey) string {
 	if vaultPubKey.IsEmpty() {
 		return ""
 	}
@@ -2241,11 +2242,11 @@ func (c *Client) setVaultAddressMapping(vaultPubKey common.PubKey, address commo
 		}
 	}
 	if c.scanner != nil {
-		c.scanner.SetVaultAddress(vaultPubKey, address.String())
+		c.scanner.SetManualVaultAddress(vaultPubKey, address.String())
 	}
 }
 
-func (c *Client) getMappedVaultAddress(vaultPubKey common.PubKey) (common.Address, bool) {
+func (c *Client) cachedVaultAddress(vaultPubKey common.PubKey) (common.Address, bool) {
 	if vaultPubKey.IsEmpty() {
 		return common.NoAddress, false
 	}
@@ -2304,7 +2305,7 @@ func txCacheVault(tx stypes.TxOutItem, chain common.Chain) string {
 	return stypes.BroadcastCacheKey(txVaultPubKey(tx).String(), chain.String())
 }
 
-func xmrCoinbaseThorchain() uint64 {
+func coinbaseThorchain() uint64 {
 	coinbaseThorchain := uint64(defaultCoinbaseValue / moneroAtomicToThorchain)
 	if coinbaseThorchain == 0 {
 		return 1
@@ -2312,14 +2313,14 @@ func xmrCoinbaseThorchain() uint64 {
 	return coinbaseThorchain
 }
 
-func xmrConfirmationRequired(totalValue, confValue cosmos.Uint) uint64 {
+func confirmationRequired(totalValue, confValue cosmos.Uint) uint64 {
 	if confValue.IsZero() {
 		return 0
 	}
 	return totalValue.Quo(confValue).Uint64()
 }
 
-func xmrThorchainAmountToAtomic(amount cosmos.Uint) (uint64, error) {
+func thorchainAmountToAtomic(amount cosmos.Uint) (uint64, error) {
 	if amount.IsNil() {
 		return 0, fmt.Errorf("xmr outbound amount is nil")
 	}

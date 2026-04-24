@@ -3,6 +3,8 @@ package monero
 import (
 	"testing"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
@@ -43,7 +45,7 @@ func TestTransferToTxInItemUsesFeeFallback(t *testing.T) {
 		currentBlockHeight: atomic.NewInt64(0),
 		lastFee:            atomic.NewUint64(123 * moneroAtomicToThorchain),
 	}
-	item, ok := s.transferToTxInItem(xmrFrostTransferEntry{
+	item, ok := s.transferToTxInItem(sidecar.Transfer{
 		TxID:   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		Amount: 10000,
 		Fee:    0,
@@ -64,7 +66,7 @@ func TestResolveOutgoingSenderPrefersExplicitMetadata(t *testing.T) {
 		lastFee:            atomic.NewUint64(0),
 	}
 
-	sender, pk := s.resolveOutgoingSender(xmrFrostTransferEntry{
+	sender, pk := s.resolveOutgoingSender(sidecar.Transfer{
 		TxID:        "tx-1",
 		FromAddress: vaultAddr.String(),
 		VaultPubKey: vaultPubKey.String(),
@@ -123,7 +125,7 @@ func TestResolveOutgoingSenderRejectsMissingExplicitMetadata(t *testing.T) {
 		lastFee:            atomic.NewUint64(0),
 	}
 
-	sender, pk := s.resolveOutgoingSender(xmrFrostTransferEntry{
+	sender, pk := s.resolveOutgoingSender(sidecar.Transfer{
 		TxID:        "tx-missing-sender",
 		FromAddress: "",
 		VaultPubKey: vaultPubKey.String(),
@@ -132,7 +134,7 @@ func TestResolveOutgoingSenderRejectsMissingExplicitMetadata(t *testing.T) {
 		t.Fatalf("expected missing sender to fail closed, got sender=%q pk=%s", sender, pk.String())
 	}
 
-	sender, pk = s.resolveOutgoingSender(xmrFrostTransferEntry{
+	sender, pk = s.resolveOutgoingSender(sidecar.Transfer{
 		TxID:        "tx-missing-vault",
 		FromAddress: vaultAddr.String(),
 		VaultPubKey: "",
@@ -151,7 +153,7 @@ func TestResolveOutgoingSenderRejectsSenderVaultMismatch(t *testing.T) {
 		lastFee:            atomic.NewUint64(0),
 	}
 
-	sender, pk := s.resolveOutgoingSender(xmrFrostTransferEntry{
+	sender, pk := s.resolveOutgoingSender(sidecar.Transfer{
 		TxID:        "tx-mismatch",
 		FromAddress: otherAddr.String(),
 		VaultPubKey: vaultPubKey.String(),

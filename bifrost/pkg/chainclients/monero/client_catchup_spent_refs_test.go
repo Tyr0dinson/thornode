@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -23,13 +24,13 @@ func TestCatchupSpentOutputRefsReadsFromVaultAndCallsSidecar(t *testing.T) {
 
 	var mu sync.Mutex
 	var capturedVault, capturedTxHash string
-	var capturedRefs []xmrFrostOutputRef
+	var capturedRefs []sidecar.SpentRef
 	var skipVerification bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/monero/outputs/mark-spent":
-			var req xmrFrostMarkSpentRequest
+			var req sidecar.MarkSpentReq
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			mu.Lock()
 			capturedVault = req.VaultPubKey
@@ -37,14 +38,14 @@ func TestCatchupSpentOutputRefsReadsFromVaultAndCallsSidecar(t *testing.T) {
 			capturedRefs = req.SpentRefs
 			skipVerification = req.SkipVerification
 			mu.Unlock()
-			_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: len(req.SpentRefs)})
+			_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	vault := ttypes.Vault{
@@ -59,9 +60,9 @@ func TestCatchupSpentOutputRefsReadsFromVaultAndCallsSidecar(t *testing.T) {
 	}
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
+		chain:   common.XMRChain,
+		sidecar: signer,
+		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
 			vaultByPubKey: map[string]ttypes.Vault{
 				vault.PubKey.String(): vault,
@@ -97,14 +98,14 @@ func TestCatchupSpentOutputRefsIncludesInactiveVaultFromPubkeys(t *testing.T) {
 		switch r.URL.Path {
 		case "/v1/monero/outputs/mark-spent":
 			calls++
-			_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: 1})
+			_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: 1})
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	vault := ttypes.Vault{
@@ -117,9 +118,9 @@ func TestCatchupSpentOutputRefsIncludesInactiveVaultFromPubkeys(t *testing.T) {
 	}
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
+		chain:   common.XMRChain,
+		sidecar: signer,
+		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
 			vaultByPubKey: map[string]ttypes.Vault{
 				primaryKey.String(): vault,
@@ -141,17 +142,17 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrost(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: 0})
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: 0})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
+		chain:   common.XMRChain,
+		sidecar: signer,
+		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
 			vaultByPubKey: map[string]ttypes.Vault{
 				"eddsa-only": {
@@ -175,17 +176,17 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithNoRefs(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: 0})
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: 0})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
+		chain:   common.XMRChain,
+		sidecar: signer,
+		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
 			vaultByPubKey: map[string]ttypes.Vault{
 				"v1": {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -34,7 +35,7 @@ func TestValidateXMRSignTxRejectsInboundMemo(t *testing.T) {
 		Memo: "DONATE:XMR.XMR",
 	}
 
-	_, err := c.validateXMRSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100, true)
 	if err == nil {
 		t.Fatalf("expected inbound memo validation error")
 	}
@@ -48,8 +49,8 @@ func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	c := &Client{chain: common.XMRChain}
-	ckpt, _ := json.Marshal(xmrSignCheckpoint{
-		SpentOutputRefs: []xmrFrostOutputRef{{
+	ckpt, _ := json.Marshal(signCheckpoint{
+		SpentOutputRefs: []sidecar.SpentRef{{
 			TxHash:      "aabb",
 			OutputIndex: 0,
 			KeyImage:    "ki_aabb",
@@ -69,7 +70,7 @@ func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 		Checkpoint: ckpt,
 	}
 
-	_, err := c.validateXMRSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100, true)
 	if err != nil {
 		t.Fatalf("checkpoint should be accepted: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestValidateXMRSignTxAcceptsFeaturedDestination(t *testing.T) {
 	}
 
 	// Featured addresses are valid destinations; validation should succeed.
-	_, err := c.validateXMRSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100, true)
 	if err != nil {
 		t.Fatalf("featured addresses should be accepted as valid destinations: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestValidateXMRSignTxAcceptsNonGuaranteedFeaturedDestination(t *testing.T) 
 	}
 
 	// Non-guaranteed featured addresses are valid destinations; validation should succeed.
-	_, err := c.validateXMRSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100, true)
 	if err != nil {
 		t.Fatalf("non-guaranteed featured addresses should be accepted as valid destinations: %v", err)
 	}
@@ -132,11 +133,11 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 			return
 		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
-			_ = json.NewEncoder(w).Encode(xmrFrostBalanceResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.Balance{
 				Balance:         2 * moneroAtomicToThorchain,
 				UnlockedBalance: 2 * moneroAtomicToThorchain,
 			})
@@ -147,14 +148,14 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 	defer balanceServer.Close()
 
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: frostSigner,
+		chain:   common.XMRChain,
+		sidecar: frostSigner,
 		vaultAddressMap: map[string]common.Address{
 			vaultPubKey.String(): vaultAddr,
 		},
@@ -174,7 +175,7 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateXMRSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100, true)
 	if err == nil {
 		t.Fatalf("expected insufficient balance error")
 	}
@@ -191,11 +192,11 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 			return
 		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
-			_ = json.NewEncoder(w).Encode(xmrFrostBalanceResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.Balance{
 				Balance:         10 * moneroAtomicToThorchain,
 				UnlockedBalance: 0,
 			})
@@ -206,14 +207,14 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	defer balanceServer.Close()
 
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: frostSigner,
+		chain:   common.XMRChain,
+		sidecar: frostSigner,
 		vaultAddressMap: map[string]common.Address{
 			vaultPubKey.String(): vaultAddr,
 		},
@@ -230,7 +231,7 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateXMRSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100, true)
 	if err == nil {
 		t.Fatalf("expected insufficient balance error when funds are fully locked")
 	}
@@ -244,7 +245,7 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 
-	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+	balanceServer := newFrostBalanceServer(t, map[string]sidecar.Balance{
 		vaultPubKey.String(): {
 			Balance:          10 * moneroAtomicToThorchain,
 			UnlockedBalance:  10 * moneroAtomicToThorchain,
@@ -254,14 +255,14 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 	defer balanceServer.Close()
 
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: frostSigner,
+		chain:   common.XMRChain,
+		sidecar: frostSigner,
 		vaultAddressMap: map[string]common.Address{
 			vaultPubKey.String(): vaultAddr,
 		},
@@ -278,7 +279,7 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateXMRSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100, true)
 	if err == nil {
 		t.Fatalf("expected insufficient balance error when spendable balance is below amount")
 	}
@@ -291,7 +292,7 @@ func TestValidateXMRSignTxRequiresFrostVaultPubKey(t *testing.T) {
 	t.Parallel()
 
 	eddsaPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
-	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+	balanceServer := newFrostBalanceServer(t, map[string]sidecar.Balance{
 		eddsaPubKey.String(): {
 			Balance:          5 * moneroAtomicToThorchain,
 			UnlockedBalance:  5 * moneroAtomicToThorchain,
@@ -300,14 +301,14 @@ func TestValidateXMRSignTxRequiresFrostVaultPubKey(t *testing.T) {
 	})
 	defer balanceServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	c := &Client{
 		chain:           common.XMRChain,
-		frostSigner:     frostSigner,
+		sidecar:         frostSigner,
 		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{eddsaPubKey.String(): {PubKeyEddsa: eddsaPubKey}}},
 		vaultAddressMap: map[string]common.Address{
 			eddsaPubKey.String(): vaultAddr,
@@ -323,7 +324,7 @@ func TestValidateXMRSignTxRequiresFrostVaultPubKey(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateXMRSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100, true)
 	if err == nil {
 		t.Fatal("expected sign validation to fail closed without VaultPubKeyFrost")
 	}
@@ -349,7 +350,7 @@ func TestValidateXMRSignTxAcceptsValidRequest(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	req, err := c.validateXMRSignTx(tx, 100, true)
+	req, err := c.validateSignTx(tx, 100, true)
 	if err != nil {
 		t.Fatalf("expected valid sign request, got error: %v", err)
 	}
@@ -359,12 +360,12 @@ func TestValidateXMRSignTxAcceptsValidRequest(t *testing.T) {
 }
 
 // newFrostBalanceServer creates a mock sidecar server that serves balance requests.
-func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]xmrFrostBalanceResponse) *httptest.Server {
+func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]sidecar.Balance) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 			return
 		}
 		// Path format: /v1/monero/balance/{vault_pub_key}

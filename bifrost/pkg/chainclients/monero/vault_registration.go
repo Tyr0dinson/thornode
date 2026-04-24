@@ -8,6 +8,7 @@ import (
 	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/rs/zerolog"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -46,17 +47,20 @@ func vaultPubKeyFromGroupKeyHex(groupKeyHex string) (common.PubKey, error) {
 	return common.NewPubKeyFromCrypto(cometed25519.PubKey(raw))
 }
 
-func ensureFrostVaultRegistered(
+// ensureVaultRegistered registers the given vault with the sidecar, attaching
+// spend-key material if the local node owns the vault alone, or a deterministic
+// view key otherwise.
+func ensureVaultRegistered(
 	logger zerolog.Logger,
-	signer *FrostSigner,
+	client *sidecar.Client,
 	chain common.Chain,
 	vaultPubKey common.PubKey,
-	bootstrap *frostVaultBootstrap,
+	bootstrap *vaultBootstrap,
 	source string,
 	birthday int64,
 ) (common.Address, error) {
-	if signer == nil {
-		return common.NoAddress, fmt.Errorf("frost signer is not initialized")
+	if client == nil {
+		return common.NoAddress, fmt.Errorf("sidecar client is not initialized")
 	}
 	if vaultPubKey.IsEmpty() {
 		return common.NoAddress, fmt.Errorf("vault pubkey is empty")
@@ -75,7 +79,7 @@ func ensureFrostVaultRegistered(
 		return common.NoAddress, err
 	}
 
-	req := xmrFrostRegisterVaultRequest{
+	req := sidecar.RegisterVaultReq{
 		VaultPubKey:         vaultPubKey.String(),
 		GroupKey:            groupKeyHex,
 		Address:             address.String(),
@@ -94,12 +98,12 @@ func ensureFrostVaultRegistered(
 		}
 	}
 
-	if _, err = signer.RegisterVault(req); err != nil {
+	if _, err = client.RegisterVault(req); err != nil {
 		logger.Debug().
 			Err(err).
 			Str("vault_pubkey", vaultPubKey.String()).
 			Str("address", address.String()).
-			Msg("failed to register xmr vault with frost signer")
+			Msg("failed to register xmr vault with sidecar")
 		return common.NoAddress, err
 	}
 

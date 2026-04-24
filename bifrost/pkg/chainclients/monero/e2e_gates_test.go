@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -84,7 +85,7 @@ func (b *solvencyBridge) GetAsgards() (ttypes.Vaults, error) {
 // transfers, addresses, and chain-query responses for scanner tests.
 func newFrostTransfersServer(
 	t *testing.T,
-	incoming, outgoing []xmrFrostTransferEntry,
+	incoming, outgoing []sidecar.Transfer,
 	addresses []string,
 ) *httptest.Server {
 	t.Helper()
@@ -116,9 +117,9 @@ func newFrostTransfersServer(
 
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/height"):
-			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 500})
+			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 500})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
 			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
 			height, err := strconv.ParseInt(rawHeight, 10, 64)
@@ -126,7 +127,7 @@ func newFrostTransfersServer(
 				http.Error(w, "invalid block height", http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
 				Hash:         "hash-" + rawHeight,
@@ -134,19 +135,19 @@ func newFrostTransfersServer(
 				TxHashes:     chainTxHashes,
 			})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/tx/") && strings.HasSuffix(r.URL.Path, "/exists"):
-			_ = json.NewEncoder(w).Encode(xmrFrostChainTxExistsResponse{Exists: true})
+			_ = json.NewEncoder(w).Encode(sidecar.TxExistsResp{Exists: true})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/scanner/sync"):
-			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.Transfers{
 				Incoming: incoming,
 				Outgoing: outgoing,
 			})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/transfers"):
-			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.Transfers{
 				Incoming: incoming,
 				Outgoing: outgoing,
 			})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/addresses/"):
-			_ = json.NewEncoder(w).Encode(xmrFrostAddressesResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.Addresses{
 				Addresses: addresses,
 			})
 		default:
@@ -164,7 +165,7 @@ func TestXMRScannerInboundDeferredReferenceMemoAttribution(t *testing.T) {
 	expectedMemo := "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g"
 
 	frostServer := newFrostTransfersServer(t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:    txID,
 				Address: vaultAddress,
@@ -178,7 +179,7 @@ func TestXMRScannerInboundDeferredReferenceMemoAttribution(t *testing.T) {
 
 	var err error
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -213,7 +214,7 @@ func TestXMRScannerInboundMemolessDeferredAttribution(t *testing.T) {
 	vaultAddress := vaultAddr.String()
 
 	frostServer := newFrostTransfersServer(t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:    txID,
 				Address: vaultAddress,
@@ -227,7 +228,7 @@ func TestXMRScannerInboundMemolessDeferredAttribution(t *testing.T) {
 
 	var err error
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -268,7 +269,7 @@ func TestXMRScannerOutgoingMemolessDeferredAttribution(t *testing.T) {
 
 	frostServer := newFrostTransfersServer(t,
 		nil,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        txID,
 				Address:     destinationAddress,
@@ -284,7 +285,7 @@ func TestXMRScannerOutgoingMemolessDeferredAttribution(t *testing.T) {
 
 	var err error
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -357,7 +358,7 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 	}
 
 	// Mock frost signer that returns balance by vault pub key
-	balanceByPK := map[string]xmrFrostBalanceResponse{
+	balanceByPK := map[string]sidecar.Balance{
 		pkA.String(): {Balance: 100 * moneroAtomicToThorchain, UnlockedBalance: 100 * moneroAtomicToThorchain},
 		pkB.String(): {Balance: 10 * moneroAtomicToThorchain, UnlockedBalance: 10 * moneroAtomicToThorchain},
 	}
@@ -365,7 +366,7 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 	defer balanceServer.Close()
 
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, balanceServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, balanceServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -377,7 +378,7 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 		chain:                   common.XMRChain,
 		thorchainBridge:         &solvencyBridge{asgards: asgardVaults},
 		scanner:                 &Scanner{lastFee: atomic.NewUint64(10)},
-		frostSigner:             frostSigner,
+		sidecar:                 frostSigner,
 		globalSolvencyQueue:     queue,
 		vaultAddressMap:         map[string]common.Address{pkA.String(): addrA, pkB.String(): addrB},
 		lastSolvencyCheckHeight: atomic.NewInt64(0),

@@ -11,6 +11,7 @@ import (
 	"go.uber.org/atomic"
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -31,13 +32,13 @@ const (
 
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
 type Scanner struct {
-	logger              zerolog.Logger
-	frostSigner         *FrostSigner
-	bridge              thorclient.ThorchainBridge
-	chain               common.Chain
-	localNodePubKey     common.PubKey
-	localVaultBootstrap *frostVaultBootstrap
-	reorgStore          *ReorgStore
+	logger          zerolog.Logger
+	sidecar         *sidecar.Client
+	bridge          thorclient.ThorchainBridge
+	chain           common.Chain
+	localNodePubKey common.PubKey
+	vaultBootstrap  *vaultBootstrap
+	reorgStore      *ReorgStore
 	// solvencyReporter is invoked once per scanned block so that wallet vs
 	// thornode vault accounting drift is reported to thornode promptly.
 	// Without this hook, Client.ReportSolvency only fires from the
@@ -71,7 +72,7 @@ type observedOutgoingTx struct {
 
 func NewScanner(
 	logger zerolog.Logger,
-	frostSigner *FrostSigner,
+	sidecarClient *sidecar.Client,
 	bridge thorclient.ThorchainBridge,
 	chain common.Chain,
 	localNodePubKey common.PubKey,
@@ -79,7 +80,7 @@ func NewScanner(
 ) *Scanner {
 	return &Scanner{
 		logger:                 logger,
-		frostSigner:            frostSigner,
+		sidecar:                sidecarClient,
 		bridge:                 bridge,
 		chain:                  chain,
 		localNodePubKey:        localNodePubKey,
@@ -101,7 +102,7 @@ func (s *Scanner) SetSolvencyReporter(fn func(int64) error) {
 	s.solvencyReporter = fn
 }
 
-func (s *Scanner) SetVaultAddress(vaultPubKey common.PubKey, address string) {
+func (s *Scanner) SetManualVaultAddress(vaultPubKey common.PubKey, address string) {
 	if vaultPubKey.IsEmpty() || strings.TrimSpace(address) == "" {
 		return
 	}
@@ -124,7 +125,7 @@ func (s *Scanner) SetVaultAddress(vaultPubKey common.PubKey, address string) {
 	s.asgardMu.Unlock()
 }
 
-func (s *Scanner) GetVaultAddress(vaultPubKey common.PubKey) (string, bool) {
+func (s *Scanner) ManualVaultAddress(vaultPubKey common.PubKey) (string, bool) {
 	if vaultPubKey.IsEmpty() {
 		return "", false
 	}
@@ -149,8 +150,8 @@ func (s *Scanner) SetReorgStore(store *ReorgStore) {
 	s.reorgStore = store
 }
 
-func (s *Scanner) SetLocalVaultBootstrap(bootstrap *frostVaultBootstrap) {
-	s.localVaultBootstrap = bootstrap
+func (s *Scanner) SetVaultBootstrap(bootstrap *vaultBootstrap) {
+	s.vaultBootstrap = bootstrap
 }
 
 // FetchMemPool emits only outbound mempool transfers with explicit sender metadata.
@@ -160,11 +161,11 @@ func (s *Scanner) FetchMemPool(height int64) (stypes.TxIn, error) {
 		Chain:   common.XMRChain,
 		MemPool: true,
 	}
-	if s.frostSigner == nil {
+	if s.sidecar == nil {
 		return txIn, nil
 	}
 
-	resp, err := s.frostSigner.GetMemPoolTransfers()
+	resp, err := s.sidecar.Mempool()
 	if err != nil {
 		return txIn, fmt.Errorf("fail to get monero mempool transfers: %w", err)
 	}
@@ -223,13 +224,13 @@ func (s *Scanner) FetchMemPool(height int64) (stypes.TxIn, error) {
 
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{Chain: common.XMRChain}
-	if s.frostSigner == nil {
+	if s.sidecar == nil {
 		return txIn, fmt.Errorf("monero scanner requires frost signer for chain queries")
 	}
 
-	block, err := s.frostSigner.GetChainBlock(fetchHeight)
+	block, err := s.sidecar.ChainBlock(fetchHeight)
 	if err != nil {
-		if errors.Is(err, ErrFrostUnavailableBlock) {
+		if errors.Is(err, sidecar.ErrUnavailableBlock) {
 			return txIn, btypes.ErrUnavailableBlock
 		}
 		return txIn, fmt.Errorf("fail to fetch monero block %d: %w", fetchHeight, err)
@@ -238,7 +239,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	// Estimate vault outbound fee from monerod's per-weight fee rate x typical
 	// vault tx weight. Avoid block-coinbase averaging when possible because it
 	// mixes complex user txs and materially overestimates simple vault outbounds.
-	if perWeight, perWeightErr := s.frostSigner.GetFeeRate(); perWeightErr == nil && perWeight > 0 {
+	if perWeight, perWeightErr := s.sidecar.FeeRate(); perWeightErr == nil && perWeight > 0 {
 		feeAtomic := perWeight * typicalVaultOutboundWeight
 		if feeAtomic > 0 {
 			s.lastFee.Store(feeAtomic)
@@ -302,7 +303,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 }
 
 func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHash, parentHash string) ([]*stypes.TxInItem, error) {
-	if s.frostSigner == nil || s.bridge == nil {
+	if s.sidecar == nil || s.bridge == nil {
 		return nil, nil
 	}
 	s.pruneObservedOutgoing(fetchHeight)
@@ -311,7 +312,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 		return nil, btypes.ErrUnavailableBlock
 	}
 
-	resp, err := s.frostSigner.SyncTransfersByHeight(fetchHeight, chainHeight, blockHash, parentHash, s.maxReorgRescan)
+	resp, err := s.sidecar.SyncAt(fetchHeight, chainHeight, blockHash, parentHash, s.maxReorgRescan)
 	if err != nil {
 		if isFrostScannerHashMismatchErr(err) {
 			return nil, btypes.ErrUnavailableBlock
@@ -396,7 +397,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	return s.dedupeTxInItemsByTxID(txItems), nil
 }
 
-func (s *Scanner) outgoingVaultsByTxID(outgoing []xmrFrostTransferEntry) map[string]map[string]struct{} {
+func (s *Scanner) outgoingVaultsByTxID(outgoing []sidecar.Transfer) map[string]map[string]struct{} {
 	if len(outgoing) == 0 {
 		return nil
 	}
@@ -517,7 +518,7 @@ func (s *Scanner) pruneObservedOutgoing(currentHeight int64) {
 	}
 }
 
-func (s *Scanner) resolveOutgoingSender(transfer xmrFrostTransferEntry) (string, common.PubKey) {
+func (s *Scanner) resolveOutgoingSender(transfer sidecar.Transfer) (string, common.PubKey) {
 	txID := strings.TrimSpace(transfer.TxID)
 	explicitSender := strings.TrimSpace(transfer.FromAddress)
 	explicitVault := strings.TrimSpace(transfer.VaultPubKey)
@@ -563,11 +564,11 @@ func (s *Scanner) resolveOutgoingSender(transfer xmrFrostTransferEntry) (string,
 }
 
 func (s *Scanner) GetHeight() (int64, error) {
-	if s.frostSigner == nil {
+	if s.sidecar == nil {
 		return 0, fmt.Errorf("monero scanner requires frost signer for chain queries")
 	}
 
-	height, err := s.frostSigner.GetChainHeight()
+	height, err := s.sidecar.ChainHeight()
 	if err != nil {
 		return 0, err
 	}
@@ -618,7 +619,7 @@ func averageNetworkFeeFromBlock(reward uint64, txCount int) uint64 {
 	return averageFeeAtomic
 }
 
-func (s *Scanner) processReorg(block chainBlock, chainHeight int64) ([]*stypes.TxInItem, error) {
+func (s *Scanner) processReorg(block sidecar.ChainBlock, chainHeight int64) ([]*stypes.TxInItem, error) {
 	if s.reorgStore == nil || block.Hash == "" || block.PreviousHash == "" {
 		return nil, nil
 	}
@@ -655,9 +656,9 @@ func (s *Scanner) processReorg(block chainBlock, chainHeight int64) ([]*stypes.T
 
 	reScannedItems := make([]*stypes.TxInItem, 0)
 	for _, height := range reorgHeights {
-		reorgBlock, blockErr := s.frostSigner.GetChainBlock(height)
+		reorgBlock, blockErr := s.sidecar.ChainBlock(height)
 		if blockErr != nil {
-			if errors.Is(blockErr, ErrFrostUnavailableBlock) {
+			if errors.Is(blockErr, sidecar.ErrUnavailableBlock) {
 				return nil, btypes.ErrUnavailableBlock
 			}
 			s.logger.Error().Err(blockErr).Int64("height", height).Msg("fail to fetch monero block during reorg rescan")
@@ -702,7 +703,7 @@ func (s *Scanner) reConfirmTx(height int64) ([]int64, error) {
 			continue
 		}
 
-		block, err := s.frostSigner.GetChainBlock(i)
+		block, err := s.sidecar.ChainBlock(i)
 		if err != nil {
 			return nil, fmt.Errorf("fail to fetch monero block %d during reorg check: %w", i, err)
 		}
@@ -718,7 +719,7 @@ func (s *Scanner) reConfirmTx(height int64) ([]int64, error) {
 
 		errataTxs := make([]stypes.ErrataTx, 0)
 		for _, tx := range blockMeta.CustomerTransactions {
-			txExists, confirmErr := s.frostSigner.TxExists(tx)
+			txExists, confirmErr := s.sidecar.TxExists(tx)
 			if confirmErr != nil {
 				return nil, fmt.Errorf("unable to confirm monero tx %s existence during reorg: %w", tx, confirmErr)
 			}
@@ -750,7 +751,7 @@ func (s *Scanner) reConfirmTx(height int64) ([]int64, error) {
 	return rescanHeights, nil
 }
 
-func (s *Scanner) saveBlockMeta(block chainBlock, height int64, items []*stypes.TxInItem) error {
+func (s *Scanner) saveBlockMeta(block sidecar.ChainBlock, height int64, items []*stypes.TxInItem) error {
 	if s.reorgStore == nil {
 		return nil
 	}
@@ -843,12 +844,12 @@ func (s *Scanner) addFrostVaultToLookup(
 	}
 	seenVaults[key] = struct{}{}
 
-	derived, addrErr := ensureFrostVaultRegistered(
+	derived, addrErr := ensureVaultRegistered(
 		s.logger,
-		s.frostSigner,
+		s.sidecar,
 		s.chain,
 		observedVault,
-		s.localVaultBootstrap,
+		s.vaultBootstrap,
 		"bifrost_scanner",
 		creationHeight,
 	)
@@ -863,20 +864,20 @@ func (s *Scanner) addFrostVaultToLookup(
 	return nil
 }
 
-func (s *Scanner) getVaultForAddress(addr string) (common.PubKey, bool) {
+func (s *Scanner) vaultPubKeyForAddress(addr string) (common.PubKey, bool) {
 	s.asgardMu.RLock()
 	defer s.asgardMu.RUnlock()
 	pk, ok := s.asgardLookup[addr]
 	return pk, ok
 }
 
-func (s *Scanner) resolveIncomingVault(transfer xmrFrostTransferEntry) (common.PubKey, bool) {
+func (s *Scanner) resolveIncomingVault(transfer sidecar.Transfer) (common.PubKey, bool) {
 	to := strings.TrimSpace(transfer.Address)
 	if to == "" {
 		return common.EmptyPubKey, false
 	}
 
-	mappedVault, mappedOK := s.getVaultForAddress(to)
+	mappedVault, mappedOK := s.vaultPubKeyForAddress(to)
 	explicitVault := strings.TrimSpace(transfer.VaultPubKey)
 	if explicitVault == "" {
 		return mappedVault, mappedOK
@@ -929,7 +930,7 @@ func (s *Scanner) resolveIncomingVault(transfer xmrFrostTransferEntry) (common.P
 }
 
 func (s *Scanner) transferToTxInItem(
-	transfer xmrFrostTransferEntry,
+	transfer sidecar.Transfer,
 	sender string,
 	to string,
 	vaultPubKey common.PubKey,
@@ -1080,7 +1081,7 @@ func normalizeTxID(txID string) string {
 }
 
 func IsUnavailableBlockErr(err error) bool {
-	return errors.Is(err, ErrFrostUnavailableBlock)
+	return errors.Is(err, sidecar.ErrUnavailableBlock)
 }
 
 func isFrostScannerHashMismatchErr(err error) bool {

@@ -14,6 +14,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"go.uber.org/atomic"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -28,7 +29,7 @@ func TestFetchTxsAggregatesDuplicateIncomingTxIDs(t *testing.T) {
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:    dupTxID,
 				Address: vaultAddr.String(),
@@ -49,7 +50,7 @@ func TestFetchTxsAggregatesDuplicateIncomingTxIDs(t *testing.T) {
 	)
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -88,7 +89,7 @@ func TestFetchTxsSkipsIncomingTransfersWithMismatchedExplicitVaultAttribution(t 
 	otherVaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        txID,
 				Address:     currentVaultAddr.String(),
@@ -111,7 +112,7 @@ func TestFetchTxsSkipsIncomingTransfersWithMismatchedExplicitVaultAttribution(t 
 	)
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -152,7 +153,7 @@ func TestFetchTxsAcceptsCurrentAsgardWithPubKeyFrost(t *testing.T) {
 	currentVaultPubKey, currentVaultAddr := testVaultPubKeyAndAddress(t)
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        txID,
 				Address:     currentVaultAddr.String(),
@@ -167,7 +168,7 @@ func TestFetchTxsAcceptsCurrentAsgardWithPubKeyFrost(t *testing.T) {
 	)
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -208,7 +209,7 @@ func TestFetchTxsSkipsCurrentAsgardWithoutPubKeyFrost(t *testing.T) {
 	currentVaultPubKey, currentVaultAddr := testVaultPubKeyAndAddress(t)
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        txID,
 				Address:     currentVaultAddr.String(),
@@ -223,7 +224,7 @@ func TestFetchTxsSkipsCurrentAsgardWithoutPubKeyFrost(t *testing.T) {
 	)
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -263,7 +264,7 @@ func TestFetchTxsSkipsIncomingChangeForKnownOutgoingSameVault(t *testing.T) {
 
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:    txID,
 				Address: vaultAddress,
@@ -271,7 +272,7 @@ func TestFetchTxsSkipsIncomingChangeForKnownOutgoingSameVault(t *testing.T) {
 				Height:  100,
 			},
 		},
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        txID,
 				Address:     destinationAddress,
@@ -286,7 +287,7 @@ func TestFetchTxsSkipsIncomingChangeForKnownOutgoingSameVault(t *testing.T) {
 	)
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -332,7 +333,7 @@ func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *test
 
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:    txID,
 				Address: destVaultAddr.String(),
@@ -341,7 +342,7 @@ func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *test
 				Note:    "MIGRATE:100",
 			},
 		},
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        txID,
 				Address:     destVaultAddr.String(),
@@ -357,7 +358,7 @@ func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *test
 	)
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -428,7 +429,7 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 				http.Error(w, "invalid block height", http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
 				Hash:         "hash-" + rawHeight,
@@ -436,16 +437,16 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 				TxHashes:     []string{txID},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
-			var req xmrFrostScannerSyncRequest
+			var req sidecar.SyncReq
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
 
-			resp := xmrFrostTransfersResponse{}
+			resp := sidecar.Transfers{}
 			switch req.Height {
 			case 100:
-				resp.Outgoing = []xmrFrostTransferEntry{
+				resp.Outgoing = []sidecar.Transfer{
 					{
 						TxID:        txID,
 						Address:     destinationAddress,
@@ -457,7 +458,7 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 					},
 				}
 			case 101:
-				resp.Incoming = []xmrFrostTransferEntry{
+				resp.Incoming = []sidecar.Transfer{
 					{
 						TxID:        txID,
 						Address:     vaultAddress,
@@ -469,16 +470,16 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 			}
 			_ = json.NewEncoder(w).Encode(resp)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/addresses/"):
-			_ = json.NewEncoder(w).Encode(xmrFrostAddressesResponse{Addresses: []string{vaultAddress}})
+			_ = json.NewEncoder(w).Encode(sidecar.Addresses{Addresses: []string{vaultAddress}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -526,7 +527,7 @@ func TestFetchTxsFailsClosedOnReorgProcessingError(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/block/101":
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       101,
 				Reward:       defaultCoinbaseValue,
 				Hash:         "hash-101",
@@ -536,14 +537,14 @@ func TestFetchTxsFailsClosedOnReorgProcessingError(t *testing.T) {
 			http.Error(w, "reorg confirmation failed", http.StatusInternalServerError)
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
 			syncCalls.Inc()
-			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
+			_ = json.NewEncoder(w).Encode(sidecar.Transfers{})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)

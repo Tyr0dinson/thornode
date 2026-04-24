@@ -3,6 +3,8 @@ package monero
 import (
 	"testing"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -21,7 +23,7 @@ func TestFetchMemPoolEmitsOutboundAndDedupesUntilConfirmed(t *testing.T) {
 	frostServer := newFrostTransfersServer(
 		t,
 		nil,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        txID,
 				Address:     destinationAddress,
@@ -37,7 +39,7 @@ func TestFetchMemPoolEmitsOutboundAndDedupesUntilConfirmed(t *testing.T) {
 	defer frostServer.Close()
 
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -93,7 +95,7 @@ func TestFetchMemPoolSkipsInvalidOrUnattributedOutgoing(t *testing.T) {
 
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				Address: vaultAddress,
@@ -102,7 +104,7 @@ func TestFetchMemPoolSkipsInvalidOrUnattributedOutgoing(t *testing.T) {
 				Height:  77,
 			},
 		},
-		[]xmrFrostTransferEntry{
+		[]sidecar.Transfer{
 			{
 				TxID:        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				Address:     destinationAddress,
@@ -136,7 +138,7 @@ func TestFetchMemPoolSkipsInvalidOrUnattributedOutgoing(t *testing.T) {
 	defer frostServer.Close()
 
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := NewFrostSignerWithEndpoint(cfg, frostServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, frostServer.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}

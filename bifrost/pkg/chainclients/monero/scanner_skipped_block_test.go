@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,7 +21,7 @@ import (
 //
 // Scenario:
 //  1. Sidecar has vault registered under frost key
-//  2. Bifrost calls ensureFrostVaultRegistered with eddsa key (bug)
+//  2. Bifrost calls ensureVaultRegistered with eddsa key (bug)
 //  3. Sidecar returns 500 ("already registered with different mapping")
 //  4. refreshAsgardLookup returns error
 //  5. OLD CODE: fetchTransfersByHeight returns (nil, nil) → bifrost advances
@@ -48,12 +50,12 @@ func TestVaultRegistrationFailurePropagatesError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
-	// ensureFrostVaultRegistered with eddsa key → sidecar returns 500.
+	// ensureVaultRegistered with eddsa key → sidecar returns 500.
 	// This error MUST propagate — not be swallowed.
-	_, regErr := ensureFrostVaultRegistered(
+	_, regErr := ensureVaultRegistered(
 		testLogger(),
 		signer,
 		common.XMRChain,
@@ -76,7 +78,7 @@ func TestVaultRegistrationFailurePropagatesError(t *testing.T) {
 // vault. The failed vault is skipped; valid vaults remain usable.
 //
 // This test simulates the exact refreshAsgardLookup logic: iterate vaults,
-// call ensureFrostVaultRegistered, and verify the fail-open path.
+// call ensureVaultRegistered, and verify the fail-open path.
 func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 	t.Parallel()
 
@@ -87,7 +89,7 @@ func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/monero/vaults/register" {
-			var req xmrFrostRegisterVaultRequest
+			var req sidecar.RegisterVaultReq
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			registeredKeys = append(registeredKeys, req.VaultPubKey)
 
@@ -99,14 +101,14 @@ func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 				)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	// Simulate the refreshAsgardLookup logic: register each vault.
@@ -120,7 +122,7 @@ func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 
 	var registrationErrors int
 	for _, v := range vaults {
-		_, regErr := ensureFrostVaultRegistered(
+		_, regErr := ensureVaultRegistered(
 			testLogger(),
 			signer,
 			common.XMRChain,

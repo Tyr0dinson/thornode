@@ -2,9 +2,11 @@ package monero
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -61,7 +63,7 @@ func (m *mockMoneroBridge) GetObservedTxVoter(txID string) (*ttypes.QueryObserve
 	return nil, errors.New("observed tx voter not found")
 }
 
-func TestGetVaultAddressReturnsEmptyForUnknownVault(t *testing.T) {
+func TestDeriveVaultAddressReturnsEmptyForUnknownVault(t *testing.T) {
 	t.Parallel()
 
 	c := &Client{
@@ -70,8 +72,103 @@ func TestGetVaultAddressReturnsEmptyForUnknownVault(t *testing.T) {
 		vaultAddressMap: make(map[string]common.Address),
 	}
 
-	got := c.getVaultAddress(common.PubKey("thorpub1unknownvault"))
+	got := c.deriveVaultAddress(common.PubKey("thorpub1unknownvault"))
 	if got != "" {
 		t.Fatalf("expected empty vault address when mapping is unknown, got %s", got)
+	}
+}
+
+func TestLoadVaultAddressMapRestoresPersistedMapping(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
+	store := newTestVaultAddressStore(t)
+	if err := store.Set(vaultPubKey.String(), vaultAddress.String()); err != nil {
+		t.Fatalf("persist mapping: %v", err)
+	}
+
+	c := &Client{
+		chain:             common.XMRChain,
+		vaultAddressStore: store,
+		vaultAddressMap:   make(map[string]common.Address),
+	}
+
+	if err := c.loadVaultAddressMap(); err != nil {
+		t.Fatalf("load vault address map: %v", err)
+	}
+	mapped, ok := c.cachedVaultAddress(vaultPubKey)
+	if !ok {
+		t.Fatalf("expected restored mapping for %s", vaultPubKey)
+	}
+	if !mapped.Equals(vaultAddress) {
+		t.Fatalf("expected restored address %s, got %s", vaultAddress, mapped)
+	}
+}
+
+func TestLoadVaultAddressMapIgnoresMismatchedPersistedMapping(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	_, wrongAddress := testVaultPubKeyAndAddress(t)
+	store := newTestVaultAddressStore(t)
+	if err := store.Set(vaultPubKey.String(), wrongAddress.String()); err != nil {
+		t.Fatalf("persist mismatched mapping: %v", err)
+	}
+
+	c := &Client{
+		chain:             common.XMRChain,
+		vaultAddressStore: store,
+		vaultAddressMap:   make(map[string]common.Address),
+	}
+
+	if err := c.loadVaultAddressMap(); err != nil {
+		t.Fatalf("load vault address map: %v", err)
+	}
+	if _, ok := c.cachedVaultAddress(vaultPubKey); ok {
+		t.Fatalf("expected mismatched persisted mapping for %s to be ignored", vaultPubKey)
+	}
+}
+
+func TestTxCacheVaultUsesFrostVaultPubKey(t *testing.T) {
+	t.Parallel()
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		VaultPubKeyFrost: common.PubKey("thorpub1frost"),
+	}
+
+	key := txCacheVault(tx, common.XMRChain)
+	if !strings.Contains(key, "thorpub1frost") {
+		t.Fatalf("expected cache key to include frost vault pubkey, got %s", key)
+	}
+}
+
+func TestTxVaultPubKeyUsesFrost(t *testing.T) {
+	t.Parallel()
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		VaultPubKey:      common.PubKey("thorpub1secp"),
+		VaultPubKeyEddsa: common.PubKey("thorpub1eddsa"),
+		VaultPubKeyFrost: common.PubKey("thorpub1frost"),
+	}
+
+	got := txVaultPubKey(tx)
+	if !got.Equals(tx.VaultPubKeyFrost) {
+		t.Fatalf("expected frost vault pubkey, got %s", got.String())
+	}
+}
+
+func TestTxVaultPubKeyRequiresFrost(t *testing.T) {
+	t.Parallel()
+
+	tx := stypes.TxOutItem{
+		Chain:       common.XMRChain,
+		VaultPubKey: common.PubKey("thorpub1secp"),
+	}
+
+	got := txVaultPubKey(tx)
+	if !got.IsEmpty() {
+		t.Fatalf("expected empty vault pubkey when frost key is missing, got %s", got.String())
 	}
 }

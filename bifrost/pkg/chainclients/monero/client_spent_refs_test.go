@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -45,7 +46,7 @@ func TestBuildOutboundObservationIncludesSpentRefs(t *testing.T) {
 		Memo:             "OUT:inhash",
 	}
 
-	spentRefs := []xmrFrostOutputRef{
+	spentRefs := []sidecar.SpentRef{
 		{TxHash: "aaa111", OutputIndex: 0, KeyImage: "ki_aaa"},
 		{TxHash: "bbb222", OutputIndex: 1, KeyImage: "ki_bbb"},
 		{TxHash: "ccc333", OutputIndex: 2, KeyImage: "ki_ccc"},
@@ -108,31 +109,31 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	var mu sync.Mutex
 	var capturedVault string
 	var capturedTxHash string
-	var capturedRefs []xmrFrostOutputRef
+	var capturedRefs []sidecar.SpentRef
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/monero/outputs/mark-spent" {
-			var req xmrFrostMarkSpentRequest
+			var req sidecar.MarkSpentReq
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			mu.Lock()
 			capturedVault = req.VaultPubKey
 			capturedTxHash = req.TxHash
 			capturedRefs = req.SpentRefs
 			mu.Unlock()
-			_ = json.NewEncoder(w).Encode(xmrFrostMarkSpentResponse{Marked: len(req.SpentRefs)})
+			_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	c := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
+		chain:   common.XMRChain,
+		sidecar: signer,
+		logger:  testLogger(),
 	}
 
 	refs := []*common.OutputRef{

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -19,14 +20,14 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 
 	var (
 		mu     sync.Mutex
-		gotReq xmrFrostBroadcastRequest
+		gotReq sidecar.BroadcastReq
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/broadcast" {
 			http.NotFound(w, r)
 			return
 		}
-		var req xmrFrostBroadcastRequest
+		var req sidecar.BroadcastReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -34,18 +35,18 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 		mu.Lock()
 		gotReq = req
 		mu.Unlock()
-		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: ""})
+		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{TxHash: ""})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	client := &Client{
-		frostSigner:        signer,
+		sidecar:            signer,
 		signerCacheManager: newTestSignerCacheManager(t),
 	}
 	tx := stypes.TxOutItem{
@@ -88,14 +89,14 @@ func TestBroadcastTxIgnoresSidecarHashOverride(t *testing.T) {
 
 	var (
 		mu     sync.Mutex
-		gotReq xmrFrostBroadcastRequest
+		gotReq sidecar.BroadcastReq
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/broadcast" {
 			http.NotFound(w, r)
 			return
 		}
-		var req xmrFrostBroadcastRequest
+		var req sidecar.BroadcastReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -104,18 +105,18 @@ func TestBroadcastTxIgnoresSidecarHashOverride(t *testing.T) {
 		gotReq = req
 		mu.Unlock()
 		// Sidecar returns a different hash than FROST-validated one.
-		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
+		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{TxHash: "daemon-hash"})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	client := &Client{
-		frostSigner:        signer,
+		sidecar:            signer,
 		signerCacheManager: newTestSignerCacheManager(t),
 	}
 	tx := stypes.TxOutItem{
@@ -160,18 +161,18 @@ func TestBroadcastTxRequiresMsgID(t *testing.T) {
 	var sidecarCalled atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sidecarCalled.Store(true)
-		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
+		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{TxHash: "daemon-hash"})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	client := &Client{
-		frostSigner:        signer,
+		sidecar:            signer,
 		signerCacheManager: newTestSignerCacheManager(t),
 	}
 	tx := stypes.TxOutItem{
@@ -204,18 +205,18 @@ func TestBroadcastTxRequiresFrostVaultPubKey(t *testing.T) {
 	var sidecarCalled atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sidecarCalled.Store(true)
-		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
+		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{TxHash: "daemon-hash"})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	client := &Client{
-		frostSigner:        signer,
+		sidecar:            signer,
 		signerCacheManager: newTestSignerCacheManager(t),
 	}
 	tx := stypes.TxOutItem{
@@ -246,7 +247,7 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 	var (
 		sidecarCalls int32
 		mu           sync.Mutex
-		gotReq       xmrFrostBroadcastRequest
+		gotReq       sidecar.BroadcastReq
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&sidecarCalls, 1)
@@ -254,7 +255,7 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		var req xmrFrostBroadcastRequest
+		var req sidecar.BroadcastReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -262,18 +263,18 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 		mu.Lock()
 		gotReq = req
 		mu.Unlock()
-		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
+		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{TxHash: "daemon-hash"})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	client := &Client{
-		frostSigner:        signer,
+		sidecar:            signer,
 		signerCacheManager: newTestSignerCacheManager(t),
 	}
 	tx := stypes.TxOutItem{
@@ -316,18 +317,18 @@ func TestBroadcastTxBroadcastedFlagStillRequiresTxMetadata(t *testing.T) {
 	var sidecarCalled atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sidecarCalled.Store(true)
-		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
+		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{TxHash: "daemon-hash"})
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
 	client := &Client{
-		frostSigner:        signer,
+		sidecar:            signer,
 		signerCacheManager: newTestSignerCacheManager(t),
 	}
 	tx := stypes.TxOutItem{

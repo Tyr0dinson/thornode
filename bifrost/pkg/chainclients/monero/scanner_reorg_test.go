@@ -14,6 +14,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -22,7 +23,7 @@ import (
 func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	t.Parallel()
 
-	blocks := map[int64]chainBlock{
+	blocks := map[int64]sidecar.ChainBlock{
 		98:  withBlockHeader(98, defaultCoinbaseValue, "h98", "h97"),
 		99:  withBlockHeader(99, defaultCoinbaseValue, "new99", "h98"),
 		100: withBlockHeader(100, defaultCoinbaseValue, "new100", "new99"),
@@ -48,19 +49,19 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 				http.Error(w, "unknown height", http.StatusNotFound)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(xmrFrostChainBlockResponse(block))
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp(block))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/tx/"):
 			path := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/tx/")
 			path = strings.TrimSuffix(path, "/exists")
 			path, _ = url.PathUnescape(path)
-			_ = json.NewEncoder(w).Encode(xmrFrostChainTxExistsResponse{Exists: txExists[path]})
+			_ = json.NewEncoder(w).Encode(sidecar.TxExistsResp{Exists: txExists[path]})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer frostServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		frostServer.URL,
 	)
@@ -152,8 +153,8 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	}
 }
 
-func withBlockHeader(height int64, reward uint64, hash, prevHash string) chainBlock {
-	return chainBlock{
+func withBlockHeader(height int64, reward uint64, hash, prevHash string) sidecar.ChainBlock {
+	return sidecar.ChainBlock{
 		Height:       height,
 		Reward:       reward,
 		Hash:         hash,

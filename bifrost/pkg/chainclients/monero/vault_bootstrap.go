@@ -11,12 +11,15 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-type frostVaultBootstrap struct {
+// vaultBootstrap carries the local node's Ed25519 spend key so we can register
+// a single-member vault with the sidecar without running DKG. If the local
+// node is not the sole member, the view-key-only path is used instead.
+type vaultBootstrap struct {
 	vaultPubKey common.PubKey
 	spendKeyHex string
 }
 
-func deriveLocalFrostVaultBootstrap(thorKeys *thorclient.Keys) (*frostVaultBootstrap, error) {
+func deriveVaultBootstrap(thorKeys *thorclient.Keys) (*vaultBootstrap, error) {
 	if thorKeys == nil {
 		return nil, nil
 	}
@@ -40,13 +43,13 @@ func deriveLocalFrostVaultBootstrap(thorKeys *thorclient.Keys) (*frostVaultBoots
 		return nil, fmt.Errorf("fail to encode local ed25519 pubkey: %w", err)
 	}
 
-	return &frostVaultBootstrap{
+	return &vaultBootstrap{
 		vaultPubKey: vaultPubKey,
 		spendKeyHex: hex.EncodeToString(privBytes[:32]),
 	}, nil
 }
 
-func (b *frostVaultBootstrap) spendKeyHexFor(vaultPubKey common.PubKey) (string, bool) {
+func (b *vaultBootstrap) spendKeyHexFor(vaultPubKey common.PubKey) (string, bool) {
 	if b == nil || b.vaultPubKey.IsEmpty() || vaultPubKey.IsEmpty() {
 		return "", false
 	}

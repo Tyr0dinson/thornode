@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -51,7 +52,7 @@ func TestReportSolvencyAutoUnhaltUsesCheckedVaultCount(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
-	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+	balanceServer := newFrostBalanceServer(t, map[string]sidecar.Balance{
 		vaultPubKey.String(): {
 			Balance:          100 * moneroAtomicToThorchain,
 			UnlockedBalance:  100 * moneroAtomicToThorchain,
@@ -60,7 +61,7 @@ func TestReportSolvencyAutoUnhaltUsesCheckedVaultCount(t *testing.T) {
 	})
 	defer balanceServer.Close()
 
-	frostSigner, err := NewFrostSignerWithEndpoint(
+	frostSigner, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{},
 		balanceServer.URL,
 	)
@@ -75,7 +76,7 @@ func TestReportSolvencyAutoUnhaltUsesCheckedVaultCount(t *testing.T) {
 		chain:                   common.XMRChain,
 		thorchainBridge:         &solvencyBridge{asgards: ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey, PubKeyFrost: vaultPubKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100)))}, {PubKey: common.EmptyPubKey, PubKeyEddsa: common.EmptyPubKey, PubKeyFrost: common.EmptyPubKey}}},
 		scanner:                 &Scanner{lastFee: atomic.NewUint64(10)},
-		frostSigner:             frostSigner,
+		sidecar:                 frostSigner,
 		globalSolvencyQueue:     queue,
 		vaultAddressMap:         map[string]common.Address{vaultPubKey.String(): vaultAddress},
 		lastSolvencyCheckHeight: atomic.NewInt64(0),

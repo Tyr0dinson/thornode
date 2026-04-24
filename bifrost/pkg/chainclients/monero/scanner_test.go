@@ -3,6 +3,8 @@ package monero
 import (
 	"errors"
 	"testing"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 )
 
 func TestAverageNetworkFeeFromBlock(t *testing.T) {
@@ -41,10 +43,10 @@ func TestAverageNetworkFeeFromBlock(t *testing.T) {
 }
 
 func TestIsUnavailableBlockErr(t *testing.T) {
-	if !IsUnavailableBlockErr(ErrFrostUnavailableBlock) {
+	if !IsUnavailableBlockErr(sidecar.ErrUnavailableBlock) {
 		t.Fatal("expected unavailable block error to be detected")
 	}
-	if !IsUnavailableBlockErr(errors.Join(errString("wrapper"), ErrFrostUnavailableBlock)) {
+	if !IsUnavailableBlockErr(errors.Join(errString("wrapper"), sidecar.ErrUnavailableBlock)) {
 		t.Fatal("expected wrapped unavailable block error to be detected")
 	}
 	if IsUnavailableBlockErr(errString("some other rpc error")) {
@@ -55,3 +57,25 @@ func TestIsUnavailableBlockErr(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func TestExpectedXMRVaultAddressFromKeygenRequest(t *testing.T) {
+	t.Parallel()
+
+	pubKey, expected := testVaultPubKeyAndAddress(t)
+	got, err := expectedXMRVaultAddressFromKeygenRequest(pubKey.String())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !got.Equals(expected) {
+		t.Fatalf("expected %s, got %s", expected, got)
+	}
+}
+
+func TestExpectedXMRVaultAddressFromKeygenRequestRejectsMissingFrost(t *testing.T) {
+	t.Parallel()
+
+	_, err := expectedXMRVaultAddressFromKeygenRequest("")
+	if err == nil {
+		t.Fatal("expected missing frost pubkey error")
+	}
+}

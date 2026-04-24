@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +19,7 @@ import (
 )
 
 // TestRefreshAsgardRegistersOnlyFrostKey validates that refreshAsgardLookup
-// calls ensureFrostVaultRegistered with the frost key, not the eddsa key.
+// calls ensureVaultRegistered with the frost key, not the eddsa key.
 //
 // The bug: if the eddsa key is registered, the sidecar returns 500 (conflict
 // with the existing frost key registration). refreshAsgardLookup returns an
@@ -37,7 +39,7 @@ func TestRefreshAsgardRegistersOnlyFrostKey(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/monero/vaults/register" {
-			var req xmrFrostRegisterVaultRequest
+			var req sidecar.RegisterVaultReq
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			registeredKeys = append(registeredKeys, req.VaultPubKey)
 
@@ -48,14 +50,14 @@ func TestRefreshAsgardRegistersOnlyFrostKey(t *testing.T) {
 				return
 			}
 
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	scanner := NewScanner(
@@ -89,14 +91,14 @@ func TestRefreshAsgardSkipsVaultWithoutPubKeyFrost(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/monero/vaults/register" {
 			registerCalls++
-			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer server.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
 	scanner := NewScanner(
@@ -126,7 +128,7 @@ func TestFetchTxsObservesInactiveFrostVaultFromPubKeys(t *testing.T) {
 
 	frostServer := newFrostTransfersServer(
 		t,
-		[]xmrFrostTransferEntry{{
+		[]sidecar.Transfer{{
 			TxID:        txID,
 			Address:     frostAddr.String(),
 			VaultPubKey: frostKey.String(),
@@ -139,7 +141,7 @@ func TestFetchTxsObservesInactiveFrostVaultFromPubKeys(t *testing.T) {
 	)
 	defer frostServer.Close()
 
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, frostServer.URL)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, frostServer.URL)
 	require.NoError(t, err)
 
 	scanner := NewScanner(
