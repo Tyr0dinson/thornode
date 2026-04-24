@@ -237,7 +237,7 @@ func (s *BackfillSuite) TestSignTxAlreadySigned(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 
-	_, err = s.client.BroadcastTx(txOutItem, signed)
+	_, err = s.client.BroadcastTx([]types.TxOutItem{txOutItem}, signed)
 	c.Assert(err, IsNil)
 
 	// Second sign should return nil (already signed)
@@ -415,7 +415,7 @@ func (s *BackfillSuite) TestBroadcastTxDupTransaction(c *C) {
 	}
 	txBytes, _ := json.Marshal(tx)
 
-	txId, err := s.client.BroadcastTx(txOutItem, txBytes)
+	txId, err := s.client.BroadcastTx([]types.TxOutItem{txOutItem}, txBytes)
 	c.Assert(err, IsNil)
 	c.Assert(txId, Equals, "abc123")
 
@@ -481,7 +481,7 @@ func (s *BackfillSuite) TestBroadcastTxFailedBroadcast(c *C) {
 
 	txBytes := []byte(`{"txID":"test123"}`)
 
-	_, err := s.client.BroadcastTx(txOutItem, txBytes)
+	_, err := s.client.BroadcastTx([]types.TxOutItem{txOutItem}, txBytes)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*BANDWIDTH_ERROR.*")
 
@@ -1569,7 +1569,7 @@ func (s *BackfillSuite) TestBroadcastTxDupTransactionBadUnmarshal(c *C) {
 	}
 
 	// Bad tx bytes that can't be unmarshaled
-	_, err := s.client.BroadcastTx(txOutItem, []byte("not-json"))
+	_, err := s.client.BroadcastTx([]types.TxOutItem{txOutItem}, []byte("not-json"))
 	c.Assert(err, NotNil)
 
 	s.client.api = savedApi
@@ -1676,7 +1676,7 @@ func (s *BackfillSuite) TestBroadcastTxAPIError(c *C) {
 		GasRate:     1,
 	}
 
-	_, err := s.client.BroadcastTx(txOutItem, []byte(`{"txID":"test"}`))
+	_, err := s.client.BroadcastTx([]types.TxOutItem{txOutItem}, []byte(`{"txID":"test"}`))
 	c.Assert(err, NotNil)
 
 	s.client.api = savedApi

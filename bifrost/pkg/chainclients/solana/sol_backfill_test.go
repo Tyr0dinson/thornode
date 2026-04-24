@@ -916,7 +916,7 @@ func (s *ClientBackfillSuite) TestBroadcastTx(c *C) {
 		MaxGas:  common.Gas{common.NewCoin(common.SOLAsset, cosmos.NewUint(5000))},
 		GasRate: 1,
 	}
-	sig, err := client.BroadcastTx(txOutItem, []byte("rawbytes"))
+	sig, err := client.BroadcastTx([]stypes.TxOutItem{txOutItem}, []byte("rawbytes"))
 	c.Assert(err, IsNil)
 	c.Assert(sig, Equals, "txsig123")
 }
@@ -933,7 +933,7 @@ func (s *ClientBackfillSuite) TestBroadcastTxError(c *C) {
 	broadcastLookupDelay = 0
 	defer func() { broadcastLookupDelay = oldDelay }()
 
-	_, err := client.BroadcastTx(stypes.TxOutItem{}, []byte("rawbytes"))
+	_, err := client.BroadcastTx([]stypes.TxOutItem{{}}, []byte("rawbytes"))
 	c.Assert(err, NotNil)
 }
 

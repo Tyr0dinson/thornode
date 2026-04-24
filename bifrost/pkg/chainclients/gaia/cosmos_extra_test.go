@@ -776,7 +776,7 @@ func (s *ExtraTestSuite) TestBroadcastTx(c *C) {
 	cc.accts.Set(pk, CosmosMetadata{AccountNumber: 1, SeqNumber: 5, BlockHeight: 100})
 
 	txOut := stypes.TxOutItem{VaultPubKey: pk}
-	hash, err := cc.BroadcastTx(txOut, []byte("txbytes"))
+	hash, err := cc.BroadcastTx([]stypes.TxOutItem{txOut}, []byte("txbytes"))
 	c.Assert(err, IsNil)
 	c.Check(hash, Equals, "AABBCCDD")
 
@@ -792,7 +792,7 @@ func (s *ExtraTestSuite) TestBroadcastTxError(c *C) {
 		txClient: &extraMockTxServiceClient{err: errors.New("network error")},
 	}
 
-	_, err := cc.BroadcastTx(stypes.TxOutItem{}, []byte("txbytes"))
+	_, err := cc.BroadcastTx([]stypes.TxOutItem{{}}, []byte("txbytes"))
 	c.Assert(err, NotNil)
 }
 
@@ -803,7 +803,7 @@ func (s *ExtraTestSuite) TestBroadcastTxFailCode(c *C) {
 		txClient: &extraMockTxServiceClient{code: 999},
 	}
 
-	_, err := cc.BroadcastTx(stypes.TxOutItem{}, []byte("txbytes"))
+	_, err := cc.BroadcastTx([]stypes.TxOutItem{{}}, []byte("txbytes"))
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Equals, "broadcast msg failed")
 }
@@ -1648,7 +1648,7 @@ func (s *ExtraTestSuite) TestBroadcastTxSuccessCodeSetsSigner(c *C) {
 	cc.accts.Set(pk, CosmosMetadata{AccountNumber: 1, SeqNumber: 5, BlockHeight: 100})
 
 	txOut := stypes.TxOutItem{VaultPubKey: pk}
-	hash, err := cc.BroadcastTx(txOut, []byte("txbytes"))
+	hash, err := cc.BroadcastTx([]stypes.TxOutItem{txOut}, []byte("txbytes"))
 	c.Assert(err, IsNil)
 	c.Check(hash, Equals, "AABBCCDD")
 

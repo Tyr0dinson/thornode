@@ -1032,7 +1032,7 @@ func (s *SolTestSuite) TestBroadcastTxLandedDespiteError(c *C) {
 	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)
 
 	// BroadcastTx should detect the tx on-chain despite the RPC error
-	txSig, err := e.BroadcastTx(txOut, rawTx)
+	txSig, err := e.BroadcastTx([]stypes.TxOutItem{txOut}, rawTx)
 	c.Assert(err, IsNil)
 	c.Assert(txSig, Equals, expectedSig)
 
@@ -1369,7 +1369,7 @@ func (s *SolTestSuite) TestBroadcastTxWritesExpiringCacheEntry(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(rawTx, NotNil)
 
-	txSig, err := e.BroadcastTx(txOut, rawTx)
+	txSig, err := e.BroadcastTx([]stypes.TxOutItem{txOut}, rawTx)
 	c.Assert(err, IsNil)
 	c.Assert(txSig, Equals, "broadcast-sig")
 

@@ -2289,7 +2289,7 @@ func (s *XrpTestSuite) TestBroadcastTxWithSignedTx(c *C) {
 
 	// Now try to broadcast - will fail because mock RPC doesn't implement submit
 	// but exercises the BroadcastTx code path
-	_, err = client.BroadcastTx(txOut, signedTx)
+	_, err = client.BroadcastTx([]types.TxOutItem{txOut}, signedTx)
 	c.Assert(err, NotNil) // expected to fail with mock RPC
 }
 
@@ -2902,7 +2902,7 @@ func (s *XrpTestSuite) TestBroadcastTxFullFlow(c *C) {
 	c.Assert(err, IsNil)
 	client.rpcClient = rpc.NewClient(rpcCfg2)
 
-	txHash, err := client.BroadcastTx(txOut, signedTx)
+	txHash, err := client.BroadcastTx([]types.TxOutItem{txOut}, signedTx)
 	c.Assert(err, IsNil)
 	c.Check(txHash, Not(Equals), "")
 }

@@ -202,7 +202,7 @@ func (b *MockSuccessChainClient) SignTx(tai types.TxOutItem, height int64) ([]by
 	return []byte("signed-tx"), nil, nil, nil
 }
 
-func (b *MockSuccessChainClient) BroadcastTx(_ types.TxOutItem, tx []byte) (string, error) {
+func (b *MockSuccessChainClient) BroadcastTx(_ []types.TxOutItem, tx []byte) (string, error) {
 	b.broadcastTxs++
 	return "TXHASH123", b.broadcastErr
 }
@@ -218,7 +218,7 @@ func (b *MockCaptureSignChainClient) SignTx(tai types.TxOutItem, height int64) (
 	return []byte("signed-tx"), nil, b.observation, nil
 }
 
-func (b *MockCaptureSignChainClient) BroadcastTx(_ types.TxOutItem, tx []byte) (string, error) {
+func (b *MockCaptureSignChainClient) BroadcastTx(_ []types.TxOutItem, tx []byte) (string, error) {
 	b.broadcastCount++
 	return "TXHASH123", nil
 }

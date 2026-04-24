@@ -951,9 +951,9 @@ func (s *CoverageBackfillSuite) TestSignTxEmptyCoins(c *C) {
 func (s *CoverageBackfillSuite) TestBroadcastTxEmptyPayloadZEC(c *C) {
 	oldChain := s.client.cfg.ChainID
 	s.client.cfg.ChainID = common.ZECChain
-	_, err := s.client.BroadcastTx(stypes.TxOutItem{Chain: common.ZECChain}, nil)
+	_, err := s.client.BroadcastTx([]stypes.TxOutItem{{Chain: common.ZECChain}}, nil)
 	c.Assert(err, NotNil)
-	c.Assert(strings.Contains(err.Error(), "payload is empty"), Equals, true)
+	c.Assert(strings.Contains(err.Error(), "no txns to broadcast"), Equals, true)
 	s.client.cfg.ChainID = oldChain
 }
 
@@ -1756,7 +1756,7 @@ func (s *CoverageBackfillSuite) TestBroadcastTxBTC(c *C) {
 	c.Assert(err, IsNil)
 
 	txOut := stypes.TxOutItem{Chain: common.BTCChain}
-	txHash, err := s.client.BroadcastTx(txOut, buf.Bytes())
+	txHash, err := s.client.BroadcastTx([]stypes.TxOutItem{txOut}, buf.Bytes())
 	c.Assert(err, IsNil)
 	c.Assert(txHash, Equals, "1a7897481ef3aea8e41d45dbca70cffd283ebc95b4e61a2c75ae86a41ab0f423")
 }
@@ -1774,7 +1774,7 @@ func (s *CoverageBackfillSuite) TestBroadcastTxDOGE(c *C) {
 	c.Assert(err, IsNil)
 
 	txOut := stypes.TxOutItem{Chain: common.DOGEChain}
-	txHash, err := s.client.BroadcastTx(txOut, buf.Bytes())
+	txHash, err := s.client.BroadcastTx([]stypes.TxOutItem{txOut}, buf.Bytes())
 	c.Assert(err, IsNil)
 	c.Assert(txHash, Equals, "1a7897481ef3aea8e41d45dbca70cffd283ebc95b4e61a2c75ae86a41ab0f423")
 	s.client.cfg.ChainID = oldChain
@@ -1782,7 +1782,7 @@ func (s *CoverageBackfillSuite) TestBroadcastTxDOGE(c *C) {
 
 func (s *CoverageBackfillSuite) TestBroadcastTxInvalidPayload(c *C) {
 	txOut := stypes.TxOutItem{Chain: common.BTCChain}
-	_, err := s.client.BroadcastTx(txOut, []byte{0x01, 0x02, 0x03})
+	_, err := s.client.BroadcastTx([]stypes.TxOutItem{txOut}, []byte{0x01, 0x02, 0x03})
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "fail to deserialize payload"), Equals, true)
 }
