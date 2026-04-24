@@ -1,7 +1,12 @@
 package thorchain
 
 import (
+	"strings"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -207,4 +212,74 @@ func (s *QuotesSuite) TestRapidStreamingSwapCalculation(c *C) {
 	// For now, we've verified the calculation logic works correctly
 	rapidSwapMax := mgr.Keeper().GetConfigInt64(ctx, constants.AdvSwapQueueRapidSwapMax)
 	c.Assert(rapidSwapMax, Equals, int64(5))
+}
+
+func (s *QuotesSuite) TestQuoteSwapChainLiquidityCap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.DOGEAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Three active nodes; only one of them secures DOGE -> below the 2/3 BFT
+	// threshold, so the per-validator cap applies.
+	nodes := make(NodeAccounts, 3)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Chains = append(vault.Chains, common.DOGEChain.String())
+	vault.Membership = []string{nodes[0].PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(common.NewCoin(common.DOGEAsset, cosmos.NewUint(50*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
+	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
+	// cap = 1 validator * 100 RUNE = 100 RUNE; vault already holds ~50 RUNE worth
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100*common.One)
+
+	qs := queryServer{mgr: mgr}
+
+	// Case A: small RUNE -> DOGE swap fits under remaining headroom.
+	_, err := qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
+		FromAsset: "THOR.RUNE",
+		ToAsset:   "DOGE.DOGE",
+		Amount:    cosmos.NewUint(1 * common.One).String(),
+	})
+	if err != nil {
+		c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, false,
+			Commentf("small swap should not trigger chain liquidity cap, got: %s", err.Error()))
+	}
+
+	// Case B: large RUNE -> DOGE swap exceeds target chain cap.
+	_, err = qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
+		FromAsset: "THOR.RUNE",
+		ToAsset:   "DOGE.DOGE",
+		Amount:    cosmos.NewUint(200 * common.One).String(),
+	})
+	c.Assert(err, NotNil, Commentf("large RUNE->DOGE should breach target chain cap"))
+	c.Assert(strings.Contains(err.Error(), "target chain cap"), Equals, true,
+		Commentf("expected 'target chain cap' in error, got: %s", err.Error()))
+	c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, true,
+		Commentf("expected 'liquidity cap exceeded' in error, got: %s", err.Error()))
+
+	// Case C: large DOGE -> RUNE swap exceeds source chain cap.
+	// Target is THOR.RUNE so target-side check is skipped; source-side catches it.
+	_, err = qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
+		FromAsset: "DOGE.DOGE",
+		ToAsset:   "THOR.RUNE",
+		Amount:    cosmos.NewUint(200 * common.One).String(),
+	})
+	c.Assert(err, NotNil, Commentf("large DOGE->RUNE should breach source chain cap"))
+	c.Assert(strings.Contains(err.Error(), "source chain cap"), Equals, true,
+		Commentf("expected 'source chain cap' in error, got: %s", err.Error()))
+	c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, true,
+		Commentf("expected 'liquidity cap exceeded' in error, got: %s", err.Error()))
 }

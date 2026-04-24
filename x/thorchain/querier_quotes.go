@@ -781,6 +781,37 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		return nil, fmt.Errorf("amount less than dust threshold")
 	}
 
+	// chain liquidity cap pre-check: mirror handler_swap.go so the quote
+	// fails early when the swap would be rejected by validateChainLiquidityCap
+	// at submission. The source-side check is defensive; the handler only
+	// enforces target-side.
+	inboundRuneValue := amount
+	if !fromAsset.IsRune() {
+		pool, pErr := qs.mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
+		if pErr != nil {
+			return nil, fmt.Errorf("fail to get pool for chain liquidity cap: %w", pErr)
+		}
+		inboundRuneValue = pool.AssetValueInRune(amount)
+	}
+	if !fromAsset.IsSyntheticAsset() && !fromAsset.IsTradeAsset() &&
+		!fromAsset.IsSecuredAsset() && !fromAsset.IsDerivedAsset() &&
+		!fromAsset.Chain.Equals(common.THORChain) {
+		if capErr := validateChainLiquidityCap(ctx, qs.mgr, fromAsset.Chain, inboundRuneValue); capErr != nil {
+			return nil, fmt.Errorf("source chain cap: %w", capErr)
+		}
+	}
+	if !toAsset.IsSyntheticAsset() && !toAsset.IsTradeAsset() && !toAsset.IsSecuredAsset() {
+		capChain := toAsset.GetLayer1Asset().GetChain()
+		if !capChain.Equals(common.THORChain) {
+			if capErr := validateActiveAsgardExists(ctx, qs.mgr, capChain); capErr != nil {
+				return nil, capErr
+			}
+			if capErr := validateChainLiquidityCap(ctx, qs.mgr, capChain, inboundRuneValue); capErr != nil {
+				return nil, fmt.Errorf("target chain cap: %w", capErr)
+			}
+		}
+	}
+
 	// parse streaming interval
 	streamingInterval := uint64(0) // default value
 	if len(req.StreamingInterval) > 0 {
