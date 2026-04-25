@@ -456,6 +456,10 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			if err != nil {
 				return fmt.Errorf("fail to get init vaults: %w", err)
 			}
+			activeVaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+			if err != nil {
+				return fmt.Errorf("fail to get active vaults: %w", err)
+			}
 
 			var metric *keeper.TssKeygenMetric
 			metric, err = h.mgr.Keeper().GetTssKeygenMetric(ctx, msg.PoolPubKey)
@@ -489,7 +493,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				}
 			}
 
-			matched, allMatched := matchInitVaultsToExpected(initVaults, expected)
+			matched, allMatched := matchExpectedChurnVaults(initVaults, activeVaults, expected)
 			if allMatched {
 				ctx.Logger().Info("tss keygen results churn", "asgards", len(matched))
 				for _, v := range matched {
@@ -520,31 +524,44 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 	return nil
 }
 
-// matchInitVaultsToExpected pairs each expected membership with an InitVault
-// that has the same membership. Returns the matched vaults and whether every
-// expected membership was matched. Each init vault is consumed by at most
-// one expected membership.
-func matchInitVaultsToExpected(initVaults Vaults, expected [][]string) (Vaults, bool) {
+// matchExpectedChurnVaults satisfies each expected membership with either an
+// existing ActiveVault (no rotation needed) or an InitVault (ready and to be
+// rotated). ActiveVault matches are preferred over InitVault matches for the
+// same membership, so a churn that preserves an active group does not rotate
+// a duplicate init vault. Returns the matched init vaults to rotate and
+// whether every expected membership was satisfied. Each vault is consumed by
+// at most one expected membership.
+func matchExpectedChurnVaults(initVaults, activeVaults Vaults, expected [][]string) (Vaults, bool) {
 	matched := make(Vaults, 0, len(expected))
-	consumed := make([]bool, len(initVaults))
+	initConsumed := make([]bool, len(initVaults))
+	activeConsumed := make([]bool, len(activeVaults))
 	for _, want := range expected {
-		found := false
-		for i, v := range initVaults {
-			if consumed[i] {
-				continue
-			}
-			if vaultMembershipMatches(v, want) {
-				matched = append(matched, v)
-				consumed[i] = true
-				found = true
-				break
-			}
+		if i, ok := findUnconsumedVault(activeVaults, activeConsumed, want); ok {
+			activeConsumed[i] = true
+			continue
 		}
-		if !found {
-			return matched, false
+		if i, ok := findUnconsumedVault(initVaults, initConsumed, want); ok {
+			matched = append(matched, initVaults[i])
+			initConsumed[i] = true
+			continue
 		}
+		return matched, false
 	}
 	return matched, true
+}
+
+// findUnconsumedVault returns the index of the first vault in vaults whose
+// membership matches expected and is not already marked consumed.
+func findUnconsumedVault(vaults Vaults, consumed []bool, expected []string) (int, bool) {
+	for i, v := range vaults {
+		if consumed[i] {
+			continue
+		}
+		if vaultMembershipMatches(v, expected) {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // vaultMembershipMatches returns true when the vault's membership equals the

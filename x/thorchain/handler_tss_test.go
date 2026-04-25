@@ -835,7 +835,7 @@ func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
 
-func (s *HandlerTssSuite) TestMatchInitVaultsToExpected(c *C) {
+func (s *HandlerTssSuite) TestMatchExpectedChurnVaults(c *C) {
 	pkA1 := GetRandomPubKey().String()
 	pkA2 := GetRandomPubKey().String()
 	pkB1 := GetRandomPubKey().String()
@@ -855,24 +855,47 @@ func (s *HandlerTssSuite) TestMatchInitVaultsToExpected(c *C) {
 
 	expected := [][]string{canonical(pkA1, pkA2), canonical(pkB1, pkB2, pkB3)}
 
-	matched, ok := matchInitVaultsToExpected(Vaults{vaultA, vaultB}, expected)
+	// Both groups satisfied via init vaults — both should be rotated.
+	matched, ok := matchExpectedChurnVaults(Vaults{vaultA, vaultB}, nil, expected)
 	c.Assert(ok, Equals, true)
 	c.Assert(len(matched), Equals, 2)
 
 	// Missing one of the expected groups returns ok=false.
-	matched, ok = matchInitVaultsToExpected(Vaults{vaultA}, expected)
+	matched, ok = matchExpectedChurnVaults(Vaults{vaultA}, nil, expected)
 	c.Assert(ok, Equals, false)
 	c.Assert(len(matched), Equals, 1)
 
 	// Extra unrelated init vaults are ignored — only matches are returned.
 	other := NewVault(0, InitVault, AsgardVault, GetRandomPubKey(), nil, nil)
 	other.Membership = []string{GetRandomPubKey().String()}
-	matched, ok = matchInitVaultsToExpected(Vaults{other, vaultA, vaultB}, expected)
+	matched, ok = matchExpectedChurnVaults(Vaults{other, vaultA, vaultB}, nil, expected)
 	c.Assert(ok, Equals, true)
 	c.Assert(len(matched), Equals, 2)
 
 	// Each init vault is consumed by at most one expected membership.
 	dupExpected := [][]string{canonical(pkA1, pkA2), canonical(pkA1, pkA2)}
-	_, ok = matchInitVaultsToExpected(Vaults{vaultA}, dupExpected)
+	_, ok = matchExpectedChurnVaults(Vaults{vaultA}, nil, dupExpected)
+	c.Assert(ok, Equals, false)
+
+	// An expected group already present as an ActiveVault is satisfied
+	// without an init vault and is not added to the rotation list.
+	activeA := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), nil, nil)
+	activeA.Membership = []string{pkA1, pkA2}
+	matched, ok = matchExpectedChurnVaults(Vaults{vaultB}, Vaults{activeA}, expected)
+	c.Assert(ok, Equals, true)
+	c.Assert(len(matched), Equals, 1)
+	c.Assert(matched[0].Membership, DeepEquals, vaultB.Membership)
+
+	// ActiveVault is preferred over a duplicate InitVault for the same
+	// membership — the init vault is left alone.
+	matched, ok = matchExpectedChurnVaults(Vaults{vaultA, vaultB}, Vaults{activeA}, expected)
+	c.Assert(ok, Equals, true)
+	c.Assert(len(matched), Equals, 1)
+	c.Assert(matched[0].Membership, DeepEquals, vaultB.Membership)
+
+	// Without ActiveVault to satisfy A and only B as InitVault, churn is
+	// not yet complete (this is the bug the active-match fixes for retries
+	// where TriggerKeygen skips a planned group already active).
+	_, ok = matchExpectedChurnVaults(Vaults{vaultB}, nil, expected)
 	c.Assert(ok, Equals, false)
 }
