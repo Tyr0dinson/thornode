@@ -391,7 +391,12 @@ func (k KVStoreDummy) GetKeygenBlock(_ cosmos.Context, _ int64) (KeygenBlock, er
 }
 func (k KVStoreDummy) SetKeygenBlock(_ cosmos.Context, _ KeygenBlock)          {}
 func (k KVStoreDummy) GetKeygenBlockIterator(_ cosmos.Context) cosmos.Iterator { return nil }
-func (k KVStoreDummy) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error)      { return nil, kaboom }
+func (k KVStoreDummy) SetChurnKeygenExpected(_ cosmos.Context, _ [][]string)   {}
+func (k KVStoreDummy) GetChurnKeygenExpected(_ cosmos.Context) ([][]string, bool, error) {
+	return nil, false, kaboom
+}
+func (k KVStoreDummy) DeleteChurnKeygenExpected(_ cosmos.Context)         {}
+func (k KVStoreDummy) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error) { return nil, kaboom }
 func (k KVStoreDummy) GetTxOutValue(_ cosmos.Context, _ int64) (cosmos.Uint, cosmos.Uint, error) {
 	return cosmos.ZeroUint(), cosmos.ZeroUint(), kaboom
 }

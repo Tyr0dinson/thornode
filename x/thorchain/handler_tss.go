@@ -472,15 +472,34 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				}
 			}
 
-			if len(initVaults) == len(keygenBlock.Keygens) {
-				ctx.Logger().Info("tss keygen results churn", "asgards", len(initVaults))
-				for _, v := range initVaults {
+			expected, hasExpected, err := h.mgr.Keeper().GetChurnKeygenExpected(ctx)
+			if err != nil {
+				return fmt.Errorf("fail to get churn keygen expected: %w", err)
+			}
+			// Fall back to deriving expected memberships from KeygenBlock for
+			// the upgrade window before any churn has populated the new
+			// state. This preserves prior behavior for the first churn after
+			// deployment.
+			if !hasExpected {
+				expected = make([][]string, 0, len(keygenBlock.Keygens))
+				for _, kg := range keygenBlock.Keygens {
+					members := append([]string{}, kg.Members...)
+					sort.Strings(members)
+					expected = append(expected, members)
+				}
+			}
+
+			matched, allMatched := matchInitVaultsToExpected(initVaults, expected)
+			if allMatched {
+				ctx.Logger().Info("tss keygen results churn", "asgards", len(matched))
+				for _, v := range matched {
 					if err = h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
 						return fmt.Errorf("fail to rotate vault: %w", err)
 					}
 				}
+				h.mgr.Keeper().DeleteChurnKeygenExpected(ctx)
 			} else {
-				ctx.Logger().Info("not enough keygen yet", "expecting", len(keygenBlock.Keygens), "current", len(initVaults))
+				ctx.Logger().Info("not enough keygen yet", "expecting", len(expected), "current", len(matched))
 			}
 
 			addrs, err := vault.GetMembership().Addresses()
@@ -499,6 +518,50 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 	}
 
 	return nil
+}
+
+// matchInitVaultsToExpected pairs each expected membership with an InitVault
+// that has the same membership. Returns the matched vaults and whether every
+// expected membership was matched. Each init vault is consumed by at most
+// one expected membership.
+func matchInitVaultsToExpected(initVaults Vaults, expected [][]string) (Vaults, bool) {
+	matched := make(Vaults, 0, len(expected))
+	consumed := make([]bool, len(initVaults))
+	for _, want := range expected {
+		found := false
+		for i, v := range initVaults {
+			if consumed[i] {
+				continue
+			}
+			if vaultMembershipMatches(v, want) {
+				matched = append(matched, v)
+				consumed[i] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			return matched, false
+		}
+	}
+	return matched, true
+}
+
+// vaultMembershipMatches returns true when the vault's membership equals the
+// given expected member set, ignoring order. expected is assumed to be the
+// canonical-sorted form already stored on chain.
+func vaultMembershipMatches(v Vault, expected []string) bool {
+	if len(v.Membership) != len(expected) {
+		return false
+	}
+	got := append([]string{}, v.Membership...)
+	sort.Strings(got)
+	for i := range got {
+		if got[i] != expected[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter TssVoter) {

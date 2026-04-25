@@ -834,3 +834,45 @@ func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+func (s *HandlerTssSuite) TestMatchInitVaultsToExpected(c *C) {
+	pkA1 := GetRandomPubKey().String()
+	pkA2 := GetRandomPubKey().String()
+	pkB1 := GetRandomPubKey().String()
+	pkB2 := GetRandomPubKey().String()
+	pkB3 := GetRandomPubKey().String()
+
+	canonical := func(pks ...string) []string {
+		out := append([]string{}, pks...)
+		sort.Strings(out)
+		return out
+	}
+
+	vaultA := NewVault(0, InitVault, AsgardVault, GetRandomPubKey(), nil, nil)
+	vaultA.Membership = []string{pkA2, pkA1} // unsorted on purpose
+	vaultB := NewVault(0, InitVault, AsgardVault, GetRandomPubKey(), nil, nil)
+	vaultB.Membership = []string{pkB3, pkB1, pkB2}
+
+	expected := [][]string{canonical(pkA1, pkA2), canonical(pkB1, pkB2, pkB3)}
+
+	matched, ok := matchInitVaultsToExpected(Vaults{vaultA, vaultB}, expected)
+	c.Assert(ok, Equals, true)
+	c.Assert(len(matched), Equals, 2)
+
+	// Missing one of the expected groups returns ok=false.
+	matched, ok = matchInitVaultsToExpected(Vaults{vaultA}, expected)
+	c.Assert(ok, Equals, false)
+	c.Assert(len(matched), Equals, 1)
+
+	// Extra unrelated init vaults are ignored — only matches are returned.
+	other := NewVault(0, InitVault, AsgardVault, GetRandomPubKey(), nil, nil)
+	other.Membership = []string{GetRandomPubKey().String()}
+	matched, ok = matchInitVaultsToExpected(Vaults{other, vaultA, vaultB}, expected)
+	c.Assert(ok, Equals, true)
+	c.Assert(len(matched), Equals, 2)
+
+	// Each init vault is consumed by at most one expected membership.
+	dupExpected := [][]string{canonical(pkA1, pkA2), canonical(pkA1, pkA2)}
+	_, ok = matchInitVaultsToExpected(Vaults{vaultA}, dupExpected)
+	c.Assert(ok, Equals, false)
+}

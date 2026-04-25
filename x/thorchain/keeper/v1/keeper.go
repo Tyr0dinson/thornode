@@ -61,6 +61,7 @@ const (
 	prefixTss                       types.DbPrefix = "tss/"
 	prefixTssKeysignFailure         types.DbPrefix = "tssKeysignFailure/"
 	prefixKeygen                    types.DbPrefix = "keygen/"
+	prefixChurnKeygenExpected       types.DbPrefix = "churn_keygen_expected/"
 	prefixRagnarokHeight            types.DbPrefix = "ragnarokHeight/"
 	prefixRagnarokNth               types.DbPrefix = "ragnarokNth/"
 	prefixRagnarokPending           types.DbPrefix = "ragnarokPending/"

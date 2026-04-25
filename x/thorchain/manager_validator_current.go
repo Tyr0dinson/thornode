@@ -189,6 +189,15 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	}
 	if ok {
 		groups := vm.splitNext(ctx, next, asgardSize)
+
+		// Record the canonical (sorted) memberships of all planned groups
+		// before triggering keygens. This is the completion counter used by
+		// handler_tss to decide when to rotate vaults — separate from
+		// KeygenBlock, which TriggerKeygen may skip writing for groups that
+		// already have a matching InitVault from a prior attempt.
+		expected := membershipsForGroups(groups)
+		vm.k.SetChurnKeygenExpected(ctx, expected)
+
 		for _, nodeAccSet := range groups {
 			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
 				return err
@@ -204,6 +213,22 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		}
 	}
 	return nil
+}
+
+// membershipsForGroups returns the secp256k1 pubkey strings for each group,
+// sorted within each group so that identical memberships always serialize
+// identically regardless of NodeAccount ordering.
+func membershipsForGroups(groups []NodeAccounts) [][]string {
+	out := make([][]string, 0, len(groups))
+	for _, group := range groups {
+		members := make([]string, len(group))
+		for i, na := range group {
+			members[i] = na.PubKeySet.Secp256k1.String()
+		}
+		sort.Strings(members)
+		out = append(out, members)
+	}
+	return out
 }
 
 // cleanupStaleInitVaults marks fundless init vaults as inactive if they don't

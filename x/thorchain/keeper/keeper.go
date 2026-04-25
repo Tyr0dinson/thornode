@@ -342,6 +342,9 @@ type KeeperKeygen interface {
 	SetKeygenBlock(ctx cosmos.Context, keygenBlock KeygenBlock)
 	GetKeygenBlockIterator(ctx cosmos.Context) cosmos.Iterator
 	GetKeygenBlock(ctx cosmos.Context, height int64) (KeygenBlock, error)
+	SetChurnKeygenExpected(ctx cosmos.Context, memberships [][]string)
+	GetChurnKeygenExpected(ctx cosmos.Context) ([][]string, bool, error)
+	DeleteChurnKeygenExpected(ctx cosmos.Context)
 }
 
 type KeeperBanVoter interface {
