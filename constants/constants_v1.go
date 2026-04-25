@@ -160,6 +160,8 @@ func NewConstantValue() *ConstantVals {
 			ChainLiquidityRunePerValidator:      10_000_00000000,    // per-validator liquidity cap when chain support < 2/3 (100k RUNE)
 			ChainSubBFTRatioNum:                 2,                  // numerator of the ratio below which liquidity cap activates
 			ChainSubBFTRatioDenom:               3,                  // denominator of the ratio below which liquidity cap activates
+			POLReserveSystemIncomeBps:           0,                  // basis points of system income routed to POL reserve, 0 = disabled
+			POLReserveMaxDeployment:             10_000_000_000,     // maximum RUNE deployed per pool per block (100 RUNE in 1e8 units)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

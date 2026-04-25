@@ -275,6 +275,10 @@ message EventRewards {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
+  string pol_reserve_reward = 7 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }
 
 message EventRefund {
@@ -757,4 +761,15 @@ message EventChainRagnarokInitiated {
                          "gitlab.com/thorchain/thornode/v3/common.Chain" ];
   int64 height = 2;
   string reason = 3;
+}
+
+message EventPOLReserveDeploy {
+  common.Asset pool = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string rune_amount = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }

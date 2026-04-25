@@ -35,6 +35,19 @@ import (
 
 const solvencyDivisor = 10
 
+// signerCacheExpiry is the window after a broadcast during which SignTx respects
+// the cache unconditionally, without an RPC lookup. Past this window, SignTx
+// verifies the recorded signature on chain and only re-signs if the RPC
+// definitively reports it absent. Both conditions must hold — expiry alone never
+// invalidates, because thorchain observation consensus can lag actual Solana
+// inclusion and re-signing a landed-but-not-yet-observed tx would double-spend.
+//
+// 2h is well past Solana's ~60s blockhash validity (MAX_PROCESSING_AGE = 150 slots)
+// and generous against prolonged scanner or consensus lag. It corresponds to 4x
+// SigningTransactionPeriod (1200 thorchain blocks at 6s), so a stuck outbound gets
+// at most a few rescheduled reschedules before this window allows re-sign.
+const signerCacheExpiry = 2 * time.Hour
+
 // broadcastLookupDelay is the time to wait after a broadcast error before
 // querying the chain to see if the transaction landed anyway. Exposed as a
 // variable so tests can override it.
@@ -288,9 +301,17 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
-	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	for _, v := range asgardVaults {
+	chainVaults := asgardVaults[:0]
+	for _, asgard := range asgardVaults {
+		if asgard.HasFundsForChain(c.cfg.ChainID) {
+			chainVaults = append(chainVaults, asgard)
+		}
+	}
+
+	msgs := make([]stypes.Solvency, 0, len(chainVaults))
+	solventMsgs := make([]stypes.Solvency, 0, len(chainVaults))
+	processedVaults := 0
+	for _, v := range chainVaults {
 		if v.PubKeyEddsa.IsEmpty() {
 			c.logger.Error().Msg("asgard vault pubkey is empty, skipping solvency check")
 			continue
@@ -307,6 +328,7 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 			PubKey: v.PubKey, // or v.PubKeyEddsa
 			Coins:  acct.Coins,
 		}
+		processedVaults++
 
 		if runners.IsVaultSolvent(c.cfg.ChainID, acct, v, currentFeeRate) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
@@ -315,14 +337,15 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 		msgs = append(msgs, msg) // Insolvent-vault message
 	}
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all vaults are solvent,
-	// report that all the vaults are solvent.
+	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all chain-specific vaults are solvent,
+	// report that all the chain-specific vaults are solvent.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	solvent := false
-	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
+	if !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}
@@ -368,9 +391,40 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, errors.New("vault public key is empty")
 	}
 
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-		c.logger.Info().Interface("tx", tx).Msg("transaction signed before, ignore")
-		return nil, nil, nil, nil
+	if signed, expired := c.signerCacheManager.HasSignedWithExpiry(tx.CacheHash()); signed {
+		if !expired {
+			// Pre-expiry: the recorded broadcast's blockhash may still allow it to
+			// land, so never re-sign during this window — doing so risks a second
+			// broadcast that lands alongside the first and double-spends.
+			c.logger.Info().Interface("tx", tx).Msg("transaction signed before, ignore")
+			return nil, nil, nil, nil
+		}
+
+		// Expired: re-signing is only safe after chain-side verification confirms
+		// the recorded broadcast is not on chain. Any other invalidation (expiry
+		// alone, RPC error) would risk a double-spend when thorchain observation
+		// consensus lags behind actual Solana inclusion.
+		sig, ok := c.signerCacheManager.GetSignedTxHash(tx.CacheHash())
+		if !ok {
+			// No recorded broadcast hash to verify — respect the cache.
+			c.logger.Info().Interface("tx", tx).Msg("transaction signed before, ignore")
+			return nil, nil, nil, nil
+		}
+		result, lookupErr := c.rpcClient.GetTransactionConfirmed(sig)
+		switch {
+		case lookupErr != nil:
+			c.logger.Warn().Err(lookupErr).Str("sig", sig).Interface("tx", tx).
+				Msg("signature lookup failed, respecting signer cache")
+			return nil, nil, nil, nil
+		case result.Slot > 0:
+			c.logger.Info().Str("sig", sig).Interface("tx", tx).
+				Msg("cached broadcast confirmed on chain, respecting signer cache")
+			return nil, nil, nil, nil
+		default:
+			c.logger.Warn().Str("sig", sig).Interface("tx", tx).
+				Msg("expired cached broadcast not found on chain, clearing signer cache")
+			c.signerCacheManager.RemoveSigned(sig)
+		}
 	}
 
 	// GetMemo returns OriginalMemo for memoless outbounds
@@ -567,7 +621,8 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 			if result, lookupErr := c.rpcClient.GetTransactionConfirmed(knownSig); lookupErr == nil && result.Slot > 0 {
 				c.logger.Warn().Str("memo", txOutItem.Memo).Str("txid", knownSig).
 					Msg("tx found on chain despite broadcast error, updating signer cache")
-				if cacheErr := c.signerCacheManager.SetSigned(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), knownSig); cacheErr != nil {
+				expiry := time.Now().Add(signerCacheExpiry).UnixMilli()
+				if cacheErr := c.signerCacheManager.SetSignedWithExpiry(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), knownSig, expiry); cacheErr != nil {
 					c.logger.Err(cacheErr).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
 				}
 				return knownSig, nil
@@ -577,8 +632,12 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 	}
 	c.logger.Info().Str("memo", txOutItem.Memo).Str("txid", txSig).Msg("broadcast tx")
 
-	// update the signer cache
-	if err := c.signerCacheManager.SetSigned(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txSig); err != nil {
+	// Record the broadcast in the signer cache with its expiry. SignTx will respect
+	// the cache unconditionally until the expiry passes; past expiry it verifies on
+	// chain before re-signing, so a dropped broadcast eventually recovers without
+	// risking a double-spend against a lagging observation.
+	expiry := time.Now().Add(signerCacheExpiry).UnixMilli()
+	if err := c.signerCacheManager.SetSignedWithExpiry(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txSig, expiry); err != nil {
 		c.logger.Err(err).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
 	}
 

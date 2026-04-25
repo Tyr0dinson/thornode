@@ -149,6 +149,7 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"STOPSOLVENCYCHECK",
 		"MIMIRUPGRADECONTRACT",
 		"EVMALLOWANCECHECK",
+		"POLRESERVEBLACKLIST",
 	}
 	for i := range partialMatches {
 		// Contains rather than HasPrefix to include cases like StreamingSwapPause.

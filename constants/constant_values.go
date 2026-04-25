@@ -173,6 +173,8 @@ const (
 	ChainLiquidityRunePerValidator
 	ChainSubBFTRatioNum
 	ChainSubBFTRatioDenom
+	POLReserveSystemIncomeBps
+	POLReserveMaxDeployment
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight

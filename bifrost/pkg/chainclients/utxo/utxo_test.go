@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -20,6 +21,21 @@ const (
 var m *metrics.Metrics
 
 func TestPackage(t *testing.T) { TestingT(t) }
+
+func TestUpdateCurrentBlockHeightMonotonic(t *testing.T) {
+	client := &Client{}
+
+	client.updateCurrentBlockHeight(100)
+	client.updateCurrentBlockHeight(90)
+	if got := client.getCurrentBlockHeight(); got != 100 {
+		t.Fatalf("expected current block height to remain 100, got %d", got)
+	}
+
+	client.updateCurrentBlockHeight(110)
+	if got := client.getCurrentBlockHeight(); got != 110 {
+		t.Fatalf("expected current block height to advance to 110, got %d", got)
+	}
+}
 
 func GetMetricForTest(c *C, chain common.Chain) *metrics.Metrics {
 	if m != nil {
@@ -47,4 +63,39 @@ func httpTestHandler(c *C, rw http.ResponseWriter, fixture string) {
 	if _, err = rw.Write(content); err != nil {
 		c.Fatal(err)
 	}
+}
+
+// assertSenderUTXOValidation verifies that Client.getSender rejects bare
+// multisig sender UTXOs. This guards against the sender-spoofing attack where
+// an attacker crafts a bare multisig [victim_pubkey, attacker_pubkey] and signs
+// with their own key, causing getSender to attribute the tx to the victim
+// (first pubkey's address). P2SH/P2WSH-wrapped multisig is not affected since
+// those scriptPubKeys return a single 3xxx/bc1q address. The same check applies
+// uniformly to BTC, LTC, DOGE, BCH, and ZEC — each chain's isValidUTXO rejects
+// MultiSigTy and accepts single-address/single-sig types.
+func assertSenderUTXOValidation(c *C, client *Client) {
+	const multisigTxid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	// 1-of-1 bare multisig: OP_1 <pubkey> OP_1 OP_CHECKMULTISIG
+	const bareMultisigScriptHex = "51210281feb90c058c3436f8bc361930ae99fcfb530a699cdad141d7244bfcad521a1f51ae"
+
+	tx := btcjson.TxRawResult{
+		Vin: []btcjson.Vin{{Txid: multisigTxid, Vout: 0}},
+	}
+	vinZeroTxs := map[string]*btcjson.TxRawResult{
+		multisigTxid: {
+			Vout: []btcjson.Vout{
+				{
+					ScriptPubKey: btcjson.ScriptPubKeyResult{
+						Hex:  bareMultisigScriptHex,
+						Type: "multisig",
+					},
+				},
+			},
+		},
+	}
+
+	sender, err := client.getSender(&tx, vinZeroTxs)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "sender utxo must be single-sig")
+	c.Assert(sender, Equals, "")
 }

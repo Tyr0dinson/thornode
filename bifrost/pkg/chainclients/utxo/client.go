@@ -449,7 +449,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		return txIn, fmt.Errorf("fail to get block: %w", err)
 	}
 
-	c.currentBlockHeight.Store(height)
+	c.updateCurrentBlockHeight(height)
 	reScannedTxs, err := c.processReorg(block)
 	if err != nil {
 		c.log.Err(err).Msg("fail to process re-org")
@@ -693,7 +693,7 @@ func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 	// check if we have the necessary number of confirmations
 	height := txIn.TxArray[0].BlockHeight
 	confirm := txIn.ConfirmationRequired
-	ready := (c.currentBlockHeight.Load() - height) >= confirm // every tx already has 1
+	ready := (c.getCurrentBlockHeight() - height) >= confirm // every tx already has 1
 	c.log.Info().
 		Int64("height", height).
 		Int64("required", confirm).
@@ -701,6 +701,24 @@ func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 		Msg("confirmation count check")
 
 	return ready
+}
+
+func (c *Client) getCurrentBlockHeight() int64 {
+	return c.currentBlockHeight.Load()
+}
+
+// updateCurrentBlockHeight records the highest scanner height seen without
+// allowing concurrent prefetches to move it backwards.
+func (c *Client) updateCurrentBlockHeight(height int64) {
+	for {
+		currentHeight := c.getCurrentBlockHeight()
+		if height <= currentHeight {
+			return
+		}
+		if c.currentBlockHeight.CompareAndSwap(currentHeight, height) {
+			return
+		}
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -754,11 +772,19 @@ func (c *Client) ReportSolvency(height int64) error {
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
-	msgs := make([]types.Solvency, 0, len(asgardVaults))
-	solventMsgs := make([]types.Solvency, 0, len(asgardVaults))
-	for i := range asgardVaults {
+	chainVaults := asgardVaults[:0]
+	for _, asgard := range asgardVaults {
+		if asgard.HasFundsForChain(c.cfg.ChainID) {
+			chainVaults = append(chainVaults, asgard)
+		}
+	}
+
+	msgs := make([]types.Solvency, 0, len(chainVaults))
+	solventMsgs := make([]types.Solvency, 0, len(chainVaults))
+	processedVaults := 0
+	for i := range chainVaults {
 		var acct common.Account
-		acct, err = c.GetAccount(asgardVaults[i].PubKey, nil)
+		acct, err = c.GetAccount(chainVaults[i].PubKey, nil)
 		if err != nil {
 			c.log.Err(err).Msgf("fail to get account balance")
 			continue
@@ -767,25 +793,27 @@ func (c *Client) ReportSolvency(height int64) error {
 		msg := types.Solvency{
 			Height: height,
 			Chain:  c.cfg.ChainID,
-			PubKey: asgardVaults[i].PubKey,
+			PubKey: chainVaults[i].PubKey,
 			Coins:  acct.Coins,
 		}
+		processedVaults++
 
-		if runners.IsVaultSolvent(c.cfg.ChainID, acct, asgardVaults[i], currentGasFee) {
+		if runners.IsVaultSolvent(c.cfg.ChainID, acct, chainVaults[i], currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}
 		msgs = append(msgs, msg) // Insolvent-vault message
 	}
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all vaults are solvent,
-	// report that all the vaults are solvent.
+	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all chain-specific vaults are solvent,
+	// report that all the chain-specific vaults are solvent.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	solvent := false
-	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
+	if !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}
