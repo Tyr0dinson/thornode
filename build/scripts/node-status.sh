@@ -129,7 +129,7 @@ if [ "$VALIDATOR" = "true" ]; then
   BSC_PROGRESS=$(calc_progress "$BSC_SYNC_HEIGHT" "$BSC_HEIGHT")
 
   # calculate BASE chain sync progress
-  BASE_HEIGHT_RESULT=$(curl -X POST -sL --fail -m 10 --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' -H 'content-type: application/json' "https://base.llamarpc.com")
+  BASE_HEIGHT_RESULT=$(curl -X POST -sL --fail -m 10 --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' -H 'content-type: application/json' "https://base-rpc.publicnode.com")
   BASE_SYNC_HEIGHT_RESULT=$(curl -X POST -sL --fail -m 10 --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' -H 'content-type: application/json' "$BASE_ENDPOINT")
   BASE_HEIGHT=$(printf "%.0f" "$(echo "$BASE_HEIGHT_RESULT" | jq -r ".result")")
   if [ -n "$BASE_SYNC_HEIGHT_RESULT" ]; then
