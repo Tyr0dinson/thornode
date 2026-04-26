@@ -961,6 +961,7 @@ func collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, k k
 	// Staged outbound entries are keyed by inbound hash and exist only for
 	// mempool-swap state, so the TOR reservation is not required as a marker.
 	stagedIter := k.GetStagedOutboundIterator(ctx)
+	defer stagedIter.Close()
 	for ; stagedIter.Valid(); stagedIter.Next() {
 		var stagedList keeper.StagedOutboundList
 		if err := k.Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
@@ -969,12 +970,12 @@ func collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, k k
 		}
 		addIfMatch(stagedList.InHash, false)
 	}
-	stagedIter.Close()
 
 	// Queue-backed mempool swaps can be stranded before any staged outbound is
 	// written. Require a TOR reservation here so ordinary advanced-queue swaps
 	// are not mistaken for speculative mempool work.
 	advIter := k.GetAdvSwapQueueItemIterator(ctx)
+	defer advIter.Close()
 	for ; advIter.Valid(); advIter.Next() {
 		var msg MsgSwap
 		if err := k.Cdc().Unmarshal(advIter.Value(), &msg); err != nil {
@@ -983,7 +984,6 @@ func collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, k k
 		}
 		addIfMatch(msg.Tx.ID, true)
 	}
-	advIter.Close()
 
 	return hashes
 }
