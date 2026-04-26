@@ -23,6 +23,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// mempoolSwapForceRollbackTimeoutMultiplier gives finalized mempool swaps extra
+// retry time before force rollback. This keeps transient signing/finalization
+// failures from releasing TOR capacity too aggressively while still bounding
+// stuck reservations.
+const mempoolSwapForceRollbackTimeoutMultiplier int64 = 3
+
 // Slasher is current implementation of slasher
 type SlasherImpl struct {
 	keeper   keeper.Keeper
@@ -865,10 +871,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling.
 	if maxOutboundAttempts > 0 {
 		timeoutAge := signingTransPeriod * maxOutboundAttempts
-		// After 3x the normal timeout, force-rollback even finalized active-vault
-		// swaps whose finalization deterministically fails, preventing permanent
-		// TOR capacity reservation.
-		forceRollbackAge := 3 * timeoutAge
+		forceRollbackAge := mempoolSwapForceRollbackTimeoutMultiplier * timeoutAge
 
 		// Collect timed-out inHashes first, then process after closing iterator
 		// to avoid iterator invalidation when rollbackMempoolSwapAtomic deletes from store
