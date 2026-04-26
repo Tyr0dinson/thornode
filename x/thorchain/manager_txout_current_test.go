@@ -899,6 +899,55 @@ func (s TxOutStoreSuite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c *C)
 	c.Assert(afterVoter1.OutboundHeight, Equals, int64(4))
 }
 
+func (s TxOutStoreSuite) TestAddOutTxItemRefreshesFinalisedHeightForNonMempoolVoter(c *C) {
+	SetupConfigForTest()
+	w := getHandlerTestWrapper(c, 11, true, true)
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.DOGEAsset, cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	acc1 := GetRandomValidatorNode(NodeActive)
+	acc2 := GetRandomValidatorNode(NodeActive)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, common.ObservedTxs{
+		common.ObservedTx{
+			Tx:             GetRandomTx(),
+			Status:         common.Status_incomplete,
+			BlockHeight:    1,
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String(), acc1.NodeAddress.String(), acc2.NodeAddress.String()},
+			FinaliseHeight: 1,
+		},
+	})
+	voter.Height = 6
+	voter.UnfinalizedHeight = 6
+	voter.FinalisedHeight = 6
+	voter.MempoolSwapTOR = cosmos.ZeroUint()
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	item := TxOutItem{
+		Chain:     common.DOGEChain,
+		ToAddress: GetRandomDOGEAddress(),
+		InHash:    inTxID,
+		Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(20*common.One)),
+	}
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	afterVoter, err := w.keeper.GetObservedTxInVoter(w.ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(afterVoter.HasReservedMempoolSwapTOR(), Equals, false)
+	c.Assert(afterVoter.Actions, HasLen, 1)
+	c.Assert(afterVoter.FinalisedHeight, Equals, w.ctx.BlockHeight())
+}
+
 func (s TxOutStoreSuite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
