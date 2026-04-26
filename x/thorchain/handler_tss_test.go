@@ -716,6 +716,112 @@ func (s *HandlerTssSuite) TestKeygenSuccessHandler(c *C) {
 	}
 }
 
+func (s *HandlerTssSuite) TestKeygenRetryWithPreservedInitVaultCompletesChurn(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	groupA := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	groupB := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	minBond := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MinimumBondInRune)))
+	for _, na := range append(append(NodeAccounts{}, groupA...), groupB...) {
+		if na.Bond.LTE(minBond) {
+			na.Bond = minBond.AddUint64(common.One)
+		}
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+
+	membersA := common.PubKeys{
+		groupA[0].PubKeySet.Secp256k1,
+		groupA[1].PubKeySet.Secp256k1,
+	}
+	vaultA := NewVault(105, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{})
+	vaultA.Membership = membersA.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultA), IsNil)
+
+	ctx = ctx.WithBlockHeight(200)
+	expected := membershipsForGroups([]NodeAccounts{groupA, groupB})
+	mgr.Keeper().SetChurnKeygenExpected(ctx, expected)
+
+	c.Assert(mgr.NetworkMgr().TriggerKeygen(ctx, groupA), IsNil)
+	c.Assert(mgr.NetworkMgr().TriggerKeygen(ctx, groupB), IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, 200)
+	c.Assert(err, IsNil)
+	c.Assert(len(keygenBlock.Keygens), Equals, 1)
+	c.Assert(keygenBlock.Keygens[0].GetMembers().Equals(common.PubKeys{
+		groupB[0].PubKeySet.Secp256k1,
+		groupB[1].PubKeySet.Secp256k1,
+	}), Equals, true)
+
+	gotExpected, ok, err := mgr.Keeper().GetChurnKeygenExpected(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+	c.Assert(gotExpected, DeepEquals, expected)
+
+	handler := NewTssHandler(mgr)
+	keygenTime := int64(1024)
+	poolPubKey := GetRandomPubKey()
+	poolPubKeyEddsa := GetRandomPubKey()
+	fakeSig := []byte("fakeSignature")
+	groupBMembers := common.PubKeys{
+		groupB[0].PubKeySet.Secp256k1,
+		groupB[1].PubKeySet.Secp256k1,
+	}
+	var voterID string
+
+	oldVerify := verifySecp256K1Signature
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+	defer func() { verifySecp256K1Signature = oldVerify }()
+
+	for _, na := range groupB {
+		msg, err := NewMsgTssPoolV2(
+			groupBMembers.Strings(),
+			poolPubKey,
+			fakeSig,
+			nil,
+			AsgardKeygen,
+			ctx.BlockHeight(),
+			nil,
+			common.Chains{common.RuneAsset().Chain}.Strings(),
+			na.NodeAddress,
+			keygenTime,
+			poolPubKeyEddsa,
+			nil,
+		)
+		c.Assert(err, IsNil)
+		voterID = msg.ID
+		_, err = handler.Run(ctx, msg)
+		c.Assert(err, IsNil)
+	}
+
+	voter, err := mgr.Keeper().GetTssVoter(ctx, voterID)
+	c.Assert(err, IsNil)
+	vaultA, err = mgr.Keeper().GetVault(ctx, vaultA.PubKey)
+	c.Assert(err, IsNil)
+	vaultB, err := mgr.Keeper().GetVault(ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(voter.Signers), Equals, len(voter.PubKeys))
+	c.Assert(vaultA.Status, Equals, ActiveVault)
+	c.Assert(vaultA.MembershipEquals(membersA), Equals, true)
+
+	c.Assert(vaultB.Status, Equals, ActiveVault)
+	c.Assert(vaultB.MembershipEquals(groupBMembers), Equals, true)
+
+	initVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(initVaults), Equals, 0)
+
+	_, ok, err = mgr.Keeper().GetChurnKeygenExpected(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, false)
+}
+
 func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	height := int64(1024)
