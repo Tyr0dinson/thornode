@@ -240,16 +240,23 @@ func (vm *ValidatorMgr) cleanupStaleInitVaults(ctx cosmos.Context, groups []Node
 	if err != nil {
 		return fmt.Errorf("fail to get init vaults: %w", err)
 	}
+	var groupMembers []common.PubKeys
 	for _, v := range initVaults {
 		if v.HasFunds() {
 			continue
 		}
-		matchesGroup := false
-		for _, nodeAccSet := range groups {
-			members := make(common.PubKeys, len(nodeAccSet))
-			for i, na := range nodeAccSet {
-				members[i] = na.PubKeySet.Secp256k1
+		if groupMembers == nil {
+			groupMembers = make([]common.PubKeys, len(groups))
+			for i, nodeAccSet := range groups {
+				members := make(common.PubKeys, len(nodeAccSet))
+				for j, na := range nodeAccSet {
+					members[j] = na.PubKeySet.Secp256k1
+				}
+				groupMembers[i] = members
 			}
+		}
+		matchesGroup := false
+		for _, members := range groupMembers {
 			if v.MembershipEquals(members) {
 				matchesGroup = true
 				break
