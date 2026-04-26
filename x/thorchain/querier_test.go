@@ -1169,8 +1169,8 @@ func (s *QuerierSuite) TestQueryInboundAddressesChainSupport(c *C) {
 	c.Assert(resp[0].ActiveValidatorFraction, Equals, "0.50")
 	c.Assert(resp[0].LiquidityCapApplied, Equals, true)
 
-	// Verify cap amount: 2 validators × default ChainLiquidityRunePerValidator (10_000_00000000)
-	expectedCap := cosmos.NewUint(10_000_00000000).MulUint64(2)
+	// Verify cap amount: 2 validators × default ChainLiquidityRunePerValidator (100_000_00000000)
+	expectedCap := cosmos.NewUint(100_000_00000000).MulUint64(2)
 	c.Assert(resp[0].LiquidityCapRune, Equals, expectedCap.String())
 
 	// Now add all 4 validators to the vault membership (4 of 4 = 100%)
