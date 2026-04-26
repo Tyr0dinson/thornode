@@ -10,7 +10,7 @@
 #
 # Tests:
 #   1. Set ChurnInterval=10 via mimir
-#   2. Churn at block 10 → BTC partition has 2 nodes (< MinimumNodesForBFT=4)
+#   2. Churn at block 10 → BTC partition has 2 nodes (< MinNodeChainSupport=4)
 #      → auto-ragnarok BTC chain
 #   3. MsgLeave for dog rejected (node in vault for ragnaroking chain)
 #   4. Set RAGNAROK-BTC-BTC mimir → pool drain completes at next FundMigrationInterval
@@ -330,7 +330,8 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Set ChurnInterval=10 via mimir (economic mimir, needs supermajority: 4 of 6 active).
+# Set ChurnInterval=10 and MinNodeChainSupport=4 via mimir (operational mimirs,
+# need supermajority: 4 of 6 active).
 ########################################################################################
 type: tx-mimir
 key: "ChurnInterval"
@@ -355,6 +356,29 @@ signer: {{ addr_thor_frog }}
 type: create-blocks
 count: 1
 ---
+type: tx-mimir
+key: "MinNodeChainSupport"
+value: 4
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: "MinNodeChainSupport"
+value: 4
+signer: {{ addr_thor_cat }}
+---
+type: tx-mimir
+key: "MinNodeChainSupport"
+value: 4
+signer: {{ addr_thor_pig }}
+---
+type: tx-mimir
+key: "MinNodeChainSupport"
+value: 4
+signer: {{ addr_thor_frog }}
+---
+type: create-blocks
+count: 1
+---
 ########################################################################################
 # Verify initial state: dog supports all chains, hawk supports ETH only.
 ########################################################################################
@@ -371,8 +395,17 @@ asserts:
   - .supported_chains[0] == "ETH"
 ---
 ########################################################################################
+# Verify operational mimirs were applied: ChurnInterval=10, MinNodeChainSupport=4.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .CHURNINTERVAL == 10
+  - .MINNODECHAINSUPPORT == 4
+---
+########################################################################################
 # Advance to block 10: churn triggers (lastChurnHeight=0 + ChurnInterval=10 = 10).
-# BTC partition: dog, cat = 2 < MinimumNodesForBFT(4) → auto-ragnarok BTC.
+# BTC partition: dog, cat = 2 < MinNodeChainSupport(4) → auto-ragnarok BTC.
 # ETH partition: 4 nodes >= 4 → viable, ETH survives.
 ########################################################################################
 type: create-blocks
