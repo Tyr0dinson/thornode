@@ -27,8 +27,6 @@ func (ConstantsTestSuite) TestConstantName_String(c *C) {
 		ValidatorMaxRewardRatio,
 		MinNodeChainSupport,
 		ChainLiquidityRunePerValidator,
-		ChainSubBFTRatioNum,
-		ChainSubBFTRatioDenom,
 	}
 	for _, item := range constantNames {
 		c.Assert(item.String(), Not(Equals), "NA")
@@ -44,10 +42,8 @@ func (ConstantsTestSuite) TestGetConstantValues(c *C) {
 func (ConstantsTestSuite) TestChainSupportMimirDefaults(c *C) {
 	vals := NewConstantValue()
 	c.Assert(vals.GetInt64Value(MinNodeChainSupport), Equals, int64(1))
-	c.Assert(vals.GetInt64Value(ChainLiquidityRunePerValidator), Equals, int64(10_000_00000000))
+	c.Assert(vals.GetInt64Value(ChainLiquidityRunePerValidator), Equals, int64(100_000_00000000))
 	c.Assert(vals.GetInt64Value(MinimumNodesForBFT), Equals, int64(4))
-	c.Assert(vals.GetInt64Value(ChainSubBFTRatioNum), Equals, int64(2))
-	c.Assert(vals.GetInt64Value(ChainSubBFTRatioDenom), Equals, int64(3))
 }
 
 func (ConstantsTestSuite) TestAllConstantName(c *C) {

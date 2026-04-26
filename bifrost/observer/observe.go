@@ -44,7 +44,7 @@ const defaultOracleUpdateInterval = 1 * time.Second
 
 // supportedChainsRefreshTime is how often the observer recomputes the
 // supported chains from PubKeyManager and diffs against the previous set.
-const supportedChainsRefreshTime = 6 * time.Second
+var supportedChainsRefreshTime = constants.ThorchainBlockTime
 
 type txInKey struct {
 	chain  common.Chain

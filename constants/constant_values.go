@@ -171,8 +171,6 @@ const (
 	ModifyLimitSwapMaxIterations
 	MinNodeChainSupport
 	ChainLiquidityRunePerValidator
-	ChainSubBFTRatioNum
-	ChainSubBFTRatioDenom
 	POLReserveSystemIncomeBps
 	POLReserveMaxDeployment
 

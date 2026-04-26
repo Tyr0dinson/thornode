@@ -580,11 +580,6 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 	}
 	activeNodeCount := int64(len(activeNodes))
 
-	ratioNum := k.GetConfigInt64(ctx, constants.ChainSubBFTRatioNum)
-	ratioDenom := k.GetConfigInt64(ctx, constants.ChainSubBFTRatioDenom)
-	if ratioDenom == 0 {
-		ratioDenom = 3
-	}
 	liquidityRunePerValidator := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.ChainLiquidityRunePerValidator)))
 
 	for _, chain := range chains {
@@ -646,7 +641,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			fraction = "0.00"
 		}
 
-		threshold := (ratioNum*activeNodeCount + ratioDenom - 1) / ratioDenom
+		threshold := chainBFTValidatorThreshold(activeNodeCount)
 		capApplied := supportingValidators < threshold && activeNodeCount > 0
 		var capRune string
 		if capApplied {

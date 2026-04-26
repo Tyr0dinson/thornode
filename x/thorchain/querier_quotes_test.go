@@ -240,8 +240,6 @@ func (s *QuotesSuite) TestQuoteSwapChainLiquidityCap(c *C) {
 	vault.Coins = common.NewCoins(common.NewCoin(common.DOGEAsset, cosmos.NewUint(50*common.One)))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
 	// cap = 1 validator * 100 RUNE = 100 RUNE; vault already holds ~50 RUNE worth
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100*common.One)
 

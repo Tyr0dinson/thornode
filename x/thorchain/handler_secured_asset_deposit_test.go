@@ -168,8 +168,6 @@ func (HandlerSecuredAssetDeposit) TestSecuredAssetDepositChainLiquidityCap(c *C)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	// Configure mimirs: cap = 3 * 10,000 = 30,000 RUNE
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 10_000_00000000)
 
 	// Deposit exceeding cap: 2.5 BTC = 25,000 RUNE; current vault = 10,000 RUNE → total 35,000 > 30,000

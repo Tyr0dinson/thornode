@@ -1133,7 +1133,9 @@ func (vts *ValidatorMgrTestSuite) TestChurnPartitionBelowMinimumExcluded(c *C) {
 	networkMgrDummy := NewNetworkMgrDummy()
 	vm := newValidatorMgr(k, networkMgrDummy, mgr.TxOutStore(), mgr.EventMgr())
 
-	// MinimumNodesForBFT default is 4
+	// Set MinNodeChainSupport to 4 via mimir so partitions below this size are skipped.
+	k.SetMimir(ctx, constants.MinNodeChainSupport.String(), 4)
+
 	// Group A: 5 nodes with BTC+ETH — viable
 	groupA := make(NodeAccounts, 5)
 	for i := 0; i < 5; i++ {
@@ -1144,7 +1146,7 @@ func (vts *ValidatorMgrTestSuite) TestChurnPartitionBelowMinimumExcluded(c *C) {
 		groupA[i] = na
 	}
 
-	// Group B: 2 nodes with DOGE only — below MinimumNodesForBFT
+	// Group B: 2 nodes with DOGE only — below MinNodeChainSupport
 	groupB := make(NodeAccounts, 2)
 	for i := 0; i < 2; i++ {
 		na := GetRandomValidatorNode(NodeActive)
@@ -1157,17 +1159,17 @@ func (vts *ValidatorMgrTestSuite) TestChurnPartitionBelowMinimumExcluded(c *C) {
 	all := make(NodeAccounts, 0, len(groupA)+len(groupB))
 	all = append(all, groupA...)
 	all = append(all, groupB...)
-	minimumNodesForBFT := k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
-	c.Assert(minimumNodesForBFT, Equals, int64(4))
+	minNodeChainSupport := k.GetConfigInt64(ctx, constants.MinNodeChainSupport)
+	c.Assert(minNodeChainSupport, Equals, int64(4))
 
 	partitions := vm.partitionByChainSupport(ctx, mgr, all)
 	c.Assert(len(partitions), Equals, 2)
 
-	// Simulate what churnInner does: filter out partitions below MinimumNodesForBFT
+	// Simulate what churnInner does: filter out partitions below MinNodeChainSupport
 	asgardSize := int64(40)
 	triggeredCount := 0
 	for _, p := range partitions {
-		if int64(len(p.nodes)) < minimumNodesForBFT {
+		if int64(len(p.nodes)) < minNodeChainSupport {
 			continue
 		}
 		groups := vm.splitNext(ctx, p.nodes, asgardSize)
@@ -1287,7 +1289,7 @@ func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToNodeRemovals(c *C) 
 	dogePool.BalanceAsset = cosmos.NewUint(2500 * common.One)
 	c.Assert(k.SetPool(ctx, dogePool), IsNil)
 
-	// Scenario: only 2 nodes support DOGE (below MinimumNodesForBFT=4),
+	// Scenario: only 2 nodes support DOGE (below MinNodeChainSupport when raised to 4),
 	// while 5 nodes support BTC+ETH. The partition loop would have already
 	// filtered out the DOGE partition, so coveredChains won't include DOGE.
 	ctx = ctx.WithBlockHeight(200)

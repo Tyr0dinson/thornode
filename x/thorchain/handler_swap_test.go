@@ -309,9 +309,7 @@ func (s *HandlerSwapSuite) TestValidateChainLiquidityCap(c *C) {
 	vault.Coins = common.NewCoins(common.NewCoin(common.DOGEAsset, cosmos.NewUint(50*common.One)))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	// Set mimirs for sub-BFT ratio and per-validator cap
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
+	// Set per-validator cap mimir
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100*common.One) // 100 RUNE per validator
 
 	mgr.txOutStore = NewTxStoreDummy()

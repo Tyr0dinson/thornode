@@ -1244,8 +1244,6 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityChainLiquidityCap(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	// Configure mimirs: cap = 3 * 10,000 = 30,000 RUNE
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioNum.String(), 2)
-	mgr.Keeper().SetMimir(ctx, constants.ChainSubBFTRatioDenom.String(), 3)
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 10_000_00000000)
 
 	addHandler := NewAddLiquidityHandler(mgr)
