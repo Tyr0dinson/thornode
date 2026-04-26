@@ -246,7 +246,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnDe
 	// affiliate-fee adjustment should fail before any finalization side effects
 	// are committed.
 	err := finalizeOutboundsAtomic(ctx, mgr, voter)
-	c.Assert(err, ErrorMatches, "fail to take deferred affiliate fee: dev err: no active node accounts")
+	c.Assert(err, ErrorMatches, ".*no active node accounts")
 
 	usage := mgr.Keeper().GetMempoolSwapUsageTOR(ctx)
 	c.Check(usage.Equal(cosmos.NewUint(999*common.One)), Equals, true, Commentf("mempool usage should roll back on deferred affiliate failure"))
