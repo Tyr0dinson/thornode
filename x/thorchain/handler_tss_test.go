@@ -779,8 +779,9 @@ func (s *HandlerTssSuite) TestKeygenRetryWithPreservedInitVaultCompletesChurn(c 
 	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
 	defer func() { verifySecp256K1Signature = oldVerify }()
 
+	var msg *MsgTssPool
 	for _, na := range groupB {
-		msg, err := NewMsgTssPoolV2(
+		msg, err = NewMsgTssPoolV2(
 			groupBMembers.Strings(),
 			poolPubKey,
 			fakeSig,
