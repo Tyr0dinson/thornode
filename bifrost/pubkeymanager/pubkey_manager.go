@@ -395,8 +395,12 @@ func (pkm *PubKeyManager) GetContract(chain common.Chain, pubKey common.PubKey) 
 }
 
 // GetSupportedChains returns the union of chains from all active and retiring
-// Asgard vaults where this node is a member. Falls back to AllChains when
-// no vault membership is found (standby/bootstrapping).
+// Asgard vaults where this node is a member. Returns AllChains only when the
+// node identity is not yet loaded (bootstrap) or the bridge query fails
+// (transient — preserves inbound observation rather than dropping it). When
+// the bridge query succeeds and finds no membership for this node — i.e. a
+// retired/standby node — returns an empty slice so opt-in semantics are
+// honored and the node does not resume observing every chain.
 func (pkm *PubKeyManager) GetSupportedChains() []common.Chain {
 	nodePubKey := pkm.GetNodePubKey(common.SigningAlgoSecp256k1)
 	if nodePubKey.IsEmpty() {
@@ -427,10 +431,6 @@ func (pkm *PubKeyManager) GetSupportedChains() []common.Chain {
 		for _, chain := range vault.GetChains() {
 			seen[chain] = true
 		}
-	}
-
-	if len(seen) == 0 {
-		return common.AllChains[:]
 	}
 
 	chains := make([]common.Chain, 0, len(seen))

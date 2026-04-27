@@ -1924,6 +1924,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 			fees  cosmos.Uint
 		}
 		chainFeeMap := make(map[common.Chain]cosmos.Uint)
+		layer1Fees := cosmos.ZeroUint()
 		for _, pool := range availablePools {
 			fees, feeErr := vm.k.GetPoolLiquidityFees(ctx, currentHeight, pool.Asset)
 			if feeErr != nil || fees.IsZero() {
@@ -1935,6 +1936,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 			} else {
 				chainFeeMap[chain] = fees
 			}
+			layer1Fees = layer1Fees.Add(fees)
 		}
 
 		// Deterministic ordering for remainder-to-last pattern.
@@ -1947,13 +1949,23 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 			return chainFeeEntries[i].chain < chainFeeEntries[j].chain
 		})
 
+		// totalLiquidityFees counts fees from ALL pools (including native /
+		// derived pools that have no external-chain validators), but
+		// chainFeeMap only covers layer-1 pools via availablePools. Split
+		// feeBonderShare proportionally so that the native-pool share folds
+		// into the global BondRewardRune bucket rather than being absorbed
+		// by the alphabetically-last layer-1 chain via remainder-to-last.
+		layer1BonderShare := common.GetSafeShare(layer1Fees, totalLiquidityFees, feeBonderShare)
+		nativeBonderShare := common.SafeSub(feeBonderShare, layer1BonderShare)
+
 		totalChainAllocated := cosmos.ZeroUint()
 		for idx, entry := range chainFeeEntries {
 			var share cosmos.Uint
 			if idx == len(chainFeeEntries)-1 {
-				share = common.SafeSub(feeBonderShare, totalChainAllocated)
+				// Remainder-to-last absorbs rounding dust within the layer-1 bucket only.
+				share = common.SafeSub(layer1BonderShare, totalChainAllocated)
 			} else {
-				share = common.GetSafeShare(entry.fees, totalLiquidityFees, feeBonderShare)
+				share = common.GetSafeShare(entry.fees, layer1Fees, layer1BonderShare)
 			}
 			totalChainAllocated = totalChainAllocated.Add(share)
 			if !share.IsZero() {
@@ -1961,14 +1973,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 			}
 		}
 
-		// totalLiquidityFees counts fees from ALL pools (including native /
-		// derived pools that have no external chain validators), but
-		// chainFeeEntries only covers layer-1 pools via availablePools. Any
-		// leftover feeBonderShare — i.e. the portion attributable to native
-		// pool fees — has no chain to distribute to, so fold it into the
-		// global BondRewardRune bucket. This keeps the Bond module solvent.
-		unallocated := common.SafeSub(feeBonderShare, totalChainAllocated)
-		network.BondRewardRune = network.BondRewardRune.Add(emissionBonderShare).Add(unallocated)
+		network.BondRewardRune = network.BondRewardRune.Add(emissionBonderShare).Add(nativeBonderShare)
 	} else {
 		network.BondRewardRune = network.BondRewardRune.Add(bondReward)
 	}

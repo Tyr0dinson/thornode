@@ -64,5 +64,6 @@ func (d DummySlasher) DecSlashPoints(ctx cosmos.Context, point int64, addresses 
 	}
 }
 
-func (d DummySlasher) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain common.Chain, nonSigners []cosmos.AccAddress, totalParticipants int) {
+func (d DummySlasher) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain common.Chain, nonSigners []cosmos.AccAddress, totalParticipants int) error {
+	return nil
 }

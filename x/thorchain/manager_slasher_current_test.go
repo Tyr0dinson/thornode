@@ -1500,11 +1500,25 @@ func (k *TestForfeitChainIncomeKeeper) AddChainIncome(_ cosmos.Context, chain co
 }
 
 func (k *TestForfeitChainIncomeKeeper) GetNetwork(_ cosmos.Context) (Network, error) {
-	return k.network, nil
+	// Project chainIncomes onto network.ChainIncome so the test setup
+	// (which seeds k.chainIncomes directly) is visible to the read-modify-
+	// write path inside ForfeitChainIncomeForNonSigners.
+	out := k.network
+	out.ChainIncome = nil
+	for chain, amount := range k.chainIncomes {
+		out.ChainIncome = append(out.ChainIncome, ChainIncome{Chain: chain, Amount: amount})
+	}
+	return out, nil
 }
 
 func (k *TestForfeitChainIncomeKeeper) SetNetwork(_ cosmos.Context, network Network) error {
 	k.network = network
+	if k.chainIncomes == nil {
+		k.chainIncomes = make(map[string]cosmos.Uint)
+	}
+	for _, ci := range network.ChainIncome {
+		k.chainIncomes[ci.Chain] = ci.Amount
+	}
 	return nil
 }
 

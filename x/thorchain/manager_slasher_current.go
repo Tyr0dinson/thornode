@@ -950,24 +950,40 @@ func (s *SlasherImpl) DecSlashPoints(ctx cosmos.Context, point int64, addresses 
 // pass) so we avoid re-fetching vault membership on the hot consensus path.
 // A zero totalParticipants means the chain has no vault participants and no
 // pro-rata accounting is possible; the call becomes a no-op.
-func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain common.Chain, nonSigners []cosmos.AccAddress, totalParticipants int) {
+func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain common.Chain, nonSigners []cosmos.AccAddress, totalParticipants int) error {
 	if len(nonSigners) == 0 || totalParticipants == 0 {
-		return
+		return nil
 	}
 
-	chainIncome, err := s.keeper.GetChainIncome(ctx, chain)
+	// Read Network once and mutate ChainIncome + BondRewardRune in memory,
+	// then SetNetwork once. The forfeiture and the BondRewardRune credit are
+	// logically a single atomic operation; doing it as one read-modify-write
+	// avoids leaving the chain bucket zeroed without a matching credit if an
+	// intermediate step fails. The returned error propagates to the caller's
+	// CacheContext so partial state never commits.
+	network, err := s.keeper.GetNetwork(ctx)
 	if err != nil {
-		ctx.Logger().Error("fail to get chain income for forfeiture", "chain", chain, "error", err)
-		return
+		return fmt.Errorf("fail to get network for forfeiture: %w", err)
+	}
+
+	chainStr := chain.String()
+	chainIncome := cosmos.ZeroUint()
+	idx := -1
+	for i, ci := range network.ChainIncome {
+		if ci.Chain == chainStr {
+			chainIncome = ci.Amount
+			idx = i
+			break
+		}
 	}
 	if chainIncome.IsZero() {
-		return
+		return nil
 	}
 
 	totalParticipantsU := cosmos.NewUint(uint64(totalParticipants))
 	perNodeShare := chainIncome.Quo(totalParticipantsU)
 	if perNodeShare.IsZero() {
-		return
+		return nil
 	}
 
 	totalForfeiture := perNodeShare.MulUint64(uint64(len(nonSigners)))
@@ -975,29 +991,12 @@ func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain 
 		totalForfeiture = chainIncome
 	}
 
-	// Deduct forfeited amount from chain income bucket.
 	remainder := common.SafeSub(chainIncome, totalForfeiture)
-	if zeroErr := s.keeper.ZeroChainIncome(ctx, chain); zeroErr != nil {
-		ctx.Logger().Error("fail to zero chain income for forfeiture", "chain", chain, "error", zeroErr)
-		return
-	}
-	if !remainder.IsZero() {
-		if addErr := s.keeper.AddChainIncome(ctx, chain, remainder); addErr != nil {
-			ctx.Logger().Error("fail to restore chain income remainder", "chain", chain, "error", addErr)
-			return
-		}
-	}
-
-	// Move forfeited amount to global reserve reward bucket.
-	network, err := s.keeper.GetNetwork(ctx)
-	if err != nil {
-		ctx.Logger().Error("fail to get network for forfeiture", "error", err)
-		return
-	}
+	network.ChainIncome[idx].Amount = remainder
 	network.BondRewardRune = network.BondRewardRune.Add(totalForfeiture)
+
 	if err := s.keeper.SetNetwork(ctx, network); err != nil {
-		ctx.Logger().Error("fail to set network for forfeiture", "error", err)
-		return
+		return fmt.Errorf("fail to set network for forfeiture: %w", err)
 	}
 
 	ctx.Logger().Debug("chain income forfeited for non-signers",
@@ -1006,6 +1005,7 @@ func (s *SlasherImpl) ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain 
 		"participants", totalParticipants,
 		"forfeited", totalForfeiture,
 	)
+	return nil
 }
 
 // updatePoolFromSlash updates a pool's depths and emits appropriate events after a slash

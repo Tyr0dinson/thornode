@@ -210,7 +210,7 @@ type Slasher interface {
 	SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins common.Coins, mgr Manager) error
 	IncSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress)
 	DecSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress)
-	ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain common.Chain, nonSigners []cosmos.AccAddress, totalParticipants int)
+	ForfeitChainIncomeForNonSigners(ctx cosmos.Context, chain common.Chain, nonSigners []cosmos.AccAddress, totalParticipants int) error
 }
 
 // Though Swapper is not a full manager, it is recorded here for versioning convenience.

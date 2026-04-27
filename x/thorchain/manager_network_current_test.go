@@ -3202,6 +3202,94 @@ func (s *NetworkManagerTestSuite) TestBondInvariantWithNativePoolFees(c *C) {
 	checkBondInvariant(200)
 }
 
+// TestNativePoolFeesNotAbsorbedByLastChain asserts that when both layer-1
+// pools and a native pool generate fees in the same block, the native-pool
+// share of the bonder fee is folded into BondRewardRune, not absorbed by the
+// alphabetically-last layer-1 chain via the remainder-to-last pattern.
+func (s *NetworkManagerTestSuite) TestNativePoolFeesNotAbsorbedByLastChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	k := mgr.Keeper()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	FundModule(c, ctx, k, ReserveName, 100_000*common.One)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	FundModule(c, ctx, k, BondName, 1000*common.One)
+
+	// Two layer-1 pools that will receive non-zero fees, plus a native
+	// (RUNE) pool whose fees enter totalLiquidityFees but not chainFeeMap.
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(500 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(500 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(500 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(500 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	runePool := NewPool()
+	runePool.Asset = common.RuneAsset()
+	runePool.BalanceRune = cosmos.NewUint(100 * common.One)
+	runePool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	runePool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, runePool), IsNil)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	ctx = ctx.WithBlockHeight(1)
+	c.Assert(k.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300)), IsNil)
+	c.Assert(k.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100)), IsNil)
+	c.Assert(k.AddToLiquidityFees(ctx, common.RuneAsset(), cosmos.NewUint(600)), IsNil)
+
+	bondRewardBefore := cosmos.ZeroUint()
+	if net, err := k.GetNetwork(ctx); err == nil {
+		bondRewardBefore = net.BondRewardRune
+	}
+
+	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+
+	chainAmount := func(chain common.Chain) cosmos.Uint {
+		for _, ci := range network.ChainIncome {
+			if ci.Chain == chain.String() {
+				return ci.Amount
+			}
+		}
+		return cosmos.ZeroUint()
+	}
+
+	btcShare := chainAmount(common.BTCChain)
+	ethShare := chainAmount(common.ETHChain)
+
+	// BTC and ETH should split the layer-1 portion 3:1 (fees 300:100).
+	// ETH must NOT absorb the native (RUNE) pool's share via remainder-to-last.
+	// Concretely: ethShare must be <= 1.5 * btcShare to fail loudly if the
+	// remainder-to-last bug regresses (under the bug, ETH would receive the
+	// entire native share, dwarfing BTC).
+	c.Assert(btcShare.IsZero(), Equals, false, Commentf("BTC chain should receive a non-zero share"))
+	c.Assert(ethShare.LTE(btcShare), Equals, true,
+		Commentf("ETH share (%s) must not exceed BTC share (%s) — regression of native-pool absorption bug", ethShare, btcShare))
+
+	// And BondRewardRune should have grown beyond just the emission share —
+	// it must include the native-pool fee portion of feeBonderShare.
+	c.Assert(network.BondRewardRune.GT(bondRewardBefore), Equals, true,
+		Commentf("BondRewardRune should grow by emission + native-pool bonder share"))
+}
+
 func (s *NetworkManagerTestSuite) TestBondInvariantFullChurnCycle(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ver := GetCurrentVersion()

@@ -172,20 +172,22 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 		}
 	}
 
-	if !target.IsSyntheticAsset() && !target.IsTradeAsset() && !target.IsSecuredAsset() {
-		capChain := target.GetLayer1Asset().GetChain()
+	// The chain liquidity cap gates inflow to a layer-1 vault. Apply it to the
+	// source side (the chain whose vault is credited by this swap), not the
+	// target side (the chain whose vault is debited). Skip when the source
+	// is RUNE / synth / trade / secured, since none of those credit a
+	// layer-1 vault.
+	if len(msg.Tx.Coins) > 0 && !sourceCoin.Asset.IsSyntheticAsset() && !sourceCoin.Asset.IsTradeAsset() && !sourceCoin.Asset.IsSecuredAsset() {
+		capChain := sourceCoin.Asset.GetLayer1Asset().GetChain()
 		if !capChain.Equals(common.THORChain) {
 			if capErr := validateActiveAsgardExists(ctx, h.mgr, capChain); capErr != nil {
 				return capErr
 			}
-			runeVal := sourceCoin.Amount
-			if !sourceCoin.IsRune() {
-				pool, err := h.mgr.Keeper().GetPool(ctx, sourceCoin.Asset.GetLayer1Asset())
-				if err != nil {
-					return ErrInternal(err, "fail to get pool for chain liquidity cap")
-				}
-				runeVal = pool.AssetValueInRune(sourceCoin.Amount)
+			pool, err := h.mgr.Keeper().GetPool(ctx, sourceCoin.Asset.GetLayer1Asset())
+			if err != nil {
+				return ErrInternal(err, "fail to get pool for chain liquidity cap")
 			}
+			runeVal := pool.AssetValueInRune(sourceCoin.Amount)
 			if capErr := validateChainLiquidityCap(ctx, h.mgr, capChain, runeVal); capErr != nil {
 				return capErr
 			}

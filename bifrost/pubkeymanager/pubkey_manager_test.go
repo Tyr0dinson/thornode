@@ -552,9 +552,10 @@ func (s *PubKeyMgrSuite) TestGetSupportedChainsNoMembership(c *C) {
 	c.Assert(err, IsNil)
 	pubkeyMgr.AddNodePubKey(nodePk, common.SigningAlgoSecp256k1)
 
-	// No membership in any vault → fallback to AllChains
+	// No membership in any vault — opt-in design: a retired/standby node
+	// must not resume observing every chain. Returns empty.
 	chains := pubkeyMgr.GetSupportedChains()
-	c.Assert(len(chains), Equals, len(common.AllChains))
+	c.Assert(len(chains), Equals, 0)
 }
 
 func (s *PubKeyMgrSuite) TestGetSupportedChainsNoNodePubKey(c *C) {

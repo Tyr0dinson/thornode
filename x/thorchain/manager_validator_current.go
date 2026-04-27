@@ -949,21 +949,28 @@ func (vm *ValidatorMgr) distributeChainBondRewards(ctx cosmos.Context, mgr Manag
 			continue
 		}
 
-		var distributed cosmos.Uint
-		distributed, err = vm.distributeChainIncome(ctx, mgr, chain, ci.Amount)
-		if err != nil {
-			resultErr = errors.Join(resultErr, err)
-			ctx.Logger().Error("fail to distribute chain income", "chain", chain, "error", err)
+		// Each chain's distribute + zero pair must be atomic. EndBlock is
+		// not wrapped in a CacheContext by the module dispatcher, so without
+		// this guard a ZeroChainIncome failure after distributeChainIncome
+		// already credited node bonds would leave the bucket populated and
+		// re-distribute on the next churn (double-pay).
+		cacheCtx, commit := ctx.CacheContext()
+		distributed, distErr := vm.distributeChainIncome(cacheCtx, mgr, chain, ci.Amount)
+		if distErr != nil {
+			resultErr = errors.Join(resultErr, distErr)
+			ctx.Logger().Error("fail to distribute chain income", "chain", chain, "error", distErr)
 			continue
 		}
+		if zeroErr := vm.k.ZeroChainIncome(cacheCtx, chain); zeroErr != nil {
+			resultErr = errors.Join(resultErr, zeroErr)
+			ctx.Logger().Error("fail to zero chain income — rolling back distribution", "chain", chain, "error", zeroErr)
+			continue
+		}
+		commit()
 
 		undistributed := common.SafeSub(ci.Amount, distributed)
 		if !undistributed.IsZero() {
 			totalUndistributed = totalUndistributed.Add(undistributed)
-		}
-
-		if zeroErr := vm.k.ZeroChainIncome(ctx, chain); zeroErr != nil {
-			resultErr = errors.Join(resultErr, zeroErr)
 		}
 	}
 
@@ -1052,7 +1059,14 @@ func (vm *ValidatorMgr) distributeChainIncome(ctx cosmos.Context, mgr Manager, c
 }
 
 func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeAccount, reward cosmos.Uint, chain common.Chain) error {
-	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
+	// Wrap the full payout in a CacheContext so SetNodeAccount and
+	// SetBondProviders only commit if SendFromModuleToAccount also succeeds.
+	// Without this, a late-stage send failure would leave bp.Bond reflecting
+	// an operator-fee unbond with no matching cash transfer, breaking the
+	// invariant sum(bp.Bond) + module_balance.
+	cacheCtx, commit := ctx.CacheContext()
+
+	bp, err := vm.k.GetBondProviders(cacheCtx, na.NodeAddress)
 	if err != nil {
 		return fmt.Errorf("fail to get bond providers(%s): %w", na.NodeAddress, err)
 	}
@@ -1060,7 +1074,7 @@ func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeA
 	if err != nil {
 		return fmt.Errorf("fail to parse bond address(%s): %w", na.BondAddress, err)
 	}
-	if err := passiveBackfill(ctx, mgr, na, &bp); err != nil {
+	if err := passiveBackfill(cacheCtx, mgr, na, &bp); err != nil {
 		return err
 	}
 	bp.Adjust(na.Bond)
@@ -1084,29 +1098,31 @@ func (vm *ValidatorMgr) payChainReward(ctx cosmos.Context, mgr Manager, na NodeA
 		bp.Unbond(nodeOperatorFees, nodeOperatorAccAddr)
 	}
 
-	if err := vm.k.SetNodeAccount(ctx, na); err != nil {
+	if err := vm.k.SetNodeAccount(cacheCtx, na); err != nil {
 		return fmt.Errorf("fail to save node account: %w", err)
 	}
-	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+	if err := mgr.Keeper().SetBondProviders(cacheCtx, bp); err != nil {
 		return fmt.Errorf("fail to save bond providers(%s): %w", bp.NodeAddress, err)
 	}
 	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
 	bondRewardEvent.RewardChain = chain.String()
-	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
+	if err := mgr.EventMgr().EmitEvent(cacheCtx, bondRewardEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 
 	if !nodeOperatorFees.IsZero() {
 		coin := common.NewCoin(common.RuneNative, nodeOperatorFees)
-		if sdkErr := vm.k.SendFromModuleToAccount(ctx, BondName, nodeOperatorAccAddr, common.NewCoins(coin)); sdkErr != nil {
+		if sdkErr := vm.k.SendFromModuleToAccount(cacheCtx, BondName, nodeOperatorAccAddr, common.NewCoins(coin)); sdkErr != nil {
 			return fmt.Errorf("fail to send node operator fees: %w", sdkErr)
 		}
 
 		bondReturnedEvent := NewEventBond(nodeOperatorFees, BondReturned, common.Tx{}, &na, nodeOperatorAccAddr)
-		if err := mgr.EventMgr().EmitEvent(ctx, bondReturnedEvent); err != nil {
+		if err := mgr.EventMgr().EmitEvent(cacheCtx, bondReturnedEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)
 		}
 	}
+
+	commit()
 	return nil
 }
 

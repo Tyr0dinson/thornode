@@ -74,7 +74,9 @@ func processTxInAttestation(
 			nonSigners, totalParticipants := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants)
+			if err := slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants); err != nil {
+				ctx.Logger().Error("fail to forfeit chain income for non-signers", "chain", tx.Tx.Chain, "error", err)
+			}
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&
@@ -438,7 +440,9 @@ func processTxOutAttestation(
 			nonSigners, totalParticipants := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants)
+			if err := slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants); err != nil {
+				ctx.Logger().Error("fail to forfeit chain income for non-signers", "chain", tx.Tx.Chain, "error", err)
+			}
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.Tx.EqualsEx(tx.Tx) &&

@@ -1807,6 +1807,25 @@ func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Cha
 			memberSet[pk.String()] = struct{}{}
 		}
 	}
+	// Union retiring vault members for the chain so the denominator stays
+	// stable across churn windows, matching getChainConsensusParticipants.
+	// Counting active vaults alone can yield validatorsForChain == 0
+	// mid-churn (when only retiring members remain) and would silently
+	// bypass the cap. If the retiring lookup fails we log and continue with
+	// the active set rather than rejecting the inbound — the cap is a
+	// safety floor, not an exact accounting requirement.
+	if retiringVaults, retErr := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault); retErr == nil {
+		for _, vault := range retiringVaults {
+			if !vault.GetChains().Has(chain) {
+				continue
+			}
+			for _, pk := range vault.GetMembership() {
+				memberSet[pk.String()] = struct{}{}
+			}
+		}
+	} else {
+		ctx.Logger().Debug("fail to load retiring vaults for chain liquidity cap; using active-only denominator", "chain", chain, "error", retErr)
+	}
 	validatorsForChain := int64(len(memberSet))
 
 	if validatorsForChain == 0 {
