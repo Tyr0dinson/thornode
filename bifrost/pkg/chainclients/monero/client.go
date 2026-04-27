@@ -1601,9 +1601,6 @@ func (c *Client) outgoingInventoryNeedsReplay(vaultPubKey string, refs []xmrOutg
 	removeSet := make(map[string]struct{})
 	needsReplay := false
 	for _, record := range state.Outgoing {
-		if !record.isObservedMined() {
-			continue
-		}
 		txHash := strings.ToLower(strings.TrimSpace(record.TxHash))
 		if txHash == "" {
 			continue
@@ -1611,6 +1608,9 @@ func (c *Client) outgoingInventoryNeedsReplay(vaultPubKey string, refs []xmrOutg
 		localKeys := normalizeTxKeyValues(record.TxKeys)
 		wantKeys, ok := wanted[txHash]
 		if !ok {
+			continue
+		}
+		if !record.RegisteredInventory {
 			continue
 		}
 		if len(localKeys) == 0 {

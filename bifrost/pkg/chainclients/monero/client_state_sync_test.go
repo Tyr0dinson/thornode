@@ -179,6 +179,50 @@ func TestTxKeyCatchupNeedsReplayReturnsSignerError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestTxKeyCatchupNeedsReplayAcceptsRegisteredInventoryBeforeMined(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("a", 64)
+	txKey := strings.Repeat("1", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+vaultPubKey.String():
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:              txHash,
+					TxKeys:              []string{txKey},
+					RegisteredInventory: true,
+					Status:              xmrFrostOutgoingStatusObservedMempool,
+				}},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	stateCheck, err := client.outgoingInventoryNeedsReplay(vaultPubKey.String(), []xmrOutgoingInventoryRef{{
+		txHash: txHash,
+		txKeys: []string{txKey},
+	}})
+	require.NoError(t, err)
+	assert.False(t, stateCheck.needsReplay)
+	assert.Empty(t, stateCheck.removeHashes)
+}
+
 func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing.T) {
 	t.Parallel()
 
