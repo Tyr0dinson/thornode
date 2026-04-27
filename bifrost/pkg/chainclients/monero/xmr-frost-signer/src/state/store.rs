@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -60,6 +61,36 @@ pub enum OutputState {
 impl Default for OutputState {
     fn default() -> Self {
         OutputState::Unspent
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum OutgoingTransferStatus {
+    SignedPendingObservation,
+    AttestedPendingObservation,
+    ObservedMempool,
+    ObservedMined,
+}
+
+impl OutgoingTransferStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SignedPendingObservation => "signed_pending_observation",
+            Self::AttestedPendingObservation => "attested_pending_observation",
+            Self::ObservedMempool => "observed_mempool",
+            Self::ObservedMined => "observed_mined",
+        }
+    }
+
+    pub const fn is_observed_mined(self) -> bool {
+        matches!(self, Self::ObservedMined)
+    }
+}
+
+impl fmt::Display for OutgoingTransferStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -179,6 +210,12 @@ pub struct OutgoingTransferRecord {
     pub tx_keys: Vec<String>,
     #[serde(default)]
     pub registered_inventory: bool,
+    #[serde(default)]
+    pub has_owned_change: Option<bool>,
+    #[serde(default)]
+    pub local_change_materialized: Option<bool>,
+    #[serde(default)]
+    pub key_images_ready: Option<bool>,
     pub msg_id: String,
     pub vault_pub_key: String,
     pub from_address: String,
@@ -188,7 +225,7 @@ pub struct OutgoingTransferRecord {
     pub memo: String,
     pub planned_height: u64,
     pub observed_height: Option<u64>,
-    pub status: String,
+    pub status: OutgoingTransferStatus,
     pub broadcasted_at: Option<i64>,
     pub observed_at: Option<i64>,
     #[serde(default)]
@@ -197,11 +234,22 @@ pub struct OutgoingTransferRecord {
 }
 
 impl OutgoingTransferRecord {
+    pub fn effective_height(&self) -> u64 {
+        self.observed_height.unwrap_or(self.planned_height)
+    }
+
+    pub fn is_observed_mined(&self) -> bool {
+        self.status.is_observed_mined()
+    }
+
     fn same_outbound_as(&self, other: &Self) -> bool {
         self.tx_hash == other.tx_hash
             && self.tx_hex == other.tx_hex
             && self.tx_keys == other.tx_keys
             && self.registered_inventory == other.registered_inventory
+            && self.has_owned_change == other.has_owned_change
+            && self.local_change_materialized == other.local_change_materialized
+            && self.key_images_ready == other.key_images_ready
             && self.msg_id == other.msg_id
             && self.vault_pub_key == other.vault_pub_key
             && self.from_address == other.from_address
@@ -507,24 +555,6 @@ impl Store {
         }
     }
 
-    pub fn remove_vault_if_mapping_matches(
-        &self,
-        vault_pub_key: &str,
-        group_key: &str,
-        address: &str,
-    ) -> Result<()> {
-        let tree = self.db.open_tree("vaults")?;
-        let Some(raw) = tree.get(vault_pub_key.as_bytes())? else {
-            return Ok(());
-        };
-        let existing: VaultRecord = serde_json::from_slice(&raw)?;
-        if existing.group_key == group_key && existing.address == address {
-            tree.remove(vault_pub_key.as_bytes())?;
-            tree.flush()?;
-        }
-        Ok(())
-    }
-
     pub fn delete_vault(&self, vault_pub_key: &str) -> Result<bool> {
         let tree = self.db.open_tree("vaults")?;
         let removed = tree.remove(vault_pub_key.as_bytes())?.is_some();
@@ -780,9 +810,7 @@ impl Store {
                     // bound key_image was proven via FROST ceremony or
                     // validated peer attestation and is authoritative even
                     // before THORChain vault metadata has caught up.
-                    if output.spent_by_key_image_height
-                        == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
-                    {
+                    if output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT) {
                         output.spent_by_key_image_height = None;
                         if output.state == OutputState::Spent {
                             output.state = OutputState::Unspent;
@@ -867,9 +895,6 @@ impl Store {
     pub fn save_outgoing_transfer(&self, record: &OutgoingTransferRecord) -> Result<()> {
         if record.msg_id.trim().is_empty() {
             anyhow::bail!("outgoing transfer msg_id must not be empty");
-        }
-        if record.status.trim().is_empty() {
-            anyhow::bail!("outgoing transfer status must not be empty");
         }
         let tree = self.db.open_tree("outgoing_transfers")?;
         let key = format!("{}:{}", record.vault_pub_key, record.tx_hash);
@@ -962,7 +987,7 @@ impl Store {
             if normalized_hash.is_empty() || !tx_hashes.contains(&normalized_hash) {
                 continue;
             }
-            if observed_mined_only && !record.status.eq_ignore_ascii_case("observed_mined") {
+            if observed_mined_only && !record.status.is_observed_mined() {
                 continue;
             }
             if tx_key_backed_only && record.tx_keys.is_empty() {
@@ -997,7 +1022,7 @@ impl Store {
         &self,
         vault_pub_key: &str,
         tx_hash: &str,
-        status: &str,
+        status: OutgoingTransferStatus,
         observed_height: Option<u64>,
         observed_at: Option<i64>,
         broadcasted_at: Option<i64>,
@@ -1008,9 +1033,9 @@ impl Store {
             return Ok(());
         };
         let mut record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
-        let previous_status = record.status.clone();
-        let previous_effective_height = record.observed_height.unwrap_or(record.planned_height);
-        record.status = status.to_string();
+        let previous_status = record.status;
+        let previous_effective_height = record.effective_height();
+        record.status = status;
         if observed_height.is_some() {
             record.observed_height = observed_height;
         }
@@ -1020,9 +1045,9 @@ impl Store {
         if broadcasted_at.is_some() {
             record.broadcasted_at = broadcasted_at;
         }
-        let effective_height = record.observed_height.unwrap_or(record.planned_height);
-        if !record.status.eq_ignore_ascii_case("observed_mined")
-            || !previous_status.eq_ignore_ascii_case(&record.status)
+        let effective_height = record.effective_height();
+        if !record.status.is_observed_mined()
+            || previous_status != record.status
             || previous_effective_height != effective_height
         {
             record.reported_effective_height = None;
@@ -1038,6 +1063,7 @@ impl Store {
         tx_hash: &str,
         tx_keys: &[String],
         registered_inventory: bool,
+        has_owned_change: Option<bool>,
         from_address: &str,
         memo: &str,
     ) -> Result<()> {
@@ -1053,12 +1079,43 @@ impl Store {
         if registered_inventory {
             record.registered_inventory = true;
         }
+        if let Some(has_owned_change) = has_owned_change {
+            if let Some(existing) = record.has_owned_change {
+                if existing != has_owned_change {
+                    anyhow::bail!(
+                        "existing outgoing transfer for {} has conflicting owned-change attribution",
+                        tx_hash
+                    );
+                }
+            }
+            record.has_owned_change = Some(has_owned_change);
+        }
         if !from_address.trim().is_empty() {
             record.from_address = from_address.trim().to_string();
         }
         if !memo.trim().is_empty() {
             record.memo = memo.trim().to_string();
         }
+        tree.insert(key.as_bytes(), serde_json::to_vec(&record)?)?;
+        tree.flush()?;
+        Ok(())
+    }
+
+    pub fn update_outgoing_transfer_readiness(
+        &self,
+        vault_pub_key: &str,
+        tx_hash: &str,
+        local_change_materialized: Option<bool>,
+        key_images_ready: Option<bool>,
+    ) -> Result<()> {
+        let tree = self.db.open_tree("outgoing_transfers")?;
+        let key = format!("{}:{}", vault_pub_key, tx_hash);
+        let Some(raw) = tree.get(key.as_bytes())? else {
+            return Ok(());
+        };
+        let mut record: OutgoingTransferRecord = serde_json::from_slice(&raw)?;
+        record.local_change_materialized = local_change_materialized;
+        record.key_images_ready = key_images_ready;
         tree.insert(key.as_bytes(), serde_json::to_vec(&record)?)?;
         tree.flush()?;
         Ok(())
@@ -1635,12 +1692,16 @@ impl Store {
         Ok(Some(meta))
     }
 
-    pub fn delete_scan_block_meta(&self, vault_pub_key: &str, height: u64) -> Result<()> {
+    pub fn list_scan_block_meta(&self, vault_pub_key: &str) -> Result<Vec<ScanBlockMeta>> {
         let tree = self.db.open_tree("scan_block_meta")?;
-        let key = Self::scan_block_meta_key(vault_pub_key, height);
-        tree.remove(key.as_bytes())?;
-        tree.flush()?;
-        Ok(())
+        let prefix = format!("{vault_pub_key}:");
+        let mut metas = Vec::new();
+        for item in tree.scan_prefix(prefix.as_bytes()) {
+            let (_, value) = item?;
+            metas.push(serde_json::from_slice(&value)?);
+        }
+        metas.sort_by_key(|meta: &ScanBlockMeta| meta.height);
+        Ok(metas)
     }
 
     pub fn rollback_scan_state_from_height(
@@ -1854,8 +1915,7 @@ mod tests {
 
         let path = dir.path().join("keys").join("vault-tamper.frost");
         let mut raw = std::fs::read(&path).unwrap();
-        let last = raw.len() - 1;
-        raw[last] ^= 0x01;
+        raw.pop();
         std::fs::write(&path, raw).unwrap();
 
         let reopened = Store::open(dir.path());
@@ -1930,6 +1990,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
             registered_inventory: true,
+            has_owned_change: Some(false),
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault".to_string(),
             from_address: "48from".to_string(),
@@ -1939,7 +2002,7 @@ mod tests {
             memo: "OUT:ABC".to_string(),
             planned_height: 12,
             observed_height: Some(12),
-            status: "observed_mined".to_string(),
+            status: OutgoingTransferStatus::ObservedMined,
             broadcasted_at: Some(123),
             observed_at: Some(123),
             reported_effective_height: None,
@@ -1994,6 +2057,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
             registered_inventory: true,
+            has_owned_change: None,
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault".to_string(),
             from_address: "48from".to_string(),
@@ -2003,7 +2069,7 @@ mod tests {
             memo: "OUT:ABC".to_string(),
             planned_height: 12,
             observed_height: None,
-            status: "signed_pending_observation".to_string(),
+            status: OutgoingTransferStatus::SignedPendingObservation,
             broadcasted_at: None,
             observed_at: None,
             reported_effective_height: None,
@@ -2014,6 +2080,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
             registered_inventory: true,
+            has_owned_change: None,
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg2".to_string(),
             vault_pub_key: "thorpub1vault".to_string(),
             from_address: "48from".to_string(),
@@ -2023,7 +2092,7 @@ mod tests {
             memo: "OUT:DEF".to_string(),
             planned_height: 12,
             observed_height: None,
-            status: "signed_pending_observation".to_string(),
+            status: OutgoingTransferStatus::SignedPendingObservation,
             broadcasted_at: None,
             observed_at: None,
             reported_effective_height: None,
@@ -2054,6 +2123,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
             registered_inventory: true,
+            has_owned_change: None,
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: "48from-a".to_string(),
@@ -2063,7 +2135,7 @@ mod tests {
             memo: "OUT:ABC".to_string(),
             planned_height: 12,
             observed_height: Some(12),
-            status: "observed_mined".to_string(),
+            status: OutgoingTransferStatus::ObservedMined,
             broadcasted_at: None,
             observed_at: None,
             reported_effective_height: None,
@@ -2074,6 +2146,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["22".repeat(32)],
             registered_inventory: true,
+            has_owned_change: None,
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg2".to_string(),
             vault_pub_key: "thorpub1vault-b".to_string(),
             from_address: "48from-b".to_string(),
@@ -2083,7 +2158,7 @@ mod tests {
             memo: "OUT:DEF".to_string(),
             planned_height: 14,
             observed_height: Some(14),
-            status: "observed_mined".to_string(),
+            status: OutgoingTransferStatus::ObservedMined,
             broadcasted_at: None,
             observed_at: None,
             reported_effective_height: None,
@@ -2115,6 +2190,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
             registered_inventory: true,
+            has_owned_change: Some(true),
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: "48from-a".to_string(),
@@ -2124,7 +2202,7 @@ mod tests {
             memo: "OUT:ABC".to_string(),
             planned_height: 12,
             observed_height: Some(12),
-            status: "observed_mined".to_string(),
+            status: OutgoingTransferStatus::ObservedMined,
             broadcasted_at: None,
             observed_at: None,
             reported_effective_height: None,
@@ -2162,6 +2240,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec!["11".repeat(32)],
             registered_inventory: true,
+            has_owned_change: Some(false),
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: "48from-a".to_string(),
@@ -2171,7 +2252,7 @@ mod tests {
             memo: "OUT:ABC".to_string(),
             planned_height: 12,
             observed_height: Some(12),
-            status: "observed_mined".to_string(),
+            status: OutgoingTransferStatus::ObservedMined,
             broadcasted_at: None,
             observed_at: None,
             reported_effective_height: None,
@@ -2184,7 +2265,7 @@ mod tests {
         let mut third = first.clone();
         third.tx_hash = "hash3".to_string();
         third.msg_id = "msg3".to_string();
-        third.status = "signed_pending_observation".to_string();
+        third.status = OutgoingTransferStatus::SignedPendingObservation;
 
         store.save_outgoing_transfer(&first).unwrap();
         store.save_outgoing_transfer(&second).unwrap();
@@ -2223,6 +2304,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec![],
             registered_inventory: false,
+            has_owned_change: None,
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg1".to_string(),
             vault_pub_key: "thorpub1vault-a".to_string(),
             from_address: String::new(),
@@ -2232,7 +2316,7 @@ mod tests {
             memo: String::new(),
             planned_height: 12,
             observed_height: None,
-            status: "signed_pending_observation".to_string(),
+            status: OutgoingTransferStatus::SignedPendingObservation,
             broadcasted_at: None,
             observed_at: None,
             reported_effective_height: None,
@@ -2246,6 +2330,7 @@ mod tests {
                 "hash1",
                 &["11".repeat(32)],
                 true,
+                Some(true),
                 "48from-a",
                 "OUT:ABC",
             )
@@ -2253,6 +2338,7 @@ mod tests {
 
         record.tx_keys = vec!["11".repeat(32)];
         record.registered_inventory = true;
+        record.has_owned_change = Some(true);
         record.from_address = "48from-a".to_string();
         record.memo = "OUT:ABC".to_string();
 
@@ -2261,6 +2347,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(loaded.tx_keys, record.tx_keys);
+        assert_eq!(loaded.has_owned_change, record.has_owned_change);
         assert_eq!(loaded.from_address, record.from_address);
         assert_eq!(loaded.memo, record.memo);
     }

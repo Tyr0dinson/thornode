@@ -22,6 +22,13 @@ var ErrFrostUnavailableBlock = errors.New("frost chain block unavailable")
 
 const maxFrostResponseBytes = 10 * 1024 * 1024
 
+const (
+	xmrFrostOutgoingStatusSignedPending   = "signed_pending_observation"
+	xmrFrostOutgoingStatusAttestedPending = "attested_pending_observation"
+	xmrFrostOutgoingStatusObservedMempool = "observed_mempool"
+	xmrFrostOutgoingStatusObservedMined   = "observed_mined"
+)
+
 // FrostSigner is the HTTP client for the xmr-frost-signer sidecar.
 type FrostSigner struct {
 	endpoint string
@@ -338,6 +345,9 @@ type xmrFrostOutgoingTransferStateEntry struct {
 	TxHash                  string   `json:"tx_hash"`
 	TxKeys                  []string `json:"tx_keys,omitempty"`
 	RegisteredInventory     bool     `json:"registered_inventory"`
+	HasOwnedChange          *bool    `json:"has_owned_change,omitempty"`
+	LocalChangeMaterialized *bool    `json:"local_change_materialized,omitempty"`
+	KeyImagesReady          *bool    `json:"key_images_ready,omitempty"`
 	FromAddress             string   `json:"from_address"`
 	ToAddress               string   `json:"to_address"`
 	Amount                  uint64   `json:"amount"`
@@ -346,8 +356,61 @@ type xmrFrostOutgoingTransferStateEntry struct {
 	PlannedHeight           uint64   `json:"planned_height"`
 	ObservedHeight          *uint64  `json:"observed_height,omitempty"`
 	Status                  string   `json:"status"`
+	PendingReason           string   `json:"pending_reason,omitempty"`
 	ReportedEffectiveHeight *uint64  `json:"reported_effective_height,omitempty"`
 	CreatedAt               int64    `json:"created_at"`
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) normalizedStatus() string {
+	return strings.TrimSpace(e.Status)
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) isObservedMined() bool {
+	return strings.EqualFold(e.normalizedStatus(), xmrFrostOutgoingStatusObservedMined)
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) hasPendingLifecycle() bool {
+	if strings.TrimSpace(e.PendingReason) != "" {
+		return true
+	}
+	return !e.isObservedMined() || e.ReportedEffectiveHeight == nil
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) ownedChangeKnown() bool {
+	return e.HasOwnedChange != nil
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) hasOwnedChange() bool {
+	return e.HasOwnedChange != nil && *e.HasOwnedChange
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) localChangeMaterializedKnown() bool {
+	return e.LocalChangeMaterialized != nil
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) localChangeMaterialized() bool {
+	return e.LocalChangeMaterialized != nil && *e.LocalChangeMaterialized
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) keyImagesReadyKnown() bool {
+	return e.KeyImagesReady != nil
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) keyImagesReady() bool {
+	return e.KeyImagesReady != nil && *e.KeyImagesReady
+}
+
+func (e xmrFrostOutgoingTransferStateEntry) pendingLifecycleReason() string {
+	if reason := strings.TrimSpace(e.PendingReason); reason != "" {
+		return reason
+	}
+	if !e.isObservedMined() {
+		return "awaiting_chain_observation"
+	}
+	if e.ReportedEffectiveHeight == nil {
+		return "awaiting_finalized_observation"
+	}
+	return ""
 }
 
 type xmrFrostOutgoingTransfersStateResponse struct {
@@ -847,15 +910,6 @@ func (s *FrostSigner) RegisterVault(req xmrFrostRegisterVaultRequest) (xmrFrostR
 	var out xmrFrostRegisterVaultResponse
 	if err := s.call(http.MethodPost, s.registerPath, req, &out); err != nil {
 		return xmrFrostRegisterVaultResponse{}, fmt.Errorf("fail to call frost register vault endpoint: %w", err)
-	}
-	return out, nil
-}
-
-func (s *FrostSigner) GetTransfersByHeight(height int64) (xmrFrostTransfersResponse, error) {
-	var out xmrFrostTransfersResponse
-	path := fmt.Sprintf("%s?height=%d", s.transfersPath, height)
-	if err := s.callGet(path, &out); err != nil {
-		return xmrFrostTransfersResponse{}, fmt.Errorf("fail to call frost transfers endpoint: %w", err)
 	}
 	return out, nil
 }

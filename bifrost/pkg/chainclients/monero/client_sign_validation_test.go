@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -70,19 +71,37 @@ func TestValidateOutboundObservationCallsSidecar(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("a", 64)
+	noOwnedChange := false
 
-	var captured xmrFrostValidateOutboundRequest
+	var capturedPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/monero/outbounds/validate" {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+url.PathEscape(vaultPubKey.String()):
+			capturedPath = r.URL.Path
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:              txHash,
+					HasOwnedChange:      &noOwnedChange,
+					FromAddress:         common.Address(common.XMRChecksummedDummyAddress('4')).String(),
+					ToAddress:           testOutboundXMRDestination().String(),
+					Amount:              55 * moneroAtomicToThorchain,
+					Fee:                 3 * moneroAtomicToThorchain,
+					Memo:                "OUT:" + strings.Repeat("B", 64),
+					PlannedHeight:       100,
+					Status:              "observed_mined",
+					TxKeys:              []string{strings.Repeat("1", 64), strings.Repeat("2", 64)},
+					RegisteredInventory: true,
+				}},
+			})
+			return
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			t.Fatal("validate_outbound fallback should not be called")
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, Marked: 2})
 	}))
 	defer server.Close()
 
@@ -98,7 +117,7 @@ func TestValidateOutboundObservationCallsSidecar(t *testing.T) {
 
 	obsTx := common.NewObservedTx(
 		common.Tx{
-			ID:          common.TxID(strings.Repeat("a", 64)),
+			ID:          common.TxID(txHash),
 			Chain:       common.XMRChain,
 			FromAddress: common.Address(common.XMRChecksummedDummyAddress('4')),
 			ToAddress:   testOutboundXMRDestination(),
@@ -116,20 +135,8 @@ func TestValidateOutboundObservationCallsSidecar(t *testing.T) {
 		t.Fatalf("validate outbound observation: %v", err)
 	}
 
-	if captured.VaultPubKey != vaultPubKey.String() {
-		t.Fatalf("expected vault pubkey %s, got %s", vaultPubKey, captured.VaultPubKey)
-	}
-	if captured.TxHash != obsTx.Tx.ID.String() {
-		t.Fatalf("expected tx hash %s, got %s", obsTx.Tx.ID, captured.TxHash)
-	}
-	if len(captured.TxKeys) != 2 || captured.TxKeys[0] != obsTx.TxKeys[0] || captured.TxKeys[1] != obsTx.TxKeys[1] {
-		t.Fatalf("unexpected tx keys: %+v", captured.TxKeys)
-	}
-	if captured.Amount != 55*moneroAtomicToThorchain {
-		t.Fatalf("expected atomic amount %d, got %d", 55*moneroAtomicToThorchain, captured.Amount)
-	}
-	if captured.Fee != 3*moneroAtomicToThorchain {
-		t.Fatalf("expected atomic fee %d, got %d", 3*moneroAtomicToThorchain, captured.Fee)
+	if capturedPath != "/v1/monero/outbounds/"+url.PathEscape(vaultPubKey.String()) {
+		t.Fatalf("expected signer outgoing state lookup path for %s, got %s", vaultPubKey, capturedPath)
 	}
 }
 
@@ -138,19 +145,33 @@ func TestValidateOutboundObservationCanonicalizesVaultPubKeyForSidecarTxKeyAudit
 
 	observedVaultPubKey := common.PubKey("cthorpub1observedvault")
 	canonicalVaultPubKey := common.PubKey("cthorpub1canonicalvault")
+	txHash := strings.Repeat("c", 64)
+	noOwnedChange := false
 
-	var captured xmrFrostValidateOutboundRequest
+	var capturedPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
-			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: false, Marked: 0})
-		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
-			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+url.PathEscape(canonicalVaultPubKey.String()):
+			capturedPath = r.URL.Path
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: canonicalVaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:              txHash,
+					HasOwnedChange:      &noOwnedChange,
+					FromAddress:         common.Address(common.XMRChecksummedDummyAddress('4')).String(),
+					ToAddress:           testOutboundXMRDestination().String(),
+					Amount:              55 * moneroAtomicToThorchain,
+					Fee:                 3 * moneroAtomicToThorchain,
+					Memo:                "OUT:" + strings.Repeat("D", 64),
+					PlannedHeight:       100,
+					Status:              "observed_mined",
+					TxKeys:              []string{strings.Repeat("1", 64)},
+					RegisteredInventory: true,
+				}},
+			})
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			t.Fatal("validate_outbound fallback should not be called")
 		default:
 			http.NotFound(w, r)
 		}
@@ -182,7 +203,7 @@ func TestValidateOutboundObservationCanonicalizesVaultPubKeyForSidecarTxKeyAudit
 
 	obsTx := common.NewObservedTx(
 		common.Tx{
-			ID:          common.TxID(strings.Repeat("c", 64)),
+			ID:          common.TxID(txHash),
 			Chain:       common.XMRChain,
 			FromAddress: common.Address(common.XMRChecksummedDummyAddress('4')),
 			ToAddress:   testOutboundXMRDestination(),
@@ -199,8 +220,8 @@ func TestValidateOutboundObservationCanonicalizesVaultPubKeyForSidecarTxKeyAudit
 	if err := c.ValidateOutboundObservation(obsTx); err != nil {
 		t.Fatalf("validate outbound observation: %v", err)
 	}
-	if captured.VaultPubKey != canonicalVaultPubKey.String() {
-		t.Fatalf("expected canonical vault pubkey %s, got %s", canonicalVaultPubKey, captured.VaultPubKey)
+	if capturedPath != "/v1/monero/outbounds/"+url.PathEscape(canonicalVaultPubKey.String()) {
+		t.Fatalf("expected canonical vault lookup path %s, got %s", canonicalVaultPubKey, capturedPath)
 	}
 }
 
@@ -599,6 +620,58 @@ func TestShouldSweepXMRMigration(t *testing.T) {
 				t.Fatalf("expected %t, got %t", tc.expected, got)
 			}
 		})
+	}
+}
+
+func TestValidateXMRSignTxRejectsShortFinalMigrateBalance(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	amountAtomic := uint64(2 * moneroAtomicToThorchain)
+	maxGasAtomic := uint64(moneroAtomicToThorchain)
+	spendableAtomic := amountAtomic + (maxGasAtomic / 2)
+
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:          spendableAtomic,
+			UnlockedBalance:  spendableAtomic,
+			SpendableBalance: uint64Ptr(spendableAtomic),
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddr,
+		},
+	}
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        testOutboundXMRDestination(),
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyEddsa: vaultPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(2)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+		},
+		Memo: "MIGRATE:123",
+	}
+
+	_, err = c.validateXMRSignTx(tx, 100, true)
+	if err == nil {
+		t.Fatalf("expected short final migration balance to be rejected")
+	}
+	if !strings.Contains(err.Error(), "insufficient xmr balance") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

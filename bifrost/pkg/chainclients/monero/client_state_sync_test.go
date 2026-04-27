@@ -118,6 +118,67 @@ func TestSyncTrackedVaultRegistrationsRegistersNewVaultInRescanMode(t *testing.T
 	assert.Equal(t, 0, resetReqs, "bifrost must not call reset in the sync flow — sidecar defaults rescan=true on fresh register")
 }
 
+func TestTxKeyCatchupNeedsReplayUsesSignerOutgoingStateOnly(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("a", 64)
+	txKey := strings.Repeat("1", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+vaultPubKey.String():
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	stateCheck, err := client.outgoingInventoryNeedsReplay(vaultPubKey.String(), []xmrOutgoingInventoryRef{{
+		txHash: txHash,
+		txKeys: []string{txKey},
+	}})
+	require.NoError(t, err)
+	assert.True(t, stateCheck.needsReplay)
+	assert.Empty(t, stateCheck.removeHashes)
+}
+
+func TestTxKeyCatchupNeedsReplayReturnsSignerError(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+	}
+
+	_, err = client.outgoingInventoryNeedsReplay(vaultPubKey.String(), []xmrOutgoingInventoryRef{{
+		txHash: strings.Repeat("a", 64),
+		txKeys: []string{strings.Repeat("1", 64)},
+	}})
+	require.Error(t, err)
+}
+
 func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing.T) {
 	t.Parallel()
 

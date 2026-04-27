@@ -19,6 +19,10 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+func boolPtr(v bool) *bool {
+	return &v
+}
+
 func TestShouldReportSolvency(t *testing.T) {
 	c := &Client{
 		cfg:                     config.BifrostChainConfiguration{SolvencyBlocks: 10},
@@ -156,7 +160,7 @@ func TestXMRSolvencySystemIdleRejectsNonIdleStates(t *testing.T) {
 	t.Run("scanner behind tip", func(t *testing.T) {
 		c, server := newTestXMRSolvencyClient(t, 500, asgards, balanceByPK, nil)
 		defer server.Close()
-		c.scanner.currentBlockHeight.Store(499)
+		c.scanner.currentBlockHeight.Store(490)
 
 		idle, reason, err := c.xmrSolvencySystemIdle()
 		if err != nil {
@@ -234,6 +238,36 @@ func TestXMRSolvencySystemIdleRejectsNonIdleStates(t *testing.T) {
 		}
 		if !strings.Contains(reason, "awaiting finalized observation") {
 			t.Fatalf("expected finalized observation reason, got %q", reason)
+		}
+	})
+
+	t.Run("outbound still awaiting change materialization", func(t *testing.T) {
+		localChangeMaterialized := false
+		c, server := newTestXMRSolvencyClient(t, 500, asgards, balanceByPK, map[string][]xmrFrostOutgoingTransferStateEntry{
+			vaultPubKey.String(): {{
+				TxHash:                  strings.Repeat("b", 64),
+				Status:                  "observed_mined",
+				TxKeys:                  []string{"tx-key"},
+				HasOwnedChange:          boolPtr(true),
+				LocalChangeMaterialized: &localChangeMaterialized,
+				PendingReason:           "awaiting_change_materialization",
+				Amount:                  1,
+				Fee:                     1,
+				Memo:                    "OUT:def",
+				CreatedAt:               1,
+			}},
+		})
+		defer server.Close()
+
+		idle, reason, err := c.xmrSolvencySystemIdle()
+		if err != nil {
+			t.Fatalf("xmrSolvencySystemIdle: %v", err)
+		}
+		if idle {
+			t.Fatal("expected idle check to fail while tracked outbound change has not materialized")
+		}
+		if !strings.Contains(reason, "awaiting change materialization") {
+			t.Fatalf("expected change materialization reason, got %q", reason)
 		}
 	})
 }

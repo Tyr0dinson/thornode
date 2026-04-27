@@ -125,6 +125,11 @@ require_external_full_monerod() {
   fi
 }
 
+install_host_reset_tool() {
+  echo "  installing xmr-reset-scanner onto host from thornode:xmr-chainnet"
+  "$SCRIPT_DIR/xmr-install-host-tools.sh" --image thornode:xmr-chainnet xmr-reset-scanner
+}
+
 set_node_keys() {
   local container="$1"
   local seed="$2"
@@ -167,6 +172,10 @@ echo "      'rm /root/.thornode/address_book.seed' inside each thornode"
 echo "      container, then restart bifrosts in DOG -> CAT/FOX order."
 echo "      XMR services require XMR_DAEMON_URL to point at the external"
 echo "      full Monero RPC before compose or this script is run."
+
+echo ""
+echo "[prep] Installing host helper tools..."
+install_host_reset_tool
 
 echo ""
 echo "[0/8] Verifying external full Monero RPC..."

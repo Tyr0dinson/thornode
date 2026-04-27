@@ -24,7 +24,7 @@ use rand_chacha::rand_core::{CryptoRng, RngCore};
 use transcript::{RecommendedTranscript, Transcript};
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::state::{store::TrackedOutput, Store};
+use crate::state::{store::TrackedOutput, OutputLifecycle, Store};
 
 const KEY_IMAGE_SESSION_TTL: Duration = Duration::from_secs(120);
 
@@ -512,7 +512,7 @@ impl KeyImageCoordinator {
             .map_err(|e| anyhow::anyhow!("failed to combine key image shares: {e}"))?;
 
         let key_image_hex = hex::encode(signature.key_image.to_bytes());
-        self.store
+        OutputLifecycle::new(self.store.as_ref())
             .apply_key_images(
                 &vault_pub_key,
                 &[(tx_hash.clone(), output_index, key_image_hex.clone())],

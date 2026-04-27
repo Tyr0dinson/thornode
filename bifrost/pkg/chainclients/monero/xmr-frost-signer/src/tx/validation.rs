@@ -19,6 +19,7 @@ struct OutputDerivations {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ValidatedOutboundTransaction {
     pub tracked_owned_output: bool,
+    pub actual_fee: u64,
 }
 
 pub fn validate_outbound_transaction(
@@ -43,8 +44,8 @@ pub fn validate_outbound_transaction(
 
     let fee = proofs.base.fee;
     if let Some(expected_fee) = expected_fee {
-        if fee != expected_fee {
-            anyhow::bail!("fee mismatch: expected {expected_fee}, got {fee}");
+        if fee > expected_fee {
+            anyhow::bail!("fee mismatch: expected at most {expected_fee}, got {fee}");
         }
     }
 
@@ -155,6 +156,7 @@ pub fn validate_outbound_transaction(
     }
     Ok(ValidatedOutboundTransaction {
         tracked_owned_output: matched_owned,
+        actual_fee: fee,
     })
 }
 
@@ -575,6 +577,7 @@ mod tests {
         )
         .expect("standard outbound validation should succeed");
         assert!(validated.tracked_owned_output);
+        assert_eq!(validated.actual_fee, fee);
     }
 
     #[test]
@@ -614,6 +617,85 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("primary tx key does not match transaction extra"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_standard_outbound_transaction_accepts_fee_below_expected_cap() {
+        let recipient = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(11),
+            point_from_scalar(13),
+        );
+        let change = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(17),
+            point_from_scalar(19),
+        );
+        let primary = Scalar::from(7u64);
+        let fee = 42u64;
+        let tx_hex = synthetic_pruned_tx_hex(
+            fee,
+            serialize_extra(&primary * ED25519_BASEPOINT_TABLE, vec![]),
+            vec![
+                synthetic_output_for_address(&primary, 0, &recipient, 1_000_000),
+                synthetic_output_for_address(&primary, 1, &change, 2_000_000),
+            ],
+        );
+
+        let validated = validate_outbound_transaction(
+            &tx_hex,
+            &[scalar_hex(7)],
+            &recipient.to_string(),
+            1_000_000,
+            Some(fee + 8),
+            &[change.to_string()],
+        )
+        .expect("lower actual fee should be accepted under the provided cap");
+        assert!(validated.tracked_owned_output);
+        assert_eq!(validated.actual_fee, fee);
+    }
+
+    #[test]
+    fn validate_standard_outbound_transaction_rejects_fee_above_expected_cap() {
+        let recipient = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(11),
+            point_from_scalar(13),
+        );
+        let change = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(17),
+            point_from_scalar(19),
+        );
+        let primary = Scalar::from(7u64);
+        let fee = 42u64;
+        let tx_hex = synthetic_pruned_tx_hex(
+            fee,
+            serialize_extra(&primary * ED25519_BASEPOINT_TABLE, vec![]),
+            vec![
+                synthetic_output_for_address(&primary, 0, &recipient, 1_000_000),
+                synthetic_output_for_address(&primary, 1, &change, 2_000_000),
+            ],
+        );
+
+        let err = validate_outbound_transaction(
+            &tx_hex,
+            &[scalar_hex(7)],
+            &recipient.to_string(),
+            1_000_000,
+            Some(fee - 1),
+            &[change.to_string()],
+        )
+        .expect_err("higher actual fee should still fail");
+        assert!(
+            err.to_string()
+                .contains("fee mismatch: expected at most 41, got 42"),
             "unexpected error: {err}"
         );
     }

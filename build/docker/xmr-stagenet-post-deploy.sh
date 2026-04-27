@@ -13,6 +13,8 @@ DOG_NODE_ADDR="sthor1zf3gsk7edzwl9syyefvfhle37cjtql3585mpmq"
 CAT_SEED="cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
 FOX_SEED="fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 tx() {
   local container="$1"; shift
   docker exec "$container" bash -c "printf '${PASSWORD}\n${PASSWORD}\n' | thornode tx thorchain $* --from thorchain --keyring-backend $KEYRING --chain-id $CHAIN_ID --yes" 2>&1
@@ -86,9 +88,18 @@ set_version() {
   tx "$container" "set-version --node $rpc" | grep -E "code:|txhash:" || true
 }
 
+install_host_reset_tool() {
+  echo "  installing xmr-reset-scanner onto host from thornode:xmr-stagenet"
+  "$SCRIPT_DIR/xmr-install-host-tools.sh" --image thornode:xmr-stagenet xmr-reset-scanner
+}
+
 echo "============================================"
 echo "XMR Stagenet Post-Deploy"
 echo "============================================"
+
+echo ""
+echo "[prep] Installing host helper tools..."
+install_host_reset_tool
 
 echo ""
 echo "[1/6] Waiting for thornode health..."

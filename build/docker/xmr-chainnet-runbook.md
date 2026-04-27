@@ -342,7 +342,7 @@ for c in "${SIGNERS[@]}"; do
   seed=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | awk -F= '/^SIGNER_SEED_PHRASE=/{sub(/^SIGNER_SEED_PHRASE=/,""); print}')
   resp=$(docker exec -e AUTH="$seed" "$c" sh -lc 'curl -sf -H "Authorization: $AUTH" "http://127.0.0.1:8283/v1/monero/outputs/'"$VAULT"'?view=all"')
   printf '%s ' "$c"
-  printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outputs[]? | select((.tx_hash // "") | ascii_downcase == $tx) | {tx_hash,state,spent,key_image,height,amount,output_index}) // "MISSING"'
+  printf '%s' "$resp" | jq -c --arg tx "$TX" 'first(.outputs[]? | select((.tx_hash // "") | ascii_downcase == $tx) | {tx_hash,state,key_image,height,amount,output_index}) // "MISSING"'
 done
 ```
 
@@ -383,6 +383,55 @@ fatal. Another bifrost can win the next attempt, complete the ceremony, and the 
 can still converge correctly. Treat repeated failures across multiple nodes as the
 real problem, not a single failed attempt.
 
+## Operator query scripts
+
+Use the scripts below instead of rebuilding one-off shell snippets each time. They all
+support:
+
+- `--host root@91.99.89.216` to query the chainnet cluster from your local machine
+- `--node dog` for one node
+- `--node all` for the full cluster
+- repeated `--node` flags to scope to a subset
+- automatic node discovery from the current docker cluster; set `XMR_CHAINNET_NODES` only if you need to override it
+
+Check signer state, outputs, key-images, tx-keys, and outbound inventory:
+
+```bash
+bash build/docker/xmr-chainnet-check-signer-state.sh
+bash build/docker/xmr-chainnet-check-signer-state.sh --host root@91.99.89.216
+bash build/docker/xmr-chainnet-check-signer-state.sh --node dog
+bash build/docker/xmr-chainnet-check-signer-state.sh --node cat --node fox
+bash build/docker/xmr-chainnet-check-signer-state.sh --node all --vault <cthorpub1...>
+```
+
+Use this first when you need to answer:
+
+- whether all 7 signers have the new active vault registered
+- which nodes are missing an active XMR vault
+- whether local signer inventory has diverged from on-chain XMR vault state
+
+The script now prints an `Active vault registration coverage` section before the
+full per-vault signer table, so there should be no need to rebuild one-off curl
+or jq commands for that question.
+
+Check a transaction across thornode, signers, outputs, outbounds, and bifrost logs:
+
+```bash
+bash build/docker/xmr-chainnet-check-tx.sh --tx 031ccfb458800fecc7de0b3ba57a4ea9681d2af4bb95a0e63e0ea1ef86580e7d
+bash build/docker/xmr-chainnet-check-tx.sh --host root@91.99.89.216 --tx 031ccf...
+bash build/docker/xmr-chainnet-check-tx.sh --tx 031ccf... --node dog
+bash build/docker/xmr-chainnet-check-tx.sh --tx 031ccf... --node all --logs-since 2h
+```
+
+Check pools, vaults, and per-node XMR summary:
+
+```bash
+bash build/docker/xmr-chainnet-check-pools-vaults.sh
+bash build/docker/xmr-chainnet-check-pools-vaults.sh --host root@91.99.89.216
+bash build/docker/xmr-chainnet-check-pools-vaults.sh --node dog
+bash build/docker/xmr-chainnet-check-pools-vaults.sh --node all
+```
+
 ### Driving a birthday reset scanner
 
 Use the reset tool when a signer needs to forget local Monero scan state and replay from
@@ -395,8 +444,10 @@ build/docker/xmr-reset-scanner.sh
 ```
 
 The wrapper runs an installed `xmr-reset-scanner` binary if one exists. Otherwise it
-falls back to `go run tools/xmr-reset-scanner`, so the host must have a working
-`go` binary unless the tool is already installed.
+extracts `xmr-reset-scanner` from the locally built `thornode:xmr-chainnet` /
+`thornode:xmr-stagenet` image into `build/docker/.bin` if possible, then falls
+back to `go run tools/xmr-reset-scanner`. The chainnet post-deploy script also
+installs the host copy to `/usr/local/bin/xmr-reset-scanner`.
 
 Single vault on one signer:
 
@@ -564,9 +615,16 @@ fresh outbound can be absent there until it lands on chain and is observed mined
 
 ### `xmr-reset-scanner.sh` fails with `go: command not found`
 
-The wrapper script falls back to `go run tools/xmr-reset-scanner` when no installed
-`xmr-reset-scanner` binary is present. On hosts without Go installed, either install
-the tool first or run the reset from an environment that has a working `go` binary.
+This now usually means neither of these recovery paths was available:
+
+- `/usr/local/bin/xmr-reset-scanner` was not installed by post-deploy
+- no local `thornode:xmr-chainnet` image was available for wrapper extraction
+
+Manual recovery:
+
+```bash
+bash build/docker/xmr-install-host-tools.sh --image thornode:xmr-chainnet xmr-reset-scanner
+```
 
 ### Go/Rust auth mismatch
 

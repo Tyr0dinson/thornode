@@ -21,7 +21,6 @@ use super::decoy;
 pub struct SelectedInputRef {
     pub tx_hash: String,
     pub output_index: u32,
-    pub key_image: Option<String>,
 }
 
 #[derive(Clone)]
@@ -33,9 +32,8 @@ pub struct UnsignedTransaction {
     pub fee: u64,
     pub memo: String,
     pub tx_keys: Vec<String>,
+    pub has_owned_change: bool,
 }
-
-pub const THORCHAIN_XMR_DUST_THRESHOLD_ATOMIC: u64 = 100_000_000;
 
 pub async fn build_unsigned_transaction(
     rpc: &OxideRpc,
@@ -107,7 +105,7 @@ pub async fn build_unsigned_transaction(
         }
         selected.push(candidate);
         selected_total += u128::from(candidate.0.amount);
-        if selected_total >= u128::from(requested_total) {
+        if !sweep_if_final && selected_total >= u128::from(requested_total) {
             break;
         }
     }
@@ -188,11 +186,18 @@ pub async fn build_unsigned_transaction(
                         // bootstrap the fee-convergence loop from the scheduled
                         // net amount instead of bailing on the first fee-aware
                         // construction attempt.
+                        let bootstrap_amount = amount.min(
+                            requested_total.checked_sub(max_gas_atomic).ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "selected sweep total is not enough to cover max gas"
+                                )
+                            })?,
+                        );
                         let fallback = build_signable_for_selection(
                             rpc,
                             &selected,
                             &to,
-                            amount,
+                            bootstrap_amount,
                             &change,
                             fee_rate,
                             rct_type,
@@ -215,7 +220,7 @@ pub async fn build_unsigned_transaction(
                                     max,
                                     selected_total,
                                     msg,
-                                    amount,
+                                    bootstrap_amount,
                                     fallback_err
                                 ));
                             }
@@ -274,7 +279,6 @@ pub async fn build_unsigned_transaction(
         .map(|(tracked, _)| SelectedInputRef {
             tx_hash: tracked.tx_hash.clone(),
             output_index: tracked.output_index,
-            key_image: tracked.key_image.clone(),
         })
         .collect::<Vec<_>>();
 
@@ -288,6 +292,10 @@ pub async fn build_unsigned_transaction(
     );
 
     let tx_keys = derive_tx_keys_for_built_outbound(&outgoing_view_key, &used, &to);
+    let has_owned_change = selected_total
+        > u128::from(final_amount)
+            .checked_add(u128::from(fee))
+            .ok_or_else(|| anyhow::anyhow!("final amount + fee overflow"))?;
 
     Ok(UnsignedTransaction {
         signable,
@@ -297,6 +305,7 @@ pub async fn build_unsigned_transaction(
         fee,
         memo: memo.to_string(),
         tx_keys,
+        has_owned_change,
     })
 }
 

@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+use super::outgoing_inventory::{reconcile_registered_tx_key_inventory, validate_outbound_request};
 use super::types::*;
 use crate::config::ChainNetworkMode;
 use crate::frost::dkg::DkgCoordinator;
@@ -23,14 +24,17 @@ use crate::frost::key_image::KeyImageCoordinator;
 use crate::frost::keys::ThresholdKeyShare;
 use crate::frost::sign::SignCoordinator;
 use crate::state::store::{
-    IdempotencyClaimResult, OutputRef, OutputState, RegisteredKeyImageRef, ScanBlockMeta,
-    TrackedOutput,
+    IdempotencyClaimResult, OutgoingTransferRecord, OutgoingTransferStatus, OutputRef, OutputState,
+    RegisteredKeyImageRef, ScanBlockMeta, TrackedOutput,
+};
+use crate::state::{
+    ApplyKeyImagesOutcome, OutgoingLifecycle, OutgoingObservation, OutputLifecycle, VaultLifecycle,
+    VaultSyncState,
 };
 use crate::tx::builder;
 use crate::tx::daemon::DaemonClient;
 use crate::tx::fee;
 use crate::tx::scanner::Scanner;
-use crate::tx::validation;
 use crate::xmr;
 
 /// Shared application state passed to all route handlers.
@@ -189,7 +193,7 @@ fn persist_idempotency(
     }
 }
 
-fn error_json(msg: impl Into<String>) -> serde_json::Value {
+pub(crate) fn error_json(msg: impl Into<String>) -> serde_json::Value {
     serde_json::to_value(ErrorResponse::new(msg.into())).unwrap()
 }
 
@@ -351,63 +355,20 @@ fn ensure_registered_vault_state(
     source: &str,
     birthday: Option<u64>,
 ) -> Result<bool, String> {
-    let birthday_height = birthday.unwrap_or(0);
-    let registered = state
-        .store
-        .register_vault(vault_pub_key, group_key, address, source, birthday_height)
-        .map_err(|e| format!("failed to register vault mapping: {e}"))?;
-
-    let outputs = state
-        .store
-        .load_outputs(vault_pub_key)
-        .map_err(|e| format!("failed to load vault outputs: {e}"))?;
-    let stored_scan_height = state
-        .store
-        .load_scan_height(vault_pub_key)
-        .map_err(|e| format!("failed to load vault scan height: {e}"))?
-        .filter(|height| *height > 0);
-    if stored_scan_height.is_none() && birthday_height > 0 {
-        state
-            .store
-            .save_scan_height(vault_pub_key, birthday_height)
-            .map_err(|e| format!("failed to persist initial vault scan height: {e}"))?;
-    }
-    let scan_height = stored_scan_height.unwrap_or_else(|| {
-        if birthday_height > 0 {
-            birthday_height
-        } else {
-            state.scanner.lock().current_height()
-        }
-    });
-
     let mut scanner = state.scanner.lock();
-    scanner
-        .register_vault(
+    let current_height = scanner.current_height();
+    VaultLifecycle::new(state.store.as_ref())
+        .ensure_registered(
+            &mut scanner,
+            state.chain_network,
             vault_pub_key,
             group_key,
-            state.chain_network,
-            outputs.clone(),
-            Some(scan_height),
+            address,
+            source,
+            birthday,
+            current_height,
         )
-        .map_err(|e| format!("failed to initialize vault scanner state: {e}"))?;
-    scanner.merge_output_states(vault_pub_key, &outputs);
-
-    Ok(registered)
-}
-
-fn stored_scan_height_or_birthday(
-    state: &AppState,
-    vault_pub_key: &str,
-    birthday: u64,
-) -> Result<u64, String> {
-    state
-        .store
-        .load_scan_height(vault_pub_key)
-        .map_err(|e| format!("failed to load vault scan height: {e}"))?
-        .filter(|height| *height > 0)
-        .or_else(|| (birthday > 0).then_some(birthday))
-        .or(Some(0))
-        .ok_or_else(|| format!("failed to determine scan height for vault {vault_pub_key}"))
+        .map_err(|e| format!("failed to ensure registered vault state: {e}"))
 }
 
 /// One block's worth of scan output bundled for batched commit.
@@ -476,8 +437,7 @@ fn apply_registered_key_image_inventory(
         let mut scanner = state.scanner.lock();
         let _ = scanner.apply_key_images(vault_pub_key, &key_images, reconcile);
     }
-    state
-        .store
+    OutputLifecycle::new(state.store.as_ref())
         .apply_key_images(vault_pub_key, &key_images, reconcile)
         .map_err(|e| format!("failed to apply registered key image inventory: {e}"))?;
 
@@ -529,6 +489,8 @@ fn commit_scan_batch(
     blocks: &[ScannedBlockEntry],
     reorg_window: u64,
 ) -> Result<CommitBatchResult, String> {
+    let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
+    let vault_lifecycle = VaultLifecycle::new(state.store.as_ref());
     let mut added_refs_per_block = Vec::with_capacity(blocks.len());
 
     for entry in blocks {
@@ -542,8 +504,7 @@ fn commit_scan_batch(
         spent_key_images.dedup();
 
         let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
-        state
-            .store
+        output_lifecycle
             .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
             .map_err(|e| format!("failed to persist outputs after scanner sync: {e}"))?;
 
@@ -555,9 +516,8 @@ fn commit_scan_batch(
                 output_index: output.output_index,
             })
             .collect();
-        state
-            .store
-            .save_scan_block_meta(
+        output_lifecycle
+            .record_scan_block(
                 vault_pub_key,
                 &ScanBlockMeta {
                     height: entry.height,
@@ -571,9 +531,8 @@ fn commit_scan_batch(
             .map_err(|e| {
                 format!("failed to persist scan block metadata after scanner sync: {e}")
             })?;
-        state
-            .store
-            .save_scan_height(vault_pub_key, entry.height)
+        vault_lifecycle
+            .advance_scan_height(vault_pub_key, entry.height)
             .map_err(|e| format!("failed to persist scan height after scanner sync: {e}"))?;
 
         added_refs_per_block.push(added_refs);
@@ -583,10 +542,7 @@ fn commit_scan_batch(
 
     let top_height = blocks.last().map(|entry| entry.height).unwrap_or(0);
     let min_height = top_height.saturating_sub(reorg_window.saturating_sub(1));
-    if let Err(e) = state
-        .store
-        .prune_scan_block_meta_before(vault_pub_key, min_height)
-    {
+    if let Err(e) = output_lifecycle.prune_scan_blocks_before(vault_pub_key, min_height) {
         warn!(
             error = %e,
             vault = %vault_pub_key,
@@ -611,132 +567,9 @@ fn replay_reconciled_key_image_spends(
     vault_pub_key: &str,
     key_images: &[(String, u32, String)],
 ) -> Result<(), String> {
-    if key_images.is_empty() {
-        return Ok(());
-    }
-
-    let requested_refs: HashSet<(String, u32)> = key_images
-        .iter()
-        .map(|(tx_hash, output_index, _)| (normalize_tx_hash(tx_hash), *output_index))
-        .collect();
-    if requested_refs.is_empty() {
-        return Ok(());
-    }
-
-    let outputs = state
-        .store
-        .load_outputs(vault_pub_key)
-        .map_err(|e| format!("failed to load outputs before key-image replay: {e}"))?;
-    let scan_height = state
-        .store
-        .load_scan_height(vault_pub_key)
-        .map_err(|e| format!("failed to load scan height before key-image replay: {e}"))?
-        .unwrap_or_else(|| state.scanner.lock().current_height());
-
-    let mut replay_from = None;
-    let mut candidate_key_images = HashSet::new();
-    for output in &outputs {
-        if !requested_refs.contains(&(normalize_tx_hash(&output.tx_hash), output.output_index)) {
-            continue;
-        }
-        if output.spent_by_key_image_height.is_some() {
-            continue;
-        }
-        let Some(key_image) = output
-            .key_image
-            .as_ref()
-            .map(|key_image| key_image.trim().to_ascii_lowercase())
-        else {
-            continue;
-        };
-        if key_image.is_empty() {
-            continue;
-        }
-        candidate_key_images.insert(key_image);
-        let start = output.height.saturating_add(1);
-        replay_from = Some(replay_from.map_or(start, |current: u64| current.min(start)));
-    }
-
-    let Some(replay_from) = replay_from else {
-        return Ok(());
-    };
-    if replay_from > scan_height {
-        return Ok(());
-    }
-
-    info!(
-        vault = %vault_pub_key,
-        from = replay_from,
-        to = scan_height,
-        requested_outputs = requested_refs.len(),
-        replay_key_images = candidate_key_images.len(),
-        "replaying historical XMR spends after key-image reconcile"
-    );
-
-    for height in replay_from..=scan_height {
-        let Some(mut meta) = state
-            .store
-            .load_scan_block_meta(vault_pub_key, height)
-            .map_err(|e| {
-                format!("failed to load scan block meta {height} during key-image replay: {e}")
-            })?
-        else {
-            continue;
-        };
-        let relevant_key_images: Vec<String> = meta
-            .spent_key_images
-            .iter()
-            .map(|key_image| key_image.trim().to_ascii_lowercase())
-            .filter(|key_image| candidate_key_images.contains(key_image))
-            .collect();
-        if relevant_key_images.is_empty() {
-            continue;
-        }
-
-        let resolved_refs: Vec<OutputRef> = {
-            let mut scanner = state.scanner.lock();
-            scanner
-                .mark_spent_key_images(vault_pub_key, &relevant_key_images, height)
-                .0
-                .into_iter()
-                .map(|(tx_hash, output_index)| OutputRef {
-                    tx_hash,
-                    output_index,
-                })
-                .collect()
-        };
-        state
-            .store
-            .mark_spent_key_images(vault_pub_key, &relevant_key_images, height)
-            .map_err(|e| {
-                format!("failed to persist replayed key-image spends at height {height}: {e}")
-            })?;
-
-        if !resolved_refs.is_empty() {
-            let mut known_refs: HashSet<(String, u32)> = meta
-                .spent_by_key_images
-                .iter()
-                .map(|r| (normalize_tx_hash(&r.tx_hash), r.output_index))
-                .collect();
-            let mut changed = false;
-            for r in resolved_refs {
-                if known_refs.insert((normalize_tx_hash(&r.tx_hash), r.output_index)) {
-                    meta.spent_by_key_images.push(r);
-                    changed = true;
-                }
-            }
-            if changed {
-                state
-                    .store
-                    .save_scan_block_meta(vault_pub_key, &meta)
-                    .map_err(|e| {
-                        format!("failed to persist replayed spend refs for block {height}: {e}")
-                    })?;
-            }
-        }
-    }
-
-    Ok(())
+    OutputLifecycle::new(state.store.as_ref())
+        .replay_reconciled_spends(vault_pub_key, key_images)
+        .map_err(|e| format!("failed to replay reconciled key-image spends: {e}"))
 }
 
 // ---- DKG Routes ----
@@ -993,9 +826,8 @@ pub async fn register_vault(
                 })
             })
             .collect();
-        if let Err(e) = state
-            .store
-            .save_registered_key_images(&vault_pub_key, &key_images)
+        if let Err(e) =
+            VaultLifecycle::new(state.store.as_ref()).apply_inventory(&vault_pub_key, &key_images)
         {
             error!(
                 error = %e,
@@ -1872,14 +1704,15 @@ pub async fn broadcast(
                             error!(error = %e, msg_id, "failed to finalize reserved outputs after broadcast");
                         }
                     }
-                    if let Err(e) = state.store.update_outgoing_transfer_status(
-                        &vault_pub_key_canonical,
-                        &tx_hash,
-                        OUTGOING_STATUS_MEMPOOL,
-                        None,
-                        Some(chrono::Utc::now().timestamp()),
-                        Some(chrono::Utc::now().timestamp()),
-                    ) {
+                    if let Err(e) = OutgoingLifecycle::new(state.store.as_ref())
+                        .reconcile_observation(
+                            &vault_pub_key_canonical,
+                            &tx_hash,
+                            OutgoingObservation::ObservedInMempool,
+                            Some(chrono::Utc::now().timestamp()),
+                            Some(chrono::Utc::now().timestamp()),
+                        )
+                    {
                         error!(error = %e, "failed to update outgoing transfer status after broadcast");
                     }
 
@@ -1962,14 +1795,15 @@ pub async fn broadcast(
                         ) {
                             error!(error = %e, msg_id, "failed to finalize reserved outputs after already-known broadcast");
                         }
-                        if let Err(e) = state.store.update_outgoing_transfer_status(
-                            &vault_pub_key_canonical,
-                            caller_tx_hash,
-                            OUTGOING_STATUS_MEMPOOL,
-                            None,
-                            Some(chrono::Utc::now().timestamp()),
-                            Some(chrono::Utc::now().timestamp()),
-                        ) {
+                        if let Err(e) = OutgoingLifecycle::new(state.store.as_ref())
+                            .reconcile_observation(
+                                &vault_pub_key_canonical,
+                                caller_tx_hash,
+                                OutgoingObservation::ObservedInMempool,
+                                Some(chrono::Utc::now().timestamp()),
+                                Some(chrono::Utc::now().timestamp()),
+                            )
+                        {
                             error!(error = %e, "failed to update outgoing transfer status after already-known broadcast");
                         }
                         (
@@ -2079,19 +1913,16 @@ pub struct OutputsQuery {
 }
 
 const MEMPOOL_TRANSFER_BATCH_SIZE: usize = 100;
-const OUTGOING_STATUS_MEMPOOL: &str = "observed_mempool";
-const OUTGOING_STATUS_MINED: &str = "observed_mined";
-
-fn normalize_tx_hash(hash: &str) -> String {
+pub(crate) fn normalize_tx_hash(hash: &str) -> String {
     hash.trim().to_ascii_lowercase()
 }
 
-fn is_observed_mined_record(tx: &crate::state::store::OutgoingTransferRecord) -> bool {
-    tx.status.eq_ignore_ascii_case(OUTGOING_STATUS_MINED)
+fn is_observed_mined_record(tx: &OutgoingTransferRecord) -> bool {
+    tx.is_observed_mined()
 }
 
-fn outgoing_effective_height(tx: &crate::state::store::OutgoingTransferRecord) -> u64 {
-    tx.observed_height.unwrap_or(tx.planned_height)
+fn outgoing_effective_height(tx: &OutgoingTransferRecord) -> u64 {
+    tx.effective_height()
 }
 
 fn should_emit_outgoing_on_scanner_sync(
@@ -2106,7 +1937,7 @@ fn should_emit_outgoing_on_scanner_sync(
 }
 
 fn transfer_entry_from_outgoing_record(
-    tx: &crate::state::store::OutgoingTransferRecord,
+    tx: &OutgoingTransferRecord,
     current_height: u64,
     mempool: bool,
 ) -> TransferEntry {
@@ -2132,27 +1963,32 @@ fn transfer_entry_from_outgoing_record(
 }
 
 fn outgoing_state_entry_from_record(
-    tx: crate::state::store::OutgoingTransferRecord,
+    tx: OutgoingTransferRecord,
 ) -> crate::api::types::OutgoingTransferStateEntry {
+    let snapshot = OutgoingLifecycle::snapshot(&tx);
     crate::api::types::OutgoingTransferStateEntry {
         tx_hash: tx.tx_hash,
         tx_keys: tx.tx_keys,
-        registered_inventory: tx.registered_inventory,
+        registered_inventory: snapshot.registered_inventory,
+        has_owned_change: snapshot.has_owned_change,
+        local_change_materialized: snapshot.local_change_materialized,
+        key_images_ready: snapshot.key_images_ready,
         from_address: tx.from_address,
         to_address: tx.to_address,
         amount: tx.amount,
         fee: tx.fee,
         memo: tx.memo,
         planned_height: tx.planned_height,
-        observed_height: tx.observed_height,
-        status: tx.status,
-        reported_effective_height: tx.reported_effective_height,
+        observed_height: snapshot.observed_height,
+        status: snapshot.status.to_string(),
+        pending_reason: snapshot.pending_reason.map(str::to_string),
+        reported_effective_height: snapshot.reported_effective_height,
         created_at: tx.created_at,
     }
 }
 
 fn build_mempool_outgoing_entries(
-    records: &[crate::state::store::OutgoingTransferRecord],
+    records: &[OutgoingTransferRecord],
     in_pool_hashes: &HashSet<String>,
 ) -> Vec<TransferEntry> {
     let mut outgoing = Vec::new();
@@ -2186,6 +2022,7 @@ fn promote_outgoing_records_observed_in_block(
     }
 
     let now_ts = chrono::Utc::now().timestamp();
+    let outgoing_lifecycle = OutgoingLifecycle::new(store);
     for record in records {
         let normalized = normalize_tx_hash(&record.tx_hash);
         if normalized.is_empty() || !block_tx_hashes.contains(&normalized) {
@@ -2194,11 +2031,10 @@ fn promote_outgoing_records_observed_in_block(
         if is_observed_mined_record(&record) && record.observed_height == Some(height) {
             continue;
         }
-        store.update_outgoing_transfer_status(
+        outgoing_lifecycle.reconcile_observation(
             vault_pub_key,
             &record.tx_hash,
-            OUTGOING_STATUS_MINED,
-            Some(height),
+            OutgoingObservation::ObservedMined(height),
             Some(now_ts),
             None,
         )?;
@@ -2256,11 +2092,11 @@ fn output_refs_at_height(outputs: &[TrackedOutput], height: u64) -> Vec<OutputRe
         .collect()
 }
 
-fn hash_matches(actual: &str, expected: &str) -> bool {
+pub(crate) fn hash_matches(actual: &str, expected: &str) -> bool {
     actual.trim().eq_ignore_ascii_case(expected.trim())
 }
 
-fn is_valid_chain_tx_hash(hash: &str) -> bool {
+pub(crate) fn is_valid_chain_tx_hash(hash: &str) -> bool {
     let normalized = hash.trim();
     normalized.len() == 64 && hex::decode(normalized).is_ok()
 }
@@ -2440,9 +2276,8 @@ pub async fn scanner_sync(
             let tip = std::cmp::max(effective_height, rescan_chain_tip);
             if vault_scan_height >= tip {
                 info!(vault = %vault.vault_pub_key, "rescan complete — already at chain tip");
-                let _ = state
-                    .store
-                    .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                let _ = VaultLifecycle::new(state.store.as_ref())
+                    .complete_rescan_at_tip(&vault.vault_pub_key, vault.birthday);
                 // Fall through to normal scan below.
             } else {
                 let end = rescan_target_height(vault_scan_height, effective_height, tip);
@@ -2522,59 +2357,40 @@ pub async fn scanner_sync(
                     .unwrap_or(0);
                 if new_height >= tip {
                     info!(vault = %vault.vault_pub_key, "rescan complete — caught up to chain tip");
-                    let _ =
-                        state
-                            .store
-                            .set_vault_rescan(&vault.vault_pub_key, false, vault.birthday);
+                    let _ = VaultLifecycle::new(state.store.as_ref())
+                        .complete_rescan_at_tip(&vault.vault_pub_key, vault.birthday);
                 }
                 // Skip normal scan while an active rescan batch is in progress.
                 continue;
             }
         }
 
-        let mut outputs = match state.store.load_outputs(&vault.vault_pub_key) {
-            Ok(outputs) => outputs,
-            Err(e) => {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    "failed to load outputs for scanner sync"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
+        let vault_lifecycle = VaultLifecycle::new(state.store.as_ref());
+        let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
+        let (mut outputs, mut scan_height) = {
+            let mut scanner = state.scanner.lock();
+            match vault_lifecycle.rehydrate_scanner(
+                &mut scanner,
+                state.chain_network,
+                &vault.vault_pub_key,
+                &vault.group_key,
+                vault.birthday,
+                0,
+            ) {
+                Ok(state) => state,
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        vault = %vault.vault_pub_key,
+                        "failed to initialize scanner state for scanner sync"
+                    );
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(error_json(e.to_string())),
+                    );
+                }
             }
         };
-        let mut scan_height = match stored_scan_height_or_birthday(
-            &state,
-            &vault.vault_pub_key,
-            vault.birthday,
-        ) {
-            Ok(height) => height,
-            Err(e) => {
-                error!(vault = %vault.vault_pub_key, error = %e, "failed to determine scan height for scanner sync");
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-            }
-        };
-
-        if let Err(e) = state.scanner.lock().register_vault(
-            &vault.vault_pub_key,
-            &vault.group_key,
-            state.chain_network,
-            outputs.clone(),
-            Some(scan_height),
-        ) {
-            error!(
-                error = %e,
-                vault = %vault.vault_pub_key,
-                "failed to initialize scanner state for scanner sync"
-            );
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(e.to_string())),
-            );
-        }
 
         let mut stored_meta = match state
             .store
@@ -2615,9 +2431,7 @@ pub async fn scanner_sync(
                     spent_key_images: Vec::new(),
                     spent_by_key_images: Vec::new(),
                 };
-                let _ = state
-                    .store
-                    .save_scan_block_meta(&vault.vault_pub_key, &synthesized);
+                let _ = output_lifecycle.record_scan_block(&vault.vault_pub_key, &synthesized);
                 stored_meta = Some(synthesized);
             }
         }
@@ -2638,9 +2452,7 @@ pub async fn scanner_sync(
                 && scan_height >= req.height);
 
         if needs_rollback {
-            if let Err(e) = state
-                .store
-                .rollback_scan_state_from_height(&vault.vault_pub_key, req.height)
+            if let Err(e) = output_lifecycle.rollback_from_height(&vault.vault_pub_key, req.height)
             {
                 error!(
                     error = %e,
@@ -2653,47 +2465,33 @@ pub async fn scanner_sync(
                     Json(error_json(e.to_string())),
                 );
             }
-            outputs = match state.store.load_outputs(&vault.vault_pub_key) {
-                Ok(outputs) => outputs,
+            let rehydrated = {
+                let mut scanner = state.scanner.lock();
+                vault_lifecycle.rehydrate_scanner(
+                    &mut scanner,
+                    state.chain_network,
+                    &vault.vault_pub_key,
+                    &vault.group_key,
+                    vault.birthday,
+                    0,
+                )
+            };
+            match rehydrated {
+                Ok((rehydrated_outputs, rehydrated_scan_height)) => {
+                    outputs = rehydrated_outputs;
+                    scan_height = rehydrated_scan_height;
+                }
                 Err(e) => {
                     error!(
                         error = %e,
                         vault = %vault.vault_pub_key,
-                        "failed to reload outputs after scanner rollback"
+                        "failed to reinitialize scanner after rollback"
                     );
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(error_json(e.to_string())),
                     );
                 }
-            };
-            scan_height = match stored_scan_height_or_birthday(
-                &state,
-                &vault.vault_pub_key,
-                vault.birthday,
-            ) {
-                Ok(height) => height,
-                Err(e) => {
-                    error!(vault = %vault.vault_pub_key, error = %e, "failed to reload scan height after scanner rollback");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-                }
-            };
-            if let Err(e) = state.scanner.lock().register_vault(
-                &vault.vault_pub_key,
-                &vault.group_key,
-                state.chain_network,
-                outputs.clone(),
-                Some(scan_height),
-            ) {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    "failed to reinitialize scanner after rollback"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
             }
         }
 
@@ -2726,9 +2524,7 @@ pub async fn scanner_sync(
                         "scanner sync recovered missing added outputs from persisted state"
                     );
                     meta.added_outputs.extend(recovered_refs);
-                    if let Err(e) = state
-                        .store
-                        .save_scan_block_meta(&vault.vault_pub_key, &meta)
+                    if let Err(e) = output_lifecycle.record_scan_block(&vault.vault_pub_key, &meta)
                     {
                         error!(
                             error = %e,
@@ -2896,7 +2692,7 @@ pub async fn scanner_sync(
                         effective_height,
                         false,
                     ));
-                    if let Err(e) = state.store.mark_outgoing_transfer_reported(
+                    if let Err(e) = OutgoingLifecycle::new(state.store.as_ref()).mark_reported(
                         &vault.vault_pub_key,
                         &tx.tx_hash,
                         observed_height,
@@ -2960,6 +2756,7 @@ pub async fn scanner_reset(
 ) -> impl IntoResponse {
     let _scan_lifecycle = state.scan_lifecycle.lock().await;
     let vault_pub_key = req.vault_pub_key.trim().to_string();
+    let requested_birthday_height = req.birthday_height;
     if vault_pub_key.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -2967,64 +2764,20 @@ pub async fn scanner_reset(
         );
     }
 
-    // True clean slate: wipe every piece of vault-scoped state. After this,
-    // the caller MUST re-register the vault via /register_vault (with full
-    // inventory) before any further operation. FROST keyshares live in the
-    // on-disk `keys/<pubkey>.frost` file and are never touched by reset.
-    if let Err(e) = state.store.save_outputs(&vault_pub_key, &[]) {
-        error!(error = %e, vault = %vault_pub_key, "failed to clear outputs during scanner reset");
+    let mut scanner = state.scanner.lock();
+    if let Err(e) = VaultLifecycle::new(state.store.as_ref()).reset(&mut scanner, &vault_pub_key) {
+        error!(error = %e, vault = %vault_pub_key, "failed to reset vault state during scanner reset");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(e.to_string())),
         );
     }
 
-    if let Err(e) = state
-        .store
-        .rollback_scan_state_from_height(&vault_pub_key, 0)
-    {
-        error!(error = %e, vault = %vault_pub_key, "failed to rollback scan state during scanner reset");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(e.to_string())),
-        );
-    }
-
-    if let Err(e) = state.store.save_registered_key_images(&vault_pub_key, &[]) {
-        error!(error = %e, vault = %vault_pub_key, "failed to clear registered key image inventory during scanner reset");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(e.to_string())),
-        );
-    }
-
-    if let Err(e) = state.store.clear_outgoing_transfers(&vault_pub_key) {
-        error!(error = %e, vault = %vault_pub_key, "failed to clear outgoing transfers during scanner reset");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(e.to_string())),
-        );
-    }
-
-    if let Err(e) = state.store.delete_scan_height(&vault_pub_key) {
-        error!(error = %e, vault = %vault_pub_key, "failed to delete scan height during scanner reset");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(e.to_string())),
-        );
-    }
-
-    if let Err(e) = state.store.delete_vault(&vault_pub_key) {
-        error!(error = %e, vault = %vault_pub_key, "failed to delete vault record during scanner reset");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(e.to_string())),
-        );
-    }
-
-    state.scanner.lock().remove_vault(&vault_pub_key);
-
-    info!(vault = %vault_pub_key, "scanner reset complete — vault fully purged, awaiting re-registration");
+    info!(
+        vault = %vault_pub_key,
+        requested_birthday_height,
+        "scanner reset complete — vault fully purged, awaiting re-registration"
+    );
 
     (
         StatusCode::OK,
@@ -3230,6 +2983,27 @@ pub async fn get_outbounds(
     State(state): State<Arc<AppState>>,
     Path(vault_pub_key): Path<String>,
 ) -> impl IntoResponse {
+    let outputs = match state.store.load_outputs(&vault_pub_key) {
+        Ok(outputs) => outputs,
+        Err(e) => {
+            error!(error = %e, vault = %vault_pub_key, "failed to load outputs before refreshing outgoing transfers");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!("failed to load tracked outputs: {e}"))),
+            );
+        }
+    };
+    if let Err(e) = OutgoingLifecycle::new(state.store.as_ref())
+        .reconcile_output_readiness_with_outputs(&vault_pub_key, &outputs)
+    {
+        error!(error = %e, vault = %vault_pub_key, "failed to refresh outgoing readiness from tracked outputs");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error_json(format!(
+                "failed to refresh outgoing transfer readiness: {e}"
+            ))),
+        );
+    }
     match state.store.load_outgoing_transfers(&vault_pub_key) {
         Ok(outgoing) => {
             let entries = outgoing
@@ -3283,7 +3057,7 @@ pub async fn prune_outbounds(
         );
     }
 
-    match state.store.prune_outgoing_transfers(
+    match OutgoingLifecycle::new(state.store.as_ref()).prune_stale(
         &vault_pub_key,
         &tx_hashes,
         req.observed_mined_only,
@@ -3348,7 +3122,8 @@ pub async fn apply_key_images(
         })
         .collect();
 
-    let (applied, not_found) = if req.spend {
+    let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
+    let ApplyKeyImagesOutcome { applied, not_found } = if req.spend {
         let Some(spent_height) = req.spent_height.filter(|height| *height > 0) else {
             return (
                 StatusCode::BAD_REQUEST,
@@ -3372,9 +3147,7 @@ pub async fn apply_key_images(
             scanner.mark_spent_key_images(&vault_pub_key, &spent_key_images, spent_height);
         }
 
-        match state
-            .store
-            .mark_spent_key_images(&vault_pub_key, &spent_key_images, spent_height)
+        match output_lifecycle.mark_spent_on_chain(&vault_pub_key, &spent_key_images, spent_height)
         {
             Ok(result) => result,
             Err(e) => {
@@ -3393,10 +3166,7 @@ pub async fn apply_key_images(
             scanner.apply_key_images(&vault_pub_key, &key_images, req.reconcile);
         }
 
-        match state
-            .store
-            .apply_key_images(&vault_pub_key, &key_images, req.reconcile)
-        {
+        match output_lifecycle.apply_key_images(&vault_pub_key, &key_images, req.reconcile) {
             Ok(result) => result,
             Err(e) => {
                 error!(error = %e, vault = vault_pub_key, "failed to persist applied key images");
@@ -3462,467 +3232,18 @@ pub async fn apply_key_images(
     )
 }
 
-fn normalized_tx_keys(keys: &[String]) -> Vec<String> {
-    let mut normalized: Vec<String> = keys
-        .iter()
-        .map(|key| key.trim().to_ascii_lowercase())
-        .filter(|key| !key.is_empty())
-        .collect();
-    normalized.sort();
-    normalized
-}
-
 fn build_vault_inventory_fingerprint(
     vault_pub_key: &str,
     birthday: u64,
     registered_key_images: &[RegisteredKeyImageRef],
-    outgoing: &[crate::state::store::OutgoingTransferRecord],
+    outgoing: &[OutgoingTransferRecord],
 ) -> String {
-    let mut builder = String::new();
-    builder.push_str(vault_pub_key);
-    builder.push('|');
-    builder.push_str(&birthday.to_string());
-
-    let mut key_images = registered_key_images.to_vec();
-    key_images.sort_by(|left, right| {
-        left.tx_hash
-            .cmp(&right.tx_hash)
-            .then(left.output_index.cmp(&right.output_index))
-            .then(left.key_image.cmp(&right.key_image))
-    });
-    for entry in key_images {
-        builder.push_str("|ki:");
-        builder.push_str(&normalize_tx_hash(&entry.tx_hash));
-        builder.push(':');
-        builder.push_str(&entry.output_index.to_string());
-        builder.push(':');
-        builder.push_str(&entry.key_image.trim().to_ascii_lowercase());
-    }
-
-    let mut tx_entries: Vec<(String, Vec<String>)> = outgoing
-        .iter()
-        .filter_map(|record| {
-            let tx_hash = normalize_tx_hash(&record.tx_hash);
-            if tx_hash.is_empty() || record.tx_keys.is_empty() || !record.registered_inventory {
-                return None;
-            }
-            Some((tx_hash, normalized_tx_keys(&record.tx_keys)))
-        })
-        .collect();
-    tx_entries.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then(left.1.join(",").cmp(&right.1.join(",")))
-    });
-    for (tx_hash, tx_keys) in tx_entries {
-        builder.push_str("|tx:");
-        builder.push_str(&tx_hash);
-        builder.push(':');
-        builder.push_str(&tx_keys.join(","));
-    }
-
-    hex::encode(Sha256::digest(builder.as_bytes()))
-}
-
-fn outgoing_record_matches_registered_tx_key(
-    record: &crate::state::store::OutgoingTransferRecord,
-    entry: &crate::api::types::RegisterTxKeyEntry,
-) -> bool {
-    if !record.status.eq_ignore_ascii_case(OUTGOING_STATUS_MINED) {
-        return false;
-    }
-    if !record.registered_inventory {
-        return false;
-    }
-    if normalized_tx_keys(&record.tx_keys) != normalized_tx_keys(&entry.tx_keys) {
-        return false;
-    }
-    if !record
-        .to_address
-        .eq_ignore_ascii_case(entry.to_address.trim())
-    {
-        return false;
-    }
-    if record.amount != entry.amount || record.fee != entry.fee {
-        return false;
-    }
-
-    let entry_from = entry.from_address.as_deref().unwrap_or_default().trim();
-    if !entry_from.is_empty() && !record.from_address.eq_ignore_ascii_case(entry_from) {
-        return false;
-    }
-
-    let entry_memo = entry.memo.as_deref().unwrap_or_default().trim();
-    if !entry_memo.is_empty() && record.memo.trim() != entry_memo {
-        return false;
-    }
-
-    true
-}
-
-fn register_tx_key_entry_as_validate_request(
-    vault_pub_key: &str,
-    entry: crate::api::types::RegisterTxKeyEntry,
-) -> crate::api::types::ValidateOutboundRequest {
-    crate::api::types::ValidateOutboundRequest {
-        vault_pub_key: vault_pub_key.to_string(),
-        tx_hash: entry.tx_hash,
-        tx_keys: entry.tx_keys,
-        registered_inventory: true,
-        from_address: entry.from_address,
-        to_address: entry.to_address,
-        amount: entry.amount,
-        fee: entry.fee,
-        memo: entry.memo,
-        reconcile: true,
-    }
-}
-
-async fn validate_outbound_request(
-    state: &Arc<AppState>,
-    req: crate::api::types::ValidateOutboundRequest,
-) -> Result<crate::api::types::ValidateOutboundResponse, (StatusCode, serde_json::Value)> {
-    let vault_pub_key = req.vault_pub_key.trim().to_string();
-    if vault_pub_key.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("vault_pub_key is required"),
-        ));
-    }
-
-    let tx_hash = normalize_tx_hash(&req.tx_hash);
-    if !is_valid_chain_tx_hash(&tx_hash) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("tx_hash must be a 64-character hex string"),
-        ));
-    }
-    if req.tx_keys.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("tx_keys must not be empty"),
-        ));
-    }
-
-    let to_address = req.to_address.trim().to_string();
-    if to_address.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("to_address is required"),
-        ));
-    }
-
-    let owned_addresses = {
-        let scanner = state.scanner.lock();
-        scanner.get_addresses(&vault_pub_key)
-    };
-    if owned_addresses.is_empty() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            error_json(format!(
-                "no registered addresses found for vault {vault_pub_key}"
-            )),
-        ));
-    }
-
-    let from_address = req
-        .from_address
-        .as_deref()
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if !from_address.is_empty()
-        && !owned_addresses
-            .iter()
-            .any(|address| address.eq_ignore_ascii_case(&from_address))
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("from_address does not belong to the provided vault"),
-        ));
-    }
-
-    let daemon_result = match state.daemon.get_transactions(&[tx_hash.clone()]).await {
-        Ok(result) => result,
-        Err(e) => {
-            error!(error = %e, tx_hash, "failed to query daemon transaction");
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                error_json(format!(
-                    "daemon transaction query unavailable for {tx_hash}: {e}"
-                )),
-            ));
-        }
-    };
-
-    let tx_entry = match daemon_result
-        .txs
-        .unwrap_or_default()
-        .into_iter()
-        .find(|entry| hash_matches(&entry.tx_hash, &tx_hash))
-    {
-        Some(entry) => entry,
-        None => {
-            if daemon_result
-                .missed_tx
-                .unwrap_or_default()
-                .iter()
-                .any(|hash| hash_matches(hash, &tx_hash))
-            {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    error_json(format!("transaction {tx_hash} not found")),
-                ));
-            }
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!(
-                    "ambiguous daemon get_transactions response for {tx_hash}"
-                )),
-            ));
-        }
-    };
-
-    let tx_hex = tx_entry.as_hex.trim().to_string();
-    if tx_hex.is_empty() {
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            error_json(format!(
-                "daemon returned empty tx hex for transaction {tx_hash}"
-            )),
-        ));
-    }
-
-    let validated = match validation::validate_outbound_transaction(
-        &tx_hex,
-        &req.tx_keys,
-        &to_address,
-        req.amount,
-        Some(req.fee),
-        &owned_addresses,
-    ) {
-        Ok(validated) => validated,
-        Err(e) => {
-            warn!(
-                error = %e,
-                vault = vault_pub_key,
-                tx_hash,
-                to_address,
-                amount = req.amount,
-                fee = req.fee,
-                "outbound tx-key validation failed"
-            );
-            return Err((
-                StatusCode::BAD_REQUEST,
-                error_json(format!("failed to validate outbound transaction: {e}")),
-            ));
-        }
-    };
-
-    let existing = match state.store.load_outgoing_transfer(&vault_pub_key, &tx_hash) {
-        Ok(record) => record,
-        Err(e) => {
-            error!(error = %e, vault = vault_pub_key, tx_hash, "failed to load existing outgoing transfer");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!("failed to load outgoing transfer: {e}")),
-            ));
-        }
-    };
-
-    if let Some(record) = existing.as_ref() {
-        if !record.tx_keys.is_empty() && record.tx_keys != req.tx_keys {
-            return Err((
-                StatusCode::CONFLICT,
-                error_json(format!(
-                    "existing outgoing transfer for {tx_hash} has different tx_keys"
-                )),
-            ));
-        }
-        if !record.to_address.eq_ignore_ascii_case(&to_address)
-            || record.amount != req.amount
-            || record.fee != req.fee
-        {
-            return Err((
-                StatusCode::CONFLICT,
-                error_json(format!(
-                    "existing outgoing transfer for {tx_hash} conflicts with outbound metadata"
-                )),
-            ));
-        }
-    }
-
-    let current_height = state.scanner.lock().current_height();
-    let status = if tx_entry.block_height.is_some() {
-        OUTGOING_STATUS_MINED
-    } else if tx_entry.in_pool.unwrap_or(false) {
-        OUTGOING_STATUS_MEMPOOL
-    } else {
-        "attested_pending_observation"
-    };
-    let observed_height = tx_entry.block_height;
-    let observed_at = observed_height.map(|_| chrono::Utc::now().timestamp());
-
-    if let Some(record) = existing {
-        // A successful validate_outbound result means this node has
-        // cryptographically proven the tx-key against the daemon-fetched tx
-        // and the vault's owned addresses. That's authoritative — persist it
-        // as registered inventory regardless of what the caller asked, so
-        // the tx-key counts in registered_tx_key_count immediately and can
-        // feed later co-attestation paths even before THORChain's vault
-        // metadata round-trip completes.
-        if let Err(e) = state.store.update_outgoing_transfer_audit_metadata(
-            &vault_pub_key,
-            &tx_hash,
-            &req.tx_keys,
-            true,
-            &from_address,
-            req.memo.as_deref().unwrap_or_default(),
-        ) {
-            error!(error = %e, vault = vault_pub_key, tx_hash, "failed to update existing outgoing transfer metadata");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!("failed to update outgoing transfer metadata: {e}")),
-            ));
-        }
-        if let Err(e) = state.store.update_outgoing_transfer_status(
-            &vault_pub_key,
-            &tx_hash,
-            status,
-            observed_height,
-            observed_at,
-            None,
-        ) {
-            error!(error = %e, vault = vault_pub_key, tx_hash, "failed to update existing outgoing transfer status");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!("failed to update outgoing transfer status: {e}")),
-            ));
-        }
-
-        let marked = if req.reconcile && record.tx_keys.is_empty() {
-            0
-        } else {
-            0
-        };
-        return Ok(crate::api::types::ValidateOutboundResponse {
-            tracked: validated.tracked_owned_output,
-            marked,
-            not_found: 0,
-        });
-    }
-
-    let (marked, not_found) = (0usize, 0usize);
-
-    let record = crate::state::store::OutgoingTransferRecord {
-        tx_hash: tx_hash.clone(),
-        tx_hex,
-        tx_keys: req.tx_keys.clone(),
-        // Validation success is cryptographic proof; mark registered
-        // inventory unconditionally so non-signer validators persist the
-        // tx-key alongside signer-produced records.
-        registered_inventory: true,
-        msg_id: format!("attestation:{tx_hash}"),
-        vault_pub_key: vault_pub_key.clone(),
-        from_address,
-        to_address,
-        amount: req.amount,
-        fee: req.fee,
-        memo: req.memo.unwrap_or_default(),
-        planned_height: observed_height.unwrap_or(current_height),
-        observed_height,
-        status: status.to_string(),
-        broadcasted_at: None,
-        observed_at,
-        reported_effective_height: None,
-        created_at: chrono::Utc::now().timestamp(),
-    };
-    if let Err(e) = state.store.save_outgoing_transfer(&record) {
-        error!(error = %e, vault = vault_pub_key, tx_hash, "failed to persist tx-key validated outgoing transfer");
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error_json(format!("failed to persist outgoing transfer: {e}")),
-        ));
-    }
-
-    info!(
-        vault = vault_pub_key,
-        tx_hash,
-        tracked = validated.tracked_owned_output,
-        marked,
-        reconcile = req.reconcile,
-        "validated outbound via tx keys without mutating local spend state"
-    );
-
-    Ok(crate::api::types::ValidateOutboundResponse {
-        tracked: validated.tracked_owned_output,
-        marked,
-        not_found,
-    })
-}
-
-async fn reconcile_registered_tx_key_inventory(
-    state: &Arc<AppState>,
-    vault_pub_key: &str,
-    tx_key_entries: Vec<crate::api::types::RegisterTxKeyEntry>,
-) -> Result<(), (StatusCode, serde_json::Value)> {
-    let existing = state
-        .store
-        .load_outgoing_transfers(vault_pub_key)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!("failed to load outgoing transfers: {e}")),
-            )
-        })?;
-    let existing_by_hash: HashMap<String, crate::state::store::OutgoingTransferRecord> = existing
-        .into_iter()
-        .filter(|record| !record.tx_hash.trim().is_empty())
-        .map(|record| (normalize_tx_hash(&record.tx_hash), record))
-        .collect();
-
-    let mut retained_hashes = HashSet::new();
-    for entry in tx_key_entries {
-        let normalized_hash = normalize_tx_hash(&entry.tx_hash);
-        if normalized_hash.is_empty() {
-            continue;
-        }
-        retained_hashes.insert(normalized_hash.clone());
-        if existing_by_hash
-            .get(&normalized_hash)
-            .is_some_and(|record| outgoing_record_matches_registered_tx_key(record, &entry))
-        {
-            continue;
-        }
-        validate_outbound_request(
-            state,
-            register_tx_key_entry_as_validate_request(vault_pub_key, entry),
-        )
-        .await?;
-    }
-
-    let stale_hashes: HashSet<String> = existing_by_hash
-        .iter()
-        .filter_map(|(tx_hash, record)| {
-            if record.tx_keys.is_empty() || retained_hashes.contains(tx_hash) {
-                return None;
-            }
-            Some(tx_hash.clone())
-        })
-        .collect();
-    if !stale_hashes.is_empty() {
-        state
-            .store
-            .prune_outgoing_transfers(vault_pub_key, &stale_hashes, false, true)
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    error_json(format!("failed to prune stale tx-key outbounds: {e}")),
-                )
-            })?;
-    }
-
-    Ok(())
+    VaultLifecycle::build_inventory_fingerprint(
+        vault_pub_key,
+        birthday,
+        registered_key_images,
+        outgoing,
+    )
 }
 
 pub async fn validate_outbound(
@@ -3999,85 +3320,32 @@ pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoR
 
     let mut entries = Vec::with_capacity(vaults.len());
     for vault in vaults {
-        let scan_height = match state.store.load_scan_height(&vault.vault_pub_key) {
-            Ok(height) => height,
+        let snapshot = match VaultLifecycle::new(state.store.as_ref()).snapshot(&vault) {
+            Ok(snapshot) => snapshot,
             Err(e) => {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    "failed to load scan height while listing vault states"
-                );
+                error!(error = %e, vault = %vault.vault_pub_key, "failed to build vault lifecycle snapshot");
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(error_json(format!(
-                        "failed to load scan height for {}: {e}",
+                        "failed to build vault state for {}: {e}",
                         vault.vault_pub_key
                     ))),
                 );
             }
         };
-        let registered_key_images =
-            match state.store.load_registered_key_images(&vault.vault_pub_key) {
-                Ok(key_images) => key_images,
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        vault = %vault.vault_pub_key,
-                        "failed to load registered key images while listing vault states"
-                    );
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json(format!(
-                            "failed to load registered key images for {}: {e}",
-                            vault.vault_pub_key
-                        ))),
-                    );
-                }
-            };
-        let outgoing = match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
-            Ok(records) => records,
-            Err(e) => {
-                error!(
-                    error = %e,
-                    vault = %vault.vault_pub_key,
-                    "failed to load outgoing transfers while listing vault states"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to load outgoing transfers for {}: {e}",
-                        vault.vault_pub_key
-                    ))),
-                );
-            }
-        };
-        let registered_tx_key_count = outgoing
-            .iter()
-            .filter(|record| {
-                record.registered_inventory
-                    && !record.tx_keys.is_empty()
-                    && !record.tx_hash.trim().is_empty()
-            })
-            .count();
         entries.push(crate::api::types::VaultStateEntry {
-            inventory_fingerprint: build_vault_inventory_fingerprint(
-                &vault.vault_pub_key,
-                vault.birthday,
-                &registered_key_images,
-                &outgoing,
-            ),
-            registered_key_image_count: registered_key_images.len(),
-            registered_tx_key_count,
-            vault_pub_key: vault.vault_pub_key,
-            address: vault.address,
-            birthday: vault.birthday,
-            rescan: vault.rescan,
-            sync_state: if vault.rescan {
-                "syncing_to_tip".to_string()
-            } else {
-                "at_tip".to_string()
+            inventory_fingerprint: snapshot.inventory_fingerprint,
+            registered_key_image_count: snapshot.registered_key_image_count,
+            registered_tx_key_count: snapshot.registered_tx_key_count,
+            vault_pub_key: snapshot.vault_pub_key,
+            address: snapshot.address,
+            birthday: snapshot.birthday,
+            rescan: snapshot.rescan,
+            sync_state: match snapshot.state {
+                VaultSyncState::SyncingToTip => "syncing_to_tip".to_string(),
+                VaultSyncState::AtTip => "at_tip".to_string(),
             },
-            scan_height,
+            scan_height: snapshot.scan_height,
         });
     }
 
@@ -4728,7 +3996,8 @@ pub async fn sim_transfer(
         .collect::<Vec<_>>();
     let session_id = Uuid::new_v4().to_string();
     let msg_id = session_id.clone();
-    if let Err(e) = state.store.reserve_outputs(
+    let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
+    if let Err(e) = output_lifecycle.reserve(
         &account.account_id,
         &refs,
         &session_id,
@@ -4741,36 +4010,26 @@ pub async fn sim_transfer(
     let spend_scalar = match xmr::spend_scalar_from_seed_hex(&req.spend_key_hex) {
         Ok(scalar) => scalar,
         Err(e) => {
-            let _ = state.store.release_reservations_for_session(
-                &account.account_id,
-                &session_id,
-                &msg_id,
-            );
+            let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
             return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string())));
         }
     };
     let tx = match unsigned.signable.sign(&mut OsRng, &spend_scalar) {
         Ok(tx) => tx,
         Err(e) => {
-            let _ = state.store.release_reservations_for_session(
-                &account.account_id,
-                &session_id,
-                &msg_id,
-            );
+            let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
             return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string())));
         }
     };
     let tx_hash = hex::encode(tx.hash());
     let tx_hex = hex::encode(tx.serialize());
-    if let Err(e) =
-        state
-            .store
-            .bind_reservation_tx_hash(&account.account_id, &session_id, &msg_id, &tx_hash)
-    {
-        let _ =
-            state
-                .store
-                .release_reservations_for_session(&account.account_id, &session_id, &msg_id);
+    if let Err(e) = output_lifecycle.bind_reservation_tx_hash(
+        &account.account_id,
+        &session_id,
+        &msg_id,
+        &tx_hash,
+    ) {
+        let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(error_json(format!(
@@ -4782,9 +4041,7 @@ pub async fn sim_transfer(
     match state.daemon.send_raw_transaction(&tx_hex).await {
         Ok(resp) if resp.status == "OK" => {
             if let Err(e) =
-                state
-                    .store
-                    .finalize_reserved_for_msg(&account.account_id, &msg_id, &tx_hash)
+                output_lifecycle.finalize_for_msg(&account.account_id, &msg_id, &tx_hash)
             {
                 error!(error = %e, tx_hash = %tx_hash, "failed to finalize sim transfer reservation");
             }
@@ -4798,22 +4055,14 @@ pub async fn sim_transfer(
             )
         }
         Ok(resp) => {
-            let _ = state.store.release_reservations_for_session(
-                &account.account_id,
-                &session_id,
-                &msg_id,
-            );
+            let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
             (
                 StatusCode::BAD_REQUEST,
                 Json(error_json(resp.reason.unwrap_or(resp.status))),
             )
         }
         Err(e) => {
-            let _ = state.store.release_reservations_for_session(
-                &account.account_id,
-                &session_id,
-                &msg_id,
-            );
+            let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(error_json(format!("failed to broadcast sim transfer: {e}"))),
@@ -4928,6 +4177,9 @@ mod tests {
             tx_hex: "deadbeef".to_string(),
             tx_keys: vec![],
             registered_inventory: false,
+            has_owned_change: None,
+            local_change_materialized: None,
+            key_images_ready: None,
             msg_id: "msg-id".to_string(),
             vault_pub_key: vault_pub_key.to_string(),
             from_address: from.to_string(),
@@ -4937,7 +4189,7 @@ mod tests {
             memo: "OUT:TEST".to_string(),
             planned_height: 77,
             observed_height: Some(77),
-            status: OUTGOING_STATUS_MINED.to_string(),
+            status: OutgoingTransferStatus::ObservedMined,
             broadcasted_at: Some(created_at),
             observed_at: Some(created_at),
             reported_effective_height: None,
@@ -5613,7 +4865,7 @@ mod tests {
             "48tod",
             4,
         );
-        record.status = "signed_pending_observation".to_string();
+        record.status = OutgoingTransferStatus::SignedPendingObservation;
         record.observed_height = None;
         record.observed_at = None;
 
@@ -5636,7 +4888,7 @@ mod tests {
             .load_outgoing_transfer(VALID_VAULT_PUB_KEY, &record.tx_hash)
             .expect("failed to load updated outgoing transfer")
             .expect("updated outgoing transfer should exist");
-        assert_eq!(updated.status, OUTGOING_STATUS_MINED);
+        assert_eq!(updated.status, OutgoingTransferStatus::ObservedMined);
         assert_eq!(updated.observed_height, Some(120));
         assert!(updated.observed_at.is_some());
     }
@@ -6054,7 +5306,7 @@ mod tests {
         assert_eq!(records[0].amount, expected_amount);
         assert_eq!(records[0].fee, expected_fee);
         assert_eq!(records[0].memo, "OUT:parent");
-        assert_eq!(records[0].status, OUTGOING_STATUS_MINED);
+        assert_eq!(records[0].status, OutgoingTransferStatus::ObservedMined);
         assert_eq!(records[0].observed_height, Some(111));
     }
 
@@ -6737,7 +5989,7 @@ mod tests {
             .iter()
             .find(|record| record.tx_hash.eq_ignore_ascii_case(daemon_hash))
             .expect("daemon hash outgoing record should exist");
-        assert_eq!(updated.status, OUTGOING_STATUS_MEMPOOL);
+        assert_eq!(updated.status, OutgoingTransferStatus::ObservedMempool);
     }
 
     #[tokio::test]
@@ -6811,8 +6063,11 @@ mod tests {
             .iter()
             .find(|record| record.tx_hash.eq_ignore_ascii_case(caller_hash))
             .expect("caller outgoing record should exist");
-        assert_eq!(daemon_record.status, OUTGOING_STATUS_MEMPOOL);
-        assert_eq!(caller_record.status, OUTGOING_STATUS_MINED);
+        assert_eq!(
+            daemon_record.status,
+            OutgoingTransferStatus::ObservedMempool
+        );
+        assert_eq!(caller_record.status, OutgoingTransferStatus::ObservedMined);
     }
 
     #[tokio::test]
@@ -7216,6 +6471,59 @@ mod tests {
             .expect("failed to load outgoing transfers");
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].tx_hash, keep.tx_hash);
+    }
+
+    #[tokio::test]
+    async fn registered_tx_key_inventory_prune_preserves_local_signed_outbound() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+
+        let mut local_signed = sample_outgoing(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            VALID_VAULT_PUB_KEY,
+            "48from-a",
+            "8to-a",
+            1,
+        );
+        local_signed.tx_keys = vec!["aa".repeat(32)];
+        local_signed.status = OutgoingTransferStatus::SignedPendingObservation;
+        local_signed.observed_height = None;
+        local_signed.registered_inventory = true;
+
+        let mut stale_registered = sample_outgoing(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            VALID_VAULT_PUB_KEY,
+            "48from-b",
+            "8to-b",
+            2,
+        );
+        stale_registered.tx_keys = vec!["bb".repeat(32)];
+        stale_registered.registered_inventory = true;
+        stale_registered.msg_id = format!("attestation:{}", stale_registered.tx_hash);
+
+        state
+            .store
+            .save_outgoing_transfer(&local_signed)
+            .expect("failed to seed local signed outgoing transfer");
+        state
+            .store
+            .save_outgoing_transfer(&stale_registered)
+            .expect("failed to seed stale registered outgoing transfer");
+
+        reconcile_registered_tx_key_inventory(&state, VALID_VAULT_PUB_KEY, Vec::new())
+            .await
+            .expect("empty registered inventory should reconcile");
+
+        let records = state
+            .store
+            .load_outgoing_transfers(VALID_VAULT_PUB_KEY)
+            .expect("outgoing transfers should load");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tx_hash, local_signed.tx_hash);
+        assert_eq!(
+            records[0].status,
+            OutgoingTransferStatus::SignedPendingObservation
+        );
+        assert!(records[0].registered_inventory);
     }
 
     #[tokio::test]
@@ -8345,14 +7653,14 @@ mod tests {
             .expect("failed to load outgoing transfer")
             .expect("outgoing transfer should exist");
         assert_eq!(saved.tx_keys, synthetic.tx_keys);
-        // validate_outbound now forces registered_inventory=true on success
-        // (the proof is cryptographic), so the tx-key counts immediately
-        // without waiting for the THORChain vault-metadata round trip.
-        assert!(saved.registered_inventory);
+        // Compatibility validation can be driven by peer observation before
+        // THORChain vault inventory has caught up. Keep it non-inventory until
+        // register_vault replays the canonical tx-key inventory.
+        assert!(!saved.registered_inventory);
         assert_eq!(saved.to_address, synthetic.to_address);
         assert_eq!(saved.amount, synthetic.amount);
         assert_eq!(saved.fee, synthetic.fee);
-        assert_eq!(saved.status, OUTGOING_STATUS_MINED);
+        assert_eq!(saved.status, OutgoingTransferStatus::ObservedMined);
     }
 
     #[tokio::test]

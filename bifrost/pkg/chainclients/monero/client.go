@@ -164,14 +164,9 @@ type xmrKeyImageCatchupState struct {
 	pending bool
 }
 
-type xmrTxKeyCatchupRef struct {
+type xmrOutgoingInventoryRef struct {
 	txHash string
 	txKeys []string
-}
-
-type xmrTxKeyCatchupState struct {
-	refs    []xmrTxKeyCatchupRef
-	pending bool
 }
 
 type xmrKeyImageCeremonyGate struct {
@@ -227,8 +222,6 @@ type Client struct {
 	trackedVaultSyncState   map[string]string
 	keyImageCatchupMu       sync.Mutex
 	keyImageCatchupState    map[string]xmrKeyImageCatchupState
-	txKeyCatchupMu          sync.Mutex
-	txKeyCatchupState       map[string]xmrTxKeyCatchupState
 	keyImageCeremonyGateMu  sync.Mutex
 	keyImageCeremonyGate    *xmrKeyImageCeremonyGate
 	keyImageProofCacheMu    sync.Mutex
@@ -478,6 +471,10 @@ func (c *Client) xmrLocalCapability(members []string, syncState xmrSyncState, va
 }
 
 func (c *Client) xmrLocalSyncState(states []xmrFrostVaultStateEntry) (xmrSyncState, string, error) {
+	return c.xmrLocalSyncStateForVault(states, common.EmptyPubKey)
+}
+
+func (c *Client) xmrLocalSyncStateForVault(states []xmrFrostVaultStateEntry, target common.PubKey) (xmrSyncState, string, error) {
 	if c.frostSigner == nil {
 		return xmrSyncStateSyncingToTip, "xmr frost signer is not initialized", nil
 	}
@@ -489,12 +486,16 @@ func (c *Client) xmrLocalSyncState(states []xmrFrostVaultStateEntry) (xmrSyncSta
 		states = stateResp.Vaults
 	}
 	for _, state := range states {
-		if state.Rescan {
-			return xmrSyncStateSyncingToTip, fmt.Sprintf("vault %s is syncing_to_tip", strings.TrimSpace(state.VaultPubKey)), nil
+		if !state.Rescan {
+			continue
 		}
+		if !target.IsEmpty() && strings.TrimSpace(state.VaultPubKey) != target.String() {
+			continue
+		}
+		return xmrSyncStateSyncingToTip, fmt.Sprintf("vault %s is syncing_to_tip", strings.TrimSpace(state.VaultPubKey)), nil
 	}
 	if c.scanner == nil || c.scanner.frostSigner == nil || c.scanner.bridge == nil {
-		if pending, reason, err := c.xmrHasPendingReplayWork(); pending || err != nil {
+		if pending, reason, err := c.xmrHasPendingReplayWorkForVault(target); pending || err != nil {
 			if err != nil {
 				return xmrSyncStateSyncingToTip, "failed to inspect xmr replay work", err
 			}
@@ -511,11 +512,12 @@ func (c *Client) xmrLocalSyncState(states []xmrFrostVaultStateEntry) (xmrSyncSta
 	if err != nil {
 		return xmrSyncStateSyncingToTip, "failed to query xmr chain tip", err
 	}
-	if scannerHeight <= 0 || chainHeight <= 0 || scannerHeight != chainHeight {
+	const xmrScannerTipToleranceBlocks = 3
+	if scannerHeight <= 0 || chainHeight <= 0 || chainHeight-scannerHeight > xmrScannerTipToleranceBlocks {
 		return xmrSyncStateSyncingToTip, fmt.Sprintf("xmr scanner is not at tip (scan=%d tip=%d)", scannerHeight, chainHeight), nil
 	}
 
-	if pending, reason, err := c.xmrHasPendingReplayWork(); pending || err != nil {
+	if pending, reason, err := c.xmrHasPendingReplayWorkForVault(target); pending || err != nil {
 		if err != nil {
 			return xmrSyncStateSyncingToTip, "failed to inspect xmr replay work", err
 		}
@@ -593,6 +595,7 @@ func isTransientXMRKeyImageCeremonyError(err error) bool {
 }
 
 var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not active")
+var errXMROutgoingAuditIncomplete = errors.New("xmr outgoing audit incomplete")
 
 func (c *Client) Start(
 	globalTxsQueue chan stypes.TxIn,
@@ -712,7 +715,6 @@ func (c *Client) syncXMRState() error {
 
 	c.catchupKeyImagesForVaults(vaults)
 	c.driveLocalKeyImageBacklogForVaults(vaults)
-	c.catchupTxKeysForVaults(vaults)
 	c.logXMRVaultLocalStatuses(vaultStates)
 	return nil
 }
@@ -940,157 +942,21 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		Msg("xmr key-image backlog: cached locally generated proof set")
 }
 
-func (c *Client) catchupTxKeys() {
+func (c *Client) refreshOutgoingInventoryReplay() {
 	if c.thorchainBridge == nil || c.frostSigner == nil {
 		return
 	}
 	vaults, err := c.trackedXMRVaultsForKeyImageCatchup()
 	if err != nil {
-		c.logger.Err(err).Msg("xmr tx-key catchup: failed to get tracked xmr vaults")
+		c.logger.Err(err).Msg("xmr outgoing inventory replay: failed to get tracked xmr vaults")
 		return
 	}
-	c.catchupTxKeysForVaults(vaults)
-}
-
-func (c *Client) catchupTxKeysForVaults(vaults ttypes.Vaults) {
-	for _, vault := range vaults {
-		vaultPubKey := keyImageCatchupVaultPubKey(vault)
-		if vaultPubKey.IsEmpty() {
-			c.clearTxKeyCatchupState(vaultPubKey.String())
-			continue
-		}
-
-		refs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
-		if len(refs) == 0 {
-			c.clearTxKeyCatchupState(vaultPubKey.String())
-			continue
-		}
-		keyImageRefs := makeApplyKeyImageRefs(vault.KeyImagesXmr)
-		if len(keyImageRefs) > 0 {
-			keyImagesPending, verifyErr := c.keyImageCatchupNeedsReplay(vaultPubKey.String(), keyImageRefs)
-			if verifyErr != nil {
-				c.logger.Debug().
-					Err(verifyErr).
-					Str("vault", vaultPubKey.String()).
-					Msg("xmr tx-key catchup: failed to verify key-image state, blocking outbound audit replay")
-				c.clearTxKeyCatchupState(vaultPubKey.String())
-				continue
-			}
-			if keyImagesPending {
-				c.logger.Info().
-					Str("vault", vaultPubKey.String()).
-					Int("key_images", len(keyImageRefs)).
-					Msg("xmr tx-key catchup: waiting for key-image reconciliation before outbound audit replay")
-				c.clearTxKeyCatchupState(vaultPubKey.String())
-				continue
-			}
-		}
-
-		batch, shouldApply := c.nextTxKeyCatchupBatch(vaultPubKey.String(), refs)
-		stateCheck, verifyErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), refs)
-		if verifyErr != nil {
-			c.logger.Debug().
-				Err(verifyErr).
-				Str("vault", vaultPubKey.String()).
-				Msg("xmr tx-key catchup: failed to verify signer state, forcing replay")
-			stateCheck.needsReplay = true
-		}
-		if len(stateCheck.removeHashes) > 0 {
-			_, pruneErr := c.frostSigner.PruneOutgoingTransfers(xmrFrostPruneOutgoingTransfersRequest{
-				VaultPubKey:       vaultPubKey.String(),
-				TxHashes:          append([]string(nil), stateCheck.removeHashes...),
-				ObservedMinedOnly: true,
-				TxKeyBackedOnly:   true,
-			})
-			if pruneErr != nil {
-				c.logger.Err(pruneErr).
-					Str("vault", vaultPubKey.String()).
-					Strs("tx_hashes", stateCheck.removeHashes).
-					Msg("xmr tx-key catchup: failed to prune stale signer outbounds")
-				stateCheck.needsReplay = true
-			}
-		}
-		if stateCheck.needsReplay && !shouldApply {
-			c.clearTxKeyCatchupState(vaultPubKey.String())
-			batch = cloneTxKeyCatchupRefs(refs)
-			shouldApply = true
-		}
-		if !shouldApply {
-			continue
-		}
-
-		type catchupOutbound struct {
-			ref  xmrTxKeyCatchupRef
-			meta xmrFrostOutboundMeta
-		}
-
-		ordered := make([]catchupOutbound, 0, len(batch))
-		pending := false
-		for _, ref := range batch {
-			meta, metaErr := c.getTxKeyCatchupOutboundMeta(vaultPubKey, ref.txHash)
-			if metaErr != nil {
-				c.logger.Err(metaErr).
-					Str("vault", vaultPubKey.String()).
-					Str("tx_hash", ref.txHash).
-					Msg("xmr tx-key catchup: failed to load outbound metadata")
-				pending = true
-				break
-			}
-			ordered = append(ordered, catchupOutbound{ref: ref, meta: meta})
-		}
-
-		sort.SliceStable(ordered, func(i, j int) bool {
-			leftHeight := ordered[i].meta.ObservedHeight
-			rightHeight := ordered[j].meta.ObservedHeight
-			if leftHeight == rightHeight {
-				return strings.ToLower(strings.TrimSpace(ordered[i].ref.txHash)) <
-					strings.ToLower(strings.TrimSpace(ordered[j].ref.txHash))
-			}
-			if leftHeight <= 0 {
-				return false
-			}
-			if rightHeight <= 0 {
-				return true
-			}
-			return leftHeight < rightHeight
-		})
-
-		applied := 0
-		for _, outbound := range ordered {
-			_, applyErr := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
-				VaultPubKey: vaultPubKey.String(),
-				TxHash:      outbound.ref.txHash,
-				TxKeys:      append([]string(nil), outbound.ref.txKeys...),
-				FromAddress: outbound.meta.FromAddress,
-				ToAddress:   outbound.meta.ToAddress,
-				Amount:      outbound.meta.Amount,
-				Fee:         outbound.meta.Fee,
-				Memo:        outbound.meta.Memo,
-				Reconcile:   true,
-			})
-			if applyErr != nil {
-				c.logger.Err(applyErr).
-					Str("vault", vaultPubKey.String()).
-					Str("tx_hash", outbound.ref.txHash).
-					Msg("xmr tx-key catchup: failed to replay outbound audit record")
-				pending = true
-				break
-			}
-			applied++
-		}
-
-		c.recordTxKeyCatchup(vaultPubKey.String(), refs, pending)
-		c.logger.Info().
-			Str("vault", vaultPubKey.String()).
-			Int("applied", applied).
-			Int("sent", len(batch)).
-			Int("total", len(refs)).
-			Bool("pending", pending).
-			Msg("xmr tx-key catchup: replayed outbound audit records from thorchain")
+	if _, err := c.syncTrackedVaultRegistrations(vaults); err != nil {
+		c.logger.Err(err).Msg("xmr outgoing inventory replay: failed to refresh signer inventory from thorchain")
 	}
 }
 
-func (c *Client) getTxKeyCatchupOutboundMeta(vaultPubKey common.PubKey, txHash string) (xmrFrostOutboundMeta, error) {
+func (c *Client) getOutgoingInventoryReplayMeta(vaultPubKey common.PubKey, txHash string) (xmrFrostOutboundMeta, error) {
 	voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
 	if err != nil {
 		return xmrFrostOutboundMeta{}, fmt.Errorf("fail to get observed tx voter for %s: %w", txHash, err)
@@ -1119,15 +985,21 @@ func (c *Client) getTxKeyCatchupOutboundMeta(vaultPubKey common.PubKey, txHash s
 		return xmrFrostOutboundMeta{}, fmt.Errorf("observed xmr outbound %s is missing destination address", txHash)
 	}
 
-	if meta, ok, err := c.txKeyCatchupCanonicalOutboundMeta(vaultPubKey, txHash, observed.Tx.Memo); err != nil {
+	if meta, ok, err := c.outgoingInventoryCanonicalOutboundMeta(vaultPubKey, txHash, observed.Tx.Memo); err != nil {
 		return xmrFrostOutboundMeta{}, err
 	} else if ok {
 		meta.ObservedHeight = observed.BlockHeight
 		return meta, nil
 	}
 
+	fromAddress := observed.Tx.FromAddress.String()
+	if common.IsXMRUnknownSenderAddress(common.Address(fromAddress)) {
+		if vaultAddr, addrErr := vaultPubKey.GetAddress(common.XMRChain); addrErr == nil && !vaultAddr.IsEmpty() {
+			fromAddress = vaultAddr.String()
+		}
+	}
 	return xmrFrostOutboundMeta{
-		FromAddress:    observed.Tx.FromAddress.String(),
+		FromAddress:    fromAddress,
 		ToAddress:      observed.Tx.ToAddress.String(),
 		Amount:         amountAtomic,
 		Fee:            feeAtomic,
@@ -1136,7 +1008,7 @@ func (c *Client) getTxKeyCatchupOutboundMeta(vaultPubKey common.PubKey, txHash s
 	}, nil
 }
 
-func (c *Client) txKeyCatchupCanonicalOutboundMeta(vaultPubKey common.PubKey, txHash, memoText string) (xmrFrostOutboundMeta, bool, error) {
+func (c *Client) outgoingInventoryCanonicalOutboundMeta(vaultPubKey common.PubKey, txHash, memoText string) (xmrFrostOutboundMeta, bool, error) {
 	parsedMemo, err := memo.ParseMemo(common.LatestVersion, memoText)
 	if err != nil || !parsedMemo.IsOutbound() || parsedMemo.GetTxID().IsEmpty() {
 		return xmrFrostOutboundMeta{}, false, nil
@@ -1151,14 +1023,14 @@ func (c *Client) txKeyCatchupCanonicalOutboundMeta(vaultPubKey common.PubKey, tx
 		)
 	}
 
-	meta, found, err := c.txKeyCatchupMetaFromTxStatus(vaultPubKey, txHash, status)
+	meta, found, err := c.outgoingInventoryMetaFromTxStatus(vaultPubKey, txHash, status)
 	if err != nil {
 		return xmrFrostOutboundMeta{}, false, err
 	}
 	return meta, found, nil
 }
 
-func (c *Client) txKeyCatchupMetaFromTxStatus(
+func (c *Client) outgoingInventoryMetaFromTxStatus(
 	vaultPubKey common.PubKey,
 	txHash string,
 	status *ttypes.QueryTxStatusResponse,
@@ -1336,7 +1208,7 @@ func xmrVaultInventoryFingerprint(vault ttypes.Vault) string {
 		builder.WriteString(strings.ToLower(strings.TrimSpace(ref.KeyImage)))
 	}
 
-	txRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+	txRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
 	sort.Slice(txRefs, func(i, j int) bool {
 		if txRefs[i].txHash == txRefs[j].txHash {
 			leftKeys := normalizeTxKeyValues(txRefs[i].txKeys)
@@ -1462,7 +1334,6 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 
 		if replayPending {
 			c.clearKeyImageCatchupState(vaultPubKey.String())
-			c.clearTxKeyCatchupState(vaultPubKey.String())
 			c.logger.Info().
 				Str("vault", vaultPubKey.String()).
 				Int("key_images", len(vault.KeyImagesXmr)).
@@ -1594,9 +1465,9 @@ func (c *Client) watchedVaultInventoryReplayPending(vault ttypes.Vault, stateEnt
 		}
 	}
 
-	txKeyRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+	txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
 	if len(txKeyRefs) > 0 {
-		stateCheck, err := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), txKeyRefs)
+		stateCheck, err := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
 		if err != nil {
 			return false, err
 		}
@@ -1702,56 +1573,23 @@ func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostA
 	return false, nil
 }
 
-type xmrTxKeyCatchupStateCheck struct {
+type xmrOutgoingInventoryReplayStateCheck struct {
 	needsReplay  bool
 	removeHashes []string
 }
 
-func legacyTxKeyCatchupNeedsReplay(
-	vaultPubKey string,
-	refs []xmrTxKeyCatchupRef,
-	transfers xmrFrostTransfersResponse,
-) xmrTxKeyCatchupStateCheck {
-	wanted := make(map[string][]string, len(refs))
-	for _, ref := range refs {
-		wanted[strings.ToLower(strings.TrimSpace(ref.txHash))] = normalizeTxKeyValues(ref.txKeys)
-	}
-
-	seen := make(map[string]struct{}, len(refs))
-	needsReplay := false
-	for _, transfer := range transfers.Outgoing {
-		if !strings.EqualFold(strings.TrimSpace(transfer.VaultPubKey), vaultPubKey) {
-			continue
-		}
-		txHash := strings.ToLower(strings.TrimSpace(transfer.TxID))
-		wantKeys, ok := wanted[txHash]
-		if !ok {
-			continue
-		}
-		if !sameNormalizedTxKeyValues(normalizeTxKeyValues(transfer.TxKeys), wantKeys) {
-			needsReplay = true
-			continue
-		}
-		seen[txHash] = struct{}{}
-	}
-
-	for txHash := range wanted {
-		if _, ok := seen[txHash]; !ok {
-			needsReplay = true
-		}
-	}
-
-	return xmrTxKeyCatchupStateCheck{needsReplay: needsReplay}
+type xmrOutgoingAuditLookup struct {
+	canonicalVaultPubKey common.PubKey
+	record               *xmrFrostOutgoingTransferStateEntry
 }
 
-func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatchupRef) (xmrTxKeyCatchupStateCheck, error) {
+func (c *Client) outgoingInventoryNeedsReplay(vaultPubKey string, refs []xmrOutgoingInventoryRef) (xmrOutgoingInventoryReplayStateCheck, error) {
 	state, err := c.frostSigner.GetOutgoingTransferState(vaultPubKey)
 	if err != nil {
-		transfers, transferErr := c.frostSigner.GetTransfersByHeight(0)
-		if transferErr != nil {
-			return xmrTxKeyCatchupStateCheck{}, err
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			return xmrOutgoingInventoryReplayStateCheck{needsReplay: len(refs) > 0}, nil
 		}
-		return legacyTxKeyCatchupNeedsReplay(vaultPubKey, refs, transfers), nil
+		return xmrOutgoingInventoryReplayStateCheck{}, err
 	}
 
 	wanted := make(map[string][]string, len(refs))
@@ -1763,7 +1601,7 @@ func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatc
 	removeSet := make(map[string]struct{})
 	needsReplay := false
 	for _, record := range state.Outgoing {
-		if !strings.EqualFold(strings.TrimSpace(record.Status), "observed_mined") {
+		if !record.isObservedMined() {
 			continue
 		}
 		txHash := strings.ToLower(strings.TrimSpace(record.TxHash))
@@ -1799,52 +1637,147 @@ func (c *Client) txKeyCatchupNeedsReplay(vaultPubKey string, refs []xmrTxKeyCatc
 	}
 	sort.Strings(removeHashes)
 
-	return xmrTxKeyCatchupStateCheck{
+	return xmrOutgoingInventoryReplayStateCheck{
 		needsReplay:  needsReplay,
 		removeHashes: removeHashes,
 	}, nil
 }
 
-func (c *Client) recoverLocalXMROutboundTxKeys(vaultPubKey common.PubKey, txHash string) ([]string, bool, error) {
+func (c *Client) lookupXMROutgoingAudit(vaultPubKey common.PubKey, txHash string) (xmrOutgoingAuditLookup, error) {
 	if c == nil || c.frostSigner == nil || strings.TrimSpace(txHash) == "" {
-		return nil, false, nil
+		return xmrOutgoingAuditLookup{canonicalVaultPubKey: vaultPubKey}, nil
 	}
 
 	canonicalVaultPubKey, err := c.canonicalizeXMROutboundVaultPubKey(vaultPubKey, txHash)
 	if err != nil {
-		return nil, false, err
+		return xmrOutgoingAuditLookup{}, err
 	}
 
 	state, err := c.frostSigner.GetOutgoingTransferState(canonicalVaultPubKey.String())
 	if err != nil {
 		if isFrostHTTPStatus(err, http.StatusNotFound) {
-			return nil, false, nil
+			return xmrOutgoingAuditLookup{canonicalVaultPubKey: canonicalVaultPubKey}, nil
 		}
-		return nil, false, err
+		return xmrOutgoingAuditLookup{}, err
 	}
 
 	normalizedTxHash := normalizeTxID(txHash)
-	for _, record := range state.Outgoing {
+	for i := range state.Outgoing {
+		record := &state.Outgoing[i]
 		if !strings.EqualFold(strings.TrimSpace(record.TxHash), normalizedTxHash) {
 			continue
 		}
-		txKeys := normalizeTxKeyValues(record.TxKeys)
-		if len(txKeys) == 0 {
-			return nil, false, nil
-		}
-		return txKeys, true, nil
+		return xmrOutgoingAuditLookup{
+			canonicalVaultPubKey: canonicalVaultPubKey,
+			record:               record,
+		}, nil
 	}
 
-	return nil, false, nil
+	return xmrOutgoingAuditLookup{canonicalVaultPubKey: canonicalVaultPubKey}, nil
 }
 
-func makeTxKeyCatchupRefs(refs []*common.XmrTxKeyRef) []xmrTxKeyCatchupRef {
-	out := make([]xmrTxKeyCatchupRef, 0, len(refs))
+func (c *Client) resolveTrackedXMROutboundChange(
+	lookup xmrOutgoingAuditLookup,
+) (bool, error) {
+	if lookup.record == nil {
+		return false, errXMROutgoingAuditIncomplete
+	}
+	if !lookup.record.ownedChangeKnown() {
+		return false, errXMROutgoingAuditIncomplete
+	}
+	return lookup.record.hasOwnedChange(), nil
+}
+
+func xmrOutboundMetaFromObservedTx(vaultPubKey common.PubKey, tx common.ObservedTx) (xmrFrostOutboundMeta, error) {
+	amountAtomic, err := xmrThorchainAmountToAtomic(tx.Tx.Coins.GetCoin(common.XMRAsset).Amount)
+	if err != nil {
+		return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound amount to atomic for %s: %w", tx.Tx.ID, err)
+	}
+
+	var feeAtomic uint64
+	gasCoin := tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
+	if !gasCoin.IsEmpty() {
+		feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
+		if err != nil {
+			return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound fee to atomic for %s: %w", tx.Tx.ID, err)
+		}
+	}
+
+	fromAddress := tx.Tx.FromAddress.String()
+	if common.IsXMRUnknownSenderAddress(common.Address(fromAddress)) {
+		if vaultAddr, addrErr := vaultPubKey.GetAddress(common.XMRChain); addrErr == nil && !vaultAddr.IsEmpty() {
+			fromAddress = vaultAddr.String()
+		}
+	}
+
+	return xmrFrostOutboundMeta{
+		FromAddress:    fromAddress,
+		ToAddress:      tx.Tx.ToAddress.String(),
+		Amount:         amountAtomic,
+		Fee:            feeAtomic,
+		Memo:           tx.Tx.Memo,
+		ObservedHeight: tx.BlockHeight,
+	}, nil
+}
+
+func (c *Client) validateXMROutgoingAuditFromObservation(
+	tx common.ObservedTx,
+	lookup xmrOutgoingAuditLookup,
+) (xmrOutgoingAuditLookup, error) {
+	if c == nil || c.frostSigner == nil {
+		return lookup, errXMROutgoingAuditIncomplete
+	}
+	vaultPubKey := lookup.canonicalVaultPubKey
+	if vaultPubKey.IsEmpty() {
+		vaultPubKey = tx.ObservedPubKey
+	}
+	if vaultPubKey.IsEmpty() {
+		return lookup, fmt.Errorf("observed xmr outbound %s is missing vault pubkey", tx.Tx.ID)
+	}
+	meta, err := xmrOutboundMetaFromObservedTx(vaultPubKey, tx)
+	if err != nil {
+		return lookup, err
+	}
+	if strings.TrimSpace(meta.ToAddress) == "" {
+		return lookup, fmt.Errorf("observed xmr outbound %s is missing destination address", tx.Tx.ID)
+	}
+	txKeys := normalizeTxKeyValues(tx.TxKeys)
+	if len(txKeys) == 0 {
+		return lookup, fmt.Errorf("observed xmr outbound %s is missing tx keys", tx.Tx.ID)
+	}
+
+	if _, err := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
+		VaultPubKey: vaultPubKey.String(),
+		TxHash:      tx.Tx.ID.String(),
+		TxKeys:      txKeys,
+		FromAddress: meta.FromAddress,
+		ToAddress:   meta.ToAddress,
+		Amount:      meta.Amount,
+		Fee:         meta.Fee,
+		Memo:        meta.Memo,
+		Reconcile:   true,
+	}); err != nil {
+		return lookup, err
+	}
+
+	return c.lookupXMROutgoingAudit(vaultPubKey, tx.Tx.ID.String())
+}
+
+func humanizeXMROutgoingPendingReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return ""
+	}
+	return strings.ReplaceAll(reason, "_", " ")
+}
+
+func makeOutgoingInventoryRefs(refs []*common.XmrTxKeyRef) []xmrOutgoingInventoryRef {
+	out := make([]xmrOutgoingInventoryRef, 0, len(refs))
 	for _, ref := range refs {
 		if ref == nil || strings.TrimSpace(ref.TxHash) == "" {
 			continue
 		}
-		out = append(out, xmrTxKeyCatchupRef{
+		out = append(out, xmrOutgoingInventoryRef{
 			txHash: ref.TxHash,
 			txKeys: append([]string(nil), ref.TxKeys...),
 		})
@@ -1897,51 +1830,6 @@ func (c *Client) clearKeyImageCatchupState(vaultPubKey string) {
 	delete(c.keyImageCatchupState, vaultPubKey)
 }
 
-func (c *Client) nextTxKeyCatchupBatch(vaultPubKey string, refs []xmrTxKeyCatchupRef) ([]xmrTxKeyCatchupRef, bool) {
-	c.txKeyCatchupMu.Lock()
-	defer c.txKeyCatchupMu.Unlock()
-
-	if c.txKeyCatchupState == nil {
-		c.txKeyCatchupState = make(map[string]xmrTxKeyCatchupState)
-	}
-
-	state, ok := c.txKeyCatchupState[vaultPubKey]
-	switch {
-	case !ok:
-		return cloneTxKeyCatchupRefs(refs), true
-	case state.pending:
-		return cloneTxKeyCatchupRefs(refs), true
-	case sameTxKeyCatchupRefs(state.refs, refs):
-		return nil, false
-	case hasTxKeyCatchupPrefix(refs, state.refs):
-		return cloneTxKeyCatchupRefs(refs[len(state.refs):]), true
-	default:
-		return cloneTxKeyCatchupRefs(refs), true
-	}
-}
-
-func (c *Client) recordTxKeyCatchup(vaultPubKey string, refs []xmrTxKeyCatchupRef, pending bool) {
-	c.txKeyCatchupMu.Lock()
-	defer c.txKeyCatchupMu.Unlock()
-
-	if c.txKeyCatchupState == nil {
-		c.txKeyCatchupState = make(map[string]xmrTxKeyCatchupState)
-	}
-	c.txKeyCatchupState[vaultPubKey] = xmrTxKeyCatchupState{
-		refs:    cloneTxKeyCatchupRefs(refs),
-		pending: pending,
-	}
-}
-
-func (c *Client) clearTxKeyCatchupState(vaultPubKey string) {
-	if vaultPubKey == "" {
-		return
-	}
-	c.txKeyCatchupMu.Lock()
-	defer c.txKeyCatchupMu.Unlock()
-	delete(c.txKeyCatchupState, vaultPubKey)
-}
-
 func cloneApplyKeyImageRefs(refs []xmrFrostApplyKeyImageRef) []xmrFrostApplyKeyImageRef {
 	if len(refs) == 0 {
 		return nil
@@ -1963,60 +1851,6 @@ func sameApplyKeyImageRefs(left, right []xmrFrostApplyKeyImageRef) bool {
 	return true
 }
 
-func cloneTxKeyCatchupRefs(refs []xmrTxKeyCatchupRef) []xmrTxKeyCatchupRef {
-	if len(refs) == 0 {
-		return nil
-	}
-	out := make([]xmrTxKeyCatchupRef, len(refs))
-	for i, ref := range refs {
-		out[i] = xmrTxKeyCatchupRef{
-			txHash: ref.txHash,
-			txKeys: append([]string(nil), ref.txKeys...),
-		}
-	}
-	return out
-}
-
-func sameTxKeyCatchupRefs(left, right []xmrTxKeyCatchupRef) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i].txHash != right[i].txHash {
-			return false
-		}
-		if len(left[i].txKeys) != len(right[i].txKeys) {
-			return false
-		}
-		for j := range left[i].txKeys {
-			if left[i].txKeys[j] != right[i].txKeys[j] {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func hasTxKeyCatchupPrefix(full, prefix []xmrTxKeyCatchupRef) bool {
-	if len(prefix) > len(full) {
-		return false
-	}
-	for i := range prefix {
-		if prefix[i].txHash != full[i].txHash {
-			return false
-		}
-		if len(prefix[i].txKeys) != len(full[i].txKeys) {
-			return false
-		}
-		for j := range prefix[i].txKeys {
-			if prefix[i].txKeys[j] != full[i].txKeys[j] {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func xmrVaultStateIndex(states []xmrFrostVaultStateEntry) map[string]xmrFrostVaultStateEntry {
 	index := make(map[string]xmrFrostVaultStateEntry, len(states))
 	for _, state := range states {
@@ -2026,11 +1860,16 @@ func xmrVaultStateIndex(states []xmrFrostVaultStateEntry) map[string]xmrFrostVau
 }
 
 func (c *Client) xmrHasPendingReplayWork() (bool, string, error) {
-	if c.hasPendingXMRKeyImageCatchup() {
-		return true, "xmr key-image replay is still pending", nil
-	}
-	if c.hasPendingXMRTxKeyCatchup() {
-		return true, "xmr tx-key replay is still pending", nil
+	return c.xmrHasPendingReplayWorkForVault(common.EmptyPubKey)
+}
+
+func (c *Client) xmrHasPendingReplayWorkForVault(target common.PubKey) (bool, string, error) {
+	if target.IsEmpty() {
+		if c.hasPendingXMRKeyImageCatchup() {
+			return true, "xmr key-image replay is still pending", nil
+		}
+	} else if c.hasPendingXMRKeyImageCatchupForVault(target.String()) {
+		return true, fmt.Sprintf("xmr key-image replay pending for vault %s", target.String()), nil
 	}
 	if c.thorchainBridge == nil || c.frostSigner == nil {
 		return false, "", nil
@@ -2045,6 +1884,9 @@ func (c *Client) xmrHasPendingReplayWork() (bool, string, error) {
 		if vaultPubKey.IsEmpty() {
 			continue
 		}
+		if !target.IsEmpty() && !vaultPubKey.Equals(target) {
+			continue
+		}
 
 		keyImageRefs := makeApplyKeyImageRefs(vault.KeyImagesXmr)
 		if len(keyImageRefs) > 0 {
@@ -2057,14 +1899,14 @@ func (c *Client) xmrHasPendingReplayWork() (bool, string, error) {
 			}
 		}
 
-		txKeyRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+		txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
 		if len(txKeyRefs) > 0 {
-			stateCheck, replayErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), txKeyRefs)
+			stateCheck, replayErr := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
 			if replayErr != nil {
 				return false, "", replayErr
 			}
 			if stateCheck.needsReplay {
-				return true, fmt.Sprintf("xmr tx-key replay pending for vault %s", vaultPubKey.String()), nil
+				return true, fmt.Sprintf("xmr outgoing inventory replay pending for vault %s", vaultPubKey.String()), nil
 			}
 		}
 	}
@@ -2127,9 +1969,9 @@ func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrV
 		}
 
 		var pendingTxKeyReplayCount int
-		txKeyRefs := makeTxKeyCatchupRefs(vault.TxKeysXmr)
+		txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
 		if len(txKeyRefs) > 0 {
-			replayState, replayErr := c.txKeyCatchupNeedsReplay(vaultPubKey.String(), txKeyRefs)
+			replayState, replayErr := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
 			if replayErr != nil {
 				return nil, replayErr
 			}
@@ -2248,7 +2090,7 @@ func (c *Client) resolveXMRKeyImageAnchorHeight(vaultPubKey common.PubKey, txHas
 	if err != nil {
 		return fallback
 	}
-	if meta, ok, metaErr := c.txKeyCatchupCanonicalOutboundMeta(vaultPubKey, txHash, voter.Tx.Tx.Memo); metaErr == nil && ok && meta.ObservedHeight > 0 {
+	if meta, ok, metaErr := c.outgoingInventoryCanonicalOutboundMeta(vaultPubKey, txHash, voter.Tx.Tx.Memo); metaErr == nil && ok && meta.ObservedHeight > 0 {
 		return meta.ObservedHeight
 	}
 	return xmrObservedTxAnchorHeight(voter, txHash, fallback)
@@ -3138,7 +2980,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if memberErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve vault signing members for FROST signing: %w", memberErr)
 	}
-	syncState, syncReason, syncErr := c.xmrLocalSyncState(nil)
+	syncState, syncReason, syncErr := c.xmrLocalSyncStateForVault(nil, signReqCtx.vaultPubKey)
 	if syncErr != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve local xmr sync state before keysign: %w", syncErr)
 	}
@@ -3280,7 +3122,7 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 		if err != nil {
 			return xmrValidatedSignRequest{}, fmt.Errorf("fail to parse outbound memo(%s): %w", memoForParsing, err)
 		}
-		if parsedMemo.IsInbound() {
+		if parsedMemo.IsInbound() && !parsedMemo.IsType(memo.TxNoOp) {
 			return xmrValidatedSignRequest{}, fmt.Errorf("inbound memo should not be used for outbound tx")
 		}
 	}
@@ -3610,64 +3452,23 @@ func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
 	}
 
 	trackedOutboundChange := len(tx.XmrKeyImages) > 0
-	validateResp, err := c.validateXMRTrackedOutboundChange(
-		tx.ObservedPubKey,
-		tx.Tx.ID.String(),
-		tx.TxKeys,
-		tx.Tx.FromAddress.String(),
-		tx.Tx.ToAddress.String(),
-		tx.Tx.Coins,
-		tx.Tx.Gas,
-		tx.Tx.Memo,
-		true,
-	)
+	outgoingAudit, err := c.lookupXMROutgoingAudit(tx.ObservedPubKey, tx.Tx.ID.String())
 	if err != nil {
-		return fmt.Errorf("fail to validate xmr outbound via sidecar: %w", err)
+		return fmt.Errorf("fail to query xmr outbound audit via sidecar: %w", err)
 	}
-	trackedOutboundChange = trackedOutboundChange || validateResp.Tracked
-	return c.validateObservedTxKeyImages(tx, false, trackedOutboundChange)
-}
-
-func (c *Client) validateXMRTrackedOutboundChange(
-	vaultPubKey common.PubKey,
-	txHash string,
-	txKeys []string,
-	fromAddress string,
-	toAddress string,
-	coins common.Coins,
-	gas common.Gas,
-	memo string,
-	reconcile bool,
-) (xmrFrostValidateOutboundResponse, error) {
-	canonicalVaultPubKey, err := c.canonicalizeXMROutboundVaultPubKey(vaultPubKey, txHash)
-	if err != nil {
-		return xmrFrostValidateOutboundResponse{}, err
-	}
-	amountAtomic, err := xmrThorchainAmountToAtomic(coins.GetCoin(common.XMRAsset).Amount)
-	if err != nil {
-		return xmrFrostValidateOutboundResponse{}, fmt.Errorf("fail to convert xmr outbound amount to atomic: %w", err)
-	}
-
-	var feeAtomic uint64
-	gasCoin := gas.ToCoins().GetCoin(common.XMRAsset)
-	if !gasCoin.IsEmpty() {
-		feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
+	tracked, err := c.resolveTrackedXMROutboundChange(outgoingAudit)
+	if errors.Is(err, errXMROutgoingAuditIncomplete) {
+		outgoingAudit, err = c.validateXMROutgoingAuditFromObservation(tx, outgoingAudit)
 		if err != nil {
-			return xmrFrostValidateOutboundResponse{}, fmt.Errorf("fail to convert xmr outbound fee to atomic: %w", err)
+			return fmt.Errorf("fail to validate xmr outbound tx-key state via sidecar: %w", err)
 		}
+		tracked, err = c.resolveTrackedXMROutboundChange(outgoingAudit)
 	}
-
-	return c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
-		VaultPubKey: canonicalVaultPubKey.String(),
-		TxHash:      txHash,
-		TxKeys:      append([]string(nil), txKeys...),
-		FromAddress: fromAddress,
-		ToAddress:   toAddress,
-		Amount:      amountAtomic,
-		Fee:         feeAtomic,
-		Memo:        memo,
-		Reconcile:   reconcile,
-	})
+	if err != nil {
+		return fmt.Errorf("fail to resolve xmr outbound audit from signer state: %w", err)
+	}
+	trackedOutboundChange = trackedOutboundChange || tracked
+	return c.validateObservedTxKeyImages(tx, false, trackedOutboundChange)
 }
 
 func (c *Client) ExportFrostKeyshare(groupKey common.PubKey) ([]byte, error) {
@@ -3704,21 +3505,37 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	if !isInboundToVault && !isOutboundFromVault {
 		return item, true, nil
 	}
-	if isOutboundFromVault && len(item.TxKeys) == 0 {
-		txKeys, recovered, recoverErr := c.recoverLocalXMROutboundTxKeys(item.ObservedVaultPubKey, item.Tx)
-		if recoverErr != nil {
+	var outgoingAudit xmrOutgoingAuditLookup
+	if isOutboundFromVault {
+		var auditErr error
+		outgoingAudit, auditErr = c.lookupXMROutgoingAudit(item.ObservedVaultPubKey, item.Tx)
+		if auditErr != nil {
 			c.logger.Warn().
-				Err(recoverErr).
+				Err(auditErr).
 				Str("tx_hash", normalizeTxID(item.Tx)).
 				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
-				Msg("failed to recover missing XMR tx-keys from local signer state")
-		} else if recovered {
-			item.TxKeys = txKeys
-			c.logger.Info().
-				Str("tx_hash", normalizeTxID(item.Tx)).
-				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
-				Int("tx_key_count", len(txKeys)).
-				Msg("recovered missing XMR tx-keys from local signer state")
+				Msg("failed to query XMR outgoing audit state from signer")
+		} else {
+			if !outgoingAudit.canonicalVaultPubKey.IsEmpty() &&
+				!outgoingAudit.canonicalVaultPubKey.Equals(item.ObservedVaultPubKey) {
+				c.logger.Info().
+					Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
+					Str("canonical_vault_pub_key", outgoingAudit.canonicalVaultPubKey.String()).
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Msg("canonicalized XMR outbound audit vault context")
+				item.ObservedVaultPubKey = outgoingAudit.canonicalVaultPubKey
+			}
+			if len(item.TxKeys) == 0 && outgoingAudit.record != nil {
+				txKeys := normalizeTxKeyValues(outgoingAudit.record.TxKeys)
+				if len(txKeys) > 0 {
+					item.TxKeys = txKeys
+					c.logger.Info().
+						Str("tx_hash", normalizeTxID(item.Tx)).
+						Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+						Int("tx_key_count", len(txKeys)).
+						Msg("recovered missing XMR tx-keys from signer outgoing audit state")
+				}
+			}
 		}
 	}
 	if isInboundToVault && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
@@ -3757,21 +3574,31 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 				Msg("waiting for XMR tx-key propagation before finalized outbound observation")
 			return nil, false, nil
 		}
-		validateResp, validateErr := c.validateXMRTrackedOutboundChange(
-			item.ObservedVaultPubKey,
-			item.Tx,
-			item.TxKeys,
-			item.Sender,
-			item.To,
-			item.Coins,
-			item.Gas,
-			item.Memo,
-			true,
-		)
-		if validateErr != nil {
-			return nil, false, fmt.Errorf("fail to validate xmr outbound via sidecar: %w", validateErr)
+		tracked, trackedErr := c.resolveTrackedXMROutboundChange(outgoingAudit)
+		if trackedErr != nil {
+			if errors.Is(trackedErr, errXMROutgoingAuditIncomplete) {
+				c.logger.Info().
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+					Str("memo", item.Memo).
+					Msg("waiting for signer-owned XMR outbound audit state before finalized outbound observation")
+				return nil, false, nil
+			}
+			return nil, false, fmt.Errorf("fail to resolve xmr outbound audit from signer state: %w", trackedErr)
 		}
-		trackedOutboundChange = trackedOutboundChange || validateResp.Tracked
+		trackedOutboundChange = trackedOutboundChange || tracked
+		if trackedOutboundChange &&
+			outgoingAudit.record != nil &&
+			outgoingAudit.record.localChangeMaterializedKnown() &&
+			!outgoingAudit.record.localChangeMaterialized() {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Str("memo", item.Memo).
+				Str("pending_reason", strings.TrimSpace(outgoingAudit.record.pendingLifecycleReason())).
+				Msg("finalized XMR outbound is still waiting for tracked change outputs to materialize")
+			return nil, false, nil
+		}
 	}
 
 	ceremonyCtx, err := c.resolveXMRKeyImageCeremonyContext(item.ObservedVaultPubKey)
@@ -3786,7 +3613,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("canonicalized XMR key-image vault context")
 		item.ObservedVaultPubKey = ceremonyCtx.vaultPubKey
 	}
-	syncState, syncReason, syncErr := c.xmrLocalSyncState(nil)
+	syncState, syncReason, syncErr := c.xmrLocalSyncStateForVault(nil, ceremonyCtx.vaultPubKey)
 	if syncErr != nil {
 		return nil, false, fmt.Errorf("fail to resolve local xmr sync state for finalized observation: %w", syncErr)
 	}
@@ -3942,6 +3769,31 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 
 func (c *Client) ValidateObservedTxIn(tx common.ObservedTx) error {
 	return c.validateObservedTxKeyImages(tx, true, false)
+}
+
+func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
+	if item == nil || c.thorchainBridge == nil {
+		return false
+	}
+	txHash := normalizeTxID(item.Tx)
+	if txHash == "" {
+		return false
+	}
+	vault, err := c.thorchainBridge.GetVault(item.ObservedVaultPubKey.String())
+	if err != nil {
+		return false
+	}
+	for _, ref := range vault.TxKeysXmr {
+		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
+			return true
+		}
+	}
+	for _, proof := range vault.KeyImagesXmr {
+		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) postKeysignFailure(tx stypes.TxOutItem, height int64, signErr error) error {
@@ -4908,16 +4760,12 @@ func (c *Client) hasPendingXMRKeyImageCatchup() bool {
 	return false
 }
 
-func (c *Client) hasPendingXMRTxKeyCatchup() bool {
-	c.txKeyCatchupMu.Lock()
-	defer c.txKeyCatchupMu.Unlock()
+func (c *Client) hasPendingXMRKeyImageCatchupForVault(vaultPubKey string) bool {
+	c.keyImageCatchupMu.Lock()
+	defer c.keyImageCatchupMu.Unlock()
 
-	for _, state := range c.txKeyCatchupState {
-		if state.pending {
-			return true
-		}
-	}
-	return false
+	state, ok := c.keyImageCatchupState[vaultPubKey]
+	return ok && state.pending
 }
 
 func (c *Client) xmrSolvencyHasPendingOutboundWork() (bool, string, error) {
@@ -4953,14 +4801,15 @@ func (c *Client) xmrSolvencyHasPendingOutboundWork() (bool, string, error) {
 			return false, "", fmt.Errorf("fail to get outgoing xmr state for vault %s: %w", vaultPubKey, err)
 		}
 		for _, record := range state.Outgoing {
-			status := strings.TrimSpace(record.Status)
-			txHash := strings.TrimSpace(record.TxHash)
-			switch {
-			case !strings.EqualFold(status, "observed_mined"):
-				return true, fmt.Sprintf("xmr outbound %s still %s", txHash, status), nil
-			case record.ReportedEffectiveHeight == nil:
-				return true, fmt.Sprintf("xmr outbound %s is still awaiting finalized observation", txHash), nil
+			if !record.hasPendingLifecycle() {
+				continue
 			}
+			txHash := strings.TrimSpace(record.TxHash)
+			reason := humanizeXMROutgoingPendingReason(record.pendingLifecycleReason())
+			if txHash == "" {
+				return true, fmt.Sprintf("xmr outbound is still %s", reason), nil
+			}
+			return true, fmt.Sprintf("xmr outbound %s is still %s", txHash, reason), nil
 		}
 	}
 

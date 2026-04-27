@@ -17,8 +17,8 @@ use monero_wallet::send::{TransactionSignMachine, TransactionSignatureMachine};
 
 use crate::config::ChainNetworkMode;
 use crate::state::{
-    store::{FinalizeReservedForMsgResult, OutgoingTransferRecord, OutputRef},
-    Store,
+    store::{FinalizeReservedForMsgResult, OutputRef},
+    OutgoingLifecycle, OutputLifecycle, RecordSignedParams, Store,
 };
 use crate::tx::builder::{self, UnsignedTransaction};
 use crate::tx::daemon::DaemonClient;
@@ -228,10 +228,11 @@ impl SignCoordinator {
     pub fn clear_all_sessions(&self) -> usize {
         let mut sessions = self.sessions.lock();
         let mut released_total = 0usize;
+        let output_lifecycle = OutputLifecycle::new(self.store.as_ref());
         for (id, session) in sessions.iter() {
             match session.phase {
                 SignPhase::Preprocessed | SignPhase::PartialSigned => {
-                    match self.store.release_reservations_for_session(
+                    match output_lifecycle.release_session(
                         &session.vault_pub_key,
                         id,
                         &session.msg_id,
@@ -355,7 +356,7 @@ impl SignCoordinator {
                 .ok_or_else(|| anyhow::anyhow!("failed to compute reservation expiry"))?
                 .timestamp();
 
-            match self.store.reserve_outputs(
+            match OutputLifecycle::new(self.store.as_ref()).reserve(
                 vault_pub_key,
                 &selected_refs,
                 &session_id,
@@ -469,10 +470,11 @@ impl SignCoordinator {
 
     fn abandon_session(&self, session_id: &str, vault_pub_key: &str, msg_id: &str, reason: &str) {
         let removed = self.sessions.lock().remove(session_id).is_some();
-        match self
-            .store
-            .release_reservations_for_session(vault_pub_key, session_id, msg_id)
-        {
+        match OutputLifecycle::new(self.store.as_ref()).release_session(
+            vault_pub_key,
+            session_id,
+            msg_id,
+        ) {
             Ok(released) => {
                 debug!(
                     session_id,
@@ -689,21 +691,16 @@ impl SignCoordinator {
         let tx_hex = hex::encode(tx.serialize());
         let fee = unsigned_tx.fee;
         let tx_keys = unsigned_tx.tx_keys.clone();
-        self.store
+        OutputLifecycle::new(self.store.as_ref())
             .bind_reservation_tx_hash(&vault_pub_key, session_id, msg_id, &tx_hash)
             .context("failed to bind reservation tx hash")?;
 
-        self.store
-            .save_outgoing_transfer(&OutgoingTransferRecord {
+        OutgoingLifecycle::new(self.store.as_ref())
+            .record_signed(RecordSignedParams {
                 tx_hash: tx_hash.clone(),
                 tx_hex: tx_hex.clone(),
                 tx_keys: tx_keys.clone(),
-                // The signer just produced this tx-key via FROST sign_combine;
-                // it is cryptographically authoritative and must count as
-                // registered inventory immediately so registered_tx_key_count
-                // reflects it without waiting for a THORChain vault-metadata
-                // round trip.
-                registered_inventory: true,
+                has_owned_change: unsigned_tx.has_owned_change,
                 msg_id: session_msg_id,
                 vault_pub_key: vault_pub_key.clone(),
                 from_address,
@@ -712,11 +709,6 @@ impl SignCoordinator {
                 fee,
                 memo: unsigned_tx.memo.clone(),
                 planned_height: chain_height,
-                observed_height: None,
-                status: "signed_pending_observation".to_string(),
-                broadcasted_at: None,
-                observed_at: None,
-                reported_effective_height: None,
                 created_at: chrono::Utc::now().timestamp(),
             })
             .context("failed to persist outgoing transfer attribution")?;
@@ -740,6 +732,7 @@ impl SignCoordinator {
         let mut sessions = self.sessions.lock();
         let mut removed = 0usize;
         let mut released = 0usize;
+        let output_lifecycle = OutputLifecycle::new(self.store.as_ref());
         sessions.retain(|id, session| {
             let expired = session.created_at.elapsed() > SIGN_SESSION_TTL;
             if !expired {
@@ -753,7 +746,7 @@ impl SignCoordinator {
                     false
                 }
                 SignPhase::Preprocessed | SignPhase::PartialSigned => {
-                    match self.store.release_reservations_for_session(
+                    match output_lifecycle.release_session(
                         &session.vault_pub_key,
                         id,
                         &session.msg_id,
@@ -806,8 +799,8 @@ impl SignCoordinator {
         msg_id: &str,
         tx_hash: &str,
     ) -> Result<FinalizeReservedForMsgResult> {
-        self.store
-            .finalize_reserved_for_msg(vault_pub_key, msg_id, tx_hash)
+        OutputLifecycle::new(self.store.as_ref())
+            .finalize_for_msg(vault_pub_key, msg_id, tx_hash)
             .context("failed to finalize reserved outputs for broadcast")
     }
 
@@ -845,8 +838,7 @@ impl SignCoordinator {
                 }
             }
             let now_ts = chrono::Utc::now().timestamp();
-            let (finalized, released) = self
-                .store
+            let (finalized, released) = OutputLifecycle::new(self.store.as_ref())
                 .reconcile_reservations(&vault.vault_pub_key, &observed_hashes, now_ts)
                 .with_context(|| {
                     format!(
@@ -876,12 +868,7 @@ impl SignCoordinator {
                 continue;
             }
 
-            let pending_hashes: HashSet<String> = outgoing
-                .iter()
-                .filter(|record| !record.status.eq_ignore_ascii_case("observed_mined"))
-                .map(|record| record.tx_hash.to_ascii_lowercase())
-                .filter(|hash| !hash.trim().is_empty())
-                .collect();
+            let pending_hashes: HashSet<String> = OutgoingLifecycle::pending_hashes(&outgoing);
             let mut observed_in_pool = HashSet::new();
             let mut observed_mined: HashMap<String, u64> = HashMap::new();
             if !pending_hashes.is_empty() {
@@ -913,45 +900,21 @@ impl SignCoordinator {
             }
 
             let now_ts = chrono::Utc::now().timestamp();
-            let mut marked_mined = 0usize;
-            let mut marked_mempool = 0usize;
-            let mut marked_pending = 0usize;
-            for record in outgoing {
-                let normalized = record.tx_hash.to_ascii_lowercase();
-                let mut status = "signed_pending_observation";
-                let mut observed_height = None;
-                if let Some(height) = observed_mined.get(&normalized).copied() {
-                    status = "observed_mined";
-                    observed_height = Some(height);
-                } else if observed_in_pool.contains(&normalized) {
-                    status = "observed_mempool";
-                }
-                if record.status.eq_ignore_ascii_case(status)
-                    && (observed_height.is_none() || record.observed_height == observed_height)
-                {
-                    continue;
-                }
-                self.store
-                    .update_outgoing_transfer_status(
+            let (marked_mined, marked_mempool, marked_pending) =
+                OutgoingLifecycle::new(self.store.as_ref())
+                    .reconcile_records_from_chain_view(
                         &vault.vault_pub_key,
-                        &record.tx_hash,
-                        status,
-                        observed_height,
-                        Some(now_ts),
-                        None,
+                        &outgoing,
+                        &observed_in_pool,
+                        &observed_mined,
+                        now_ts,
                     )
                     .with_context(|| {
                         format!(
-                            "failed to update outgoing observation status for {}:{}",
-                            vault.vault_pub_key, record.tx_hash
+                            "failed to reconcile outgoing observation status for {}",
+                            vault.vault_pub_key
                         )
                     })?;
-                match status {
-                    "observed_mined" => marked_mined += 1,
-                    "observed_mempool" => marked_mempool += 1,
-                    _ => marked_pending += 1,
-                }
-            }
             if marked_mined > 0 || marked_mempool > 0 || marked_pending > 0 {
                 info!(
                     vault = %vault.vault_pub_key,

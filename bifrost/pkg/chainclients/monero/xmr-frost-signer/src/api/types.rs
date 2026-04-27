@@ -261,6 +261,12 @@ pub struct OutgoingTransferStateEntry {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tx_keys: Vec<String>,
     pub registered_inventory: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_owned_change: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_change_materialized: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_images_ready: Option<bool>,
     pub from_address: String,
     pub to_address: String,
     pub amount: u64,
@@ -269,6 +275,8 @@ pub struct OutgoingTransferStateEntry {
     pub planned_height: u64,
     pub observed_height: Option<u64>,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_reason: Option<String>,
     pub reported_effective_height: Option<u64>,
     pub created_at: i64,
 }
