@@ -260,6 +260,7 @@ var (
 	NewOutboundMemo        = mem.NewOutboundMemo
 	NewRagnarokMemo        = mem.NewRagnarokMemo
 	NewMigrateMemo         = mem.NewMigrateMemo
+	NewNoOpMemo            = mem.NewNoOpMemo
 	NewReferenceReadMemo   = mem.NewReferenceReadMemo
 
 	FetchDexAggregator         = aggregators.FetchDexAggregator

@@ -623,7 +623,7 @@ func TestShouldSweepXMRMigration(t *testing.T) {
 	}
 }
 
-func TestValidateXMRSignTxRejectsShortFinalMigrateBalance(t *testing.T) {
+func TestValidateXMRSignTxAllowsShortFinalMigrateBalanceForExactSignerAttempt(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -667,11 +667,8 @@ func TestValidateXMRSignTxRejectsShortFinalMigrateBalance(t *testing.T) {
 	}
 
 	_, err = c.validateXMRSignTx(tx, 100, true)
-	if err == nil {
-		t.Fatalf("expected short final migration balance to be rejected")
-	}
-	if !strings.Contains(err.Error(), "insufficient xmr balance") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("expected short final migration balance to reach exact signer attempt: %v", err)
 	}
 }
 

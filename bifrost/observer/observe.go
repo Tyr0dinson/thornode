@@ -259,7 +259,11 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 	}
 
 	for j, txInItem := range deck.TxArray {
-		if !txInItem.EqualsObservedTx(tx) {
+		if isFinal {
+			if !txInItem.MatchesCommittedObservedTx(tx) {
+				continue
+			}
+		} else if !txInItem.EqualsObservedTx(tx) {
 			continue
 		}
 		if isFinal {
@@ -716,6 +720,12 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 			// we have already committed this tx in the un-finalized state,
 			// and the tx is not yet final, so we should not send it again.
 			continue
+		}
+		if reconciler, ok := chain.(chainclienttypes.DeckReconciler); ok {
+			if reconciler.IsDeckItemStale(item) {
+				invalidIndices = append(invalidIndices, i)
+				continue
+			}
 		}
 		if preparer, ok := chain.(chainclienttypes.ObservationPreparer); ok {
 			prepared, include, prepErr := preparer.PrepareObservedTxInItem(item, finalized, finaliseHeight)

@@ -17,6 +17,53 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
+// reconcileInboundMigrateGas uses the authoritative on-chain fee recorded on
+// the destination's inbound MIGRATE observation to refund any drift accrued on
+// the sending vault's coins from an earlier outbound observation that reported
+// an inflated fee.
+func reconcileInboundMigrateGas(ctx cosmos.Context, k keeper.Keeper, inbound common.ObservedTx) {
+	gasAsset := inbound.Tx.Chain.GetGasAsset()
+	actualGas := inbound.Tx.Gas.ToCoins().GetCoin(gasAsset)
+	if actualGas.IsEmpty() {
+		return
+	}
+	outVoter, err := k.GetObservedTxOutVoter(ctx, inbound.Tx.ID)
+	if err != nil {
+		return
+	}
+	if outVoter.Tx.Tx.ID.IsEmpty() {
+		return
+	}
+	recordedGas := outVoter.Tx.Tx.Gas.ToCoins().GetCoin(gasAsset)
+	if recordedGas.IsEmpty() {
+		return
+	}
+	if !recordedGas.Amount.GT(actualGas.Amount) {
+		return
+	}
+	senderPubKey := outVoter.Tx.ObservedPubKey
+	if senderPubKey.IsEmpty() {
+		return
+	}
+	senderVault, err := k.GetVault(ctx, senderPubKey)
+	if err != nil {
+		return
+	}
+	refund := recordedGas.Amount.Sub(actualGas.Amount)
+	senderVault.AddFunds(common.NewCoins(common.NewCoin(gasAsset, refund)))
+	if err := k.SetVault(ctx, senderVault); err != nil {
+		ctx.Logger().Error("fail to refund migrate gas drift to sender vault", "error", err)
+		return
+	}
+	ctx.Logger().Info("refunded migrate gas drift to sender vault",
+		"tx_id", inbound.Tx.ID.String(),
+		"sender_vault", senderPubKey.String(),
+		"recorded_gas", recordedGas.Amount.String(),
+		"actual_gas", actualGas.Amount.String(),
+		"refund", refund.String(),
+	)
+}
+
 // processTxInAttestation processes a single attestation for an observed tx.
 // This is used by both MsgObservedTxIn (single attester) and MsgObservedTxInQuorum (multiple attesters).
 func processTxInAttestation(
@@ -217,6 +264,9 @@ func handleObservedTxInQuorum(
 				vault.InboundTxCount++
 			}
 			voter.UpdatedVault = true
+		}
+		if vault.IsAsgard() && memo.IsType(TxMigrate) && !tx.Tx.Gas.IsEmpty() {
+			reconcileInboundMigrateGas(ctx, k, tx)
 		}
 	}
 	if hasFinalised && vault.IsAsgard() && tx.Tx.Chain.Equals(common.XMRChain) && len(tx.XmrKeyImages) > 0 {

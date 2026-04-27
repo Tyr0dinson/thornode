@@ -179,7 +179,7 @@ func (s *HandlerObservedTxInSuite) TestXMRRefundSkipsUnknownSenderWithoutExplici
 	c.Check(items[0].ToAddress.Equals(refundAddress), Equals, true)
 }
 
-func (s *HandlerObservedTxInSuite) TestXMRInactiveVaultUnknownSenderReroutesToActiveVaultWithEmptyMemo(c *C) {
+func (s *HandlerObservedTxInSuite) TestXMRInactiveVaultUnknownSenderReroutesToActiveVaultWithNoOpMemo(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	sourceVault := NewVaultV2(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil, GetRandomEd25519PubKey())

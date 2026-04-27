@@ -84,6 +84,15 @@ type ObservedTxInValidator interface {
 	ValidateObservedTxIn(tx common.ObservedTx) error
 }
 
+// DeckReconciler optionally lets a chain client declare that a given deck item
+// is already fully committed on chain and should be dropped. Used to evict
+// stale deck items whose handleObservedTxCommitted event never fires on
+// restart (e.g. XMR txs committed before a proof-cache-invalidating upgrade).
+type DeckReconciler interface {
+	ChainClient
+	IsDeckItemStale(item *types.TxInItem) bool
+}
+
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
 	Members          []string
