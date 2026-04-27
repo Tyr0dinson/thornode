@@ -76,6 +76,16 @@ func (e transientSigningHaltedError) Error() string {
 	return fmt.Sprintf("signing for %s is halted by %s", e.chain, e.key)
 }
 
+type retryAfterNextBlockStringError string
+
+func (e retryAfterNextBlockStringError) Error() string {
+	return string(e)
+}
+
+func (e retryAfterNextBlockStringError) RetryAfterNextBlock() bool {
+	return true
+}
+
 type vaultLocker interface {
 	GetVaultLock(vaultPubKey string) *sync.Mutex
 }
@@ -788,7 +798,11 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// scenario, the network could broadcast a transaction several times,
 	// bleeding funds.
 	if !chain.IsBlockScannerHealthy() {
-		return nil, nil, fmt.Errorf("the block scanner for chain %s is unhealthy, not signing transactions due to it", chain.GetChain())
+		err := fmt.Errorf("the block scanner for chain %s is unhealthy, not signing transactions due to it", chain.GetChain())
+		if tx.Chain.Equals(common.XMRChain) {
+			return nil, nil, retryAfterNextBlockStringError(err.Error())
+		}
+		return nil, nil, err
 	}
 
 	start := time.Now()
