@@ -107,6 +107,7 @@ wait_for_health docker-thornode-1 "http://localhost:1317/thorchain/ping" 120
 
 echo ""
 echo "[2/6] Setting mimirs..."
+mimir DollarsPerRune 100000000
 mimir P2PGateDisabled 1
 mimir MinimumNodesForBFT 2
 mimir DesiredValidatorSet 3

@@ -192,6 +192,7 @@ echo "[2/8] Setting initial mimirs..."
 # P2PGateDisabled must be a mimir (not just a constant) because bifrost reads
 # it via GetMimir API, not from /thorchain/constants.
 mimir HaltChurning 1
+mimir DollarsPerRune 100000000
 mimir P2PGateDisabled 1
 mimir DesiredValidatorSet 6
 mimir AsgardSize 3
