@@ -683,6 +683,39 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 	}
 }
 
+func (s *ObserverSuite) TestObserveSignedXMROutboundIsNonFinal(c *C) {
+	observer := &Observer{
+		globalTxsQueue: make(chan types.TxIn, 1),
+	}
+	txIn := types.TxIn{
+		Chain:                  common.XMRChain,
+		MemPool:                true,
+		ConfirmationRequired:   0,
+		AllowFutureObservation: true,
+		TxArray: []*types.TxInItem{
+			{
+				BlockHeight: 123,
+				Tx:          types2.GetRandomTxHash().String(),
+				TxKeys:      []string{"tx-key"},
+			},
+		},
+	}
+
+	observer.ObserveSigned(txIn)
+
+	queued := <-observer.globalTxsQueue
+	c.Assert(queued.ConfirmationRequired, Equals, int64(1))
+	key := TxInKey(&queued)
+	c.Assert(key.height, Equals, int64(124))
+	obsTx := common.NewObservedTx(
+		common.Tx{ID: types2.GetRandomTxHash(), Chain: common.XMRChain},
+		queued.TxArray[0].BlockHeight,
+		types2.GetRandomPubKey(),
+		key.height,
+	)
+	c.Assert(obsTx.IsFinal(), Equals, false)
+}
+
 func (s *ObserverSuite) TestPeerConcurrencyLimits(c *C) {
 	// Create a logger
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.InfoLevel)

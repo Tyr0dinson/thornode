@@ -186,6 +186,13 @@ func (o *Observer) Start(ctx context.Context) error {
 // ObserveSigned is called when a tx is signed by the signer and returns an observation that should be immediately submitted.
 // Observations passed to this method with 'allowFutureObservation' false will be cached in memory and skipped if they are later observed in the mempool or block.
 func (o *Observer) ObserveSigned(txIn types.TxIn) {
+	if txIn.Chain.Equals(common.XMRChain) && txIn.MemPool && txIn.ConfirmationRequired <= 0 {
+		// XMR outbounds use two observation rounds. The sign-time observation
+		// must stay non-final so txkeys can mark the outbound in-flight before
+		// final key-image validation is ready.
+		txIn.ConfirmationRequired = 1
+	}
+
 	if !txIn.AllowFutureObservation {
 		// add all transaction ids to the signed tx out cache
 		o.signedTxOutCacheMu.Lock()
