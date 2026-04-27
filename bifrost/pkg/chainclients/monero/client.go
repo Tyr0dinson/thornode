@@ -104,8 +104,9 @@ type lockedOutputsError struct {
 }
 
 type keyImageBacklogError struct {
-	queued uint64
-	active bool
+	queued     uint64
+	active     bool
+	activeWork string
 }
 
 type xmrSyncingToTipError struct {
@@ -124,6 +125,9 @@ func (e *lockedOutputsError) Error() string {
 func (e *lockedOutputsError) RetryAfterNextBlock() bool { return true }
 
 func (e *keyImageBacklogError) Error() string {
+	if strings.TrimSpace(e.activeWork) != "" {
+		return fmt.Sprintf("pending xmr key-image backlog: queued=%d active=%t active_work=%s", e.queued, e.active, e.activeWork)
+	}
 	return fmt.Sprintf("pending xmr key-image backlog: queued=%d active=%t", e.queued, e.active)
 }
 
@@ -401,6 +405,28 @@ func (c *Client) pendingXMRKeyImageBacklog() (queued uint64, active bool) {
 	return gate.queued, gate.active
 }
 
+func (c *Client) pendingXMRKeyImageBacklogDetails() (queued uint64, active bool, activeWork *xmrWorkItem) {
+	queued, active = c.pendingXMRKeyImageBacklog()
+	if active {
+		activeWork = c.getActiveXMRWorkItem()
+	}
+	return queued, active, activeWork
+}
+
+func (c *Client) signalXMRKeyImageBacklogChanged() {
+	gate := c.getXMRKeyImageCeremonyGate()
+	gate.mu.Lock()
+	gate.cond.Broadcast()
+	gate.mu.Unlock()
+}
+
+func xmrKeyImageBacklogConflictsWithSign(activeWork *xmrWorkItem, vaultPubKey common.PubKey) bool {
+	if activeWork == nil || vaultPubKey.IsEmpty() {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(activeWork.VaultPubKey), vaultPubKey.String())
+}
+
 func (c *Client) setActiveXMRWorkItem(item *xmrWorkItem) {
 	c.activeXMRWorkMu.Lock()
 	defer c.activeXMRWorkMu.Unlock()
@@ -589,7 +615,10 @@ func isTransientXMRKeyImageCeremonyError(err error) bool {
 	if err == nil {
 		return false
 	}
-	errText := err.Error()
+	return isTransientXMRKeyImageCeremonyText(err.Error())
+}
+
+func isTransientXMRKeyImageCeremonyText(errText string) bool {
 	return strings.Contains(errText, "leader not reachable") ||
 		strings.Contains(errText, "fail to join party, timeout")
 }
@@ -776,6 +805,7 @@ func (c *Client) catchupKeyImagesForVaults(vaults ttypes.Vaults) {
 			Int("sent", len(batch)).
 			Int("total", len(refs)).
 			Msg("xmr key-image catchup: applied key-images from thorchain")
+		c.signalXMRKeyImageBacklogChanged()
 	}
 }
 
@@ -2159,6 +2189,9 @@ func (c *Client) rotateXMRKeyImageLeaderEpoch(item xmrWorkItem, currentHeight in
 	if item.LeaderEpochHeight == targetHeight {
 		return item, nil
 	}
+	if item.LeaderEpochHeight > targetHeight && isTransientXMRKeyImageCeremonyText(item.LastError) {
+		return item, nil
+	}
 	item.LeaderEpochHeight = targetHeight
 	if c.keyImageWorkStore == nil {
 		return item, nil
@@ -2173,6 +2206,15 @@ func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight in
 	item.LastAttemptHeight = currentHeight
 	item.AttemptCount++
 	item.LastError = strings.TrimSpace(errText)
+	if isTransientXMRKeyImageCeremonyText(item.LastError) {
+		period := c.getSigningTransactionPeriod()
+		if period > 0 && currentHeight > 0 {
+			nextEpoch := xmrLeaderEpochHeight(currentHeight+period, period)
+			if nextEpoch > item.LeaderEpochHeight {
+				item.LeaderEpochHeight = nextEpoch
+			}
+		}
+	}
 	if c.keyImageWorkStore == nil {
 		return nil
 	}
@@ -2998,16 +3040,19 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 			Msg("deferring XMR keysign while local node is not allowed to originate work")
 		return nil, nil, nil, &xmrSyncingToTipError{reason: syncReason}
 	}
-	if queued, active := c.pendingXMRKeyImageBacklog(); queued > 0 || active {
+	if queued, active, activeWork := c.pendingXMRKeyImageBacklogDetails(); active && xmrKeyImageBacklogConflictsWithSign(activeWork, signReqCtx.vaultPubKey) {
 		c.logger.Info().
 			Str("vault_pub_key", signReqCtx.vaultPubKey.String()).
 			Str("memo", tx.Memo).
 			Uint64("pending_key_image_queue", queued).
 			Bool("key_image_active", active).
+			Str("active_key_image_work_id", activeWork.ID).
+			Str("active_key_image_tx_hash", activeWork.TxHash).
 			Msg("deferring XMR keysign until key-image backlog clears")
 		return nil, nil, nil, &keyImageBacklogError{
-			queued: queued,
-			active: active,
+			queued:     queued,
+			active:     active,
+			activeWork: activeWork.ID,
 		}
 	}
 	version, err := c.thorchainBridge.GetThorchainVersion()
@@ -4457,6 +4502,7 @@ func (c *Client) generateObservedTxKeyImages(
 			Int("applied", result.Applied).
 			Int("not_found", result.NotFound).
 			Msg("applied locally generated XMR key-images")
+		c.signalXMRKeyImageBacklogChanged()
 	}
 	for _, workItem := range completedWorkItems {
 		if err := c.completeXMRKeyImageWorkItem(workItem); err != nil {
@@ -4738,6 +4784,7 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trac
 		Int("applied", result.Applied).
 		Int("not_found", result.NotFound).
 		Msg("validated and applied finalized XMR key-images")
+	c.signalXMRKeyImageBacklogChanged()
 	return nil
 }
 

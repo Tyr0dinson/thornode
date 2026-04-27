@@ -59,6 +59,58 @@ func TestRotateXMRKeyImageLeaderEpochUsesThorSigningPeriod(t *testing.T) {
 	require.Equal(t, int64(20_001), stored.LeaderEpochHeight)
 }
 
+func TestRecordXMRKeyImageLeaderFailureSkipsCurrentEpoch(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	client := &Client{
+		chain:             common.XMRChain,
+		thorchainBridge:   &mockMoneroBridge{constants: map[string]int64{constants.SigningTransactionPeriod.String(): 40}},
+		keyImageWorkStore: newTestXMRKeyImageWorkStore(t),
+	}
+
+	item, err := client.ensureXMRKeyImageWorkItem(
+		vaultPubKey,
+		strings.Repeat("b", 64),
+		0,
+		20_001,
+		xmrWorkKindReplayKeyImage,
+		xmrFinalizePhaseKeyImage,
+	)
+	require.NoError(t, err)
+	item, err = client.rotateXMRKeyImageLeaderEpoch(item, 20_033)
+	require.NoError(t, err)
+	require.Equal(t, int64(20_001), item.LeaderEpochHeight)
+
+	require.NoError(t, client.recordXMRKeyImageWorkAttempt(item, 20_033, "leader not reachable"))
+	stored, ok, err := client.keyImageWorkStore.get(item.ID)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(20_041), stored.LeaderEpochHeight)
+
+	rotated, err := client.rotateXMRKeyImageLeaderEpoch(stored, 20_034)
+	require.NoError(t, err)
+	require.Equal(t, int64(20_041), rotated.LeaderEpochHeight)
+}
+
+func TestXMRKeyImageBacklogOnlyConflictsWithSameVaultSign(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	otherVaultPubKey := common.PubKey("cthorpub1zcjduepqfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	activeOutput := uint32(0)
+	activeWork := &xmrWorkItem{
+		ID:          "active",
+		VaultPubKey: vaultPubKey.String(),
+		TxHash:      strings.Repeat("c", 64),
+		OutputIndex: &activeOutput,
+	}
+
+	require.True(t, xmrKeyImageBacklogConflictsWithSign(activeWork, vaultPubKey))
+	require.False(t, xmrKeyImageBacklogConflictsWithSign(activeWork, otherVaultPubKey))
+	require.False(t, xmrKeyImageBacklogConflictsWithSign(nil, vaultPubKey))
+}
+
 func TestXMRLocalCapabilityAllowsStandbySignerForRetiringAndInactiveVaults(t *testing.T) {
 	t.Parallel()
 

@@ -535,6 +535,14 @@ func TestSignTxDefersWhileXMRKeyImageBacklogIsActive(t *testing.T) {
 
 	release := c.acquireXMRKeyImageCeremonySlot()
 	defer release()
+	activeOutput := uint32(0)
+	c.setActiveXMRWorkItem(&xmrWorkItem{
+		ID:          "active-key-image-work",
+		VaultPubKey: vaultPubKey.String(),
+		TxHash:      strings.Repeat("a", 64),
+		OutputIndex: &activeOutput,
+	})
+	defer c.setActiveXMRWorkItem(nil)
 
 	tx := stypes.TxOutItem{
 		Chain:            common.XMRChain,
