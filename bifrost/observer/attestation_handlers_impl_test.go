@@ -1050,6 +1050,71 @@ func TestSendObservedTxAttestationsToThornodeAllowsFinalXMROutboundWhenValidated
 	}
 }
 
+func TestRetryPendingXMROutboundTxKeyAttestationsCoAttestsAfterValidation(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+
+	var validateCalls int
+	ag.SetObserverValidateXMRTx(func(tx common.ObservedTx) error {
+		validateCalls++
+		if validateCalls == 1 {
+			return fmt.Errorf("tx not mined yet")
+		}
+		return nil
+	})
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          common.TxID(stringsRepeat("c", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("external"))),
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 130,
+		ObservedPubKey: "thorpub1addwnpepqtest",
+		TxKeys:         []string{strings.Repeat("c", 64)},
+	}
+
+	k, err := observedTxKey(obsTx, true, false)
+	require.NoError(t, err)
+
+	state := ag.observedTxsPool.NewAttestationState(&obsTx)
+	state.attestations = []attestationSentState{
+		{
+			attestation: &common.Attestation{
+				PubKey:    []byte("remote-pubkey"),
+				Signature: []byte("remote-signature"),
+			},
+		},
+	}
+
+	ag.mu.Lock()
+	ag.observedTxs[k] = state
+	ag.mu.Unlock()
+
+	ag.retryPendingXMROutboundTxKeyAttestations(context.Background())
+
+	require.Eventually(t, func() bool {
+		return validateCalls == 1
+	}, time.Second, 10*time.Millisecond)
+	ag.mu.Lock()
+	state.mu.Lock()
+	assert.False(t, hasLocalObservedTxAttestation(state, ag.pubKey))
+	state.mu.Unlock()
+	ag.mu.Unlock()
+
+	ag.retryPendingXMROutboundTxKeyAttestations(context.Background())
+
+	require.Eventually(t, func() bool {
+		ag.mu.Lock()
+		defer ag.mu.Unlock()
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		return hasLocalObservedTxAttestation(state, ag.pubKey)
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, 2, validateCalls)
+}
+
 func TestXMROutboundTxKeysUseActiveValidatorQuorum(t *testing.T) {
 	ag, _, _, grpcClient, bridge, _ := setupTestGossip(t)
 

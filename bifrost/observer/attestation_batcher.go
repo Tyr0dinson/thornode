@@ -286,6 +286,14 @@ func (b *AttestationBatcher) AddObservedTx(tx common.AttestTx) {
 
 	b.observedTxBatch = append(b.observedTxBatch, &tx)
 
+	if isPriorityXMROutboundTxKeyAttestation(tx) {
+		b.logger.Info().
+			Str("tx_id", tx.ObsTx.Tx.ID.String()).
+			Msg("priority XMR outbound tx-key attestation queued, triggering immediate send")
+		go b.triggerBatchSend()
+		return
+	}
+
 	// If we've reached the maximum batch size, trigger an immediate send
 	if int64(len(b.observedTxBatch)) >= maxBatchSize {
 		b.logger.Debug().

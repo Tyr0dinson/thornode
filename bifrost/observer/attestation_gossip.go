@@ -758,6 +758,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 
 			s.mu.Unlock()
 
+			s.retryPendingXMROutboundTxKeyAttestations(ctx)
 			s.retryPendingInboundXMRKeyImageAttestations(ctx)
 
 			// Prune cached keysign parties

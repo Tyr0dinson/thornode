@@ -77,6 +77,13 @@ func useActiveValidatorQuorumForObservedTx(obsTx common.ObservedTx, inbound bool
 	return !inbound && obsTx.Tx.Chain.Equals(common.XMRChain) && len(obsTx.TxKeys) > 0
 }
 
+func isPriorityXMROutboundTxKeyAttestation(tx common.AttestTx) bool {
+	return !tx.Inbound &&
+		tx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
+		!tx.ObsTx.IsFinal() &&
+		len(tx.ObsTx.TxKeys) > 0
+}
+
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
 	obsTx := tx.ObsTx
@@ -261,6 +268,48 @@ func (s *AttestationGossip) validateAndCoAttestOutboundXMRKeyImages(ctx context.
 		s.logger.Err(err).
 			Str("tx_id", obsTx.Tx.ID.String()).
 			Msg("failed to co-attest XMR outbound final observation")
+	}
+}
+
+func (s *AttestationGossip) retryPendingXMROutboundTxKeyAttestations(ctx context.Context) {
+	if s.observerValidateXMRTx == nil {
+		return
+	}
+
+	candidates := make([]pendingInboundXMRKeyImageAttestation, 0)
+
+	s.mu.Lock()
+	for k, state := range s.observedTxs {
+		state.mu.Lock()
+
+		shouldRetry := !k.Inbound &&
+			!k.Finalized &&
+			state.Item != nil &&
+			state.Item.Tx.Chain.Equals(common.XMRChain) &&
+			len(state.Item.TxKeys) > 0 &&
+			!hasLocalObservedTxAttestation(state, s.pubKey)
+		if shouldRetry {
+			candidates = append(candidates, pendingInboundXMRKeyImageAttestation{
+				key:                    k,
+				obsTx:                  *state.Item,
+				allowFutureObservation: k.AllowFutureObservation,
+				inbound:                false,
+			})
+		}
+
+		state.mu.Unlock()
+	}
+	s.mu.Unlock()
+
+	for _, candidate := range candidates {
+		cp := candidate.obsTx
+		s.validateXMRObservationAsync(cp, func() {
+			if err := s.attestObservedTxWithFutureFlag(ctx, &cp, false, candidate.allowFutureObservation); err != nil {
+				s.logger.Err(err).
+					Str("tx_id", cp.Tx.ID.String()).
+					Msg("failed to retry co-attest XMR outbound tx-key observation")
+			}
+		})
 	}
 }
 

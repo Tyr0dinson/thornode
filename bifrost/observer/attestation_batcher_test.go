@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -310,6 +311,30 @@ func TestAttestationBatcher(t *testing.T) {
 		// Check batch clears metric
 		// batchClears := m.GetCounter(metrics.BatchClears)
 		// assert.GreaterOrEqual(t, testutil.ToFloat64(batchClears), float64(1), "Batch clears metric should be incremented")
+	})
+
+	t.Run("priority xmr outbound tx-key attestations force send", func(t *testing.T) {
+		host := NewMockHost([]peer.ID{})
+		batcher := NewAttestationBatcher(host, logger, nil, time.Hour, 100, time.Second, 4)
+
+		batcher.AddObservedTx(common.AttestTx{
+			ObsTx: common.ObservedTx{
+				Tx: common.Tx{
+					ID:    common.TxID(strings.Repeat("a", 64)),
+					Chain: common.XMRChain,
+				},
+				BlockHeight:    100,
+				FinaliseHeight: 130,
+				TxKeys:         []string{strings.Repeat("b", 64)},
+			},
+			Inbound: false,
+		})
+
+		select {
+		case <-batcher.forceSendChan:
+		case <-time.After(time.Second):
+			t.Fatal("expected priority XMR outbound tx-key attestation to trigger immediate send")
+		}
 	})
 }
 
