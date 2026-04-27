@@ -272,6 +272,29 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	if err != nil {
 		return FrostKeySignResponse{}, fmt.Errorf("fail to compute frost threshold: %w", err)
 	}
+	coordinationHeight := req.BlockHeight
+	if coordinationHeight <= 0 {
+		coordinationHeight = 1
+	}
+	predictedLeader := ""
+	if peerIDs, peerErr := conversion.GetPeerIDsFromPubKeys(req.SignerPubKeys); peerErr == nil {
+		peerIDStrings := make([]string, 0, len(peerIDs))
+		for _, peerID := range peerIDs {
+			peerIDStrings = append(peerIDStrings, peerID.String())
+		}
+		if leader, leaderErr := p2p.LeaderNode(msgID, coordinationHeight, peerIDStrings); leaderErr == nil {
+			predictedLeader = leader
+		}
+	}
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Str("vault_pub_key", strings.TrimSpace(req.VaultPubKey)).
+		Str("memo", strings.TrimSpace(req.Memo)).
+		Int64("requested_block_height", req.BlockHeight).
+		Int64("coordination_height", coordinationHeight).
+		Str("predicted_leader", predictedLeader).
+		Strs("signer_pub_keys", req.SignerPubKeys).
+		Msg("starting frost keysign ceremony")
 
 	msgChan := make(chan *p2p.Message, 1024)
 	sigChan := make(chan string, 2)
@@ -293,12 +316,22 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	onlinePeers, _, errJoinParty := t.joinParty(
 		msgID,
 		req.Version,
-		req.BlockHeight,
+		coordinationHeight,
 		req.SignerPubKeys,
 		threshold,
 		sigChan,
 	)
 	if errJoinParty != nil {
+		t.logger.Warn().
+			Err(errJoinParty).
+			Str("msg_id", msgID).
+			Str("vault_pub_key", strings.TrimSpace(req.VaultPubKey)).
+			Str("memo", strings.TrimSpace(req.Memo)).
+			Int64("requested_block_height", req.BlockHeight).
+			Int64("coordination_height", coordinationHeight).
+			Str("predicted_leader", predictedLeader).
+			Strs("signer_pub_keys", req.SignerPubKeys).
+			Msg("frost keysign join party failed")
 		return FrostKeySignResponse{
 			Status: tcommon.Fail,
 			Blame:  blame.NewBlame(errJoinParty.Error(), nil),
@@ -450,17 +483,17 @@ func (c *FrostSignCoordinator) Execute(
 	}
 
 	prepareResp, err := c.sidecar.FrostSignPrepare(FrostSidecarPrepareReq{
-		MsgID:          c.msgID,
-		VaultPubKey:    req.VaultPubKey,
-		ToAddress:      req.ToAddress,
-		AmountAtomic:   req.AmountAtomic,
-		MaxGasAtomic:   req.MaxGasAtomic,
-		SweepIfFinal:   req.SweepIfFinal,
-		Memo:           req.Memo,
-		FeeRate:        req.FeeRate,
-		DecoyContext:   decoyContext,
-		MaxInputs:      req.MaxInputs,
-		DustThreshold:  req.DustThreshold,
+		MsgID:         c.msgID,
+		VaultPubKey:   req.VaultPubKey,
+		ToAddress:     req.ToAddress,
+		AmountAtomic:  req.AmountAtomic,
+		MaxGasAtomic:  req.MaxGasAtomic,
+		SweepIfFinal:  req.SweepIfFinal,
+		Memo:          req.Memo,
+		FeeRate:       req.FeeRate,
+		DecoyContext:  decoyContext,
+		MaxInputs:     req.MaxInputs,
+		DustThreshold: req.DustThreshold,
 	})
 	if err != nil {
 		return FrostKeySignResponse{
@@ -529,15 +562,15 @@ func (c *FrostSignCoordinator) Execute(
 	}
 
 	return FrostKeySignResponse{
-		TxHash:          combineResp.TxHash,
-		TxHex:           combineResp.TxHex,
-		AmountAtomic:    combineResp.AmountAtomic,
-		FeeAtomic:       combineResp.FeeAtomic,
-		MsgID:           c.msgID,
-		Eventuality:     eventuality,
-		TxKeys:          append([]string(nil), combineResp.TxKeys...),
-		Status:          tcommon.Success,
-		Blame:           blame.Blame{},
+		TxHash:       combineResp.TxHash,
+		TxHex:        combineResp.TxHex,
+		AmountAtomic: combineResp.AmountAtomic,
+		FeeAtomic:    combineResp.FeeAtomic,
+		MsgID:        c.msgID,
+		Eventuality:  eventuality,
+		TxKeys:       append([]string(nil), combineResp.TxKeys...),
+		Status:       tcommon.Success,
+		Blame:        blame.Blame{},
 	}
 }
 

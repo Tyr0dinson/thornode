@@ -901,6 +901,52 @@ func (s *SlashingSuite) TestNeedsNewVaultFrost(c *C) {
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 }
 
+func (s *SlashingSuite) TestNeedsNewVaultFrostSingleXMRObservation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	inhash := GetRandomTxHash()
+	outhash := GetRandomTxHash()
+	pk1 := GetRandomPubKey()
+	pk2 := GetRandomPubKey()
+	pk3 := GetRandomPubKey()
+	sig1, _ := pk1.GetThorAddress()
+
+	ecdsaPK := GetRandomPubKey()
+	frostPK := GetRandomPubKey()
+
+	tx := GetRandomTx()
+	tx.ID = outhash
+	tx.Chain = common.XMRChain
+	tx.Coins = common.Coins{common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One))}
+	obs := NewObservedTx(tx, 0, frostPK, 0)
+	obs.ObservedPubKey = frostPK
+	obs.Signers = []string{sig1.String()}
+
+	vault := GetRandomVault()
+	vault.Membership = []string{pk1.String(), pk2.String(), pk3.String()}
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+	toi := TxOutItem{
+		Chain:            common.XMRChain,
+		InHash:           inhash,
+		Coin:             tx.Coins[0],
+		VaultPubKey:      ecdsaPK,
+		VaultPubKeyFrost: frostPK,
+	}
+
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, true)
+
+	voter := NewObservedTxVoter(outhash, []common.ObservedTx{obs})
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	mgr.Keeper().SetObservedLink(ctx, inhash, outhash)
+
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+
+	ctx = ctx.WithBlockHeight(999999999)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+}
+
 func (s *SlashingSuite) TestTreasuryRecoveryForMaxAttempts(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

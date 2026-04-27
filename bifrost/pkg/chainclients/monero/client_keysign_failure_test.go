@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -67,6 +68,12 @@ func (b *keysignFailureBridge) GetThorchainVersion() (semver.Version, error) {
 
 func (b *keysignFailureBridge) GetMimir(_ string) (int64, error) {
 	return -1, nil
+}
+
+func (b *keysignFailureBridge) GetConstants() (map[string]int64, error) {
+	return map[string]int64{
+		constants.SigningTransactionPeriod.String(): 40,
+	}, nil
 }
 
 func (b *keysignFailureBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
@@ -120,13 +127,15 @@ func newTestSignerCacheManager(t *testing.T) *signercache.CacheManager {
 
 type mockFrostTssServer struct {
 	tssp.Server
-	calls int
-	resp  tssp.FrostKeySignResponse
-	err   error
+	calls   int
+	lastReq tssp.FrostKeySignRequest
+	resp    tssp.FrostKeySignResponse
+	err     error
 }
 
 func (m *mockFrostTssServer) FrostKeySign(req tssp.FrostKeySignRequest, _ tssp.FrostSidecarClient) (tssp.FrostKeySignResponse, error) {
 	m.calls++
+	m.lastReq = req
 	if m.err != nil {
 		return m.resp, m.err
 	}
@@ -338,6 +347,90 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 
 	if bridge.calls != 0 {
 		t.Fatalf("expected PostKeysignFailure not to be called, got %d calls", bridge.calls)
+	}
+}
+
+func TestSignTxTransientFrostLeaderFailureRetriesWithoutKeysignFailure(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
+	bridge := &keysignFailureBridge{
+		blockHeight: 2118,
+		vaults: map[string]ttypes.Vault{
+			vaultPubKey.String(): {
+				PubKey:      vaultPubKey,
+				PubKeyEddsa: vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+				StatusSince: 12000,
+				Membership:  []string{"member-a"},
+			},
+		},
+	}
+
+	tssServer := &mockFrostTssServer{
+		resp: tssp.FrostKeySignResponse{
+			Status: gotsscommon.Fail,
+			Blame: gotssblame.Blame{
+				FailReason: "leader not reachable",
+			},
+		},
+	}
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:         10 * moneroAtomicToThorchain,
+			UnlockedBalance: 10 * moneroAtomicToThorchain,
+		},
+	})
+	defer balanceServer.Close()
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:              common.XMRChain,
+		logger:             testLogger(),
+		localNodePubKey:    common.PubKey("member-a"),
+		frostSigner:        frostSigner,
+		tssServer:          tssServer,
+		signerCacheManager: newTestSignerCacheManager(t),
+		thorchainBridge:    bridge,
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddress,
+		},
+	}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        testOutboundXMRDestination(),
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+		},
+		Memo: "OUT:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+	}
+
+	_, _, _, signErr := c.SignTx(tx, 2088)
+	if signErr == nil {
+		t.Fatalf("expected SignTx error")
+	}
+	var retryErr interface {
+		error
+		RetryAfterNextBlock() bool
+	}
+	if !errors.As(signErr, &retryErr) {
+		t.Fatalf("expected retry-after-next-block error, got: %T %v", signErr, signErr)
+	}
+	if !retryErr.RetryAfterNextBlock() {
+		t.Fatalf("expected transient leader error to request retry after next block")
+	}
+	if bridge.calls != 0 {
+		t.Fatalf("expected PostKeysignFailure not to be called for transient leader failure, got %d calls", bridge.calls)
+	}
+	if tssServer.lastReq.BlockHeight != 2081 {
+		t.Fatalf("expected keysign coordination height to use current signing-period epoch 2081, got %d", tssServer.lastReq.BlockHeight)
 	}
 }
 

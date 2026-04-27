@@ -987,6 +987,14 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 			}
 		}
 		if len(signers) > 0 {
+			// XMR outbounds have a two-phase observation flow: first the outbound is
+			// observed, then finalisation waits for tx keys / key images. Once any
+			// matching XMR observation exists, the transaction is in-flight and must
+			// not be reassigned to another vault while finalisation catches up.
+			if toi.Chain.Equals(common.XMRChain) {
+				return false
+			}
+
 			var count int // count the number of signers from the assigned vault
 			for _, member := range vault.Membership {
 				pk, err := common.NewPubKey(member)

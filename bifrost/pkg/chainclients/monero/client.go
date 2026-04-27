@@ -113,6 +113,10 @@ type xmrSyncingToTipError struct {
 	reason string
 }
 
+type xmrTransientFrostKeySignError struct {
+	reason string
+}
+
 const xmrDefaultMaxConfirmationCap uint64 = 30 // ~1 hour at 2-minute XMR blocks
 
 func (e *lockedOutputsError) Error() string {
@@ -141,6 +145,15 @@ func (e *xmrSyncingToTipError) Error() string {
 }
 
 func (e *xmrSyncingToTipError) RetryAfterNextBlock() bool { return true }
+
+func (e *xmrTransientFrostKeySignError) Error() string {
+	if strings.TrimSpace(e.reason) == "" {
+		return "transient xmr frost keysign failure"
+	}
+	return fmt.Sprintf("transient xmr frost keysign failure: %s", e.reason)
+}
+
+func (e *xmrTransientFrostKeySignError) RetryAfterNextBlock() bool { return true }
 
 type xmrConsolidationSettings struct {
 	Enabled             bool
@@ -619,6 +632,10 @@ func isTransientXMRKeyImageCeremonyError(err error) bool {
 }
 
 func isTransientXMRKeyImageCeremonyText(errText string) bool {
+	return isTransientXMRFrostCoordinationText(errText)
+}
+
+func isTransientXMRFrostCoordinationText(errText string) bool {
 	return strings.Contains(errText, "leader not reachable") ||
 		strings.Contains(errText, "fail to join party, timeout")
 }
@@ -3059,6 +3076,13 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to resolve thorchain version: %w", err)
 	}
+	currentThorHeight := height
+	if c.thorchainBridge != nil {
+		if thorHeight, heightErr := c.thorchainBridge.GetBlockHeight(); heightErr == nil && thorHeight > 0 {
+			currentThorHeight = thorHeight
+		}
+	}
+	coordinationHeight := xmrLeaderEpochHeight(currentThorHeight, c.getSigningTransactionPeriod())
 
 	txInHash := ""
 	if !tx.InHash.IsEmpty() {
@@ -3087,20 +3111,33 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		Memo:          tx.Memo,
 		FeeRate:       feeRate,
 		SignerPubKeys: members,
-		BlockHeight:   height,
+		BlockHeight:   coordinationHeight,
 		Version:       version.String(),
 		TxInHash:      txInHash,
 		RequestID:     tx.SigningID,
 		MaxInputs:     maxInputs,
 		DustThreshold: dustThreshold,
 	}
+	c.logger.Info().
+		Str("vault_pub_key", signReqCtx.vaultPubKey.String()).
+		Str("memo", tx.Memo).
+		Int64("txout_height", height).
+		Int64("current_thor_height", currentThorHeight).
+		Int64("coordination_height", coordinationHeight).
+		Msg("starting XMR FROST keysign")
 	resp, err := c.tssServer.FrostKeySign(frostReq, newFrostSignerAdapter(c.frostSigner))
 	if err != nil {
 		c.observeXMRActualFeeEstimate(height, feeRate, xmrNecessaryFeeFromError(err))
+		if isTransientXMRFrostCoordinationText(err.Error()) {
+			return nil, nil, nil, &xmrTransientFrostKeySignError{reason: err.Error()}
+		}
 		return nil, nil, nil, fmt.Errorf("fail to execute FROST keysign: %w", err)
 	}
 	if resp.Status != gotsscommon.Success {
 		c.observeXMRActualFeeEstimate(height, feeRate, xmrNecessaryFeeFromString(resp.Blame.FailReason))
+		if isTransientXMRFrostCoordinationText(resp.Blame.FailReason) {
+			return nil, nil, nil, &xmrTransientFrostKeySignError{reason: resp.Blame.FailReason}
+		}
 		if len(resp.Blame.BlameNodes) > 0 {
 			return nil, nil, nil, bifrosttss.NewKeysignError(frostBlameToThorchainBlame(resp.Blame))
 		}
