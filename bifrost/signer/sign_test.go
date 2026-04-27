@@ -75,6 +75,18 @@ type fakeBridge struct {
 	thorclient.ThorchainBridge
 }
 
+type fakeBridgeWithMimir struct {
+	fakeBridge
+	mimir map[string]int64
+}
+
+func (b fakeBridgeWithMimir) GetMimir(key string) (int64, error) {
+	if val, ok := b.mimir[key]; ok {
+		return val, nil
+	}
+	return b.fakeBridge.GetMimir(key)
+}
+
 func (b fakeBridge) GetBlockHeight() (int64, error) {
 	return 100, nil
 }
@@ -837,6 +849,53 @@ func (s *SignSuite) TestXMRLockedOutputsBacksOffUntilNextLocalBlock(c *C) {
 	sign.processTransactions()
 	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 2)
+}
+
+func (s *SignSuite) TestXMRHaltedSigningKeepsTxOutForRetry(c *C) {
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+
+	cc := &MockChainClient{}
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: cc,
+		},
+		pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(),
+		stopChan:  make(chan struct{}),
+		wg:        &sync.WaitGroup{},
+		thorchainBridge: fakeBridgeWithMimir{
+			fakeBridge: fakeBridge{s.bridge},
+			mimir: map[string]int64{
+				fmt.Sprintf(constants.MimirTemplateHaltSigning, common.XMRChain): 1,
+			},
+		},
+		constantsProvider:   NewConstantsProvider(fakeBridge{s.bridge}),
+		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+		logger:              log.With().Str("module", "signer").Logger(),
+	}
+
+	sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+
+	item := TxOutStoreItem{
+		Height: 1,
+		TxOutItem: types.TxOutItem{
+			Chain:       common.XMRChain,
+			ToAddress:   "45HDGQDwz2wXrKeDqYZ12knAco4zxuZyLQJvPZ1xy4dEkALmJigE2gYzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+			Memo:        "OUT:1",
+			VaultPubKey: vaultPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000000)),
+			},
+		},
+	}
+	c.Assert(sign.storage.Set(item), IsNil)
+
+	sign.processTransactions()
+	sign.pipeline.Wait()
+
+	c.Assert(cc.signCount, Equals, 0)
+	c.Assert(sign.storage.List(), HasLen, 1)
 }
 
 func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {

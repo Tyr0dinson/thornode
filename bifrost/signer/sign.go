@@ -67,6 +67,15 @@ type retryAfterNextBlockError interface {
 	RetryAfterNextBlock() bool
 }
 
+type transientSigningHaltedError struct {
+	chain common.Chain
+	key   string
+}
+
+func (e transientSigningHaltedError) Error() string {
+	return fmt.Sprintf("signing for %s is halted by %s", e.chain, e.key)
+}
+
 type vaultLocker interface {
 	GetVaultLock(vaultPubKey string) *sync.Mutex
 }
@@ -745,6 +754,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningGlobalMimir > 0 && haltSigningGlobalMimir <= blockHeight {
 		s.logger.Info().Msg("signing has been halted globally")
+		if tx.Chain.Equals(common.XMRChain) {
+			return nil, nil, transientSigningHaltedError{chain: tx.Chain, key: mimirKey}
+		}
 		return nil, nil, nil
 	}
 	mimirKey = fmt.Sprintf(constants.MimirTemplateHaltSigning, tx.Chain)
@@ -755,6 +767,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningMimir > 0 && haltSigningMimir <= blockHeight {
 		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
+		if tx.Chain.Equals(common.XMRChain) {
+			return nil, nil, transientSigningHaltedError{chain: tx.Chain, key: mimirKey}
+		}
 		return nil, nil, nil
 	}
 	if !s.shouldSign(tx) {
