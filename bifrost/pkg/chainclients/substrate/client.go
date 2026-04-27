@@ -519,11 +519,16 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 		case strings.Contains(errMsg, "AlreadyImported") || strings.Contains(errMsg, "already imported"):
 			c.logger.Info().Str("txid", txHash).Msg("extrinsic already in pool, treating as success")
 
-		// Stale nonce — the on-chain nonce is ahead of this tx's nonce, meaning
-		// a tx with this nonce already confirmed. Treat as success.
 		case strings.Contains(errMsg, "Stale"):
-			c.logger.Info().Str("txid", txHash).Msg("extrinsic has stale nonce (already confirmed), treating as success")
-
+			// Stale means the on-chain nonce has advanced past this tx's slot.
+			// That *usually* means our tx already confirmed — but it can also mean
+			// someone else burned the slot (operator error, double-signer, state
+			// corruption). Do NOT mark signed here; let the scanner confirm via
+			// the normal inbound-observation path. On retry, Checkpoint reuses
+			// the same nonce under a fresh mortal era.
+			c.logger.Info().Str("txid", txHash).Msg("extrinsic stale - deferring confirmation to scanner")
+			// triggers retry; SignedTx cleared in sign.go
+			return "", fmt.Errorf("stale nonce: %w", err)
 		default:
 			return "", fmt.Errorf("failed to broadcast tx: %w", err)
 		}

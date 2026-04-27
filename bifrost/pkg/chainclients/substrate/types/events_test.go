@@ -55,6 +55,13 @@ func makeDefaultDispatchInfo() []byte {
 	return makeCompactDispatchInfo(261973000, 1493, 0, 0)
 }
 
+// buildTransferEvent builds a Balances::Transfer event record (from + to + amount
+// layout). Topics is always empty (0x00 trailing byte), which is what real
+// Substrate runtimes emit for balance events.
+func buildTransferEvent(extIdx uint32, balancesPallet byte, balanceSize int) []byte {
+	return buildEvent(0x00, extIdx, balancesPallet, 0x02, make([]byte, 32*2+balanceSize), 0)
+}
+
 func (s *EventsSuite) TestParseExtrinsicResults_Success(c *C) {
 	for _, balanceSize := range []int{8, 16} {
 		pallets := EventPalletConfig{
@@ -247,6 +254,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_FindsEventsAfterUnknownPallet(c *
 	pallets := EventPalletConfig{
 		SystemPalletIndex:             0,
 		BalancesPalletIndex:           5,
+		BalancesTransferEventIndex:    2,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
 		BalanceSize:                   8,
@@ -254,16 +262,18 @@ func (s *EventsSuite) TestScanExtrinsicResults_FindsEventsAfterUnknownPallet(c *
 
 	var events []byte
 
-	// ExtrinsicSuccess for extrinsic 0
+	// Transfer + ExtrinsicSuccess for extrinsic 0
+	events = append(events, buildTransferEvent(0, 5, 8)...)
 	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
 	// Unknown pallet event for extrinsic 1 (pallet 99, 20 bytes data)
 	events = append(events, buildEvent(0x00, 1, 99, 0, make([]byte, 20), 0)...)
 
-	// ExtrinsicSuccess for extrinsic 1 (after the unknown event)
+	// Transfer + ExtrinsicSuccess for extrinsic 1 (after the unknown event)
+	events = append(events, buildTransferEvent(1, 5, 8)...)
 	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
-	data := EncodeCompact(3)
+	data := EncodeCompact(5)
 	data = append(data, events...)
 
 	// Linear parser should miss extrinsic 1
@@ -281,6 +291,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_FindsFailedAfterUnknownPallet(c *
 	pallets := EventPalletConfig{
 		SystemPalletIndex:             0,
 		BalancesPalletIndex:           5,
+		BalancesTransferEventIndex:    2,
 		UtilityPalletIndex:            11,
 		TransactionPaymentPalletIndex: 6,
 		BalanceSize:                   8,
@@ -288,7 +299,8 @@ func (s *EventsSuite) TestScanExtrinsicResults_FindsFailedAfterUnknownPallet(c *
 
 	var events []byte
 
-	// ExtrinsicSuccess for extrinsic 0
+	// Transfer + ExtrinsicSuccess for extrinsic 0
+	events = append(events, buildTransferEvent(0, 5, 8)...)
 	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
 	// Unknown pallet event for extrinsic 1 (pallet 50, non-zero data to avoid
@@ -299,12 +311,12 @@ func (s *EventsSuite) TestScanExtrinsicResults_FindsFailedAfterUnknownPallet(c *
 	}
 	events = append(events, buildEvent(0x00, 1, 50, 2, unknownData, 0)...)
 
-	// ExtrinsicFailed for extrinsic 1
+	// ExtrinsicFailed for extrinsic 1 — no Transfer needed for failure path.
 	di := makeDefaultDispatchInfo()
 	failData := append([]byte{0x00}, di...) // DispatchError::Other + DispatchInfo
 	events = append(events, buildEvent(0x00, 1, 0, 0x01, failData, 0)...)
 
-	data := EncodeCompact(3)
+	data := EncodeCompact(4)
 	data = append(data, events...)
 
 	scanResults := ScanExtrinsicResults(data, pallets, 2)
@@ -362,16 +374,20 @@ func (s *EventsSuite) TestScanExtrinsicResults_RejectsOutOfRangeExtrinsicIdx(c *
 
 func (s *EventsSuite) TestScanExtrinsicResults_ConflictingMatchesExcluded(c *C) {
 	pallets := EventPalletConfig{
-		SystemPalletIndex: 0,
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
 	}
 
 	// Build data where the scan finds BOTH ExtrinsicSuccess and ExtrinsicFailed
 	// patterns for extrinsic 1. This simulates a false positive from unknown pallet
 	// event data containing a matching byte pattern.
 	var data []byte
-	data = append(data, EncodeCompact(4)...) // 4 "events" (the scan doesn't use the count)
+	data = append(data, EncodeCompact(5)...) // 5 "events" (the scan doesn't use the count)
 
-	// Real ExtrinsicSuccess for extrinsic 0
+	// Real Transfer + ExtrinsicSuccess for extrinsic 0
+	data = append(data, buildTransferEvent(0, 5, 8)...)
 	data = append(data, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
 	// Real ExtrinsicFailed for extrinsic 1
@@ -508,12 +524,16 @@ func (s *EventsSuite) TestDispatchErrorSizeEstimates_UnknownVariant(c *C) {
 
 func (s *EventsSuite) TestScanExtrinsicResults_UnknownDispatchErrorVariant(c *C) {
 	pallets := EventPalletConfig{
-		SystemPalletIndex: 0,
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
 	}
 
 	var events []byte
 
-	// ExtrinsicSuccess for extrinsic 0
+	// Transfer + ExtrinsicSuccess for extrinsic 0
+	events = append(events, buildTransferEvent(0, 5, 8)...)
 	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
 
 	// ExtrinsicFailed for extrinsic 1 with an unknown DispatchError variant (99).
@@ -522,7 +542,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_UnknownDispatchErrorVariant(c *C)
 	failData := append([]byte{99}, di...) // Unknown DispatchError variant + DispatchInfo
 	events = append(events, buildEvent(0x00, 1, 0, 0x01, failData, 0)...)
 
-	data := EncodeCompact(2)
+	data := EncodeCompact(3)
 	data = append(data, events...)
 
 	// Linear parser stops at unknown pallet events, but scan should find both
@@ -566,4 +586,315 @@ func (s *EventsSuite) TestParseExtrinsicResults_ExtractsFee(c *C) {
 		_, ok := fees[0]
 		c.Check(ok, Equals, false, Commentf("balanceSize=%d: extrinsic 0 should not have a fee", balanceSize))
 	}
+}
+
+// -----------------------------------------------------------------------------
+// A12 gate: scan-matched ExtrinsicSuccess requires a matching Balances::Transfer
+// event at the same extIdx. Without the gate, the pattern-based fallback could
+// false-positive a transfer credit from unrelated unknown-pallet event bytes.
+// -----------------------------------------------------------------------------
+
+func (s *EventsSuite) TestScanExtrinsicResults_SuccessWithTransferCredited(c *C) {
+	for _, balanceSize := range []int{8, 16} {
+		pallets := EventPalletConfig{
+			SystemPalletIndex:             0,
+			BalancesPalletIndex:           5,
+			BalancesTransferEventIndex:    2,
+			UtilityPalletIndex:            11,
+			TransactionPaymentPalletIndex: 6,
+			BalanceSize:                   balanceSize,
+		}
+
+		var events []byte
+
+		// extrinsic 0: Transfer + ExtrinsicSuccess.
+		events = append(events, buildTransferEvent(0, 5, balanceSize)...)
+		events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+		// Unknown pallet event between extrinsics to force scan resolution.
+		events = append(events, buildEvent(0x00, 1, 99, 0, make([]byte, 20), 0)...)
+
+		// extrinsic 1: Transfer + ExtrinsicSuccess.
+		events = append(events, buildTransferEvent(1, 5, balanceSize)...)
+		events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+		data := EncodeCompact(5)
+		data = append(data, events...)
+
+		results := ScanExtrinsicResults(data, pallets, 2)
+		c.Check(results[0], Equals, true,
+			Commentf("balanceSize=%d: ext 0 should be credited (success + transfer)", balanceSize))
+		c.Check(results[1], Equals, true,
+			Commentf("balanceSize=%d: ext 1 should be credited (success + transfer)", balanceSize))
+	}
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_SuccessWithoutTransferBlocked(c *C) {
+	// Core A12 regression test. Without the transfer-event gate, a scan-matched
+	// ExtrinsicSuccess (for example from a pattern collision in unknown-pallet
+	// event bytes) would false-credit the user. With the gate, a success match
+	// that lacks a corresponding Balances::Transfer is silently dropped.
+	for _, balanceSize := range []int{8, 16} {
+		pallets := EventPalletConfig{
+			SystemPalletIndex:             0,
+			BalancesPalletIndex:           5,
+			BalancesTransferEventIndex:    2,
+			UtilityPalletIndex:            11,
+			TransactionPaymentPalletIndex: 6,
+			BalanceSize:                   balanceSize,
+		}
+
+		var events []byte
+
+		// Baseline: ext 0 is fully compliant (transfer + success) → must be credited.
+		events = append(events, buildTransferEvent(0, 5, balanceSize)...)
+		events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+		// Unknown pallet event forces scan resolution for ext 1.
+		events = append(events, buildEvent(0x00, 1, 99, 0, make([]byte, 20), 0)...)
+
+		// Real ExtrinsicSuccess for ext 1 but NO corresponding Balances::Transfer.
+		// Pre-fix: scanResults[1] == true (false credit).
+		// Post-fix: scanResults[1] absent.
+		events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+		data := EncodeCompact(4)
+		data = append(data, events...)
+
+		results := ScanExtrinsicResults(data, pallets, 2)
+		c.Check(results[0], Equals, true,
+			Commentf("balanceSize=%d: ext 0 should be credited", balanceSize))
+
+		_, ok := results[1]
+		c.Check(ok, Equals, false,
+			Commentf("balanceSize=%d: ext 1 must NOT be credited without a Transfer event", balanceSize))
+	}
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_FailureDoesNotRequireTransfer(c *C) {
+	// The gate applies only to successes. A failed extrinsic with no Transfer
+	// must still be reported as false — that instructs the caller to skip it.
+	pallets := EventPalletConfig{
+		SystemPalletIndex:             0,
+		BalancesPalletIndex:           5,
+		BalancesTransferEventIndex:    2,
+		UtilityPalletIndex:            11,
+		TransactionPaymentPalletIndex: 6,
+		BalanceSize:                   8,
+	}
+
+	var events []byte
+
+	// Baseline credit for ext 0.
+	events = append(events, buildTransferEvent(0, 5, 8)...)
+	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	// Unknown pallet event for ext 1 — forces scan. Use non-zero filler so
+	// the bytes don't accidentally form a valid pattern for a different extIdx.
+	unknownData := make([]byte, 64)
+	for i := range unknownData {
+		unknownData[i] = 0xAB
+	}
+	events = append(events, buildEvent(0x00, 1, 50, 2, unknownData, 0)...)
+
+	// ExtrinsicFailed for ext 1, no Transfer required.
+	di := makeDefaultDispatchInfo()
+	failData := append([]byte{0x00}, di...)
+	events = append(events, buildEvent(0x00, 1, 0, 0x01, failData, 0)...)
+
+	data := EncodeCompact(4)
+	data = append(data, events...)
+
+	results := ScanExtrinsicResults(data, pallets, 2)
+	c.Check(results[0], Equals, true)
+	c.Check(results[1], Equals, false,
+		Commentf("failure must still be reported regardless of Transfer presence"))
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_TransferForDifferentExtIdxDoesNotSatisfyGate(c *C) {
+	// The gate is keyed per-extIdx. A transfer at ext 2 must not vouch for a
+	// success at ext 1.
+	pallets := EventPalletConfig{
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
+	}
+
+	var events []byte
+
+	// Success for ext 1, Transfer for ext 2 (mismatched).
+	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+	events = append(events, buildTransferEvent(2, 5, 8)...)
+
+	data := EncodeCompact(2)
+	data = append(data, events...)
+
+	results := ScanExtrinsicResults(data, pallets, 3)
+	_, ok := results[1]
+	c.Check(ok, Equals, false,
+		Commentf("transfer for ext 2 must not vouch for success at ext 1"))
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_BalancesDepositDoesNotSatisfyGate(c *C) {
+	// Only Balances::Transfer (event index 2) satisfies the gate.
+	// Balances::Deposit (event index 7) must not count.
+	pallets := EventPalletConfig{
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
+	}
+
+	var events []byte
+
+	// Success for ext 1.
+	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	// Balances::Deposit (event 7) for ext 1 — wrong event, should NOT satisfy gate.
+	events = append(events, buildEvent(0x00, 1, 5, 7, make([]byte, 32+8), 0)...)
+
+	data := EncodeCompact(2)
+	data = append(data, events...)
+
+	results := ScanExtrinsicResults(data, pallets, 2)
+	_, ok := results[1]
+	c.Check(ok, Equals, false,
+		Commentf("Balances::Deposit must not satisfy the Transfer-only gate"))
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_TransferWithNonEmptyTopicsNotMatched(c *C) {
+	// A Transfer-shaped record followed by a non-0x00 byte at the topics
+	// position shouldn't be recognized as a transfer. The scan requires the
+	// trailing byte to be 0x00 (compact-encoded empty Vec<H256>).
+	pallets := EventPalletConfig{
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
+	}
+
+	var events []byte
+
+	// Success for ext 1.
+	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	// Transfer-shaped event for ext 1 but with topicCount=1 → trailing compact
+	// byte is 0x04, not 0x00. Scan must reject it as a Transfer match, so the
+	// gate for ext 1 stays unsatisfied.
+	events = append(events, buildEvent(0x00, 1, 5, 2, make([]byte, 32*2+8), 1)...)
+
+	data := EncodeCompact(2)
+	data = append(data, events...)
+
+	results := ScanExtrinsicResults(data, pallets, 2)
+	_, ok := results[1]
+	c.Check(ok, Equals, false,
+		Commentf("transfer-shaped bytes with non-empty topics must not satisfy gate"))
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_TransferPatternTruncatedRejected(c *C) {
+	// A Transfer-shaped prefix at the very end of the data (with no room for
+	// the trailing topics byte) must be rejected by the bounds check.
+	pallets := EventPalletConfig{
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
+	}
+
+	var events []byte
+	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	// Transfer-like bytes truncated right before the topics byte:
+	// phase(1) + extIdx(4) + pallet(1) + event(1) + from(32) + to(32) + amount(8) = 79 bytes
+	// with no trailing topics byte — scan's pos+totalLen<len(data) must reject.
+	truncated := []byte{0x00}
+	truncated = append(truncated, 1, 0, 0, 0)          // extIdx = 1
+	truncated = append(truncated, 5)                   // Balances pallet
+	truncated = append(truncated, 2)                   // Transfer event
+	truncated = append(truncated, make([]byte, 72)...) // from+to+amount, no topics byte
+	events = append(events, truncated...)
+
+	data := EncodeCompact(1)
+	data = append(data, events...)
+
+	results := ScanExtrinsicResults(data, pallets, 2)
+	_, ok := results[1]
+	c.Check(ok, Equals, false,
+		Commentf("truncated transfer pattern at end of data must not satisfy gate"))
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_ConflictingMatchesExcludedEvenWithTransfer(c *C) {
+	// If the scan sees both success and failure patterns for the same extIdx,
+	// conflict exclusion drops both even when a Transfer exists (so the gate
+	// would otherwise admit the success). This verifies conflict exclusion
+	// runs independently of the transfer gate.
+	pallets := EventPalletConfig{
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
+	}
+
+	var data []byte
+	data = append(data, EncodeCompact(5)...)
+
+	// ext 0: Transfer + Success → credited.
+	data = append(data, buildTransferEvent(0, 5, 8)...)
+	data = append(data, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	// ext 1: real Failed + real Transfer (gate would admit if success also matched).
+	di := makeDefaultDispatchInfo()
+	failData := append([]byte{0x00}, di...)
+	data = append(data, buildEvent(0x00, 1, 0, 0x01, failData, 0)...)
+	data = append(data, buildTransferEvent(1, 5, 8)...)
+
+	// Embed a fake ExtrinsicSuccess pattern for ext 1 (collision simulation).
+	fakeSuccess := []byte{0x00, 1, 0, 0, 0, 0x00, 0x00}
+	fakeSuccess = append(fakeSuccess, makeDefaultDispatchInfo()...)
+	fakeSuccess = append(fakeSuccess, 0x00)
+	data = append(data, fakeSuccess...)
+
+	results := ScanExtrinsicResults(data, pallets, 2)
+	c.Check(results[0], Equals, true)
+	_, ok := results[1]
+	c.Check(ok, Equals, false,
+		Commentf("conflict exclusion must drop ext 1 even when gate would admit"))
+}
+
+func (s *EventsSuite) TestScanExtrinsicResults_MultipleExtrinsicsOnlyTransferredCredited(c *C) {
+	// Multi-extrinsic block: gate is keyed per-extIdx so only extrinsics with
+	// matching Transfer events are credited.
+	pallets := EventPalletConfig{
+		SystemPalletIndex:          0,
+		BalancesPalletIndex:        5,
+		BalancesTransferEventIndex: 2,
+		BalanceSize:                8,
+	}
+
+	var events []byte
+
+	// ext 0: Transfer + Success.
+	events = append(events, buildTransferEvent(0, 5, 8)...)
+	events = append(events, buildEvent(0x00, 0, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	// Unknown pallet event — forces scan for the block.
+	events = append(events, buildEvent(0x00, 1, 99, 0, make([]byte, 20), 0)...)
+
+	// ext 1: Success only, no Transfer → must be blocked.
+	events = append(events, buildEvent(0x00, 1, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	// ext 2: Transfer + Success.
+	events = append(events, buildTransferEvent(2, 5, 8)...)
+	events = append(events, buildEvent(0x00, 2, 0, 0x00, makeDefaultDispatchInfo(), 0)...)
+
+	data := EncodeCompact(5)
+	data = append(data, events...)
+
+	results := ScanExtrinsicResults(data, pallets, 3)
+	c.Check(results[0], Equals, true, Commentf("ext 0 has Transfer → credited"))
+	_, ok := results[1]
+	c.Check(ok, Equals, false, Commentf("ext 1 has no Transfer → blocked"))
+	c.Check(results[2], Equals, true, Commentf("ext 2 has Transfer → credited"))
 }

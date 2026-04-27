@@ -234,6 +234,7 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 	palletConfig := stypes.EventPalletConfig{
 		SystemPalletIndex:             s.params.SystemPallet,
 		BalancesPalletIndex:           s.params.BalancesPallet,
+		BalancesTransferEventIndex:    s.params.BalancesTransferEvent,
 		UtilityPalletIndex:            s.params.UtilityPallet,
 		TransactionPaymentPalletIndex: s.params.TxPaymentPallet,
 		BalanceSize:                   s.params.BalanceSize,
@@ -263,9 +264,14 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 			Msg("using scan-based event fallback for undetermined extrinsics")
 		scanResults := stypes.ScanExtrinsicResults(eventsData, palletConfig, numExtrinsics)
 		for idx, success := range scanResults {
-			if _, ok := results[idx]; !ok {
-				results[idx] = success
+			if _, ok := results[idx]; ok {
+				continue
 			}
+			results[idx] = success
+			s.logger.Warn().
+				Uint32("ext_idx", idx).
+				Str("block_hash", blockHash).
+				Msg("extrinsic success determined solely by scan fallback")
 		}
 	}
 

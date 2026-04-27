@@ -20,6 +20,7 @@ var ChainParams = map[common.Chain]Params{
 		BalancesPallet:         5,
 		UtilityPallet:          26,
 		TxPaymentPallet:        32,
+		BalancesTransferEvent:  2,
 	},
 	common.TAOChain: {
 		SpecName:               "node-subtensor-runtime",
@@ -35,5 +36,6 @@ var ChainParams = map[common.Chain]Params{
 		BalancesPallet:         5,
 		UtilityPallet:          11,
 		TxPaymentPallet:        6,
+		BalancesTransferEvent:  2,
 	},
 }

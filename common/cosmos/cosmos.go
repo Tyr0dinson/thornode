@@ -131,10 +131,17 @@ func RoundToDecimal(amt Uint, dec int64) Uint {
 		if prec == 0 { // sanity check
 			return amt
 		}
-		precisionAdjust := sdkmath.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(prec), nil))
+		precisionAdjust := PowerOfTen(uint64(prec))
 		amt = amt.Quo(precisionAdjust).Mul(precisionAdjust)
 	}
 	return amt
+}
+
+// PowerOfTen
+func PowerOfTen(exp uint64) Uint {
+	return sdkmath.NewUintFromBigInt(
+		new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exp)), nil),
+	)
 }
 
 // KeybaseStore to store keys

@@ -14,4 +14,5 @@ type Params struct {
 	BalancesAllowDeathCall byte
 	BalancesKeepAliveCall  byte
 	UtilityBatchAllCall    byte
+	BalancesTransferEvent  byte
 }

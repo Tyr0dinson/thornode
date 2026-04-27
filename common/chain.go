@@ -304,13 +304,19 @@ func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 //
 // For chains whose gas asset has more decimals than THORChain,
 // floor-division in NativeGasToThorCoin can drop sub-1e8 precision.
-// In this case we always add 1 unit to avoid under-reporting which could
+// In this case we add 1 unit to avoid under-reporting which could
 // mis-state vault solvency and risk failed broadcasts.
 func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
 	coin := c.NativeGasToThorCoin(native)
+
 	if c.GetGasAssetDecimal() > THORChainDecimals {
-		coin.Amount = coin.Amount.Add(cosmos.OneUint())
+		_, gasRateUnitsPerOne := c.GetGasUnits()
+		amount := coin.Amount.Mul(gasRateUnitsPerOne).QuoUint64(One)
+		if native.GT(amount) {
+			coin.Amount = coin.Amount.Add(cosmos.OneUint())
+		}
 	}
+
 	return coin
 }
 

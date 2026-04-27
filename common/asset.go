@@ -180,6 +180,16 @@ func (a Asset) Equals(a2 Asset) bool {
 	return a.Chain.Equals(a2.Chain) && a.Symbol.Equals(a2.Symbol) && a.Ticker.Equals(a2.Ticker) && a.Synth == a2.Synth && a.Trade == a2.Trade && a.Secured == a2.Secured
 }
 
+func (a Asset) OneOf(assets ...Asset) bool {
+	for _, asset := range assets {
+		if a.Equals(asset) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (a Asset) GetChain() Chain {
 	if a.Synth || a.Trade || a.Secured {
 		return THORChain

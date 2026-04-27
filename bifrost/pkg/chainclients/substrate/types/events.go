@@ -50,6 +50,7 @@ func dispatchErrorSizeEstimates(variant byte) []int {
 type EventPalletConfig struct {
 	SystemPalletIndex             byte
 	BalancesPalletIndex           byte
+	BalancesTransferEventIndex    byte
 	UtilityPalletIndex            byte
 	TransactionPaymentPalletIndex byte
 	BalanceSize                   int
@@ -140,17 +141,21 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 				case 8:
 					fees[extrinsicIdx] = binary.LittleEndian.Uint64(part)
 				case 16:
-					var amount cosmos.Uint
-					amount, err = cosmos.ParseUint128(part)
-					if err != nil {
-						return results, fees, fmt.Errorf("failed to parse amount: %w", err)
+					amount, parseErr := cosmos.ParseUint128(part)
+					if parseErr != nil {
+						// skip this extrinsic's fee, don't abort the whole block
+						break
 					}
 
 					if amount.GT(cosmos.NewUint(math.MaxUint64)) {
-						return results, fees, fmt.Errorf("amount greater than max uint: %s", amount.String())
+						// fee exceeds uint64 — implausibly large for actual chain fees;
+						// skip this extrinsic's fee rather than abandoning the block
+						break
 					}
 
 					fees[extrinsicIdx] = amount.Uint64()
+				default:
+					return results, fees, fmt.Errorf("unsupported BalanceSize: %d", sizeBalance)
 				}
 			}
 		}
@@ -379,11 +384,15 @@ func txPaymentEventDataSize(eventIdx byte, sizeBalance int) (int, error) {
 }
 
 // ScanExtrinsicResults performs a pattern-based scan of raw event data to find
-// System::ExtrinsicSuccess and System::ExtrinsicFailed events. This is a fallback
-// for when the linear parser stops at unknown events from unrecognized pallets
-// (e.g., chain-specific pallets like SubtensorModule on TAO, or Staking on DOT).
+// System::ExtrinsicSuccess, System::ExtrinsicFailed, Balances::Transfer events.
+// This is a fallback for when the linear parser stops at unknown events from
+// unrecognized pallets (e.g., chain-specific pallets like SubtensorModule
+// on TAO, or Staking on DOT).
 // It searches for byte patterns matching these System events and validates
 // them by decoding compact DispatchInfo fields.
+// A scan-matched ExtrinsicSuccess is only reported when the same extIdx also
+// has a scan-matched Balances::Transfer event.
+// Call-data decode alone is never sufficient to credit a transfer.
 func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics int) map[uint32]bool {
 	results := make(map[uint32]bool)
 	if len(data) == 0 || numExtrinsics <= 0 {
@@ -395,6 +404,10 @@ func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics 
 	// unknown pallet event data) — we exclude it rather than risk a false credit.
 	successes := make(map[uint32]bool)
 	failures := make(map[uint32]bool)
+
+	// Track transfer events independently. If no transfer event is found, the
+	// decoded ApplyExtrinsic is a false positive
+	transfers := make(map[uint32]bool)
 
 	// Minimum match: phase(1) + extIdx(4) + palletIdx(1) + eventIdx(1) + DispatchInfo(min 4) + topics(1)
 	minMatch := 12
@@ -410,12 +423,23 @@ func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics 
 			continue
 		}
 
-		// Must be System pallet
-		if data[pos+5] != pallets.SystemPalletIndex {
+		palletIdx := data[pos+5]
+		eventIdx := data[pos+6]
+
+		if palletIdx == pallets.BalancesPalletIndex && eventIdx == pallets.BalancesTransferEventIndex {
+			// layout: phase(1) + extIdx(4) + pallet(1) + event(1) + from(32) + to(32) + amount(BalanceSize) + topics(1)
+			totalLen := 7 + 32 + 32 + pallets.BalanceSize
+			if pos+totalLen < len(data) && data[pos+totalLen] == 0x00 {
+				transfers[extIdx] = true
+			}
 			continue
 		}
 
-		eventIdx := data[pos+6]
+		// Must be System pallet
+		if palletIdx != pallets.SystemPalletIndex {
+			continue
+		}
+
 		diStart := pos + 7
 
 		switch eventIdx {
@@ -459,9 +483,14 @@ func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics 
 	// Build results only for non-conflicting matches. If both success and failure
 	// patterns matched for the same extIdx, exclude it (treat as undetermined).
 	for extIdx := range successes {
-		if !failures[extIdx] {
-			results[extIdx] = true
+		if failures[extIdx] {
+			continue
 		}
+		if !transfers[extIdx] {
+			// No transfer event found
+			continue
+		}
+		results[extIdx] = true
 	}
 	for extIdx := range failures {
 		if !successes[extIdx] {
