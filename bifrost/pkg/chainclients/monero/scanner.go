@@ -180,14 +180,8 @@ func (s *Scanner) FetchMemPool(height int64) (stypes.TxIn, error) {
 	skipped := 0
 
 	for _, transfer := range resp.Outgoing {
-		to := strings.TrimSpace(transfer.Address)
-		if to == "" {
-			skipped++
-			continue
-		}
-		_, err = common.NewAddress(to)
-		if err != nil {
-			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip mempool outgoing transfer with invalid to address")
+		to, ok := s.transferAddress(transfer, "skip mempool outgoing transfer with invalid to address")
+		if !ok {
 			skipped++
 			continue
 		}
@@ -331,13 +325,8 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	s.rememberObservedOutgoingVaults(outgoingVaultsByTxID, fetchHeight)
 	txItems := make([]*stypes.TxInItem, 0, len(resp.Incoming)+len(resp.Outgoing))
 	for _, transfer := range resp.Incoming {
-		to := strings.TrimSpace(transfer.Address)
-		if to == "" {
-			continue
-		}
-		_, err = common.NewAddress(to)
-		if err != nil {
-			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip incoming transfer with invalid to address")
+		to, ok := s.transferAddress(transfer, "skip incoming transfer with invalid to address")
+		if !ok {
 			continue
 		}
 
@@ -353,14 +342,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 			continue
 		}
 
-		memoText := strings.TrimSpace(transfer.Note)
-		if memoText == "" {
-			memoText, err = s.bridge.GetReferenceMemoByTxHash(transfer.TxID)
-			if err != nil {
-				s.logger.Debug().Err(err).Str("txid", transfer.TxID).Msg("incoming transfer has no reference memo yet")
-			}
-			memoText = strings.TrimSpace(memoText)
-		}
+		memoText := s.transferMemo(transfer, true)
 		if s.shouldSkipIncomingVaultTransfer(vaultPubKey, memoText) {
 			s.logger.Debug().
 				Str("txid", transfer.TxID).
@@ -383,13 +365,8 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	}
 
 	for _, transfer := range resp.Outgoing {
-		to := strings.TrimSpace(transfer.Address)
-		if to == "" {
-			continue
-		}
-		_, err = common.NewAddress(to)
-		if err != nil {
-			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip outgoing transfer with invalid to address")
+		to, ok := s.transferAddress(transfer, "skip outgoing transfer with invalid to address")
+		if !ok {
 			continue
 		}
 
@@ -398,11 +375,7 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 			continue
 		}
 
-		memoText := strings.TrimSpace(transfer.Note)
-		if memoText == "" {
-			memoText, _ = s.bridge.GetReferenceMemoByTxHash(transfer.TxID)
-			memoText = strings.TrimSpace(memoText)
-		}
+		memoText := s.transferMemo(transfer, false)
 
 		item, ok := s.transferToTxInItem(transfer, sender, to, vaultPubKey, memoText, fetchHeight)
 		if !ok {
@@ -412,6 +385,33 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	}
 
 	return s.dedupeTxInItemsByTxID(txItems), nil
+}
+
+func (s *Scanner) transferAddress(transfer xmrFrostTransferEntry, invalidMsg string) (string, bool) {
+	to := strings.TrimSpace(transfer.Address)
+	if to == "" {
+		return "", false
+	}
+	if _, err := common.NewAddress(to); err != nil {
+		s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg(invalidMsg)
+		return "", false
+	}
+	return to, true
+}
+
+func (s *Scanner) transferMemo(transfer xmrFrostTransferEntry, logMissingReference bool) string {
+	memoText := strings.TrimSpace(transfer.Note)
+	if memoText != "" || s.bridge == nil {
+		return memoText
+	}
+	memoText, err := s.bridge.GetReferenceMemoByTxHash(transfer.TxID)
+	if err != nil {
+		if logMissingReference {
+			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Msg("incoming transfer has no reference memo yet")
+		}
+		return ""
+	}
+	return strings.TrimSpace(memoText)
 }
 
 func (s *Scanner) outgoingVaultsByTxID(outgoing []xmrFrostTransferEntry) map[string]map[string]struct{} {

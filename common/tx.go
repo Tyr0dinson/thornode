@@ -238,7 +238,7 @@ func (tx Tx) Valid() error {
 	if err := tx.Coins.Valid(); err != nil {
 		return err
 	}
-	if !tx.Chain.Equals(THORChain) && len(tx.Gas) == 0 {
+	if !tx.Chain.Equals(THORChain) && len(tx.Gas) == 0 && !tx.IsXMRUnauthorizedSpendObservation() {
 		return errors.New("must have at least 1 gas coin")
 	}
 	if err := tx.Gas.Valid(); err != nil {
@@ -249,6 +249,10 @@ func (tx Tx) Valid() error {
 		return fmt.Errorf("memo must not exceed %d bytes: %d", constants.MaxMemoSize, len([]byte(tx.Memo)))
 	}
 	return nil
+}
+
+func (tx Tx) IsXMRUnauthorizedSpendObservation() bool {
+	return tx.Chain.Equals(XMRChain) && strings.EqualFold(strings.TrimSpace(tx.Memo), "NOOP:UNAUTHORIZED")
 }
 
 // ToAttributes push all the tx fields into a slice of cosmos Attribute(key value pairs)

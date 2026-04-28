@@ -21,10 +21,17 @@ func requireXMROutboundTxKeys(obsTx common.ObservedTx, inbound bool) error {
 	if inbound || !obsTx.Tx.Chain.Equals(common.XMRChain) {
 		return nil
 	}
+	if isXMRUnauthorizedSpendObservation(obsTx) {
+		return nil
+	}
 	if len(obsTx.TxKeys) == 0 {
 		return fmt.Errorf("xmr outbound attestation requires tx keys for %s", obsTx.Tx.ID)
 	}
 	return nil
+}
+
+func isXMRUnauthorizedSpendObservation(obsTx common.ObservedTx) bool {
+	return obsTx.Tx.IsXMRUnauthorizedSpendObservation()
 }
 
 func requireXMRFinalInboundKeyImages(obsTx common.ObservedTx, inbound bool) error {
@@ -62,6 +69,9 @@ func (s *AttestationGossip) requireXMRFinalInboundPropagation(obsTx common.Obser
 
 func (s *AttestationGossip) requireXMRFinalOutboundPropagation(obsTx common.ObservedTx, inbound bool) error {
 	if inbound || !obsTx.Tx.Chain.Equals(common.XMRChain) || !obsTx.IsFinal() {
+		return nil
+	}
+	if isXMRUnauthorizedSpendObservation(obsTx) {
 		return nil
 	}
 	if s.observerValidateXMRTx == nil {

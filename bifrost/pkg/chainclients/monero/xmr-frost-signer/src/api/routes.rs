@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use bech32::{decode as bech32_decode, FromBase32};
+use bech32::{decode as bech32_decode, encode as bech32_encode, FromBase32, ToBase32, Variant};
 use monero_wallet::rpc::Rpc;
 use monero_wallet::transaction::{Input, Pruned, Transaction};
 use rand::rngs::OsRng;
@@ -372,6 +372,7 @@ struct ScannedBlockEntry {
     block_hash: String,
     parent_hash: String,
     spent_key_images: Vec<String>,
+    spent_key_image_txs: HashMap<String, String>,
     added_outputs: Vec<TrackedOutput>,
 }
 
@@ -390,17 +391,24 @@ fn parse_pruned_transaction_hex(tx_hex: &str) -> Result<Transaction<Pruned>, Str
         .map_err(|e| format!("failed to decode pruned transaction: {e}"))
 }
 
-fn collect_spent_key_images(transactions: &[Transaction<Pruned>]) -> HashSet<String> {
-    transactions
-        .iter()
-        .flat_map(|tx| tx.prefix().inputs.iter())
-        .filter_map(|input| match input {
-            Input::ToKey { key_image, .. } => {
-                Some(hex::encode(key_image.compress().to_bytes()).to_ascii_lowercase())
+fn collect_spent_key_images_by_tx(
+    transactions: &[Transaction<Pruned>],
+    tx_hashes: &[String],
+) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for (idx, tx) in transactions.iter().enumerate() {
+        let tx_hash = tx_hashes
+            .get(idx)
+            .map(|hash| normalize_tx_hash(hash))
+            .unwrap_or_default();
+        for input in &tx.prefix().inputs {
+            if let Input::ToKey { key_image, .. } = input {
+                let key_image = hex::encode(key_image.compress().to_bytes()).to_ascii_lowercase();
+                out.entry(key_image).or_insert_with(|| tx_hash.clone());
             }
-            _ => None,
-        })
-        .collect()
+        }
+    }
+    out
 }
 
 fn load_registered_key_image_inventory(
@@ -561,6 +569,106 @@ fn replay_reconciled_key_image_spends(
     OutputLifecycle::new(state.store.as_ref())
         .replay_reconciled_spends(vault_pub_key, key_images)
         .map_err(|e| format!("failed to replay reconciled key-image spends: {e}"))
+}
+
+fn unauthorized_spend_entries(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    vault_address: &str,
+    blocks: &[ScannedBlockEntry],
+    outputs_after_scan: &[TrackedOutput],
+    current_height: u64,
+) -> Vec<TransferEntry> {
+    if blocks.is_empty() || outputs_after_scan.is_empty() {
+        return Vec::new();
+    }
+
+    let authorized_tx_hashes: HashSet<String> = state
+        .store
+        .load_outgoing_transfers(vault_pub_key)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|tx| normalize_tx_hash(&tx.tx_hash))
+        .filter(|tx_hash| !tx_hash.is_empty())
+        .collect();
+
+    let mut spend_tx_by_height_and_key_image = HashMap::new();
+    for block in blocks {
+        for (key_image, spend_tx) in &block.spent_key_image_txs {
+            spend_tx_by_height_and_key_image.insert(
+                (block.height, key_image.trim().to_ascii_lowercase()),
+                normalize_tx_hash(spend_tx),
+            );
+        }
+    }
+
+    let mut emitted = HashSet::new();
+    let mut entries = Vec::new();
+    for output in outputs_after_scan {
+        let Some(spent_height) = output.spent_by_key_image_height else {
+            continue;
+        };
+        let Some(key_image) = output.key_image.as_ref() else {
+            continue;
+        };
+        let Some(spend_tx) = spend_tx_by_height_and_key_image
+            .get(&(spent_height, key_image.trim().to_ascii_lowercase()))
+            .cloned()
+        else {
+            continue;
+        };
+        if authorized_tx_hashes.contains(&spend_tx) || output.amount == 0 {
+            continue;
+        }
+
+        let output_key = (
+            spend_tx.clone(),
+            output.tx_hash.clone(),
+            output.output_index,
+        );
+        if !emitted.insert(output_key) {
+            continue;
+        }
+
+        warn!(
+            vault = %vault_pub_key,
+            spend_tx = %spend_tx,
+            output_tx = %output.tx_hash,
+            output_index = output.output_index,
+            amount = output.amount,
+            spent_height,
+            "detected unauthorized XMR spend of monitored vault output"
+        );
+
+        entries.push(TransferEntry {
+            txid: spend_tx.clone(),
+            address: xmr_unknown_address(&spend_tx, vault_address),
+            from_address: Some(vault_address.to_string()),
+            vault_pub_key: Some(vault_pub_key.to_string()),
+            tx_keys: Vec::new(),
+            amount: output.amount,
+            fee: 0,
+            height: spent_height,
+            confirmations: current_height.saturating_sub(spent_height),
+            note: "NOOP:UNAUTHORIZED".to_string(),
+            locked: current_height.saturating_sub(spent_height) < 10,
+        });
+    }
+    entries
+}
+
+fn xmr_unknown_address(tx_id: &str, to: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(tx_id.trim().as_bytes());
+    hasher.update(b"|");
+    hasher.update(to.trim().as_bytes());
+    let seed = hasher.finalize();
+    bech32_encode(
+        "xmrunknown",
+        seed[..20].to_vec().to_base32(),
+        Variant::Bech32,
+    )
+    .unwrap_or_else(|_| "xmrunknown1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3b9l4f".to_string())
 }
 
 // ---- DKG Routes ----
@@ -2095,6 +2203,12 @@ pub async fn scanner_sync(
                     let block_hash = normalize_tx_hash(&hex::encode(rescan_block.block.hash()));
                     let parent_hash =
                         normalize_tx_hash(&hex::encode(rescan_block.block.header.previous));
+                    let block_tx_hashes: Vec<String> = rescan_block
+                        .block
+                        .transactions
+                        .iter()
+                        .map(|tx_hash| normalize_tx_hash(&hex::encode(tx_hash)))
+                        .collect();
                     let block_transactions = rescan_block.transactions.clone();
                     let added = match state.scanner.lock().scan_block_for_vault_with_added(
                         &vault.vault_pub_key,
@@ -2119,27 +2233,38 @@ pub async fn scanner_sync(
                             }
                         }
                     }
+                    let spent_key_image_txs =
+                        collect_spent_key_images_by_tx(&block_transactions, &block_tx_hashes);
                     let spent_key_images: Vec<String> =
-                        collect_spent_key_images(&block_transactions)
-                            .into_iter()
-                            .collect();
+                        spent_key_image_txs.keys().cloned().collect();
                     batch.push(ScannedBlockEntry {
                         height: h,
                         block_hash,
                         parent_hash,
                         spent_key_images,
+                        spent_key_image_txs,
                         added_outputs: added,
                     });
                 }
                 if !batch.is_empty() {
-                    if let Err(e) =
-                        commit_scan_batch(&state, &vault.vault_pub_key, &batch, reorg_window)
-                    {
-                        warn!(
-                            error = %e,
-                            vault = %vault.vault_pub_key,
-                            "rescan: failed to commit scan batch"
-                        );
+                    match commit_scan_batch(&state, &vault.vault_pub_key, &batch, reorg_window) {
+                        Ok(persisted) => {
+                            outgoing.extend(unauthorized_spend_entries(
+                                &state,
+                                &vault.vault_pub_key,
+                                &vault.address,
+                                &batch,
+                                &persisted.outputs_after_scan,
+                                effective_height,
+                            ));
+                        }
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                vault = %vault.vault_pub_key,
+                                "rescan: failed to commit scan batch"
+                            );
+                        }
                     }
                 }
                 // Check if caught up
@@ -2341,13 +2466,14 @@ pub async fn scanner_sync(
                     );
                 }
             };
-            let block_tx_hashes: HashSet<String> = block
+            let block_tx_hash_vec: Vec<String> = block
                 .block
                 .transactions
                 .iter()
                 .map(|tx_hash| normalize_tx_hash(&hex::encode(tx_hash)))
                 .filter(|hash| !hash.is_empty())
                 .collect();
+            let block_tx_hashes: HashSet<String> = block_tx_hash_vec.iter().cloned().collect();
             if let Err(e) = promote_outgoing_records_observed_in_block(
                 &state.store,
                 &vault.vault_pub_key,
@@ -2380,14 +2506,15 @@ pub async fn scanner_sync(
                     return internal_error_response(e.to_string());
                 }
             };
-            let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
-                .into_iter()
-                .collect();
+            let spent_key_image_txs =
+                collect_spent_key_images_by_tx(&block_transactions, &block_tx_hash_vec);
+            let spent_key_images: Vec<String> = spent_key_image_txs.keys().cloned().collect();
             let batch = vec![ScannedBlockEntry {
                 height: req.height,
                 block_hash: req.block_hash.trim().to_string(),
                 parent_hash: req.parent_hash.trim().to_string(),
                 spent_key_images,
+                spent_key_image_txs,
                 added_outputs: added_outputs.clone(),
             }];
             let persisted =
@@ -2446,6 +2573,14 @@ pub async fn scanner_sync(
                             ));
                         }
                     }
+                    outgoing.extend(unauthorized_spend_entries(
+                        &state,
+                        &vault.vault_pub_key,
+                        &vault.address,
+                        &batch,
+                        &persisted.outputs_after_scan,
+                        effective_height,
+                    ));
                 }
             }
         }
@@ -4034,14 +4169,17 @@ mod tests {
                 parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(9))
                     .expect("failed to build test transaction"),
             ];
-        let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
-            .into_iter()
-            .collect();
+        let spent_key_image_txs = collect_spent_key_images_by_tx(
+            &block_transactions,
+            &["abababababababababababababababababababababababababababababababab".to_string()],
+        );
+        let spent_key_images: Vec<String> = spent_key_image_txs.keys().cloned().collect();
         let batch = vec![ScannedBlockEntry {
             height: 121,
             block_hash: "hash121".to_string(),
             parent_hash: "hash120".to_string(),
             spent_key_images,
+            spent_key_image_txs,
             added_outputs: Vec::new(),
         }];
         let persisted = commit_scan_batch(&state, &vault_pub_key, &batch, 120)
@@ -4118,14 +4256,17 @@ mod tests {
                 parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(11))
                     .expect("failed to build test transaction"),
             ];
-        let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
-            .into_iter()
-            .collect();
+        let spent_key_image_txs = collect_spent_key_images_by_tx(
+            &block_transactions,
+            &["babababababababababababababababababababababababababababababababa".to_string()],
+        );
+        let spent_key_images: Vec<String> = spent_key_image_txs.keys().cloned().collect();
         let batch = vec![ScannedBlockEntry {
             height: 121,
             block_hash: "hash121".to_string(),
             parent_hash: "hash120".to_string(),
             spent_key_images,
+            spent_key_image_txs,
             added_outputs: Vec::new(),
         }];
         commit_scan_batch(&state, &vault_pub_key, &batch, 120)
@@ -4181,20 +4322,28 @@ mod tests {
 
         let mut batch: Vec<ScannedBlockEntry> = Vec::new();
         for height in 101..=250 {
-            let spent_key_images: Vec<String> = if height == 110 {
+            let spent_key_image_txs = if height == 110 {
                 let txs = vec![
                     parse_pruned_transaction_hex(&test_pruned_tx_hex_with_key_image(13))
                         .expect("failed to build test transaction"),
                 ];
-                collect_spent_key_images(&txs).into_iter().collect()
+                collect_spent_key_images_by_tx(
+                    &txs,
+                    &[
+                        "cacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca"
+                            .to_string(),
+                    ],
+                )
             } else {
-                Vec::new()
+                HashMap::new()
             };
+            let spent_key_images: Vec<String> = spent_key_image_txs.keys().cloned().collect();
             batch.push(ScannedBlockEntry {
                 height,
                 block_hash: format!("hash{height}"),
                 parent_hash: format!("hash{}", height - 1),
                 spent_key_images,
+                spent_key_image_txs,
                 added_outputs: Vec::new(),
             });
         }
@@ -4210,6 +4359,99 @@ mod tests {
         assert_eq!(outputs[0].key_image.as_deref(), Some(key_image.as_str()));
         assert_eq!(outputs[0].state, OutputState::Spent);
         assert_eq!(outputs[0].spent_by_key_image_height, Some(110));
+    }
+
+    #[test]
+    fn unauthorized_spend_entries_emit_full_output_to_unknown_destination() {
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(vec![]);
+        let spend_tx =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string();
+        let key_image = test_key_image_hex(21);
+        let output = TrackedOutput {
+            tx_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            output_index: 2,
+            amount: 123_456_789,
+            height: 100,
+            key_image: Some(key_image.clone()),
+            spent_by_key_image_height: Some(121),
+            state: OutputState::Spent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("aa".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        let mut spent_key_image_txs = HashMap::new();
+        spent_key_image_txs.insert(key_image, spend_tx.clone());
+        let batch = vec![ScannedBlockEntry {
+            height: 121,
+            block_hash: "hash121".to_string(),
+            parent_hash: "hash120".to_string(),
+            spent_key_images: Vec::new(),
+            spent_key_image_txs,
+            added_outputs: Vec::new(),
+        }];
+
+        let entries =
+            unauthorized_spend_entries(&state, &vault_pub_key, "48vault", &batch, &[output], 130);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].txid, spend_tx);
+        assert_eq!(entries[0].from_address.as_deref(), Some("48vault"));
+        assert!(entries[0].address.starts_with("xmrunknown1"));
+        assert_eq!(entries[0].amount, 123_456_789);
+        assert_eq!(entries[0].fee, 0);
+        assert_eq!(entries[0].note, "NOOP:UNAUTHORIZED");
+        assert!(entries[0].tx_keys.is_empty());
+    }
+
+    #[test]
+    fn unauthorized_spend_entries_skip_authorized_outgoing_records() {
+        let (state, _data_dir, vault_pub_key) = outputs_test_state(vec![]);
+        let spend_tx =
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string();
+        state
+            .store
+            .save_outgoing_transfer(&sample_outgoing(
+                &spend_tx,
+                &vault_pub_key,
+                "48vault",
+                "48dest",
+                1,
+            ))
+            .expect("failed to seed outgoing transfer");
+        let key_image = test_key_image_hex(22);
+        let output = TrackedOutput {
+            tx_hash: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd".to_string(),
+            output_index: 0,
+            amount: 123,
+            height: 100,
+            key_image: Some(key_image.clone()),
+            spent_by_key_image_height: Some(121),
+            state: OutputState::Spent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("aa".to_string()),
+            address: Some("48vault".to_string()),
+            note: None,
+        };
+        let mut spent_key_image_txs = HashMap::new();
+        spent_key_image_txs.insert(key_image, spend_tx);
+        let batch = vec![ScannedBlockEntry {
+            height: 121,
+            block_hash: "hash121".to_string(),
+            parent_hash: "hash120".to_string(),
+            spent_key_images: Vec::new(),
+            spent_key_image_txs,
+            added_outputs: Vec::new(),
+        }];
+
+        let entries =
+            unauthorized_spend_entries(&state, &vault_pub_key, "48vault", &batch, &[output], 130);
+
+        assert!(entries.is_empty());
     }
 
     #[tokio::test]

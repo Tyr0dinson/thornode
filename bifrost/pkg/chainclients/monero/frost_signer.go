@@ -1270,11 +1270,7 @@ func (s *FrostSigner) callDaemonJSONRPC(method string, params any, out any) erro
 		return fmt.Errorf("fail to create monero daemon request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if s.bearer != "" {
-		req.Header.Set("Authorization", s.bearer)
-	} else if s.username != "" {
-		req.SetBasicAuth(s.username, s.password)
-	}
+	s.applyAuth(req)
 
 	resp, err := s.daemonClient.Do(req)
 	if err != nil {
@@ -1321,62 +1317,7 @@ func (s *FrostSigner) callGet(path string, out any) error {
 	if err != nil {
 		return fmt.Errorf("fail to create frost request: %w", err)
 	}
-	if s.bearer != "" {
-		req.Header.Set("Authorization", s.bearer)
-	} else if s.username != "" {
-		req.SetBasicAuth(s.username, s.password)
-	}
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("fail to call frost endpoint %s: %w", path, err)
-	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
-
-	respBody, err := readBoundedResponseBody(resp.Body, maxFrostResponseBytes)
-	if err != nil {
-		return fmt.Errorf("fail to read frost response: %w", err)
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return &frostHTTPError{
-			path:   path,
-			status: resp.StatusCode,
-			body:   strings.TrimSpace(string(respBody)),
-		}
-	}
-	if out == nil {
-		return nil
-	}
-	if len(respBody) == 0 {
-		return fmt.Errorf("frost endpoint %s returned empty response body", path)
-	}
-
-	if err = json.Unmarshal(respBody, out); err == nil {
-		return nil
-	}
-
-	var envelope xmrTSSResponseEnvelope
-	if envErr := json.Unmarshal(respBody, &envelope); envErr != nil {
-		return fmt.Errorf("fail to unmarshal frost response: %w", err)
-	}
-	if envelope.Error != "" || envelope.Message != "" {
-		msg := strings.TrimSpace(envelope.Error)
-		if msg == "" {
-			msg = strings.TrimSpace(envelope.Message)
-		}
-		return fmt.Errorf("frost endpoint %s error: %s", path, msg)
-	}
-	if len(envelope.Result) == 0 {
-		return fmt.Errorf("frost endpoint %s returned empty result", path)
-	}
-	if err = json.Unmarshal(envelope.Result, out); err != nil {
-		return fmt.Errorf("fail to unmarshal frost result: %w", err)
-	}
-	return nil
+	return s.doFrostRequest(s.client, req, path, out)
 }
 
 func (s *FrostSigner) call(method, path string, payload any, out any) error {
@@ -1390,11 +1331,6 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 		return fmt.Errorf("fail to create frost request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if s.bearer != "" {
-		req.Header.Set("Authorization", s.bearer)
-	} else if s.username != "" {
-		req.SetBasicAuth(s.username, s.password)
-	}
 
 	// Sign-prepare can take significantly longer than other endpoints because
 	// the sidecar may iterate through many deterministic decoy seeds before
@@ -1404,6 +1340,19 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 	if (path == s.signPreparePath || path == s.keyImagePreparePath || path == s.keyImageCombinePath) && s.signClient != nil {
 		httpClient = s.signClient
 	}
+	return s.doFrostRequest(httpClient, req, path, out)
+}
+
+func (s *FrostSigner) applyAuth(req *http.Request) {
+	if s.bearer != "" {
+		req.Header.Set("Authorization", s.bearer)
+	} else if s.username != "" {
+		req.SetBasicAuth(s.username, s.password)
+	}
+}
+
+func (s *FrostSigner) doFrostRequest(httpClient *http.Client, req *http.Request, path string, out any) error {
+	s.applyAuth(req)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fail to call frost endpoint %s: %w", path, err)
@@ -1431,9 +1380,13 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 	if len(respBody) == 0 {
 		return fmt.Errorf("frost endpoint %s returned empty response body", path)
 	}
+	return decodeFrostResponse(path, respBody, out)
+}
 
+func decodeFrostResponse(path string, respBody []byte, out any) error {
 	// Accept both direct payload responses and envelope-style responses.
-	if err = json.Unmarshal(respBody, out); err == nil {
+	err := json.Unmarshal(respBody, out)
+	if err == nil {
 		return nil
 	}
 

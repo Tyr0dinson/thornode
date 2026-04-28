@@ -4857,47 +4857,52 @@ func (c *Client) localNodeIsVaultSigner(members []string) bool {
 }
 
 func (c *Client) isObservedInboundToVault(item *stypes.TxInItem) bool {
-	if item == nil || item.ObservedVaultPubKey.IsEmpty() {
+	if item == nil {
 		return false
 	}
-	vaultAddr, err := item.ObservedVaultPubKey.GetAddress(common.XMRChain)
-	if err != nil {
+	vaultAddr, ok := observedXMRVaultAddress(item.ObservedVaultPubKey)
+	if !ok {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(item.To), vaultAddr.String())
 }
 
 func (c *Client) isObservedOutboundFromVault(item *stypes.TxInItem) bool {
-	if item == nil || item.ObservedVaultPubKey.IsEmpty() {
+	if item == nil {
 		return false
 	}
-	vaultAddr, err := item.ObservedVaultPubKey.GetAddress(common.XMRChain)
-	if err != nil {
+	vaultAddr, ok := observedXMRVaultAddress(item.ObservedVaultPubKey)
+	if !ok {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(item.Sender), vaultAddr.String())
 }
 
 func (c *Client) isObservedTxInboundToVault(tx common.ObservedTx) bool {
-	if tx.ObservedPubKey.IsEmpty() {
-		return false
-	}
-	vaultAddr, err := tx.ObservedPubKey.GetAddress(common.XMRChain)
-	if err != nil {
+	vaultAddr, ok := observedXMRVaultAddress(tx.ObservedPubKey)
+	if !ok {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(tx.Tx.ToAddress.String()), vaultAddr.String())
 }
 
 func (c *Client) isObservedTxOutboundFromVault(tx common.ObservedTx) bool {
-	if tx.ObservedPubKey.IsEmpty() {
-		return false
-	}
-	vaultAddr, err := tx.ObservedPubKey.GetAddress(common.XMRChain)
-	if err != nil {
+	vaultAddr, ok := observedXMRVaultAddress(tx.ObservedPubKey)
+	if !ok {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(tx.Tx.FromAddress.String()), vaultAddr.String())
+}
+
+func observedXMRVaultAddress(vaultPubKey common.PubKey) (common.Address, bool) {
+	if vaultPubKey.IsEmpty() {
+		return common.NoAddress, false
+	}
+	vaultAddr, err := vaultPubKey.GetAddress(common.XMRChain)
+	if err != nil || vaultAddr.IsEmpty() {
+		return common.NoAddress, false
+	}
+	return vaultAddr, true
 }
 
 func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trackedOutboundChange bool) error {

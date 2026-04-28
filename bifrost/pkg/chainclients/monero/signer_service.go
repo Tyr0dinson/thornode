@@ -142,132 +142,53 @@ func (s *HTTPSignerService) ensureAuthorized(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *HTTPSignerService) handleFrostDKGRound1(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !s.ensureAuthorized(w, r) {
-		return
-	}
-	var req xmrFrostDKGRound1Request
-	if err := decodeJSONRequest(w, r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		return
-	}
-	resp, err := s.engine.FrostDKGRound1(req)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
+	handleSignerPost(s, w, r, func(req xmrFrostDKGRound1Request) (xmrFrostDKGRound1Response, error) {
+		return s.engine.FrostDKGRound1(req)
+	})
 }
 
 func (s *HTTPSignerService) handleFrostDKGRound2(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !s.ensureAuthorized(w, r) {
-		return
-	}
-	var req xmrFrostDKGRound2Request
-	if err := decodeJSONRequest(w, r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		return
-	}
-	resp, err := s.engine.FrostDKGRound2(req)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
+	handleSignerPost(s, w, r, func(req xmrFrostDKGRound2Request) (xmrFrostDKGRound2Response, error) {
+		return s.engine.FrostDKGRound2(req)
+	})
 }
 
 func (s *HTTPSignerService) handleFrostDKGRound3(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !s.ensureAuthorized(w, r) {
-		return
-	}
-	var req xmrFrostDKGRound3Request
-	if err := decodeJSONRequest(w, r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		return
-	}
-	resp, err := s.engine.FrostDKGRound3(req)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
+	handleSignerPost(s, w, r, func(req xmrFrostDKGRound3Request) (xmrFrostDKGRound3Response, error) {
+		return s.engine.FrostDKGRound3(req)
+	})
 }
 
 func (s *HTTPSignerService) handleFrostSignPrepare(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !s.ensureAuthorized(w, r) {
-		return
-	}
-	var req xmrFrostSignPrepareRequest
-	if err := decodeJSONRequest(w, r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		return
-	}
-	resp, err := s.engine.FrostSignPrepare(req)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
+	handleSignerPost(s, w, r, func(req xmrFrostSignPrepareRequest) (xmrFrostSignPrepareResponse, error) {
+		return s.engine.FrostSignPrepare(req)
+	})
 }
 
 func (s *HTTPSignerService) handleFrostSignPartial(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !s.ensureAuthorized(w, r) {
-		return
-	}
-	var req xmrFrostSignPartialRequest
-	if err := decodeJSONRequest(w, r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		return
-	}
-	resp, err := s.engine.FrostSignPartial(req)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
+	handleSignerPost(s, w, r, func(req xmrFrostSignPartialRequest) (xmrFrostSignPartialResponse, error) {
+		return s.engine.FrostSignPartial(req)
+	})
 }
 
 func (s *HTTPSignerService) handleFrostSignCombine(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !s.ensureAuthorized(w, r) {
-		return
-	}
-	var req xmrFrostSignCombineRequest
-	if err := decodeJSONRequest(w, r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		return
-	}
-	resp, err := s.engine.FrostSignCombine(req)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
+	handleSignerPost(s, w, r, func(req xmrFrostSignCombineRequest) (xmrFrostSignCombineResponse, error) {
+		return s.engine.FrostSignCombine(req)
+	})
 }
 
 func (s *HTTPSignerService) handleFrostBroadcast(w http.ResponseWriter, r *http.Request) {
+	handleSignerPost(s, w, r, func(req xmrFrostBroadcastRequest) (xmrFrostBroadcastResponse, error) {
+		return s.engine.FrostBroadcast(req)
+	})
+}
+
+func handleSignerPost[Req any, Resp any](
+	s *HTTPSignerService,
+	w http.ResponseWriter,
+	r *http.Request,
+	call func(Req) (Resp, error),
+) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -275,12 +196,12 @@ func (s *HTTPSignerService) handleFrostBroadcast(w http.ResponseWriter, r *http.
 	if !s.ensureAuthorized(w, r) {
 		return
 	}
-	var req xmrFrostBroadcastRequest
+	var req Req
 	if err := decodeJSONRequest(w, r, &req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
-	resp, err := s.engine.FrostBroadcast(req)
+	resp, err := call(req)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
