@@ -77,7 +77,26 @@ pub async fn build_unsigned_transaction(
         amount
     };
 
-    let mut candidates = decode_candidate_outputs(available_outputs, excluded_inputs)?;
+    let current_height = tip_height as u64;
+    let immature_count = available_outputs
+        .iter()
+        .filter(|output| {
+            output.is_available_for_spend()
+                && !output.is_unlocked_at(current_height)
+                && !excluded_inputs.contains(&(output.tx_hash.clone(), output.output_index))
+        })
+        .count();
+    if immature_count > 0 {
+        info!(
+            current_height,
+            immature_outputs = immature_count,
+            required_confirmations = TrackedOutput::MIN_SPENDABLE_CONFIRMATIONS,
+            "skipping immature Monero outputs during transaction construction"
+        );
+    }
+
+    let mut candidates =
+        decode_candidate_outputs(available_outputs, excluded_inputs, current_height)?;
     // Filter sub-dust outputs.
     if dust > 0 {
         candidates.retain(|(tracked, _)| tracked.amount >= dust);
@@ -92,7 +111,12 @@ pub async fn build_unsigned_transaction(
     });
 
     if candidates.is_empty() {
-        anyhow::bail!("no spendable outputs with serialized wallet payload were available");
+        anyhow::bail!(
+            "no unlocked spendable outputs with serialized wallet payload were available at height {} (required confirmations: {}, immature outputs skipped: {})",
+            current_height,
+            TrackedOutput::MIN_SPENDABLE_CONFIRMATIONS,
+            immature_count
+        );
     }
 
     // Greedy accumulation: grab outputs in sort order until sum >= requested_total,
@@ -313,6 +337,7 @@ pub fn select_outbound_input_refs(
     available_outputs: &[TrackedOutput],
     amount: u64,
     fee: u64,
+    current_height: u64,
     dust_threshold: Option<u64>,
 ) -> Result<Vec<OutputRef>> {
     let requested_total = amount
@@ -322,7 +347,7 @@ pub fn select_outbound_input_refs(
 
     let mut candidates = available_outputs
         .iter()
-        .filter(|output| output.is_available_for_spend())
+        .filter(|output| output.is_available_for_spend_at(current_height))
         .filter(|output| {
             output
                 .wallet_output_hex
@@ -340,7 +365,11 @@ pub fn select_outbound_input_refs(
     });
 
     if candidates.is_empty() {
-        anyhow::bail!("no spendable outputs with serialized wallet payload were available");
+        anyhow::bail!(
+            "no unlocked spendable outputs with serialized wallet payload were available at height {} (required confirmations: {})",
+            current_height,
+            TrackedOutput::MIN_SPENDABLE_CONFIRMATIONS
+        );
     }
 
     let mut selected_total: u128 = 0;
@@ -466,13 +495,14 @@ async fn build_signable_for_selection(
 fn decode_candidate_outputs(
     available_outputs: &[TrackedOutput],
     excluded_inputs: &HashSet<(String, u32)>,
+    current_height: u64,
 ) -> Result<Vec<(TrackedOutput, WalletOutput)>> {
     let mut decoded = Vec::new();
     for output in available_outputs {
         if excluded_inputs.contains(&(output.tx_hash.clone(), output.output_index)) {
             continue;
         }
-        if !output.is_available_for_spend() {
+        if !output.is_available_for_spend_at(current_height) {
             continue;
         }
         let Some(serialized_hex) = &output.wallet_output_hex else {
@@ -602,7 +632,7 @@ mod tests {
             tracked_output("c", 0, 50, 14, OutputState::Unspent, Some("cc")),
         ];
 
-        let refs = select_outbound_input_refs(&outputs, 100, 20, Some(0))
+        let refs = select_outbound_input_refs(&outputs, 100, 20, 25, Some(0))
             .expect("selection should succeed");
         assert_eq!(refs.len(), 2);
         assert_eq!(refs[0].tx_hash, "a");
@@ -619,10 +649,23 @@ mod tests {
             tracked_output("e", 0, 140, 14, OutputState::Unspent, Some("ee")),
         ];
 
-        let refs = select_outbound_input_refs(&outputs, 100, 30, Some(75))
+        let refs = select_outbound_input_refs(&outputs, 100, 30, 25, Some(75))
             .expect("selection should succeed");
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].tx_hash, "e");
+    }
+
+    #[test]
+    fn select_outbound_input_refs_skips_immature_outputs() {
+        let outputs = vec![
+            tracked_output("immature", 0, 200, 20, OutputState::Unspent, Some("aa")),
+            tracked_output("mature", 0, 140, 10, OutputState::Unspent, Some("bb")),
+        ];
+
+        let refs = select_outbound_input_refs(&outputs, 100, 30, 20, Some(0))
+            .expect("selection should use mature output");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].tx_hash, "mature");
     }
 
     #[test]

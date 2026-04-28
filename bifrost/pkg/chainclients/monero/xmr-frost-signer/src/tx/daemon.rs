@@ -128,7 +128,69 @@ pub struct SendRawTxResponse {
     pub tx_hash_list: Option<Vec<String>>,
     pub double_spend: Option<bool>,
     pub fee_too_low: Option<bool>,
+    pub invalid_input: Option<bool>,
+    pub invalid_output: Option<bool>,
+    pub low_mixin: Option<bool>,
+    pub not_relayed: Option<bool>,
+    pub not_rct: Option<bool>,
+    pub overspend: Option<bool>,
+    pub too_big: Option<bool>,
     pub reason: Option<String>,
+}
+
+impl SendRawTxResponse {
+    pub fn rejection_flags(&self) -> Vec<&'static str> {
+        let mut flags = Vec::new();
+        if self.double_spend.unwrap_or(false) {
+            flags.push("double_spend");
+        }
+        if self.fee_too_low.unwrap_or(false) {
+            flags.push("fee_too_low");
+        }
+        if self.invalid_input.unwrap_or(false) {
+            flags.push("invalid_input");
+        }
+        if self.invalid_output.unwrap_or(false) {
+            flags.push("invalid_output");
+        }
+        if self.low_mixin.unwrap_or(false) {
+            flags.push("low_mixin");
+        }
+        if self.not_relayed.unwrap_or(false) {
+            flags.push("not_relayed");
+        }
+        if self.not_rct.unwrap_or(false) {
+            flags.push("not_rct");
+        }
+        if self.overspend.unwrap_or(false) {
+            flags.push("overspend");
+        }
+        if self.too_big.unwrap_or(false) {
+            flags.push("too_big");
+        }
+        flags
+    }
+
+    pub fn rejection_reason(&self) -> String {
+        if let Some(reason) = self
+            .reason
+            .as_deref()
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+        {
+            return reason.to_string();
+        }
+        let status = self.status.trim();
+        if !status.is_empty() {
+            return status.to_string();
+        }
+        let flags = self.rejection_flags();
+        if flags.is_empty() {
+            "daemon rejected transaction without status, reason, or rejection flags".to_string()
+        } else {
+            format!("daemon rejected transaction: {}", flags.join(","))
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]

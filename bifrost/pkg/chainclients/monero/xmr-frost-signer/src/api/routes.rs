@@ -1772,10 +1772,29 @@ pub async fn broadcast(
                     )
                 }
             } else {
-                let reason = resp.reason.unwrap_or_else(|| resp.status.clone());
+                let reason = resp.rejection_reason();
+                let rejection_flags = resp.rejection_flags();
                 let is_double_spend = resp.double_spend.unwrap_or(false);
                 let status_lower = resp.status.to_ascii_lowercase();
                 let reason_lower = reason.to_ascii_lowercase();
+                warn!(
+                    msg_id,
+                    vault_pub_key = %vault_pub_key_canonical,
+                    caller_tx_hash = %req.tx_hash.trim(),
+                    daemon_status = %resp.status,
+                    reason = %reason,
+                    rejection_flags = %rejection_flags.join(","),
+                    double_spend = resp.double_spend.unwrap_or(false),
+                    fee_too_low = resp.fee_too_low.unwrap_or(false),
+                    invalid_input = resp.invalid_input.unwrap_or(false),
+                    invalid_output = resp.invalid_output.unwrap_or(false),
+                    low_mixin = resp.low_mixin.unwrap_or(false),
+                    not_relayed = resp.not_relayed.unwrap_or(false),
+                    not_rct = resp.not_rct.unwrap_or(false),
+                    overspend = resp.overspend.unwrap_or(false),
+                    too_big = resp.too_big.unwrap_or(false),
+                    "daemon rejected broadcast"
+                );
                 // "not relayed" is ambiguous: monerod can return it for a tx
                 // that really is already in pool/chain, but it can also mean
                 // the broadcast was rejected and the tx never became visible.
@@ -5646,6 +5665,60 @@ mod tests {
         let (status, body) = response_to_status_json(response).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"].as_str().unwrap_or_default(), "not relayed");
+    }
+
+    #[tokio::test]
+    async fn broadcast_empty_daemon_reason_returns_rejection_flags() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(
+                axum::Router::new()
+                    .route(
+                        "/send_raw_transaction",
+                        axum::routing::post(|| async {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "",
+                                    "reason": "",
+                                    "invalid_input": true,
+                                    "not_relayed": true,
+                                })),
+                            )
+                        }),
+                    )
+                    .route(
+                        "/get_transactions",
+                        axum::routing::post(|| async {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "OK",
+                                    "missed_tx": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+                                })),
+                            )
+                        }),
+                    ),
+            )
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let req = BroadcastRequest {
+            tx_hex: "deadbeef".to_string(),
+            tx_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+            msg_id: "msg-broadcast-empty-reason".to_string(),
+        };
+        let response = broadcast(State(state), Json(req)).await.into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let error = body["error"].as_str().unwrap_or_default();
+        assert!(error.contains("invalid_input"));
+        assert!(error.contains("not_relayed"));
     }
 
     #[tokio::test]

@@ -17,7 +17,7 @@ use monero_wallet::send::{TransactionSignMachine, TransactionSignatureMachine};
 
 use crate::config::ChainNetworkMode;
 use crate::state::{
-    store::{FinalizeReservedForMsgResult, OutputRef},
+    store::{FinalizeReservedForMsgResult, OutputRef, TrackedOutput},
     OutgoingLifecycle, OutputLifecycle, RecordSignedParams, Store,
 };
 use crate::tx::builder::{self, UnsignedTransaction};
@@ -294,6 +294,26 @@ impl SignCoordinator {
             )
             .await
             .context("failed to build real signable transaction")?;
+
+            for selected in &built.selected_inputs {
+                if let Some(output) = outputs.iter().find(|output| {
+                    output.tx_hash == selected.tx_hash
+                        && output.output_index == selected.output_index
+                }) {
+                    info!(
+                        msg_id,
+                        vault_pub_key,
+                        output_tx = %output.tx_hash,
+                        output_index = output.output_index,
+                        amount = output.amount,
+                        output_height = output.height,
+                        current_height = last_header.block_header.height,
+                        confirmations = output.confirmations_at(last_header.block_header.height),
+                        required_confirmations = TrackedOutput::MIN_SPENDABLE_CONFIRMATIONS,
+                        "selected Monero input for signing"
+                    );
+                }
+            }
 
             let selected_refs = built
                 .selected_inputs
