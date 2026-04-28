@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +37,56 @@ func (b *countingStateSyncBridge) GetTxStatus(txID string) (*ttypes.QueryTxStatu
 	b.txStatusCalls++
 	b.mu.Unlock()
 	return b.mockMoneroBridge.GetTxStatus(txID)
+}
+
+func TestTrackedXMRVaultsForKeyImageCatchupIncludesInactiveTrackedVaults(t *testing.T) {
+	t.Parallel()
+
+	currentVaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	inactiveVaultPubKey, _ := testVaultPubKeyAndAddress(t)
+
+	currentVault := ttypes.Vault{
+		PubKey:                 currentVaultPubKey,
+		PubKeyEddsa:            currentVaultPubKey,
+		PubKeyFrost:            currentVaultPubKey,
+		Status:                 ttypes.VaultStatus_ActiveVault,
+		VaultCreationHeightXmr: 50,
+	}
+	inactiveVault := ttypes.Vault{
+		PubKey:                 inactiveVaultPubKey,
+		PubKeyEddsa:            inactiveVaultPubKey,
+		PubKeyFrost:            inactiveVaultPubKey,
+		Status:                 ttypes.VaultStatus_InactiveVault,
+		VaultCreationHeightXmr: 25,
+		KeyImagesXmr: []*common.XmrKeyImageRef{{
+			TxHash:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			KeyImage: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		}},
+	}
+
+	bridge := &scannerTrackedVaultBridge{
+		asgards: ttypes.Vaults{currentVault},
+		pubKeys: scannerTrackedVaultPubKeys(currentVaultPubKey, inactiveVaultPubKey),
+		vaultByKey: map[string]ttypes.Vault{
+			currentVaultPubKey.String():  currentVault,
+			inactiveVaultPubKey.String(): inactiveVault,
+		},
+	}
+	scanner := NewScanner(testLogger(), nil, bridge, common.XMRChain, common.EmptyPubKey, 72)
+	client := &Client{scanner: scanner}
+
+	vaults, err := client.trackedXMRVaultsForKeyImageCatchup()
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(vaults))
+	for _, vault := range vaults {
+		got = append(got, vault.PubKeyFrost.String())
+	}
+	sort.Strings(got)
+
+	want := []string{currentVaultPubKey.String(), inactiveVaultPubKey.String()}
+	sort.Strings(want)
+	assert.Equal(t, want, got)
 }
 
 func TestSyncTrackedVaultRegistrationsRegistersNewVaultInRescanMode(t *testing.T) {

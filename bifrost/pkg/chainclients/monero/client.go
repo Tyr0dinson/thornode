@@ -1214,7 +1214,7 @@ func selectObservedOutboundForVault(
 
 func (c *Client) trackedXMRVaultsForKeyImageCatchup() (ttypes.Vaults, error) {
 	if c.scanner != nil && c.scanner.bridge != nil {
-		return c.scanner.asgardXMRVaults()
+		return c.scanner.trackedXMRVaults()
 	}
 	if c.thorchainBridge == nil {
 		return nil, nil
