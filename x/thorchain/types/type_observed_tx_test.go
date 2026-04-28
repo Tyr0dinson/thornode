@@ -704,3 +704,47 @@ func (TypeObservedTxSuite) TestGetConsensusTxMergesXMRMetadata(c *C) {
 	c.Assert(consensusTx.TxKeys, DeepEquals, []string{"key-a", "key-b"})
 	c.Assert(consensusTx.GetSigners(), HasLen, 3)
 }
+
+func (TypeObservedTxSuite) TestGetConsensusTxMergesXMRActualGasFromTxKeyObservation(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+	acc4 := GetRandomBech32Addr()
+
+	active := NodeAccounts{
+		{NodeAddress: acc1, Status: NodeStatus_Active, PubKeySet: GetRandomPubKeySet(), ValidatorConsPubKey: GetRandomBech32ConsensusPubKey()},
+		{NodeAddress: acc2, Status: NodeStatus_Active, PubKeySet: GetRandomPubKeySet(), ValidatorConsPubKey: GetRandomBech32ConsensusPubKey()},
+		{NodeAddress: acc3, Status: NodeStatus_Active, PubKeySet: GetRandomPubKeySet(), ValidatorConsPubKey: GetRandomBech32ConsensusPubKey()},
+		{NodeAddress: acc4, Status: NodeStatus_Active, PubKeySet: GetRandomPubKeySet(), ValidatorConsPubKey: GetRandomBech32ConsensusPubKey()},
+	}
+
+	baseTx := common.Tx{
+		ID:          txID,
+		Chain:       common.XMRChain,
+		FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("from-vault"))),
+		ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("to-vault"))),
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(46158370))),
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(24000))},
+		Memo:        "MIGRATE:12719",
+	}
+	observePoolAddr := GetRandomPubKey()
+	fallback := common.NewObservedTx(baseTx, 3662271, observePoolAddr, 3662271)
+
+	actualTx := baseTx
+	actualTx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(26868))}
+	actual := common.NewObservedTx(actualTx, 3662271, observePoolAddr, 3662271)
+	actual.TxKeys = []string{"tx-key"}
+
+	voter := NewObservedTxVoter(txID, nil)
+	c.Assert(voter.Add(fallback, acc1), Equals, true)
+	c.Assert(voter.Add(fallback, acc2), Equals, true)
+	c.Assert(voter.Add(actual, acc3), Equals, true)
+
+	c.Assert(voter.HasFinalised(active), Equals, true)
+	consensusTx := voter.GetTx(active)
+	c.Assert(consensusTx.IsEmpty(), Equals, false)
+	c.Assert(consensusTx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset).Amount.Uint64(), Equals, uint64(26868))
+	c.Assert(consensusTx.TxKeys, DeepEquals, []string{"tx-key"})
+	c.Assert(consensusTx.GetSigners(), HasLen, 3)
+}

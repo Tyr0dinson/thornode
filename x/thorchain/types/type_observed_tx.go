@@ -202,6 +202,16 @@ func mergeObservedTxMetadata(dst *common.ObservedTx, src common.ObservedTx) {
 		return
 	}
 
+	// XMR scanner observations can arrive in two shapes for the same chain tx:
+	// a scanner-only view with fallback gas, and a tx-key-backed view with the
+	// actual Monero fee. Once tx keys exist, their gas is authoritative.
+	if dst.Tx.Chain.Equals(common.XMRChain) &&
+		dst.Tx.EqualsExIgnoreGas(src.Tx) &&
+		len(src.TxKeys) > 0 &&
+		!src.Tx.Gas.IsEmpty() {
+		dst.Tx.Gas = src.Tx.Gas
+	}
+
 	if len(dst.TxKeys) == 0 && len(src.TxKeys) > 0 {
 		dst.TxKeys = append([]string(nil), src.TxKeys...)
 	}
@@ -300,8 +310,14 @@ func (m *ObservedTxVoter) GetConsensusSigners() []cosmos.AccAddress {
 }
 
 func sameObservedTxConsensusKey(left, right common.ObservedTx) bool {
-	if !left.Tx.EqualsEx(right.Tx) {
-		return false
+	if left.Tx.Chain.Equals(common.XMRChain) && right.Tx.Chain.Equals(common.XMRChain) {
+		if !left.Tx.EqualsExIgnoreGas(right.Tx) {
+			return false
+		}
+	} else {
+		if !left.Tx.EqualsEx(right.Tx) {
+			return false
+		}
 	}
 	if !left.ObservedPubKey.Equals(right.ObservedPubKey) {
 		return false

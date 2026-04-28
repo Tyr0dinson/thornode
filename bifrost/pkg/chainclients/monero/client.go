@@ -3624,11 +3624,15 @@ func shouldSweepXMRMigration(tx stypes.TxOutItem, maxGasAtomic uint64) bool {
 	if maxGasAtomic == 0 {
 		return false
 	}
-	memoForParsing := tx.GetMemo()
-	if memoForParsing == "" {
+	return isXMRMigrateMemo(tx.GetMemo())
+}
+
+func isXMRMigrateMemo(memoText string) bool {
+	memoText = strings.TrimSpace(memoText)
+	if memoText == "" {
 		return false
 	}
-	parsedMemo, err := memo.ParseMemo(common.LatestVersion, memoForParsing)
+	parsedMemo, err := memo.ParseMemo(common.LatestVersion, memoText)
 	if err != nil {
 		return false
 	}
@@ -3790,6 +3794,15 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Str("sender", item.Sender).
 			Str("memo", item.Memo).
 			Msg("skipping delayed XMR change inbound; key-images will ride on finalized outbound")
+		return nil, false, nil
+	}
+	if isInboundToVault && isXMRMigrateMemo(item.Memo) && len(item.TxKeys) == 0 {
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
+			Str("sender", item.Sender).
+			Str("memo", item.Memo).
+			Msg("waiting for XMR tx-key propagation before finalized migrate inbound observation")
 		return nil, false, nil
 	}
 	if isOutboundFromVault && len(item.TxKeys) > 0 {

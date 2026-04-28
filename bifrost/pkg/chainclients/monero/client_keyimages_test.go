@@ -1078,6 +1078,7 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalMigrateInbound(t *test
 		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 		ObservedVaultPubKey: destVaultPubKey,
 		Memo:                "MIGRATE:123",
+		TxKeys:              []string{"tx-key"},
 	}
 
 	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
@@ -1093,6 +1094,66 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalMigrateInbound(t *test
 	require.Len(t, tssServer.reqs, 1)
 	assert.Equal(t, destVaultPubKey.String(), tssServer.reqs[0].VaultPubKey)
 	assert.Equal(t, int64(1), tssServer.reqs[0].BlockHeight)
+}
+
+func TestPrepareObservedTxInItemWaitsForTxKeysBeforeFinalMigrateInbound(t *testing.T) {
+	t.Parallel()
+
+	sourceVaultPubKey, sourceVaultAddr := testVaultPubKeyAndAddress(t)
+	destVaultPubKey, destVaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("w", 64)
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, "http://127.0.0.1:1")
+	require.NoError(t, err)
+
+	bridge := &keyImageTestBridge{
+		mockMoneroBridge: mockMoneroBridge{
+			vaultByPubKey: map[string]ttypes.Vault{
+				sourceVaultPubKey.String(): {
+					PubKey:      sourceVaultPubKey,
+					PubKeyEddsa: sourceVaultPubKey,
+					PubKeyFrost: sourceVaultPubKey,
+					Membership:  []string{"source-a", "source-b", "source-c"},
+				},
+				destVaultPubKey.String(): {
+					PubKey:      destVaultPubKey,
+					PubKeyEddsa: destVaultPubKey,
+					PubKeyFrost: destVaultPubKey,
+					Membership:  []string{"dest-a", "dest-b", "dest-c"},
+				},
+			},
+		},
+		version: semver.MustParse("3.0.0"),
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("dest-a"),
+		frostSigner:     signer,
+		tssServer:       &mockKeyImageTssServer{},
+		thorchainBridge: bridge,
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{
+			sourceVaultPubKey.String(): sourceVaultAddr,
+			destVaultPubKey.String():   destVaultAddr,
+		},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              sourceVaultAddr.String(),
+		To:                  destVaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(25))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(24000))},
+		ObservedVaultPubKey: destVaultPubKey,
+		Memo:                "MIGRATE:123",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
 }
 
 func TestPrepareObservedTxInItemSkipsFinalInboundForNonSigner(t *testing.T) {
