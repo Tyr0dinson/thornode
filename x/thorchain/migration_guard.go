@@ -58,14 +58,18 @@ func hasInFlightMigrate(ctx cosmos.Context, k keeper.Keeper, matchVault func(Vau
 			return false, fmt.Errorf("fail to parse in-flight migrate source vault pubkey: %w", err)
 		}
 
-		if matchVault == nil {
-			return true, nil
-		}
-
 		vault, err := k.GetVault(ctx, sourcePubKey)
 		if err != nil {
 			return false, fmt.Errorf("fail to get source vault for migrate guard: %w", err)
 		}
+		if vault.Status != RetiringVault {
+			continue
+		}
+
+		if matchVault == nil {
+			return true, nil
+		}
+
 		if matchVault(vault) {
 			return true, nil
 		}
