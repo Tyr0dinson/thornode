@@ -67,6 +67,11 @@ type retryAfterNextBlockError interface {
 	RetryAfterNextBlock() bool
 }
 
+type retryAfterBlocksError interface {
+	error
+	RetryAfterBlocks() uint64
+}
+
 type transientSigningHaltedError struct {
 	chain common.Chain
 	key   string
@@ -968,14 +973,22 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 			if heightErr != nil {
 				s.logger.Error().Err(heightErr).Str("chain", item.TxOutItem.Chain.String()).Msg("fail to get block scanner height for retry gate")
 			} else {
-				item.RetryAfterBlockScannerHeight = height + 1
+				retryAfterBlocks := uint64(1)
+				var retryBlocksErr retryAfterBlocksError
+				if errors.As(err, &retryBlocksErr) {
+					if blocks := retryBlocksErr.RetryAfterBlocks(); blocks > 0 {
+						retryAfterBlocks = blocks
+					}
+				}
+				item.RetryAfterBlockScannerHeight = height + int64(retryAfterBlocks)
 				if storeErr := s.storage.Set(item); storeErr != nil {
 					s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with retry gate")
 				}
 				s.logger.Info().
 					Str("chain", item.TxOutItem.Chain.String()).
+					Uint64("retry_after_blocks", retryAfterBlocks).
 					Int64("retry_after_block_scanner_height", item.RetryAfterBlockScannerHeight).
-					Msg("deferring tx retry until next local chain block")
+					Msg("deferring tx retry until local chain block")
 				cancel()
 				return
 			}

@@ -493,12 +493,16 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	var retryErr interface {
 		error
 		RetryAfterNextBlock() bool
+		RetryAfterBlocks() uint64
 	}
 	if !errors.As(err, &retryErr) {
 		t.Fatalf("expected locked balance error to request retry after next block: %v", err)
 	}
 	if !retryErr.RetryAfterNextBlock() {
 		t.Fatalf("expected locked balance error to request retry after next block")
+	}
+	if retryErr.RetryAfterBlocks() != 6 {
+		t.Fatalf("expected locked balance error to retry after 6 blocks, got %d", retryErr.RetryAfterBlocks())
 	}
 }
 

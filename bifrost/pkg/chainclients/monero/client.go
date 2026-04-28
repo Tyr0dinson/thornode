@@ -140,6 +140,13 @@ func (e *lockedOutputsError) Error() string {
 
 func (e *lockedOutputsError) RetryAfterNextBlock() bool { return true }
 
+func (e *lockedOutputsError) RetryAfterBlocks() uint64 {
+	if !e.confirmationDetailsObserved || e.confirmationsRemaining == 0 {
+		return 1
+	}
+	return e.confirmationsRemaining
+}
+
 func (e *keyImageBacklogError) Error() string {
 	if strings.TrimSpace(e.activeWork) != "" {
 		return fmt.Sprintf("pending xmr key-image backlog: queued=%d active=%t active_work=%s", e.queued, e.active, e.activeWork)

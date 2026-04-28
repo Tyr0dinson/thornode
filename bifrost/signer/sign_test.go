@@ -238,6 +238,16 @@ func (retryAfterNextBlockTestErr) Error() string { return "retry after next bloc
 
 func (retryAfterNextBlockTestErr) RetryAfterNextBlock() bool { return true }
 
+type retryAfterBlocksTestErr struct {
+	blocks uint64
+}
+
+func (e retryAfterBlocksTestErr) Error() string { return "retry after blocks" }
+
+func (e retryAfterBlocksTestErr) RetryAfterNextBlock() bool { return true }
+
+func (e retryAfterBlocksTestErr) RetryAfterBlocks() uint64 { return e.blocks }
+
 func (b *MockChainClient) IsBlockScannerHealthy() bool {
 	return true
 }
@@ -846,6 +856,63 @@ func (s *SignSuite) TestXMRLockedOutputsBacksOffUntilNextLocalBlock(c *C) {
 	c.Assert(cc.signCount, Equals, 1)
 
 	cc.blockScannerHeight = 101
+	sign.processTransactions()
+	sign.pipeline.Wait()
+	c.Assert(cc.signCount, Equals, 2)
+}
+
+func (s *SignSuite) TestXMRLockedOutputsBacksOffUntilRemainingConfirmations(c *C) {
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+
+	cc := &MockChainClient{
+		signErr:            retryAfterBlocksTestErr{blocks: 4},
+		blockScannerHeight: 100,
+	}
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: cc,
+		},
+		pubkeyMgr:           pubkeymanager.NewMockPoolAddressValidator(),
+		stopChan:            make(chan struct{}),
+		wg:                  &sync.WaitGroup{},
+		thorchainBridge:     fakeBridge{s.bridge},
+		constantsProvider:   NewConstantsProvider(fakeBridge{s.bridge}),
+		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+		logger:              log.With().Str("module", "signer").Logger(),
+	}
+
+	sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+
+	item := TxOutStoreItem{
+		Height: 1,
+		TxOutItem: types.TxOutItem{
+			Chain:       common.XMRChain,
+			ToAddress:   "46xifvnEA8t34L5vQLJT1G7Ui6U6q8YogGXv3yCDKhEJ5HrhAteiYSC6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGeCayBP",
+			Memo:        "OUT:1",
+			VaultPubKey: vaultPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000000)),
+			},
+		},
+	}
+	c.Assert(sign.storage.Set(item), IsNil)
+
+	sign.processTransactions()
+	sign.pipeline.Wait()
+	c.Assert(cc.signCount, Equals, 1)
+
+	items := sign.storage.List()
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].RetryAfterBlockScannerHeight, Equals, int64(104))
+
+	cc.blockScannerHeight = 103
+	sign.processTransactions()
+	sign.pipeline.Wait()
+	c.Assert(cc.signCount, Equals, 1)
+
+	cc.blockScannerHeight = 104
 	sign.processTransactions()
 	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 2)
