@@ -62,7 +62,10 @@ func hasInFlightMigrate(ctx cosmos.Context, k keeper.Keeper, matchVault func(Vau
 		if err != nil {
 			return false, fmt.Errorf("fail to get source vault for migrate guard: %w", err)
 		}
-		if vault.Status != RetiringVault {
+		// In-flight migrate guards must remain active after a source vault flips
+		// inactive, until the matching inbound migrate credit clears the index.
+		// Only active vaults are stale guards from already-settled migrations.
+		if vault.Status == ActiveVault {
 			continue
 		}
 

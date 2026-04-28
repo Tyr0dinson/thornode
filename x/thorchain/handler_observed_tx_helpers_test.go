@@ -265,11 +265,20 @@ func (s *HandlerObservedTxHelpersSuite) TestNetworkHasMigratingVaultsTracksInFli
 	c.Assert(err, IsNil)
 	c.Assert(memberMigrating, Equals, true)
 
+	vault.Status = InactiveVault
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	migrating, err = networkHasMigratingVaults(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(migrating, Equals, true)
+
+	memberMigrating, err = nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(memberMigrating, Equals, true)
+
 	inVoter := NewObservedTxVoter(observed.Tx.ID, nil)
 	inVoter.UpdatedVault = true
 	mgr.Keeper().SetObservedTxInVoter(ctx, inVoter)
-	vault.Status = InactiveVault
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	migrating, err = networkHasMigratingVaults(ctx, mgr.Keeper())
 	c.Assert(err, IsNil)
