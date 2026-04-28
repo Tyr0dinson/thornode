@@ -460,6 +460,107 @@ fn apply_registered_key_image_inventory(
     Ok(())
 }
 
+async fn recover_missing_key_image_outputs(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    key_images: &[(String, u32, String)],
+) -> Result<usize, String> {
+    let missing = OutputLifecycle::new(state.store.as_ref())
+        .missing_outputs_for_key_images(vault_pub_key, key_images)
+        .map_err(|e| format!("failed to inspect missing key-image outputs: {e}"))?;
+    if missing.is_empty() {
+        return Ok(0);
+    }
+
+    let mut tx_hashes: Vec<String> = missing
+        .iter()
+        .map(|(tx_hash, _, _)| normalize_tx_hash(tx_hash))
+        .filter(|tx_hash| !tx_hash.is_empty())
+        .collect();
+    tx_hashes.sort();
+    tx_hashes.dedup();
+
+    let mut heights = HashSet::new();
+    for batch in tx_hashes.chunks(64) {
+        let resp = state
+            .daemon
+            .get_transactions(batch)
+            .await
+            .map_err(|e| format!("failed to lookup key-image source transactions: {e}"))?;
+        for tx in resp.txs.unwrap_or_default() {
+            let tx_hash = normalize_tx_hash(&tx.tx_hash);
+            match tx.block_height {
+                Some(height) => {
+                    heights.insert(height);
+                }
+                None => {
+                    warn!(
+                        vault = %vault_pub_key,
+                        tx_hash = %tx_hash,
+                        "registered key-image source transaction is not mined; cannot recover missing output yet"
+                    );
+                }
+            }
+        }
+    }
+    if heights.is_empty() {
+        warn!(
+            vault = %vault_pub_key,
+            missing_outputs = missing.len(),
+            "registered key-image outputs are missing but source transaction heights were unavailable"
+        );
+        return Ok(0);
+    }
+
+    let rpc = state.daemon.oxide_rpc().await.map_err(|e| {
+        format!("failed to initialize monero RPC for key-image output recovery: {e}")
+    })?;
+    let mut heights: Vec<u64> = heights.into_iter().collect();
+    heights.sort_unstable();
+
+    let mut recovered = 0usize;
+    let source_blocks = heights.len();
+    for &height in &heights {
+        let block = rpc
+            .get_scannable_block_by_number(height as usize)
+            .await
+            .map_err(|e| format!("failed to fetch key-image source block {height}: {e}"))?;
+        let added = {
+            let mut scanner = state.scanner.lock();
+            scanner
+                .scan_block_for_vault_with_added(vault_pub_key, height, block)
+                .map_err(|e| {
+                    format!("failed to recover missing key-image outputs at block {height}: {e}")
+                })?
+        };
+        if added.is_empty() {
+            continue;
+        }
+        recovered += added.len();
+        let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
+        OutputLifecycle::new(state.store.as_ref())
+            .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
+            .map_err(|e| format!("failed to persist recovered key-image outputs: {e}"))?;
+    }
+
+    if recovered > 0 {
+        info!(
+            vault = %vault_pub_key,
+            missing_outputs = missing.len(),
+            recovered,
+            "output lifecycle: recovered missing registered key-image outputs"
+        );
+    } else {
+        warn!(
+            vault = %vault_pub_key,
+            missing_outputs = missing.len(),
+            source_blocks,
+            "registered key-image outputs remain missing after source block recovery"
+        );
+    }
+    Ok(recovered)
+}
+
 /// Unified scan-batch commit. One operation for N blocks (N=1 for normal scan,
 /// up to RESCAN_MAX_BLOCKS_PER_SYNC for rescan). Preserves the distinction between
 /// LOADING a key-image (attaching metadata to a tracked output) and MARKING a
@@ -874,6 +975,28 @@ pub async fn register_vault(
             );
             return internal_error_response(format!(
                 "failed to persist registered key image inventory: {e}"
+            ));
+        }
+        let key_image_tuples: Vec<(String, u32, String)> = key_images
+            .iter()
+            .map(|entry| {
+                (
+                    entry.tx_hash.clone(),
+                    entry.output_index,
+                    entry.key_image.clone(),
+                )
+            })
+            .collect();
+        if let Err(e) =
+            recover_missing_key_image_outputs(&state, &vault_pub_key, &key_image_tuples).await
+        {
+            error!(
+                error = %e,
+                vault = %vault_pub_key,
+                "failed to recover missing registered key-image outputs"
+            );
+            return internal_error_response(format!(
+                "failed to recover missing registered key-image outputs: {e}"
             ));
         }
         if let Err(e) = apply_registered_key_image_inventory(&state, &vault_pub_key, true) {

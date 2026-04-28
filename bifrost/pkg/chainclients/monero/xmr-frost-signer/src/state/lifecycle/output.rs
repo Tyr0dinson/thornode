@@ -198,6 +198,42 @@ impl<'a> OutputLifecycle<'a> {
         Ok(ApplyKeyImagesOutcome { applied, not_found })
     }
 
+    pub fn missing_outputs_for_key_images(
+        &self,
+        vault_pub_key: &str,
+        key_images: &[(String, u32, String)],
+    ) -> Result<Vec<(String, u32, String)>> {
+        if key_images.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let existing: HashSet<(String, u32)> = self
+            .store
+            .load_outputs(vault_pub_key)?
+            .into_iter()
+            .map(|output| {
+                (
+                    output.tx_hash.trim().to_ascii_lowercase(),
+                    output.output_index,
+                )
+            })
+            .collect();
+
+        let mut seen = HashSet::new();
+        let missing = key_images
+            .iter()
+            .filter_map(|(tx_hash, output_index, key_image)| {
+                let normalized_tx_hash = tx_hash.trim().to_ascii_lowercase();
+                let key = (normalized_tx_hash.clone(), *output_index);
+                if existing.contains(&key) || !seen.insert(key) {
+                    return None;
+                }
+                Some((normalized_tx_hash, *output_index, key_image.clone()))
+            })
+            .collect();
+        Ok(missing)
+    }
+
     pub fn mark_spent_on_chain(
         &self,
         vault_pub_key: &str,
@@ -465,5 +501,27 @@ mod tests {
             .unwrap();
         assert_eq!(updated.local_change_materialized, Some(true));
         assert_eq!(updated.key_images_ready, Some(true));
+    }
+
+    #[test]
+    fn missing_outputs_for_key_images_reports_only_absent_refs() {
+        let (_dir, store) = test_store();
+        store
+            .save_outputs("thorpub1vault", &[tracked_output("tx-d", 0)])
+            .unwrap();
+        let lifecycle = OutputLifecycle::new(&store);
+
+        let missing = lifecycle
+            .missing_outputs_for_key_images(
+                "thorpub1vault",
+                &[
+                    (" TX-D ".to_string(), 0, "ki-d".to_string()),
+                    (" TX-E ".to_string(), 1, "ki-e".to_string()),
+                    ("tx-e".to_string(), 1, "ki-e".to_string()),
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(missing, vec![("tx-e".to_string(), 1, "ki-e".to_string())]);
     }
 }
