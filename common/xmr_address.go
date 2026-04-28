@@ -42,13 +42,10 @@ var (
 	xmrBase58Radix    = big.NewInt(58)
 	xmrEncodedBlockSz = [...]int{0, 2, 3, 5, 6, 7, 9, 10, 11}
 
-	xmrViewPubKeyOnce sync.Once
-	xmrViewPubKey     [32]byte
-	xmrViewPubKeyErr  error
-
-	xmrViewScalarOnce sync.Once
-	xmrViewScalarHex  string
-	xmrViewScalarErr  error
+	xmrViewKeyOnce sync.Once
+	xmrViewPubKey  [32]byte
+	xmrViewScalar  [32]byte
+	xmrViewKeyErr  error
 
 	// Reverse lookups populated by init().
 	xmrBase58CharMap  [256]int // byte value → alphabet index (-1 = invalid)
@@ -109,7 +106,12 @@ func deriveXMRAddressFromSpendPubKey(spendPubKey []byte, _ ChainNetwork) (string
 }
 
 func deriveXMRViewPubKey() ([32]byte, error) {
-	xmrViewPubKeyOnce.Do(func() {
+	pubKey, _, err := deriveXMRViewKeys()
+	return pubKey, err
+}
+
+func deriveXMRViewKeys() ([32]byte, [32]byte, error) {
+	xmrViewKeyOnce.Do(func() {
 		var k [8]byte
 		binary.LittleEndian.PutUint64(k[:], 0)
 
@@ -120,33 +122,22 @@ func deriveXMRViewPubKey() ([32]byte, error) {
 
 		scalar, err := new(edwards25519.Scalar).SetUniformBytes(sum)
 		if err != nil {
-			xmrViewPubKeyErr = fmt.Errorf("fail to derive monero additional view scalar: %w", err)
+			xmrViewKeyErr = fmt.Errorf("fail to derive monero view scalar: %w", err)
 			return
 		}
+		copy(xmrViewScalar[:], scalar.Bytes())
 		point := new(edwards25519.Point).ScalarBaseMult(scalar)
 		copy(xmrViewPubKey[:], point.Bytes())
 	})
-	return xmrViewPubKey, xmrViewPubKeyErr
+	return xmrViewPubKey, xmrViewScalar, xmrViewKeyErr
 }
 
 func XMRViewKeyHex() (string, error) {
-	xmrViewScalarOnce.Do(func() {
-		var k [8]byte
-		binary.LittleEndian.PutUint64(k[:], 0)
-
-		hasher := sha512.New()
-		hasher.Write([]byte("THORChain View Key"))
-		hasher.Write(k[:])
-		sum := hasher.Sum(nil)
-
-		scalar, err := new(edwards25519.Scalar).SetUniformBytes(sum)
-		if err != nil {
-			xmrViewScalarErr = fmt.Errorf("fail to derive monero view scalar: %w", err)
-			return
-		}
-		xmrViewScalarHex = fmt.Sprintf("%x", scalar.Bytes())
-	})
-	return xmrViewScalarHex, xmrViewScalarErr
+	_, scalar, err := deriveXMRViewKeys()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", scalar[:]), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -334,27 +325,7 @@ func xmrDecodeAddressInfo(address string) (xmrAddressInfo, bool) {
 // XMRChecksummedDummyAddress generates a valid XMR address with zero keys for the
 // given prefix ('4' for primary, '8' for subaddress, 'C' for featured+guaranteed).
 func XMRChecksummedDummyAddress(prefix byte) string {
-	payload := make([]byte, 0, 1+32+32+2+4)
-	switch prefix {
-	case '4':
-		payload = append(payload, xmrPrimaryNetworkByte)
-	case '8':
-		payload = append(payload, xmrSubaddressNetworkByte)
-	default:
-		payload = append(payload, xmrFeaturedMainnetNetworkByte)
-		payload = append(payload, make([]byte, 64)...)
-		features := xmrFeaturedSubaddressBit | xmrFeaturedGuaranteedBit
-		payload = xmrAppendVarint(payload, features)
-		checksum := eth.Keccak256(payload)
-		payload = append(payload, checksum[:4]...)
-		addr, _ := xmrBase58Encode(payload)
-		return addr
-	}
-	payload = append(payload, make([]byte, 64)...)
-	checksum := eth.Keccak256(payload)
-	payload = append(payload, checksum[:4]...)
-	addr, _ := xmrBase58Encode(payload)
-	return addr
+	return xmrDummyAddress(prefix, make([]byte, 32), make([]byte, 32))
 }
 
 // XMRSeededDummyAddress generates a valid XMR address deterministically seeded
@@ -364,6 +335,10 @@ func XMRSeededDummyAddress(prefix byte, seed []byte) string {
 	spendKey := eth.Keccak256(append([]byte("xmr-dummy-spend:"), seed...))
 	viewKey := eth.Keccak256(append([]byte("xmr-dummy-view:"), seed...))
 
+	return xmrDummyAddress(prefix, spendKey[:32], viewKey[:32])
+}
+
+func xmrDummyAddress(prefix byte, spendKey, viewKey []byte) string {
 	payload := make([]byte, 0, 1+32+32+2+4)
 	switch prefix {
 	case '4':
@@ -374,8 +349,7 @@ func XMRSeededDummyAddress(prefix byte, seed []byte) string {
 		payload = append(payload, xmrFeaturedMainnetNetworkByte)
 		payload = append(payload, spendKey[:32]...)
 		payload = append(payload, viewKey[:32]...)
-		features := xmrFeaturedSubaddressBit | xmrFeaturedGuaranteedBit
-		payload = xmrAppendVarint(payload, features)
+		payload = xmrAppendVarint(payload, xmrFeaturedSubaddressBit|xmrFeaturedGuaranteedBit)
 		checksum := eth.Keccak256(payload)
 		payload = append(payload, checksum[:4]...)
 		addr, _ := xmrBase58Encode(payload)
