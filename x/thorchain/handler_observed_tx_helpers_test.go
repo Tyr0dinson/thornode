@@ -308,6 +308,37 @@ func (s *HandlerObservedTxHelpersSuite) TestNetworkHasMigratingVaultsIgnoresStal
 	c.Assert(memberMigrating, Equals, false)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestReconcileInboundMigrateGasSkipsXMRFallbackGas(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	senderPubKey := GetRandomPubKey()
+	senderVault := NewVault(1, RetiringVault, AsgardVault, senderPubKey, common.Chains{common.XMRChain}.Strings(), nil)
+	senderVault.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100_000)))
+	c.Assert(mgr.Keeper().SetVault(ctx, senderVault), IsNil)
+
+	txID := GetRandomTxHash()
+	outbound := GetRandomObservedTx()
+	outbound.Tx.ID = txID
+	outbound.Tx.Chain = common.XMRChain
+	outbound.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(84_432))}
+	outbound.ObservedPubKey = senderPubKey
+
+	outVoter := NewObservedTxVoter(txID, ObservedTxs{outbound})
+	outVoter.Tx = outbound
+	mgr.Keeper().SetObservedTxOutVoter(ctx, outVoter)
+
+	inbound := GetRandomObservedTx()
+	inbound.Tx.ID = txID
+	inbound.Tx.Chain = common.XMRChain
+	inbound.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(24_000))}
+
+	reconcileInboundMigrateGas(ctx, mgr.Keeper(), inbound)
+
+	updatedVault, err := mgr.Keeper().GetVault(ctx, senderPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.GetCoin(common.XMRAsset).Amount.Uint64(), Equals, uint64(100_000))
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithExpiredMemo(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100) // Current block height

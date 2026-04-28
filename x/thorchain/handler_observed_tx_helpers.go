@@ -22,6 +22,12 @@ import (
 // the sending vault's coins from an earlier outbound observation that reported
 // an inflated fee.
 func reconcileInboundMigrateGas(ctx cosmos.Context, k keeper.Keeper, inbound common.ObservedTx) {
+	if inbound.Tx.Chain.Equals(common.XMRChain) {
+		// XMR outbound tx-key observations carry the authoritative on-chain fee.
+		// The matching inbound final observation may only have scanner fallback
+		// gas, so using it here would incorrectly re-credit the sender vault.
+		return
+	}
 	gasAsset := inbound.Tx.Chain.GetGasAsset()
 	actualGas := inbound.Tx.Gas.ToCoins().GetCoin(gasAsset)
 	if actualGas.IsEmpty() {
