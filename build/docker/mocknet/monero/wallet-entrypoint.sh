@@ -45,18 +45,20 @@ wait_for_wallet_rpc() {
   done
 }
 
-wallet_request() {
-  method="$1"
-  params="$2"
+json_rpc_request() {
+  url="$1"
+  method="$2"
+  params="$3"
   payload=$(printf '{"jsonrpc":"2.0","id":"0","method":"%s","params":%s}' "${method}" "${params}")
-  curl -sf -H "Content-Type: application/json" -d "${payload}" "${RPC_URL}"
+  curl -sf -H "Content-Type: application/json" -d "${payload}" "${url}"
+}
+
+wallet_request() {
+  json_rpc_request "${RPC_URL}" "$1" "$2"
 }
 
 daemon_request() {
-  method="$1"
-  params="$2"
-  payload=$(printf '{"jsonrpc":"2.0","id":"0","method":"%s","params":%s}' "${method}" "${params}")
-  curl -sf -H "Content-Type: application/json" -d "${payload}" "${DAEMON_RPC_URL}"
+  json_rpc_request "${DAEMON_RPC_URL}" "$1" "$2"
 }
 
 current_height() {

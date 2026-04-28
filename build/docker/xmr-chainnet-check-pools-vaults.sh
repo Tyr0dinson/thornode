@@ -45,15 +45,9 @@ xmr_chainnet_require_transport
 xmr_chainnet_require jq curl column
 
 nodes=()
-if ((${#requested_nodes[@]} == 0)); then
-  while IFS= read -r node; do
-    [[ -n "$node" ]] && nodes+=("$node")
-  done < <(xmr_chainnet_expand_nodes)
-else
-  while IFS= read -r node; do
-    [[ -n "$node" ]] && nodes+=("$node")
-  done < <(xmr_chainnet_expand_nodes "${requested_nodes[@]}")
-fi
+while IFS= read -r node; do
+  [[ -n "$node" ]] && nodes+=("$node")
+done < <(xmr_chainnet_expand_requested_nodes "${requested_nodes[@]}")
 reference_node="$(xmr_chainnet_reference_node thornode "${nodes[@]}")"
 
 echo "Node summary"

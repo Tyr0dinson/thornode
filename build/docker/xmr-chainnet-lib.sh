@@ -124,6 +124,14 @@ xmr_chainnet_expand_nodes() {
   printf '%s\n' "${requested[@]}" | awk '!seen[$0]++'
 }
 
+xmr_chainnet_expand_requested_nodes() {
+  if (($# == 0)); then
+    xmr_chainnet_expand_nodes
+  else
+    xmr_chainnet_expand_nodes "$@"
+  fi
+}
+
 xmr_chainnet_signer_container() {
   local node="$1"
   if [[ "$node" == "dog" ]]; then
@@ -291,6 +299,23 @@ xmr_chainnet_local_xmr_vaults() {
       | select(length > 0)
     '
   done | sort -u
+}
+
+xmr_chainnet_discover_xmr_vaults() {
+  local reference_node="${1:-}"
+  shift || true
+
+  local found=0
+  local vault
+  while IFS= read -r vault; do
+    [[ -z "$vault" ]] && continue
+    found=1
+    printf '%s\n' "$vault"
+  done < <(xmr_chainnet_canonical_xmr_vaults "$reference_node" 2>/dev/null || true)
+
+  if ((found == 0)); then
+    xmr_chainnet_local_xmr_vaults "$@"
+  fi
 }
 
 xmr_chainnet_tabulate() {

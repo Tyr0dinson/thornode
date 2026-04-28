@@ -67,27 +67,15 @@ xmr_chainnet_require jq curl column grep
 tx_lower="$(printf '%s' "$tx_hash" | tr '[:upper:]' '[:lower:]')"
 tx_upper="$(printf '%s' "$tx_hash" | tr '[:lower:]' '[:upper:]')"
 nodes=()
-if ((${#requested_nodes[@]} == 0)); then
-  while IFS= read -r node; do
-    [[ -n "$node" ]] && nodes+=("$node")
-  done < <(xmr_chainnet_expand_nodes)
-else
-  while IFS= read -r node; do
-    [[ -n "$node" ]] && nodes+=("$node")
-  done < <(xmr_chainnet_expand_nodes "${requested_nodes[@]}")
-fi
+while IFS= read -r node; do
+  [[ -n "$node" ]] && nodes+=("$node")
+done < <(xmr_chainnet_expand_requested_nodes "${requested_nodes[@]}")
 reference_node="$(xmr_chainnet_reference_node thornode "${nodes[@]}")"
 
 if ((${#vaults[@]} == 0)); then
   while IFS= read -r vault; do
     [[ -n "$vault" ]] && vaults+=("$vault")
-  done < <(xmr_chainnet_canonical_xmr_vaults "$reference_node" 2>/dev/null || true)
-fi
-
-if ((${#vaults[@]} == 0)); then
-  while IFS= read -r vault; do
-    [[ -n "$vault" ]] && vaults+=("$vault")
-  done < <(xmr_chainnet_local_xmr_vaults "${nodes[@]}")
+  done < <(xmr_chainnet_discover_xmr_vaults "$reference_node" "${nodes[@]}")
 fi
 
 echo "Thornode tx ($reference_node)"

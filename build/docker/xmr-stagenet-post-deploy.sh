@@ -15,14 +15,33 @@ FOX_SEED="fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fo
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+joiner_names() {
+  printf '%s\n' cat fox
+}
+
+joiner_label() {
+  joiner_names | paste -sd/ -
+}
+
+rpc_for_name() {
+  case "$1" in
+    cat) echo "$CAT_RPC" ;;
+    fox) echo "$FOX_RPC" ;;
+    *) return 1 ;;
+  esac
+}
+
+seed_for_name() {
+  case "$1" in
+    cat) echo "$CAT_SEED" ;;
+    fox) echo "$FOX_SEED" ;;
+    *) return 1 ;;
+  esac
+}
+
 tx() {
   local container="$1"; shift
   docker exec "$container" bash -c "printf '${PASSWORD}\n${PASSWORD}\n' | thornode tx thorchain $* --from thorchain --keyring-backend $KEYRING --chain-id $CHAIN_ID --yes" 2>&1
-}
-
-tx_env() {
-  local container="$1"; local env_key="$2"; local env_val="$3"; shift 3
-  docker exec -e "${env_key}=${env_val}" "$container" bash -c "printf '${PASSWORD}\n${PASSWORD}\n' | thornode tx thorchain $* --from thorchain --keyring-backend $KEYRING --chain-id $CHAIN_ID --yes" 2>&1
 }
 
 mimir() {
@@ -116,20 +135,21 @@ mimir ChurnRetryInterval 10
 mimir MinimumBondInRune 1
 
 echo ""
-echo "[3/6] Waiting for cat/fox thornodes..."
-wait_for_health docker-thornode-cat-1 "http://localhost:1317/thorchain/ping" 120
-wait_for_health docker-thornode-fox-1 "http://localhost:1317/thorchain/ping" 120
+echo "[3/6] Waiting for joiner thornodes ($(joiner_label))..."
+while read -r name; do
+  wait_for_health "docker-thornode-${name}-1" "http://localhost:1317/thorchain/ping" 120
+done < <(joiner_names)
 
 echo ""
-echo "[4/6] Setting node keys, IPs, versions for cat and fox..."
-set_node_keys docker-thornode-cat-1 "$CAT_SEED" "$CAT_RPC"
-set_ip docker-thornode-cat-1 "$CAT_RPC"
-set_version docker-thornode-cat-1 "$CAT_RPC"
-sleep 7
-set_node_keys docker-thornode-fox-1 "$FOX_SEED" "$FOX_RPC"
-set_ip docker-thornode-fox-1 "$FOX_RPC"
-sleep 7
-set_version docker-thornode-fox-1 "$FOX_RPC"
+echo "[4/6] Setting node keys, IPs, versions for joiners ($(joiner_label))..."
+while read -r name; do
+  seed=$(seed_for_name "$name")
+  rpc=$(rpc_for_name "$name")
+  set_node_keys "docker-thornode-${name}-1" "$seed" "$rpc"
+  set_ip "docker-thornode-${name}-1" "$rpc"
+  set_version "docker-thornode-${name}-1" "$rpc"
+  sleep 7
+done < <(joiner_names)
 
 echo ""
 echo "[5/6] Equalizing dog bond..."

@@ -183,30 +183,45 @@ func resolveSignerAccess(opts toolOptions) (signerAccess, error) {
 }
 
 func discoverVaults(opts toolOptions, signer *monero.FrostSigner) ([]localVault, error) {
-	if opts.vaultPubKey != "" {
-		requestedPubKey := strings.TrimSpace(opts.vaultPubKey)
-		birthday := opts.height
-		pubKey := requestedPubKey
-		vault, err := fetchVault(opts.apiURL, requestedPubKey)
+	requestedPubKey := strings.TrimSpace(opts.vaultPubKey)
+	switch {
+	case requestedPubKey != "":
+		vault, err := resolveLocalVault(opts.apiURL, requestedPubKey, opts.height)
 		if err != nil {
-			if birthday <= 0 || !looksLikeCanonicalXMRVaultPubKey(requestedPubKey) {
-				return nil, err
-			}
-		} else {
-			if !hasChain(vault.Chains, "XMR") {
-				return nil, fmt.Errorf("vault %s is not an XMR vault", requestedPubKey)
-			}
-			pubKey = canonicalXMRVaultPubKey(vault, requestedPubKey)
-			if birthday <= 0 {
-				birthday = vault.VaultCreationHeightXmr
-			}
+			return nil, err
 		}
-		if birthday <= 0 {
-			return nil, fmt.Errorf("vault %s has no XMR birthday recorded", requestedPubKey)
-		}
-		return []localVault{{PubKey: pubKey, Birthday: birthday}}, nil
+		return []localVault{vault}, nil
+	case opts.allVaults:
+		return discoverAllLocalVaults(opts.apiURL, signer)
+	default:
+		return nil, errors.New("pass --vault-pubkey or --all-vaults")
 	}
+}
 
+func resolveLocalVault(apiURL, requestedPubKey string, heightOverride int64) (localVault, error) {
+	birthday := heightOverride
+	pubKey := requestedPubKey
+	vault, err := fetchVault(apiURL, requestedPubKey)
+	if err != nil {
+		if birthday <= 0 || !looksLikeCanonicalXMRVaultPubKey(requestedPubKey) {
+			return localVault{}, err
+		}
+	} else {
+		if !hasChain(vault.Chains, "XMR") {
+			return localVault{}, fmt.Errorf("vault %s is not an XMR vault", requestedPubKey)
+		}
+		pubKey = canonicalXMRVaultPubKey(vault, requestedPubKey)
+		if birthday <= 0 {
+			birthday = vault.VaultCreationHeightXmr
+		}
+	}
+	if birthday <= 0 {
+		return localVault{}, fmt.Errorf("vault %s has no XMR birthday recorded", requestedPubKey)
+	}
+	return localVault{PubKey: pubKey, Birthday: birthday}, nil
+}
+
+func discoverAllLocalVaults(apiURL string, signer *monero.FrostSigner) ([]localVault, error) {
 	keys, err := signer.ListVaultKeys()
 	if err != nil {
 		return nil, fmt.Errorf("list local signer vault keys: %w", err)
@@ -225,24 +240,16 @@ func discoverVaults(opts toolOptions, signer *monero.FrostSigner) ([]localVault,
 		// key-image observations produced by the signing subset — without that,
 		// finalized XMR observations never reach supermajority and the vault
 		// metadata never gets the derived key-image.
-		vault, err := fetchVault(opts.apiURL, requestedPubKey)
+		vault, err := resolveLocalVault(apiURL, requestedPubKey, 0)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", requestedPubKey, err)
 			continue
 		}
-		if !hasChain(vault.Chains, "XMR") {
+		if _, ok := seen[vault.PubKey]; ok {
 			continue
 		}
-		pubKey := canonicalXMRVaultPubKey(vault, requestedPubKey)
-		if _, ok := seen[pubKey]; ok {
-			continue
-		}
-		seen[pubKey] = struct{}{}
-		if vault.VaultCreationHeightXmr <= 0 {
-			fmt.Fprintf(os.Stderr, "Skipping %s: no XMR birthday recorded\n", pubKey)
-			continue
-		}
-		vaults = append(vaults, localVault{PubKey: pubKey, Birthday: vault.VaultCreationHeightXmr})
+		seen[vault.PubKey] = struct{}{}
+		vaults = append(vaults, vault)
 	}
 
 	sort.Slice(vaults, func(i, j int) bool {
