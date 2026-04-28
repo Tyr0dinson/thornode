@@ -41,7 +41,7 @@ fn outgoing_record_matches_registered_tx_key(
     {
         return false;
     }
-    if record.amount != entry.amount || record.fee != entry.fee {
+    if record.amount != entry.amount {
         return false;
     }
 

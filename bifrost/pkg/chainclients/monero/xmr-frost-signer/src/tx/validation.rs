@@ -51,8 +51,10 @@ pub fn validate_outbound_transaction(
 
     let fee = proofs.base.fee;
     if let Some(expected_fee) = expected_fee {
-        if fee > expected_fee {
-            anyhow::bail!("fee mismatch: expected at most {expected_fee}, got {fee}");
+        let input_count = prefix.inputs.len().max(1) as u64;
+        let fee_cap = expected_fee.saturating_mul(input_count);
+        if fee > fee_cap {
+            anyhow::bail!("fee mismatch: expected at most {fee_cap} for {input_count} inputs ({expected_fee} per input), got {fee}");
         }
     }
 
@@ -408,15 +410,22 @@ fn serialize_extra(primary: EdwardsPoint, additional: Vec<EdwardsPoint>) -> Vec<
 }
 
 #[cfg(test)]
-fn synthetic_pruned_tx_hex(fee: u64, extra: Vec<u8>, outputs: Vec<SyntheticOutput>) -> String {
+fn synthetic_pruned_tx_hex_with_inputs(
+    fee: u64,
+    extra: Vec<u8>,
+    outputs: Vec<SyntheticOutput>,
+    input_count: usize,
+) -> String {
     let tx = Transaction::<Pruned>::V2 {
         prefix: TransactionPrefix {
             additional_timelock: Timelock::None,
-            inputs: vec![Input::ToKey {
-                amount: None,
-                key_offsets: vec![1],
-                key_image: point_from_scalar(99),
-            }],
+            inputs: (0..input_count.max(1))
+                .map(|i| Input::ToKey {
+                    amount: None,
+                    key_offsets: vec![1],
+                    key_image: point_from_scalar(99 + i as u64),
+                })
+                .collect(),
             outputs: outputs.iter().map(|output| output.output.clone()).collect(),
             extra,
         },
@@ -434,6 +443,11 @@ fn synthetic_pruned_tx_hex(fee: u64, extra: Vec<u8>, outputs: Vec<SyntheticOutpu
         }),
     };
     hex::encode(tx.serialize())
+}
+
+#[cfg(test)]
+fn synthetic_pruned_tx_hex(fee: u64, extra: Vec<u8>, outputs: Vec<SyntheticOutput>) -> String {
+    synthetic_pruned_tx_hex_with_inputs(fee, extra, outputs, 1)
 }
 
 #[cfg(test)]
@@ -629,9 +643,49 @@ mod tests {
         .expect_err("higher actual fee should still fail");
         assert!(
             err.to_string()
-                .contains("fee mismatch: expected at most 41, got 42"),
+                .contains("fee mismatch: expected at most 41 for 1 inputs (41 per input), got 42"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn validate_standard_outbound_transaction_allows_fee_cap_per_actual_input() {
+        let recipient = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(11),
+            point_from_scalar(13),
+        );
+        let change = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Legacy,
+            point_from_scalar(17),
+            point_from_scalar(19),
+        );
+        let primary = Scalar::from(7u64);
+        let expected_fee_per_input = 240_000_000u64;
+        let actual_fee = 1_339_680_000u64;
+        let tx_hex = synthetic_pruned_tx_hex_with_inputs(
+            actual_fee,
+            serialize_extra(&primary * ED25519_BASEPOINT_TABLE, vec![]),
+            vec![
+                synthetic_output_for_address(&primary, 0, &recipient, 1_000_000),
+                synthetic_output_for_address(&primary, 1, &change, 2_000_000),
+            ],
+            15,
+        );
+
+        let validated = validate_outbound_transaction(
+            &tx_hex,
+            &[scalar_hex(7)],
+            &recipient.to_string(),
+            1_000_000,
+            Some(expected_fee_per_input),
+            &[change.to_string()],
+        )
+        .expect("multi-input outbound should be allowed up to the per-input fee cap");
+        assert!(validated.tracked_owned_output);
+        assert_eq!(validated.actual_fee, actual_fee);
     }
 
     #[test]
