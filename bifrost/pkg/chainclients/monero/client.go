@@ -662,6 +662,14 @@ func isTransientXMRFrostCoordinationText(errText string) bool {
 var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not active")
 var errXMROutgoingAuditIncomplete = errors.New("xmr outgoing audit incomplete")
 
+func isTransientXMROutboundValidationError(err error) bool {
+	if err == nil || !isFrostHTTPStatus(err, http.StatusNotFound) {
+		return false
+	}
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "transaction") && strings.Contains(errText, "not found")
+}
+
 func (c *Client) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
@@ -3835,6 +3843,15 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	if isOutboundFromVault && len(item.TxKeys) > 0 {
 		validatedAudit, validateErr := c.validateXMROutgoingAuditFromObservation(xmrObservedTxFromTxInItem(item), outgoingAudit)
 		if validateErr != nil {
+			if isTransientXMROutboundValidationError(validateErr) {
+				c.logger.Info().
+					Err(validateErr).
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+					Str("memo", item.Memo).
+					Msg("waiting for XMR outbound tx to become visible before tx-key validation")
+				return nil, false, nil
+			}
 			return nil, false, fmt.Errorf("fail to validate xmr outbound tx-key state via sidecar: %w", validateErr)
 		}
 		outgoingAudit = validatedAudit
