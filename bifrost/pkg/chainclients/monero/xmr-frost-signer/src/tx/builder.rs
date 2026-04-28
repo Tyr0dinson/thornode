@@ -165,6 +165,57 @@ pub async fn build_unsigned_transaction(
                         msg
                     ));
                 }
+                if sweep_if_final && selected_total >= u128::from(requested_total) {
+                    if let Some(necessary_fee) = necessary_fee_from_error_message(&msg) {
+                        let mut retry_fee = necessary_fee;
+                        let mut adjusted_signable = None;
+                        for _ in 0..3 {
+                            let send_amount = final_migrate_amount(requested_total, retry_fee)?;
+                            match build_signable_for_selection(
+                                rpc,
+                                &selected,
+                                &to,
+                                send_amount,
+                                &change,
+                                fee_rate,
+                                rct_type,
+                                outgoing_view_key.clone(),
+                                data.clone(),
+                                decoy_context,
+                                hard_fork_version,
+                                tip_height,
+                            )
+                            .await
+                            {
+                                Ok(s) => {
+                                    adjusted_signable = Some(s);
+                                    break;
+                                }
+                                Err(adjusted_err) => {
+                                    let adjusted_msg = adjusted_err.to_string();
+                                    if let Some(adjusted_fee) =
+                                        necessary_fee_from_error_message(&adjusted_msg)
+                                    {
+                                        if adjusted_fee != retry_fee {
+                                            retry_fee = adjusted_fee;
+                                            continue;
+                                        }
+                                    }
+                                    if !adjusted_msg.contains("not enough funds") {
+                                        return Err(anyhow::anyhow!(
+                                            "failed to construct final sweep signable transaction: {}",
+                                            adjusted_msg
+                                        ));
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        if let Some(s) = adjusted_signable {
+                            break (s, selected.clone());
+                        }
+                    }
+                }
                 let mut grew = false;
                 for candidate in &candidates {
                     if selected.len() >= max {
@@ -329,6 +380,14 @@ fn final_migrate_amount(requested_total: u64, fee: u64) -> Result<u64> {
     requested_total
         .checked_sub(fee)
         .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))
+}
+
+fn necessary_fee_from_error_message(message: &str) -> Option<u64> {
+    let marker = "necessary_fee Some(";
+    let start = message.find(marker)? + marker.len();
+    let rest = &message[start..];
+    let end = rest.find(')')?;
+    rest[..end].parse().ok()
 }
 
 fn derive_tx_keys_from_components(
@@ -592,6 +651,13 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("actual fee exceeds requested migrate total"));
+    }
+
+    #[test]
+    fn parses_necessary_fee_from_builder_error() {
+        let msg = "failed to construct signable transaction: not enough funds (inputs 318029330000, outputs 317669330000, necessary_fee Some(597840000))";
+        assert_eq!(necessary_fee_from_error_message(msg), Some(597_840_000));
+        assert_eq!(necessary_fee_from_error_message("not enough funds"), None);
     }
 
     #[test]
