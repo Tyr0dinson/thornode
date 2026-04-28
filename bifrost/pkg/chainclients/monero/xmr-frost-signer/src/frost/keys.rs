@@ -80,11 +80,6 @@ impl ThresholdKeyShare {
             data: bytes.to_vec(),
         })
     }
-
-    /// Get the raw serialized data.
-    pub fn key_data(&self) -> &[u8] {
-        &self.data
-    }
 }
 
 impl Drop for ThresholdKeyShare {

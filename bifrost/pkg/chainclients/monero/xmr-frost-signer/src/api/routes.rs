@@ -193,12 +193,24 @@ fn persist_idempotency(
     }
 }
 
-pub(crate) fn error_json(msg: impl Into<String>) -> serde_json::Value {
-    serde_json::to_value(ErrorResponse::new(msg.into())).unwrap()
-}
-
 type ApiError = (StatusCode, serde_json::Value);
 type ApiResponse = (StatusCode, Json<serde_json::Value>);
+
+fn json_value<T: serde::Serialize>(value: T) -> serde_json::Value {
+    serde_json::to_value(value).unwrap()
+}
+
+fn json_response<T: serde::Serialize>(status: StatusCode, value: T) -> ApiResponse {
+    (status, Json(json_value(value)))
+}
+
+fn ok_response<T: serde::Serialize>(value: T) -> ApiResponse {
+    json_response(StatusCode::OK, value)
+}
+
+pub(crate) fn error_json(msg: impl Into<String>) -> serde_json::Value {
+    json_value(ErrorResponse::new(msg.into()))
+}
 
 fn bad_request(msg: impl Into<String>) -> ApiError {
     (StatusCode::BAD_REQUEST, error_json(msg))
@@ -569,15 +581,9 @@ pub async fn dkg_round1(
         req.participant_index,
         &req.context,
     ) {
-        Ok(commitments) => (
-            StatusCode::OK,
-            Json(
-                serde_json::to_value(DkgRound1Response {
-                    commitments: hex::encode(commitments),
-                })
-                .unwrap(),
-            ),
-        ),
+        Ok(commitments) => ok_response(DkgRound1Response {
+            commitments: hex::encode(commitments),
+        }),
         Err(e) => {
             error!(error = %e, "DKG round 1 failed");
             let msg = e.to_string();
@@ -606,15 +612,9 @@ pub async fn dkg_round2(
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), hex::encode(v)))
                 .collect();
-            (
-                StatusCode::OK,
-                Json(
-                    serde_json::to_value(DkgRound2Response {
-                        encrypted_shares: hex_shares,
-                    })
-                    .unwrap(),
-                ),
-            )
+            ok_response(DkgRound2Response {
+                encrypted_shares: hex_shares,
+            })
         }
         Err(e) => {
             error!(error = %e, "DKG round 2 failed");
@@ -633,10 +633,7 @@ pub async fn dkg_round3(
     };
 
     match state.dkg.round3(&req.session_id, all_shares) {
-        Ok((address, group_key)) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(DkgRound3Response { address, group_key }).unwrap()),
-        ),
+        Ok((address, group_key)) => ok_response(DkgRound3Response { address, group_key }),
         Err(e) => {
             error!(error = %e, "DKG round 3 failed");
             bad_request_response(e.to_string())
@@ -652,16 +649,10 @@ pub async fn dkg_finalize(
         .dkg
         .finalize(&req.session_id, &req.group_key, &req.address)
     {
-        Ok(key_share_bytes) => (
-            StatusCode::OK,
-            Json(
-                serde_json::to_value(DkgFinalizeResponse {
-                    success: true,
-                    key_bytes_hex: hex::encode(&key_share_bytes),
-                })
-                .unwrap(),
-            ),
-        ),
+        Ok(key_share_bytes) => ok_response(DkgFinalizeResponse {
+            success: true,
+            key_bytes_hex: hex::encode(&key_share_bytes),
+        }),
         Err(e) => {
             error!(error = %e, "DKG finalize failed");
             bad_request_response(e.to_string())
@@ -801,10 +792,7 @@ pub async fn register_vault(
         }
     }
 
-    (
-        StatusCode::OK,
-        Json(serde_json::to_value(RegisterVaultResponse { registered }).unwrap()),
-    )
+    ok_response(RegisterVaultResponse { registered })
 }
 
 // ---- Signing Routes ----
@@ -959,11 +947,10 @@ pub async fn sign_prepare(
     {
         Ok((session_id, preprocess)) => (
             StatusCode::OK,
-            serde_json::to_value(SignPrepareResponse {
+            json_value(SignPrepareResponse {
                 session_id,
                 preprocess: hex::encode(preprocess),
-            })
-            .unwrap(),
+            }),
         ),
         Err(e) => {
             // Use Debug formatter (`{:?}`) so anyhow includes the full error
@@ -1053,10 +1040,9 @@ pub async fn sign_partial(
     {
         Ok(share) => (
             StatusCode::OK,
-            serde_json::to_value(SignPartialResponse {
+            json_value(SignPartialResponse {
                 signature_share: hex::encode(share),
-            })
-            .unwrap(),
+            }),
         ),
         Err(e) => {
             error!(error = %e, "sign partial failed");
@@ -1140,14 +1126,13 @@ pub async fn sign_combine(
     {
         Ok((tx_hash, tx_hex, amount_atomic, fee_atomic, tx_keys)) => (
             StatusCode::OK,
-            serde_json::to_value(SignCombineResponse {
+            json_value(SignCombineResponse {
                 tx_hash,
                 tx_hex,
                 amount_atomic,
                 fee_atomic,
                 tx_keys,
-            })
-            .unwrap(),
+            }),
         ),
         Err(e) => {
             error!(error = %e, "sign combine failed");
@@ -1254,11 +1239,10 @@ pub async fn key_image_prepare(
         {
             Ok((session_id, preprocess)) => (
                 StatusCode::OK,
-                serde_json::to_value(KeyImagePrepareResponse {
+                json_value(KeyImagePrepareResponse {
                     session_id,
                     preprocess: hex::encode(preprocess),
-                })
-                .unwrap(),
+                }),
             ),
             Err(e) => bad_request(e.to_string()),
         };
@@ -1326,10 +1310,9 @@ pub async fn key_image_partial(
     {
         Ok(share) => (
             StatusCode::OK,
-            serde_json::to_value(KeyImagePartialResponse {
+            json_value(KeyImagePartialResponse {
                 signature_share: hex::encode(share),
-            })
-            .unwrap(),
+            }),
         ),
         Err(e) => bad_request(e.to_string()),
     };
@@ -1394,14 +1377,13 @@ pub async fn key_image_combine(
     let (status, response_json) = match state.key_images.combine(&req.session_id, all_shares) {
         Ok((tx_hash, key_image, proof_c, proof_s, output_index)) => (
             StatusCode::OK,
-            serde_json::to_value(KeyImageCombineResponse {
+            json_value(KeyImageCombineResponse {
                 tx_hash,
                 output_index,
                 key_image,
                 proof_c,
                 proof_s,
-            })
-            .unwrap(),
+            }),
         ),
         Err(e) => bad_request(e.to_string()),
     };
@@ -1437,10 +1419,7 @@ pub async fn key_image_validate(
         req.proof_c.trim(),
         req.proof_s.trim(),
     ) {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(KeyImageValidateResponse { valid: true }).unwrap()),
-        ),
+        Ok(()) => ok_response(KeyImageValidateResponse { valid: true }),
         Err(e) => bad_request_response(e.to_string()),
     }
 }
@@ -1553,10 +1532,7 @@ pub async fn broadcast(
                         error!(error = %e, "failed to update outgoing transfer status after broadcast");
                     }
 
-                    (
-                        StatusCode::OK,
-                        serde_json::to_value(BroadcastResponse { tx_hash }).unwrap(),
-                    )
+                    (StatusCode::OK, json_value(BroadcastResponse { tx_hash }))
                 } else {
                     error!("daemon broadcast returned success without tx hash");
                     (
@@ -1645,10 +1621,9 @@ pub async fn broadcast(
                         }
                         (
                             StatusCode::OK,
-                            serde_json::to_value(BroadcastResponse {
+                            json_value(BroadcastResponse {
                                 tx_hash: caller_tx_hash.to_string(),
-                            })
-                            .unwrap(),
+                            }),
                         )
                     } else {
                         warn!(msg_id, reason = %reason, "broadcast rejected as already known but no caller tx_hash to fall back on");
@@ -1696,17 +1671,11 @@ pub async fn get_balance(
     };
     let spendable_balance = unlocked_balance;
 
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(BalanceResponse {
-                balance,
-                unlocked_balance,
-                spendable_balance,
-            })
-            .unwrap(),
-        ),
-    )
+    ok_response(BalanceResponse {
+        balance,
+        unlocked_balance,
+        spendable_balance,
+    })
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -2539,10 +2508,7 @@ pub async fn scanner_sync(
         }
     }
 
-    (
-        StatusCode::OK,
-        Json(serde_json::to_value(TransfersResponse { incoming, outgoing }).unwrap()),
-    )
+    ok_response(TransfersResponse { incoming, outgoing })
 }
 
 pub async fn scanner_reset(
@@ -2649,10 +2615,7 @@ pub async fn get_transfers(
         }
     }
 
-    (
-        StatusCode::OK,
-        Json(serde_json::to_value(TransfersResponse { incoming, outgoing }).unwrap()),
-    )
+    ok_response(TransfersResponse { incoming, outgoing })
 }
 
 async fn get_mempool_transfers(state: Arc<AppState>) -> (StatusCode, Json<serde_json::Value>) {
@@ -2705,16 +2668,10 @@ async fn get_mempool_transfers(state: Arc<AppState>) -> (StatusCode, Json<serde_
     }
 
     let outgoing = build_mempool_outgoing_entries(&records, &in_pool_hashes);
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(TransfersResponse {
-                incoming: Vec::new(),
-                outgoing,
-            })
-            .unwrap(),
-        ),
-    )
+    ok_response(TransfersResponse {
+        incoming: Vec::new(),
+        outgoing,
+    })
 }
 
 pub async fn get_addresses(
@@ -2726,10 +2683,7 @@ pub async fn get_addresses(
         scanner.get_addresses(&vault_pub_key)
     };
 
-    (
-        StatusCode::OK,
-        Json(serde_json::to_value(AddressesResponse { addresses }).unwrap()),
-    )
+    ok_response(AddressesResponse { addresses })
 }
 
 pub async fn get_outputs(
@@ -2750,10 +2704,7 @@ pub async fn get_outputs(
 
     let entries: Vec<OutputEntry> = outputs.into_iter().map(output_entry_from_tracked).collect();
 
-    (
-        StatusCode::OK,
-        Json(serde_json::to_value(OutputsResponse { outputs: entries }).unwrap()),
-    )
+    ok_response(OutputsResponse { outputs: entries })
 }
 
 pub async fn get_outbounds(
@@ -2781,16 +2732,10 @@ pub async fn get_outbounds(
                 .into_iter()
                 .map(outgoing_state_entry_from_record)
                 .collect();
-            (
-                StatusCode::OK,
-                Json(
-                    serde_json::to_value(crate::api::types::OutgoingTransfersStateResponse {
-                        vault_pub_key,
-                        outgoing: entries,
-                    })
-                    .unwrap(),
-                ),
-            )
+            ok_response(crate::api::types::OutgoingTransfersStateResponse {
+                vault_pub_key,
+                outgoing: entries,
+            })
         }
         Err(e) => {
             error!(error = %e, vault = %vault_pub_key, "failed to load outgoing transfers");
@@ -2823,13 +2768,7 @@ pub async fn prune_outbounds(
         req.observed_mined_only,
         req.tx_key_backed_only,
     ) {
-        Ok(removed) => (
-            StatusCode::OK,
-            Json(
-                serde_json::to_value(crate::api::types::PruneOutgoingTransfersResponse { removed })
-                    .unwrap(),
-            ),
-        ),
+        Ok(removed) => ok_response(crate::api::types::PruneOutgoingTransfersResponse { removed }),
         Err(e) => {
             error!(error = %e, vault = %vault_pub_key, "failed to prune outgoing transfers");
             internal_error_response(format!("failed to prune outgoing transfers: {e}"))
@@ -2942,13 +2881,7 @@ pub async fn apply_key_images(
         scanner.merge_output_states(&vault_pub_key, &outputs_after);
     }
 
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(crate::api::types::ApplyKeyImagesResponse { applied, not_found })
-                .unwrap(),
-        ),
-    )
+    ok_response(crate::api::types::ApplyKeyImagesResponse { applied, not_found })
 }
 
 fn build_vault_inventory_fingerprint(
@@ -2970,10 +2903,7 @@ pub async fn validate_outbound(
     Json(req): Json<crate::api::types::ValidateOutboundRequest>,
 ) -> impl IntoResponse {
     match validate_outbound_request(&state, req).await {
-        Ok(response) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(response).unwrap()),
-        ),
+        Ok(response) => ok_response(response),
         Err((status, response)) => (status, Json(response)),
     }
 }
@@ -3011,13 +2941,7 @@ pub async fn list_vault_keys(State(state): State<Arc<AppState>>) -> impl IntoRes
         })
         .collect();
 
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(crate::api::types::ListVaultKeysResponse { vaults: entries })
-                .unwrap(),
-        ),
-    )
+    ok_response(crate::api::types::ListVaultKeysResponse { vaults: entries })
 }
 
 pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -3059,13 +2983,7 @@ pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoR
         });
     }
 
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(crate::api::types::ListVaultStatesResponse { vaults: entries })
-                .unwrap(),
-        ),
-    )
+    ok_response(crate::api::types::ListVaultStatesResponse { vaults: entries })
 }
 
 pub async fn key_export(
@@ -3091,15 +3009,9 @@ pub async fn key_export(
             })
         });
     match frost_bytes {
-        Some(raw_bytes) => (
-            StatusCode::OK,
-            Json(
-                serde_json::to_value(crate::api::types::KeyExportResponse {
-                    key_bytes_hex: hex::encode(raw_bytes),
-                })
-                .unwrap(),
-            ),
-        ),
+        Some(raw_bytes) => ok_response(crate::api::types::KeyExportResponse {
+            key_bytes_hex: hex::encode(raw_bytes),
+        }),
         None => error_response(
             StatusCode::NOT_FOUND,
             format!("no FROST keys found for vault {vault_pub_key}"),
@@ -3134,13 +3046,7 @@ pub async fn key_restore(
         .unwrap_or_else(|| vault_pub_key.clone());
 
     if let Ok(Some(_)) = state.store.load_frost_keys(&save_key) {
-        return (
-            StatusCode::OK,
-            Json(
-                serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: false })
-                    .unwrap(),
-            ),
-        );
+        return ok_response(crate::api::types::KeyRestoreResponse { restored: false });
     }
 
     if let Err(e) = state.store.save_frost_keys(&save_key, &key_bytes) {
@@ -3152,12 +3058,7 @@ pub async fn key_restore(
         vault = vault_pub_key,
         save_key, "restored FROST keys from backup"
     );
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(crate::api::types::KeyRestoreResponse { restored: true }).unwrap(),
-        ),
-    )
+    ok_response(crate::api::types::KeyRestoreResponse { restored: true })
 }
 
 pub async fn get_fee_rate(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -3171,15 +3072,9 @@ pub async fn get_fee_rate(State(state): State<Arc<AppState>>) -> impl IntoRespon
 
     match fee::estimate_fee_rate(&rpc).await {
         Ok(rate) => match fee::per_weight(&rate) {
-            Ok(per_weight) => (
-                StatusCode::OK,
-                Json(
-                    serde_json::to_value(FeeRateResponse {
-                        fee_rate_per_weight: per_weight,
-                    })
-                    .unwrap(),
-                ),
-            ),
+            Ok(per_weight) => ok_response(FeeRateResponse {
+                fee_rate_per_weight: per_weight,
+            }),
             Err(e) => internal_error_response(e.to_string()),
         },
         Err(e) => {
@@ -3191,10 +3086,7 @@ pub async fn get_fee_rate(State(state): State<Arc<AppState>>) -> impl IntoRespon
 
 pub async fn get_chain_height(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     match state.daemon.get_height().await {
-        Ok(height) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(ChainHeightResponse { height }).unwrap()),
-        ),
+        Ok(height) => ok_response(ChainHeightResponse { height }),
         Err(e) => {
             error!(error = %e, "failed to query daemon chain height");
             error_response(
@@ -3227,19 +3119,13 @@ pub async fn get_chain_block(
     }
 
     match state.daemon.get_block_by_height(height).await {
-        Ok(block) => (
-            StatusCode::OK,
-            Json(
-                serde_json::to_value(ChainBlockResponse {
-                    height: block.block_header.height,
-                    reward: block.block_header.reward,
-                    hash: block.block_header.hash,
-                    previous_hash: block.block_header.prev_hash,
-                    tx_hashes: block.tx_hashes.unwrap_or_default(),
-                })
-                .unwrap(),
-            ),
-        ),
+        Ok(block) => ok_response(ChainBlockResponse {
+            height: block.block_header.height,
+            reward: block.block_header.reward,
+            hash: block.block_header.hash,
+            previous_hash: block.block_header.prev_hash,
+            tx_hashes: block.tx_hashes.unwrap_or_default(),
+        }),
         Err(e) => {
             error!(error = %e, height, "failed to query daemon chain block");
             error_response(
@@ -3277,10 +3163,7 @@ pub async fn get_chain_tx_exists(
         .iter()
         .any(|tx| tx.tx_hash.trim().eq_ignore_ascii_case(&normalized))
     {
-        return (
-            StatusCode::OK,
-            Json(serde_json::to_value(ChainTxExistsResponse { exists: true }).unwrap()),
-        );
+        return ok_response(ChainTxExistsResponse { exists: true });
     }
     if result
         .missed_tx
@@ -3288,10 +3171,7 @@ pub async fn get_chain_tx_exists(
         .iter()
         .any(|hash| hash.trim().eq_ignore_ascii_case(&normalized))
     {
-        return (
-            StatusCode::OK,
-            Json(serde_json::to_value(ChainTxExistsResponse { exists: false }).unwrap()),
-        );
+        return ok_response(ChainTxExistsResponse { exists: false });
     }
 
     error!(
@@ -3547,17 +3427,11 @@ pub async fn sim_get_balance(
         scanner.get_balance(&account.account_id)
     };
 
-    (
-        StatusCode::OK,
-        Json(
-            serde_json::to_value(SimBalanceResponse {
-                address: account.address,
-                balance_atomic,
-                unlocked_balance_atomic,
-            })
-            .unwrap(),
-        ),
-    )
+    ok_response(SimBalanceResponse {
+        address: account.address,
+        balance_atomic,
+        unlocked_balance_atomic,
+    })
 }
 
 pub async fn sim_transfer(
@@ -3696,10 +3570,7 @@ pub async fn sim_transfer(
                 .scanner
                 .lock()
                 .mark_spent_by_refs(&account.account_id, &ref_pairs);
-            (
-                StatusCode::OK,
-                Json(serde_json::to_value(SimTransferResponse { tx_hash }).unwrap()),
-            )
+            ok_response(SimTransferResponse { tx_hash })
         }
         Ok(resp) => {
             let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
@@ -3768,10 +3639,7 @@ pub async fn sim_faucet(
         })
         .filter(|hash| !hash.trim().is_empty());
     match tx_hash {
-        Some(tx_hash) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(SimTransferResponse { tx_hash }).unwrap()),
-        ),
+        Some(tx_hash) => ok_response(SimTransferResponse { tx_hash }),
         None => error_response(
             StatusCode::BAD_GATEWAY,
             "wallet-rpc transfer returned success without tx_hash",
