@@ -1021,11 +1021,10 @@ func (s *FrostSigner) GetFeeRate() (uint64, error) {
 	return out.FeeRatePerWeight, nil
 }
 
-func (s *FrostSigner) ResetScanner(vaultPubKey string, birthdayHeight int64) error {
+func (s *FrostSigner) ResetScanner(vaultPubKey string) error {
 	req := struct {
-		VaultPubKey    string `json:"vault_pub_key"`
-		BirthdayHeight int64  `json:"birthday_height"`
-	}{vaultPubKey, birthdayHeight}
+		VaultPubKey string `json:"vault_pub_key"`
+	}{vaultPubKey}
 	return s.call(http.MethodPost, "/v1/monero/scanner/reset", req, nil)
 }
 

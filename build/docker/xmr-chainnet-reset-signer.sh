@@ -133,7 +133,7 @@ for node in "${nodes[@]}"; do
       printf ' dry-run\n'
       continue
     fi
-    payload="$(jq -cn --arg vault "$vault" --argjson birthday "$birthday" '{vault_pub_key:$vault,birthday_height:$birthday}')"
+    payload="$(jq -cn --arg vault "$vault" '{vault_pub_key:$vault}')"
     if response="$(xmr_chainnet_signer_post_json "$node" "/v1/monero/scanner/reset" "$payload" 2>/dev/null)"; then
       printf ' reset=%s\n' "$(printf '%s' "$response" | jq -c '.')"
     else

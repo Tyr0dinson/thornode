@@ -388,7 +388,6 @@ pub struct KeyRestoreRequest {
 #[derive(Debug, Deserialize)]
 pub struct ScannerResetRequest {
     pub vault_pub_key: String,
-    pub birthday_height: u64,
 }
 
 #[derive(Debug, Serialize)]

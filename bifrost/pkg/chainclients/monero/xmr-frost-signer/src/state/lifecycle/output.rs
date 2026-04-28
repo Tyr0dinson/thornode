@@ -198,6 +198,47 @@ impl<'a> OutputLifecycle<'a> {
         Ok(ApplyKeyImagesOutcome { applied, not_found })
     }
 
+    pub fn missing_outputs_for_key_images(
+        &self,
+        vault_pub_key: &str,
+        key_images: &[(String, u32, String)],
+    ) -> Result<Vec<(String, u32, String)>> {
+        if key_images.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let existing_refs: HashSet<(String, u32)> = self
+            .store
+            .load_outputs(vault_pub_key)?
+            .into_iter()
+            .map(|output| (output.tx_hash, output.output_index))
+            .collect();
+        let mut seen = HashSet::new();
+        let mut missing = Vec::new();
+
+        for (tx_hash, output_index, key_image) in key_images {
+            let tx_hash = tx_hash.trim().to_ascii_lowercase();
+            let key_image = key_image.trim().to_ascii_lowercase();
+            if tx_hash.is_empty() || key_image.is_empty() {
+                continue;
+            }
+            let key = (tx_hash.clone(), *output_index);
+            if existing_refs.contains(&key) || !seen.insert(key) {
+                continue;
+            }
+            missing.push((tx_hash, *output_index, key_image));
+        }
+
+        if !missing.is_empty() {
+            info!(
+                vault = %vault_pub_key,
+                missing = missing.len(),
+                "output lifecycle: detected missing outputs for registered key images"
+            );
+        }
+        Ok(missing)
+    }
+
     pub fn mark_spent_on_chain(
         &self,
         vault_pub_key: &str,
@@ -414,6 +455,30 @@ mod tests {
 
         let metas = store.list_scan_block_meta("thorpub1vault").unwrap();
         assert_eq!(metas[0].spent_by_key_images.len(), 1);
+    }
+
+    #[test]
+    fn missing_outputs_for_key_images_reports_only_absent_refs() {
+        let (_dir, store) = test_store();
+        store
+            .save_outputs("thorpub1vault", &[tracked_output("tx-a", 0)])
+            .unwrap();
+        let lifecycle = OutputLifecycle::new(&store);
+
+        let missing = lifecycle
+            .missing_outputs_for_key_images(
+                "thorpub1vault",
+                &[
+                    ("TX-A".to_string(), 0, "ki-a".to_string()),
+                    ("tx-b".to_string(), 1, "ki-b".to_string()),
+                    ("tx-b".to_string(), 1, "ki-b".to_string()),
+                    ("".to_string(), 2, "ki-empty".to_string()),
+                    ("tx-c".to_string(), 3, "".to_string()),
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(missing, vec![("tx-b".to_string(), 1, "ki-b".to_string())]);
     }
 
     #[test]

@@ -29,17 +29,13 @@ func TestRunResetsScannerWithoutDrivingSync(t *testing.T) {
 			}
 			resetCalls.Add(1)
 			var req struct {
-				VaultPubKey    string `json:"vault_pub_key"`
-				BirthdayHeight int64  `json:"birthday_height"`
+				VaultPubKey string `json:"vault_pub_key"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatalf("decode reset request: %v", err)
 			}
 			if req.VaultPubKey != canonicalVaultPubKey {
 				t.Fatalf("unexpected vault pubkey %q", req.VaultPubKey)
-			}
-			if req.BirthdayHeight != 3652000 {
-				t.Fatalf("unexpected birthday %d", req.BirthdayHeight)
 			}
 			w.WriteHeader(http.StatusOK)
 		case "/v1/monero/scanner/sync":

@@ -454,7 +454,6 @@ func TestFrostSignerResetScannerCallsSidecarEndpoint(t *testing.T) {
 	t.Parallel()
 
 	var receivedVault string
-	var receivedBirthday int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/scanner/reset" || r.Method != http.MethodPost {
@@ -462,8 +461,7 @@ func TestFrostSignerResetScannerCallsSidecarEndpoint(t *testing.T) {
 			return
 		}
 		var req struct {
-			VaultPubKey    string `json:"vault_pub_key"`
-			BirthdayHeight int64  `json:"birthday_height"`
+			VaultPubKey string `json:"vault_pub_key"`
 		}
 		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
@@ -471,12 +469,10 @@ func TestFrostSignerResetScannerCallsSidecarEndpoint(t *testing.T) {
 			return
 		}
 		receivedVault = req.VaultPubKey
-		receivedBirthday = req.BirthdayHeight
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"vault_pub_key":   req.VaultPubKey,
-			"birthday_height": req.BirthdayHeight,
-			"status":          "reset",
-			"rescan":          true,
+			"vault_pub_key": req.VaultPubKey,
+			"status":        "reset",
+			"rescan":        true,
 		})
 	}))
 	defer server.Close()
@@ -486,15 +482,12 @@ func TestFrostSignerResetScannerCallsSidecarEndpoint(t *testing.T) {
 		t.Fatalf("new frost signer: %v", err)
 	}
 
-	err = signer.ResetScanner("thorpub1testvault", 50000)
+	err = signer.ResetScanner("thorpub1testvault")
 	if err != nil {
 		t.Fatalf("ResetScanner: %v", err)
 	}
 	if receivedVault != "thorpub1testvault" {
 		t.Fatalf("expected vault thorpub1testvault, got %s", receivedVault)
-	}
-	if receivedBirthday != 50000 {
-		t.Fatalf("expected birthday 50000, got %d", receivedBirthday)
 	}
 }
 

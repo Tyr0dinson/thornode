@@ -461,6 +461,110 @@ fn apply_registered_key_image_inventory(
     Ok(())
 }
 
+async fn recover_missing_key_image_outputs(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    key_images: &[(String, u32, String)],
+) -> Result<usize, String> {
+    let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
+    let missing = output_lifecycle
+        .missing_outputs_for_key_images(vault_pub_key, key_images)
+        .map_err(|e| format!("failed to inspect key-image output inventory: {e}"))?;
+    if missing.is_empty() {
+        return Ok(0);
+    }
+
+    let mut tx_hashes: Vec<String> = missing
+        .iter()
+        .map(|(tx_hash, _, _)| tx_hash.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    tx_hashes.sort();
+
+    let txs = state
+        .daemon
+        .get_transactions(&tx_hashes)
+        .await
+        .map_err(|e| format!("failed to load missing key-image source transactions: {e}"))?;
+
+    let mut heights = HashSet::new();
+    for tx in txs.txs.unwrap_or_default() {
+        if let Some(height) = tx.block_height {
+            heights.insert(height);
+        }
+    }
+    if heights.is_empty() {
+        warn!(
+            vault = %vault_pub_key,
+            missing = missing.len(),
+            "registered key-image inventory references missing outputs, but no source transaction block heights were found"
+        );
+        return Ok(0);
+    }
+
+    let rpc = state
+        .daemon
+        .oxide_rpc()
+        .await
+        .map_err(|e| format!("failed to initialize monero RPC client: {e}"))?;
+    let mut heights: Vec<u64> = heights.into_iter().collect();
+    heights.sort_unstable();
+    let source_blocks = heights.len();
+
+    let mut recovered = 0usize;
+    for height in heights {
+        let block = rpc
+            .get_scannable_block_by_number(height as usize)
+            .await
+            .map_err(|e| format!("failed to fetch key-image source block {height}: {e}"))?;
+        let added = state
+            .scanner
+            .lock()
+            .scan_block_for_vault_with_added(vault_pub_key, height, block)
+            .map_err(|e| format!("failed to scan key-image source block {height}: {e}"))?;
+        if !added.is_empty() {
+            recovered += added.len();
+        }
+    }
+
+    let outputs_after = state.scanner.lock().get_all_outputs(vault_pub_key);
+    output_lifecycle
+        .merge_scanned_outputs(vault_pub_key, &outputs_after)
+        .map_err(|e| format!("failed to persist recovered key-image source outputs: {e}"))?;
+    state
+        .scanner
+        .lock()
+        .merge_output_states(vault_pub_key, &outputs_after);
+
+    if recovered > 0 {
+        info!(
+            vault = %vault_pub_key,
+            missing = missing.len(),
+            source_blocks,
+            recovered,
+            "recovered missing outputs before key-image replay"
+        );
+    } else {
+        warn!(
+            vault = %vault_pub_key,
+            missing = missing.len(),
+            source_blocks,
+            "key-image source blocks scanned but no missing outputs recovered"
+        );
+    }
+
+    Ok(recovered)
+}
+
+async fn recover_registered_key_image_outputs(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+) -> Result<usize, String> {
+    let key_images = load_registered_key_image_inventory(state, vault_pub_key)?;
+    recover_missing_key_image_outputs(state, vault_pub_key, &key_images).await
+}
+
 /// Unified scan-batch commit. One operation for N blocks (N=1 for normal scan,
 /// up to RESCAN_MAX_BLOCKS_PER_SYNC for rescan). Preserves the distinction between
 /// LOADING a key-image (attaching metadata to a tracked output) and MARKING a
@@ -838,6 +942,31 @@ pub async fn register_vault(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(error_json(format!(
                     "failed to persist registered key image inventory: {e}"
+                ))),
+            );
+        }
+        let key_image_refs: Vec<(String, u32, String)> = key_images
+            .iter()
+            .map(|entry| {
+                (
+                    entry.tx_hash.clone(),
+                    entry.output_index,
+                    entry.key_image.clone(),
+                )
+            })
+            .collect();
+        if let Err(e) =
+            recover_missing_key_image_outputs(&state, &vault_pub_key, &key_image_refs).await
+        {
+            error!(
+                error = %e,
+                vault = %vault_pub_key,
+                "failed to recover registered key-image source outputs"
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to recover registered key-image source outputs: {e}"
                 ))),
             );
         }
@@ -1728,10 +1857,29 @@ pub async fn broadcast(
                     )
                 }
             } else {
-                let reason = resp.reason.unwrap_or_else(|| resp.status.clone());
+                let reason = resp.rejection_reason();
+                let rejection_flags = resp.rejection_flags();
                 let is_double_spend = resp.double_spend.unwrap_or(false);
                 let status_lower = resp.status.to_ascii_lowercase();
                 let reason_lower = reason.to_ascii_lowercase();
+                warn!(
+                    msg_id,
+                    vault_pub_key = %vault_pub_key_canonical,
+                    caller_tx_hash = %req.tx_hash.trim(),
+                    daemon_status = %resp.status,
+                    reason = %reason,
+                    rejection_flags = %rejection_flags.join(","),
+                    double_spend = resp.double_spend.unwrap_or(false),
+                    fee_too_low = resp.fee_too_low.unwrap_or(false),
+                    invalid_input = resp.invalid_input.unwrap_or(false),
+                    invalid_output = resp.invalid_output.unwrap_or(false),
+                    low_mixin = resp.low_mixin.unwrap_or(false),
+                    not_relayed = resp.not_relayed.unwrap_or(false),
+                    not_rct = resp.not_rct.unwrap_or(false),
+                    overspend = resp.overspend.unwrap_or(false),
+                    too_big = resp.too_big.unwrap_or(false),
+                    "daemon rejected broadcast"
+                );
                 // "not relayed" is ambiguous: monerod can return it for a tx
                 // that really is already in pool/chain, but it can also mean
                 // the broadcast was rejected and the tx never became visible.
@@ -2339,6 +2487,16 @@ pub async fn scanner_sync(
                 }
                 if !batch.is_empty() {
                     if let Err(e) =
+                        recover_registered_key_image_outputs(&state, &vault.vault_pub_key).await
+                    {
+                        warn!(
+                            error = %e,
+                            vault = %vault.vault_pub_key,
+                            "rescan: failed to recover registered key-image source outputs"
+                        );
+                        continue;
+                    }
+                    if let Err(e) =
                         commit_scan_batch(&state, &vault.vault_pub_key, &batch, reorg_window)
                     {
                         warn!(
@@ -2620,6 +2778,16 @@ pub async fn scanner_sync(
                 spent_key_images,
                 added_outputs: added_outputs.clone(),
             }];
+            if let Err(e) = recover_registered_key_image_outputs(&state, &vault.vault_pub_key).await
+            {
+                error!(
+                    error = %e,
+                    vault = %vault.vault_pub_key,
+                    height = req.height,
+                    "failed to recover registered key-image source outputs before scanner sync commit"
+                );
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
+            }
             let persisted =
                 match commit_scan_batch(&state, &vault.vault_pub_key, &batch, reorg_window) {
                     Ok(result) => result,
@@ -2756,7 +2924,6 @@ pub async fn scanner_reset(
 ) -> impl IntoResponse {
     let _scan_lifecycle = state.scan_lifecycle.lock().await;
     let vault_pub_key = req.vault_pub_key.trim().to_string();
-    let requested_birthday_height = req.birthday_height;
     if vault_pub_key.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -2775,7 +2942,6 @@ pub async fn scanner_reset(
 
     info!(
         vault = %vault_pub_key,
-        requested_birthday_height,
         "scanner reset complete — vault fully purged, awaiting re-registration"
     );
 
@@ -3122,8 +3288,8 @@ pub async fn apply_key_images(
         })
         .collect();
 
-    let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
     let ApplyKeyImagesOutcome { applied, not_found } = if req.spend {
+        let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
         let Some(spent_height) = req.spent_height.filter(|height| *height > 0) else {
             return (
                 StatusCode::BAD_REQUEST,
@@ -3161,12 +3327,30 @@ pub async fn apply_key_images(
             }
         }
     } else {
+        if let Err(e) = recover_missing_key_image_outputs(&state, &vault_pub_key, &key_images).await
+        {
+            error!(
+                error = %e,
+                vault = vault_pub_key,
+                "failed to recover key-image source outputs"
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_json(format!(
+                    "failed to recover key-image source outputs: {e}"
+                ))),
+            );
+        }
         {
             let mut scanner = state.scanner.lock();
             scanner.apply_key_images(&vault_pub_key, &key_images, req.reconcile);
         }
 
-        match output_lifecycle.apply_key_images(&vault_pub_key, &key_images, req.reconcile) {
+        match OutputLifecycle::new(state.store.as_ref()).apply_key_images(
+            &vault_pub_key,
+            &key_images,
+            req.reconcile,
+        ) {
             Ok(result) => result,
             Err(e) => {
                 error!(error = %e, vault = vault_pub_key, "failed to persist applied key images");
@@ -5783,6 +5967,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn broadcast_empty_daemon_reason_returns_rejection_flags() {
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(
+                axum::Router::new()
+                    .route(
+                        "/send_raw_transaction",
+                        axum::routing::post(|| async {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "",
+                                    "reason": "",
+                                    "invalid_input": true,
+                                    "not_relayed": true,
+                                })),
+                            )
+                        }),
+                    )
+                    .route(
+                        "/get_transactions",
+                        axum::routing::post(|| async {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "status": "OK",
+                                    "missed_tx": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+                                })),
+                            )
+                        }),
+                    ),
+            )
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+
+        let req = BroadcastRequest {
+            tx_hex: "deadbeef".to_string(),
+            tx_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+            msg_id: "msg-broadcast-empty-reason".to_string(),
+        };
+        let response = broadcast(State(state), Json(req)).await.into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let error = body["error"].as_str().unwrap_or_default();
+        assert!(error.contains("invalid_input"));
+        assert!(error.contains("not_relayed"));
+    }
+
+    #[tokio::test]
     async fn broadcast_not_relayed_with_positive_lookup_returns_success() {
         let daemon_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let daemon_server = axum_test::TestServer::builder()
@@ -6289,7 +6527,6 @@ mod tests {
             State(state.clone()),
             Json(crate::api::types::ScannerResetRequest {
                 vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
-                birthday_height: 321,
             }),
         )
         .await

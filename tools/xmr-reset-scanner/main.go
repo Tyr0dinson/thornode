@@ -123,7 +123,7 @@ func run(opts toolOptions) error {
 
 	for _, vault := range vaults {
 		fmt.Printf("Resetting %s to birthday %d\n", vault.PubKey, vault.Birthday)
-		if err := signer.ResetScanner(vault.PubKey, vault.Birthday); err != nil {
+		if err := signer.ResetScanner(vault.PubKey); err != nil {
 			return fmt.Errorf("reset %s: %w", vault.PubKey, err)
 		}
 	}
