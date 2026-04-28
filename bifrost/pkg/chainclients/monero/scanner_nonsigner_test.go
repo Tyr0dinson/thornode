@@ -180,6 +180,115 @@ func TestNonSignerMissingFromAddressFailsClosed(t *testing.T) {
 	}
 }
 
+func TestUnauthorizedSpendObservedBySignerAndNonSigner(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vaultAddress := vaultAddr.String()
+	spendTxID := strings.Repeat("fa", 32)
+
+	unauthorized := xmrFrostTransferEntry{
+		TxID:        spendTxID,
+		Address:     common.XMRUnknownSenderAddress(spendTxID, vaultAddress),
+		FromAddress: vaultAddress,
+		VaultPubKey: vaultPubKey.String(),
+		Amount:      2 * moneroAtomicToThorchain,
+		Fee:         0,
+		Height:      300,
+		Note:        "NOOP:UNAUTHORIZED",
+	}
+
+	signerFrost := newMockFrostServer(t, 300, []xmrFrostTransferEntry{unauthorized})
+	defer signerFrost.Close()
+	nonSignerFrost := newMockFrostServer(t, 300, []xmrFrostTransferEntry{unauthorized})
+	defer nonSignerFrost.Close()
+
+	signerScanner := newTestScanner(t, signerFrost.URL, vaultPubKey)
+	nonSignerScanner := newTestScanner(t, nonSignerFrost.URL, vaultPubKey)
+
+	signerTxIn, err := signerScanner.FetchTxs(300, 350)
+	if err != nil {
+		t.Fatalf("signer FetchTxs: %v", err)
+	}
+	nonSignerTxIn, err := nonSignerScanner.FetchTxs(300, 350)
+	if err != nil {
+		t.Fatalf("non-signer FetchTxs: %v", err)
+	}
+
+	if len(signerTxIn.TxArray) != 1 {
+		t.Fatalf("expected signer to observe unauthorized spend once, got %d", len(signerTxIn.TxArray))
+	}
+	if len(nonSignerTxIn.TxArray) != 1 {
+		t.Fatalf("expected non-signer to observe unauthorized spend once, got %d", len(nonSignerTxIn.TxArray))
+	}
+
+	for label, item := range map[string]*stypes.TxInItem{
+		"signer":     signerTxIn.TxArray[0],
+		"non-signer": nonSignerTxIn.TxArray[0],
+	} {
+		if item.Tx != spendTxID {
+			t.Fatalf("%s tx mismatch: expected %s, got %s", label, spendTxID, item.Tx)
+		}
+		if item.Memo != "NOOP:UNAUTHORIZED" {
+			t.Fatalf("%s memo mismatch: expected NOOP:UNAUTHORIZED, got %s", label, item.Memo)
+		}
+		if item.Sender != vaultAddress {
+			t.Fatalf("%s sender mismatch: expected %s, got %s", label, vaultAddress, item.Sender)
+		}
+		if !item.ObservedVaultPubKey.Equals(vaultPubKey) {
+			t.Fatalf("%s vault pubkey mismatch: expected %s, got %s", label, vaultPubKey, item.ObservedVaultPubKey)
+		}
+		if len(item.TxKeys) != 0 {
+			t.Fatalf("%s unauthorized spend should not carry tx keys: %+v", label, item.TxKeys)
+		}
+	}
+}
+
+func TestUnauthorizedSpendToUnknownAddressCannotFallThroughAsNormalOutbound(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vaultAddress := vaultAddr.String()
+	spendTxID := strings.Repeat("fb", 32)
+
+	// Defensive case for replay paths: even if the sidecar response carries
+	// stale tx-key fields or a missing note, xmrunknown destination means this
+	// is a synthetic theft observation, not a normal outbound.
+	unauthorized := xmrFrostTransferEntry{
+		TxID:        spendTxID,
+		Address:     common.XMRUnknownSenderAddress(spendTxID, vaultAddress),
+		FromAddress: vaultAddress,
+		VaultPubKey: vaultPubKey.String(),
+		TxKeys:      []string{strings.Repeat("1", 64)},
+		Amount:      2 * moneroAtomicToThorchain,
+		Fee:         30_000_000,
+		Height:      301,
+		Note:        "",
+	}
+
+	frost := newMockFrostServer(t, 301, []xmrFrostTransferEntry{unauthorized})
+	defer frost.Close()
+
+	scanner := newTestScanner(t, frost.URL, vaultPubKey)
+	txIn, err := scanner.FetchTxs(301, 350)
+	if err != nil {
+		t.Fatalf("FetchTxs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected one unauthorized observation, got %d", len(txIn.TxArray))
+	}
+	item := txIn.TxArray[0]
+	if item.Memo != "NOOP:UNAUTHORIZED" {
+		t.Fatalf("expected NOOP:UNAUTHORIZED memo, got %q", item.Memo)
+	}
+	if len(item.TxKeys) != 0 {
+		t.Fatalf("unauthorized spend must not retain tx keys: %+v", item.TxKeys)
+	}
+	if item.Sender != vaultAddress {
+		t.Fatalf("expected vault sender %s, got %s", vaultAddress, item.Sender)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

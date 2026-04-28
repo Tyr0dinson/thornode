@@ -1475,17 +1475,31 @@ func (c *Client) drivePendingScannerRescans(states []xmrFrostVaultStateEntry) ([
 			return current, fmt.Errorf("failed to query xmr chain block %d while driving rescans: %w", chainHeight, err)
 		}
 
-		if _, err := c.frostSigner.SyncTransfersByHeight(
+		resp, err := c.frostSigner.SyncTransfersByHeight(
 			chainHeight,
 			chainHeight,
 			block.Hash,
 			block.PreviousHash,
 			reorgWindow,
-		); err != nil {
+		)
+		if err != nil {
 			if isFrostScannerHashMismatchErr(err) {
 				return current, nil
 			}
 			return current, fmt.Errorf("failed to drive xmr scanner rescan at tip %d: %w", chainHeight, err)
+		}
+		if c.scanner != nil && len(resp.Incoming)+len(resp.Outgoing) > 0 {
+			items, convertErr := c.scanner.transfersToTxInItems(resp, chainHeight)
+			if convertErr != nil {
+				return current, fmt.Errorf("failed to convert xmr scanner rescan transfers at tip %d: %w", chainHeight, convertErr)
+			}
+			if len(items) > 0 {
+				c.scanner.queueReplayTxInItems(items)
+				c.logger.Info().
+					Int("txs", len(items)).
+					Int64("height", chainHeight).
+					Msg("queued XMR scanner rescan observations for normal scanner submission")
+			}
 		}
 
 		updated, err := c.frostSigner.ListVaultStates()

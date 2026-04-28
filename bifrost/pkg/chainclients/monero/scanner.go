@@ -64,6 +64,9 @@ type Scanner struct {
 	observedOutgoingMu     sync.RWMutex
 	observedOutgoingByTxID map[string]observedOutgoingTx
 
+	replayMu           sync.Mutex
+	pendingReplayItems []*stypes.TxInItem
+
 	mempoolMu   sync.Mutex
 	mempoolSeen map[string]struct{}
 }
@@ -263,6 +266,10 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	if len(currentItems) > 0 {
 		txIn.TxArray = append(txIn.TxArray, currentItems...)
 	}
+	if replayItems := s.drainReplayTxInItems(); len(replayItems) > 0 {
+		txIn.TxArray = append(txIn.TxArray, replayItems...)
+		txIn.TxArray = s.dedupeTxInItemsByTxID(txIn.TxArray)
+	}
 	if len(txIn.TxArray) > 0 {
 		txIDs := make([]string, 0, len(txIn.TxArray))
 		for _, item := range txIn.TxArray {
@@ -321,6 +328,20 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 		return nil, nil
 	}
 
+	return s.transfersToTxInItems(resp, fetchHeight)
+}
+
+func (s *Scanner) transfersToTxInItems(resp xmrFrostTransfersResponse, fetchHeight int64) ([]*stypes.TxInItem, error) {
+	if len(resp.Incoming)+len(resp.Outgoing) == 0 {
+		return nil, nil
+	}
+	if s.bridge != nil {
+		if err := s.refreshAsgardLookup(); err != nil {
+			s.logger.Err(err).Msg("fail to refresh asgard lookup while converting monero transfers")
+			return nil, btypes.ErrUnavailableBlock
+		}
+	}
+
 	outgoingVaultsByTxID := s.outgoingVaultsByTxID(resp.Outgoing)
 	s.rememberObservedOutgoingVaults(outgoingVaultsByTxID, fetchHeight)
 	txItems := make([]*stypes.TxInItem, 0, len(resp.Incoming)+len(resp.Outgoing))
@@ -376,6 +397,10 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 		}
 
 		memoText := s.transferMemo(transfer, false)
+		if common.IsXMRUnknownSenderAddress(common.Address(to)) {
+			memoText = "NOOP:UNAUTHORIZED"
+			transfer.TxKeys = nil
+		}
 
 		item, ok := s.transferToTxInItem(transfer, sender, to, vaultPubKey, memoText, fetchHeight)
 		if !ok {
@@ -385,6 +410,29 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 	}
 
 	return s.dedupeTxInItemsByTxID(txItems), nil
+}
+
+func (s *Scanner) queueReplayTxInItems(items []*stypes.TxInItem) {
+	if s == nil || len(items) == 0 {
+		return
+	}
+	s.replayMu.Lock()
+	defer s.replayMu.Unlock()
+	s.pendingReplayItems = s.dedupeTxInItemsByTxID(append(s.pendingReplayItems, items...))
+}
+
+func (s *Scanner) drainReplayTxInItems() []*stypes.TxInItem {
+	if s == nil {
+		return nil
+	}
+	s.replayMu.Lock()
+	defer s.replayMu.Unlock()
+	if len(s.pendingReplayItems) == 0 {
+		return nil
+	}
+	items := append([]*stypes.TxInItem(nil), s.pendingReplayItems...)
+	s.pendingReplayItems = nil
+	return items
 }
 
 func (s *Scanner) transferAddress(transfer xmrFrostTransferEntry, invalidMsg string) (string, bool) {

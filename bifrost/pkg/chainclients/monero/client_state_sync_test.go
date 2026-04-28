@@ -734,3 +734,113 @@ func TestDrivePendingScannerRescansUsesScannerSyncPath(t *testing.T) {
 	assert.Equal(t, "block-hash-119", syncRequests[0].ParentHash)
 	assert.Equal(t, int64(72), syncRequests[0].ReorgWindow)
 }
+
+func TestDrivePendingScannerRescansQueuesRecoveredUnauthorizedSpend(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vaultAddress := vaultAddr.String()
+	startHeight := uint64(25)
+	tipHeight := int64(120)
+	spendTxID := strings.Repeat("a", 64)
+
+	var mu sync.Mutex
+	vaultStates := xmrFrostVaultStatesResponse{
+		Vaults: []xmrFrostVaultStateEntry{{
+			VaultPubKey: vaultPubKey.String(),
+			Address:     vaultAddress,
+			Birthday:    startHeight,
+			Rescan:      true,
+			ScanHeight:  &startHeight,
+		}},
+	}
+	var syncRequests []xmrFrostScannerSyncRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/vaults":
+			mu.Lock()
+			defer mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(vaultStates))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: tipHeight}))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/block/120":
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+				Height:       tipHeight,
+				Hash:         "block-hash-120",
+				PreviousHash: "block-hash-119",
+			}))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/block/121":
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostChainBlockResponse{
+				Height:       121,
+				Hash:         "block-hash-121",
+				PreviousHash: "block-hash-120",
+			}))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
+			var req xmrFrostScannerSyncRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			syncRequests = append(syncRequests, req)
+			if req.Height == tipHeight {
+				completed := uint64(tipHeight)
+				vaultStates.Vaults[0].Rescan = false
+				vaultStates.Vaults[0].ScanHeight = &completed
+				mu.Unlock()
+				require.NoError(t, json.NewEncoder(w).Encode(xmrFrostTransfersResponse{
+					Outgoing: []xmrFrostTransferEntry{{
+						TxID:        spendTxID,
+						Address:     common.XMRUnknownSenderAddress(spendTxID, vaultAddress),
+						FromAddress: vaultAddress,
+						VaultPubKey: vaultPubKey.String(),
+						Amount:      uint64(2 * moneroAtomicToThorchain),
+						Height:      uint64(tipHeight),
+						Note:        "NOOP:UNAUTHORIZED",
+					}},
+				}))
+				return
+			}
+			mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostTransfersResponse{}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	scanner := NewScanner(
+		testLogger(),
+		signer,
+		&scannerMemoBridge{asgards: ttypes.Vaults{{PubKeyEddsa: vaultPubKey, PubKey: vaultPubKey, PubKeyFrost: vaultPubKey}}},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+	client := &Client{
+		frostSigner: signer,
+		logger:      testLogger(),
+		scanner:     scanner,
+	}
+
+	updated, err := client.drivePendingScannerRescans(vaultStates.Vaults)
+	require.NoError(t, err)
+	require.Len(t, updated, 1)
+	assert.False(t, updated[0].Rescan)
+
+	txIn, err := scanner.FetchTxs(121, 121)
+	require.NoError(t, err)
+	require.Len(t, txIn.TxArray, 1)
+	assert.Equal(t, spendTxID, txIn.TxArray[0].Tx)
+	assert.Equal(t, "NOOP:UNAUTHORIZED", txIn.TxArray[0].Memo)
+	assert.Equal(t, vaultAddress, txIn.TxArray[0].Sender)
+	assert.True(t, txIn.TxArray[0].ObservedVaultPubKey.Equals(vaultPubKey))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, syncRequests, 2)
+	assert.Equal(t, tipHeight, syncRequests[0].Height)
+	assert.Equal(t, int64(121), syncRequests[1].Height)
+}
