@@ -3688,11 +3688,14 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, am
 }
 
 func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
-	if c.frostSigner == nil {
-		return fmt.Errorf("frost signer not configured")
-	}
 	if tx.Tx.Chain != common.XMRChain {
 		return fmt.Errorf("unexpected chain for xmr outbound validation: %s", tx.Tx.Chain)
+	}
+	if tx.Tx.IsXMRUnauthorizedSpendObservation() {
+		return nil
+	}
+	if c.frostSigner == nil {
+		return fmt.Errorf("frost signer not configured")
 	}
 	if tx.Tx.ID.IsEmpty() {
 		return fmt.Errorf("observed tx id is empty")
@@ -3759,6 +3762,9 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	isInboundToVault := c.isObservedInboundToVault(item)
 	isOutboundFromVault := c.isObservedOutboundFromVault(item)
 	if !isInboundToVault && !isOutboundFromVault {
+		return item, true, nil
+	}
+	if isOutboundFromVault && (common.Tx{Chain: common.XMRChain, Memo: item.Memo}).IsXMRUnauthorizedSpendObservation() {
 		return item, true, nil
 	}
 	var outgoingAudit xmrOutgoingAuditLookup

@@ -282,6 +282,76 @@ func TestValidateOutboundObservationRejectsMissingTxKeys(t *testing.T) {
 	}
 }
 
+func TestValidateOutboundObservationAllowsUnauthorizedSpendWithoutTxKeys(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          common.TxID(strings.Repeat("d", 64)),
+			Chain:       common.XMRChain,
+			FromAddress: common.Address(common.XMRChecksummedDummyAddress('4')),
+			ToAddress:   common.Address(common.XMRUnknownSenderAddress("spend", "vault")),
+			Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(55))),
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(3))},
+			Memo:        "NOOP:UNAUTHORIZED",
+		},
+		100,
+		vaultPubKey,
+		0,
+	)
+
+	c := &Client{chain: common.XMRChain}
+	if err := c.ValidateOutboundObservation(obsTx); err != nil {
+		t.Fatalf("unauthorized spend should not require sidecar tx-key validation: %v", err)
+	}
+}
+
+func TestPrepareObservedTxInItemAllowsUnauthorizedSpendWithoutTxKeys(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	var called bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		tssServer:   &mockKeyImageTssServer{},
+		logger:      testLogger(),
+	}
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  strings.Repeat("e", 64),
+		Sender:              vaultAddr.String(),
+		To:                  common.XMRUnknownSenderAddress("spend", vaultAddr.String()),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(55))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(3))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "NOOP:UNAUTHORIZED",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	if err != nil {
+		t.Fatalf("prepare unauthorized spend: %v", err)
+	}
+	if !include || prepared != item {
+		t.Fatalf("expected unauthorized spend to be included unchanged")
+	}
+	if called {
+		t.Fatalf("unauthorized spend should not call sidecar validation")
+	}
+}
+
 func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 	t.Parallel()
 
