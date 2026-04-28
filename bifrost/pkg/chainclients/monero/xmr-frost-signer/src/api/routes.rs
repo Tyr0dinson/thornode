@@ -197,10 +197,33 @@ pub(crate) fn error_json(msg: impl Into<String>) -> serde_json::Value {
     serde_json::to_value(ErrorResponse::new(msg.into())).unwrap()
 }
 
-fn required_msg_id(value: &str) -> Result<String, (StatusCode, serde_json::Value)> {
+type ApiError = (StatusCode, serde_json::Value);
+type ApiResponse = (StatusCode, Json<serde_json::Value>);
+
+fn bad_request(msg: impl Into<String>) -> ApiError {
+    (StatusCode::BAD_REQUEST, error_json(msg))
+}
+
+fn internal_error(msg: impl Into<String>) -> ApiError {
+    (StatusCode::INTERNAL_SERVER_ERROR, error_json(msg))
+}
+
+fn error_response(status: StatusCode, msg: impl Into<String>) -> ApiResponse {
+    (status, Json(error_json(msg)))
+}
+
+fn bad_request_response(msg: impl Into<String>) -> ApiResponse {
+    error_response(StatusCode::BAD_REQUEST, msg)
+}
+
+fn internal_error_response(msg: impl Into<String>) -> ApiResponse {
+    error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)
+}
+
+fn required_msg_id(value: &str) -> Result<String, ApiError> {
     let msg_id = value.trim().to_string();
     if msg_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, error_json("msg_id is required")));
+        return Err(bad_request("msg_id is required"));
     }
     Ok(msg_id)
 }
@@ -224,54 +247,35 @@ fn valid_vault_pub_key(value: &str) -> bool {
     !data.is_empty()
 }
 
-fn normalized_group_key_hex(value: &str) -> Result<String, (StatusCode, serde_json::Value)> {
+fn normalized_group_key_hex(value: &str) -> Result<String, ApiError> {
     let normalized = value.trim().to_ascii_lowercase();
     if normalized.len() != 64 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("group_key must be 32-byte hex"),
-        ));
+        return Err(bad_request("group_key must be 32-byte hex"));
     }
     let decoded = match hex::decode(&normalized) {
         Ok(decoded) => decoded,
         Err(_) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                error_json("group_key must be valid hex"),
-            ));
+            return Err(bad_request("group_key must be valid hex"));
         }
     };
     if decoded.len() != 32 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("group_key must be 32-byte hex"),
-        ));
+        return Err(bad_request("group_key must be 32-byte hex"));
     }
     Ok(normalized)
 }
 
 const ED25519_PUBKEY_AMINO_PREFIX: &[u8] = &[0x16, 0x24, 0xde, 0x64, 0x20];
 
-fn vault_pub_key_matches_group_key(
-    vault_pub_key: &str,
-    group_key: &str,
-) -> Result<bool, (StatusCode, serde_json::Value)> {
+fn vault_pub_key_matches_group_key(vault_pub_key: &str, group_key: &str) -> Result<bool, ApiError> {
     let (_, data, _) = match bech32_decode(vault_pub_key.trim()) {
         Ok(decoded) => decoded,
         Err(_) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                error_json("invalid vault_pub_key format"),
-            ));
+            return Err(bad_request("invalid vault_pub_key format"));
         }
     };
 
-    let decoded = Vec::<u8>::from_base32(&data).map_err(|_| {
-        (
-            StatusCode::BAD_REQUEST,
-            error_json("invalid vault_pub_key format"),
-        )
-    })?;
+    let decoded =
+        Vec::<u8>::from_base32(&data).map_err(|_| bad_request("invalid vault_pub_key format"))?;
     if decoded.len() != ED25519_PUBKEY_AMINO_PREFIX.len() + 32 {
         return Ok(false);
     }
@@ -279,12 +283,8 @@ fn vault_pub_key_matches_group_key(
         return Ok(false);
     }
 
-    let group_key = hex::decode(group_key).map_err(|_| {
-        (
-            StatusCode::BAD_REQUEST,
-            error_json("group_key must be valid hex"),
-        )
-    })?;
+    let group_key =
+        hex::decode(group_key).map_err(|_| bad_request("group_key must be valid hex"))?;
     Ok(decoded[ED25519_PUBKEY_AMINO_PREFIX.len()..] == group_key)
 }
 
@@ -293,7 +293,7 @@ fn ensure_bootstrap_frost_key_material(
     vault_pub_key: &str,
     group_key: &str,
     spend_key_hex: Option<&str>,
-) -> Result<(), (StatusCode, serde_json::Value)> {
+) -> Result<(), ApiError> {
     let Some(spend_key_hex) = spend_key_hex
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -301,50 +301,29 @@ fn ensure_bootstrap_frost_key_material(
         return Ok(());
     };
 
-    let derived_group_key = xmr::group_key_hex_from_spend_seed_hex(spend_key_hex).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            error_json(format!("invalid spend_key_hex: {e}")),
-        )
-    })?;
+    let derived_group_key = xmr::group_key_hex_from_spend_seed_hex(spend_key_hex)
+        .map_err(|e| bad_request(format!("invalid spend_key_hex: {e}")))?;
     if derived_group_key != group_key {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("spend_key_hex does not match group_key"),
-        ));
+        return Err(bad_request("spend_key_hex does not match group_key"));
     }
     if !vault_pub_key_matches_group_key(vault_pub_key, group_key)? {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("vault_pub_key does not match group_key"),
-        ));
+        return Err(bad_request("vault_pub_key does not match group_key"));
     }
 
-    let existing = state.store.load_frost_keys(group_key).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error_json(format!("failed to load frost key material: {e}")),
-        )
-    })?;
+    let existing = state
+        .store
+        .load_frost_keys(group_key)
+        .map_err(|e| internal_error(format!("failed to load frost key material: {e}")))?;
     if existing.is_some() {
         return Ok(());
     }
 
-    let key_share = ThresholdKeyShare::from_spend_seed_hex(spend_key_hex).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            error_json(format!("failed to derive frost key material: {e}")),
-        )
-    })?;
+    let key_share = ThresholdKeyShare::from_spend_seed_hex(spend_key_hex)
+        .map_err(|e| bad_request(format!("failed to derive frost key material: {e}")))?;
     state
         .store
         .save_frost_keys(group_key, &key_share.to_bytes())
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!("failed to persist frost key material: {e}")),
-            )
-        })
+        .map_err(|e| internal_error(format!("failed to persist frost key material: {e}")))
 }
 
 fn ensure_registered_vault_state(
@@ -579,10 +558,7 @@ pub async fn dkg_round1(
     Json(req): Json<DkgRound1Request>,
 ) -> impl IntoResponse {
     if !valid_vault_pub_key(&req.vault_pub_key) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("invalid vault_pub_key format")),
-        );
+        return bad_request_response("invalid vault_pub_key format");
     }
 
     match state.dkg.round1(
@@ -610,10 +586,7 @@ pub async fn dkg_round1(
             } else {
                 StatusCode::BAD_REQUEST
             };
-            (
-                status,
-                Json(serde_json::to_value(ErrorResponse::new(msg)).unwrap()),
-            )
+            error_response(status, msg)
         }
     }
 }
@@ -624,12 +597,7 @@ pub async fn dkg_round2(
 ) -> impl IntoResponse {
     let all_commitments = match parse_hex_map(&req.all_commitments) {
         Ok(c) => c,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::to_value(ErrorResponse::new(e)).unwrap()),
-            );
-        }
+        Err(e) => return bad_request_response(e),
     };
 
     match state.dkg.round2(&req.session_id, all_commitments) {
@@ -650,10 +618,7 @@ pub async fn dkg_round2(
         }
         Err(e) => {
             error!(error = %e, "DKG round 2 failed");
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            )
+            bad_request_response(e.to_string())
         }
     }
 }
@@ -664,12 +629,7 @@ pub async fn dkg_round3(
 ) -> impl IntoResponse {
     let all_shares = match parse_hex_map(&req.all_shares) {
         Ok(s) => s,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::to_value(ErrorResponse::new(e)).unwrap()),
-            );
-        }
+        Err(e) => return bad_request_response(e),
     };
 
     match state.dkg.round3(&req.session_id, all_shares) {
@@ -679,10 +639,7 @@ pub async fn dkg_round3(
         ),
         Err(e) => {
             error!(error = %e, "DKG round 3 failed");
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            )
+            bad_request_response(e.to_string())
         }
     }
 }
@@ -707,10 +664,7 @@ pub async fn dkg_finalize(
         ),
         Err(e) => {
             error!(error = %e, "DKG finalize failed");
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            )
+            bad_request_response(e.to_string())
         }
     }
 }
@@ -721,10 +675,7 @@ pub async fn register_vault(
 ) -> impl IntoResponse {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if !valid_vault_pub_key(&vault_pub_key) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("invalid vault_pub_key format")),
-        );
+        return bad_request_response("invalid vault_pub_key format");
     }
 
     let group_key = match normalized_group_key_hex(&req.group_key) {
@@ -734,10 +685,7 @@ pub async fn register_vault(
     match vault_pub_key_matches_group_key(&vault_pub_key, &group_key) {
         Ok(true) => {}
         Ok(false) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(error_json("vault_pub_key does not match group_key")),
-            );
+            return bad_request_response("vault_pub_key does not match group_key");
         }
         Err((status, response)) => return (status, Json(response)),
     }
@@ -745,28 +693,19 @@ pub async fn register_vault(
     let expected_address = match xmr::derive_vault_address(&group_key, state.chain_network) {
         Ok(address) => address,
         Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(error_json(format!(
-                    "failed to derive vault address from group_key: {e}"
-                ))),
-            );
+            return bad_request_response(format!(
+                "failed to derive vault address from group_key: {e}"
+            ));
         }
     };
 
     let provided_address = req.address.trim();
     if provided_address.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("address is required")),
-        );
+        return bad_request_response("address is required");
     }
     if provided_address != expected_address {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json(
-                "address does not match the derived vault address for group_key",
-            )),
+        return bad_request_response(
+            "address does not match the derived vault address for group_key",
         );
     }
 
@@ -802,7 +741,7 @@ pub async fn register_vault(
                 vault = %vault_pub_key,
                 "runtime vault registration failed"
             );
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
+            return internal_error_response(e);
         }
     };
 
@@ -834,12 +773,9 @@ pub async fn register_vault(
                 vault = %vault_pub_key,
                 "failed to persist registered key image inventory"
             );
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
-                    "failed to persist registered key image inventory: {e}"
-                ))),
-            );
+            return internal_error_response(format!(
+                "failed to persist registered key image inventory: {e}"
+            ));
         }
         if let Err(e) = apply_registered_key_image_inventory(&state, &vault_pub_key, true) {
             error!(
@@ -847,12 +783,9 @@ pub async fn register_vault(
                 vault = %vault_pub_key,
                 "failed to reconcile registered key image inventory"
             );
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
-                    "failed to reconcile registered key image inventory: {e}"
-                ))),
-            );
+            return internal_error_response(format!(
+                "failed to reconcile registered key image inventory: {e}"
+            ));
         }
     }
     if let Some(tx_keys) = req.tx_keys {
@@ -886,19 +819,14 @@ pub async fn sign_prepare(
     };
     let vault_pub_key_canonical = req.vault_pub_key.trim().to_string();
     if !valid_vault_pub_key(&vault_pub_key_canonical) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("invalid vault_pub_key format")),
-        );
+        return bad_request_response("invalid vault_pub_key format");
     }
     let mut canonical_req = req.clone();
     canonical_req.msg_id = msg_id.clone();
     canonical_req.vault_pub_key = vault_pub_key_canonical.clone();
     let payload_hashes = match idempotency_payload_hashes(&canonical_req) {
         Ok(hashes) => hashes,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     };
     match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => {
@@ -924,12 +852,7 @@ pub async fn sign_prepare(
             );
             if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale sign_prepare idempotency record");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
         }
         Ok(IdempotencyCheck::Conflict) => {
@@ -939,36 +862,24 @@ pub async fn sign_prepare(
             );
             if let Err(e) = state.store.clear_idempotency("sign_prepare", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale idempotency record");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
             match check_idempotency(&state, "sign_prepare", &msg_id, &payload_hashes) {
                 Ok(IdempotencyCheck::Fresh) => {}
                 other => {
                     error!(msg_id, result = ?other, "unexpected idempotency state after clear");
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json("idempotency reset failed")),
-                    );
+                    return internal_error_response("idempotency reset failed");
                 }
             }
         }
         Ok(IdempotencyCheck::InProgress) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency request already in progress for msg_id",
-                )),
+                "idempotency request already in progress for msg_id",
             );
         }
         Ok(IdempotencyCheck::Fresh) => {}
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     }
 
     let tip_height = match state.daemon.get_height().await {
@@ -1092,9 +1003,7 @@ pub async fn sign_partial(
     canonical_req.msg_id = msg_id.clone();
     let payload_hashes = match idempotency_payload_hashes(&canonical_req) {
         Ok(hashes) => hashes,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     };
     match check_idempotency(&state, "sign_partial", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
@@ -1105,36 +1014,24 @@ pub async fn sign_partial(
             );
             if let Err(e) = state.store.clear_idempotency("sign_partial", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale sign_partial idempotency record");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
             match check_idempotency(&state, "sign_partial", &msg_id, &payload_hashes) {
                 Ok(IdempotencyCheck::Fresh) => {}
                 other => {
                     error!(msg_id, result = ?other, "unexpected sign_partial idempotency state after clear");
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json("idempotency reset failed")),
-                    );
+                    return internal_error_response("idempotency reset failed");
                 }
             }
         }
         Ok(IdempotencyCheck::InProgress) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency request already in progress for msg_id",
-                )),
+                "idempotency request already in progress for msg_id",
             );
         }
         Ok(IdempotencyCheck::Fresh) => {}
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     }
     let all_preprocesses = match parse_hex_map(&req.all_preprocesses) {
         Ok(p) => p,
@@ -1163,7 +1060,7 @@ pub async fn sign_partial(
         ),
         Err(e) => {
             error!(error = %e, "sign partial failed");
-            (StatusCode::BAD_REQUEST, error_json(e.to_string()))
+            bad_request(e.to_string())
         }
     };
     persist_idempotency(
@@ -1189,9 +1086,7 @@ pub async fn sign_combine(
     canonical_req.msg_id = msg_id.clone();
     let payload_hashes = match idempotency_payload_hashes(&canonical_req) {
         Ok(hashes) => hashes,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     };
     match check_idempotency(&state, "sign_combine", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
@@ -1202,36 +1097,24 @@ pub async fn sign_combine(
             );
             if let Err(e) = state.store.clear_idempotency("sign_combine", &msg_id) {
                 error!(msg_id, error = %e, "failed to clear stale sign_combine idempotency record");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
             match check_idempotency(&state, "sign_combine", &msg_id, &payload_hashes) {
                 Ok(IdempotencyCheck::Fresh) => {}
                 other => {
                     error!(msg_id, result = ?other, "unexpected sign_combine idempotency state after clear");
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json("idempotency reset failed")),
-                    );
+                    return internal_error_response("idempotency reset failed");
                 }
             }
         }
         Ok(IdempotencyCheck::InProgress) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency request already in progress for msg_id",
-                )),
+                "idempotency request already in progress for msg_id",
             );
         }
         Ok(IdempotencyCheck::Fresh) => {}
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     }
 
     let all_shares = match parse_hex_map(&req.all_shares) {
@@ -1268,7 +1151,7 @@ pub async fn sign_combine(
         ),
         Err(e) => {
             error!(error = %e, "sign combine failed");
-            (StatusCode::BAD_REQUEST, error_json(e.to_string()))
+            bad_request(e.to_string())
         }
     };
     persist_idempotency(
@@ -1294,7 +1177,7 @@ pub async fn key_image_prepare(
     canonical_req.msg_id = msg_id.clone();
     let payload_hashes = match idempotency_payload_hashes(&canonical_req) {
         Ok(hashes) => hashes,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+        Err(e) => return internal_error_response(e),
     };
     match check_idempotency(&state, "key_image_prepare", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => {
@@ -1320,34 +1203,22 @@ pub async fn key_image_prepare(
                     error = %e,
                     "failed to clear stale key_image_prepare idempotency record"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
         }
         Ok(IdempotencyCheck::Conflict) => {
             if let Err(e) = state.store.clear_idempotency("key_image_prepare", &msg_id) {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
         }
         Ok(IdempotencyCheck::InProgress) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency request already in progress for msg_id",
-                )),
-            )
+                "idempotency request already in progress for msg_id",
+            );
         }
         Ok(IdempotencyCheck::Fresh) => {}
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+        Err(e) => return internal_error_response(e),
     }
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if !valid_vault_pub_key(&vault_pub_key) {
@@ -1389,7 +1260,7 @@ pub async fn key_image_prepare(
                 })
                 .unwrap(),
             ),
-            Err(e) => (StatusCode::BAD_REQUEST, error_json(e.to_string())),
+            Err(e) => bad_request(e.to_string()),
         };
     persist_idempotency(
         &state,
@@ -1414,30 +1285,23 @@ pub async fn key_image_partial(
     canonical_req.msg_id = msg_id.clone();
     let payload_hashes = match idempotency_payload_hashes(&canonical_req) {
         Ok(hashes) => hashes,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+        Err(e) => return internal_error_response(e),
     };
     match check_idempotency(&state, "key_image_partial", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
             if let Err(e) = state.store.clear_idempotency("key_image_partial", &msg_id) {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
         }
         Ok(IdempotencyCheck::InProgress) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency request already in progress for msg_id",
-                )),
-            )
+                "idempotency request already in progress for msg_id",
+            );
         }
         Ok(IdempotencyCheck::Fresh) => {}
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+        Err(e) => return internal_error_response(e),
     }
 
     let all_preprocesses = match parse_hex_map(&req.all_preprocesses) {
@@ -1467,7 +1331,7 @@ pub async fn key_image_partial(
             })
             .unwrap(),
         ),
-        Err(e) => (StatusCode::BAD_REQUEST, error_json(e.to_string())),
+        Err(e) => bad_request(e.to_string()),
     };
     persist_idempotency(
         &state,
@@ -1492,30 +1356,23 @@ pub async fn key_image_combine(
     canonical_req.msg_id = msg_id.clone();
     let payload_hashes = match idempotency_payload_hashes(&canonical_req) {
         Ok(hashes) => hashes,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+        Err(e) => return internal_error_response(e),
     };
     match check_idempotency(&state, "key_image_combine", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
             if let Err(e) = state.store.clear_idempotency("key_image_combine", &msg_id) {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to clear stale idempotency: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
             }
         }
         Ok(IdempotencyCheck::InProgress) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency request already in progress for msg_id",
-                )),
-            )
+                "idempotency request already in progress for msg_id",
+            );
         }
         Ok(IdempotencyCheck::Fresh) => {}
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+        Err(e) => return internal_error_response(e),
     }
 
     let all_shares = match parse_hex_map(&req.all_shares) {
@@ -1546,7 +1403,7 @@ pub async fn key_image_combine(
             })
             .unwrap(),
         ),
-        Err(e) => (StatusCode::BAD_REQUEST, error_json(e.to_string())),
+        Err(e) => bad_request(e.to_string()),
     };
     persist_idempotency(
         &state,
@@ -1565,17 +1422,11 @@ pub async fn key_image_validate(
 ) -> impl IntoResponse {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if !valid_vault_pub_key(&vault_pub_key) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("invalid vault_pub_key format")),
-        );
+        return bad_request_response("invalid vault_pub_key format");
     }
     let tx_hash = req.tx_hash.trim().to_ascii_lowercase();
     if tx_hash.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("tx_hash is required")),
-        );
+        return bad_request_response("tx_hash is required");
     }
 
     match state.key_images.validate(
@@ -1590,7 +1441,7 @@ pub async fn key_image_validate(
             StatusCode::OK,
             Json(serde_json::to_value(KeyImageValidateResponse { valid: true }).unwrap()),
         ),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(error_json(e.to_string()))),
+        Err(e) => bad_request_response(e.to_string()),
     }
 }
 
@@ -1604,16 +1455,10 @@ pub async fn broadcast(
     };
     let vault_pub_key_canonical = req.vault_pub_key.trim().to_string();
     if vault_pub_key_canonical.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("vault_pub_key is required")),
-        );
+        return bad_request_response("vault_pub_key is required");
     }
     if !valid_vault_pub_key(&vault_pub_key_canonical) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("invalid vault_pub_key format")),
-        );
+        return bad_request_response("invalid vault_pub_key format");
     }
 
     let mut canonical_req = req.clone();
@@ -1621,32 +1466,24 @@ pub async fn broadcast(
     canonical_req.vault_pub_key = vault_pub_key_canonical.clone();
     let payload_hashes = match idempotency_payload_hashes(&canonical_req) {
         Ok(hashes) => hashes,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     };
     match check_idempotency(&state, "broadcast", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => return (status, Json(response)),
         Ok(IdempotencyCheck::Conflict) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency conflict: msg_id reused with different payload",
-                )),
+                "idempotency conflict: msg_id reused with different payload",
             );
         }
         Ok(IdempotencyCheck::InProgress) => {
-            return (
+            return error_response(
                 StatusCode::CONFLICT,
-                Json(error_json(
-                    "idempotency request already in progress for msg_id",
-                )),
+                "idempotency request already in progress for msg_id",
             );
         }
         Ok(IdempotencyCheck::Fresh) => {}
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
-        }
+        Err(e) => return internal_error_response(e),
     }
 
     let (status, response_json) = match state.daemon.send_raw_transaction(&req.tx_hex).await {
@@ -2172,10 +2009,7 @@ pub async fn scanner_sync(
 ) -> impl IntoResponse {
     let _scan_lifecycle = state.scan_lifecycle.lock().await;
     if req.block_hash.trim().is_empty() || req.parent_hash.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("block_hash and parent_hash are required")),
-        );
+        return bad_request_response("block_hash and parent_hash are required");
     }
 
     let canonical_header = match state.daemon.get_block_header_by_height(req.height).await {
@@ -2186,12 +2020,9 @@ pub async fn scanner_sync(
                 height = req.height,
                 "failed to fetch canonical block header for scanner sync"
             );
-            return (
+            return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!(
-                    "scanner sync unavailable for height {}: {}",
-                    req.height, e
-                ))),
+                format!("scanner sync unavailable for height {}: {}", req.height, e),
             );
         }
     };
@@ -2199,16 +2030,16 @@ pub async fn scanner_sync(
     if !hash_matches(&canonical_header.hash, &req.block_hash)
         || !hash_matches(&canonical_header.prev_hash, &req.parent_hash)
     {
-        return (
+        return error_response(
             StatusCode::CONFLICT,
-            Json(error_json(format!(
+            format!(
                 "scanner sync hash mismatch at height {}: expected {}<-{}, got {}<-{}",
                 req.height,
                 req.block_hash.trim(),
                 req.parent_hash.trim(),
                 canonical_header.hash.trim(),
                 canonical_header.prev_hash.trim()
-            ))),
+            ),
         );
     }
 
@@ -2219,10 +2050,7 @@ pub async fn scanner_sync(
         Ok(v) => v,
         Err(e) => {
             error!(error = %e, "failed to list vaults for scanner sync");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(e.to_string())),
-            );
+            return internal_error_response(e.to_string());
         }
     };
     let rescan_chain_tip = if vaults.iter().any(|vault| vault.rescan) {
@@ -2244,10 +2072,7 @@ pub async fn scanner_sync(
         Ok(rpc) => rpc,
         Err(e) => {
             error!(error = %e, "failed to initialize monero-oxide rpc client for scanner sync");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(e.to_string())),
-            );
+            return internal_error_response(e.to_string());
         }
     };
 
@@ -2384,10 +2209,7 @@ pub async fn scanner_sync(
                         vault = %vault.vault_pub_key,
                         "failed to initialize scanner state for scanner sync"
                     );
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json(e.to_string())),
-                    );
+                    return internal_error_response(e.to_string());
                 }
             }
         };
@@ -2404,10 +2226,7 @@ pub async fn scanner_sync(
                     height = req.height,
                     "failed to load scan block metadata for scanner sync"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
+                return internal_error_response(e.to_string());
             }
         };
 
@@ -2460,10 +2279,7 @@ pub async fn scanner_sync(
                     height = req.height,
                     "failed to rollback scanner state"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
+                return internal_error_response(e.to_string());
             }
             let rehydrated = {
                 let mut scanner = state.scanner.lock();
@@ -2487,10 +2303,7 @@ pub async fn scanner_sync(
                         vault = %vault.vault_pub_key,
                         "failed to reinitialize scanner after rollback"
                     );
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json(e.to_string())),
-                    );
+                    return internal_error_response(e.to_string());
                 }
             }
         }
@@ -2532,10 +2345,7 @@ pub async fn scanner_sync(
                             height = req.height,
                             "failed to heal scan block metadata during scanner sync"
                         );
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(error_json(e.to_string())),
-                        );
+                        return internal_error_response(e.to_string());
                     }
                 }
 
@@ -2556,12 +2366,9 @@ pub async fn scanner_sync(
                         height = req.height,
                         "failed to fetch scannable block for scanner sync"
                     );
-                    return (
+                    return error_response(
                         StatusCode::SERVICE_UNAVAILABLE,
-                        Json(error_json(format!(
-                            "scanner sync unavailable for height {}: {}",
-                            req.height, e
-                        ))),
+                        format!("scanner sync unavailable for height {}: {}", req.height, e),
                     );
                 }
             };
@@ -2584,10 +2391,7 @@ pub async fn scanner_sync(
                     height = req.height,
                     "failed to promote outgoing transfer observations from scanned block"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
+                return internal_error_response(e.to_string());
             }
             let block_transactions = block.transactions.clone();
 
@@ -2604,10 +2408,7 @@ pub async fn scanner_sync(
                         height = req.height,
                         "failed to scan block for vault during scanner sync"
                     );
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(error_json(e.to_string())),
-                    );
+                    return internal_error_response(e.to_string());
                 }
             };
             let spent_key_images: Vec<String> = collect_spent_key_images(&block_transactions)
@@ -2630,7 +2431,7 @@ pub async fn scanner_sync(
                             height = req.height,
                             "failed to persist scanner sync state"
                         );
-                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e)));
+                        return internal_error_response(e);
                     }
                 };
             // Include outputs newly discovered by this scan.
@@ -2704,10 +2505,7 @@ pub async fn scanner_sync(
                             observed_height,
                             "failed to mark outgoing transfer reported during scanner sync"
                         );
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(error_json(e.to_string())),
-                        );
+                        return internal_error_response(e.to_string());
                     }
                 }
             }
@@ -2717,10 +2515,7 @@ pub async fn scanner_sync(
                     vault = %vault.vault_pub_key,
                     "failed to load outgoing transfers for scanner sync"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(e.to_string())),
-                );
+                return internal_error_response(e.to_string());
             }
         }
     }
@@ -2758,19 +2553,13 @@ pub async fn scanner_reset(
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     let requested_birthday_height = req.birthday_height;
     if vault_pub_key.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("vault_pub_key is required")),
-        );
+        return bad_request_response("vault_pub_key is required");
     }
 
     let mut scanner = state.scanner.lock();
     if let Err(e) = VaultLifecycle::new(state.store.as_ref()).reset(&mut scanner, &vault_pub_key) {
         error!(error = %e, vault = %vault_pub_key, "failed to reset vault state during scanner reset");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(e.to_string())),
-        );
+        return internal_error_response(e.to_string());
     }
 
     info!(
@@ -2818,10 +2607,7 @@ pub async fn get_transfers(
         Ok(v) => v,
         Err(e) => {
             error!(error = %e, "failed to list vaults");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            );
+            return internal_error_response(e.to_string());
         }
     };
 
@@ -2874,10 +2660,7 @@ async fn get_mempool_transfers(state: Arc<AppState>) -> (StatusCode, Json<serde_
         Ok(v) => v,
         Err(e) => {
             error!(error = %e, "failed to list vaults for mempool transfers");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            );
+            return internal_error_response(e.to_string());
         }
     };
 
@@ -2891,10 +2674,7 @@ async fn get_mempool_transfers(state: Arc<AppState>) -> (StatusCode, Json<serde_
                     vault = %vault.vault_pub_key,
                     "failed to load outgoing transfers for mempool filtering"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-                );
+                return internal_error_response(e.to_string());
             }
         }
     }
@@ -2914,10 +2694,7 @@ async fn get_mempool_transfers(state: Arc<AppState>) -> (StatusCode, Json<serde_
             Ok(resp) => resp.txs.unwrap_or_default(),
             Err(e) => {
                 error!(error = %e, "failed to query daemon mempool transactions");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-                );
+                return internal_error_response(e.to_string());
             }
         };
         for tx in txs {
@@ -2967,7 +2744,7 @@ pub async fn get_outputs(
         }
         OutputsSource::Store => match stored_outputs_for_view(&state, &vault_pub_key, query.view) {
             Ok(outputs) => outputs,
-            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(error_json(e))),
+            Err(e) => return internal_error_response(e),
         },
     };
 
@@ -2987,22 +2764,16 @@ pub async fn get_outbounds(
         Ok(outputs) => outputs,
         Err(e) => {
             error!(error = %e, vault = %vault_pub_key, "failed to load outputs before refreshing outgoing transfers");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to load tracked outputs: {e}"))),
-            );
+            return internal_error_response(format!("failed to load tracked outputs: {e}"));
         }
     };
     if let Err(e) = OutgoingLifecycle::new(state.store.as_ref())
         .reconcile_output_readiness_with_outputs(&vault_pub_key, &outputs)
     {
         error!(error = %e, vault = %vault_pub_key, "failed to refresh outgoing readiness from tracked outputs");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(format!(
-                "failed to refresh outgoing transfer readiness: {e}"
-            ))),
-        );
+        return internal_error_response(format!(
+            "failed to refresh outgoing transfer readiness: {e}"
+        ));
     }
     match state.store.load_outgoing_transfers(&vault_pub_key) {
         Ok(outgoing) => {
@@ -3023,12 +2794,7 @@ pub async fn get_outbounds(
         }
         Err(e) => {
             error!(error = %e, vault = %vault_pub_key, "failed to load outgoing transfers");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
-                    "failed to load outgoing transfers: {e}"
-                ))),
-            )
+            internal_error_response(format!("failed to load outgoing transfers: {e}"))
         }
     }
 }
@@ -3039,10 +2805,7 @@ pub async fn prune_outbounds(
 ) -> impl IntoResponse {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("vault_pub_key is required")),
-        );
+        return bad_request_response("vault_pub_key is required");
     }
     let tx_hashes: HashSet<String> = req
         .tx_hashes
@@ -3051,10 +2814,7 @@ pub async fn prune_outbounds(
         .filter(|hash| !hash.is_empty())
         .collect();
     if tx_hashes.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("tx_hashes must not be empty")),
-        );
+        return bad_request_response("tx_hashes must not be empty");
     }
 
     match OutgoingLifecycle::new(state.store.as_ref()).prune_stale(
@@ -3072,12 +2832,7 @@ pub async fn prune_outbounds(
         ),
         Err(e) => {
             error!(error = %e, vault = %vault_pub_key, "failed to prune outgoing transfers");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
-                    "failed to prune outgoing transfers: {e}"
-                ))),
-            )
+            internal_error_response(format!("failed to prune outgoing transfers: {e}"))
         }
     }
 }
@@ -3088,26 +2843,13 @@ pub async fn apply_key_images(
 ) -> impl IntoResponse {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("vault_pub_key is required")),
-        );
+        return bad_request_response("vault_pub_key is required");
     }
     if req.reconcile && req.spend {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json(
-                "reconcile and spend modes are mutually exclusive",
-            )),
-        );
+        return bad_request_response("reconcile and spend modes are mutually exclusive");
     }
     if req.key_images.is_empty() && !req.reconcile {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json(
-                "key_images must not be empty unless reconcile=true",
-            )),
-        );
+        return bad_request_response("key_images must not be empty unless reconcile=true");
     }
 
     let key_images: Vec<(String, u32, String)> = req
@@ -3125,10 +2867,7 @@ pub async fn apply_key_images(
     let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
     let ApplyKeyImagesOutcome { applied, not_found } = if req.spend {
         let Some(spent_height) = req.spent_height.filter(|height| *height > 0) else {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(error_json("spent_height is required when spend=true")),
-            );
+            return bad_request_response("spent_height is required when spend=true");
         };
         let spent_key_images: Vec<String> = key_images
             .iter()
@@ -3136,10 +2875,7 @@ pub async fn apply_key_images(
             .filter(|key_image| !key_image.is_empty())
             .collect();
         if spent_key_images.is_empty() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(error_json("spend=true requires at least one key_image")),
-            );
+            return bad_request_response("spend=true requires at least one key_image");
         }
 
         {
@@ -3152,12 +2888,7 @@ pub async fn apply_key_images(
             Ok(result) => result,
             Err(e) => {
                 error!(error = %e, vault = vault_pub_key, "failed to persist spent key images");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to persist spent key images: {e}"
-                    ))),
-                );
+                return internal_error_response(format!("failed to persist spent key images: {e}"));
             }
         }
     } else {
@@ -3170,10 +2901,7 @@ pub async fn apply_key_images(
             Ok(result) => result,
             Err(e) => {
                 error!(error = %e, vault = vault_pub_key, "failed to persist applied key images");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!("failed to persist key images: {e}"))),
-                );
+                return internal_error_response(format!("failed to persist key images: {e}"));
             }
         }
     };
@@ -3182,10 +2910,7 @@ pub async fn apply_key_images(
         Ok(outputs) => outputs,
         Err(e) => {
             error!(error = %e, vault = vault_pub_key, "failed to reload outputs after apply-key-images");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to reload outputs: {e}"))),
-            );
+            return internal_error_response(format!("failed to reload outputs: {e}"));
         }
     };
     {
@@ -3199,12 +2924,9 @@ pub async fn apply_key_images(
                 vault = vault_pub_key,
                 "failed to replay historical spends after apply-key-images reconcile"
             );
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!(
-                    "failed to replay historical spends after key-image reconcile: {e}"
-                ))),
-            );
+            return internal_error_response(format!(
+                "failed to replay historical spends after key-image reconcile: {e}"
+            ));
         }
     }
 
@@ -3212,10 +2934,7 @@ pub async fn apply_key_images(
         Ok(outputs) => outputs,
         Err(e) => {
             error!(error = %e, vault = vault_pub_key, "failed to reload outputs after key-image replay");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to reload outputs: {e}"))),
-            );
+            return internal_error_response(format!("failed to reload outputs: {e}"));
         }
     };
     {
@@ -3264,10 +2983,7 @@ pub async fn list_vault_keys(State(state): State<Arc<AppState>>) -> impl IntoRes
         Ok(v) => v,
         Err(e) => {
             error!(error = %e, "failed to list vaults");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to list vaults: {e}"))),
-            );
+            return internal_error_response(format!("failed to list vaults: {e}"));
         }
     };
 
@@ -3309,10 +3025,7 @@ pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoR
         Ok(v) => v,
         Err(e) => {
             error!(error = %e, "failed to list vaults");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_json(format!("failed to list vaults: {e}"))),
-            );
+            return internal_error_response(format!("failed to list vaults: {e}"));
         }
     };
 
@@ -3324,13 +3037,10 @@ pub async fn list_vault_states(State(state): State<Arc<AppState>>) -> impl IntoR
             Ok(snapshot) => snapshot,
             Err(e) => {
                 error!(error = %e, vault = %vault.vault_pub_key, "failed to build vault lifecycle snapshot");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_json(format!(
-                        "failed to build vault state for {}: {e}",
-                        vault.vault_pub_key
-                    ))),
-                );
+                return internal_error_response(format!(
+                    "failed to build vault state for {}: {e}",
+                    vault.vault_pub_key
+                ));
             }
         };
         entries.push(crate::api::types::VaultStateEntry {
@@ -3364,10 +3074,7 @@ pub async fn key_export(
 ) -> impl IntoResponse {
     let vault_pub_key = vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("vault_pub_key is required")),
-        );
+        return bad_request_response("vault_pub_key is required");
     }
     let frost_bytes = state
         .store
@@ -3393,11 +3100,9 @@ pub async fn key_export(
                 .unwrap(),
             ),
         ),
-        None => (
+        None => error_response(
             StatusCode::NOT_FOUND,
-            Json(error_json(format!(
-                "no FROST keys found for vault {vault_pub_key}"
-            ))),
+            format!("no FROST keys found for vault {vault_pub_key}"),
         ),
     }
 }
@@ -3408,25 +3113,12 @@ pub async fn key_restore(
 ) -> impl IntoResponse {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("vault_pub_key is required")),
-        );
+        return bad_request_response("vault_pub_key is required");
     }
     let key_bytes = match hex::decode(req.key_bytes_hex.trim()) {
         Ok(b) if !b.is_empty() => b,
-        Ok(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(error_json("key_bytes_hex must not be empty")),
-            );
-        }
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(error_json(format!("invalid key_bytes_hex: {e}"))),
-            );
-        }
+        Ok(_) => return bad_request_response("key_bytes_hex must not be empty"),
+        Err(e) => return bad_request_response(format!("invalid key_bytes_hex: {e}")),
     };
 
     let save_key = state
@@ -3453,10 +3145,7 @@ pub async fn key_restore(
 
     if let Err(e) = state.store.save_frost_keys(&save_key, &key_bytes) {
         error!(error = %e, vault = vault_pub_key, save_key, "failed to restore FROST keys");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(format!("failed to save restored keys: {e}"))),
-        );
+        return internal_error_response(format!("failed to save restored keys: {e}"));
     }
 
     info!(
@@ -3476,10 +3165,7 @@ pub async fn get_fee_rate(State(state): State<Arc<AppState>>) -> impl IntoRespon
         Ok(rpc) => rpc,
         Err(e) => {
             error!(error = %e, "failed to initialize monero-oxide rpc client");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            );
+            return internal_error_response(e.to_string());
         }
     };
 
@@ -3494,17 +3180,11 @@ pub async fn get_fee_rate(State(state): State<Arc<AppState>>) -> impl IntoRespon
                     .unwrap(),
                 ),
             ),
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            ),
+            Err(e) => internal_error_response(e.to_string()),
         },
         Err(e) => {
             error!(error = %e, "fee rate estimation failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::to_value(ErrorResponse::new(e.to_string())).unwrap()),
-            )
+            internal_error_response(e.to_string())
         }
     }
 }
@@ -3517,9 +3197,9 @@ pub async fn get_chain_height(State(state): State<Arc<AppState>>) -> impl IntoRe
         ),
         Err(e) => {
             error!(error = %e, "failed to query daemon chain height");
-            (
+            error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!("daemon chain height unavailable: {e}"))),
+                format!("daemon chain height unavailable: {e}"),
             )
         }
     }
@@ -3533,18 +3213,16 @@ pub async fn get_chain_block(
         Ok(height) => height,
         Err(e) => {
             error!(error = %e, "failed to query daemon chain tip");
-            return (
+            return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!("daemon chain tip unavailable: {e}"))),
+                format!("daemon chain tip unavailable: {e}"),
             );
         }
     };
     if height > tip_height {
-        return (
+        return error_response(
             StatusCode::CONFLICT,
-            Json(error_json(format!(
-                "requested height {height} is above chain tip {tip_height}"
-            ))),
+            format!("requested height {height} is above chain tip {tip_height}"),
         );
     }
 
@@ -3564,11 +3242,9 @@ pub async fn get_chain_block(
         ),
         Err(e) => {
             error!(error = %e, height, "failed to query daemon chain block");
-            (
+            error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!(
-                    "daemon chain block unavailable at height {height}: {e}"
-                ))),
+                format!("daemon chain block unavailable at height {height}: {e}"),
             )
         }
     }
@@ -3580,10 +3256,7 @@ pub async fn get_chain_tx_exists(
 ) -> impl IntoResponse {
     let normalized = tx_hash.trim().to_ascii_lowercase();
     if !is_valid_chain_tx_hash(&normalized) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("tx_hash must be a 64-character hex string")),
-        );
+        return bad_request_response("tx_hash must be a 64-character hex string");
     }
 
     let query = vec![normalized.clone()];
@@ -3591,11 +3264,9 @@ pub async fn get_chain_tx_exists(
         Ok(result) => result,
         Err(e) => {
             error!(error = %e, tx_hash = %normalized, "failed to query daemon transaction");
-            return (
+            return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!(
-                    "daemon transaction query unavailable for {normalized}: {e}"
-                ))),
+                format!("daemon transaction query unavailable for {normalized}: {e}"),
             );
         }
     };
@@ -3627,12 +3298,9 @@ pub async fn get_chain_tx_exists(
         tx_hash = %normalized,
         "ambiguous daemon get_transactions response: no tx entry and no missed marker"
     );
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(error_json(format!(
-            "ambiguous daemon get_transactions response for {normalized}"
-        ))),
-    )
+    internal_error_response(format!(
+        "ambiguous daemon get_transactions response for {normalized}"
+    ))
 }
 
 #[derive(Debug, Clone)]
@@ -3867,11 +3535,11 @@ pub async fn sim_get_balance(
 
     let account = match sim_account_from_spend_key(&req.spend_key_hex, state.chain_network) {
         Ok(account) => account,
-        Err(e) => return (StatusCode::BAD_REQUEST, Json(error_json(e))),
+        Err(e) => return bad_request_response(e),
     };
     if let Err(e) = sync_sim_account(&state, &account).await {
         error!(error = %e, account = %account.account_id, "failed to sync sim balance");
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(error_json(e)));
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, e);
     }
 
     let (balance_atomic, unlocked_balance_atomic) = {
@@ -3900,62 +3568,46 @@ pub async fn sim_transfer(
         return (err.0, Json(err.1));
     }
     if req.to_address.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("to_address is required")),
-        );
+        return bad_request_response("to_address is required");
     }
     if req.amount_atomic == 0 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("amount_atomic must be > 0")),
-        );
+        return bad_request_response("amount_atomic must be > 0");
     }
 
     let account = match sim_account_from_spend_key(&req.spend_key_hex, state.chain_network) {
         Ok(account) => account,
-        Err(e) => return (StatusCode::BAD_REQUEST, Json(error_json(e))),
+        Err(e) => return bad_request_response(e),
     };
     if let Err(e) = sync_sim_account(&state, &account).await {
         error!(error = %e, account = %account.account_id, "failed to sync sim transfer account");
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(error_json(e)));
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, e);
     }
 
     let tip_height = match state.daemon.get_height().await {
         Ok(height) => height,
         Err(e) => {
-            return (
+            return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!("daemon height unavailable: {e}"))),
+                format!("daemon height unavailable: {e}"),
             )
         }
     };
     let header = match state.daemon.get_block_header_by_height(tip_height).await {
         Ok(header) => header.block_header,
         Err(e) => {
-            return (
+            return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!("daemon header unavailable: {e}"))),
+                format!("daemon header unavailable: {e}"),
             )
         }
     };
     let rpc = match state.daemon.oxide_rpc().await {
         Ok(rpc) => rpc,
-        Err(e) => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(e.to_string())),
-            )
-        }
+        Err(e) => return error_response(StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
     };
     let fee_rate = match fee::estimate_fee_rate(&rpc).await {
         Ok(rate) => rate,
-        Err(e) => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(e.to_string())),
-            )
-        }
+        Err(e) => return error_response(StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
     };
     let available_outputs = state.scanner.lock().get_outputs(&account.account_id);
     let unsigned = match builder::build_unsigned_transaction(
@@ -3979,7 +3631,7 @@ pub async fn sim_transfer(
     .await
     {
         Ok(unsigned) => unsigned,
-        Err(e) => return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string()))),
+        Err(e) => return bad_request_response(e.to_string()),
     };
 
     let refs = unsigned
@@ -4004,21 +3656,21 @@ pub async fn sim_transfer(
         &msg_id,
         chrono::Utc::now().timestamp() + 300,
     ) {
-        return (StatusCode::CONFLICT, Json(error_json(e.to_string())));
+        return error_response(StatusCode::CONFLICT, e.to_string());
     }
 
     let spend_scalar = match xmr::spend_scalar_from_seed_hex(&req.spend_key_hex) {
         Ok(scalar) => scalar,
         Err(e) => {
             let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
-            return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string())));
+            return bad_request_response(e.to_string());
         }
     };
     let tx = match unsigned.signable.sign(&mut OsRng, &spend_scalar) {
         Ok(tx) => tx,
         Err(e) => {
             let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
-            return (StatusCode::BAD_REQUEST, Json(error_json(e.to_string())));
+            return bad_request_response(e.to_string());
         }
     };
     let tx_hash = hex::encode(tx.hash());
@@ -4030,12 +3682,7 @@ pub async fn sim_transfer(
         &tx_hash,
     ) {
         let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json(format!(
-                "failed to bind sim transfer reservation: {e}"
-            ))),
-        );
+        return internal_error_response(format!("failed to bind sim transfer reservation: {e}"));
     }
 
     match state.daemon.send_raw_transaction(&tx_hex).await {
@@ -4056,16 +3703,13 @@ pub async fn sim_transfer(
         }
         Ok(resp) => {
             let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
-            (
-                StatusCode::BAD_REQUEST,
-                Json(error_json(resp.reason.unwrap_or(resp.status))),
-            )
+            bad_request_response(resp.reason.unwrap_or(resp.status))
         }
         Err(e) => {
             let _ = output_lifecycle.release_session(&account.account_id, &session_id, &msg_id);
-            (
+            error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(error_json(format!("failed to broadcast sim transfer: {e}"))),
+                format!("failed to broadcast sim transfer: {e}"),
             )
         }
     }
@@ -4079,32 +3723,23 @@ pub async fn sim_faucet(
         return (err.0, Json(err.1));
     }
     if req.to_address.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("to_address is required")),
-        );
+        return bad_request_response("to_address is required");
     }
     if req.amount_atomic == 0 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(error_json("amount_atomic must be > 0")),
-        );
+        return bad_request_response("amount_atomic must be > 0");
     }
 
     let Some(wallet_rpc_url) = state.sim_helper_wallet_rpc_url.as_deref() else {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(error_json("sim helper wallet-rpc URL not configured")),
-        );
+        return internal_error_response("sim helper wallet-rpc URL not configured");
     };
 
     if let Err(e) =
         wallet_rpc_call::<_, serde_json::Value>(wallet_rpc_url, "refresh", WalletRefreshParams {})
             .await
     {
-        return (
+        return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(error_json(format!("wallet-rpc refresh failed: {e}"))),
+            format!("wallet-rpc refresh failed: {e}"),
         );
     }
 
@@ -4121,7 +3756,7 @@ pub async fn sim_faucet(
     .await
     {
         Ok(transfer) => transfer,
-        Err(e) => return (StatusCode::SERVICE_UNAVAILABLE, Json(error_json(e))),
+        Err(e) => return error_response(StatusCode::SERVICE_UNAVAILABLE, e),
     };
 
     let tx_hash = transfer
@@ -4137,11 +3772,9 @@ pub async fn sim_faucet(
             StatusCode::OK,
             Json(serde_json::to_value(SimTransferResponse { tx_hash }).unwrap()),
         ),
-        None => (
+        None => error_response(
             StatusCode::BAD_GATEWAY,
-            Json(error_json(
-                "wallet-rpc transfer returned success without tx_hash",
-            )),
+            "wallet-rpc transfer returned success without tx_hash",
         ),
     }
 }

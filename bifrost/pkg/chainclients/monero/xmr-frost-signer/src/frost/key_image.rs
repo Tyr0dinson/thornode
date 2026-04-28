@@ -599,38 +599,20 @@ fn normalize_participant_payloads(
     local_participant_index: u16,
     payloads: HashMap<u16, Vec<u8>>,
 ) -> Result<HashMap<u16, Vec<u8>>> {
-    if participant_count == 0 {
-        anyhow::bail!("key image session has invalid participant count 0");
-    }
-    if local_participant_index == 0 || local_participant_index > participant_count {
-        anyhow::bail!(
-            "key image session has invalid local participant index {} for participant count {}",
-            local_participant_index,
-            participant_count
-        );
-    }
-
-    let mut normalized = HashMap::with_capacity(payloads.len().min(participant_count as usize));
-    for (idx, payload) in payloads {
-        if idx == 0 || idx > participant_count || idx == local_participant_index {
-            continue;
-        }
-        normalized.insert(idx, payload);
-    }
-    Ok(normalized)
+    super::payloads::normalize_participant_payloads(
+        "key image",
+        None,
+        participant_count,
+        local_participant_index,
+        payloads,
+    )
 }
 
 fn normalize_expected_peer_payloads(
     expected_peers: &[u16],
     payloads: HashMap<u16, Vec<u8>>,
 ) -> HashMap<u16, Vec<u8>> {
-    let mut normalized = HashMap::with_capacity(payloads.len().min(expected_peers.len()));
-    for (idx, payload) in payloads {
-        if expected_peers.contains(&idx) {
-            normalized.insert(idx, payload);
-        }
-    }
-    normalized
+    super::payloads::normalize_expected_peer_payloads(None, expected_peers, payloads)
 }
 
 fn key_image_message(vault_pub_key: &str, tx_hash: &str, output_index: u32) -> String {

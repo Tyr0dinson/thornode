@@ -1,5 +1,7 @@
+use std::fmt::Display;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 const XMR_DAEMON_URL_ENV: &str = "XMR_DAEMON_URL";
 const DEFAULT_DAEMON_MAX_RESPONSE_BYTES: usize = 50 * 1024 * 1024;
@@ -295,14 +297,23 @@ fn read_env_bool(name: &'static str, default: bool) -> Result<bool, ConfigError>
     }
 }
 
-fn read_env_usize(name: &'static str, default: usize, min: usize) -> Result<usize, ConfigError> {
+fn read_env_min<T>(
+    name: &'static str,
+    default: T,
+    min: T,
+    type_name: &'static str,
+) -> Result<T, ConfigError>
+where
+    T: Copy + Display + FromStr + PartialOrd,
+    T::Err: Display,
+{
     let Some(raw) = read_non_empty_env(name) else {
         return Ok(default);
     };
 
-    let parsed = raw.parse::<usize>().map_err(|e| ConfigError::InvalidEnv {
+    let parsed = raw.parse::<T>().map_err(|e| ConfigError::InvalidEnv {
         name,
-        reason: format!("failed to parse usize from {raw:?}: {e}"),
+        reason: format!("failed to parse {type_name} from {raw:?}: {e}"),
     })?;
     if parsed < min {
         return Err(ConfigError::InvalidEnv {
@@ -312,44 +323,18 @@ fn read_env_usize(name: &'static str, default: usize, min: usize) -> Result<usiz
     }
 
     Ok(parsed)
+}
+
+fn read_env_usize(name: &'static str, default: usize, min: usize) -> Result<usize, ConfigError> {
+    read_env_min(name, default, min, "usize")
 }
 
 fn read_env_u32(name: &'static str, default: u32, min: u32) -> Result<u32, ConfigError> {
-    let Some(raw) = read_non_empty_env(name) else {
-        return Ok(default);
-    };
-
-    let parsed = raw.parse::<u32>().map_err(|e| ConfigError::InvalidEnv {
-        name,
-        reason: format!("failed to parse u32 from {raw:?}: {e}"),
-    })?;
-    if parsed < min {
-        return Err(ConfigError::InvalidEnv {
-            name,
-            reason: format!("value {parsed} must be >= {min}"),
-        });
-    }
-
-    Ok(parsed)
+    read_env_min(name, default, min, "u32")
 }
 
 fn read_env_u64(name: &'static str, default: u64, min: u64) -> Result<u64, ConfigError> {
-    let Some(raw) = read_non_empty_env(name) else {
-        return Ok(default);
-    };
-
-    let parsed = raw.parse::<u64>().map_err(|e| ConfigError::InvalidEnv {
-        name,
-        reason: format!("failed to parse u64 from {raw:?}: {e}"),
-    })?;
-    if parsed < min {
-        return Err(ConfigError::InvalidEnv {
-            name,
-            reason: format!("value {parsed} must be >= {min}"),
-        });
-    }
-
-    Ok(parsed)
+    read_env_min(name, default, min, "u64")
 }
 
 fn read_env_f64(name: &'static str, default: f64, min_exclusive: f64) -> Result<f64, ConfigError> {

@@ -12,6 +12,16 @@ use crate::state::store::OutgoingTransferRecord;
 use crate::state::{OutgoingLifecycle, OutgoingObservation, RecordValidatedParams};
 use crate::tx::validation;
 
+type ApiError = (StatusCode, serde_json::Value);
+
+fn api_error(status: StatusCode, msg: impl Into<String>) -> ApiError {
+    (status, error_json(msg))
+}
+
+fn bad_request(msg: impl Into<String>) -> ApiError {
+    api_error(StatusCode::BAD_REQUEST, msg)
+}
+
 fn normalized_tx_keys(keys: &[String]) -> Vec<String> {
     let mut normalized = keys
         .iter()
@@ -85,35 +95,23 @@ fn register_tx_key_entry_as_validate_request(
 pub(crate) async fn validate_outbound_request(
     state: &Arc<AppState>,
     req: ValidateOutboundRequest,
-) -> Result<ValidateOutboundResponse, (StatusCode, serde_json::Value)> {
+) -> Result<ValidateOutboundResponse, ApiError> {
     let vault_pub_key = req.vault_pub_key.trim().to_string();
     if vault_pub_key.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("vault_pub_key is required"),
-        ));
+        return Err(bad_request("vault_pub_key is required"));
     }
 
     let tx_hash = normalize_tx_hash(&req.tx_hash);
     if !is_valid_chain_tx_hash(&tx_hash) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("tx_hash must be a 64-character hex string"),
-        ));
+        return Err(bad_request("tx_hash must be a 64-character hex string"));
     }
     if req.tx_keys.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("tx_keys must not be empty"),
-        ));
+        return Err(bad_request("tx_keys must not be empty"));
     }
 
     let to_address = req.to_address.trim().to_string();
     if to_address.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("to_address is required"),
-        ));
+        return Err(bad_request("to_address is required"));
     }
 
     let owned_addresses = {
@@ -121,11 +119,9 @@ pub(crate) async fn validate_outbound_request(
         scanner.get_addresses(&vault_pub_key)
     };
     if owned_addresses.is_empty() {
-        return Err((
+        return Err(api_error(
             StatusCode::NOT_FOUND,
-            error_json(format!(
-                "no registered addresses found for vault {vault_pub_key}"
-            )),
+            format!("no registered addresses found for vault {vault_pub_key}"),
         ));
     }
 
@@ -140,9 +136,8 @@ pub(crate) async fn validate_outbound_request(
             .iter()
             .any(|address| address.eq_ignore_ascii_case(&from_address))
     {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            error_json("from_address does not belong to the provided vault"),
+        return Err(bad_request(
+            "from_address does not belong to the provided vault",
         ));
     }
 
@@ -150,11 +145,9 @@ pub(crate) async fn validate_outbound_request(
         Ok(result) => result,
         Err(e) => {
             error!(error = %e, tx_hash, "failed to query daemon transaction");
-            return Err((
+            return Err(api_error(
                 StatusCode::SERVICE_UNAVAILABLE,
-                error_json(format!(
-                    "daemon transaction query unavailable for {tx_hash}: {e}"
-                )),
+                format!("daemon transaction query unavailable for {tx_hash}: {e}"),
             ));
         }
     };
@@ -173,27 +166,23 @@ pub(crate) async fn validate_outbound_request(
                 .iter()
                 .any(|hash| hash_matches(hash, &tx_hash))
             {
-                return Err((
+                return Err(api_error(
                     StatusCode::NOT_FOUND,
-                    error_json(format!("transaction {tx_hash} not found")),
+                    format!("transaction {tx_hash} not found"),
                 ));
             }
-            return Err((
+            return Err(api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!(
-                    "ambiguous daemon get_transactions response for {tx_hash}"
-                )),
+                format!("ambiguous daemon get_transactions response for {tx_hash}"),
             ));
         }
     };
 
     let tx_hex = tx_entry.as_hex.trim().to_string();
     if tx_hex.is_empty() {
-        return Err((
+        return Err(api_error(
             StatusCode::BAD_GATEWAY,
-            error_json(format!(
-                "daemon returned empty tx hex for transaction {tx_hash}"
-            )),
+            format!("daemon returned empty tx hex for transaction {tx_hash}"),
         ));
     }
 
@@ -216,10 +205,9 @@ pub(crate) async fn validate_outbound_request(
                 fee = req.fee,
                 "outbound tx-key validation failed"
             );
-            return Err((
-                StatusCode::BAD_REQUEST,
-                error_json(format!("failed to validate outbound transaction: {e}")),
-            ));
+            return Err(bad_request(format!(
+                "failed to validate outbound transaction: {e}"
+            )));
         }
     };
 
@@ -255,9 +243,9 @@ pub(crate) async fn validate_outbound_request(
         })
     {
         error!(error = %e, vault = vault_pub_key, tx_hash, "failed to persist tx-key validated outgoing transfer");
-        return Err((
+        return Err(api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            error_json(format!("failed to persist outgoing transfer: {e}")),
+            format!("failed to persist outgoing transfer: {e}"),
         ));
     }
 
@@ -283,14 +271,14 @@ pub(crate) async fn reconcile_registered_tx_key_inventory(
     state: &Arc<AppState>,
     vault_pub_key: &str,
     tx_key_entries: Vec<RegisterTxKeyEntry>,
-) -> Result<(), (StatusCode, serde_json::Value)> {
+) -> Result<(), ApiError> {
     let existing = state
         .store
         .load_outgoing_transfers(vault_pub_key)
         .map_err(|e| {
-            (
+            api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                error_json(format!("failed to load outgoing transfers: {e}")),
+                format!("failed to load outgoing transfers: {e}"),
             )
         })?;
     let existing_by_hash: HashMap<String, OutgoingTransferRecord> = existing
@@ -332,9 +320,9 @@ pub(crate) async fn reconcile_registered_tx_key_inventory(
         OutgoingLifecycle::new(state.store.as_ref())
             .prune_stale(vault_pub_key, &stale_hashes, false, true)
             .map_err(|e| {
-                (
+                api_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    error_json(format!("failed to prune stale tx-key outbounds: {e}")),
+                    format!("failed to prune stale tx-key outbounds: {e}"),
                 )
             })?;
     }
