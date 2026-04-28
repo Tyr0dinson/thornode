@@ -12,6 +12,40 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
+func writeTestVaultResponse(w http.ResponseWriter, pubKey string, birthday int64, chains ...string) {
+	if len(chains) == 0 {
+		chains = []string{"XMR"}
+	}
+	chainsJSON, _ := json.Marshal(chains)
+	fmt.Fprintf(w, `{"pub_key_frost":"%s","pub_key_eddsa":"","chains":%s,"vault_creation_height_xmr":%d}`, pubKey, chainsJSON, birthday)
+}
+
+func requireSingleDiscoveredVault(t *testing.T, vaults []localVault, wantPubKey string, wantBirthday int64) {
+	t.Helper()
+
+	if len(vaults) != 1 {
+		t.Fatalf("expected 1 vault, got %d", len(vaults))
+	}
+	if got := vaults[0].PubKey; got != wantPubKey {
+		t.Fatalf("expected canonical pubkey, got %q", got)
+	}
+	if wantBirthday > 0 {
+		if got := vaults[0].Birthday; got != wantBirthday {
+			t.Fatalf("expected birthday %d, got %d", wantBirthday, got)
+		}
+	}
+}
+
+func newToolFrostSigner(t *testing.T, server *httptest.Server) *monero.FrostSigner {
+	t.Helper()
+
+	signer, err := monero.NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("NewFrostSignerWithEndpoint: %v", err)
+	}
+	return signer
+}
+
 func TestRunResetsScannerWithoutDrivingSync(t *testing.T) {
 	t.Parallel()
 
@@ -22,7 +56,7 @@ func TestRunResetsScannerWithoutDrivingSync(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/thorchain/vault/thorpub1testvault":
-			fmt.Fprint(w, `{"pub_key_frost":"`+canonicalVaultPubKey+`","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652000}`)
+			writeTestVaultResponse(w, canonicalVaultPubKey, 3652000)
 		case "/v1/monero/scanner/reset":
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST reset, got %s", r.Method)
@@ -77,7 +111,7 @@ func TestRunDryRunSkipsReset(t *testing.T) {
 	var resetCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/thorchain/vault/thorpub1testvault" {
-			fmt.Fprint(w, `{"pub_key_frost":"cthorpub1zcjddryruntestvault","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652000}`)
+			writeTestVaultResponse(w, "cthorpub1zcjddryruntestvault", 3652000)
 			return
 		}
 		if r.URL.Path == "/v1/monero/scanner/reset" {
@@ -109,7 +143,7 @@ func TestDiscoverVaultsCanonicalizesVaultPubKey(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"pub_key_frost":"cthorpub1zcjduepqa7canonical","pub_key_eddsa":"","chains":["BTC","XMR"],"vault_creation_height_xmr":3652752}`)
+		writeTestVaultResponse(w, "cthorpub1zcjduepqa7canonical", 3652752, "BTC", "XMR")
 	}))
 	defer server.Close()
 
@@ -120,22 +154,14 @@ func TestDiscoverVaultsCanonicalizesVaultPubKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discoverVaults returned error: %v", err)
 	}
-	if len(vaults) != 1 {
-		t.Fatalf("expected 1 vault, got %d", len(vaults))
-	}
-	if got := vaults[0].PubKey; got != "cthorpub1zcjduepqa7canonical" {
-		t.Fatalf("expected canonical pubkey, got %q", got)
-	}
-	if got := vaults[0].Birthday; got != 3652752 {
-		t.Fatalf("expected birthday 3652752, got %d", got)
-	}
+	requireSingleDiscoveredVault(t, vaults, "cthorpub1zcjduepqa7canonical", 3652752)
 }
 
 func TestDiscoverVaultsKeepsHeightOverrideWhileCanonicalizing(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"pub_key_frost":"cthorpub1zcjduepqdgcanonical","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652752}`)
+		writeTestVaultResponse(w, "cthorpub1zcjduepqdgcanonical", 3652752)
 	}))
 	defer server.Close()
 
@@ -147,15 +173,7 @@ func TestDiscoverVaultsKeepsHeightOverrideWhileCanonicalizing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discoverVaults returned error: %v", err)
 	}
-	if len(vaults) != 1 {
-		t.Fatalf("expected 1 vault, got %d", len(vaults))
-	}
-	if got := vaults[0].PubKey; got != "cthorpub1zcjduepqdgcanonical" {
-		t.Fatalf("expected canonical pubkey, got %q", got)
-	}
-	if got := vaults[0].Birthday; got != 3653000 {
-		t.Fatalf("expected override birthday 3653000, got %d", got)
-	}
+	requireSingleDiscoveredVault(t, vaults, "cthorpub1zcjduepqdgcanonical", 3653000)
 }
 
 func TestDiscoverVaultsAllowsCanonicalOverrideWithoutAPI(t *testing.T) {
@@ -169,12 +187,7 @@ func TestDiscoverVaultsAllowsCanonicalOverrideWithoutAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discoverVaults returned error: %v", err)
 	}
-	if len(vaults) != 1 {
-		t.Fatalf("expected 1 vault, got %d", len(vaults))
-	}
-	if got := vaults[0].PubKey; got != "cthorpub1zcjduepqcanonical" {
-		t.Fatalf("expected canonical pubkey, got %q", got)
-	}
+	requireSingleDiscoveredVault(t, vaults, "cthorpub1zcjduepqcanonical", 3653000)
 }
 
 func TestDiscoverVaultsRejectsGenericOverrideWithoutAPI(t *testing.T) {
@@ -187,6 +200,15 @@ func TestDiscoverVaultsRejectsGenericOverrideWithoutAPI(t *testing.T) {
 	}, nil)
 	if err == nil {
 		t.Fatal("expected error for generic pubkey without API canonicalization")
+	}
+}
+
+func TestDiscoverVaultsRequiresExplicitScope(t *testing.T) {
+	t.Parallel()
+
+	_, err := discoverVaults(toolOptions{}, nil)
+	if err == nil {
+		t.Fatal("expected scope error")
 	}
 }
 
@@ -209,21 +231,18 @@ func TestDiscoverVaultsAllVaultsIncludesNonMemberVaults(t *testing.T) {
 				`{"vault_pub_key":"%s","has_frost_keys":false}`+
 				`]}`, memberVault, nonMemberVault)
 		case "/thorchain/vault/" + memberVault:
-			fmt.Fprintf(w, `{"pub_key_frost":"%s","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3652000}`, memberVault)
+			writeTestVaultResponse(w, memberVault, 3652000)
 		case "/thorchain/vault/" + nonMemberVault:
-			fmt.Fprintf(w, `{"pub_key_frost":"%s","pub_key_eddsa":"","chains":["XMR"],"vault_creation_height_xmr":3653000}`, nonMemberVault)
+			writeTestVaultResponse(w, nonMemberVault, 3653000)
 		default:
 			http.Error(w, "unexpected path: "+r.URL.Path, http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
 
-	signer, err := monero.NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("NewFrostSignerWithEndpoint: %v", err)
-	}
+	signer := newToolFrostSigner(t, server)
 
-	vaults, err := discoverVaults(toolOptions{apiURL: server.URL}, signer)
+	vaults, err := discoverVaults(toolOptions{apiURL: server.URL, allVaults: true}, signer)
 	if err != nil {
 		t.Fatalf("discoverVaults returned error: %v", err)
 	}

@@ -16,7 +16,7 @@ const (
 	featuredNonGuaranteedSubaddressVector = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v3wfMHCy"
 	featuredGuaranteedSubaddressVector    = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v4Pyz8bD"
 	xmrFixtureSpendHex                    = "b862409fb5c4c4123df2abf7462b88f041ad36dd6864ce872fd5472be363c5b1"
-	xmrFixtureAddress = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGbm9KqB"
+	xmrFixtureAddress                     = "48cNbRvGyrb43yGQYLWKxshBnnq8nRkFfPcUwfqpihwJWiSwHb7gy6p6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGbm9KqB"
 )
 
 func makeTestXMRAddr(networkByte byte, spend, view [32]byte) string {
@@ -24,10 +24,7 @@ func makeTestXMRAddr(networkByte byte, spend, view [32]byte) string {
 	payload = append(payload, networkByte)
 	payload = append(payload, spend[:]...)
 	payload = append(payload, view[:]...)
-	checksum := eth.Keccak256(payload)
-	payload = append(payload, checksum[:4]...)
-	addr, _ := xmrBase58Encode(payload)
-	return addr
+	return encodeTestXMRPayload(payload)
 }
 
 func makeTestXMRIntegratedAddr(spend, view [32]byte, paymentID [8]byte) string {
@@ -36,10 +33,7 @@ func makeTestXMRIntegratedAddr(spend, view [32]byte, paymentID [8]byte) string {
 	payload = append(payload, spend[:]...)
 	payload = append(payload, view[:]...)
 	payload = append(payload, paymentID[:]...)
-	checksum := eth.Keccak256(payload)
-	payload = append(payload, checksum[:4]...)
-	addr, _ := xmrBase58Encode(payload)
-	return addr
+	return encodeTestXMRPayload(payload)
 }
 
 func makeTestXMRFeaturedAddr(networkByte byte, spend, view [32]byte, features uint64, paymentID *[8]byte) string {
@@ -56,6 +50,10 @@ func makeTestXMRFeaturedAddrWithVarint(networkByte byte, spend, view [32]byte, v
 	if paymentID != nil {
 		payload = append(payload, paymentID[:]...)
 	}
+	return encodeTestXMRPayload(payload)
+}
+
+func encodeTestXMRPayload(payload []byte) string {
 	checksum := eth.Keccak256(payload)
 	payload = append(payload, checksum[:4]...)
 	addr, _ := xmrBase58Encode(payload)

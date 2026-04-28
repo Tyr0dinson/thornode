@@ -105,11 +105,7 @@ func newTestXMRSolvencyClient(
 	t.Helper()
 
 	server := newFrostSolvencyStateServer(t, chainHeight, balanceByPubKey, outgoingByPubKey)
-	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		server.Close()
-		t.Fatalf("new frost signer: %v", err)
-	}
+	frostSigner := newTestFrostSignerWithServer(t, server)
 
 	bridge := &solvencyBridge{asgards: asgards}
 	scanner := NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 0)

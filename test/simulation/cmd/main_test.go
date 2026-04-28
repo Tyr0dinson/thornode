@@ -41,6 +41,18 @@ func readRepoFile(t *testing.T, rel string) string {
 	return string(data)
 }
 
+func requireRepoFileContains(t *testing.T, rel string, snippets ...string) string {
+	t.Helper()
+
+	content := readRepoFile(t, rel)
+	for _, snippet := range snippets {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("%s must contain %q", rel, snippet)
+		}
+	}
+	return content
+}
+
 func TestLiteClientConstructorsCoverSimChains(t *testing.T) {
 	for _, chain := range acommon.SimChains {
 		if _, ok := liteClientConstructors[chain]; !ok {
@@ -98,20 +110,14 @@ func TestMocknetWaitsForXMRMasterAccountReadiness(t *testing.T) {
 }
 
 func TestMocknetXRPBootstrapWaitsForRPCAndRetriesMasterFunding(t *testing.T) {
-	entrypoint := readRepoFile(t, "build/scripts/xrp/start-xrp.sh")
-
-	for _, snippet := range []string{
+	requireRepoFileContains(t, "build/scripts/xrp/start-xrp.sh",
 		`wait_for_rippled()`,
 		`master_account_ready()`,
 		`until "${RIPPLED_BIN}" server_state`,
 		`while ! master_account_ready; do`,
 		`fund_submitted=false`,
 		`"engine_result" : "tesSUCCESS"`,
-	} {
-		if !strings.Contains(entrypoint, snippet) {
-			t.Fatalf("xrp bootstrap entrypoint must contain %q so clean resets wait for rippled and retry master funding", snippet)
-		}
-	}
+	)
 }
 
 func TestMocknetMoneroDaemonRunsOffline(t *testing.T) {
@@ -122,20 +128,14 @@ func TestMocknetMoneroDaemonRunsOffline(t *testing.T) {
 }
 
 func TestMocknetMoneroWalletMaintainsBlockGenerationAcrossDaemonRestarts(t *testing.T) {
-	entrypoint := readRepoFile(t, "build/docker/mocknet/monero/wallet-entrypoint.sh")
-
-	for _, snippet := range []string{
+	requireRepoFileContains(t, "build/docker/mocknet/monero/wallet-entrypoint.sh",
 		`current_height()`,
 		`generate_blocks()`,
 		`"generateblocks"`,
 		`BOOTSTRAP_HEIGHT="${XMR_BOOTSTRAP_HEIGHT:-512}"`,
 		`ensure_daemon_blocks &`,
 		`kill "${block_pid}"`,
-	} {
-		if !strings.Contains(entrypoint, snippet) {
-			t.Fatalf("mocknet monero wallet entrypoint must contain %q so block generation resumes when monerod restarts without restarting the wallet container", snippet)
-		}
-	}
+	)
 }
 
 func TestMocknetMoneroWalletAllowsFakechainDaemonVersionSkew(t *testing.T) {
@@ -171,10 +171,7 @@ func TestMocknetBifrostDeclaresXMRChainNetwork(t *testing.T) {
 }
 
 func TestXMRStagenetScopesThorAsStagenetAndMoneroAsMainnet(t *testing.T) {
-	compose := readRepoFile(t, "build/docker/docker-compose.xmr-stagenet.yml")
-	postDeploy := readRepoFile(t, "build/docker/xmr-stagenet-post-deploy.sh")
-
-	for _, snippet := range []string{
+	requireRepoFileContains(t, "build/docker/docker-compose.xmr-stagenet.yml",
 		`NET: stagenet`,
 		`TAG: stagenet`,
 		`PORT_RPC: "27147"`,
@@ -183,22 +180,14 @@ func TestXMRStagenetScopesThorAsStagenetAndMoneroAsMainnet(t *testing.T) {
 		`FAUCET: "sthor1zf3gsk7edzwl9syyefvfhle37cjtql3585mpmq"`,
 		`EXTRA_FUND_ACCOUNT_1: "sthor1uuds8pd92qnnq0udw0rpg0szpgcslc9ph3j6kf"`,
 		`EXTRA_FUND_ACCOUNT_2: "sthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4e5fzhc"`,
-	} {
-		if !strings.Contains(compose, snippet) {
-			t.Fatalf("xmr-stagenet compose must contain %q", snippet)
-		}
-	}
+	)
 
-	for _, snippet := range []string{
+	requireRepoFileContains(t, "build/docker/xmr-stagenet-post-deploy.sh",
 		`DOG_RPC="tcp://localhost:27147"`,
 		`CAT_RPC="tcp://thornode-cat:27147"`,
 		`FOX_RPC="tcp://thornode-fox:27147"`,
 		`DOG_NODE_ADDR="sthor1zf3gsk7edzwl9syyefvfhle37cjtql3585mpmq"`,
-	} {
-		if !strings.Contains(postDeploy, snippet) {
-			t.Fatalf("xmr-stagenet post-deploy must contain %q", snippet)
-		}
-	}
+	)
 }
 
 func TestXMRChainnetUsesMainnetMoneroMode(t *testing.T) {
@@ -242,23 +231,17 @@ func TestMocknetCosmosSidecarsRestartAfterDockerRestart(t *testing.T) {
 }
 
 func TestSimulationUsesIPv4LoopbackForHostMappedRPCs(t *testing.T) {
-	mocknetGo := readRepoFile(t, "test/simulation/cmd/mocknet.go")
-
-	if strings.Contains(mocknetGo, "localhost:") {
-		t.Fatal("simulation mocknet rpc endpoints should use explicit IPv4 loopback to avoid Docker Desktop localhost IPv6 resolution failures")
-	}
-
-	for _, snippet := range []string{
+	mocknetGo := requireRepoFileContains(t, "test/simulation/cmd/mocknet.go",
 		`common.GAIAChain:  "127.0.0.1:9091"`,
 		`common.NOBLEChain: "127.0.0.1:9092"`,
 		`common.SOLChain:   "http://127.0.0.1:8899"`,
 		`BIFROST_THORCHAIN_CHAIN_HOST", "127.0.0.1:1317"`,
 		`BIFROST_THORCHAIN_CHAIN_RPC", "127.0.0.1:26657"`,
 		`BIFROST_THORCHAIN_CHAIN_EBIFROST", "127.0.0.1:50051"`,
-	} {
-		if !strings.Contains(mocknetGo, snippet) {
-			t.Fatalf("missing expected IPv4 loopback mocknet endpoint %q", snippet)
-		}
+	)
+
+	if strings.Contains(mocknetGo, "localhost:") {
+		t.Fatal("simulation mocknet rpc endpoints should use explicit IPv4 loopback to avoid Docker Desktop localhost IPv6 resolution failures")
 	}
 }
 
@@ -655,17 +638,12 @@ func TestXMRFrostSignerDockerBuilderSupportsCargoLockfile(t *testing.T) {
 }
 
 func TestXMRFrostSignerCargoPinsSeraiGitDependencies(t *testing.T) {
-	cargoToml := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml")
-	for _, snippet := range []string{
+	requireRepoFileContains(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml",
 		`dkg-pedpop = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
 		`dalek-ff-group = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
 		`ciphersuite = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391", features = [`,
 		`simple-request = { git = "https://github.com/serai-dex/serai", rev = "737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391" }`,
-	} {
-		if !strings.Contains(cargoToml, snippet) {
-			t.Fatalf("expected xmr-frost-signer/Cargo.toml to contain %q", snippet)
-		}
-	}
+	)
 
 	cargoLock := readRepoFile(t, "bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock")
 	if !strings.Contains(cargoLock, `source = "git+https://github.com/serai-dex/serai?rev=737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391#737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391"`) {
@@ -684,15 +662,10 @@ func TestXMRFrostSignerCargoPinsSeraiGitDependencies(t *testing.T) {
 }
 
 func TestXMRFrostSignerDockerRuntimePreparesWritableDataVolume(t *testing.T) {
-	compose := readRepoFile(t, "build/docker/docker-compose.yml")
-	for _, volumeRef := range []string{
+	requireRepoFileContains(t, "build/docker/docker-compose.yml",
 		"- xmr-frost-data:/var/lib/xmr-frost",
 		"- xmr-sim-data:/var/lib/xmr-sim",
-	} {
-		if !strings.Contains(compose, volumeRef) {
-			t.Fatalf("expected compose to mount %s for xmr services", volumeRef)
-		}
-	}
+	)
 
 	dockerfile := readRepoFile(t, "build/docker/xmr-frost-signer/Dockerfile")
 	if !strings.Contains(dockerfile, "COPY build/docker/xmr-frost-signer/entrypoint.sh /usr/local/bin/xmr-frost-entrypoint") {
@@ -702,18 +675,13 @@ func TestXMRFrostSignerDockerRuntimePreparesWritableDataVolume(t *testing.T) {
 		t.Fatal("xmr-frost-signer Dockerfile must start through xmr-frost-entrypoint so mounted data dirs are prepared before the signer starts")
 	}
 
-	entrypoint := readRepoFile(t, "build/docker/xmr-frost-signer/entrypoint.sh")
-	for _, snippet := range []string{
+	requireRepoFileContains(t, "build/docker/xmr-frost-signer/entrypoint.sh",
 		`data_dir="${XMR_FROST_DATA_DIR:-/var/lib/xmr-frost}"`,
 		`mkdir -p "$data_dir"`,
 		`chown -R frost:frost "$data_dir"`,
 		`chmod 700 "$data_dir"`,
 		`exec runuser -u frost -- /usr/local/bin/xmr-frost-signer "$@"`,
-	} {
-		if !strings.Contains(entrypoint, snippet) {
-			t.Fatalf("xmr-frost-signer entrypoint must contain %q", snippet)
-		}
-	}
+	)
 }
 
 func TestDockerignoreKeepsXMRFrostEntrypointInBuildContext(t *testing.T) {
@@ -727,9 +695,7 @@ func TestDockerignoreKeepsXMRFrostEntrypointInBuildContext(t *testing.T) {
 }
 
 func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {
-	dockerignore := readRepoFile(t, "ci/Dockerfile.simtest.dockerignore")
-
-	for _, snippet := range []string{
+	requireRepoFileContains(t, "ci/Dockerfile.simtest.dockerignore",
 		".git",
 		"thornode",
 		"bifrost/pkg/chainclients/monero/xmr-frost-signer/*",
@@ -740,11 +706,7 @@ func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {
 		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src",
 		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**",
 		"**/target",
-	} {
-		if !strings.Contains(dockerignore, snippet) {
-			t.Fatalf("expected .dockerignore to contain %q so ci/Dockerfile.simtest does not send local build artifacts in the docker context", snippet)
-		}
-	}
+	)
 }
 
 func assertStageOrder(t *testing.T, stages []string, before string, after string) {

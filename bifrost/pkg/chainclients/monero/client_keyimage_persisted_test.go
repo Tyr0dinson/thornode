@@ -3,16 +3,13 @@ package monero
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
-
-	"gitlab.com/thorchain/thornode/v3/config"
 )
 
 func TestKeyImageCatchupNeedsReplayUsesPersistedOutputs(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	signer, _ := newTestFrostSignerHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/outputs/thorpub1vault" {
 			http.Error(w, "unexpected path", http.StatusNotFound)
 			return
@@ -36,12 +33,6 @@ func TestKeyImageCatchupNeedsReplayUsesPersistedOutputs(t *testing.T) {
 			}},
 		})
 	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
 
 	client := &Client{frostSigner: signer}
 	needsReplay, err := client.keyImageCatchupNeedsReplay("thorpub1vault", []xmrFrostApplyKeyImageRef{{

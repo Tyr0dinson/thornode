@@ -3,16 +3,38 @@ package monero
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/config"
 )
+
+func newBroadcastTestClient(t *testing.T, handler http.HandlerFunc) (*Client, common.PubKey) {
+	t.Helper()
+
+	signer, _ := newTestFrostSignerHTTPServer(t, handler)
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	return newTestXMRClientWithFrostSigner(t, signer), vaultPubKey
+}
+
+func requireBroadcastRequestIdentity(t *testing.T, gotReq xmrFrostBroadcastRequest, payload signedTxPayload, vaultPubKey common.PubKey) {
+	t.Helper()
+
+	if strings.TrimSpace(gotReq.MsgID) == "" {
+		t.Fatalf("expected broadcast request to include msg_id")
+	}
+	if gotReq.MsgID != payload.MsgID {
+		t.Fatalf("expected msg_id %q, got %q", payload.MsgID, gotReq.MsgID)
+	}
+	if strings.TrimSpace(gotReq.VaultPubKey) == "" {
+		t.Fatalf("expected broadcast request to include vault_pub_key")
+	}
+	if gotReq.VaultPubKey != vaultPubKey.String() {
+		t.Fatalf("expected vault_pub_key %q, got %q", vaultPubKey, gotReq.VaultPubKey)
+	}
+}
 
 func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 	t.Parallel()
@@ -21,7 +43,7 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 		mu     sync.Mutex
 		gotReq xmrFrostBroadcastRequest
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, vaultPubKey := newBroadcastTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/broadcast" {
 			http.NotFound(w, r)
 			return
@@ -36,23 +58,7 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: ""})
 	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	client := &Client{
-		frostSigner:        signer,
-		signerCacheManager: newTestSignerCacheManager(t),
-	}
-	tx := stypes.TxOutItem{
-		Chain:            common.XMRChain,
-		VaultPubKey:      vaultPubKey,
-		VaultPubKeyEddsa: vaultPubKey,
-	}
+	tx := newTestXMRTxOutItem(vaultPubKey)
 	payload := signedTxPayload{
 		TxHash:     "signed-hash",
 		TxMetadata: "deadbeef",
@@ -68,18 +74,7 @@ func TestBroadcastTxPreservesSignedHashWhenSidecarHashEmpty(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.TrimSpace(gotReq.MsgID) == "" {
-		t.Fatalf("expected broadcast request to include msg_id")
-	}
-	if gotReq.MsgID != payload.MsgID {
-		t.Fatalf("expected msg_id %q, got %q", payload.MsgID, gotReq.MsgID)
-	}
-	if strings.TrimSpace(gotReq.VaultPubKey) == "" {
-		t.Fatalf("expected broadcast request to include vault_pub_key")
-	}
-	if gotReq.VaultPubKey != vaultPubKey.String() {
-		t.Fatalf("expected vault_pub_key %q, got %q", vaultPubKey, gotReq.VaultPubKey)
-	}
+	requireBroadcastRequestIdentity(t, gotReq, payload, vaultPubKey)
 }
 
 func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
@@ -89,7 +84,7 @@ func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
 		mu     sync.Mutex
 		gotReq xmrFrostBroadcastRequest
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, vaultPubKey := newBroadcastTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/broadcast" {
 			http.NotFound(w, r)
 			return
@@ -104,23 +99,7 @@ func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
 		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
 	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	client := &Client{
-		frostSigner:        signer,
-		signerCacheManager: newTestSignerCacheManager(t),
-	}
-	tx := stypes.TxOutItem{
-		Chain:            common.XMRChain,
-		VaultPubKey:      vaultPubKey,
-		VaultPubKeyEddsa: vaultPubKey,
-	}
+	tx := newTestXMRTxOutItem(vaultPubKey)
 	payload := signedTxPayload{
 		TxHash:     "signed-hash",
 		TxMetadata: "deadbeef",
@@ -136,52 +115,25 @@ func TestBroadcastTxUsesSidecarHashWhenProvided(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.TrimSpace(gotReq.MsgID) == "" {
-		t.Fatalf("expected broadcast request to include msg_id")
-	}
-	if gotReq.MsgID != payload.MsgID {
-		t.Fatalf("expected msg_id %q, got %q", payload.MsgID, gotReq.MsgID)
-	}
-	if strings.TrimSpace(gotReq.VaultPubKey) == "" {
-		t.Fatalf("expected broadcast request to include vault_pub_key")
-	}
-	if gotReq.VaultPubKey != vaultPubKey.String() {
-		t.Fatalf("expected vault_pub_key %q, got %q", vaultPubKey, gotReq.VaultPubKey)
-	}
+	requireBroadcastRequestIdentity(t, gotReq, payload, vaultPubKey)
 }
 
 func TestBroadcastTxRequiresMsgID(t *testing.T) {
 	t.Parallel()
 
 	var sidecarCalled atomic.Bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, vaultPubKey := newBroadcastTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sidecarCalled.Store(true)
 		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
 	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	client := &Client{
-		frostSigner:        signer,
-		signerCacheManager: newTestSignerCacheManager(t),
-	}
-	tx := stypes.TxOutItem{
-		Chain:            common.XMRChain,
-		VaultPubKey:      vaultPubKey,
-		VaultPubKeyEddsa: vaultPubKey,
-	}
+	tx := newTestXMRTxOutItem(vaultPubKey)
 	payload := signedTxPayload{
 		TxHash:     "signed-hash",
 		TxMetadata: "deadbeef",
 		MsgID:      "   ",
 	}
 
-	_, err = client.broadcastTx(tx, payload)
+	_, err := client.broadcastTx(tx, payload)
 	if err == nil {
 		t.Fatalf("expected broadcast tx to fail when msg_id is missing")
 	}
@@ -197,33 +149,19 @@ func TestBroadcastTxRequiresEddsaVaultPubKey(t *testing.T) {
 	t.Parallel()
 
 	var sidecarCalled atomic.Bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, vaultPubKey := newBroadcastTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sidecarCalled.Store(true)
 		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
 	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	client := &Client{
-		frostSigner:        signer,
-		signerCacheManager: newTestSignerCacheManager(t),
-	}
-	tx := stypes.TxOutItem{
-		Chain:       common.XMRChain,
-		VaultPubKey: vaultPubKey,
-	}
+	tx := newTestXMRTxOutItem(vaultPubKey)
+	tx.VaultPubKeyEddsa = common.EmptyPubKey
 	payload := signedTxPayload{
 		TxHash:     "signed-hash",
 		TxMetadata: "deadbeef",
 		MsgID:      "broadcast-msg-id-missing-vault",
 	}
 
-	_, err = client.broadcastTx(tx, payload)
+	_, err := client.broadcastTx(tx, payload)
 	if err == nil {
 		t.Fatalf("expected broadcast tx to fail when EDDSA vault pubkey is missing")
 	}
@@ -243,7 +181,7 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 		mu           sync.Mutex
 		gotReq       xmrFrostBroadcastRequest
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, vaultPubKey := newBroadcastTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&sidecarCalls, 1)
 		if r.URL.Path != "/v1/monero/broadcast" {
 			http.NotFound(w, r)
@@ -259,23 +197,7 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
 	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	client := &Client{
-		frostSigner:        signer,
-		signerCacheManager: newTestSignerCacheManager(t),
-	}
-	tx := stypes.TxOutItem{
-		Chain:            common.XMRChain,
-		VaultPubKey:      vaultPubKey,
-		VaultPubKeyEddsa: vaultPubKey,
-	}
+	tx := newTestXMRTxOutItem(vaultPubKey)
 	payload := signedTxPayload{
 		TxHash:      "signed-hash",
 		TxMetadata:  "deadbeef",
@@ -307,27 +229,11 @@ func TestBroadcastTxBroadcastedFlagStillRequiresTxMetadata(t *testing.T) {
 	t.Parallel()
 
 	var sidecarCalled atomic.Bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, vaultPubKey := newBroadcastTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sidecarCalled.Store(true)
 		_ = json.NewEncoder(w).Encode(xmrFrostBroadcastResponse{TxHash: "daemon-hash"})
 	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	client := &Client{
-		frostSigner:        signer,
-		signerCacheManager: newTestSignerCacheManager(t),
-	}
-	tx := stypes.TxOutItem{
-		Chain:            common.XMRChain,
-		VaultPubKey:      vaultPubKey,
-		VaultPubKeyEddsa: vaultPubKey,
-	}
+	tx := newTestXMRTxOutItem(vaultPubKey)
 	payload := signedTxPayload{
 		TxHash:      "signed-hash",
 		TxMetadata:  "   ",
@@ -335,7 +241,7 @@ func TestBroadcastTxBroadcastedFlagStillRequiresTxMetadata(t *testing.T) {
 		Broadcasted: true,
 	}
 
-	_, err = client.broadcastTx(tx, payload)
+	_, err := client.broadcastTx(tx, payload)
 	if err == nil {
 		t.Fatalf("expected broadcast tx to fail when tx_metadata is missing")
 	}

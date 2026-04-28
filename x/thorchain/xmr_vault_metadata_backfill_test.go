@@ -11,43 +11,67 @@ type XMRVaultMetadataBackfillSuite struct{}
 
 var _ = Suite(&XMRVaultMetadataBackfillSuite{})
 
-func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromHistoricalObservedVoters(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-
-	outboundVaultPubKey := GetRandomPubKey()
-	outboundVault := NewVault(1, ActiveVault, AsgardVault, outboundVaultPubKey, []string{
+func setTestXMRBackfillVault(c *C, ctx cosmos.Context, mgr *Mgrs, pubKey common.PubKey, amount cosmos.Uint) Vault {
+	vault := NewVault(1, ActiveVault, AsgardVault, pubKey, []string{
 		common.XMRChain.String(),
 	}, nil)
-	outboundVault.AddFunds(common.Coins{
-		common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One)),
-	})
-	c.Assert(mgr.Keeper().SetVault(ctx, outboundVault), IsNil)
+	if !amount.IsZero() {
+		vault.AddFunds(common.Coins{
+			common.NewCoin(common.XMRAsset, amount),
+		})
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	return vault
+}
 
-	inboundVaultPubKey := GetRandomPubKey()
-	inboundVault := NewVault(1, ActiveVault, AsgardVault, inboundVaultPubKey, []string{
-		common.XMRChain.String(),
-	}, nil)
-	c.Assert(mgr.Keeper().SetVault(ctx, inboundVault), IsNil)
-
-	outboundTxID := GetRandomTxHash()
-	outboundBase := common.ObservedTx{
+func newTestXMRBackfillObservedTx(
+	txID common.TxID,
+	observedPubKey common.PubKey,
+	from common.Address,
+	to common.Address,
+	amount cosmos.Uint,
+	memo string,
+	height int64,
+) common.ObservedTx {
+	return common.ObservedTx{
 		Tx: common.Tx{
-			ID:          outboundTxID,
+			ID:          txID,
 			Chain:       common.XMRChain,
-			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault-out"))),
-			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
+			FromAddress: from,
+			ToAddress:   to,
 			Coins: common.Coins{
-				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+				common.NewCoin(common.XMRAsset, amount),
 			},
 			Gas: common.Gas{
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
 			},
-			Memo: "OUT:" + GetRandomTxHash().String(),
+			Memo: memo,
 		},
-		BlockHeight:    100,
-		FinaliseHeight: 100,
-		ObservedPubKey: outboundVaultPubKey,
+		BlockHeight:    height,
+		FinaliseHeight: height,
+		ObservedPubKey: observedPubKey,
 	}
+}
+
+func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromHistoricalObservedVoters(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	outboundVaultPubKey := GetRandomPubKey()
+	outboundVault := setTestXMRBackfillVault(c, ctx, mgr, outboundVaultPubKey, cosmos.NewUint(10*common.One))
+
+	inboundVaultPubKey := GetRandomPubKey()
+	inboundVault := setTestXMRBackfillVault(c, ctx, mgr, inboundVaultPubKey, cosmos.ZeroUint())
+
+	outboundTxID := GetRandomTxHash()
+	outboundBase := newTestXMRBackfillObservedTx(
+		outboundTxID,
+		outboundVaultPubKey,
+		common.Address(common.XMRSeededDummyAddress('4', []byte("vault-out"))),
+		common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
+		cosmos.NewUint(common.One),
+		"OUT:"+GetRandomTxHash().String(),
+		100,
+	)
 	outboundWithMetadata := outboundBase
 	outboundWithMetadata.TxKeys = []string{"tx-key-1"}
 	outboundWithMetadata.XmrKeyImages = []*common.XmrKeyImageProof{
@@ -62,24 +86,15 @@ func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromHistoric
 	})
 
 	inboundTxID := GetRandomTxHash()
-	inboundBase := common.ObservedTx{
-		Tx: common.Tx{
-			ID:          inboundTxID,
-			Chain:       common.XMRChain,
-			FromAddress: common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
-			ToAddress:   common.Address(common.XMRSeededDummyAddress('4', []byte("vault-in"))),
-			Coins: common.Coins{
-				common.NewCoin(common.XMRAsset, cosmos.NewUint(2*common.One)),
-			},
-			Gas: common.Gas{
-				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
-			},
-			Memo: "ADD:XMR.XMR:" + GetRandomBech32Addr().String(),
-		},
-		BlockHeight:    120,
-		FinaliseHeight: 120,
-		ObservedPubKey: inboundVaultPubKey,
-	}
+	inboundBase := newTestXMRBackfillObservedTx(
+		inboundTxID,
+		inboundVaultPubKey,
+		common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
+		common.Address(common.XMRSeededDummyAddress('4', []byte("vault-in"))),
+		cosmos.NewUint(2*common.One),
+		"ADD:XMR.XMR:"+GetRandomBech32Addr().String(),
+		120,
+	)
 	inboundWithMetadata := inboundBase
 	inboundWithMetadata.XmrKeyImages = []*common.XmrKeyImageProof{
 		{TxHash: inboundTxID.String(), OutputIndex: 0, KeyImage: "ki-in", ProofC: "c2", ProofS: "s2"},
@@ -128,33 +143,18 @@ func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromNonFinal
 	ctx, mgr := setupManagerForTest(c)
 
 	vaultPubKey := GetRandomPubKey()
-	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
-		common.XMRChain.String(),
-	}, nil)
-	vault.AddFunds(common.Coins{
-		common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One)),
-	})
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	vault := setTestXMRBackfillVault(c, ctx, mgr, vaultPubKey, cosmos.NewUint(10*common.One))
 
 	txID := GetRandomTxHash()
-	finalObserved := common.ObservedTx{
-		Tx: common.Tx{
-			ID:          txID,
-			Chain:       common.XMRChain,
-			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault-out"))),
-			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
-			Coins: common.Coins{
-				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
-			},
-			Gas: common.Gas{
-				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
-			},
-			Memo: "OUT:" + GetRandomTxHash().String(),
-		},
-		BlockHeight:    100,
-		FinaliseHeight: 100,
-		ObservedPubKey: vaultPubKey,
-	}
+	finalObserved := newTestXMRBackfillObservedTx(
+		txID,
+		vaultPubKey,
+		common.Address(common.XMRSeededDummyAddress('4', []byte("vault-out"))),
+		common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
+		cosmos.NewUint(common.One),
+		"OUT:"+GetRandomTxHash().String(),
+		100,
+	)
 	nonFinalWithMetadata := finalObserved
 	nonFinalWithMetadata.BlockHeight = 99
 	nonFinalWithMetadata.TxKeys = []string{"tx-key-1"}
