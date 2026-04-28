@@ -56,6 +56,27 @@ func TestTransferToTxInItemUsesFeeFallback(t *testing.T) {
 	}
 }
 
+func TestTransferToTxInItemUsesFeeFallbackForUnauthorizedSpend(t *testing.T) {
+	pk := common.PubKey("thorpub1testvault")
+
+	s := &Scanner{
+		logger:             log.Logger,
+		currentBlockHeight: atomic.NewInt64(0),
+		lastFee:            atomic.NewUint64(123 * moneroAtomicToThorchain),
+	}
+	item, ok := s.transferToTxInItem(xmrFrostTransferEntry{
+		TxID:   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB",
+		Amount: 10000,
+		Fee:    0,
+	}, unknownSenderAddress("sender", "8abc"), unknownSenderAddress("receiver", "8def"), pk, "NOOP:UNAUTHORIZED", 100)
+	if !ok {
+		t.Fatal("expected unauthorized spend transfer to convert to tx in item")
+	}
+	if item.Gas[0].Amount.Uint64() != 123 {
+		t.Fatalf("expected fallback fee 123, got %d", item.Gas[0].Amount.Uint64())
+	}
+}
+
 func TestTransferToTxInItemCarriesTxKeys(t *testing.T) {
 	pk := common.PubKey("thorpub1testvault")
 

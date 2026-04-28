@@ -2573,16 +2573,16 @@ pub async fn scanner_sync(
                             ));
                         }
                     }
-                    outgoing.extend(unauthorized_spend_entries(
-                        &state,
-                        &vault.vault_pub_key,
-                        &vault.address,
-                        &batch,
-                        &persisted.outputs_after_scan,
-                        effective_height,
-                    ));
                 }
             }
+            outgoing.extend(unauthorized_spend_entries(
+                &state,
+                &vault.vault_pub_key,
+                &vault.address,
+                &batch,
+                &persisted.outputs_after_scan,
+                effective_height,
+            ));
         }
 
         match state.store.load_outgoing_transfers(&vault.vault_pub_key) {
