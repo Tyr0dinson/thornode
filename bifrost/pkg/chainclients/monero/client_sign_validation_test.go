@@ -434,6 +434,24 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 			})
 			return
 		}
+		if strings.Contains(r.URL.Path, "/v1/monero/outputs/") {
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{
+						TxHash:      strings.Repeat("a", 64),
+						OutputIndex: 0,
+						Amount:      10 * moneroAtomicToThorchain,
+						Height:      96,
+						State:       "unspent",
+					},
+				},
+			})
+			return
+		}
+		if r.URL.Path == "/v1/monero/chain/height" {
+			_ = json.NewEncoder(w).Encode(xmrFrostChainHeightResponse{Height: 100})
+			return
+		}
 		http.NotFound(w, r)
 	}))
 	defer balanceServer.Close()
@@ -468,6 +486,9 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "insufficient xmr balance") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "confirmations_remaining=6") {
+		t.Fatalf("expected remaining confirmation detail, got: %v", err)
 	}
 	var retryErr interface {
 		error

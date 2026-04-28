@@ -97,10 +97,15 @@ type xmrValidatedSignRequest struct {
 }
 
 type lockedOutputsError struct {
-	available uint64
-	required  uint64
-	total     uint64
-	locked    uint64
+	available                   uint64
+	required                    uint64
+	total                       uint64
+	locked                      uint64
+	confirmationsRemaining      uint64
+	minConfirmationsRemaining   uint64
+	maxConfirmationsRemaining   uint64
+	lockedOutputCount           int
+	confirmationDetailsObserved bool
 }
 
 type keyImageBacklogError struct {
@@ -118,10 +123,17 @@ type xmrTransientFrostKeySignError struct {
 }
 
 const xmrDefaultMaxConfirmationCap uint64 = 30 // ~1 hour at 2-minute XMR blocks
+const xmrSpendableConfirmations uint64 = 10
 
 func (e *lockedOutputsError) Error() string {
+	if e.confirmationDetailsObserved {
+		return fmt.Sprintf(
+			"insufficient xmr balance for signing: available=%d required=%d (total=%d locked=%d, locked_outputs=%d, confirmations_remaining=%d min_remaining=%d max_remaining=%d)",
+			e.available, e.required, e.total, e.locked, e.lockedOutputCount, e.confirmationsRemaining, e.minConfirmationsRemaining, e.maxConfirmationsRemaining,
+		)
+	}
 	return fmt.Sprintf(
-		"insufficient xmr balance for signing: available=%d required=%d (total=%d locked=%d, outputs may need 10 confirmations)",
+		"insufficient xmr balance for signing: available=%d required=%d (total=%d locked=%d, confirmations_remaining=unknown)",
 		e.available, e.required, e.total, e.locked,
 	)
 }
@@ -3298,6 +3310,7 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 		return err
 	}
 
+	balanceVaultPubKey := vaultPubKey.String()
 	balance, err := c.frostSigner.GetBalance(vaultPubKey.String())
 	if err != nil {
 		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
@@ -3312,6 +3325,7 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 			frostBalance, frostErr := c.frostSigner.GetBalance(frostPK.String())
 			if frostErr == nil && (frostBalance.Balance > 0 || frostBalance.UnlockedBalance > 0) {
 				balance = frostBalance
+				balanceVaultPubKey = frostPK.String()
 			}
 		}
 	}
@@ -3337,11 +3351,17 @@ func (c *Client) ensureXMRVaultBalance(vaultPubKey common.PubKey, amountAtomic u
 		totalAtomic := balance.Balance
 		lockedAtomic := totalAtomic - availableAtomic
 		if lockedAtomic > 0 {
+			diagnostics := c.xmrLockedOutputDiagnostics(balanceVaultPubKey, availableAtomic, requiredAtomic)
 			return &lockedOutputsError{
-				available: availableAtomic,
-				required:  requiredAtomic,
-				total:     totalAtomic,
-				locked:    lockedAtomic,
+				available:                   availableAtomic,
+				required:                    requiredAtomic,
+				total:                       totalAtomic,
+				locked:                      lockedAtomic,
+				confirmationsRemaining:      diagnostics.confirmationsRemaining,
+				minConfirmationsRemaining:   diagnostics.minConfirmationsRemaining,
+				maxConfirmationsRemaining:   diagnostics.maxConfirmationsRemaining,
+				lockedOutputCount:           diagnostics.lockedOutputCount,
+				confirmationDetailsObserved: diagnostics.observed,
 			}
 		}
 		return fmt.Errorf(
@@ -3365,6 +3385,89 @@ func spendableBalanceAtomic(balance xmrFrostBalanceResponse) uint64 {
 		}
 	}
 	return availableAtomic
+}
+
+type xmrLockedOutputDiagnostics struct {
+	observed                  bool
+	confirmationsRemaining    uint64
+	minConfirmationsRemaining uint64
+	maxConfirmationsRemaining uint64
+	lockedOutputCount         int
+}
+
+type xmrLockedOutputCandidate struct {
+	amount               uint64
+	confirmationsToSpend uint64
+}
+
+func (c *Client) xmrLockedOutputDiagnostics(vaultPubKey string, availableAtomic, requiredAtomic uint64) xmrLockedOutputDiagnostics {
+	if c.frostSigner == nil {
+		return xmrLockedOutputDiagnostics{}
+	}
+	currentHeight, err := c.frostSigner.GetChainHeight()
+	if err != nil || currentHeight < 0 {
+		return xmrLockedOutputDiagnostics{}
+	}
+	outputs, err := c.frostSigner.GetAllOutputs(vaultPubKey)
+	if err != nil {
+		return xmrLockedOutputDiagnostics{}
+	}
+	if requiredAtomic <= availableAtomic {
+		return xmrLockedOutputDiagnostics{observed: true}
+	}
+
+	requiredShortfall := requiredAtomic - availableAtomic
+	candidates := make([]xmrLockedOutputCandidate, 0, len(outputs))
+	for _, output := range outputs {
+		if output.IsSpent() {
+			continue
+		}
+		confirmations := uint64(0)
+		if currentHeight > int64(output.Height) {
+			confirmations = uint64(currentHeight - int64(output.Height))
+		}
+		if confirmations >= xmrSpendableConfirmations {
+			continue
+		}
+		candidates = append(candidates, xmrLockedOutputCandidate{
+			amount:               output.Amount,
+			confirmationsToSpend: xmrSpendableConfirmations - confirmations,
+		})
+	}
+	if len(candidates) == 0 {
+		return xmrLockedOutputDiagnostics{observed: true}
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].confirmationsToSpend == candidates[j].confirmationsToSpend {
+			return candidates[i].amount > candidates[j].amount
+		}
+		return candidates[i].confirmationsToSpend < candidates[j].confirmationsToSpend
+	})
+
+	diagnostics := xmrLockedOutputDiagnostics{
+		observed:                  true,
+		minConfirmationsRemaining: candidates[0].confirmationsToSpend,
+		maxConfirmationsRemaining: candidates[0].confirmationsToSpend,
+		lockedOutputCount:         len(candidates),
+		confirmationsRemaining:    candidates[len(candidates)-1].confirmationsToSpend,
+	}
+	var unlockedByThen uint64
+	for _, candidate := range candidates {
+		if candidate.confirmationsToSpend > diagnostics.maxConfirmationsRemaining {
+			diagnostics.maxConfirmationsRemaining = candidate.confirmationsToSpend
+		}
+		if unlockedByThen <= math.MaxUint64-candidate.amount {
+			unlockedByThen += candidate.amount
+		} else {
+			unlockedByThen = math.MaxUint64
+		}
+		if unlockedByThen >= requiredShortfall {
+			diagnostics.confirmationsRemaining = candidate.confirmationsToSpend
+			break
+		}
+	}
+	return diagnostics
 }
 
 func xmrMaxGasToAtomic(maxGas common.Gas) (uint64, error) {
