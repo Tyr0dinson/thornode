@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -663,11 +664,35 @@ var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not a
 var errXMROutgoingAuditIncomplete = errors.New("xmr outgoing audit incomplete")
 
 func isTransientXMROutboundValidationError(err error) bool {
-	if err == nil || !isFrostHTTPStatus(err, http.StatusNotFound) {
+	if err == nil {
 		return false
 	}
 	errText := strings.ToLower(err.Error())
-	return strings.Contains(errText, "transaction") && strings.Contains(errText, "not found")
+	if isFrostHTTPStatus(err, http.StatusNotFound) {
+		return strings.Contains(errText, "transaction") && strings.Contains(errText, "not found")
+	}
+	switch {
+	case isFrostHTTPStatus(err, http.StatusRequestTimeout),
+		isFrostHTTPStatus(err, http.StatusTooManyRequests),
+		isFrostHTTPStatus(err, http.StatusBadGateway),
+		isFrostHTTPStatus(err, http.StatusServiceUnavailable),
+		isFrostHTTPStatus(err, http.StatusGatewayTimeout):
+		return true
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	return strings.Contains(errText, "connection refused") ||
+		strings.Contains(errText, "connection reset") ||
+		strings.Contains(errText, "i/o timeout") ||
+		strings.Contains(errText, "context deadline exceeded") ||
+		strings.Contains(errText, "server closed idle connection") ||
+		strings.Contains(errText, "unexpected eof")
 }
 
 func (c *Client) Start(

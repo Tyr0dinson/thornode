@@ -812,6 +812,114 @@ func TestPrepareObservedTxInItemRetriesOutboundTxKeyValidationWhenTxNotVisible(t
 	require.Equal(t, 1, validateCalls)
 }
 
+func TestPrepareObservedTxInItemRetriesOutboundTxKeyValidationWhenSidecarUnavailable(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("s", 64)
+	destination := common.XMRSeededDummyAddress('8', []byte("txkey-validation-sidecar-unavailable"))
+	validateCalls := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/outbounds/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing:    nil,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			validateCalls++
+			http.Error(w, `{"error":"monero daemon temporarily unavailable"}`, http.StatusServiceUnavailable)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		tssServer:       &mockKeyImageTssServer{},
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination,
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "OUT:" + strings.Repeat("D", 64),
+		TxKeys:              []string{strings.Repeat("1", 64)},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+	require.Equal(t, 1, validateCalls)
+}
+
+func TestPrepareObservedTxInItemRejectsNonTransientOutboundTxKeyValidationFailure(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("b", 64)
+	destination := common.XMRSeededDummyAddress('8', []byte("txkey-validation-bad-request"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/outbounds/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing:    nil,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			http.Error(w, `{"error":"tx keys do not match transaction"}`, http.StatusBadRequest)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		tssServer:       &mockKeyImageTssServer{},
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination,
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "OUT:" + strings.Repeat("E", 64),
+		TxKeys:              []string{strings.Repeat("1", 64)},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.Error(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+	require.Contains(t, err.Error(), "fail to validate xmr outbound tx-key state")
+}
+
 func TestPrepareObservedTxInItemWaitsForPeerDiscoveryBeforeKeyImageCeremony(t *testing.T) {
 	t.Parallel()
 
