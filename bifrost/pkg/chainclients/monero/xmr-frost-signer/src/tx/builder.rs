@@ -105,12 +105,12 @@ pub async fn build_unsigned_transaction(
         }
         selected.push(candidate);
         selected_total += u128::from(candidate.0.amount);
-        if !sweep_if_final && selected_total >= u128::from(requested_total) {
+        if selected_total >= u128::from(requested_total) {
             break;
         }
     }
 
-    if selected_total < u128::from(requested_total) && !sweep_if_final {
+    if selected_total < u128::from(requested_total) {
         anyhow::bail!(
             "insufficient funds: need {} but only {} available from {} outputs (max_inputs={})",
             requested_total,
@@ -119,14 +119,12 @@ pub async fn build_unsigned_transaction(
             max
         );
     }
-    let effective_total =
-        effective_requested_total(requested_total, selected_total, sweep_if_final)?;
 
     let rct_type = rct_type_for_hf(hard_fork_version).with_context(|| {
         format!("cannot construct transaction for hard fork version {hard_fork_version}")
     })?;
     let outgoing_view_key =
-        derive_outgoing_view_key(decoy_context, to_address, effective_total, memo);
+        derive_outgoing_view_key(decoy_context, to_address, requested_total, memo);
     let data = if memo.trim().is_empty() {
         Vec::new()
     } else {
@@ -143,7 +141,7 @@ pub async fn build_unsigned_transaction(
             rpc,
             &selected,
             &to,
-            effective_total,
+            amount,
             &change,
             fee_rate,
             rct_type,
@@ -181,53 +179,6 @@ pub async fn build_unsigned_transaction(
                     break;
                 }
                 if !grew {
-                    if sweep_if_final {
-                        // Final-round migrate sweeps intentionally target the
-                        // whole selected balance and then back the real fee out
-                        // afterward. When the selection is already exhausted,
-                        // bootstrap the fee-convergence loop from the scheduled
-                        // net amount instead of bailing on the first fee-aware
-                        // construction attempt.
-                        let bootstrap_amount = amount.min(
-                            effective_total.checked_sub(max_gas_atomic).ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "selected sweep total is not enough to cover max gas"
-                                )
-                            })?,
-                        );
-                        let fallback = build_signable_for_selection(
-                            rpc,
-                            &selected,
-                            &to,
-                            bootstrap_amount,
-                            &change,
-                            fee_rate,
-                            rct_type,
-                            outgoing_view_key.clone(),
-                            data.clone(),
-                            decoy_context,
-                            hard_fork_version,
-                            tip_height,
-                        )
-                        .await;
-                        match fallback {
-                            Ok(s) => break (s, selected.clone()),
-                            Err(fallback_err) => {
-                                return Err(anyhow::anyhow!(
-                                    "insufficient funds to cover amount ({}) + necessary fee: \
-                                     exhausted candidates ({} selected, max {}, total {}): {}; \
-                                     fallback sweep build with net amount {} also failed: {}",
-                                    effective_total,
-                                    selected.len(),
-                                    max,
-                                    selected_total,
-                                    msg,
-                                    bootstrap_amount,
-                                    fallback_err
-                                ));
-                            }
-                        }
-                    }
                     anyhow::bail!(
                         "insufficient funds to cover amount ({}) + necessary fee: \
                          exhausted candidates ({} selected, max {}, total {}): {}",
@@ -244,9 +195,7 @@ pub async fn build_unsigned_transaction(
 
     let mut fee = signable.necessary_fee();
     let final_amount = if sweep_if_final {
-        let mut send_amount = effective_total
-            .checked_sub(fee)
-            .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))?;
+        let mut send_amount = final_migrate_amount(requested_total, fee)?;
         for _ in 0..2 {
             signable = build_signable_for_selection(
                 rpc,
@@ -264,9 +213,7 @@ pub async fn build_unsigned_transaction(
             )
             .await?;
             fee = signable.necessary_fee();
-            let adjusted_amount = effective_total
-                .checked_sub(fee)
-                .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))?;
+            let adjusted_amount = final_migrate_amount(requested_total, fee)?;
             if adjusted_amount == send_amount {
                 break;
             }
@@ -289,7 +236,6 @@ pub async fn build_unsigned_transaction(
         fee,
         selected_total,
         requested_total,
-        effective_total,
         final_amount,
         "constructed Monero signable transaction"
     );
@@ -379,16 +325,10 @@ fn derive_tx_keys_for_built_outbound(
     derive_tx_keys_from_components(outgoing_view_key, input_keys, to.is_subaddress())
 }
 
-fn effective_requested_total(
-    requested_total: u64,
-    selected_total: u128,
-    sweep_if_final: bool,
-) -> Result<u64> {
-    if sweep_if_final && selected_total < u128::from(requested_total) {
-        return u64::try_from(selected_total)
-            .map_err(|_| anyhow::anyhow!("selected sweep total exceeds u64"));
-    }
-    Ok(requested_total)
+fn final_migrate_amount(requested_total: u64, fee: u64) -> Result<u64> {
+    requested_total
+        .checked_sub(fee)
+        .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))
 }
 
 fn derive_tx_keys_from_components(
@@ -627,19 +567,31 @@ mod tests {
     }
 
     #[test]
-    fn final_sweep_uses_selected_total_when_short_of_requested_total() {
+    fn final_sweep_adds_unused_max_gas_to_migrated_amount() {
+        let amount = 461_674_480_000;
+        let max_gas = 360_000_000;
+        let actual_fee = 185_520_000;
+        let requested_total = amount + max_gas;
+        let final_amount = final_migrate_amount(requested_total, actual_fee).unwrap();
+
         assert_eq!(
-            effective_requested_total(318_029_330_000, 316_929_650_000, true).unwrap(),
-            316_929_650_000
+            final_amount,
+            amount + (max_gas - actual_fee),
+            "unused max gas must go to the destination vault"
         );
         assert_eq!(
-            effective_requested_total(318_029_330_000, 316_929_650_000, false).unwrap(),
-            318_029_330_000
+            final_amount + actual_fee,
+            requested_total,
+            "observed coin + gas must equal scheduled coin + max gas"
         );
-        assert_eq!(
-            effective_requested_total(318_029_330_000, 400_000_000_000, true).unwrap(),
-            318_029_330_000
-        );
+    }
+
+    #[test]
+    fn final_sweep_rejects_fee_above_requested_total() {
+        assert!(final_migrate_amount(100, 101)
+            .unwrap_err()
+            .to_string()
+            .contains("actual fee exceeds requested migrate total"));
     }
 
     #[test]
