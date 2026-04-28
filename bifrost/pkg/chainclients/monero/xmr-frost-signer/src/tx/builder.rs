@@ -110,7 +110,7 @@ pub async fn build_unsigned_transaction(
         }
     }
 
-    if selected_total < u128::from(requested_total) {
+    if selected_total < u128::from(requested_total) && !sweep_if_final {
         anyhow::bail!(
             "insufficient funds: need {} but only {} available from {} outputs (max_inputs={})",
             requested_total,
@@ -119,12 +119,14 @@ pub async fn build_unsigned_transaction(
             max
         );
     }
+    let effective_total =
+        effective_requested_total(requested_total, selected_total, sweep_if_final)?;
 
     let rct_type = rct_type_for_hf(hard_fork_version).with_context(|| {
         format!("cannot construct transaction for hard fork version {hard_fork_version}")
     })?;
     let outgoing_view_key =
-        derive_outgoing_view_key(decoy_context, to_address, requested_total, memo);
+        derive_outgoing_view_key(decoy_context, to_address, effective_total, memo);
     let data = if memo.trim().is_empty() {
         Vec::new()
     } else {
@@ -141,7 +143,7 @@ pub async fn build_unsigned_transaction(
             rpc,
             &selected,
             &to,
-            requested_total,
+            effective_total,
             &change,
             fee_rate,
             rct_type,
@@ -187,7 +189,7 @@ pub async fn build_unsigned_transaction(
                         // net amount instead of bailing on the first fee-aware
                         // construction attempt.
                         let bootstrap_amount = amount.min(
-                            requested_total.checked_sub(max_gas_atomic).ok_or_else(|| {
+                            effective_total.checked_sub(max_gas_atomic).ok_or_else(|| {
                                 anyhow::anyhow!(
                                     "selected sweep total is not enough to cover max gas"
                                 )
@@ -215,7 +217,7 @@ pub async fn build_unsigned_transaction(
                                     "insufficient funds to cover amount ({}) + necessary fee: \
                                      exhausted candidates ({} selected, max {}, total {}): {}; \
                                      fallback sweep build with net amount {} also failed: {}",
-                                    requested_total,
+                                    effective_total,
                                     selected.len(),
                                     max,
                                     selected_total,
@@ -242,7 +244,7 @@ pub async fn build_unsigned_transaction(
 
     let mut fee = signable.necessary_fee();
     let final_amount = if sweep_if_final {
-        let mut send_amount = requested_total
+        let mut send_amount = effective_total
             .checked_sub(fee)
             .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))?;
         for _ in 0..2 {
@@ -262,7 +264,7 @@ pub async fn build_unsigned_transaction(
             )
             .await?;
             fee = signable.necessary_fee();
-            let adjusted_amount = requested_total
+            let adjusted_amount = effective_total
                 .checked_sub(fee)
                 .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))?;
             if adjusted_amount == send_amount {
@@ -287,6 +289,7 @@ pub async fn build_unsigned_transaction(
         fee,
         selected_total,
         requested_total,
+        effective_total,
         final_amount,
         "constructed Monero signable transaction"
     );
@@ -374,6 +377,18 @@ fn derive_tx_keys_for_built_outbound(
         .map(|(_, wallet_output)| wallet_output.key())
         .collect();
     derive_tx_keys_from_components(outgoing_view_key, input_keys, to.is_subaddress())
+}
+
+fn effective_requested_total(
+    requested_total: u64,
+    selected_total: u128,
+    sweep_if_final: bool,
+) -> Result<u64> {
+    if sweep_if_final && selected_total < u128::from(requested_total) {
+        return u64::try_from(selected_total)
+            .map_err(|_| anyhow::anyhow!("selected sweep total exceeds u64"));
+    }
+    Ok(requested_total)
 }
 
 fn derive_tx_keys_from_components(
@@ -609,6 +624,22 @@ mod tests {
             .expect("selection should succeed");
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].tx_hash, "e");
+    }
+
+    #[test]
+    fn final_sweep_uses_selected_total_when_short_of_requested_total() {
+        assert_eq!(
+            effective_requested_total(318_029_330_000, 316_929_650_000, true).unwrap(),
+            316_929_650_000
+        );
+        assert_eq!(
+            effective_requested_total(318_029_330_000, 316_929_650_000, false).unwrap(),
+            318_029_330_000
+        );
+        assert_eq!(
+            effective_requested_total(318_029_330_000, 400_000_000_000, true).unwrap(),
+            318_029_330_000
+        );
     }
 
     #[test]
