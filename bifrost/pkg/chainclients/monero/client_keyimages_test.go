@@ -1302,6 +1302,8 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *test
 					TxKeys:                  []string{strings.Repeat("1", 64)},
 				}},
 			})
+		case "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, ActualFee: 1 * moneroAtomicToThorchain})
 		case "/v1/monero/outputs/apply-key-images":
 			var req xmrFrostApplyKeyImagesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1399,6 +1401,8 @@ func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testin
 					RegisteredInventory: true,
 				}},
 			})
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: false, ActualFee: 7 * moneroAtomicToThorchain})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
 			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
 		default:
@@ -1449,6 +1453,7 @@ func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testin
 	require.True(t, include)
 	require.NotNil(t, prepared)
 	require.Empty(t, prepared.XmrKeyImages)
+	require.Equal(t, uint64(7), prepared.Gas.ToCoins().GetCoin(common.XMRAsset).Amount.Uint64())
 
 	tssServer.mu.Lock()
 	defer tssServer.mu.Unlock()
@@ -1484,6 +1489,8 @@ func TestPrepareObservedTxInItemRecoversFinalOutboundTxKeysFromLocalState(t *tes
 					Status:                  "observed_mined",
 				}},
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, ActualFee: 3 * moneroAtomicToThorchain})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/apply-key-images":
 			var req xmrFrostApplyKeyImagesRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
@@ -1541,6 +1548,7 @@ func TestPrepareObservedTxInItemRecoversFinalOutboundTxKeysFromLocalState(t *tes
 	require.True(t, include)
 	require.NotNil(t, prepared)
 	require.Equal(t, []string{txKey}, prepared.TxKeys)
+	require.Equal(t, uint64(3), prepared.Gas.ToCoins().GetCoin(common.XMRAsset).Amount.Uint64())
 	require.Len(t, prepared.XmrKeyImages, 1)
 
 	tssServer.mu.Lock()

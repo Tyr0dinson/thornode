@@ -332,6 +332,7 @@ pub struct ValidateOutboundResponse {
     pub tracked: bool,
     pub marked: usize,
     pub not_found: usize,
+    pub actual_fee: u64,
 }
 
 #[derive(Debug, Deserialize)]

@@ -431,9 +431,10 @@ type xmrFrostValidateOutboundRequest struct {
 }
 
 type xmrFrostValidateOutboundResponse struct {
-	Tracked  bool `json:"tracked"`
-	Marked   int  `json:"marked"`
-	NotFound int  `json:"not_found"`
+	Tracked   bool   `json:"tracked"`
+	Marked    int    `json:"marked"`
+	NotFound  int    `json:"not_found"`
+	ActualFee uint64 `json:"actual_fee,omitempty"`
 }
 
 type xmrFrostPruneOutgoingTransfersRequest struct {

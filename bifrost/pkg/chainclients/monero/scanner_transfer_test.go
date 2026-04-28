@@ -67,7 +67,7 @@ func TestTransferToTxInItemCarriesTxKeys(t *testing.T) {
 	item, ok := s.transferToTxInItem(xmrFrostTransferEntry{
 		TxID:   "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
 		Amount: 10000,
-		Fee:    5000,
+		Fee:    5 * moneroAtomicToThorchain,
 		TxKeys: []string{"11", "22"},
 	}, unknownSenderAddress("sender", "8abc"), unknownSenderAddress("receiver", "8def"), pk, "", 100)
 	if !ok {
@@ -75,6 +75,25 @@ func TestTransferToTxInItemCarriesTxKeys(t *testing.T) {
 	}
 	if len(item.TxKeys) != 2 || item.TxKeys[0] != "11" || item.TxKeys[1] != "22" {
 		t.Fatalf("unexpected tx keys: %+v", item.TxKeys)
+	}
+}
+
+func TestTransferToTxInItemSkipsOutboundTxKeysWithoutActualFee(t *testing.T) {
+	pk := common.PubKey("thorpub1testvault")
+
+	s := &Scanner{
+		logger:             log.Logger,
+		currentBlockHeight: atomic.NewInt64(0),
+		lastFee:            atomic.NewUint64(123 * moneroAtomicToThorchain),
+	}
+	item, ok := s.transferToTxInItem(xmrFrostTransferEntry{
+		TxID:   "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+		Amount: 10000,
+		Fee:    0,
+		TxKeys: []string{"11"},
+	}, unknownSenderAddress("sender", "8abc"), unknownSenderAddress("receiver", "8def"), pk, "", 100)
+	if ok || item != nil {
+		t.Fatalf("expected outbound transfer with tx-keys and no actual fee to be skipped")
 	}
 }
 

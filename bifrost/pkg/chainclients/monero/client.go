@@ -1640,6 +1640,7 @@ type xmrOutgoingInventoryReplayStateCheck struct {
 type xmrOutgoingAuditLookup struct {
 	canonicalVaultPubKey common.PubKey
 	record               *xmrFrostOutgoingTransferStateEntry
+	actualFeeAtomic      uint64
 }
 
 func (c *Client) outgoingInventoryNeedsReplay(vaultPubKey string, refs []xmrOutgoingInventoryRef) (xmrOutgoingInventoryReplayStateCheck, error) {
@@ -1729,6 +1730,7 @@ func (c *Client) lookupXMROutgoingAudit(vaultPubKey common.PubKey, txHash string
 		return xmrOutgoingAuditLookup{
 			canonicalVaultPubKey: canonicalVaultPubKey,
 			record:               record,
+			actualFeeAtomic:      record.Fee,
 		}, nil
 	}
 
@@ -1805,7 +1807,7 @@ func (c *Client) validateXMROutgoingAuditFromObservation(
 		return lookup, fmt.Errorf("observed xmr outbound %s is missing tx keys", tx.Tx.ID)
 	}
 
-	if _, err := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
+	validateResp, err := c.frostSigner.ValidateOutbound(xmrFrostValidateOutboundRequest{
 		VaultPubKey: vaultPubKey.String(),
 		TxHash:      tx.Tx.ID.String(),
 		TxKeys:      txKeys,
@@ -1815,11 +1817,58 @@ func (c *Client) validateXMROutgoingAuditFromObservation(
 		Fee:         meta.Fee,
 		Memo:        meta.Memo,
 		Reconcile:   true,
-	}); err != nil {
+	})
+	if err != nil {
 		return lookup, err
 	}
 
-	return c.lookupXMROutgoingAudit(vaultPubKey, tx.Tx.ID.String())
+	lookup, err = c.lookupXMROutgoingAudit(vaultPubKey, tx.Tx.ID.String())
+	if err != nil {
+		return lookup, err
+	}
+	if validateResp.ActualFee > 0 {
+		lookup.actualFeeAtomic = validateResp.ActualFee
+		if lookup.record != nil {
+			lookup.record.Fee = validateResp.ActualFee
+		}
+	}
+	return lookup, nil
+}
+
+func xmrObservedTxFromTxInItem(item *stypes.TxInItem) common.ObservedTx {
+	if item == nil {
+		return common.ObservedTx{}
+	}
+	return common.ObservedTx{
+		Tx: common.NewTx(
+			common.TxID(item.Tx),
+			common.Address(item.Sender),
+			common.Address(item.To),
+			item.Coins,
+			item.Gas,
+			item.Memo,
+		),
+		BlockHeight:    item.BlockHeight,
+		ObservedPubKey: item.ObservedVaultPubKey,
+		TxKeys:         append([]string(nil), item.TxKeys...),
+		XmrKeyImages:   append([]*common.XmrKeyImageProof(nil), item.XmrKeyImages...),
+	}
+}
+
+func setTxInItemXMRGasFromActualFee(item *stypes.TxInItem, actualFeeAtomic uint64) bool {
+	if item == nil || actualFeeAtomic == 0 {
+		return false
+	}
+	actualFee := actualFeeAtomic / moneroAtomicToThorchain
+	if actualFee == 0 {
+		return false
+	}
+	current := item.Gas.ToCoins().GetCoin(common.XMRAsset).Amount.Uint64()
+	if current == actualFee {
+		return false
+	}
+	item.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(actualFee))}
+	return true
 }
 
 func humanizeXMROutgoingPendingReason(reason string) string {
@@ -3742,6 +3791,20 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Str("memo", item.Memo).
 			Msg("skipping delayed XMR change inbound; key-images will ride on finalized outbound")
 		return nil, false, nil
+	}
+	if isOutboundFromVault && len(item.TxKeys) > 0 {
+		validatedAudit, validateErr := c.validateXMROutgoingAuditFromObservation(xmrObservedTxFromTxInItem(item), outgoingAudit)
+		if validateErr != nil {
+			return nil, false, fmt.Errorf("fail to validate xmr outbound tx-key state via sidecar: %w", validateErr)
+		}
+		outgoingAudit = validatedAudit
+		if setTxInItemXMRGasFromActualFee(item, outgoingAudit.actualFeeAtomic) {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Uint64("actual_fee", outgoingAudit.actualFeeAtomic/moneroAtomicToThorchain).
+				Msg("updated finalized XMR outbound gas from tx-key validation")
+		}
 	}
 	if len(item.XmrKeyImages) > 0 {
 		if isOutboundFromVault && len(item.TxKeys) == 0 {

@@ -1058,6 +1058,12 @@ func (s *Scanner) transferToTxInItem(
 	}
 
 	fee := transfer.Fee / moneroAtomicToThorchain
+	if fee == 0 && len(transfer.TxKeys) > 0 {
+		s.logger.Info().
+			Str("tx_id", normalizeTxID(transfer.TxID)).
+			Msg("skip XMR outbound transfer with tx-keys until sidecar reports actual fee")
+		return nil, false
+	}
 	if fee == 0 {
 		fee = totalFeeAtomicToThorchain(s.lastFee.Load())
 	}

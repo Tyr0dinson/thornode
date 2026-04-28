@@ -275,6 +275,7 @@ pub(crate) async fn validate_outbound_request(
         tracked: validated.tracked_owned_output,
         marked: 0,
         not_found: 0,
+        actual_fee: validated.actual_fee,
     })
 }
 
