@@ -702,7 +702,6 @@ func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {
 		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.lock",
 		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/Cargo.toml",
 		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/LICENSE",
-		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md",
 		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src",
 		"!bifrost/pkg/chainclients/monero/xmr-frost-signer/src/**",
 		"**/target",

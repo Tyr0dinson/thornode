@@ -22,9 +22,8 @@ The supported Monero/XMR architecture in this repository keeps the `xmr-frost-si
 
 Changes that affect the sidecar boundary should keep the contract and operational notes in sync with:
 
-- `docs/xmr-addition-design.md`
-- `docs/xmr-implementation-map.mmd`
 - `bifrost/pkg/chainclients/monero/XMR_TSS_SIGNER_API.md`
+- `build/docker/xmr-chainnet-runbook.md`
 
 ## Review Expectations
 

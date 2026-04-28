@@ -33,20 +33,6 @@ Each specific chain such as BTC, LTC, or DOGE wraps this shared logic with minim
 
 Similarly, for EVM-based chains like Ethereum, Avalanche, and BSC, shared functionality is implemented in evm/client.go and reused by each specific EVM client (e.g., `ethereum/client.go`, `bsc/client.go`).
 
-## Monero (XMR) Client Notes
-
-Monero integration uses a dedicated Bifrost chain client (`monero/`) plus a local `xmr-frost-signer` sidecar for chain-specific cryptography and scanner state. The sidecar source lives in `bifrost/pkg/chainclients/monero/xmr-frost-signer`, and its Serai-derived Rust crates are pinned to `serai-dex/serai` rev `737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391`.
-
-- Keygen uses a custom FROST DKG path with explicit finalize (`/v1/monero/dkg/finalize`) before vault mapping/key persistence.
-- Outbound signing is a 3-step FROST API flow (`prepare` -> `partial` -> `combine`) with idempotent `msg_id`.
-- Scanner sync is canonical-hash driven via `POST /v1/monero/scanner/sync`; `GET /v1/monero/transfers` is diagnostic/read-only.
-- Inbound mempool attribution is intentionally unsupported; mempool queries are used for tracked outgoing visibility only.
-
-For full XMR architecture and API details:
-
-- [XMR Integration Design](../xmr-addition-design.md)
-- [XMR TSS Signer API](https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/monero/XMR_TSS_SIGNER_API.md)
-
 ## ChainClient Interface
 
 Every chain client in Bifrost must implement the `ChainClient` interface defined in [`types/types.go`](https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/shared/types/types.go). It encapsulates the lifecycle of chain interactions — scanning, observation, signing, broadcasting, solvency reporting, and account inspection. Clients may override additional chain-specific behavior using optional interfaces or embedded logic.
@@ -234,4 +220,3 @@ See [token-lists.md](./token-lists.md) for details.
 - [Vault Behaviors](../bifrost/vault-behaviors.md)
 - [Integrating New Chains](../new-chains/implementation-guide.md)
 - [Sending Transactions](../concepts/sending-transactions.md)
-- [XMR Integration Design](../xmr-addition-design.md)

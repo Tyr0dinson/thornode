@@ -1,6 +1,6 @@
 # XMR TSS Signer API
 
-The Monero sidecar exposes HTTP endpoints for DKG, signing rounds, broadcast, and scanner sync/read APIs.
+The Monero sidecar exposes HTTP endpoints for DKG, signing rounds, broadcast, vault registration, scanner sync, and read APIs.
 
 ## Configuration
 
@@ -60,7 +60,67 @@ its local sidecar round endpoints while exchanging round payloads over p2p:
 3. `POST /v1/monero/dkg/round3`
 4. `POST /v1/monero/dkg/finalize`
 
+## Vault Registration And Inventory
+
+`POST /v1/monero/vaults/register` is the canonical path for loading vault metadata into the signer. Bifrost calls it after keygen and during state sync/rescan catch-up. It registers the vault pubkey, FROST group key, derived XMR address, creation height/birthday, and optional inventory.
+
+Optional `key_images` and `tx_keys` are append/reconcile metadata. Omitting them preserves existing signer state; it does not clear previously registered inventory.
+
+Key-image registration binds known output refs to their derived key images. It does not prove spend by itself. A spend is applied only when the scanner sees that key image in an on-chain transaction input, then calls the same key-image apply path with `spend=true`.
+
+Tx-key registration validates the tx keys against daemon transaction data before persisting outbound audit metadata. The registered tx key is used to verify the outbound destination amount, fee, source vault, and presence of owned change. Change is identified so later key-image generation can cover the new vault-owned output; change audit is not part of the THORChain observation.
+
+Rescan catch-up is Bifrost-driven:
+
+1. Register vault metadata plus any Thorchain key-image and tx-key inventory.
+2. Drive `scanner/sync` across canonical blocks to find inbounds and on-chain spent key images.
+3. Apply matched spent key images to signer state.
+4. Apply/validate registered tx keys for outbound audit state.
+
 ## Endpoints
+
+### `POST /v1/monero/vaults/register`
+
+Request:
+
+```json
+{
+  "vault_pub_key": "thorpub1...",
+  "group_key": "<32-byte-hex>",
+  "address": "C...",
+  "source": "bifrost",
+  "spend_key_hex": "<optional-bootstrap-spend-key>",
+  "birthday": 3652200,
+  "key_images": [
+    {
+      "tx_hash": "<64-hex>",
+      "output_index": 0,
+      "key_image": "<64-hex>"
+    }
+  ],
+  "tx_keys": [
+    {
+      "tx_hash": "<64-hex>",
+      "tx_keys": ["<32-byte-hex>"],
+      "from_address": "C...",
+      "to_address": "C...",
+      "amount": 1000000000000,
+      "fee": 120000000,
+      "memo": "OUT:..."
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "registered": true
+}
+```
+
+The signer rejects vault registration when the supplied vault pubkey, group key, and address do not match each other.
 
 ### `POST /v1/monero/dkg/round1`
 
@@ -155,7 +215,8 @@ Response:
 
 ```json
 {
-  "success": true
+  "success": true,
+  "key_bytes_hex": "<local-key-share>"
 }
 ```
 
@@ -233,7 +294,8 @@ Response:
   "tx_hash": "...",
   "tx_hex": "...",
   "amount_atomic": 999000000000,
-  "fee_atomic": 120000000
+  "fee_atomic": 120000000,
+  "tx_keys": ["..."]
 }
 ```
 
@@ -265,7 +327,10 @@ Replay matching uses canonical payload hashing only.
 ### Scanner/Read endpoints
 
 - `GET /v1/monero/balance/{vault_pub_key}`
+- `POST /v1/monero/vaults/register`
+- `GET /v1/monero/vaults`
 - `POST /v1/monero/scanner/sync`
+- `POST /v1/monero/outputs/apply-key-images`
 - `GET /v1/monero/transfers?height={h}`
 - `GET /v1/monero/transfers?mempool=true`
 - `GET /v1/monero/addresses/{vault_pub_key}`
@@ -319,6 +384,26 @@ applies deterministic rollback/rescan for that exact height and returns `Transfe
 
 Scanner confirmation/unlock math uses the sidecar-validated synced height (`height` and canonical
 header) and ignores caller-provided `tip_height` for security hardening.
+
+`POST /v1/monero/outputs/apply-key-images` accepts:
+
+```json
+{
+  "vault_pub_key": "thorpub1...",
+  "reconcile": true,
+  "spend": false,
+  "spent_height": 3652709,
+  "key_images": [
+    {
+      "tx_hash": "<64-hex>",
+      "output_index": 0,
+      "key_image": "<64-hex>"
+    }
+  ]
+}
+```
+
+Use `spend=false` when loading key images from Thorchain metadata or attestations. Use `spend=true` only for key images observed as spent by the on-chain scanner.
 
 `GET /v1/monero/transfers` remains a read-only diagnostic query endpoint and is not the canonical
 scan driver.

@@ -18,7 +18,7 @@ This repository is the canonical Rust-sidecar line for THORChain's Monero/XMR im
 - The sidecar source lives under `bifrost/pkg/chainclients/monero/xmr-frost-signer` and pins Serai-derived Rust crates to `serai-dex/serai` rev `737dbcbaa78ab817cc1c435cb2b6c5d24d1c4391`
 - The separate all-Go cutover line lives at [boonew/thornode-go](https://gitlab.com/boonew/thornode-go)
 
-`xmr-frost-signer` remains intentionally isolated as its own AGPL-licensed service in this repo. See [bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md](./bifrost/pkg/chainclients/monero/xmr-frost-signer/README.md) for the sidecar boundary, Serai attribution, and licensing details.
+`xmr-frost-signer` remains intentionally isolated as its own AGPL-licensed service in this repo. Its sidecar API boundary is documented in [XMR_TSS_SIGNER_API.md](./bifrost/pkg/chainclients/monero/XMR_TSS_SIGNER_API.md).
 
 ## THORNodes
 
