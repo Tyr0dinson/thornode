@@ -980,19 +980,19 @@ func (s *Scanner) loadVaultForPubKey(pubKey common.PubKey) (ttypes.Vault, error)
 		return ttypes.Vault{}, fmt.Errorf("vault pubkey is empty")
 	}
 
+	vault, err := s.bridge.GetVault(pubKey.String())
+	if err == nil {
+		s.cacheVault(vault)
+		return vault, nil
+	}
+
 	s.asgardMu.RLock()
 	cached, ok := s.vaultByPubKey[pubKey.String()]
 	s.asgardMu.RUnlock()
 	if ok {
 		return cached, nil
 	}
-
-	vault, err := s.bridge.GetVault(pubKey.String())
-	if err != nil {
-		return ttypes.Vault{}, err
-	}
-	s.cacheVault(vault)
-	return vault, nil
+	return ttypes.Vault{}, err
 }
 
 func mapVaults(lookup map[string]ttypes.Vault) ttypes.Vaults {
