@@ -41,6 +41,19 @@ import (
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
+func TestNormalizeInvalidDeckIndicesDeduplicatesDescending(t *testing.T) {
+	got := normalizeInvalidDeckIndices([]int{2, 5, 2, 4, 5, 1})
+	want := []int{5, 4, 2, 1}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	}
+}
+
 type ObserverSuite struct {
 	metrics  *metrics.Metrics
 	thorKeys *thorclient.Keys

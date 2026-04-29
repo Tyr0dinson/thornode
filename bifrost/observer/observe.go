@@ -395,15 +395,7 @@ func (o *Observer) sendDeck(ctx context.Context) {
 
 		// Remove invalid transactions from deck
 		if len(invalidIndices) > 0 {
-			// Sort indices in descending order to remove from highest to lowest
-			// This preserves indices during removal
-			for i := 0; i < len(invalidIndices); i++ {
-				for j := i + 1; j < len(invalidIndices); j++ {
-					if invalidIndices[i] < invalidIndices[j] {
-						invalidIndices[i], invalidIndices[j] = invalidIndices[j], invalidIndices[i]
-					}
-				}
-			}
+			invalidIndices = normalizeInvalidDeckIndices(invalidIndices)
 
 			firstItemRemoved := false
 			for _, idx := range invalidIndices {
@@ -433,6 +425,29 @@ func (o *Observer) sendDeck(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func normalizeInvalidDeckIndices(indices []int) []int {
+	if len(indices) < 2 {
+		return indices
+	}
+	for i := 0; i < len(indices); i++ {
+		for j := i + 1; j < len(indices); j++ {
+			if indices[i] < indices[j] {
+				indices[i], indices[j] = indices[j], indices[i]
+			}
+		}
+	}
+	out := indices[:0]
+	last := 0
+	for i, idx := range indices {
+		if i > 0 && idx == last {
+			continue
+		}
+		out = append(out, idx)
+		last = idx
+	}
+	return out
 }
 
 func (o *Observer) sendToQuorumChecker(deck *types.TxIn, finalised bool, finaliseHeight int64) []int {
