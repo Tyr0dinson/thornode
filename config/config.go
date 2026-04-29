@@ -989,6 +989,7 @@ func (b *BifrostChainConfiguration) Validate() {
 
 type BifrostBlockScannerConfiguration struct {
 	StartBlockHeight           int64         `mapstructure:"start_block_height"`
+	FloorBlockHeight           int64         `mapstructure:"floor_block_height"`
 	BlockScanProcessors        int           `mapstructure:"block_scan_processors"`
 	HTTPRequestTimeout         time.Duration `mapstructure:"http_request_timeout"`
 	HTTPRequestReadTimeout     time.Duration `mapstructure:"http_request_read_timeout"`

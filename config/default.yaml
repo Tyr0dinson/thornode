@@ -156,6 +156,7 @@ bifrost:
 
         # the following defaults must be defined to override with environment
         start_block_height: 0
+        floor_block_height: 0
         cosmos_grpc_host: ""
         cosmos_grpc_tls: false
         gas_cache_blocks: 0

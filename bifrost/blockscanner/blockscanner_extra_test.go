@@ -748,6 +748,72 @@ func (s *BlockScannerExtraSuite) TestGetStartHeightThorBackfillsRecentWindow(c *
 	c.Check(scanner.PreviousHeight(), Equals, int64(600))
 }
 
+// startScannerForFloorTest is a helper that constructs a scanner with the given
+// floor/start/persisted-pos config, calls Start(), reads PreviousHeight, and stops.
+// The fetcher returns chainHeight=0 so scanBlocks cannot advance previousBlock
+// during the brief window in which we observe it.
+func (s *BlockScannerExtraSuite) startScannerForFloorTest(c *C, startHeight, floorHeight, persistedPos int64) int64 {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+			_, _ = w.Write([]byte(`-1`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):
+			_, _ = w.Write([]byte(`[{"chain":"NOOP","lastobservedin":0,"lastsignedout":0,"thorchain":0}]`))
+		}
+	}))
+	defer server.Close()
+	bridge := s.makeBridge(c, server)
+
+	mss := NewMockScannerStorage()
+	if persistedPos > 0 {
+		c.Assert(mss.SetScanPos(persistedPos), IsNil)
+	}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           startHeight,
+		FloorBlockHeight:           floorHeight,
+		BlockScanProcessors:        1,
+		HTTPRequestTimeout:         time.Second,
+		BlockHeightDiscoverBackoff: time.Second,
+		BlockRetryInterval:         time.Second,
+		ChainID:                    common.ETHChain,
+		ScanMemPool:                false,
+	}, mss, m, bridge, &configFetcher{chainHeight: 0})
+	c.Assert(err, IsNil)
+
+	globalChan := make(chan types.TxIn, 1)
+	nfChan := make(chan common.NetworkFee, 1)
+	scanner.Start(globalChan, nfChan)
+	height := scanner.PreviousHeight()
+	scanner.Stop()
+	return height
+}
+
+func (s *BlockScannerExtraSuite) TestStartFloorUnsetUsesStartHeight(c *C) {
+	// Floor unset: behaves as before, StartBlockHeight wins.
+	got := s.startScannerForFloorTest(c, 10, 0, 0)
+	c.Check(got, Equals, int64(10))
+}
+
+func (s *BlockScannerExtraSuite) TestStartFloorAdvancesAboveStartHeight(c *C) {
+	// Floor > StartBlockHeight, no persisted pos: scanner advances to floor.
+	got := s.startScannerForFloorTest(c, 10, 100, 0)
+	c.Check(got, Equals, int64(100))
+}
+
+func (s *BlockScannerExtraSuite) TestStartFloorRespectsHigherPersistedPos(c *C) {
+	// Floor < persisted pos (with StartBlockHeight set): the floor uses
+	// max(FloorBlockHeight, currentPos), so the scanner is never dragged below
+	// the persisted scan position.
+	got := s.startScannerForFloorTest(c, 10, 100, 200)
+	c.Check(got, Equals, int64(200))
+}
+
+func (s *BlockScannerExtraSuite) TestStartFloorAboveStartAndPersisted(c *C) {
+	// Floor above both StartBlockHeight and persisted pos: scanner advances to floor.
+	got := s.startScannerForFloorTest(c, 10, 500, 200)
+	c.Check(got, Equals, int64(500))
+}
+
 func (s *BlockScannerExtraSuite) TestStartStopWithMempoolDisabled(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
