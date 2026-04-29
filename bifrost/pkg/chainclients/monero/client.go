@@ -4179,6 +4179,19 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			}
 		}
 	}
+	if isOutboundFromVault && len(item.XmrKeyImages) > 0 {
+		kept, stripErr := c.stripMismatchedOutboundXMRKeyImages(item)
+		if stripErr != nil {
+			return nil, false, stripErr
+		}
+		if !kept {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Str("memo", item.Memo).
+				Msg("stripped XMR key-images that do not match outbound vault outputs")
+		}
+	}
 	if len(item.XmrKeyImages) > 0 {
 		if isOutboundFromVault && len(item.TxKeys) == 0 {
 			c.logger.Info().
@@ -4405,6 +4418,29 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		Int("proof_count", len(proofs)).
 		Msg("attached XMR key-images to finalized observation")
 	return item, true, nil
+}
+
+func (c *Client) stripMismatchedOutboundXMRKeyImages(item *stypes.TxInItem) (bool, error) {
+	if item == nil || len(item.XmrKeyImages) == 0 || c.frostSigner == nil {
+		return true, nil
+	}
+	outputs, err := c.collectVaultOutputsForTx(item.ObservedVaultPubKey, item.Tx)
+	if err != nil {
+		return false, err
+	}
+	proofs := canonicalXMRKeyImageProofs(item.XmrKeyImages)
+	if len(proofs) != len(outputs) {
+		item.XmrKeyImages = nil
+		return false, nil
+	}
+	for i, output := range outputs {
+		proof := proofs[i]
+		if !strings.EqualFold(proof.TxHash, output.TxHash) || proof.OutputIndex != output.OutputIndex {
+			item.XmrKeyImages = nil
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (c *Client) ValidateObservedTxIn(tx common.ObservedTx) error {

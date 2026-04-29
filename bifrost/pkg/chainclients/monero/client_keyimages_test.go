@@ -1982,6 +1982,96 @@ func TestPrepareObservedTxInItemKeepsFinalOutboundWithoutTrackedChange(t *testin
 	assert.Empty(t, tssServer.reqs)
 }
 
+func TestPrepareObservedTxInItemStripsMismatchedOutboundKeyImages(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("1", 64)
+	destination := common.XMRSeededDummyAddress('8', []byte("external-without-change"))
+	memo := "OUT:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		noOwnedChange := false
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+url.PathEscape(vaultPubKey.String()):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:              txHash,
+					HasOwnedChange:      &noOwnedChange,
+					FromAddress:         vaultAddr.String(),
+					ToAddress:           destination,
+					Amount:              10,
+					Fee:                 1,
+					Memo:                memo,
+					PlannedHeight:       100,
+					Status:              "observed_mined",
+					TxKeys:              []string{strings.Repeat("1", 64)},
+					RegisteredInventory: true,
+				}},
+			})
+		case r.URL.Path == "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: false, ActualFee: 7 * moneroAtomicToThorchain})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: nil})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination,
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                memo,
+		TxKeys:              []string{strings.Repeat("1", 64)},
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "receiver-vault-keyimage", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Empty(t, prepared.XmrKeyImages)
+	require.Equal(t, uint64(7), prepared.Gas.ToCoins().GetCoin(common.XMRAsset).Amount.Uint64())
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	assert.Empty(t, tssServer.reqs)
+}
+
 func TestPrepareObservedTxInItemRecoversFinalOutboundTxKeysFromLocalState(t *testing.T) {
 	t.Parallel()
 
@@ -2166,6 +2256,10 @@ func TestPrepareObservedTxInItemUsesRegisteredTxKeysForKeyImageReplay(t *testing
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
 			validateCalls++
 			http.Error(w, "validation should be bypassed for registered txkeys", http.StatusInternalServerError)
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100}},
+			})
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
