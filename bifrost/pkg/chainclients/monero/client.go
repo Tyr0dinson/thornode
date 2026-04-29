@@ -1628,7 +1628,7 @@ func (c *Client) drivePendingScannerRescans(states []xmrFrostVaultStateEntry) ([
 		return states, nil
 	}
 
-	const maxRescanBatchesPerTick = 8
+	const maxRescanBatchesPerTick = 32
 
 	current := states
 	reorgWindow := int64(0)
