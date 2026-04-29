@@ -667,25 +667,15 @@ func mergeXMRMetadataIntoTxInItem(existing, incoming *types.TxInItem) bool {
 		existing.TxKeys = append(existing.TxKeys, txKey)
 		changed = true
 	}
-	for _, proof := range incoming.XmrKeyImages {
-		if proof == nil {
-			continue
-		}
-		found := false
-		for _, existingProof := range existing.XmrKeyImages {
-			if common.XmrKeyImageProofsEqual(
-				[]*common.XmrKeyImageProof{existingProof},
-				[]*common.XmrKeyImageProof{proof},
-			) {
-				found = true
-				break
+	if len(incoming.XmrKeyImages) > 0 && !common.XmrKeyImageProofsEqual(existing.XmrKeyImages, incoming.XmrKeyImages) {
+		existing.XmrKeyImages = make([]*common.XmrKeyImageProof, 0, len(incoming.XmrKeyImages))
+		for _, proof := range incoming.XmrKeyImages {
+			if proof == nil {
+				continue
 			}
+			cp := *proof
+			existing.XmrKeyImages = append(existing.XmrKeyImages, &cp)
 		}
-		if found {
-			continue
-		}
-		cp := *proof
-		existing.XmrKeyImages = append(existing.XmrKeyImages, &cp)
 		changed = true
 	}
 	return changed

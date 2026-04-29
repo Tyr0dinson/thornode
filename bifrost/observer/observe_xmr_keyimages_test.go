@@ -131,6 +131,9 @@ func TestProcessObservedTxMergesXMRMetadataIntoExistingDeckItem(t *testing.T) {
 		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
 		To:                  common.XMRSeededDummyAddress('4', []byte("vault")),
 		ObservedVaultPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 1, KeyImage: "stale-cross-vault-ki", ProofC: "stale-c", ProofS: "stale-s"},
+		},
 	}
 	deckKey := txInKey{chain: common.XMRChain, height: 100}
 	deck := &types.TxIn{
@@ -159,4 +162,5 @@ func TestProcessObservedTxMergesXMRMetadataIntoExistingDeckItem(t *testing.T) {
 	require.Len(t, deck.TxArray, 1)
 	require.Len(t, deck.TxArray[0].XmrKeyImages, 1)
 	require.Equal(t, "ki0", deck.TxArray[0].XmrKeyImages[0].KeyImage)
+	require.Equal(t, uint32(0), deck.TxArray[0].XmrKeyImages[0].OutputIndex)
 }
