@@ -581,6 +581,54 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", proofs[0].KeyImage)
 }
 
+func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("2", 64)
+	vault := ttypes.Vault{
+		PubKey: vaultPubKey,
+		TxKeysXmr: []*common.XmrTxKeyRef{
+			{TxHash: txHash, TxKeys: []string{"tx-key"}},
+		},
+	}
+	c := &Client{
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{vaultPubKey.String(): vault},
+			},
+		},
+	}
+
+	assert.True(t, c.IsDeckItemStale(&stypes.TxInItem{
+		Tx:                  txHash,
+		ObservedVaultPubKey: vaultPubKey,
+	}))
+	assert.False(t, c.IsDeckItemStale(&stypes.TxInItem{
+		Tx:                  txHash,
+		ObservedVaultPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0"},
+		},
+	}))
+
+	vault.KeyImagesXmr = []*common.XmrKeyImageRef{
+		{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0"},
+	}
+	c.thorchainBridge = &keyImageTestBridge{
+		mockMoneroBridge: mockMoneroBridge{
+			vaultByPubKey: map[string]ttypes.Vault{vaultPubKey.String(): vault},
+		},
+	}
+	assert.True(t, c.IsDeckItemStale(&stypes.TxInItem{
+		Tx:                  txHash,
+		ObservedVaultPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0"},
+		},
+	}))
+}
+
 func TestPrepareObservedTxInItemTreatsLeaderNotReachableAsRetryLater(t *testing.T) {
 	t.Parallel()
 

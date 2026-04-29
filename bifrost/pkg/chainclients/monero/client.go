@@ -4393,6 +4393,9 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 	if err != nil {
 		return false
 	}
+	if len(item.XmrKeyImages) > 0 {
+		return xmrKeyImageProofsAlreadyRegistered(item.XmrKeyImages, vault.KeyImagesXmr)
+	}
 	for _, ref := range vault.TxKeysXmr {
 		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
 			return true
@@ -4404,6 +4407,30 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 		}
 	}
 	return false
+}
+
+func xmrKeyImageProofsAlreadyRegistered(proofs []*common.XmrKeyImageProof, registered []*common.XmrKeyImageRef) bool {
+	if len(proofs) == 0 {
+		return false
+	}
+	registeredSet := make(map[string]struct{}, len(registered))
+	for _, proof := range registered {
+		if proof == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s:%d", normalizeTxID(proof.TxHash), proof.OutputIndex)
+		registeredSet[key] = struct{}{}
+	}
+	for _, proof := range proofs {
+		if proof == nil {
+			return false
+		}
+		key := fmt.Sprintf("%s:%d", normalizeTxID(proof.TxHash), proof.OutputIndex)
+		if _, ok := registeredSet[key]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) postKeysignFailure(tx stypes.TxOutItem, height int64, signErr error) error {
