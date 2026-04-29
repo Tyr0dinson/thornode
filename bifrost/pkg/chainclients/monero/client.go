@@ -979,16 +979,22 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 
 	backlogOutputs := xmrOutputsMissingKeyImages(allOutputs)
 	if len(backlogOutputs) == 0 {
+		backlogOutputs = xmrOutputsWithLocalKeyImagesMissingFromVault(allOutputs, vault.KeyImagesXmr)
+	}
+	if len(backlogOutputs) == 0 {
 		return
 	}
 
 	backlogHeadTxHash := normalizeTxID(backlogOutputs[0].TxHash)
 	txOutputs := filterVaultOutputsForTx(allOutputs, backlogHeadTxHash)
 	pendingOutputs := xmrOutputsMissingKeyImages(txOutputs)
-	if len(txOutputs) == 0 || len(pendingOutputs) == 0 {
+	if len(txOutputs) == 0 {
 		return
 	}
-	if len(pendingOutputs) != len(txOutputs) {
+	if len(pendingOutputs) == 0 && !xmrTxOutputsNeedKeyImageAttestation(txOutputs, vault.KeyImagesXmr) {
+		return
+	}
+	if len(pendingOutputs) != 0 && len(pendingOutputs) != len(txOutputs) {
 		c.logger.Info().
 			Str("vault", ceremonyCtx.vaultPubKey.String()).
 			Str("tx_hash", backlogHeadTxHash).
@@ -999,6 +1005,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
+		c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
 		return
 	}
 
@@ -1010,10 +1017,14 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		Int64("requested_finalise_height", finaliseHeight).
 		Msg("driving local xmr key-image backlog head")
 
+	ceremonyOutputs := pendingOutputs
+	if len(ceremonyOutputs) == 0 {
+		ceremonyOutputs = txOutputs
+	}
 	proofs, err := c.generateObservedTxKeyImages(
 		ceremonyCtx.vaultPubKey,
 		backlogHeadTxHash,
-		pendingOutputs,
+		ceremonyOutputs,
 		ceremonyCtx.members,
 		finaliseHeight,
 		xmrWorkKindReplayKeyImage,
@@ -1051,11 +1062,90 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs, proofs)
+	c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
 		Int("proof_count", len(proofs)).
 		Msg("xmr key-image backlog: cached locally generated proof set")
+}
+
+func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, txHash string, fallbackHeight int64) {
+	item, err := c.xmrObservedTxInItemFromVoter(vaultPubKey, txHash, fallbackHeight)
+	if err != nil {
+		c.logger.Debug().
+			Err(err).
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", normalizeTxID(txHash)).
+			Msg("xmr key-image backlog: cannot replay observation for local proof set")
+		return
+	}
+	if c.scanner != nil {
+		c.scanner.queueReplayTxInItems([]*stypes.TxInItem{item})
+		c.logger.Info().
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", normalizeTxID(txHash)).
+			Msg("xmr key-image backlog: queued observation replay for local proof set")
+		return
+	}
+	if c.globalTxsQueue == nil {
+		return
+	}
+	select {
+	case c.globalTxsQueue <- stypes.TxIn{Chain: common.XMRChain, TxArray: []*stypes.TxInItem{item}}:
+		c.logger.Info().
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", normalizeTxID(txHash)).
+			Msg("xmr key-image backlog: submitted observation replay for local proof set")
+	default:
+		c.logger.Debug().
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", normalizeTxID(txHash)).
+			Msg("xmr key-image backlog: observation queue full")
+	}
+}
+
+func (c *Client) xmrObservedTxInItemFromVoter(vaultPubKey common.PubKey, txHash string, fallbackHeight int64) (*stypes.TxInItem, error) {
+	if c.thorchainBridge == nil {
+		return nil, fmt.Errorf("thorchain bridge is not configured")
+	}
+	normalizedTxHash := normalizeTxID(txHash)
+	voter, err := c.thorchainBridge.GetObservedTxVoter(normalizedTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
+	}
+	observed, err := selectObservedXMRForVault(voter, normalizedTxHash, vaultPubKey)
+	if err != nil {
+		return nil, err
+	}
+	height := observed.BlockHeight
+	if height <= 0 {
+		height = fallbackHeight
+	}
+	if height <= 0 {
+		height = voter.FinalisedHeight
+	}
+	if height <= 0 {
+		height = voter.Height
+	}
+
+	item := stypes.NewTxInItem(
+		height,
+		observed.Tx.ID.String(),
+		observed.Tx.Memo,
+		observed.Tx.FromAddress.String(),
+		observed.Tx.ToAddress.String(),
+		observed.Tx.Coins,
+		observed.Tx.Gas,
+		observed.ObservedPubKey,
+		observed.Aggregator,
+		observed.AggregatorTarget,
+		observed.AggregatorTargetLimit,
+	)
+	if item == nil {
+		return nil, fmt.Errorf("failed to build observed tx item")
+	}
+	return item, nil
 }
 
 func (c *Client) refreshOutgoingInventoryReplay() {
@@ -1260,6 +1350,41 @@ func selectObservedOutboundForVault(
 		return fallback, nil
 	}
 	return nil, fmt.Errorf("observed tx voter %s has no xmr outbound observation", txHash)
+}
+
+func selectObservedXMRForVault(
+	voter *ttypes.QueryObservedTxVoter,
+	txHash string,
+	vaultPubKey common.PubKey,
+) (*ttypes.QueryObservedTx, error) {
+	if voter == nil {
+		return nil, fmt.Errorf("observed tx voter is nil for %s", txHash)
+	}
+
+	normalizedTxHash := normalizeTxID(txHash)
+	candidates := make([]*ttypes.QueryObservedTx, 0, len(voter.Txs)+1)
+	if !voter.Tx.Tx.IsEmpty() {
+		candidates = append(candidates, &voter.Tx)
+	}
+	for i := range voter.Txs {
+		candidates = append(candidates, &voter.Txs[i])
+	}
+
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.Tx.IsEmpty() {
+			continue
+		}
+		if !candidate.Tx.Chain.Equals(common.XMRChain) {
+			continue
+		}
+		if !strings.EqualFold(candidate.Tx.ID.String(), normalizedTxHash) {
+			continue
+		}
+		if candidate.ObservedPubKey.Equals(vaultPubKey) {
+			return candidate, nil
+		}
+	}
+	return nil, fmt.Errorf("observed tx voter %s has no xmr observation for vault %s", txHash, vaultPubKey)
 }
 
 func (c *Client) trackedXMRVaultsForKeyImageCatchup() (ttypes.Vaults, error) {
@@ -4772,6 +4897,46 @@ func xmrOutputsMissingKeyImages(outputs []xmrFrostOutputEntry) []xmrFrostOutputE
 		return pending[i].OutputIndex < pending[j].OutputIndex
 	})
 	return pending
+}
+
+func xmrOutputsWithLocalKeyImagesMissingFromVault(outputs []xmrFrostOutputEntry, refs []*common.XmrKeyImageRef) []xmrFrostOutputEntry {
+	registered := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		if ref == nil {
+			continue
+		}
+		registered[xmrOutputRefKey(ref.TxHash, ref.OutputIndex)] = strings.ToLower(strings.TrimSpace(ref.KeyImage))
+	}
+
+	pending := make([]xmrFrostOutputEntry, 0)
+	for _, output := range outputs {
+		localKeyImage := strings.ToLower(strings.TrimSpace(output.KeyImage))
+		if localKeyImage == "" {
+			continue
+		}
+		registeredKeyImage, ok := registered[xmrOutputRefKey(output.TxHash, output.OutputIndex)]
+		if ok && registeredKeyImage != "" && strings.EqualFold(registeredKeyImage, localKeyImage) {
+			continue
+		}
+		pending = append(pending, output)
+	}
+	sort.Slice(pending, func(i, j int) bool {
+		if pending[i].Height != pending[j].Height {
+			return pending[i].Height < pending[j].Height
+		}
+		if normalizeTxID(pending[i].TxHash) != normalizeTxID(pending[j].TxHash) {
+			return normalizeTxID(pending[i].TxHash) < normalizeTxID(pending[j].TxHash)
+		}
+		return pending[i].OutputIndex < pending[j].OutputIndex
+	})
+	return pending
+}
+
+func xmrTxOutputsNeedKeyImageAttestation(outputs []xmrFrostOutputEntry, refs []*common.XmrKeyImageRef) bool {
+	if len(outputs) == 0 {
+		return false
+	}
+	return len(xmrOutputsWithLocalKeyImagesMissingFromVault(outputs, refs)) > 0
 }
 
 func xmrPendingKeyImageTxCount(outputs []xmrFrostOutputEntry) int {
