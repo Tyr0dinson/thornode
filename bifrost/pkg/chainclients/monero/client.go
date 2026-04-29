@@ -883,19 +883,6 @@ func (c *Client) driveLocalKeyImageBacklogForVaults(vaults ttypes.Vaults) {
 	if c.frostSigner == nil || c.tssServer == nil || c.thorchainBridge == nil {
 		return
 	}
-	syncState, syncReason, err := c.xmrLocalSyncState(nil)
-	if err != nil {
-		c.logger.Debug().Err(err).Msg("xmr key-image backlog: failed to resolve local sync state")
-		return
-	}
-	if syncState != xmrSyncStateAtTip {
-		c.logger.Info().
-			Str("sync_state", string(syncState)).
-			Str("reason", syncReason).
-			Msg("xmr key-image backlog: deferring origination while node is syncing_to_tip")
-		return
-	}
-
 	version, err := c.thorchainBridge.GetThorchainVersion()
 	if err != nil {
 		c.logger.Debug().Err(err).Msg("xmr key-image backlog: failed to resolve thornode version")
@@ -903,6 +890,18 @@ func (c *Client) driveLocalKeyImageBacklogForVaults(vaults ttypes.Vaults) {
 	}
 
 	for _, vault := range vaults {
+		vaultPubKey := keyImageCatchupVaultPubKey(vault)
+		if vaultPubKey.IsEmpty() {
+			continue
+		}
+		syncState, syncReason, syncErr := c.xmrLocalSyncStateForVault(nil, vaultPubKey)
+		if syncErr != nil {
+			c.logger.Debug().
+				Err(syncErr).
+				Str("vault", vaultPubKey.String()).
+				Msg("xmr key-image backlog: failed to resolve local vault sync state")
+			continue
+		}
 		c.driveLocalKeyImageBacklogForVault(vault, version.String(), syncState, syncReason)
 	}
 }
@@ -2145,10 +2144,6 @@ func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrV
 	if err != nil {
 		return nil, err
 	}
-	syncState, _, err := c.xmrLocalSyncState(states)
-	if err != nil {
-		return nil, err
-	}
 	stateIndex := xmrVaultStateIndex(states)
 	pendingFinalizeCounts := make(map[string]int)
 	if c.keyImageWorkStore != nil {
@@ -2172,6 +2167,10 @@ func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrV
 		vaultPubKey := keyImageCatchupVaultPubKey(vault)
 		if vaultPubKey.IsEmpty() {
 			continue
+		}
+		syncState, _, syncErr := c.xmrLocalSyncStateForVault(states, vaultPubKey)
+		if syncErr != nil {
+			return nil, syncErr
 		}
 		ceremonyCtx, ctxErr := c.resolveXMRKeyImageCeremonyContext(vaultPubKey)
 		if ctxErr != nil {

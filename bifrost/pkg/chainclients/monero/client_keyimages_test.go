@@ -527,6 +527,91 @@ func TestDriveLocalKeyImageBacklogCachesProofsForLaterObservation(t *testing.T) 
 	tssServer.mu.Unlock()
 }
 
+func TestDriveLocalKeyImageBacklogUsesPerVaultSyncState(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	staleVaultPubKey := common.PubKey("cthorpub1zcjduepqyf5a5mzu9v5njvd5s88ynqj3rnmjcejctd44848hp6wl8k3a394sv6uwps")
+	txHash := strings.Repeat("b", 64)
+
+	var mu sync.Mutex
+	outputs := []xmrFrostOutputEntry{{
+		TxHash:      txHash,
+		OutputIndex: 0,
+		Amount:      10,
+		Height:      100,
+	}}
+	vaultStates := xmrFrostVaultStatesResponse{Vaults: []xmrFrostVaultStateEntry{
+		{VaultPubKey: staleVaultPubKey.String(), Rescan: true},
+		{VaultPubKey: vaultPubKey.String(), Address: vaultAddr.String(), Birthday: 100, Rescan: false},
+	}}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/vaults":
+			_ = json.NewEncoder(w).Encode(vaultStates)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			require.Equal(t, "all", r.URL.Query().Get("view"))
+			mu.Lock()
+			resp := append([]xmrFrostOutputEntry(nil), outputs...)
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{Outputs: resp})
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/monero/key-images/"):
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			for i := range outputs {
+				for _, image := range req.KeyImages {
+					if normalizeTxID(outputs[i].TxHash) == normalizeTxID(image.TxHash) &&
+						outputs[i].OutputIndex == image.OutputIndex {
+						outputs[i].KeyImage = image.KeyImage
+					}
+				}
+			}
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	vault := ttypes.Vault{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
+		Membership:  []string{"member-a", "member-b", "member-c"},
+		Status:      ttypes.VaultStatus_ActiveVault,
+	}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): vault,
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	c.driveLocalKeyImageBacklogForVaults(ttypes.Vaults{vault})
+
+	tssServer.mu.Lock()
+	require.Len(t, tssServer.reqs, 1)
+	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
+	tssServer.mu.Unlock()
+}
+
 func TestPrepareObservedTxInItemTreatsLeaderNotReachableAsRetryLater(t *testing.T) {
 	t.Parallel()
 
