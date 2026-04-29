@@ -186,6 +186,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	if err := runChainnetXMRVaultMetadataBackfillOnce(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to run one-time chainnet XMR vault metadata backfill", "error", err)
 	}
+	if err := runChainnetStaleInFlightMigrateResetOnce(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to run one-time chainnet stale in-flight migrate reset", "error", err)
+	}
 
 	version := am.mgr.GetVersion()
 	localVer := semver.MustParse(constants.SWVersion.String())
