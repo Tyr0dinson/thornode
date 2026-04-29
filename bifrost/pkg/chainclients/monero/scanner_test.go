@@ -2,7 +2,11 @@ package monero
 
 import (
 	"errors"
+	"strings"
 	"testing"
+
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 func TestAverageNetworkFeeFromBlock(t *testing.T) {
@@ -49,6 +53,38 @@ func TestIsUnavailableBlockErr(t *testing.T) {
 	}
 	if IsUnavailableBlockErr(errString("some other rpc error")) {
 		t.Fatal("expected non-block-height errors to be ignored")
+	}
+}
+
+func TestDedupeTxInItemsPreservesReplayMetadata(t *testing.T) {
+	txHash := strings.Repeat("a", 64)
+	vaultPubKey := common.PubKey("cthorpub1zcjduepqyf5a5mzu9v5njvd5s88ynqj3rnmjcejctd44848hp6wl8k3a394sv6uwps")
+	base := &stypes.TxInItem{
+		Tx:                  txHash,
+		Sender:              "sender",
+		To:                  "to",
+		ObservedVaultPubKey: vaultPubKey,
+	}
+	replay := &stypes.TxInItem{
+		Tx:                  txHash,
+		Sender:              "sender",
+		To:                  "to",
+		ObservedVaultPubKey: vaultPubKey,
+		TxKeys:              []string{"tx-key"},
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "key-image"},
+		},
+	}
+
+	deduped := (&Scanner{}).dedupeTxInItemsByTxID([]*stypes.TxInItem{base, replay})
+	if len(deduped) != 1 {
+		t.Fatalf("expected one deduped item, got %d", len(deduped))
+	}
+	if len(deduped[0].TxKeys) != 1 || deduped[0].TxKeys[0] != "tx-key" {
+		t.Fatalf("expected txkey replay metadata to be preserved, got %#v", deduped[0].TxKeys)
+	}
+	if len(deduped[0].XmrKeyImages) != 1 || deduped[0].XmrKeyImages[0].KeyImage != "key-image" {
+		t.Fatalf("expected keyimage replay metadata to be preserved, got %#v", deduped[0].XmrKeyImages)
 	}
 }
 

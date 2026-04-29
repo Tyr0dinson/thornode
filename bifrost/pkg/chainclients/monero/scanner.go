@@ -1185,6 +1185,8 @@ func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxIn
 		if existing.Memo == "" && item.Memo != "" {
 			existing.Memo = item.Memo
 		}
+		existing.TxKeys = mergeStrings(existing.TxKeys, item.TxKeys)
+		existing.XmrKeyImages = mergeXMRKeyImageProofs(existing.XmrKeyImages, item.XmrKeyImages)
 	}
 
 	deduped := make([]*stypes.TxInItem, 0, len(order))
@@ -1192,6 +1194,57 @@ func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxIn
 		deduped = append(deduped, merged[observationKey])
 	}
 	return deduped
+}
+
+func mergeStrings(existing, incoming []string) []string {
+	if len(incoming) == 0 {
+		return existing
+	}
+	if len(existing) == 0 {
+		return append([]string(nil), incoming...)
+	}
+	seen := make(map[string]struct{}, len(existing)+len(incoming))
+	merged := append([]string(nil), existing...)
+	for _, value := range existing {
+		seen[value] = struct{}{}
+	}
+	for _, value := range incoming {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		merged = append(merged, value)
+	}
+	return merged
+}
+
+func mergeXMRKeyImageProofs(existing, incoming []*common.XmrKeyImageProof) []*common.XmrKeyImageProof {
+	if len(incoming) == 0 {
+		return existing
+	}
+	if len(existing) == 0 {
+		return append([]*common.XmrKeyImageProof(nil), incoming...)
+	}
+	seen := make(map[string]struct{}, len(existing)+len(incoming))
+	merged := append([]*common.XmrKeyImageProof(nil), existing...)
+	for _, proof := range existing {
+		if proof == nil {
+			continue
+		}
+		seen[fmt.Sprintf("%s:%d:%s", normalizeTxID(proof.TxHash), proof.OutputIndex, strings.TrimSpace(proof.KeyImage))] = struct{}{}
+	}
+	for _, proof := range incoming {
+		if proof == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s:%d:%s", normalizeTxID(proof.TxHash), proof.OutputIndex, strings.TrimSpace(proof.KeyImage))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, proof)
+	}
+	return merged
 }
 
 func txInItemObservationKey(item *stypes.TxInItem) string {
