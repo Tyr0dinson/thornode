@@ -1443,7 +1443,12 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 
 		txKeyEntries, txKeyErr := txKeyEntriesFromVault(c.thorchainBridge, c.chain, vault)
 		if txKeyErr != nil {
-			return nil, fmt.Errorf("failed to build tx-key registration inventory for vault %s: %w", vaultPubKey.String(), txKeyErr)
+			c.logger.Warn().
+				Err(txKeyErr).
+				Str("vault", vaultPubKey.String()).
+				Msg("xmr state sync: skipping vault registration until tx-key inventory metadata can be built")
+			delete(nextFingerprints, vaultPubKey.String())
+			continue
 		}
 
 		_, regErr := ensureFrostVaultRegisteredWithInventory(
@@ -1458,7 +1463,14 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 			txKeyEntries,
 		)
 		if regErr != nil {
-			return nil, fmt.Errorf("failed to register vault %s: %w", vaultPubKey.String(), regErr)
+			c.logger.Warn().
+				Err(regErr).
+				Str("vault", vaultPubKey.String()).
+				Int("key_images", len(vault.KeyImagesXmr)).
+				Int("tx_keys", len(vault.TxKeysXmr)).
+				Msg("xmr state sync: skipping vault registration until signer accepts inventory")
+			delete(nextFingerprints, vaultPubKey.String())
+			continue
 		}
 		needsRefresh = true
 	}

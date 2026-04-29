@@ -169,6 +169,83 @@ func TestSyncTrackedVaultRegistrationsRegistersNewVaultInRescanMode(t *testing.T
 	assert.Equal(t, 0, resetReqs, "bifrost must not call reset in the sync flow — sidecar defaults rescan=true on fresh register")
 }
 
+func TestSyncTrackedVaultRegistrationsContinuesAfterVaultRegisterFailure(t *testing.T) {
+	t.Parallel()
+
+	badVaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	goodVaultPubKey, goodVaultAddr := testVaultPubKeyAndAddress(t)
+	badVault := ttypes.Vault{
+		PubKey:                 badVaultPubKey,
+		PubKeyEddsa:            badVaultPubKey,
+		PubKeyFrost:            badVaultPubKey,
+		Status:                 ttypes.VaultStatus_InactiveVault,
+		VaultCreationHeightXmr: 25,
+	}
+	goodVault := ttypes.Vault{
+		PubKey:                 goodVaultPubKey,
+		PubKeyEddsa:            goodVaultPubKey,
+		PubKeyFrost:            goodVaultPubKey,
+		Status:                 ttypes.VaultStatus_ActiveVault,
+		VaultCreationHeightXmr: 30,
+	}
+
+	var mu sync.Mutex
+	var registerReqs []xmrFrostRegisterVaultRequest
+	vaultStates := xmrFrostVaultStatesResponse{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/vaults":
+			mu.Lock()
+			defer mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(vaultStates))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+			var req xmrFrostRegisterVaultRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			mu.Lock()
+			registerReqs = append(registerReqs, req)
+			if req.VaultPubKey == badVaultPubKey.String() {
+				mu.Unlock()
+				http.Error(w, `{"error":"from_address does not belong to the provided vault"}`, http.StatusBadRequest)
+				return
+			}
+			vaultStates.Vaults = append(vaultStates.Vaults, xmrFrostVaultStateEntry{
+				VaultPubKey: req.VaultPubKey,
+				Address:     req.Address,
+				Birthday:    uint64(req.VaultCreationHeight),
+			})
+			mu.Unlock()
+			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:                 common.XMRChain,
+		frostSigner:           signer,
+		logger:                testLogger(),
+		trackedVaultSyncState: make(map[string]string),
+	}
+
+	states, err := client.syncTrackedVaultRegistrations(ttypes.Vaults{badVault, goodVault})
+	require.NoError(t, err)
+	require.Len(t, states, 1)
+	assert.Equal(t, goodVaultPubKey.String(), states[0].VaultPubKey)
+	assert.Equal(t, goodVaultAddr.String(), states[0].Address)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, registerReqs, 2)
+	assert.Equal(t, badVaultPubKey.String(), registerReqs[0].VaultPubKey)
+	assert.Equal(t, goodVaultPubKey.String(), registerReqs[1].VaultPubKey)
+}
+
 func TestTxKeyCatchupNeedsReplayUsesSignerOutgoingStateOnly(t *testing.T) {
 	t.Parallel()
 
