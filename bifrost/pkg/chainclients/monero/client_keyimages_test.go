@@ -230,6 +230,96 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) 
 	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
 }
 
+func TestIsDeckItemStaleAllowsKeyImageReplayAfterTxKeyRegistration(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("b", 64)
+	txKey := strings.Repeat("9", 64)
+	keyImage := strings.Repeat("a", 64)
+
+	keyImageProof := &common.XmrKeyImageProof{
+		TxHash:      txHash,
+		OutputIndex: 0,
+		KeyImage:    keyImage,
+		ProofC:      strings.Repeat("c", 64),
+		ProofS:      strings.Repeat("d", 64),
+	}
+
+	tests := []struct {
+		name      string
+		vault     ttypes.Vault
+		item      *stypes.TxInItem
+		wantStale bool
+	}{
+		{
+			name: "txkey registered and no keyimage replay is stale",
+			vault: ttypes.Vault{
+				PubKey: vaultPubKey,
+				TxKeysXmr: []*common.XmrTxKeyRef{
+					{TxHash: txHash, TxKeys: []string{txKey}},
+				},
+			},
+			item: &stypes.TxInItem{
+				Tx:                  txHash,
+				ObservedVaultPubKey: vaultPubKey,
+			},
+			wantStale: true,
+		},
+		{
+			name: "txkey registered and keyimage replay is not stale",
+			vault: ttypes.Vault{
+				PubKey: vaultPubKey,
+				TxKeysXmr: []*common.XmrTxKeyRef{
+					{TxHash: txHash, TxKeys: []string{txKey}},
+				},
+			},
+			item: &stypes.TxInItem{
+				Tx:                  txHash,
+				ObservedVaultPubKey: vaultPubKey,
+				XmrKeyImages:        []*common.XmrKeyImageProof{keyImageProof},
+			},
+			wantStale: false,
+		},
+		{
+			name: "keyimage registered and keyimage replay is stale",
+			vault: ttypes.Vault{
+				PubKey: vaultPubKey,
+				TxKeysXmr: []*common.XmrTxKeyRef{
+					{TxHash: txHash, TxKeys: []string{txKey}},
+				},
+				KeyImagesXmr: []*common.XmrKeyImageRef{
+					{TxHash: txHash, OutputIndex: 0, KeyImage: keyImage},
+				},
+			},
+			item: &stypes.TxInItem{
+				Tx:                  txHash,
+				ObservedVaultPubKey: vaultPubKey,
+				XmrKeyImages:        []*common.XmrKeyImageProof{keyImageProof},
+			},
+			wantStale: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &Client{
+				thorchainBridge: &mockMoneroBridge{
+					vaultByPubKey: map[string]ttypes.Vault{
+						vaultPubKey.String(): tt.vault,
+					},
+				},
+				logger: testLogger(),
+			}
+
+			require.Equal(t, tt.wantStale, c.IsDeckItemStale(tt.item))
+		})
+	}
+}
+
 func TestPrepareObservedTxInItemSkipsFinalInboundUntilTrackedOutputsExist(t *testing.T) {
 	t.Parallel()
 

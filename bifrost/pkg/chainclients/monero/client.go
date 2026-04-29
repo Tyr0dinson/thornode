@@ -4316,13 +4316,17 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 	if err != nil {
 		return false
 	}
-	for _, ref := range vault.TxKeysXmr {
-		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
+	hasKeyImageReplay := len(item.XmrKeyImages) > 0
+	for _, proof := range vault.KeyImagesXmr {
+		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
 			return true
 		}
 	}
-	for _, proof := range vault.KeyImagesXmr {
-		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
+	if hasKeyImageReplay {
+		return false
+	}
+	for _, ref := range vault.TxKeysXmr {
+		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
 			return true
 		}
 	}
