@@ -25,7 +25,7 @@ use crate::frost::keys::ThresholdKeyShare;
 use crate::frost::sign::SignCoordinator;
 use crate::state::store::{
     IdempotencyClaimResult, OutgoingTransferRecord, OutgoingTransferStatus, OutputRef, OutputState,
-    RegisteredKeyImageRef, ScanBlockMeta, TrackedOutput,
+    RegisteredKeyImageRef, ScanBlockMeta, TrackedOutput, VaultRecord,
 };
 use crate::state::{
     ApplyKeyImagesOutcome, OutgoingLifecycle, OutgoingObservation, OutputLifecycle, VaultLifecycle,
@@ -2161,7 +2161,7 @@ fn scan_lag_exceeds(tip_height: u64, scanned_height: u64, max_lag_blocks: u64) -
     tip_height.saturating_sub(scanned_height) > max_lag_blocks
 }
 
-const RESCAN_MAX_BLOCKS_PER_SYNC: u64 = 500;
+const RESCAN_MAX_BLOCKS_PER_SYNC: u64 = 50;
 
 fn rescan_target_height(scan_height: u64, validated_height: u64, chain_tip: u64) -> u64 {
     let rescan_tip = std::cmp::max(validated_height, chain_tip);
@@ -2169,6 +2169,25 @@ fn rescan_target_height(scan_height: u64, validated_height: u64, chain_tip: u64)
         scan_height.saturating_add(RESCAN_MAX_BLOCKS_PER_SYNC),
         rescan_tip,
     )
+}
+
+fn active_rescan_vault_key<F>(
+    vaults: &[VaultRecord],
+    validated_height: u64,
+    chain_tip: u64,
+    mut load_scan_height: F,
+) -> Option<String>
+where
+    F: FnMut(&str) -> Option<u64>,
+{
+    let tip = std::cmp::max(validated_height, chain_tip);
+    vaults.iter().find_map(|vault| {
+        if !vault.rescan {
+            return None;
+        }
+        let scan_height = load_scan_height(&vault.vault_pub_key).unwrap_or(vault.birthday);
+        (scan_height < tip).then(|| vault.vault_pub_key.clone())
+    })
 }
 
 fn outputs_for_view(
@@ -2302,8 +2321,21 @@ pub async fn scanner_sync(
     } else {
         req.reorg_window
     };
+    let active_rescan_vault = active_rescan_vault_key(
+        &vaults,
+        effective_height,
+        rescan_chain_tip,
+        |vault_pub_key| state.store.load_scan_height(vault_pub_key).ok().flatten(),
+    );
+    let mut touched_vaults = HashSet::new();
 
     for vault in &vaults {
+        if let Some(active) = active_rescan_vault.as_deref() {
+            if vault.vault_pub_key != active {
+                continue;
+            }
+        }
+
         // If vault is in rescan mode, self-scan from stored height to chain tip.
         // When rescan is already at tip (e.g. a freshly-registered vault whose
         // birthday equals the current height), flip rescan=false and fall
@@ -2311,6 +2343,7 @@ pub async fn scanner_sync(
         // block via the normal path. When an actual batch runs, skip normal
         // scan for this cycle — the next scanner_sync will pick it up.
         if vault.rescan {
+            touched_vaults.insert(vault.vault_pub_key.clone());
             let vault_scan_height = state
                 .store
                 .load_scan_height(&vault.vault_pub_key)
@@ -2425,6 +2458,7 @@ pub async fn scanner_sync(
                 continue;
             }
         }
+        touched_vaults.insert(vault.vault_pub_key.clone());
 
         let vault_lifecycle = VaultLifecycle::new(state.store.as_ref());
         let output_lifecycle = OutputLifecycle::new(state.store.as_ref());
@@ -2766,12 +2800,15 @@ pub async fn scanner_sync(
         }
     }
 
-    // Persist scanner in-memory outputs to store for ALL vaults.
+    // Persist scanner in-memory outputs to store for touched vaults.
     // The meta_matches path skips merge_scanned_outputs, so outputs
     // found by the wallet scanner during register_vault stay in memory
-    // but never reach the persistent store. This sync ensures the
-    // output store stays consistent across all nodes.
+    // but never reach the persistent store. Limit this to the vaults this
+    // request actually scanned so rescan catchup stays bounded.
     for vault in &vaults {
+        if !touched_vaults.contains(&vault.vault_pub_key) {
+            continue;
+        }
         let all_outputs = state.scanner.lock().get_all_outputs(&vault.vault_pub_key);
         if let Err(e) = state
             .store
@@ -6124,12 +6161,58 @@ mod tests {
 
     #[test]
     fn rescan_target_height_prefers_chain_tip_with_larger_catchup_budget() {
-        assert_eq!(rescan_target_height(100, 120, 170), 170);
+        assert_eq!(
+            rescan_target_height(100, 120, 170),
+            100 + RESCAN_MAX_BLOCKS_PER_SYNC
+        );
         assert_eq!(
             rescan_target_height(100, 120, 10_000),
             100 + RESCAN_MAX_BLOCKS_PER_SYNC
         );
         assert_eq!(rescan_target_height(600, 650, 640), 650);
+    }
+
+    #[test]
+    fn active_rescan_vault_key_selects_one_lagging_vault() {
+        let vaults = vec![
+            VaultRecord {
+                vault_pub_key: "vault-at-tip".to_string(),
+                group_key: "group-a".to_string(),
+                address: "addr-a".to_string(),
+                source: "test".to_string(),
+                registered_at: 1,
+                rescan: true,
+                birthday: 100,
+            },
+            VaultRecord {
+                vault_pub_key: "vault-lagging".to_string(),
+                group_key: "group-b".to_string(),
+                address: "addr-b".to_string(),
+                source: "test".to_string(),
+                registered_at: 1,
+                rescan: true,
+                birthday: 100,
+            },
+            VaultRecord {
+                vault_pub_key: "vault-not-rescanning".to_string(),
+                group_key: "group-c".to_string(),
+                address: "addr-c".to_string(),
+                source: "test".to_string(),
+                registered_at: 1,
+                rescan: false,
+                birthday: 100,
+            },
+        ];
+
+        let selected = active_rescan_vault_key(&vaults, 150, 150, |vault| match vault {
+            "vault-at-tip" => Some(150),
+            "vault-lagging" => Some(120),
+            _ => Some(0),
+        });
+        assert_eq!(selected.as_deref(), Some("vault-lagging"));
+
+        let selected = active_rescan_vault_key(&vaults, 150, 150, |_| Some(150));
+        assert!(selected.is_none());
     }
 
     #[tokio::test]
