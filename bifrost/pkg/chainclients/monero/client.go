@@ -987,11 +987,17 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		return
 	}
 
+	finaliseHeight := c.resolveXMRKeyImageAnchorHeight(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
+		c.queueFinalizedXMROutboundReplayWithKeyImages(ceremonyCtx.vaultPubKey, backlogHeadTxHash, finaliseHeight, cachedProofs)
+		c.logger.Info().
+			Str("vault", ceremonyCtx.vaultPubKey.String()).
+			Str("tx_hash", backlogHeadTxHash).
+			Int("proof_count", len(cachedProofs)).
+			Msg("xmr key-image backlog: replayed cached proof set")
 		return
 	}
 
-	finaliseHeight := c.resolveXMRKeyImageAnchorHeight(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
