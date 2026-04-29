@@ -30,6 +30,8 @@ type NetworkResponse struct {
 	TotalReserve string `json:"total_reserve"`
 	// Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
 	VaultsMigrating bool `json:"vaults_migrating"`
+	// In-flight migration outbounds blocking vault churn.
+	InFlightMigrations []InFlightMigration `json:"in_flight_migrations,omitempty"`
 	// Sum of the gas the network has spent to send outbounds
 	GasSpentRune string `json:"gas_spent_rune"`
 	// Sum of the gas withheld from users to cover outbound gas
@@ -251,6 +253,38 @@ func (o *NetworkResponse) GetVaultsMigratingOk() (*bool, bool) {
 // SetVaultsMigrating sets field value
 func (o *NetworkResponse) SetVaultsMigrating(v bool) {
 	o.VaultsMigrating = v
+}
+
+// GetInFlightMigrations returns the InFlightMigrations field value if set, zero value otherwise.
+func (o *NetworkResponse) GetInFlightMigrations() []InFlightMigration {
+	if o == nil || o.InFlightMigrations == nil {
+		var ret []InFlightMigration
+		return ret
+	}
+	return o.InFlightMigrations
+}
+
+// GetInFlightMigrationsOk returns a tuple with the InFlightMigrations field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *NetworkResponse) GetInFlightMigrationsOk() ([]InFlightMigration, bool) {
+	if o == nil || o.InFlightMigrations == nil {
+		return nil, false
+	}
+	return o.InFlightMigrations, true
+}
+
+// HasInFlightMigrations returns a boolean if a field has been set.
+func (o *NetworkResponse) HasInFlightMigrations() bool {
+	if o != nil && o.InFlightMigrations != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetInFlightMigrations gets a reference to the given []InFlightMigration and assigns it to the InFlightMigrations field.
+func (o *NetworkResponse) SetInFlightMigrations(v []InFlightMigration) {
+	o.InFlightMigrations = v
 }
 
 // GetGasSpentRune returns the GasSpentRune field value
@@ -524,6 +558,9 @@ func (o NetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
 	if true {
 		toSerialize["vaults_migrating"] = o.VaultsMigrating
 	}
+	if o.InFlightMigrations != nil {
+		toSerialize["in_flight_migrations"] = o.InFlightMigrations
+	}
 	if true {
 		toSerialize["gas_spent_rune"] = o.GasSpentRune
 	}
@@ -592,5 +629,3 @@ func (v *NullableNetworkResponse) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

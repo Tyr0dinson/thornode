@@ -11,6 +11,7 @@ Name | Type | Description | Notes
 **EffectiveSecurityBond** | **string** | effective security bond used to determine maximum pooled RUNE | 
 **TotalReserve** | **string** | total reserve RUNE | 
 **VaultsMigrating** | **bool** | Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults | 
+**InFlightMigrations** | Pointer to [**[]InFlightMigration**](InFlightMigration.md) | In-flight migration outbounds blocking vault churn. | [optional]
 **GasSpentRune** | **string** | Sum of the gas the network has spent to send outbounds | 
 **GasWithheldRune** | **string** | Sum of the gas withheld from users to cover outbound gas | 
 **OutboundFeeMultiplier** | Pointer to **string** | Current outbound fee multiplier, in basis points | [optional] 
@@ -180,6 +181,31 @@ and a boolean to check if the value has been set.
 
 SetVaultsMigrating sets VaultsMigrating field to given value.
 
+
+### GetInFlightMigrations
+
+`func (o *NetworkResponse) GetInFlightMigrations() []InFlightMigration`
+
+GetInFlightMigrations returns the InFlightMigrations field if non-nil, zero value otherwise.
+
+### GetInFlightMigrationsOk
+
+`func (o *NetworkResponse) GetInFlightMigrationsOk() (*[]InFlightMigration, bool)`
+
+GetInFlightMigrationsOk returns a tuple with the InFlightMigrations field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetInFlightMigrations
+
+`func (o *NetworkResponse) SetInFlightMigrations(v []InFlightMigration)`
+
+SetInFlightMigrations sets InFlightMigrations field to given value.
+
+### HasInFlightMigrations
+
+`func (o *NetworkResponse) HasInFlightMigrations() bool`
+
+HasInFlightMigrations returns a boolean if a field has been set.
 
 ### GetGasSpentRune
 
@@ -388,5 +414,3 @@ SetTorPriceHalted sets TorPriceHalted field to given value.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
-
-

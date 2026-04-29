@@ -130,16 +130,14 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 		if migratingVaults {
 			return fmt.Errorf("fail to leave, vault migration still in flight")
 		}
-		if !migratingVaults {
-			// NOTE: there is an edge case, where the first node doesn't have a
-			// vault (it was destroyed when we successfully migrated funds from
-			// their address to a new TSS vault
-			if !h.mgr.Keeper().VaultExists(ctx, nodeAcc.PubKeySet.Secp256k1) {
-				if err := refundBond(ctx, msg.Tx, bondAddr, cosmos.ZeroUint(), &nodeAcc, h.mgr); err != nil {
-					return ErrInternal(err, "fail to refund bond")
-				}
-				nodeAcc.UpdateStatus(NodeDisabled, ctx.BlockHeight())
+		// NOTE: there is an edge case, where the first node doesn't have a
+		// vault (it was destroyed when we successfully migrated funds from
+		// their address to a new TSS vault
+		if !h.mgr.Keeper().VaultExists(ctx, nodeAcc.PubKeySet.Secp256k1) {
+			if err := refundBond(ctx, msg.Tx, bondAddr, cosmos.ZeroUint(), &nodeAcc, h.mgr); err != nil {
+				return ErrInternal(err, "fail to refund bond")
 			}
+			nodeAcc.UpdateStatus(NodeDisabled, ctx.BlockHeight())
 		}
 	}
 	nodeAcc.RequestedToLeave = true

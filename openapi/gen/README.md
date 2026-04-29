@@ -193,6 +193,7 @@ Class | Method | HTTP request | Description
  - [ContractInfoResponse](docs/ContractInfoResponse.md)
  - [ContractInfosResponse](docs/ContractInfosResponse.md)
  - [DerivedPool](docs/DerivedPool.md)
+ - [InFlightMigration](docs/InFlightMigration.md)
  - [InboundAddress](docs/InboundAddress.md)
  - [InboundConfirmationCountedStage](docs/InboundConfirmationCountedStage.md)
  - [InboundFinalisedStage](docs/InboundFinalisedStage.md)
@@ -314,4 +315,3 @@ Each of these functions takes a value of the given basic type and returns a poin
 ## Author
 
 devs@thorchain.org
-
