@@ -580,6 +580,23 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 						Msg("Dropping duplicate observation tx")
 					break
 				}
+				if txInItemMatchesIgnoringXMRMetadata(txInItemDeck, txInItem) {
+					if mergeXMRMetadataIntoTxInItem(txInItemDeck, txInItem) {
+						setDeckStart := time.Now()
+						if err := o.storage.AddOrUpdateTx(in); err != nil {
+							o.logger.Error().Err(err).Msg("fail to update tx with merged XMR metadata")
+						}
+						o.logger.Info().
+							Str("id", txInItem.Tx).
+							Str("chain", in.Chain.String()).
+							Int("tx_keys", len(txInItemDeck.TxKeys)).
+							Int("xmr_key_images", len(txInItemDeck.XmrKeyImages)).
+							Msg("merged XMR metadata into existing observation tx")
+						o.logger.Debug().Msgf("AddOrUpdateTx merged XMR metadata took %s", time.Since(setDeckStart))
+					}
+					foundTx = true
+					break
+				}
 			}
 			if !foundTx {
 				newTxs = append(newTxs, txInItem)
@@ -604,6 +621,74 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 		o.logger.Error().Err(err).Msg("fail to add tx to storage")
 	}
 	o.logger.Debug().Msgf("AddOrUpdateTx new took %s", time.Since(setDeckStart))
+}
+
+func txInItemMatchesIgnoringXMRMetadata(existing, incoming *types.TxInItem) bool {
+	if existing == nil || incoming == nil {
+		return false
+	}
+	if existing.BlockHeight != incoming.BlockHeight ||
+		existing.Tx != incoming.Tx ||
+		existing.Memo != incoming.Memo ||
+		existing.Sender != incoming.Sender ||
+		existing.To != incoming.To ||
+		!existing.Coins.EqualsEx(incoming.Coins) ||
+		!existing.Gas.Equals(incoming.Gas) ||
+		!existing.ObservedVaultPubKey.Equals(incoming.ObservedVaultPubKey) ||
+		existing.Aggregator != incoming.Aggregator ||
+		existing.AggregatorTarget != incoming.AggregatorTarget {
+		return false
+	}
+	if existing.AggregatorTargetLimit == nil || incoming.AggregatorTargetLimit == nil {
+		return existing.AggregatorTargetLimit == incoming.AggregatorTargetLimit
+	}
+	return existing.AggregatorTargetLimit.Equal(*incoming.AggregatorTargetLimit)
+}
+
+func mergeXMRMetadataIntoTxInItem(existing, incoming *types.TxInItem) bool {
+	if existing == nil || incoming == nil {
+		return false
+	}
+	changed := false
+	for _, txKey := range incoming.TxKeys {
+		if txKey == "" {
+			continue
+		}
+		found := false
+		for _, existingTxKey := range existing.TxKeys {
+			if existingTxKey == txKey {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		existing.TxKeys = append(existing.TxKeys, txKey)
+		changed = true
+	}
+	for _, proof := range incoming.XmrKeyImages {
+		if proof == nil {
+			continue
+		}
+		found := false
+		for _, existingProof := range existing.XmrKeyImages {
+			if common.XmrKeyImageProofsEqual(
+				[]*common.XmrKeyImageProof{existingProof},
+				[]*common.XmrKeyImageProof{proof},
+			) {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		cp := *proof
+		existing.XmrKeyImages = append(existing.XmrKeyImages, &cp)
+		changed = true
+	}
+	return changed
 }
 
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
