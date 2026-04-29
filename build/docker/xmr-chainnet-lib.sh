@@ -30,7 +30,12 @@ xmr_chainnet_run() {
   if [[ -n "${XMR_CHAINNET_HOST:-}" ]]; then
     local remote_cmd
     printf -v remote_cmd '%q ' "$@"
-    ssh -o BatchMode=yes "${XMR_CHAINNET_HOST}" "$remote_cmd"
+    if [[ -n "${XMR_CHAINNET_REMOTE_TIMEOUT:-}" ]]; then
+      local remote_timeout
+      printf -v remote_timeout '%q ' timeout "$XMR_CHAINNET_REMOTE_TIMEOUT"
+      remote_cmd="${remote_timeout}${remote_cmd}"
+    fi
+    ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 "${XMR_CHAINNET_HOST}" "$remote_cmd"
   else
     "$@"
   fi
@@ -205,14 +210,23 @@ xmr_chainnet_reference_node() {
 xmr_chainnet_signer_auth() {
   local container="$1"
   xmr_chainnet_run docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$container" | awk -F= '
-    /^XMR_FROST_AUTH_BEARER=/ { sub(/^XMR_FROST_AUTH_BEARER=/, "", $0); print; found=1; exit }
+    /^XMR_FROST_AUTH_BEARER=/ {
+      sub(/^XMR_FROST_AUTH_BEARER=/, "", $0)
+      bearer=$0
+    }
+    /^SIGNER_SEED_PHRASE=/ {
+      sub(/^SIGNER_SEED_PHRASE=/, "", $0)
+      seed=$0
+    }
     END {
-      if (!found) {
+      if (bearer != "") {
+        print bearer
+      } else if (seed != "") {
+        print seed
+      } else {
         exit 1
       }
     }
-  ' 2>/dev/null || xmr_chainnet_run docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$container" | awk -F= '
-    /^SIGNER_SEED_PHRASE=/ { sub(/^SIGNER_SEED_PHRASE=/, "", $0); print; exit }
   '
 }
 
@@ -224,7 +238,7 @@ xmr_chainnet_signer_get() {
   local auth
   auth="$(xmr_chainnet_signer_auth "$container")"
   xmr_chainnet_run docker exec -e AUTH="$auth" -e XPATH="$path" "$container" sh -lc \
-    'curl -sf -H "Authorization: $AUTH" "http://127.0.0.1:'"$SIGNER_API_PORT"'$XPATH"'
+    'curl -sf --connect-timeout 2 --max-time 15 -H "Authorization: $AUTH" "http://127.0.0.1:'"$SIGNER_API_PORT"'$XPATH"'
 }
 
 xmr_chainnet_signer_post_json() {
@@ -236,7 +250,7 @@ xmr_chainnet_signer_post_json() {
   local auth
   auth="$(xmr_chainnet_signer_auth "$container")"
   xmr_chainnet_run docker exec -e AUTH="$auth" -e XPATH="$path" -e JSON_PAYLOAD="$payload" "$container" sh -lc \
-    'curl -sf -H "Authorization: $AUTH" -H "Content-Type: application/json" -X POST -d "$JSON_PAYLOAD" "http://127.0.0.1:'"$SIGNER_API_PORT"'$XPATH"'
+    'curl -sf --connect-timeout 2 --max-time 15 -H "Authorization: $AUTH" -H "Content-Type: application/json" -X POST -d "$JSON_PAYLOAD" "http://127.0.0.1:'"$SIGNER_API_PORT"'$XPATH"'
 }
 
 xmr_chainnet_thornode_get() {
@@ -245,7 +259,7 @@ xmr_chainnet_thornode_get() {
   local container
   container="$(xmr_chainnet_thornode_container "$node")"
   xmr_chainnet_run docker exec -e XPATH="$path" "$container" sh -lc \
-    'curl -sf "http://127.0.0.1:'"$THORNODE_API_PORT"'$XPATH"'
+    'curl -sf --connect-timeout 2 --max-time 15 "http://127.0.0.1:'"$THORNODE_API_PORT"'$XPATH"'
 }
 
 xmr_chainnet_bifrost_logs() {
@@ -262,7 +276,7 @@ xmr_chainnet_monerod_post_json() {
   local container
   container="$(xmr_chainnet_monerod_container)"
   xmr_chainnet_run docker exec -e XPATH="$path" -e JSON_PAYLOAD="$payload" "$container" sh -lc \
-    'curl -sf -H "Content-Type: application/json" -X POST -d "$JSON_PAYLOAD" "http://127.0.0.1:18081$XPATH"'
+    'curl -sf --connect-timeout 2 --max-time 15 -H "Content-Type: application/json" -X POST -d "$JSON_PAYLOAD" "http://127.0.0.1:18081$XPATH"'
 }
 
 xmr_chainnet_short() {

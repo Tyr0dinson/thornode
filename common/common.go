@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/blang/semver"
 )
@@ -44,33 +43,7 @@ func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 }
 
 func sortedXMRKeyImageProofs(proofs []*XmrKeyImageProof) []*XmrKeyImageProof {
-	if len(proofs) == 0 {
-		return nil
-	}
-	out := make([]*XmrKeyImageProof, 0, len(proofs))
-	for _, proof := range proofs {
-		if proof == nil {
-			continue
-		}
-		cp := *proof
-		out = append(out, &cp)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].TxHash != out[j].TxHash {
-			return out[i].TxHash < out[j].TxHash
-		}
-		if out[i].OutputIndex != out[j].OutputIndex {
-			return out[i].OutputIndex < out[j].OutputIndex
-		}
-		if out[i].KeyImage != out[j].KeyImage {
-			return out[i].KeyImage < out[j].KeyImage
-		}
-		if out[i].ProofC != out[j].ProofC {
-			return out[i].ProofC < out[j].ProofC
-		}
-		return out[i].ProofS < out[j].ProofS
-	})
-	return out
+	return CanonicalXMRKeyImageProofs(proofs)
 }
 
 func OutputRefsEqual(left, right []*OutputRef) bool {

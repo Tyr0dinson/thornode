@@ -1097,7 +1097,7 @@ func removeVaultXMRTxKeys(vault *Vault, txHash string) bool {
 }
 
 func xmrOutputRefKey(txHash string, outputIndex uint32) string {
-	return txHash + ":" + fmt.Sprint(outputIndex)
+	return common.XMROutputRefKey(txHash, outputIndex)
 }
 
 // matchedOutbound holds a matching TxOutItem with its height and hash for sorting

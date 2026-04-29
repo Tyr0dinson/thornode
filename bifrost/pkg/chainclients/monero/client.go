@@ -1755,7 +1755,7 @@ func (c *Client) watchedVaultInventoryReplayPending(vault ttypes.Vault, stateEnt
 }
 
 func xmrOutputRefKey(txHash string, outputIndex uint32) string {
-	return strings.ToLower(strings.TrimSpace(txHash)) + ":" + strconv.FormatUint(uint64(outputIndex), 10)
+	return common.XMROutputRefKey(txHash, outputIndex)
 }
 
 func makeApplyKeyImageRefs(refs []*common.XmrKeyImageRef) []xmrFrostApplyKeyImageRef {
@@ -1774,19 +1774,7 @@ func makeApplyKeyImageRefs(refs []*common.XmrKeyImageRef) []xmrFrostApplyKeyImag
 }
 
 func normalizeTxKeyValues(keys []string) []string {
-	if len(keys) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		normalized := strings.ToLower(strings.TrimSpace(key))
-		if normalized == "" {
-			continue
-		}
-		out = append(out, normalized)
-	}
-	sort.Strings(out)
-	return out
+	return common.NormalizeXMRTxKeys(keys)
 }
 
 func sameNormalizedTxKeyValues(left, right []string) bool {
@@ -4479,16 +4467,7 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 }
 
 func xmrKeyImagesRegisteredForTx(txHash string, registered []*common.XmrKeyImageRef) bool {
-	txHash = normalizeTxID(txHash)
-	if txHash == "" {
-		return false
-	}
-	for _, proof := range registered {
-		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
-			return true
-		}
-	}
-	return false
+	return common.XMRKeyImageRefsContainTx(txHash, registered)
 }
 
 func (c *Client) xmrTxKeysAlreadyRegistered(vaultPubKey common.PubKey, txHash string) bool {
@@ -4522,27 +4501,7 @@ func (c *Client) registeredXMRTxKeysForTx(vaultPubKey common.PubKey, txHash stri
 }
 
 func xmrKeyImageProofsAlreadyRegistered(proofs []*common.XmrKeyImageProof, registered []*common.XmrKeyImageRef) bool {
-	if len(proofs) == 0 {
-		return false
-	}
-	registeredSet := make(map[string]struct{}, len(registered))
-	for _, proof := range registered {
-		if proof == nil {
-			continue
-		}
-		key := fmt.Sprintf("%s:%d", normalizeTxID(proof.TxHash), proof.OutputIndex)
-		registeredSet[key] = struct{}{}
-	}
-	for _, proof := range proofs {
-		if proof == nil {
-			return false
-		}
-		key := fmt.Sprintf("%s:%d", normalizeTxID(proof.TxHash), proof.OutputIndex)
-		if _, ok := registeredSet[key]; !ok {
-			return false
-		}
-	}
-	return true
+	return common.XMRKeyImageProofsRegistered(proofs, registered)
 }
 
 func (c *Client) postKeysignFailure(tx stypes.TxOutItem, height int64, signErr error) error {
@@ -5338,29 +5297,7 @@ func (c *Client) isKnownVaultAddress(address string) bool {
 }
 
 func canonicalXMRKeyImageProofs(proofs []*common.XmrKeyImageProof) []*common.XmrKeyImageProof {
-	if len(proofs) == 0 {
-		return nil
-	}
-
-	out := make([]*common.XmrKeyImageProof, 0, len(proofs))
-	for _, proof := range proofs {
-		if proof == nil {
-			continue
-		}
-		cp := *proof
-		cp.TxHash = strings.ToLower(strings.TrimSpace(cp.TxHash))
-		cp.KeyImage = strings.ToLower(strings.TrimSpace(cp.KeyImage))
-		cp.ProofC = strings.ToLower(strings.TrimSpace(cp.ProofC))
-		cp.ProofS = strings.ToLower(strings.TrimSpace(cp.ProofS))
-		out = append(out, &cp)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].TxHash != out[j].TxHash {
-			return out[i].TxHash < out[j].TxHash
-		}
-		return out[i].OutputIndex < out[j].OutputIndex
-	})
-	return out
+	return common.CanonicalXMRKeyImageProofs(proofs)
 }
 
 func (c *Client) localNodeIsVaultSigner(members []string) bool {
