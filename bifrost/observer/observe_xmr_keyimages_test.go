@@ -212,3 +212,25 @@ func TestProcessObservedTxMergesXMRMetadataIntoDuplicateDeckItems(t *testing.T) 
 		require.Equal(t, "ki0", item.XmrKeyImages[0].KeyImage)
 	}
 }
+
+func TestFilteredObservationScopesXMRMetadataToSourceVault(t *testing.T) {
+	sourceVault := common.PubKey("thorpub1source")
+	otherVault := common.PubKey("thorpub1other")
+	item := &types.TxInItem{
+		Tx:                  stringsRepeat("1", 64),
+		ObservedVaultPubKey: sourceVault,
+		TxKeys:              []string{"tx-key"},
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: stringsRepeat("1", 64), OutputIndex: 0, KeyImage: "ki0", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+
+	sameVault := filteredObservationForVault(item, sourceVault)
+	require.Equal(t, []string{"tx-key"}, sameVault.TxKeys)
+	require.Len(t, sameVault.XmrKeyImages, 1)
+
+	crossVault := filteredObservationForVault(item, otherVault)
+	require.Empty(t, crossVault.TxKeys)
+	require.Empty(t, crossVault.XmrKeyImages)
+	require.Equal(t, otherVault, crossVault.ObservedVaultPubKey)
+}

@@ -715,8 +715,7 @@ func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInIte
 		isInternal := false
 		// check if the from address is a valid pool
 		if ok, cpi := o.pubkeyMgr.IsValidPoolAddress(txInItem.Sender, chain); ok {
-			tx := txInItem.Copy()
-			tx.ObservedVaultPubKey = cpi.PubKey
+			tx := filteredObservationForVault(txInItem, cpi.PubKey)
 			isInternal = true
 
 			// skip the outbound observation if we signed and manually observed
@@ -738,12 +737,22 @@ func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInIte
 		// for inbound message , if it is still in mempool , it will be ignored unless it is internal transaction
 		// internal tx means both from & to addresses belongs to the network. for example migrate/consolidate
 		if ok, cpi := o.pubkeyMgr.IsValidPoolAddress(txInItem.To, chain); ok && (!memPool || isInternal) {
-			tx := txInItem.Copy()
-			tx.ObservedVaultPubKey = cpi.PubKey
+			tx := filteredObservationForVault(txInItem, cpi.PubKey)
 			txs = append(txs, tx)
 		}
 	}
 	return txs
+}
+
+func filteredObservationForVault(item *types.TxInItem, vaultPubKey common.PubKey) *types.TxInItem {
+	tx := item.Copy()
+	metadataVault := tx.ObservedVaultPubKey
+	tx.ObservedVaultPubKey = vaultPubKey
+	if !metadataVault.IsEmpty() && !metadataVault.Equals(vaultPubKey) {
+		tx.TxKeys = nil
+		tx.XmrKeyImages = nil
+	}
+	return tx
 }
 
 func (o *Observer) processErrataTx(ctx context.Context) {
