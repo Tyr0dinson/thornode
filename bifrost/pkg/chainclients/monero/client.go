@@ -1035,6 +1035,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs, proofs)
+	c.queueFinalizedXMROutboundReplayWithKeyImages(ceremonyCtx.vaultPubKey, backlogHeadTxHash, finaliseHeight, proofs)
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
@@ -1054,6 +1055,62 @@ func (c *Client) refreshOutgoingInventoryReplay() {
 	if _, err := c.syncTrackedVaultRegistrations(vaults); err != nil {
 		c.logger.Err(err).Msg("xmr outgoing inventory replay: failed to refresh signer inventory from thorchain")
 	}
+}
+
+func (c *Client) queueFinalizedXMROutboundReplayWithKeyImages(vaultPubKey common.PubKey, txHash string, finaliseHeight int64, proofs []*common.XmrKeyImageProof) {
+	if c == nil || c.scanner == nil || len(proofs) == 0 {
+		return
+	}
+	audit, err := c.lookupXMROutgoingAudit(vaultPubKey, txHash)
+	if err != nil {
+		c.logger.Debug().
+			Err(err).
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", txHash).
+			Msg("xmr key-image backlog: failed to load outbound audit for replay")
+		return
+	}
+	if audit.record == nil {
+		return
+	}
+	record := audit.record
+	if len(normalizeTxKeyValues(record.TxKeys)) == 0 {
+		return
+	}
+	if strings.TrimSpace(record.FromAddress) == "" || strings.TrimSpace(record.ToAddress) == "" {
+		return
+	}
+
+	height := finaliseHeight
+	if record.ObservedHeight != nil && *record.ObservedHeight > 0 && *record.ObservedHeight <= math.MaxInt64 {
+		height = int64(*record.ObservedHeight)
+	} else if record.PlannedHeight > 0 && record.PlannedHeight <= math.MaxInt64 {
+		height = int64(record.PlannedHeight)
+	}
+	item := stypes.NewTxInItem(
+		height,
+		normalizeTxID(record.TxHash),
+		record.Memo,
+		record.FromAddress,
+		record.ToAddress,
+		common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(record.Amount/moneroAtomicToThorchain))),
+		common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(record.Fee/moneroAtomicToThorchain))},
+		audit.canonicalVaultPubKey,
+		"",
+		"",
+		nil,
+	)
+	if item == nil {
+		return
+	}
+	item.TxKeys = normalizeTxKeyValues(record.TxKeys)
+	item.XmrKeyImages = canonicalXMRKeyImageProofs(proofs)
+	c.scanner.queueReplayTxInItems([]*stypes.TxInItem{item})
+	c.logger.Info().
+		Str("vault", audit.canonicalVaultPubKey.String()).
+		Str("tx_hash", normalizeTxID(record.TxHash)).
+		Int("proof_count", len(item.XmrKeyImages)).
+		Msg("xmr key-image backlog: queued finalized outbound replay with key-images")
 }
 
 func (c *Client) getOutgoingInventoryReplayMeta(vaultPubKey common.PubKey, txHash string) (xmrFrostOutboundMeta, error) {

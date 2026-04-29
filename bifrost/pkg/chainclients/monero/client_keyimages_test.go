@@ -354,6 +354,63 @@ func TestPrepareObservedTxInItemReusesCachedKeyImagesForDuplicateFinalInbound(t 
 	require.Len(t, tssServer.reqs, 1)
 }
 
+func TestQueueFinalizedXMROutboundReplayWithKeyImages(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("b", 64)
+	txKey := strings.Repeat("1", 64)
+	observedHeight := uint64(333)
+	proofs := []*common.XmrKeyImageProof{
+		{TxHash: txHash, OutputIndex: 0, KeyImage: strings.Repeat("2", 64), ProofC: "proof-c-0", ProofS: "proof-s-0"},
+		{TxHash: txHash, OutputIndex: 1, KeyImage: strings.Repeat("3", 64), ProofC: "proof-c-1", ProofS: "proof-s-1"},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outbounds/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:         txHash,
+					TxKeys:         []string{txKey},
+					FromAddress:    vaultAddr.String(),
+					ToAddress:      vaultAddr.String(),
+					Amount:         123 * moneroAtomicToThorchain,
+					Fee:            4 * moneroAtomicToThorchain,
+					Memo:           "consolidate",
+					PlannedHeight:  222,
+					ObservedHeight: &observedHeight,
+					Status:         xmrFrostOutgoingStatusObservedMined,
+				}},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		scanner:     &Scanner{},
+		logger:      testLogger(),
+	}
+
+	c.queueFinalizedXMROutboundReplayWithKeyImages(vaultPubKey, txHash, 111, proofs)
+
+	items := c.scanner.drainReplayTxInItems()
+	require.Len(t, items, 1)
+	assert.Equal(t, int64(333), items[0].BlockHeight)
+	assert.Equal(t, txHash, items[0].Tx)
+	assert.Equal(t, "consolidate", items[0].Memo)
+	assert.Equal(t, []string{txKey}, items[0].TxKeys)
+	require.Len(t, items[0].XmrKeyImages, 2)
+	assert.Equal(t, cosmos.NewUint(123), items[0].Coins.GetCoin(common.XMRAsset).Amount)
+	assert.Equal(t, cosmos.NewUint(4), items[0].Gas.ToCoins().GetCoin(common.XMRAsset).Amount)
+}
+
 func TestDriveLocalKeyImageBacklogCachesProofsForLaterObservation(t *testing.T) {
 	t.Parallel()
 
