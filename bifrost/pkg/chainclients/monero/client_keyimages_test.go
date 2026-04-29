@@ -594,7 +594,7 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.T) {
 	t.Parallel()
 
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	txHash := strings.Repeat("2", 64)
 	vault := ttypes.Vault{
 		PubKey: vaultPubKey,
@@ -612,6 +612,12 @@ func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.
 
 	assert.True(t, c.IsDeckItemStale(&stypes.TxInItem{
 		Tx:                  txHash,
+		ObservedVaultPubKey: vaultPubKey,
+	}))
+	assert.False(t, c.IsDeckItemStale(&stypes.TxInItem{
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  vaultAddr.String(),
 		ObservedVaultPubKey: vaultPubKey,
 	}))
 	assert.False(t, c.IsDeckItemStale(&stypes.TxInItem{

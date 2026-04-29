@@ -4416,10 +4416,26 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 	}
 	for _, ref := range vault.TxKeysXmr {
 		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
+			if c.isObservedInboundToVault(item) && c.isObservedOutboundFromVault(item) && !xmrKeyImagesRegisteredForTx(txHash, vault.KeyImagesXmr) {
+				return false
+			}
 			return true
 		}
 	}
 	for _, proof := range vault.KeyImagesXmr {
+		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
+			return true
+		}
+	}
+	return false
+}
+
+func xmrKeyImagesRegisteredForTx(txHash string, registered []*common.XmrKeyImageRef) bool {
+	txHash = normalizeTxID(txHash)
+	if txHash == "" {
+		return false
+	}
+	for _, proof := range registered {
 		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
 			return true
 		}
