@@ -1,6 +1,7 @@
 package observer
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -163,4 +164,51 @@ func TestProcessObservedTxMergesXMRMetadataIntoExistingDeckItem(t *testing.T) {
 	require.Len(t, deck.TxArray[0].XmrKeyImages, 1)
 	require.Equal(t, "ki0", deck.TxArray[0].XmrKeyImages[0].KeyImage)
 	require.Equal(t, uint32(0), deck.TxArray[0].XmrKeyImages[0].OutputIndex)
+}
+
+func TestProcessObservedTxMergesXMRMetadataIntoDuplicateDeckItems(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	txHash := stringsRepeat("f", 64)
+	vaultPubKey := common.PubKey("thorpub1vault")
+	base := &types.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Memo:                "REFUND:" + stringsRepeat("b", 64),
+		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+		To:                  common.XMRSeededDummyAddress('4', []byte("vault")),
+		ObservedVaultPubKey: vaultPubKey,
+	}
+	duplicate := base.Copy()
+	duplicate.Tx = strings.ToUpper(txHash)
+
+	deckKey := txInKey{chain: common.XMRChain, height: 100}
+	deck := &types.TxIn{
+		Chain:    common.XMRChain,
+		TxArray:  []*types.TxInItem{base, duplicate},
+		Filtered: true,
+	}
+	observer := &Observer{
+		logger:  zerolog.Nop(),
+		onDeck:  map[txInKey]*types.TxIn{deckKey: deck},
+		lock:    &sync.Mutex{},
+		storage: storage,
+	}
+
+	replay := base.Copy()
+	replay.XmrKeyImages = []*common.XmrKeyImageProof{
+		{TxHash: txHash, OutputIndex: 0, KeyImage: "ki0", ProofC: "c0", ProofS: "s0"},
+	}
+	observer.processObservedTx(types.TxIn{
+		Chain:    common.XMRChain,
+		TxArray:  []*types.TxInItem{replay},
+		Filtered: true,
+	})
+
+	require.Len(t, deck.TxArray, 2)
+	for _, item := range deck.TxArray {
+		require.Len(t, item.XmrKeyImages, 1)
+		require.Equal(t, "ki0", item.XmrKeyImages[0].KeyImage)
+	}
 }

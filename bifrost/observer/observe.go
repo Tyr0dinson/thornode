@@ -577,6 +577,7 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 		// tx is already in the onDeck, dedupe incoming txs
 		dedupeStart := time.Now()
 		var newTxs []*types.TxInItem
+		deckUpdated := false
 		for _, txInItem := range txIn.TxArray {
 			foundTx := false
 			for _, txInItemDeck := range in.TxArray {
@@ -597,20 +598,15 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 				}
 				if txInItemMatchesIgnoringXMRMetadata(txInItemDeck, txInItem) {
 					if mergeXMRMetadataIntoTxInItem(txInItemDeck, txInItem) {
-						setDeckStart := time.Now()
-						if err := o.storage.AddOrUpdateTx(in); err != nil {
-							o.logger.Error().Err(err).Msg("fail to update tx with merged XMR metadata")
-						}
+						deckUpdated = true
 						o.logger.Info().
 							Str("id", txInItem.Tx).
 							Str("chain", in.Chain.String()).
 							Int("tx_keys", len(txInItemDeck.TxKeys)).
 							Int("xmr_key_images", len(txInItemDeck.XmrKeyImages)).
 							Msg("merged XMR metadata into existing observation tx")
-						o.logger.Debug().Msgf("AddOrUpdateTx merged XMR metadata took %s", time.Since(setDeckStart))
 					}
 					foundTx = true
-					break
 				}
 			}
 			if !foundTx {
@@ -618,7 +614,7 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 			}
 		}
 		o.logger.Debug().Msgf("Dedupe took %s", time.Since(dedupeStart))
-		if len(newTxs) > 0 {
+		if deckUpdated || len(newTxs) > 0 {
 			in.TxArray = append(in.TxArray, newTxs...)
 			setDeckStart := time.Now()
 			if err := o.storage.AddOrUpdateTx(in); err != nil {
@@ -643,7 +639,7 @@ func txInItemMatchesIgnoringXMRMetadata(existing, incoming *types.TxInItem) bool
 		return false
 	}
 	if existing.BlockHeight != incoming.BlockHeight ||
-		existing.Tx != incoming.Tx ||
+		!txInItemTxIDsEqual(existing.Tx, incoming.Tx) ||
 		existing.Memo != incoming.Memo ||
 		existing.Sender != incoming.Sender ||
 		existing.To != incoming.To ||
@@ -658,6 +654,15 @@ func txInItemMatchesIgnoringXMRMetadata(existing, incoming *types.TxInItem) bool
 		return existing.AggregatorTargetLimit == incoming.AggregatorTargetLimit
 	}
 	return existing.AggregatorTargetLimit.Equal(*incoming.AggregatorTargetLimit)
+}
+
+func txInItemTxIDsEqual(a, b string) bool {
+	aID, aErr := common.NewTxID(a)
+	bID, bErr := common.NewTxID(b)
+	if aErr != nil || bErr != nil {
+		return a == b
+	}
+	return aID.Equals(bID)
 }
 
 func mergeXMRMetadataIntoTxInItem(existing, incoming *types.TxInItem) bool {
