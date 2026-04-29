@@ -17,6 +17,7 @@ import (
 	"go.uber.org/atomic"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	tsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -410,6 +411,8 @@ func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
 		feeRate: 10,
 	}
 	client := newConsolidationClient(t, bridge, tssServer, sidecar, localNodePubKey, vaultPubKey, vaultAddr)
+	observed := make(chan stypes.TxIn, 1)
+	client.globalTxsQueue = observed
 
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
@@ -432,6 +435,26 @@ func TestRunConsolidationPassBroadcastsSelfSend(t *testing.T) {
 	}
 	if req.AmountAtomic == 0 {
 		t.Fatal("expected non-zero consolidation amount")
+	}
+	txIn := <-observed
+	if !txIn.AllowFutureObservation {
+		t.Fatal("expected consolidate observation to allow future re-observation")
+	}
+	if txIn.ConfirmationRequired != 1 {
+		t.Fatalf("expected one confirmation for consolidate observation, got %d", txIn.ConfirmationRequired)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected one consolidate observation, got %d", len(txIn.TxArray))
+	}
+	item := txIn.TxArray[0]
+	if item.Memo != "consolidate" {
+		t.Fatalf("expected consolidate observation memo, got %s", item.Memo)
+	}
+	if item.Sender != vaultAddr.String() || item.To != vaultAddr.String() {
+		t.Fatalf("expected consolidate self-send %s -> %s, got %s -> %s", vaultAddr, vaultAddr, item.Sender, item.To)
+	}
+	if len(item.TxKeys) == 0 {
+		t.Fatal("expected consolidate observation to carry tx keys")
 	}
 }
 

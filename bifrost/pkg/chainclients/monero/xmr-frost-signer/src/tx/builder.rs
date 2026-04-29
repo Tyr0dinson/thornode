@@ -154,6 +154,7 @@ pub async fn build_unsigned_transaction(
     } else {
         vec![memo.as_bytes().to_vec()]
     };
+    let no_change_sweep = is_consolidate_memo(memo);
 
     // Build the signable transaction. Each added input increases the on-wire
     // size and therefore `necessary_fee`, so we may need to grow the input set
@@ -166,7 +167,7 @@ pub async fn build_unsigned_transaction(
             &selected,
             &to,
             amount,
-            &change,
+            Some(&change),
             fee_rate,
             rct_type,
             outgoing_view_key.clone(),
@@ -189,6 +190,31 @@ pub async fn build_unsigned_transaction(
                         msg
                     ));
                 }
+                if no_change_sweep {
+                    if let Some(necessary_fee) = necessary_fee_from_error_message(&msg) {
+                        let selected_total_u64 = u64::try_from(selected_total)
+                            .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
+                        let send_amount = final_migrate_amount(selected_total_u64, necessary_fee)?;
+                        if let Ok(s) = build_signable_for_selection(
+                            rpc,
+                            &selected,
+                            &to,
+                            send_amount,
+                            None,
+                            fee_rate,
+                            rct_type,
+                            outgoing_view_key.clone(),
+                            data.clone(),
+                            decoy_context,
+                            hard_fork_version,
+                            tip_height,
+                        )
+                        .await
+                        {
+                            break (s, selected.clone());
+                        }
+                    }
+                }
                 if sweep_if_final && selected_total >= u128::from(requested_total) {
                     if let Some(necessary_fee) = necessary_fee_from_error_message(&msg) {
                         let mut retry_fee = necessary_fee;
@@ -200,7 +226,7 @@ pub async fn build_unsigned_transaction(
                                 &selected,
                                 &to,
                                 send_amount,
-                                &change,
+                                Some(&change),
                                 fee_rate,
                                 rct_type,
                                 outgoing_view_key.clone(),
@@ -268,8 +294,42 @@ pub async fn build_unsigned_transaction(
         }
     };
 
+    let used_total = used
+        .iter()
+        .try_fold(0u128, |acc, (tracked, _)| {
+            acc.checked_add(u128::from(tracked.amount))
+        })
+        .ok_or_else(|| anyhow::anyhow!("selected input total overflow"))?;
     let mut fee = signable.necessary_fee();
-    let final_amount = if sweep_if_final {
+    let final_amount = if no_change_sweep {
+        let used_total_u64 = u64::try_from(used_total)
+            .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
+        let mut send_amount = final_migrate_amount(used_total_u64, fee)?;
+        for _ in 0..2 {
+            signable = build_signable_for_selection(
+                rpc,
+                &used,
+                &to,
+                send_amount,
+                None,
+                fee_rate,
+                rct_type,
+                outgoing_view_key.clone(),
+                data.clone(),
+                decoy_context,
+                hard_fork_version,
+                tip_height,
+            )
+            .await?;
+            fee = signable.necessary_fee();
+            let adjusted_amount = final_migrate_amount(used_total_u64, fee)?;
+            if adjusted_amount == send_amount {
+                break;
+            }
+            send_amount = adjusted_amount;
+        }
+        send_amount
+    } else if sweep_if_final {
         let mut send_amount = final_migrate_amount(requested_total, fee)?;
         for _ in 0..2 {
             signable = build_signable_for_selection(
@@ -277,7 +337,7 @@ pub async fn build_unsigned_transaction(
                 &used,
                 &to,
                 send_amount,
-                &change,
+                Some(&change),
                 fee_rate,
                 rct_type,
                 outgoing_view_key.clone(),
@@ -315,11 +375,13 @@ pub async fn build_unsigned_transaction(
         "constructed Monero signable transaction"
     );
 
-    let tx_keys = derive_tx_keys_for_built_outbound(&outgoing_view_key, &used, &to);
-    let has_owned_change = selected_total
-        > u128::from(final_amount)
-            .checked_add(u128::from(fee))
-            .ok_or_else(|| anyhow::anyhow!("final amount + fee overflow"))?;
+    let has_owned_change = !no_change_sweep
+        && used_total
+            > u128::from(final_amount)
+                .checked_add(u128::from(fee))
+                .ok_or_else(|| anyhow::anyhow!("final amount + fee overflow"))?;
+    let payment_count = if has_owned_change { 2 } else { 1 };
+    let tx_keys = derive_tx_keys_for_built_outbound(&outgoing_view_key, &used, &to, payment_count);
 
     Ok(UnsignedTransaction {
         signable,
@@ -397,12 +459,18 @@ fn derive_tx_keys_for_built_outbound(
     outgoing_view_key: &Zeroizing<[u8; 32]>,
     selected: &[&(TrackedOutput, WalletOutput)],
     to: &MoneroAddress,
+    payment_count: usize,
 ) -> Vec<String> {
     let input_keys = selected
         .iter()
         .map(|(_, wallet_output)| wallet_output.key())
         .collect();
-    derive_tx_keys_from_components(outgoing_view_key, input_keys, to.is_subaddress())
+    derive_tx_keys_from_components(
+        outgoing_view_key,
+        input_keys,
+        to.is_subaddress(),
+        payment_count,
+    )
 }
 
 fn final_migrate_amount(requested_total: u64, fee: u64) -> Result<u64> {
@@ -419,14 +487,18 @@ fn necessary_fee_from_error_message(message: &str) -> Option<u64> {
     rest[..end].parse().ok()
 }
 
+fn is_consolidate_memo(memo: &str) -> bool {
+    memo.trim().eq_ignore_ascii_case("consolidate")
+}
+
 fn derive_tx_keys_from_components(
     outgoing_view_key: &Zeroizing<[u8; 32]>,
     input_keys: Vec<curve25519_dalek::EdwardsPoint>,
     destination_is_subaddress: bool,
+    payment_count: usize,
 ) -> Vec<String> {
     let mut tx_keys = TransactionKeys::new(outgoing_view_key, input_keys);
 
-    let payment_count = 2usize; // one outbound payment plus one fingerprintable change output
     let mut derived = Vec::with_capacity(1 + payment_count);
     derived.push(hex::encode(
         tx_keys
@@ -456,7 +528,7 @@ async fn build_signable_for_selection(
     selected: &[&(TrackedOutput, WalletOutput)],
     to: &MoneroAddress,
     amount: u64,
-    change: &MoneroAddress,
+    change: Option<&MoneroAddress>,
     fee_rate: FeeRate,
     rct_type: RctType,
     outgoing_view_key: Zeroizing<[u8; 32]>,
@@ -485,7 +557,7 @@ async fn build_signable_for_selection(
         outgoing_view_key,
         inputs,
         vec![(to.clone(), amount)],
-        Change::fingerprintable(Some(change.clone())),
+        Change::fingerprintable(change.cloned()),
         data,
         fee_rate,
     )
@@ -704,6 +776,14 @@ mod tests {
     }
 
     #[test]
+    fn consolidate_memo_enables_no_change_sweep_mode() {
+        assert!(is_consolidate_memo("consolidate"));
+        assert!(is_consolidate_memo(" CONSOLIDATE "));
+        assert!(!is_consolidate_memo("migrate:123"));
+        assert!(!is_consolidate_memo(""));
+    }
+
+    #[test]
     fn outgoing_view_key_is_deterministic() {
         let a = derive_outgoing_view_key("ctx", "addr", 42, "memo");
         let b = derive_outgoing_view_key("ctx", "addr", 42, "memo");
@@ -720,7 +800,8 @@ mod tests {
             &Scalar::from(5u64) * ED25519_BASEPOINT_TABLE,
         ];
 
-        let actual = derive_tx_keys_from_components(&outgoing_view_key, input_keys.clone(), false);
+        let actual =
+            derive_tx_keys_from_components(&outgoing_view_key, input_keys.clone(), false, 2);
 
         let mut expected_keys = TransactionKeys::new(&outgoing_view_key, input_keys);
         let expected = vec![hex::encode(
@@ -741,10 +822,37 @@ mod tests {
             &Scalar::from(17u64) * ED25519_BASEPOINT_TABLE,
         ];
 
-        let actual = derive_tx_keys_from_components(&outgoing_view_key, input_keys.clone(), true);
+        let actual =
+            derive_tx_keys_from_components(&outgoing_view_key, input_keys.clone(), true, 2);
 
         let mut expected_keys = TransactionKeys::new(&outgoing_view_key, input_keys);
         let expected = (0..3)
+            .map(|_| {
+                hex::encode(
+                    expected_keys
+                        .next()
+                        .expect("TransactionKeys (never-ending) was exhausted")
+                        .to_bytes(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn derive_tx_keys_for_subaddress_no_change_uses_one_additional_key() {
+        let outgoing_view_key = Zeroizing::new([19u8; 32]);
+        let input_keys = vec![
+            &Scalar::from(23u64) * ED25519_BASEPOINT_TABLE,
+            &Scalar::from(29u64) * ED25519_BASEPOINT_TABLE,
+        ];
+
+        let actual =
+            derive_tx_keys_from_components(&outgoing_view_key, input_keys.clone(), true, 1);
+
+        let mut expected_keys = TransactionKeys::new(&outgoing_view_key, input_keys);
+        let expected = (0..2)
             .map(|_| {
                 hex::encode(
                     expected_keys

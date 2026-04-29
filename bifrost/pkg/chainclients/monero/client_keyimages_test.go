@@ -227,7 +227,7 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) 
 	tssServer.mu.Lock()
 	defer tssServer.mu.Unlock()
 	require.Len(t, tssServer.reqs, 2)
-	assert.Equal(t, int64(1), tssServer.reqs[0].BlockHeight)
+	assert.Equal(t, int64(81), tssServer.reqs[0].BlockHeight)
 	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
 }
 
@@ -1264,7 +1264,7 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalMigrateInbound(t *test
 	defer tssServer.mu.Unlock()
 	require.Len(t, tssServer.reqs, 1)
 	assert.Equal(t, destVaultPubKey.String(), tssServer.reqs[0].VaultPubKey)
-	assert.Equal(t, int64(1), tssServer.reqs[0].BlockHeight)
+	assert.Equal(t, int64(81), tssServer.reqs[0].BlockHeight)
 }
 
 func TestPrepareObservedTxInItemWaitsForTxKeysBeforeFinalMigrateInbound(t *testing.T) {

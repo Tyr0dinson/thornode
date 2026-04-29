@@ -523,6 +523,74 @@ func TestFetchTxsSkipsConsolidateSelfSendWithoutOutgoingRecord(t *testing.T) {
 	}
 }
 
+func TestFetchTxsObservesConsolidateOutgoingSelfSend(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("1", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+
+	frostServer := newFrostTransfersServer(
+		t,
+		nil,
+		[]xmrFrostTransferEntry{
+			{
+				TxID:        txID,
+				Address:     vaultAddr.String(),
+				FromAddress: vaultAddr.String(),
+				VaultPubKey: vaultPubKey.String(),
+				TxKeys:      testFrostTxKeys(),
+				Amount:      uint64(2 * moneroAtomicToThorchain),
+				Fee:         uint64(moneroAtomicToThorchain),
+				Height:      100,
+				Note:        "consolidate",
+			},
+		},
+		[]string{vaultAddr.String()},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{
+				PubKeyEddsa: vaultPubKey,
+				PubKey:      vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected consolidate outgoing self-send observation, got %d items", len(txIn.TxArray))
+	}
+	item := txIn.TxArray[0]
+	if item.Sender != vaultAddr.String() || item.To != vaultAddr.String() {
+		t.Fatalf("expected consolidate self-send %s -> %s, got %s -> %s", vaultAddr, vaultAddr, item.Sender, item.To)
+	}
+	if item.Memo != "consolidate" {
+		t.Fatalf("expected consolidate memo, got %s", item.Memo)
+	}
+	if len(item.TxKeys) == 0 {
+		t.Fatal("expected consolidate observation to carry tx keys")
+	}
+}
+
 func TestFetchTxsSkipsRetiringMigrateChangeWithoutOutgoingRecord(t *testing.T) {
 	t.Parallel()
 
