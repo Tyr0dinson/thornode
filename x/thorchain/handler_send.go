@@ -170,7 +170,7 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 	if err != nil {
 		return ctx, err
 	}
-	return ctx, deductNativeTxFeeFromAccount(ctx, k, msg.Amount, msg.GetSigners()[0], msg)
+	return ctx, deductNativeTxFeeFromAccount(ctx, k, msg.GetSigners()[0], msg)
 }
 
 // deductNativeTxFeeFromAccount charges the tx fee during ante. When the signer
@@ -178,7 +178,7 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 // fee asset, this intentionally drains the remaining balance as anti-spam
 // protection. Because this runs in ante, a successful fee deduction persists
 // even if the message handler later fails.
-func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins cosmos.Coins, signer cosmos.AccAddress, m sdk.Msg) error {
+func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, m sdk.Msg) error {
 	nativeTxFee := k.GetNativeTxFee(ctx)
 	nativeTxFeeCoin := common.NewCoin(common.RuneNative, nativeTxFee)
 	nativeTxFeeCommonCoins := common.NewCoins(nativeTxFeeCoin)
@@ -201,10 +201,7 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 	var coins common.Coins
 	switch msg := m.(type) {
 	case *MsgSend:
-		if csCoins == nil {
-			return se.ErrInsufficientFunds
-		}
-		coins = csCoinsToCoins(csCoins)
+		coins = csCoinsToCoins(msg.Amount)
 	case *MsgDeposit:
 		coins = msg.Coins
 	default:
