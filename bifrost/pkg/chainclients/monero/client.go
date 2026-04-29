@@ -1005,7 +1005,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
-		c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
+		c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height), cachedProofs)
 		return
 	}
 
@@ -1062,7 +1062,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs, proofs)
-	c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
+	c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height), proofs)
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
@@ -1070,7 +1070,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		Msg("xmr key-image backlog: cached locally generated proof set")
 }
 
-func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, txHash string, fallbackHeight int64) {
+func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, txHash string, fallbackHeight int64, proofs []*common.XmrKeyImageProof) {
 	item, err := c.xmrObservedTxInItemFromVoter(vaultPubKey, txHash, fallbackHeight)
 	if err != nil {
 		c.logger.Debug().
@@ -1080,11 +1080,13 @@ func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, t
 			Msg("xmr key-image backlog: cannot replay observation for local proof set")
 		return
 	}
+	item.XmrKeyImages = cloneXMRKeyImageProofs(proofs)
 	if c.scanner != nil {
 		c.scanner.queueReplayTxInItems([]*stypes.TxInItem{item})
 		c.logger.Info().
 			Str("vault", vaultPubKey.String()).
 			Str("tx_hash", normalizeTxID(txHash)).
+			Int("proof_count", len(item.XmrKeyImages)).
 			Msg("xmr key-image backlog: queued observation replay for local proof set")
 		return
 	}
@@ -1096,6 +1098,7 @@ func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, t
 		c.logger.Info().
 			Str("vault", vaultPubKey.String()).
 			Str("tx_hash", normalizeTxID(txHash)).
+			Int("proof_count", len(item.XmrKeyImages)).
 			Msg("xmr key-image backlog: submitted observation replay for local proof set")
 	default:
 		c.logger.Debug().

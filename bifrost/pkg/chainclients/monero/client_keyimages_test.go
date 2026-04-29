@@ -569,11 +569,16 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 	assert.Equal(t, txHash, replay[0].Tx)
 	assert.Equal(t, vaultPubKey, replay[0].ObservedVaultPubKey)
 	assert.Equal(t, vaultAddr.String(), replay[0].To)
+	require.Len(t, replay[0].XmrKeyImages, 1)
+	assert.Equal(t, txHash, replay[0].XmrKeyImages[0].TxHash)
+	assert.Equal(t, uint32(0), replay[0].XmrKeyImages[0].OutputIndex)
+	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", replay[0].XmrKeyImages[0].KeyImage)
 
 	proofs, ok := c.getCachedXMRKeyImageProofs(vaultPubKey, txHash, []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0}})
 	require.True(t, ok)
 	require.Len(t, proofs, 1)
 	assert.Equal(t, uint32(0), proofs[0].OutputIndex)
+	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", proofs[0].KeyImage)
 }
 
 func TestPrepareObservedTxInItemTreatsLeaderNotReachableAsRetryLater(t *testing.T) {
