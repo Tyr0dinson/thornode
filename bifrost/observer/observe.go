@@ -614,6 +614,10 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 			}
 		}
 		o.logger.Debug().Msgf("Dedupe took %s", time.Since(dedupeStart))
+		if in.MemPool && !txIn.MemPool {
+			in.MemPool = false
+			deckUpdated = true
+		}
 		if deckUpdated || len(newTxs) > 0 {
 			in.TxArray = append(in.TxArray, newTxs...)
 			setDeckStart := time.Now()

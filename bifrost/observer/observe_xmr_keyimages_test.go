@@ -213,6 +213,50 @@ func TestProcessObservedTxMergesXMRMetadataIntoDuplicateDeckItems(t *testing.T) 
 	}
 }
 
+func TestProcessObservedTxPromotesMempoolDeckOnXMRMetadataReplay(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	txHash := stringsRepeat("e", 64)
+	vaultPubKey := common.PubKey("thorpub1vault")
+	base := &types.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Memo:                "REFUND:" + stringsRepeat("c", 64),
+		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+		To:                  common.XMRSeededDummyAddress('4', []byte("vault")),
+		ObservedVaultPubKey: vaultPubKey,
+	}
+
+	deckKey := txInKey{chain: common.XMRChain, height: 100}
+	deck := &types.TxIn{
+		Chain:    common.XMRChain,
+		TxArray:  []*types.TxInItem{base},
+		Filtered: true,
+		MemPool:  true,
+	}
+	observer := &Observer{
+		logger:  zerolog.Nop(),
+		onDeck:  map[txInKey]*types.TxIn{deckKey: deck},
+		lock:    &sync.Mutex{},
+		storage: storage,
+	}
+
+	replay := base.Copy()
+	replay.XmrKeyImages = []*common.XmrKeyImageProof{
+		{TxHash: txHash, OutputIndex: 0, KeyImage: "ki0", ProofC: "c0", ProofS: "s0"},
+	}
+	observer.processObservedTx(types.TxIn{
+		Chain:    common.XMRChain,
+		TxArray:  []*types.TxInItem{replay},
+		Filtered: true,
+	})
+
+	require.False(t, deck.MemPool)
+	require.Len(t, deck.TxArray[0].XmrKeyImages, 1)
+	require.Equal(t, "ki0", deck.TxArray[0].XmrKeyImages[0].KeyImage)
+}
+
 func TestFilteredObservationScopesXMRMetadataToSourceVault(t *testing.T) {
 	sourceVault := common.PubKey("thorpub1source")
 	otherVault := common.PubKey("thorpub1other")
