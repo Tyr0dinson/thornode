@@ -573,6 +573,8 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 		t.Fatal("expected local key-image replay to be submitted directly")
 	}
 	require.Len(t, replay.TxArray, 1)
+	assert.True(t, replay.Filtered)
+	assert.Zero(t, replay.ConfirmationRequired)
 	assert.Equal(t, txHash, replay.TxArray[0].Tx)
 	assert.Equal(t, vaultPubKey, replay.TxArray[0].ObservedVaultPubKey)
 	assert.Equal(t, vaultAddr.String(), replay.TxArray[0].To)

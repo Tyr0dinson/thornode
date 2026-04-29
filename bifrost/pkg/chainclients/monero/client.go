@@ -1081,9 +1081,14 @@ func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, t
 		return
 	}
 	item.XmrKeyImages = cloneXMRKeyImageProofs(proofs)
+	replay := stypes.TxIn{
+		Chain:    common.XMRChain,
+		TxArray:  []*stypes.TxInItem{item},
+		Filtered: true,
+	}
 	if c.globalTxsQueue != nil {
 		select {
-		case c.globalTxsQueue <- stypes.TxIn{Chain: common.XMRChain, TxArray: []*stypes.TxInItem{item}}:
+		case c.globalTxsQueue <- replay:
 			c.logger.Info().
 				Str("vault", vaultPubKey.String()).
 				Str("tx_hash", normalizeTxID(txHash)).
@@ -1098,7 +1103,7 @@ func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, t
 		}
 	}
 	if c.scanner != nil {
-		c.scanner.queueReplayTxInItems([]*stypes.TxInItem{item})
+		c.scanner.queueReplayTxInItems(replay.TxArray)
 		c.logger.Info().
 			Str("vault", vaultPubKey.String()).
 			Str("tx_hash", normalizeTxID(txHash)).
