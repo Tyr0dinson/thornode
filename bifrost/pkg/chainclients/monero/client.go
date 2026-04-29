@@ -1095,9 +1095,8 @@ func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, t
 	}
 	item.XmrKeyImages = cloneXMRKeyImageProofs(proofs)
 	replay := stypes.TxIn{
-		Chain:    common.XMRChain,
-		TxArray:  []*stypes.TxInItem{item},
-		Filtered: true,
+		Chain:   common.XMRChain,
+		TxArray: []*stypes.TxInItem{item},
 	}
 	if c.globalTxsQueue != nil {
 		select {
