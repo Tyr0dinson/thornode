@@ -1639,6 +1639,15 @@ func TestPrepareObservedTxInItemSkipsOutboundMemoChangeObservation(t *testing.T)
 	tssServer.mu.Lock()
 	defer tssServer.mu.Unlock()
 	assert.Empty(t, tssServer.reqs)
+
+	item.XmrKeyImages = []*common.XmrKeyImageProof{
+		{TxHash: txHash, OutputIndex: 1, KeyImage: "ki-1", ProofC: "c1", ProofS: "s1"},
+	}
+	prepared, include, err = c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Len(t, prepared.XmrKeyImages, 1)
 }
 
 func TestPrepareObservedTxInItemSkipsRetiringMigrateChangeObservation(t *testing.T) {
@@ -2537,26 +2546,28 @@ func TestValidateObservedTxInAppliesValidatedKeyImagesForFinalMigrateInbound(t *
 	assert.Equal(t, uint32(0), applyReq.KeyImages[0].OutputIndex)
 }
 
-func TestValidateObservedTxInSkipsOutboundMemoChangeObservation(t *testing.T) {
+func TestValidateObservedTxInAllowsOutboundMemoChangeObservationWithKeyImages(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	txHash := strings.Repeat("f", 64)
 
 	validateCalled := false
+	applyCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v1/monero/key-image/validate":
 			validateCalled = true
 			_ = json.NewEncoder(w).Encode(xmrFrostKeyImageValidateResponse{Valid: true})
+		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			applyCalled = true
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: 1})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
 			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
 				Outputs: []xmrFrostOutputEntry{
 					{TxHash: txHash, OutputIndex: 1, Amount: 20, Height: 100},
 				},
 			})
-		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
-			t.Fatal("apply-key-images should not be called for outbound memo change observation")
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
@@ -2590,29 +2601,32 @@ func TestValidateObservedTxInSkipsOutboundMemoChangeObservation(t *testing.T) {
 	}
 
 	require.NoError(t, c.ValidateObservedTxIn(obsTx))
-	assert.False(t, validateCalled)
+	assert.True(t, validateCalled)
+	assert.True(t, applyCalled)
 }
 
-func TestValidateObservedTxInSkipsConsolidateChangeObservation(t *testing.T) {
+func TestValidateObservedTxInAllowsConsolidateChangeObservationWithKeyImages(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	txHash := strings.Repeat("n", 64)
 
 	validateCalled := false
+	applyCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v1/monero/key-image/validate":
 			validateCalled = true
 			_ = json.NewEncoder(w).Encode(xmrFrostKeyImageValidateResponse{Valid: true})
+		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			applyCalled = true
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: 1})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
 			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
 				Outputs: []xmrFrostOutputEntry{
 					{TxHash: txHash, OutputIndex: 1, Amount: 20, Height: 100},
 				},
 			})
-		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
-			t.Fatal("apply-key-images should not be called for consolidate change observation")
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
@@ -2646,7 +2660,8 @@ func TestValidateObservedTxInSkipsConsolidateChangeObservation(t *testing.T) {
 	}
 
 	require.NoError(t, c.ValidateObservedTxIn(obsTx))
-	assert.False(t, validateCalled)
+	assert.True(t, validateCalled)
+	assert.True(t, applyCalled)
 }
 
 func TestValidateOutboundObservationAppliesValidatedKeyImagesForFinalOutboundChange(t *testing.T) {

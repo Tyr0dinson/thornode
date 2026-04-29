@@ -4110,7 +4110,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 				Msg("recovered missing XMR tx-keys from registered vault inventory")
 		}
 	}
-	if isInboundToVault && !isOutboundFromVault && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
+	if isInboundToVault && !isOutboundFromVault && len(item.XmrKeyImages) == 0 && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
 		c.logger.Debug().
 			Str("tx_hash", normalizeTxID(item.Tx)).
 			Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
@@ -5433,7 +5433,7 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trac
 		if !c.isObservedTxInboundToVault(tx) {
 			return nil
 		}
-		if c.shouldSkipObservedXMRInboundChange(tx.Tx.Memo, tx.Tx.FromAddress.String(), tx.ObservedPubKey) {
+		if len(tx.XmrKeyImages) == 0 && c.shouldSkipObservedXMRInboundChange(tx.Tx.Memo, tx.Tx.FromAddress.String(), tx.ObservedPubKey) {
 			return nil
 		}
 	} else if !c.isObservedTxOutboundFromVault(tx) {
