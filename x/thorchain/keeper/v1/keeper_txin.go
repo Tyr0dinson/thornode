@@ -131,6 +131,16 @@ func (k KVStore) trackInFlightMigrate(ctx cosmos.Context, tx ObservedTxVoter) {
 		return
 	}
 
+	inVoter, err := k.GetObservedTxInVoter(ctx, tx.TxID)
+	if err != nil {
+		ctx.Logger().Error("fail to get observed tx in voter while tracking in-flight migrate", "tx_id", tx.TxID, "error", err)
+		return
+	}
+	if inVoter.UpdatedVault {
+		k.del(ctx, []byte(key))
+		return
+	}
+
 	k.setString(ctx, key, tx.Tx.ObservedPubKey.String())
 }
 

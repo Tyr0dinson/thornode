@@ -24,6 +24,8 @@ type InFlightMigration struct {
 	// destination vault pubkey resolved from the outbound destination address
 	DestinationVaultPubKey *string    `json:"destination_vault_pub_key,omitempty"`
 	TxOut                  *TxOutItem `json:"tx_out,omitempty"`
+	// true when the matching inbound migration already updated the destination vault
+	UpdatedVault *bool `json:"updated_vault,omitempty"`
 }
 
 // NewInFlightMigration instantiates a new InFlightMigration object
@@ -203,6 +205,38 @@ func (o *InFlightMigration) SetTxOut(v TxOutItem) {
 	o.TxOut = &v
 }
 
+// GetUpdatedVault returns the UpdatedVault field value if set, zero value otherwise.
+func (o *InFlightMigration) GetUpdatedVault() bool {
+	if o == nil || o.UpdatedVault == nil {
+		var ret bool
+		return ret
+	}
+	return *o.UpdatedVault
+}
+
+// GetUpdatedVaultOk returns a tuple with the UpdatedVault field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InFlightMigration) GetUpdatedVaultOk() (*bool, bool) {
+	if o == nil || o.UpdatedVault == nil {
+		return nil, false
+	}
+	return o.UpdatedVault, true
+}
+
+// HasUpdatedVault returns a boolean if a field has been set.
+func (o *InFlightMigration) HasUpdatedVault() bool {
+	if o != nil && o.UpdatedVault != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetUpdatedVault gets a reference to the given bool and assigns it to the UpdatedVault field.
+func (o *InFlightMigration) SetUpdatedVault(v bool) {
+	o.UpdatedVault = &v
+}
+
 func (o InFlightMigration) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.TxId != nil {
@@ -219,6 +253,9 @@ func (o InFlightMigration) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.TxOut != nil {
 		toSerialize["tx_out"] = o.TxOut
+	}
+	if o.UpdatedVault != nil {
+		toSerialize["updated_vault"] = o.UpdatedVault
 	}
 	return json.Marshal(toSerialize)
 }

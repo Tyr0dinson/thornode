@@ -9,6 +9,7 @@ Name | Type | Description | Notes
 **SourceVaultStatus** | Pointer to **string** |  | [optional] 
 **DestinationVaultPubKey** | Pointer to **string** | destination vault pubkey resolved from the outbound destination address | [optional] 
 **TxOut** | Pointer to [**TxOutItem**](TxOutItem.md) |  | [optional] 
+**UpdatedVault** | Pointer to **bool** | true when the matching inbound migration already updated the destination vault | [optional] 
 
 ## Methods
 
@@ -153,6 +154,31 @@ SetTxOut sets TxOut field to given value.
 `func (o *InFlightMigration) HasTxOut() bool`
 
 HasTxOut returns a boolean if a field has been set.
+
+### GetUpdatedVault
+
+`func (o *InFlightMigration) GetUpdatedVault() bool`
+
+GetUpdatedVault returns the UpdatedVault field if non-nil, zero value otherwise.
+
+### GetUpdatedVaultOk
+
+`func (o *InFlightMigration) GetUpdatedVaultOk() (*bool, bool)`
+
+GetUpdatedVaultOk returns a tuple with the UpdatedVault field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetUpdatedVault
+
+`func (o *InFlightMigration) SetUpdatedVault(v bool)`
+
+SetUpdatedVault sets UpdatedVault field to given value.
+
+### HasUpdatedVault
+
+`func (o *InFlightMigration) HasUpdatedVault() bool`
+
+HasUpdatedVault returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

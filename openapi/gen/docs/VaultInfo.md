@@ -6,7 +6,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **PubKey** | **string** |  | 
 **PubKeyEddsa** | Pointer to **string** |  | [optional] 
-**PubKeyFrost** | Pointer to **string** |  | [optional]
+**PubKeyFrost** | Pointer to **string** |  | [optional] 
 **Routers** | [**[]VaultRouter**](VaultRouter.md) |  | 
 **Membership** | Pointer to **[]string** | the list of node public keys which are members of the vault | [optional] 
 
@@ -146,3 +146,5 @@ HasMembership returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
+
+

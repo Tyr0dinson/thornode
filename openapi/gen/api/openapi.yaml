@@ -5931,6 +5931,7 @@ components:
               decimals: 6
               asset: BTC.BTC
           source_vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          updated_vault: true
           tx_id: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
         - source_vault_status: InactiveVault
           destination_vault_pub_key: thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m
@@ -5961,6 +5962,7 @@ components:
               decimals: 6
               asset: BTC.BTC
           source_vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          updated_vault: true
           tx_id: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
         tns_fee_per_block_rune: "20"
         gas_spent_rune: "1000000000"
@@ -6100,6 +6102,7 @@ components:
             decimals: 6
             asset: BTC.BTC
         source_vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+        updated_vault: true
         tx_id: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
       properties:
         tx_id:
@@ -6120,6 +6123,10 @@ components:
           type: string
         tx_out:
           $ref: '#/components/schemas/TxOutItem'
+        updated_vault:
+          description: true when the matching inbound migration already updated the
+            destination vault
+          type: boolean
       type: object
     OutboundFeesResponse:
       items:

@@ -70,4 +70,5 @@ message InFlightMigration {
   // destination vault pubkey, resolved from the outbound destination address
   string destination_vault_pub_key = 4;
   QueryTxOutItem tx_out = 5;
+  bool updated_vault = 6;
 }

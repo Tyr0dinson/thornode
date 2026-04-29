@@ -4046,6 +4046,9 @@ components:
           example: "thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m"
         tx_out:
           $ref: "#/components/schemas/TxOutItem"
+        updated_vault:
+          type: boolean
+          description: true when the matching inbound migration already updated the destination vault
 
     OutboundFeesResponse:
       type: array

@@ -47,6 +47,20 @@ func hasInFlightMigrate(ctx cosmos.Context, k keeper.Keeper, matchVault func(Vau
 	defer iter.Close()
 
 	for ; iter.Valid(); iter.Next() {
+		txIDString := strings.TrimPrefix(string(iter.Key()), "in_flight_migrate/")
+		txIDString = strings.TrimPrefix(txIDString, "/")
+		txID, err := common.NewTxID(txIDString)
+		if err != nil {
+			return false, fmt.Errorf("fail to parse in-flight migrate tx id: %w", err)
+		}
+		inVoter, err := k.GetObservedTxInVoter(ctx, txID)
+		if err != nil {
+			return false, fmt.Errorf("fail to get observed tx in voter for migrate guard: %w", err)
+		}
+		if inVoter.UpdatedVault {
+			continue
+		}
+
 		var source types.ProtoString
 		if err := k.Cdc().Unmarshal(iter.Value(), &source); err != nil {
 			return false, fmt.Errorf("fail to unmarshal in-flight migrate source vault: %w", err)
@@ -119,6 +133,12 @@ func getInFlightMigrations(ctx cosmos.Context, k keeper.Keeper) ([]*types.InFlig
 		if err != nil {
 			return nil, fmt.Errorf("fail to parse in-flight migrate tx id: %w", err)
 		}
+		inVoter, err := k.GetObservedTxInVoter(ctx, txID)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get observed tx in voter for in-flight migrate: %w", err)
+		}
+		migration.UpdatedVault = inVoter.UpdatedVault
+
 		voter, err := k.GetObservedTxOutVoter(ctx, txID)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter for in-flight migrate: %w", err)
@@ -134,12 +154,34 @@ func getInFlightMigrations(ctx cosmos.Context, k keeper.Keeper) ([]*types.InFlig
 			}
 			migration.TxOut = castTxOutItem(action, voter.Height)
 			migration.DestinationVaultPubKey = findVaultByAddress(ctx, k, action.Chain, action.ToAddress)
+		} else if !inVoter.Tx.IsEmpty() {
+			migration.TxOut = castTxAsMigrationOut(inVoter.Tx, migration.SourceVaultPubKey, inVoter.Height)
+			migration.DestinationVaultPubKey = findVaultByAddress(ctx, k, inVoter.Tx.Tx.Chain, inVoter.Tx.Tx.ToAddress)
 		}
 
 		migrations = append(migrations, migration)
 	}
 
 	return migrations, nil
+}
+
+func castTxAsMigrationOut(tx common.ObservedTx, sourceVaultPubKey string, height int64) *types.QueryTxOutItem {
+	coin := common.NoCoin
+	if len(tx.Tx.Coins) > 0 {
+		coin = tx.Tx.Coins[0]
+	}
+
+	return &types.QueryTxOutItem{
+		Height:      height,
+		VaultPubKey: sourceVaultPubKey,
+		InHash:      tx.Tx.ID.String(),
+		OutHash:     tx.Tx.ID.String(),
+		Chain:       tx.Tx.Chain.String(),
+		ToAddress:   tx.Tx.ToAddress.String(),
+		Coin:        &coin,
+		MaxGas:      tx.Tx.Gas,
+		Memo:        tx.Tx.Memo,
+	}
 }
 
 func findVaultByAddress(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, address common.Address) string {
