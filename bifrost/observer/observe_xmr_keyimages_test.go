@@ -206,11 +206,59 @@ func TestProcessObservedTxMergesXMRMetadataIntoDuplicateDeckItems(t *testing.T) 
 		Filtered: true,
 	})
 
-	require.Len(t, deck.TxArray, 2)
-	for _, item := range deck.TxArray {
-		require.Len(t, item.XmrKeyImages, 1)
-		require.Equal(t, "ki0", item.XmrKeyImages[0].KeyImage)
+	require.Len(t, deck.TxArray, 1)
+	require.Len(t, deck.TxArray[0].XmrKeyImages, 1)
+	require.Equal(t, "ki0", deck.TxArray[0].XmrKeyImages[0].KeyImage)
+}
+
+func TestProcessObservedTxCoalescesSplitXMRMetadataDuplicates(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	txHash := stringsRepeat("a", 64)
+	vaultPubKey := common.PubKey("thorpub1vault")
+	base := &types.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Memo:                "REFUND:" + stringsRepeat("c", 64),
+		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+		To:                  common.XMRSeededDummyAddress('4', []byte("vault")),
+		ObservedVaultPubKey: vaultPubKey,
 	}
+	txKeyOnly := base.Copy()
+	txKeyOnly.TxKeys = []string{"tx-key"}
+	txKeyOnly.CommittedUnFinalised = true
+	keyImageOnly := base.Copy()
+	keyImageOnly.Tx = strings.ToUpper(txHash)
+	keyImageOnly.XmrKeyImages = []*common.XmrKeyImageProof{
+		{TxHash: txHash, OutputIndex: 0, KeyImage: "ki0", ProofC: "c0", ProofS: "s0"},
+	}
+
+	deckKey := txInKey{chain: common.XMRChain, height: 100}
+	deck := &types.TxIn{
+		Chain:    common.XMRChain,
+		TxArray:  []*types.TxInItem{txKeyOnly, keyImageOnly},
+		Filtered: true,
+	}
+	observer := &Observer{
+		logger:  zerolog.Nop(),
+		onDeck:  map[txInKey]*types.TxIn{deckKey: deck},
+		lock:    &sync.Mutex{},
+		storage: storage,
+	}
+
+	replay := keyImageOnly.Copy()
+	observer.processObservedTx(types.TxIn{
+		Chain:    common.XMRChain,
+		TxArray:  []*types.TxInItem{replay},
+		Filtered: true,
+	})
+
+	require.Len(t, deck.TxArray, 1)
+	require.Equal(t, []string{"tx-key"}, deck.TxArray[0].TxKeys)
+	require.Len(t, deck.TxArray[0].XmrKeyImages, 1)
+	require.Equal(t, "ki0", deck.TxArray[0].XmrKeyImages[0].KeyImage)
+	require.True(t, deck.TxArray[0].CommittedUnFinalised)
 }
 
 func TestProcessObservedTxPromotesMempoolDeckOnXMRMetadataReplay(t *testing.T) {

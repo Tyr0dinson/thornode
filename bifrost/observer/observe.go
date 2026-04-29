@@ -614,12 +614,19 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 			}
 		}
 		o.logger.Debug().Msgf("Dedupe took %s", time.Since(dedupeStart))
+		if coalesced, changed := coalesceXMRMetadataDuplicateDeckItems(in.Chain, in.TxArray); changed {
+			in.TxArray = coalesced
+			deckUpdated = true
+		}
 		if in.MemPool && !txIn.MemPool {
 			in.MemPool = false
 			deckUpdated = true
 		}
 		if deckUpdated || len(newTxs) > 0 {
 			in.TxArray = append(in.TxArray, newTxs...)
+			if coalesced, changed := coalesceXMRMetadataDuplicateDeckItems(in.Chain, in.TxArray); changed {
+				in.TxArray = coalesced
+			}
 			setDeckStart := time.Now()
 			if err := o.storage.AddOrUpdateTx(in); err != nil {
 				o.logger.Error().Err(err).Msg("fail to add tx to storage")
@@ -628,6 +635,9 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 		}
 
 		return
+	}
+	if coalesced, changed := coalesceXMRMetadataDuplicateDeckItems(txIn.Chain, txIn.TxArray); changed {
+		txIn.TxArray = coalesced
 	}
 	o.onDeck[k] = &txIn
 
@@ -703,6 +713,41 @@ func mergeXMRMetadataIntoTxInItem(existing, incoming *types.TxInItem) bool {
 		changed = true
 	}
 	return changed
+}
+
+func coalesceXMRMetadataDuplicateDeckItems(chain common.Chain, items []*types.TxInItem) ([]*types.TxInItem, bool) {
+	if !chain.Equals(common.XMRChain) || len(items) < 2 {
+		return items, false
+	}
+
+	out := items[:0]
+	changed := false
+	for _, item := range items {
+		if item == nil {
+			out = append(out, item)
+			continue
+		}
+		merged := false
+		for _, existing := range out {
+			if !txInItemMatchesIgnoringXMRMetadata(existing, item) {
+				continue
+			}
+			if mergeXMRMetadataIntoTxInItem(existing, item) {
+				changed = true
+			}
+			if item.CommittedUnFinalised && !existing.CommittedUnFinalised {
+				existing.CommittedUnFinalised = true
+				changed = true
+			}
+			merged = true
+			changed = true
+			break
+		}
+		if !merged {
+			out = append(out, item)
+		}
+	}
+	return out, changed
 }
 
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
