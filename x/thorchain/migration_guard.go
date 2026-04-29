@@ -2,10 +2,12 @@ package thorchain
 
 import (
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -79,4 +81,88 @@ func hasInFlightMigrate(ctx cosmos.Context, k keeper.Keeper, matchVault func(Vau
 	}
 
 	return false, nil
+}
+
+func getInFlightMigrations(ctx cosmos.Context, k keeper.Keeper) ([]*types.InFlightMigration, error) {
+	migrations := make([]*types.InFlightMigration, 0)
+	iter := k.GetInFlightMigrateIterator(ctx)
+	if iter == nil {
+		return migrations, nil
+	}
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		txIDString := strings.TrimPrefix(string(iter.Key()), "in_flight_migrate/")
+		txIDString = strings.TrimPrefix(txIDString, "/")
+		migration := &types.InFlightMigration{TxId: txIDString}
+
+		var source types.ProtoString
+		if err := k.Cdc().Unmarshal(iter.Value(), &source); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal in-flight migrate source vault: %w", err)
+		}
+		migration.SourceVaultPubKey = source.GetValue()
+
+		if source.GetValue() != "" {
+			sourcePubKey, err := common.NewPubKey(source.GetValue())
+			if err != nil {
+				return nil, fmt.Errorf("fail to parse in-flight migrate source vault pubkey: %w", err)
+			}
+
+			vault, err := k.GetVault(ctx, sourcePubKey)
+			if err != nil {
+				return nil, fmt.Errorf("fail to get source vault for migrate guard: %w", err)
+			}
+			migration.SourceVaultStatus = vault.Status.String()
+		}
+
+		txID, err := common.NewTxID(txIDString)
+		if err != nil {
+			return nil, fmt.Errorf("fail to parse in-flight migrate tx id: %w", err)
+		}
+		voter, err := k.GetObservedTxOutVoter(ctx, txID)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get observed tx out voter for in-flight migrate: %w", err)
+		}
+		if len(voter.Actions) > 0 {
+			action := voter.Actions[0]
+			for _, candidate := range voter.Actions {
+				memo, err := mem.ParseMemo(k.GetVersion(), candidate.Memo)
+				if err == nil && memo.IsType(mem.TxMigrate) {
+					action = candidate
+					break
+				}
+			}
+			migration.TxOut = castTxOutItem(action, voter.Height)
+			migration.DestinationVaultPubKey = findVaultByAddress(ctx, k, action.Chain, action.ToAddress)
+		}
+
+		migrations = append(migrations, migration)
+	}
+
+	return migrations, nil
+}
+
+func findVaultByAddress(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, address common.Address) string {
+	if chain.IsEmpty() || address.IsEmpty() {
+		return ""
+	}
+
+	for _, status := range []VaultStatus{ActiveVault, RetiringVault, InactiveVault} {
+		vaults, err := k.GetAsgardVaultsByStatus(ctx, status)
+		if err != nil {
+			ctx.Logger().Error("fail to get vaults while resolving migration destination", "status", status, "error", err)
+			continue
+		}
+		for _, vault := range vaults {
+			vaultAddress, err := vault.GetAddress(chain)
+			if err != nil {
+				continue
+			}
+			if vaultAddress.Equals(address) {
+				return vault.PubKey.String()
+			}
+		}
+	}
+
+	return ""
 }

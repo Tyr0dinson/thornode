@@ -3980,6 +3980,11 @@ components:
           type: boolean
           example: false
           description: Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
+        in_flight_migrations:
+          type: array
+          description: In-flight migration outbounds blocking vault churn.
+          items:
+            $ref: "#/components/schemas/InFlightMigration"
         gas_spent_rune:
           type: string
           example: "1000000000"
@@ -4020,6 +4025,27 @@ components:
           type: boolean
           example: false
           description: indicates if all anchor chains are halted (true), or at least one anchor chain is available (false)
+
+    InFlightMigration:
+      type: object
+      properties:
+        tx_id:
+          type: string
+          description: outbound tx hash used as the in-flight migration index key
+          example: "0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB"
+        source_vault_pub_key:
+          type: string
+          description: source vault pubkey stored in the in-flight migration index
+          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
+        source_vault_status:
+          type: string
+          example: "InactiveVault"
+        destination_vault_pub_key:
+          type: string
+          description: destination vault pubkey resolved from the outbound destination address
+          example: "thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m"
+        tx_out:
+          $ref: "#/components/schemas/TxOutItem"
 
     OutboundFeesResponse:
       type: array

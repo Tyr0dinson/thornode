@@ -4,6 +4,7 @@ package types;
 option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 
 import "gogoproto/gogo.proto";
+import "types/query_outbound.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -55,4 +56,18 @@ message QueryNetworkResponse {
   string tor_price_in_rune = 14 [ (gogoproto.jsontag) = "tor_price_in_rune" ];
   // indicator if all anchor chains are halted
   bool tor_price_halted = 17 [ (gogoproto.jsontag) = "tor_price_halted" ];
+  // in-flight migration outbounds blocking vault churn
+  repeated InFlightMigration in_flight_migrations = 18
+      [ (gogoproto.jsontag) = "in_flight_migrations" ];
+}
+
+message InFlightMigration {
+  // outbound tx hash used as the in-flight migration index key
+  string tx_id = 1;
+  // source vault pubkey stored in the in-flight migration index
+  string source_vault_pub_key = 2;
+  string source_vault_status = 3;
+  // destination vault pubkey, resolved from the outbound destination address
+  string destination_vault_pub_key = 4;
+  QueryTxOutItem tx_out = 5;
 }

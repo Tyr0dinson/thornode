@@ -245,6 +245,10 @@ func (s *HandlerObservedTxHelpersSuite) TestNetworkHasMigratingVaultsTracksInFli
 	vault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
 	vault.Membership = []string{memberPubKey.String()}
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	destVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, destVault), IsNil)
+	destAddress, err := destVault.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
 
 	observed := GetRandomObservedTx()
 	observed.Tx.Chain = common.BTCChain
@@ -255,11 +259,30 @@ func (s *HandlerObservedTxHelpersSuite) TestNetworkHasMigratingVaultsTracksInFli
 	outVoter.Tx = observed
 	outVoter.Height = ctx.BlockHeight()
 	outVoter.FinalisedHeight = ctx.BlockHeight()
+	outVoter.Actions = []TxOutItem{{
+		Chain:       common.BTCChain,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   destAddress,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(123_456)),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+		GasRate:     10,
+		InHash:      observed.Tx.ID,
+		Memo:        observed.Tx.Memo,
+	}}
 	mgr.Keeper().SetObservedTxOutVoter(ctx, outVoter)
 
 	migrating, err := networkHasMigratingVaults(ctx, mgr.Keeper())
 	c.Assert(err, IsNil)
 	c.Assert(migrating, Equals, true)
+	inFlight, err := getInFlightMigrations(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(inFlight, HasLen, 1)
+	c.Assert(inFlight[0].TxId, Equals, observed.Tx.ID.String())
+	c.Assert(inFlight[0].SourceVaultPubKey, Equals, vault.PubKey.String())
+	c.Assert(inFlight[0].SourceVaultStatus, Equals, RetiringVault.String())
+	c.Assert(inFlight[0].DestinationVaultPubKey, Equals, destVault.PubKey.String())
+	c.Assert(inFlight[0].TxOut.Memo, Equals, "migrate:123")
+	c.Assert(inFlight[0].TxOut.Coin.Amount.Equal(cosmos.NewUint(123_456)), Equals, true)
 
 	memberMigrating, err := nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
 	c.Assert(err, IsNil)
