@@ -1081,6 +1081,22 @@ func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, t
 		return
 	}
 	item.XmrKeyImages = cloneXMRKeyImageProofs(proofs)
+	if c.globalTxsQueue != nil {
+		select {
+		case c.globalTxsQueue <- stypes.TxIn{Chain: common.XMRChain, TxArray: []*stypes.TxInItem{item}}:
+			c.logger.Info().
+				Str("vault", vaultPubKey.String()).
+				Str("tx_hash", normalizeTxID(txHash)).
+				Int("proof_count", len(item.XmrKeyImages)).
+				Msg("xmr key-image backlog: submitted observation replay for local proof set")
+			return
+		default:
+			c.logger.Debug().
+				Str("vault", vaultPubKey.String()).
+				Str("tx_hash", normalizeTxID(txHash)).
+				Msg("xmr key-image backlog: observation queue full")
+		}
+	}
 	if c.scanner != nil {
 		c.scanner.queueReplayTxInItems([]*stypes.TxInItem{item})
 		c.logger.Info().
@@ -1089,22 +1105,6 @@ func (c *Client) queueXMRKeyImageBacklogObservation(vaultPubKey common.PubKey, t
 			Int("proof_count", len(item.XmrKeyImages)).
 			Msg("xmr key-image backlog: queued observation replay for local proof set")
 		return
-	}
-	if c.globalTxsQueue == nil {
-		return
-	}
-	select {
-	case c.globalTxsQueue <- stypes.TxIn{Chain: common.XMRChain, TxArray: []*stypes.TxInItem{item}}:
-		c.logger.Info().
-			Str("vault", vaultPubKey.String()).
-			Str("tx_hash", normalizeTxID(txHash)).
-			Int("proof_count", len(item.XmrKeyImages)).
-			Msg("xmr key-image backlog: submitted observation replay for local proof set")
-	default:
-		c.logger.Debug().
-			Str("vault", vaultPubKey.String()).
-			Str("tx_hash", normalizeTxID(txHash)).
-			Msg("xmr key-image backlog: observation queue full")
 	}
 }
 

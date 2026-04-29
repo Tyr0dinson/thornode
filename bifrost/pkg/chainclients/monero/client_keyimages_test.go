@@ -547,6 +547,7 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 	}
 
 	scanner := &Scanner{}
+	observed := make(chan stypes.TxIn, 1)
 	tssServer := &mockKeyImageTssServer{}
 	c := &Client{
 		chain:           common.XMRChain,
@@ -555,6 +556,7 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 		tssServer:       tssServer,
 		thorchainBridge: bridge,
 		scanner:         scanner,
+		globalTxsQueue:  observed,
 		logger:          testLogger(),
 	}
 
@@ -564,15 +566,21 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 	require.Len(t, applyReqs[0].KeyImages, 1)
 	assert.Equal(t, txHash, applyReqs[0].KeyImages[0].TxHash)
 
-	replay := scanner.drainReplayTxInItems()
-	require.Len(t, replay, 1)
-	assert.Equal(t, txHash, replay[0].Tx)
-	assert.Equal(t, vaultPubKey, replay[0].ObservedVaultPubKey)
-	assert.Equal(t, vaultAddr.String(), replay[0].To)
-	require.Len(t, replay[0].XmrKeyImages, 1)
-	assert.Equal(t, txHash, replay[0].XmrKeyImages[0].TxHash)
-	assert.Equal(t, uint32(0), replay[0].XmrKeyImages[0].OutputIndex)
-	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", replay[0].XmrKeyImages[0].KeyImage)
+	var replay stypes.TxIn
+	select {
+	case replay = <-observed:
+	default:
+		t.Fatal("expected local key-image replay to be submitted directly")
+	}
+	require.Len(t, replay.TxArray, 1)
+	assert.Equal(t, txHash, replay.TxArray[0].Tx)
+	assert.Equal(t, vaultPubKey, replay.TxArray[0].ObservedVaultPubKey)
+	assert.Equal(t, vaultAddr.String(), replay.TxArray[0].To)
+	require.Len(t, replay.TxArray[0].XmrKeyImages, 1)
+	assert.Equal(t, txHash, replay.TxArray[0].XmrKeyImages[0].TxHash)
+	assert.Equal(t, uint32(0), replay.TxArray[0].XmrKeyImages[0].OutputIndex)
+	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", replay.TxArray[0].XmrKeyImages[0].KeyImage)
+	assert.Empty(t, scanner.drainReplayTxInItems())
 
 	proofs, ok := c.getCachedXMRKeyImageProofs(vaultPubKey, txHash, []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 0}})
 	require.True(t, ok)
