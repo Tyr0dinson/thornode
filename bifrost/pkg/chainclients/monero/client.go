@@ -4088,6 +4088,16 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			}
 		}
 	}
+	if isOutboundFromVault && len(item.TxKeys) == 0 && len(item.XmrKeyImages) > 0 {
+		if txKeys, ok := c.registeredXMRTxKeysForTx(item.ObservedVaultPubKey, item.Tx); ok {
+			item.TxKeys = txKeys
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Int("tx_key_count", len(txKeys)).
+				Msg("recovered missing XMR tx-keys from registered vault inventory")
+		}
+	}
 	if isInboundToVault && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
 		c.logger.Debug().
 			Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4107,51 +4117,54 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, nil
 	}
 	if isOutboundFromVault && len(item.TxKeys) > 0 {
-		workItem, workErr := c.ensureXMRFinalizeWorkItem(
-			item.ObservedVaultPubKey,
-			item.Tx,
-			finaliseHeight,
-			xmrFinalizePhaseTxKey,
-		)
-		if workErr != nil {
-			return nil, false, fmt.Errorf("fail to initialize XMR tx-key validation work item: %w", workErr)
-		}
-		if ready, wait := xmrWorkItemRetryReady(workItem, time.Now()); !ready {
-			c.logger.Debug().
-				Str("tx_hash", normalizeTxID(item.Tx)).
-				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
-				Int64("attempt_count", workItem.AttemptCount).
-				Dur("retry_after", wait).
-				Msg("waiting for XMR outbound tx-key validation retry backoff")
-			return nil, false, nil
-		}
-		validatedAudit, validateErr := c.validateXMROutgoingAuditFromObservation(xmrObservedTxFromTxInItem(item), outgoingAudit)
-		if validateErr != nil {
-			if isTransientXMROutboundValidationError(validateErr) {
-				currentHeight := c.currentThorHeight(finaliseHeight)
-				var recordErr error
-				workItem, recordErr = c.recordXMRKeyImageWorkAttempt(workItem, currentHeight, validateErr.Error())
-				if recordErr != nil {
-					return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", recordErr)
-				}
-				c.logger.Info().
-					Err(validateErr).
+		txKeysAlreadyRegistered := len(item.XmrKeyImages) > 0 && c.xmrTxKeysAlreadyRegistered(item.ObservedVaultPubKey, item.Tx)
+		if !txKeysAlreadyRegistered {
+			workItem, workErr := c.ensureXMRFinalizeWorkItem(
+				item.ObservedVaultPubKey,
+				item.Tx,
+				finaliseHeight,
+				xmrFinalizePhaseTxKey,
+			)
+			if workErr != nil {
+				return nil, false, fmt.Errorf("fail to initialize XMR tx-key validation work item: %w", workErr)
+			}
+			if ready, wait := xmrWorkItemRetryReady(workItem, time.Now()); !ready {
+				c.logger.Debug().
 					Str("tx_hash", normalizeTxID(item.Tx)).
 					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
 					Int64("attempt_count", workItem.AttemptCount).
-					Str("memo", item.Memo).
-					Msg("waiting for XMR outbound tx to become visible before tx-key validation")
+					Dur("retry_after", wait).
+					Msg("waiting for XMR outbound tx-key validation retry backoff")
 				return nil, false, nil
 			}
-			return nil, false, fmt.Errorf("fail to validate xmr outbound tx-key state via sidecar: %w", validateErr)
-		}
-		outgoingAudit = validatedAudit
-		if setTxInItemXMRGasFromActualFee(item, outgoingAudit.actualFeeAtomic) {
-			c.logger.Info().
-				Str("tx_hash", normalizeTxID(item.Tx)).
-				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
-				Uint64("actual_fee", outgoingAudit.actualFeeAtomic/moneroAtomicToThorchain).
-				Msg("updated finalized XMR outbound gas from tx-key validation")
+			validatedAudit, validateErr := c.validateXMROutgoingAuditFromObservation(xmrObservedTxFromTxInItem(item), outgoingAudit)
+			if validateErr != nil {
+				if isTransientXMROutboundValidationError(validateErr) {
+					currentHeight := c.currentThorHeight(finaliseHeight)
+					var recordErr error
+					workItem, recordErr = c.recordXMRKeyImageWorkAttempt(workItem, currentHeight, validateErr.Error())
+					if recordErr != nil {
+						return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", recordErr)
+					}
+					c.logger.Info().
+						Err(validateErr).
+						Str("tx_hash", normalizeTxID(item.Tx)).
+						Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+						Int64("attempt_count", workItem.AttemptCount).
+						Str("memo", item.Memo).
+						Msg("waiting for XMR outbound tx to become visible before tx-key validation")
+					return nil, false, nil
+				}
+				return nil, false, fmt.Errorf("fail to validate xmr outbound tx-key state via sidecar: %w", validateErr)
+			}
+			outgoingAudit = validatedAudit
+			if setTxInItemXMRGasFromActualFee(item, outgoingAudit.actualFeeAtomic) {
+				c.logger.Info().
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+					Uint64("actual_fee", outgoingAudit.actualFeeAtomic/moneroAtomicToThorchain).
+					Msg("updated finalized XMR outbound gas from tx-key validation")
+			}
 		}
 	}
 	if len(item.XmrKeyImages) > 0 {
@@ -4412,6 +4425,36 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 		}
 	}
 	return false
+}
+
+func (c *Client) xmrTxKeysAlreadyRegistered(vaultPubKey common.PubKey, txHash string) bool {
+	_, ok := c.registeredXMRTxKeysForTx(vaultPubKey, txHash)
+	return ok
+}
+
+func (c *Client) registeredXMRTxKeysForTx(vaultPubKey common.PubKey, txHash string) ([]string, bool) {
+	if c == nil || c.thorchainBridge == nil {
+		return nil, false
+	}
+	txHash = normalizeTxID(txHash)
+	if vaultPubKey.IsEmpty() || txHash == "" {
+		return nil, false
+	}
+	vault, err := c.getVaultByPubKey(vaultPubKey)
+	if err != nil {
+		return nil, false
+	}
+	for _, ref := range vault.TxKeysXmr {
+		if ref == nil || normalizeTxID(ref.TxHash) != txHash {
+			continue
+		}
+		txKeys := normalizeTxKeyValues(ref.TxKeys)
+		if len(txKeys) == 0 {
+			return nil, false
+		}
+		return txKeys, true
+	}
+	return nil, false
 }
 
 func xmrKeyImageProofsAlreadyRegistered(proofs []*common.XmrKeyImageProof, registered []*common.XmrKeyImageRef) bool {

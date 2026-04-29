@@ -2026,6 +2026,88 @@ func TestPrepareObservedTxInItemDefersFinalOutboundUntilTxKeysPropagate(t *testi
 	assert.Empty(t, tssServer.reqs)
 }
 
+func TestPrepareObservedTxInItemUsesRegisteredTxKeysForKeyImageReplay(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("b", 64)
+	txKey := strings.Repeat("5", 64)
+	destination := common.XMRSeededDummyAddress('8', []byte("registered-txkeys-replay-destination"))
+
+	var validateCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+url.PathEscape(vaultPubKey.String()):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing:    nil,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
+			validateCalls++
+			http.Error(w, "validation should be bypassed for registered txkeys", http.StatusInternalServerError)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+						TxKeysXmr: []*common.XmrTxKeyRef{{
+							TxHash: txHash,
+							TxKeys: []string{txKey},
+						}},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  destination,
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "OUT:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 0, KeyImage: "ki-0", ProofC: "c0", ProofS: "s0"},
+		},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Equal(t, []string{txKey}, prepared.TxKeys)
+	require.Len(t, prepared.XmrKeyImages, 1)
+	assert.Zero(t, validateCalls)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	assert.Empty(t, tssServer.reqs)
+}
+
 func TestValidateObservedTxInAppliesValidatedKeyImages(t *testing.T) {
 	t.Parallel()
 
