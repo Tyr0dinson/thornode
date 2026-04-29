@@ -72,6 +72,7 @@ type xmrWorkItem struct {
 	AnchorHeight      int64            `json:"anchor_height"`
 	LeaderEpochHeight int64            `json:"leader_epoch_height,omitempty"`
 	LastAttemptHeight int64            `json:"last_attempt_height,omitempty"`
+	LastAttemptAt     int64            `json:"last_attempt_at,omitempty"`
 	AttemptCount      int64            `json:"attempt_count,omitempty"`
 	LastError         string           `json:"last_error,omitempty"`
 	AbandonedAtHeight int64            `json:"abandoned_at_height,omitempty"`

@@ -663,6 +663,9 @@ func isTransientXMRFrostCoordinationText(errText string) bool {
 var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not active")
 var errXMROutgoingAuditIncomplete = errors.New("xmr outgoing audit incomplete")
 var errXMRFinalizeWorkAbandoned = errors.New("xmr finalized observation work abandoned")
+var errXMRFinalizeWorkRetryBackoff = errors.New("xmr finalized observation work retry backoff active")
+
+const xmrWorkRetryMinBackoff = 60 * time.Second
 
 func isTransientXMROutboundValidationError(err error) bool {
 	if err == nil {
@@ -1012,6 +1015,12 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	)
 	if err != nil {
 		switch {
+		case errors.Is(err, errXMRFinalizeWorkRetryBackoff):
+			c.logger.Debug().
+				Err(err).
+				Str("vault", ceremonyCtx.vaultPubKey.String()).
+				Str("tx_hash", backlogHeadTxHash).
+				Msg("xmr key-image backlog: waiting for retry backoff")
 		case errors.Is(err, errXMRKeyImageNotActiveSigner):
 			c.logger.Info().
 				Err(err).
@@ -2377,8 +2386,9 @@ func (c *Client) rotateXMRKeyImageLeaderEpoch(item xmrWorkItem, currentHeight in
 	return item, nil
 }
 
-func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight int64, errText string) error {
+func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight int64, errText string) (xmrWorkItem, error) {
 	item.LastAttemptHeight = currentHeight
+	item.LastAttemptAt = time.Now().Unix()
 	item.AttemptCount++
 	item.LastError = strings.TrimSpace(errText)
 	if isTransientXMRKeyImageCeremonyText(item.LastError) {
@@ -2391,9 +2401,9 @@ func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight in
 		}
 	}
 	if c.keyImageWorkStore == nil {
-		return nil
+		return item, nil
 	}
-	return c.keyImageWorkStore.put(item)
+	return item, c.keyImageWorkStore.put(item)
 }
 
 func (c *Client) abandonXMRWorkItem(item xmrWorkItem, currentHeight int64, reason string) error {
@@ -2410,6 +2420,17 @@ func (c *Client) abandonXMRWorkItem(item xmrWorkItem, currentHeight int64, reaso
 
 func (c *Client) xmrWorkItemAbandoned(item xmrWorkItem) bool {
 	return item.AbandonedAtHeight > 0
+}
+
+func xmrWorkItemRetryReady(item xmrWorkItem, now time.Time) (bool, time.Duration) {
+	if item.LastAttemptAt <= 0 {
+		return true, 0
+	}
+	elapsed := now.Sub(time.Unix(item.LastAttemptAt, 0))
+	if elapsed >= xmrWorkRetryMinBackoff {
+		return true, 0
+	}
+	return false, xmrWorkRetryMinBackoff - elapsed
 }
 
 func (c *Client) completeXMRKeyImageWorkItem(item xmrWorkItem) error {
@@ -3969,16 +3990,24 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 				Msg("dropping abandoned XMR outbound tx-key validation work")
 			return nil, false, nil
 		}
+		if ready, wait := xmrWorkItemRetryReady(workItem, time.Now()); !ready {
+			c.logger.Debug().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Int64("attempt_count", workItem.AttemptCount).
+				Dur("retry_after", wait).
+				Msg("waiting for XMR outbound tx-key validation retry backoff")
+			return nil, false, nil
+		}
 		validatedAudit, validateErr := c.validateXMROutgoingAuditFromObservation(xmrObservedTxFromTxInItem(item), outgoingAudit)
 		if validateErr != nil {
 			if isTransientXMROutboundValidationError(validateErr) {
 				currentHeight := c.currentThorHeight(finaliseHeight)
-				if err := c.recordXMRKeyImageWorkAttempt(workItem, currentHeight, validateErr.Error()); err != nil {
-					return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", err)
+				var recordErr error
+				workItem, recordErr = c.recordXMRKeyImageWorkAttempt(workItem, currentHeight, validateErr.Error())
+				if recordErr != nil {
+					return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", recordErr)
 				}
-				workItem.LastAttemptHeight = currentHeight
-				workItem.AttemptCount++
-				workItem.LastError = validateErr.Error()
 				if workItem.AttemptCount >= c.getXMRFinalizeMaxAttempts() {
 					if err := c.abandonXMRWorkItem(workItem, currentHeight, validateErr.Error()); err != nil {
 						return nil, false, fmt.Errorf("fail to abandon XMR tx-key validation work: %w", err)
@@ -4203,6 +4232,14 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		version.String(),
 	)
 	if err != nil {
+		if errors.Is(err, errXMRFinalizeWorkRetryBackoff) {
+			c.logger.Debug().
+				Err(err).
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Msg("waiting for finalized XMR key-image retry backoff")
+			return nil, false, nil
+		}
 		if errors.Is(err, errXMRFinalizeWorkAbandoned) {
 			c.logger.Warn().
 				Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4864,6 +4901,16 @@ func (c *Client) generateObservedTxKeyImages(
 				Msg("abandoning XMR key-image work after retry limit")
 			return nil, errXMRFinalizeWorkAbandoned
 		}
+		if ready, wait := xmrWorkItemRetryReady(workItem, time.Now()); !ready {
+			c.logger.Debug().
+				Str("vault_pub_key", vaultPubKey.String()).
+				Str("tx_hash", txHash).
+				Uint32("output_index", output.OutputIndex).
+				Int64("attempt_count", workItem.AttemptCount).
+				Dur("retry_after", wait).
+				Msg("waiting for XMR key-image retry backoff")
+			return nil, errXMRFinalizeWorkRetryBackoff
+		}
 		c.setActiveXMRWorkItem(&workItem)
 		c.logger.Info().
 			Str("vault_pub_key", vaultPubKey.String()).
@@ -4883,12 +4930,12 @@ func (c *Client) generateObservedTxKeyImages(
 			Version:       version,
 		}, newFrostSignerAdapter(c.frostSigner))
 		if err != nil {
-			_ = c.recordXMRKeyImageWorkAttempt(workItem, currentThorHeight, err.Error())
+			_, _ = c.recordXMRKeyImageWorkAttempt(workItem, currentThorHeight, err.Error())
 			return nil, fmt.Errorf("fail to execute XMR key-image ceremony for %s:%d: %w", txHash, output.OutputIndex, err)
 		}
 		if resp.Status != gotsscommon.Success {
 			failReason := strings.TrimSpace(resp.Blame.FailReason)
-			_ = c.recordXMRKeyImageWorkAttempt(workItem, currentThorHeight, failReason)
+			_, _ = c.recordXMRKeyImageWorkAttempt(workItem, currentThorHeight, failReason)
 			if failReason == "local signer is not in active signer set" || failReason == "local signer is not in participant set" {
 				return nil, fmt.Errorf("%w for %s:%d: %s", errXMRKeyImageNotActiveSigner, txHash, output.OutputIndex, failReason)
 			}

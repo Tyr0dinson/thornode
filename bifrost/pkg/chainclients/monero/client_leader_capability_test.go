@@ -3,6 +3,7 @@ package monero
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -82,7 +83,8 @@ func TestRecordXMRKeyImageLeaderFailureSkipsCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(20_001), item.LeaderEpochHeight)
 
-	require.NoError(t, client.recordXMRKeyImageWorkAttempt(item, 20_033, "leader not reachable"))
+	item, err = client.recordXMRKeyImageWorkAttempt(item, 20_033, "leader not reachable")
+	require.NoError(t, err)
 	stored, ok, err := client.keyImageWorkStore.get(item.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -91,6 +93,19 @@ func TestRecordXMRKeyImageLeaderFailureSkipsCurrentEpoch(t *testing.T) {
 	rotated, err := client.rotateXMRKeyImageLeaderEpoch(stored, 20_034)
 	require.NoError(t, err)
 	require.Equal(t, int64(20_041), rotated.LeaderEpochHeight)
+}
+
+func TestXMRWorkRetryBackoffRequiresSixtySeconds(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	item := xmrWorkItem{LastAttemptAt: now.Unix(), AttemptCount: 1}
+
+	ready, wait := xmrWorkItemRetryReady(item, now.Add(59*time.Second))
+	require.False(t, ready)
+	require.Equal(t, time.Second, wait)
+
+	ready, wait = xmrWorkItemRetryReady(item, now.Add(60*time.Second))
+	require.True(t, ready)
+	require.Zero(t, wait)
 }
 
 func TestXMRKeyImageBacklogOnlyConflictsWithSameVaultSign(t *testing.T) {

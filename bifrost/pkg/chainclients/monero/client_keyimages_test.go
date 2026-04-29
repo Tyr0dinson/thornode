@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/blang/semver"
 	"github.com/stretchr/testify/assert"
@@ -652,6 +653,12 @@ func TestPrepareObservedTxInItemRotatesKeyImageLeaderEpochAfterFailure(t *testin
 	require.NoError(t, err)
 	require.False(t, include)
 	require.Nil(t, prepared)
+
+	workItems, err := c.keyImageWorkStore.list()
+	require.NoError(t, err)
+	require.Len(t, workItems, 1)
+	workItems[0].LastAttemptAt = time.Now().Add(-xmrWorkRetryMinBackoff).Unix()
+	require.NoError(t, c.keyImageWorkStore.put(workItems[0]))
 
 	bridge.blockHeight = 290
 	prepared, include, err = c.PrepareObservedTxInItem(newItem(), true, 250)
