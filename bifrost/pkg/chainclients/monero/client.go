@@ -2074,16 +2074,10 @@ func (c *Client) xmrHasPendingReplayWorkForVault(target common.PubKey) (bool, st
 			}
 		}
 
-		txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
-		if len(txKeyRefs) > 0 {
-			stateCheck, replayErr := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
-			if replayErr != nil {
-				return false, "", replayErr
-			}
-			if stateCheck.needsReplay {
-				return true, fmt.Sprintf("xmr outgoing inventory replay pending for vault %s", vaultPubKey.String()), nil
-			}
-		}
+		// Tx-key inventory is validated and replayed by syncTrackedVaultRegistrations.
+		// It is intentionally best-effort here: a bad historical tx-key ref must
+		// not make the local signer look out-of-sync forever and block unrelated
+		// key-image backlog generation.
 	}
 
 	return false, "", nil

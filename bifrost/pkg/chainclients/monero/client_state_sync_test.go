@@ -351,6 +351,50 @@ func TestTxKeyCatchupNeedsReplayAcceptsRegisteredInventoryBeforeMined(t *testing
 	assert.Empty(t, stateCheck.removeHashes)
 }
 
+func TestPendingReplayWorkDoesNotGateOnTxKeyInventoryOnly(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	vault := ttypes.Vault{
+		PubKey:                 vaultPubKey,
+		PubKeyEddsa:            vaultPubKey,
+		PubKeyFrost:            vaultPubKey,
+		Status:                 ttypes.VaultStatus_ActiveVault,
+		VaultCreationHeightXmr: 50,
+		TxKeysXmr: []*common.XmrTxKeyRef{{
+			TxHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			TxKeys: []string{"bb"},
+		}},
+	}
+	bridge := &scannerTrackedVaultBridge{
+		asgards: ttypes.Vaults{vault},
+		pubKeys: scannerTrackedVaultPubKeys(vaultPubKey),
+		vaultByKey: map[string]ttypes.Vault{
+			vaultPubKey.String(): vault,
+		},
+	}
+	scanner := NewScanner(testLogger(), nil, bridge, common.XMRChain, common.EmptyPubKey, 72)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("tx-key-only replay checks should not query signer state, got %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	client := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     signer,
+		thorchainBridge: bridge,
+		scanner:         scanner,
+		logger:          testLogger(),
+	}
+
+	pending, reason, err := client.xmrHasPendingReplayWork()
+	require.NoError(t, err)
+	assert.False(t, pending)
+	assert.Empty(t, reason)
+}
+
 func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing.T) {
 	t.Parallel()
 
