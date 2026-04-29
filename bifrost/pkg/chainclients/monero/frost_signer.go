@@ -65,7 +65,7 @@ type FrostSigner struct {
 
 	client       *http.Client
 	daemonClient *http.Client
-	signClient   *http.Client // longer timeout for sign/prepare; decoy retries can take a while
+	signClient   *http.Client // longer timeout for heavyweight sidecar operations
 	username     string
 	password     string
 	bearer       string
@@ -612,10 +612,10 @@ func NewFrostSignerWithEndpoint(cfg config.BifrostChainConfiguration, endpoint s
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	// sign/prepare may need to retry decoy ring selection many times when the
-	// local pruned monerod produces undecodable txs at small candidate-set
-	// heights. Cap at 120s so the sidecar's full retry budget can finish
-	// before bifrost gives up.
+	// Some sidecar operations are intentionally heavier than simple state reads:
+	// sign/prepare may retry decoy ring selection, key-image combine waits on
+	// peers, and scanner/sync can rebuild vault state after a birthday reset.
+	// Give those paths enough time to finish before bifrost retries.
 	signTimeout := timeout
 	if signTimeout < 120*time.Second {
 		signTimeout = 120 * time.Second
@@ -1332,12 +1332,12 @@ func (s *FrostSigner) call(method, path string, payload any, out any) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// Sign-prepare can take significantly longer than other endpoints because
-	// the sidecar may iterate through many deterministic decoy seeds before
-	// finding a ring whose elements all parse cleanly under our local pruned
-	// monerod. Route it through a longer-timeout client.
+	// Heavy sidecar paths can exceed the normal block-scanner HTTP timeout.
 	httpClient := s.client
-	if (path == s.signPreparePath || path == s.keyImagePreparePath || path == s.keyImageCombinePath) && s.signClient != nil {
+	if (path == s.signPreparePath ||
+		path == s.keyImagePreparePath ||
+		path == s.keyImageCombinePath ||
+		path == s.scannerSyncPath) && s.signClient != nil {
 		httpClient = s.signClient
 	}
 	return s.doFrostRequest(httpClient, req, path, out)
