@@ -23,7 +23,7 @@ var ChainParams = map[common.Chain]Params{
 		BalancesTransferEvent:  2,
 	},
 	common.TAOChain: {
-		SpecName:               "node-subtensor-runtime",
+		SpecName:               "node-subtensor",
 		MortalEraPeriod:        64,      // 64 blocks * 12s ≈ 12.8 minutes
 		DefaultFee:             100_000, // 0.0001 TAO
 		BalanceSize:            8,

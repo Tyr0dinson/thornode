@@ -320,6 +320,14 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
 	}
 
+	// Substrate clients build a Balances::transfer_keep_alive denominated in
+	// the chain's native gas asset. Reject any other asset at the boundary
+	// rather than silently treating its amount as the gas-asset amount.
+	gasAsset := c.GetChain().GetGasAsset()
+	if !tx.Coins[0].Asset.Equals(gasAsset) {
+		return nil, nil, nil, fmt.Errorf("substrate clients only support the native gas asset %s, got %s", gasAsset, tx.Coins[0].Asset)
+	}
+
 	// Get vault address
 	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
 	if err != nil {

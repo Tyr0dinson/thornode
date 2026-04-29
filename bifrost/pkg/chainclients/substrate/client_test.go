@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -450,6 +451,12 @@ func (s *ClientSuite) TestBroadcastTx_AlreadyImported(c *C) {
 }
 
 func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
+	// Stale errors must surface back to the signer pipeline so the substrate
+	// retry branch in sign.go can clear SignedTx and let the scanner confirm
+	// via the inbound-observation path. The previous behavior — treating
+	// Stale as success — could mark a never-landed transfer as broadcast
+	// when the nonce slot was burned externally (operator error,
+	// double-signer, etc.).
 	h := newRPCHandler()
 	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("rpc error (code: 1010): Stale")
@@ -462,10 +469,11 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
 	rawTx := []byte{0x01, 0x02, 0x03}
 
-	// Should succeed — Stale nonce means tx already confirmed
 	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
-	c.Assert(err, IsNil, Commentf("BroadcastTx should succeed for Stale"))
-	c.Check(txHash, Not(Equals), "", Commentf("expected non-empty tx hash"))
+	c.Assert(err, NotNil, Commentf("BroadcastTx must return an error on Stale"))
+	c.Check(strings.Contains(err.Error(), "stale nonce"), Equals, true,
+		Commentf("error must wrap the stale-nonce signal: got %v", err))
+	c.Check(txHash, Equals, "", Commentf("tx hash must be empty when broadcast errors"))
 }
 
 func (s *ClientSuite) TestBroadcastTx_OtherError(c *C) {

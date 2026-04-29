@@ -302,6 +302,27 @@ func (s *ScannerSuite) TestProcessExtrinsic_BatchMultipleRemarksRejected(c *C) {
 	c.Assert(err, NotNil, Commentf("expected error for batch with multiple remarks"))
 }
 
+func (s *ScannerSuite) TestProcessExtrinsic_BatchEmptyFirstRemarkRejected(c *C) {
+	sc := newTestScanner()
+
+	dest := make([]byte, 32)
+	dest[0] = 0xCC
+	amount := cosmos.NewUint(1_000_000_000)
+
+	emptyRemark := stypes.SystemRemark(0, 0, []byte{})
+	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	realRemark := stypes.SystemRemark(0, 0, []byte("SWAP:BTC.BTC:bc1qattacker"))
+	batchCall := stypes.BatchAll(11, 2, [][]byte{emptyRemark, transferCall, realRemark})
+
+	extHex := buildTestExtrinsic(batchCall)
+
+	_, err := sc.processExtrinsic(extHex, 100, 0)
+	c.Assert(err, NotNil,
+		Commentf("expected error: empty first remark must not bypass the multi-remark guard"))
+	c.Check(strings.Contains(err.Error(), "multiple remark"), Equals, true,
+		Commentf("error should mention multiple remarks, got: %v", err))
+}
+
 func (s *ScannerSuite) TestProcessExtrinsic_BatchUnknownCallUsesFirstTransfer(c *C) {
 	sc := newTestScanner()
 
@@ -680,11 +701,34 @@ func (s *ScannerSuite) TestProcessExtrinsic_UsesActualFee(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(txItem, NotNil, Commentf("expected non-nil TxInItem"))
 
-	// Should use actual fee: 150_000 / 10 = 15_000 + 1 (+1 from CoinCeil)
-	expectedGas := cosmos.NewUint(15_001)
+	expectedGas := cosmos.NewUint(15_000)
 	c.Assert(len(txItem.Gas) > 0, Equals, true, Commentf("gas should not be empty"))
 	c.Check(txItem.Gas[0].Amount.Equal(expectedGas), Equals, true,
-		Commentf("gas amount: got %s, want %s", txItem.Gas[0].Amount, expectedGas))
+		Commentf("gas amount (exact-conversion case): got %s, want %s",
+			txItem.Gas[0].Amount, expectedGas))
+}
+
+func (s *ScannerSuite) TestProcessExtrinsic_UsesActualFee_RoundsUpOnRemainder(c *C) {
+	sc := newTestScanner()
+
+	dest := make([]byte, 32)
+	dest[0] = 0xAA
+	amount := cosmos.NewUint(1_000_000_000)
+	call := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
+	extHex := buildTestExtrinsic(call)
+
+	// 150_001 rao has a remainder when divided by 10 (the native-to-thor
+	// ratio for TAO). NativeGasToThorCoinCeil must add +1 to avoid
+	// under-reporting gas. 150_001 ÷ 10 = 15_000 floor → +1 = 15_001.
+	txItem, err := sc.processExtrinsic(extHex, 100, 150_001)
+	c.Assert(err, IsNil)
+	c.Assert(txItem, NotNil)
+
+	expectedGas := cosmos.NewUint(15_001)
+	c.Assert(len(txItem.Gas) > 0, Equals, true)
+	c.Check(txItem.Gas[0].Amount.Equal(expectedGas), Equals, true,
+		Commentf("gas amount (remainder case): got %s, want %s",
+			txItem.Gas[0].Amount, expectedGas))
 }
 
 func (s *ScannerSuite) TestProcessExtrinsic_FallsBackToDefaultFee(c *C) {

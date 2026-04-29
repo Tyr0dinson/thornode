@@ -75,13 +75,16 @@ func NewScanner(
 	}
 
 	// Validate we're connected to the correct node, not another Substrate chain.
-	// Pallet indices are hardcoded for the chain runtime; a different runtime
-	// would have different pallet ordering, causing silent misattribution of events.
+	// Pallet indices are hardcoded per chain runtime; a different runtime would
+	// have different pallet ordering, silently misattributing events and
+	// potentially crediting bogus transfers.
 	if rv.SpecName != s.params.SpecName {
-		s.logger.Warn().
-			Str("expected", s.params.SpecName).
-			Str("got", rv.SpecName).
-			Msg("runtime specName mismatch — pallet indices may be incorrect")
+		return nil, fmt.Errorf(
+			"runtime specName mismatch (expected %q, got %q): pallet indices "+
+				"are hardcoded per chain runtime, refusing to start with the wrong runtime "+
+				"— check the RPC endpoint configuration",
+			s.params.SpecName, rv.SpecName,
+		)
 	}
 
 	s.specVersion = rv.SpecVersion
@@ -527,6 +530,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 	var memo string
 	var transferData []byte
 	var hasTransfer bool
+	var hasRemark bool
 
 	stop := false
 	for i := 0; i < numCalls; i++ {
@@ -540,10 +544,15 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 
 		switch {
 		case pallet == s.params.SystemPallet && call == s.params.SystemRemarkCall:
-			if memo != "" {
-				// Reject batches with multiple remarks to prevent memo confusion attacks.
+			// Reject batches with multiple remarks to prevent memo confusion
+			// attacks. We track presence with a dedicated flag rather than
+			// `memo != ""` because `System.remark("")` is a legal empty-bytes
+			// call that would otherwise let a `[remark(""), transfer, remark(...)]`
+			// batch slip past the guard.
+			if hasRemark {
 				return nil, fmt.Errorf("batch_all contains multiple remark calls")
 			}
+			hasRemark = true
 
 			var remarkLength int
 			remarkLength, consumed, err = stypes.DecodeCompactToInt(data[pos:])
