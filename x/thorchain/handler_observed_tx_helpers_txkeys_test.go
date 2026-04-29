@@ -43,13 +43,22 @@ func (s *XMRTxKeysFlowSuite) TestRemoveVaultXMRTxKeysByTxHash(c *C) {
 	c.Assert(vault.TxKeysXmr[0].TxHash, Equals, "aaa")
 }
 
+func prepareTestXMRVault(c *C, vault *Vault) common.Address {
+	vault.PubKeyEddsa = vault.PubKey
+	vault.PubKeyFrost = vault.PubKey
+	address, err := vault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	return address
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTxKeysOnVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	vaultPubKey := GetRandomPubKey()
+	vaultPubKey := GetRandomEd25519PubKey()
 	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
 		common.XMRChain.String(),
 	}, []ChainContract{})
+	vaultAddress := prepareTestXMRVault(c, &vault)
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(5*common.One)),
 	})
@@ -60,7 +69,7 @@ func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTx
 		Tx: common.Tx{
 			ID:          txID,
 			Chain:       common.XMRChain,
-			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			FromAddress: vaultAddress,
 			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
 			Coins: common.Coins{
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
@@ -103,13 +112,88 @@ func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTx
 	c.Assert(vault.TxKeysXmr[0].TxKeys, DeepEquals, []string{"key-a", "key-b"})
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumRemovesReceiverSideMigrateXMRTxKeys(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	senderPubKey := GetRandomEd25519PubKey()
+	senderVault := NewVault(1, RetiringVault, AsgardVault, senderPubKey, []string{
+		common.XMRChain.String(),
+	}, []ChainContract{})
+	senderAddress := prepareTestXMRVault(c, &senderVault)
+	c.Assert(mgr.Keeper().SetVault(ctx, senderVault), IsNil)
+
+	receiverPubKey := GetRandomEd25519PubKey()
+	receiverVault := NewVault(1, ActiveVault, AsgardVault, receiverPubKey, []string{
+		common.XMRChain.String(),
+	}, []ChainContract{})
+	receiverAddress := prepareTestXMRVault(c, &receiverVault)
+	receiverVault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(5*common.One)),
+	})
+
+	txID := GetRandomTxHash()
+	receiverVault.TxKeysXmr = []*common.XmrTxKeyRef{
+		{TxHash: txID.String(), TxKeys: []string{"stale-receiver-key"}},
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, receiverVault), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:          txID,
+			Chain:       common.XMRChain,
+			FromAddress: senderAddress,
+			ToAddress:   receiverAddress,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+			},
+			Gas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
+			},
+			Memo: "MIGRATE:123",
+		},
+		BlockHeight:    1024,
+		FinaliseHeight: 1024,
+		ObservedPubKey: receiverPubKey,
+		TxKeys:         []string{"wrong-vault-key"},
+	}
+	voter := ObservedTxVoter{
+		TxID:            txID,
+		Tx:              observedTx,
+		Txs:             common.ObservedTxs{observedTx},
+		Height:          observedTx.BlockHeight,
+		FinalisedHeight: observedTx.BlockHeight,
+	}
+
+	err := handleObservedTxOutQuorum(
+		ctx,
+		mgr,
+		cosmos.AccAddress{},
+		NodeAccounts{},
+		func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) { return nil, errKaboom },
+		observedTx,
+		voter,
+		nil,
+		true,
+	)
+	c.Assert(err, IsNil)
+
+	receiverVault, err = mgr.Keeper().GetVault(ctx, receiverPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(receiverVault.TxKeysXmr, HasLen, 0)
+
+	senderVault, err = mgr.Keeper().GetVault(ctx, senderPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(senderVault.TxKeysXmr, HasLen, 0)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTxKeysFromNonFinalObservationMetadata(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	vaultPubKey := GetRandomPubKey()
+	vaultPubKey := GetRandomEd25519PubKey()
 	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
 		common.XMRChain.String(),
 	}, []ChainContract{})
+	vaultAddress := prepareTestXMRVault(c, &vault)
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(5*common.One)),
 	})
@@ -120,7 +204,7 @@ func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTx
 		Tx: common.Tx{
 			ID:          txID,
 			Chain:       common.XMRChain,
-			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			FromAddress: vaultAddress,
 			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
 			Coins: common.Coins{
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
@@ -169,10 +253,11 @@ func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumStoresXMRTx
 func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumBackfillsLateXMRTxKeysAfterFinalization(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	vaultPubKey := GetRandomPubKey()
+	vaultPubKey := GetRandomEd25519PubKey()
 	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, []string{
 		common.XMRChain.String(),
 	}, []ChainContract{})
+	vaultAddress := prepareTestXMRVault(c, &vault)
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(5*common.One)),
 	})
@@ -183,7 +268,7 @@ func (s *HandlerObservedTxHelpersSuite) TestHandleObservedTxOutQuorumBackfillsLa
 		Tx: common.Tx{
 			ID:          txID,
 			Chain:       common.XMRChain,
-			FromAddress: common.Address(common.XMRSeededDummyAddress('4', []byte("vault"))),
+			FromAddress: vaultAddress,
 			ToAddress:   common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
 			Coins: common.Coins{
 				common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),

@@ -836,7 +836,14 @@ func handleObservedTxOutQuorum(
 			vault.OutboundTxCount++
 		}
 		if vault.IsAsgard() && hasFinalised && tx.Tx.Chain.Equals(common.XMRChain) && len(xmrTxKeys) > 0 {
-			appendVaultXMRTxKeys(&vault, tx.Tx.ID.String(), xmrTxKeys)
+			ownsTxKeys, ownsErr := vaultOwnsXMRTxKeys(vault, tx)
+			if ownsErr != nil {
+				ctx.Logger().Error("fail to determine XMR tx-key vault owner", "error", ownsErr, "txid", tx.Tx.ID.String(), "vault_pubkey", tx.ObservedPubKey.String())
+			} else if ownsTxKeys {
+				appendVaultXMRTxKeys(&vault, tx.Tx.ID.String(), xmrTxKeys)
+			} else if removeVaultXMRTxKeys(&vault, tx.Tx.ID.String()) {
+				ctx.Logger().Info("removed XMR tx-keys from non-spending vault", "txid", tx.Tx.ID.String(), "vault_pubkey", tx.ObservedPubKey.String())
+			}
 		}
 		if vault.IsAsgard() && hasFinalised && tx.Tx.Chain.Equals(common.XMRChain) && len(xmrKeyImages) > 0 {
 			appendVaultXMRKeyImages(&vault, xmrKeyImages)
@@ -1052,6 +1059,20 @@ func appendVaultXMRTxKeys(vault *Vault, txHash string, txKeys []string) {
 		TxHash: txHash,
 		TxKeys: deduped,
 	})
+}
+
+func vaultOwnsXMRTxKeys(vault Vault, tx common.ObservedTx) (bool, error) {
+	if tx.IsEmpty() || !tx.Tx.Chain.Equals(common.XMRChain) {
+		return false, nil
+	}
+	vaultAddress, err := vault.GetAddress(common.XMRChain)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(
+		strings.TrimSpace(tx.Tx.FromAddress.String()),
+		strings.TrimSpace(vaultAddress.String()),
+	), nil
 }
 
 func removeVaultXMRTxKeys(vault *Vault, txHash string) bool {

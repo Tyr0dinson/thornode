@@ -15,6 +15,7 @@ func setTestXMRBackfillVault(c *C, ctx cosmos.Context, mgr *Mgrs, pubKey common.
 	vault := NewVault(1, ActiveVault, AsgardVault, pubKey, []string{
 		common.XMRChain.String(),
 	}, nil)
+	prepareTestXMRVault(c, &vault)
 	if !amount.IsZero() {
 		vault.AddFunds(common.Coins{
 			common.NewCoin(common.XMRAsset, amount),
@@ -56,17 +57,19 @@ func newTestXMRBackfillObservedTx(
 func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromHistoricalObservedVoters(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	outboundVaultPubKey := GetRandomPubKey()
+	outboundVaultPubKey := GetRandomEd25519PubKey()
 	outboundVault := setTestXMRBackfillVault(c, ctx, mgr, outboundVaultPubKey, cosmos.NewUint(10*common.One))
 
-	inboundVaultPubKey := GetRandomPubKey()
+	inboundVaultPubKey := GetRandomEd25519PubKey()
 	inboundVault := setTestXMRBackfillVault(c, ctx, mgr, inboundVaultPubKey, cosmos.ZeroUint())
 
 	outboundTxID := GetRandomTxHash()
+	outboundVaultAddress, err := outboundVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
 	outboundBase := newTestXMRBackfillObservedTx(
 		outboundTxID,
 		outboundVaultPubKey,
-		common.Address(common.XMRSeededDummyAddress('4', []byte("vault-out"))),
+		outboundVaultAddress,
 		common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
 		cosmos.NewUint(common.One),
 		"OUT:"+GetRandomTxHash().String(),
@@ -86,11 +89,13 @@ func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromHistoric
 	})
 
 	inboundTxID := GetRandomTxHash()
+	inboundVaultAddress, err := inboundVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
 	inboundBase := newTestXMRBackfillObservedTx(
 		inboundTxID,
 		inboundVaultPubKey,
 		common.Address(common.XMRSeededDummyAddress('8', []byte("sender"))),
-		common.Address(common.XMRSeededDummyAddress('4', []byte("vault-in"))),
+		inboundVaultAddress,
 		cosmos.NewUint(2*common.One),
 		"ADD:XMR.XMR:"+GetRandomBech32Addr().String(),
 		120,
@@ -142,14 +147,16 @@ func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromHistoric
 func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromNonFinalObservationMetadata(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	vaultPubKey := GetRandomPubKey()
+	vaultPubKey := GetRandomEd25519PubKey()
 	vault := setTestXMRBackfillVault(c, ctx, mgr, vaultPubKey, cosmos.NewUint(10*common.One))
 
 	txID := GetRandomTxHash()
+	vaultAddress, err := vault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
 	finalObserved := newTestXMRBackfillObservedTx(
 		txID,
 		vaultPubKey,
-		common.Address(common.XMRSeededDummyAddress('4', []byte("vault-out"))),
+		vaultAddress,
 		common.Address(common.XMRSeededDummyAddress('8', []byte("recipient"))),
 		cosmos.NewUint(common.One),
 		"OUT:"+GetRandomTxHash().String(),
@@ -183,4 +190,57 @@ func (s *XMRVaultMetadataBackfillSuite) TestBackfillXMRVaultMetadataFromNonFinal
 	c.Assert(vault.TxKeysXmr, HasLen, 1)
 	c.Assert(vault.TxKeysXmr[0].TxHash, Equals, txID.String())
 	c.Assert(vault.TxKeysXmr[0].TxKeys, DeepEquals, []string{"tx-key-1"})
+}
+
+func (s *XMRVaultMetadataBackfillSuite) TestBackfillRemovesReceiverSideMigrateXMRTxKeys(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	senderPubKey := GetRandomEd25519PubKey()
+	senderVault := setTestXMRBackfillVault(c, ctx, mgr, senderPubKey, cosmos.NewUint(10*common.One))
+	senderAddress, err := senderVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	receiverPubKey := GetRandomEd25519PubKey()
+	receiverVault := setTestXMRBackfillVault(c, ctx, mgr, receiverPubKey, cosmos.NewUint(10*common.One))
+	receiverAddress, err := receiverVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	txID := GetRandomTxHash()
+	receiverVault.TxKeysXmr = []*common.XmrTxKeyRef{
+		{TxHash: txID.String(), TxKeys: []string{"stale-receiver-key"}},
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, receiverVault), IsNil)
+
+	receiverObserved := newTestXMRBackfillObservedTx(
+		txID,
+		receiverPubKey,
+		senderAddress,
+		receiverAddress,
+		cosmos.NewUint(common.One),
+		"MIGRATE:123",
+		100,
+	)
+	receiverObservedWithMetadata := receiverObserved
+	receiverObservedWithMetadata.TxKeys = []string{"wrong-vault-key"}
+	mgr.Keeper().SetObservedTxOutVoter(ctx, ObservedTxVoter{
+		TxID:            txID,
+		Tx:              receiverObserved,
+		Txs:             common.ObservedTxs{receiverObserved, receiverObservedWithMetadata},
+		Height:          100,
+		FinalisedHeight: 100,
+	})
+
+	stats, err := backfillXMRVaultMetadata(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(stats.vaultsTouched, Equals, 1)
+	c.Assert(stats.txKeyRefsAdded, Equals, -1)
+	c.Assert(stats.txKeysAdded, Equals, -1)
+
+	receiverVault, err = mgr.Keeper().GetVault(ctx, receiverPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(receiverVault.TxKeysXmr, HasLen, 0)
+
+	senderVault, err = mgr.Keeper().GetVault(ctx, senderPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(senderVault.TxKeysXmr, HasLen, 0)
 }

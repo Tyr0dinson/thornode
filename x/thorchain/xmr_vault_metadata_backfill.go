@@ -174,7 +174,14 @@ func applyObservedVoterXMRMetadataBackfill(
 	beforeTxKeyRefs, beforeTxKeyCount := countVaultXMRTxKeys(*vault)
 
 	if len(txKeys) > 0 {
-		appendVaultXMRTxKeys(vault, observedTx.Tx.ID.String(), txKeys)
+		ownsTxKeys, ownsErr := vaultOwnsXMRTxKeys(*vault, observedTx)
+		if ownsErr != nil {
+			ctx.Logger().Error("fail to determine XMR tx-key vault owner during backfill", "error", ownsErr, "txid", observedTx.Tx.ID.String(), "vault_pubkey", observedTx.ObservedPubKey.String())
+		} else if ownsTxKeys {
+			appendVaultXMRTxKeys(vault, observedTx.Tx.ID.String(), txKeys)
+		} else if removeVaultXMRTxKeys(vault, observedTx.Tx.ID.String()) {
+			ctx.Logger().Info("removed XMR tx-keys from non-spending vault during backfill", "txid", observedTx.Tx.ID.String(), "vault_pubkey", observedTx.ObservedPubKey.String())
+		}
 	}
 	if len(keyImages) > 0 {
 		appendVaultXMRKeyImages(vault, keyImages)
