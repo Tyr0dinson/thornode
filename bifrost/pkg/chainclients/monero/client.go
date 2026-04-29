@@ -545,14 +545,27 @@ func (c *Client) xmrLocalSyncStateForVault(states []xmrFrostVaultStateEntry, tar
 		}
 		states = stateResp.Vaults
 	}
+	targetReady := false
 	for _, state := range states {
 		if !state.Rescan {
+			if !target.IsEmpty() && strings.TrimSpace(state.VaultPubKey) == target.String() {
+				targetReady = true
+			}
 			continue
 		}
 		if !target.IsEmpty() && strings.TrimSpace(state.VaultPubKey) != target.String() {
 			continue
 		}
 		return xmrSyncStateSyncingToTip, fmt.Sprintf("vault %s is syncing_to_tip", strings.TrimSpace(state.VaultPubKey)), nil
+	}
+	if targetReady {
+		if pending, reason, err := c.xmrHasPendingReplayWorkForVault(target); pending || err != nil {
+			if err != nil {
+				return xmrSyncStateSyncingToTip, "failed to inspect xmr replay work", err
+			}
+			return xmrSyncStateSyncingToTip, reason, nil
+		}
+		return xmrSyncStateAtTip, "", nil
 	}
 	if c.scanner == nil || c.scanner.frostSigner == nil || c.scanner.bridge == nil {
 		if pending, reason, err := c.xmrHasPendingReplayWorkForVault(target); pending || err != nil {

@@ -645,6 +645,23 @@ func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.
 	}))
 }
 
+func TestXMRLocalSyncStateForVaultIgnoresOtherVaultRescans(t *testing.T) {
+	t.Parallel()
+
+	target := common.PubKey("cthorpub1zcjduepqcxwdd50egsntvfz6cskeumuq8r4aayqcuvhyhk9ye8g3xvnj8qaqdurjyk")
+	other := common.PubKey("cthorpub1zcjduepqyf5a5mzu9v5njvd5s88ynqj3rnmjcejctd44848hp6wl8k3a394sv6uwps")
+
+	c := &Client{frostSigner: &FrostSigner{}}
+	state, reason, err := c.xmrLocalSyncStateForVault([]xmrFrostVaultStateEntry{
+		{VaultPubKey: target.String(), Rescan: false},
+		{VaultPubKey: other.String(), Rescan: true},
+	}, target)
+
+	require.NoError(t, err)
+	assert.Equal(t, xmrSyncStateAtTip, state)
+	assert.Empty(t, reason)
+}
+
 func TestPrepareObservedTxInItemTreatsLeaderNotReachableAsRetryLater(t *testing.T) {
 	t.Parallel()
 
