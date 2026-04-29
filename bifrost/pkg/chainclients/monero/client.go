@@ -4429,7 +4429,7 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 	}
 	for _, ref := range vault.TxKeysXmr {
 		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
-			if c.isObservedInboundToVault(item) && c.isObservedOutboundFromVault(item) && !xmrKeyImagesRegisteredForTx(txHash, vault.KeyImagesXmr) {
+			if c.isObservedInboundToVault(item) && !xmrKeyImagesRegisteredForTx(txHash, vault.KeyImagesXmr) {
 				return false
 			}
 			return true

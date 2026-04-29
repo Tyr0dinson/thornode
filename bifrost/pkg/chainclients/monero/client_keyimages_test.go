@@ -616,6 +616,11 @@ func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.
 	}))
 	assert.False(t, c.IsDeckItemStale(&stypes.TxInItem{
 		Tx:                  txHash,
+		To:                  vaultAddr.String(),
+		ObservedVaultPubKey: vaultPubKey,
+	}))
+	assert.False(t, c.IsDeckItemStale(&stypes.TxInItem{
+		Tx:                  txHash,
 		Sender:              vaultAddr.String(),
 		To:                  vaultAddr.String(),
 		ObservedVaultPubKey: vaultPubKey,
