@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -12,11 +13,15 @@ import (
 // SetObservedTxInVoter - save a txin voter object
 func (k KVStore) SetObservedTxInVoter(ctx cosmos.Context, tx ObservedTxVoter) {
 	k.setObservedTxVoter(ctx, prefixObservedTxIn, tx)
+	if tx.UpdatedVault {
+		k.clearInFlightMigrate(ctx, tx.TxID)
+	}
 }
 
 // SetObservedTxOutVoter - save a txout voter object
 func (k KVStore) SetObservedTxOutVoter(ctx cosmos.Context, tx ObservedTxVoter) {
 	k.setObservedTxVoter(ctx, prefixObservedTxOut, tx)
+	k.trackInFlightMigrate(ctx, tx)
 }
 
 func (k KVStore) setObservedTxVoter(ctx cosmos.Context, prefix types.DbPrefix, tx ObservedTxVoter) {
@@ -38,6 +43,10 @@ func (k KVStore) GetObservedTxInVoterIterator(ctx cosmos.Context) cosmos.Iterato
 // GetObservedTxOutVoterIterator iterate tx out voters
 func (k KVStore) GetObservedTxOutVoterIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getObservedTxVoterIterator(ctx, prefixObservedTxOut)
+}
+
+func (k KVStore) GetInFlightMigrateIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixInFlightMigrate)
 }
 
 func (k KVStore) getObservedTxVoterIterator(ctx cosmos.Context, prefix types.DbPrefix) cosmos.Iterator {
@@ -107,4 +116,24 @@ func (k KVStore) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []commo
 		hashes = append(hashes, hash)
 	}
 	return hashes
+}
+
+func (k KVStore) trackInFlightMigrate(ctx cosmos.Context, tx ObservedTxVoter) {
+	key := string(k.GetKey(prefixInFlightMigrate, tx.TxID.String()))
+	if tx.Tx.IsEmpty() || tx.Height == 0 || tx.Tx.ObservedPubKey.IsEmpty() {
+		k.del(ctx, []byte(key))
+		return
+	}
+
+	memoType, _, _ := strings.Cut(tx.Tx.Tx.Memo, ":")
+	if !strings.EqualFold(memoType, "migrate") {
+		k.del(ctx, []byte(key))
+		return
+	}
+
+	k.setString(ctx, key, tx.Tx.ObservedPubKey.String())
+}
+
+func (k KVStore) clearInFlightMigrate(ctx cosmos.Context, txID common.TxID) {
+	k.del(ctx, k.GetKey(prefixInFlightMigrate, txID.String()))
 }

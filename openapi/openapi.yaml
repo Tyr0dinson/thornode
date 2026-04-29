@@ -3989,6 +3989,11 @@ components:
           type: boolean
           example: false
           description: Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
+        in_flight_migrations:
+          type: array
+          description: In-flight migration outbounds blocking vault churn.
+          items:
+            $ref: "#/components/schemas/InFlightMigration"
         gas_spent_rune:
           type: string
           example: "1000000000"
@@ -4029,6 +4034,103 @@ components:
           type: boolean
           example: false
           description: indicates if all anchor chains are halted (true), or at least one anchor chain is available (false)
+
+    InFlightMigration:
+      type: object
+      properties:
+        tx_id:
+          type: string
+          description: outbound tx hash used as the in-flight migration index key
+          example: "0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB"
+        source_vault_pub_key:
+          type: string
+          description: source vault pubkey stored in the in-flight migration index
+          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
+        source_vault_status:
+          type: string
+          example: "InactiveVault"
+        destination_vault_pub_key:
+          type: string
+          description: destination vault pubkey resolved from the outbound destination address
+          example: "thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m"
+        tx_out:
+          $ref: "#/components/schemas/InFlightMigrationTxOut"
+        updated_vault:
+          type: boolean
+          description: true when the matching inbound migration already updated the destination vault
+
+    InFlightMigrationTxOut:
+      type: object
+      required:
+        - chain
+        - to_address
+        - coin
+        - max_gas
+      properties:
+        in_hash:
+          type: string
+          example: "208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA"
+        out_hash:
+          type: string
+          example: "0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB"
+        chain:
+          type: string
+          example: "ETH"
+        to_address:
+          type: string
+          example: "0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b"
+        vault_pub_key:
+          type: string
+          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
+        vault_pub_key_eddsa:
+          type: string
+          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
+        coin:
+          $ref: "#/components/schemas/InFlightMigrationCoin"
+        max_gas:
+          type: array
+          items:
+            $ref: "#/components/schemas/InFlightMigrationCoin"
+        gas_rate:
+          type: string
+        memo:
+          type: string
+          example: "OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA"
+        original_memo:
+          type: string
+          example: "=:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg"
+        aggregator:
+          type: string
+          description: whitelisted DEX Aggregator contract address
+          example: "0xe4ddca21881bac219af7f217703db0475d2a9f02"
+        aggregator_target_asset:
+          type: string
+          description: target asset for the aggregator contract to attempt a swap to
+          example: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        aggregator_target_limit:
+          type: string
+          description: the minimum number of tokens the swapper wants to receive of the output asset
+          example: "100"
+        clout_spent:
+          type: string
+          description: clout spent in RUNE for the outbound
+          example: "1234"
+
+    InFlightMigrationCoin:
+      type: object
+      required:
+        - asset
+        - amount
+      properties:
+        asset:
+          type: string
+          example: "BTC.BTC"
+        amount:
+          type: string
+          example: "100000000"
+        decimals:
+          type: string
+          example: "8"
 
     OutboundFeesResponse:
       type: array

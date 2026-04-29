@@ -55,4 +55,45 @@ message QueryNetworkResponse {
   string tor_price_in_rune = 14 [ (gogoproto.jsontag) = "tor_price_in_rune" ];
   // indicator if all anchor chains are halted
   bool tor_price_halted = 17 [ (gogoproto.jsontag) = "tor_price_halted" ];
+  // in-flight migration outbounds blocking vault churn
+  repeated InFlightMigration in_flight_migrations = 18
+      [ (gogoproto.jsontag) = "in_flight_migrations" ];
+}
+
+message InFlightMigration {
+  // outbound tx hash used as the in-flight migration index key
+  string tx_id = 1;
+  // source vault pubkey stored in the in-flight migration index
+  string source_vault_pub_key = 2;
+  string source_vault_status = 3;
+  // destination vault pubkey, resolved from the outbound destination address
+  string destination_vault_pub_key = 4;
+  InFlightMigrationTxOut tx_out = 5;
+  bool updated_vault = 6;
+}
+
+message InFlightMigrationTxOut {
+  string vault_pub_key = 3;
+  string in_hash = 8;
+  string out_hash = 9;
+  string chain = 1 [ (gogoproto.jsontag) = "chain" ];
+  string to_address = 2 [ (gogoproto.jsontag) = "to_address" ];
+  InFlightMigrationCoin coin = 4 [ (gogoproto.jsontag) = "coin" ];
+  repeated InFlightMigrationCoin max_gas = 6
+      [ (gogoproto.jsontag) = "max_gas" ];
+  string gas_rate = 7;
+  string memo = 5;
+  string original_memo = 16;
+  string aggregator = 12;
+  string aggregator_target_asset = 13;
+  string aggregator_target_limit = 14;
+  // clout spent in RUNE for the outbound
+  string clout_spent = 11;
+  string vault_pub_key_eddsa = 15;
+}
+
+message InFlightMigrationCoin {
+  string asset = 1;
+  string amount = 2;
+  string decimals = 3;
 }

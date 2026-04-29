@@ -492,11 +492,14 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		return nil, fmt.Errorf("fail to get network: %w", err)
 	}
 
-	vaults, err := qs.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	vaultsMigrating, err := networkHasMigratingVaults(ctx, qs.mgr.Keeper())
 	if err != nil {
-		return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
+		return nil, fmt.Errorf("fail to get vault migration state: %w", err)
 	}
-	vaultsMigrating := (len(vaults) != 0)
+	inFlightMigrations, err := getInFlightMigrations(ctx, qs.mgr.Keeper())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get in-flight migrations: %w", err)
+	}
 
 	nodeAccounts, err := qs.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -531,6 +534,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		EffectiveSecurityBond: effectiveSecurityBond.String(),
 		TotalReserve:          qs.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
 		VaultsMigrating:       vaultsMigrating,
+		InFlightMigrations:    inFlightMigrations,
 		GasSpentRune:          cosmos.NewUint(data.OutboundGasSpentRune).String(),
 		GasWithheldRune:       cosmos.NewUint(data.OutboundGasWithheldRune).String(),
 		OutboundFeeMultiplier: outboundFeeMultiplier.String(),
@@ -3385,6 +3389,15 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 // -------------------------------------------------------------------------------------
 
 func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
+	aggregatorTargetLimit := ""
+	if toi.AggregatorTargetLimit != nil {
+		aggregatorTargetLimit = toi.AggregatorTargetLimit.String()
+	}
+	cloutSpent := ""
+	if toi.CloutSpent != nil {
+		cloutSpent = toi.CloutSpent.String()
+	}
+
 	return &types.QueryTxOutItem{
 		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		VaultPubKey:           toi.VaultPubKey.String(),
@@ -3400,8 +3413,8 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 		OriginalMemo:          toi.OriginalMemo,
 		Aggregator:            toi.Aggregator,
 		AggregatorTargetAsset: toi.AggregatorTargetAsset,
-		AggregatorTargetLimit: toi.AggregatorTargetLimit.String(),
-		CloutSpent:            toi.CloutSpent.String(),
+		AggregatorTargetLimit: aggregatorTargetLimit,
+		CloutSpent:            cloutSpent,
 	}
 }
 

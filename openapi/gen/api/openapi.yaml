@@ -5908,6 +5908,67 @@ components:
         outbound_fee_multiplier: "15000"
         total_reserve: "21999180112172346"
         native_outbound_fee_rune: "100000000"
+        in_flight_migrations:
+        - source_vault_status: InactiveVault
+          destination_vault_pub_key: thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m
+          tx_out:
+            vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            chain: ETH
+            gas_rate: gas_rate
+            original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+            in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+            aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+            memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+            max_gas:
+            - amount: "100000000"
+              decimals: "8"
+              asset: BTC.BTC
+            - amount: "100000000"
+              decimals: "8"
+              asset: BTC.BTC
+            aggregator_target_limit: "100"
+            clout_spent: "1234"
+            coin:
+              amount: "100000000"
+              decimals: "8"
+              asset: BTC.BTC
+          source_vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          updated_vault: true
+          tx_id: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+        - source_vault_status: InactiveVault
+          destination_vault_pub_key: thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m
+          tx_out:
+            vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            chain: ETH
+            gas_rate: gas_rate
+            original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+            in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+            aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+            memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+            max_gas:
+            - amount: "100000000"
+              decimals: "8"
+              asset: BTC.BTC
+            - amount: "100000000"
+              decimals: "8"
+              asset: BTC.BTC
+            aggregator_target_limit: "100"
+            clout_spent: "1234"
+            coin:
+              amount: "100000000"
+              decimals: "8"
+              asset: BTC.BTC
+          source_vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          updated_vault: true
+          tx_id: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
         tns_fee_per_block_rune: "20"
         gas_spent_rune: "1000000000"
         rune_price_in_tor: "10"
@@ -5947,6 +6008,11 @@ components:
             migrating funds to new ActiveVaults
           example: false
           type: boolean
+        in_flight_migrations:
+          description: In-flight migration outbounds blocking vault churn.
+          items:
+            $ref: '#/components/schemas/InFlightMigration'
+          type: array
         gas_spent_rune:
           description: Sum of the gas the network has spent to send outbounds
           example: "1000000000"
@@ -6009,6 +6075,164 @@ components:
       - total_reserve
       - vaults_liquidity_rune
       - vaults_migrating
+      type: object
+    InFlightMigration:
+      example:
+        source_vault_status: InactiveVault
+        destination_vault_pub_key: thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m
+        tx_out:
+          vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
+          gas_rate: gas_rate
+          original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+          in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+          aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+          memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+          max_gas:
+          - amount: "100000000"
+            decimals: "8"
+            asset: BTC.BTC
+          - amount: "100000000"
+            decimals: "8"
+            asset: BTC.BTC
+          aggregator_target_limit: "100"
+          clout_spent: "1234"
+          coin:
+            amount: "100000000"
+            decimals: "8"
+            asset: BTC.BTC
+        source_vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+        updated_vault: true
+        tx_id: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+      properties:
+        tx_id:
+          description: outbound tx hash used as the in-flight migration index key
+          example: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+          type: string
+        source_vault_pub_key:
+          description: source vault pubkey stored in the in-flight migration index
+          example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          type: string
+        source_vault_status:
+          example: InactiveVault
+          type: string
+        destination_vault_pub_key:
+          description: destination vault pubkey resolved from the outbound destination
+            address
+          example: thorpub1addwnpepq02wfnn09sgw3l9tm3wmk9rrw2n0z8a3n0p2gr0x33c7n7wnj7nz9t80p0m
+          type: string
+        tx_out:
+          $ref: '#/components/schemas/InFlightMigrationTxOut'
+        updated_vault:
+          description: true when the matching inbound migration already updated the
+            destination vault
+          type: boolean
+      type: object
+    InFlightMigrationTxOut:
+      example:
+        vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+        chain: ETH
+        gas_rate: gas_rate
+        original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+        in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+        out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+        aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+        memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+        to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+        vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+        aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+        max_gas:
+        - amount: "100000000"
+          decimals: "8"
+          asset: BTC.BTC
+        - amount: "100000000"
+          decimals: "8"
+          asset: BTC.BTC
+        aggregator_target_limit: "100"
+        clout_spent: "1234"
+        coin:
+          amount: "100000000"
+          decimals: "8"
+          asset: BTC.BTC
+      properties:
+        in_hash:
+          example: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          type: string
+        out_hash:
+          example: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+          type: string
+        chain:
+          example: ETH
+          type: string
+        to_address:
+          example: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          type: string
+        vault_pub_key:
+          example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          type: string
+        vault_pub_key_eddsa:
+          example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          type: string
+        coin:
+          $ref: '#/components/schemas/InFlightMigrationCoin'
+        max_gas:
+          items:
+            $ref: '#/components/schemas/InFlightMigrationCoin'
+          type: array
+        gas_rate:
+          type: string
+        memo:
+          example: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          type: string
+        original_memo:
+          example: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+          type: string
+        aggregator:
+          description: whitelisted DEX Aggregator contract address
+          example: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+          type: string
+        aggregator_target_asset:
+          description: target asset for the aggregator contract to attempt a swap
+            to
+          example: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+          type: string
+        aggregator_target_limit:
+          description: the minimum number of tokens the swapper wants to receive of
+            the output asset
+          example: "100"
+          type: string
+        clout_spent:
+          description: clout spent in RUNE for the outbound
+          example: "1234"
+          type: string
+      required:
+      - chain
+      - coin
+      - max_gas
+      - to_address
+      type: object
+    InFlightMigrationCoin:
+      example:
+        amount: "100000000"
+        decimals: "8"
+        asset: BTC.BTC
+      properties:
+        asset:
+          example: BTC.BTC
+          type: string
+        amount:
+          example: "100000000"
+          type: string
+        decimals:
+          example: "8"
+          type: string
+      required:
+      - amount
+      - asset
       type: object
     OutboundFeesResponse:
       items:

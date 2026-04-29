@@ -2759,13 +2759,12 @@ func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error
 		return nil // Not time yet, exit early
 	}
 
-	// Skip processing if churn is in progress (retiring vaults exist)
-	// to avoid calculations during vault migration
-	retiringVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	// Skip processing while vault migrations are still in flight.
+	migratingVaults, err := networkHasMigratingVaults(ctx, vm.k)
 	if err != nil {
-		return fmt.Errorf("failed to get retiring vaults: %w", err)
+		return fmt.Errorf("failed to get vault migration state: %w", err)
 	}
-	if len(retiringVaults) > 0 {
+	if migratingVaults {
 		return nil // Churn in progress, skip processing
 	}
 

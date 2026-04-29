@@ -72,6 +72,9 @@ docs/ContractInfosResponse.md
 docs/DerivedPool.md
 docs/ExportApi.md
 docs/HealthApi.md
+docs/InFlightMigration.md
+docs/InFlightMigrationCoin.md
+docs/InFlightMigrationTxOut.md
 docs/InboundAddress.md
 docs/InboundConfirmationCountedStage.md
 docs/InboundFinalisedStage.md
@@ -224,6 +227,9 @@ model_contract_info.go
 model_contract_info_response.go
 model_contract_infos_response.go
 model_derived_pool.go
+model_in_flight_migration.go
+model_in_flight_migration_coin.go
+model_in_flight_migration_tx_out.go
 model_inbound_address.go
 model_inbound_confirmation_counted_stage.go
 model_inbound_finalised_stage.go

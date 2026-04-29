@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$0")"
 BASE_BRANCH="origin/develop"
-FLAGS="-j8 --ci"
+FLAGS="-j${TRUNK_JOBS:-1} --ci"
 CHECK_EXISTING=false
 
 if [ -n "${CI_MERGE_REQUEST_ID-}" ]; then

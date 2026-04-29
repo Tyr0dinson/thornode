@@ -238,6 +238,108 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegration(c *C) {
 	c.Assert(updatedRefMemo.HasBeenUsedBy(tx.Tx.ID), Equals, true)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestNetworkHasMigratingVaultsTracksInFlightMigrates(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	memberPubKey := GetRandomPubKey()
+	vault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	vault.Membership = []string{memberPubKey.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	destVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, destVault), IsNil)
+	destAddress, err := destVault.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	observed := GetRandomObservedTx()
+	observed.Tx.Chain = common.BTCChain
+	observed.Tx.Memo = "migrate:123"
+	observed.ObservedPubKey = vault.PubKey
+
+	outVoter := NewObservedTxVoter(observed.Tx.ID, ObservedTxs{observed})
+	outVoter.Tx = observed
+	outVoter.Height = ctx.BlockHeight()
+	outVoter.FinalisedHeight = ctx.BlockHeight()
+	outVoter.Actions = []TxOutItem{{
+		Chain:       common.BTCChain,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   destAddress,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(123_456)),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+		GasRate:     10,
+		InHash:      observed.Tx.ID,
+		Memo:        observed.Tx.Memo,
+	}}
+	mgr.Keeper().SetObservedTxOutVoter(ctx, outVoter)
+
+	migrating, err := networkHasMigratingVaults(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(migrating, Equals, true)
+	inFlight, err := getInFlightMigrations(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(inFlight, HasLen, 1)
+	c.Assert(inFlight[0].TxId, Equals, observed.Tx.ID.String())
+	c.Assert(inFlight[0].SourceVaultPubKey, Equals, vault.PubKey.String())
+	c.Assert(inFlight[0].SourceVaultStatus, Equals, RetiringVault.String())
+	c.Assert(inFlight[0].DestinationVaultPubKey, Equals, destVault.PubKey.String())
+	c.Assert(inFlight[0].TxOut.Memo, Equals, "migrate:123")
+	c.Assert(inFlight[0].TxOut.Coin.Amount, Equals, cosmos.NewUint(123_456).String())
+
+	memberMigrating, err := nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(memberMigrating, Equals, true)
+
+	vault.Status = InactiveVault
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	migrating, err = networkHasMigratingVaults(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(migrating, Equals, true)
+
+	memberMigrating, err = nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(memberMigrating, Equals, true)
+
+	inVoter := NewObservedTxVoter(observed.Tx.ID, nil)
+	inVoter.UpdatedVault = true
+	mgr.Keeper().SetObservedTxInVoter(ctx, inVoter)
+
+	migrating, err = networkHasMigratingVaults(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(migrating, Equals, false)
+
+	memberMigrating, err = nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(memberMigrating, Equals, false)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestNetworkHasMigratingVaultsIgnoresStaleInFlightMigrateFromActiveVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	memberPubKey := GetRandomPubKey()
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	vault.Membership = []string{memberPubKey.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	observed := GetRandomObservedTx()
+	observed.Tx.Chain = common.BTCChain
+	observed.Tx.Memo = "migrate:123"
+	observed.ObservedPubKey = vault.PubKey
+
+	outVoter := NewObservedTxVoter(observed.Tx.ID, ObservedTxs{observed})
+	outVoter.Tx = observed
+	outVoter.Height = ctx.BlockHeight()
+	outVoter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxOutVoter(ctx, outVoter)
+
+	migrating, err := networkHasMigratingVaults(ctx, mgr.Keeper())
+	c.Assert(err, IsNil)
+	c.Assert(migrating, Equals, false)
+
+	memberMigrating, err := nodeHasMigratingVaults(ctx, mgr.Keeper(), memberPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(memberMigrating, Equals, false)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithExpiredMemo(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100) // Current block height
