@@ -89,6 +89,8 @@ func TestRecordXMRKeyImageLeaderFailureSkipsCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, int64(20_041), stored.LeaderEpochHeight)
+	require.Zero(t, stored.AttemptCount)
+	require.Zero(t, stored.AbandonedAtHeight)
 
 	rotated, err := client.rotateXMRKeyImageLeaderEpoch(stored, 20_034)
 	require.NoError(t, err)

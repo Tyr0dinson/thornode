@@ -239,6 +239,7 @@ type Client struct {
 	vaultAddressMap     map[string]common.Address
 	vaultAddrToKey      map[string]string
 	vaultAddressMu      sync.RWMutex
+	globalTxsQueue      chan stypes.TxIn
 	globalSolvencyQueue chan stypes.Solvency
 
 	asgardMu                sync.RWMutex
@@ -662,7 +663,6 @@ func isTransientXMRFrostCoordinationText(errText string) bool {
 
 var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not active")
 var errXMROutgoingAuditIncomplete = errors.New("xmr outgoing audit incomplete")
-var errXMRFinalizeWorkAbandoned = errors.New("xmr finalized observation work abandoned")
 var errXMRFinalizeWorkRetryBackoff = errors.New("xmr finalized observation work retry backoff active")
 
 const xmrWorkRetryMinBackoff = 60 * time.Second
@@ -673,7 +673,7 @@ func isTransientXMROutboundValidationError(err error) bool {
 	}
 	errText := strings.ToLower(err.Error())
 	if isFrostHTTPStatus(err, http.StatusNotFound) {
-		return strings.Contains(errText, "transaction") && strings.Contains(errText, "not found")
+		return isTransientXMROutboundValidationText(errText)
 	}
 	switch {
 	case isFrostHTTPStatus(err, http.StatusRequestTimeout),
@@ -691,7 +691,13 @@ func isTransientXMROutboundValidationError(err error) bool {
 	if errors.Is(err, os.ErrDeadlineExceeded) {
 		return true
 	}
-	return strings.Contains(errText, "connection refused") ||
+	return isTransientXMROutboundValidationText(errText)
+}
+
+func isTransientXMROutboundValidationText(errText string) bool {
+	errText = strings.ToLower(strings.TrimSpace(errText))
+	return (strings.Contains(errText, "transaction") && strings.Contains(errText, "not found")) ||
+		strings.Contains(errText, "connection refused") ||
 		strings.Contains(errText, "connection reset") ||
 		strings.Contains(errText, "i/o timeout") ||
 		strings.Contains(errText, "context deadline exceeded") ||
@@ -709,6 +715,7 @@ func (c *Client) Start(
 	if err := c.syncXMRState(); err != nil {
 		c.logger.Warn().Err(err).Msg("xmr startup state sync failed; continuing and retrying in background")
 	}
+	c.globalTxsQueue = globalTxsQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.scanner.SetErrataQueue(globalErrataQueue)
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
@@ -2389,9 +2396,11 @@ func (c *Client) rotateXMRKeyImageLeaderEpoch(item xmrWorkItem, currentHeight in
 func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight int64, errText string) (xmrWorkItem, error) {
 	item.LastAttemptHeight = currentHeight
 	item.LastAttemptAt = time.Now().Unix()
-	item.AttemptCount++
 	item.LastError = strings.TrimSpace(errText)
 	if isTransientXMRKeyImageCeremonyText(item.LastError) {
+		// Party formation failures are liveness issues, not invalid work. Keep
+		// the item pending indefinitely and only move to a future leader epoch.
+		item.AttemptCount = 0
 		period := c.getSigningTransactionPeriod()
 		if period > 0 && currentHeight > 0 {
 			nextEpoch := xmrLeaderEpochHeight(currentHeight+period, period)
@@ -2399,27 +2408,13 @@ func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight in
 				item.LeaderEpochHeight = nextEpoch
 			}
 		}
+	} else {
+		item.AttemptCount++
 	}
 	if c.keyImageWorkStore == nil {
 		return item, nil
 	}
 	return item, c.keyImageWorkStore.put(item)
-}
-
-func (c *Client) abandonXMRWorkItem(item xmrWorkItem, currentHeight int64, reason string) error {
-	item.AbandonedAtHeight = currentHeight
-	item.AbandonReason = strings.TrimSpace(reason)
-	if item.AbandonReason == "" {
-		item.AbandonReason = "retry limit reached"
-	}
-	if c.keyImageWorkStore == nil {
-		return nil
-	}
-	return c.keyImageWorkStore.put(item)
-}
-
-func (c *Client) xmrWorkItemAbandoned(item xmrWorkItem) bool {
-	return item.AbandonedAtHeight > 0
 }
 
 func xmrWorkItemRetryReady(item xmrWorkItem, now time.Time) (bool, time.Duration) {
@@ -2774,7 +2769,7 @@ func (c *Client) consolidateVault(
 			SigningID: fmt.Sprintf("xmr-consolidation:%s:%d:%d:%d", stateKey, thorchainHeight, attempt, amountAtomic),
 		}
 
-		rawTx, _, _, signErr := c.SignTx(txOutItem, thorchainHeight)
+		rawTx, _, observation, signErr := c.SignTx(txOutItem, thorchainHeight)
 		if signErr != nil {
 			lastErr = signErr
 			if !isRetryableConsolidationErr(signErr) {
@@ -2804,6 +2799,7 @@ func (c *Client) consolidateVault(
 			reserve = bumpConsolidationReserve(reserve, settings.ReserveBps)
 			continue
 		}
+		c.observeSignedXMRConsolidation(observation, txHash)
 
 		c.setConsolidationVaultState(stateKey, xmrConsolidationVaultState{
 			LastAttemptHeight: thorchainHeight,
@@ -2834,6 +2830,29 @@ func (c *Client) consolidateVault(
 			Int64("thorchain_height", thorchainHeight).
 			Int64("consecutive_failures", state.ConsecutiveFails).
 			Msg("xmr consolidation failed")
+	}
+}
+
+func (c *Client) observeSignedXMRConsolidation(item *stypes.TxInItem, txHash string) {
+	if item == nil {
+		return
+	}
+	if normalized := strings.TrimSpace(txHash); normalized != "" {
+		item.Tx = normalized
+	}
+	if c.globalTxsQueue == nil {
+		if c.scanner != nil {
+			c.scanner.queueReplayTxInItems([]*stypes.TxInItem{item})
+		}
+		return
+	}
+	c.globalTxsQueue <- stypes.TxIn{
+		Chain:                  c.chain,
+		TxArray:                []*stypes.TxInItem{item},
+		MemPool:                true,
+		Filtered:               true,
+		ConfirmationRequired:   1,
+		AllowFutureObservation: true,
 	}
 }
 
@@ -3132,22 +3151,6 @@ func (c *Client) getSigningTransactionPeriod() int64 {
 		}
 	}
 	return constants.GetConstantValues(semver.MustParse("0.0.0")).GetInt64Value(constants.SigningTransactionPeriod)
-}
-
-func (c *Client) getXMRFinalizeMaxAttempts() int64 {
-	const fallback = int64(100)
-	limit := fallback
-	if c.thorchainBridge != nil {
-		if consts, err := c.thorchainBridge.GetConstants(); err == nil {
-			if attempts := consts[constants.MaxOutboundAttempts.String()]; attempts > 0 {
-				limit = attempts
-			}
-		}
-	}
-	if limit <= 0 || limit > fallback {
-		return fallback
-	}
-	return limit
 }
 
 func (c *Client) currentThorHeight(fallback int64) int64 {
@@ -3980,16 +3983,6 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		if workErr != nil {
 			return nil, false, fmt.Errorf("fail to initialize XMR tx-key validation work item: %w", workErr)
 		}
-		if c.xmrWorkItemAbandoned(workItem) {
-			c.logger.Warn().
-				Str("tx_hash", normalizeTxID(item.Tx)).
-				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
-				Int64("attempt_count", workItem.AttemptCount).
-				Int64("abandoned_at_height", workItem.AbandonedAtHeight).
-				Str("reason", workItem.AbandonReason).
-				Msg("dropping abandoned XMR outbound tx-key validation work")
-			return nil, false, nil
-		}
 		if ready, wait := xmrWorkItemRetryReady(workItem, time.Now()); !ready {
 			c.logger.Debug().
 				Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4008,23 +4001,11 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 				if recordErr != nil {
 					return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", recordErr)
 				}
-				if workItem.AttemptCount >= c.getXMRFinalizeMaxAttempts() {
-					if err := c.abandonXMRWorkItem(workItem, currentHeight, validateErr.Error()); err != nil {
-						return nil, false, fmt.Errorf("fail to abandon XMR tx-key validation work: %w", err)
-					}
-					c.logger.Warn().
-						Err(validateErr).
-						Str("tx_hash", normalizeTxID(item.Tx)).
-						Str("vault_pub_key", item.ObservedVaultPubKey.String()).
-						Int64("attempt_count", workItem.AttemptCount).
-						Int64("max_attempts", c.getXMRFinalizeMaxAttempts()).
-						Msg("abandoning XMR outbound tx-key validation after retry limit")
-					return nil, false, nil
-				}
 				c.logger.Info().
 					Err(validateErr).
 					Str("tx_hash", normalizeTxID(item.Tx)).
 					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+					Int64("attempt_count", workItem.AttemptCount).
 					Str("memo", item.Memo).
 					Msg("waiting for XMR outbound tx to become visible before tx-key validation")
 				return nil, false, nil
@@ -4238,13 +4219,6 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 				Str("tx_hash", normalizeTxID(item.Tx)).
 				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
 				Msg("waiting for finalized XMR key-image retry backoff")
-			return nil, false, nil
-		}
-		if errors.Is(err, errXMRFinalizeWorkAbandoned) {
-			c.logger.Warn().
-				Str("tx_hash", normalizeTxID(item.Tx)).
-				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
-				Msg("dropping abandoned finalized XMR observation work")
 			return nil, false, nil
 		}
 		if errors.Is(err, errXMRKeyImageNotActiveSigner) {
@@ -4875,31 +4849,6 @@ func (c *Client) generateObservedTxKeyImages(
 		workItem, workErr = c.rotateXMRKeyImageLeaderEpoch(workItem, currentThorHeight)
 		if workErr != nil {
 			return nil, fmt.Errorf("fail to rotate XMR key-image leader epoch for %s:%d: %w", txHash, output.OutputIndex, workErr)
-		}
-		if c.xmrWorkItemAbandoned(workItem) {
-			c.logger.Warn().
-				Str("vault_pub_key", vaultPubKey.String()).
-				Str("tx_hash", txHash).
-				Uint32("output_index", output.OutputIndex).
-				Int64("attempt_count", workItem.AttemptCount).
-				Int64("abandoned_at_height", workItem.AbandonedAtHeight).
-				Str("reason", workItem.AbandonReason).
-				Msg("dropping abandoned XMR key-image work")
-			return nil, errXMRFinalizeWorkAbandoned
-		}
-		if workItem.AttemptCount >= c.getXMRFinalizeMaxAttempts() {
-			if err := c.abandonXMRWorkItem(workItem, currentThorHeight, workItem.LastError); err != nil {
-				return nil, fmt.Errorf("fail to abandon XMR key-image work for %s:%d: %w", txHash, output.OutputIndex, err)
-			}
-			c.logger.Warn().
-				Str("vault_pub_key", vaultPubKey.String()).
-				Str("tx_hash", txHash).
-				Uint32("output_index", output.OutputIndex).
-				Int64("attempt_count", workItem.AttemptCount).
-				Int64("max_attempts", c.getXMRFinalizeMaxAttempts()).
-				Str("last_error", workItem.LastError).
-				Msg("abandoning XMR key-image work after retry limit")
-			return nil, errXMRFinalizeWorkAbandoned
 		}
 		if ready, wait := xmrWorkItemRetryReady(workItem, time.Now()); !ready {
 			c.logger.Debug().
