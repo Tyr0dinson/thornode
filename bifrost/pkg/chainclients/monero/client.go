@@ -883,6 +883,19 @@ func (c *Client) driveLocalKeyImageBacklogForVaults(vaults ttypes.Vaults) {
 	if c.frostSigner == nil || c.tssServer == nil || c.thorchainBridge == nil {
 		return
 	}
+	syncState, syncReason, err := c.xmrLocalSyncState(nil)
+	if err != nil {
+		c.logger.Debug().Err(err).Msg("xmr key-image backlog: failed to resolve local sync state")
+		return
+	}
+	if syncState != xmrSyncStateAtTip {
+		c.logger.Info().
+			Str("sync_state", string(syncState)).
+			Str("reason", syncReason).
+			Msg("xmr key-image backlog: deferring origination while node is syncing_to_tip")
+		return
+	}
+
 	version, err := c.thorchainBridge.GetThorchainVersion()
 	if err != nil {
 		c.logger.Debug().Err(err).Msg("xmr key-image backlog: failed to resolve thornode version")
@@ -890,18 +903,6 @@ func (c *Client) driveLocalKeyImageBacklogForVaults(vaults ttypes.Vaults) {
 	}
 
 	for _, vault := range vaults {
-		vaultPubKey := keyImageCatchupVaultPubKey(vault)
-		if vaultPubKey.IsEmpty() {
-			continue
-		}
-		syncState, syncReason, syncErr := c.xmrLocalSyncStateForVault(nil, vaultPubKey)
-		if syncErr != nil {
-			c.logger.Debug().
-				Err(syncErr).
-				Str("vault", vaultPubKey.String()).
-				Msg("xmr key-image backlog: failed to resolve local vault sync state")
-			continue
-		}
 		c.driveLocalKeyImageBacklogForVault(vault, version.String(), syncState, syncReason)
 	}
 }
@@ -987,17 +988,11 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		return
 	}
 
-	finaliseHeight := c.resolveXMRKeyImageAnchorHeight(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
 	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
-		c.queueFinalizedXMROutboundReplayWithKeyImages(ceremonyCtx.vaultPubKey, backlogHeadTxHash, finaliseHeight, cachedProofs)
-		c.logger.Info().
-			Str("vault", ceremonyCtx.vaultPubKey.String()).
-			Str("tx_hash", backlogHeadTxHash).
-			Int("proof_count", len(cachedProofs)).
-			Msg("xmr key-image backlog: replayed cached proof set")
 		return
 	}
 
+	finaliseHeight := c.resolveXMRKeyImageAnchorHeight(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height))
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
@@ -1040,7 +1035,6 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 	}
 
 	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs, proofs)
-	c.queueFinalizedXMROutboundReplayWithKeyImages(ceremonyCtx.vaultPubKey, backlogHeadTxHash, finaliseHeight, proofs)
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
 		Str("tx_hash", backlogHeadTxHash).
@@ -1060,62 +1054,6 @@ func (c *Client) refreshOutgoingInventoryReplay() {
 	if _, err := c.syncTrackedVaultRegistrations(vaults); err != nil {
 		c.logger.Err(err).Msg("xmr outgoing inventory replay: failed to refresh signer inventory from thorchain")
 	}
-}
-
-func (c *Client) queueFinalizedXMROutboundReplayWithKeyImages(vaultPubKey common.PubKey, txHash string, finaliseHeight int64, proofs []*common.XmrKeyImageProof) {
-	if c == nil || c.scanner == nil || len(proofs) == 0 {
-		return
-	}
-	audit, err := c.lookupXMROutgoingAudit(vaultPubKey, txHash)
-	if err != nil {
-		c.logger.Debug().
-			Err(err).
-			Str("vault", vaultPubKey.String()).
-			Str("tx_hash", txHash).
-			Msg("xmr key-image backlog: failed to load outbound audit for replay")
-		return
-	}
-	if audit.record == nil {
-		return
-	}
-	record := audit.record
-	if len(normalizeTxKeyValues(record.TxKeys)) == 0 {
-		return
-	}
-	if strings.TrimSpace(record.FromAddress) == "" || strings.TrimSpace(record.ToAddress) == "" {
-		return
-	}
-
-	height := finaliseHeight
-	if record.ObservedHeight != nil && *record.ObservedHeight > 0 && *record.ObservedHeight <= math.MaxInt64 {
-		height = int64(*record.ObservedHeight)
-	} else if record.PlannedHeight > 0 && record.PlannedHeight <= math.MaxInt64 {
-		height = int64(record.PlannedHeight)
-	}
-	item := stypes.NewTxInItem(
-		height,
-		normalizeTxID(record.TxHash),
-		record.Memo,
-		record.FromAddress,
-		record.ToAddress,
-		common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(record.Amount/moneroAtomicToThorchain))),
-		common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(record.Fee/moneroAtomicToThorchain))},
-		audit.canonicalVaultPubKey,
-		"",
-		"",
-		nil,
-	)
-	if item == nil {
-		return
-	}
-	item.TxKeys = normalizeTxKeyValues(record.TxKeys)
-	item.XmrKeyImages = canonicalXMRKeyImageProofs(proofs)
-	c.scanner.queueReplayTxInItems([]*stypes.TxInItem{item})
-	c.logger.Info().
-		Str("vault", audit.canonicalVaultPubKey.String()).
-		Str("tx_hash", normalizeTxID(record.TxHash)).
-		Int("proof_count", len(item.XmrKeyImages)).
-		Msg("xmr key-image backlog: queued finalized outbound replay with key-images")
 }
 
 func (c *Client) getOutgoingInventoryReplayMeta(vaultPubKey common.PubKey, txHash string) (xmrFrostOutboundMeta, error) {
@@ -1505,12 +1443,7 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 
 		txKeyEntries, txKeyErr := txKeyEntriesFromVault(c.thorchainBridge, c.chain, vault)
 		if txKeyErr != nil {
-			c.logger.Warn().
-				Err(txKeyErr).
-				Str("vault", vaultPubKey.String()).
-				Msg("xmr state sync: skipping vault registration until tx-key inventory metadata can be built")
-			delete(nextFingerprints, vaultPubKey.String())
-			continue
+			return nil, fmt.Errorf("failed to build tx-key registration inventory for vault %s: %w", vaultPubKey.String(), txKeyErr)
 		}
 
 		_, regErr := ensureFrostVaultRegisteredWithInventory(
@@ -1525,14 +1458,7 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 			txKeyEntries,
 		)
 		if regErr != nil {
-			c.logger.Warn().
-				Err(regErr).
-				Str("vault", vaultPubKey.String()).
-				Int("key_images", len(vault.KeyImagesXmr)).
-				Int("tx_keys", len(vault.TxKeysXmr)).
-				Msg("xmr state sync: skipping vault registration until signer accepts inventory")
-			delete(nextFingerprints, vaultPubKey.String())
-			continue
+			return nil, fmt.Errorf("failed to register vault %s: %w", vaultPubKey.String(), regErr)
 		}
 		needsRefresh = true
 	}
@@ -2136,10 +2062,16 @@ func (c *Client) xmrHasPendingReplayWorkForVault(target common.PubKey) (bool, st
 			}
 		}
 
-		// Tx-key inventory is validated and replayed by syncTrackedVaultRegistrations.
-		// It is intentionally best-effort here: a bad historical tx-key ref must
-		// not make the local signer look out-of-sync forever and block unrelated
-		// key-image backlog generation.
+		txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
+		if len(txKeyRefs) > 0 {
+			stateCheck, replayErr := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
+			if replayErr != nil {
+				return false, "", replayErr
+			}
+			if stateCheck.needsReplay {
+				return true, fmt.Sprintf("xmr outgoing inventory replay pending for vault %s", vaultPubKey.String()), nil
+			}
+		}
 	}
 
 	return false, "", nil
@@ -2147,6 +2079,10 @@ func (c *Client) xmrHasPendingReplayWorkForVault(target common.PubKey) (bool, st
 
 func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrVaultLocalStatus, error) {
 	trackedVaults, err := c.trackedXMRVaultsForKeyImageCatchup()
+	if err != nil {
+		return nil, err
+	}
+	syncState, _, err := c.xmrLocalSyncState(states)
 	if err != nil {
 		return nil, err
 	}
@@ -2173,10 +2109,6 @@ func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrV
 		vaultPubKey := keyImageCatchupVaultPubKey(vault)
 		if vaultPubKey.IsEmpty() {
 			continue
-		}
-		syncState, _, syncErr := c.xmrLocalSyncStateForVault(states, vaultPubKey)
-		if syncErr != nil {
-			return nil, syncErr
 		}
 		ceremonyCtx, ctxErr := c.resolveXMRKeyImageCeremonyContext(vaultPubKey)
 		if ctxErr != nil {
@@ -4322,17 +4254,13 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 	if err != nil {
 		return false
 	}
-	hasKeyImageReplay := len(item.XmrKeyImages) > 0
-	for _, proof := range vault.KeyImagesXmr {
-		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
+	for _, ref := range vault.TxKeysXmr {
+		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
 			return true
 		}
 	}
-	if hasKeyImageReplay {
-		return false
-	}
-	for _, ref := range vault.TxKeysXmr {
-		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
+	for _, proof := range vault.KeyImagesXmr {
+		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
 			return true
 		}
 	}
