@@ -74,6 +74,8 @@ type xmrWorkItem struct {
 	LastAttemptHeight int64            `json:"last_attempt_height,omitempty"`
 	AttemptCount      int64            `json:"attempt_count,omitempty"`
 	LastError         string           `json:"last_error,omitempty"`
+	AbandonedAtHeight int64            `json:"abandoned_at_height,omitempty"`
+	AbandonReason     string           `json:"abandon_reason,omitempty"`
 	UpdatedAt         int64            `json:"updated_at,omitempty"`
 }
 
@@ -108,6 +110,15 @@ func xmrKeyImageWorkID(vaultPubKey common.PubKey, txHash string, outputIndex uin
 		strings.TrimSpace(vaultPubKey.String()),
 		strings.ToLower(strings.TrimSpace(txHash)),
 		fmt.Sprintf("%d", outputIndex),
+	}, "|")
+}
+
+func xmrFinalizeObservationWorkID(vaultPubKey common.PubKey, txHash string, phase xmrFinalizePhase) string {
+	return strings.Join([]string{
+		strings.TrimSpace(vaultPubKey.String()),
+		strings.ToLower(strings.TrimSpace(txHash)),
+		"finalize",
+		string(phase),
 	}, "|")
 }
 

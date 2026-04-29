@@ -662,6 +662,7 @@ func isTransientXMRFrostCoordinationText(errText string) bool {
 
 var errXMRKeyImageNotActiveSigner = errors.New("xmr key-image local signer not active")
 var errXMROutgoingAuditIncomplete = errors.New("xmr outgoing audit incomplete")
+var errXMRFinalizeWorkAbandoned = errors.New("xmr finalized observation work abandoned")
 
 func isTransientXMROutboundValidationError(err error) bool {
 	if err == nil {
@@ -2313,6 +2314,48 @@ func (c *Client) ensureXMRKeyImageWorkItem(
 	return stored, nil
 }
 
+func (c *Client) ensureXMRFinalizeWorkItem(
+	vaultPubKey common.PubKey,
+	txHash string,
+	anchorHeight int64,
+	phase xmrFinalizePhase,
+) (xmrWorkItem, error) {
+	item := xmrWorkItem{
+		ID:           xmrFinalizeObservationWorkID(vaultPubKey, txHash, phase),
+		Kind:         xmrWorkKindFinalizeObservation,
+		Phase:        phase,
+		VaultPubKey:  strings.TrimSpace(vaultPubKey.String()),
+		TxHash:       normalizeTxID(txHash),
+		AnchorHeight: anchorHeight,
+	}
+	if c.keyImageWorkStore == nil {
+		return item, nil
+	}
+
+	stored, ok, err := c.keyImageWorkStore.get(item.ID)
+	if err != nil {
+		return xmrWorkItem{}, err
+	}
+	if !ok {
+		if err := c.keyImageWorkStore.put(item); err != nil {
+			return xmrWorkItem{}, err
+		}
+		return item, nil
+	}
+
+	if stored.AnchorHeight <= 0 && anchorHeight > 0 {
+		stored.AnchorHeight = anchorHeight
+	}
+	stored.Kind = xmrWorkKindFinalizeObservation
+	stored.Phase = phase
+	stored.VaultPubKey = strings.TrimSpace(vaultPubKey.String())
+	stored.TxHash = normalizeTxID(txHash)
+	if err := c.keyImageWorkStore.put(stored); err != nil {
+		return xmrWorkItem{}, err
+	}
+	return stored, nil
+}
+
 func (c *Client) rotateXMRKeyImageLeaderEpoch(item xmrWorkItem, currentHeight int64) (xmrWorkItem, error) {
 	if currentHeight <= 0 {
 		return item, nil
@@ -2351,6 +2394,22 @@ func (c *Client) recordXMRKeyImageWorkAttempt(item xmrWorkItem, currentHeight in
 		return nil
 	}
 	return c.keyImageWorkStore.put(item)
+}
+
+func (c *Client) abandonXMRWorkItem(item xmrWorkItem, currentHeight int64, reason string) error {
+	item.AbandonedAtHeight = currentHeight
+	item.AbandonReason = strings.TrimSpace(reason)
+	if item.AbandonReason == "" {
+		item.AbandonReason = "retry limit reached"
+	}
+	if c.keyImageWorkStore == nil {
+		return nil
+	}
+	return c.keyImageWorkStore.put(item)
+}
+
+func (c *Client) xmrWorkItemAbandoned(item xmrWorkItem) bool {
+	return item.AbandonedAtHeight > 0
 }
 
 func (c *Client) completeXMRKeyImageWorkItem(item xmrWorkItem) error {
@@ -3052,6 +3111,31 @@ func (c *Client) getSigningTransactionPeriod() int64 {
 		}
 	}
 	return constants.GetConstantValues(semver.MustParse("0.0.0")).GetInt64Value(constants.SigningTransactionPeriod)
+}
+
+func (c *Client) getXMRFinalizeMaxAttempts() int64 {
+	const fallback = int64(100)
+	limit := fallback
+	if c.thorchainBridge != nil {
+		if consts, err := c.thorchainBridge.GetConstants(); err == nil {
+			if attempts := consts[constants.MaxOutboundAttempts.String()]; attempts > 0 {
+				limit = attempts
+			}
+		}
+	}
+	if limit <= 0 || limit > fallback {
+		return fallback
+	}
+	return limit
+}
+
+func (c *Client) currentThorHeight(fallback int64) int64 {
+	if c.thorchainBridge != nil {
+		if h, err := c.thorchainBridge.GetBlockHeight(); err == nil && h > 0 {
+			return h
+		}
+	}
+	return fallback
 }
 
 func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
@@ -3866,9 +3950,48 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, nil
 	}
 	if isOutboundFromVault && len(item.TxKeys) > 0 {
+		workItem, workErr := c.ensureXMRFinalizeWorkItem(
+			item.ObservedVaultPubKey,
+			item.Tx,
+			finaliseHeight,
+			xmrFinalizePhaseTxKey,
+		)
+		if workErr != nil {
+			return nil, false, fmt.Errorf("fail to initialize XMR tx-key validation work item: %w", workErr)
+		}
+		if c.xmrWorkItemAbandoned(workItem) {
+			c.logger.Warn().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Int64("attempt_count", workItem.AttemptCount).
+				Int64("abandoned_at_height", workItem.AbandonedAtHeight).
+				Str("reason", workItem.AbandonReason).
+				Msg("dropping abandoned XMR outbound tx-key validation work")
+			return nil, false, nil
+		}
 		validatedAudit, validateErr := c.validateXMROutgoingAuditFromObservation(xmrObservedTxFromTxInItem(item), outgoingAudit)
 		if validateErr != nil {
 			if isTransientXMROutboundValidationError(validateErr) {
+				currentHeight := c.currentThorHeight(finaliseHeight)
+				if err := c.recordXMRKeyImageWorkAttempt(workItem, currentHeight, validateErr.Error()); err != nil {
+					return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", err)
+				}
+				workItem.LastAttemptHeight = currentHeight
+				workItem.AttemptCount++
+				workItem.LastError = validateErr.Error()
+				if workItem.AttemptCount >= c.getXMRFinalizeMaxAttempts() {
+					if err := c.abandonXMRWorkItem(workItem, currentHeight, validateErr.Error()); err != nil {
+						return nil, false, fmt.Errorf("fail to abandon XMR tx-key validation work: %w", err)
+					}
+					c.logger.Warn().
+						Err(validateErr).
+						Str("tx_hash", normalizeTxID(item.Tx)).
+						Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+						Int64("attempt_count", workItem.AttemptCount).
+						Int64("max_attempts", c.getXMRFinalizeMaxAttempts()).
+						Msg("abandoning XMR outbound tx-key validation after retry limit")
+					return nil, false, nil
+				}
 				c.logger.Info().
 					Err(validateErr).
 					Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4080,6 +4203,13 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		version.String(),
 	)
 	if err != nil {
+		if errors.Is(err, errXMRFinalizeWorkAbandoned) {
+			c.logger.Warn().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+				Msg("dropping abandoned finalized XMR observation work")
+			return nil, false, nil
+		}
 		if errors.Is(err, errXMRKeyImageNotActiveSigner) {
 			c.logger.Info().
 				Err(err).
@@ -4708,6 +4838,31 @@ func (c *Client) generateObservedTxKeyImages(
 		workItem, workErr = c.rotateXMRKeyImageLeaderEpoch(workItem, currentThorHeight)
 		if workErr != nil {
 			return nil, fmt.Errorf("fail to rotate XMR key-image leader epoch for %s:%d: %w", txHash, output.OutputIndex, workErr)
+		}
+		if c.xmrWorkItemAbandoned(workItem) {
+			c.logger.Warn().
+				Str("vault_pub_key", vaultPubKey.String()).
+				Str("tx_hash", txHash).
+				Uint32("output_index", output.OutputIndex).
+				Int64("attempt_count", workItem.AttemptCount).
+				Int64("abandoned_at_height", workItem.AbandonedAtHeight).
+				Str("reason", workItem.AbandonReason).
+				Msg("dropping abandoned XMR key-image work")
+			return nil, errXMRFinalizeWorkAbandoned
+		}
+		if workItem.AttemptCount >= c.getXMRFinalizeMaxAttempts() {
+			if err := c.abandonXMRWorkItem(workItem, currentThorHeight, workItem.LastError); err != nil {
+				return nil, fmt.Errorf("fail to abandon XMR key-image work for %s:%d: %w", txHash, output.OutputIndex, err)
+			}
+			c.logger.Warn().
+				Str("vault_pub_key", vaultPubKey.String()).
+				Str("tx_hash", txHash).
+				Uint32("output_index", output.OutputIndex).
+				Int64("attempt_count", workItem.AttemptCount).
+				Int64("max_attempts", c.getXMRFinalizeMaxAttempts()).
+				Str("last_error", workItem.LastError).
+				Msg("abandoning XMR key-image work after retry limit")
+			return nil, errXMRFinalizeWorkAbandoned
 		}
 		c.setActiveXMRWorkItem(&workItem)
 		c.logger.Info().
