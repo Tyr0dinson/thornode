@@ -4111,7 +4111,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 				Msg("recovered missing XMR tx-keys from registered vault inventory")
 		}
 	}
-	if isInboundToVault && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
+	if isInboundToVault && !isOutboundFromVault && c.shouldSkipObservedXMRInboundChange(item.Memo, item.Sender, item.ObservedVaultPubKey) {
 		c.logger.Debug().
 			Str("tx_hash", normalizeTxID(item.Tx)).
 			Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).

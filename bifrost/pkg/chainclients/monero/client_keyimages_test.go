@@ -1696,6 +1696,99 @@ func TestPrepareObservedTxInItemSkipsRetiringMigrateChangeObservation(t *testing
 	assert.Empty(t, tssServer.reqs)
 }
 
+func TestPrepareObservedTxInItemGeneratesKeyImagesForSelfConsolidate(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("b", 64)
+	txKey := strings.Repeat("6", 64)
+	memo := "consolidate"
+
+	var applyReqs []xmrFrostApplyKeyImagesRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/monero/outbounds/" + url.PathEscape(vaultPubKey.String()):
+			trackedOwnedChange := true
+			localChangeMaterialized := true
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:                  txHash,
+					TxKeys:                  []string{txKey},
+					HasOwnedChange:          &trackedOwnedChange,
+					LocalChangeMaterialized: &localChangeMaterialized,
+					FromAddress:             vaultAddr.String(),
+					ToAddress:               vaultAddr.String(),
+					Amount:                  10,
+					Memo:                    memo,
+					Status:                  "observed_mined",
+				}},
+			})
+		case "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: true, ActualFee: 1 * moneroAtomicToThorchain})
+		case "/v1/monero/outputs/apply-key-images":
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			applyReqs = append(applyReqs, req)
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		default:
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{TxHash: txHash, OutputIndex: 0, Amount: 7, Height: 100},
+					{TxHash: txHash, OutputIndex: 1, Amount: 3, Height: 100},
+				},
+			})
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  vaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                memo,
+		TxKeys:              []string{txKey},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Len(t, prepared.XmrKeyImages, 2)
+	require.Len(t, applyReqs, 1)
+	require.Len(t, applyReqs[0].KeyImages, 2)
+}
+
 func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *testing.T) {
 	t.Parallel()
 
