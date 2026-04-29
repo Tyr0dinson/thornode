@@ -300,11 +300,20 @@ pub(crate) async fn reconcile_registered_tx_key_inventory(
         {
             continue;
         }
-        validate_outbound_request(
+        if let Err((status, body)) = validate_outbound_request(
             state,
             register_tx_key_entry_as_validate_request(vault_pub_key, entry),
         )
-        .await?;
+        .await
+        {
+            warn!(
+                vault = vault_pub_key,
+                tx_hash = normalized_hash,
+                status = %status,
+                error = %body,
+                "skipping registered tx-key inventory entry that failed validation"
+            );
+        }
     }
 
     let stale_hashes: HashSet<String> = existing_by_hash

@@ -6466,6 +6466,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn registered_tx_key_inventory_skips_bad_entries_and_continues() {
+        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+
+        let mut already_reconciled = sample_outgoing(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            VALID_VAULT_PUB_KEY,
+            "48from-b",
+            "8to-b",
+            2,
+        );
+        already_reconciled.tx_keys = vec!["bb".repeat(32)];
+        already_reconciled.registered_inventory = true;
+        state
+            .store
+            .save_outgoing_transfer(&already_reconciled)
+            .expect("failed to seed reconciled outgoing transfer");
+
+        let bad_entry = crate::api::types::RegisterTxKeyEntry {
+            tx_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            tx_keys: vec!["aa".repeat(32)],
+            from_address: Some("48from-a".to_string()),
+            to_address: "8to-a".to_string(),
+            amount: 1,
+            fee: 1,
+            memo: Some("OUT:BAD".to_string()),
+        };
+        let good_existing_entry = crate::api::types::RegisterTxKeyEntry {
+            tx_hash: already_reconciled.tx_hash.clone(),
+            tx_keys: already_reconciled.tx_keys.clone(),
+            from_address: Some(already_reconciled.from_address.clone()),
+            to_address: already_reconciled.to_address.clone(),
+            amount: already_reconciled.amount,
+            fee: already_reconciled.fee,
+            memo: Some(already_reconciled.memo.clone()),
+        };
+
+        reconcile_registered_tx_key_inventory(
+            &state,
+            VALID_VAULT_PUB_KEY,
+            vec![bad_entry, good_existing_entry],
+        )
+        .await
+        .expect("bad registered tx-key entries should not abort the batch");
+
+        let records = state
+            .store
+            .load_outgoing_transfers(VALID_VAULT_PUB_KEY)
+            .expect("outgoing transfers should load");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tx_hash, already_reconciled.tx_hash);
+        assert!(records[0].registered_inventory);
+    }
+
+    #[tokio::test]
     async fn scanner_sync_recovers_missing_added_outputs_from_persisted_state() {
         let daemon_server = axum_test::TestServer::builder()
             .http_transport()
