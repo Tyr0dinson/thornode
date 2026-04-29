@@ -1080,15 +1080,8 @@ impl Store {
             record.registered_inventory = true;
         }
         if let Some(has_owned_change) = has_owned_change {
-            if let Some(existing) = record.has_owned_change {
-                if existing != has_owned_change {
-                    anyhow::bail!(
-                        "existing outgoing transfer for {} has conflicting owned-change attribution",
-                        tx_hash
-                    );
-                }
-            }
-            record.has_owned_change = Some(has_owned_change);
+            record.has_owned_change =
+                Some(record.has_owned_change.unwrap_or(false) || has_owned_change);
         }
         if !from_address.trim().is_empty() {
             record.from_address = from_address.trim().to_string();
@@ -2350,6 +2343,75 @@ mod tests {
         assert_eq!(loaded.has_owned_change, record.has_owned_change);
         assert_eq!(loaded.from_address, record.from_address);
         assert_eq!(loaded.memo, record.memo);
+    }
+
+    #[test]
+    fn update_outgoing_transfer_audit_metadata_keeps_owned_change_monotonic() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        let mut record = OutgoingTransferRecord {
+            tx_hash: "hash1".to_string(),
+            tx_hex: "deadbeef".to_string(),
+            tx_keys: vec!["11".repeat(32)],
+            registered_inventory: false,
+            has_owned_change: Some(false),
+            local_change_materialized: None,
+            key_images_ready: None,
+            msg_id: "msg1".to_string(),
+            vault_pub_key: "thorpub1vault-a".to_string(),
+            from_address: "48from-a".to_string(),
+            to_address: "48to-a".to_string(),
+            amount: 42,
+            fee: 2,
+            memo: "consolidate".to_string(),
+            planned_height: 12,
+            observed_height: None,
+            status: OutgoingTransferStatus::SignedPendingObservation,
+            broadcasted_at: None,
+            observed_at: None,
+            reported_effective_height: None,
+            created_at: 123,
+        };
+
+        store.save_outgoing_transfer(&record).unwrap();
+        store
+            .update_outgoing_transfer_audit_metadata(
+                "thorpub1vault-a",
+                "hash1",
+                &["11".repeat(32)],
+                true,
+                Some(true),
+                "48from-a",
+                "consolidate",
+            )
+            .unwrap();
+
+        record.has_owned_change = Some(true);
+        record.registered_inventory = true;
+        let loaded = store
+            .load_outgoing_transfer("thorpub1vault-a", "hash1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.has_owned_change, record.has_owned_change);
+        assert!(loaded.registered_inventory);
+
+        store
+            .update_outgoing_transfer_audit_metadata(
+                "thorpub1vault-a",
+                "hash1",
+                &["11".repeat(32)],
+                true,
+                Some(false),
+                "48from-a",
+                "consolidate",
+            )
+            .unwrap();
+        let loaded = store
+            .load_outgoing_transfer("thorpub1vault-a", "hash1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.has_owned_change, Some(true));
     }
 
     fn sample_reserved_output(msg_id: &str, tx_hash_candidate: Option<&str>) -> TrackedOutput {
