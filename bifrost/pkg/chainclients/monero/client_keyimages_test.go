@@ -960,7 +960,7 @@ func TestPrepareObservedTxInItemDefersTrackedOutboundUntilChangeOutputsMateriali
 	require.Len(t, tssServer.reqs, 0)
 }
 
-func TestPrepareObservedTxInItemRetriesOutboundTxKeyValidationWhenTxNotVisible(t *testing.T) {
+func TestPrepareObservedTxInItemDoesNotRetryOutboundTxKeyValidationWhenTxMissing(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -1009,7 +1009,8 @@ func TestPrepareObservedTxInItemRetriesOutboundTxKeyValidationWhenTxNotVisible(t
 	}
 
 	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "transaction "+txHash+" not found")
 	require.False(t, include)
 	require.Nil(t, prepared)
 	require.Equal(t, 1, validateCalls)

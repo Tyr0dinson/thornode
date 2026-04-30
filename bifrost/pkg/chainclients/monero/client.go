@@ -686,7 +686,7 @@ func isTransientXMROutboundValidationError(err error) bool {
 	}
 	errText := strings.ToLower(err.Error())
 	if isFrostHTTPStatus(err, http.StatusNotFound) {
-		return isTransientXMROutboundValidationText(errText)
+		return false
 	}
 	switch {
 	case isFrostHTTPStatus(err, http.StatusRequestTimeout),
