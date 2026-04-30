@@ -18,6 +18,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	bifrosttss "gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -960,7 +961,7 @@ func TestPrepareObservedTxInItemDefersTrackedOutboundUntilChangeOutputsMateriali
 	require.Len(t, tssServer.reqs, 0)
 }
 
-func TestPrepareObservedTxInItemDoesNotRetryOutboundTxKeyValidationWhenTxMissing(t *testing.T) {
+func TestPrepareObservedTxInItemRetriesMissingOutboundTxBeforeTerminalDrop(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -989,11 +990,12 @@ func TestPrepareObservedTxInItemDoesNotRetryOutboundTxKeyValidationWhenTxMissing
 	require.NoError(t, err)
 
 	c := &Client{
-		chain:           common.XMRChain,
-		frostSigner:     signer,
-		tssServer:       &mockKeyImageTssServer{},
-		logger:          testLogger(),
-		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+		chain:             common.XMRChain,
+		frostSigner:       signer,
+		tssServer:         &mockKeyImageTssServer{},
+		logger:            testLogger(),
+		vaultAddressMap:   map[string]common.Address{vaultPubKey.String(): vaultAddr},
+		keyImageWorkStore: newTestXMRKeyImageWorkStateStore(t),
 	}
 
 	item := &stypes.TxInItem{
@@ -1009,11 +1011,47 @@ func TestPrepareObservedTxInItemDoesNotRetryOutboundTxKeyValidationWhenTxMissing
 	}
 
 	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "transaction "+txHash+" not found")
+	require.NoError(t, err)
 	require.False(t, include)
 	require.Nil(t, prepared)
 	require.Equal(t, 1, validateCalls)
+
+	prepared, include, err = c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+	require.Equal(t, 1, validateCalls, "second pass should wait for 10s missing-tx backoff")
+
+	workItems, err := c.keyImageWorkStore.list()
+	require.NoError(t, err)
+	require.Len(t, workItems, 1)
+	workItems[0].LastAttemptAt = time.Now().Add(-11 * time.Second).Unix()
+	require.NoError(t, c.keyImageWorkStore.put(workItems[0]))
+
+	prepared, include, err = c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+	require.Equal(t, 2, validateCalls)
+
+	prepared, include, err = c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+	require.Equal(t, 2, validateCalls, "third pass should wait for 30s missing-tx backoff")
+
+	workItems, err = c.keyImageWorkStore.list()
+	require.NoError(t, err)
+	require.Len(t, workItems, 1)
+	workItems[0].LastAttemptAt = time.Now().Add(-31 * time.Second).Unix()
+	require.NoError(t, c.keyImageWorkStore.put(workItems[0]))
+
+	prepared, include, err = c.PrepareObservedTxInItem(item, true, 110)
+	require.ErrorIs(t, err, chainclienttypes.ErrTerminalObservation)
+	require.Contains(t, err.Error(), "transaction "+txHash+" not found")
+	require.False(t, include)
+	require.Nil(t, prepared)
+	require.Equal(t, 3, validateCalls)
 }
 
 func TestPrepareObservedTxInItemRetriesOutboundTxKeyValidationWhenSidecarUnavailable(t *testing.T) {

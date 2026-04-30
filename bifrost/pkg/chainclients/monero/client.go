@@ -679,6 +679,12 @@ var errXMROutgoingAuditIncomplete = errors.New("xmr outgoing audit incomplete")
 var errXMRFinalizeWorkRetryBackoff = errors.New("xmr finalized observation work retry backoff active")
 
 const xmrWorkRetryMinBackoff = 60 * time.Second
+const xmrMissingOutboundTxRetryLimit = 3
+
+var xmrMissingOutboundTxRetryBackoff = []time.Duration{
+	10 * time.Second,
+	30 * time.Second,
+}
 
 func isTransientXMROutboundValidationError(err error) bool {
 	if err == nil {
@@ -722,7 +728,11 @@ func isMissingXMROutboundValidationTx(err error) bool {
 	if err == nil || !isFrostHTTPStatus(err, http.StatusNotFound) {
 		return false
 	}
-	errText := strings.ToLower(err.Error())
+	return isMissingXMROutboundValidationText(err.Error())
+}
+
+func isMissingXMROutboundValidationText(errText string) bool {
+	errText = strings.ToLower(errText)
 	return strings.Contains(errText, "transaction") && strings.Contains(errText, "not found")
 }
 
@@ -2569,6 +2579,32 @@ func xmrWorkItemRetryReady(item xmrWorkItem, now time.Time) (bool, time.Duration
 	return false, xmrWorkRetryMinBackoff - elapsed
 }
 
+func xmrMissingOutboundTxRetryReady(item xmrWorkItem, now time.Time) (bool, time.Duration) {
+	if item.LastAttemptAt <= 0 || !isMissingXMROutboundValidationText(item.LastError) {
+		return true, 0
+	}
+	if item.AttemptCount <= 0 {
+		return true, 0
+	}
+	index := int(item.AttemptCount - 1)
+	if index >= len(xmrMissingOutboundTxRetryBackoff) {
+		return true, 0
+	}
+	elapsed := now.Sub(time.Unix(item.LastAttemptAt, 0))
+	wait := xmrMissingOutboundTxRetryBackoff[index]
+	if elapsed >= wait {
+		return true, 0
+	}
+	return false, wait - elapsed
+}
+
+func xmrOutboundTxKeyValidationRetryReady(item xmrWorkItem, now time.Time) (bool, time.Duration) {
+	if isMissingXMROutboundValidationText(item.LastError) {
+		return xmrMissingOutboundTxRetryReady(item, now)
+	}
+	return xmrWorkItemRetryReady(item, now)
+}
+
 func (c *Client) completeXMRKeyImageWorkItem(item xmrWorkItem) error {
 	if c.keyImageWorkStore == nil {
 		return nil
@@ -4136,7 +4172,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			if workErr != nil {
 				return nil, false, fmt.Errorf("fail to initialize XMR tx-key validation work item: %w", workErr)
 			}
-			if ready, wait := xmrWorkItemRetryReady(workItem, time.Now()); !ready {
+			if ready, wait := xmrOutboundTxKeyValidationRetryReady(workItem, time.Now()); !ready {
 				c.logger.Debug().
 					Str("tx_hash", normalizeTxID(item.Tx)).
 					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
@@ -4147,6 +4183,25 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			}
 			validatedAudit, validateErr := c.validateXMROutgoingAuditFromObservation(xmrObservedTxFromTxInItem(item), outgoingAudit)
 			if validateErr != nil {
+				if isMissingXMROutboundValidationTx(validateErr) {
+					currentHeight := c.currentThorHeight(finaliseHeight)
+					var recordErr error
+					workItem, recordErr = c.recordXMRKeyImageWorkAttempt(workItem, currentHeight, validateErr.Error())
+					if recordErr != nil {
+						return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", recordErr)
+					}
+					if workItem.AttemptCount >= xmrMissingOutboundTxRetryLimit {
+						return nil, false, fmt.Errorf("%w: xmr outbound tx-key validation failed after %d attempts: %w", types.ErrTerminalObservation, workItem.AttemptCount, validateErr)
+					}
+					c.logger.Info().
+						Err(validateErr).
+						Str("tx_hash", normalizeTxID(item.Tx)).
+						Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+						Int64("attempt_count", workItem.AttemptCount).
+						Str("memo", item.Memo).
+						Msg("waiting for XMR outbound tx to become visible before tx-key validation")
+					return nil, false, nil
+				}
 				if isTransientXMROutboundValidationError(validateErr) {
 					currentHeight := c.currentThorHeight(finaliseHeight)
 					var recordErr error
@@ -4162,9 +4217,6 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 						Str("memo", item.Memo).
 						Msg("waiting for XMR outbound tx to become visible before tx-key validation")
 					return nil, false, nil
-				}
-				if isMissingXMROutboundValidationTx(validateErr) {
-					return nil, false, fmt.Errorf("%w: xmr outbound tx-key validation failed: %w", types.ErrTerminalObservation, validateErr)
 				}
 				return nil, false, fmt.Errorf("fail to validate xmr outbound tx-key state via sidecar: %w", validateErr)
 			}
