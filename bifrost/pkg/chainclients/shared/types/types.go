@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"math/big"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -8,6 +9,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// ErrTerminalObservation tells the observer that a prepared deck item can never
+// become valid and should be removed from ondeck storage.
+var ErrTerminalObservation = errors.New("terminal observation")
 
 // ChainClient is the interface for chain clients.
 type ChainClient interface {

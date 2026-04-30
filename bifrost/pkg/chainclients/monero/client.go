@@ -718,6 +718,14 @@ func isTransientXMROutboundValidationText(errText string) bool {
 		strings.Contains(errText, "unexpected eof")
 }
 
+func isMissingXMROutboundValidationTx(err error) bool {
+	if err == nil || !isFrostHTTPStatus(err, http.StatusNotFound) {
+		return false
+	}
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "transaction") && strings.Contains(errText, "not found")
+}
+
 func (c *Client) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
@@ -4154,6 +4162,9 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 						Str("memo", item.Memo).
 						Msg("waiting for XMR outbound tx to become visible before tx-key validation")
 					return nil, false, nil
+				}
+				if isMissingXMROutboundValidationTx(validateErr) {
+					return nil, false, fmt.Errorf("%w: xmr outbound tx-key validation failed: %w", types.ErrTerminalObservation, validateErr)
 				}
 				return nil, false, fmt.Errorf("fail to validate xmr outbound tx-key state via sidecar: %w", validateErr)
 			}

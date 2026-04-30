@@ -777,6 +777,16 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		if preparer, ok := chain.(chainclienttypes.ObservationPreparer); ok {
 			prepared, include, prepErr := preparer.PrepareObservedTxInItem(item, finalized, finaliseHeight)
 			if prepErr != nil {
+				if errors.Is(prepErr, chainclienttypes.ErrTerminalObservation) {
+					o.logger.Info().
+						Err(prepErr).
+						Str("chain", txIn.Chain.String()).
+						Str("tx", item.Tx).
+						Bool("finalized", finalized).
+						Msg("removing terminal observed tx item")
+					invalidIndices = append(invalidIndices, i)
+					continue
+				}
 				o.logger.Error().
 					Err(prepErr).
 					Str("chain", txIn.Chain.String()).
