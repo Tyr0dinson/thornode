@@ -18,16 +18,16 @@ message QueryNodeBlameResponse {
     (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress",
     (gogoproto.jsontag) = "node_address"
   ];
-  int64 keygen_blame_count_total = 2 [ (gogoproto.jsontag) = "keygen_blame_count_total" ];
-  int64 keysign_blame_count_total = 3 [ (gogoproto.jsontag) = "keysign_blame_count_total" ];
-  int64 keygen_blame_count_since_churn = 4 [ (gogoproto.jsontag) = "keygen_blame_count_since_churn" ];
-  int64 keysign_blame_count_since_churn = 5 [ (gogoproto.jsontag) = "keysign_blame_count_since_churn" ];
+  int64 keygen_blame_count_total = 2
+      [ (gogoproto.jsontag) = "keygen_blame_count_total" ];
+  int64 keysign_blame_count_total = 3
+      [ (gogoproto.jsontag) = "keysign_blame_count_total" ];
+  int64 keygen_blame_count_since_churn = 4
+      [ (gogoproto.jsontag) = "keygen_blame_count_since_churn" ];
+  int64 keysign_blame_count_since_churn = 5
+      [ (gogoproto.jsontag) = "keysign_blame_count_since_churn" ];
 }
 
-message QueryNodeBlamesRequest {
-  string height = 1;
-}
+message QueryNodeBlamesRequest { string height = 1; }
 
-message QueryNodeBlamesResponse {
-  repeated QueryNodeBlameResponse blames = 1;
-}
+message QueryNodeBlamesResponse { repeated QueryNodeBlameResponse blames = 1; }
