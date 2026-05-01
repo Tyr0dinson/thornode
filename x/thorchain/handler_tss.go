@@ -535,11 +535,11 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 						failedKeygenSlashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 							telemetry.NewLabel("reason", "failed_keygen"),
 						}))
-						if err := h.mgr.Keeper().IncNodeAccountSlashPoints(failedKeygenSlashCtx, na.NodeAddress, slashPoints); err != nil {
-							ctx.Logger().Error("fail to inc slash points", "error", err)
+						if errInc := h.mgr.Keeper().IncNodeAccountSlashPoints(failedKeygenSlashCtx, na.NodeAddress, slashPoints); errInc != nil {
+							ctx.Logger().Error("fail to inc slash points", "error", errInc)
 						}
 
-						if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventSlashPoint(na.NodeAddress, slashPoints, "fail keygen")); err != nil {
+						if errEmit := h.mgr.EventMgr().EmitEvent(ctx, NewEventSlashPoint(na.NodeAddress, slashPoints, "fail keygen")); errEmit != nil {
 							ctx.Logger().Error("fail to emit slash point event")
 						}
 					} else {
@@ -574,8 +574,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 						// Go to jail
 						reason := "failed to perform keygen"
-						if err := h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); err != nil {
-							ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", err)
+						if errJail := h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); errJail != nil {
+							ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", errJail)
 						}
 
 						network, err := h.mgr.Keeper().GetNetwork(ctx)
