@@ -454,9 +454,9 @@ message EventTssKeygenFailure {
 }
 
 message NodeBlameDetail {
-  bytes node_address = 1 [
-    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"
-  ];
+  bytes node_address = 1
+      [ (gogoproto.casttype) =
+            "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
   int64 keygen_blame_count_since_churn = 2;
 }
 
