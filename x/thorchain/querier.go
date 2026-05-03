@@ -1403,10 +1403,31 @@ func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBla
 	}, nil
 }
 
-// queryNodeBlames returns blame records for all nodes
-func (qs queryServer) queryNodeBlames(ctx cosmos.Context, _ *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
-	var result []*types.QueryNodeBlameResponse
+// queryNodeBlames returns blame records for active nodes only.
+//
+// Supported query args:
+//   - sort_by: keygen_since_churn (default), keysign_since_churn, keygen_total, keysign_total
+//   - sort_order: desc (default), asc
+func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
+	keyFn, err := nodeBlameSortKey(req.SortBy)
+	if err != nil {
+		return nil, err
+	}
+	descending, err := nodeBlameSortDescending(req.SortOrder)
+	if err != nil {
+		return nil, err
+	}
 
+	activeNodes, err := qs.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to list active validators: %w", err)
+	}
+	activeSet := make(map[string]bool, len(activeNodes))
+	for _, na := range activeNodes {
+		activeSet[na.NodeAddress.String()] = true
+	}
+
+	var result []*types.QueryNodeBlameResponse
 	iter := qs.mgr.Keeper().GetNodeBlameIterator(ctx)
 	defer iter.Close()
 
@@ -1414,6 +1435,10 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, _ *types.QueryNodeBlam
 		var record NodeBlameRecord
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
 			ctx.Logger().Error("fail to unmarshal node blame record", "error", err)
+			continue
+		}
+
+		if !activeSet[record.NodeAddress.String()] {
 			continue
 		}
 
@@ -1426,7 +1451,43 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, _ *types.QueryNodeBlam
 		})
 	}
 
+	// SliceStable preserves iterator order (byte-sorted by node address) for
+	// records with equal sort keys.
+	sort.SliceStable(result, func(i, j int) bool {
+		if descending {
+			return keyFn(result[i]) > keyFn(result[j])
+		}
+		return keyFn(result[i]) < keyFn(result[j])
+	})
+
 	return &types.QueryNodeBlamesResponse{Blames: result}, nil
+}
+
+// nodeBlameSortKey returns the field accessor for the given sort_by value.
+func nodeBlameSortKey(sortBy string) (func(*types.QueryNodeBlameResponse) int64, error) {
+	switch sortBy {
+	case "", "keygen_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountSinceChurn }, nil
+	case "keysign_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountSinceChurn }, nil
+	case "keygen_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountTotal }, nil
+	case "keysign_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountTotal }, nil
+	default:
+		return nil, fmt.Errorf("invalid sort_by: %q (expected one of: keygen_since_churn, keysign_since_churn, keygen_total, keysign_total)", sortBy)
+	}
+}
+
+func nodeBlameSortDescending(sortOrder string) (bool, error) {
+	switch sortOrder {
+	case "", "desc":
+		return true, nil
+	case "asc":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid sort_order: %q (expected: asc or desc)", sortOrder)
+	}
 }
 
 func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {

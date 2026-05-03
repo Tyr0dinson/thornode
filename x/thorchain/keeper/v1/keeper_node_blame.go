@@ -117,22 +117,27 @@ func (k KVStore) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
 
 // ResetAllSinceChurnCounters resets all since_churn counters to zero (called on successful keygen)
 func (k KVStore) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
+	// Collect records that need updating before mutating the store. Writing to
+	// the same store being iterated has implementation-defined behavior across
+	// Cosmos store backends.
+	var toReset []NodeBlameRecord
 	iter := k.GetNodeBlameIterator(ctx)
-	defer iter.Close()
-
 	for ; iter.Valid(); iter.Next() {
 		var record NodeBlameRecord
 		if err := k.cdc.Unmarshal(iter.Value(), &record); err != nil {
 			ctx.Logger().Error("fail to unmarshal node blame record", "error", err)
 			continue
 		}
-
-		// Only update if there's something to reset
 		if record.KeygenBlameCountSinceChurn > 0 || record.KeysignBlameCountSinceChurn > 0 {
-			record.ResetSinceChurnCounters()
-			if err := k.SetNodeBlameRecord(ctx, record); err != nil {
-				ctx.Logger().Error("fail to reset blame counters", "address", record.NodeAddress.String(), "error", err)
-			}
+			toReset = append(toReset, record)
+		}
+	}
+	iter.Close()
+
+	for _, record := range toReset {
+		record.ResetSinceChurnCounters()
+		if err := k.SetNodeBlameRecord(ctx, record); err != nil {
+			ctx.Logger().Error("fail to reset blame counters", "address", record.NodeAddress.String(), "error", err)
 		}
 	}
 

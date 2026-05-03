@@ -28,6 +28,10 @@ message QueryNodeBlameResponse {
       [ (gogoproto.jsontag) = "keysign_blame_count_since_churn" ];
 }
 
-message QueryNodeBlamesRequest { string height = 1; }
+message QueryNodeBlamesRequest {
+  string height = 1;
+  string sort_by = 2;
+  string sort_order = 3;
+}
 
 message QueryNodeBlamesResponse { repeated QueryNodeBlameResponse blames = 1; }

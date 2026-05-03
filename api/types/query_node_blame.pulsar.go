@@ -1112,14 +1112,18 @@ func (x *fastReflection_QueryNodeBlameResponse) ProtoMethods() *protoiface.Metho
 }
 
 var (
-	md_QueryNodeBlamesRequest        protoreflect.MessageDescriptor
-	fd_QueryNodeBlamesRequest_height protoreflect.FieldDescriptor
+	md_QueryNodeBlamesRequest            protoreflect.MessageDescriptor
+	fd_QueryNodeBlamesRequest_height     protoreflect.FieldDescriptor
+	fd_QueryNodeBlamesRequest_sort_by    protoreflect.FieldDescriptor
+	fd_QueryNodeBlamesRequest_sort_order protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_types_query_node_blame_proto_init()
 	md_QueryNodeBlamesRequest = File_types_query_node_blame_proto.Messages().ByName("QueryNodeBlamesRequest")
 	fd_QueryNodeBlamesRequest_height = md_QueryNodeBlamesRequest.Fields().ByName("height")
+	fd_QueryNodeBlamesRequest_sort_by = md_QueryNodeBlamesRequest.Fields().ByName("sort_by")
+	fd_QueryNodeBlamesRequest_sort_order = md_QueryNodeBlamesRequest.Fields().ByName("sort_order")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryNodeBlamesRequest)(nil)
@@ -1193,6 +1197,18 @@ func (x *fastReflection_QueryNodeBlamesRequest) Range(f func(protoreflect.FieldD
 			return
 		}
 	}
+	if x.SortBy != "" {
+		value := protoreflect.ValueOfString(x.SortBy)
+		if !f(fd_QueryNodeBlamesRequest_sort_by, value) {
+			return
+		}
+	}
+	if x.SortOrder != "" {
+		value := protoreflect.ValueOfString(x.SortOrder)
+		if !f(fd_QueryNodeBlamesRequest_sort_order, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -1210,6 +1226,10 @@ func (x *fastReflection_QueryNodeBlamesRequest) Has(fd protoreflect.FieldDescrip
 	switch fd.FullName() {
 	case "types.QueryNodeBlamesRequest.height":
 		return x.Height != ""
+	case "types.QueryNodeBlamesRequest.sort_by":
+		return x.SortBy != ""
+	case "types.QueryNodeBlamesRequest.sort_order":
+		return x.SortOrder != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNodeBlamesRequest"))
@@ -1228,6 +1248,10 @@ func (x *fastReflection_QueryNodeBlamesRequest) Clear(fd protoreflect.FieldDescr
 	switch fd.FullName() {
 	case "types.QueryNodeBlamesRequest.height":
 		x.Height = ""
+	case "types.QueryNodeBlamesRequest.sort_by":
+		x.SortBy = ""
+	case "types.QueryNodeBlamesRequest.sort_order":
+		x.SortOrder = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNodeBlamesRequest"))
@@ -1246,6 +1270,12 @@ func (x *fastReflection_QueryNodeBlamesRequest) Get(descriptor protoreflect.Fiel
 	switch descriptor.FullName() {
 	case "types.QueryNodeBlamesRequest.height":
 		value := x.Height
+		return protoreflect.ValueOfString(value)
+	case "types.QueryNodeBlamesRequest.sort_by":
+		value := x.SortBy
+		return protoreflect.ValueOfString(value)
+	case "types.QueryNodeBlamesRequest.sort_order":
+		value := x.SortOrder
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
@@ -1269,6 +1299,10 @@ func (x *fastReflection_QueryNodeBlamesRequest) Set(fd protoreflect.FieldDescrip
 	switch fd.FullName() {
 	case "types.QueryNodeBlamesRequest.height":
 		x.Height = value.Interface().(string)
+	case "types.QueryNodeBlamesRequest.sort_by":
+		x.SortBy = value.Interface().(string)
+	case "types.QueryNodeBlamesRequest.sort_order":
+		x.SortOrder = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNodeBlamesRequest"))
@@ -1291,6 +1325,10 @@ func (x *fastReflection_QueryNodeBlamesRequest) Mutable(fd protoreflect.FieldDes
 	switch fd.FullName() {
 	case "types.QueryNodeBlamesRequest.height":
 		panic(fmt.Errorf("field height of message types.QueryNodeBlamesRequest is not mutable"))
+	case "types.QueryNodeBlamesRequest.sort_by":
+		panic(fmt.Errorf("field sort_by of message types.QueryNodeBlamesRequest is not mutable"))
+	case "types.QueryNodeBlamesRequest.sort_order":
+		panic(fmt.Errorf("field sort_order of message types.QueryNodeBlamesRequest is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNodeBlamesRequest"))
@@ -1305,6 +1343,10 @@ func (x *fastReflection_QueryNodeBlamesRequest) Mutable(fd protoreflect.FieldDes
 func (x *fastReflection_QueryNodeBlamesRequest) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
 	case "types.QueryNodeBlamesRequest.height":
+		return protoreflect.ValueOfString("")
+	case "types.QueryNodeBlamesRequest.sort_by":
+		return protoreflect.ValueOfString("")
+	case "types.QueryNodeBlamesRequest.sort_order":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -1379,6 +1421,14 @@ func (x *fastReflection_QueryNodeBlamesRequest) ProtoMethods() *protoiface.Metho
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.SortBy)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.SortOrder)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1407,6 +1457,20 @@ func (x *fastReflection_QueryNodeBlamesRequest) ProtoMethods() *protoiface.Metho
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.SortOrder) > 0 {
+			i -= len(x.SortOrder)
+			copy(dAtA[i:], x.SortOrder)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.SortOrder)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if len(x.SortBy) > 0 {
+			i -= len(x.SortBy)
+			copy(dAtA[i:], x.SortBy)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.SortBy)))
+			i--
+			dAtA[i] = 0x12
 		}
 		if len(x.Height) > 0 {
 			i -= len(x.Height)
@@ -1495,6 +1559,70 @@ func (x *fastReflection_QueryNodeBlamesRequest) ProtoMethods() *protoiface.Metho
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
 				x.Height = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SortBy", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.SortBy = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SortOrder", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.SortOrder = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -2153,7 +2281,9 @@ type QueryNodeBlamesRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Height string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
+	Height    string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
+	SortBy    string `protobuf:"bytes,2,opt,name=sort_by,json=sortBy,proto3" json:"sort_by,omitempty"`
+	SortOrder string `protobuf:"bytes,3,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
 }
 
 func (x *QueryNodeBlamesRequest) Reset() {
@@ -2179,6 +2309,20 @@ func (*QueryNodeBlamesRequest) Descriptor() ([]byte, []int) {
 func (x *QueryNodeBlamesRequest) GetHeight() string {
 	if x != nil {
 		return x.Height
+	}
+	return ""
+}
+
+func (x *QueryNodeBlamesRequest) GetSortBy() string {
+	if x != nil {
+		return x.SortBy
+	}
+	return ""
+}
+
+func (x *QueryNodeBlamesRequest) GetSortOrder() string {
+	if x != nil {
+		return x.SortOrder
 	}
 	return ""
 }
@@ -2263,24 +2407,28 @@ var file_types_query_node_blame_proto_rawDesc = []byte{
 	0x69, 0x67, 0x6e, 0x5f, 0x62, 0x6c, 0x61, 0x6d, 0x65, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x5f,
 	0x73, 0x69, 0x6e, 0x63, 0x65, 0x5f, 0x63, 0x68, 0x75, 0x72, 0x6e, 0x52, 0x1b, 0x6b, 0x65, 0x79,
 	0x73, 0x69, 0x67, 0x6e, 0x42, 0x6c, 0x61, 0x6d, 0x65, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x53, 0x69,
-	0x6e, 0x63, 0x65, 0x43, 0x68, 0x75, 0x72, 0x6e, 0x22, 0x30, 0x0a, 0x16, 0x51, 0x75, 0x65, 0x72,
+	0x6e, 0x63, 0x65, 0x43, 0x68, 0x75, 0x72, 0x6e, 0x22, 0x68, 0x0a, 0x16, 0x51, 0x75, 0x65, 0x72,
 	0x79, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6c, 0x61, 0x6d, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
 	0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x50, 0x0a, 0x17, 0x51, 0x75,
-	0x65, 0x72, 0x79, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6c, 0x61, 0x6d, 0x65, 0x73, 0x52, 0x65, 0x73,
-	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x35, 0x0a, 0x06, 0x62, 0x6c, 0x61, 0x6d, 0x65, 0x73, 0x18,
-	0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75,
-	0x65, 0x72, 0x79, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6c, 0x61, 0x6d, 0x65, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x52, 0x06, 0x62, 0x6c, 0x61, 0x6d, 0x65, 0x73, 0x42, 0x84, 0x01, 0x0a,
-	0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13, 0x51, 0x75, 0x65, 0x72,
-	0x79, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6c, 0x61, 0x6d, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50,
-	0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68,
-	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65,
-	0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03,
-	0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79,
-	0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d,
-	0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8,
-	0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x17, 0x0a, 0x07, 0x73, 0x6f,
+	0x72, 0x74, 0x5f, 0x62, 0x79, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x6f, 0x72,
+	0x74, 0x42, 0x79, 0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x6f, 0x72, 0x74, 0x5f, 0x6f, 0x72, 0x64, 0x65,
+	0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x73, 0x6f, 0x72, 0x74, 0x4f, 0x72, 0x64,
+	0x65, 0x72, 0x22, 0x50, 0x0a, 0x17, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4e, 0x6f, 0x64, 0x65, 0x42,
+	0x6c, 0x61, 0x6d, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x35, 0x0a,
+	0x06, 0x62, 0x6c, 0x61, 0x6d, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1d, 0x2e,
+	0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4e, 0x6f, 0x64, 0x65, 0x42,
+	0x6c, 0x61, 0x6d, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x06, 0x62, 0x6c,
+	0x61, 0x6d, 0x65, 0x73, 0x42, 0x84, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0x42, 0x13, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6c, 0x61,
+	0x6d, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61,
+	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
+	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f,
+	0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79,
+	0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79,
+	0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea,
+	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x33,
 }
 
 var (
