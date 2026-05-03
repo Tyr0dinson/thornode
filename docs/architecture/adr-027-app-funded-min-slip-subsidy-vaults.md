@@ -293,4 +293,3 @@ An alternative forfeiture formula could scale with vault utilization instead of 
 1. THORChain MR !4731: https://gitlab.com/thorchain/thornode/-/merge_requests/4731
 2. Rujira THORChain swap contract: https://gitlab.com/thorchain/rujira/-/tree/main/contracts/rujira-thorchain-swap
 3. ADR 020 App-layer: https://gitlab.com/whys1/thornode/-/blob/d0409bee3b8df11219241863bdff58976cb5b0f6/docs/architecture/adr-020-app-layer.md
-
