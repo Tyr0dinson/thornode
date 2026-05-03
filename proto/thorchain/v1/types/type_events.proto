@@ -453,6 +453,18 @@ message EventTssKeygenFailure {
   int64 height = 5;
 }
 
+message NodeBlameDetail {
+  bytes node_address = 1 [
+    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"
+  ];
+  int64 keygen_blame_count_since_churn = 2;
+}
+
+message EventKeygenBlameSummary {
+  int64 height = 1;
+  repeated NodeBlameDetail blamed_nodes = 2 [ (gogoproto.nullable) = false ];
+}
+
 message EventTssKeygenMetric {
   string pub_key = 1 [ (gogoproto.casttype) =
                            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];

@@ -56,6 +56,7 @@ const (
 	TSSKeygenSuccess                = "tss_keygen_success"
 	TSSKeygenFailure                = "tss_keygen_failure"
 	TSSKeysignFailure               = "tss_keysign_failure"
+	TSSKeygenBlameSummary           = "tss_keygen_blame_summary"
 	TSSKeygenMetricEventType        = "tss_keygen"
 	TSSKeysignMetricEventType       = "tss_keysign"
 	VersionEventType                = "version"
@@ -869,6 +870,39 @@ func (m *EventTssKeygenFailure) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
 		cosmos.NewAttribute("blame", strings.Join(m.BlameNodes, ", ")),
 	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventKeygenBlameSummary create a new EventKeygenBlameSummary
+func NewEventKeygenBlameSummary(height int64, details []NodeBlameDetail) *EventKeygenBlameSummary {
+	return &EventKeygenBlameSummary{
+		Height:      height,
+		BlamedNodes: details,
+	}
+}
+
+// Type return a string which represent the type of this event
+func (m *EventKeygenBlameSummary) Type() string {
+	return TSSKeygenBlameSummary
+}
+
+// Events return cosmos sdk events
+func (m *EventKeygenBlameSummary) Events() (cosmos.Events, error) {
+	attributes := []cosmos.Attribute{
+		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
+		cosmos.NewAttribute("blame_count", strconv.Itoa(len(m.BlamedNodes))),
+	}
+
+	// Add each blamed node
+	for i, detail := range m.BlamedNodes {
+		prefix := fmt.Sprintf("blamed_%d_", i)
+		attributes = append(attributes,
+			cosmos.NewAttribute(prefix+"address", detail.NodeAddress.String()),
+			cosmos.NewAttribute(prefix+"keygen_count", strconv.FormatInt(detail.KeygenBlameCountSinceChurn, 10)),
+		)
+	}
+
+	evt := cosmos.NewEvent(m.Type(), attributes...)
 	return cosmos.Events{evt}, nil
 }
 
