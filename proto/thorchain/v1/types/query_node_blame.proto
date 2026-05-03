@@ -26,6 +26,8 @@ message QueryNodeBlameResponse {
       [ (gogoproto.jsontag) = "keygen_blame_count_since_churn" ];
   int64 keysign_blame_count_since_churn = 5
       [ (gogoproto.jsontag) = "keysign_blame_count_since_churn" ];
+  string node_operator_address = 6
+      [ (gogoproto.jsontag) = "node_operator_address" ];
 }
 
 message QueryNodeBlamesRequest {

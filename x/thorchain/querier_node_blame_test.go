@@ -43,6 +43,56 @@ func (s *QuerierNodeBlameSuite) TestNodeBlamesDefaultSort(c *C) {
 	c.Check(resp.Blames[0].NodeAddress.Equals(high.NodeAddress), Equals, true)
 	c.Check(resp.Blames[1].NodeAddress.Equals(mid.NodeAddress), Equals, true)
 	c.Check(resp.Blames[2].NodeAddress.Equals(low.NodeAddress), Equals, true)
+
+	// Operator address must be populated from the node account's BondAddress.
+	c.Check(resp.Blames[0].NodeOperatorAddress, Equals, high.BondAddress.String())
+	c.Check(resp.Blames[1].NodeOperatorAddress, Equals, mid.BondAddress.String())
+	c.Check(resp.Blames[2].NodeOperatorAddress, Equals, low.BondAddress.String())
+}
+
+func (s *QuerierNodeBlameSuite) TestNodeBlame(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+
+	na := setupBlameRecord(c, ctx, mgr, 7, 3, 2, 1)
+
+	resp, err := qs.queryNodeBlame(ctx, &types.QueryNodeBlameRequest{
+		Address: na.NodeAddress.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+	c.Check(resp.NodeAddress.Equals(na.NodeAddress), Equals, true)
+	c.Check(resp.NodeOperatorAddress, Equals, na.BondAddress.String())
+	c.Check(resp.KeygenBlameCountTotal, Equals, int64(7))
+	c.Check(resp.KeysignBlameCountTotal, Equals, int64(3))
+	c.Check(resp.KeygenBlameCountSinceChurn, Equals, int64(2))
+	c.Check(resp.KeysignBlameCountSinceChurn, Equals, int64(1))
+}
+
+func (s *QuerierNodeBlameSuite) TestNodeBlameUnknownAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+
+	// Address with no NodeAccount and no blame record: zero counters,
+	// empty operator address, no error.
+	stranger := GetRandomValidatorNode(NodeActive).NodeAddress
+	resp, err := qs.queryNodeBlame(ctx, &types.QueryNodeBlameRequest{
+		Address: stranger.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+	c.Check(resp.NodeOperatorAddress, Equals, "")
+	c.Check(resp.KeygenBlameCountTotal, Equals, int64(0))
+	c.Check(resp.KeysignBlameCountTotal, Equals, int64(0))
+}
+
+func (s *QuerierNodeBlameSuite) TestNodeBlameMissingAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+
+	resp, err := qs.queryNodeBlame(ctx, &types.QueryNodeBlameRequest{})
+	c.Check(resp, IsNil)
+	c.Assert(err, NotNil)
 }
 
 func (s *QuerierNodeBlameSuite) TestNodeBlamesSortByKeysignTotal(c *C) {

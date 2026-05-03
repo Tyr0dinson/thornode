@@ -1394,8 +1394,14 @@ func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBla
 		return nil, err
 	}
 
+	nodeAcc, err := qs.mgr.Keeper().GetNodeAccount(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node account: %w", err)
+	}
+
 	return &types.QueryNodeBlameResponse{
 		NodeAddress:                 record.NodeAddress,
+		NodeOperatorAddress:         nodeAcc.BondAddress.String(),
 		KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
 		KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
 		KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
@@ -1422,9 +1428,9 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBl
 	if err != nil {
 		return nil, fmt.Errorf("fail to list active validators: %w", err)
 	}
-	activeSet := make(map[string]bool, len(activeNodes))
+	operatorByNode := make(map[string]string, len(activeNodes))
 	for _, na := range activeNodes {
-		activeSet[na.NodeAddress.String()] = true
+		operatorByNode[na.NodeAddress.String()] = na.BondAddress.String()
 	}
 
 	var result []*types.QueryNodeBlameResponse
@@ -1438,12 +1444,14 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBl
 			continue
 		}
 
-		if !activeSet[record.NodeAddress.String()] {
+		operator, active := operatorByNode[record.NodeAddress.String()]
+		if !active {
 			continue
 		}
 
 		result = append(result, &types.QueryNodeBlameResponse{
 			NodeAddress:                 record.NodeAddress,
+			NodeOperatorAddress:         operator,
 			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
 			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
 			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
