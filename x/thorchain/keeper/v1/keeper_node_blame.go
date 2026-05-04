@@ -13,11 +13,7 @@ import (
 func (k KVStore) setNodeBlameRecord(ctx cosmos.Context, key []byte, record NodeBlameRecord) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	buf := k.cdc.MustMarshal(&record)
-	if buf == nil {
-		store.Delete(key)
-	} else {
-		store.Set(key, buf)
-	}
+	store.Set(key, buf)
 }
 
 // getNodeBlameRecord internal helper to get node blame record
