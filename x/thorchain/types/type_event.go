@@ -67,6 +67,7 @@ const (
 	ChainLiquidityCapBreachEventType = "chain_liquidity_cap_breach"
 	ChainRagnarokInitiatedEventType  = "chain_ragnarok_initiated"
 	POLReserveDeployEventType        = "pol_reserve_deploy"
+	DynamicL1FeeUpdateEventType      = "dynamic_l1_fee_update"
 )
 
 // PoolMods a list of pool modifications

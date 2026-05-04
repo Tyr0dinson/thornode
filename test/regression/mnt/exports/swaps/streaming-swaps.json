@@ -218,6 +218,8 @@
         }
       ],
       "chain_contracts": [],
+      "dynamic_fee_accumulators": [],
+      "dynamic_fee_records": [],
       "last_chain_heights": [
         {
           "chain": "BTC",
@@ -326,6 +328,7 @@
           "asset": "ETH.ETH"
         }
       ],
+      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "100000000000",
@@ -422,8 +425,7 @@
           "status": "ActiveVault",
           "type": "AsgardVault"
         }
-      ],
-      "pol_reserve_deposits": []
+      ]
     },
     "upgrade": {},
     "wasm": {

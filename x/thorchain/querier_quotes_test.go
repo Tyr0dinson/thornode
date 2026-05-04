@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"strings"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -280,4 +281,34 @@ func (s *QuotesSuite) TestQuoteSwapChainLiquidityCap(c *C) {
 		Commentf("expected 'source chain cap' in error, got: %s", err.Error()))
 	c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, true,
 		Commentf("expected 'liquidity cap exceeded' in error, got: %s", err.Error()))
+}
+
+// TestQuoteLimitStaleState verifies that queryQuoteLimit rejects requests when
+// the node's latest block is older than the configured MaxLag, preventing
+// callers from receiving stale vault addresses (e.g. retiring vaults).
+func (s *QuotesSuite) TestQuoteLimitStaleState(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+
+	// Provide all required parameters so validation passes and we reach the stale check.
+	req := &types.QueryQuoteLimitRequest{
+		FromAsset:   "BTC.BTC",
+		ToAsset:     "ETH.ETH",
+		Amount:      "100000",
+		Destination: "0x1234567890123456789012345678901234567890",
+		TargetOut:   "50000",
+	}
+
+	// Stale node: block time is far in the past — must be rejected.
+	staleCtx := ctx.WithBlockTime(time.Unix(1, 0))
+	_, err := qs.queryQuoteLimit(staleCtx, req)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "refusing quote on node with stale state")
+
+	// Fresh node: block time is current — stale-state error must NOT be returned
+	// (the request may still fail due to missing pools, but not due to stale state).
+	_, err = qs.queryQuoteLimit(ctx, req)
+	if err != nil {
+		c.Assert(strings.Contains(err.Error(), "stale state"), Equals, false)
+	}
 }

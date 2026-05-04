@@ -49,8 +49,6 @@ const (
 	// defaultAskPeersDelay is the delay before asking peers for their attestation state on startup.
 	defaultAskPeersDelay = 5 * time.Second
 
-	cachedKeysignPartyTTL = 1 * time.Minute
-
 	defaultPeerTimeout = 20 * time.Second
 
 	defaultPeerConcurrentSends    = 4
@@ -132,10 +130,7 @@ type AttestationGossip struct {
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
-	observerHandleObservedTxCommitted func(tx common.ObservedTx)
-
-	cachedKeySignParties map[common.PubKey]cachedKeySignParty
-	cachedKeySignMu      sync.Mutex
+	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
 
 	batcher *AttestationBatcher
 
@@ -144,11 +139,6 @@ type AttestationGossip struct {
 
 	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
 	stateInitMu    sync.Mutex
-}
-
-type cachedKeySignParty struct {
-	keySignParty common.PubKeys
-	lastUpdated  time.Time
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip
@@ -213,8 +203,6 @@ func NewAttestationGossip(
 		priceFeedsPool:  NewAttestationStatePool[*common.PriceFeed](),
 
 		priceFeedsDelay: NewDelay(),
-
-		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
 
 		batcher: batcher,
 	}
@@ -316,28 +304,6 @@ func (s *AttestationGossip) getActiveValidators() map[peer.ID]bool {
 	return s.activeVals
 }
 
-// Get the keysign party for a specific public key
-func (s *AttestationGossip) getKeysignParty(pubKey common.PubKey) (common.PubKeys, error) {
-	s.cachedKeySignMu.Lock()
-	defer s.cachedKeySignMu.Unlock()
-
-	if cached, ok := s.cachedKeySignParties[pubKey]; ok {
-		return cached.keySignParty, nil
-	}
-
-	keySignParty, err := s.bridge.GetKeysignParty(pubKey)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get key sign party: %w", err)
-	}
-
-	s.cachedKeySignParties[pubKey] = cachedKeySignParty{
-		keySignParty: keySignParty,
-		lastUpdated:  time.Now(),
-	}
-
-	return keySignParty, nil
-}
-
 func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 	s.observerHandleObservedTxCommitted = o.handleObservedTxCommitted
 }
@@ -358,7 +324,7 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 			if bytes.Equal(att.PubKey, s.pubKey) {
 				// we have attested to this tx, and it has been committed to the chain.
 				s.logger.Debug().Msg("our attestation is in the quorum tx, passing to observer to remove from ondeck")
-				s.observerHandleObservedTxCommitted(qtx.ObsTx)
+				s.observerHandleObservedTxCommitted(qtx.ObsTx, qtx.AllowFutureObservation)
 				break
 			}
 		}
@@ -549,16 +515,6 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
 
 			s.mu.Unlock()
-
-			// Prune cached keysign parties
-			s.cachedKeySignMu.Lock()
-			for pk, cached := range s.cachedKeySignParties {
-				if time.Since(cached.lastUpdated) > cachedKeysignPartyTTL {
-					delete(s.cachedKeySignParties, pk)
-				}
-			}
-			s.cachedKeySignMu.Unlock()
-
 			s.reconcileMimirConfigs()
 
 		case <-delayTimer.C:

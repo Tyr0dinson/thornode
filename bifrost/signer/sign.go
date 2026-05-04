@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -475,10 +474,14 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 	var keysharesEddsa []byte
 	var err error
 	if s.cfg.Signer.BackupKeyshares {
+		seedPhrase, seedErr := common.GetSignerSeedPhrase()
+		if seedErr != nil {
+			s.logger.Error().Err(seedErr).Msg("fail to get signer seed phrase")
+		}
 		if !poolPk.IsEmpty() {
 			keyshares, err = tss.EncryptKeyshares(
 				filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPk)),
-				os.Getenv("SIGNER_SEED_PHRASE"),
+				seedPhrase,
 			)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("fail to encrypt secp256k1 keyshares")
@@ -487,7 +490,7 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 		if !poolPubKeyEddsa.IsEmpty() {
 			keysharesEddsa, err = tss.EncryptKeyshares(
 				filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPubKeyEddsa)),
-				os.Getenv("SIGNER_SEED_PHRASE"),
+				seedPhrase,
 			)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("fail to encrypt eddsa keyshares")
@@ -772,15 +775,16 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		// vault will never attempt multiple txs for an outbound, as further protection
 		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.
 		// In tradeoff, we accept a higher likelihood of temporary stuck outbounds.
-		item.Checkpoint = checkpoint
-
-		// mark the txout on round 7 failure to block other txs for the chain / pubkey
 		ksErr := tss.KeysignError{}
-		if errors.As(err, &ksErr) && ksErr.IsRound7() {
-			s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
-			item.Round7Retry = true
+		isRound7 := errors.As(err, &ksErr) && ksErr.IsRound7()
+		if checkpoint != nil || isRound7 {
+			item.Checkpoint = checkpoint
+			if isRound7 {
+				s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
+				item.Round7Retry = true
+			}
 			if storeErr := s.storage.Set(item); storeErr != nil {
-				s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with round 7 retry")
+				s.logger.Error().Err(storeErr).Msg("fail to persist checkpoint after sign failure")
 			}
 		}
 

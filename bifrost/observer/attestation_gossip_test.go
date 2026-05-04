@@ -100,11 +100,7 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 		},
 	}
 
-	bridge := &MockThorchainBridge{
-		getKeysignPartyFunc: func(pubKey common.PubKey) (common.PubKeys, error) {
-			return common.PubKeys{pubKey, pubkey2, pubkey3}, nil
-		},
-	}
+	bridge := &MockThorchainBridge{}
 
 	eventClient := NewMockEventClient()
 
@@ -124,16 +120,15 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 
 	// Create the attestation gossip directly without calling NewAttestationGossip
 	ag := &AttestationGossip{
-		logger:               getTestLogger(t),
-		host:                 host,
-		privKey:              privKey,
-		pubKey:               privKey.PubKey().Bytes(),
-		grpcClient:           grpcClient,
-		config:               cfg,
-		bridge:               bridge,
-		eventClient:          eventClient,
-		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
-		batcher:              batcher,
+		logger:      getTestLogger(t),
+		host:        host,
+		privKey:     privKey,
+		pubKey:      privKey.PubKey().Bytes(),
+		grpcClient:  grpcClient,
+		config:      cfg,
+		bridge:      bridge,
+		eventClient: eventClient,
+		batcher:     batcher,
 
 		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
 		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
@@ -223,69 +218,6 @@ func TestActiveValidatorCount(t *testing.T) {
 	assert.False(t, ag.isActiveValidator(peer3))
 }
 
-// TestGetKeysignParty tests retrieving and caching the keysign party
-func TestGetKeysignParty(t *testing.T) {
-	ag, _, _, _, bridge, _ := setupTestGossip(t)
-
-	t.Run("returns cached value if available", func(t *testing.T) {
-		pubKey := common.PubKey("pubkey1")
-
-		// First call should go to the bridge
-		callCount := 0
-		bridge.getKeysignPartyFunc = func(key common.PubKey) (common.PubKeys, error) {
-			callCount++
-			return common.PubKeys{pubKey, "pubkey2", "pubkey3"}, nil
-		}
-
-		result1, err := ag.getKeysignParty(pubKey)
-		require.NoError(t, err)
-		assert.Equal(t, 1, callCount)
-		assert.Len(t, result1, 3)
-
-		// Second call should use cache
-		result2, err := ag.getKeysignParty(pubKey)
-		require.NoError(t, err)
-		assert.Equal(t, 1, callCount) // Still 1, not incremented
-		assert.Len(t, result2, 3)
-	})
-
-	t.Run("cache expires after TTL", func(t *testing.T) {
-		pubKey := common.PubKey("expiring-key")
-
-		callCount := 0
-		bridge.getKeysignPartyFunc = func(key common.PubKey) (common.PubKeys, error) {
-			callCount++
-			return common.PubKeys{pubKey, "pubkey2", "pubkey3"}, nil
-		}
-
-		// First call - should hit the bridge
-		_, err := ag.getKeysignParty(pubKey)
-		require.NoError(t, err)
-		assert.Equal(t, 1, callCount)
-
-		// Manually expire the cache entry by setting the time in the past
-		ag.cachedKeySignMu.Lock()
-		cached := ag.cachedKeySignParties[pubKey]
-		cached.lastUpdated = time.Now().Add(-2 * cachedKeysignPartyTTL)
-		ag.cachedKeySignParties[pubKey] = cached
-		ag.cachedKeySignMu.Unlock()
-
-		// Now simulate the pruning that would happen in the Start method
-		ag.cachedKeySignMu.Lock()
-		for pk, cached := range ag.cachedKeySignParties {
-			if time.Since(cached.lastUpdated) > cachedKeysignPartyTTL {
-				delete(ag.cachedKeySignParties, pk)
-			}
-		}
-		ag.cachedKeySignMu.Unlock()
-
-		// Next call should hit the bridge again
-		_, err = ag.getKeysignParty(pubKey)
-		require.NoError(t, err)
-		assert.Equal(t, 2, callCount)
-	})
-}
-
 // TestAttestObservedTx tests attesting to an observed transaction
 func TestAttestObservedTx(t *testing.T) {
 	// Disable deadline application during tests
@@ -357,7 +289,7 @@ func TestAttestObservedTx(t *testing.T) {
 		}
 
 		// Test the function
-		err := ag.AttestObservedTx(context.Background(), tx, true)
+		err := ag.AttestObservedTx(context.Background(), tx, true, false)
 		require.NoError(t, err)
 
 		// Wait a bit for all operations to complete
@@ -368,12 +300,11 @@ func TestAttestObservedTx(t *testing.T) {
 		defer ag.mu.Unlock()
 
 		key := txKey{
-			Chain:                  tx.Tx.Chain,
-			ID:                     tx.Tx.ID,
-			UniqueHash:             tx.Tx.Hash(0),
-			AllowFutureObservation: false,
-			Finalized:              tx.IsFinal(),
-			Inbound:                true,
+			Chain:      tx.Tx.Chain,
+			ID:         tx.Tx.ID,
+			UniqueHash: tx.Tx.Hash(0),
+			Finalized:  tx.IsFinal(),
+			Inbound:    true,
 		}
 
 		state, exists := ag.observedTxs[key]
@@ -385,9 +316,51 @@ func TestAttestObservedTx(t *testing.T) {
 	})
 }
 
+func TestAttestObservedTxPropagatesAllowFutureObservation(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+
+	ag.avMu.Lock()
+	ag.activeVals = map[peer.ID]bool{ag.host.ID(): true}
+	ag.avMu.Unlock()
+
+	tx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "future-observation-tx",
+			Chain: common.BTCChain,
+		},
+	}
+
+	var sentTx *common.QuorumTx
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		sentTx = quorumTx
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	err := ag.AttestObservedTx(context.Background(), tx, false, true)
+	require.NoError(t, err)
+
+	key := txKey{
+		Chain:                  tx.Tx.Chain,
+		ID:                     tx.Tx.ID,
+		UniqueHash:             tx.Tx.Hash(0),
+		AllowFutureObservation: true,
+		Finalized:              tx.IsFinal(),
+		Inbound:                false,
+	}
+
+	ag.mu.Lock()
+	_, exists := ag.observedTxs[key]
+	ag.mu.Unlock()
+
+	assert.True(t, exists, "future observation should use a distinct attestation key")
+	require.NotNil(t, sentTx)
+	assert.True(t, sentTx.AllowFutureObservation)
+	assert.False(t, sentTx.Inbound)
+}
+
 // TestHandleObservedTxAttestation tests handling an observed transaction attestation
 func TestHandleObservedTxAttestation(t *testing.T) {
-	ag, _, _, grpcClient, bridge, _ := setupTestGossip(t)
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
 
 	// Override verifySignature for testing
 	origVerifySignature := verifySignature
@@ -417,11 +390,6 @@ func TestHandleObservedTxAttestation(t *testing.T) {
 		require.NoError(t, err)
 		pub3, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey3.PubKey())
 		require.NoError(t, err)
-
-		// Set up keysign party mock
-		bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
-			return common.PubKeys{"pubkey1", "pubkey2", "pubkey3", "pubkey4"}, nil
-		}
 
 		// Set up GRPC client mock to capture the sent tx
 		var sentTxs []*common.QuorumTx
@@ -486,12 +454,11 @@ func TestHandleObservedTxAttestation(t *testing.T) {
 		defer ag.mu.Unlock()
 
 		key := txKey{
-			Chain:                  tx.Tx.Chain,
-			ID:                     tx.Tx.ID,
-			UniqueHash:             tx.Tx.Hash(0),
-			AllowFutureObservation: false,
-			Finalized:              tx.IsFinal(),
-			Inbound:                true,
+			Chain:      tx.Tx.Chain,
+			ID:         tx.Tx.ID,
+			UniqueHash: tx.Tx.Hash(0),
+			Finalized:  tx.IsFinal(),
+			Inbound:    true,
 		}
 
 		state, exists := ag.observedTxs[key]
@@ -762,7 +729,7 @@ func TestSendLateAttestations(t *testing.T) {
 		state.mu.Lock()
 		if state.ShouldSendLate(ag.config.MinTimeBetweenAttestations) {
 			// Send late attestations
-			ag.sendObservedTxAttestationsToThornode(context.Background(), *obsTx, state, k.Inbound, false, false)
+			ag.sendObservedTxAttestationsToThornode(context.Background(), *obsTx, state, k.Inbound, k.AllowFutureObservation, false)
 		}
 		state.mu.Unlock()
 	}
@@ -800,9 +767,11 @@ func TestHandleQuorumTxCommited(t *testing.T) {
 		// Set up observer handler
 		handlerCalled := false
 		var handledTx common.ObservedTx
-		ag.observerHandleObservedTxCommitted = func(tx common.ObservedTx) {
+		var handledAllowFuture bool
+		ag.observerHandleObservedTxCommitted = func(tx common.ObservedTx, allowFutureObservation bool) {
 			handlerCalled = true
 			handledTx = tx
+			handledAllowFuture = allowFutureObservation
 		}
 
 		// Create a test tx with our attestation
@@ -814,7 +783,8 @@ func TestHandleQuorumTxCommited(t *testing.T) {
 		}
 
 		quorumTx := common.QuorumTx{
-			ObsTx: tx,
+			ObsTx:                  tx,
+			AllowFutureObservation: true,
 			Attestations: []*common.Attestation{
 				{
 					PubKey:    ag.pubKey,
@@ -834,12 +804,13 @@ func TestHandleQuorumTxCommited(t *testing.T) {
 		// Verify handler was called
 		assert.True(t, handlerCalled)
 		assert.Equal(t, tx, handledTx)
+		assert.True(t, handledAllowFuture)
 	})
 
 	t.Run("doesn't call handler if our attestation is not in tx", func(t *testing.T) {
 		// Set up observer handler
 		handlerCalled := false
-		ag.observerHandleObservedTxCommitted = func(tx common.ObservedTx) {
+		ag.observerHandleObservedTxCommitted = func(tx common.ObservedTx, allowFutureObservation bool) {
 			handlerCalled = true
 		}
 

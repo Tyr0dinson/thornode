@@ -424,7 +424,10 @@ func (vm *NetworkMgr) calculateWeightedMeanSlip(ctx cosmos.Context, asset common
 			}
 
 			value := ProtoInt64{}
-			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &value)
+			if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &value); err != nil {
+				ctx.Logger().Error("fail to unmarshal swap slip snapshot", "key", string(key), "error", err)
+				continue
+			}
 			slip := value.GetValue()
 			if slip <= 0 {
 				mgr.Keeper().DeleteKey(ctx, key)
@@ -2247,8 +2250,11 @@ func (vm *NetworkMgr) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
 		if pool.Asset.IsGasAsset() && !vm.canRagnarokGasPool(ctx, pool.Asset.GetChain(), pools) {
 			continue
 		}
-		if err := vm.ragnarokPool(ctx, mgr, pool); err != nil {
+		cacheCtx, commit := ctx.CacheContext()
+		if err := vm.ragnarokPool(cacheCtx, mgr, pool); err != nil {
 			ctx.Logger().Error("fail to ragnarok pool", "error", err)
+		} else {
+			commit()
 		}
 	}
 

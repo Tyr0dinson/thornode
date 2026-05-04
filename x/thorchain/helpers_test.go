@@ -1604,7 +1604,7 @@ func (s *HelperSuite) TestGetMaxSwapQuantityRapidInterval(c *C) {
 	quantity, err := getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, StreamingSwap{
 		Interval: 0,
 		Deposit:  cosmos.NewUint(1000 * common.One),
-	})
+	}, nil, nil)
 	c.Assert(err, IsNil)
 	c.Assert(quantity, Equals, uint64(1000), Commentf("rapid interval should preserve non-zero quantity cap"))
 
@@ -1612,9 +1612,63 @@ func (s *HelperSuite) TestGetMaxSwapQuantityRapidInterval(c *C) {
 	quantity, err = getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, StreamingSwap{
 		Interval: 0,
 		Deposit:  cosmos.NewUint(50000 * common.One),
-	})
+	}, nil, nil)
 	c.Assert(err, IsNil)
 	c.Assert(quantity, Equals, uint64(14400), Commentf("rapid interval should respect max length cap"))
+}
+
+// TestGetMaxSwapQuantityHonorsDynamicFloor verifies that when a whitelisted
+// thorname has a dynamic-fee floor for the pair, the streaming sub-swap size
+// uses that floor rather than the static L1SlipMinBps — so users don't get
+// carved into sub-swaps smaller than what the floor will charge anyway.
+func (s *HelperSuite) TestGetMaxSwapQuantityHonorsDynamicFloor(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	k.SetMimir(ctx, "L1SlipMinBps", 10) // static floor 10 bps
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 14400)
+	setDynamicFeeTestMimirs(ctx, k)
+
+	registerThorname(ctx, k, "mytn", 1)
+	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+		Thorname:   "mytn",
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 50,
+	}), IsNil)
+
+	affiliates := []string{"mytn"}
+	affBps := []cosmos.Uint{cosmos.NewUint(100)}
+	deposit := cosmos.NewUint(1000 * common.One)
+
+	// No affiliate context: uses static 10 bps → larger quantity allowed.
+	withoutDyn, err := getMaxSwapQuantity(ctx, mgr, common.RuneAsset(), common.BTCAsset, StreamingSwap{
+		Interval: 1,
+		Deposit:  deposit,
+	}, nil, nil)
+	c.Assert(err, IsNil)
+
+	// With affiliate context: dynamic 50 bps floor → fewer, larger sub-swaps.
+	withDyn, err := getMaxSwapQuantity(ctx, mgr, common.RuneAsset(), common.BTCAsset, StreamingSwap{
+		Interval: 1,
+		Deposit:  deposit,
+	}, affiliates, affBps)
+	c.Assert(err, IsNil)
+
+	// 50 bps is 5x the static 10 bps floor, so the dynamic path must allow
+	// roughly 1/5 the quantity. Exact ratio: use GT/LT rather than equality
+	// to stay robust against future changes to pool math.
+	c.Assert(withDyn < withoutDyn, Equals, true, Commentf("dynamic floor should yield fewer sub-swaps than static floor"))
+	c.Assert(withDyn*5, Equals, withoutDyn, Commentf("dynamic 50bps is 5x the static 10bps → 1/5 the sub-swaps"))
 }
 
 func (s *HelperSuite) TestIsStableToStable(c *C) {
@@ -1677,22 +1731,22 @@ func (s *HelperSuite) TestGetMinSlipBpsStableOverride(c *C) {
 	k.SetMimir(ctx, "L1SlipMinBps", 10)
 
 	// Without stable override, should return L1 min bps
-	result := getMinSlipBps(ctx, k, busd, false)
+	result := getMinSlipBps(ctx, k, common.NoAddress, busd, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
 	c.Assert(result.Uint64(), Equals, uint64(10))
 
 	// With stable override but StableSlipMinBps=0, should fall through to L1
-	result = getMinSlipBps(ctx, k, busd, true)
+	result = getMinSlipBps(ctx, k, common.NoAddress, busd, true, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
 	c.Assert(result.Uint64(), Equals, uint64(10))
 
 	// Set StableSlipMinBps to 3
 	k.SetMimir(ctx, "StableSlipMinBps", 3)
 
 	// With stable override and non-zero StableSlipMinBps, should return stable value
-	result = getMinSlipBps(ctx, k, busd, true)
+	result = getMinSlipBps(ctx, k, common.NoAddress, busd, true, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
 	c.Assert(result.Uint64(), Equals, uint64(3))
 
 	// Without stable override, should still return L1 value
-	result = getMinSlipBps(ctx, k, busd, false)
+	result = getMinSlipBps(ctx, k, common.NoAddress, busd, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
 	c.Assert(result.Uint64(), Equals, uint64(10))
 }
 
@@ -2451,4 +2505,140 @@ func (s *HelperSuite) TestIsNodeInRagnarokingChainVault(c *C) {
 	got, err = isNodeInRagnarokingChainVault(ctx, mgr, na)
 	c.Assert(err, NotNil)
 	c.Assert(got, Equals, false)
+}
+
+func (s *HelperSuite) TestGetMinSlipBpsWasmArbContract(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	busd, _ := common.NewAsset("ETH.BUSD-BD1")
+	k.SetMimir(ctx, "L1SlipMinBps", 25)
+
+	wasmArbAddr, err := common.NewAddress("thor1n5a08r0zvmqca39ka2tgwlkjy9ugalutk7fjpzptfppqcccnat2ska5t4g")
+	c.Assert(err, IsNil)
+
+	// Default WasmArbSlipMinBps should be 10
+	result := getMinSlipBps(ctx, k, wasmArbAddr, busd, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(10))
+
+	// Operational mimir override should take effect
+	k.SetMimir(ctx, "WasmArbSlipMinBps", 7)
+	result = getMinSlipBps(ctx, k, wasmArbAddr, busd, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(7))
+
+	// Non-arb addresses still use the asset-class min slip
+	result = getMinSlipBps(ctx, k, common.NoAddress, common.Asset{}, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(25))
+}
+
+// TestGetMinSlipBpsDynamicOverridesStable verifies that an active dynamic fee
+// for a whitelisted thorname takes precedence over the stable-override.
+func (s *HelperSuite) TestGetMinSlipBpsDynamicOverridesStable(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	btc := common.BTCAsset
+	pool := NewPool()
+	pool.Asset = btc
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.Decimals = 8
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, "StableSlipMinBps", 3)
+	setDynamicFeeTestMimirs(ctx, k)
+
+	registerThorname(ctx, k, "mytn", 1)
+
+	pairA, pairB, ok := dynamicFeePairKey(btc, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	rec := types.DynamicFeeRecord{
+		Thorname:   "mytn",
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 25,
+	}
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+
+	dfm := newDynamicFeeMgr(k)
+	affiliates := []string{"mytn"}
+	affBps := []cosmos.Uint{cosmos.NewUint(100)}
+
+	// stableOverride=true, dynamic record present → dynamic wins (25) over stable (3).
+	result := getMinSlipBps(ctx, k, common.NoAddress, btc, true, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(25))
+
+	// stableOverride=false, dynamic record present → dynamic wins (25) over L1 default (10).
+	result = getMinSlipBps(ctx, k, common.NoAddress, btc, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(25))
+
+	// Clear dynamic record → stable override should now apply (3).
+	c.Assert(k.DeleteDynamicFeeRecord(ctx, "mytn", pairA, pairB), IsNil)
+	result = getMinSlipBps(ctx, k, common.NoAddress, btc, true, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(3))
+
+	// No dynamic record, no stable override → L1 default (10).
+	result = getMinSlipBps(ctx, k, common.NoAddress, btc, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(10))
+}
+
+// TestGetMinSlipBpsNonL1IgnoresDynamic verifies that synth, trade and derived
+// assets skip the dynamic-fee branch entirely: even when a non-nil
+// DynamicFeeManager and non-empty affiliates are supplied, the result must
+// come from the asset-type mimir (SynthSlipMinBps / TradeAccountsSlipMinBps /
+// DerivedSlipMinBps), not from any DynamicFeeRecord that happens to exist.
+func (s *HelperSuite) TestGetMinSlipBpsNonL1IgnoresDynamic(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	// Distinct mimir values so the branch taken is identifiable from the result.
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, "SynthSlipMinBps", 20)
+	k.SetMimir(ctx, "TradeAccountsSlipMinBps", 30)
+	k.SetMimir(ctx, "DerivedSlipMinBps", 40)
+	setDynamicFeeTestMimirs(ctx, k)
+
+	registerThorname(ctx, k, "mytn", 1)
+
+	// Dynamic record for (BTC, RUNE). If any non-L1 branch incorrectly fell
+	// through to the default case, this would be returned instead of the
+	// asset-type mimir.
+	btc := common.BTCAsset
+	pairA, pairB, ok := dynamicFeePairKey(btc, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+		Thorname:   "mytn",
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 77,
+	}), IsNil)
+
+	dfm := newDynamicFeeMgr(k)
+	affiliates := []string{"mytn"}
+	affBps := []cosmos.Uint{cosmos.NewUint(100)}
+
+	synthBTC, err := common.NewAsset("BTC/BTC")
+	c.Assert(err, IsNil)
+	tradeBTC, err := common.NewAsset("BTC~BTC")
+	c.Assert(err, IsNil)
+	derivedBTC, err := common.NewAsset("THOR.BTC")
+	c.Assert(err, IsNil)
+
+	// Sanity: the assets classify as the expected types.
+	c.Assert(synthBTC.IsSyntheticAsset(), Equals, true)
+	c.Assert(tradeBTC.IsTradeAsset(), Equals, true)
+	c.Assert(derivedBTC.IsDerivedAsset(), Equals, true)
+
+	// For each non-L1 asset, a non-nil dfm with affiliates must still produce
+	// the asset-type mimir value (not the dynamic 77 bps).
+	result := getMinSlipBps(ctx, k, common.NoAddress, synthBTC, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(20))
+
+	result = getMinSlipBps(ctx, k, common.NoAddress, tradeBTC, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(30))
+
+	result = getMinSlipBps(ctx, k, common.NoAddress, derivedBTC, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(40))
 }

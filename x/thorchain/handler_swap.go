@@ -345,6 +345,16 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 		swp.Count = msg.State.Count
 	}
 
+	// Parsed up here so sub-swap sizing in getMaxSwapQuantity can honor the
+	// affiliate's dynamic floor; also used below for swap accounting.
+	mem, parseMemoErr := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
+	var swapAffiliates []string
+	var swapAffiliateBps []cosmos.Uint
+	if parseMemoErr == nil {
+		swapAffiliates = mem.GetAffiliates()
+		swapAffiliateBps = mem.GetAffiliatesBasisPoints()
+	}
+
 	// Only create streaming swap records for actual streaming swaps (not limit swaps)
 	if msg.IsLegacyStreaming() && !msg.IsLimitSwap() {
 		if h.mgr.Keeper().StreamingSwapExists(ctx, msg.Tx.ID) {
@@ -366,7 +376,7 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 			sourceAsset := msg.Tx.Coins[0].Asset
 			targetAsset := msg.TargetAsset
 			var maxSwapQuantity uint64
-			maxSwapQuantity, err = getMaxSwapQuantity(ctx, h.mgr, sourceAsset, targetAsset, swp)
+			maxSwapQuantity, err = getMaxSwapQuantity(ctx, h.mgr, sourceAsset, targetAsset, swp, swapAffiliates, swapAffiliateBps)
 			if err != nil {
 				return nil, cosmos.ZeroUint(), err
 			}
@@ -382,7 +392,7 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 		msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize()
 	}
 
-	emit, _, swapErr := swapper.Swap(
+	emit, swapEvents, swapErr := swapper.Swap(
 		ctx,
 		h.mgr.Keeper(),
 		msg.Tx,
@@ -394,7 +404,8 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 		msg.AggregatorTargetLimit,
 		swp,
 		synthVirtualDepthMult,
-		h.mgr)
+		h.mgr,
+		swapAffiliates, swapAffiliateBps)
 	if swapErr != nil {
 		return nil, cosmos.ZeroUint(), swapErr
 	}
@@ -411,7 +422,6 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 	var affThorname *THORName
 	var affCol AffiliateFeeCollector
 
-	mem, parseMemoErr := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	if parseMemoErr == nil {
 		affThorname = mem.GetAffiliateTHORName()
 	}
@@ -434,6 +444,11 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 			}
 		}
 	}
+
+	// Credit dynamic fee tracking for eligible affiliates. Per-leg, with
+	// RUNE→TOR conversion so the closed-loop gradient signal is not corrupted
+	// by RUNE price moves.
+	creditDynamicFeeForLegs(ctx, h.mgr, swapEvents, swapAffiliates, swapAffiliateBps)
 
 	// Check if swap to a synth would cause synth supply to exceed
 	// MaxSynthPerPoolDepth cap

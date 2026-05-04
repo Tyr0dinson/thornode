@@ -606,7 +606,7 @@ func (s *ObserveExtraSuite) TestHandleObservedTxCommittedNotInDeck(c *C) {
 		BlockHeight:    100,
 		FinaliseHeight: 100,
 	}
-	obs.handleObservedTxCommitted(observedTx) // should not panic
+	obs.handleObservedTxCommitted(observedTx, false) // should not panic
 }
 
 // ---------------------------------------------------------------------------
@@ -725,11 +725,7 @@ func (s *ObserveExtraSuite) TestObserverStorageCreateTxKey(c *C) {
 // ---------------------------------------------------------------------------
 
 func (s *ObserveExtraSuite) TestGetOracleMimirs(c *C) {
-	bridge := &MockThorchainBridge{
-		getKeysignPartyFunc: func(pubKey common.PubKey) (common.PubKeys, error) {
-			return nil, nil
-		},
-	}
+	bridge := &MockThorchainBridge{}
 
 	obs := &Observer{
 		logger:          log.Logger,
@@ -825,34 +821,6 @@ func (s *ObserveExtraSuite) TestAttestationGossipActiveValidators(c *C) {
 	// getActiveValidators should return the map
 	vals := ag.getActiveValidators()
 	c.Assert(len(vals), Equals, 0)
-}
-
-// ---------------------------------------------------------------------------
-// AttestationGossip getKeysignParty tests
-// ---------------------------------------------------------------------------
-
-func (s *ObserveExtraSuite) TestGetKeysignParty(c *C) {
-	pubKey := stypes.GetRandomPubKey()
-
-	ag := &AttestationGossip{
-		logger: log.Logger,
-		bridge: &MockThorchainBridge{
-			getKeysignPartyFunc: func(pk common.PubKey) (common.PubKeys, error) {
-				return common.PubKeys{pk}, nil
-			},
-		},
-		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
-	}
-
-	// First call - should fetch from bridge
-	result, err := ag.getKeysignParty(pubKey)
-	c.Assert(err, IsNil)
-	c.Assert(len(result), Equals, 1)
-
-	// Second call - should use cache
-	result2, err := ag.getKeysignParty(pubKey)
-	c.Assert(err, IsNil)
-	c.Assert(len(result2), Equals, 1)
 }
 
 // ---------------------------------------------------------------------------
@@ -1780,11 +1748,7 @@ func newTestAttestationGossip(c *C, peers []peer.ID) (*AttestationGossip, *MockG
 	}
 
 	host := NewMockHost(peers)
-	bridge := &MockThorchainBridge{
-		getKeysignPartyFunc: func(pubKey common.PubKey) (common.PubKeys, error) {
-			return common.PubKeys{pubKey}, nil
-		},
-	}
+	bridge := &MockThorchainBridge{}
 
 	batcher := NewAttestationBatcher(
 		host,
@@ -1800,29 +1764,28 @@ func newTestAttestationGossip(c *C, peers []peer.ID) (*AttestationGossip, *MockG
 	normalizeConfig(&cfg)
 
 	ag := &AttestationGossip{
-		logger:               log.Logger,
-		host:                 host,
-		grpcClient:           grpcClient,
-		privKey:              privKey,
-		pubKey:               privKey.PubKey().Bytes(),
-		bridge:               bridge,
-		config:               cfg,
-		eventClient:          NewMockEventClient(),
-		observedTxs:          make(map[txKey]*AttestationState[*common.ObservedTx]),
-		networkFees:          make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
-		solvencies:           make(map[common.TxID]*AttestationState[*common.Solvency]),
-		errataTxs:            make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
-		priceFeeds:           make(map[string]*AttestationState[*common.PriceFeed]),
-		observedTxsPool:      NewAttestationStatePool[*common.ObservedTx](),
-		networkFeesPool:      NewAttestationStatePool[*common.NetworkFee](),
-		solvenciesPool:       NewAttestationStatePool[*common.Solvency](),
-		errataTxsPool:        NewAttestationStatePool[*common.ErrataTx](),
-		priceFeedsPool:       NewAttestationStatePool[*common.PriceFeed](),
-		priceFeedsDelay:      NewDelay(),
-		activeVals:           map[peer.ID]bool{peers[0]: true},
-		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
-		batcher:              batcher,
-		peerMgr:              newPeerManager(log.Logger, 5),
+		logger:          log.Logger,
+		host:            host,
+		grpcClient:      grpcClient,
+		privKey:         privKey,
+		pubKey:          privKey.PubKey().Bytes(),
+		bridge:          bridge,
+		config:          cfg,
+		eventClient:     NewMockEventClient(),
+		observedTxs:     make(map[txKey]*AttestationState[*common.ObservedTx]),
+		networkFees:     make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
+		solvencies:      make(map[common.TxID]*AttestationState[*common.Solvency]),
+		errataTxs:       make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
+		priceFeeds:      make(map[string]*AttestationState[*common.PriceFeed]),
+		observedTxsPool: NewAttestationStatePool[*common.ObservedTx](),
+		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
+		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
+		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
+		priceFeedsPool:  NewAttestationStatePool[*common.PriceFeed](),
+		priceFeedsDelay: NewDelay(),
+		activeVals:      map[peer.ID]bool{peers[0]: true},
+		batcher:         batcher,
+		peerMgr:         newPeerManager(log.Logger, 5),
 	}
 
 	return ag, grpcClient
@@ -1844,7 +1807,7 @@ func (s *ObserveExtraSuite) TestAttestObservedTx(c *C) {
 		FinaliseHeight: 100,
 	}
 
-	err := ag.AttestObservedTx(context.Background(), obsTx, true)
+	err := ag.AttestObservedTx(context.Background(), obsTx, true, false)
 	c.Assert(err, IsNil)
 
 	// Verify the attestation was added locally
@@ -1867,7 +1830,7 @@ func (s *ObserveExtraSuite) TestAttestObservedTxNotActive(c *C) {
 		},
 	}
 
-	err := ag.AttestObservedTx(context.Background(), obsTx, true)
+	err := ag.AttestObservedTx(context.Background(), obsTx, true, false)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "skipping attest observed tx: not active")
 }
@@ -1981,7 +1944,7 @@ func (s *ObserveExtraSuite) TestAttestErrataRemovesObservedTx(c *C) {
 		BlockHeight:    100,
 		FinaliseHeight: 100,
 	}
-	err := ag.AttestObservedTx(context.Background(), obsTx, true)
+	err := ag.AttestObservedTx(context.Background(), obsTx, true, false)
 	c.Assert(err, IsNil)
 
 	ag.mu.Lock()

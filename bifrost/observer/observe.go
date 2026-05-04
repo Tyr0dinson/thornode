@@ -47,14 +47,16 @@ const defaultOracleUpdateInterval = 1 * time.Second
 var supportedChainsRefreshTime = constants.ThorchainBlockTime
 
 type txInKey struct {
-	chain  common.Chain
-	height int64
+	chain                  common.Chain
+	height                 int64
+	allowFutureObservation bool
 }
 
 func TxInKey(txIn *types.TxIn) txInKey {
 	return txInKey{
-		chain:  txIn.Chain,
-		height: txIn.TxArray[0].BlockHeight + txIn.ConfirmationRequired,
+		chain:                  txIn.Chain,
+		height:                 txIn.TxArray[0].BlockHeight + txIn.ConfirmationRequired,
+		allowFutureObservation: txIn.AllowFutureObservation,
 	}
 }
 
@@ -260,7 +262,7 @@ func (o *Observer) deck(ctx context.Context) {
 
 // handleObservedTxCommitted will be called when an observed tx has been committed to thorchain,
 // notified via AttestationGossip's grpc subscription to thornode..
-func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
+func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureObservation bool) {
 	madeChanges := false
 
 	isFinal := tx.IsFinal()
@@ -269,8 +271,9 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 	defer o.lock.Unlock()
 
 	k := txInKey{
-		chain:  tx.Tx.Chain,
-		height: tx.FinaliseHeight,
+		chain:                  tx.Tx.Chain,
+		height:                 tx.FinaliseHeight,
+		allowFutureObservation: allowFutureObservation,
 	}
 
 	deck, ok := o.onDeck[k]
@@ -463,13 +466,13 @@ func (o *Observer) sendToQuorumChecker(deck *types.TxIn, finalised bool, finalis
 	}
 
 	for _, tx := range inbound {
-		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, true); err != nil {
+		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, true, deck.AllowFutureObservation); err != nil {
 			o.logger.Err(err).Msg("fail to send inbound tx to thorchain")
 		}
 	}
 
 	for _, tx := range outbound {
-		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, false); err != nil {
+		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, false, deck.AllowFutureObservation); err != nil {
 			o.logger.Err(err).Msg("fail to send outbound tx to thorchain")
 		}
 	}

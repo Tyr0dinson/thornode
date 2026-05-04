@@ -563,6 +563,12 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 		return nil, fmt.Errorf("missing target_out parameter")
 	}
 
+	// error if latest block is older than max lag (node is not at tip)
+	isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
+	if !isWasm && ctx.BlockTime().Before(time.Now().Add(-config.GetThornode().API.Quote.MaxLag)) {
+		return nil, fmt.Errorf("refusing quote on node with stale state")
+	}
+
 	// parse assets
 	fromAsset, err := common.NewAsset(req.FromAsset)
 	if err != nil {
@@ -617,11 +623,17 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 		}
 	}
 
+	// parse affiliate params
+	affiliates, affiliateBps, totalBps, err := parseMultipleAffiliateParams(ctx, qs.mgr, req.Affiliate, req.AffiliateBps)
+	if err != nil {
+		return nil, fmt.Errorf("bad affiliate params: %w", err)
+	}
+
 	swp := StreamingSwap{
 		Interval: uint64(customTTL),
 		Deposit:  amount,
 	}
-	maxSwapQuantity, err := getMaxSwapQuantity(ctx, qs.mgr, fromAsset, toAsset, swp)
+	maxSwapQuantity, err := getMaxSwapQuantity(ctx, qs.mgr, fromAsset, toAsset, swp, affiliates, affiliateBps)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate max streaming swap quantity: %w", err)
 	}
@@ -629,12 +641,6 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 	// cap the streaming quantity to the max swap quantity
 	if streamingQuantity > maxSwapQuantity {
 		streamingQuantity = maxSwapQuantity
-	}
-
-	// parse affiliate params
-	affiliates, affiliateBps, totalBps, err := parseMultipleAffiliateParams(ctx, qs.mgr, req.Affiliate, req.AffiliateBps)
-	if err != nil {
-		return nil, fmt.Errorf("bad affiliate params: %w", err)
 	}
 
 	// parse refund address
@@ -827,11 +833,18 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			return nil, fmt.Errorf("bad streaming quantity amount: %w", err)
 		}
 	}
+	// Parse affiliate params up front so getMaxSwapQuantity can honor any
+	// dynamic-fee floor the affiliate has earned for this pair.
+	affiliates, affiliateBps, totalBps, err := parseMultipleAffiliateParams(ctx, qs.mgr, req.Affiliate, req.AffiliateBps)
+	if err != nil {
+		return nil, fmt.Errorf("bad affiliate params: %w", err)
+	}
+
 	swp := StreamingSwap{
 		Interval: streamingInterval,
 		Deposit:  amount,
 	}
-	maxSwapQuantity, err := getMaxSwapQuantity(ctx, qs.mgr, fromAsset, toAsset, swp)
+	maxSwapQuantity, err := getMaxSwapQuantity(ctx, qs.mgr, fromAsset, toAsset, swp, affiliates, affiliateBps)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate max streaming swap quantity: %w", err)
 	}
@@ -942,12 +955,6 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		}
 	}
 
-	// parse affiliate params
-	affiliates, affiliateBps, totalBps, err := parseMultipleAffiliateParams(ctx, qs.mgr, req.Affiliate, req.AffiliateBps)
-	if err != nil {
-		return nil, fmt.Errorf("bad affiliate params: %w", err)
-	}
-
 	// check if the amount is less than the minimum swap amount
 	minSwapAmount, err := calculateMinSwapAmount(ctx, qs.mgr, fromAsset, toAsset, totalBps)
 	if err != nil {
@@ -1042,13 +1049,19 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	// Quote rapid/auto streaming only when the advanced queue is enabled.
 	// In legacy mode, interval=0 is still a non-streaming swap.
 	shouldQuoteStreaming := streamingInterval > 0 || qs.mgr.Keeper().AdvSwapQueueEnabled(ctx)
+	autoStreamingQuantity := shouldQuoteStreaming && streamingQuantity == 0
 
 	// if we're using a streaming swap, calculate emit amount by a sub-swap amount instead
 	// of the full amount, then multiply the result by the swap count
-	if shouldQuoteStreaming && streamingQuantity == 0 {
+	if autoStreamingQuantity {
 		streamingQuantity = maxSwapQuantity
 	}
 	if shouldQuoteStreaming && streamingQuantity > 0 {
+		if autoStreamingQuantity && streamingInterval == 0 && streamingQuantity > 1 {
+			memo.StreamQuantity = streamingQuantity
+			memoString = memo.ShortString()
+			msg.Tx.Memo = memoString
+		}
 		msg.TradeTarget = msg.TradeTarget.QuoUint64(streamingQuantity)
 		// simulate the swap
 		var streamRes *types.QueryQuoteSwapResponse
