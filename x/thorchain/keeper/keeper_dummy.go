@@ -428,7 +428,7 @@ func (k KVStoreDummy) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
-func (k KVStoreDummy) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
+func (k KVStoreDummy) ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error {
 	return kaboom
 }
 

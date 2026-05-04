@@ -3,6 +3,7 @@ package keeperv1
 import (
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
@@ -152,7 +153,7 @@ func (s *KeeperNodeBlameSuite) TestCalculateKeygenPenaltyMultiplier(c *C) {
 	c.Check(mult, Equals, int64(10))
 }
 
-func (s *KeeperNodeBlameSuite) TestResetAllSinceChurnCounters(c *C) {
+func (s *KeeperNodeBlameSuite) TestResetSinceChurnCountersForMembers(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Create multiple nodes with blame records
@@ -193,19 +194,21 @@ func (s *KeeperNodeBlameSuite) TestResetAllSinceChurnCounters(c *C) {
 	c.Check(record3.KeygenBlameCountSinceChurn, Equals, int64(1))
 	c.Check(record3.KeysignBlameCountSinceChurn, Equals, int64(1))
 
-	// Reset all since_churn counters
-	err = k.ResetAllSinceChurnCounters(ctx)
+	// Reset since_churn counters only for nodes 1 and 3 (just-succeeded keygen members)
+	err = k.ResetSinceChurnCountersForMembers(ctx, []cosmos.AccAddress{addr1, addr3})
 	c.Assert(err, IsNil)
 
-	// Verify totals remain, since_churn are reset
+	// Node 1 reset: total preserved, since_churn cleared
 	record1, _ = k.GetNodeBlameRecord(ctx, addr1)
 	c.Check(record1.KeygenBlameCountTotal, Equals, int64(3))
 	c.Check(record1.KeygenBlameCountSinceChurn, Equals, int64(0))
 
+	// Node 2 NOT a member of the succeeded keygen; counters must be untouched
 	record2, _ = k.GetNodeBlameRecord(ctx, addr2)
 	c.Check(record2.KeysignBlameCountTotal, Equals, int64(2))
-	c.Check(record2.KeysignBlameCountSinceChurn, Equals, int64(0))
+	c.Check(record2.KeysignBlameCountSinceChurn, Equals, int64(2))
 
+	// Node 3 reset: totals preserved, both since_churn cleared
 	record3, _ = k.GetNodeBlameRecord(ctx, addr3)
 	c.Check(record3.KeygenBlameCountTotal, Equals, int64(1))
 	c.Check(record3.KeysignBlameCountTotal, Equals, int64(1))

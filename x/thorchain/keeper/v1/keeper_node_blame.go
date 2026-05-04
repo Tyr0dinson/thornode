@@ -111,31 +111,28 @@ func (k KVStore) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
 	return cosmos.KVStorePrefixIterator(store, []byte(prefixNodeBlameRecord))
 }
 
-// ResetAllSinceChurnCounters resets all since_churn counters to zero (called on successful keygen)
-func (k KVStore) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
-	// Collect records that need updating before mutating the store. Writing to
-	// the same store being iterated has implementation-defined behavior across
-	// Cosmos store backends.
-	var toReset []NodeBlameRecord
-	iter := k.GetNodeBlameIterator(ctx)
-	for ; iter.Valid(); iter.Next() {
-		var record NodeBlameRecord
-		if err := k.cdc.Unmarshal(iter.Value(), &record); err != nil {
-			ctx.Logger().Error("fail to unmarshal node blame record", "error", err)
+// ResetSinceChurnCountersForMembers resets the since_churn counters of the
+// given node addresses. Called on successful keygen so only the members of
+// the just-succeeded keygen are reset. A global reset would be unsafe during
+// parallel multi-Asgard churn — a success in one Asgard would otherwise wipe
+// pending blame counters for nodes in another Asgard that is still failing.
+func (k KVStore) ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error {
+	for _, addr := range members {
+		if addr.Empty() {
 			continue
 		}
-		if record.KeygenBlameCountSinceChurn > 0 || record.KeysignBlameCountSinceChurn > 0 {
-			toReset = append(toReset, record)
+		record, err := k.GetNodeBlameRecord(ctx, addr)
+		if err != nil {
+			ctx.Logger().Error("fail to get node blame record", "address", addr.String(), "error", err)
+			continue
 		}
-	}
-	iter.Close()
-
-	for _, record := range toReset {
+		if record.KeygenBlameCountSinceChurn == 0 && record.KeysignBlameCountSinceChurn == 0 {
+			continue
+		}
 		record.ResetSinceChurnCounters()
 		if err := k.SetNodeBlameRecord(ctx, record); err != nil {
-			ctx.Logger().Error("fail to reset blame counters", "address", record.NodeAddress.String(), "error", err)
+			ctx.Logger().Error("fail to reset blame counters", "address", addr.String(), "error", err)
 		}
 	}
-
 	return nil
 }

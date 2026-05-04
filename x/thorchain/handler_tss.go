@@ -779,10 +779,27 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				}
 			}
 
-			// Reset all since_churn counters upon successful keygen
-			ctx.Logger().Info("successful keygen, resetting all blame since_churn counters")
-			if err = h.mgr.Keeper().ResetAllSinceChurnCounters(ctx); err != nil {
-				ctx.Logger().Error("fail to reset blame since_churn counters", "error", err)
+			// Reset since_churn counters only for the members of the
+			// just-succeeded keygen. A global reset would be unsafe during
+			// parallel multi-Asgard churn — a success in one Asgard would
+			// otherwise wipe pending blame counters for nodes in another
+			// Asgard that is still failing.
+			memberAddrs := make([]cosmos.AccAddress, 0, len(vault.Membership))
+			for _, member := range vault.Membership {
+				pkey, errPK := common.NewPubKey(member)
+				if errPK != nil {
+					ctx.Logger().Error("fail to parse vault member pubkey", "error", errPK, "pubkey", member)
+					continue
+				}
+				addr, errAddr := pkey.GetThorAddress()
+				if errAddr != nil {
+					ctx.Logger().Error("fail to derive thor address from member pubkey", "error", errAddr, "pubkey", member)
+					continue
+				}
+				memberAddrs = append(memberAddrs, addr)
+			}
+			if errReset := h.mgr.Keeper().ResetSinceChurnCountersForMembers(ctx, memberAddrs); errReset != nil {
+				ctx.Logger().Error("fail to reset blame since_churn counters", "error", errReset)
 			}
 
 			if rotateErr := h.rotateReadyKeygenVaultFamilies(ctx, keygenBlock); rotateErr != nil {
