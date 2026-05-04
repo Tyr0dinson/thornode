@@ -558,6 +558,14 @@ func (c Chain) DefaultCoinbase() float64 {
 		return 1.5625
 	case XMRChain:
 		return 0.6
+	case DASHChain:
+		// Dash subsidy declines ~7.1%/year (not a halving schedule). As of
+		// 2026-Q2 the block reward is ~1.55 DASH/block — see
+		// https://docs.dash.org/en/stable/docs/user/mining/index.html.
+		// DefaultCoinbase is a fallback for confirmation-count estimation
+		// when dynamic block-fee derivation is unavailable; precision matters
+		// less than direction. Revisit if drift exceeds 10%.
+		return 1.55
 	default:
 		return 0
 	}
@@ -575,14 +583,6 @@ func (c Chain) SS58Prefix() byte {
 		return 42
 	case DOTChain:
 		return 0
-	case DASHChain:
-		// Dash subsidy declines ~7.1%/year (not a halving schedule). As of
-		// 2026-Q2 the block reward is ~1.55 DASH/block — see
-		// https://docs.dash.org/en/stable/docs/user/mining/index.html.
-		// DefaultCoinbase is a fallback for confirmation-count estimation
-		// when dynamic block-fee derivation is unavailable; precision matters
-		// less than direction. Revisit if drift exceeds 10%.
-		return 1.55
 	default:
 		return 0
 	}
