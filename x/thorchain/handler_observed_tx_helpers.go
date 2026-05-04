@@ -461,8 +461,7 @@ func handleObservedTxInQuorum(
 	// streaming was requested explicitly in the memo or derived implicitly by
 	// the advanced queue. Outbounds still won't be signed until the inbound
 	// finalizes.
-	canProcessMempoolSwap := canUseMempoolSwap(ctx, mgr, voter.Tx.Tx, memo)
-	shouldHandleMempoolSwap := !hasFinalised && canProcessMempoolSwap
+	shouldHandleMempoolSwap := !hasFinalised && canUseMempoolSwap(ctx, mgr, voter.Tx.Tx, memo)
 
 	if !shouldHandleMempoolSwap && !hasFinalised {
 		ctx.Logger().Info("transaction pending confirmation counting", "hash", voter.TxID)
