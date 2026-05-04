@@ -419,13 +419,17 @@ At each epoch boundary, defined by `DynamicArbMinFeeWindowEpochDurationInBlocks`
 8. If pool fees increased, continue in the previous direction by `DynamicArbMinFeeStepBps`.
 9. If pool fees decreased, reverse the previous direction by `DynamicArbMinFeeStepBps`.
 10. If pool fees are unchanged, hold the active dynamic arb bps unchanged.
-11. Clamp the asset's active dynamic arb bps into the implicit range `0..base_min_slip_bps`.
+11. Clamp the asset's active dynamic arb bps into the implicit range `0..current_base_min_slip_bps`.
 
 This defines the net-positive threshold per asset. A lower dynamic arb floor for an asset that does not generate enough additional pool activity to increase total pool protocol fees causes that asset's controller to reverse toward a higher floor.
 
-### Relationship to App Subsidy Vaults
+### Precedence and Base Min-Slip Interaction
 
 This ADR is independent from `ADR 027 App-Funded Min-Slip Subsidy Vaults` (https://gitlab.com/thorchain/thornode/-/merge_requests/4792).
+
+For each swap leg, the implementation first reads the applicable base min-slip value from the existing config path: `TradeAccountsSlipMinBps` for trade-account legs and `SecuredAssetSlipMinBps` for secured-asset legs.
+
+The dynamic arb min fee never replaces those base Mimir values. It can only lower the effective min-slip bps for an eligible price-correcting leg.
 
 The two mechanisms may coexist:
 
@@ -437,27 +441,20 @@ dynamic arb path:
   lower bps granted because the trade improves pool price
 ```
 
-If both paths apply, the effective bps can be the lower of the two, but accounting must remain separate.
+Evaluation order is:
 
-For example:
+1. Calculate the base-fee result using the current base min-slip bps.
+2. If dynamic arb eligibility is satisfied, calculate the dynamic-arb-fee result using the active dynamic arb bps, capped at the current base min-slip bps.
+3. If an app-funded subsidy also applies, calculate the app-fee result according to ADR-027.
+4. Execute the leg with the lowest valid effective bps among base, dynamic arb, and app-funded subsidy.
 
-```text
-base bps:                 10
-app requested bps:         0
-dynamic arb bps:           5
-effective bps:             0
-app vault subsidy covers:  base-fee result - app-fee result
-protocol dynamic arb cost:  0
-```
+Accounting attribution remains separate:
 
-If no app subsidy applies:
+- If the app-funded bps is lower than or equal to the dynamic arb bps, the app subsidy covers the full difference between the base-fee result and the app-fee result, and protocol dynamic arb cost is zero.
+- If the dynamic arb bps is lower than the app-funded bps, the app subsidy covers the difference between the base-fee result and the app-fee result, while protocol dynamic arb cost covers only the additional difference between the app-fee result and the dynamic-arb-fee result.
+- If no app subsidy applies, protocol dynamic arb cost is the difference between the base-fee result and the dynamic-arb-fee result.
 
-```text
-base bps:                 10
-dynamic arb bps:           5
-effective bps:             5
-protocol dynamic arb cost: base-fee result - dynamic arb fee result
-```
+If the base min-slip Mimir changes during an epoch, swap execution uses the current block's base value. At epoch boundaries, the active dynamic arb bps is clamped into `0..current_base_min_slip_bps`.
 
 This separation avoids confusing commercial app subsidies with protocol-level price-quality incentives.
 
@@ -499,8 +496,6 @@ type DynamicArbMinFeeAssetConfig struct {
 
 Exact names and storage layout are implementation details.
 
-The base min slip is read from the existing min-slip config path. In the current codebase this means `TradeAccountsSlipMinBps` for trade assets and `SecuredAssetSlipMinBps` for secured assets.
-
 ### Swap Evaluation
 
 For each eligible swap leg:
@@ -508,13 +503,14 @@ For each eligible swap leg:
 1. Load pool state before execution.
 2. Load the pool asset reference price and the RUNE/USD denominator reference price.
 3. Reject dynamic arb min fee eligibility if the current-block reference price is unavailable or disabled.
-4. Calculate the base-fee result using the existing min-slip value.
-5. Calculate the candidate dynamic arb fee result using the active dynamic arb min fee value for the pool asset.
-6. Derive the candidate post-swap pool state.
-7. Calculate `pre_deviation` and candidate `post_deviation`.
-8. If `post_deviation + min_improvement_bps <= pre_deviation`, execute or commit the dynamic arb fee result.
-9. Otherwise execute or commit the base-fee result.
-10. If the dynamic arb fee result is used, emit or attach compact fee adjustment attributes with asset, pre-deviation, post-deviation, base bps, effective bps, and fee reduction value.
+4. Calculate the base-fee result using the current base min-slip value.
+5. Calculate the candidate dynamic arb fee result using the active dynamic arb min fee value for the pool asset, capped at the current base min-slip value.
+6. Derive the candidate dynamic arb post-swap pool state.
+7. Calculate `pre_deviation` and candidate dynamic arb `post_deviation`.
+8. If `post_deviation + min_improvement_bps <= pre_deviation`, mark the dynamic arb fee result as valid.
+9. If an app-funded subsidy applies, calculate the app-fee result according to ADR-027.
+10. Execute or commit the lowest valid effective bps among base, dynamic arb, and app-funded subsidy.
+11. If the dynamic arb fee result is used, emit or attach compact fee adjustment attributes with asset, pre-deviation, post-deviation, base bps, effective bps, and fee reduction value.
 
 ### Crossing Rules
 
