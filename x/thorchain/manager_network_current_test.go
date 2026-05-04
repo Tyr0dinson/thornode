@@ -2876,6 +2876,195 @@ func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTradeTargetSubtracted
 		Commentf("BTC solvency: expected 0 (trade streaming output subtracted), got %s", btcSolvency))
 }
 
+// TestSolvencyStreamingSwapTradeAssetTarget locks in the trade-target streaming
+// fix: while a BTC.BTC -> BSC~USDC advanced streaming swap is mid-flight,
+// pool.BalanceAsset has been reduced for each sub-swap but TradeUnit.Depth is
+// not bumped until nativeTxOut runs after settleSwap. Step 4 must therefore
+// subtract msg.State.Out from the L1 target's solvency. Once settlement
+// completes — queue item removed and TradeUnit.Depth populated — Step 5 must
+// carry the same liability without double counting.
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTradeAssetTarget(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	bscUSDC, err := common.NewAsset("BSC.USDC-0X8AC76A51CC950D9822D68B83FE1AD97B32CD580D")
+	c.Assert(err, IsNil)
+
+	// The deduction in calculateNetworkSolvency keys assetAmounts by the L1
+	// form of msg.TargetAsset.GetLayer1Asset(). Guard against a silent no-op
+	// if the trade↔L1 round-trip ever drops the contract suffix.
+	c.Assert(bscUSDC.GetTradeAsset().GetLayer1Asset().Equals(bscUSDC), Equals, true)
+
+	bscPool := NewPool()
+	bscPool.Asset = bscUSDC
+	bscPool.BalanceAsset = cosmos.NewUint(800 * common.One)
+	bscPool.BalanceRune = cosmos.NewUint(800 * common.One)
+	bscPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, bscPool), IsNil)
+
+	// Step 4 errors if the swap source asset is not in assetAmounts. Seed BTC
+	// as a tracked L1 pool; balance matches the vault holding so BTC solvency
+	// stays at 0 and does not pollute the BSC.USDC assertion.
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(bscUSDC, cosmos.NewUint(1000*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Mid-stream advanced swap: BTC.BTC -> BSC~USDC, partially progressed,
+	// 200 BSC.USDC already emitted from the pool but not yet credited as
+	// trade depth. State carried inline (V2) — no SetStreamingSwap fallback.
+	txID := GetRandomTxHash()
+	msg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    txID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		},
+		TargetAsset: bscUSDC.GetTradeAsset(),
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 5,
+			Count:    2,
+			Interval: 1,
+			Deposit:  cosmos.NewUint(1 * common.One),
+			In:       cosmos.NewUint(40000000), // 0.4 BTC processed
+			Out:      cosmos.NewUint(200 * common.One),
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, msg), IsNil)
+
+	// Vault 1000 - Pool 800 - State.Out 200 = 0
+	// Without the fix: Vault 1000 - Pool 800 = +200 (false over-solvency).
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	bscSolvency := math.ZeroInt()
+	for _, s := range solvency {
+		if s.Asset.Equals(bscUSDC) {
+			bscSolvency = s.Amount
+		}
+	}
+	c.Assert(bscSolvency.Equal(math.ZeroInt()), Equals, true,
+		Commentf("BSC.USDC solvency mid-stream: expected 0, got %s", bscSolvency))
+
+	// Settlement: queue item removed, TradeUnit.Depth populated.
+	c.Assert(mgr.Keeper().RemoveAdvSwapQueueItem(ctx, txID, 0), IsNil)
+	tu := types.NewTradeUnit(bscUSDC.GetTradeAsset())
+	tu.Units = cosmos.NewUint(200 * common.One)
+	tu.Depth = cosmos.NewUint(200 * common.One)
+	mgr.Keeper().SetTradeUnit(ctx, tu)
+
+	// Vault 1000 - Pool 800 - TradeUnit.Depth 200 = 0
+	// Step 5 carries the liability; no double counting now that the queue
+	// entry is gone.
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	bscSolvency = math.ZeroInt()
+	for _, s := range solvency {
+		if s.Asset.Equals(bscUSDC) {
+			bscSolvency = s.Amount
+		}
+	}
+	c.Assert(bscSolvency.Equal(math.ZeroInt()), Equals, true,
+		Commentf("BSC.USDC solvency post-settlement: expected 0, got %s", bscSolvency))
+}
+
+// TestSolvencyStreamingSwapSecuredAssetTarget mirrors the trade-target test for
+// secured assets. Settlement timing is identical: nativeTxOut bumps the secured
+// pool Depth via SecuredAssetManager.Deposit only after settleSwap, so during
+// the queued window State.Out must be subtracted from the L1 target solvency.
+// Step 5 then carries the liability via the secured pool Depth once settlement
+// completes.
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapSecuredAssetTarget(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	bscUSDC, err := common.NewAsset("BSC.USDC-0X8AC76A51CC950D9822D68B83FE1AD97B32CD580D")
+	c.Assert(err, IsNil)
+	c.Assert(bscUSDC.GetSecuredAsset().GetLayer1Asset().Equals(bscUSDC), Equals, true)
+
+	bscPool := NewPool()
+	bscPool.Asset = bscUSDC
+	bscPool.BalanceAsset = cosmos.NewUint(800 * common.One)
+	bscPool.BalanceRune = cosmos.NewUint(800 * common.One)
+	bscPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, bscPool), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(bscUSDC, cosmos.NewUint(1000*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	msg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    txID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		},
+		TargetAsset: bscUSDC.GetSecuredAsset(),
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 5,
+			Count:    2,
+			Interval: 1,
+			Deposit:  cosmos.NewUint(1 * common.One),
+			In:       cosmos.NewUint(40000000),
+			Out:      cosmos.NewUint(200 * common.One),
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, msg), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	bscSolvency := math.ZeroInt()
+	for _, s := range solvency {
+		if s.Asset.Equals(bscUSDC) {
+			bscSolvency = s.Amount
+		}
+	}
+	c.Assert(bscSolvency.Equal(math.ZeroInt()), Equals, true,
+		Commentf("BSC.USDC solvency mid-stream (secured target): expected 0, got %s", bscSolvency))
+
+	// Settlement: queue item removed, secured pool Depth populated.
+	c.Assert(mgr.Keeper().RemoveAdvSwapQueueItem(ctx, txID, 0), IsNil)
+	securedPool := types.NewSecuredAsset(bscUSDC.GetSecuredAsset())
+	securedPool.Depth = cosmos.NewUint(200 * common.One)
+	mgr.Keeper().SetSecuredAsset(ctx, securedPool)
+
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	bscSolvency = math.ZeroInt()
+	for _, s := range solvency {
+		if s.Asset.Equals(bscUSDC) {
+			bscSolvency = s.Amount
+		}
+	}
+	c.Assert(bscSolvency.Equal(math.ZeroInt()), Equals, true,
+		Commentf("BSC.USDC solvency post-settlement (secured target): expected 0, got %s", bscSolvency))
+}
+
 func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
