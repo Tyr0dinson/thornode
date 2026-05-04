@@ -555,9 +555,13 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 							mult = 1 // Fallback to base penalty
 						}
 
-						// Apply escalated penalties
+						// Apply escalated penalties.
+						// JailTimeKeygenBase is a per-blame base (multiplied by the
+						// blame-since-churn count). It is intentionally distinct from
+						// JailTimeKeygen, which is the flat jail period used by the
+						// active-node and late-signer paths.
 						baseSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints)
-						baseJailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygen)
+						baseJailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygenBase)
 
 						escalatedSlashPoints := baseSlashPoints * mult
 						escalatedJailTime := baseJailTime * mult

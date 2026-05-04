@@ -56,6 +56,7 @@ const (
 	MissBlockSignSlashPoints
 	ObservationDelayFlexibility
 	JailTimeKeygen
+	JailTimeKeygenBase
 	JailTimeKeysign
 	MaxKeygenBlameMultiplier
 	NodePauseChainBlocks
