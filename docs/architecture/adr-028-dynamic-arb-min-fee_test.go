@@ -748,7 +748,7 @@ func dynamicArbMinFeeHistoricalSampleWindows(latest int64) ([]dynamicArbMinFeeHi
 		return nil, fmt.Errorf("latest height %d is too low for one full historical sample day", latest)
 	}
 
-	rng := rand.New(rand.NewSource(dynamicArbMinFeeHistoricalSampleSeed))
+	rng := rand.New(rand.NewSource(dynamicArbMinFeeHistoricalSampleSeed)) //nolint:gosec
 	windows := make([]dynamicArbMinFeeHistoricalSampleWindow, 0, dynamicArbMinFeeHistoricalSampleDays)
 	for day := 0; day < dynamicArbMinFeeHistoricalSampleDays; day++ {
 		dayEnd := latest - int64(day*dynamicArbMinFeeHistoricalDayBlocks)
@@ -945,14 +945,6 @@ func dynamicArbMinFeeHistoricalFetchSampleBlocks(client *http.Client, windows []
 	sort.Slice(heights, func(i, j int) bool {
 		return heights[i] < heights[j]
 	})
-	return dynamicArbMinFeeHistoricalFetchBlockHeights(client, heights)
-}
-
-func dynamicArbMinFeeHistoricalFetchBlocks(client *http.Client, startHeight, endHeight int64) (map[int64]dynamicArbMinFeeHistoricalBlock, error) {
-	heights := make([]int64, 0, endHeight-startHeight+1)
-	for height := startHeight; height <= endHeight; height++ {
-		heights = append(heights, height)
-	}
 	return dynamicArbMinFeeHistoricalFetchBlockHeights(client, heights)
 }
 
