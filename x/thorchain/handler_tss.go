@@ -544,14 +544,14 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 						}
 					} else {
 						// Track the keygen blame per node
-						if err = h.mgr.Keeper().IncrementKeygenBlame(ctx, na.NodeAddress); err != nil {
-							ctx.Logger().Error("fail to increment keygen blame", "error", err)
+						if errInc := h.mgr.Keeper().IncrementKeygenBlame(ctx, na.NodeAddress); errInc != nil {
+							ctx.Logger().Error("fail to increment keygen blame", "error", errInc)
 						}
 
 						// Calculate escalated penalties based on blame history
-						mult, err := h.mgr.Keeper().CalculateKeygenPenaltyMultiplier(ctx, na.NodeAddress)
-						if err != nil {
-							ctx.Logger().Error("fail to calculate keygen penalty multiplier", "error", err)
+						mult, errMult := h.mgr.Keeper().CalculateKeygenPenaltyMultiplier(ctx, na.NodeAddress)
+						if errMult != nil {
+							ctx.Logger().Error("fail to calculate keygen penalty multiplier", "error", errMult)
 							mult = 1 // Fallback to base penalty
 						}
 
@@ -578,9 +578,9 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 							ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", errJail)
 						}
 
-						network, err := h.mgr.Keeper().GetNetwork(ctx)
-						if err != nil {
-							return fmt.Errorf("fail to get network: %w", err)
+						network, errNet := h.mgr.Keeper().GetNetwork(ctx)
+						if errNet != nil {
+							return fmt.Errorf("fail to get network: %w", errNet)
 						}
 
 						slashBond := network.CalcNodeRewards(cosmos.NewUint(uint64(escalatedSlashPoints)))
