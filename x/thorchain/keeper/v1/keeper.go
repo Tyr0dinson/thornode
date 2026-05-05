@@ -131,7 +131,8 @@ const (
 	prefixDynamicFee                types.DbPrefix = "dynfee/"
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
-	prefixPendingAltNativeTxFee     types.DbPrefix = "pending_alt_native_fee/"
+	prefixVolume                    types.DbPrefix = "volume/"
+	prefixAltNativeFeeEscrow        types.DbPrefix = "alt_native_fee_escrow/"
 	prefixAltNativeFeeEscrow        types.DbPrefix = "alt_native_fee_escrow/"
 )
 
