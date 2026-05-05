@@ -512,10 +512,11 @@ func (s *PubKeyMgrSuite) TestGetSupportedChains(c *C) {
 
 	chains := pubkeyMgr.GetSupportedChains()
 	sort.Slice(chains, func(i, j int) bool { return chains[i] < chains[j] })
-	c.Assert(chains, HasLen, 3) // BTC, DOGE, ETH (union of active+retiring)
+	c.Assert(chains, HasLen, 4) // BTC, DOGE, ETH, LTC (union of active+retiring+inactive)
 	c.Check(chains[0], Equals, common.BTCChain)
 	c.Check(chains[1], Equals, common.DOGEChain)
 	c.Check(chains[2], Equals, common.ETHChain)
+	c.Check(chains[3], Equals, common.LTCChain)
 }
 
 func (s *PubKeyMgrSuite) TestGetSupportedChainsNoMembership(c *C) {

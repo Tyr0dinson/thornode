@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // OnNewPubKey is a function that used as a callback , if somehow we need to do additional process when a new pubkey get added
@@ -394,13 +395,18 @@ func (pkm *PubKeyManager) GetContract(chain common.Chain, pubKey common.PubKey) 
 	return common.NoAddress
 }
 
-// GetSupportedChains returns the union of chains from all active and retiring
-// Asgard vaults where this node is a member. Returns AllChains only when the
-// node identity is not yet loaded (bootstrap) or the bridge query fails
-// (transient — preserves inbound observation rather than dropping it). When
-// the bridge query succeeds and finds no membership for this node — i.e. a
-// retired/standby node — returns an empty slice so opt-in semantics are
-// honored and the node does not resume observing every chain.
+// GetSupportedChains returns the union of chains from all active, retiring,
+// and inactive Asgard vaults where this node is a member. Returns AllChains
+// only when the node identity is not yet loaded (bootstrap) or the bridge
+// query fails (transient — preserves inbound observation rather than
+// dropping it). When the bridge query succeeds and finds no membership for
+// this node — i.e. a retired/standby node — returns an empty slice so
+// opt-in semantics are honored and the node does not resume observing
+// every chain.
+//
+// Inactive vault membership is included so members of retired vaults that
+// still hold funds continue observing those chains to handle late inbounds
+// (e.g. user funds sent to a stale vault address that need to be refunded).
 func (pkm *PubKeyManager) GetSupportedChains() []common.Chain {
 	nodePubKey := pkm.GetNodePubKey(common.SigningAlgoSecp256k1)
 	if nodePubKey.IsEmpty() {
@@ -415,7 +421,7 @@ func (pkm *PubKeyManager) GetSupportedChains() []common.Chain {
 
 	seen := make(map[common.Chain]bool)
 	for _, vault := range vaults {
-		if !vault.IsActive() && !vault.IsRetiring() {
+		if !vault.IsActive() && !vault.IsRetiring() && vault.Status != types.VaultStatus_InactiveVault {
 			continue
 		}
 		isMember := false
