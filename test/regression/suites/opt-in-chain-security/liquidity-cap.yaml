@@ -585,37 +585,13 @@ asserts:
   - .|[..|select(.type? == "refund")][0].reason | contains("liquidity cap exceeded")
 ---
 ########################################################################################
-# Test 4: Swap RUNE→BTC rejected (cap exceeded on target chain).
-########################################################################################
-type: tx-deposit
-signer: {{ addr_thor_fox }}
-coins:
-  - amount: "1000000000"
-    asset: "rune"
-memo: "=:BTC.BTC:{{ addr_btc_fox }}"
----
-type: create-blocks
-count: 1
-skip_invariants: true
----
-type: check
-endpoint: http://localhost:1317/thorchain/block
-asserts:
-  - .|[..|select(.type? == "refund")][0].reason | contains("liquidity cap exceeded")
----
-########################################################################################
-# Verify existing pool untouched — no volume, LP units unchanged.
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
-asserts:
-  - .LP_units == "100000000000"
-  - .volume_rune == "0"
-  - .volume_asset == "0"
----
-########################################################################################
-# Test 5: Withdrawal from BTC pool still succeeds (cap does not block outflows).
+# Test 4: Withdrawal from BTC pool still succeeds (cap does not block outflows).
 # Fox withdraws 10% of LP position (1000 basis points).
+#
+# Note: tests covering swap-side cap enforcement are exercised in unit tests
+# (TestQuoteSwapChainLiquidityCap, TestValidateChainLiquidityCap). The cap is
+# applied on the source side per the post-Huginn-review semantics, so a
+# RUNE→BTC swap is not capped here (BTC vault is being drained, not credited).
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
