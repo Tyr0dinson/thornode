@@ -560,23 +560,6 @@ func (c Chain) SS58Prefix() byte {
 	}
 }
 
-// SS58Prefix returns the SS58 prefix for Substrate chains
-func (c Chain) SS58Prefix() byte {
-	// All local mocknet dev networks are using prefix: 42
-	if CurrentChainNetwork == MockNet {
-		return 42
-	}
-
-	switch c {
-	case TAOChain:
-		return 42
-	case DOTChain:
-		return 0
-	default:
-		return 0
-	}
-}
-
 func (c Chain) ExistentialDeposit() cosmos.Uint {
 	switch c {
 	case XRPChain:
