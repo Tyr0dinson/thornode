@@ -226,7 +226,7 @@ func (s *KeeperNodeBlameSuite) TestResetSinceChurnCountersForMembers(c *C) {
 	record4, _ := k.GetNodeBlameRecord(ctx, addr4)
 	c.Check(record4.KeygenBlameCountSinceChurn, Equals, int64(2))
 
-	err = k.ResetSinceChurnCountersForMembers(ctx, []cosmos.AccAddress{cosmos.AccAddress{}, addr4})
+	err = k.ResetSinceChurnCountersForMembers(ctx, []cosmos.AccAddress{{}, addr4})
 	c.Assert(err, IsNil)
 
 	record4, _ = k.GetNodeBlameRecord(ctx, addr4)
