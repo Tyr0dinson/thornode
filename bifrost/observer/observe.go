@@ -789,7 +789,16 @@ func (o *Observer) processSolvencyQueue(ctx context.Context) {
 			if !more {
 				return
 			}
-			if solvencyItem.Chain.IsEmpty() || solvencyItem.PubKey.IsEmpty() {
+			// Skip reports with empty Coins. These typically indicate the chain
+			// client could not enumerate the vault's on-chain balance (e.g. an
+			// RPC failure during simulation startup), and being processed as a
+			// "vault has zero of everything" claim against a non-empty
+			// vault.Coins on THORNode side will trip a spurious solvency halt.
+			//
+			// EVM clients post-MR !4800 source their coin set from vault.Coins
+			// (so the only way GetVaultBalances yields empty is that all asset
+			// queries failed) — same skip-on-empty semantics apply.
+			if solvencyItem.Chain.IsEmpty() || solvencyItem.Coins.IsEmpty() || solvencyItem.PubKey.IsEmpty() {
 				continue
 			}
 			o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
