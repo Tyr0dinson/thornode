@@ -30,6 +30,8 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
+var ErrStaleNonce = fmt.Errorf("stale nonce")
+
 // Client is a generic client for Substrate blockchains.
 type Client struct {
 	*generic.Client
@@ -297,6 +299,16 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	if tx.VaultPubKeyEddsa.IsEmpty() {
 		return nil, nil, nil, errors.New("vault Ed25519 public key is empty")
 	}
+	if len(tx.Coins) != 1 {
+		return nil, nil, nil, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
+	}
+	if tx.GasRate < 0 {
+		return nil, nil, nil, fmt.Errorf("negative gas rate: %d", tx.GasRate)
+	}
+	gasAsset := c.GetChain().GetGasAsset()
+	if !tx.Coins[0].Asset.Equals(gasAsset) {
+		return nil, nil, nil, fmt.Errorf("substrate clients only support the native gas asset %s, got %s", gasAsset, tx.Coins[0].Asset)
+	}
 
 	if c.HasSigned(tx) {
 		c.logger.Info().Interface("tx", tx).Msg("transaction already signed, ignoring...")
@@ -314,18 +326,6 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		if memoObj.IsInbound() {
 			return nil, nil, nil, errors.New("inbound memo should not be used for outbound tx")
 		}
-	}
-
-	if len(tx.Coins) != 1 {
-		return nil, nil, nil, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
-	}
-
-	// Substrate clients build a Balances::transfer_keep_alive denominated in
-	// the chain's native gas asset. Reject any other asset at the boundary
-	// rather than silently treating its amount as the gas-asset amount.
-	gasAsset := c.GetChain().GetGasAsset()
-	if !tx.Coins[0].Asset.Equals(gasAsset) {
-		return nil, nil, nil, fmt.Errorf("substrate clients only support the native gas asset %s, got %s", gasAsset, tx.Coins[0].Asset)
 	}
 
 	// Get vault address
@@ -361,10 +361,6 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	txHash := stypes.ExtrinsicHash(rawTx)
 
 	// Create instant observation TxInItem
-	if tx.GasRate < 0 {
-		return nil, nil, nil, fmt.Errorf("negative gas rate: %d", tx.GasRate)
-	}
-
 	gasCoin := c.GetChain().NativeGasToThorCoinCeil(cosmos.NewUint(uint64(tx.GasRate)))
 	if gasCoin.Amount.IsZero() {
 		gasCoin.Amount = cosmos.OneUint()
@@ -526,17 +522,14 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 		// Same pattern as XRP (tefPAST_SEQ) and Cosmos (CosmosSuccessCodes).
 		case strings.Contains(errMsg, "AlreadyImported") || strings.Contains(errMsg, "already imported"):
 			c.logger.Info().Str("txid", txHash).Msg("extrinsic already in pool, treating as success")
-
 		case strings.Contains(errMsg, "Stale"):
 			// Stale means the on-chain nonce has advanced past this tx's slot.
 			// That *usually* means our tx already confirmed — but it can also mean
 			// someone else burned the slot (operator error, double-signer, state
-			// corruption). Do NOT mark signed here; let the scanner confirm via
-			// the normal inbound-observation path. On retry, Checkpoint reuses
-			// the same nonce under a fresh mortal era.
-			c.logger.Info().Str("txid", txHash).Msg("extrinsic stale - deferring confirmation to scanner")
-			// triggers retry; SignedTx cleared in sign.go
-			return "", fmt.Errorf("stale nonce: %w", err)
+			// corruption). Do NOT mark signed here, abandon instead.
+			// Re-broadcasting at a fresh nonce risks a double-spend.
+			c.logger.Err(err).Str("txid", txHash).Msg("stale nonce")
+			return "", ErrStaleNonce
 		default:
 			return "", fmt.Errorf("failed to broadcast tx: %w", err)
 		}

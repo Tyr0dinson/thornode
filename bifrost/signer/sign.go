@@ -11,6 +11,7 @@ import (
 	"time"
 
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/cenkalti/backoff"
@@ -702,6 +703,20 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	hash, err := chain.BroadcastTx(tx, signedTx)
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
+
+		if errors.Is(err, substrate.ErrStaleNonce) {
+			s.logger.Err(err).
+				Str("memo", tx.Memo).
+				Str("chain", tx.Chain.String()).
+				Interface("tx", item.SignedTx).
+				Msg("abandon txout")
+
+			removeErr := s.storage.Remove(item)
+			if removeErr != nil {
+				s.logger.Err(removeErr).Msg("fail to remove item")
+			}
+			return nil, nil, err
+		}
 
 		// Substrate chains (DOT, TAO) use mortal-era transactions that can expire
 		// before the signing window ends. On broadcast failure, clear SignedTx so

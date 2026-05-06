@@ -2,13 +2,13 @@ package substrate
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -471,8 +471,7 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 
 	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
 	c.Assert(err, NotNil, Commentf("BroadcastTx must return an error on Stale"))
-	c.Check(strings.Contains(err.Error(), "stale nonce"), Equals, true,
-		Commentf("error must wrap the stale-nonce signal: got %v", err))
+	c.Check(errors.Is(err, ErrStaleNonce), Equals, true, Commentf("BroadcastTx must return an error on Stale"))
 	c.Check(txHash, Equals, "", Commentf("tx hash must be empty when broadcast errors"))
 }
 

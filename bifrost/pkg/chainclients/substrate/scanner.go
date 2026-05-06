@@ -676,9 +676,12 @@ func (s *Scanner) updateNetworkFee(height int64) {
 		TransactionRate: fee,
 	}
 
+	timer := time.NewTimer(constants.ThorchainBlockTime)
+	defer timer.Stop()
+
 	select {
 	case s.globalNetworkFeeQueue <- networkFee:
-	case <-time.After(constants.ThorchainBlockTime):
+	case <-timer.C:
 		s.logger.Error().Msg("timeout sending network fee to THORChain")
 		return
 	}

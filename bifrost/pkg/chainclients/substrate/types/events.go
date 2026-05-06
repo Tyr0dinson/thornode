@@ -142,18 +142,14 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 					fees[extrinsicIdx] = binary.LittleEndian.Uint64(part)
 				case 16:
 					amount, parseErr := cosmos.ParseUint128(part)
-					if parseErr != nil {
-						// skip this extrinsic's fee, don't abort the whole block
-						break
+					switch {
+					case parseErr != nil:
+						// skip, ParseUint128 failed
+					case amount.GT(cosmos.NewUint(math.MaxUint64)):
+					// skip, exceeds uint64
+					default:
+						fees[extrinsicIdx] = amount.Uint64()
 					}
-
-					if amount.GT(cosmos.NewUint(math.MaxUint64)) {
-						// fee exceeds uint64 — implausibly large for actual chain fees;
-						// skip this extrinsic's fee rather than abandoning the block
-						break
-					}
-
-					fees[extrinsicIdx] = amount.Uint64()
 				default:
 					return results, fees, fmt.Errorf("unsupported BalanceSize: %d", sizeBalance)
 				}
