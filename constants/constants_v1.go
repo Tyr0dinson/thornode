@@ -125,6 +125,7 @@ func NewConstantValue() *ConstantVals {
 			SynthSlipMinBps:                     0,                  // Minimum synth asset swap fee in basis points
 			DerivedSlipMinBps:                   0,                  // Minimum derived asset swap fee in basis points
 			StableSlipMinBps:                    0,                  // Minimum swap fee in basis points for stable-to-stable swaps
+			WasmArbSlipMinBps:                   10,                 // Minimum swap fee in basis points for swaps originating from WasmArbContract
 			SlipMinBpsMax:                       100,                // Maximum slip min bps for all asset types
 			RUNEPoolEnabled:                     0,                  // enable/disable RUNE Pool
 			RUNEPoolDepositMaturityBlocks:       14400 * 90,         // blocks from last deposit to allow withdraw
@@ -158,6 +159,13 @@ func NewConstantValue() *ConstantVals {
 			ModifyLimitSwapMaxIterations:        100,                // maximum iterations when searching for a user's swap in a ratio-grouped index
 			POLReserveSystemIncomeBps:           0,                  // basis points of system income routed to POL reserve, 0 = disabled
 			POLReserveMaxDeployment:             10_000_000_000,     // maximum RUNE deployed per pool per block (100 RUNE in 1e8 units)
+			L1DynamicFeeEnabled:                 0,                  // enable/disable dynamic L1 min fee
+			L1DynamicFeeEpochBlocks:             14400,              // number of blocks per dynamic fee epoch
+			L1DynamicFeeFloorBPS:                1,                  // floor basis points for dynamic L1 min fee
+			L1DynamicFeeCeilingBPS:              20,                 // ceiling basis points for dynamic L1 min fee
+			L1DynamicFeeStepBPS:                 1,                  // step basis points for dynamic L1 min fee adjustment
+			L1DynamicFeeDeadbandBPS:             1000,               // % change in fees_rune (in bps, 10000 = 100%) below which the dynamic L1 fee controller holds
+			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fees_rune gradient (clamped into [1, MaxDynamicFeeHistory])
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
@@ -168,6 +176,7 @@ func NewConstantValue() *ConstantVals {
 			MarketingFundAddress: "thor1usj8cqjmjea32csxn5fma96ffeulln40gyrahn", // marketing fund address for ADR 21
 			OverSolvencyAddress:  "thor1lhufh0mwasa0lk9udppdegmvnkgqt08f0m9p5g", // over-solvency sweep destination address
 			RequiredPriceFeeds:   "ATOM,AVAX,BCH,BNB,BTC,DOGE,ETH,LTC,RUNE,SOL,TRX,USDC,USDT,XRP,ZEC",
+			WasmArbContract:      "thor1n5a08r0zvmqca39ka2tgwlkjy9ugalutk7fjpzptfppqcccnat2ska5t4g", // deployed instance of https://gitlab.com/thorchain/rujira/-/tree/main/contracts/rujira-thorchain-swap
 		},
 	}
 }

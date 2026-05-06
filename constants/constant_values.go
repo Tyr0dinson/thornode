@@ -128,6 +128,7 @@ const (
 	TradeAccountsDepositEnabled
 	SecuredAssetSlipMinBps
 	StableSlipMinBps
+	WasmArbSlipMinBps
 	EVMDisableContractWhitelist
 	OperationalVotesMin
 	RUNEPoolEnabled
@@ -171,6 +172,7 @@ const (
 	ModifyLimitSwapMaxIterations
 	POLReserveSystemIncomeBps
 	POLReserveMaxDeployment
+	WasmArbContract
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
@@ -190,6 +192,13 @@ const (
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
 	P2PGateDisabled
+	L1DynamicFeeEnabled
+	L1DynamicFeeEpochBlocks
+	L1DynamicFeeFloorBPS
+	L1DynamicFeeCeilingBPS
+	L1DynamicFeeStepBPS
+	L1DynamicFeeDeadbandBPS
+	L1DynamicFeeWindowEpochs
 )
 
 // ConstantValues define methods used to get constant values

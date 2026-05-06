@@ -49,7 +49,7 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 
 // getAllUtxos will iterate unspend utxos for the given address and return the oldest
 // set of utxos that can cover the amount.
-func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount, sweepDust bool) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
 	// get all unspent utxos
 	addr, err := pubkey.GetAddress(c.cfg.ChainID)
 	if err != nil {
@@ -83,23 +83,15 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount, swee
 
 		// analyze-ignore(float-comparison)
 		if item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations || item.Amount < minUTXOAmt {
-			// For migration transactions, include confirmed sub-dust UTXOs to sweep all
-			// vault funds. This allows resolving balance mismatches where the on-chain
-			// UTXOs don't match the internal ledger, without requiring a consensus change.
-			// analyze-ignore(float-comparison)
-			if sweepDust && item.Amount < minUTXOAmt && item.Confirmations >= c.cfg.UTXO.MinUTXOConfirmations {
-				// Allow confirmed sub-dust UTXOs through for migration sweeps
-			} else {
-				// use all UTXOs sent from asgard, regardless of confirmations or dust threshold
-				isSelfTx := c.isSelfTransaction(item.TxID)
+			// use all UTXOs sent from asgard, regardless of confirmations or dust threshold
+			isSelfTx := c.isSelfTransaction(item.TxID)
 
-				// confirm sender of the UTXO is not asgard in case of lost block meta
-				if !isSelfTx {
-					isSelfTx = c.isFromAsgard(item.TxID)
-				}
-				if !isSelfTx {
-					continue
-				}
+			// confirm sender of the UTXO is not asgard in case of lost block meta
+			if !isSelfTx {
+				isSelfTx = c.isFromAsgard(item.TxID)
+			}
+			if !isSelfTx {
+				continue
 			}
 
 			// For unconfirmed UTXOs (even self-transactions), check ancestor, descendant, and combined
@@ -416,8 +408,11 @@ func (c *Client) getGasCoinZEC(tx *wire.MsgTx, memo string) common.Coin {
 	// https://zips.z.cash/zip-0317
 	// 8 bytes value + 1 byte length + OP_RETURN + OP_PUSHBYTES/DATA
 	// -> 8 + 1 + 1 + 2 (using two bytes for OP_PUSHDATA2 for simplicity)
-	bytesOpReturn := 12 + len(memo)
-	actionsMemo := (bytesOpReturn + 34 - 1) / 34
+	var actionsMemo int
+	if len(memo) > 0 {
+		bytesOpReturn := 12 + len(memo)
+		actionsMemo = (bytesOpReturn + 34 - 1) / 34
+	}
 
 	// assume 2 tx out: one to customer + one back to self
 	amount := 5000*max(len(tx.TxIn), 2+actionsMemo) + ZecExtraFee
@@ -426,15 +421,7 @@ func (c *Client) getGasCoinZEC(tx *wire.MsgTx, memo string) common.Coin {
 }
 
 func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx, map[string]int64, error) {
-	// Parse memo early to determine if this is a migration (used for dust UTXO inclusion)
-	isMigrate := false
-	if memoStr := tx.GetMemo(); memoStr != "" {
-		if parsedMemo, mErr := mem.ParseMemo(common.LatestVersion, memoStr); mErr == nil {
-			isMigrate = parsedMemo.GetType() == mem.TxMigrate
-		}
-	}
-
-	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx), isMigrate)
+	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 	}
@@ -724,7 +711,7 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend int64) er
 
 	// Probe UTXO availability for consolidation.
 	// The amount used here doesn't matter , just to see whether there are more than 15 UTXO available or not
-	utxos, err := c.getUtxoToSpend(vault.PubKey, 0, false)
+	utxos, err := c.getUtxoToSpend(vault.PubKey, 0)
 	if err != nil {
 		return fmt.Errorf("get utxos to spend: %w", err)
 	}

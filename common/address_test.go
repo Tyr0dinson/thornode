@@ -11,7 +11,7 @@ type AddressSuite struct{}
 var _ = Suite(&AddressSuite{})
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 18)
+	c.Assert(AllChains, HasLen, 19)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)
@@ -377,9 +377,41 @@ func (s *AddressSuite) TestAddressMapping(c *C) {
 	c.Check(err, IsNil)
 	c.Check(mapped.String(), Equals, "cosmos1pfy63nact82mfmts5jv87p2uayxqs29gf8070td7kzhwzx6zc9ruqdehkrz")
 
-	// Invalid
+	// Non-bech32 chains (XRP, SOL, XMR, TRON, TAO, DOT) use hash-based mapping.
 	addr, err = NewAddress("r4KYDZBbcAaJJ5MQPwRR9apJ2p5EBz8bq8")
 	c.Check(err, IsNil)
-	_, err = addr.MappedAccAddress()
-	c.Check(err, NotNil)
+	mapped, err = addr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mapped), Equals, 20)
+
+	addr, err = NewAddress("TKSrg7Ffs81r8QsLMfqRHG82hbFYz2Bw5W")
+	c.Check(err, IsNil)
+	mapped, err = addr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mapped), Equals, 20)
+
+	addr, err = NewAddress("BEcrPLugbAY1zEJGUNYgzcsxMi72rPeVwG6qKm96LK5g")
+	c.Check(err, IsNil)
+	mapped, err = addr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mapped), Equals, 20)
+
+	// SS58 addresses (TAO/DOT). Test determinism by mapping the same
+	// address twice and asserting equality, plus that two distinct
+	// SS58 addresses map to distinct AccAddresses.
+	taoAddr, err := NewAddress("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY")
+	c.Check(err, IsNil)
+	mappedTAO1, err := taoAddr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mappedTAO1), Equals, 20)
+	mappedTAO2, err := taoAddr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(mappedTAO1.Equals(mappedTAO2), Equals, true)
+
+	dotAddr, err := NewAddress("5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty")
+	c.Check(err, IsNil)
+	mappedDOT, err := dotAddr.MappedAccAddress()
+	c.Check(err, IsNil)
+	c.Check(len(mappedDOT), Equals, 20)
+	c.Check(mappedTAO1.Equals(mappedDOT), Equals, false)
 }

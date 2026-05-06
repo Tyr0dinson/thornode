@@ -210,6 +210,8 @@
         }
       ],
       "chain_contracts": [],
+      "dynamic_fee_accumulators": [],
+      "dynamic_fee_records": [],
       "last_chain_heights": [],
       "last_signed_height": "6",
       "liquidity_providers": [
@@ -389,6 +391,7 @@
           "asset": "ETH.USDZ-0X9999999999999999999999999999999999999999"
         }
       ],
+      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "100000000000",
@@ -560,8 +563,7 @@
           "status": "ActiveVault",
           "type": "AsgardVault"
         }
-      ],
-      "pol_reserve_deposits": []
+      ]
     },
     "upgrade": {},
     "wasm": {

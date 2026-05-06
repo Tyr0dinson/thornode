@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,6 +44,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/aggregators"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 const (
@@ -803,6 +805,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to marshal nonce: %w", err)
 		}
+
+		// Wait for the approval to be mined before estimating gas for the outbound.
+		// The transferFrom will revert if the approval isn't on-chain yet. This only
+		// happens once per vault per token, so the one-time delay is acceptable.
+		// If the approval is still not mined in time, the outbound will be rescheduled.
+		wait := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()*3) * time.Millisecond
+		c.logger.Info().Dur("wait", wait).Msg("waiting for approval transaction to be mined")
+		time.Sleep(wait)
 	}
 
 	// Convert TxOutItem gas rate units to Wei.
@@ -890,7 +900,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		// when this fail , chain client should skip the outbound and move on to the next. The network will reschedule the outbound
 		// after 300 blocks
 		c.logger.Err(err).Msgf("fail to estimate gas")
-		return nil, nonceBytes, nil, nil
+		return nil, nil, nil, nil
 	}
 	c.logger.Info().Msgf("memo:%s estimated gas unit: %d", tx.Memo, estimatedGas)
 
@@ -1140,6 +1150,42 @@ func (c *Client) GetBalances(addr string, height *big.Int, contractAddr string) 
 	return coins.Distinct(), nil
 }
 
+// GetVaultBalances gets balances for the chain assets tracked by the given
+// THORChain vault. This is used for solvency reports so every node signs the
+// same asset set instead of relying on node-local token metadata discovery.
+func (c *Client) GetVaultBalances(addr string, height *big.Int, contractAddr string, vault types.Vault) (common.Coins, error) {
+	assets := make([]common.Asset, 0, len(vault.Coins))
+	seen := make(map[string]struct{}, len(vault.Coins))
+	for _, coin := range vault.Coins {
+		if !coin.Asset.Chain.Equals(c.cfg.ChainID) {
+			continue
+		}
+		key := coin.Asset.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		assets = append(assets, coin.Asset)
+	}
+	sort.Slice(assets, func(i, j int) bool {
+		return assets[i].String() < assets[j].String()
+	})
+
+	coins := make(common.Coins, 0, len(assets))
+	for _, asset := range assets {
+		tokenAddr := getTokenAddressFromAsset(asset)
+		balance, err := c.GetBalance(addr, tokenAddr, height, contractAddr)
+		if err != nil {
+			c.logger.Err(err).Msgf("fail to get balance for token:%s", tokenAddr)
+			continue
+		}
+		bal := c.ethScanner.convertAmount(tokenAddr, balance)
+		coins = append(coins, common.NewCoin(asset, bal))
+	}
+
+	return coins, nil
+}
+
 // GetAccount gets account by address in eth client
 func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
 	addr := c.GetAddress(pk)
@@ -1149,6 +1195,23 @@ func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, 
 	}
 	contractAddr := c.getSmartContractAddr(pk)
 	coins, err := c.GetBalances(addr, height, contractAddr.String())
+	if err != nil {
+		return common.Account{}, err
+	}
+	account := common.NewAccount(int64(nonce), 0, coins, false)
+	return account, nil
+}
+
+// GetVaultAccount gets account balances for exactly the assets tracked by the
+// THORChain vault. Zero balances are intentionally retained for solvency.
+func (c *Client) GetVaultAccount(vault types.Vault, height *big.Int) (common.Account, error) {
+	addr := c.GetAddress(vault.PubKey)
+	nonce, err := c.GetNonce(addr)
+	if err != nil {
+		return common.Account{}, err
+	}
+	contractAddr := c.getSmartContractAddr(vault.PubKey)
+	coins, err := c.GetVaultBalances(addr, height, contractAddr.String(), vault)
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -1365,11 +1428,19 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
-	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	for i := range asgardVaults {
+	chainVaults := asgardVaults[:0]
+	for _, asgard := range asgardVaults {
+		if asgard.HasFundsForChain(c.cfg.ChainID) {
+			chainVaults = append(chainVaults, asgard)
+		}
+	}
+
+	msgs := make([]stypes.Solvency, 0, len(chainVaults))
+	solventMsgs := make([]stypes.Solvency, 0, len(chainVaults))
+	processedVaults := 0
+	for i := range chainVaults {
 		var acct common.Account
-		acct, err = c.GetAccount(asgardVaults[i].PubKey, new(big.Int).SetInt64(ethBlockHeight))
+		acct, err = c.GetVaultAccount(chainVaults[i], new(big.Int).SetInt64(ethBlockHeight))
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
@@ -1378,25 +1449,27 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 		msg := stypes.Solvency{
 			Height: ethBlockHeight,
 			Chain:  common.ETHChain,
-			PubKey: asgardVaults[i].PubKey,
+			PubKey: chainVaults[i].PubKey,
 			Coins:  acct.Coins,
 		}
+		processedVaults++
 
-		if runners.IsVaultSolvent(c.cfg.ChainID, acct, asgardVaults[i], currentGasFee) {
+		if runners.IsVaultSolvent(c.cfg.ChainID, acct, chainVaults[i], currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}
 		msgs = append(msgs, msg) // Insolvent-vault message
 	}
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all vaults are solvent,
-	// report that all the vaults are solvent.
+	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all chain-specific vaults are solvent,
+	// report that all the chain-specific vaults are solvent.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	solvent := false
-	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
+	if !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}

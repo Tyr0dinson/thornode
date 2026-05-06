@@ -114,6 +114,24 @@ func (s TxSuite) TestTx(c *C) {
 	c.Check(tx.Memo, Equals, "hello memo")
 }
 
+func (s TxSuite) TestTxRejectsXMRUnknownSenderOutsideXMR(c *C) {
+	xmrAddr, err := NewAddress(XMRUnknownSenderAddress("tx-hash-a", "4abcd"))
+	c.Assert(err, IsNil)
+	txID, err := NewTxID("0xb41cf456e942f3430681298c503def54b79a96e3373ef9d44ea314d7eae41952")
+	c.Assert(err, IsNil)
+	tx := NewTx(
+		txID,
+		xmrAddr,
+		Address("0x90f2b1ae50e6018230e90a33f98c7844a0ab635a"),
+		Coins{NewCoin(ETHAsset, cosmos.NewUint(One))},
+		Gas{NewCoin(ETHAsset, cosmos.NewUint(10000))},
+		"hello memo",
+	)
+	c.Assert(tx.Valid(), ErrorMatches, "xmr unknown sender marker is only valid on XMR chain")
+	tx.Chain = XMRChain
+	c.Assert(tx.Valid(), IsNil)
+}
+
 func (s TxSuite) TestEqualsExIgnoreGas(c *C) {
 	id, err := NewTxID("0xb41cf456e942f3430681298c503def54b79a96e3373ef9d44ea314d7eae41952")
 	c.Assert(err, IsNil)

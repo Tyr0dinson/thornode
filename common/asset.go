@@ -41,6 +41,8 @@ var (
 	SOLAsset = Asset{Chain: SOLChain, Symbol: "SOL", Ticker: "SOL", Synth: false}
 	// ZECAsset ZEC
 	ZECAsset = Asset{Chain: ZECChain, Symbol: "ZEC", Ticker: "ZEC", Synth: false}
+	// XMRAsset XMR
+	XMRAsset = Asset{Chain: XMRChain, Symbol: "XMR", Ticker: "XMR", Synth: false}
 	// POLAsset POL
 	POLAsset = Asset{Chain: POLChain, Symbol: "POL", Ticker: "POL", Synth: false}
 	// SUIAsset SUI
@@ -138,6 +140,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
 	shorts[TRXAsset.ShortCode()] = TRXAsset.String()
 	shorts[XRPAsset.ShortCode()] = XRPAsset.String()
+	shorts[XMRAsset.ShortCode()] = XMRAsset.String()
 	shorts[POLAsset.ShortCode()] = POLAsset.String()
 	shorts[SUIAsset.ShortCode()] = SUIAsset.String()
 	shorts[ADAAsset.ShortCode()] = ADAAsset.String()
@@ -360,6 +363,8 @@ func (a Asset) ShortCode() string {
 		return "ta"
 	case "ZEC.ZEC":
 		return "z"
+	case "XMR.XMR":
+		return "m"
 	case "POL.POL":
 		return "p"
 	case "SUI.SUI":
