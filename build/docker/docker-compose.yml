@@ -266,7 +266,9 @@ services:
 
       # enable dash
       BIFROST_CHAINS_DASH_DISABLED: "${BIFROST_CHAINS_DASH_DISABLED:-false}"
-      BIFROST_CHAINS_DASH_RPC_HOST: ${BIFROST_CHAINS_DASH_RPC_HOST:-dash:19898}
+      BIFROST_CHAINS_DASH_RPC_HOST: ${BIFROST_CHAINS_DASH_RPC_HOST:-dash1:19898}
+      BIFROST_CHAINS_DASH_INSTANT_SEND_ENABLED: "true"
+      BIFROST_CHAINS_DASH_INSTANT_SEND_USD_THRESHOLD: 100
 
       # enable eth
       BIFROST_CHAINS_ETH_DISABLED: "${BIFROST_CHAINS_ETH_DISABLED:-false}"
@@ -675,27 +677,93 @@ services:
 
   # ------------------------------ dash ------------------------------
 
-  dash:
+  dash1:
+    container_name: dash-1
     profiles:
+      - dash
       - mocknet
       - mocknet-cluster
+    hostname: dash1
     image: dashpay/dashd:23.1.2
     restart: unless-stopped
-    environment:
-      BLOCK_TIME: ${BLOCK_TIME:-1}
-      DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
-    ports:
-      - 19898:19898 # regtest RPC
-      - 19899:19899 # regtest P2P
     volumes:
-      - "./mocknet:/mocknet"
-    entrypoint: "/mocknet/dash/entrypoint.sh"
-    healthcheck:
-      test: ["CMD", "/mocknet/dash/healthcheck.sh"]
-      interval: 2s
-      timeout: 10s
-      retries: 120
-      start_period: 30s
+      - "./mocknet/dash:/mocknet"
+    environment:
+      BLOCK_TIME: ${DASH_BLOCK_TIME:-12}
+      BOOTSTRAP_BLOCK_TIME: ${DASH_BOOTSTRAP_BLOCK_TIME:-1}
+      DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
+    entrypoint: "/mocknet/entrypoint-genesis.sh"
+    ports:
+      - "19898:19898" # regtest RPC
+      - "28332:28332" # regtest P2P
+
+  dash2:
+    container_name: dash-2
+    profiles:
+      - dash
+      - mocknet
+      - mocknet-cluster
+    hostname: dash2
+    image: dashpay/dashd:23.1.2
+    restart: unless-stopped
+    volumes:
+      - "./mocknet/dash:/mocknet"
+    environment:
+      BLOCK_TIME: ${DASH_BLOCK_TIME:-12}
+      BOOTSTRAP_BLOCK_TIME: ${DASH_BOOTSTRAP_BLOCK_TIME:-1}
+      DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
+    entrypoint: "/mocknet/entrypoint-masternode.sh"
+
+  dash3:
+    container_name: dash-3
+    profiles:
+      - dash
+      - mocknet
+      - mocknet-cluster
+    hostname: dash3
+    image: dashpay/dashd:23.1.2
+    restart: unless-stopped
+    volumes:
+      - "./mocknet/dash:/mocknet"
+    environment:
+      BLOCK_TIME: ${DASH_BLOCK_TIME:-12}
+      BOOTSTRAP_BLOCK_TIME: ${DASH_BOOTSTRAP_BLOCK_TIME:-1}
+      DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
+    entrypoint: "/mocknet/entrypoint-masternode.sh"
+
+  dash4:
+    container_name: dash-4
+    profiles:
+      - dash
+      - mocknet
+      - mocknet-cluster
+    hostname: dash4
+    image: dashpay/dashd:23.1.2
+    restart: unless-stopped
+    volumes:
+      - "./mocknet/dash:/mocknet"
+    environment:
+      BLOCK_TIME: ${DASH_BLOCK_TIME:-12}
+      BOOTSTRAP_BLOCK_TIME: ${DASH_BOOTSTRAP_BLOCK_TIME:-1}
+      DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
+    entrypoint: "/mocknet/entrypoint-masternode.sh"
+
+  dash5:
+    container_name: dash-5
+    profiles:
+      - dash
+      - mocknet
+      - mocknet-cluster
+    hostname: dash5
+    image: dashpay/dashd:23.1.2
+    restart: unless-stopped
+    volumes:
+      - "./mocknet/dash:/mocknet"
+    environment:
+      BLOCK_TIME: ${DASH_BLOCK_TIME:-12}
+      BOOTSTRAP_BLOCK_TIME: ${DASH_BOOTSTRAP_BLOCK_TIME:-1}
+      DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
+    entrypoint: "/mocknet/entrypoint-masternode.sh"
 
   # ------------------------------ ethereum ------------------------------
 

@@ -393,7 +393,7 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 			return common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(vSize*gasRate)))
 		}
 		// analyze-ignore(float-comparison)
-		if fee != 0.0 && vSize != 0 {
+		if fee > 0 && vBytes != 0 {
 			var amt btcutil.Amount
 			amt, err = btcutil.NewAmount(fee)
 			if err != nil {

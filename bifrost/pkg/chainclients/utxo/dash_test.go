@@ -157,6 +157,81 @@ func (s *DashSuite) TestGetChainCfgDASH(c *C) {
 	c.Assert(params.Bech32HRPSegwit, Equals, "")
 }
 
+// TestGetMemoDASHUsesCanonicalScriptHex verifies Dash memo parsing ignores the
+// potentially lossy asm rendering and reconstructs the memo from the canonical
+// script bytes instead. Dash Core can render "NOOP" as the decimal script
+// number "1347374926" in asm, which the old generic parser would not recover
+// back into the original memo text.
+func (s *DashSuite) TestGetMemoDASHUsesCanonicalScriptHex(c *C) {
+	client := newDashClientForUnitTest()
+
+	script, err := btctxscript.NullDataScript([]byte("NOOP"))
+	c.Assert(err, IsNil)
+
+	tx := &btcjson.TxRawResult{
+		Vout: []btcjson.Vout{
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Type: "nulldata",
+					Hex:  hex.EncodeToString(script),
+					Asm:  "OP_RETURN 1347374926",
+				},
+			},
+		},
+	}
+
+	memo, err := client.getMemo(tx)
+	c.Assert(err, IsNil)
+	c.Assert(memo, Equals, "NOOP")
+}
+
+// TestGetMemoDASHConcatenatesNulldataOutputs verifies Dash memo parsing
+// preserves output order across multiple nulldata fragments, which is required
+// for extended THORChain memos split across several outputs.
+func (s *DashSuite) TestGetMemoDASHConcatenatesNulldataOutputs(c *C) {
+	client := newDashClientForUnitTest()
+
+	script1, err := btctxscript.NullDataScript([]byte("SWAP:"))
+	c.Assert(err, IsNil)
+	script2, err := btctxscript.NullDataScript([]byte("DASH.DASH:"))
+	c.Assert(err, IsNil)
+	script3, err := btctxscript.NullDataScript([]byte("Xabc"))
+	c.Assert(err, IsNil)
+
+	tx := &btcjson.TxRawResult{
+		Vout: []btcjson.Vout{
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Type: "nulldata",
+					Hex:  hex.EncodeToString(script1),
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Type: "pubkeyhash",
+					Hex:  "76a914000000000000000000000000000000000000000088ac",
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Type: "nulldata",
+					Hex:  hex.EncodeToString(script2),
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Type: "nulldata",
+					Hex:  hex.EncodeToString(script3),
+				},
+			},
+		},
+	}
+
+	memo, err := client.getMemo(tx)
+	c.Assert(err, IsNil)
+	c.Assert(memo, Equals, "SWAP:DASH.DASH:Xabc")
+}
+
 // TestDashWireFormatIsBitcoinCompatible verifies that btcwire.MsgTx can be
 // used directly for Dash tx construction — no separate wireToDASH conversion
 // needed. This is the assumption behind the lightweight Dash signing path in

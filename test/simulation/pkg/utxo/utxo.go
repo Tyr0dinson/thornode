@@ -486,35 +486,52 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 	return result, nil
 }
 
-func (c *Client) getGasSats() float64 {
+// GetGasSats returns the default fixed fee, in satoshis / smallest-unit base
+// units, used by simulation-generated UTXO transactions when the scenario does
+// not provide an explicit SimTx.FeeSats override. These are intentionally
+// simple per-chain constants rather than live RPC fee estimates, so test
+// scenarios stay deterministic.
+func (c *Client) GetGasSats() uint64 {
 	switch c.chain {
 	case common.DOGEChain:
-		return 0.1
+		return 10_000_000
 	case common.BCHChain:
-		return 0.0001
+		return 10_000
 	case common.LTCChain:
-		return 0.0001
+		return 10_000
 	case common.BTCChain:
-		return 0.0001
+		return 10_000
 	case common.ZECChain:
-		return 0.001
+		return 100_000
 	case common.DASHChain:
-		return 0.0001
+		// Keep the default Dash tx comfortably above relay / InstantSend policy floors.
+		// Scenarios that need a low-fee fallback override FeeSats directly.
+		return 15_000
 	default:
 		log.Fatal().Msg("unsupported chain")
-		return 0.0
+		return 0
 	}
 }
 
+// getPaymentAmount returns the total output-side payment value in whole-coin
+// units for RPC calls that expect float amounts. It adds the transfer amount
+// and the selected fixed fee (default or SimTx.FeeSats override), both in base
+// units, then converts the result by dividing through common.One.
 func (c *Client) getPaymentAmount(tx SimTx) float64 {
+	feeSats := c.GetGasSats()
+	if tx.FeeSats > 0 {
+		feeSats = tx.FeeSats
+	}
+
 	amtToPay1e8 := tx.Coin.Amount.Uint64()
 	amtToPay := btcutil.Amount(int64(amtToPay1e8)).ToBTC()
-	amtToPay += c.getGasSats()
+	amtToPay += feeSats
+	totalSats := tx.Coin.Amount.Uint64() + feeSats
 	if memoScripts, err := c.getMemoScripts(tx.Memo); err == nil && len(memoScripts) > 1 {
 		p2wpkhOutputsCost := int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
 		amtToPay += btcutil.Amount(p2wpkhOutputsCost).ToBTC()
 	}
-	return amtToPay
+	return float64(totalSats) / float64(common.One)
 }
 
 func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
@@ -705,7 +722,11 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	}
 
 	// add output to pay the balance back ourselves
-	balance := totalAmt - redeemTxOut.Value - int64(c.getGasSats()*common.One) - p2wpkhOutputsCost
+	feeSats := int64(c.GetGasSats())
+	if tx.FeeSats > 0 {
+		feeSats = int64(tx.FeeSats)
+	}
+	balance := totalAmt - redeemTxOut.Value - feeSats - p2wpkhOutputsCost
 	if balance < 0 {
 		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
 	}

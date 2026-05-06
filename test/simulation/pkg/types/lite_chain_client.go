@@ -17,6 +17,10 @@ type SimTx struct {
 	// OneShotMemo prevents fresh replacement transactions after a chain accepts
 	// a txid for memo flows that consume one-time THORChain state.
 	OneShotMemo bool
+
+	// Optional fee override for UTXO-style chains, in satoshis/duffs.
+	// If zero, the client will fall back to its chain defaults.
+	FeeSats uint64
 }
 
 // SimContractTx is a struct used for simulation contract call transactions.

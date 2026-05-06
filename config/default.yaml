@@ -137,6 +137,11 @@ bifrost:
       xmr_consolidation_max_retries: 0
       xmr_consolidation_max_inputs: 0
       xmr_consolidation_max_lock_bps: 0
+      instant_send: &default-instant-send
+        enabled: false
+        usd_threshold: 0
+        min_fee_rate_sat_per_vbyte: 0
+        max_mempool_age: 0
       evm:
         max_gas_tip_percentage: 0
         token_max_gas_multiplier: 0
@@ -590,6 +595,12 @@ bifrost:
     dash:
       <<: *default-chain
       chain_id: DASH
+      instant_send:
+        <<: *default-instant-send
+        enabled: true
+        usd_threshold: 5000
+        min_fee_rate_sat_per_vbyte: 8
+        max_mempool_age: 2m
       block_scanner:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 288 # 12h at 2.5 min blocks

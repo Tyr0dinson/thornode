@@ -4,6 +4,8 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
@@ -241,4 +243,22 @@ func (s *QuotesSuite) TestQuoteLimitStaleState(c *C) {
 	if err != nil {
 		c.Assert(strings.Contains(err.Error(), "stale state"), Equals, false)
 	}
+}
+
+func (s *QuotesSuite) TestQuoteInboundInfoDASHHasNoConfirmationDelay(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, "ConfMultiplierBasisPoints-DASH", 1)
+	mgr.Keeper().SetMimir(ctx, "MaxConfirmations-DASH", 1)
+
+	address, router, confirmations, err := quoteInboundInfo(ctx, mgr, cosmos.NewUint(10_000*common.One), common.DASHChain, common.DASHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(address.Equals(common.NoAddress), Equals, false)
+	c.Assert(router.Equals(common.NoAddress), Equals, true)
+	c.Assert(confirmations, Equals, int64(0))
 }

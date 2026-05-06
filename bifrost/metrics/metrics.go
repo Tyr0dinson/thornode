@@ -36,7 +36,8 @@ const (
 	ObserverError MetricName = `observer_error`
 	SignerError   MetricName = `signer_error`
 
-	PubKeyManagerError MetricName = `pubkey_manager_error`
+	PubKeyManagerError      MetricName = `pubkey_manager_error`
+	DashInstantSendObserved MetricName = `dash_instantsend_observed`
 
 	BatchSends      MetricName = `batch_sends`
 	BatchClears     MetricName = `batch_clears`
@@ -83,6 +84,12 @@ var (
 			Subsystem: "thorchain_client",
 			Name:      "tx_to_thorchain_signed_total",
 			Help:      "number of tx observer signed successfully",
+		}),
+		DashInstantSendObserved: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "dash",
+			Subsystem: "instantsend",
+			Name:      "observed_total",
+			Help:      "number of Dash InstantSend observations accepted from mempool",
 		}),
 		BatchSends: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "observer",

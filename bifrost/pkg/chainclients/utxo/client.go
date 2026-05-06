@@ -79,8 +79,10 @@ type Client struct {
 	currentBlockHeight    stdatomic.Int64
 
 	// ---------- thornode state ----------
-	bridge      thorclient.ThorchainBridge
-	asgardCache stdatomic.Pointer[utxo.AsgardCache]
+	bridge         thorclient.ThorchainBridge
+	poolMgr        thorclient.PoolManager
+	asgardCache    stdatomic.Pointer[utxo.AsgardCache]
+	instantSendCfg config.DashInstantSendConfiguration
 
 	// ---------- fees / solvency ----------
 	minRelayFeeSats         stdatomic.Uint64
@@ -104,6 +106,7 @@ func NewClient(
 	server *gotss.TssServer,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
+	poolMgr thorclient.PoolManager,
 ) (*Client, error) {
 	// verify the chain is supported
 	supported := map[common.Chain]bool{
@@ -163,6 +166,8 @@ func NewClient(
 		vaultLocks:                make(map[string]*sync.Mutex),
 		stopchan:                  make(chan struct{}),
 		bridge:                    bridge,
+		poolMgr:                   poolMgr,
+		instantSendCfg:            cfg.InstantSend.WithDefaults(),
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
 	}
 
@@ -220,6 +225,16 @@ func (c *Client) IsBlockScannerHealthy() bool {
 
 // GetHeight returns current chain (not scanner) height.
 func (c *Client) GetHeight() (int64, error) {
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		// Dash finality is driven by ChainLocks rather than generic best-block PoW depth.
+		// Use the best chainlocked height so downstream confirmation/finality logic keys off
+		// the latest irreversible Dash tip, not the latest un-finalized block tip.
+		bestChainlock, err := c.rpc.GetBestChainlock()
+		if err != nil {
+			return 0, err
+		}
+		return bestChainlock.Height, nil
+	}
 	return c.rpc.GetBlockCount()
 }
 
@@ -538,6 +553,17 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 
 // FetchMemPool retrieves txs from mempool
 func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		// Dash does not use the generic UTXO mempool path. We only surface mempool
+		// transactions that are already InstantSend-locked. Ordinary unconfirmed txs
+		// must wait for the ChainLock-backed block path instead.
+		c.updateInstantSendCfg()
+		if !c.instantSendCfg.Enabled {
+			return types.TxIn{}, nil
+		}
+		return c.getInstantSendLocks(height)
+	}
+
 	hashes, err := c.rpc.GetRawMempool()
 	if err != nil {
 		return types.TxIn{}, fmt.Errorf("fail to get tx hashes from mempool: %w", err)
@@ -649,6 +675,13 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 // GetConfirmationCount returns the number of blocks required before processing in
 // Thorchain.
 func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		// Dash observations are emitted only after Dash-specific finality:
+		// either InstantSend-lock from mempool or inclusion under the chainlocked tip.
+		// Once emitted, no additional generic PoW confirmation depth is required.
+		return 0
+	}
+
 	// if there are no txs, nothing will be reported
 	if len(txIn.TxArray) == 0 {
 		return 0
@@ -676,6 +709,12 @@ func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
 // observed block height + confirmation required.
 // https://medium.com/coinmonks/1confvalue-a-simple-pow-confirmation-rule-of-thumb-a8d9c6c483dd
 func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		// Dash txs only reach this stage once they have already met Dash finality.
+		// There is no extra generic confirmation-counting wait after observation.
+		return true
+	}
+
 	// if there are no txs, nothing will be reported
 	if len(txIn.TxArray) == 0 {
 		return true

@@ -18,6 +18,7 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
 	"cosmossdk.io/log"
@@ -403,6 +404,12 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		if chain.IsEVM() {
 			router = vault.GetContract(chain).Router
 		}
+	}
+
+	if chain.Equals(common.DASHChain) {
+		// Dash finality is handled by InstantSend or ChainLocks in Bifrost.
+		// Once observed, there is no additional confirmation wait.
+		return address, router, 0, nil
 	}
 
 	// estimate the inbound confirmation count blocks: ceil(amount/coinbase * conf adjustment)
@@ -1300,6 +1307,16 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			var bz [20]byte
 			copy(bz[:], data[:20])
 			hash := zecutil.NewAddressPubKeyHash(bz, params)
+			address = hash.String()
+		case common.DASHChain:
+			params := &dashutil.MainNetParams
+			if network == common.MockNet {
+				params = &dashutil.RegressionNetParams
+			}
+			hash, err := btcutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
 			address = hash.String()
 		default:
 			return nil, fmt.Errorf("chain not supported")

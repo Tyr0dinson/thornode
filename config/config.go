@@ -824,6 +824,37 @@ type BifrostAttestationGossipConfig struct {
 	PeerConcurrentReceives int `mapstructure:"peer_concurrent_receives"`
 }
 
+type DashInstantSendConfiguration struct {
+	// Enabled indicates if InstantSend mempool observation is enabled.
+	Enabled bool `mapstructure:"enabled"`
+	// USDThreshold enforces ChainLock finality for txs at or above this USD value.
+	USDThreshold uint64 `mapstructure:"usd_threshold"`
+	// MinFeeRateSatPerVByte requires InstantSend txs to meet a fee-rate floor.
+	MinFeeRateSatPerVByte float64 `mapstructure:"min_fee_rate_sat_per_vbyte"`
+	// MaxMempoolAge bounds how long a tx can sit in mempool before falling back to blocks.
+	MaxMempoolAge time.Duration `mapstructure:"max_mempool_age"`
+}
+
+const (
+	// Default minimum fee rate to accept InstantSend mempool txs (sat/vbyte).
+	defaultDashInstantSendMinFeeRateSatPerVByte = 8.0
+	// Default max mempool age for an InstantSend lock before falling back to blocks.
+	defaultDashInstantSendMaxMempoolAge = 2 * time.Minute
+)
+
+func (d DashInstantSendConfiguration) WithDefaults() DashInstantSendConfiguration {
+	if d.MaxMempoolAge <= 0 {
+		d.MaxMempoolAge = defaultDashInstantSendMaxMempoolAge
+	}
+	// Preserve 0 as "disabled" (no fee-rate gate). Only negative values are
+	// treated as unset.
+	// analyze-ignore(float-comparison)
+	if d.MinFeeRateSatPerVByte < 0 {
+		d.MinFeeRateSatPerVByte = defaultDashInstantSendMinFeeRateSatPerVByte
+	}
+	return d
+}
+
 type BifrostChainConfiguration struct {
 	ChainID      common.Chain `mapstructure:"chain_id"`
 	ChainHost    string       `mapstructure:"chain_host"`
@@ -930,6 +961,9 @@ type BifrostChainConfiguration struct {
 		// when reconstructing liabilities for EVM chains.
 		ReconstructLiabilitiesConcurrency int `mapstructure:"reconstruct_liabilities_concurrency"`
 	} `mapstructure:"evm"`
+
+	// InstantSend contains Dash-specific mempool observation controls.
+	InstantSend DashInstantSendConfiguration `mapstructure:"instant_send"`
 
 	// UTXO contains UTXO chain specific configuration.
 	UTXO struct {

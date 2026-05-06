@@ -104,7 +104,7 @@ var _ = Suite(&HealthServerTestSuite{})
 
 func (HealthServerTestSuite) TestHealthServer(c *C) {
 	tssServer := &MockTssServer{}
-	s := NewHealthServer("127.0.0.1:8080", tssServer, nil, nil, false)
+	s := NewHealthServer("127.0.0.1:0", tssServer, nil, nil, false)
 	c.Assert(s, NotNil)
 	wg := sync.WaitGroup{}
 	wg.Add(1)

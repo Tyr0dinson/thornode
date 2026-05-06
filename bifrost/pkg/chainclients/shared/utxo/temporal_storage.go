@@ -3,6 +3,7 @@ package utxo
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/rs/zerolog/log"
@@ -244,6 +245,37 @@ func (t *TemporalStorage) UntrackMempoolTx(txid string) error {
 	}
 
 	return err
+}
+
+// PruneMempoolTx removes tracked mempool txids that match the provided filter.
+// The filter should return true when the txid should be deleted.
+func (t *TemporalStorage) PruneMempoolTx(filter func(txid string) bool) error {
+	if filter == nil {
+		return nil
+	}
+
+	iter := t.db.NewIterator(util.BytesPrefix([]byte(PrefixMempool)), nil)
+	defer iter.Release()
+
+	for iter.Next() {
+		key := string(iter.Key())
+		txid := strings.TrimPrefix(key, PrefixMempool)
+		if txid == "" {
+			continue
+		}
+		if !filter(txid) {
+			continue
+		}
+
+		if err := t.db.Delete([]byte(key), nil); err != nil {
+			return fmt.Errorf("fail to delete mempool tx %s: %w", txid, err)
+		}
+		if t.mempoolTxIDCache != nil {
+			t.mempoolTxIDCache.Remove(key)
+		}
+	}
+
+	return iter.Error()
 }
 
 // TrackObservedTx attempts to track the provided observed txid. Returns

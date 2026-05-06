@@ -3,6 +3,7 @@ package utxo
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/btcsuite/btcd/btcjson"
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
@@ -78,6 +79,58 @@ func (c *Client) getAddressesFromScriptPubKeyDASH(scriptPubKey btcjson.ScriptPub
 		addresses = append(addresses, a.String())
 	}
 	return addresses
+}
+
+// getMemoDASH returns the memo/OP_RETURN data, reading the canonical script bytes.
+//
+// How it works now:
+//   - Reads ScriptPubKey.Hex (the canonical on-chain bytes), decodes it, and
+//     pulls out OP_RETURN pushdata via txscript.PushedData, then joins those
+//     bytes into the memo.
+//
+// Why we changed it:
+//   - The previous version parsed ScriptPubKey.Asm, split tokens, and tried to
+//     hex-decode the second token. It failed when dashd rendered pushdata as a
+//     decimal script-number.
+//
+// Real Example:
+//   - Dash Core rendered an OP_RETURN payload as a decimal script-number
+//     in asm ("OP_RETURN 1347374926" for the bytes "NOOP").
+//     The old asm-based parser would try to hex-decode "1347374926"
+//     and return an empty memo. Using ScriptPubKey.Hex avoids this
+//     formatting ambiguity and correctly recovers the memo bytes.
+//
+// Benefit:
+//   - Hex is the source of truth on-chain, so this path is deterministic:
+//     canonical bytes in, pushdata out, no asm guessing, and it correctly
+//     decodes memos even when asm shows decimal script-numbers.
+func (c *Client) getMemoDASH(tx *btcjson.TxRawResult) (string, error) {
+	var memo string
+
+	for _, vOut := range tx.Vout {
+		if !strings.EqualFold(vOut.ScriptPubKey.Type, "nulldata") || vOut.ScriptPubKey.Hex == "" {
+			continue
+		}
+
+		script, err := hex.DecodeString(vOut.ScriptPubKey.Hex)
+		if err != nil {
+			return "", fmt.Errorf("fail to decode scriptPubKey hex: %w", err)
+		}
+		pushes, err := btctxscript.PushedData(script)
+		if err != nil {
+			return "", fmt.Errorf("fail to parse nulldata script: %w", err)
+		}
+		for _, push := range pushes {
+			if len(push) == 0 {
+				continue
+			}
+			// Preserve each pushed byte slice exactly and append in output order so
+			// split Dash memo fragments reconstruct to the original THORChain memo.
+			memo += string(push)
+		}
+	}
+
+	return memo, nil
 }
 
 // signUTXODASH signs a single input of the given redeem transaction. Dash is

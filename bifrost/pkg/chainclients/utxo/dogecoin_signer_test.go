@@ -138,7 +138,7 @@ func (s *DogecoinSignerSuite) SetUpTest(c *C) {
 
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
-	s.client, _ = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
+	s.client, _ = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
 	storage := storage.NewMemStorage()
 	db, err := leveldb.Open(storage, nil)
 	c.Assert(err, IsNil)

@@ -884,6 +884,10 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 
 // getMemo returns memo for a btc tx, using vout OP_RETURN
 func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		return c.getMemoDASH(tx)
+	}
+
 	var memo string
 
 	if c.cfg.ChainID.Equals(common.ZECChain) {
@@ -925,10 +929,6 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			asm, err = btctxscript.DisasmString(buf)
 		case common.ZECChain:
 			asm, err = btctxscript.DisasmString(buf)
-		case common.DASHChain:
-			// Dash scripts are Bitcoin-compatible, so btctxscript handles disasm.
-			asm, err = btctxscript.DisasmString(buf)
-
 		default:
 			c.log.Fatal().Msg("unsupported chain")
 		}

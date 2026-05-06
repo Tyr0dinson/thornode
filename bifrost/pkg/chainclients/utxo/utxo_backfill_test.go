@@ -187,7 +187,7 @@ func (s *CoverageBackfillSuite) SetUpTest(c *C) {
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
-	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
+	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
 	s.client.disableVinZeroBatch = true
 	netFeeQueue := make(chan common.NetworkFee, 100)
 	s.client.globalNetworkFeeQueue = netFeeQueue
@@ -790,6 +790,15 @@ func (s *CoverageBackfillSuite) TestGetGasCoinWithDefaultSatsPerVByte(c *C) {
 	c.Assert(gas.Asset, Equals, common.BTCAsset)
 	// 50 sats/vbyte * 100 vbytes = 5000
 	c.Assert(gas.Amount.Uint64(), Equals, uint64(5000))
+
+	// A cached fee without cached vbytes cannot produce a fee rate, so it
+	// should also fall back to the configured default instead of dividing by zero.
+	err = s.client.temporalStorage.UpsertTransactionFee(0.001, 0)
+	c.Assert(err, IsNil)
+
+	gas = s.client.getGasCoin(tx, 100)
+	c.Assert(gas.Asset, Equals, common.BTCAsset)
+	c.Assert(gas.Amount.Uint64(), Equals, uint64(5000))
 }
 
 func (s *CoverageBackfillSuite) TestGetGasCoinZEC(c *C) {
@@ -1171,7 +1180,7 @@ func (s *CoverageBackfillSuite) TestOnObservedTxIn(c *C) {
 func (s *CoverageBackfillSuite) TestNewClientUnsupportedChain(c *C) {
 	cfg := s.cfg
 	cfg.ChainID = common.ETHChain
-	_, err := NewClient(s.keys, cfg, nil, s.bridge, s.m)
+	_, err := NewClient(s.keys, cfg, nil, s.bridge, s.m, nil)
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "unsupported utxo chain"), Equals, true)
 }

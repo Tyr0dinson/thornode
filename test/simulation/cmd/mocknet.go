@@ -331,6 +331,11 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		}
 	}
 
+	if _, ok := liteClientConstructors[common.DASHChain]; ok {
+		requiredDash := sdkmath.NewUint(uint64(len(funded)) * 10 * common.One)
+		waitForMasterFunding(master, common.DASHChain, 10*time.Minute, requiredDash)
+	}
+
 	// fund user accounts with one goroutine per chain
 	wg = &sync.WaitGroup{}
 	for _, chain := range acommon.SimChains {
@@ -422,8 +427,34 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 			Coin:      common.NewCoin(chain.GetGasAsset(), fundingAmount),
 			Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
 		}
+		maxAttempts := 1
+		if chain.Equals(common.DASHChain) {
+			maxAttempts = 5
+		}
 
-		txid, err := SignAndBroadcastTx(master.ChainClients[chain], tx)
+		var txid string
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			if attempt > 1 {
+				time.Sleep(2 * time.Second)
+			}
+
+			txid, err = SignAndBroadcastTx(master.ChainClients[chain], tx)
+			if err == nil {
+				break
+			}
+
+			if attempt == maxAttempts {
+				log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to sign master tx")
+			}
+
+			log.Warn().
+				Err(err).
+				Stringer("chain", chain).
+				Stringer("to", tx.ToAddress).
+				Int("attempt", attempt).
+				Msg("retrying funding transaction signing")
+		}
+
 		if err != nil {
 			log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
 		}
@@ -705,4 +736,45 @@ func isRetryableTransportStartupError(err error) bool {
 	}
 
 	return false
+}
+
+func waitForMasterFunding(master *User, chain common.Chain, timeout time.Duration, minAmount sdkmath.Uint) {
+	client, ok := master.ChainClients[chain]
+	if !ok {
+		log.Warn().Stringer("chain", chain).Msg("no chain client found for chain, skipping funding wait")
+		return
+	}
+
+	log.Info().Stringer("chain", chain).Msg("waiting for master account to be funded")
+	deadline := time.Now().Add(timeout)
+	for {
+		account, err := client.GetAccount(nil)
+		if err == nil {
+			for _, coin := range account.Coins {
+				if !coin.Asset.IsGasAsset() {
+					continue
+				}
+
+				if minAmount.IsZero() && coin.Amount.GT(sdkmath.ZeroUint()) {
+					log.Info().Stringer("chain", chain).Msg("master account funded")
+					return
+				}
+				if !minAmount.IsZero() && coin.Amount.GTE(minAmount) {
+					log.Info().
+						Stringer("chain", chain).
+						Stringer("have", coin.Amount).
+						Stringer("need", minAmount).
+						Msg("master account funded")
+					return
+				}
+			}
+		} else {
+			log.Debug().Stringer("chain", chain).Err(err).Msg("failed to get master account; retrying")
+		}
+
+		if time.Now().After(deadline) {
+			log.Fatal().Stringer("chain", chain).Msg("timed out waiting for genesis funding")
+		}
+		time.Sleep(5 * time.Second)
+	}
 }

@@ -140,3 +140,15 @@ func check(c *C, path []string, cm map[interface{}]interface{}, t reflect.Type) 
 		}
 	}
 }
+
+func (Test) TestDashInstantSendWithDefaultsPreservesZeroMinFeeRate(c *C) {
+	cfg := DashInstantSendConfiguration{
+		MinFeeRateSatPerVByte: 0,
+	}
+	got := cfg.WithDefaults()
+	c.Assert(got.MinFeeRateSatPerVByte, Equals, float64(0))
+
+	cfg.MinFeeRateSatPerVByte = -1
+	got = cfg.WithDefaults()
+	c.Assert(got.MinFeeRateSatPerVByte, Equals, defaultDashInstantSendMinFeeRateSatPerVByte)
+}

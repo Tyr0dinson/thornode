@@ -91,6 +91,7 @@ func simulationStages() []simulationStage {
 		{name: "swaps", defaultOn: true, constructor: suites.Swaps},
 		{name: "memoless-swaps", defaultOn: true, constructor: suites.MemolessSwaps},
 		{name: "consolidate", defaultOn: true, constructor: features.Consolidate},
+		{name: "dash-instantsend", defaultOn: true, constructor: features.DashInstantSend},
 		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
 		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
