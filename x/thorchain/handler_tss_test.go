@@ -2440,3 +2440,163 @@ func securityEventMsg(ctx cosmos.Context) string {
 	}
 	return ""
 }
+
+// TestKeygenSuccessResetsOnlyMembershipBlame drives a complete keygen success
+// (full consensus + matching check signatures) and verifies the handler resets
+// since_churn counters for the just-succeeded vault's members but leaves a
+// non-member node's counters intact. This locks in the fix from commit
+// 656937e ("scope keygen since_churn reset to just-succeeded vault members"),
+// which prevents a parallel multi-Asgard success in one vault from wiping
+// pending blame counters of nodes participating in another, still-failing
+// Asgard keygen. It also exercises the handler-level pubkey-to-thor-address
+// derivation at handler_tss.go:537-558.
+func (s *HandlerTssSuite) TestKeygenSuccessResetsOnlyMembershipBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+
+	// addrOther represents a node that is NOT a member of the vault about
+	// to succeed (e.g., a member of another, still-failing Asgard during
+	// a parallel multi-Asgard churn). Its since_churn blame must NOT be
+	// wiped by this success.
+	addrOther := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, addrOther), IsNil)
+
+	// addrMember represents one of the about-to-succeed vault's members.
+	// Its since_churn counters should be reset by the address the handler
+	// derives from the membership pubkey string.
+	addrMember, err := helper.members[3].GetThorAddress()
+	c.Assert(err, IsNil)
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, addrMember), IsNil)
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, addrMember), IsNil)
+
+	// Drive a full keygen success: each member signs the same msg with the
+	// same non-empty Secp256K1Signature so the voter reaches both 8/8
+	// consensus and the identical-check-signature consensus required at
+	// handler_tss.go:484. Use handler.handle to bypass the secp256k1
+	// signature verification done in handler.validate.
+	keygenTime := int64(1024)
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	fakeSig := []byte("fakeSig")
+	for _, item := range helper.members {
+		thorAddr, errAddr := item.GetThorAddress()
+		c.Assert(errAddr, IsNil)
+		tssMsg, errMsg := NewMsgTssPoolV2(
+			helper.members.Strings(), poolPubKey, fakeSig, nil,
+			AsgardKeygen, helper.ctx.BlockHeight(), nil,
+			common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr,
+			keygenTime, poolEddsaPubKey, nil, nil, common.EmptyPubKey,
+		)
+		c.Assert(errMsg, IsNil)
+		c.Assert(handler.handle(helper.ctx, tssMsg), IsNil)
+	}
+
+	// Member's since_churn must be reset; total preserved.
+	recordMember, err := helper.keeper.GetNodeBlameRecord(helper.ctx, addrMember)
+	c.Assert(err, IsNil)
+	c.Check(recordMember.KeygenBlameCountTotal, Equals, int64(2))
+	c.Check(recordMember.KeygenBlameCountSinceChurn, Equals, int64(0),
+		Commentf("vault member's since_churn must be reset"))
+
+	// Non-member's blame counters must be untouched.
+	recordOther, err := helper.keeper.GetNodeBlameRecord(helper.ctx, addrOther)
+	c.Assert(err, IsNil)
+	c.Check(recordOther.KeygenBlameCountTotal, Equals, int64(1))
+	c.Check(recordOther.KeygenBlameCountSinceChurn, Equals, int64(1),
+		Commentf("non-member's since_churn must NOT be wiped by this success"))
+}
+
+// TestKeygenFailEscalationMath drives a keygen failure where the blamed node
+// is non-active and already has prior since-churn keygen blames, and locks in
+// the per-blame multiplier math: jail release height and bond slash both
+// scale with the post-increment blame count, not the base values.
+//
+// A regression that uses baseJailTime in place of escalatedJailTime for
+// releaseHeight, or baseSlashPoints in place of escalatedSlashPoints for
+// CalcNodeRewards, would produce a different jail height / bond delta and
+// fail this test. See handler_tss.go else-branch around lines 351-424.
+func (s *HandlerTssSuite) TestKeygenFailEscalationMath(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+
+	// The signature-verification override is package-level and set in
+	// TestTssHandler; set it again here so the test is order-independent.
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+
+	// Set up a Standby NodeAccount for members[3] with a substantial bond
+	// so the slashBond calculation is not capped by na.Bond.
+	blamedPK := helper.members[3]
+	blamedAddr, err := blamedPK.GetThorAddress()
+	c.Assert(err, IsNil)
+	blamedNode := GetRandomValidatorNode(NodeStandby)
+	blamedNode.NodeAddress = blamedAddr
+	blamedNode.Bond = cosmos.NewUint(10000 * common.One)
+	c.Assert(helper.keeper.SetNodeAccount(helper.ctx, blamedNode), IsNil)
+
+	// Pre-load 2 keygen blames; the handler increments to 3, so the
+	// multiplier becomes 3.
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
+
+	// Pick Network values that give a clean, multiplier-sensitive slashBond:
+	//   escalated nodeUnits = 720 * 3 = 2160 -> slashBond = 3 * common.One
+	//   regression nodeUnits = 720          -> slashBond = 1 * common.One
+	network := Network{
+		BondRewardRune: cosmos.NewUint(common.One),
+		TotalBondUnits: cosmos.NewUint(720),
+	}
+	c.Assert(helper.keeper.SetNetwork(helper.ctx, network), IsNil)
+
+	keygenTime := int64(1024)
+	fakeSig := []byte("fakeSignature")
+	b := Blame{
+		FailReason: "test escalation",
+		BlameNodes: []Node{{Pubkey: blamedPK.String()}},
+	}
+	tssMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(), GetRandomPubKey(), fakeSig, nil,
+		AsgardKeygen, helper.ctx.BlockHeight(), []Blame{b},
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		keygenTime, GetRandomPubKey(), nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	// Pre-fill the voter with all non-signer members; msg.Signer brings
+	// the voter to full consensus when handler.Run signs.
+	voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
+	c.Assert(err, IsNil)
+	for _, pk := range helper.members {
+		addr, errPK := pk.GetThorAddress()
+		c.Assert(errPK, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, tssMsg)
+	c.Assert(err, IsNil)
+
+	// Blame count was incremented by the handler.
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(3))
+
+	// Jail release height = blockHeight + JailTimeKeygenBase * count.
+	jailTimeKeygenBase := helper.constAccessor.GetInt64Value(constants.JailTimeKeygenBase)
+	expectedRelease := helper.ctx.BlockHeight() + jailTimeKeygenBase*3
+	jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(jail.ReleaseHeight, Equals, expectedRelease,
+		Commentf("expected %d, got %d", expectedRelease, jail.ReleaseHeight))
+
+	// Bond slash = CalcNodeRewards(FailKeygenSlashPoints * count).
+	failKeygenSlashPoints := helper.constAccessor.GetInt64Value(constants.FailKeygenSlashPoints)
+	expectedSlash := network.CalcNodeRewards(cosmos.NewUint(uint64(failKeygenSlashPoints * 3)))
+	expectedBond := cosmos.NewUint(10000 * common.One).Sub(expectedSlash)
+	naAfter, err := helper.keeper.GetNodeAccount(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(naAfter.Bond.Equal(expectedBond), Equals, true,
+		Commentf("expected %s, got %s", expectedBond.String(), naAfter.Bond.String()))
+}

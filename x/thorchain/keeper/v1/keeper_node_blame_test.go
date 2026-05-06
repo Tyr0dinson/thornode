@@ -214,6 +214,24 @@ func (s *KeeperNodeBlameSuite) TestResetSinceChurnCountersForMembers(c *C) {
 	c.Check(record3.KeysignBlameCountTotal, Equals, int64(1))
 	c.Check(record3.KeygenBlameCountSinceChurn, Equals, int64(0))
 	c.Check(record3.KeysignBlameCountSinceChurn, Equals, int64(0))
+
+	// Empty address in the slice must be skipped without panicking on
+	// record.NodeAddress.String() inside SetNodeBlameRecord, and other
+	// valid addresses in the same call must still be reset.
+	addr4 := GetRandomBech32Addr()
+	for i := 0; i < 2; i++ {
+		err := k.IncrementKeygenBlame(ctx, addr4)
+		c.Assert(err, IsNil)
+	}
+	record4, _ := k.GetNodeBlameRecord(ctx, addr4)
+	c.Check(record4.KeygenBlameCountSinceChurn, Equals, int64(2))
+
+	err = k.ResetSinceChurnCountersForMembers(ctx, []cosmos.AccAddress{cosmos.AccAddress{}, addr4})
+	c.Assert(err, IsNil)
+
+	record4, _ = k.GetNodeBlameRecord(ctx, addr4)
+	c.Check(record4.KeygenBlameCountTotal, Equals, int64(2))
+	c.Check(record4.KeygenBlameCountSinceChurn, Equals, int64(0))
 }
 
 func (s *KeeperNodeBlameSuite) TestGetNodeBlameIterator(c *C) {
