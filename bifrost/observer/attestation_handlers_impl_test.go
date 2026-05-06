@@ -67,11 +67,17 @@ func TestAttestMessageInterface(t *testing.T) {
 
 	// Test GetSignablePayload for each type
 	t.Run("GetSignablePayload returns marshaled data", func(t *testing.T) {
-		// ObservedTx
+		// ObservedTx — payload covers the full wrapper (with KeysignMs zeroed)
+		// plus the inbound bit, so a proposer cannot mutate FinaliseHeight,
+		// BlockHeight, or QuorumTx.Inbound without invalidating signatures.
 		txPayload, err := attestTx.GetSignablePayload()
 		require.NoError(t, err)
-		expectedTxPayload, err := tx.Marshal()
+		canonical := obsTx
+		canonical.KeysignMs = 0
+		expectedTxPayload, err := canonical.Marshal()
 		require.NoError(t, err)
+		// AttestTx.Inbound defaults to false here; trailing byte is 0.
+		expectedTxPayload = append(expectedTxPayload, 0)
 		assert.Equal(t, expectedTxPayload, txPayload)
 
 		// NetworkFee
@@ -225,7 +231,7 @@ func TestSendAttestationsToThornode(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := ag.observedTxsPool.NewAttestationState(obsTx)
+	state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// Add two attestations
 	state.attestations = []attestationSentState{

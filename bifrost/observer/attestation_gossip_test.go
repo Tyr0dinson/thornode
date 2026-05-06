@@ -130,12 +130,12 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 		eventClient: eventClient,
 		batcher:     batcher,
 
-		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
+		observedTxs: make(map[txKey]*AttestationState[*attestableObservedTx]),
 		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
 		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
 
-		observedTxsPool: NewAttestationStatePool[*common.ObservedTx](),
+		observedTxsPool: NewAttestationStatePool[*attestableObservedTx](),
 		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
 		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
 		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
@@ -616,7 +616,7 @@ func TestPruningLogic(t *testing.T) {
 		Tx: *pruneTx,
 	}
 
-	pruneState := ag.observedTxsPool.NewAttestationState(obsTx)
+	pruneState := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// Set quorum time in the distant past
 	pruneState.quorumAttestationsSent = time.Now().Add(-24 * time.Hour)
@@ -688,7 +688,7 @@ func TestSendLateAttestations(t *testing.T) {
 		ID:    tx.ID,
 	}
 
-	lateState := ag.observedTxsPool.NewAttestationState(obsTx)
+	lateState := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// Add two attestations
 	lateState.attestations = append(lateState.attestations, attestationSentState{
