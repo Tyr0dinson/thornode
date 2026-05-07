@@ -33,7 +33,8 @@ type DashInstantSendActor struct {
 // DashInstantSend wires up a feature actor that exercises different InstantSend paths.
 func DashInstantSend(rng *rand.Rand) *Actor {
 	a := &DashInstantSendActor{
-		// sensible defaults matching docker-compose.yml & config/default.yaml
+		// Match the mocknet docker-compose InstantSend policy used by simulation.
+		// config/default.yaml keeps the DASH USD threshold at the network default.
 		Actor:             *NewActor("Feature-DASH-InstantSend", rng),
 		highValueUSDLimit: 100,
 		minFeeRate:        8,
