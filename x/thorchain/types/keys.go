@@ -15,6 +15,8 @@ const (
 	LendingName = "lending"
 	// AffiliateCollectorName the name of the account used to store rune for affiliate fee swaps
 	AffiliateCollectorName = "affiliate_collector"
+	// BondYieldCollectorName the name of the account used to store rune for bond yield swaps
+	BondYieldCollectorName = "bond_yield_collector"
 	// TreasuryName the name of the account used for treasury governance
 	TreasuryName = "treasury"
 	// RUNEPoolName the name of the account used to track RUNEPool

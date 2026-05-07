@@ -132,3 +132,67 @@ func (k KVStore) GetAffiliateCollectors(ctx cosmos.Context) ([]AffiliateFeeColle
 	}
 	return affCols, nil
 }
+
+// setBondYieldCollector writes a collector record, deleting empty balances so
+// only accrued bond yield remains in state.
+func (k KVStore) setBondYieldCollector(ctx cosmos.Context, key []byte, record BondYieldCollector) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if record.RuneAmount.IsZero() {
+		store.Delete(key)
+		return
+	}
+	buf := k.cdc.MustMarshal(&record)
+	if buf == nil {
+		store.Delete(key)
+	} else {
+		store.Set(key, buf)
+	}
+}
+
+// getBondYieldCollector reads a collector record into the supplied default record.
+func (k KVStore) getBondYieldCollector(ctx cosmos.Context, key []byte, record *BondYieldCollector) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
+		return false, nil
+	}
+
+	bz := store.Get(key)
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+
+	return true, nil
+}
+
+// SetBondYieldCollector stores accrued RUNE for a node/provider bond yield payout.
+func (k KVStore) SetBondYieldCollector(ctx cosmos.Context, collector BondYieldCollector) {
+	k.setBondYieldCollector(ctx, k.GetKey(prefixBondYieldCollector, collector.Key()), collector)
+}
+
+// GetBondYieldCollector returns the collector for a node/provider pair, defaulting to empty.
+func (k KVStore) GetBondYieldCollector(ctx cosmos.Context, nodeAddr, providerAddr cosmos.AccAddress) (BondYieldCollector, error) {
+	record := NewBondYieldCollector(nodeAddr, providerAddr)
+	_, err := k.getBondYieldCollector(ctx, k.GetKey(prefixBondYieldCollector, record.Key()), &record)
+	return record, err
+}
+
+// GetBondYieldCollectorIterator returns an iterator over all bond yield collectors.
+func (k KVStore) GetBondYieldCollectorIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixBondYieldCollector)
+}
+
+// GetBondYieldCollectors returns every non-empty bond yield collector in state.
+func (k KVStore) GetBondYieldCollectors(ctx cosmos.Context) ([]BondYieldCollector, error) {
+	var collectors []BondYieldCollector
+	iterator := k.GetBondYieldCollectorIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var collector BondYieldCollector
+		err := k.Cdc().Unmarshal(iterator.Value(), &collector)
+		if err != nil {
+			return nil, dbError(ctx, "Unmarshal: bond yield collector", err)
+		}
+		collectors = append(collectors, collector)
+	}
+	return collectors, nil
+}

@@ -3899,9 +3899,14 @@ func (x *fastReflection_NodeBondProviders) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_NodeBondProvider              protoreflect.MessageDescriptor
-	fd_NodeBondProvider_bond_address protoreflect.FieldDescriptor
-	fd_NodeBondProvider_bond         protoreflect.FieldDescriptor
+	md_NodeBondProvider                 protoreflect.MessageDescriptor
+	fd_NodeBondProvider_bond_address    protoreflect.FieldDescriptor
+	fd_NodeBondProvider_bond            protoreflect.FieldDescriptor
+	fd_NodeBondProvider_principal       protoreflect.FieldDescriptor
+	fd_NodeBondProvider_claimable_yield protoreflect.FieldDescriptor
+	fd_NodeBondProvider_auto_claim_bps  protoreflect.FieldDescriptor
+	fd_NodeBondProvider_payout_asset    protoreflect.FieldDescriptor
+	fd_NodeBondProvider_payout_address  protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -3909,6 +3914,11 @@ func init() {
 	md_NodeBondProvider = File_types_query_node_proto.Messages().ByName("NodeBondProvider")
 	fd_NodeBondProvider_bond_address = md_NodeBondProvider.Fields().ByName("bond_address")
 	fd_NodeBondProvider_bond = md_NodeBondProvider.Fields().ByName("bond")
+	fd_NodeBondProvider_principal = md_NodeBondProvider.Fields().ByName("principal")
+	fd_NodeBondProvider_claimable_yield = md_NodeBondProvider.Fields().ByName("claimable_yield")
+	fd_NodeBondProvider_auto_claim_bps = md_NodeBondProvider.Fields().ByName("auto_claim_bps")
+	fd_NodeBondProvider_payout_asset = md_NodeBondProvider.Fields().ByName("payout_asset")
+	fd_NodeBondProvider_payout_address = md_NodeBondProvider.Fields().ByName("payout_address")
 }
 
 var _ protoreflect.Message = (*fastReflection_NodeBondProvider)(nil)
@@ -3988,6 +3998,36 @@ func (x *fastReflection_NodeBondProvider) Range(f func(protoreflect.FieldDescrip
 			return
 		}
 	}
+	if x.Principal != "" {
+		value := protoreflect.ValueOfString(x.Principal)
+		if !f(fd_NodeBondProvider_principal, value) {
+			return
+		}
+	}
+	if x.ClaimableYield != "" {
+		value := protoreflect.ValueOfString(x.ClaimableYield)
+		if !f(fd_NodeBondProvider_claimable_yield, value) {
+			return
+		}
+	}
+	if x.AutoClaimBps != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.AutoClaimBps)
+		if !f(fd_NodeBondProvider_auto_claim_bps, value) {
+			return
+		}
+	}
+	if x.PayoutAsset != "" {
+		value := protoreflect.ValueOfString(x.PayoutAsset)
+		if !f(fd_NodeBondProvider_payout_asset, value) {
+			return
+		}
+	}
+	if x.PayoutAddress != "" {
+		value := protoreflect.ValueOfString(x.PayoutAddress)
+		if !f(fd_NodeBondProvider_payout_address, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -4007,6 +4047,16 @@ func (x *fastReflection_NodeBondProvider) Has(fd protoreflect.FieldDescriptor) b
 		return x.BondAddress != ""
 	case "types.NodeBondProvider.bond":
 		return x.Bond != ""
+	case "types.NodeBondProvider.principal":
+		return x.Principal != ""
+	case "types.NodeBondProvider.claimable_yield":
+		return x.ClaimableYield != ""
+	case "types.NodeBondProvider.auto_claim_bps":
+		return x.AutoClaimBps != uint64(0)
+	case "types.NodeBondProvider.payout_asset":
+		return x.PayoutAsset != ""
+	case "types.NodeBondProvider.payout_address":
+		return x.PayoutAddress != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.NodeBondProvider"))
@@ -4027,6 +4077,16 @@ func (x *fastReflection_NodeBondProvider) Clear(fd protoreflect.FieldDescriptor)
 		x.BondAddress = ""
 	case "types.NodeBondProvider.bond":
 		x.Bond = ""
+	case "types.NodeBondProvider.principal":
+		x.Principal = ""
+	case "types.NodeBondProvider.claimable_yield":
+		x.ClaimableYield = ""
+	case "types.NodeBondProvider.auto_claim_bps":
+		x.AutoClaimBps = uint64(0)
+	case "types.NodeBondProvider.payout_asset":
+		x.PayoutAsset = ""
+	case "types.NodeBondProvider.payout_address":
+		x.PayoutAddress = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.NodeBondProvider"))
@@ -4048,6 +4108,21 @@ func (x *fastReflection_NodeBondProvider) Get(descriptor protoreflect.FieldDescr
 		return protoreflect.ValueOfString(value)
 	case "types.NodeBondProvider.bond":
 		value := x.Bond
+		return protoreflect.ValueOfString(value)
+	case "types.NodeBondProvider.principal":
+		value := x.Principal
+		return protoreflect.ValueOfString(value)
+	case "types.NodeBondProvider.claimable_yield":
+		value := x.ClaimableYield
+		return protoreflect.ValueOfString(value)
+	case "types.NodeBondProvider.auto_claim_bps":
+		value := x.AutoClaimBps
+		return protoreflect.ValueOfUint64(value)
+	case "types.NodeBondProvider.payout_asset":
+		value := x.PayoutAsset
+		return protoreflect.ValueOfString(value)
+	case "types.NodeBondProvider.payout_address":
+		value := x.PayoutAddress
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
@@ -4073,6 +4148,16 @@ func (x *fastReflection_NodeBondProvider) Set(fd protoreflect.FieldDescriptor, v
 		x.BondAddress = value.Interface().(string)
 	case "types.NodeBondProvider.bond":
 		x.Bond = value.Interface().(string)
+	case "types.NodeBondProvider.principal":
+		x.Principal = value.Interface().(string)
+	case "types.NodeBondProvider.claimable_yield":
+		x.ClaimableYield = value.Interface().(string)
+	case "types.NodeBondProvider.auto_claim_bps":
+		x.AutoClaimBps = value.Uint()
+	case "types.NodeBondProvider.payout_asset":
+		x.PayoutAsset = value.Interface().(string)
+	case "types.NodeBondProvider.payout_address":
+		x.PayoutAddress = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.NodeBondProvider"))
@@ -4097,6 +4182,16 @@ func (x *fastReflection_NodeBondProvider) Mutable(fd protoreflect.FieldDescripto
 		panic(fmt.Errorf("field bond_address of message types.NodeBondProvider is not mutable"))
 	case "types.NodeBondProvider.bond":
 		panic(fmt.Errorf("field bond of message types.NodeBondProvider is not mutable"))
+	case "types.NodeBondProvider.principal":
+		panic(fmt.Errorf("field principal of message types.NodeBondProvider is not mutable"))
+	case "types.NodeBondProvider.claimable_yield":
+		panic(fmt.Errorf("field claimable_yield of message types.NodeBondProvider is not mutable"))
+	case "types.NodeBondProvider.auto_claim_bps":
+		panic(fmt.Errorf("field auto_claim_bps of message types.NodeBondProvider is not mutable"))
+	case "types.NodeBondProvider.payout_asset":
+		panic(fmt.Errorf("field payout_asset of message types.NodeBondProvider is not mutable"))
+	case "types.NodeBondProvider.payout_address":
+		panic(fmt.Errorf("field payout_address of message types.NodeBondProvider is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.NodeBondProvider"))
@@ -4113,6 +4208,16 @@ func (x *fastReflection_NodeBondProvider) NewField(fd protoreflect.FieldDescript
 	case "types.NodeBondProvider.bond_address":
 		return protoreflect.ValueOfString("")
 	case "types.NodeBondProvider.bond":
+		return protoreflect.ValueOfString("")
+	case "types.NodeBondProvider.principal":
+		return protoreflect.ValueOfString("")
+	case "types.NodeBondProvider.claimable_yield":
+		return protoreflect.ValueOfString("")
+	case "types.NodeBondProvider.auto_claim_bps":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "types.NodeBondProvider.payout_asset":
+		return protoreflect.ValueOfString("")
+	case "types.NodeBondProvider.payout_address":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -4191,6 +4296,25 @@ func (x *fastReflection_NodeBondProvider) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.Principal)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.ClaimableYield)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.AutoClaimBps != 0 {
+			n += 1 + runtime.Sov(uint64(x.AutoClaimBps))
+		}
+		l = len(x.PayoutAsset)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.PayoutAddress)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -4219,6 +4343,39 @@ func (x *fastReflection_NodeBondProvider) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.PayoutAddress) > 0 {
+			i -= len(x.PayoutAddress)
+			copy(dAtA[i:], x.PayoutAddress)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PayoutAddress)))
+			i--
+			dAtA[i] = 0x3a
+		}
+		if len(x.PayoutAsset) > 0 {
+			i -= len(x.PayoutAsset)
+			copy(dAtA[i:], x.PayoutAsset)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PayoutAsset)))
+			i--
+			dAtA[i] = 0x32
+		}
+		if x.AutoClaimBps != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.AutoClaimBps))
+			i--
+			dAtA[i] = 0x28
+		}
+		if len(x.ClaimableYield) > 0 {
+			i -= len(x.ClaimableYield)
+			copy(dAtA[i:], x.ClaimableYield)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ClaimableYield)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if len(x.Principal) > 0 {
+			i -= len(x.Principal)
+			copy(dAtA[i:], x.Principal)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Principal)))
+			i--
+			dAtA[i] = 0x1a
 		}
 		if len(x.Bond) > 0 {
 			i -= len(x.Bond)
@@ -4346,6 +4503,153 @@ func (x *fastReflection_NodeBondProvider) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
 				x.Bond = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Principal", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Principal = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ClaimableYield", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.ClaimableYield = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 5:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field AutoClaimBps", wireType)
+				}
+				x.AutoClaimBps = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.AutoClaimBps |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 6:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PayoutAsset", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PayoutAsset = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 7:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PayoutAddress", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PayoutAddress = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -6248,8 +6552,13 @@ type NodeBondProvider struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	BondAddress string `protobuf:"bytes,1,opt,name=bond_address,json=bondAddress,proto3" json:"bond_address,omitempty"`
-	Bond        string `protobuf:"bytes,2,opt,name=bond,proto3" json:"bond,omitempty"`
+	BondAddress    string `protobuf:"bytes,1,opt,name=bond_address,json=bondAddress,proto3" json:"bond_address,omitempty"`
+	Bond           string `protobuf:"bytes,2,opt,name=bond,proto3" json:"bond,omitempty"`
+	Principal      string `protobuf:"bytes,3,opt,name=principal,proto3" json:"principal,omitempty"`
+	ClaimableYield string `protobuf:"bytes,4,opt,name=claimable_yield,json=claimableYield,proto3" json:"claimable_yield,omitempty"`
+	AutoClaimBps   uint64 `protobuf:"varint,5,opt,name=auto_claim_bps,json=autoClaimBps,proto3" json:"auto_claim_bps,omitempty"`
+	PayoutAsset    string `protobuf:"bytes,6,opt,name=payout_asset,json=payoutAsset,proto3" json:"payout_asset,omitempty"`
+	PayoutAddress  string `protobuf:"bytes,7,opt,name=payout_address,json=payoutAddress,proto3" json:"payout_address,omitempty"`
 }
 
 func (x *NodeBondProvider) Reset() {
@@ -6282,6 +6591,41 @@ func (x *NodeBondProvider) GetBondAddress() string {
 func (x *NodeBondProvider) GetBond() string {
 	if x != nil {
 		return x.Bond
+	}
+	return ""
+}
+
+func (x *NodeBondProvider) GetPrincipal() string {
+	if x != nil {
+		return x.Principal
+	}
+	return ""
+}
+
+func (x *NodeBondProvider) GetClaimableYield() string {
+	if x != nil {
+		return x.ClaimableYield
+	}
+	return ""
+}
+
+func (x *NodeBondProvider) GetAutoClaimBps() uint64 {
+	if x != nil {
+		return x.AutoClaimBps
+	}
+	return 0
+}
+
+func (x *NodeBondProvider) GetPayoutAsset() string {
+	if x != nil {
+		return x.PayoutAsset
+	}
+	return ""
+}
+
+func (x *NodeBondProvider) GetPayoutAddress() string {
+	if x != nil {
+		return x.PayoutAddress
 	}
 	return ""
 }
@@ -6542,38 +6886,50 @@ var file_types_query_node_proto_rawDesc = []byte{
 	0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x17, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x4e,
 	0x6f, 0x64, 0x65, 0x42, 0x6f, 0x6e, 0x64, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x42,
 	0x0d, 0xea, 0xde, 0x1f, 0x09, 0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x73, 0x52, 0x09,
-	0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x73, 0x22, 0x49, 0x0a, 0x10, 0x4e, 0x6f, 0x64,
-	0x65, 0x42, 0x6f, 0x6e, 0x64, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x12, 0x21, 0x0a,
-	0x0c, 0x62, 0x6f, 0x6e, 0x64, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x0b, 0x62, 0x6f, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
-	0x12, 0x12, 0x0a, 0x04, 0x62, 0x6f, 0x6e, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04,
-	0x62, 0x6f, 0x6e, 0x64, 0x22, 0x49, 0x0a, 0x08, 0x4e, 0x6f, 0x64, 0x65, 0x4a, 0x61, 0x69, 0x6c,
-	0x12, 0x25, 0x0a, 0x0e, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x5f, 0x68, 0x65, 0x69, 0x67,
-	0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0d, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73,
-	0x65, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x72, 0x65, 0x61, 0x73, 0x6f,
-	0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x22,
-	0x52, 0x0a, 0x0b, 0x43, 0x68, 0x61, 0x69, 0x6e, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x1f,
-	0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x09, 0xea,
-	0xde, 0x1f, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x52, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12,
-	0x22, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x42,
-	0x0a, 0xea, 0xde, 0x1f, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x52, 0x06, 0x68, 0x65, 0x69,
-	0x67, 0x68, 0x74, 0x22, 0x7b, 0x0a, 0x13, 0x4e, 0x6f, 0x64, 0x65, 0x50, 0x72, 0x65, 0x66, 0x6c,
-	0x69, 0x67, 0x68, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x22, 0x0a, 0x06, 0x73, 0x74,
-	0x61, 0x74, 0x75, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0a, 0xea, 0xde, 0x1f, 0x06,
-	0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x22,
-	0x0a, 0x06, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0a,
-	0xea, 0xde, 0x1f, 0x06, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x52, 0x06, 0x72, 0x65, 0x61, 0x73,
-	0x6f, 0x6e, 0x12, 0x1c, 0x0a, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03,
-	0x42, 0x08, 0xea, 0xde, 0x1f, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x52, 0x04, 0x63, 0x6f, 0x64, 0x65,
-	0x42, 0x7f, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0e, 0x51,
-	0x75, 0x65, 0x72, 0x79, 0x4e, 0x6f, 0x64, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a,
-	0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72,
-	0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76,
-	0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58,
-	0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
-	0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
-	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e,
-	0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x73, 0x22, 0x80, 0x02, 0x0a, 0x10, 0x4e, 0x6f,
+	0x64, 0x65, 0x42, 0x6f, 0x6e, 0x64, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x12, 0x21,
+	0x0a, 0x0c, 0x62, 0x6f, 0x6e, 0x64, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x62, 0x6f, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x12, 0x12, 0x0a, 0x04, 0x62, 0x6f, 0x6e, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x04, 0x62, 0x6f, 0x6e, 0x64, 0x12, 0x1c, 0x0a, 0x09, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69, 0x70,
+	0x61, 0x6c, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x70, 0x72, 0x69, 0x6e, 0x63, 0x69,
+	0x70, 0x61, 0x6c, 0x12, 0x27, 0x0a, 0x0f, 0x63, 0x6c, 0x61, 0x69, 0x6d, 0x61, 0x62, 0x6c, 0x65,
+	0x5f, 0x79, 0x69, 0x65, 0x6c, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x63, 0x6c,
+	0x61, 0x69, 0x6d, 0x61, 0x62, 0x6c, 0x65, 0x59, 0x69, 0x65, 0x6c, 0x64, 0x12, 0x24, 0x0a, 0x0e,
+	0x61, 0x75, 0x74, 0x6f, 0x5f, 0x63, 0x6c, 0x61, 0x69, 0x6d, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x05,
+	0x20, 0x01, 0x28, 0x04, 0x52, 0x0c, 0x61, 0x75, 0x74, 0x6f, 0x43, 0x6c, 0x61, 0x69, 0x6d, 0x42,
+	0x70, 0x73, 0x12, 0x21, 0x0a, 0x0c, 0x70, 0x61, 0x79, 0x6f, 0x75, 0x74, 0x5f, 0x61, 0x73, 0x73,
+	0x65, 0x74, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x70, 0x61, 0x79, 0x6f, 0x75, 0x74,
+	0x41, 0x73, 0x73, 0x65, 0x74, 0x12, 0x25, 0x0a, 0x0e, 0x70, 0x61, 0x79, 0x6f, 0x75, 0x74, 0x5f,
+	0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x70,
+	0x61, 0x79, 0x6f, 0x75, 0x74, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x22, 0x49, 0x0a, 0x08,
+	0x4e, 0x6f, 0x64, 0x65, 0x4a, 0x61, 0x69, 0x6c, 0x12, 0x25, 0x0a, 0x0e, 0x72, 0x65, 0x6c, 0x65,
+	0x61, 0x73, 0x65, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03,
+	0x52, 0x0d, 0x72, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12,
+	0x16, 0x0a, 0x06, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x06, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x22, 0x52, 0x0a, 0x0b, 0x43, 0x68, 0x61, 0x69, 0x6e,
+	0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x1f, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x09, 0xea, 0xde, 0x1f, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e,
+	0x52, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12, 0x22, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68,
+	0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x42, 0x0a, 0xea, 0xde, 0x1f, 0x06, 0x68, 0x65, 0x69,
+	0x67, 0x68, 0x74, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x7b, 0x0a, 0x13, 0x4e,
+	0x6f, 0x64, 0x65, 0x50, 0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x53, 0x74, 0x61, 0x74,
+	0x75, 0x73, 0x12, 0x22, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x09, 0x42, 0x0a, 0xea, 0xde, 0x1f, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06,
+	0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x22, 0x0a, 0x06, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0a, 0xea, 0xde, 0x1f, 0x06, 0x72, 0x65, 0x61, 0x73,
+	0x6f, 0x6e, 0x52, 0x06, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x12, 0x1c, 0x0a, 0x04, 0x63, 0x6f,
+	0x64, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x42, 0x08, 0xea, 0xde, 0x1f, 0x04, 0x63, 0x6f,
+	0x64, 0x65, 0x52, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x42, 0x7f, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e,
+	0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4e, 0x6f, 0x64, 0x65,
+	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79,
+	0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05,
+	0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x33,
 }
 
 var (

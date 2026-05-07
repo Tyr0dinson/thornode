@@ -802,6 +802,19 @@ func (k KVStoreDummy) GetAffiliateCollectors(_ cosmos.Context) ([]AffiliateFeeCo
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) SetBondYieldCollector(_ cosmos.Context, _ BondYieldCollector) {}
+func (k KVStoreDummy) GetBondYieldCollector(_ cosmos.Context, _, _ cosmos.AccAddress) (BondYieldCollector, error) {
+	return BondYieldCollector{}, kaboom
+}
+
+func (k KVStoreDummy) GetBondYieldCollectorIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetBondYieldCollectors(_ cosmos.Context) ([]BondYieldCollector, error) {
+	return nil, kaboom
+}
+
 func (k KVStoreDummy) InvariantRoutes() []common.InvariantRoute {
 	return nil
 }

@@ -131,6 +131,7 @@ func (h OperatorRotateHandler) rotate(ctx cosmos.Context, operator cosmos.AccAdd
 	if err != nil {
 		return err
 	}
+	bp.NormaliseYieldAccounting()
 
 	// rotate the operator address after passiveBackfill
 	nodeAcc.BondAddress = common.Address(operator.String())

@@ -55,8 +55,12 @@ func NewBondProviders(acc cosmos.AccAddress) BondProviders {
 
 func NewBondProvider(acc cosmos.AccAddress) BondProvider {
 	return BondProvider{
-		BondAddress: acc,
-		Bond:        cosmos.ZeroUint(),
+		BondAddress:    acc,
+		Bond:           cosmos.ZeroUint(),
+		Principal:      cosmos.ZeroUint(),
+		ClaimableYield: cosmos.ZeroUint(),
+		PayoutAsset:    common.EmptyAsset,
+		PayoutAddress:  common.NoAddress,
 	}
 }
 
@@ -255,6 +259,110 @@ func (m *BondProvider) IsEmpty() bool {
 	return m.BondAddress.Empty()
 }
 
+// NormaliseYieldAccounting initializes legacy or nil bond yield fields before accounting.
+func (m *BondProvider) NormaliseYieldAccounting() {
+	if m.Bond.IsNil() {
+		m.Bond = cosmos.ZeroUint()
+	}
+	if m.Principal.IsNil() {
+		m.Principal = cosmos.ZeroUint()
+	}
+	if m.ClaimableYield.IsNil() {
+		m.ClaimableYield = cosmos.ZeroUint()
+	}
+	if m.PayoutAddress.IsEmpty() {
+		m.PayoutAddress = common.NoAddress
+	}
+	// Before this accounting existed, the whole provider bond was principal.
+	if m.Principal.IsZero() && m.ClaimableYield.IsZero() && !m.Bond.IsZero() {
+		m.Principal = m.Bond
+	}
+	m.ClampYieldAccounting()
+}
+
+// ClampYieldAccounting keeps principal and claimable yield within the provider bond.
+func (m *BondProvider) ClampYieldAccounting() {
+	if m.Bond.IsNil() {
+		m.Bond = cosmos.ZeroUint()
+	}
+	if m.Principal.IsNil() {
+		m.Principal = cosmos.ZeroUint()
+	}
+	if m.ClaimableYield.IsNil() {
+		m.ClaimableYield = cosmos.ZeroUint()
+	}
+	if m.Principal.Add(m.ClaimableYield).LTE(m.Bond) {
+		return
+	}
+	if m.Principal.GTE(m.Bond) {
+		m.Principal = m.Bond
+		m.ClaimableYield = cosmos.ZeroUint()
+		return
+	}
+	m.ClaimableYield = common.SafeSub(m.Bond, m.Principal)
+}
+
+// NormaliseYieldAccounting initializes yield accounting on every bond provider.
+func (bp *BondProviders) NormaliseYieldAccounting() {
+	for i := range bp.Providers {
+		bp.Providers[i].NormaliseYieldAccounting()
+	}
+}
+
+// ResetYieldAccounting treats the current bond as principal and clears claimable yield.
+func (bp *BondProviders) ResetYieldAccounting() {
+	for i := range bp.Providers {
+		if bp.Providers[i].Bond.IsNil() {
+			bp.Providers[i].Bond = cosmos.ZeroUint()
+		}
+		bp.Providers[i].Principal = bp.Providers[i].Bond
+		bp.Providers[i].ClaimableYield = cosmos.ZeroUint()
+		if bp.Providers[i].PayoutAddress.IsEmpty() {
+			bp.Providers[i].PayoutAddress = common.NoAddress
+		}
+	}
+}
+
+// BondSnapshot captures provider bond balances before reward distribution.
+func (bp *BondProviders) BondSnapshot() map[string]cosmos.Uint {
+	snapshot := make(map[string]cosmos.Uint, len(bp.Providers))
+	for i := range bp.Providers {
+		bp.Providers[i].NormaliseYieldAccounting()
+		snapshot[bp.Providers[i].BondAddress.String()] = bp.Providers[i].Bond
+	}
+	return snapshot
+}
+
+// AccrueClaimableYield adds post-reward bond increases to claimable yield, bounded by the cap.
+func (bp *BondProviders) AccrueClaimableYield(before map[string]cosmos.Uint, claimableBpsCap cosmos.Uint) {
+	for i := range bp.Providers {
+		provider := &bp.Providers[i]
+		provider.NormaliseYieldAccounting()
+		beforeBond, ok := before[provider.BondAddress.String()]
+		if !ok || provider.Bond.LTE(beforeBond) {
+			provider.ClampYieldAccounting()
+			continue
+		}
+
+		delta := provider.Bond.Sub(beforeBond)
+		if !claimableBpsCap.IsZero() {
+			// The cap is based on principal, so repeatedly compounding rewards cannot
+			// make all provider bond claimable.
+			maxClaimable := common.GetSafeShare(claimableBpsCap, cosmos.NewUint(10000), provider.Principal)
+			if provider.ClaimableYield.GTE(maxClaimable) {
+				provider.ClampYieldAccounting()
+				continue
+			}
+			headroom := maxClaimable.Sub(provider.ClaimableYield)
+			if delta.GT(headroom) {
+				delta = headroom
+			}
+		}
+		provider.ClaimableYield = provider.ClaimableYield.Add(delta)
+		provider.ClampYieldAccounting()
+	}
+}
+
 func (bp *BondProviders) Has(acc cosmos.AccAddress) bool {
 	provider := bp.Get(acc)
 	return !provider.IsEmpty()
@@ -272,7 +380,10 @@ func (bp *BondProviders) Get(acc cosmos.AccAddress) BondProvider {
 func (bp *BondProviders) Bond(bond cosmos.Uint, acc cosmos.AccAddress) {
 	for i, provider := range bp.Providers {
 		if provider.BondAddress.Equals(acc) {
+			bp.Providers[i].NormaliseYieldAccounting()
 			bp.Providers[i].Bond = bp.Providers[i].Bond.Add(bond)
+			// Fresh bond deposits are principal, not claimable yield.
+			bp.Providers[i].Principal = bp.Providers[i].Principal.Add(bond)
 			return
 		}
 	}
@@ -281,10 +392,99 @@ func (bp *BondProviders) Bond(bond cosmos.Uint, acc cosmos.AccAddress) {
 func (bp *BondProviders) Unbond(bond cosmos.Uint, acc cosmos.AccAddress) {
 	for i, provider := range bp.Providers {
 		if provider.BondAddress.Equals(acc) {
+			bp.Providers[i].NormaliseYieldAccounting()
 			bp.Providers[i].Bond = common.SafeSub(bp.Providers[i].Bond, bond)
+			// Unbonding consumes claimable yield first so principal only shrinks after
+			// accrued yield has been exhausted.
+			claimableReduction := bond
+			if claimableReduction.GT(bp.Providers[i].ClaimableYield) {
+				claimableReduction = bp.Providers[i].ClaimableYield
+			}
+			bp.Providers[i].ClaimableYield = common.SafeSub(bp.Providers[i].ClaimableYield, claimableReduction)
+			principalReduction := common.SafeSub(bond, claimableReduction)
+			bp.Providers[i].Principal = common.SafeSub(bp.Providers[i].Principal, principalReduction)
+			bp.Providers[i].ClampYieldAccounting()
 			return
 		}
 	}
+}
+
+// ClaimYield removes claimable yield from a provider without reducing principal.
+func (bp *BondProviders) ClaimYield(bond cosmos.Uint, acc cosmos.AccAddress) cosmos.Uint {
+	for i, provider := range bp.Providers {
+		if provider.BondAddress.Equals(acc) {
+			bp.Providers[i].NormaliseYieldAccounting()
+			if bond.IsZero() || bond.GT(bp.Providers[i].ClaimableYield) {
+				bond = bp.Providers[i].ClaimableYield
+			}
+			bp.Providers[i].Bond = common.SafeSub(bp.Providers[i].Bond, bond)
+			bp.Providers[i].ClaimableYield = common.SafeSub(bp.Providers[i].ClaimableYield, bond)
+			bp.Providers[i].ClampYieldAccounting()
+			return bond
+		}
+	}
+	return cosmos.ZeroUint()
+}
+
+// SetAutoClaim stores the provider's automatic bond yield claim settings.
+func (bp *BondProviders) SetAutoClaim(acc cosmos.AccAddress, bps uint64, payoutAsset common.Asset, payoutAddress common.Address) bool {
+	for i, provider := range bp.Providers {
+		if provider.BondAddress.Equals(acc) {
+			bp.Providers[i].NormaliseYieldAccounting()
+			bp.Providers[i].AutoClaimBps = bps
+			bp.Providers[i].PayoutAsset = payoutAsset
+			if payoutAddress.IsEmpty() {
+				payoutAddress = common.NoAddress
+			}
+			bp.Providers[i].PayoutAddress = payoutAddress
+			return true
+		}
+	}
+	return false
+}
+
+func (bp *BondProviders) Rebond(bond cosmos.Uint, oldAcc, newAcc cosmos.AccAddress) cosmos.Uint {
+	for oldIdx := range bp.Providers {
+		if !bp.Providers[oldIdx].BondAddress.Equals(oldAcc) {
+			continue
+		}
+		for newIdx := range bp.Providers {
+			if !bp.Providers[newIdx].BondAddress.Equals(newAcc) {
+				continue
+			}
+			bp.Providers[oldIdx].NormaliseYieldAccounting()
+			bp.Providers[newIdx].NormaliseYieldAccounting()
+			oldProvider := bp.Providers[oldIdx]
+			if bond.IsZero() || bond.GT(oldProvider.Bond) {
+				bond = oldProvider.Bond
+			}
+			if bond.IsZero() {
+				return cosmos.ZeroUint()
+			}
+
+			// Rebonding moves principal and claimable yield in the same proportion as
+			// the provider bond being transferred.
+			principal := common.GetSafeShare(bond, oldProvider.Bond, oldProvider.Principal)
+			claimable := common.GetSafeShare(bond, oldProvider.Bond, oldProvider.ClaimableYield)
+			if bond.Equal(oldProvider.Bond) {
+				principal = oldProvider.Principal
+				claimable = oldProvider.ClaimableYield
+			}
+
+			bp.Providers[oldIdx].Bond = common.SafeSub(bp.Providers[oldIdx].Bond, bond)
+			bp.Providers[oldIdx].Principal = common.SafeSub(bp.Providers[oldIdx].Principal, principal)
+			bp.Providers[oldIdx].ClaimableYield = common.SafeSub(bp.Providers[oldIdx].ClaimableYield, claimable)
+			bp.Providers[oldIdx].ClampYieldAccounting()
+
+			bp.Providers[newIdx].Bond = bp.Providers[newIdx].Bond.Add(bond)
+			bp.Providers[newIdx].Principal = bp.Providers[newIdx].Principal.Add(principal)
+			bp.Providers[newIdx].ClaimableYield = bp.Providers[newIdx].ClaimableYield.Add(claimable)
+			bp.Providers[newIdx].ClampYieldAccounting()
+
+			return bond
+		}
+	}
+	return cosmos.ZeroUint()
 }
 
 // remove provider (only if bond is zero)
@@ -304,6 +504,7 @@ func (bp *BondProviders) Remove(acc cosmos.AccAddress) bool {
 
 // realigns the bond providers relative to the node bond
 func (bp *BondProviders) Adjust(nodeBond cosmos.Uint) {
+	bp.NormaliseYieldAccounting()
 	totalBond := cosmos.ZeroUint()
 	if len(bp.Providers) == 0 {
 		// no adjustment needed
@@ -340,6 +541,9 @@ func (bp *BondProviders) Adjust(nodeBond cosmos.Uint) {
 
 	}
 	bp.Providers[0].Bond = bp.Providers[0].Bond.Add(fee)
+	for i := range bp.Providers {
+		bp.Providers[i].ClampYieldAccounting()
+	}
 }
 
 // HasProviderBonded: Checks if a bond provider (not the operator) has bonded to the node

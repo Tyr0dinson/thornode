@@ -71,6 +71,7 @@ type (
 	ReferenceMemo            = types.ReferenceMemo
 	THORName                 = types.THORName
 	AffiliateFeeCollector    = types.AffiliateFeeCollector
+	BondYieldCollector       = types.BondYieldCollector
 	SwapperClout             = types.SwapperClout
 	TradeAccount             = types.TradeAccount
 	TradeUnit                = types.TradeUnit

@@ -125,6 +125,7 @@ var maccPerms = map[string][]string{
 	thorchain.ReserveName:            {},
 	thorchain.LendingName:            {},
 	thorchain.AffiliateCollectorName: {},
+	thorchain.BondYieldCollectorName: {},
 	thorchain.TreasuryName:           {},
 	thorchain.RUNEPoolName:           {},
 	wasmtypes.ModuleName:             {authtypes.Burner},

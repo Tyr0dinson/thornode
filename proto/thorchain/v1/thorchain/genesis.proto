@@ -9,6 +9,7 @@ import "types/type_chain_contract.proto";
 import "types/type_network_fee.proto";
 import "types/msg_swap.proto";
 import "types/type_affiliate_fee_collector.proto";
+import "types/type_bond_yield_collector.proto";
 import "types/type_streaming_swap.proto";
 import "types/type_network.proto";
 import "types/type_pol.proto";
@@ -130,4 +131,6 @@ message GenesisState {
   repeated types.DynamicFeeAccumulator dynamic_fee_accumulators = 47
       [ (gogoproto.nullable) = false ];
   int64 last_observed_dynamic_fee_epoch_blocks = 48;
+  repeated types.BondYieldCollector bond_yield_collectors = 49
+      [ (gogoproto.nullable) = false ];
 }

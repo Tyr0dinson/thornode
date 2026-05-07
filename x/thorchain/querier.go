@@ -779,8 +779,13 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		providers = make([]*types.NodeBondProvider, len(bp.Providers))
 		for i, p := range bp.Providers {
 			providers[i] = &types.NodeBondProvider{
-				BondAddress: p.BondAddress.String(),
-				Bond:        p.Bond.String(),
+				BondAddress:    p.BondAddress.String(),
+				Bond:           p.Bond.String(),
+				Principal:      p.Principal.String(),
+				ClaimableYield: p.ClaimableYield.String(),
+				AutoClaimBps:   p.AutoClaimBps,
+				PayoutAsset:    p.PayoutAsset.String(),
+				PayoutAddress:  p.PayoutAddress.String(),
 			}
 		}
 	}
@@ -1014,8 +1019,13 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			providers = make([]*types.NodeBondProvider, len(bp.Providers))
 			for i := range bp.Providers {
 				providers[i] = &types.NodeBondProvider{
-					BondAddress: bp.Providers[i].BondAddress.String(),
-					Bond:        bp.Providers[i].Bond.String(),
+					BondAddress:    bp.Providers[i].BondAddress.String(),
+					Bond:           bp.Providers[i].Bond.String(),
+					Principal:      bp.Providers[i].Principal.String(),
+					ClaimableYield: bp.Providers[i].ClaimableYield.String(),
+					AutoClaimBps:   bp.Providers[i].AutoClaimBps,
+					PayoutAsset:    bp.Providers[i].PayoutAsset.String(),
+					PayoutAddress:  bp.Providers[i].PayoutAddress.String(),
 				}
 			}
 		}

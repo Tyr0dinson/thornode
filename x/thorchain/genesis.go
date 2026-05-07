@@ -141,6 +141,7 @@ func DefaultGenesisState() GenesisState {
 		RuneProviders:           make([]RUNEProvider, 0),
 		RunePool:                NewRUNEPool(),
 		AffiliateCollectors:     []AffiliateFeeCollector{},
+		BondYieldCollectors:     []BondYieldCollector{},
 		PolReserveDeposits:      make([]POLReserveDeposit, 0),
 		DynamicFeeRecords:       make([]types.DynamicFeeRecord, 0),
 		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
@@ -333,6 +334,10 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetAffiliateCollector(ctx, item)
 	}
 
+	for _, item := range data.BondYieldCollectors {
+		keeper.SetBondYieldCollector(ctx, item)
+	}
+
 	for _, item := range data.TcyClaimers {
 		if err := keeper.SetTCYClaimer(ctx, item); err != nil {
 			panic(err)
@@ -381,6 +386,8 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	ctx.Logger().Info("Claiming Module", "address", ClaimingAddr.String())
 	tcyStakeAddr, _ := keeper.GetModuleAddress(TCYStakeName)
 	ctx.Logger().Info("TCYStake Module", "address", tcyStakeAddr.String())
+	bondYieldCollectorAddr, _ := keeper.GetModuleAddress(BondYieldCollectorName)
+	ctx.Logger().Info("BondYieldCollector Module", "address", bondYieldCollectorAddr.String())
 
 	return validators
 }
@@ -802,6 +809,11 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		panic(err)
 	}
 
+	bondYieldCollectors, err := k.GetBondYieldCollectors(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 	dynamicFeeRecords := make([]types.DynamicFeeRecord, 0)
 	iterDFRec := k.GetDynamicFeeRecordIterator(ctx)
 	defer iterDFRec.Close()
@@ -855,6 +867,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		RuneProviders:                     runeProviders,
 		RunePool:                          runePool,
 		AffiliateCollectors:               affiliateCollectors,
+		BondYieldCollectors:               bondYieldCollectors,
 		TcyClaimers:                       tcyClaimers,
 		TcyStakers:                        tcyStakers,
 		PolReserveDeposits:                polReserveDeposits,

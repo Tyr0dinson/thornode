@@ -462,6 +462,14 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 	if strings.HasPrefix(memo, PreferredAssetSwapMemoPrefix) && fromAdd.Equals(affColAddress) {
 		return &cosmos.Result{}, finalEmit, nil
 	}
+	bondYieldCollectorAddress, err := h.mgr.Keeper().GetModuleAddress(BondYieldCollectorName)
+	if err != nil {
+		ctx.Logger().Error("failed to retrieve BondYieldCollector module address", "error", err)
+	}
+	// Bond yield payout swaps are terminal payouts, so skip downstream memo handling.
+	if strings.HasPrefix(memo, BondYieldSwapMemoPrefix) && fromAdd.Equals(bondYieldCollectorAddress) {
+		return &cosmos.Result{}, finalEmit, nil
+	}
 
 	if parseMemoErr != nil {
 		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", parseMemoErr)

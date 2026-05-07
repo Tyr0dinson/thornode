@@ -10,6 +10,7 @@ const (
 	ReserveName            = types.ReserveName
 	AsgardName             = types.AsgardName
 	AffiliateCollectorName = types.AffiliateCollectorName
+	BondYieldCollectorName = types.BondYieldCollectorName
 	TreasuryName           = types.TreasuryName
 	RUNEPoolName           = types.RUNEPoolName
 	TCYClaimingName        = types.TCYClaimingName
@@ -72,6 +73,7 @@ var (
 	NewNodeAccount             = types.NewNodeAccount
 	NewBondProviders           = types.NewBondProviders
 	NewBondProvider            = types.NewBondProvider
+	NewBondYieldCollector      = types.NewBondYieldCollector
 	NewVault                   = types.NewVault
 	NewVaultV2                 = types.NewVaultV2
 	NewReserveContributor      = types.NewReserveContributor
@@ -142,6 +144,7 @@ type (
 	THORName                 = types.THORName
 	THORNameAlias            = types.THORNameAlias
 	AffiliateFeeCollector    = types.AffiliateFeeCollector
+	BondYieldCollector       = types.BondYieldCollector
 	SolvencyVoter            = types.SolvencyVoter
 	MinJoinLast              = types.MinJoinLast
 	NodeMimir                = types.NodeMimir

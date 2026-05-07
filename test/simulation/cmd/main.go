@@ -89,6 +89,7 @@ func simulationStages() []simulationStage {
 		{name: "arb", defaultOn: true, constructor: core.NewArbActor},
 		{name: "swaps", defaultOn: true, constructor: suites.Swaps},
 		{name: "memoless-swaps", defaultOn: true, constructor: suites.MemolessSwaps},
+		{name: "bond-yield", defaultOn: false, constructor: suites.BondYield},
 		{name: "consolidate", defaultOn: true, constructor: features.Consolidate},
 		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
 		{name: "inactive-vault-refunds", defaultOn: false, constructor: features.InactiveVaultRefunds},

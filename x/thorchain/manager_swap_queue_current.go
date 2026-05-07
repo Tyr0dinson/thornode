@@ -169,6 +169,21 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 						ctx.Logger().Error("failed to cleanup failed preferred asset swap", "error", err)
 					}
 				}
+				var bondYieldCollectorAddress common.Address
+				bondYieldCollectorAddress, err = mgr.Keeper().GetModuleAddress(BondYieldCollectorName)
+				if err != nil {
+					ctx.Logger().Error("failed to retrieve BondYieldCollector module address", "error", err)
+				}
+				if strings.HasPrefix(pick.msg.Tx.Memo, BondYieldSwapMemoPrefix) && pick.msg.Tx.FromAddress.Equals(bondYieldCollectorAddress) {
+					triggerRefund = false
+					// The swap spent RUNE from Asgard, so return the failed payout amount to
+					// the bond yield collector instead of issuing a user refund.
+					runeAmt := pick.msg.Tx.Coins[0].Amount
+					memo := pick.msg.Tx.Memo
+					if err = vm.cleanupFailedBondYieldSwap(ctx, mgr, memo, runeAmt); err != nil {
+						ctx.Logger().Error("failed to cleanup failed bond yield swap", "error", err)
+					}
+				}
 			}
 
 			if triggerRefund {
@@ -302,6 +317,41 @@ func (vm *SwapQueueImpl) cleanupFailedPreferredAssetSwap(ctx cosmos.Context, mgr
 	// send rune back to affiliate collector
 	if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, AffiliateCollectorName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))); err != nil {
 		return fmt.Errorf("failed to send rune back to affiliate collector: %w", err)
+	}
+
+	return nil
+}
+
+// cleanupFailedBondYieldSwap restores failed non-RUNE bond yield payout RUNE to
+// the collector keyed by the network memo.
+func (vm *SwapQueueImpl) cleanupFailedBondYieldSwap(ctx cosmos.Context, mgr Manager, memo string, runeAmt cosmos.Uint) error {
+	ctx.Logger().Info("bond yield payout swap failed, send rune back to bond yield collector", "runeAmt", runeAmt.String(), "memo", memo)
+	suffix, ok := strings.CutPrefix(memo, fmt.Sprintf("%s-", BondYieldSwapMemoPrefix))
+	if !ok {
+		return fmt.Errorf("failed to get bond yield collector key from memo: %s", memo)
+	}
+	parts := strings.SplitN(suffix, "-", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid bond yield collector memo: %s", memo)
+	}
+	nodeAddr, err := cosmos.AccAddressFromBech32(parts[0])
+	if err != nil {
+		return fmt.Errorf("failed to parse node address: %w", err)
+	}
+	providerAddr, err := cosmos.AccAddressFromBech32(parts[1])
+	if err != nil {
+		return fmt.Errorf("failed to parse bond provider address: %w", err)
+	}
+
+	collector, err := mgr.Keeper().GetBondYieldCollector(ctx, nodeAddr, providerAddr)
+	if err != nil {
+		return fmt.Errorf("failed to get bond yield collector record: %w", err)
+	}
+	collector.RuneAmount = collector.RuneAmount.Add(runeAmt)
+	mgr.Keeper().SetBondYieldCollector(ctx, collector)
+
+	if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, BondYieldCollectorName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))); err != nil {
+		return fmt.Errorf("failed to send rune back to bond yield collector: %w", err)
 	}
 
 	return nil

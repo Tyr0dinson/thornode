@@ -394,6 +394,18 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 		na.MissingBlocks = 0 // zero missing blocks that weren't signed (if any)
 
 		vm.k.ResetNodeAccountSlashPoints(ctx, na.NodeAddress)
+		bp, bpErr := vm.k.GetBondProviders(ctx, na.NodeAddress)
+		if bpErr != nil {
+			ctx.Logger().Error("fail to get bond providers", "node address", na.NodeAddress.String(), "error", bpErr)
+		} else if bpErr = passiveBackfill(ctx, mgr, na, &bp); bpErr != nil {
+			ctx.Logger().Error("fail to backfill bond providers", "node address", na.NodeAddress.String(), "error", bpErr)
+		} else {
+			bp.Adjust(na.Bond)
+			bp.ResetYieldAccounting()
+			if bpErr = vm.k.SetBondProviders(ctx, bp); bpErr != nil {
+				ctx.Logger().Error("fail to save bond providers", "node address", na.NodeAddress.String(), "error", bpErr)
+			}
+		}
 		if err = vm.k.SetNodeAccount(ctx, na); err != nil {
 			ctx.Logger().Error("fail to save node account", "error", err)
 		}
@@ -549,7 +561,8 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		return fmt.Errorf("fail to get network: %w", err)
 	}
 
-	slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
+	var slashPts int64
+	slashPts, err = vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 	if err != nil {
 		return fmt.Errorf("fail to get node slash points: %w", err)
 	}
@@ -573,11 +586,13 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	reward = common.GetUncappedShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
 
 	// Record the node operator's bond (in bond provider form) before the reward
-	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
+	var bp keeper.BondProviders
+	bp, err = vm.k.GetBondProviders(ctx, na.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", na.NodeAddress))
 	}
-	nodeOperatorAccAddr, err := na.BondAddress.AccAddress()
+	var nodeOperatorAccAddr cosmos.AccAddress
+	nodeOperatorAccAddr, err = na.BondAddress.AccAddress()
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to parse bond address(%s)", na.BondAddress))
 	}
@@ -587,6 +602,7 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	}
 	// Ensure that previous rewards are already accounted for
 	bp.Adjust(na.Bond)
+	providerBondBeforeReward := bp.BondSnapshot()
 	nodeOperatorProvider := bp.Get(nodeOperatorAccAddr)
 	// Sanity check that the node operator is accounted for
 	if nodeOperatorProvider.IsEmpty() {
@@ -606,7 +622,7 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		cosmos.NewUint(uint64(totalActiveBlocks)),
 	)
 
-	if err := vm.k.SetNetwork(ctx, network); err != nil {
+	if err = vm.k.SetNetwork(ctx, network); err != nil {
 		return fmt.Errorf("fail to save network data: %w", err)
 	}
 
@@ -627,16 +643,22 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		na.Bond = common.SafeSub(na.Bond, nodeOperatorFees)
 		bp.Unbond(nodeOperatorFees, nodeOperatorAccAddr)
 	}
+	// Only the provider bond increase that remains after node operator fees is
+	// accrued as claimable bond yield.
+	bp.AccrueClaimableYield(providerBondBeforeReward, getBondYieldClaimableBpsCap(ctx, mgr))
+	if err = autoClaimBondYield(ctx, mgr, &na, &bp); err != nil {
+		return fmt.Errorf("fail to auto claim bond yield: %w", err)
+	}
 
 	// Set node account and bond providers, then emit BondReward event (for the full pre-payout reward)
-	if err := vm.k.SetNodeAccount(ctx, na); err != nil {
+	if err = vm.k.SetNodeAccount(ctx, na); err != nil {
 		return fmt.Errorf("fail to save node account: %w", err)
 	}
-	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+	if err = mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
-	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
+	if err = mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 
@@ -649,13 +671,13 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		}
 
 		// TODO: Remove this NewAddress call entirely in the next version of this manager.
-		_, err := common.NewAddress(na.NodeAddress.String())
+		_, err = common.NewAddress(na.NodeAddress.String())
 		if err != nil {
 			return fmt.Errorf("fail to parse node address: %w", err)
 		}
 		// emit BondReturned event
 		bondReturnedEvent := NewEventBond(nodeOperatorFees, BondReturned, common.Tx{}, &na, nodeOperatorAccAddr)
-		if err := mgr.EventMgr().EmitEvent(ctx, bondReturnedEvent); err != nil {
+		if err = mgr.EventMgr().EmitEvent(ctx, bondReturnedEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)
 		}
 	}

@@ -522,6 +522,18 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
 	c.Assert(mem.NodeOperatorFee, Equals, int64(1000))
 
+	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("BONDYIELD:%s:10000", whiteListAddr))
+	c.Assert(err, IsNil)
+	c.Assert(memo.IsType(TxBondYield), Equals, true)
+	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
+	c.Assert(memo.GetAmount().Equal(cosmos.NewUint(10000)), Equals, true)
+	memoParser, _ := newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BONDYIELD:%s:AUTO:2500:ETH.ETH:%s", whiteListAddr.String(), types.GetRandomETHAddress()))
+	bondYieldMemo, err := memoParser.ParseBondYieldMemo()
+	c.Assert(err, IsNil)
+	c.Assert(bondYieldMemo.AutoClaim, Equals, true)
+	c.Assert(bondYieldMemo.AutoClaimBps, Equals, uint64(2500))
+	c.Assert(bondYieldMemo.PayoutAsset.String(), Equals, "ETH.ETH")
+
 	memo, err = ParseMemoWithTHORNames(ctx, k, "leave:"+types.GetRandomBech32Addr().String())
 	c.Assert(err, IsNil)
 	c.Assert(memo.IsType(TxLeave), Equals, true)

@@ -63,6 +63,22 @@ message BondProvider {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
+  string principal = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string claimable_yield = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  uint64 auto_claim_bps = 5;
+  common.Asset payout_asset = 6 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string payout_address = 7
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
 }
 
 message BondProviders {

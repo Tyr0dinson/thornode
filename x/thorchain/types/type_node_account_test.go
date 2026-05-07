@@ -238,3 +238,58 @@ func (s *NodeAccountSuite) TestBondProviders(c *C) {
 	c.Assert(bp.Providers[0].Bond.Equal(nodeBond), Equals, true)
 	// The sole provider's bond equals the node bond after adjustment.
 }
+
+func (s *NodeAccountSuite) TestBondProviderYieldAccounting(c *C) {
+	acc := GetRandomBech32Addr()
+	bp := NewBondProviders(acc)
+	bp.Providers = []BondProvider{NewBondProvider(acc)}
+	bp.Bond(cosmos.NewUint(1000), acc)
+
+	snapshot := bp.BondSnapshot()
+	bp.Providers[0].Bond = cosmos.NewUint(1500)
+	bp.AccrueClaimableYield(snapshot, cosmos.NewUint(2500))
+
+	provider := bp.Get(acc)
+	c.Check(provider.Principal.Uint64(), Equals, uint64(1000))
+	c.Check(provider.ClaimableYield.Uint64(), Equals, uint64(250))
+
+	claimed := bp.ClaimYield(cosmos.NewUint(100), acc)
+	provider = bp.Get(acc)
+	c.Check(claimed.Uint64(), Equals, uint64(100))
+	c.Check(provider.Bond.Uint64(), Equals, uint64(1400))
+	c.Check(provider.Principal.Uint64(), Equals, uint64(1000))
+	c.Check(provider.ClaimableYield.Uint64(), Equals, uint64(150))
+
+	bp.Unbond(cosmos.NewUint(200), acc)
+	provider = bp.Get(acc)
+	c.Check(provider.Bond.Uint64(), Equals, uint64(1200))
+	c.Check(provider.Principal.Uint64(), Equals, uint64(950))
+	c.Check(provider.ClaimableYield.IsZero(), Equals, true)
+
+	bp.ResetYieldAccounting()
+	provider = bp.Get(acc)
+	c.Check(provider.Principal.Uint64(), Equals, uint64(1200))
+	c.Check(provider.ClaimableYield.IsZero(), Equals, true)
+}
+
+func (s *NodeAccountSuite) TestBondProviderRebondMovesYieldAccounting(c *C) {
+	oldAcc := GetRandomBech32Addr()
+	newAcc := GetRandomBech32Addr()
+	bp := NewBondProviders(oldAcc)
+	bp.Providers = []BondProvider{NewBondProvider(oldAcc), NewBondProvider(newAcc)}
+	bp.Providers[0].Bond = cosmos.NewUint(1000)
+	bp.Providers[0].Principal = cosmos.NewUint(800)
+	bp.Providers[0].ClaimableYield = cosmos.NewUint(200)
+
+	rebonded := bp.Rebond(cosmos.NewUint(500), oldAcc, newAcc)
+	c.Check(rebonded.Uint64(), Equals, uint64(500))
+
+	oldProvider := bp.Get(oldAcc)
+	newProvider := bp.Get(newAcc)
+	c.Check(oldProvider.Bond.Uint64(), Equals, uint64(500))
+	c.Check(oldProvider.Principal.Uint64(), Equals, uint64(400))
+	c.Check(oldProvider.ClaimableYield.Uint64(), Equals, uint64(100))
+	c.Check(newProvider.Bond.Uint64(), Equals, uint64(500))
+	c.Check(newProvider.Principal.Uint64(), Equals, uint64(400))
+	c.Check(newProvider.ClaimableYield.Uint64(), Equals, uint64(100))
+}

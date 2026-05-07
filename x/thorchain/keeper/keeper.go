@@ -498,6 +498,10 @@ type KeeperTHORName interface {
 	GetAffiliateCollector(_ cosmos.Context, _ cosmos.AccAddress) (AffiliateFeeCollector, error)
 	GetAffiliateCollectorIterator(_ cosmos.Context) cosmos.Iterator
 	GetAffiliateCollectors(_ cosmos.Context) ([]AffiliateFeeCollector, error)
+	SetBondYieldCollector(_ cosmos.Context, _ BondYieldCollector)
+	GetBondYieldCollector(_ cosmos.Context, _ cosmos.AccAddress, _ cosmos.AccAddress) (BondYieldCollector, error)
+	GetBondYieldCollectorIterator(_ cosmos.Context) cosmos.Iterator
+	GetBondYieldCollectors(_ cosmos.Context) ([]BondYieldCollector, error)
 }
 
 type KeeperHalt interface {

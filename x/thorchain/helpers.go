@@ -1212,6 +1212,7 @@ func IsModuleAccAddress(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
 		accAddr.Equals(keeper.GetModuleAccAddress(ReserveName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(LendingName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(BondYieldCollectorName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(TCYClaimingName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(TCYStakeName)) ||

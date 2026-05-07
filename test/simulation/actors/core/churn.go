@@ -46,6 +46,15 @@ func (a *ChurnActor) startChurn(config *OpConfig) OpResult {
 			Continue: false,
 		}
 	}
+	if len(nodes) < 2 {
+		a.Log().
+			Info().
+			Int("node_count", len(nodes)).
+			Msg("skipping churn; not enough thornode nodes")
+		return OpResult{
+			Finish: true,
+		}
+	}
 	activeNodes := map[string]bool{}
 	for _, node := range nodes {
 		if node.Status == types.NodeStatus_Active.String() {

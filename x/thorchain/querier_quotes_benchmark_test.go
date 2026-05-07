@@ -100,6 +100,7 @@ func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
 			types.ReserveName:            {},
 			types.LendingName:            {},
 			types.AffiliateCollectorName: {},
+			types.BondYieldCollectorName: {},
 			types.TreasuryName:           {},
 			types.RUNEPoolName:           {},
 			types.TCYStakeName:           {},

@@ -71,6 +71,11 @@ message NodeBondProviders {
 message NodeBondProvider {
   string bond_address = 1;
   string bond = 2;
+  string principal = 3;
+  string claimable_yield = 4;
+  uint64 auto_claim_bps = 5;
+  string payout_asset = 6;
+  string payout_address = 7;
 }
 
 message NodeJail {

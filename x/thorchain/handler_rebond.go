@@ -129,8 +129,7 @@ func (h ReBondHandler) handle(ctx cosmos.Context, msg MsgReBond) error {
 		amount = oldProvider.Bond
 	}
 
-	bondProviders.Unbond(amount, oldProvider.BondAddress)
-	bondProviders.Bond(amount, newProvider.BondAddress)
+	amount = bondProviders.Rebond(amount, oldProvider.BondAddress, newProvider.BondAddress)
 
 	// if old provider bond is zero, remove it
 	if amount.Equal(oldProvider.Bond) {

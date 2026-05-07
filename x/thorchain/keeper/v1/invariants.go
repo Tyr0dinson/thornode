@@ -14,6 +14,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("bond", BondInvariant(k)),
 		common.NewInvariantRoute("thorchain", THORChainInvariant(k)),
 		common.NewInvariantRoute("affiliate_collector", AffilliateCollectorInvariant(k)),
+		common.NewInvariantRoute("bond_yield_collector", BondYieldCollectorInvariant(k)),
 		common.NewInvariantRoute("pools", PoolsInvariant(k)),
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
@@ -241,6 +242,41 @@ func AffilliateCollectorInvariant(k KVStore) common.Invariant {
 		} else if totalAffRune.LT(affColModuleRune) {
 			broken = true
 			diff := affColModuleRune.Sub(totalAffRune)
+			coin, _ := common.NewCoin(common.RuneAsset(), diff).Native()
+			msg = append(msg, fmt.Sprintf("oversolvent: %s", coin))
+		}
+
+		return msg, broken
+	}
+}
+
+// BondYieldCollectorInvariant the bond_yield_collector module backs accrued
+// bond yield waiting for a configured payout swap.
+func BondYieldCollectorInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		moduleRune := k.GetBalanceOfModule(ctx, BondYieldCollectorName, common.RuneAsset().Native())
+		collectors, err := k.GetBondYieldCollectors(ctx)
+		if err != nil {
+			if moduleRune.IsZero() {
+				return nil, false
+			}
+			msg = append(msg, err.Error())
+			return msg, true
+		}
+
+		totalRune := cosmos.ZeroUint()
+		for _, collector := range collectors {
+			totalRune = totalRune.Add(collector.RuneAmount)
+		}
+
+		if totalRune.GT(moduleRune) {
+			broken = true
+			diff := totalRune.Sub(moduleRune)
+			coin, _ := common.NewCoin(common.RuneAsset(), diff).Native()
+			msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
+		} else if totalRune.LT(moduleRune) {
+			broken = true
+			diff := moduleRune.Sub(totalRune)
 			coin, _ := common.NewCoin(common.RuneAsset(), diff).Native()
 			msg = append(msg, fmt.Sprintf("oversolvent: %s", coin))
 		}

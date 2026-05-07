@@ -16,6 +16,7 @@ const (
 	BondName               = types.BondName
 	LendingName            = types.LendingName
 	AffiliateCollectorName = types.AffiliateCollectorName
+	BondYieldCollectorName = types.BondYieldCollectorName
 	TreasuryName           = types.TreasuryName
 	RUNEPoolName           = types.RUNEPoolName
 	TCYClaimingName        = types.TCYClaimingName
@@ -85,6 +86,7 @@ const (
 	TxModifyLimitSwap   = mem.TxModifyLimitSwap
 	TxAdd               = mem.TxAdd
 	TxBond              = mem.TxBond
+	TxBondYield         = mem.TxBondYield
 	TxMigrate           = mem.TxMigrate
 	TxRagnarok          = mem.TxRagnarok
 	TxReserve           = mem.TxReserve
@@ -206,6 +208,7 @@ var (
 	NewReserveContributor          = types.NewReserveContributor
 	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
+	NewMsgBondYield                = types.NewMsgBondYield
 	NewMsgUnBond                   = types.NewMsgUnBond
 	NewMsgReBond                   = types.NewMsgReBond
 	NewMsgErrataTx                 = types.NewMsgErrataTx
@@ -276,6 +279,7 @@ type (
 	MsgSend                   = types.MsgSend
 	MsgDeposit                = types.MsgDeposit
 	MsgBond                   = types.MsgBond
+	MsgBondYield              = types.MsgBondYield
 	MsgUnBond                 = types.MsgUnBond
 	MsgReBond                 = types.MsgReBond
 	MsgNoOp                   = types.MsgNoOp
@@ -363,6 +367,7 @@ type (
 	NodeStatus               = types.NodeStatus
 	BondProviders            = types.BondProviders
 	BondProvider             = types.BondProvider
+	BondYieldCollector       = types.BondYieldCollector
 	Network                  = types.Network
 	ProtocolOwnedLiquidity   = types.ProtocolOwnedLiquidity
 	POLReserveDeposit        = types.POLReserveDeposit
@@ -411,6 +416,7 @@ type (
 	MigrateMemo                = mem.MigrateMemo
 	RagnarokMemo               = mem.RagnarokMemo
 	BondMemo                   = mem.BondMemo
+	BondYieldMemo              = mem.BondYieldMemo
 	UnbondMemo                 = mem.UnbondMemo
 	RebondMemo                 = mem.RebondMemo
 	OutboundMemo               = mem.OutboundMemo
