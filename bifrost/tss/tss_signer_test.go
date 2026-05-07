@@ -153,7 +153,7 @@ func (m *mockBridgeForKeysign) GetNetworkFee(common.Chain) (uint64, uint64, erro
 	return 0, 0, nil
 }
 
-func (m *mockBridgeForKeysign) PostKeysignFailure(stypes.Blame, string, common.Coins, common.PubKey) (common.TxID, error) {
+func (m *mockBridgeForKeysign) PostKeysignFailure(stypes.Blame, int64, string, common.Coins, common.PubKey) (common.TxID, error) {
 	return "", nil
 }
 

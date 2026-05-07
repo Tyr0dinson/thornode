@@ -301,7 +301,7 @@ func (s *SolTestSuite) TestSignSOLTxDoesNotReSignWhenCachedTxIsStillPending(c *C
 
 	c.Assert(e.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "pendingsig"), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)
 	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, true)
@@ -947,7 +947,7 @@ func (s *SolTestSuite) TestSignSOLTxReSignsWhenCachedTxMissingFromChain(c *C) {
 	expired := time.Now().Add(-time.Minute).UnixMilli()
 	c.Assert(e.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "missingsig", expired), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)

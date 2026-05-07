@@ -17,7 +17,7 @@ func (m *mockChainNoVaultLock) Start(chan thtypes.TxIn, chan thtypes.ErrataBlock
 }
 func (m *mockChainNoVaultLock) Stop()                       {}
 func (m *mockChainNoVaultLock) IsBlockScannerHealthy() bool { return true }
-func (m *mockChainNoVaultLock) SignTx(thtypes.TxOutItem, int64) ([]byte, []byte, *thtypes.TxInItem, error) {
+func (m *mockChainNoVaultLock) SignTx([]thtypes.TxOutItem, int64) ([]byte, []byte, []*thtypes.TxInItem, error) {
 	return nil, nil, nil, nil
 }
 

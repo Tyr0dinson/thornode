@@ -32,7 +32,7 @@ func (m *mockBridge) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair,
 	return m.asgardPubKeys, m.asgardErr
 }
 
-func (m *mockBridge) PostKeysignFailure(_ types.Blame, _ string, _ common.Coins, _ common.PubKey) (common.TxID, error) {
+func (m *mockBridge) PostKeysignFailure(_ types.Blame, _ int64, _ string, _ common.Coins, _ common.PubKey) (common.TxID, error) {
 	return m.postKeysignTxID, m.postKeysignErr
 }
 

@@ -173,7 +173,7 @@ func (m *MockThorchainBridge) GetNetworkFee(chain common.Chain) (transactionSize
 	return 0, 0, nil
 }
 
-func (m *MockThorchainBridge) PostKeysignFailure(blame types.Blame, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
+func (m *MockThorchainBridge) PostKeysignFailure(blame types.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
 	return "", nil
 }
 

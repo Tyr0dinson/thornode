@@ -344,7 +344,7 @@ func (s *TronTestSuite) TestSignTxReSignsWhenCachedBroadcastIsMissingFromChain(c
 	)
 	c.Assert(err, IsNil)
 
-	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 }
@@ -378,7 +378,7 @@ func (s *TronTestSuite) TestSignTxSkipsWhenCachedBroadcastStillExistsOnChain(c *
 	)
 	c.Assert(err, IsNil)
 
-	signed, checkpoint, txIn, err := s.client.SignTx(txOutItem, 1)
+	signed, checkpoint, txIn, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -422,7 +422,7 @@ func (s *TronTestSuite) TestSignTxRespectsExpiredCacheWhenBroadcastPresent(c *C)
 	)
 	c.Assert(err, IsNil)
 
-	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, IsNil)
 }
@@ -452,14 +452,15 @@ func (s *TronTestSuite) TestSignTxUsesOriginalMemoForMemolessOutbounds(c *C) {
 		GasRate:      1,
 	}
 
-	signed, _, obs, err := s.client.SignTx(txOutItem, 1)
+	signed, _, obs, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(obs, NotNil)
-	c.Assert(obs.Memo, Equals, outboundMemo)
-	c.Assert(obs.Gas, HasLen, 1)
-	c.Assert(obs.Gas[0].Amount.Uint64(), Equals, uint64(100))
-	c.Assert(obs.Gas[0].Decimals, Equals, int64(6))
+	c.Assert(len(obs), Equals, 1)
+	c.Assert(obs[0].Memo, Equals, outboundMemo)
+	c.Assert(obs[0].Gas, HasLen, 1)
+	c.Assert(obs[0].Gas[0].Amount.Uint64(), Equals, uint64(100))
+	c.Assert(obs[0].Gas[0].Decimals, Equals, int64(6))
 
 	var tx api.Transaction
 	err = json.Unmarshal(signed, &tx)

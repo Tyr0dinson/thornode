@@ -1232,7 +1232,7 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, _, _, signErr := c.SignTx(tx, 12345)
+	_, _, _, signErr := c.SignTx([]stypes.TxOutItem{tx}, 12345)
 	if signErr == nil {
 		t.Fatalf("expected SignTx error")
 	}
@@ -1482,7 +1482,7 @@ func TestSignTxPreservesEmptyBlameTerminalRoundWithoutPosting(t *testing.T) {
 		Memo: "OUT:1111111111111111111111111111111111111111111111111111111111111111",
 	}
 
-	_, _, _, signErr := c.SignTx(tx, 999)
+	_, _, _, signErr := c.SignTx([]stypes.TxOutItem{tx}, 999)
 	if signErr == nil {
 		t.Fatalf("expected SignTx error")
 	}
