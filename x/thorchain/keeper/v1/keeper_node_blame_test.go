@@ -220,7 +220,7 @@ func (s *KeeperNodeBlameSuite) TestResetSinceChurnCountersForMembers(c *C) {
 	// valid addresses in the same call must still be reset.
 	addr4 := GetRandomBech32Addr()
 	for i := 0; i < 2; i++ {
-		err := k.IncrementKeygenBlame(ctx, addr4)
+		err = k.IncrementKeygenBlame(ctx, addr4)
 		c.Assert(err, IsNil)
 	}
 	record4, _ := k.GetNodeBlameRecord(ctx, addr4)
