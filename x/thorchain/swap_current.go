@@ -361,7 +361,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance
 	}
 
-	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits)
+	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits, "amount", amount)
 
 	// Burning of input synth or derived pool input (Asset or RUNE).
 	if source.IsSyntheticAsset() || pool.Asset.IsDerivedAsset() {
