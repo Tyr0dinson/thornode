@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
@@ -21,9 +22,8 @@ import (
 )
 
 const (
-	FeeCacheSize         = 200
-	FeeUpdatePeriod      = 20
-	VersionRefreshPeriod = 20
+	FeeCacheSize    = 200
+	FeeUpdatePeriod = 20
 )
 
 // Scanner is a generic block scanner for Substrate chains.
@@ -32,6 +32,7 @@ type Scanner struct {
 	logger           zerolog.Logger
 	rpcClient        *rpc.Client
 	solvencyReporter types.SolvencyReporter
+	pubkeyMgr        pubkeymanager.PubKeyValidator
 
 	globalNetworkFeeQueue chan common.NetworkFee
 
@@ -55,6 +56,7 @@ func NewScanner(
 	cfg config.BifrostBlockScannerConfiguration,
 	solvencyReporter types.SolvencyReporter,
 	rpcClient *rpc.Client,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*Scanner, error) {
 	params, found := ChainParams[cfg.ChainID]
 	if !found {
@@ -80,15 +82,15 @@ func NewScanner(
 	// potentially crediting bogus transfers.
 	if rv.SpecName != s.params.SpecName {
 		return nil, fmt.Errorf(
-			"runtime specName mismatch (expected %q, got %q): pallet indices "+
-				"are hardcoded per chain runtime, refusing to start with the wrong runtime "+
-				"— check the RPC endpoint configuration",
+			"runtime specName mismatch (expected %q, got %q)",
 			s.params.SpecName, rv.SpecName,
 		)
 	}
 
-	s.specVersion = rv.SpecVersion
-	s.txVersion = rv.TransactionVersion
+	err = s.verifyMetadata("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify metadata: %w", err)
+	}
 
 	s.genesisHash, err = rpcClient.GetGenesisHash()
 	if err != nil {
@@ -141,6 +143,12 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 		return txIn, fmt.Errorf("failed to get block hash for height %d: %w", fetchHeight, err)
 	}
 
+	// Check and refresh runtime version before parsing the block
+	err = s.checkRuntimeVersion(blockHash)
+	if err != nil {
+		return txIn, fmt.Errorf("failed to refresh runtime version: %w", err)
+	}
+
 	block, err := s.rpcClient.GetBlock(blockHash)
 	if err != nil {
 		return txIn, fmt.Errorf("failed to get block at height %d: %w", fetchHeight, err)
@@ -157,11 +165,6 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	// Store latest block hash and height for transaction construction (thread-safe)
 	s.setLatestBlock(blockHash, fetchHeight)
 
-	// Refresh runtime version periodically
-	if fetchHeight%VersionRefreshPeriod == 0 {
-		s.refreshRuntimeVersion(blockHash)
-	}
-
 	// Process extrinsics in the block
 	for i, extHex := range block.Extrinsics {
 		// Only process extrinsics confirmed as successful
@@ -170,20 +173,26 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 			// Could not determine success status — skip (safe direction)
 			continue
 		}
-		if !succeeded {
-			continue
-		}
 
 		actualFee := feeMap[uint32(i)]
+
 		var txItem *ttypes.TxInItem
-		txItem, err = s.processExtrinsic(extHex, fetchHeight, actualFee)
+
+		if succeeded {
+			txItem, err = s.processExtrinsic(extHex, fetchHeight, actualFee)
+		} else {
+			txItem, err = s.processFailedExtrinsic(extHex, fetchHeight, actualFee)
+		}
+
 		if err != nil {
 			s.logger.Debug().Err(err).Int("index", i).Msg("skip extrinsic")
 			continue
 		}
+
 		if txItem == nil {
 			continue
 		}
+
 		txIn.TxArray = append(txIn.TxArray, txItem)
 
 		// Collect actual fee from events for the rolling cache.
@@ -235,11 +244,11 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 	}
 
 	palletConfig := stypes.EventPalletConfig{
-		SystemPalletIndex:             s.params.SystemPallet,
-		BalancesPalletIndex:           s.params.BalancesPallet,
-		BalancesTransferEventIndex:    s.params.BalancesTransferEvent,
-		UtilityPalletIndex:            s.params.UtilityPallet,
-		TransactionPaymentPalletIndex: s.params.TxPaymentPallet,
+		SystemPalletIndex:             s.params.Index(SystemPallet),
+		BalancesPalletIndex:           s.params.Index(BalancesPallet),
+		BalancesTransferEventIndex:    s.params.Index(BalancesTransferEvent),
+		UtilityPalletIndex:            s.params.Index(UtilityPallet),
+		TransactionPaymentPalletIndex: s.params.Index(TransactionPaymentPallet),
 		BalanceSize:                   s.params.BalanceSize,
 	}
 
@@ -281,12 +290,12 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 	return results, fees, nil
 }
 
-// refreshRuntimeVersion re-fetches the runtime version from the node.
-func (s *Scanner) refreshRuntimeVersion(blockHash string) {
+// checkRuntimeVersion re-fetches the runtime version from the node and
+// verifies index validity on a version change
+func (s *Scanner) checkRuntimeVersion(blockHash string) error {
 	rv, err := s.rpcClient.GetRuntimeVersion(blockHash)
 	if err != nil {
-		s.logger.Warn().Err(err).Msg("failed to refresh runtime version")
-		return
+		return fmt.Errorf("failed to refresh runtime version: %w", err)
 	}
 
 	s.mu.Lock()
@@ -296,9 +305,17 @@ func (s *Scanner) refreshRuntimeVersion(blockHash string) {
 			Uint32("old_spec", s.specVersion).Uint32("new_spec", rv.SpecVersion).
 			Uint32("old_tx", s.txVersion).Uint32("new_tx", rv.TransactionVersion).
 			Msg("runtime version updated")
+
+		err = s.verifyMetadata(blockHash)
+		if err != nil {
+			return fmt.Errorf("failed to verify metadata: %w", err)
+		}
+
 		s.specVersion = rv.SpecVersion
 		s.txVersion = rv.TransactionVersion
 	}
+
+	return nil
 }
 
 // updateFeeCache adds a fee to the rolling window, truncating if over feeCacheSize.
@@ -309,6 +326,36 @@ func (s *Scanner) updateFeeCache(fee uint64) {
 	if len(s.feeCache) > FeeCacheSize {
 		s.feeCache = s.feeCache[len(s.feeCache)-FeeCacheSize:]
 	}
+}
+
+func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
+	if actualFee == 0 {
+		return nil, nil
+	}
+
+	item, err := s.processExtrinsic(extHex, blockHeight, actualFee)
+	if err != nil {
+		return nil, err
+	}
+
+	if item == nil {
+		return nil, nil
+	}
+
+	fromVault, _ := s.pubkeyMgr.IsValidPoolAddress(item.Sender, s.cfg.ChainID)
+	if !fromVault {
+		return nil, nil
+	}
+
+	// Return gas-only TxInItem for failed extrinsics
+	return &ttypes.TxInItem{
+		BlockHeight: item.BlockHeight,
+		Tx:          item.Tx,
+		Memo:        item.Memo,
+		Sender:      item.Sender,
+		To:          item.To,
+		Gas:         item.Gas,
+	}, nil
 }
 
 // processExtrinsic parses a hex-encoded extrinsic and returns a TxInItem if it's
@@ -435,10 +482,10 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 
 	var txItem *ttypes.TxInItem
 	switch {
-	case palletIdx == s.params.BalancesPallet && s.isTransferCall(callIdx):
+	case palletIdx == s.params.Index(BalancesPallet) && s.isTransferCall(callIdx):
 		txItem, err = s.parseTransfer(callData[2:], senderAddr, txHash, blockHeight, "", actualFee)
 
-	case palletIdx == s.params.UtilityPallet && callIdx == s.params.UtilityBatchAllCall:
+	case palletIdx == s.params.Index(UtilityPallet) && callIdx == s.params.Index(UtilityBatchAllCall):
 		txItem, err = s.parseBatchAll(callData[2:], senderAddr, txHash, blockHeight, actualFee)
 
 	default:
@@ -543,7 +590,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 		pos += 2
 
 		switch {
-		case pallet == s.params.SystemPallet && call == s.params.SystemRemarkCall:
+		case pallet == s.params.Index(SystemPallet) && call == s.params.Index(SystemRemarkCall):
 			// Reject batches with multiple remarks to prevent memo confusion
 			// attacks. We track presence with a dedicated flag rather than
 			// `memo != ""` because `System.remark("")` is a legal empty-bytes
@@ -569,7 +616,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 			memo = string(data[pos : pos+remarkLength])
 
 			pos += remarkLength
-		case pallet == s.params.BalancesPallet && s.isTransferCall(call):
+		case pallet == s.params.Index(BalancesPallet) && s.isTransferCall(call):
 			// Reject batches with multiple transfers to prevent ambiguity about
 			// which transfer the memo applies to.
 			if hasTransfer {
@@ -727,6 +774,20 @@ func (s *Scanner) getRuntimeVersion() (specVersion, txVersion uint32) {
 	return s.specVersion, s.txVersion
 }
 
+func (s *Scanner) verifyMetadata(blockHash string) error {
+	raw, err := s.rpcClient.GetMetadata(blockHash)
+	if err != nil {
+		return fmt.Errorf("failed to get metadata: %w", err)
+	}
+
+	metadata, err := stypes.ParseMetadata(raw)
+	if err != nil {
+		return fmt.Errorf("failed to parse metadata: %w", err)
+	}
+
+	return s.params.ValidateMetadata(metadata)
+}
+
 // --------------------------------- helpers ---------------------------------
 
 // isTransferCall returns true if the call index is a balance transfer variant.
@@ -735,6 +796,6 @@ func (s *Scanner) getRuntimeVersion() (specVersion, txVersion uint32) {
 // requiring event correlation to determine the transferred amount.
 // Note: call index 7 is force_set_balance (governance-only), NOT a transfer.
 func (s *Scanner) isTransferCall(callIdx byte) bool {
-	return callIdx == s.params.BalancesAllowDeathCall ||
-		callIdx == s.params.BalancesKeepAliveCall
+	return callIdx == s.params.Index(BalancesTransferAllowDeathCall) ||
+		callIdx == s.params.Index(BalancesTransferKeepAliveCall)
 }

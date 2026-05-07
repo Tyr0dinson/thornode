@@ -342,3 +342,17 @@ func (c *Client) GetEventsStorage(blockHash string) (string, error) {
 
 	return hexData, nil
 }
+
+func (c *Client) GetMetadata(blockHash string) (string, error) {
+	result, err := c.call("state_getMetadata", []interface{}{blockHash})
+	if err != nil {
+		return "", fmt.Errorf("failed to get metadata: %w", err)
+	}
+
+	var hexData string
+	if err := json.Unmarshal(result, &hexData); err != nil {
+		return "", fmt.Errorf("failed to unmarshal events storage: %w", err)
+	}
+
+	return hexData, nil
+}

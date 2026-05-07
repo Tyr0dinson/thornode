@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/generic"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"golang.org/x/crypto/blake2b"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
@@ -60,6 +61,7 @@ func NewClient(
 	server *tssp.TssServer,
 	bridge thorclient.ThorchainBridge,
 	metrics *tcmetrics.Metrics,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*Client, error) {
 	if bridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
@@ -104,6 +106,7 @@ func NewClient(
 		config.BlockScanner,
 		c.ReportSolvency,
 		c.rpcClient,
+		pubkeyMgr,
 	)
 	if err != nil {
 		return c, fmt.Errorf("failed to create chain scanner: %w", err)
@@ -408,8 +411,8 @@ func (c *Client) createAndSignExtrinsic(
 
 	// Build call data
 	transferCall := stypes.BalanceTransferKeepAlive(
-		c.chainScanner.params.BalancesPallet,
-		c.chainScanner.params.BalancesKeepAliveCall,
+		c.chainScanner.params.Index(BalancesPallet),
+		c.chainScanner.params.Index(BalancesTransferKeepAliveCall),
 		destPubkey,
 		amount,
 	)
@@ -418,13 +421,13 @@ func (c *Client) createAndSignExtrinsic(
 	if tx.Memo != "" {
 		// Batch transfer + remark for memo
 		remarkCall := stypes.SystemRemark(
-			c.chainScanner.params.SystemPallet,
-			c.chainScanner.params.SystemRemarkCall,
+			c.chainScanner.params.Index(SystemPallet),
+			c.chainScanner.params.Index(SystemRemarkCall),
 			[]byte(tx.Memo),
 		)
 		callData = stypes.BatchAll(
-			c.chainScanner.params.UtilityPallet,
-			c.chainScanner.params.UtilityBatchAllCall,
+			c.chainScanner.params.Index(UtilityPallet),
+			c.chainScanner.params.Index(UtilityBatchAllCall),
 			[][]byte{transferCall, remarkCall},
 		)
 	} else {

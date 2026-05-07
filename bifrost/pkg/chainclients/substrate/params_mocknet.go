@@ -7,35 +7,39 @@ import "gitlab.com/thorchain/thornode/v3/common"
 
 var ChainParams = map[common.Chain]Params{
 	common.DOTChain: {
-		SpecName:               "rococo",
-		MortalEraPeriod:        128,
-		DefaultFee:             20_000_000, // 0.002 DOT
-		BalanceSize:            16,
-		CheckMetadataHash:      true,
-		SystemRemarkCall:       0,
-		BalancesAllowDeathCall: 0,
-		BalancesKeepAliveCall:  3,
-		UtilityBatchAllCall:    2,
-		SystemPallet:           0,
-		BalancesPallet:         4,
-		UtilityPallet:          24,
-		TxPaymentPallet:        33,
-		BalancesTransferEvent:  2,
+		SpecName:          "rococo",
+		MortalEraPeriod:   128,
+		DefaultFee:        20_000_000, // 0.002 DOT
+		BalanceSize:       16,
+		CheckMetadataHash: true,
+		Indexes: map[string]byte{
+			BalancesPallet:                 4,
+			BalancesTransferAllowDeathCall: 0,
+			BalancesTransferKeepAliveCall:  3,
+			BalancesTransferEvent:          2,
+			SystemPallet:                   0,
+			SystemRemarkCall:               0,
+			TransactionPaymentPallet:       33,
+			UtilityPallet:                  24,
+			UtilityBatchAllCall:            2,
+		},
 	},
 	common.TAOChain: {
-		SpecName:               "node-subtensor",
-		MortalEraPeriod:        64,      // 64 blocks * 12s ≈ 12.8 minutes
-		DefaultFee:             100_000, // 0.0001 TAO
-		BalanceSize:            8,
-		CheckMetadataHash:      true,
-		SystemRemarkCall:       0,
-		BalancesAllowDeathCall: 0,
-		BalancesKeepAliveCall:  3,
-		UtilityBatchAllCall:    2,
-		SystemPallet:           0,
-		BalancesPallet:         5,
-		UtilityPallet:          11,
-		TxPaymentPallet:        6,
-		BalancesTransferEvent:  2,
+		SpecName:          "node-subtensor",
+		MortalEraPeriod:   64,      // 64 blocks * 12s ≈ 12.8 minutes
+		DefaultFee:        100_000, // 0.0001 TAO
+		BalanceSize:       8,
+		CheckMetadataHash: true,
+		Indexes: map[string]byte{
+			BalancesPallet:                 5,
+			BalancesTransferAllowDeathCall: 0,
+			BalancesTransferKeepAliveCall:  3,
+			BalancesTransferEvent:          2,
+			SystemPallet:                   0,
+			SystemRemarkCall:               0,
+			TransactionPaymentPallet:       6,
+			UtilityPallet:                  11,
+			UtilityBatchAllCall:            2,
+		},
 	},
 }

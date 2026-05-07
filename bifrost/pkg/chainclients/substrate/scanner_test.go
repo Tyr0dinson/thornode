@@ -7,8 +7,10 @@ import (
 	"github.com/rs/zerolog/log"
 
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 
@@ -22,6 +24,8 @@ type ScannerSuite struct{}
 var _ = Suite(&ScannerSuite{})
 
 // newTestScanner creates a minimal scanner for unit testing parse functions.
+// Defaults to the no-op pubkey validator (recognizes no addresses as vaults);
+// tests that exercise vault recognition can override pubkeyMgr after construction.
 func newTestScanner() *Scanner {
 	s := &Scanner{
 		logger: log.Logger,
@@ -29,18 +33,44 @@ func newTestScanner() *Scanner {
 		cfg: config.BifrostBlockScannerConfiguration{
 			ChainID: common.TAOChain,
 		},
+		pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(),
 	}
 	return s
 }
 
-// buildTestExtrinsic constructs a hex-encoded signed extrinsic for testing.
-// Uses a dummy signer and signature — only the call data varies.
-func buildTestExtrinsic(callData []byte) string {
+// vaultPubKeyStub recognizes a fixed set of addresses as valid vaults.
+// All other PubKeyValidator methods inherit from MockPoolAddressValidator.
+type vaultPubKeyStub struct {
+	*pubkeymanager.MockPoolAddressValidator
+	vaults map[string]bool
+}
+
+func (v *vaultPubKeyStub) IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo) {
+	if v.vaults[addr] {
+		return true, common.ChainPoolInfo{Chain: chain}
+	}
+	return false, common.EmptyChainPoolInfo
+}
+
+// defaultTestSigner returns the 32-byte pubkey baked into buildTestExtrinsic.
+func defaultTestSigner() []byte {
 	signer := make([]byte, 32)
 	for i := range signer {
 		signer[i] = byte(i + 1)
 	}
+	return signer
+}
 
+// buildTestExtrinsic constructs a hex-encoded signed extrinsic for testing.
+// Uses defaultTestSigner — only the call data varies.
+func buildTestExtrinsic(callData []byte) string {
+	return buildTestExtrinsicFromSigner(defaultTestSigner(), callData)
+}
+
+// buildTestExtrinsicFromSigner constructs a hex-encoded signed extrinsic with
+// a caller-supplied signer pubkey. Lets tests vary txItem.Sender to exercise
+// vault-vs-non-vault paths.
+func buildTestExtrinsicFromSigner(signer, callData []byte) string {
 	ext := &stypes.Extrinsic{
 		Signer:            signer,
 		SignatureType:     stypes.SignatureTypeEd25519,
@@ -584,6 +614,7 @@ func newTestScannerWithFeeQueue(resolution int64) (*Scanner, chan common.Network
 			GasPriceResolution: resolution,
 		},
 		globalNetworkFeeQueue: ch,
+		pubkeyMgr:             pubkeymanager.NewMockPoolAddressValidator(),
 	}
 	return sc, ch
 }
@@ -811,4 +842,106 @@ func (s *ScannerSuite) TestProcessExtrinsic_NoMemoTransferAccepted(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(txItem, NotNil, Commentf("expected non-nil TxInItem"))
 	c.Check(txItem.Memo, Equals, "", Commentf("memo: got %q, want empty", txItem.Memo))
+}
+
+// ---------------------------------------------------------------------------
+// processFailedExtrinsic — gas-only observation for failed vault outbounds
+// ---------------------------------------------------------------------------
+
+func (s *ScannerSuite) TestProcessFailedExtrinsic(c *C) {
+	dest := make([]byte, 32)
+	dest[0] = 0xAA
+	transferAmount := cosmos.NewUint(1_000_000_000)
+
+	simpleTransfer := stypes.BalanceTransferKeepAlive(5, 3, dest, transferAmount)
+	batchWithMemo := stypes.BatchAll(11, 2, [][]byte{
+		stypes.BalanceTransferKeepAlive(5, 3, dest, transferAmount),
+		stypes.SystemRemark(0, 0, []byte("OUT:DEAD")),
+	})
+	unknownPallet := []byte{99, 0}
+
+	vaultSigner := defaultTestSigner()
+	userSigner := make([]byte, 32)
+	for i := range userSigner {
+		userSigner[i] = 0xAA
+	}
+
+	vaultAddr, err := ss58.Encode(common.TAOChain.SS58Prefix(), vaultSigner)
+	c.Assert(err, IsNil, Commentf("failed to derive vault SS58 address"))
+
+	tests := []struct {
+		name       string
+		actualFee  uint64
+		signer     []byte
+		callData   []byte
+		expectKept bool
+		expectMemo string
+	}{
+		{
+			name:       "actualFee zero — short-circuits before parsing",
+			actualFee:  0,
+			signer:     vaultSigner,
+			callData:   simpleTransfer,
+			expectKept: false,
+		},
+		{
+			name:       "non-vault sender — dropped (not our outbound to account for)",
+			actualFee:  150_000,
+			signer:     userSigner,
+			callData:   simpleTransfer,
+			expectKept: false,
+		},
+		{
+			name:       "vault sender, simple transfer — gas-only emitted",
+			actualFee:  150_000,
+			signer:     vaultSigner,
+			callData:   simpleTransfer,
+			expectKept: true,
+			expectMemo: "",
+		},
+		{
+			name:       "vault sender, batch with memo — gas-only with memo preserved",
+			actualFee:  150_000,
+			signer:     vaultSigner,
+			callData:   batchWithMemo,
+			expectKept: true,
+			expectMemo: "OUT:DEAD",
+		},
+		{
+			name:       "vault sender, unknown pallet — dropped (parser yields nil)",
+			actualFee:  150_000,
+			signer:     vaultSigner,
+			callData:   unknownPallet,
+			expectKept: false,
+		},
+	}
+
+	for _, tt := range tests {
+		sc := newTestScanner()
+		sc.pubkeyMgr = &vaultPubKeyStub{
+			MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(),
+			vaults:                   map[string]bool{vaultAddr: true},
+		}
+
+		extHex := buildTestExtrinsicFromSigner(tt.signer, tt.callData)
+
+		got, err := sc.processFailedExtrinsic(extHex, 100, tt.actualFee)
+		c.Assert(err, IsNil, Commentf("%s: unexpected error", tt.name))
+
+		if !tt.expectKept {
+			c.Check(got, IsNil, Commentf("%s: expected nil", tt.name))
+			continue
+		}
+		c.Assert(got, NotNil, Commentf("%s: expected non-nil TxInItem", tt.name))
+		c.Check(got.Coins, HasLen, 0,
+			Commentf("%s: expected empty Coins (gas-only), got %s", tt.name, got.Coins))
+		c.Check(len(got.Gas) > 0, Equals, true,
+			Commentf("%s: Gas should be preserved for accounting", tt.name))
+		c.Check(got.Memo, Equals, tt.expectMemo,
+			Commentf("%s: memo mismatch — got %q, want %q", tt.name, got.Memo, tt.expectMemo))
+		c.Check(got.Sender, Equals, vaultAddr,
+			Commentf("%s: sender preserved", tt.name))
+		c.Check(got.Tx, Not(Equals), "",
+			Commentf("%s: tx hash preserved", tt.name))
+	}
 }
