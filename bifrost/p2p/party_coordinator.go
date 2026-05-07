@@ -269,6 +269,7 @@ func (pc *PartyCoordinator) sendMsgToPeer(msgBuf []byte, msgID string, remotePee
 	pc.logger.Debug().Msgf("try to open stream to (%s) ", remotePeer)
 	stream, err := pc.host.NewStream(ctx, remotePeer, protoc)
 	if err != nil {
+		clearPeerAddrsOnDialError(pc.host, remotePeer, err, pc.logger)
 		streamError := fmt.Errorf("fail to create stream to peer(%s):%w", remotePeer, err)
 		return streamError
 	}

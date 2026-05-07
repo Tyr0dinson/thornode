@@ -1,13 +1,17 @@
 package p2p
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/peer"
 	maddr "github.com/multiformats/go-multiaddr"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	. "gopkg.in/check.v1"
 
@@ -93,6 +97,23 @@ func TestReleaseStream(t *testing.T) {
 	// Verify stream was released
 	_, ok := comm.streamMgr.unusedStreams["test-msg"]
 	assert.False(t, ok)
+}
+
+func TestClearPeerAddrsOnDialError(t *testing.T) {
+	h, err := libp2p.New(context.Background())
+	assert.NoError(t, err)
+	defer h.Close()
+
+	target, err := peer.Decode("16Uiu2HAm2cMqSLD3ZcMDiiRuCWp4HrHm2cLdkQLLT6tN3BQET9EL")
+	assert.NoError(t, err)
+	addr, err := maddr.NewMultiaddr("/ip4/172.18.0.19/tcp/5040")
+	assert.NoError(t, err)
+
+	h.Peerstore().AddAddr(target, addr, time.Hour)
+	assert.NotEmpty(t, h.Peerstore().Addrs(target))
+
+	clearPeerAddrsOnDialError(h, target, errors.New("failed to negotiate security protocol: peer id mismatch"), zerolog.Nop())
+	assert.Empty(t, h.Peerstore().Addrs(target))
 }
 
 func TestGetPeersWithNoStateManager(t *testing.T) {

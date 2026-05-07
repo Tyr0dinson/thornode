@@ -8,8 +8,10 @@ use super::routes::{
     error_json, hash_matches, is_valid_chain_tx_hash, normalize_tx_hash, AppState,
 };
 use super::types::{RegisterTxKeyEntry, ValidateOutboundRequest, ValidateOutboundResponse};
-use crate::state::store::OutgoingTransferRecord;
-use crate::state::{OutgoingLifecycle, OutgoingObservation, RecordValidatedParams};
+use crate::state::store::{OutgoingTransferRecord, OutputState, TrackedOutput};
+use crate::state::{
+    OutgoingLifecycle, OutgoingObservation, OutputLifecycle, RecordValidatedParams,
+};
 use crate::tx::validation;
 
 type ApiError = (StatusCode, serde_json::Value);
@@ -40,6 +42,9 @@ fn outgoing_record_matches_registered_tx_key(
         return false;
     }
     if !record.registered_inventory {
+        return false;
+    }
+    if record.has_owned_change == Some(true) && record.local_change_materialized != Some(true) {
         return false;
     }
     if normalized_tx_keys(&record.tx_keys) != normalized_tx_keys(&entry.tx_keys) {
@@ -90,6 +95,96 @@ fn register_tx_key_entry_as_validate_request(
         memo: entry.memo,
         reconcile: true,
     }
+}
+
+async fn materialize_owned_change_outputs(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    tx_hash: &str,
+    tx_hex: &str,
+    tx_keys: &[String],
+    height: Option<u64>,
+    output_indices: Option<&[u64]>,
+) -> Result<usize, ApiError> {
+    let Some(height) = height else {
+        return Ok(0);
+    };
+    let first_ringct_output = output_indices
+        .and_then(|indices| indices.first())
+        .copied()
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::BAD_GATEWAY,
+                format!("daemon omitted output_indices for mined transaction {tx_hash}"),
+            )
+        })?;
+    let address_entries = {
+        let scanner = state.scanner.lock();
+        scanner
+            .get_address_entries(vault_pub_key)
+            .into_iter()
+            .map(|entry| validation::MaterializeOwnedAddress {
+                address: entry.address,
+                subaddress_major: entry.subaddress_major,
+                subaddress_minor: entry.subaddress_minor,
+            })
+            .collect::<Vec<_>>()
+    };
+    if address_entries.is_empty() {
+        return Ok(0);
+    }
+    let materialized = validation::materialize_owned_outputs_from_tx_keys(
+        tx_hash,
+        tx_hex,
+        tx_keys,
+        &address_entries,
+        first_ringct_output,
+    )
+    .map_err(|e| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            format!("failed to materialize owned outbound outputs from tx keys: {e}"),
+        )
+    })?;
+    if materialized.is_empty() {
+        return Ok(0);
+    }
+
+    let outputs = materialized
+        .into_iter()
+        .map(|output| TrackedOutput {
+            tx_hash: tx_hash.to_string(),
+            output_index: output.output_index,
+            amount: output.amount,
+            height,
+            key_image: None,
+            spent_by_key_image_height: None,
+            state: OutputState::Unspent,
+            reservation: None,
+            subaddress_major: output.subaddress_major,
+            subaddress_minor: output.subaddress_minor,
+            wallet_output_hex: Some(output.wallet_output_hex),
+            address: Some(output.address),
+            note: None,
+        })
+        .collect::<Vec<_>>();
+    let (added, outputs_after_upsert) = {
+        let mut scanner = state.scanner.lock();
+        let added = scanner.upsert_outputs(vault_pub_key, outputs);
+        let outputs_after_upsert = scanner.get_all_outputs(vault_pub_key);
+        (added, outputs_after_upsert)
+    };
+    if added > 0 {
+        OutputLifecycle::new(state.store.as_ref())
+            .merge_scanned_outputs(vault_pub_key, &outputs_after_upsert)
+            .map_err(|e| {
+                api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("failed to persist tx-key materialized outputs: {e}"),
+                )
+            })?;
+    }
+    Ok(added)
 }
 
 pub(crate) async fn validate_outbound_request(
@@ -186,14 +281,24 @@ pub(crate) async fn validate_outbound_request(
         ));
     }
 
-    let validated = match validation::validate_outbound_transaction(
-        &tx_hex,
-        &req.tx_keys,
-        &to_address,
-        req.amount,
-        Some(req.fee),
-        &owned_addresses,
-    ) {
+    let validated = match if req.registered_inventory {
+        validation::validate_registered_outbound_transaction(
+            &tx_hex,
+            &req.tx_keys,
+            &to_address,
+            Some(req.fee),
+            &owned_addresses,
+        )
+    } else {
+        validation::validate_outbound_transaction(
+            &tx_hex,
+            &req.tx_keys,
+            &to_address,
+            req.amount,
+            Some(req.fee),
+            &owned_addresses,
+        )
+    } {
         Ok(validated) => validated,
         Err(e) => {
             warn!(
@@ -202,6 +307,7 @@ pub(crate) async fn validate_outbound_request(
                 tx_hash,
                 to_address,
                 amount = req.amount,
+                registered_inventory = req.registered_inventory,
                 fee = req.fee,
                 "outbound tx-key validation failed"
             );
@@ -209,6 +315,12 @@ pub(crate) async fn validate_outbound_request(
                 "failed to validate outbound transaction: {e}"
             )));
         }
+    };
+
+    let record_amount = if req.registered_inventory {
+        validated.destination_amount
+    } else {
+        req.amount
     };
 
     let current_height = state.scanner.lock().current_height();
@@ -222,18 +334,17 @@ pub(crate) async fn validate_outbound_request(
     let observed_at = observation
         .observed_height()
         .map(|_| chrono::Utc::now().timestamp());
-
     if let Err(e) =
         OutgoingLifecycle::new(state.store.as_ref()).record_validated(RecordValidatedParams {
             tx_hash: tx_hash.clone(),
-            tx_hex,
+            tx_hex: tx_hex.clone(),
             tx_keys: req.tx_keys.clone(),
             registered_inventory: req.registered_inventory,
             has_owned_change: validated.tracked_owned_output,
             vault_pub_key: vault_pub_key.clone(),
             from_address,
             to_address,
-            amount: req.amount,
+            amount: record_amount,
             fee: validated.actual_fee,
             memo: req.memo.unwrap_or_default(),
             planned_height: observation.observed_height().unwrap_or(current_height),
@@ -249,19 +360,34 @@ pub(crate) async fn validate_outbound_request(
         ));
     }
 
+    let marked = if validated.tracked_owned_output {
+        materialize_owned_change_outputs(
+            state,
+            &vault_pub_key,
+            &tx_hash,
+            &tx_hex,
+            &req.tx_keys,
+            tx_entry.block_height,
+            tx_entry.output_indices.as_deref(),
+        )
+        .await?
+    } else {
+        0
+    };
+
     info!(
         vault = vault_pub_key,
         tx_hash,
         tracked = validated.tracked_owned_output,
-        marked = 0,
+        marked,
         registered_inventory = req.registered_inventory,
         reconcile = req.reconcile,
-        "validated outbound via tx keys without mutating local spend state"
+        "validated outbound via tx keys"
     );
 
     Ok(ValidateOutboundResponse {
         tracked: validated.tracked_owned_output,
-        marked: 0,
+        marked,
         not_found: 0,
         actual_fee: validated.actual_fee,
     })

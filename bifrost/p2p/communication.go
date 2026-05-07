@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -217,6 +218,29 @@ func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string) err
 	return WriteStreamWithBuffer(msg, stream)
 }
 
+func clearPeerAddrsOnDialError(h host.Host, pID peer.ID, err error, logger zerolog.Logger) {
+	if h == nil || err == nil {
+		return
+	}
+
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "peer id mismatch") && !strings.Contains(errMsg, "dial backoff") {
+		return
+	}
+
+	addrs := h.Peerstore().Addrs(pID)
+	if len(addrs) == 0 {
+		return
+	}
+
+	h.Peerstore().ClearAddrs(pID)
+	logger.Warn().
+		Str("peer_id", pID.String()).
+		Int("cleared_addrs", len(addrs)).
+		Err(err).
+		Msg("cleared cached peer addresses after dial failure")
+}
+
 func (c *Communication) handleStreamTss(stream network.Stream) {
 	peerID := stream.Conn().RemotePeer().String()
 	c.logger.Debug().Msgf("reading from tss stream of peer: %s", peerID)
@@ -413,6 +437,7 @@ func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 	defer cancel()
 	stream, err := c.host.NewStream(ctx, pID, TSSProtocolID)
 	if err != nil {
+		clearPeerAddrsOnDialError(c.host, pID, err, c.logger)
 		return nil, fmt.Errorf("fail to create new stream to peer: %s, %w", pID, err)
 	}
 	return stream, nil

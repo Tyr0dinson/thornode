@@ -111,6 +111,7 @@ pub struct TxEntry {
     pub tx_hash: String,
     pub as_hex: String,
     pub as_json: Option<String>,
+    pub output_indices: Option<Vec<u64>>,
     pub block_height: Option<u64>,
     pub in_pool: Option<bool>,
 }

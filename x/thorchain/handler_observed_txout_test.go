@@ -262,6 +262,70 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	c.Assert(hashes, HasLen, 1)
 }
 
+func (s *HandlerObservedTxOutSuite) TestHandleXMRConsolidateSelfSendOnlyAccountsForGas(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	vaultFrostPubKey := GetRandomPubKey()
+	vaultAddress := common.Address(common.XMRSeededDummyAddress('4', []byte("consolidate-vault")))
+	amount := cosmos.NewUint(242450977)
+	gas := cosmos.NewUint(67264)
+	initialBalance := cosmos.NewUint(391403794)
+
+	tx := common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.XMRChain,
+		FromAddress: vaultAddress,
+		ToAddress:   vaultAddress,
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, amount)),
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, gas)},
+		Memo:        "consolidate",
+	}
+	obTx := NewObservedTx(tx, 12, vaultFrostPubKey, 12)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000000 * common.One)
+	na.PubKeySet.Secp256k1 = vaultPubKey
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.XMRChain}.Strings(), []ChainContract{})
+	vault.PubKeyFrost = vaultFrostPubKey
+	vault.Membership = []string{vaultPubKey.String()}
+	vault.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, initialBalance))
+
+	keeper := &TestObservedTxOutHandleKeeper{
+		nas:       NodeAccounts{na},
+		voter:     NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
+		txInVoter: NewObservedTxVoter(GetRandomTxHash(), make(ObservedTxs, 0)),
+		pool: Pool{
+			Asset:        common.XMRAsset,
+			BalanceRune:  cosmos.NewUint(200_000 * common.One),
+			BalanceAsset: initialBalance,
+		},
+		vaultExists: true,
+		vault:       vault,
+		txOutStore:  NewTxStoreDummy(),
+		hashes:      make([]common.TxID, 0),
+	}
+
+	mgr.K = keeper
+	eventMgr := NewDummyEventMgr()
+	mgr.eventMgr = eventMgr
+	mgr.slasher = newSlasher(keeper, eventMgr)
+	mgr.validatorMgr = newValidatorMgr(keeper, mgr.NetworkMgr(), keeper.txOutStore, eventMgr)
+
+	handler := NewObservedTxOutHandler(mgr)
+	msg := NewMsgObservedTxOut(ObservedTxs{obTx}, na.NodeAddress)
+	_, err := handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	expectedAfterGas := initialBalance.Sub(gas)
+	c.Check(keeper.vault.GetCoin(common.XMRAsset).Amount.Equal(expectedAfterGas), Equals, true)
+	c.Check(keeper.pool.BalanceAsset.Equal(initialBalance), Equals, true)
+
+	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
+	c.Check(keeper.pool.BalanceAsset.Equal(expectedAfterGas), Equals, true)
+}
+
 func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	var err error
 	ctx, mgr := setupManagerForTest(c)

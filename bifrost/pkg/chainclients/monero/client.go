@@ -2077,6 +2077,44 @@ func xmrObservedTxFromTxInItem(item *stypes.TxInItem) common.ObservedTx {
 	}
 }
 
+func (c *Client) xmrUnauthorizedSpendAlreadyObserved(txHash string) (bool, error) {
+	normalizedTxHash := normalizeTxID(txHash)
+	if normalizedTxHash == "" || c.thorchainBridge == nil {
+		return false, nil
+	}
+
+	voter, err := c.thorchainBridge.GetObservedTxVoter(normalizedTxHash)
+	if err != nil {
+		return false, err
+	}
+	if voter == nil {
+		return false, nil
+	}
+
+	return voter.GetHeight() > 0 || voter.GetFinalisedHeight() > 0, nil
+}
+
+func (c *Client) xmrUnauthorizedSpendKnownOutgoing(vaultPubKey common.PubKey, txHash string) (bool, error) {
+	normalizedTxHash := normalizeTxID(txHash)
+	if c == nil || c.frostSigner == nil || c.thorchainBridge == nil || vaultPubKey.IsEmpty() || normalizedTxHash == "" {
+		return false, nil
+	}
+
+	state, err := c.frostSigner.GetOutgoingTransferState(vaultPubKey.String())
+	if err != nil {
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, record := range state.Outgoing {
+		if strings.EqualFold(strings.TrimSpace(record.TxHash), normalizedTxHash) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func setTxInItemXMRGasFromActualFee(item *stypes.TxInItem, actualFeeAtomic uint64) bool {
 	if item == nil || actualFeeAtomic == 0 {
 		return false
@@ -3518,12 +3556,22 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		MaxInputs:     maxInputs,
 		DustThreshold: dustThreshold,
 	}
+	msgID, msgIDErr := tssp.FrostKeySignMsgID(frostReq)
+	if msgIDErr != nil {
+		c.logger.Warn().
+			Err(msgIDErr).
+			Str("vault_pub_key", signReqCtx.vaultPubKey.String()).
+			Str("memo", tx.Memo).
+			Msg("failed to derive XMR FROST keysign msg id before ceremony")
+	}
 	c.logger.Info().
 		Str("vault_pub_key", signReqCtx.vaultPubKey.String()).
 		Str("memo", tx.Memo).
+		Str("msg_id", msgID).
 		Int64("txout_height", height).
 		Int64("current_thor_height", currentThorHeight).
 		Int64("coordination_height", coordinationHeight).
+		Strs("signer_pub_keys", members).
 		Msg("starting XMR FROST keysign")
 	resp, err := c.tssServer.FrostKeySign(frostReq, newFrostSignerAdapter(c.frostSigner))
 	if err != nil {
@@ -3544,7 +3592,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("FROST keysign failed: %s", resp.Blame.FailReason)
 	}
 	c.observeXMRActualFeeEstimate(height, feeRate, resp.FeeAtomic)
-	msgID := strings.TrimSpace(resp.MsgID)
+	msgID = strings.TrimSpace(resp.MsgID)
 	if msgID == "" {
 		return nil, nil, nil, fmt.Errorf("FROST keysign returned empty msg_id")
 	}
@@ -4097,6 +4145,36 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return item, true, nil
 	}
 	if isOutboundFromVault && (common.Tx{Chain: common.XMRChain, Memo: item.Memo}).IsXMRUnauthorizedSpendObservation() {
+		alreadyObserved, err := c.xmrUnauthorizedSpendAlreadyObserved(item.Tx)
+		if err != nil {
+			c.logger.Warn().
+				Err(err).
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Msg("failed to check existing XMR unauthorized spend observation")
+		}
+		if alreadyObserved {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Msg("skipping already observed XMR unauthorized spend")
+			return nil, false, nil
+		}
+		knownOutgoing, err := c.xmrUnauthorizedSpendKnownOutgoing(item.ObservedVaultPubKey, item.Tx)
+		if err != nil {
+			c.logger.Warn().
+				Err(err).
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Msg("failed to check signer outgoing state for XMR unauthorized spend observation")
+		}
+		if knownOutgoing {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+				Msg("skipping signer-owned XMR outbound reported as unauthorized spend")
+			return nil, false, nil
+		}
 		return item, true, nil
 	}
 	var outgoingAudit xmrOutgoingAuditLookup

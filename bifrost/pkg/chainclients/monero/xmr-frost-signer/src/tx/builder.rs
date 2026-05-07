@@ -154,20 +154,21 @@ pub async fn build_unsigned_transaction(
     } else {
         vec![memo.as_bytes().to_vec()]
     };
-    let no_change_sweep = is_consolidate_memo(memo);
+    let change_to_destination = is_consolidate_memo(memo) || sweep_if_final;
+    let change_target = if change_to_destination { &to } else { &change };
 
     // Build the signable transaction. Each added input increases the on-wire
     // size and therefore `necessary_fee`, so we may need to grow the input set
     // multiple times: greedy gives us amount, then we top up for fee, then a
     // larger input set bumps the fee further, and so on. Loop until either
     // SignableTransaction::new succeeds or we hit max_inputs / run out.
-    let (mut signable, used) = loop {
+    let (signable, used) = loop {
         match build_signable_for_selection(
             rpc,
             &selected,
             &to,
             amount,
-            Some(&change),
+            Some(change_target),
             fee_rate,
             rct_type,
             outgoing_view_key.clone(),
@@ -189,82 +190,6 @@ pub async fn build_unsigned_transaction(
                         "failed to construct signable transaction: {}",
                         msg
                     ));
-                }
-                if no_change_sweep {
-                    if let Some(necessary_fee) = necessary_fee_from_error_message(&msg) {
-                        let selected_total_u64 = u64::try_from(selected_total)
-                            .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
-                        let send_amount = final_migrate_amount(selected_total_u64, necessary_fee)?;
-                        if let Ok(s) = build_signable_for_selection(
-                            rpc,
-                            &selected,
-                            &to,
-                            send_amount,
-                            None,
-                            fee_rate,
-                            rct_type,
-                            outgoing_view_key.clone(),
-                            data.clone(),
-                            decoy_context,
-                            hard_fork_version,
-                            tip_height,
-                        )
-                        .await
-                        {
-                            break (s, selected.clone());
-                        }
-                    }
-                }
-                if sweep_if_final && selected_total >= u128::from(requested_total) {
-                    if let Some(necessary_fee) = necessary_fee_from_error_message(&msg) {
-                        let mut retry_fee = necessary_fee;
-                        let mut adjusted_signable = None;
-                        for _ in 0..3 {
-                            let send_amount = final_migrate_amount(requested_total, retry_fee)?;
-                            match build_signable_for_selection(
-                                rpc,
-                                &selected,
-                                &to,
-                                send_amount,
-                                Some(&change),
-                                fee_rate,
-                                rct_type,
-                                outgoing_view_key.clone(),
-                                data.clone(),
-                                decoy_context,
-                                hard_fork_version,
-                                tip_height,
-                            )
-                            .await
-                            {
-                                Ok(s) => {
-                                    adjusted_signable = Some(s);
-                                    break;
-                                }
-                                Err(adjusted_err) => {
-                                    let adjusted_msg = adjusted_err.to_string();
-                                    if let Some(adjusted_fee) =
-                                        necessary_fee_from_error_message(&adjusted_msg)
-                                    {
-                                        if adjusted_fee != retry_fee {
-                                            retry_fee = adjusted_fee;
-                                            continue;
-                                        }
-                                    }
-                                    if !adjusted_msg.contains("not enough funds") {
-                                        return Err(anyhow::anyhow!(
-                                            "failed to construct final sweep signable transaction: {}",
-                                            adjusted_msg
-                                        ));
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        if let Some(s) = adjusted_signable {
-                            break (s, selected.clone());
-                        }
-                    }
                 }
                 let mut grew = false;
                 for candidate in &candidates {
@@ -300,61 +225,11 @@ pub async fn build_unsigned_transaction(
             acc.checked_add(u128::from(tracked.amount))
         })
         .ok_or_else(|| anyhow::anyhow!("selected input total overflow"))?;
-    let mut fee = signable.necessary_fee();
-    let final_amount = if no_change_sweep {
+    let fee = signable.necessary_fee();
+    let final_amount = if change_to_destination {
         let used_total_u64 = u64::try_from(used_total)
             .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
-        let mut send_amount = final_migrate_amount(used_total_u64, fee)?;
-        for _ in 0..2 {
-            signable = build_signable_for_selection(
-                rpc,
-                &used,
-                &to,
-                send_amount,
-                None,
-                fee_rate,
-                rct_type,
-                outgoing_view_key.clone(),
-                data.clone(),
-                decoy_context,
-                hard_fork_version,
-                tip_height,
-            )
-            .await?;
-            fee = signable.necessary_fee();
-            let adjusted_amount = final_migrate_amount(used_total_u64, fee)?;
-            if adjusted_amount == send_amount {
-                break;
-            }
-            send_amount = adjusted_amount;
-        }
-        send_amount
-    } else if sweep_if_final {
-        let mut send_amount = final_migrate_amount(requested_total, fee)?;
-        for _ in 0..2 {
-            signable = build_signable_for_selection(
-                rpc,
-                &used,
-                &to,
-                send_amount,
-                Some(&change),
-                fee_rate,
-                rct_type,
-                outgoing_view_key.clone(),
-                data.clone(),
-                decoy_context,
-                hard_fork_version,
-                tip_height,
-            )
-            .await?;
-            fee = signable.necessary_fee();
-            let adjusted_amount = final_migrate_amount(requested_total, fee)?;
-            if adjusted_amount == send_amount {
-                break;
-            }
-            send_amount = adjusted_amount;
-        }
-        send_amount
+        final_migrate_amount(used_total_u64, fee)?
     } else {
         amount
     };
@@ -375,12 +250,19 @@ pub async fn build_unsigned_transaction(
         "constructed Monero signable transaction"
     );
 
-    let has_owned_change = !no_change_sweep
-        && used_total
+    let has_owned_change = if change_to_destination {
+        to_address.trim() == change_address.trim()
+    } else {
+        used_total
             > u128::from(final_amount)
                 .checked_add(u128::from(fee))
-                .ok_or_else(|| anyhow::anyhow!("final amount + fee overflow"))?;
-    let payment_count = if has_owned_change { 2 } else { 1 };
+                .ok_or_else(|| anyhow::anyhow!("final amount + fee overflow"))?
+    };
+    let payment_count = if change_to_destination || has_owned_change {
+        2
+    } else {
+        1
+    };
     let tx_keys = derive_tx_keys_for_built_outbound(&outgoing_view_key, &used, &to, payment_count);
 
     Ok(UnsignedTransaction {
@@ -477,14 +359,6 @@ fn final_migrate_amount(requested_total: u64, fee: u64) -> Result<u64> {
     requested_total
         .checked_sub(fee)
         .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))
-}
-
-fn necessary_fee_from_error_message(message: &str) -> Option<u64> {
-    let marker = "necessary_fee Some(";
-    let start = message.find(marker)? + marker.len();
-    let rest = &message[start..];
-    let end = rest.find(')')?;
-    rest[..end].parse().ok()
 }
 
 fn is_consolidate_memo(memo: &str) -> bool {
@@ -769,14 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_necessary_fee_from_builder_error() {
-        let msg = "failed to construct signable transaction: not enough funds (inputs 318029330000, outputs 317669330000, necessary_fee Some(597840000))";
-        assert_eq!(necessary_fee_from_error_message(msg), Some(597_840_000));
-        assert_eq!(necessary_fee_from_error_message("not enough funds"), None);
-    }
-
-    #[test]
-    fn consolidate_memo_enables_no_change_sweep_mode() {
+    fn consolidate_memo_enables_destination_change_mode() {
         assert!(is_consolidate_memo("consolidate"));
         assert!(is_consolidate_memo(" CONSOLIDATE "));
         assert!(!is_consolidate_memo("migrate:123"));

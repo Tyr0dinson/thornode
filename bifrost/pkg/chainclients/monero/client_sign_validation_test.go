@@ -352,6 +352,117 @@ func TestPrepareObservedTxInItemAllowsUnauthorizedSpendWithoutTxKeys(t *testing.
 	}
 }
 
+func TestPrepareObservedTxInItemSkipsAlreadyObservedUnauthorizedSpend(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("f", 64)
+	bridge := &mockMoneroBridge{
+		observedTxVoterByID: map[string]*ttypes.QueryObservedTxVoter{
+			txHash: {
+				TxID:            common.TxID(txHash),
+				Height:          123,
+				FinalisedHeight: 123,
+			},
+		},
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     &FrostSigner{},
+		tssServer:       &mockKeyImageTssServer{},
+		thorchainBridge: bridge,
+		logger:          testLogger(),
+	}
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  common.XMRUnknownSenderAddress("spend", vaultAddr.String()),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(55))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(3))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "NOOP:UNAUTHORIZED",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	if err != nil {
+		t.Fatalf("prepare unauthorized spend: %v", err)
+	}
+	if include || prepared != nil {
+		t.Fatalf("expected already observed unauthorized spend to be skipped")
+	}
+}
+
+func TestPrepareObservedTxInItemSkipsSignerOwnedConsolidateReportedUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("9", 64)
+	hasOwnedChange := true
+	localChangeMaterialized := true
+	keyImagesReady := true
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+url.PathEscape(vaultPubKey.String()):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:                  txHash,
+					TxKeys:                  testFrostTxKeys(),
+					RegisteredInventory:     true,
+					HasOwnedChange:          &hasOwnedChange,
+					LocalChangeMaterialized: &localChangeMaterialized,
+					KeyImagesReady:          &keyImagesReady,
+					FromAddress:             vaultAddr.String(),
+					ToAddress:               vaultAddr.String(),
+					Amount:                  55 * moneroAtomicToThorchain,
+					Fee:                     3 * moneroAtomicToThorchain,
+					Memo:                    "consolidate",
+					PlannedHeight:           100,
+					Status:                  xmrFrostOutgoingStatusObservedMined,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		frostSigner:     frostSigner,
+		tssServer:       &mockKeyImageTssServer{},
+		thorchainBridge: &mockMoneroBridge{observedTxVoterByID: map[string]*ttypes.QueryObservedTxVoter{}},
+		logger:          testLogger(),
+	}
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  common.XMRUnknownSenderAddress(txHash, vaultAddr.String()),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(55))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(3))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "NOOP:UNAUTHORIZED",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	if err != nil {
+		t.Fatalf("prepare signer-owned unauthorized-shaped consolidate: %v", err)
+	}
+	if include || prepared != nil {
+		t.Fatalf("expected signer-owned consolidate reported as unauthorized to be skipped")
+	}
+}
+
 func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 	t.Parallel()
 

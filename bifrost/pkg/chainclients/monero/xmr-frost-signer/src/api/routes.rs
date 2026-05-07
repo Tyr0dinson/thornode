@@ -7611,6 +7611,7 @@ mod tests {
                                 "txs": [{
                                     "tx_hash": tx_hash,
                                     "as_hex": tx_hex,
+                                    "output_indices": [700, 701],
                                     "block_height": 77,
                                     "in_pool": false
                                 }],
@@ -7709,6 +7710,7 @@ mod tests {
                                 "txs": [{
                                     "tx_hash": tx_hash,
                                     "as_hex": tx_hex,
+                                    "output_indices": [700, 701],
                                     "block_height": 77,
                                     "in_pool": false
                                 }],
@@ -7805,6 +7807,106 @@ mod tests {
             .expect("failed to reload outputs");
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].state, OutputState::Unspent);
+    }
+
+    #[tokio::test]
+    async fn validate_outbound_with_owned_change_materializes_tracked_output() {
+        let tx_hash = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let group_key = test_group_key_hex();
+        let owned_change_address =
+            xmr::derive_vault_address(&group_key, crate::config::ChainNetworkMode::Mocknet)
+                .expect("owned change address should derive");
+        let synthetic = crate::tx::validation::synthetic_owned_change_outbound_case_for_tests(
+            &owned_change_address,
+        );
+        let expected_tx_hex = synthetic.tx_hex.clone();
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/get_transactions",
+                axum::routing::post(move |Json(req): Json<serde_json::Value>| {
+                    let tx_hash = tx_hash.to_string();
+                    let tx_hex = expected_tx_hex.clone();
+                    async move {
+                        let hash = req
+                            .get("txs_hashes")
+                            .and_then(serde_json::Value::as_array)
+                            .and_then(|hashes| hashes.first())
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let payload = if hash.eq_ignore_ascii_case(&tx_hash) {
+                            serde_json::json!({
+                                "txs": [{
+                                    "tx_hash": tx_hash,
+                                    "as_hex": tx_hex,
+                                    "output_indices": [700, 701],
+                                    "block_height": 77,
+                                    "in_pool": false
+                                }],
+                                "status": "OK"
+                            })
+                        } else {
+                            serde_json::json!({
+                                "txs": [],
+                                "missed_tx": [hash],
+                                "status": "OK"
+                            })
+                        };
+                        (StatusCode::OK, Json(payload))
+                    }
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+        state
+            .scanner
+            .lock()
+            .register_vault(
+                VALID_VAULT_PUB_KEY,
+                &group_key,
+                crate::config::ChainNetworkMode::Mocknet,
+                vec![],
+                None,
+            )
+            .expect("failed to register vault scanner state");
+
+        let response = validate_outbound(
+            State(state.clone()),
+            Json(crate::api::types::ValidateOutboundRequest {
+                vault_pub_key: VALID_VAULT_PUB_KEY.to_string(),
+                tx_hash: tx_hash.to_string(),
+                tx_keys: synthetic.tx_keys.clone(),
+                registered_inventory: false,
+                from_address: None,
+                to_address: synthetic.to_address.clone(),
+                amount: synthetic.amount,
+                fee: synthetic.fee,
+                memo: Some("OUT:TEST".to_string()),
+                reconcile: true,
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+        assert_eq!(body["tracked"], serde_json::json!(true));
+        assert_eq!(body["marked"], serde_json::json!(1));
+
+        let outputs = state
+            .store
+            .load_outputs(VALID_VAULT_PUB_KEY)
+            .expect("outputs should load");
+        assert!(
+            outputs
+                .iter()
+                .any(|output| output.tx_hash == tx_hash && output.wallet_output_hex.is_some()),
+            "owned change output should be materialized for key-image generation"
+        );
     }
 
     #[tokio::test]

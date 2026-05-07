@@ -66,6 +66,13 @@ struct VaultAddresses {
     all: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct VaultAddressEntry {
+    pub address: String,
+    pub subaddress_major: u32,
+    pub subaddress_minor: u32,
+}
+
 /// Scanner wrapping monero-wallet scanner state per vault.
 pub struct Scanner {
     vault_states: HashMap<String, VaultScanState>,
@@ -364,6 +371,34 @@ impl Scanner {
             .unwrap_or_default()
     }
 
+    pub fn get_address_entries(&self, vault_pub_key: &str) -> Vec<VaultAddressEntry> {
+        let Some(state) = self.vault_states.get(vault_pub_key) else {
+            return Vec::new();
+        };
+        state.addresses.entries()
+    }
+
+    pub fn upsert_outputs(&mut self, vault_pub_key: &str, outputs: Vec<TrackedOutput>) -> usize {
+        let Some(state) = self.vault_states.get_mut(vault_pub_key) else {
+            return 0;
+        };
+
+        let mut known: HashSet<(String, u32)> = state
+            .outputs
+            .iter()
+            .map(|output| (output.tx_hash.clone(), output.output_index))
+            .collect();
+        let mut added = 0usize;
+        for output in outputs {
+            if !known.insert((output.tx_hash.clone(), output.output_index)) {
+                continue;
+            }
+            state.outputs.push(output);
+            added += 1;
+        }
+        added
+    }
+
     pub fn mark_spent_by_refs(&mut self, vault_pub_key: &str, refs: &[(String, u32)]) {
         let Some(state) = self.vault_states.get_mut(vault_pub_key) else {
             return;
@@ -620,6 +655,27 @@ impl VaultAddresses {
             forward,
             all,
         }
+    }
+
+    fn entries(&self) -> Vec<VaultAddressEntry> {
+        let candidates = [
+            (&self.base, subaddress::EXTERNAL),
+            (&self.branch, subaddress::BRANCH),
+            (&self.change, subaddress::CHANGE),
+            (&self.forward, subaddress::FORWARD),
+        ];
+        let mut seen = HashSet::new();
+        let mut entries = Vec::new();
+        for (address, (major, minor)) in candidates {
+            if seen.insert(address.clone()) {
+                entries.push(VaultAddressEntry {
+                    address: address.clone(),
+                    subaddress_major: major,
+                    subaddress_minor: minor,
+                });
+            }
+        }
+        entries
     }
 }
 
