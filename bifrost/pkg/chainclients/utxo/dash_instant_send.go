@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"sort"
 	"sync"
 	"time"
 
@@ -111,32 +110,31 @@ func (c *Client) allowInstantSend(feeRateMilliSatPerVByte uint64, age time.Durat
 	return true, ""
 }
 
-// medianUSDValueForDash returns the USD value for the given DASH amount using
-// the configured stable-pool route. Thornode currently prices DASH via USDC.
-func (c *Client) medianUSDValueForDash(amount cosmos.Uint) (cosmos.Uint, error) {
-	values := make([]cosmos.Uint, 0, 1)
+// usdValueForDash returns the USD value for the given DASH amount.
+//
+// TOR is Thornode's USD-denominated derived asset. Its pool is spawned from the
+// configured TOR anchor median, so Bifrost should use it instead of selecting a
+// single stablecoin pool locally.
+func (c *Client) usdValueForDash(amount cosmos.Uint) (cosmos.Uint, error) {
+	var priceErr error
 	if c.poolMgr != nil {
-		value, err := c.poolMgr.GetValue(common.DASHAsset, common.USDCAsset, amount)
+		value, err := c.poolMgr.GetValue(common.DASHAsset, common.TOR, amount)
 		if err == nil && !value.IsZero() {
-			values = append(values, value)
+			return value, nil
+		}
+		if err != nil {
+			priceErr = err
 		}
 	}
-	if len(values) == 0 {
-		if common.CurrentChainNetwork == common.MockNet {
-			// `amount` is denominated in 1e8 DASH units; return USD in 1e8 units.
-			// Example: 1 DASH (1e8) at $50 => 50e8.
-			return amount.MulUint64(priceDashUSDForSimulationTesting), nil
-		}
-		return cosmos.ZeroUint(), errors.New("no USD pool values available for pricing DASH in USD")
+	if common.CurrentChainNetwork == common.MockNet {
+		// `amount` is denominated in 1e8 DASH units; return USD in 1e8 units.
+		// Example: 1 DASH (1e8) at $50 => 50e8.
+		return amount.MulUint64(priceDashUSDForSimulationTesting), nil
 	}
-	sort.Slice(values, func(i, j int) bool {
-		return values[i].LT(values[j])
-	})
-	mid := len(values) / 2
-	if len(values)%2 == 1 {
-		return values[mid], nil
+	if priceErr != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("failed to price DASH in TOR: %w", priceErr)
 	}
-	return values[mid-1].Add(values[mid]).QuoUint64(2), nil
+	return cosmos.ZeroUint(), errors.New("no TOR pool value available for pricing DASH in USD")
 }
 
 // cosmosAmountToFloat converts a 1e8-based cosmos.Uint asset amount into a
@@ -164,7 +162,7 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 
 	usdPerDash := cosmos.ZeroUint() // remains 0 if USDThreshold is 0 -> we skip USD value checks
 	if c.instantSendCfg.USDThreshold > 0 {
-		price, err := c.medianUSDValueForDash(cosmos.NewUint(common.One))
+		price, err := c.usdValueForDash(cosmos.NewUint(common.One))
 		if err != nil || price.IsZero() {
 			c.log.Debug().Err(err).Msg("unable to fetch DASH/USD price, falling back to block observation")
 		} else {

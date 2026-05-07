@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/rs/zerolog"
+	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
@@ -30,54 +31,44 @@ type dashRPCRequest struct {
 
 type dashTestPoolMgr struct{}
 
-func (dashTestPoolMgr) GetValue(_ common.Asset, _ common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
+func (dashTestPoolMgr) GetValue(source common.Asset, target common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
+	if !source.Equals(common.DASHAsset) {
+		return cosmos.ZeroUint(), fmt.Errorf("unexpected source asset: %s", source)
+	}
+	if !target.Equals(common.TOR) {
+		return cosmos.ZeroUint(), fmt.Errorf("unexpected target asset: %s", target)
+	}
 	return amount.MulUint64(priceDashUSDForSimulationTesting), nil
 }
 
-func newDashTestAddress(t *testing.T, seed byte) string {
-	t.Helper()
-
+func newDashTestAddress(c *C, seed byte) string {
 	hash := bytes.Repeat([]byte{seed}, 20)
 	addr, err := btcutil.NewAddressPubKeyHash(hash, &dashutil.RegressionNetParams)
-	if err != nil {
-		t.Fatalf("new address: %v", err)
-	}
+	c.Assert(err, IsNil)
 	return addr.String()
 }
 
-func newDashP2PKHScriptHex(t *testing.T, address string) string {
-	t.Helper()
-
+func newDashP2PKHScriptHex(c *C, address string) string {
 	addr, err := btcutil.DecodeAddress(address, &dashutil.RegressionNetParams)
-	if err != nil {
-		t.Fatalf("decode address: %v", err)
-	}
+	c.Assert(err, IsNil)
 	script, err := btctxscript.PayToAddrScript(addr)
-	if err != nil {
-		t.Fatalf("pay-to-addr script: %v", err)
-	}
+	c.Assert(err, IsNil)
 	return hex.EncodeToString(script)
 }
 
-func newDashMemoScriptHex(t *testing.T, memo string) string {
-	t.Helper()
-
+func newDashMemoScriptHex(c *C, memo string) string {
 	script, err := btctxscript.NullDataScript([]byte(memo))
-	if err != nil {
-		t.Fatalf("nulldata script: %v", err)
-	}
+	c.Assert(err, IsNil)
 	return hex.EncodeToString(script)
 }
 
-func newDashTestServer(t *testing.T, handler func(method string, params []json.RawMessage) any) *httptest.Server {
-	t.Helper()
-
+func newDashTestServer(c *C, handler func(method string, params []json.RawMessage) any) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
 		var req dashRPCRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+			c.Fatalf("decode request: %v", err)
 		}
 
 		resp := map[string]any{
@@ -86,31 +77,21 @@ func newDashTestServer(t *testing.T, handler func(method string, params []json.R
 			"result":  handler(req.Method, req.Params),
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			t.Fatalf("encode response: %v", err)
+			c.Fatalf("encode response: %v", err)
 		}
 	}))
 }
 
-func newDashClientForRPCServer(t *testing.T, serverURL string) *Client {
-	t.Helper()
-
+func newDashClientForRPCServer(c *C, serverURL string) (*Client, func()) {
 	rpcClient, err := rpc.NewClient(serverURL, "thorchain", "password", 0, time.Second, common.DASHChain, zerolog.Nop())
-	if err != nil {
-		t.Fatalf("new rpc client: %v", err)
-	}
+	c.Assert(err, IsNil)
 
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
-	if err != nil {
-		t.Fatalf("new storage: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = storage.Close()
-	})
+	c.Assert(err, IsNil)
+	cleanup := func() { _ = storage.Close() }
 
 	temporalStorage, err := sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
-	if err != nil {
-		t.Fatalf("new temporal storage: %v", err)
-	}
+	c.Assert(err, IsNil)
 
 	return &Client{
 		cfg: config.BifrostChainConfiguration{
@@ -127,14 +108,12 @@ func newDashClientForRPCServer(t *testing.T, serverURL string) *Client {
 			MinFeeRateSatPerVByte: 1.5,
 			MaxMempoolAge:         2 * time.Minute,
 		},
-	}
+	}, cleanup
 }
 
-func TestDashGetHeightUsesBestChainlock(t *testing.T) {
-	server := newDashTestServer(t, func(method string, _ []json.RawMessage) any {
-		if method != "getbestchainlock" {
-			t.Fatalf("unexpected method: %s", method)
-		}
+func (s *DashSuite) TestDashGetHeightUsesBestChainlock(c *C) {
+	server := newDashTestServer(c, func(method string, _ []json.RawMessage) any {
+		c.Assert(method, Equals, "getbestchainlock")
 		return map[string]any{
 			"blockhash":   "0000000000000000000000000000000000000000000000000000000000000123",
 			"height":      321,
@@ -144,18 +123,15 @@ func TestDashGetHeightUsesBestChainlock(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := newDashClientForRPCServer(t, server.URL)
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
 
 	height, err := client.GetHeight()
-	if err != nil {
-		t.Fatalf("GetHeight() error = %v", err)
-	}
-	if height != 321 {
-		t.Fatalf("GetHeight() = %d, want 321", height)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(height, Equals, int64(321))
 }
 
-func TestDashRawMempoolVerboseFeeRateMilliSatPerVByte(t *testing.T) {
+func (s *DashSuite) TestDashRawMempoolVerboseFeeRateMilliSatPerVByte(c *C) {
 	tests := []struct {
 		name  string
 		entry rpc.GetRawMempoolVerboseResult
@@ -216,16 +192,12 @@ func TestDashRawMempoolVerboseFeeRateMilliSatPerVByte(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.entry.FeeRateMilliSatPerVByte()
-			if got != tt.want {
-				t.Fatalf("FeeRateMilliSatPerVByte() = %d, want %d", got, tt.want)
-			}
-		})
+		got := tt.entry.FeeRateMilliSatPerVByte()
+		c.Check(got, Equals, tt.want, Commentf(tt.name))
 	}
 }
 
-func TestDashAllowInstantSendPolicyBoundaries(t *testing.T) {
+func (s *DashSuite) TestDashAllowInstantSendPolicyBoundaries(c *C) {
 	client := Client{
 		instantSendCfg: config.DashInstantSendConfiguration{
 			USDThreshold:          10,
@@ -235,44 +207,42 @@ func TestDashAllowInstantSendPolicyBoundaries(t *testing.T) {
 	thresholdUSD := cosmos.NewUint(10).MulUint64(common.One)
 
 	allow, reason := client.allowInstantSend(1499, 0, true, cosmos.ZeroUint())
-	if allow {
-		t.Fatalf("allowInstantSend() = true, want false")
-	}
-	if reason != "fee rate too low: 1.499 sat/vB < 1.500 sat/vB" {
-		t.Fatalf("reason = %q", reason)
-	}
+	c.Assert(allow, Equals, false)
+	c.Assert(reason, Equals, "fee rate too low: 1.499 sat/vB < 1.500 sat/vB")
 
 	allow, reason = client.allowInstantSend(1500, 0, false, thresholdUSD)
-	if allow {
-		t.Fatalf("allowInstantSend() = true, want false")
-	}
-	if reason != "usd value 10.000000 >= threshold 10" {
-		t.Fatalf("reason = %q", reason)
-	}
+	c.Assert(allow, Equals, false)
+	c.Assert(reason, Equals, "usd value 10.000000 >= threshold 10")
 
 	allow, reason = client.allowInstantSend(1500, 0, false, thresholdUSD.Sub(cosmos.NewUint(1)))
-	if !allow {
-		t.Fatalf("allowInstantSend() = false, want true: %s", reason)
-	}
-	if reason != "" {
-		t.Fatalf("reason = %q", reason)
-	}
+	c.Assert(allow, Equals, true, Commentf(reason))
+	c.Assert(reason, Equals, "")
 }
 
-func TestDashGetInstantSendLocksFiltersUnlockedTxs(t *testing.T) {
-	asgardAddress := newDashTestAddress(t, 0x11)
-	senderAddress := newDashTestAddress(t, 0x22)
+func (s *DashSuite) TestDashUSDValueUsesTORPool(c *C) {
+	client := Client{poolMgr: dashTestPoolMgr{}}
+	amount := cosmos.NewUint(2 * common.One)
+
+	got, err := client.usdValueForDash(amount)
+	c.Assert(err, IsNil)
+	want := amount.MulUint64(priceDashUSDForSimulationTesting)
+	c.Assert(got.Equal(want), Equals, true, Commentf("got %s, want %s", got, want))
+}
+
+func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
+	asgardAddress := newDashTestAddress(c, 0x11)
+	senderAddress := newDashTestAddress(c, 0x22)
 
 	mempoolLocked := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	mempoolUnlocked := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	prevLocked := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	prevUnlocked := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 
-	lockedOutputScript := newDashP2PKHScriptHex(t, asgardAddress)
-	senderScript := newDashP2PKHScriptHex(t, senderAddress)
-	memoScript := newDashMemoScriptHex(t, "NOOP")
+	lockedOutputScript := newDashP2PKHScriptHex(c, asgardAddress)
+	senderScript := newDashP2PKHScriptHex(c, senderAddress)
+	memoScript := newDashMemoScriptHex(c, "NOOP")
 
-	server := newDashTestServer(t, func(method string, params []json.RawMessage) any {
+	server := newDashTestServer(c, func(method string, params []json.RawMessage) any {
 		switch method {
 		case "getrawmempool":
 			return map[string]any{
@@ -298,7 +268,7 @@ func TestDashGetInstantSendLocksFiltersUnlockedTxs(t *testing.T) {
 		case "getrawtransaction":
 			var txid string
 			if err := json.Unmarshal(params[0], &txid); err != nil {
-				t.Fatalf("decode txid: %v", err)
+				c.Fatalf("decode txid: %v", err)
 			}
 
 			switch txid {
@@ -337,64 +307,39 @@ func TestDashGetInstantSendLocksFiltersUnlockedTxs(t *testing.T) {
 					"vout":          []map[string]any{{"n": 0, "value": 0.10002, "scriptPubKey": map[string]any{"hex": senderScript, "type": "pubkeyhash", "addresses": []string{senderAddress}}}},
 				}
 			default:
-				t.Fatalf("unexpected tx lookup: %s", txid)
+				c.Fatalf("unexpected tx lookup: %s", txid)
 			}
 		default:
-			t.Fatalf("unexpected method: %s", method)
+			c.Fatalf("unexpected method: %s", method)
 		}
 		return nil
 	})
 	defer server.Close()
 
-	client := newDashClientForRPCServer(t, server.URL)
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
 
 	addr, err := common.NewAddress(asgardAddress)
-	if err != nil {
-		t.Fatalf("new asgard address: %v", err)
-	}
+	c.Assert(err, IsNil)
 	client.asgardCache.Store(&sharedutxo.AsgardCache{
 		Addresses: []common.Address{addr},
 		FetchedAt: time.Now(),
 	})
 
 	rawTx, err := client.rpc.GetRawTransactionVerboseDASH(mempoolLocked)
-	if err != nil {
-		t.Fatalf("GetRawTransactionVerboseDASH() error = %v", err)
-	}
+	c.Assert(err, IsNil)
 	item, err := client.getTxIn(&rawTx.TxRawResult, 123, true, nil)
-	if err != nil {
-		t.Fatalf("getTxIn() error = %v", err)
-	}
-	if item.IsEmpty() {
-		t.Fatalf("getTxIn() returned empty item")
-	}
+	c.Assert(err, IsNil)
+	c.Assert(item.IsEmpty(), Equals, false)
 
 	txIn, err := client.getInstantSendLocks(123)
-	if err != nil {
-		t.Fatalf("getInstantSendLocks() error = %v", err)
-	}
-	if txIn.MemPool {
-		t.Fatalf("expected mempool flag to be false for accepted InstantSend observations")
-	}
-	if txIn.ConfirmationRequired != 0 {
-		t.Fatalf("ConfirmationRequired = %d, want 0", txIn.ConfirmationRequired)
-	}
-	if len(txIn.TxArray) != 1 {
-		t.Fatalf("observed tx count = %d, want 1", len(txIn.TxArray))
-	}
-	if txIn.TxArray[0].Tx != mempoolLocked {
-		t.Fatalf("observed tx = %s, want %s", txIn.TxArray[0].Tx, mempoolLocked)
-	}
-	if txIn.TxArray[0].Sender != senderAddress {
-		t.Fatalf("sender = %s, want %s", txIn.TxArray[0].Sender, senderAddress)
-	}
-	if txIn.TxArray[0].To != asgardAddress {
-		t.Fatalf("to = %s, want %s", txIn.TxArray[0].To, asgardAddress)
-	}
-	if txIn.TxArray[0].Memo != "NOOP" {
-		t.Fatalf("memo = %q, want NOOP", txIn.TxArray[0].Memo)
-	}
-	if got := txIn.TxArray[0].Coins.GetCoin(common.DASHAsset).Amount.Uint64(); got != 10_000_000 {
-		t.Fatalf("amount = %d, want 10000000", got)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(txIn.MemPool, Equals, false)
+	c.Assert(txIn.ConfirmationRequired, Equals, int64(0))
+	c.Assert(len(txIn.TxArray), Equals, 1)
+	c.Assert(txIn.TxArray[0].Tx, Equals, mempoolLocked)
+	c.Assert(txIn.TxArray[0].Sender, Equals, senderAddress)
+	c.Assert(txIn.TxArray[0].To, Equals, asgardAddress)
+	c.Assert(txIn.TxArray[0].Memo, Equals, "NOOP")
+	c.Assert(txIn.TxArray[0].Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(10_000_000))
 }
