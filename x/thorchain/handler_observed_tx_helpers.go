@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
