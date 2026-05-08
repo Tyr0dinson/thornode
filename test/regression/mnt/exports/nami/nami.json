@@ -394,7 +394,6 @@
           "asset": "GAIA.NAMI"
         }
       ],
-      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "200000000",
