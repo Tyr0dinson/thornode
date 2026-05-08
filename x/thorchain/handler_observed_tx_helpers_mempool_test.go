@@ -764,7 +764,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	}
 
 	{
-		ctx, mgr, sourcePool, _, vault := setupCase()
+		ctx, mgr, _, _, vault := setupCase()
 
 		// Test 1: Successfully roll back a mempool swap.
 		inTxID := GetRandomTxHash()
@@ -824,8 +824,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 
 		updatedSourcePool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
 		c.Assert(err, IsNil)
-		c.Check(updatedSourcePool.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, false,
-			Commentf("inline rollback should change the source pool immediately"))
+		expectedSourceBalanceAsset := cosmos.NewUint(99900000000)
+		c.Check(updatedSourcePool.BalanceAsset.Equal(expectedSourceBalanceAsset), Equals, true,
+			Commentf("inline rollback should set source pool asset balance to %s, got %s", expectedSourceBalanceAsset, updatedSourcePool.BalanceAsset))
 	}
 
 	{
@@ -1910,9 +1911,18 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthOutboun
 	c.Assert(err, IsNil)
 	updatedTargetPool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
 	c.Assert(err, IsNil)
-	c.Check(updatedSourcePool.BalanceRune.Equal(postSwapSourcePool.BalanceRune), Equals, false, Commentf("synth mempool rollback should unwind the source pool immediately"))
-	c.Check(updatedSourcePool.BalanceAsset.Equal(postSwapSourcePool.BalanceAsset), Equals, false, Commentf("synth mempool rollback should unwind the source pool asset immediately"))
-	c.Check(updatedTargetPool.BalanceRune.Equal(postSwapTargetPool.BalanceRune), Equals, false, Commentf("synth mempool rollback should unwind the target pool immediately"))
+	expectedSourceBalanceRune := cosmos.NewUint(57571412921)
+	expectedSourceBalanceAsset := cosmos.NewUint(3400000000)
+	expectedTargetBalanceRune := cosmos.NewUint(111096736680)
+	expectedTargetBalanceAsset := cosmos.NewUint(3400000000)
+	c.Check(updatedSourcePool.BalanceRune.Equal(expectedSourceBalanceRune), Equals, true,
+		Commentf("synth mempool rollback should set source pool rune balance to %s, got %s", expectedSourceBalanceRune, updatedSourcePool.BalanceRune))
+	c.Check(updatedSourcePool.BalanceAsset.Equal(expectedSourceBalanceAsset), Equals, true,
+		Commentf("synth mempool rollback should set source pool asset balance to %s, got %s", expectedSourceBalanceAsset, updatedSourcePool.BalanceAsset))
+	c.Check(updatedTargetPool.BalanceRune.Equal(expectedTargetBalanceRune), Equals, true,
+		Commentf("synth mempool rollback should set target pool rune balance to %s, got %s", expectedTargetBalanceRune, updatedTargetPool.BalanceRune))
+	c.Check(updatedTargetPool.BalanceAsset.Equal(expectedTargetBalanceAsset), Equals, true,
+		Commentf("synth mempool rollback should set target pool asset balance to %s, got %s", expectedTargetBalanceAsset, updatedTargetPool.BalanceAsset))
 }
 
 // TestRevertMempoolSwapSynthAffiliateTargetBuildsGrossRollbackSwap verifies
