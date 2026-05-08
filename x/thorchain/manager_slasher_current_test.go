@@ -3203,7 +3203,9 @@ func (s *SlashingSuite) TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupe
 	ctx = ctx.WithBlockHeight(voter.FinalisedHeight + timeoutAge + 1)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
-	hashes := slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge)
+	seen := make(map[string]struct{})
+	var hashes []common.TxID
+	slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
 
 	c.Assert(hashes, HasLen, 1)
 	c.Check(hashes[0].Equals(inTxID), Equals, true)

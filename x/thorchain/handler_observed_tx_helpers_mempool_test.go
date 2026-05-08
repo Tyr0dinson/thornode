@@ -2090,7 +2090,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSelectActiveVaultForChainPref
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, voter.Actions[0], ctx.BlockHeight()+5), IsNil)
 
 	// The selector should pick the vault that can actually receive the source chain asset.
-	selectedVault, err := selectActiveVaultForChain(ctx, mgr.Keeper(), common.SOLChain)
+	selectedVault, err := selectActiveVaultForSourceChain(ctx, mgr.Keeper(), common.SOLChain)
 	c.Assert(err, IsNil)
 	c.Check(selectedVault.PubKey.Equals(supportedVault.PubKey), Equals, true)
 	// The rollback swap should use that same vault address in the memo and destination.

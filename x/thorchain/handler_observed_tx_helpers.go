@@ -2707,9 +2707,9 @@ func clearPendingMempoolSwapQueueItems(ctx cosmos.Context, k keeper.Keeper, txID
 	return nil
 }
 
-// selectActiveVaultForChain finds an active Asgard vault that can actually
+// selectActiveVaultForSourceChain finds an active Asgard vault that can actually
 // derive an address for the requested source chain.
-func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) (Vault, error) {
+func selectActiveVaultForSourceChain(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) (Vault, error) {
 	activeVaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		return Vault{}, fmt.Errorf("fail to get active vaults: %w", err)
@@ -3226,7 +3226,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		}
 
 		if rollbackSwapVault.IsEmpty() {
-			rollbackSwapVault, err = selectActiveVaultForChain(ctx, keeper, sourceAsset.GetChain())
+			rollbackSwapVault, err = selectActiveVaultForSourceChain(ctx, keeper, sourceAsset.GetChain())
 			if err != nil {
 				return err
 			}
