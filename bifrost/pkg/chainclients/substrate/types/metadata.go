@@ -24,9 +24,7 @@ func ParseMetadata(raw string) (_ *Metadata, err error) {
 		return nil, fmt.Errorf("empty metadata")
 	}
 
-	if strings.HasPrefix(raw, "0x") {
-		raw = raw[2:]
-	}
+	raw = strings.TrimPrefix(raw, "0x")
 
 	var data []byte
 	data, err = hex.DecodeString(raw)

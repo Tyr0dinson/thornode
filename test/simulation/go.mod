@@ -25,6 +25,12 @@ require (
 )
 
 require (
+	github.com/huandu/xstrings v1.3.1 // indirect
+	github.com/itering/scale.go v1.10.5 // indirect
+	github.com/shopspring/decimal v1.2.0 // indirect
+)
+
+require (
 	cel.dev/expr v0.20.0 // indirect
 	cloud.google.com/go/monitoring v1.21.2 // indirect
 	cosmossdk.io/schema v1.1.0 // indirect

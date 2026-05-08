@@ -11,7 +11,7 @@ import (
 	"time"
 
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/cenkalti/backoff"
@@ -704,7 +704,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
 
-		if errors.Is(err, substrate.ErrStaleNonce) {
+		if errors.Is(err, stypes.ErrAbandonTxOut) {
 			s.logger.Err(err).
 				Str("memo", tx.Memo).
 				Str("chain", tx.Chain.String()).

@@ -31,6 +31,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	sharedtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -197,6 +198,8 @@ type MockChainClient struct {
 	ks                 *tss.KeySign
 	assertCheckpoint   bool
 	broadcastFailCount int
+	chain              common.Chain // zero value falls back to ETHChain via GetChain
+	broadcastErr       error        // optional override returned by BroadcastTx on failure
 }
 
 func (b *MockChainClient) IsBlockScannerHealthy() bool {
@@ -244,7 +247,10 @@ func (b *MockChainClient) CheckIsTestNet() (string, bool) {
 }
 
 func (b *MockChainClient) GetChain() common.Chain {
-	return common.ETHChain
+	if b.chain == "" {
+		return common.ETHChain
+	}
+	return b.chain
 }
 
 func (b *MockChainClient) GetBlockScannerHeight() (int64, error) {
@@ -268,6 +274,9 @@ func (b *MockChainClient) BroadcastTx(_ types.TxOutItem, tx []byte) (string, err
 	b.broadcastCount += 1
 	if b.broadcastCount > b.broadcastFailCount {
 		return "", nil
+	}
+	if b.broadcastErr != nil {
+		return "", b.broadcastErr
 	}
 	return "", fmt.Errorf("broadcast failed")
 }
@@ -523,6 +532,132 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	close(sign.stopChan)
 	sign.wg.Wait()
 	ks.Stop()
+}
+
+// TestBroadcastRetry_Substrate exercises the substrate-specific branches in
+// signAndBroadcast (sign.go:707-747) that the existing ETH-driven
+// TestBroadcastRetry never reaches:
+//
+//   - errors.Is(err, ErrAbandonTxOut) → storage.Remove(item).
+//   - tx.Chain.IsSubstrate() && len(SignedTx) > 0 && Checkpoint != nil →
+//     clear SignedTx and Observation, preserve Checkpoint, return checkpoint.
+//
+// The second branch implies the next signing cycle re-signs (signCount
+// increments) — a behavior asymmetric to the ETH path.
+func (s *SignSuite) TestBroadcastRetry_Substrate(c *C) {
+	tests := []struct {
+		name                string
+		broadcastErr        error
+		broadcastFailCount  int
+		wantStorageEmpty    bool
+		runSecondCycle      bool
+		wantSignCountAfter2 int
+	}{
+		{
+			name:               "stale-nonce abandon → storage Removed after one cycle",
+			broadcastErr:       sharedtypes.ErrAbandonTxOut,
+			broadcastFailCount: 99, // never succeed; abandon path returns before broadcastFailCount matters
+			wantStorageEmpty:   true,
+		},
+		{
+			name:                "broadcast failure clears SignedTx, preserves Checkpoint, re-signs on retry",
+			broadcastErr:        nil, // default "broadcast failed"
+			broadcastFailCount:  1,   // 1st cycle fails, 2nd succeeds
+			wantStorageEmpty:    false,
+			runSecondCycle:      true,
+			wantSignCountAfter2: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+		c.Assert(err, IsNil, Commentf("%s: NewPubKey", tt.name))
+
+		msg := "foobar"
+		tssServer := newFakeTss(msg, true)
+		bridge := fakeBridge{s.bridge}
+		ks, err := tss.NewKeySign(tssServer, bridge)
+		c.Assert(err, IsNil, Commentf("%s: NewKeySign", tt.name))
+		ks.Start()
+
+		cc := &MockChainClient{
+			ks:                 ks,
+			chain:              common.TAOChain,
+			broadcastErr:       tt.broadcastErr,
+			broadcastFailCount: tt.broadcastFailCount,
+		}
+		sign := &Signer{
+			chains: map[common.Chain]chainclients.ChainClient{
+				common.TAOChain: cc,
+			},
+			pubkeyMgr:           pubkeymanager.NewMockPoolAddressValidator(),
+			stopChan:            make(chan struct{}),
+			wg:                  &sync.WaitGroup{},
+			thorchainBridge:     bridge,
+			constantsProvider:   NewConstantsProvider(bridge),
+			tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+			logger:              log.With().Str("module", "signer").Logger(),
+		}
+
+		sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
+		c.Assert(err, IsNil, Commentf("%s: NewSignerStore", tt.name))
+		err = sign.storage.Set(TxOutStoreItem{
+			TxOutItem: types.TxOutItem{
+				Chain:       common.TAOChain,
+				ToAddress:   "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+				Memo:        msg,
+				VaultPubKey: vaultPubKey,
+				Coins: common.Coins{
+					common.NewCoin(common.TAOAsset, cosmos.NewUint(1000000)),
+				},
+			},
+		})
+		c.Assert(err, IsNil, Commentf("%s: storage.Set", tt.name))
+
+		// First cycle.
+		sign.processTransactions()
+		sign.pipeline.Wait()
+
+		if tt.wantStorageEmpty {
+			c.Check(sign.storage.List(), HasLen, 0,
+				Commentf("%s: storage should be empty after abandon", tt.name))
+			close(sign.stopChan)
+			sign.wg.Wait()
+			ks.Stop()
+			continue
+		}
+
+		// Substrate-specific assertion: SignedTx cleared, Checkpoint preserved.
+		tois := sign.storage.List()
+		c.Assert(tois, HasLen, 1, Commentf("%s: storage should retain item", tt.name))
+		c.Check(len(tois[0].SignedTx), Equals, 0,
+			Commentf("%s: SignedTx should be cleared", tt.name))
+		c.Check(tois[0].Checkpoint, NotNil,
+			Commentf("%s: Checkpoint should be preserved", tt.name))
+
+		if !tt.runSecondCycle {
+			close(sign.stopChan)
+			sign.wg.Wait()
+			ks.Stop()
+			continue
+		}
+
+		// Second cycle: the substrate path re-signs because SignedTx was
+		// cleared, but tai.Checkpoint should now carry the preserved bytes.
+		// Flip the mock's assertion so SignTx panics if the checkpoint is
+		// missing — proves the checkpoint flowed through.
+		cc.assertCheckpoint = true
+		sign.processTransactions()
+		sign.pipeline.Wait()
+		c.Check(cc.signCount, Equals, tt.wantSignCountAfter2,
+			Commentf("%s: substrate path should re-sign on retry, got signCount=%d", tt.name, cc.signCount))
+		c.Check(sign.storage.List(), HasLen, 0,
+			Commentf("%s: storage should be empty after successful broadcast", tt.name))
+
+		close(sign.stopChan)
+		sign.wg.Wait()
+		ks.Stop()
+	}
 }
 
 func (s *SignSuite) TestRound7Retry(c *C) {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,10 +22,14 @@ import (
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/generic"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
+	subtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
+	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 	"gitlab.com/thorchain/thornode/v3/config"
 
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -129,7 +134,19 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":%s}`, req.ID, resultJSON)
 }
 
-func newTestClient(rpcClient *rpc.Client) *Client {
+// testClientOpt customizes the BifrostChainConfiguration produced by
+// newTestClient. Use withMaxPendingNonces / etc. to override defaults.
+type testClientOpt func(*config.BifrostChainConfiguration)
+
+// withMaxPendingNonces overrides the per-test MaxPendingNonces cap used by
+// reserveNonce.
+func withMaxPendingNonces(n uint64) testClientOpt {
+	return func(cfg *config.BifrostChainConfiguration) {
+		cfg.MaxPendingNonces = n
+	}
+}
+
+func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 	logger := log.Logger
 
 	ns := strconv.Itoa(time.Now().Nanosecond())
@@ -146,6 +163,13 @@ func newTestClient(rpcClient *rpc.Client) *Client {
 
 	chainConfig := config.BifrostChainConfiguration{
 		ChainID: common.TAOChain,
+		// Sane default for tests; the production cap-exceeded branch in
+		// reserveNonce treats 0 as "no pending allowed at all", which is
+		// not what most tests want to exercise.
+		MaxPendingNonces: 16,
+	}
+	for _, opt := range opts {
+		opt(&chainConfig)
 	}
 
 	registry := codectypes.NewInterfaceRegistry()
@@ -200,10 +224,11 @@ func newTestClient(rpcClient *rpc.Client) *Client {
 	}
 
 	return &Client{
-		Client:    genericClient,
-		logger:    log.Logger,
-		rpcClient: rpcClient,
-		nonces:    make(map[string]nonceMetadata),
+		Client:           genericClient,
+		logger:           log.Logger,
+		rpcClient:        rpcClient,
+		nonces:           make(map[string]nonceMetadata),
+		migrationTxCache: newMigrationTxCache(),
 		chainScanner: &Scanner{
 			params: ChainParams[common.TAOChain],
 		},
@@ -451,28 +476,71 @@ func (s *ClientSuite) TestBroadcastTx_AlreadyImported(c *C) {
 }
 
 func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
-	// Stale errors must surface back to the signer pipeline so the substrate
-	// retry branch in sign.go can clear SignedTx and let the scanner confirm
-	// via the inbound-observation path. The previous behavior — treating
-	// Stale as success — could mark a never-landed transfer as broadcast
-	// when the nonce slot was burned externally (operator error,
-	// double-signer, etc.).
-	h := newRPCHandler()
-	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
-		return nil, fmt.Errorf("rpc error (code: 1010): Stale")
-	})
-	srv := httptest.NewServer(h)
-	defer srv.Close()
+	// Stale on Substrate has two outcomes depending on whether the scanner
+	// has already observed our extrinsic land on-chain:
+	//   - cache miss → genuine stale, abandon the txout to avoid double-spend
+	//                  on a fresh-nonce re-broadcast.
+	//   - cache hit → our prior submission already confirmed (e.g. response
+	//                 lost from bifrost POV but the node received it); treat
+	//                 the Stale as success so internal Migrate/Consolidate
+	//                 flows aren't rescheduled into a duplicate.
+	tests := []struct {
+		name        string
+		prePopulate bool
+		wantHashSet bool
+		wantErr     error
+	}{
+		{
+			name:        "cache miss → abandon",
+			prePopulate: false,
+			wantHashSet: false,
+			wantErr:     types.ErrAbandonTxOut,
+		},
+		{
+			name:        "cache hit → treat as success",
+			prePopulate: true,
+			wantHashSet: true,
+			wantErr:     nil,
+		},
+	}
 
-	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	for _, tt := range tests {
+		h := newRPCHandler()
+		h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
+			return nil, fmt.Errorf("rpc error (code: 1010): Stale")
+		})
+		srv := httptest.NewServer(h)
 
-	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
-	rawTx := []byte{0x01, 0x02, 0x03}
+		cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+		rawTx := []byte{0x01, 0x02, 0x03}
+		// Pre-compute the hash BroadcastTx will see, so the cache key matches.
+		expectedHash := subtypes.ExtrinsicHash(rawTx)
 
-	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
-	c.Assert(err, NotNil, Commentf("BroadcastTx must return an error on Stale"))
-	c.Check(errors.Is(err, ErrStaleNonce), Equals, true, Commentf("BroadcastTx must return an error on Stale"))
-	c.Check(txHash, Equals, "", Commentf("tx hash must be empty when broadcast errors"))
+		if tt.prePopulate {
+			cl.migrationTxCache.Add(expectedHash)
+		}
+
+		txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
+		gotHash, err := cl.BroadcastTx(txOutItem, rawTx)
+
+		if tt.wantErr != nil {
+			c.Assert(err, NotNil, Commentf("%s: expected error", tt.name))
+			c.Check(errors.Is(err, tt.wantErr), Equals, true,
+				Commentf("%s: got %v", tt.name, err))
+		} else {
+			c.Check(err, IsNil, Commentf("%s: expected nil error, got %v", tt.name, err))
+		}
+
+		if tt.wantHashSet {
+			c.Check(gotHash, Equals, expectedHash,
+				Commentf("%s: hash mismatch (want %s, got %s)", tt.name, expectedHash, gotHash))
+		} else {
+			c.Check(gotHash, Equals, "",
+				Commentf("%s: hash must be empty on error", tt.name))
+		}
+
+		srv.Close()
+	}
 }
 
 func (s *ClientSuite) TestBroadcastTx_OtherError(c *C) {
@@ -490,4 +558,217 @@ func (s *ClientSuite) TestBroadcastTx_OtherError(c *C) {
 
 	_, err := cl.BroadcastTx(txOutItem, rawTx)
 	c.Check(err, NotNil, Commentf("BroadcastTx should fail for unknown errors"))
+}
+
+// ---------------------------------------------------------------------------
+// createAndSignExtrinsic — null-address destination guard
+// ---------------------------------------------------------------------------
+
+func (s *ClientSuite) TestCreateAndSignExtrinsic_NullAddressGuard(c *C) {
+	tests := []struct {
+		name        string
+		pubkey      []byte
+		wantNullErr bool
+	}{
+		{
+			name:        "all-zero pubkey rejected",
+			pubkey:      make([]byte, 32),
+			wantNullErr: true,
+		},
+		{
+			name:        "valid pubkey passes the null-address gate",
+			pubkey:      defaultTestSigner(),
+			wantNullErr: false,
+		},
+		{
+			// Boundary: a single non-zero byte must be enough to pass the
+			// gate. Confirms the check uses bytes.Equal (all-bytes-zero),
+			// not a weaker comparison.
+			name: "single non-zero byte passes the gate",
+			pubkey: func() []byte {
+				b := make([]byte, 32)
+				b[31] = 0x01
+				return b
+			}(),
+			wantNullErr: false,
+		},
+	}
+
+	cl := newTestClient(nil)
+	for _, tt := range tests {
+		addr, err := ss58.Encode(common.TAOChain.SS58Prefix(), tt.pubkey)
+		c.Assert(err, IsNil, Commentf("%s: encode SS58", tt.name))
+
+		tx := stypes.TxOutItem{
+			Chain:     common.TAOChain,
+			ToAddress: common.Address(addr),
+			Coins:     common.NewCoins(common.NewCoin(common.TAOAsset, cosmos.NewUint(1_000))),
+		}
+
+		_, err = cl.createAndSignExtrinsic(tx, "vault", 0, "", 100)
+
+		if tt.wantNullErr {
+			c.Assert(err, NotNil, Commentf("%s: expected error", tt.name))
+			c.Check(strings.Contains(err.Error(), "null address"), Equals, true,
+				Commentf("%s: expected null-address error, got: %v", tt.name, err))
+			continue
+		}
+		// The function may still error for unrelated reasons further down
+		// (genesis hash, signing, etc.) — what matters here is that the
+		// null-address guard didn't fire.
+		if err != nil {
+			c.Check(strings.Contains(err.Error(), "null address"), Equals, false,
+				Commentf("%s: unexpected null-address error: %v", tt.name, err))
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// OnObservedTxIn — substrate-specific migration cache population
+// ---------------------------------------------------------------------------
+
+func (s *ClientSuite) TestOnObservedTxIn_PopulatesMigrationCache(c *C) {
+	const vaultAddr = "vault-addr"
+	const userAddr = "user-addr"
+
+	tests := []struct {
+		name    string
+		memo    string
+		sender  string
+		wantHas bool
+	}{
+		{
+			name:    "MIGRATE memo from vault sender → cached",
+			memo:    "MIGRATE:1234",
+			sender:  vaultAddr,
+			wantHas: true,
+		},
+		{
+			name:    "CONSOLIDATE memo from vault sender → cached",
+			memo:    "CONSOLIDATE:1234",
+			sender:  vaultAddr,
+			wantHas: true,
+		},
+		{
+			name:    "MIGRATE memo from non-vault sender → not cached",
+			memo:    "MIGRATE:1234",
+			sender:  userAddr,
+			wantHas: false,
+		},
+		{
+			// SWAP is IsInbound, not IsInternal — the migration cache only
+			// tracks internal flows.
+			name:    "SWAP memo from vault sender → not cached",
+			memo:    "SWAP:BTC.BTC:bc1qtest",
+			sender:  vaultAddr,
+			wantHas: false,
+		},
+		{
+			name:    "unparsable memo from vault sender → not cached",
+			memo:    "garbage:::",
+			sender:  vaultAddr,
+			wantHas: false,
+		},
+	}
+
+	for i, tt := range tests {
+		cl := newTestClient(nil)
+		cl.chainScanner.pubkeyMgr = &vaultPubKeyStub{
+			MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(),
+			vaults:                   map[string]bool{vaultAddr: true},
+		}
+
+		// Use a unique txid per row so prior iterations don't bleed in via
+		// the shared signer cache (the generic OnObservedTxIn may write to it
+		// for OUT memos; not at issue here, but defensive).
+		txID := fmt.Sprintf("0x%064x", i+1)
+
+		txIn := stypes.TxInItem{
+			Tx:     txID,
+			Memo:   tt.memo,
+			Sender: tt.sender,
+		}
+
+		cl.OnObservedTxIn(txIn, 100)
+
+		got := cl.migrationTxCache.Has(txID)
+		c.Check(got, Equals, tt.wantHas,
+			Commentf("%s: cache.Has(%s) = %v, want %v", tt.name, txID, got, tt.wantHas))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// reserveNonce — MaxPendingNonces cap
+// ---------------------------------------------------------------------------
+
+func (s *ClientSuite) TestReserveNonce_MaxPendingNoncesCap(c *C) {
+	const vault = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+	const onChainNonce uint32 = 5
+
+	tests := []struct {
+		name        string
+		maxPending  uint64
+		cachedNonce uint32 // pre-populated cache nonce
+		wantErr     bool
+	}{
+		{
+			name:        "gap below cap → success",
+			maxPending:  16,
+			cachedNonce: onChainNonce + 1, // gap = 1
+			wantErr:     false,
+		},
+		{
+			name:        "gap exactly at cap → success (cap is exclusive)",
+			maxPending:  16,
+			cachedNonce: onChainNonce + 16, // gap = 16, condition is `> max`
+			wantErr:     false,
+		},
+		{
+			name:        "gap exceeds cap → error",
+			maxPending:  16,
+			cachedNonce: onChainNonce + 17, // gap = 17 > 16
+			wantErr:     true,
+		},
+		{
+			// Documents production behavior: with MaxPendingNonces unset
+			// (0), even a single pending nonce trips the cap. Operators
+			// must configure max_pending_nonces explicitly.
+			name:        "cap of 0 trips on any pending → error",
+			maxPending:  0,
+			cachedNonce: onChainNonce + 1,
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		h := newRPCHandler()
+		h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
+			return onChainNonce, nil
+		})
+		srv := httptest.NewServer(h)
+
+		cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second), withMaxPendingNonces(tt.maxPending))
+		// Pre-populate the cache ahead of on-chain. BlockHeight is set so
+		// mortal-era expiry does NOT trigger first (would otherwise reset
+		// the cache and bypass the cap branch).
+		cl.nonces[vault] = nonceMetadata{
+			Nonce:       tt.cachedNonce,
+			BlockHeight: 100,
+		}
+
+		// currentHeight 101: just past the cache's BlockHeight so the
+		// on-chain fetch fires, but well within MortalEraPeriod (64) so the
+		// expiry branch doesn't preempt the cap check.
+		_, _, err := cl.reserveNonce(stypes.TxOutItem{Chain: common.TAOChain}, vault, 101)
+
+		if tt.wantErr {
+			c.Assert(err, NotNil, Commentf("%s: expected error", tt.name))
+			c.Check(strings.Contains(err.Error(), "pending nonce"), Equals, true,
+				Commentf("%s: error %q does not mention pending nonce", tt.name, err))
+		} else {
+			c.Check(err, IsNil, Commentf("%s: unexpected error: %v", tt.name, err))
+		}
+
+		srv.Close()
+	}
 }

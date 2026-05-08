@@ -194,6 +194,8 @@ func (c *Client) Sign(
 }
 
 // verifySecp256k1 checks that sig was produced by pub's secp256k1 key.
+// msg must be a 32-byte digest — callers are responsible for hashing the
+// payload, since Ecrecover silently returns wrong results otherwise.
 func verifySecp256k1(msg, sig []byte, pub common.PubKey) error {
 	sigPub, err := crypto.Ecrecover(msg, sig)
 	if err != nil {

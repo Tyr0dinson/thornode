@@ -1,6 +1,7 @@
 package substrate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/generic"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"golang.org/x/crypto/blake2b"
 
@@ -31,8 +33,6 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-var ErrStaleNonce = fmt.Errorf("stale nonce")
-
 // Client is a generic client for Substrate blockchains.
 type Client struct {
 	*generic.Client
@@ -46,6 +46,7 @@ type Client struct {
 	stopchan            chan struct{}
 	signMu              sync.Mutex               // protects nonce reservation in SignTx
 	nonces              map[string]nonceMetadata // vault address → nonce state (guarded by signMu)
+	migrationTxCache    *migrationTxCache
 }
 
 // nonceMetadata holds nonce and block height for a vault.
@@ -73,10 +74,11 @@ func NewClient(
 		Logger()
 
 	c := &Client{
-		logger:   logger,
-		wg:       &sync.WaitGroup{},
-		stopchan: make(chan struct{}),
-		nonces:   make(map[string]nonceMetadata),
+		logger:           logger,
+		wg:               &sync.WaitGroup{},
+		stopchan:         make(chan struct{}),
+		nonces:           make(map[string]nonceMetadata),
+		migrationTxCache: newMigrationTxCache(),
 	}
 
 	var err error
@@ -407,6 +409,10 @@ func (c *Client) createAndSignExtrinsic(
 		return nil, fmt.Errorf("failed to decode destination address: %w", err)
 	}
 
+	if bytes.Equal(destPubkey, make([]byte, 32)) {
+		return nil, fmt.Errorf("refusing to send to null address: %s", tx.ToAddress)
+	}
+
 	amount := c.GetChain().ThorchainToNativeGas(tx.Coins[0].Amount)
 
 	// Build call data
@@ -526,13 +532,16 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 		case strings.Contains(errMsg, "AlreadyImported") || strings.Contains(errMsg, "already imported"):
 			c.logger.Info().Str("txid", txHash).Msg("extrinsic already in pool, treating as success")
 		case strings.Contains(errMsg, "Stale"):
-			// Stale means the on-chain nonce has advanced past this tx's slot.
-			// That *usually* means our tx already confirmed — but it can also mean
-			// someone else burned the slot (operator error, double-signer, state
-			// corruption). Do NOT mark signed here, abandon instead.
-			// Re-broadcasting at a fresh nonce risks a double-spend.
-			c.logger.Err(err).Str("txid", txHash).Msg("stale nonce")
-			return "", ErrStaleNonce
+			// Stale means the nonce slot was burned. Usually that's our prior
+			// submission already confirming, but it can also be an external burn.
+			// The migration cache tells us which: a hit means the scanner saw the
+			// tx land — treat as success; a miss means abandon, since re-broad-
+			// casting risks a double-spend.
+			if !c.migrationTxCache.Has(txHash) {
+				c.logger.Err(err).Str("txid", txHash).Msg("stale nonce, no scanner observation")
+				return "", types.ErrAbandonTxOut
+			}
+			c.logger.Info().Str("txid", txHash).Msg("stale nonce but already observed by scanner")
 		default:
 			return "", fmt.Errorf("failed to broadcast tx: %w", err)
 		}
@@ -557,6 +566,27 @@ func (c *Client) GetConfirmationCount(txIn ttypes.TxIn) int64 {
 // ConfirmationCountReady returns true if the confirmation count is ready.
 func (c *Client) ConfirmationCountReady(txIn ttypes.TxIn) bool {
 	return true
+}
+
+// OnObservedTxIn extends the generic outbound-memo dedup with substrate-
+// specific tracking of vault-as-sender internal-memo (Migrate / Consolidate)
+// extrinsics. The substrate migration cache is consulted from BroadcastTx's
+// Stale handler to distinguish "our prior submission already confirmed" from
+// "abandon" for internal flows whose memos carry no OUT:txid anchor.
+func (c *Client) OnObservedTxIn(txIn ttypes.TxInItem, height int64) {
+	// use generic client for signer cache
+	c.Client.OnObservedTxIn(txIn, height)
+
+	// substrate specific migration cache
+	ok, _ := c.chainScanner.pubkeyMgr.IsValidPoolAddress(txIn.Sender, c.GetChain())
+	if !ok {
+		return
+	}
+	memo, err := mem.ParseMemo(common.LatestVersion, txIn.Memo)
+	if err != nil || !memo.IsInternal() {
+		return
+	}
+	c.migrationTxCache.Add(txIn.Tx)
 }
 
 // --------------------------------- helpers ---------------------------------
@@ -601,32 +631,47 @@ func (c *Client) reserveNonce(tx ttypes.TxOutItem, vaultAddr string, currentHeig
 	period := int64(c.chainScanner.params.MortalEraPeriod)
 
 	meta := c.nonces[vaultAddr]
-	if fetchedOnChain && meta.Nonce <= onChainNonce {
-		if meta.Nonce < onChainNonce {
-			c.logger.Info().
-				Str("vault", vaultAddr).
-				Uint32("old", meta.Nonce).
-				Uint32("new", onChainNonce).
-				Msg("on-chain nonce advanced")
-		}
-		meta = nonceMetadata{
-			Nonce:       onChainNonce,
-			BlockHeight: currentHeight,
-		}
-	} else if fetchedOnChain && meta.Nonce > onChainNonce && currentHeight >= meta.BlockHeight+period {
-		// If cached nonce is ahead of on-chain and mortalEraPeriod blocks have passed,
-		// any pending transactions must have expired. Reset to on-chain nonce to recover
-		// from broadcast failures that left the cache stuck ahead.
-		c.logger.Warn().
-			Str("vault", vaultAddr).
-			Uint32("cached", meta.Nonce).
-			Uint32("on_chain", onChainNonce).
-			Int64("stale_height", meta.BlockHeight).
-			Int64("current_height", currentHeight).
-			Msg("nonce cache stale after mortal era expiry, resetting to on-chain")
-		meta = nonceMetadata{
-			Nonce:       onChainNonce,
-			BlockHeight: currentHeight,
+	if fetchedOnChain {
+		if meta.Nonce <= onChainNonce {
+			if meta.Nonce < onChainNonce {
+				c.logger.Info().
+					Str("vault", vaultAddr).
+					Uint32("old", meta.Nonce).
+					Uint32("new", onChainNonce).
+					Msg("on-chain nonce advanced")
+			}
+			meta = nonceMetadata{
+				Nonce:       onChainNonce,
+				BlockHeight: currentHeight,
+			}
+		} else {
+			if currentHeight >= meta.BlockHeight+period {
+				// If cached nonce is ahead of on-chain and mortalEraPeriod blocks have passed,
+				// any pending transactions must have expired. Reset to on-chain nonce to recover
+				// from broadcast failures that left the cache stuck ahead.
+				c.logger.Warn().
+					Str("vault", vaultAddr).
+					Uint32("cached", meta.Nonce).
+					Uint32("on_chain", onChainNonce).
+					Int64("stale_height", meta.BlockHeight).
+					Int64("current_height", currentHeight).
+					Msg("nonce cache stale after mortal era expiry, resetting to on-chain")
+				meta = nonceMetadata{
+					Nonce:       onChainNonce,
+					BlockHeight: currentHeight,
+				}
+			} else if uint64(meta.Nonce-onChainNonce) > c.GetConfig().MaxPendingNonces {
+				// Cap on pending nonces: when the cache has drifted too far ahead of
+				// on-chain, refuse to sign rather than queue more transactions that
+				// will all expire via mortal era. An unset max_pending_nonces (0)
+				// means "no pending allowed".
+				c.logger.Warn().
+					Str("vault", vaultAddr).
+					Uint32("cached", meta.Nonce).
+					Uint32("on_chain", onChainNonce).
+					Msg("pending nonce too far in future")
+				return 0, nil, fmt.Errorf("pending nonce too far in future")
+			}
 		}
 	}
 

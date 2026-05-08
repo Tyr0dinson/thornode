@@ -150,26 +150,26 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	if tx.Memo != "" {
 		// Use batch_all: [transfer_keep_alive, system_remark(memo)]
 		transferCall := types.BalanceTransferKeepAlive(
-			c.params.BalancesPallet,
-			c.params.BalancesKeepAliveCall,
+			c.params.Index(substrate.BalancesPallet),
+			c.params.Index(substrate.BalancesTransferKeepAliveCall),
 			destPubkey,
 			amount,
 		)
 		remarkCall := types.SystemRemark(
-			c.params.SystemPallet,
-			c.params.SystemRemarkCall,
+			c.params.Index(substrate.SystemPallet),
+			c.params.Index(substrate.SystemRemarkCall),
 			[]byte(tx.Memo),
 		)
 		callData = types.BatchAll(
-			c.params.UtilityPallet,
-			c.params.UtilityBatchAllCall,
+			c.params.Index(substrate.UtilityPallet),
+			c.params.Index(substrate.UtilityBatchAllCall),
 			[][]byte{transferCall, remarkCall},
 		)
 	} else {
 		// Simple transfer
 		callData = types.BalanceTransferKeepAlive(
-			c.params.BalancesPallet,
-			c.params.BalancesKeepAliveCall,
+			c.params.Index(substrate.BalancesPallet),
+			c.params.Index(substrate.BalancesTransferKeepAliveCall),
 			destPubkey,
 			amount,
 		)
