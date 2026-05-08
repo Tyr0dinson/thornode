@@ -123,7 +123,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		outputAddrStr = outputAddr.(btcutil.Address).String()
+		dashAddr, ok := outputAddr.(btcutil.Address)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("decoded dash address has unexpected type %T", outputAddr)
+		}
+		outputAddrStr = dashAddr.String()
 	case common.ZECChain:
 		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
@@ -287,7 +291,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 				}
 				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.DASHChain:
-				err = c.signUTXODASH(stx.(*btcwire.MsgTx), tx, amount, sourceScript, i, thorchainHeight)
+				msgTx, ok := stx.(*btcwire.MsgTx)
+				if !ok {
+					signErr = fmt.Errorf("unexpected dash signing tx type %T", stx)
+					break
+				}
+				signErr = c.signUTXODASH(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.ZECChain:
 				signErr = c.signUTXOZEC(zecTx, tx, amount, sourceScript, i, thorchainHeight)
 			default:
@@ -338,7 +347,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		redeemTx = btcToWire(msgTx)
 	case common.DASHChain:
 		// stx is already the same *btcwire.MsgTx as redeemTx; nothing to convert.
-		redeemTx = stx.(*btcwire.MsgTx)
+		msgTx, ok := stx.(*btcwire.MsgTx)
+		if !ok {
+			return nil, checkpointBytes, nil, fmt.Errorf("unexpected dash signed tx type %T", stx)
+		}
+		redeemTx = msgTx
 	case common.ZECChain:
 		// using zecTx directly, no need to convert back
 	default:

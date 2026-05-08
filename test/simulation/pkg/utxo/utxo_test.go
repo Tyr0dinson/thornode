@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -18,6 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
+	simtypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
 const testMnemonic = "master master master master master master master master master master master master master master master master master master master master master master master notice"
@@ -175,6 +177,31 @@ func TestGetMemoScriptsSplitsLongMemoForUTXO(t *testing.T) {
 	}
 	if len(scripts) != 2 {
 		t.Fatalf("expected 2 scripts for an 81-byte BTC memo, got %d", len(scripts))
+	}
+}
+
+func TestGetPaymentAmountAddsFeeAndMemoDustInBaseUnits(t *testing.T) {
+	client := &Client{chain: common.BTCChain}
+	amountSats := uint64(1_000_000)
+	feeSats := uint64(1_234)
+	memo := strings.Repeat("a", 81)
+
+	scripts, err := client.getMemoScripts(memo)
+	if err != nil {
+		t.Fatalf("failed to build memo scripts: %v", err)
+	}
+
+	got := client.getPaymentAmount(simtypes.SimTx{
+		Chain:   common.BTCChain,
+		Coin:    common.NewCoin(common.BTCAsset, sdkmath.NewUint(amountSats)),
+		Memo:    memo,
+		FeeSats: feeSats,
+	})
+	wantSats := amountSats + feeSats + uint64(len(scripts)-1)*uint64(common.BTCChain.P2WPKHOutputValue())
+	want := float64(wantSats) / float64(common.One)
+
+	if got != want {
+		t.Fatalf("expected payment amount %.8f, got %.8f", want, got)
 	}
 }
 

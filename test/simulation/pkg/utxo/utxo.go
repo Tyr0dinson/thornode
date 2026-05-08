@@ -523,13 +523,9 @@ func (c *Client) getPaymentAmount(tx SimTx) float64 {
 		feeSats = tx.FeeSats
 	}
 
-	amtToPay1e8 := tx.Coin.Amount.Uint64()
-	amtToPay := btcutil.Amount(int64(amtToPay1e8)).ToBTC()
-	amtToPay += feeSats
 	totalSats := tx.Coin.Amount.Uint64() + feeSats
 	if memoScripts, err := c.getMemoScripts(tx.Memo); err == nil && len(memoScripts) > 1 {
-		p2wpkhOutputsCost := int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
-		amtToPay += btcutil.Amount(p2wpkhOutputsCost).ToBTC()
+		totalSats += uint64(len(memoScripts)-1) * uint64(c.chain.P2WPKHOutputValue())
 	}
 	return float64(totalSats) / float64(common.One)
 }

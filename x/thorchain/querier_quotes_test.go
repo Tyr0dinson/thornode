@@ -251,6 +251,7 @@ func (s *QuotesSuite) TestQuoteInboundInfoDASHHasNoConfirmationDelay(c *C) {
 	vault := GetRandomVault()
 	vault.Type = AsgardVault
 	vault.Status = ActiveVault
+	vault.Chains = append(vault.Chains, common.DASHChain.String())
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	mgr.Keeper().SetMimir(ctx, "ConfMultiplierBasisPoints-DASH", 1)

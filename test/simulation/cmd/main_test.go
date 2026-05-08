@@ -573,7 +573,7 @@ func TestWaitForMasterAccountRetriesTransientXMRStartupError(t *testing.T) {
 	}
 
 	sleepCalls := 0
-	got, err := waitForMasterAccountWithSleep(common.XMRChain, client, func(time.Duration) {
+	got, err := waitForMasterAccountWithMinAmountAndSleep(common.XMRChain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
 		sleepCalls++
 	})
 	if err != nil {
@@ -605,7 +605,7 @@ func TestWaitForMasterAccountRetriesTransientXMRDaemonHeightError(t *testing.T) 
 	}
 
 	sleepCalls := 0
-	got, err := waitForMasterAccountWithSleep(common.XMRChain, client, func(time.Duration) {
+	got, err := waitForMasterAccountWithMinAmountAndSleep(common.XMRChain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
 		sleepCalls++
 	})
 	if err != nil {
@@ -639,7 +639,7 @@ func TestWaitForMasterAccountRetriesZeroBalanceXRPStartupState(t *testing.T) {
 	}
 
 	sleepCalls := 0
-	got, err := waitForMasterAccountWithSleep(common.XRPChain, client, func(time.Duration) {
+	got, err := waitForMasterAccountWithMinAmountAndSleep(common.XRPChain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
 		sleepCalls++
 	})
 	if err != nil {
@@ -673,7 +673,7 @@ func TestWaitForMasterAccountRetriesZeroBalanceSOLStartupState(t *testing.T) {
 	}
 
 	sleepCalls := 0
-	got, err := waitForMasterAccountWithSleep(common.SOLChain, client, func(time.Duration) {
+	got, err := waitForMasterAccountWithMinAmountAndSleep(common.SOLChain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
 		sleepCalls++
 	})
 	if err != nil {
@@ -705,7 +705,7 @@ func TestWaitForMasterAccountRetriesTransientSOLRPCStartupError(t *testing.T) {
 	}
 
 	sleepCalls := 0
-	got, err := waitForMasterAccountWithSleep(common.SOLChain, client, func(time.Duration) {
+	got, err := waitForMasterAccountWithMinAmountAndSleep(common.SOLChain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
 		sleepCalls++
 	})
 	if err != nil {
@@ -716,6 +716,41 @@ func TestWaitForMasterAccountRetriesTransientSOLRPCStartupError(t *testing.T) {
 	}
 	if client.calls != 3 {
 		t.Fatalf("expected 3 Solana account attempts, got %d", client.calls)
+	}
+	if sleepCalls != 2 {
+		t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)
+	}
+}
+
+func TestWaitForMasterAccountRetriesUntilRequiredFunding(t *testing.T) {
+	required := sdkmath.NewUint(10 * common.One)
+	wantAccount := &common.Account{
+		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, required)),
+	}
+
+	client := &stubLiteChainClient{}
+	client.getAccount = func(_ *common.PubKey) (*common.Account, error) {
+		client.calls++
+		if client.calls < 3 {
+			return &common.Account{
+				Coins: common.NewCoins(common.NewCoin(common.DASHAsset, sdkmath.NewUint(uint64(client.calls)*common.One))),
+			}, nil
+		}
+		return wantAccount, nil
+	}
+
+	sleepCalls := 0
+	got, err := waitForMasterAccountWithMinAmountAndSleep(common.DASHChain, client, required, 4, func(time.Duration) {
+		sleepCalls++
+	})
+	if err != nil {
+		t.Fatalf("expected master funding wait to recover, got %v", err)
+	}
+	if got != wantAccount {
+		t.Fatal("expected funded account to be returned")
+	}
+	if client.calls != 3 {
+		t.Fatalf("expected 3 DASH account attempts, got %d", client.calls)
 	}
 	if sleepCalls != 2 {
 		t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)

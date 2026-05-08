@@ -3,7 +3,6 @@ package features
 import (
 	"bufio"
 	"fmt"
-	"math"
 	rand "math/rand/v2"
 	"net/http"
 	"strconv"
@@ -27,7 +26,7 @@ type DashInstantSendActor struct {
 	dash    *utxo.Client
 
 	highValueUSDLimit uint64
-	minFeeRate        float64
+	minFeeRateSats    uint64
 }
 
 // DashInstantSend wires up a feature actor that exercises different InstantSend paths.
@@ -37,7 +36,7 @@ func DashInstantSend(rng *rand.Rand) *Actor {
 		// config/default.yaml keeps the DASH USD threshold at the network default.
 		Actor:             *NewActor("Feature-DASH-InstantSend", rng),
 		highValueUSDLimit: 100,
-		minFeeRate:        8,
+		minFeeRateSats:    8,
 	}
 	a.Timeout = 5 * time.Minute
 
@@ -88,7 +87,7 @@ func (a *DashInstantSendActor) initDashContext(_ *OpConfig) OpResult {
 	a.Log().Info().
 		Stringer("inbound", a.inbound).
 		Uint64("high_value_usd_limit", a.highValueUSDLimit).
-		Float64("min_fee_rate_sat_per_vbyte", a.minFeeRate).
+		Uint64("min_fee_rate_sat_per_vbyte", a.minFeeRateSats).
 		Msg("dash instantsend context loaded")
 
 	return OpResult{Continue: true}
@@ -268,9 +267,8 @@ func (a *DashInstantSendActor) lowFeeFallback(_ *OpConfig) OpResult {
 	amount := a.highValueUSDLimit * common.One * 9 / 10 / priceDashUSD // 90% of threshold
 
 	// Estimate a realistic tx size and set a fee rate below the InstantSend minimum.
-	const estimatedVBytes = 300.0
-	targetRate := math.Max(1, a.minFeeRate*0.25) // sat/vbyte
-	feeSats := uint64(math.Ceil(targetRate * estimatedVBytes))
+	const estimatedVBytes uint64 = 300
+	feeSats := (a.minFeeRateSats*estimatedVBytes + 3) / 4
 	if feeSats < 300 { // around 1 sat/vB at 300 vB
 		feeSats = 300
 	}

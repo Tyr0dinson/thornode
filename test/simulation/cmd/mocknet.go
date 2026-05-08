@@ -46,7 +46,7 @@ var chainRPCs = map[common.Chain]string{
 	common.XRPChain:   "http://127.0.0.1:5005",
 	common.SOLChain:   "http://127.0.0.1:8899",
 	common.XMRChain:   envOrDefault("XMR_SIM_HELPER_ENDPOINT", "http://127.0.0.1:8284"),
-	common.DASHChain:  "http://localhost:19898",
+	common.DASHChain:  "http://127.0.0.1:19898",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -80,9 +80,10 @@ var (
 )
 
 const (
-	masterAccountRetryAttempts = 30
-	masterAccountRetryDelay    = 2 * time.Second
-	mocknetInitConcurrency     = 2
+	masterAccountRetryDelay           = 2 * time.Second
+	masterAccountRetryAttempts        = 30
+	masterAccountFundingRetryAttempts = int((10 * time.Minute) / masterAccountRetryDelay)
+	mocknetInitConcurrency            = 2
 )
 
 // getHeightProvider lets chains with non-replayable mock histories seed
@@ -333,7 +334,30 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 
 	if _, ok := liteClientConstructors[common.DASHChain]; ok {
 		requiredDash := sdkmath.NewUint(uint64(len(funded)) * 10 * common.One)
-		waitForMasterFunding(master, common.DASHChain, 10*time.Minute, requiredDash)
+		client, ok := master.ChainClients[common.DASHChain]
+		if !ok {
+			log.Warn().Stringer("chain", common.DASHChain).Msg("no chain client found for chain, skipping funding wait")
+		} else {
+			log.Info().
+				Stringer("chain", common.DASHChain).
+				Stringer("required", requiredDash).
+				Msg("waiting for master account to be funded")
+			account, err := waitForMasterAccountWithMinAmountAndSleep(
+				common.DASHChain,
+				client,
+				requiredDash,
+				masterAccountFundingRetryAttempts,
+				time.Sleep,
+			)
+			if err != nil {
+				log.Fatal().Stringer("chain", common.DASHChain).Err(err).Msg("timed out waiting for genesis funding")
+			}
+			log.Info().
+				Stringer("chain", common.DASHChain).
+				Stringer("have", account.Coins.GetCoin(common.DASHChain.GetGasAsset()).Amount).
+				Stringer("need", requiredDash).
+				Msg("master account funded")
+		}
 	}
 
 	// fund user accounts with one goroutine per chain
@@ -642,28 +666,36 @@ func fundUserXMRAccounts(master *User, users []*User, amount sdkmath.Uint) {
 }
 
 func waitForMasterAccount(chain common.Chain, client LiteChainClient) (*common.Account, error) {
-	return waitForMasterAccountWithSleep(chain, client, time.Sleep)
+	return waitForMasterAccountWithMinAmountAndSleep(
+		chain,
+		client,
+		sdkmath.ZeroUint(),
+		masterAccountRetryAttempts,
+		time.Sleep,
+	)
 }
 
-func waitForMasterAccountWithSleep(
+func waitForMasterAccountWithMinAmountAndSleep(
 	chain common.Chain,
 	client LiteChainClient,
+	minAmount sdkmath.Uint,
+	maxAttempts int,
 	sleep func(time.Duration),
 ) (*common.Account, error) {
 	var lastErr error
-	for attempt := 1; attempt <= masterAccountRetryAttempts; attempt++ {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		account, err := client.GetAccount(nil)
-		if err == nil && isMasterAccountReady(chain, account) {
+		if err == nil && isMasterAccountReady(chain, account, minAmount) {
 			return account, nil
 		}
 		if err == nil {
-			lastErr = fmt.Errorf("%s master account balance is still zero", chain)
-			if !isRetryableZeroBalanceStartupState(chain, account) || attempt == masterAccountRetryAttempts {
+			lastErr = masterAccountBalanceNotReadyError(chain, account, minAmount)
+			if !isRetryableMasterAccountBalanceState(chain, account, minAmount) || attempt == maxAttempts {
 				return nil, lastErr
 			}
 		} else {
 			lastErr = err
-			if !isRetryableMasterAccountStartupError(chain, err) || attempt == masterAccountRetryAttempts {
+			if !isRetryableMasterAccountStartupError(chain, err) || attempt == maxAttempts {
 				return nil, err
 			}
 		}
@@ -671,7 +703,7 @@ func waitForMasterAccountWithSleep(
 		log.Warn().
 			Stringer("chain", chain).
 			Int("attempt", attempt).
-			Int("max_attempts", masterAccountRetryAttempts).
+			Int("max_attempts", maxAttempts).
 			Err(lastErr).
 			Msg("waiting for master account readiness")
 		sleep(masterAccountRetryDelay)
@@ -680,16 +712,16 @@ func waitForMasterAccountWithSleep(
 	return nil, lastErr
 }
 
-func isMasterAccountReady(chain common.Chain, account *common.Account) bool {
+func isMasterAccountReady(chain common.Chain, account *common.Account, minAmount sdkmath.Uint) bool {
 	if account == nil {
 		return false
 	}
 
-	if requiresFundedMasterAccount(chain) {
-		return !account.Coins.GetCoin(chain.GetGasAsset()).Amount.IsZero()
+	if !minAmount.IsZero() {
+		return account.Coins.GetCoin(chain.GetGasAsset()).Amount.GTE(minAmount)
 	}
 
-	return true
+	return !isRetryableZeroBalanceStartupState(chain, account)
 }
 
 func requiresFundedMasterAccount(chain common.Chain) bool {
@@ -697,8 +729,32 @@ func requiresFundedMasterAccount(chain common.Chain) bool {
 }
 
 func isRetryableZeroBalanceStartupState(chain common.Chain, account *common.Account) bool {
-	return requiresFundedMasterAccount(chain) && account != nil &&
-		account.Coins.GetCoin(chain.GetGasAsset()).Amount.IsZero()
+	return isRetryableMasterAccountBalanceState(chain, account, sdkmath.ZeroUint())
+}
+
+func isRetryableMasterAccountBalanceState(chain common.Chain, account *common.Account, minAmount sdkmath.Uint) bool {
+	if account == nil {
+		return false
+	}
+
+	amount := account.Coins.GetCoin(chain.GetGasAsset()).Amount
+	if !minAmount.IsZero() {
+		return amount.LT(minAmount)
+	}
+
+	return requiresFundedMasterAccount(chain) && amount.IsZero()
+}
+
+func masterAccountBalanceNotReadyError(chain common.Chain, account *common.Account, minAmount sdkmath.Uint) error {
+	amount := sdkmath.ZeroUint()
+	if account != nil {
+		amount = account.Coins.GetCoin(chain.GetGasAsset()).Amount
+	}
+	if !minAmount.IsZero() {
+		return fmt.Errorf("%s master account balance %s is below required %s", chain, amount, minAmount)
+	}
+
+	return fmt.Errorf("%s master account balance is still zero", chain)
 }
 
 func isRetryableMasterAccountStartupError(chain common.Chain, err error) bool {
@@ -736,45 +792,4 @@ func isRetryableTransportStartupError(err error) bool {
 	}
 
 	return false
-}
-
-func waitForMasterFunding(master *User, chain common.Chain, timeout time.Duration, minAmount sdkmath.Uint) {
-	client, ok := master.ChainClients[chain]
-	if !ok {
-		log.Warn().Stringer("chain", chain).Msg("no chain client found for chain, skipping funding wait")
-		return
-	}
-
-	log.Info().Stringer("chain", chain).Msg("waiting for master account to be funded")
-	deadline := time.Now().Add(timeout)
-	for {
-		account, err := client.GetAccount(nil)
-		if err == nil {
-			for _, coin := range account.Coins {
-				if !coin.Asset.IsGasAsset() {
-					continue
-				}
-
-				if minAmount.IsZero() && coin.Amount.GT(sdkmath.ZeroUint()) {
-					log.Info().Stringer("chain", chain).Msg("master account funded")
-					return
-				}
-				if !minAmount.IsZero() && coin.Amount.GTE(minAmount) {
-					log.Info().
-						Stringer("chain", chain).
-						Stringer("have", coin.Amount).
-						Stringer("need", minAmount).
-						Msg("master account funded")
-					return
-				}
-			}
-		} else {
-			log.Debug().Stringer("chain", chain).Err(err).Msg("failed to get master account; retrying")
-		}
-
-		if time.Now().After(deadline) {
-			log.Fatal().Stringer("chain", chain).Msg("timed out waiting for genesis funding")
-		}
-		time.Sleep(5 * time.Second)
-	}
 }
