@@ -308,7 +308,7 @@
           "balance_asset": "100001000",
           "balance_rune": "101002966994",
           "decimals": "8",
-          "legacy_balance_asset": "100000991",
+          "legacy_balance_asset": "100001000",
           "legacy_balance_rune": "101002966994",
           "legacy_lp_units": "100000000000",
           "pending_inbound_asset": "0",
