@@ -485,10 +485,9 @@ func (s *HandlerObservedTxHelpersSuite) TestUnfinalizedHeightUsedInFetchMemoFrom
 	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.UnfinalizedHeight)
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
-	// If we had used Height (120) instead, let's verify it would fail the height check
-	// (transaction observed after memo creation: 120 > 50, but this should be caught by height validation)
+	// A later finalized height still represents an observation after memo creation, so it should succeed.
 	resolvedMemoWithHeight := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.Height)
-	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890") // This will still work since 120 > 50
+	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
 	// Test edge case where using Height would fail but UnfinalizedHeight succeeds
 	// Create reference memo at height 70
@@ -628,6 +627,49 @@ func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundSingleMat
 	}
 
 	// Should return OriginalMemo when set
+	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
+	c.Assert(result, Equals, item.OriginalMemo)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExtendedXMRWindow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+
+	vaultPubKey := GetRandomPubKey()
+	vaultPubKeyFrost := getRandomXMRFrostPubKey(c)
+	toAddress, err := vaultPubKeyFrost.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	inHash, _ := common.NewTxID("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+	item := TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        toAddress,
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyFrost: vaultPubKeyFrost,
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(1000000)),
+		Memo:             "OUT:" + inHash.String(),
+		OriginalMemo:     "SWAP:XMR.XMR:" + toAddress.String(),
+		InHash:           inHash,
+		GasRate:          100,
+		MaxGas:           common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(10000))},
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	txOut := NewTxOut(75)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			Chain:     common.XMRChain,
+			ToAddress: toAddress,
+			Coins:     common.Coins{item.Coin},
+			Memo:      "",
+		},
+		ObservedPubKey: vaultPubKeyFrost,
+	}
+
 	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
 	c.Assert(result, Equals, item.OriginalMemo)
 }
@@ -1205,6 +1247,84 @@ func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSigners(c *C) {
 	c.Assert(count, Equals, 2)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersScopesByObservedVault(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	txID := GetRandomTxHash()
+	gas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(23061))}
+	baseTx := common.Tx{
+		ID:          txID,
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(305570))),
+		Gas:         gas,
+		Memo:        "OUT:xyz",
+	}
+
+	vaultPubKeyA := GetRandomPubKey()
+	vaultPubKeyB := GetRandomPubKey()
+
+	obsTxA := common.NewObservedTx(baseTx, 100, vaultPubKeyA, 100)
+	obsTxA.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String()}
+
+	obsTxB := common.NewObservedTx(baseTx, 100, vaultPubKeyB, 100)
+	obsTxB.Signers = []string{nas[2].NodeAddress.String(), nas[3].NodeAddress.String()}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{obsTxA, obsTxB})
+
+	countA := countMatchingSigners(voter, obsTxA, nas)
+	c.Assert(countA, Equals, 2)
+
+	countB := countMatchingSigners(voter, obsTxB, nas)
+	c.Assert(countB, Equals, 2)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersDoesNotMixXMRSpentRefs(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	txID := GetRandomTxHash()
+	baseTx := GetRandomTx()
+	baseTx.ID = txID
+	baseTx.Chain = common.XMRChain
+	baseTx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000)))
+	baseTx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1000))}
+	baseTx.Memo = "OUT:xmr-spent-refs"
+
+	vaultPubKey := GetRandomPubKey()
+	obsTxA := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
+	obsTxA.SpentOutputRefs = []common.OutputRef{
+		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
+	}
+	obsTxA.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String()}
+
+	obsTxB := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
+	obsTxB.SpentOutputRefs = []common.OutputRef{
+		{TxHash: "cccc", OutputIndex: 0, KeyImage: "ki_cccc", SpendTxHash: txID.String()},
+		{TxHash: "dddd", OutputIndex: 1, KeyImage: "ki_dddd", SpendTxHash: txID.String()},
+	}
+	obsTxB.Signers = []string{nas[2].NodeAddress.String(), nas[3].NodeAddress.String()}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{obsTxA, obsTxB})
+
+	countA := countMatchingSigners(voter, obsTxA, nas)
+	c.Assert(countA, Equals, 2)
+
+	countB := countMatchingSigners(voter, obsTxB, nas)
+	c.Assert(countB, Equals, 2)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100)
@@ -1278,4 +1398,274 @@ func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(
 	c.Assert(err, IsNil)
 	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(vaultBalanceBefore), Equals, true,
 		Commentf("vault balance should be unchanged when non-final re-observations are rejected"))
+}
+
+// TestDetectVaultSubFundsClampHalts asserts that an outbound observation whose
+// coin amount exceeds the vault's tracked balance halts signing + trading on
+// the affected chain. The clamp itself is preserved by SubFunds, but the
+// divergence must be surfaced rather than silently swallowed.
+func (s *HandlerObservedTxHelpersSuite) TestDetectVaultSubFundsClampHalts(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Observed outbound debits 100 ETH but the vault only tracks 10 ETH.
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	// Sanity: chain should not be halted before the call.
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning <= 0, Equals, true)
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading <= 0, Equals, true)
+
+	detectVaultSubFundsClamp(ctx, mgr, k, vault, tx, tx.Tx.Coins)
+
+	haltSigning, err = k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("HaltSigningETH should be set to current block height when a clamp is detected"))
+	haltTrading, err = k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("HaltETHTrading should be set to current block height when a clamp is detected"))
+}
+
+// TestDetectVaultSubFundsClampNoOpWhenSolvent ensures the helper is a no-op
+// when the vault has sufficient balance to cover the observed outbound — the
+// normal happy path that should NOT halt the chain.
+func (s *HandlerObservedTxHelpersSuite) TestDetectVaultSubFundsClampNoOpWhenSolvent(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	detectVaultSubFundsClamp(ctx, mgr, k, vault, tx, tx.Tx.Coins)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning <= 0, Equals, true,
+		Commentf("HaltSigningETH should remain unset when vault has sufficient balance"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading <= 0, Equals, true,
+		Commentf("HaltETHTrading should remain unset when vault has sufficient balance"))
+}
+
+// TestDetectVaultSubFundsClampHaltsOnGasDebit asserts the helper also catches
+// the same clamp pattern when the slashed-vault gas debit would silently
+// underflow the vault's gas reserve.
+func (s *HandlerObservedTxHelpersSuite) TestDetectVaultSubFundsClampHaltsOnGasDebit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(2222)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	// Vault has only 100 wei of ETH for gas — far less than the observed gas spend.
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	gas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))} // 1e8 wei
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		Gas:         gas,
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	// Pass the gas coins explicitly — this is the call shape used by the
+	// vault-slash branch of handleObservedTxOutQuorum.
+	detectVaultSubFundsClamp(ctx, mgr, k, vault, tx, tx.Tx.Gas.ToCoins())
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("HaltSigningETH should be set when gas-debit would clamp"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("HaltETHTrading should be set when gas-debit would clamp"))
+}
+
+// TestDetectVaultSubFundsClampPreservesManualHalt asserts that existing
+// manual indefinite halts (mimir == 1) on either HaltSigning<Chain> or
+// Halt<Chain>Trading are NOT downgraded to the current block height. Without
+// this guard, a regular halt-height write would later be auto-unhalted, which
+// is exactly what the manual-halt sentinel is meant to prevent.
+func (s *HandlerObservedTxHelpersSuite) TestDetectVaultSubFundsClampPreservesManualHalt(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Operator has set the manual indefinite-halt sentinels.
+	k.SetMimir(ctx, "HaltSigningETH", 1)
+	k.SetMimir(ctx, "HaltETHTrading", 1)
+
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	detectVaultSubFundsClamp(ctx, mgr, k, vault, tx, tx.Tx.Coins)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, int64(1),
+		Commentf("HaltSigningETH manual indefinite halt must be preserved across clamp detection"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, int64(1),
+		Commentf("HaltETHTrading manual indefinite halt must be preserved across clamp detection"))
+}
+
+// TestDetectVaultSubFundsClampOverridesFutureHalt asserts that a future-
+// scheduled halt is overwritten with ctx.BlockHeight() when a clamp is
+// detected. Per Ursa's MR feedback: a clamp is a present-time divergence,
+// so triggering the halt now (rather than waiting for the scheduled height)
+// is the right call. Differs from processSolvencyAttestation, which preserves
+// future halts because it can also unhalt.
+func (s *HandlerObservedTxHelpersSuite) TestDetectVaultSubFundsClampOverridesFutureHalt(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Halts scheduled 1000 blocks in the future.
+	futureHalt := ctx.BlockHeight() + 1000
+	k.SetMimir(ctx, "HaltSigningETH", futureHalt)
+	k.SetMimir(ctx, "HaltETHTrading", futureHalt)
+
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	detectVaultSubFundsClamp(ctx, mgr, k, vault, tx, tx.Tx.Coins)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("HaltSigningETH future halt must be overwritten with current block height"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("HaltETHTrading future halt must be overwritten with current block height"))
+}
+
+// TestDetectVaultSubFundsClampSumsDuplicateCoins asserts that multiple coin
+// entries for the same asset are summed before comparing against the vault
+// balance. Per Ursa's MR feedback: tx.Tx.Coins should normally have one entry
+// per asset, but if duplicates ever appear the SUM of amounts must be the
+// thing compared, not each entry independently.
+func (s *HandlerObservedTxHelpersSuite) TestDetectVaultSubFundsClampSumsDuplicateCoins(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(3333)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	// Vault holds 50 ETH.
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Two coin entries of 30 ETH each — neither alone exceeds 50, but the
+	// sum (60) does. A naive per-entry comparison would miss this clamp.
+	coins := common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(30*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(30*common.One)),
+	}
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       coins,
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	detectVaultSubFundsClamp(ctx, mgr, k, vault, tx, coins)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("clamp must fire when summed-by-asset amount exceeds vault balance"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("clamp must fire when summed-by-asset amount exceeds vault balance"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestXMRSpentOutputRefsStoreAccumulation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVaultV2(1, ActiveVault, AsgardVault, vaultPubKey, []string{common.XMRChain.String()}, nil, vaultPubKey)
+	vault.PubKeyFrost = vaultPubKey
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	ref1 := common.OutputRef{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"}
+	ref2 := common.OutputRef{TxHash: "bbb", OutputIndex: 1, KeyImage: "ki_bbb", SpendTxHash: "spend_tx"}
+
+	applySpentRefs := func(refs []common.OutputRef) {
+		c.Assert(mgr.Keeper().SetXMRSpentOutputRefs(ctx, vaultPubKey, common.TxID("spend_tx"), refs, ctx.BlockHeight(), ctx.BlockHeight()), IsNil)
+	}
+
+	applySpentRefs([]common.OutputRef{ref1, ref2})
+	refs, err := mgr.Keeper().GetXMRSpentOutputRefs(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(refs), Equals, 2)
+
+	applySpentRefs([]common.OutputRef{
+		{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"},
+		{TxHash: "ccc", OutputIndex: 2, KeyImage: "ki_ccc", SpendTxHash: "spend_tx"},
+	})
+	refs, err = mgr.Keeper().GetXMRSpentOutputRefs(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(refs), Equals, 3, Commentf("duplicate ref should be deduped"))
 }

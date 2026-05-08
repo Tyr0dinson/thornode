@@ -1050,19 +1050,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "610320rune",
+        "amount": "610314rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "610320rune",
+        "amount": "610314rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "610320rune",
+        "amount": "610314rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1074,19 +1074,19 @@
         "type": "message"
       },
       {
-        "amount": "419551rune",
+        "amount": "419548rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "419551rune",
+        "amount": "419548rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "419551rune",
+        "amount": "419548rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1098,19 +1098,19 @@
         "type": "message"
       },
       {
-        "amount": "81715rune",
+        "amount": "81702rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "81715rune",
+        "amount": "81702rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "81715rune",
+        "amount": "81702rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1122,9 +1122,9 @@
         "type": "message"
       },
       {
-        "AVAX.AVAX": "610320",
-        "AVAX.USDX-0X9999999999999999999999999999999999999999": "419551",
-        "bond_reward": "81715",
+        "AVAX.AVAX": "610314",
+        "AVAX.USDX-0X9999999999999999999999999999999999999999": "419548",
+        "bond_reward": "81702",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "marketing_fund_reward": "0",
@@ -1350,7 +1350,7 @@
               "value": "5"
             },
             {
-              "amount": "157501617552",
+              "amount": "156808084820",
               "bond_address": "",
               "bond_type": "bond_cost",
               "chain": "",
@@ -1364,19 +1364,19 @@
               "type": "bond"
             },
             {
-              "amount": "52500539184rune",
+              "amount": "51807006452rune",
               "msg_index": "0",
               "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
               "type": "coin_spent"
             },
             {
-              "amount": "52500539184rune",
+              "amount": "51807006452rune",
               "msg_index": "0",
               "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
               "type": "coin_received"
             },
             {
-              "amount": "52500539184rune",
+              "amount": "51807006452rune",
               "msg_index": "0",
               "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
               "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
@@ -1417,6 +1417,17 @@
               "msg_index": "0",
               "pool": "AVAX.AVAX",
               "type": "slash"
+            },
+            {
+              "chain": "AVAX",
+              "coin": "9019300200 AVAX.USDX-0X9999999999999999999999999999999999999999",
+              "from": "0xd58610f89265a2fb637ac40edf59141ff873b266",
+              "id": "0000000000000000000000000000000000000000000000000000000000000002",
+              "memo": "OUT:3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+              "msg": "vault sub_funds clamp: vault=tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4 asset=AVAX.AVAX requested=10000000000 available=950000001 missed=9049999999 tx=0000000000000000000000000000000000000000000000000000000000000002",
+              "msg_index": "0",
+              "to": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+              "type": "security"
             }
           ]
         }

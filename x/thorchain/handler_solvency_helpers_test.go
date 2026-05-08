@@ -289,6 +289,72 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_WalletCoinEmpty(c *C) 
 	c.Assert(result, Equals, true)
 }
 
+func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_PendingOutboundCoversWalletGap(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+
+	prevHeight := ctx.BlockHeight() - 1
+	txOut := NewTxOut(prevHeight)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(20*common.One)),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	// Vault has 1000 ETH, wallet has 980 ETH, and the remaining 20 ETH is
+	// already committed to an outstanding outbound.
+	walletCoins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(980*common.One)))
+
+	result := insolvencyCheck(ctx, mgr, vault, walletCoins, common.ETHChain)
+	c.Assert(result, Equals, false)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_PendingOutboundCanExceedWalletBalance(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+
+	prevHeight := ctx.BlockHeight() - 1
+	txOut := NewTxOut(prevHeight)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One)),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	// The wallet can be empty without being insolvent if the full vault amount
+	// is already represented by pending outbounds.
+	walletCoins := common.Coins{}
+
+	result := insolvencyCheck(ctx, mgr, vault, walletCoins, common.ETHChain)
+	c.Assert(result, Equals, false)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_PendingOutboundExceedsVaultBalance(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+
+	prevHeight := ctx.BlockHeight() - 1
+	txOut := NewTxOut(prevHeight)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1500*common.One)),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	// Over-scheduled pending outbounds are handled by outbound recovery and
+	// should not make solvency fall back to checking the full vault balance.
+	walletCoins := common.Coins{}
+
+	result := insolvencyCheck(ctx, mgr, vault, walletCoins, common.ETHChain)
+	c.Assert(result, Equals, false)
+}
+
 func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_GapWithinPermittedRange(c *C) {
 	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
 
@@ -339,6 +405,8 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_DifferentChainCoinSkip
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_NoMatchingVault(c *C) {
+	ctx, mgr, _, _ := setupSolvencyHelpersTest(c)
+
 	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 	}, nil)
@@ -355,13 +423,15 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_NoMatc
 		},
 	}
 
-	result := deductVaultBlockPendingOutbound(vault, block)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
 	// Balance should be unchanged since VaultPubKey doesn't match
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_AlreadySent(c *C) {
+	ctx, mgr, _, _ := setupSolvencyHelpersTest(c)
+
 	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 	}, nil)
@@ -379,13 +449,15 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_Alread
 		},
 	}
 
-	result := deductVaultBlockPendingOutbound(vault, block)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
 	// Balance should be unchanged since tx already has OutHash
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_WithGas(c *C) {
+	ctx, mgr, _, _ := setupSolvencyHelpersTest(c)
+
 	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 	}, nil)
@@ -405,7 +477,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_WithGa
 		},
 	}
 
-	result := deductVaultBlockPendingOutbound(vault, block)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
 	// Should deduct both the coin amount and gas
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(899 * common.One) // 1000 - 100 - 1
@@ -427,7 +499,7 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 	}
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 
-	adjusted, err := excludePendingOutboundFromVault(ctx, mgr, vault)
+	adjusted, _, err := excludePendingOutboundFromVault(ctx, mgr, vault)
 	c.Assert(err, IsNil)
 	ethCoin := adjusted.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(950 * common.One) // 1000 - 50

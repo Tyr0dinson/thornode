@@ -461,12 +461,34 @@ func (tos *TxOutStorage) selectFallbackVault(ctx cosmos.Context, toi TxOutItem, 
 	return bestVault
 }
 
+func (tos *TxOutStorage) emitInsufficientAvailableBalanceSecurityEvent(ctx cosmos.Context, toi TxOutItem, maxGasCoin common.Coin) {
+	if toi.MaxGas.IsEmpty() && !maxGasCoin.IsEmpty() {
+		toi.MaxGas = common.Gas{maxGasCoin}
+	}
+	etx := common.Tx{
+		ID:        toi.InHash,
+		Chain:     toi.Chain,
+		ToAddress: toi.ToAddress,
+		Coins:     common.Coins{toi.Coin},
+		Gas:       toi.MaxGas,
+		Memo:      toi.Memo,
+	}
+	event := NewEventSecurity(etx, "outbound scheduled with insufficient available vault balance")
+	if err := tos.eventMgr.EmitEvent(ctx, event); err != nil {
+		ctx.Logger().Error("failed to emit security event", "error", err)
+	}
+}
+
 func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
 	var outputs []TxOutItem
 
 	// Save original vaults before any filtering for potential fallback selection.
 	// We need this because the sort logic below may filter out vaults with zero available balance.
 	originalVaults := vaults
+	isRagnarok := false
+	if memo, err := ParseMemo(tos.keeper.GetVersion(), toi.GetMemo()); err == nil {
+		isRagnarok = memo.IsType(TxRagnarok)
+	}
 
 	// When there is more than one vault, sort the vaults by
 	// (as an integer) how many vaults of that size
@@ -551,7 +573,7 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 
 		// If the outbound Asset is the gas Asset, assigning to the limit would go over the limit,
 		// so reduce the available vaultCoinAmount by that MaxGas Amount.
-		if toi.Coin.Asset.Equals(maxGasCoin.Asset) {
+		if toi.Coin.Asset.Equals(maxGasCoin.Asset) && !isRagnarok {
 			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasCoin.Amount)
 			if vaultCoinAmount.IsZero() {
 				continue
@@ -571,7 +593,8 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 		}
 
 		toi.VaultPubKey = vault.PubKey
-		toi.VaultPubKeyEddsa = vault.PubKeyEddsa
+		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
+		toi.VaultPubKeyFrost = vault.PubKeyFrost
 
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
@@ -583,6 +606,17 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 			outputs = append(outputs, toi)
 			toi.Coin.Amount = remainingAmount
 		}
+	}
+
+	// Ragnarok can intentionally leave a chain-specific residual behind, such as
+	// XRP's account reserve. Do not route that non-spendable remainder through
+	// fallback/recovery, because the pool is being closed and the residual is not
+	// an actionable outbound deficit.
+	if isRagnarok && !toi.Coin.Amount.IsZero() && len(outputs) > 0 {
+		ctx.Logger().Info("leaving ragnarok residual unscheduled",
+			"asset", toi.Coin.Asset.String(),
+			"amount", toi.Coin.Amount.String())
+		toi.Coin.Amount = cosmos.ZeroUint()
 	}
 
 	// If we still have remaining amount, handle it based on whether we have partial outputs.
@@ -599,8 +633,12 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 					"asset", toi.Coin.Asset.String(),
 					"amount", toi.Coin.Amount.String())
 				toi.VaultPubKey = fallbackVault.PubKey
-				toi.VaultPubKeyEddsa = fallbackVault.PubKeyEddsa
+				toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, fallbackVault.PubKeyEddsa)
+				toi.VaultPubKeyFrost = fallbackVault.PubKeyFrost
 				outputs = append(outputs, toi)
+				if !isRagnarok {
+					tos.emitInsufficientAvailableBalanceSecurityEvent(ctx, toi, maxGasCoin)
+				}
 				toi.Coin.Amount = cosmos.ZeroUint()
 			}
 		} else {
@@ -622,6 +660,7 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 				"original_amount", outputs[smallestIdx].Coin.Amount.String(),
 				"remainder", toi.Coin.Amount.String())
 			outputs[smallestIdx].Coin.Amount = outputs[smallestIdx].Coin.Amount.Add(toi.Coin.Amount)
+			tos.emitInsufficientAvailableBalanceSecurityEvent(ctx, outputs[smallestIdx], maxGasCoin)
 			toi.Coin.Amount = cosmos.ZeroUint()
 		}
 	}
@@ -725,6 +764,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			activeAsgards = tos.keeper.SortBySecurity(ctx, activeAsgards, signingTransactionPeriod)
+			activeAsgards = filterActiveVaultsForOutboundChain(activeAsgards, toi.Chain)
 
 			for i := range activeAsgards {
 				// having sorted by security, deduct the value of any assigned pending outbounds
@@ -741,6 +781,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			retiringAsgards = tos.keeper.SortBySecurity(ctx, retiringAsgards, signingTransactionPeriod)
+			retiringAsgards = filterActiveVaultsForOutboundChain(retiringAsgards, toi.Chain)
 
 			for i := range retiringAsgards {
 				// having sorted by security, deduct the value of any assigned pending outbounds
@@ -1324,13 +1365,27 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 		ctx.Logger().Error("fail to get active vaults", "err", err)
 		return err
 	}
-
 	if len(active) == 0 {
-		return fmt.Errorf("dev error: no pubkey for native txn")
+		err = fmt.Errorf("dev error: no pubkey for native txn")
+		ctx.Logger().Error(
+			"native txout missing active asgard vault",
+			"err", err,
+			"module", toi.ModuleName,
+			"to", toi.ToAddress.String(),
+			"memo", toi.GetMemo(),
+		)
+		return err
 	}
+	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	activeVault, err := selectActiveVaultForChain(ctx, tos.keeper, active, common.THORChain, signingTransactionPeriod)
+	if err != nil {
+		ctx.Logger().Error("fail to select active vault for native txn", "err", err)
+		return err
+	}
+	observedPubKey := activeVault.PubKey
 
 	observedTx := ObservedTx{
-		ObservedPubKey: active[0].PubKey,
+		ObservedPubKey: observedPubKey,
 		BlockHeight:    ctx.BlockHeight(),
 		Tx:             tx,
 		FinaliseHeight: ctx.BlockHeight(),
