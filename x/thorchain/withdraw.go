@@ -426,7 +426,7 @@ func calculateBucketedWithdraw(
 	liquidityFee := cosmos.ZeroUint()
 	if !x.IsZero() && !X.IsZero() && !Y.IsZero() {
 		swapSlipBps := swapper.CalcSwapSlip(X, x)
-		minSlipBps := getMinSlipBps(ctx, keeper, pool.Asset, false)
+		minSlipBps := getMinSlipBps(ctx, keeper, common.NoAddress, pool.Asset, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
 		swapOutput, liquidityFee, _ = swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
 	}
 	outputAmount := swapOutput.Add(yAdd)
