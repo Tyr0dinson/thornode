@@ -20,6 +20,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/monero"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
