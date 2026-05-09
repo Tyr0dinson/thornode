@@ -146,7 +146,7 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 					case parseErr != nil:
 						// skip, ParseUint128 failed
 					case amount.GT(cosmos.NewUint(math.MaxUint64)):
-					// skip, exceeds uint64
+						// skip, exceeds uint64
 					default:
 						fees[extrinsicIdx] = amount.Uint64()
 					}
@@ -380,19 +380,26 @@ func txPaymentEventDataSize(eventIdx byte, sizeBalance int) (int, error) {
 }
 
 // ScanExtrinsicResults performs a pattern-based scan of raw event data to find
-// System::ExtrinsicSuccess, System::ExtrinsicFailed, Balances::Transfer events.
-// This is a fallback for when the linear parser stops at unknown events from
-// unrecognized pallets (e.g., chain-specific pallets like SubtensorModule
-// on TAO, or Staking on DOT).
-// It searches for byte patterns matching these System events and validates
-// them by decoding compact DispatchInfo fields.
+// System::ExtrinsicSuccess, System::ExtrinsicFailed, Balances::Transfer, and
+// TransactionPayment::TransactionFeePaid events. This is a fallback for when
+// the linear parser stops at unknown events from unrecognized pallets (e.g.,
+// chain-specific pallets like SubtensorModule on TAO, or Staking on DOT).
+// It searches for byte patterns matching these events and validates them by
+// decoding compact DispatchInfo fields and pinning trailing-topics terminators.
 // A scan-matched ExtrinsicSuccess is only reported when the same extIdx also
 // has a scan-matched Balances::Transfer event.
 // Call-data decode alone is never sufficient to credit a transfer.
-func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics int) map[uint32]bool {
+//
+// Returns (results, fees). The fees map carries actual_fee per extrinsic when
+// a TransactionFeePaid event was located by the scan; callers merge it with
+// the linear parser's feeMap so vault gas accounting is correct on outbounds
+// whose fee event sits after an unknown event (the linear parser would
+// otherwise have stopped before reaching it).
+func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics int) (map[uint32]bool, map[uint32]uint64) {
 	results := make(map[uint32]bool)
+	fees := make(map[uint32]uint64)
 	if len(data) == 0 || numExtrinsics <= 0 {
-		return results
+		return results, fees
 	}
 
 	// Track success and failure matches separately. If both patterns match for
@@ -427,6 +434,48 @@ func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics 
 			totalLen := 7 + 32 + 32 + pallets.BalanceSize
 			if pos+totalLen < len(data) && data[pos+totalLen] == 0x00 {
 				transfers[extIdx] = true
+			}
+			continue
+		}
+
+		// TxPayment pallet idx is non-zero on every Substrate runtime we support
+		// (TAO=6, DOT=33). Treat 0 as "unconfigured" so the branch doesn't
+		// collide with System::ExtrinsicSuccess (always pallet=0, event=0) in
+		// callers/tests that omit the pallet index.
+		if pallets.TransactionPaymentPalletIndex != 0 &&
+			palletIdx == pallets.TransactionPaymentPalletIndex && eventIdx == 0x00 {
+			// layout: phase(1) + extIdx(4) + pallet(1) + event(1) + who(AccountId32) + actual_fee(BalanceSize) + tip(BalanceSize) + topics(1)
+			// Require empty topics (0x00 terminator) so we don't pick up false
+			// positives buried in unknown pallet event payloads — the same guard
+			// the success/failure branches use.
+			totalLen := 1 + 4 + 1 + 1 + sizeAccountID + pallets.BalanceSize + pallets.BalanceSize + 1
+			if pos+totalLen > len(data) || data[pos+totalLen-1] != 0x00 {
+				continue
+			}
+			feeStart := pos + 7 + sizeAccountID
+			feePart := data[feeStart : feeStart+pallets.BalanceSize]
+
+			var fee uint64
+			switch pallets.BalanceSize {
+			case 8:
+				fee = binary.LittleEndian.Uint64(feePart)
+			case 16:
+				amount, err := cosmos.ParseUint128(feePart)
+				if err != nil {
+					continue
+				}
+				if amount.GT(cosmos.NewUint(math.MaxUint64)) {
+					continue
+				}
+				fee = amount.Uint64()
+			default:
+				continue
+			}
+
+			// First match wins, mirroring ParseExtrinsicResults' single-write
+			// semantics — chains emit one TransactionFeePaid per extrinsic.
+			if _, ok := fees[extIdx]; !ok {
+				fees[extIdx] = fee
 			}
 			continue
 		}
@@ -494,5 +543,5 @@ func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics 
 		}
 	}
 
-	return results
+	return results, fees
 }

@@ -282,7 +282,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_FindsEventsAfterUnknownPallet(c *
 	c.Check(ok, Equals, false, Commentf("linear parser should not find extrinsic 1"))
 
 	// Scan-based parser should find both
-	scanResults := ScanExtrinsicResults(data, pallets, 2)
+	scanResults, _ := ScanExtrinsicResults(data, pallets, 2)
 	c.Check(scanResults[0], Equals, true, Commentf("scan: extrinsic 0 should be successful"))
 	c.Check(scanResults[1], Equals, true, Commentf("scan: extrinsic 1 should be successful"))
 }
@@ -319,7 +319,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_FindsFailedAfterUnknownPallet(c *
 	data := EncodeCompact(4)
 	data = append(data, events...)
 
-	scanResults := ScanExtrinsicResults(data, pallets, 2)
+	scanResults, _ := ScanExtrinsicResults(data, pallets, 2)
 	c.Check(scanResults[0], Equals, true, Commentf("scan: extrinsic 0 should be successful"))
 	c.Check(scanResults[1], Equals, false, Commentf("scan: extrinsic 1 should be failed"))
 }
@@ -347,7 +347,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_RejectsInvalidDispatchInfo(c *C) 
 	data = append(data, 0)
 	data = append(data, 0x00) // 0 topics
 
-	scanResults := ScanExtrinsicResults(data, pallets, 1)
+	scanResults, _ := ScanExtrinsicResults(data, pallets, 1)
 	_, ok := scanResults[0]
 	c.Check(ok, Equals, false, Commentf("scan should reject event with invalid DispatchClass"))
 }
@@ -367,7 +367,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_RejectsOutOfRangeExtrinsicIdx(c *
 	data = append(data, makeDefaultDispatchInfo()...)
 	data = append(data, 0x00) // 0 topics
 
-	scanResults := ScanExtrinsicResults(data, pallets, 2)
+	scanResults, _ := ScanExtrinsicResults(data, pallets, 2)
 	_, ok := scanResults[100]
 	c.Check(ok, Equals, false, Commentf("scan should reject extrinsic index out of range"))
 }
@@ -408,7 +408,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_ConflictingMatchesExcluded(c *C) 
 	fakeSuccess = append(fakeSuccess, 0x00) // topics = 0
 	data = append(data, fakeSuccess...)
 
-	scanResults := ScanExtrinsicResults(data, pallets, 2)
+	scanResults, _ := ScanExtrinsicResults(data, pallets, 2)
 
 	c.Check(scanResults[0], Equals, true, Commentf("scan: extrinsic 0 should be successful"))
 
@@ -418,7 +418,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_ConflictingMatchesExcluded(c *C) 
 
 func (s *EventsSuite) TestScanExtrinsicResults_Empty(c *C) {
 	pallets := EventPalletConfig{}
-	results := ScanExtrinsicResults(nil, pallets, 0)
+	results, _ := ScanExtrinsicResults(nil, pallets, 0)
 	c.Check(len(results), Equals, 0, Commentf("expected empty results for nil input"))
 }
 
@@ -546,7 +546,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_UnknownDispatchErrorVariant(c *C)
 	data = append(data, events...)
 
 	// Linear parser stops at unknown pallet events, but scan should find both
-	scanResults := ScanExtrinsicResults(data, pallets, 2)
+	scanResults, _ := ScanExtrinsicResults(data, pallets, 2)
 	c.Check(scanResults[0], Equals, true, Commentf("scan: extrinsic 0 should be successful"))
 	c.Check(scanResults[1], Equals, false, Commentf("scan: extrinsic 1 should be failed (unknown DispatchError variant matched via estimate)"))
 }
@@ -621,7 +621,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_SuccessWithTransferCredited(c *C)
 		data := EncodeCompact(5)
 		data = append(data, events...)
 
-		results := ScanExtrinsicResults(data, pallets, 2)
+		results, _ := ScanExtrinsicResults(data, pallets, 2)
 		c.Check(results[0], Equals, true,
 			Commentf("balanceSize=%d: ext 0 should be credited (success + transfer)", balanceSize))
 		c.Check(results[1], Equals, true,
@@ -661,7 +661,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_SuccessWithoutTransferBlocked(c *
 		data := EncodeCompact(4)
 		data = append(data, events...)
 
-		results := ScanExtrinsicResults(data, pallets, 2)
+		results, _ := ScanExtrinsicResults(data, pallets, 2)
 		c.Check(results[0], Equals, true,
 			Commentf("balanceSize=%d: ext 0 should be credited", balanceSize))
 
@@ -705,7 +705,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_FailureDoesNotRequireTransfer(c *
 	data := EncodeCompact(4)
 	data = append(data, events...)
 
-	results := ScanExtrinsicResults(data, pallets, 2)
+	results, _ := ScanExtrinsicResults(data, pallets, 2)
 	c.Check(results[0], Equals, true)
 	c.Check(results[1], Equals, false,
 		Commentf("failure must still be reported regardless of Transfer presence"))
@@ -730,7 +730,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_TransferForDifferentExtIdxDoesNot
 	data := EncodeCompact(2)
 	data = append(data, events...)
 
-	results := ScanExtrinsicResults(data, pallets, 3)
+	results, _ := ScanExtrinsicResults(data, pallets, 3)
 	_, ok := results[1]
 	c.Check(ok, Equals, false,
 		Commentf("transfer for ext 2 must not vouch for success at ext 1"))
@@ -757,7 +757,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_BalancesDepositDoesNotSatisfyGate
 	data := EncodeCompact(2)
 	data = append(data, events...)
 
-	results := ScanExtrinsicResults(data, pallets, 2)
+	results, _ := ScanExtrinsicResults(data, pallets, 2)
 	_, ok := results[1]
 	c.Check(ok, Equals, false,
 		Commentf("Balances::Deposit must not satisfy the Transfer-only gate"))
@@ -787,7 +787,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_TransferWithNonEmptyTopicsNotMatc
 	data := EncodeCompact(2)
 	data = append(data, events...)
 
-	results := ScanExtrinsicResults(data, pallets, 2)
+	results, _ := ScanExtrinsicResults(data, pallets, 2)
 	_, ok := results[1]
 	c.Check(ok, Equals, false,
 		Commentf("transfer-shaped bytes with non-empty topics must not satisfy gate"))
@@ -819,7 +819,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_TransferPatternTruncatedRejected(
 	data := EncodeCompact(1)
 	data = append(data, events...)
 
-	results := ScanExtrinsicResults(data, pallets, 2)
+	results, _ := ScanExtrinsicResults(data, pallets, 2)
 	_, ok := results[1]
 	c.Check(ok, Equals, false,
 		Commentf("truncated transfer pattern at end of data must not satisfy gate"))
@@ -856,7 +856,7 @@ func (s *EventsSuite) TestScanExtrinsicResults_ConflictingMatchesExcludedEvenWit
 	fakeSuccess = append(fakeSuccess, 0x00)
 	data = append(data, fakeSuccess...)
 
-	results := ScanExtrinsicResults(data, pallets, 2)
+	results, _ := ScanExtrinsicResults(data, pallets, 2)
 	c.Check(results[0], Equals, true)
 	_, ok := results[1]
 	c.Check(ok, Equals, false,
@@ -892,9 +892,69 @@ func (s *EventsSuite) TestScanExtrinsicResults_MultipleExtrinsicsOnlyTransferred
 	data := EncodeCompact(5)
 	data = append(data, events...)
 
-	results := ScanExtrinsicResults(data, pallets, 3)
+	results, _ := ScanExtrinsicResults(data, pallets, 3)
 	c.Check(results[0], Equals, true, Commentf("ext 0 has Transfer → credited"))
 	_, ok := results[1]
 	c.Check(ok, Equals, false, Commentf("ext 1 has no Transfer → blocked"))
 	c.Check(results[2], Equals, true, Commentf("ext 2 has Transfer → credited"))
+}
+
+// buildFeeEvent constructs a TransactionPayment::TransactionFeePaid event with
+// a 32-byte zero AccountId, the requested actual_fee value LE-encoded over
+// balanceSize bytes, and a zero tip. Topics is always empty.
+func buildFeeEvent(extIdx uint32, txPaymentPallet byte, balanceSize int, actualFee uint64) []byte {
+	data := make([]byte, 32+balanceSize+balanceSize)
+	binary.LittleEndian.PutUint64(data[32:32+8], actualFee)
+	return buildEvent(0x00, extIdx, txPaymentPallet, 0x00, data, 0)
+}
+
+// TestScanExtrinsicResults_RecoversFeesAfterUnknownPallet pins the regression
+// behind the simtest TAO solvency mismatch: when bittensor's events stream
+// has an unknown pallet event before a later extrinsic's TransactionFeePaid,
+// the linear parser stops and the scan fallback used to fill in success but
+// not fees. Outbound observations then reported gas of 1 unit and thornode
+// under-debited the vault. ScanExtrinsicResults now back-fills the missed
+// fees, so the scanner caller can merge them into feeMap.
+func (s *EventsSuite) TestScanExtrinsicResults_RecoversFeesAfterUnknownPallet(c *C) {
+	tests := []struct {
+		name        string
+		balanceSize int
+	}{
+		{name: "TAO u64 balances", balanceSize: 8},
+	}
+
+	for _, tt := range tests {
+		pallets := EventPalletConfig{
+			SystemPalletIndex:             0,
+			BalancesPalletIndex:           5,
+			BalancesTransferEventIndex:    2,
+			UtilityPalletIndex:            11,
+			TransactionPaymentPalletIndex: 6,
+			BalanceSize:                   tt.balanceSize,
+		}
+
+		var events []byte
+		// ext 0: fee event before the unknown pallet event — captured by linear parser.
+		events = append(events, buildFeeEvent(0, 6, tt.balanceSize, 169570)...)
+		// Unknown pallet 99 stops the linear parser.
+		events = append(events, buildEvent(0x00, 0, 99, 0, make([]byte, 20), 0)...)
+		// ext 1: fee event after the unknown event — only the scan can recover this.
+		events = append(events, buildFeeEvent(1, 6, tt.balanceSize, 222222)...)
+
+		data := EncodeCompact(3)
+		data = append(data, events...)
+
+		// Linear parser stops at the unknown event and so misses ext 1's fee.
+		_, linearFees, _ := ParseExtrinsicResults(data, pallets)
+		c.Check(linearFees[0], Equals, uint64(169570),
+			Commentf("%s: linear parser captured ext 0 fee", tt.name))
+		_, ok := linearFees[1]
+		c.Check(ok, Equals, false,
+			Commentf("%s: linear parser missed ext 1 fee", tt.name))
+
+		// Scan recovers ext 1's fee.
+		_, scanFees := ScanExtrinsicResults(data, pallets, 2)
+		c.Check(scanFees[1], Equals, uint64(222222),
+			Commentf("%s: scan recovered ext 1 fee", tt.name))
+	}
 }
