@@ -370,6 +370,9 @@ func deleteEmptySpentOutputRefs(value any) {
 		if refs, ok := v["spent_output_refs"]; ok && isEmptyJSONList(refs) {
 			delete(v, "spent_output_refs")
 		}
+		if txKey, ok := v["xmr_tx_key"]; ok && strings.TrimSpace(fmt.Sprint(txKey)) == "" {
+			delete(v, "xmr_tx_key")
+		}
 		for _, child := range v {
 			deleteEmptySpentOutputRefs(child)
 		}
