@@ -275,7 +275,7 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 			Int("events_data_len", len(eventsData)).
 			Str("events_hex_head", stypes.HexEncodeHead(eventsData, 200)).
 			Msg("using scan-based event fallback for undetermined extrinsics")
-		scanResults := stypes.ScanExtrinsicResults(eventsData, palletConfig, numExtrinsics)
+		scanResults, scanFees := stypes.ScanExtrinsicResults(eventsData, palletConfig, numExtrinsics)
 		for idx, success := range scanResults {
 			if _, ok := results[idx]; ok {
 				continue
@@ -285,6 +285,21 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 				Uint32("ext_idx", idx).
 				Str("block_hash", blockHash).
 				Msg("extrinsic success determined solely by scan fallback")
+		}
+		// Back-fill fees the linear parser missed because it stopped at an
+		// unknown event before reaching the TransactionFeePaid event for a
+		// later extrinsic. Without this, outbound observations report gas of
+		// 1 unit and thornode under-debits the vault.
+		for idx, fee := range scanFees {
+			if _, ok := fees[idx]; ok {
+				continue
+			}
+			fees[idx] = fee
+			s.logger.Warn().
+				Uint32("ext_idx", idx).
+				Uint64("fee", fee).
+				Str("block_hash", blockHash).
+				Msg("extrinsic fee recovered solely by scan fallback")
 		}
 	}
 
