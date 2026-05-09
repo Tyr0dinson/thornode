@@ -80,6 +80,7 @@ var ErrSidecarNotConfigured = errors.New("xmr sidecar requires signer_endpoint o
 type signedTxPayload struct {
 	TxHash          string                `json:"tx_hash"`
 	TxMetadata      string                `json:"tx_metadata"`
+	TxKey           string                `json:"tx_key,omitempty"`
 	FeeAtomic       uint64                `json:"fee_atomic"`
 	MsgID           string                `json:"msg_id,omitempty"`
 	Eventuality     tssp.FrostEventuality `json:"eventuality,omitempty"`
@@ -494,7 +495,7 @@ func (c *Client) observedXMROutboundForSpentRefs(txHash string, vaultPubKey comm
 			Msg("xmr catchup: skipping invalid spent output refs")
 		return common.ObservedTx{}, nil, false
 	}
-	return observed, xmrOutboundMeta(observed.Tx), true
+	return observed, xmrOutboundMeta(observed.Tx, observed.XmrTxKey), true
 }
 
 func queryObservedXMRTx(voter *ttypes.QueryObservedTxVoter, txID common.TxID) (common.ObservedTx, bool) {
@@ -517,12 +518,13 @@ func queryObservedXMRTx(voter *ttypes.QueryObservedTxVoter, txID common.TxID) (c
 			AggregatorTarget:      candidate.GetAggregatorTarget(),
 			AggregatorTargetLimit: candidate.AggregatorTargetLimit,
 			SpentOutputRefs:       xmrOutputRefsFromPointers(candidate.GetSpentOutputRefs()),
+			XmrTxKey:              candidate.GetXmrTxKey(),
 		}, true
 	}
 	return common.ObservedTx{}, false
 }
 
-func xmrOutboundMeta(tx common.Tx) *sidecar.OutboundMeta {
+func xmrOutboundMeta(tx common.Tx, txKey string) *sidecar.OutboundMeta {
 	var amount, fee uint64
 	xmrCoin := tx.Coins.GetCoin(common.XMRAsset)
 	if !xmrCoin.IsEmpty() {
@@ -535,6 +537,7 @@ func xmrOutboundMeta(tx common.Tx) *sidecar.OutboundMeta {
 	return &sidecar.OutboundMeta{
 		FromAddress: tx.FromAddress.String(),
 		ToAddress:   tx.ToAddress.String(),
+		TxKey:       txKey,
 		Amount:      amount,
 		Fee:         fee,
 		Memo:        tx.Memo,
@@ -946,6 +949,7 @@ func (c *Client) applySpentOutputRefsFromTxInItem(obs *stypes.TxInItem) {
 		obs.BlockHeight,
 	)
 	obsTx.SpentOutputRefs = xmrOutputRefsFromPointers(obs.SpentOutputRefs)
+	obsTx.XmrTxKey = obs.XmrTxKey
 	c.ApplySpentOutputRefs(obsTx)
 }
 
@@ -1397,6 +1401,10 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	); validateErr != nil {
 		return nil, nil, nil, fmt.Errorf("invalid FROST eventuality: %w", validateErr)
 	}
+	txKey := strings.ToLower(strings.TrimSpace(resp.TxKey))
+	if err := validateFixedHex(txKey, 32, "xmr tx key"); err != nil {
+		return nil, nil, nil, err
+	}
 	var localSpentRefs []sidecar.SpentRef
 	for _, ref := range resp.SpentOutputRefs {
 		localSpentRefs = append(localSpentRefs, sidecar.SpentRef{
@@ -1409,6 +1417,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	payload := signedTxPayload{
 		TxHash:          resp.TxHash,
 		TxMetadata:      resp.TxHex,
+		TxKey:           txKey,
 		FeeAtomic:       resp.FeeAtomic,
 		MsgID:           msgID,
 		Eventuality:     resp.Eventuality,
@@ -1423,7 +1432,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if ckptErr != nil {
 		c.logger.Error().Err(ckptErr).Msg("fail to marshal xmr sign checkpoint")
 	}
-	observation := c.buildOutboundObservation(tx, resp.TxHash, resp.FeeAtomic, localSpentRefs)
+	observation := c.buildOutboundObservation(tx, resp.TxHash, txKey, resp.FeeAtomic, localSpentRefs)
 	return signedTx, ckptBytes, observation, nil
 }
 
@@ -1615,7 +1624,7 @@ func fallbackOutboundObservationFee(scanner *Scanner) uint64 {
 	return fee
 }
 
-func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, feeAtomic uint64, spentRefs []sidecar.SpentRef) *stypes.TxInItem {
+func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash, txKey string, feeAtomic uint64, spentRefs []sidecar.SpentRef) *stypes.TxInItem {
 	vaultPubKey := txVaultPubKey(tx)
 	from := c.deriveVaultAddress(vaultPubKey)
 	height := int64(0)
@@ -1654,6 +1663,9 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash string, fe
 			}
 		}
 		item.SpentOutputRefs = refs
+	}
+	if item != nil {
+		item.XmrTxKey = txKey
 	}
 	return item
 }
@@ -1699,7 +1711,7 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 	txHash := tx.Tx.ID.String()
 
 	refs := xmrSpentRefsToSidecar(tx.SpentOutputRefs)
-	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, xmrOutboundMeta(tx.Tx))
+	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, xmrOutboundMeta(tx.Tx, tx.XmrTxKey))
 	if err != nil {
 		// 404 indicates the sidecar's get_transactions race window — the
 		// catchup loop reconciles this on the next iteration, so log warn

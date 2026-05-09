@@ -86,6 +86,7 @@ func (a *FrostAdapter) FrostSignCombine(req tssp.FrostSidecarCombineReq) (tssp.F
 	return tssp.FrostSidecarCombineResp{
 		TxHash:          resp.TxHash,
 		TxHex:           resp.TxHex,
+		TxKey:           resp.TxKey,
 		FeeAtomic:       resp.FeeAtomic,
 		SpentOutputRefs: spentRefs,
 	}, nil

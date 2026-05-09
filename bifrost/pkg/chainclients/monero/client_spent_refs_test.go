@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -52,9 +53,11 @@ func TestBuildOutboundObservationIncludesSpentRefs(t *testing.T) {
 		{TxHash: "ccc333", OutputIndex: 2, KeyImage: "ki_ccc"},
 	}
 
-	obs := c.buildOutboundObservation(tx, "txhash123", 5000000, spentRefs)
+	txKey := strings.Repeat("1", 64)
+	obs := c.buildOutboundObservation(tx, "txhash123", txKey, 5000000, spentRefs)
 	require.NotNil(t, obs, "observation should not be nil")
 	require.Equal(t, 3, len(obs.SpentOutputRefs), "observation should carry all spent refs")
+	require.Equal(t, txKey, obs.XmrTxKey, "observation should carry xmr tx key")
 
 	assert.Equal(t, "aaa111", obs.SpentOutputRefs[0].TxHash)
 	assert.Equal(t, uint32(0), obs.SpentOutputRefs[0].OutputIndex)
@@ -94,7 +97,7 @@ func TestBuildOutboundObservationNoSpentRefs(t *testing.T) {
 		Memo:             "OUT:inhash",
 	}
 
-	obs := c.buildOutboundObservation(tx, "txhash456", 5000000, nil)
+	obs := c.buildOutboundObservation(tx, "txhash456", strings.Repeat("2", 64), 5000000, nil)
 	require.NotNil(t, obs)
 	assert.Empty(t, obs.SpentOutputRefs)
 }
@@ -112,6 +115,7 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	var mu sync.Mutex
 	var capturedVault string
 	var capturedTxHash string
+	var capturedTxKey string
 	var capturedRefs []sidecar.SpentRef
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +125,7 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 			mu.Lock()
 			capturedVault = req.VaultPubKey
 			capturedTxHash = req.TxHash
+			capturedTxKey = req.TxKey
 			capturedRefs = req.SpentRefs
 			mu.Unlock()
 			_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
@@ -157,6 +162,7 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 		100,
 	)
 	obsTx.SpentOutputRefs = refs
+	obsTx.XmrTxKey = strings.Repeat("3", 64)
 
 	c.ApplySpentOutputRefs(obsTx)
 
@@ -165,6 +171,7 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 
 	assert.Equal(t, vaultPubKey.String(), capturedVault, "sidecar should receive the vault pubkey from ObservedPubKey")
 	assert.Equal(t, spendTxHash, capturedTxHash)
+	assert.Equal(t, obsTx.XmrTxKey, capturedTxKey)
 	require.Equal(t, 2, len(capturedRefs))
 	assert.Equal(t, refs[0].TxHash, capturedRefs[0].TxHash)
 	assert.Equal(t, uint32(0), capturedRefs[0].OutputIndex)
@@ -186,6 +193,7 @@ func TestApplySpentOutputRefsFromTxInItemUsesObservationHeight(t *testing.T) {
 
 	var mu sync.Mutex
 	var capturedTxHash string
+	var capturedTxKey string
 	var capturedRefs []sidecar.SpentRef
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -194,6 +202,7 @@ func TestApplySpentOutputRefsFromTxInItemUsesObservationHeight(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			mu.Lock()
 			capturedTxHash = req.TxHash
+			capturedTxKey = req.TxKey
 			capturedRefs = req.SpentRefs
 			mu.Unlock()
 			_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
@@ -224,12 +233,14 @@ func TestApplySpentOutputRefsFromTxInItemUsesObservationHeight(t *testing.T) {
 		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 		ObservedVaultPubKey: vaultPubKey,
 		SpentOutputRefs:     refs,
+		XmrTxKey:            strings.Repeat("4", 64),
 	})
 
 	mu.Lock()
 	defer mu.Unlock()
 
 	assert.Equal(t, spendTxHash, capturedTxHash)
+	assert.Equal(t, strings.Repeat("4", 64), capturedTxKey)
 	require.Equal(t, 1, len(capturedRefs))
 	assert.Equal(t, refs[0].TxHash, capturedRefs[0].TxHash)
 	assert.Equal(t, spendTxHash, capturedRefs[0].SpendTxHash)

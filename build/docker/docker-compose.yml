@@ -808,7 +808,11 @@ services:
     ports:
       - 8283:8283
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8283'"]
+      test:
+        [
+          "CMD-SHELL",
+          'curl -fsS -H "Authorization: Bearer $${XMR_FROST_AUTH_BEARER}" http://127.0.0.1:8283/v1/monero/chain/height >/dev/null',
+        ]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -880,7 +884,11 @@ services:
     ports:
       - 8284:8284
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8284'"]
+      test:
+        [
+          "CMD-SHELL",
+          'curl -fsS -H "Authorization: Bearer $${XMR_FROST_AUTH_BEARER}" http://127.0.0.1:8284/v1/monero/chain/height >/dev/null',
+        ]
       interval: 5s
       timeout: 5s
       retries: 30

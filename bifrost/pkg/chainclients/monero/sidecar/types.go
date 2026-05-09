@@ -95,6 +95,7 @@ type SignCombineReq struct {
 type SignCombineResp struct {
 	TxHash          string     `json:"tx_hash"`
 	TxHex           string     `json:"tx_hex"`
+	TxKey           string     `json:"tx_key,omitempty"`
 	FeeAtomic       uint64     `json:"fee_atomic"`
 	SpentOutputRefs []SpentRef `json:"spent_output_refs,omitempty"`
 }
@@ -110,6 +111,7 @@ type SpentRef struct {
 type MarkSpentReq struct {
 	VaultPubKey      string     `json:"vault_pub_key"`
 	TxHash           string     `json:"tx_hash"`
+	TxKey            string     `json:"tx_key,omitempty"`
 	SpentRefs        []SpentRef `json:"spent_refs"`
 	SkipVerification bool       `json:"skip_verification,omitempty"`
 	FromAddress      string     `json:"from_address,omitempty"`
@@ -128,6 +130,7 @@ type MarkSpentResp struct {
 type OutboundMeta struct {
 	FromAddress string
 	ToAddress   string
+	TxKey       string
 	Amount      uint64
 	Fee         uint64
 	Memo        string
@@ -170,6 +173,7 @@ type RegisterVaultResp struct {
 
 type Transfer struct {
 	TxID          string `json:"txid"`
+	TxKey         string `json:"tx_key,omitempty"`
 	Address       string `json:"address"`
 	FromAddress   string `json:"from_address,omitempty"`
 	VaultPubKey   string `json:"vault_pub_key,omitempty"`

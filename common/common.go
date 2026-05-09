@@ -18,27 +18,37 @@ func (o *ObservedTx) IsValid() bool {
 }
 
 // GetSignablePayload returns the data that is signed for verification.
-// When spent output refs are present (XMR outbound), they are appended
-// to the signed payload so all attestors commit to the same set.
+// When XMR outbound metadata is present, append it to the signed payload so
+// all attestors commit to the same tx key and spent-output set.
 func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 	txBz, err := o.Tx.Marshal()
 	if err != nil {
 		return nil, err
 	}
-	if len(o.SpentOutputRefs) == 0 {
+	xmrTxKey := normalizeXMRTxKey(o.XmrTxKey)
+	if len(o.SpentOutputRefs) == 0 && xmrTxKey == "" {
 		return txBz, nil
 	}
 
-	buf := make([]byte, 0, len(txBz)+len(o.SpentOutputRefs)*128)
-	buf = append(buf, txBz...)
-	for _, ref := range normalizeSpentOutputRefs(o.SpentOutputRefs) {
+	refs := normalizeSpentOutputRefs(o.SpentOutputRefs)
+	var buf bytes.Buffer
+	buf.Grow(len(txBz) + len(xmrTxKey) + len(refs)*128)
+	buf.Write(txBz)
+	fmt.Fprintf(&buf, "\nxmr_tx_key:%d:%s\nxmr_spent_output_refs:%d\n", len(xmrTxKey), xmrTxKey, len(refs))
+	for _, ref := range refs {
 		refBz, marshalErr := ref.Marshal()
 		if marshalErr != nil {
 			return nil, marshalErr
 		}
-		buf = append(buf, refBz...)
+		fmt.Fprintf(&buf, "ref:%d:", len(refBz))
+		buf.Write(refBz)
+		buf.WriteByte('\n')
 	}
-	return buf, nil
+	return buf.Bytes(), nil
+}
+
+func normalizeXMRTxKey(txKey string) string {
+	return strings.ToLower(strings.TrimSpace(txKey))
 }
 
 // normalizeSpentOutputRefs returns a sorted copy of refs with the three
@@ -106,11 +116,15 @@ func spentOutputRefsIdentity(refs []OutputRef) string {
 	return buf.String()
 }
 
-func observedTxSpentRefsUniqueHash(base string, chain Chain, refs []OutputRef) string {
-	if !chain.Equals(XMRChain) || len(refs) == 0 {
+func observedTxXMRMetadataUniqueHash(base string, chain Chain, txKey string, refs []OutputRef) string {
+	if !chain.Equals(XMRChain) {
 		return base
 	}
-	return fmt.Sprintf("%X", sha256.Sum256([]byte(base+"|"+spentOutputRefsIdentity(refs))))
+	txKey = normalizeXMRTxKey(txKey)
+	if txKey == "" && len(refs) == 0 {
+		return base
+	}
+	return fmt.Sprintf("%X", sha256.Sum256([]byte(base+"|"+txKey+"|"+spentOutputRefsIdentity(refs))))
 }
 
 // Equals compares two Attestation and returns true iff they are equal

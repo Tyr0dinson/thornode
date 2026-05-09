@@ -233,6 +233,7 @@ func TestBuildOutboundObservationUsesOriginalMemo(t *testing.T) {
 			VaultPubKeyFrost: vaultPubKey,
 		},
 		txHash,
+		strings.Repeat("1", 64),
 		0,
 		nil,
 	)
@@ -271,6 +272,7 @@ func TestBuildOutboundObservationConvertsFallbackNetworkFeeToThorchainUnits(t *t
 			VaultPubKeyFrost: vaultPubKey,
 		},
 		strings.Repeat("b", 64),
+		strings.Repeat("2", 64),
 		0,
 		nil,
 	)

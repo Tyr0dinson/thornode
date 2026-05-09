@@ -139,6 +139,9 @@ func (m *consolidationTSS) FrostKeySign(req tssp.FrostKeySignRequest, _ tssp.Fro
 		if strings.TrimSpace(resp.TxHex) == "" {
 			resp.TxHex = "deadbeef"
 		}
+		if strings.TrimSpace(resp.TxKey) == "" {
+			resp.TxKey = strings.Repeat("1", 64)
+		}
 		if resp.Eventuality.Version == 0 {
 			planHash, err := tssp.FrostPlanHash(req, resp.MsgID)
 			if err != nil {

@@ -948,7 +948,7 @@ func (s *Scanner) transferToTxInItem(
 		height = fallbackHeight
 	}
 
-	return stypes.NewTxInItem(
+	item := stypes.NewTxInItem(
 		height,
 		transfer.TxID,
 		memo,
@@ -960,7 +960,9 @@ func (s *Scanner) transferToTxInItem(
 		"",
 		"",
 		nil,
-	), true
+	)
+	item.XmrTxKey = strings.TrimSpace(transfer.TxKey)
+	return item, true
 }
 
 func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxInItem {

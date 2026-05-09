@@ -3456,6 +3456,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		VaultPubKey:           toi.VaultPubKey.String(),
 		VaultPubKeyEddsa:      toi.VaultPubKeyEddsa.String(),
+		VaultPubKeyFrost:      toi.VaultPubKeyFrost.String(),
 		InHash:                toi.InHash.String(),
 		OutHash:               toi.OutHash.String(),
 		Chain:                 toi.Chain.String(),
@@ -3491,6 +3492,7 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		AggregatorTarget:      observedTx.AggregatorTarget,
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
 		SpentOutputRefs:       castOutputRefs(observedTx.SpentOutputRefs),
+		XmrTxKey:              observedTx.XmrTxKey,
 	}
 }
 

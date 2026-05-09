@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -47,6 +48,9 @@ func (m *MsgObservedTxOut) ValidateBasic() error {
 		}
 		if !tx.Tx.FromAddress.Equals(obAddr) {
 			return cosmos.ErrUnknownRequest("Request is not an outbound observed transaction")
+		}
+		if tx.Tx.Chain.Equals(common.XMRChain) && strings.TrimSpace(tx.XmrTxKey) == "" {
+			return cosmos.ErrUnknownRequest("xmr outbound observations must include xmr tx key")
 		}
 		if len(tx.Signers) > 0 {
 			return cosmos.ErrUnknownRequest("signers must be empty")

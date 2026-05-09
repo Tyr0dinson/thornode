@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
@@ -43,6 +44,7 @@ func TestFrostAdapterTranslation(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(SignCombineResp{
 				TxHash:    "tx-hash",
 				TxHex:     "tx-hex",
+				TxKey:     strings.Repeat("1", 64),
 				FeeAtomic: 42,
 			})
 		default:
@@ -115,7 +117,7 @@ func TestFrostAdapterTranslation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("adapter combine: %v", err)
 	}
-	if combineResp.TxHash != "tx-hash" || combineResp.TxHex != "tx-hex" || combineResp.FeeAtomic != 42 {
+	if combineResp.TxHash != "tx-hash" || combineResp.TxHex != "tx-hex" || combineResp.TxKey != strings.Repeat("1", 64) || combineResp.FeeAtomic != 42 {
 		t.Fatalf("unexpected combine response: %+v", combineResp)
 	}
 	if gotCombine.SessionID != combineReq.SessionID || !reflect.DeepEqual(gotCombine.AllShares, combineReq.AllShares) {

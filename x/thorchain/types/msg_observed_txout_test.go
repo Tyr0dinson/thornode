@@ -3,6 +3,7 @@ package types
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -106,4 +107,29 @@ func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutRejectsOversizedXMRSpentRefs
 
 	m := NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
 	c.Assert(m.ValidateBasic(), NotNil)
+}
+
+func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutRequiresXMRTxKey(c *C) {
+	pk := getRandomXMRPubKeyForMsgTest(c)
+	fromAddress, err := pk.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	toAddress, err := getRandomXMRPubKeyForMsgTest(c).GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.XMRChain,
+		FromAddress: fromAddress,
+		ToAddress:   toAddress,
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100))),
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:xmr-tx-key",
+	}, 55, pk, 55)
+
+	msg := NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
+	c.Assert(msg.ValidateBasic(), NotNil)
+
+	tx.XmrTxKey = strings.Repeat("a", 64)
+	msg = NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
+	c.Assert(msg.ValidateBasic(), IsNil)
 }

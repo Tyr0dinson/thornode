@@ -266,6 +266,9 @@ func (c *Client) SignCombine(req SignCombineReq) (SignCombineResp, error) {
 	if strings.TrimSpace(out.TxHash) == "" {
 		return SignCombineResp{}, fmt.Errorf("sign combine endpoint returned empty tx_hash")
 	}
+	if strings.TrimSpace(out.TxKey) == "" {
+		return SignCombineResp{}, fmt.Errorf("sign combine endpoint returned empty tx_key")
+	}
 	return out, nil
 }
 
@@ -469,6 +472,7 @@ func (c *Client) MarkSpent(vaultPubKey, txHash string, refs []SpentRef, skipVeri
 	if outbound != nil {
 		req.FromAddress = outbound.FromAddress
 		req.ToAddress = outbound.ToAddress
+		req.TxKey = outbound.TxKey
 		req.Amount = outbound.Amount
 		req.Fee = outbound.Fee
 		req.Memo = outbound.Memo

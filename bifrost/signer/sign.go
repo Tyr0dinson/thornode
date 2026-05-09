@@ -1241,6 +1241,7 @@ func (s *Signer) applySpentOutputRefsFromObs(tx types.TxOutItem, obs *types.TxIn
 		obs.BlockHeight,
 	)
 	obsTx.SpentOutputRefs = common.OutputRefsFromPointers(obs.SpentOutputRefs)
+	obsTx.XmrTxKey = obs.XmrTxKey
 	s.logger.Info().
 		Str("tx_hash", obs.Tx).
 		Int("refs", len(obs.SpentOutputRefs)).

@@ -551,6 +551,7 @@ func (c *FrostSignCoordinator) Execute(
 	return FrostKeySignResponse{
 		TxHash:          combineResp.TxHash,
 		TxHex:           combineResp.TxHex,
+		TxKey:           combineResp.TxKey,
 		FeeAtomic:       combineResp.FeeAtomic,
 		MsgID:           c.msgID,
 		Eventuality:     eventuality,
@@ -983,6 +984,7 @@ func (c *FrostSignCoordinator) BroadcastResult(resp FrostKeySignResponse, peers 
 			MsgID:           resp.MsgID,
 			TxHash:          resp.TxHash,
 			TxHex:           resp.TxHex,
+			TxKey:           resp.TxKey,
 			FeeAtomic:       resp.FeeAtomic,
 			Eventuality:     resp.Eventuality,
 			SpentOutputRefs: resp.SpentOutputRefs,
@@ -1109,6 +1111,10 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 		if err := validateHashHex("tx_hash", txHash); err != nil {
 			return FrostKeySignResponse{}, "", err
 		}
+		txKey := strings.ToLower(strings.TrimSpace(result.TxKey))
+		if err := validateHashHex("tx_key", txKey); err != nil {
+			return FrostKeySignResponse{}, "", err
+		}
 		if expectedPlanHash == "" {
 			return FrostKeySignResponse{}, "", fmt.Errorf("expected plan hash is empty")
 		}
@@ -1156,6 +1162,7 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 		normalized.MsgID = payloadMsgID
 		normalized.TxHash = txHash
 		normalized.TxHex = txHex
+		normalized.TxKey = txKey
 		normalized.Eventuality = eventuality
 		normalized.SpentOutputRefs = normalizedRefs
 	case tcommon.Fail:
@@ -1175,6 +1182,7 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 		MsgID           string                `json:"msg_id"`
 		TxHash          string                `json:"tx_hash"`
 		TxHex           string                `json:"tx_hex"`
+		TxKey           string                `json:"tx_key"`
 		FeeAtomic       uint64                `json:"fee_atomic"`
 		Eventuality     FrostEventuality      `json:"eventuality"`
 		SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs"`
@@ -1184,6 +1192,7 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 		MsgID:           normalized.MsgID,
 		TxHash:          normalized.TxHash,
 		TxHex:           normalized.TxHex,
+		TxKey:           normalized.TxKey,
 		FeeAtomic:       normalized.FeeAtomic,
 		Eventuality:     normalized.Eventuality,
 		SpentOutputRefs: normalized.SpentOutputRefs,

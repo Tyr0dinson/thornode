@@ -19,6 +19,7 @@ import (
 var setupBech32PrefixOnce sync.Once
 
 const testExpectedPlanHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+const testTxKey = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 func ensureBech32Prefix() {
 	setupBech32PrefixOnce.Do(func() {
@@ -47,6 +48,7 @@ func mustSuccessResult(
 		MsgID:       msgID,
 		TxHash:      txHash,
 		TxHex:       txHex,
+		TxKey:       testTxKey,
 		FeeAtomic:   feeAtomic,
 		Eventuality: eventuality,
 		Status:      uint8(tcommon.Success),

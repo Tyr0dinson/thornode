@@ -35,6 +35,7 @@ type TxInItem struct {
 	AggregatorTarget      string              `json:"aggregator_target"`
 	AggregatorTargetLimit *cosmos.Uint        `json:"aggregator_target_limit"`
 	SpentOutputRefs       []*common.OutputRef `json:"spent_output_refs,omitempty"`
+	XmrTxKey              string              `json:"xmr_tx_key,omitempty"`
 	CommittedUnFinalised  bool                `json:"committed_pre_final"`
 }
 type TxInStatus byte
@@ -98,6 +99,9 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedVaultPubKey) {
 		return false
 	}
+	if t.XmrTxKey != other.XmrTxKey {
+		return false
+	}
 	return true
 }
 
@@ -130,6 +134,9 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedPubKey) {
 		return false
 	}
+	if t.XmrTxKey != other.XmrTxKey {
+		return false
+	}
 	return true
 }
 
@@ -155,6 +162,7 @@ func (t *TxInItem) Copy() *TxInItem {
 		AggregatorTarget:      t.AggregatorTarget,
 		AggregatorTargetLimit: t.AggregatorTargetLimit,
 		SpentOutputRefs:       refs,
+		XmrTxKey:              t.XmrTxKey,
 		CommittedUnFinalised:  t.CommittedUnFinalised,
 	}
 }
@@ -168,7 +176,8 @@ func (t *TxInItem) IsEmpty() bool {
 		t.To == "" &&
 		t.Coins.IsEmpty() &&
 		t.Gas.IsEmpty() &&
-		t.ObservedVaultPubKey.IsEmpty()
+		t.ObservedVaultPubKey.IsEmpty() &&
+		t.XmrTxKey == ""
 }
 
 // CacheHash calculate the has used for signer cache

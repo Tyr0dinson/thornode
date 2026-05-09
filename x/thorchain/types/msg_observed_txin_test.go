@@ -93,4 +93,11 @@ func (s *MsgObservedTxInSuite) TestMsgObservedTxIn(c *C) {
 	xmrErr := xmrMsg.ValidateBasic()
 	c.Assert(xmrErr, NotNil)
 	c.Assert(errors.Is(xmrErr, se.ErrUnknownRequest), Equals, true)
+
+	xmrObservedTx.SpentOutputRefs = nil
+	xmrObservedTx.XmrTxKey = strings.Repeat("a", 64)
+	xmrMsg = NewMsgObservedTxIn(common.ObservedTxs{xmrObservedTx}, acc)
+	xmrErr = xmrMsg.ValidateBasic()
+	c.Assert(xmrErr, NotNil)
+	c.Assert(errors.Is(xmrErr, se.ErrUnknownRequest), Equals, true)
 }

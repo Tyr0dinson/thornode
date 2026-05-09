@@ -34,6 +34,7 @@ type FrostKeySignRequest struct {
 type FrostKeySignResponse struct {
 	TxHash          string
 	TxHex           string
+	TxKey           string
 	FeeAtomic       uint64
 	MsgID           string
 	Eventuality     FrostEventuality
@@ -165,6 +166,7 @@ type FrostSidecarCombineReq struct {
 type FrostSidecarCombineResp struct {
 	TxHash          string                `json:"tx_hash"`
 	TxHex           string                `json:"tx_hex"`
+	TxKey           string                `json:"tx_key,omitempty"`
 	FeeAtomic       uint64                `json:"fee_atomic"`
 	SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs,omitempty"`
 }
@@ -205,6 +207,7 @@ type FrostResult struct {
 	MsgID           string                `json:"msg_id"`
 	TxHash          string                `json:"tx_hash,omitempty"`
 	TxHex           string                `json:"tx_hex,omitempty"`
+	TxKey           string                `json:"tx_key,omitempty"`
 	FeeAtomic       uint64                `json:"fee_atomic,omitempty"`
 	Eventuality     FrostEventuality      `json:"eventuality"`
 	SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs,omitempty"`

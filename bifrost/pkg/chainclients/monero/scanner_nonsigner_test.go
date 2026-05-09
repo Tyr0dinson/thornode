@@ -27,12 +27,14 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	outboundTxID := strings.Repeat("ab", 32)
+	outboundTxKey := strings.Repeat("12", 32)
 	destAddr := testOutboundXMRDestination()
 	outboundAmount := uint64(5_000_000_000_000) // 0.5 XMR in piconero
 	outboundFee := uint64(30_000_000)           // typical fee
 
 	outboundTransfer := sidecar.Transfer{
 		TxID:          outboundTxID,
+		TxKey:         outboundTxKey,
 		Address:       destAddr.String(),
 		FromAddress:   vaultAddr.String(),
 		VaultPubKey:   vaultPubKey.String(),
@@ -63,6 +65,9 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 	var signerOutbound int
 	for _, item := range signerTxIn.TxArray {
 		if item.Sender == vaultAddr.String() {
+			if item.XmrTxKey != outboundTxKey {
+				t.Fatalf("signer outbound missing tx key: got %q", item.XmrTxKey)
+			}
 			signerOutbound++
 		}
 	}
@@ -81,6 +86,9 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 	var nonSignerOutbound int
 	for _, item := range nonSignerTxIn.TxArray {
 		if item.Sender == vaultAddr.String() {
+			if item.XmrTxKey != outboundTxKey {
+				t.Fatalf("non-signer outbound missing imported tx key: got %q", item.XmrTxKey)
+			}
 			nonSignerOutbound++
 		}
 	}
@@ -98,11 +106,13 @@ func TestTwoOfThreeSignerConsensus(t *testing.T) {
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	outboundTxID := strings.Repeat("de", 32)
+	outboundTxKey := strings.Repeat("34", 32)
 	destAddr := testOutboundXMRDestination()
 	memo := "OUT:" + strings.Repeat("ff", 32)
 
 	transfer := sidecar.Transfer{
 		TxID:          outboundTxID,
+		TxKey:         outboundTxKey,
 		Address:       destAddr.String(),
 		FromAddress:   vaultAddr.String(),
 		VaultPubKey:   vaultPubKey.String(),
@@ -207,6 +217,7 @@ func importOutboundRecord(t *testing.T, signer *sidecar.Client, transfer sidecar
 		&sidecar.OutboundMeta{
 			FromAddress: transfer.FromAddress,
 			ToAddress:   transfer.Address,
+			TxKey:       transfer.TxKey,
 			Amount:      transfer.Amount,
 			Fee:         transfer.Fee,
 			Memo:        transfer.Note,
@@ -278,6 +289,7 @@ func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []sidecar.Tran
 				mu.Lock()
 				currentOutgoing = append(currentOutgoing, sidecar.Transfer{
 					TxID:        req.TxHash,
+					TxKey:       req.TxKey,
 					Address:     req.ToAddress,
 					FromAddress: req.FromAddress,
 					VaultPubKey: req.VaultPubKey,
