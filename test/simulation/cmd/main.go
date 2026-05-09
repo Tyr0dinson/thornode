@@ -531,3 +531,34 @@ func getZecBlockCount(endpoint string) (int64, error) {
 
 	return response.Result, nil
 }
+
+func generateZecBlocks(endpoint string, blocks int) error {
+	res, err := http.Post(
+		endpoint,
+		"application/json",
+		strings.NewReader(fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"generate","params":[%d]}`, blocks)),
+	)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected zec status code: %d", res.StatusCode)
+	}
+
+	var response struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return err
+	}
+	if response.Error != nil {
+		return fmt.Errorf("zec rpc error %d: %s", response.Error.Code, response.Error.Message)
+	}
+
+	return nil
+}

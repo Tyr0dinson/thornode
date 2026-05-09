@@ -239,6 +239,38 @@ func TestSignAndBroadcastTxRetriesSolanaBlockhashFailures(t *testing.T) {
 	}
 }
 
+func TestSignAndBroadcastTxRetriesZecQueuedDownloadFailures(t *testing.T) {
+	prevDelay := zecSimTxBroadcastRetryDelay
+	prevAttempts := zecSimTxMaxBroadcastAttempts
+	zecSimTxBroadcastRetryDelay = 0
+	zecSimTxMaxBroadcastAttempts = 4
+	defer func() {
+		zecSimTxBroadcastRetryDelay = prevDelay
+		zecSimTxMaxBroadcastAttempts = prevAttempts
+	}()
+
+	client := &retryLiteChainClient{
+		broadcastErrs: []error{
+			errors.New("transaction dropped because it is already queued for download"),
+			nil,
+		},
+	}
+
+	txid, err := SignAndBroadcastTx(client, SimTx{Chain: common.ZECChain})
+	if err != nil {
+		t.Fatalf("expected zec retry helper to recover from queued-download failure, got %v", err)
+	}
+	if txid != "ok" {
+		t.Fatalf("expected successful txid, got %s", txid)
+	}
+	if client.signCalls != 2 {
+		t.Fatalf("expected 2 sign attempts, got %d", client.signCalls)
+	}
+	if client.broadcastCalls != 2 {
+		t.Fatalf("expected 2 broadcast attempts, got %d", client.broadcastCalls)
+	}
+}
+
 func TestShouldRetryTronSimTxBroadcast(t *testing.T) {
 	if !shouldRetryTronSimTxBroadcast(errors.New("broadcasted tx a not confirmed on tron node")) {
 		t.Fatal("expected confirmation failure to be retriable")
@@ -253,6 +285,21 @@ func TestShouldRetryTronSimTxBroadcast(t *testing.T) {
 		t.Fatal("expected unrelated errors to be non-retriable")
 	}
 	if shouldRetryTronSimTxBroadcast(nil) {
+		t.Fatal("expected nil error to be non-retriable")
+	}
+}
+
+func TestShouldRetryZecSimTxBroadcast(t *testing.T) {
+	if !shouldRetryZecSimTxBroadcast(errors.New("transaction dropped because it is already queued for download")) {
+		t.Fatal("expected queued-download failure to be retriable")
+	}
+	if !shouldRetryZecSimTxBroadcast(errors.New("failed to broadcast tx: context deadline exceeded")) {
+		t.Fatal("expected transient zec RPC failure to be retriable")
+	}
+	if shouldRetryZecSimTxBroadcast(errors.New("other error")) {
+		t.Fatal("expected unrelated errors to be non-retriable")
+	}
+	if shouldRetryZecSimTxBroadcast(nil) {
 		t.Fatal("expected nil error to be non-retriable")
 	}
 }

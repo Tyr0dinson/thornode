@@ -12,6 +12,8 @@ var (
 	tronSimTxBroadcastRetryDelay    = 2 * time.Second
 	solanaSimTxMaxBroadcastAttempts = 4
 	solanaSimTxBroadcastRetryDelay  = 2 * time.Second
+	zecSimTxMaxBroadcastAttempts    = 4
+	zecSimTxBroadcastRetryDelay     = 2 * time.Second
 )
 
 // SignAndBroadcastTx signs a fresh transaction payload for each attempt so
@@ -58,6 +60,8 @@ func simTxRetryConfig(chain common.Chain) (int, time.Duration) {
 		return tronSimTxMaxBroadcastAttempts, tronSimTxBroadcastRetryDelay
 	case chain.Equals(common.SOLChain):
 		return solanaSimTxMaxBroadcastAttempts, solanaSimTxBroadcastRetryDelay
+	case chain.Equals(common.ZECChain):
+		return zecSimTxMaxBroadcastAttempts, zecSimTxBroadcastRetryDelay
 	default:
 		return 1, 0
 	}
@@ -78,6 +82,8 @@ func shouldRetrySimTxBroadcast(chain common.Chain, err error) bool {
 		return shouldRetryTronSimTxBroadcast(err)
 	case chain.Equals(common.SOLChain):
 		return shouldRetrySolanaSimTxBroadcast(err)
+	case chain.Equals(common.ZECChain):
+		return shouldRetryZecSimTxBroadcast(err)
 	default:
 		return false
 	}
@@ -128,6 +134,16 @@ func shouldRetrySolanaSimTxBroadcast(err error) bool {
 
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "not confirmed on solana node") ||
+		isTransientSimTxRPCError(message)
+}
+
+func shouldRetryZecSimTxBroadcast(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "already queued for download") ||
 		isTransientSimTxRPCError(message)
 }
 
