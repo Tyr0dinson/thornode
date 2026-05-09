@@ -344,7 +344,12 @@ func (c *Client) GetEventsStorage(blockHash string) (string, error) {
 }
 
 func (c *Client) GetMetadata(blockHash string) (string, error) {
-	result, err := c.call("state_getMetadata", []interface{}{blockHash})
+	var params []interface{}
+	if blockHash != "" {
+		params = []interface{}{blockHash}
+	}
+
+	result, err := c.call("state_getMetadata", params)
 	if err != nil {
 		return "", fmt.Errorf("failed to get metadata: %w", err)
 	}

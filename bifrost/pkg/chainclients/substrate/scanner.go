@@ -69,6 +69,7 @@ func NewScanner(
 		params:           params,
 		rpcClient:        rpcClient,
 		solvencyReporter: solvencyReporter,
+		pubkeyMgr:        pubkeyMgr,
 	}
 
 	rv, err := rpcClient.GetRuntimeVersion("")
