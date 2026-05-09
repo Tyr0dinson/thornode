@@ -9,8 +9,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-const MaxXMRSpentOutputRefs = 32
-const xmrTxKeyHexLength = 64
+const (
+	MaxXMRSpentOutputRefs = 32
+	xmrTxKeyHexLength     = 64
+)
 
 // ObservedTxs a list of ObservedTx
 type ObservedTxs []ObservedTx
