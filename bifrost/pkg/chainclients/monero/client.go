@@ -1402,8 +1402,8 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("invalid FROST eventuality: %w", validateErr)
 	}
 	txKey := strings.ToLower(strings.TrimSpace(resp.TxKey))
-	if err := validateFixedHex(txKey, 32, "xmr tx key"); err != nil {
-		return nil, nil, nil, err
+	if validateErr := validateFixedHex(txKey, 32, "xmr tx key"); validateErr != nil {
+		return nil, nil, nil, validateErr
 	}
 	var localSpentRefs []sidecar.SpentRef
 	for _, ref := range resp.SpentOutputRefs {
