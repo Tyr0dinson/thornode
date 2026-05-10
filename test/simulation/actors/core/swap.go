@@ -45,12 +45,12 @@ type SwapActor struct {
 	minExpected           sdkmath.Uint
 	maxExpected           sdkmath.Uint
 
-	targetXMRSwapSlotAcquired bool
+	xmrSwapSlotAcquired bool
 }
 
 var (
 	recommendedMinAmountInPattern = regexp.MustCompile(`recommended_min_amount_in:\s*(\d+)`)
-	targetXMRSwapSlot             = make(chan struct{}, 1)
+	xmrSwapSlot                   = make(chan struct{}, 1)
 )
 
 func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
@@ -294,30 +294,30 @@ func (a *SwapActor) releaseUserSelection() {
 	a.maxExpected = sdkmath.ZeroUint()
 }
 
-func (a *SwapActor) acquireTargetXMRSwapSlot(config *OpConfig) OpResult {
-	if !a.to.Chain.Equals(common.XMRChain) || a.targetXMRSwapSlotAcquired {
+func (a *SwapActor) acquireXMRSwapSlot(config *OpConfig) OpResult {
+	if (!a.from.Chain.Equals(common.XMRChain) && !a.to.Chain.Equals(common.XMRChain)) || a.xmrSwapSlotAcquired {
 		return OpResult{Continue: true}
 	}
 
 	select {
-	case targetXMRSwapSlot <- struct{}{}:
-		a.targetXMRSwapSlotAcquired = true
-		a.Log().Info().Msg("acquired target XMR swap slot")
+	case xmrSwapSlot <- struct{}{}:
+		a.xmrSwapSlotAcquired = true
+		a.Log().Info().Msg("acquired XMR swap slot")
 		return OpResult{Continue: true}
 	default:
-		a.Log().Info().Msg("waiting for target XMR swap slot")
+		a.Log().Info().Msg("waiting for XMR swap slot")
 		return OpResult{Continue: false}
 	}
 }
 
-func (a *SwapActor) releaseTargetXMRSwapSlot() {
-	if !a.targetXMRSwapSlotAcquired {
+func (a *SwapActor) releaseXMRSwapSlot() {
+	if !a.xmrSwapSlotAcquired {
 		return
 	}
 
-	<-targetXMRSwapSlot
-	a.targetXMRSwapSlotAcquired = false
-	a.Log().Info().Msg("released target XMR swap slot")
+	<-xmrSwapSlot
+	a.xmrSwapSlotAcquired = false
+	a.Log().Info().Msg("released XMR swap slot")
 }
 
 func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.Uint, allowPartial bool) OpResult {
@@ -471,15 +471,16 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 		if a.user == nil {
 			result := a.acquireUserForAmount(config, a.swapAmount, false)
 			if !result.Continue || result.Finish {
-				a.releaseTargetXMRSwapSlot()
+				a.releaseXMRSwapSlot()
 				return openapi.QuoteSwapResponse{}, result
 			}
 		}
 
-		// XMR outbounds carry high fees relative to the small mocknet pools.
-		// Hold the slot from quote through finalisation, but not while selecting
-		// a source user, so an unsatisfiable quote cannot block all XMR targets.
-		if result := a.acquireTargetXMRSwapSlot(config); !result.Continue || result.Finish {
+		// XMR paths carry high fees and longer finality relative to the small
+		// mocknet pools. Hold the slot from quote through finalisation, but not
+		// while selecting a source user, so an unsatisfiable quote cannot block
+		// all XMR paths.
+		if result := a.acquireXMRSwapSlot(config); !result.Continue || result.Finish {
 			a.releaseUserSelection()
 			return openapi.QuoteSwapResponse{}, result
 		}
@@ -492,7 +493,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 					Stringer("user_balance", a.fromBalance).
 					Msg("quote minimum exceeds selected user balance, retrying user selection")
 				a.releaseUserSelection()
-				a.releaseTargetXMRSwapSlot()
+				a.releaseXMRSwapSlot()
 				a.swapAmount = quoteAmount
 				continue
 			}
@@ -500,7 +501,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 			if !quoteAmount.Equal(a.swapAmount) {
 				if updateErr := a.updateSwapAmount(quoteAmount, "recommended minimum inbound amount"); updateErr != nil {
 					a.releaseUserSelection()
-					a.releaseTargetXMRSwapSlot()
+					a.releaseXMRSwapSlot()
 					return openapi.QuoteSwapResponse{}, OpResult{
 						Error:  updateErr,
 						Finish: true,
@@ -511,7 +512,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 
 			a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get swap quote")
 			a.releaseUserSelection()
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 			return openapi.QuoteSwapResponse{}, OpResult{
 				Continue: false,
 			}
@@ -523,14 +524,14 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 				Stringer("user_balance", a.fromBalance).
 				Msg("quote minimum exceeds selected user balance, retrying user selection")
 			a.releaseUserSelection()
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 			a.swapAmount = quoteAmount
 			continue
 		}
 
 		if err := a.updateSwapAmount(quoteAmount, "recommended minimum inbound amount"); err != nil {
 			a.releaseUserSelection()
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 			return openapi.QuoteSwapResponse{}, OpResult{
 				Error:  err,
 				Finish: true,
@@ -546,7 +547,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 		Stringer("amount", a.swapAmount).
 		Msg("waiting for user that can satisfy the quoted minimum amount")
 	a.releaseUserSelection()
-	a.releaseTargetXMRSwapSlot()
+	a.releaseXMRSwapSlot()
 	return openapi.QuoteSwapResponse{}, OpResult{
 		Continue: false,
 	}
@@ -572,7 +573,7 @@ func (a *SwapActor) getQuote(config *OpConfig) OpResult {
 	quote, result := a.getQuoteWithUserRetry(config)
 	if !result.Continue || result.Finish {
 		if result.Finish {
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 		}
 		return result
 	}
@@ -747,7 +748,7 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 
 	// wait for outbound to be marked complete
 	if stages.SwapFinalised != nil && stages.SwapFinalised.Completed {
-		a.releaseTargetXMRSwapSlot()
+		a.releaseXMRSwapSlot()
 	}
 	if stages.OutboundSigned == nil || !stages.OutboundSigned.Completed {
 		return OpResult{
@@ -848,7 +849,7 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	}
 
 	// release user
-	a.releaseTargetXMRSwapSlot()
+	a.releaseXMRSwapSlot()
 	a.user.Release()
 
 	return OpResult{

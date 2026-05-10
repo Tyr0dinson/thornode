@@ -124,7 +124,7 @@ func (a *SwapMemolessActor) getQuote(config *OpConfig) OpResult {
 					Stringer("user_balance", a.fromBalance).
 					Msg("memoless amount encoding may exceed selected user balance, retrying user selection")
 				a.releaseUserSelection()
-				a.releaseTargetXMRSwapSlot()
+				a.releaseXMRSwapSlot()
 				result := a.acquireUserForAmount(config, requiredAmount, false)
 				if !result.Continue || result.Finish {
 					return result

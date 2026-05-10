@@ -287,6 +287,50 @@ func TestSwapQuoteDriftRangeUsesEnvelopeForXMR(t *testing.T) {
 	}
 }
 
+func TestXMRSwapSlotSerializesAnyXMRPath(t *testing.T) {
+	drainXMRSwapSlotForTest()
+	defer drainXMRSwapSlotForTest()
+
+	sourceXMR := &SwapActor{from: common.XMRAsset, to: common.ETHAsset}
+	targetXMR := &SwapActor{from: common.BTCAsset, to: common.XMRAsset}
+
+	if result := sourceXMR.acquireXMRSwapSlot(nil); !result.Continue || result.Finish {
+		t.Fatalf("expected source XMR swap to acquire slot: %+v", result)
+	}
+	if result := targetXMR.acquireXMRSwapSlot(nil); result.Continue || result.Finish {
+		t.Fatalf("expected target XMR swap to wait while source XMR swap holds slot: %+v", result)
+	}
+
+	sourceXMR.releaseXMRSwapSlot()
+	if result := targetXMR.acquireXMRSwapSlot(nil); !result.Continue || result.Finish {
+		t.Fatalf("expected target XMR swap to acquire slot after release: %+v", result)
+	}
+	targetXMR.releaseXMRSwapSlot()
+}
+
+func TestXMRSwapSlotIgnoresNonXMRPath(t *testing.T) {
+	drainXMRSwapSlotForTest()
+	defer drainXMRSwapSlotForTest()
+
+	nonXMR := &SwapActor{from: common.BTCAsset, to: common.ETHAsset}
+	if result := nonXMR.acquireXMRSwapSlot(nil); !result.Continue || result.Finish {
+		t.Fatalf("expected non-XMR swap to continue without slot: %+v", result)
+	}
+	if nonXMR.xmrSwapSlotAcquired {
+		t.Fatal("expected non-XMR swap to avoid acquiring XMR slot")
+	}
+}
+
+func drainXMRSwapSlotForTest() {
+	for {
+		select {
+		case <-xmrSwapSlot:
+		default:
+			return
+		}
+	}
+}
+
 type testSwapLiteChainClient struct {
 	account common.Account
 }
