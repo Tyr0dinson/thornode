@@ -159,6 +159,13 @@ func swapSpendableBalance(asset common.Asset, balance sdkmath.Uint) sdkmath.Uint
 	// chain dust/reserve requirements while still allowing late-stage swaps to use
 	// whatever balance remains.
 	reserve := asset.Chain.DustThreshold()
+	if asset.Chain.IsUTXO() {
+		if !balance.GT(reserve) {
+			return sdkmath.ZeroUint()
+		}
+		return balance.Sub(reserve)
+	}
+
 	fivePercent := balance.QuoUint64(20)
 	if fivePercent.GT(reserve) {
 		reserve = fivePercent
@@ -206,6 +213,25 @@ func swapQuoteExpectedRange(quote openapi.QuoteSwapResponse) (sdkmath.Uint, sdkm
 		tolerance = tolerance.Add(outboundFee.MulUint64(2))
 	}
 	return quoteOut, common.SafeSub(quoteOut, tolerance), quoteOut.Add(tolerance)
+}
+
+func swapQuoteDriftRange(from, to common.Asset, originalMin, originalMax, currentMin, currentMax sdkmath.Uint) (sdkmath.Uint, sdkmath.Uint) {
+	// XMR inbounds/outbounds have materially longer finality in the simulator.
+	// The refreshed quote is taken after the finalized swap may already have
+	// moved pools, so accept the full pre/post quote envelope for XMR paths.
+	if !from.Chain.Equals(common.XMRChain) && !to.Chain.Equals(common.XMRChain) {
+		return currentMin, currentMax
+	}
+
+	minExpected := originalMin
+	if currentMin.LT(minExpected) {
+		minExpected = currentMin
+	}
+	maxExpected := originalMax
+	if currentMax.GT(maxExpected) {
+		maxExpected = currentMax
+	}
+	return minExpected, maxExpected
 }
 
 func setQuoteExpectations(a *SwapActor, quote openapi.QuoteSwapResponse) {
@@ -808,11 +834,14 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 			err = fmt.Errorf("out amount plus gas outside tolerance")
 		} else {
 			_, currentMinExpected, currentMaxExpected := swapQuoteExpectedRange(currentQuote)
+			minExpected, maxExpected := swapQuoteDriftRange(a.from, a.to, a.minExpected, a.maxExpected, currentMinExpected, currentMaxExpected)
 			a.Log().Info().
 				Stringer("currentMinExpected", currentMinExpected).
 				Stringer("currentMaxExpected", currentMaxExpected).
+				Stringer("driftMinExpected", minExpected).
+				Stringer("driftMaxExpected", maxExpected).
 				Msg("refreshed quote after original expectation drifted")
-			if outAmountPlusGas.LT(currentMinExpected) || outAmountPlusGas.GT(currentMaxExpected) {
+			if outAmountPlusGas.LT(minExpected) || outAmountPlusGas.GT(maxExpected) {
 				err = fmt.Errorf("out amount plus gas outside tolerance")
 			}
 		}

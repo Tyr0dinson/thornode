@@ -73,6 +73,7 @@ const (
 	defaultXMRConsolidationMaxInputs           = int64(8)
 	defaultXMRConsolidationMaxLockBps          = int64(1000)        // 10.00%
 	defaultXMRConsolidationMinReserveAtomic    = uint64(50_000_000) // 0.00005 XMR (piconero)
+	xmrSpendableConfirmations                  = uint64(10)
 )
 
 var ErrSidecarNotConfigured = errors.New("xmr sidecar requires signer_endpoint or api_host configuration")
@@ -2188,6 +2189,14 @@ func (c *Client) GetConfirmationCount(txIn stypes.TxIn) int64 {
 		c.logger.Debug().Err(err).Msg("fail to get xmr max conf adjustment")
 	}
 
+	// Monero wallet outputs are not spendable until the network unlock period
+	// has elapsed. Do not let the value-based confirmation calculation or
+	// max-confirmation cap observe vault funds before they can be migrated or
+	// spent by the signer.
+	if confirm < xmrSpendableConfirmations {
+		confirm = xmrSpendableConfirmations
+	}
+
 	// Apply configured minimum floor (always wins over max cap).
 	if confirm < c.cfg.MinConfirmations {
 		confirm = c.cfg.MinConfirmations
@@ -2199,6 +2208,7 @@ func (c *Client) GetConfirmationCount(txIn stypes.TxIn) int64 {
 		Uint64("coinbase_thorchain", coinbaseThorchain).
 		Str("conf_multiplier", confMul.String()).
 		Str("conf_value", confValue.String()).
+		Uint64("spendable_confirmations", xmrSpendableConfirmations).
 		Uint64("min_confirmations", c.cfg.MinConfirmations).
 		Uint64("confirmations", confirm).
 		Msg("calculated xmr confirmation requirement")

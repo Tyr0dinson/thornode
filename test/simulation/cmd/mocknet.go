@@ -359,8 +359,9 @@ func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amou
 
 func fundUserZecAccounts(master *User, users []*User, amount sdkmath.Uint, txs int) {
 	for i := 0; i < txs; i++ {
+		cumulativeAmount := amount.MulUint64(uint64(i + 1))
 		for _, user := range users {
-			fundUserChainAccount(master, user, common.ZECChain, amount)
+			fundUserChainAccount(master, user, common.ZECChain, cumulativeAmount)
 			if err := generateZecBlocks(chainRPCs[common.ZECChain], 1); err != nil {
 				log.Fatal().Err(err).Msg("failed to mine zec funding block")
 			}

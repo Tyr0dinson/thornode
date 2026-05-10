@@ -42,6 +42,12 @@ func TestSwapSpendableBalanceLeavesGasReserve(t *testing.T) {
 			want:    sdkmath.NewUint(common.One),
 		},
 		{
+			name:    "utxo gas asset leaves dust reserve only",
+			asset:   common.BCHAsset,
+			balance: sdkmath.NewUint(10 * common.One),
+			want:    sdkmath.NewUint(10 * common.One).Sub(common.BCHChain.DustThreshold()),
+		},
+		{
 			name:    "gas asset below reserve is unusable",
 			asset:   common.XRPAsset,
 			balance: sdkmath.NewUint(common.One),
@@ -244,6 +250,40 @@ func TestOutboundAmountPlusGasPrefersActualGas(t *testing.T) {
 	want := sdkmath.NewUint(83_844_446)
 	if !got.Equal(want) {
 		t.Fatalf("expected outbound amount plus gas %s, got %s", want, got)
+	}
+}
+
+func TestSwapQuoteDriftRangeUsesCurrentRangeForNonXMR(t *testing.T) {
+	t.Parallel()
+
+	minExpected, maxExpected := swapQuoteDriftRange(
+		common.BTCAsset,
+		common.BCHAsset,
+		sdkmath.NewUint(40),
+		sdkmath.NewUint(50),
+		sdkmath.NewUint(10),
+		sdkmath.NewUint(20),
+	)
+
+	if !minExpected.Equal(sdkmath.NewUint(10)) || !maxExpected.Equal(sdkmath.NewUint(20)) {
+		t.Fatalf("expected current range 10-20, got %s-%s", minExpected, maxExpected)
+	}
+}
+
+func TestSwapQuoteDriftRangeUsesEnvelopeForXMR(t *testing.T) {
+	t.Parallel()
+
+	minExpected, maxExpected := swapQuoteDriftRange(
+		common.XMRAsset,
+		common.BCHAsset,
+		sdkmath.NewUint(42_101_384),
+		sdkmath.NewUint(51_672_580),
+		sdkmath.NewUint(13_694_927),
+		sdkmath.NewUint(17_061_243),
+	)
+
+	if !minExpected.Equal(sdkmath.NewUint(13_694_927)) || !maxExpected.Equal(sdkmath.NewUint(51_672_580)) {
+		t.Fatalf("expected XMR drift envelope 13694927-51672580, got %s-%s", minExpected, maxExpected)
 	}
 }
 

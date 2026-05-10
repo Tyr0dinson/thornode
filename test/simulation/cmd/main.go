@@ -140,12 +140,20 @@ func init() {
 
 func main() {
 	// start pprof server
-	go func() {
-		log.Info().Msg("starting pprof server on :6061")
-		if err := http.ListenAndServe(":6061", nil); err != nil {
-			log.Fatal().Err(err).Msg("pprof server failed")
-		}
-	}()
+	pprofAddress := os.Getenv("SIMULATION_PPROF_ADDRESS")
+	if pprofAddress == "" {
+		pprofAddress = ":6061"
+	}
+	if !strings.EqualFold(pprofAddress, "off") {
+		go func() {
+			log.Info().Str("address", pprofAddress).Msg("starting pprof server")
+			if err := http.ListenAndServe(pprofAddress, nil); err != nil {
+				log.Fatal().Err(err).Msg("pprof server failed")
+			}
+		}()
+	} else {
+		log.Info().Msg("pprof server disabled")
+	}
 
 	// prompt to filter run stages if connected to a terminal
 	enabledStages := map[string]bool{}

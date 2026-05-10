@@ -167,9 +167,40 @@ func TestGetConfirmationCountAppliesMaxConfirmationCap(t *testing.T) {
 		// Mocknet hard-codes confirmation multiplier and cap to 1 in the shared UTXO helpers.
 		expected = 1
 	}
+	if expected < int64(xmrSpendableConfirmations) {
+		expected = int64(xmrSpendableConfirmations)
+	}
 
 	if got := c.GetConfirmationCount(txIn); got != expected {
 		t.Fatalf("expected max confirmation cap %d, got %d", expected, got)
+	}
+}
+
+func TestGetConfirmationCountAppliesSpendableFloor(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	bridge := &confirmationBridge{
+		asgards:          ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey, PubKeyFrost: vaultPubKey}},
+		confMultiplier:   int64(constants.MaxBasisPts),
+		maxConfirmations: 0,
+	}
+	c := &Client{
+		chain:           common.XMRChain,
+		cfg:             config.BifrostChainConfiguration{},
+		thorchainBridge: bridge,
+		vaultAddressMap: make(map[string]common.Address),
+	}
+
+	txIn := stypes.TxIn{
+		TxArray: []*stypes.TxInItem{{
+			Sender: testOutboundXMRDestination().String(),
+			Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(coinbaseThorchain()-1))),
+		}},
+	}
+
+	if got := c.GetConfirmationCount(txIn); got != int64(xmrSpendableConfirmations) {
+		t.Fatalf("expected xmr spendability floor %d, got %d", xmrSpendableConfirmations, got)
 	}
 }
 
@@ -184,7 +215,7 @@ func TestGetConfirmationCountHonorsMinimumFloor(t *testing.T) {
 	}
 	c := &Client{
 		chain:           common.XMRChain,
-		cfg:             config.BifrostChainConfiguration{MinConfirmations: 7},
+		cfg:             config.BifrostChainConfiguration{MinConfirmations: xmrSpendableConfirmations + 2},
 		thorchainBridge: bridge,
 		vaultAddressMap: make(map[string]common.Address),
 	}
@@ -196,8 +227,9 @@ func TestGetConfirmationCountHonorsMinimumFloor(t *testing.T) {
 		}},
 	}
 
-	if got := c.GetConfirmationCount(txIn); got != 7 {
-		t.Fatalf("expected min confirmation floor 7, got %d", got)
+	expected := int64(xmrSpendableConfirmations + 2)
+	if got := c.GetConfirmationCount(txIn); got != expected {
+		t.Fatalf("expected min confirmation floor %d, got %d", expected, got)
 	}
 }
 
