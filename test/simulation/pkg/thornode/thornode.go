@@ -1,6 +1,7 @@
 package thornode
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -247,6 +248,111 @@ func GetOutboundFee(asset common.Asset) (sdk.Uint, error) {
 	return sdk.ZeroUint(), fmt.Errorf("no outbound fee found for %s", asset)
 }
 
+func GetTradeUnit(asset common.Asset) (openapi.TradeUnitResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/trade/unit/%s", thornodeURL, asset.String())
+	var unit openapi.TradeUnitResponse
+	err := Get(url, &unit)
+	return unit, err
+}
+
+func GetTradeAccount(addr common.Address) ([]openapi.TradeAccountResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/trade/account/%s", thornodeURL, addr)
+	var raw []byte
+	if err := Get(url, &raw); err != nil {
+		if isNotFoundErr(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// The endpoint may return either a direct account object or a protobuf-shaped wrapper.
+	var account openapi.TradeAccountResponse
+	if err := json.Unmarshal(raw, &account); err == nil && account.Asset != "" {
+		return []openapi.TradeAccountResponse{account}, nil
+	}
+
+	var accounts []openapi.TradeAccountResponse
+	if err := json.Unmarshal(raw, &accounts); err == nil {
+		return accounts, nil
+	}
+
+	var wrapped struct {
+		TradeAccounts []openapi.TradeAccountResponse `json:"trade_accounts"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil, fmt.Errorf("failed to decode trade account response: %w", err)
+	}
+	return wrapped.TradeAccounts, nil
+}
+
+func GetSecuredAsset(asset common.Asset) (openapi.SecuredAssetResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/securedasset/%s", thornodeURL, asset.String())
+	var secured openapi.SecuredAssetResponse
+	err := Get(url, &secured)
+	return secured, err
+}
+
+func GetEffectiveTradeBalance(addr common.Address, asset common.Asset) (sdk.Uint, error) {
+	asset = asset.GetTradeAsset()
+
+	accounts, err := GetTradeAccount(addr)
+	if err != nil {
+		return sdk.ZeroUint(), err
+	}
+
+	var account *openapi.TradeAccountResponse
+	for _, acct := range accounts {
+		if acct.Asset == asset.String() {
+			account = &acct
+			break
+		}
+	}
+	if account == nil {
+		return sdk.ZeroUint(), nil
+	}
+
+	unit, err := GetTradeUnit(asset)
+	if err != nil {
+		return sdk.ZeroUint(), err
+	}
+
+	return common.GetSafeShare(
+		sdk.NewUintFromString(account.Units),
+		sdk.NewUintFromString(unit.Units),
+		sdk.NewUintFromString(unit.Depth),
+	), nil
+}
+
+func GetEffectiveSecuredBalance(addr common.Address, asset common.Asset) (sdk.Uint, error) {
+	asset = asset.GetSecuredAsset()
+
+	balances, err := GetBalances(addr)
+	if err != nil {
+		if isNotFoundErr(err) {
+			return sdk.ZeroUint(), nil
+		}
+		return sdk.ZeroUint(), err
+	}
+	shareBalance := balances.GetCoin(asset).Amount
+	if shareBalance.IsZero() {
+		return sdk.ZeroUint(), nil
+	}
+
+	secured, err := GetSecuredAsset(asset)
+	if err != nil {
+		if isNotFoundErr(err) {
+			return sdk.ZeroUint(), nil
+		}
+		return sdk.ZeroUint(), err
+	}
+
+	return common.GetSafeShare(
+		shareBalance,
+		sdk.NewUintFromString(secured.Supply),
+		sdk.NewUintFromString(secured.Depth),
+	), nil
+}
+
 func GetSwapQuote(from, to common.Asset, amount sdk.Uint, destination, refundAddress common.Address, extended bool) (openapi.QuoteSwapResponse, error) {
 	baseURL := fmt.Sprintf("%s/thorchain/quote/swap", thornodeURL)
 	parsedURL, err := url.Parse(baseURL)
@@ -410,7 +516,7 @@ func getOnce(url string, target interface{}) error {
 
 	// if target is a *[]byte, return the raw response
 	if byteTarget, ok := target.(*[]byte); ok {
-		*byteTarget = buf
+		*byteTarget = bytes.Clone(buf)
 		return nil
 	}
 
@@ -447,6 +553,10 @@ func isRetryableThornodeGetError(err error) bool {
 	}
 
 	return false
+}
+
+func isNotFoundErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "HTTP: 404")
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
