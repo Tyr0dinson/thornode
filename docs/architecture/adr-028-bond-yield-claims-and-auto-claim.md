@@ -64,4 +64,3 @@ and swap once the collector exceeds the outbound-fee threshold multiplied by
 ### Neutral
 
 - Governance controls accrual cap and pause state.
-
