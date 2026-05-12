@@ -24,7 +24,7 @@ func newTestClient(srv *httptest.Server) *blockchair.Client {
 func (s *BlockchairSuite) TestGetBlockCount(c *C) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Assert(r.URL.Path, Equals, "/bitcoin/stats")
-		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"blocks": int64(800000)}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"blocks": int64(800000)}})
 	}))
 	defer srv.Close()
 
@@ -38,7 +38,7 @@ func (s *BlockchairSuite) TestGetBlockHash(c *C) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Assert(r.URL.Path, Equals, "/bitcoin/blocks")
 		c.Assert(r.URL.Query().Get("q"), Equals, "id(800000)")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{{"id": 800000, "hash": hash}},
 		})
 	}))
@@ -51,7 +51,7 @@ func (s *BlockchairSuite) TestGetBlockHash(c *C) {
 
 func (s *BlockchairSuite) TestGetBlockHashNotFound(c *C) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"data": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{}})
 	}))
 	defer srv.Close()
 
@@ -63,7 +63,7 @@ func (s *BlockchairSuite) TestGetRawTransactionVerbose(c *C) {
 	const txid = "abc123"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Assert(r.URL.Path, Equals, "/bitcoin/dashboards/transaction/"+txid)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				txid: map[string]any{
 					"transaction": map[string]any{
@@ -97,7 +97,7 @@ func (s *BlockchairSuite) TestGetRawTransactionVerbose(c *C) {
 func (s *BlockchairSuite) TestGetRawMempool(c *C) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Assert(r.URL.Path, Equals, "/bitcoin/mempool/transactions")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{
 				{"hash": "tx1", "fee": int64(500), "size": int32(200)},
 				{"hash": "tx2", "fee": int64(300), "size": int32(150)},
@@ -114,7 +114,7 @@ func (s *BlockchairSuite) TestGetRawMempool(c *C) {
 func (s *BlockchairSuite) TestGetMempoolEntryConfirmed(c *C) {
 	const txid = "confirmedtx"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				txid: map[string]any{
 					"transaction": map[string]any{
@@ -158,7 +158,7 @@ func (s *BlockchairSuite) TestNotSupportedMethods(c *C) {
 func (s *BlockchairSuite) TestApiKeyInjected(c *C) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Assert(r.URL.Query().Get("key"), Equals, "mykey")
-		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"blocks": int64(1)}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"blocks": int64(1)}})
 	}))
 	defer srv.Close()
 
