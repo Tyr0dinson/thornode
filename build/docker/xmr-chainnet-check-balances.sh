@@ -60,7 +60,7 @@ xmr_chainnet_require jq curl column
 nodes=()
 while IFS= read -r node; do
   [[ -n "$node" ]] && nodes+=("$node")
-done < <(xmr_chainnet_expand_requested_nodes "${requested_nodes[@]}")
+done < <(xmr_chainnet_expand_requested_nodes "${requested_nodes[@]+"${requested_nodes[@]}"}")
 reference_node="$(xmr_chainnet_reference_node thornode "${nodes[@]}")"
 
 pools_json="$(xmr_chainnet_thornode_get "$reference_node" "/thorchain/pools")"
@@ -86,7 +86,7 @@ vault_rows="$(
     | [
         (.status // ""),
         (.pub_key_frost // .pub_key_eddsa // .pub_key),
-        (.coins[]? | select((.asset // "") == "XMR.XMR") | ((.amount // "0") | tonumber))
+        ((first(.coins[]? | select((.asset // "") == "XMR.XMR") | .amount) // "0") | tonumber)
       ]
     | select(.[1] != null and .[1] != "" and .[2] != null)
     | @tsv
