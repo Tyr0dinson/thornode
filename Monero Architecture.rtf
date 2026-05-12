@@ -35,21 +35,15 @@ Txkey Validation\
 \
 Gas\
 - gas limit (how many units) and gas rate (how expensive those units) == gas used\
-- gas limit hardcoded initially to 10000 (one input, two outputs + margin)\
+- gas limit hardcoded initially to 10000 (1 - 15 input safe)\
 - every gas cycle, Active nodes observe gas rate and update\
 - gas limit is proportional to how many inputs used, 10 inputs = 10 * 10000 * rate\
-- Non-signing nodes will see how many inputs consumed and allow it (won\'92t slash)\
-- outbound attestation will follow up with the final gas used to correct THOR accounting\
-- if gas failed, trigger a new gas fee observation to bump gas for next hour\
-- Gas is a ceiling, Signers use less, then remainder always goes into change output\
-\
-Example1:\
-- THOR schedules outbound 1 * 10000 * 3 =30,000 \
-- Signers use 3 inputs = 3 * 10000 * 3 = 90,000\
-- Nonsigners can see 3 inputs, so attest and don\'92t slash\
-- all nodes attest 90,000 (actual) \
-- THOR accounting correct\
-\
+- Gas is a ceiling, Signers use less, then \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 - Consolidate: use whatever gas you want\
+- Final Migrate:  remainder goes into vault\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \
 10-block lock\
 - if signers to try sign, but outputs immature, we surface blocks remaining in error log\
 - signers then inhibit keysign rescheduling until monero blocks passed (stop excessive re-attempts)\
@@ -99,7 +93,7 @@ Change\
 - 0-outputs can be ignored for key-image-gen\
 \
 CONSOLIDATE\
-- Every X outputs, consolidate down to Y outputs\
+- Every 15 outputs, consolidate down to 1 output\
 - second output is 0-amount can be ignored for key-image-gen \
 \
 0-output CHANGE, 2 cases\
@@ -143,13 +137,6 @@ REORG\
 - ERRATA will undo the inbound/outbound and reverse the accounting\
 - delete keyimages associated with that inbound (or change output from outbound)\
 \
-\
-\
-Gas\
-- THOR sets max gas (cover from 1 to 15 inputs)\
-- OUT/MIGRATE: prescribed max gas is good enough all the time\
-- Consolidate: use whatever gas you want\
-- Final Migrate:  \
 \
 \
 \
