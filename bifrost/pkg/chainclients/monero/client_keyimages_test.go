@@ -1833,6 +1833,94 @@ func TestPrepareObservedTxInItemWaitsForTxKeysBeforeFinalMigrateInbound(t *testi
 	require.Nil(t, prepared)
 }
 
+func TestPrepareObservedTxInItemUsesSpendingVaultTxKeysForFinalMigrateInbound(t *testing.T) {
+	t.Parallel()
+
+	sourceVaultPubKey, sourceVaultAddr := testVaultPubKeyAndAddress(t)
+	destVaultPubKey, destVaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("9", 64)
+	txKey := strings.Repeat("a", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{TxHash: txHash, OutputIndex: 0, Amount: 25, Height: 100},
+					{TxHash: txHash, OutputIndex: 1, Amount: 0, Height: 100},
+				},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	bridge := &keyImageTestBridge{
+		mockMoneroBridge: mockMoneroBridge{
+			vaultByPubKey: map[string]ttypes.Vault{
+				sourceVaultPubKey.String(): {
+					PubKey:      sourceVaultPubKey,
+					PubKeyEddsa: sourceVaultPubKey,
+					PubKeyFrost: sourceVaultPubKey,
+					Status:      ttypes.VaultStatus_InactiveVault,
+					Membership:  []string{"source-a", "source-b", "source-c"},
+					TxKeysXmr: []*common.XmrTxKeyRef{{
+						TxHash: txHash,
+						TxKeys: []string{txKey},
+					}},
+				},
+				destVaultPubKey.String(): {
+					PubKey:      destVaultPubKey,
+					PubKeyEddsa: destVaultPubKey,
+					PubKeyFrost: destVaultPubKey,
+					Status:      ttypes.VaultStatus_ActiveVault,
+					Membership:  []string{"dest-a", "dest-b", "dest-c"},
+				},
+			},
+			constants: map[string]int64{constants.SigningTransactionPeriod.String(): 40},
+		},
+		version: semver.MustParse("3.0.0"),
+	}
+
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("dest-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: bridge,
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{
+			sourceVaultPubKey.String(): sourceVaultAddr,
+			destVaultPubKey.String():   destVaultAddr,
+		},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              sourceVaultAddr.String(),
+		To:                  destVaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(25))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(24000))},
+		ObservedVaultPubKey: destVaultPubKey,
+		Memo:                "MIGRATE:123",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Len(t, prepared.XmrKeyImages, 1)
+	assert.Equal(t, txHash, prepared.XmrKeyImages[0].TxHash)
+	assert.Equal(t, uint32(0), prepared.XmrKeyImages[0].OutputIndex)
+	assert.Empty(t, prepared.TxKeys)
+}
+
 func TestPrepareObservedTxInItemSkipsFinalInboundForNonSigner(t *testing.T) {
 	t.Parallel()
 

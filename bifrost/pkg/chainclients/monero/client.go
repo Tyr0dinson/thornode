@@ -4052,13 +4052,23 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, nil
 	}
 	if isInboundToVault && isXMRMigrateMemo(item.Memo) && len(item.TxKeys) == 0 {
-		c.logger.Info().
-			Str("tx_hash", normalizeTxID(item.Tx)).
-			Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
-			Str("sender", item.Sender).
-			Str("memo", item.Memo).
-			Msg("waiting for XMR tx-key propagation before finalized migrate inbound observation")
-		return nil, false, nil
+		if txKeys, sourceVaultPubKey, ok := c.registeredXMRTxKeysForMigrateSender(item); ok {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
+				Str("source_vault_pub_key", sourceVaultPubKey.String()).
+				Int("tx_key_count", len(txKeys)).
+				Str("memo", item.Memo).
+				Msg("found XMR migrate tx-key on spending vault; continuing finalized migrate inbound observation")
+		} else {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
+				Str("sender", item.Sender).
+				Str("memo", item.Memo).
+				Msg("waiting for XMR tx-key propagation before finalized migrate inbound observation")
+			return nil, false, nil
+		}
 	}
 	if isOutboundFromVault && len(item.TxKeys) > 0 {
 		txKeysAlreadyRegistered := len(item.XmrKeyImages) > 0 && c.xmrTxKeysAlreadyRegistered(item.ObservedVaultPubKey, item.Tx)
@@ -4473,6 +4483,21 @@ func (c *Client) registeredXMRTxKeysForTx(vaultPubKey common.PubKey, txHash stri
 		return txKeys, true
 	}
 	return nil, false
+}
+
+func (c *Client) registeredXMRTxKeysForMigrateSender(item *stypes.TxInItem) ([]string, common.PubKey, bool) {
+	if c == nil || item == nil || !isXMRMigrateMemo(item.Memo) {
+		return nil, common.EmptyPubKey, false
+	}
+	sourceVaultPubKey, found := c.findVaultPubKeyByAddress(item.Sender)
+	if !found || sourceVaultPubKey.IsEmpty() || sourceVaultPubKey.Equals(item.ObservedVaultPubKey) {
+		return nil, common.EmptyPubKey, false
+	}
+	txKeys, ok := c.registeredXMRTxKeysForTx(sourceVaultPubKey, item.Tx)
+	if !ok {
+		return nil, common.EmptyPubKey, false
+	}
+	return txKeys, sourceVaultPubKey, true
 }
 
 func xmrKeyImageProofsAlreadyRegistered(proofs []*common.XmrKeyImageProof, registered []*common.XmrKeyImageRef) bool {
