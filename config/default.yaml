@@ -208,6 +208,16 @@ bifrost:
       cosmos_grpc_tls: false
       opt_to_retire: false
       solvency_blocks: 0
+      providers: []
+      failover:
+        health_check_interval: 0s
+        max_block_lag: 0
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
 
     eth:
       <<: *default-chain

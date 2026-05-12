@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -822,6 +823,50 @@ type BifrostAttestationGossipConfig struct {
 	PeerConcurrentReceives int `mapstructure:"peer_concurrent_receives"`
 }
 
+// Provider type constants — used in ChainProviderConfig.Type to select the adapter.
+const (
+	ProviderTypeBitcoinRPC  = "bitcoin-rpc"      // BTC, LTC, BCH, DOGE — standard Bitcoin JSON-RPC
+	ProviderTypeZcashRPC    = "zcash-rpc"        // ZEC — Zcash JSON-RPC (nonce handling)
+	ProviderTypeEVMRPC      = "evm-rpc"          // ETH, AVAX, BSC, BASE, POL — Ethereum JSON-RPC
+	ProviderTypeBlockchair  = "blockchair-rest"  // UTXO read-only via Blockchair REST API
+	ProviderTypeBlockCypher = "blockcypher-rest" // UTXO read-only via BlockCypher REST API
+	ProviderTypeCosmosGRPC  = "cosmos-grpc"      // GAIA, NOBLE — Cosmos SDK gRPC
+	ProviderTypeSolanaRPC   = "solana-rpc"       // SOL — Solana JSON-RPC
+	ProviderTypeTronAPI     = "tron-api"         // TRON — Tron HTTP API + JSON-RPC
+	ProviderTypeXRPRPC      = "xrp-rpc"          // XRP — XRP Ledger JSON-RPC
+)
+
+// ChainProviderConfig describes a single chain data provider endpoint.
+type ChainProviderConfig struct {
+	Name                string `mapstructure:"name"`
+	RPCHost             string `mapstructure:"rpc_host"`
+	APIHost             string `mapstructure:"api_host"`
+	CosmosGRPCHost      string `mapstructure:"cosmos_grpc_host"`
+	CosmosGRPCTLS       bool   `mapstructure:"cosmos_grpc_tls"`
+	Type                string `mapstructure:"type"`
+	Priority            int    `mapstructure:"priority"`
+	UserName            string `mapstructure:"username"`
+	Password            string `mapstructure:"password"`
+	AuthorizationBearer string `mapstructure:"authorization_bearer"`
+}
+
+// ChainFailoverConfig controls how bifrost selects and switches between providers.
+type ChainFailoverConfig struct {
+	HealthCheckInterval   time.Duration `mapstructure:"health_check_interval"`
+	MaxBlockLag           int64         `mapstructure:"max_block_lag"`
+	ErrorThreshold        int           `mapstructure:"error_threshold"`
+	ErrorWindow           time.Duration `mapstructure:"error_window"`
+	RecoveryCheckInterval time.Duration `mapstructure:"recovery_check_interval"`
+	MinRecoveryChecks     int           `mapstructure:"min_recovery_checks"`
+	// PreferHigherPriority: when true, the health monitor actively fails back to a
+	// higher-priority (lower Priority number) provider as soon as it recovers.
+	// Default: false.
+	PreferHigherPriority bool `mapstructure:"prefer_higher_priority"`
+	// RateLimitBackoff is the minimum sleep on HTTP 429 responses.
+	// 429 does NOT count as a failover trigger. Default: 30s.
+	RateLimitBackoff time.Duration `mapstructure:"rate_limit_backoff"`
+}
+
 type BifrostChainConfiguration struct {
 	ChainID      common.Chain `mapstructure:"chain_id"`
 	ChainHost    string       `mapstructure:"chain_host"`
@@ -872,6 +917,15 @@ type BifrostChainConfiguration struct {
 	// WalletAuthorizationBearer configures a dedicated bearer token for wallet RPC.
 	// When unset, wallet RPC falls back to authorization_bearer.
 	WalletAuthorizationBearer string `mapstructure:"wallet_authorization_bearer"`
+
+	// Providers is an ordered list of chain data providers. When set, RPCHost is used
+	// only as a backward-compat fallback for validation. Priority 1 is preferred.
+	// If empty, a single provider is synthesized from RPCHost + auth fields.
+	Providers []ChainProviderConfig `mapstructure:"providers"`
+
+	// Failover controls how bifrost switches between providers.
+	// All zero values use sensible defaults (see GetFailoverConfig).
+	Failover ChainFailoverConfig `mapstructure:"failover"`
 
 	// SignerBackend selects the transaction signing implementation for the chain.
 	// The XMR chain uses a single TSS signing path with backend value "tss".
@@ -989,6 +1043,81 @@ type BifrostChainConfiguration struct {
 	} `mapstructure:"utxo"`
 }
 
+// GetProviders returns the provider list for this chain configuration.
+// If Providers is empty it synthesizes a single provider from the legacy flat fields,
+// preserving backward compatibility for existing configs.
+func (c BifrostChainConfiguration) GetProviders() []ChainProviderConfig {
+	if len(c.Providers) > 0 {
+		sorted := make([]ChainProviderConfig, len(c.Providers))
+		copy(sorted, c.Providers)
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i].Priority < sorted[j].Priority
+		})
+		return sorted
+	}
+	p := ChainProviderConfig{
+		Name:                "primary",
+		RPCHost:             c.RPCHost,
+		APIHost:             c.APIHost,
+		CosmosGRPCHost:      c.CosmosGRPCHost,
+		CosmosGRPCTLS:       c.CosmosGRPCTLS,
+		Priority:            1,
+		UserName:            c.UserName,
+		Password:            c.Password,
+		AuthorizationBearer: c.AuthorizationBearer,
+	}
+	p.Type = defaultProviderType(c.ChainID)
+	return []ChainProviderConfig{p}
+}
+
+// GetFailoverConfig returns the failover configuration with defaults applied.
+func (c BifrostChainConfiguration) GetFailoverConfig() ChainFailoverConfig {
+	fc := c.Failover
+	if fc.HealthCheckInterval == 0 {
+		fc.HealthCheckInterval = 10 * time.Second
+	}
+	if fc.MaxBlockLag == 0 {
+		fc.MaxBlockLag = 3
+	}
+	if fc.ErrorThreshold == 0 {
+		fc.ErrorThreshold = 5
+	}
+	if fc.ErrorWindow == 0 {
+		fc.ErrorWindow = 60 * time.Second
+	}
+	if fc.RecoveryCheckInterval == 0 {
+		fc.RecoveryCheckInterval = 30 * time.Second
+	}
+	if fc.MinRecoveryChecks == 0 {
+		fc.MinRecoveryChecks = 3
+	}
+	if fc.RateLimitBackoff == 0 {
+		fc.RateLimitBackoff = 30 * time.Second
+	}
+	return fc
+}
+
+func defaultProviderType(chain common.Chain) string {
+	switch chain {
+	case common.ZECChain:
+		return ProviderTypeZcashRPC
+	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain:
+		return ProviderTypeBitcoinRPC
+	case common.ETHChain, common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain:
+		return ProviderTypeEVMRPC
+	case common.GAIAChain, common.NOBLEChain:
+		return ProviderTypeCosmosGRPC
+	case common.SOLChain:
+		return ProviderTypeSolanaRPC
+	case common.TRONChain:
+		return ProviderTypeTronAPI
+	case common.XRPChain:
+		return ProviderTypeXRPRPC
+	default:
+		return ProviderTypeBitcoinRPC
+	}
+}
+
 func (b *BifrostChainConfiguration) Validate() {
 	switch b.ChainID {
 	case common.TRONChain:
@@ -998,10 +1127,10 @@ func (b *BifrostChainConfiguration) Validate() {
 				Msg("api host is required")
 		}
 	default:
-		if b.RPCHost == "" {
+		if b.RPCHost == "" && len(b.Providers) == 0 {
 			log.Fatal().
 				Str("chain", b.ChainID.String()).
-				Msg("rpc host is required")
+				Msg("rpc host or providers list is required")
 		}
 	}
 
