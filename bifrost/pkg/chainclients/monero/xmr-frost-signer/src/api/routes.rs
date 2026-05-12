@@ -624,13 +624,18 @@ fn commit_scan_batch(
                     block_hash: normalize_tx_hash(&entry.block_hash),
                     parent_hash: normalize_tx_hash(&entry.parent_hash),
                     added_outputs: added_refs.clone(),
-                    spent_key_images,
+                    spent_key_images: spent_key_images.clone(),
                     spent_by_key_images: Vec::new(),
                 },
             )
             .map_err(|e| {
                 format!("failed to persist scan block metadata after scanner sync: {e}")
             })?;
+        if !spent_key_images.is_empty() {
+            output_lifecycle
+                .mark_spent_on_chain(vault_pub_key, &spent_key_images, entry.height)
+                .map_err(|e| format!("failed to persist pending spent key images: {e}"))?;
+        }
         vault_lifecycle
             .advance_scan_height(vault_pub_key, entry.height)
             .map_err(|e| format!("failed to persist scan height after scanner sync: {e}"))?;
@@ -670,6 +675,99 @@ fn replay_reconciled_key_image_spends(
     OutputLifecycle::new(state.store.as_ref())
         .replay_reconciled_spends(vault_pub_key, key_images)
         .map_err(|e| format!("failed to replay reconciled key-image spends: {e}"))
+}
+
+async fn reconcile_key_image_spends_from_daemon(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    key_images: &[(String, u32, String)],
+) -> Result<(), String> {
+    if key_images.is_empty() {
+        return Ok(());
+    }
+
+    let requested_refs: HashSet<(String, u32)> = key_images
+        .iter()
+        .map(|(tx_hash, output_index, _)| (tx_hash.clone(), *output_index))
+        .collect();
+    let outputs = state
+        .store
+        .load_outputs(vault_pub_key)
+        .map_err(|e| format!("failed to load outputs for key-image spent reconcile: {e}"))?;
+
+    let mut key_images_to_check = Vec::new();
+    let mut seen = HashSet::new();
+    for output in outputs {
+        if output.is_spent()
+            || !requested_refs.contains(&(output.tx_hash.clone(), output.output_index))
+        {
+            continue;
+        }
+        let Some(key_image) = output
+            .key_image
+            .as_ref()
+            .map(|key_image| key_image.trim().to_ascii_lowercase())
+        else {
+            continue;
+        };
+        if key_image.is_empty() || !seen.insert(key_image.clone()) {
+            continue;
+        }
+        key_images_to_check.push(key_image);
+    }
+    if key_images_to_check.is_empty() {
+        return Ok(());
+    }
+
+    let mut confirmed_spent = Vec::new();
+    for batch in key_images_to_check.chunks(100) {
+        let batch_vec: Vec<String> = batch.to_vec();
+        let statuses = match state.daemon.is_key_image_spent(&batch_vec).await {
+            Ok(statuses) => statuses,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    vault = %vault_pub_key,
+                    key_images = batch_vec.len(),
+                    "failed to query daemon key-image spent status during reconcile"
+                );
+                continue;
+            }
+        };
+        for (key_image, status) in batch_vec.into_iter().zip(statuses.into_iter()) {
+            if status.is_confirmed_spent() {
+                confirmed_spent.push(key_image);
+            }
+        }
+    }
+    if confirmed_spent.is_empty() {
+        return Ok(());
+    }
+
+    let spent_height =
+        state.daemon.get_height().await.map_err(|e| {
+            format!("failed to query daemon height for spent key-image reconcile: {e}")
+        })?;
+    {
+        let mut scanner = state.scanner.lock();
+        scanner.mark_spent_key_images(vault_pub_key, &confirmed_spent, spent_height);
+    }
+    let result = OutputLifecycle::new(state.store.as_ref())
+        .mark_spent_on_chain(vault_pub_key, &confirmed_spent, spent_height)
+        .map_err(|e| format!("failed to mark daemon-confirmed spent key-images: {e}"))?;
+
+    if result.applied > 0 || result.not_found > 0 {
+        info!(
+            vault = %vault_pub_key,
+            checked = key_images_to_check.len(),
+            confirmed_spent = confirmed_spent.len(),
+            applied = result.applied,
+            not_found = result.not_found,
+            spent_height,
+            "reconciled daemon-confirmed spent key-images"
+        );
+    }
+    Ok(())
 }
 
 fn unauthorized_spend_entries(
@@ -2423,16 +2521,7 @@ pub async fn scanner_sync(
                 }
                 if !batch.is_empty() {
                     match commit_scan_batch(&state, &vault.vault_pub_key, &batch, reorg_window) {
-                        Ok(persisted) => {
-                            outgoing.extend(unauthorized_spend_entries(
-                                &state,
-                                &vault.vault_pub_key,
-                                &vault.address,
-                                &batch,
-                                &persisted.outputs_after_scan,
-                                effective_height,
-                            ));
-                        }
+                        Ok(_) => {}
                         Err(e) => {
                             warn!(
                                 error = %e,
@@ -3179,6 +3268,18 @@ pub async fn apply_key_images(
             );
             return internal_error_response(format!(
                 "failed to replay historical spends after key-image reconcile: {e}"
+            ));
+        }
+        if let Err(e) =
+            reconcile_key_image_spends_from_daemon(&state, &vault_pub_key, &key_images).await
+        {
+            error!(
+                error = %e,
+                vault = vault_pub_key,
+                "failed to reconcile daemon-confirmed spent key-images"
+            );
+            return internal_error_response(format!(
+                "failed to reconcile daemon-confirmed spent key-images: {e}"
             ));
         }
     }
@@ -4727,6 +4828,113 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn apply_key_images_reconcile_repairs_spent_state_from_daemon() {
+        let key_image = test_key_image_hex(8);
+        let daemon_key_image = key_image.clone();
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(
+                axum::Router::new()
+                    .route(
+                        "/is_key_image_spent",
+                        axum::routing::post(move |Json(req): Json<serde_json::Value>| {
+                            let expected = daemon_key_image.clone();
+                            async move {
+                                let key_images = req
+                                    .get("key_images")
+                                    .and_then(serde_json::Value::as_array)
+                                    .cloned()
+                                    .unwrap_or_default();
+                                assert_eq!(key_images, vec![serde_json::json!(expected)]);
+                                (
+                                    StatusCode::OK,
+                                    Json(serde_json::json!({
+                                        "status": "OK",
+                                        "spent_status": [1]
+                                    })),
+                                )
+                            }
+                        }),
+                    )
+                    .route(
+                        "/json_rpc",
+                        axum::routing::post(|Json(_req): Json<serde_json::Value>| async move {
+                            (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "result": {
+                                        "height": 201,
+                                        "top_block_hash": "hash200",
+                                        "target_height": 201,
+                                        "difficulty": 1,
+                                        "status": "OK"
+                                    }
+                                })),
+                            )
+                        }),
+                    ),
+            )
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
+        let vault_pub_key = VALID_VAULT_PUB_KEY.to_string();
+        let mut output = sample_output(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            1,
+            OutputState::Unspent,
+        );
+        output.height = 100;
+        output.key_image = None;
+
+        state
+            .scanner
+            .lock()
+            .register_vault(
+                &vault_pub_key,
+                &test_group_key_hex(),
+                crate::config::ChainNetworkMode::Mocknet,
+                vec![output.clone()],
+                Some(100),
+            )
+            .expect("failed to register scanner vault");
+        state
+            .store
+            .save_outputs(&vault_pub_key, &[output.clone()])
+            .expect("failed to seed outputs");
+
+        let response = apply_key_images(
+            State(state.clone()),
+            Json(crate::api::types::ApplyKeyImagesRequest {
+                vault_pub_key: vault_pub_key.clone(),
+                reconcile: true,
+                spend: false,
+                spent_height: None,
+                key_images: vec![crate::api::types::KeyImageEntry {
+                    tx_hash: output.tx_hash.clone(),
+                    output_index: output.output_index,
+                    key_image: key_image.clone(),
+                }],
+            }),
+        )
+        .await
+        .into_response();
+        let (status, body) = response_to_status_json(response).await;
+        assert_eq!(status, StatusCode::OK, "body={body}");
+
+        let outputs = state
+            .store
+            .load_outputs(&vault_pub_key)
+            .expect("failed to reload outputs");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].key_image.as_deref(), Some(key_image.as_str()));
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(200));
+    }
+
     #[test]
     fn build_mempool_outgoing_entries_filters_and_normalizes_hashes() {
         let records = vec![
@@ -5053,7 +5261,27 @@ mod tests {
 
     #[tokio::test]
     async fn register_vault_persists_registered_key_image_inventory() {
-        let (state, _data_dir) = chain_test_state("http://127.0.0.1:18081");
+        let daemon_server = axum_test::TestServer::builder()
+            .http_transport()
+            .build(axum::Router::new().route(
+                "/get_transactions",
+                axum::routing::post(|Json(_req): Json<serde_json::Value>| async move {
+                    (
+                        StatusCode::OK,
+                        Json(serde_json::json!({
+                            "txs": [],
+                            "missed_tx": [],
+                            "status": "OK"
+                        })),
+                    )
+                }),
+            ))
+            .expect("failed to start daemon test server");
+        let daemon_url = daemon_server
+            .server_address()
+            .expect("daemon test server address missing")
+            .to_string();
+        let (state, _data_dir) = chain_test_state(&daemon_url);
         let group_key = xmr::group_key_hex_from_spend_seed_hex(BOOTSTRAP_SPEND_KEY_HEX)
             .expect("group key should derive");
         let address = xmr::derive_vault_address(&group_key, state.chain_network)

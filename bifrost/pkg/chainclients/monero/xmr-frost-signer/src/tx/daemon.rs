@@ -221,6 +221,40 @@ struct GetOutputsRequest {
 }
 
 #[derive(Serialize)]
+struct IsKeyImageSpentRequest {
+    key_images: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct IsKeyImageSpentResponse {
+    pub spent_status: Vec<u8>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyImageSpentStatus {
+    Unspent,
+    SpentInBlockchain,
+    SpentInPool,
+    Unknown(u8),
+}
+
+impl KeyImageSpentStatus {
+    pub fn from_daemon_status(status: u8) -> Self {
+        match status {
+            0 => Self::Unspent,
+            1 => Self::SpentInBlockchain,
+            2 => Self::SpentInPool,
+            other => Self::Unknown(other),
+        }
+    }
+
+    pub fn is_confirmed_spent(self) -> bool {
+        matches!(self, Self::SpentInBlockchain)
+    }
+}
+
+#[derive(Serialize)]
 pub struct OutputIndex {
     pub amount: u64,
     pub index: u64,
@@ -451,6 +485,39 @@ impl DaemonClient {
     pub async fn get_outs(&self, outputs: Vec<OutputIndex>) -> Result<GetOutputsResponse> {
         self.other_rpc("/get_outs", GetOutputsRequest { outputs })
             .await
+    }
+
+    /// Check whether key-images are spent according to the daemon.
+    pub async fn is_key_image_spent(
+        &self,
+        key_images: &[String],
+    ) -> Result<Vec<KeyImageSpentStatus>> {
+        if key_images.is_empty() {
+            return Ok(Vec::new());
+        }
+        let response: IsKeyImageSpentResponse = self
+            .other_rpc(
+                "/is_key_image_spent",
+                IsKeyImageSpentRequest {
+                    key_images: key_images.to_vec(),
+                },
+            )
+            .await?;
+        if !response.status.eq_ignore_ascii_case("OK") {
+            anyhow::bail!("daemon is_key_image_spent returned {}", response.status);
+        }
+        if response.spent_status.len() != key_images.len() {
+            anyhow::bail!(
+                "daemon is_key_image_spent returned {} statuses for {} key-images",
+                response.spent_status.len(),
+                key_images.len()
+            );
+        }
+        Ok(response
+            .spent_status
+            .into_iter()
+            .map(KeyImageSpentStatus::from_daemon_status)
+            .collect())
     }
 }
 

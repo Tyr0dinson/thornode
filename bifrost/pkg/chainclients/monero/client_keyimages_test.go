@@ -233,7 +233,84 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalInbound(t *testing.T) 
 	assert.Equal(t, txHash, tssServer.reqs[0].TxHash)
 }
 
-func TestPrepareObservedTxInItemGeneratesOnlyMissingKeyImagesForPartialLocalState(t *testing.T) {
+func TestPrepareObservedTxInItemSkipsZeroAmountDummyOutputKeyImage(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("9", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			var req xmrFrostApplyKeyImagesRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.Len(t, req.KeyImages, 1)
+			assert.Equal(t, uint32(0), req.KeyImages[0].OutputIndex)
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: len(req.KeyImages)})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{
+					{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100},
+					{TxHash: txHash, OutputIndex: 1, Amount: 0, Height: 100},
+				},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	tssServer := &mockKeyImageTssServer{}
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       tssServer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+				constants: map[string]int64{constants.SigningTransactionPeriod.String(): 40},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger: testLogger(),
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              common.XMRSeededDummyAddress('8', []byte("sender")),
+		To:                  vaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "SWAP:XMR.XMR:thor1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0l5m4g",
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.True(t, include)
+	require.NotNil(t, prepared)
+	require.Len(t, prepared.XmrKeyImages, 1)
+	assert.Equal(t, uint32(0), prepared.XmrKeyImages[0].OutputIndex)
+
+	tssServer.mu.Lock()
+	defer tssServer.mu.Unlock()
+	require.Len(t, tssServer.reqs, 1)
+	assert.Equal(t, uint32(0), tssServer.reqs[0].OutputIndex)
+}
+
+func TestPrepareObservedTxInItemDefersPartialKeyImageLocalState(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -298,18 +375,13 @@ func TestPrepareObservedTxInItemGeneratesOnlyMissingKeyImagesForPartialLocalStat
 
 	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
 	require.NoError(t, err)
-	require.True(t, include)
-	require.NotNil(t, prepared)
-	require.Len(t, prepared.XmrKeyImages, 1)
-	assert.Equal(t, uint32(1), prepared.XmrKeyImages[0].OutputIndex)
+	require.False(t, include)
+	require.Nil(t, prepared)
 
 	tssServer.mu.Lock()
-	require.Len(t, tssServer.reqs, 1)
-	assert.Equal(t, uint32(1), tssServer.reqs[0].OutputIndex)
+	require.Empty(t, tssServer.reqs)
 	tssServer.mu.Unlock()
-	require.Len(t, applyReqs, 1)
-	require.Len(t, applyReqs[0].KeyImages, 1)
-	assert.Equal(t, uint32(1), applyReqs[0].KeyImages[0].OutputIndex)
+	require.Empty(t, applyReqs)
 }
 
 func TestPrepareObservedTxInItemSkipsFinalInboundUntilTrackedOutputsExist(t *testing.T) {
@@ -671,7 +743,7 @@ func TestDriveLocalKeyImageBacklogReplaysLocalKeyImageMissingFromThorchain(t *te
 	assert.Equal(t, strings.ToLower(txHash)+"-ki-0", proofs[0].KeyImage)
 }
 
-func TestDriveLocalKeyImageBacklogGeneratesOnlyMissingKeyImagesForPartialLocalState(t *testing.T) {
+func TestDriveLocalKeyImageBacklogDefersPartialKeyImageLocalState(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -752,22 +824,37 @@ func TestDriveLocalKeyImageBacklogGeneratesOnlyMissingKeyImagesForPartialLocalSt
 	c.driveLocalKeyImageBacklogForVault(vault, "3.0.0", xmrSyncStateAtTip, "")
 
 	tssServer.mu.Lock()
-	require.Len(t, tssServer.reqs, 1)
-	assert.Equal(t, uint32(1), tssServer.reqs[0].OutputIndex)
+	require.Empty(t, tssServer.reqs)
 	tssServer.mu.Unlock()
-	require.Len(t, applyReqs, 1)
-	require.Len(t, applyReqs[0].KeyImages, 1)
-	assert.Equal(t, uint32(1), applyReqs[0].KeyImages[0].OutputIndex)
+	require.Empty(t, applyReqs)
 
-	var replay stypes.TxIn
 	select {
-	case replay = <-observed:
+	case replay := <-observed:
+		t.Fatalf("unexpected partial local key-image replay: %#v", replay)
 	default:
-		t.Fatal("expected partial local key-image replay to be submitted")
 	}
-	require.Len(t, replay.TxArray, 1)
-	require.Len(t, replay.TxArray[0].XmrKeyImages, 1)
-	assert.Equal(t, uint32(1), replay.TxArray[0].XmrKeyImages[0].OutputIndex)
+}
+
+func TestXMROutputsMissingKeyImagesSkipsZeroAmountDummyOutputs(t *testing.T) {
+	t.Parallel()
+
+	txHash := strings.Repeat("0", 64)
+	outputs := []xmrFrostOutputEntry{
+		{TxHash: txHash, OutputIndex: 0, Amount: 10, Height: 100},
+		{TxHash: txHash, OutputIndex: 1, Amount: 0, Height: 100},
+		{TxHash: txHash, OutputIndex: 2, Amount: 20, Height: 100, KeyImage: "known"},
+	}
+
+	pending := xmrOutputsMissingKeyImages(outputs)
+	require.Len(t, pending, 1)
+	assert.Equal(t, uint32(0), pending[0].OutputIndex)
+
+	registeredMissing := xmrOutputsWithLocalKeyImagesMissingFromVault(outputs, nil)
+	require.Len(t, registeredMissing, 1)
+	assert.Equal(t, uint32(2), registeredMissing[0].OutputIndex)
+	assert.False(t, xmrTxOutputsNeedKeyImageAttestation([]xmrFrostOutputEntry{
+		{TxHash: txHash, OutputIndex: 1, Amount: 0, Height: 100, KeyImage: "dummy"},
+	}, nil))
 }
 
 func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.T) {
@@ -3834,7 +3921,7 @@ func TestCatchupKeyImagesReplaysAfterSignerReset(t *testing.T) {
 	assert.Equal(t, frostKey.String(), requests[1].VaultPubKey)
 }
 
-func TestCatchupTxKeysReadsVaultHistoryAndReplaysOutboundAudit(t *testing.T) {
+func TestCatchupTxKeysIgnoredDuringVaultRegistration(t *testing.T) {
 	t.Parallel()
 
 	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -3869,11 +3956,6 @@ func TestCatchupTxKeysReadsVaultHistoryAndReplaysOutboundAudit(t *testing.T) {
 
 	outAmount := cosmos.NewUint(100_000_000)
 	outFee := cosmos.NewUint(2_000_000)
-	expectedAmount, err := xmrThorchainAmountToAtomic(outAmount)
-	require.NoError(t, err)
-	expectedFee, err := xmrThorchainAmountToAtomic(outFee)
-	require.NoError(t, err)
-
 	bridge := &mockMoneroBridge{
 		vaultByPubKey: map[string]ttypes.Vault{
 			frostKey.String(): {
@@ -3923,23 +4005,16 @@ func TestCatchupTxKeysReadsVaultHistoryAndReplaysOutboundAudit(t *testing.T) {
 		thorchainBridge: bridge,
 	}
 
-	c.refreshOutgoingInventoryReplay()
+	c.refreshTrackedVaultInventory()
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, requests, 1)
 	assert.Equal(t, frostKey.String(), requests[0].VaultPubKey)
-	require.Len(t, requests[0].TxKeyEntries, 1)
-	assert.Equal(t, txHash, requests[0].TxKeyEntries[0].TxHash)
-	assert.Equal(t, []string{txKey}, requests[0].TxKeyEntries[0].TxKeys)
-	assert.Equal(t, vaultAddr.String(), requests[0].TxKeyEntries[0].FromAddress)
-	assert.Equal(t, destination.String(), requests[0].TxKeyEntries[0].ToAddress)
-	assert.Equal(t, expectedAmount, requests[0].TxKeyEntries[0].Amount)
-	assert.Equal(t, expectedFee, requests[0].TxKeyEntries[0].Fee)
-	assert.Equal(t, "OUT:"+parentTxHash, requests[0].TxKeyEntries[0].Memo)
+	require.Empty(t, requests[0].TxKeyEntries)
 }
 
-func TestCatchupTxKeysRegistersCombinedKeyImageAndTxKeyInventory(t *testing.T) {
+func TestCatchupRegistersKeyImageInventoryWithoutTxKeyReplay(t *testing.T) {
 	t.Parallel()
 
 	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -4025,7 +4100,7 @@ func TestCatchupTxKeysRegistersCombinedKeyImageAndTxKeyInventory(t *testing.T) {
 		thorchainBridge: bridge,
 	}
 
-	c.refreshOutgoingInventoryReplay()
+	c.refreshTrackedVaultInventory()
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -4034,12 +4109,10 @@ func TestCatchupTxKeysRegistersCombinedKeyImageAndTxKeyInventory(t *testing.T) {
 	assert.Equal(t, spentOutputTxHash, registerRequests[0].KeyImages[0].TxHash)
 	assert.Equal(t, uint32(0), registerRequests[0].KeyImages[0].OutputIndex)
 	assert.Equal(t, keyImage, registerRequests[0].KeyImages[0].KeyImage)
-	require.Len(t, registerRequests[0].TxKeyEntries, 1)
-	assert.Equal(t, outboundTxHash, registerRequests[0].TxKeyEntries[0].TxHash)
-	assert.Equal(t, []string{txKey}, registerRequests[0].TxKeyEntries[0].TxKeys)
+	require.Empty(t, registerRequests[0].TxKeyEntries)
 }
 
-func TestCatchupTxKeysReplaysAfterSignerReset(t *testing.T) {
+func TestCatchupTxKeysNotReplayedAfterSignerReset(t *testing.T) {
 	t.Parallel()
 
 	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -4120,21 +4193,19 @@ func TestCatchupTxKeysReplaysAfterSignerReset(t *testing.T) {
 		thorchainBridge: bridge,
 	}
 
-	c.refreshOutgoingInventoryReplay()
-	c.refreshOutgoingInventoryReplay()
+	c.refreshTrackedVaultInventory()
+	c.refreshTrackedVaultInventory()
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, requests, 2)
 	assert.Equal(t, frostKey.String(), requests[0].VaultPubKey)
 	assert.Equal(t, frostKey.String(), requests[1].VaultPubKey)
-	require.Len(t, requests[0].TxKeyEntries, 1)
-	require.Len(t, requests[1].TxKeyEntries, 1)
-	assert.Equal(t, txHash, requests[0].TxKeyEntries[0].TxHash)
-	assert.Equal(t, txHash, requests[1].TxKeyEntries[0].TxHash)
+	require.Empty(t, requests[0].TxKeyEntries)
+	require.Empty(t, requests[1].TxKeyEntries)
 }
 
-func TestCatchupTxKeysKeepsLocallyBoundTxKeysAheadOfInventory(t *testing.T) {
+func TestCatchupTxKeysDoNotPruneLocalRuntimeInventory(t *testing.T) {
 	t.Parallel()
 
 	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -4215,16 +4286,15 @@ func TestCatchupTxKeysKeepsLocallyBoundTxKeysAheadOfInventory(t *testing.T) {
 		thorchainBridge: bridge,
 	}
 
-	c.refreshOutgoingInventoryReplay()
+	c.refreshTrackedVaultInventory()
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, registerRequests, 1)
-	require.Len(t, registerRequests[0].TxKeyEntries, 1)
-	assert.Equal(t, txHash, registerRequests[0].TxKeyEntries[0].TxHash)
+	require.Empty(t, registerRequests[0].TxKeyEntries)
 }
 
-func TestCatchupTxKeysIgnoresLocalOnlySignerOutboundsOutsideRegisteredInventory(t *testing.T) {
+func TestCatchupTxKeysIgnoredOutsideRegisteredInventory(t *testing.T) {
 	t.Parallel()
 
 	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -4305,16 +4375,15 @@ func TestCatchupTxKeysIgnoresLocalOnlySignerOutboundsOutsideRegisteredInventory(
 		thorchainBridge: bridge,
 	}
 
-	c.refreshOutgoingInventoryReplay()
+	c.refreshTrackedVaultInventory()
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, registerRequests, 1)
-	require.Len(t, registerRequests[0].TxKeyEntries, 1)
-	assert.Equal(t, txHash, registerRequests[0].TxKeyEntries[0].TxHash)
+	require.Empty(t, registerRequests[0].TxKeyEntries)
 }
 
-func TestCatchupTxKeysReplaysOutboundAuditInObservedHeightOrder(t *testing.T) {
+func TestCatchupTxKeysDoNotAffectVaultRegistrationOrder(t *testing.T) {
 	t.Parallel()
 
 	frostKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -4427,14 +4496,12 @@ func TestCatchupTxKeysReplaysOutboundAuditInObservedHeightOrder(t *testing.T) {
 		thorchainBridge: bridge,
 	}
 
-	c.refreshOutgoingInventoryReplay()
+	c.refreshTrackedVaultInventory()
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, requests, 1)
-	require.Len(t, requests[0].TxKeyEntries, 2)
-	assert.Equal(t, olderTxHash, requests[0].TxKeyEntries[0].TxHash)
-	assert.Equal(t, newerTxHash, requests[0].TxKeyEntries[1].TxHash)
+	require.Empty(t, requests[0].TxKeyEntries)
 }
 
 func TestCatchupTxKeysSkipsInactiveVaultsOutsideAsgardSet(t *testing.T) {
@@ -4523,7 +4590,7 @@ func TestCatchupTxKeysSkipsInactiveVaultsOutsideAsgardSet(t *testing.T) {
 		thorchainBridge: bridge,
 	}
 
-	c.refreshOutgoingInventoryReplay()
+	c.refreshTrackedVaultInventory()
 
 	mu.Lock()
 	defer mu.Unlock()

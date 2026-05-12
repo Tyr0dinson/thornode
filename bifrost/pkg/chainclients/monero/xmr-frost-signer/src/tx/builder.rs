@@ -154,8 +154,7 @@ pub async fn build_unsigned_transaction(
     } else {
         vec![memo.as_bytes().to_vec()]
     };
-    let change_to_destination = is_consolidate_memo(memo) || sweep_if_final;
-    let change_target = if change_to_destination { &to } else { &change };
+    let sweep_amount = is_consolidate_memo(memo) || sweep_if_final;
 
     // Build the signable transaction. Each added input increases the on-wire
     // size and therefore `necessary_fee`, so we may need to grow the input set
@@ -166,9 +165,8 @@ pub async fn build_unsigned_transaction(
         match build_signable_for_selection(
             rpc,
             &selected,
-            &to,
-            amount,
-            Some(change_target),
+            single_payment(&to, amount),
+            Some(&change),
             fee_rate,
             rct_type,
             outgoing_view_key.clone(),
@@ -225,8 +223,9 @@ pub async fn build_unsigned_transaction(
             acc.checked_add(u128::from(tracked.amount))
         })
         .ok_or_else(|| anyhow::anyhow!("selected input total overflow"))?;
-    let fee = signable.necessary_fee();
-    let final_amount = if change_to_destination {
+    let mut signable = signable;
+    let mut fee = signable.necessary_fee();
+    let mut final_amount = if sweep_amount {
         let used_total_u64 = u64::try_from(used_total)
             .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
         final_migrate_amount(used_total_u64, fee)?
@@ -241,6 +240,81 @@ pub async fn build_unsigned_transaction(
         })
         .collect::<Vec<_>>();
 
+    let mut positive_change = positive_change_amount(used_total, final_amount, fee)?;
+    if positive_change == 0 {
+        // Real positive change always goes back to SELF (`change`). The sweep
+        // destination is only used for the mandatory zero-amount dummy output.
+        let dummy_output = if sweep_amount { &to } else { &change };
+        signable = build_signable_for_selection(
+            rpc,
+            &used,
+            zero_dummy_payments(&to, dummy_output, final_amount),
+            None,
+            fee_rate,
+            rct_type,
+            outgoing_view_key.clone(),
+            data.clone(),
+            decoy_context,
+            hard_fork_version,
+            tip_height,
+        )
+        .await?;
+        let rebuilt_fee = signable.necessary_fee();
+        if rebuilt_fee != fee {
+            if sweep_amount {
+                let used_total_u64 = u64::try_from(used_total)
+                    .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
+                final_amount = final_migrate_amount(used_total_u64, rebuilt_fee)?;
+            }
+            signable = build_signable_for_selection(
+                rpc,
+                &used,
+                zero_dummy_payments(&to, dummy_output, final_amount),
+                None,
+                fee_rate,
+                rct_type,
+                outgoing_view_key.clone(),
+                data.clone(),
+                decoy_context,
+                hard_fork_version,
+                tip_height,
+            )
+            .await?;
+            fee = signable.necessary_fee();
+            positive_change = positive_change_amount(used_total, final_amount, fee)?;
+            if positive_change != 0 {
+                anyhow::bail!(
+                    "zero-dummy rebuild produced positive change: {}",
+                    positive_change
+                );
+            }
+            if rebuilt_fee != fee {
+                anyhow::bail!(
+                    "zero-dummy sweep fee changed across rebuilds: first {}, second {}",
+                    rebuilt_fee,
+                    fee
+                );
+            }
+        }
+    } else {
+        signable = build_signable_for_selection(
+            rpc,
+            &used,
+            single_payment(&to, final_amount),
+            Some(&change),
+            fee_rate,
+            rct_type,
+            outgoing_view_key.clone(),
+            data.clone(),
+            decoy_context,
+            hard_fork_version,
+            tip_height,
+        )
+        .await?;
+        fee = signable.necessary_fee();
+        positive_change = positive_change_amount(used_total, final_amount, fee)?;
+    }
+
     info!(
         selected_inputs = selected_refs.len(),
         fee,
@@ -250,19 +324,17 @@ pub async fn build_unsigned_transaction(
         "constructed Monero signable transaction"
     );
 
-    let has_owned_change = if change_to_destination {
-        to_address.trim() == change_address.trim()
-    } else {
-        used_total
-            > u128::from(final_amount)
-                .checked_add(u128::from(fee))
-                .ok_or_else(|| anyhow::anyhow!("final amount + fee overflow"))?
-    };
-    let payment_count = if change_to_destination || has_owned_change {
-        2
-    } else {
-        1
-    };
+    if max_gas_atomic > 0 && fee > max_gas_atomic {
+        anyhow::bail!(
+            "necessary_fee Some({}) exceeds max_gas_atomic {} with selected_inputs {}",
+            fee,
+            max_gas_atomic,
+            selected_refs.len()
+        );
+    }
+
+    let has_owned_change = positive_change > 0;
+    let payment_count = 2;
     let tx_keys = derive_tx_keys_for_built_outbound(&outgoing_view_key, &used, &to, payment_count);
 
     Ok(UnsignedTransaction {
@@ -275,6 +347,27 @@ pub async fn build_unsigned_transaction(
         tx_keys,
         has_owned_change,
     })
+}
+
+fn single_payment(to: &MoneroAddress, amount: u64) -> Vec<(MoneroAddress, u64)> {
+    vec![(*to, amount)]
+}
+
+fn zero_dummy_payments(
+    to: &MoneroAddress,
+    dummy: &MoneroAddress,
+    amount: u64,
+) -> Vec<(MoneroAddress, u64)> {
+    vec![(*to, amount), (*dummy, 0)]
+}
+
+fn positive_change_amount(used_total: u128, amount: u64, fee: u64) -> Result<u128> {
+    let spent = u128::from(amount)
+        .checked_add(u128::from(fee))
+        .ok_or_else(|| anyhow::anyhow!("amount + fee overflow"))?;
+    used_total
+        .checked_sub(spent)
+        .ok_or_else(|| anyhow::anyhow!("amount + fee exceeds selected input total"))
 }
 
 pub fn select_outbound_input_refs(
@@ -400,8 +493,7 @@ fn derive_tx_keys_from_components(
 async fn build_signable_for_selection(
     rpc: &OxideRpc,
     selected: &[&(TrackedOutput, WalletOutput)],
-    to: &MoneroAddress,
-    amount: u64,
+    payments: Vec<(MoneroAddress, u64)>,
     change: Option<&MoneroAddress>,
     fee_rate: FeeRate,
     rct_type: RctType,
@@ -430,7 +522,7 @@ async fn build_signable_for_selection(
         rct_type,
         outgoing_view_key,
         inputs,
-        vec![(to.clone(), amount)],
+        payments,
         Change::fingerprintable(change.cloned()),
         data,
         fee_rate,
@@ -648,6 +740,42 @@ mod tests {
         assert!(is_consolidate_memo(" CONSOLIDATE "));
         assert!(!is_consolidate_memo("migrate:123"));
         assert!(!is_consolidate_memo(""));
+    }
+
+    #[test]
+    fn zero_dummy_payments_add_second_zero_output_to_dummy_address() {
+        let spend = &Scalar::from(31u64) * ED25519_BASEPOINT_TABLE;
+        let view = &Scalar::from(37u64) * ED25519_BASEPOINT_TABLE;
+        let to = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Featured {
+                subaddress: true,
+                payment_id: None,
+                guaranteed: true,
+            },
+            spend,
+            view,
+        );
+        let dummy = MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Featured {
+                subaddress: true,
+                payment_id: None,
+                guaranteed: true,
+            },
+            &Scalar::from(41u64) * ED25519_BASEPOINT_TABLE,
+            &Scalar::from(43u64) * ED25519_BASEPOINT_TABLE,
+        );
+
+        let payments = zero_dummy_payments(&to, &dummy, 123);
+        assert_eq!(payments, vec![(to, 123), (dummy, 0)]);
+    }
+
+    #[test]
+    fn positive_change_amount_is_value_driven() {
+        assert_eq!(positive_change_amount(100, 80, 20).unwrap(), 0);
+        assert_eq!(positive_change_amount(100, 70, 20).unwrap(), 10);
+        assert!(positive_change_amount(100, 90, 20).is_err());
     }
 
     #[test]

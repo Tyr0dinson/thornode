@@ -95,6 +95,7 @@ type xmrValidatedSignRequest struct {
 	fromAddress  string
 	toAddress    string
 	amountAtomic uint64
+	sweepIfFinal bool
 }
 
 type lockedOutputsError struct {
@@ -201,11 +202,6 @@ type xmrKeyImageCatchupState struct {
 	pending bool
 }
 
-type xmrOutgoingInventoryRef struct {
-	txHash string
-	txKeys []string
-}
-
 type xmrKeyImageCeremonyGate struct {
 	mu            sync.Mutex
 	cond          *sync.Cond
@@ -270,6 +266,7 @@ type Client struct {
 	consolidateInProgress   *atomic.Bool
 	lastConsolidationHeight *atomic.Int64
 	lastSolvencyCheckHeight *atomic.Int64
+	solvencyCheckAfterIdle  *atomic.Bool
 	wg                      *sync.WaitGroup
 	stopchan                chan struct{}
 }
@@ -353,6 +350,7 @@ func NewClient(
 		vaultAddressMap:         make(map[string]common.Address),
 		vaultAddrToKey:          make(map[string]string),
 		lastSolvencyCheckHeight: atomic.NewInt64(0),
+		solvencyCheckAfterIdle:  atomic.NewBool(false),
 		wg:                      &sync.WaitGroup{},
 		stopchan:                make(chan struct{}),
 	}
@@ -1018,24 +1016,29 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 
 	backlogHeadTxHash := normalizeTxID(backlogOutputs[0].TxHash)
 	txOutputs := filterVaultOutputsForTx(allOutputs, backlogHeadTxHash)
-	pendingOutputs := xmrOutputsMissingKeyImages(txOutputs)
+	keyImageOutputs := xmrOutputsRequiringKeyImages(txOutputs)
+	pendingOutputs := xmrOutputsMissingKeyImages(keyImageOutputs)
 	if len(txOutputs) == 0 {
 		return
 	}
-	if len(pendingOutputs) == 0 && !xmrTxOutputsNeedKeyImageAttestation(txOutputs, vault.KeyImagesXmr) {
+	if len(keyImageOutputs) == 0 {
 		return
 	}
-	if len(pendingOutputs) != 0 && len(pendingOutputs) != len(txOutputs) {
+	if len(pendingOutputs) == 0 && !xmrTxOutputsNeedKeyImageAttestation(keyImageOutputs, vault.KeyImagesXmr) {
+		return
+	}
+	if len(pendingOutputs) != 0 && len(pendingOutputs) != len(keyImageOutputs) {
 		c.logger.Info().
 			Str("vault", ceremonyCtx.vaultPubKey.String()).
 			Str("tx_hash", backlogHeadTxHash).
 			Int("tracked_output_count", len(txOutputs)).
+			Int("key_image_output_count", len(keyImageOutputs)).
 			Int("missing_key_image_output_count", len(pendingOutputs)).
 			Msg("xmr key-image backlog: waiting for coherent local proof state")
 		return
 	}
 
-	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs); ok && len(cachedProofs) == len(txOutputs) {
+	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, keyImageOutputs); ok && len(cachedProofs) == len(keyImageOutputs) {
 		c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height), cachedProofs)
 		return
 	}
@@ -1050,7 +1053,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 
 	ceremonyOutputs := pendingOutputs
 	if len(ceremonyOutputs) == 0 {
-		ceremonyOutputs = txOutputs
+		ceremonyOutputs = keyImageOutputs
 	}
 	proofs, err := c.generateObservedTxKeyImages(
 		ceremonyCtx.vaultPubKey,
@@ -1092,7 +1095,7 @@ func (c *Client) driveLocalKeyImageBacklogForVault(vault ttypes.Vault, version s
 		return
 	}
 
-	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, txOutputs, proofs)
+	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, backlogHeadTxHash, keyImageOutputs, proofs)
 	c.queueXMRKeyImageBacklogObservation(ceremonyCtx.vaultPubKey, backlogHeadTxHash, int64(backlogOutputs[0].Height), proofs)
 	c.logger.Info().
 		Str("vault", ceremonyCtx.vaultPubKey.String()).
@@ -1186,70 +1189,18 @@ func (c *Client) xmrObservedTxInItemFromVoter(vaultPubKey common.PubKey, txHash 
 	return item, nil
 }
 
-func (c *Client) refreshOutgoingInventoryReplay() {
+func (c *Client) refreshTrackedVaultInventory() {
 	if c.thorchainBridge == nil || c.frostSigner == nil {
 		return
 	}
 	vaults, err := c.trackedXMRVaultsForKeyImageCatchup()
 	if err != nil {
-		c.logger.Err(err).Msg("xmr outgoing inventory replay: failed to get tracked xmr vaults")
+		c.logger.Err(err).Msg("xmr state sync: failed to get tracked xmr vaults")
 		return
 	}
 	if _, err := c.syncTrackedVaultRegistrations(vaults); err != nil {
-		c.logger.Err(err).Msg("xmr outgoing inventory replay: failed to refresh signer inventory from thorchain")
+		c.logger.Err(err).Msg("xmr state sync: failed to refresh signer inventory from thorchain")
 	}
-}
-
-func (c *Client) getOutgoingInventoryReplayMeta(vaultPubKey common.PubKey, txHash string) (xmrFrostOutboundMeta, error) {
-	voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
-	if err != nil {
-		return xmrFrostOutboundMeta{}, fmt.Errorf("fail to get observed tx voter for %s: %w", txHash, err)
-	}
-
-	observed, err := selectObservedOutboundForVault(voter, txHash, vaultPubKey)
-	if err != nil {
-		return xmrFrostOutboundMeta{}, err
-	}
-
-	amountAtomic, err := xmrThorchainAmountToAtomic(observed.Tx.Coins.GetCoin(common.XMRAsset).Amount)
-	if err != nil {
-		return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound amount to atomic for %s: %w", txHash, err)
-	}
-
-	var feeAtomic uint64
-	gasCoin := observed.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
-	if !gasCoin.IsEmpty() {
-		feeAtomic, err = xmrThorchainAmountToAtomic(gasCoin.Amount)
-		if err != nil {
-			return xmrFrostOutboundMeta{}, fmt.Errorf("fail to convert xmr outbound fee to atomic for %s: %w", txHash, err)
-		}
-	}
-
-	if observed.Tx.ToAddress.IsEmpty() {
-		return xmrFrostOutboundMeta{}, fmt.Errorf("observed xmr outbound %s is missing destination address", txHash)
-	}
-
-	if meta, ok, err := c.outgoingInventoryCanonicalOutboundMeta(vaultPubKey, txHash, observed.Tx.Memo); err != nil {
-		return xmrFrostOutboundMeta{}, err
-	} else if ok {
-		meta.ObservedHeight = observed.BlockHeight
-		return meta, nil
-	}
-
-	fromAddress := observed.Tx.FromAddress.String()
-	if common.IsXMRUnknownSenderAddress(common.Address(fromAddress)) {
-		if vaultAddr, addrErr := vaultPubKey.GetAddress(common.XMRChain); addrErr == nil && !vaultAddr.IsEmpty() {
-			fromAddress = vaultAddr.String()
-		}
-	}
-	return xmrFrostOutboundMeta{
-		FromAddress:    fromAddress,
-		ToAddress:      observed.Tx.ToAddress.String(),
-		Amount:         amountAtomic,
-		Fee:            feeAtomic,
-		Memo:           observed.Tx.Memo,
-		ObservedHeight: observed.BlockHeight,
-	}, nil
 }
 
 func (c *Client) outgoingInventoryCanonicalOutboundMeta(vaultPubKey common.PubKey, txHash, memoText string) (xmrFrostOutboundMeta, bool, error) {
@@ -1487,24 +1438,6 @@ func xmrVaultInventoryFingerprint(vault ttypes.Vault) string {
 		builder.WriteString(strings.ToLower(strings.TrimSpace(ref.KeyImage)))
 	}
 
-	txRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
-	sort.Slice(txRefs, func(i, j int) bool {
-		if txRefs[i].txHash == txRefs[j].txHash {
-			leftKeys := normalizeTxKeyValues(txRefs[i].txKeys)
-			rightKeys := normalizeTxKeyValues(txRefs[j].txKeys)
-			leftJoined := strings.Join(leftKeys, ",")
-			rightJoined := strings.Join(rightKeys, ",")
-			return leftJoined < rightJoined
-		}
-		return txRefs[i].txHash < txRefs[j].txHash
-	})
-	for _, ref := range txRefs {
-		builder.WriteString("|tx:")
-		builder.WriteString(strings.ToLower(strings.TrimSpace(ref.txHash)))
-		builder.WriteString(":")
-		builder.WriteString(strings.Join(normalizeTxKeyValues(ref.txKeys), ","))
-	}
-
 	sum := sha256.Sum256([]byte(builder.String()))
 	return fmt.Sprintf("%x", sum[:])
 }
@@ -1616,13 +1549,7 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 			c.logger.Info().
 				Str("vault", vaultPubKey.String()).
 				Int("key_images", len(vault.KeyImagesXmr)).
-				Int("tx_keys", len(vault.TxKeysXmr)).
 				Msg("xmr state sync: forcing watched vault inventory reapply because local signer state is behind thorchain")
-		}
-
-		txKeyEntries, txKeyErr := txKeyEntriesFromVault(c.thorchainBridge, c.chain, vault)
-		if txKeyErr != nil {
-			return nil, fmt.Errorf("failed to build tx-key registration inventory for vault %s: %w", vaultPubKey.String(), txKeyErr)
 		}
 
 		_, regErr := ensureFrostVaultRegisteredWithInventory(
@@ -1634,7 +1561,7 @@ func (c *Client) syncTrackedVaultRegistrations(vaults ttypes.Vaults) ([]xmrFrost
 			"bifrost_state_sync",
 			vault.VaultCreationHeightXmr,
 			keyImageRefsFromVault(vault),
-			txKeyEntries,
+			nil,
 		)
 		if regErr != nil {
 			return nil, fmt.Errorf("failed to register vault %s: %w", vaultPubKey.String(), regErr)
@@ -1701,18 +1628,12 @@ func (c *Client) drivePendingScannerRescans(states []xmrFrostVaultStateEntry) ([
 			}
 			return current, fmt.Errorf("failed to drive xmr scanner rescan at tip %d: %w", chainHeight, err)
 		}
-		if c.scanner != nil && len(resp.Incoming)+len(resp.Outgoing) > 0 {
-			items, convertErr := c.scanner.transfersToTxInItems(resp, chainHeight)
-			if convertErr != nil {
-				return current, fmt.Errorf("failed to convert xmr scanner rescan transfers at tip %d: %w", chainHeight, convertErr)
-			}
-			if len(items) > 0 {
-				c.scanner.queueReplayTxInItems(items)
-				c.logger.Info().
-					Int("txs", len(items)).
-					Int64("height", chainHeight).
-					Msg("queued XMR scanner rescan observations for normal scanner submission")
-			}
+		if len(resp.Incoming)+len(resp.Outgoing) > 0 {
+			c.logger.Info().
+				Int("incoming", len(resp.Incoming)).
+				Int("outgoing", len(resp.Outgoing)).
+				Int64("height", chainHeight).
+				Msg("discarded XMR birthday-rescan observations after local reconciliation")
 		}
 
 		updated, err := c.frostSigner.ListVaultStates()
@@ -1742,8 +1663,7 @@ func (c *Client) watchedVaultInventoryReplayPending(vault ttypes.Vault, stateEnt
 		return false, nil
 	}
 
-	if stateEntry.RegisteredKeyImageCount < len(vault.KeyImagesXmr) ||
-		stateEntry.RegisteredTxKeyCount < len(vault.TxKeysXmr) {
+	if stateEntry.RegisteredKeyImageCount < len(vault.KeyImagesXmr) {
 		return true, nil
 	}
 
@@ -1754,17 +1674,6 @@ func (c *Client) watchedVaultInventoryReplayPending(vault ttypes.Vault, stateEnt
 			return false, err
 		}
 		if needsReplay {
-			return true, nil
-		}
-	}
-
-	txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
-	if len(txKeyRefs) > 0 {
-		stateCheck, err := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
-		if err != nil {
-			return false, err
-		}
-		if stateCheck.needsReplay {
 			return true, nil
 		}
 	}
@@ -1854,75 +1763,10 @@ func (c *Client) keyImageCatchupNeedsReplay(vaultPubKey string, refs []xmrFrostA
 	return false, nil
 }
 
-type xmrOutgoingInventoryReplayStateCheck struct {
-	needsReplay  bool
-	removeHashes []string
-}
-
 type xmrOutgoingAuditLookup struct {
 	canonicalVaultPubKey common.PubKey
 	record               *xmrFrostOutgoingTransferStateEntry
 	actualFeeAtomic      uint64
-}
-
-func (c *Client) outgoingInventoryNeedsReplay(vaultPubKey string, refs []xmrOutgoingInventoryRef) (xmrOutgoingInventoryReplayStateCheck, error) {
-	state, err := c.frostSigner.GetOutgoingTransferState(vaultPubKey)
-	if err != nil {
-		if isFrostHTTPStatus(err, http.StatusNotFound) {
-			return xmrOutgoingInventoryReplayStateCheck{needsReplay: len(refs) > 0}, nil
-		}
-		return xmrOutgoingInventoryReplayStateCheck{}, err
-	}
-
-	wanted := make(map[string][]string, len(refs))
-	for _, ref := range refs {
-		wanted[strings.ToLower(strings.TrimSpace(ref.txHash))] = normalizeTxKeyValues(ref.txKeys)
-	}
-
-	seen := make(map[string]struct{}, len(refs))
-	removeSet := make(map[string]struct{})
-	needsReplay := false
-	for _, record := range state.Outgoing {
-		txHash := strings.ToLower(strings.TrimSpace(record.TxHash))
-		if txHash == "" {
-			continue
-		}
-		localKeys := normalizeTxKeyValues(record.TxKeys)
-		wantKeys, ok := wanted[txHash]
-		if !ok {
-			continue
-		}
-		if !record.RegisteredInventory {
-			continue
-		}
-		if len(localKeys) == 0 {
-			needsReplay = true
-			continue
-		}
-		if !sameNormalizedTxKeyValues(localKeys, wantKeys) {
-			removeSet[strings.TrimSpace(record.TxHash)] = struct{}{}
-			needsReplay = true
-			continue
-		}
-		seen[txHash] = struct{}{}
-	}
-
-	for txHash := range wanted {
-		if _, ok := seen[txHash]; !ok {
-			needsReplay = true
-		}
-	}
-
-	removeHashes := make([]string, 0, len(removeSet))
-	for txHash := range removeSet {
-		removeHashes = append(removeHashes, txHash)
-	}
-	sort.Strings(removeHashes)
-
-	return xmrOutgoingInventoryReplayStateCheck{
-		needsReplay:  needsReplay,
-		removeHashes: removeHashes,
-	}, nil
 }
 
 func (c *Client) lookupXMROutgoingAudit(vaultPubKey common.PubKey, txHash string) (xmrOutgoingAuditLookup, error) {
@@ -2139,20 +1983,6 @@ func humanizeXMROutgoingPendingReason(reason string) string {
 	return strings.ReplaceAll(reason, "_", " ")
 }
 
-func makeOutgoingInventoryRefs(refs []*common.XmrTxKeyRef) []xmrOutgoingInventoryRef {
-	out := make([]xmrOutgoingInventoryRef, 0, len(refs))
-	for _, ref := range refs {
-		if ref == nil || strings.TrimSpace(ref.TxHash) == "" {
-			continue
-		}
-		out = append(out, xmrOutgoingInventoryRef{
-			txHash: ref.TxHash,
-			txKeys: append([]string(nil), ref.TxKeys...),
-		})
-	}
-	return out
-}
-
 func (c *Client) nextKeyImageCatchupBatch(vaultPubKey string, refs []xmrFrostApplyKeyImageRef) ([]xmrFrostApplyKeyImageRef, bool) {
 	c.keyImageCatchupMu.Lock()
 	defer c.keyImageCatchupMu.Unlock()
@@ -2267,16 +2097,6 @@ func (c *Client) xmrHasPendingReplayWorkForVault(target common.PubKey) (bool, st
 			}
 		}
 
-		txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
-		if len(txKeyRefs) > 0 {
-			stateCheck, replayErr := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
-			if replayErr != nil {
-				return false, "", replayErr
-			}
-			if stateCheck.needsReplay {
-				return true, fmt.Sprintf("xmr outgoing inventory replay pending for vault %s", vaultPubKey.String()), nil
-			}
-		}
 	}
 
 	return false, "", nil
@@ -2336,18 +2156,6 @@ func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrV
 			}
 		}
 
-		var pendingTxKeyReplayCount int
-		txKeyRefs := makeOutgoingInventoryRefs(vault.TxKeysXmr)
-		if len(txKeyRefs) > 0 {
-			replayState, replayErr := c.outgoingInventoryNeedsReplay(vaultPubKey.String(), txKeyRefs)
-			if replayErr != nil {
-				return nil, replayErr
-			}
-			if replayState.needsReplay {
-				pendingTxKeyReplayCount = len(txKeyRefs)
-			}
-		}
-
 		outputs, outputErr := c.frostSigner.GetAllOutputs(vaultPubKey.String())
 		if outputErr != nil && !isFrostHTTPStatus(outputErr, http.StatusNotFound) {
 			return nil, outputErr
@@ -2366,7 +2174,6 @@ func (c *Client) xmrVaultLocalStatuses(states []xmrFrostVaultStateEntry) ([]xmrV
 			RegisteredKeyImageCount:    stateEntry.RegisteredKeyImageCount,
 			RegisteredTxKeyCount:       stateEntry.RegisteredTxKeyCount,
 			PendingKeyImageReplayCount: pendingKeyImageReplayCount,
-			PendingTxKeyReplayCount:    pendingTxKeyReplayCount,
 			PendingKeyImageOutputCount: len(pendingOutputs),
 			PendingKeyImageTxCount:     xmrPendingKeyImageTxCount(pendingOutputs),
 			PendingFinalizePhaseCount:  pendingFinalizeCounts[vaultPubKey.String()],
@@ -2389,7 +2196,6 @@ func (c *Client) logXMRVaultLocalStatuses(states []xmrFrostVaultStateEntry) {
 		event := c.logger.Debug()
 		if status.SyncState != xmrSyncStateAtTip ||
 			status.PendingKeyImageReplayCount > 0 ||
-			status.PendingTxKeyReplayCount > 0 ||
 			status.PendingKeyImageOutputCount > 0 ||
 			status.PendingFinalizePhaseCount > 0 ||
 			status.ActiveWorkItem != nil {
@@ -2402,7 +2208,6 @@ func (c *Client) logXMRVaultLocalStatuses(states []xmrFrostVaultStateEntry) {
 			Int("registered_key_images", status.RegisteredKeyImageCount).
 			Int("registered_tx_keys", status.RegisteredTxKeyCount).
 			Int("pending_key_image_replay", status.PendingKeyImageReplayCount).
-			Int("pending_tx_key_replay", status.PendingTxKeyReplayCount).
 			Int("pending_key_image_outputs", status.PendingKeyImageOutputCount).
 			Int("pending_key_image_txs", status.PendingKeyImageTxCount).
 			Int("pending_finalize_phases", status.PendingFinalizePhaseCount)
@@ -2685,6 +2490,9 @@ func (c *Client) ensureConsolidationState() {
 		}
 		if c.lastSolvencyCheckHeight == nil {
 			c.lastSolvencyCheckHeight = atomic.NewInt64(0)
+		}
+		if c.solvencyCheckAfterIdle == nil {
+			c.solvencyCheckAfterIdle = atomic.NewBool(false)
 		}
 		if c.vaultLocks == nil {
 			c.vaultLocks = make(map[string]*sync.Mutex)
@@ -3545,7 +3353,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		ToAddress:     signReqCtx.toAddress,
 		AmountAtomic:  signReqCtx.amountAtomic,
 		MaxGasAtomic:  maxGasAtomic,
-		SweepIfFinal:  shouldSweepXMRMigration(tx, maxGasAtomic),
+		SweepIfFinal:  signReqCtx.sweepIfFinal,
 		Memo:          tx.Memo,
 		FeeRate:       feeRate,
 		SignerPubKeys: members,
@@ -3575,14 +3383,12 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		Msg("starting XMR FROST keysign")
 	resp, err := c.tssServer.FrostKeySign(frostReq, newFrostSignerAdapter(c.frostSigner))
 	if err != nil {
-		c.observeXMRActualFeeEstimate(height, feeRate, xmrNecessaryFeeFromError(err))
 		if isTransientXMRFrostCoordinationText(err.Error()) {
 			return nil, nil, nil, &xmrTransientFrostKeySignError{reason: err.Error()}
 		}
 		return nil, nil, nil, fmt.Errorf("fail to execute FROST keysign: %w", err)
 	}
 	if resp.Status != gotsscommon.Success {
-		c.observeXMRActualFeeEstimate(height, feeRate, xmrNecessaryFeeFromString(resp.Blame.FailReason))
 		if isTransientXMRFrostCoordinationText(resp.Blame.FailReason) {
 			return nil, nil, nil, &xmrTransientFrostKeySignError{reason: resp.Blame.FailReason}
 		}
@@ -3691,10 +3497,6 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 		return xmrValidatedSignRequest{}, fmt.Errorf("derived monero vault address %s is not on %s", fromAddress, c.chain.String())
 	}
 
-	if err = c.ensureXMRVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas, shouldSweepXMRMigration(tx, xmrMaxGasToAtomicOrZero(tx.MaxGas))); err != nil {
-		return xmrValidatedSignRequest{}, err
-	}
-
 	vaultStatus := ttypes.VaultStatus_InactiveVault
 	if c.thorchainBridge != nil {
 		vault, err := c.getVaultByPubKey(vaultPubKey)
@@ -3703,6 +3505,11 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 		}
 		vaultStatus = vault.Status
 	}
+	sweepIfFinal := c.shouldSweepXMRFinal(tx, xmrMaxGasToAtomicOrZero(tx.MaxGas), vaultStatus)
+
+	if err = c.ensureXMRVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas, sweepIfFinal); err != nil {
+		return xmrValidatedSignRequest{}, err
+	}
 
 	return xmrValidatedSignRequest{
 		vaultPubKey:  vaultPubKey,
@@ -3710,6 +3517,7 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 		fromAddress:  fromAddress,
 		toAddress:    tx.ToAddress.String(),
 		amountAtomic: amountAtomic,
+		sweepIfFinal: sweepIfFinal,
 	}, nil
 }
 
@@ -3960,11 +3768,15 @@ func xmrWeightFromActualFee(feeAtomic, feeRatePerWeight uint64) uint64 {
 }
 
 func (c *Client) observeXMRActualFeeEstimate(height int64, feeRatePerWeight, feeAtomic uint64) {
-	if c == nil || c.scanner == nil || feeAtomic == 0 || feeRatePerWeight == 0 {
-		return
-	}
 	weight := xmrWeightFromActualFee(feeAtomic, feeRatePerWeight)
 	if weight == 0 {
+		return
+	}
+	c.observeXMRNetworkFeeEstimate(height, feeAtomic, weight)
+}
+
+func (c *Client) observeXMRNetworkFeeEstimate(height int64, feeAtomic, weight uint64) {
+	if c == nil || c.scanner == nil || feeAtomic == 0 || weight == 0 {
 		return
 	}
 	c.scanner.ObserveFeeEstimate(feeAtomic, weight)
@@ -4012,6 +3824,16 @@ func shouldSweepXMRMigration(tx stypes.TxOutItem, maxGasAtomic uint64) bool {
 		return false
 	}
 	return isXMRMigrateMemo(tx.GetMemo())
+}
+
+func (c *Client) shouldSweepXMRFinal(tx stypes.TxOutItem, maxGasAtomic uint64, vaultStatus ttypes.VaultStatus) bool {
+	if shouldSweepXMRMigration(tx, maxGasAtomic) {
+		return true
+	}
+	if maxGasAtomic == 0 || vaultStatus != ttypes.VaultStatus_InactiveVault {
+		return false
+	}
+	return c.isKnownVaultAddress(tx.ToAddress.String())
 }
 
 func isXMRMigrateMemo(memoText string) bool {
@@ -4425,7 +4247,8 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, fmt.Errorf("fail to query tracked outputs for vault %s: %w", ceremonyCtx.vaultPubKey, err)
 	}
 	outputs := filterVaultOutputsForTx(allOutputs, item.Tx)
-	pendingOutputs := xmrOutputsMissingKeyImages(outputs)
+	keyImageOutputs := xmrOutputsRequiringKeyImages(outputs)
+	pendingOutputs := xmrOutputsMissingKeyImages(keyImageOutputs)
 	backlogOutputs := xmrOutputsMissingKeyImages(allOutputs)
 	backlogHeadTxHash := ""
 	if len(backlogOutputs) > 0 {
@@ -4454,7 +4277,15 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 			Msg("finalized XMR inbound has no tracked outputs locally yet; retrying key-image preparation later")
 		return nil, false, nil
 	}
-	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), outputs); ok && len(cachedProofs) == len(outputs) {
+	if len(keyImageOutputs) == 0 {
+		c.logger.Info().
+			Str("tx_hash", normalizeTxID(item.Tx)).
+			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
+			Str("memo", item.Memo).
+			Msg("finalized XMR observation has only zero-amount vault-owned outputs; no key-image ceremony needed")
+		return item, true, nil
+	}
+	if cachedProofs, ok := c.getCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), keyImageOutputs); ok && len(cachedProofs) == len(keyImageOutputs) {
 		item.XmrKeyImages = cachedProofs
 		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4465,13 +4296,14 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	}
 	ceremonyOutputs := pendingOutputs
 	if len(ceremonyOutputs) == 0 {
-		ceremonyOutputs = outputs
+		ceremonyOutputs = keyImageOutputs
 	}
-	if len(pendingOutputs) != 0 && len(pendingOutputs) != len(outputs) {
+	if len(pendingOutputs) != 0 && len(pendingOutputs) != len(keyImageOutputs) {
 		c.logger.Info().
 			Str("tx_hash", normalizeTxID(item.Tx)).
 			Str("canonical_vault_pub_key", ceremonyCtx.vaultPubKey.String()).
 			Int("tracked_output_count", len(outputs)).
+			Int("key_image_output_count", len(keyImageOutputs)).
 			Int("missing_key_image_output_count", len(pendingOutputs)).
 			Msg("waiting for coherent XMR key-image proof propagation before retrying finalized observation")
 		return nil, false, nil
@@ -4498,6 +4330,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		Bool("inbound", isInboundToVault).
 		Bool("outbound", isOutboundFromVault).
 		Int("tracked_output_count", len(outputs)).
+		Int("key_image_output_count", len(keyImageOutputs)).
 		Int("missing_key_image_output_count", len(pendingOutputs)).
 		Int64("finalise_height", finaliseHeight).
 		Str("memo", item.Memo).
@@ -4539,7 +4372,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		}
 		return nil, false, err
 	}
-	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), ceremonyOutputs, proofs)
+	c.putCachedXMRKeyImageProofs(ceremonyCtx.vaultPubKey, normalizeTxID(item.Tx), keyImageOutputs, proofs)
 	item.XmrKeyImages = proofs
 	c.logger.Info().
 		Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4557,6 +4390,7 @@ func (c *Client) stripMismatchedOutboundXMRKeyImages(item *stypes.TxInItem) (boo
 	if err != nil {
 		return false, err
 	}
+	outputs = xmrOutputsRequiringKeyImages(outputs)
 	proofs := canonicalXMRKeyImageProofs(item.XmrKeyImages)
 	if len(proofs) != len(outputs) {
 		item.XmrKeyImages = nil
@@ -5121,9 +4955,23 @@ func filterVaultOutputsForTx(outputs []xmrFrostOutputEntry, txHash string) []xmr
 	return filtered
 }
 
+func xmrOutputsRequiringKeyImages(outputs []xmrFrostOutputEntry) []xmrFrostOutputEntry {
+	required := make([]xmrFrostOutputEntry, 0, len(outputs))
+	for _, output := range outputs {
+		if output.Amount == 0 {
+			continue
+		}
+		required = append(required, output)
+	}
+	return required
+}
+
 func xmrOutputsMissingKeyImages(outputs []xmrFrostOutputEntry) []xmrFrostOutputEntry {
 	pending := make([]xmrFrostOutputEntry, 0, len(outputs))
 	for _, output := range outputs {
+		if output.Amount == 0 {
+			continue
+		}
 		if strings.TrimSpace(output.KeyImage) != "" {
 			continue
 		}
@@ -5152,6 +5000,9 @@ func xmrOutputsWithLocalKeyImagesMissingFromVault(outputs []xmrFrostOutputEntry,
 
 	pending := make([]xmrFrostOutputEntry, 0)
 	for _, output := range outputs {
+		if output.Amount == 0 {
+			continue
+		}
 		localKeyImage := strings.ToLower(strings.TrimSpace(output.KeyImage))
 		if localKeyImage == "" {
 			continue
@@ -5550,6 +5401,10 @@ func (c *Client) validateObservedTxKeyImages(tx common.ObservedTx, inbound, trac
 		}
 		return fmt.Errorf("no tracked outputs found locally for XMR outbound %s", tx.Tx.ID)
 	}
+	outputs = xmrOutputsRequiringKeyImages(outputs)
+	if len(outputs) == 0 {
+		return nil
+	}
 	if len(tx.XmrKeyImages) == 0 {
 		if inbound {
 			return fmt.Errorf("xmr finalized inbound is missing key images for %s", tx.Tx.ID)
@@ -5619,17 +5474,24 @@ func (c *Client) RollbackBlockScanner() error {
 }
 
 func (c *Client) ShouldReportSolvency(height int64) bool {
+	c.ensureConsolidationState()
 	if c.lastSolvencyCheckHeight == nil || c.scanner == nil {
 		return false
 	}
 	if height <= c.lastSolvencyCheckHeight.Load() {
 		return false
 	}
+	if c.scanner.lastFee.Load() == 0 {
+		return false
+	}
+	if c.solvencyCheckAfterIdle != nil && c.solvencyCheckAfterIdle.Load() {
+		return true
+	}
 	solvencyBlocks := c.cfg.SolvencyBlocks
 	if solvencyBlocks <= 0 {
 		solvencyBlocks = 10
 	}
-	return height%solvencyBlocks == 0 && c.scanner.lastFee.Load() > 0
+	return height%solvencyBlocks == 0
 }
 
 func (c *Client) hasPendingXMRKeyImageCatchup() bool {
@@ -5731,7 +5593,11 @@ func (c *Client) xmrSolvencySystemIdle() (bool, string, error) {
 }
 
 func (c *Client) ReportSolvency(height int64) error {
-	if !c.ShouldReportSolvency(height) {
+	c.ensureConsolidationState()
+	if c.lastSolvencyCheckHeight == nil || c.scanner == nil {
+		return nil
+	}
+	if height <= c.lastSolvencyCheckHeight.Load() || c.scanner.lastFee.Load() == 0 {
 		return nil
 	}
 
@@ -5741,7 +5607,19 @@ func (c *Client) ReportSolvency(height int64) error {
 		return nil
 	}
 	if !idle {
+		if c.solvencyCheckAfterIdle != nil {
+			c.solvencyCheckAfterIdle.Store(true)
+		}
 		c.logger.Info().Int64("height", height).Str("reason", reason).Msg("skip monero solvency: xmr system not idle")
+		return nil
+	}
+
+	solvencyBlocks := c.cfg.SolvencyBlocks
+	if solvencyBlocks <= 0 {
+		solvencyBlocks = 10
+	}
+	forceAfterIdle := c.solvencyCheckAfterIdle != nil && c.solvencyCheckAfterIdle.Load()
+	if !forceAfterIdle && height%solvencyBlocks != 0 {
 		return nil
 	}
 
@@ -5789,6 +5667,9 @@ func (c *Client) ReportSolvency(height int64) error {
 		}
 	}
 	c.lastSolvencyCheckHeight.Store(height)
+	if c.solvencyCheckAfterIdle != nil {
+		c.solvencyCheckAfterIdle.Store(false)
+	}
 	return nil
 }
 

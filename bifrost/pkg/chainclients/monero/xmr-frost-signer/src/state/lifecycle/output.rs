@@ -184,18 +184,24 @@ impl<'a> OutputLifecycle<'a> {
         let (applied, not_found) =
             self.store
                 .apply_key_images(vault_pub_key, key_images, reconcile)?;
+        let pending = self.store.apply_pending_key_images(vault_pub_key)?;
         OutgoingLifecycle::new(self.store).reconcile_output_readiness(vault_pub_key)?;
-        if applied > 0 || not_found > 0 {
+        if applied > 0 || not_found > 0 || pending.applied > 0 || pending.pending > 0 {
             info!(
                 vault = %vault_pub_key,
                 refs = key_images.len(),
                 applied,
                 not_found,
+                pending_applied = pending.applied,
+                pending = pending.pending,
                 reconcile,
                 "output lifecycle: applied key images"
             );
         }
-        Ok(ApplyKeyImagesOutcome { applied, not_found })
+        Ok(ApplyKeyImagesOutcome {
+            applied: applied + pending.applied,
+            not_found,
+        })
     }
 
     pub fn missing_outputs_for_key_images(
@@ -240,17 +246,31 @@ impl<'a> OutputLifecycle<'a> {
         key_images: &[String],
         height: u64,
     ) -> Result<ApplyKeyImagesOutcome> {
-        let (applied, not_found) =
-            self.store
-                .mark_spent_key_images(vault_pub_key, key_images, height)?;
+        let requested: HashSet<String> = key_images
+            .iter()
+            .map(|key_image| key_image.trim().to_ascii_lowercase())
+            .filter(|key_image| !key_image.is_empty())
+            .collect();
+        self.store
+            .save_pending_key_images(vault_pub_key, key_images, height)?;
+        let pending = self.store.apply_pending_key_images(vault_pub_key)?;
+        let still_pending = self
+            .store
+            .load_pending_key_images(vault_pub_key)?
+            .into_iter()
+            .filter(|pending| requested.contains(&pending.key_image))
+            .count();
+        let applied = requested.len().saturating_sub(still_pending);
+        let not_found = still_pending;
         if applied > 0 || not_found > 0 {
             info!(
                 vault = %vault_pub_key,
                 key_images = key_images.len(),
                 height,
                 applied,
-                not_found,
-                "output lifecycle: marked outputs spent on chain"
+                pending = not_found,
+                pending_total = pending.pending,
+                "output lifecycle: reconciled pending spent key images"
             );
         }
         Ok(ApplyKeyImagesOutcome { applied, not_found })
@@ -450,6 +470,42 @@ mod tests {
 
         let metas = store.list_scan_block_meta("thorpub1vault").unwrap();
         assert_eq!(metas[0].spent_by_key_images.len(), 1);
+    }
+
+    #[test]
+    fn spent_key_image_before_binding_is_applied_when_key_image_arrives() {
+        let (_dir, store) = test_store();
+        let lifecycle = OutputLifecycle::new(&store);
+
+        store
+            .save_outputs("thorpub1vault", &[tracked_output("tx-pending-spend", 0)])
+            .unwrap();
+
+        let spend = lifecycle
+            .mark_spent_on_chain("thorpub1vault", &["ki-pending-spend".to_string()], 333)
+            .unwrap();
+        assert_eq!(spend.applied, 0);
+        assert_eq!(spend.not_found, 1);
+
+        lifecycle
+            .apply_key_images(
+                "thorpub1vault",
+                &[(
+                    "tx-pending-spend".to_string(),
+                    0,
+                    "ki-pending-spend".to_string(),
+                )],
+                false,
+            )
+            .unwrap();
+
+        let outputs = store.load_outputs("thorpub1vault").unwrap();
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(333));
+        assert!(store
+            .load_pending_key_images("thorpub1vault")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

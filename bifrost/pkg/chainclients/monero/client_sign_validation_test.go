@@ -829,6 +829,33 @@ func TestShouldSweepXMRMigration(t *testing.T) {
 	}
 }
 
+func TestShouldSweepXMRFinalIncludesInactiveVaultReroute(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	c := &Client{
+		chain: common.XMRChain,
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddr,
+		},
+	}
+	tx := stypes.TxOutItem{
+		Chain:     common.XMRChain,
+		ToAddress: vaultAddr,
+		Memo:      "",
+	}
+
+	if !c.shouldSweepXMRFinal(tx, 1, ttypes.VaultStatus_InactiveVault) {
+		t.Fatalf("expected inactive vault reroute to known vault to sweep final amount")
+	}
+	if c.shouldSweepXMRFinal(tx, 0, ttypes.VaultStatus_InactiveVault) {
+		t.Fatalf("expected zero gas to disable final sweep")
+	}
+	if c.shouldSweepXMRFinal(tx, 1, ttypes.VaultStatus_ActiveVault) {
+		t.Fatalf("expected active vault reroute to use normal change handling")
+	}
+}
+
 func TestValidateXMRSignTxAllowsShortFinalMigrateBalanceForExactSignerAttempt(t *testing.T) {
 	t.Parallel()
 

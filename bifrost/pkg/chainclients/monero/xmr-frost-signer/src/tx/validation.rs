@@ -355,7 +355,6 @@ pub fn materialize_owned_outputs_from_tx_keys(
                 let absolute_index = output_index_for_first_ringct_output
                     .checked_add(index as u64)
                     .ok_or_else(|| anyhow::anyhow!("blockchain output index overflow"))?;
-
                 out.push(MaterializedOwnedOutput {
                     output_index,
                     amount: commitment.amount,

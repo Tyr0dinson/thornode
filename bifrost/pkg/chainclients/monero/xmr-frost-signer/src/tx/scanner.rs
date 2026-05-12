@@ -378,6 +378,12 @@ impl Scanner {
         state.addresses.entries()
     }
 
+    pub fn get_group_key(&self, vault_pub_key: &str) -> Option<String> {
+        self.vault_states
+            .get(vault_pub_key)
+            .map(|state| state.group_key.clone())
+    }
+
     pub fn upsert_outputs(&mut self, vault_pub_key: &str, outputs: Vec<TrackedOutput>) -> usize {
         let Some(state) = self.vault_states.get_mut(vault_pub_key) else {
             return 0;

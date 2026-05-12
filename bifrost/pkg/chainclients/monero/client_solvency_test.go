@@ -304,6 +304,58 @@ func TestReportSolvencySkipsWhenXMRSystemIsNotIdle(t *testing.T) {
 	}
 }
 
+func TestReportSolvencyChecksImmediatelyAfterXMRBecomesIdle(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
+	asgards := ttypes.Vaults{{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100))),
+	}}
+	c, server := newTestXMRSolvencyClient(t, 500, asgards, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:          10 * moneroAtomicToThorchain,
+			UnlockedBalance:  10 * moneroAtomicToThorchain,
+			SpendableBalance: uint64Ptr(10 * moneroAtomicToThorchain),
+		},
+	}, nil)
+	defer server.Close()
+
+	queue := make(chan stypes.Solvency, 1)
+	c.globalSolvencyQueue = queue
+	c.vaultAddressMap[vaultPubKey.String()] = vaultAddress
+	c.scanner.currentBlockHeight.Store(490)
+
+	if err := c.ReportSolvency(10); err != nil {
+		t.Fatalf("report solvency while syncing: %v", err)
+	}
+	if len(queue) != 0 {
+		t.Fatalf("expected no solvency message while syncing, got %d", len(queue))
+	}
+	if c.lastSolvencyCheckHeight.Load() != 0 {
+		t.Fatalf("expected non-idle skip to leave last height unchanged, got %d", c.lastSolvencyCheckHeight.Load())
+	}
+	if c.solvencyCheckAfterIdle == nil || !c.solvencyCheckAfterIdle.Load() {
+		t.Fatal("expected next idle block to force a solvency check")
+	}
+
+	c.scanner.currentBlockHeight.Store(500)
+	if err := c.ReportSolvency(11); err != nil {
+		t.Fatalf("report solvency after idle: %v", err)
+	}
+	if len(queue) != 1 {
+		t.Fatalf("expected immediate insolvency message after idle, got %d", len(queue))
+	}
+	if c.lastSolvencyCheckHeight.Load() != 11 {
+		t.Fatalf("expected last solvency check height 11, got %d", c.lastSolvencyCheckHeight.Load())
+	}
+	if c.solvencyCheckAfterIdle.Load() {
+		t.Fatal("expected forced solvency check flag to clear after reporting")
+	}
+}
+
 func TestReportSolvencyReportsOnlyInsolventVaultsWhenXMRSystemIsIdle(t *testing.T) {
 	t.Parallel()
 

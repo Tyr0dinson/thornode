@@ -803,7 +803,7 @@ func (*HandlerErrataTxSuite) TestErrataRemovesXMRVaultKeyImages(c *C) {
 	c.Assert(vault.GetCoin(common.XMRAsset).Amount.Equal(cosmos.NewUint(4*common.One)), Equals, true)
 }
 
-func (*HandlerErrataTxSuite) TestProcessErrataOutboundTxRemovesXMRVaultTxKeys(c *C) {
+func (*HandlerErrataTxSuite) TestProcessErrataOutboundTxRemovesXMRVaultMetadata(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	nodes := NodeAccounts{
@@ -825,6 +825,9 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTxRemovesXMRVaultTxKeys(c 
 	vault.TxKeysXmr = []*common.XmrTxKeyRef{
 		{TxHash: txID.String(), TxKeys: []string{"key-a", "key-b"}},
 	}
+	vault.KeyImagesXmr = []*common.XmrKeyImageRef{
+		{TxHash: txID.String(), OutputIndex: 1, KeyImage: "ki-change"},
+	}
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	observedTx := common.ObservedTx{
@@ -845,6 +848,9 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTxRemovesXMRVaultTxKeys(c 
 		FinaliseHeight: 1024,
 		ObservedPubKey: vaultPubKey,
 		TxKeys:         []string{"key-a", "key-b"},
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txID.String(), OutputIndex: 1, KeyImage: "ki-change", ProofC: "c1", ProofS: "s1"},
+		},
 	}
 	txOutVoter := ObservedTxVoter{
 		TxID:            txID,
@@ -864,6 +870,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTxRemovesXMRVaultTxKeys(c 
 	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
 	c.Assert(err, IsNil)
 	c.Assert(vault.TxKeysXmr, HasLen, 0)
+	c.Assert(vault.KeyImagesXmr, HasLen, 0)
 	c.Assert(vault.GetCoin(common.XMRAsset).Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
 }
 

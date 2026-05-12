@@ -227,8 +227,13 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 		if v.Status == InactiveVault {
 			ctx.Logger().Info("Errata credited funds to inactive vault - recovery via migration needed", "vault pub key", v.PubKey)
 		}
-		if txOutVoter.Tx.IsFinal() && tx.Chain.Equals(common.XMRChain) && len(txOutVoter.Tx.TxKeys) > 0 {
-			removeVaultXMRTxKeys(&v, tx.ID.String())
+		if txOutVoter.Tx.IsFinal() && tx.Chain.Equals(common.XMRChain) {
+			if len(txOutVoter.Tx.TxKeys) > 0 {
+				removeVaultXMRTxKeys(&v, tx.ID.String())
+			}
+			if len(txOutVoter.Tx.XmrKeyImages) > 0 {
+				removeVaultXMRKeyImages(&v, txOutVoter.Tx.XmrKeyImages)
+			}
 		}
 
 		if !v.IsEmpty() {

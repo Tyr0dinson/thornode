@@ -129,8 +129,8 @@ func TestGetNetworkFeeUsesTypicalWeightAndPerWeightRate(t *testing.T) {
 	if txSize != typicalVaultOutboundWeight {
 		t.Fatalf("expected tx size %d, got %d", typicalVaultOutboundWeight, txSize)
 	}
-	if feeRate != 2 {
-		t.Fatalf("expected fee rate 2 thorchain-units/weight, got %d", feeRate)
+	if feeRate != 1 {
+		t.Fatalf("expected fee rate 1 thorchain-units/weight, got %d", feeRate)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestGetNetworkFeeConvertsPiconeroToThorchainUnits(t *testing.T) {
 	if feeRate != 12 {
 		t.Fatalf("expected fee rate 12 thorchain-units/weight, got %d", feeRate)
 	}
-	if txSize*feeRate != 36_000 {
-		t.Fatalf("expected total network fee 36000 thorchain units, got %d", txSize*feeRate)
+	if txSize*feeRate != 120_000 {
+		t.Fatalf("expected total network fee 120000 thorchain units, got %d", txSize*feeRate)
 	}
 }
 

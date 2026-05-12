@@ -87,7 +87,6 @@ type xmrVaultLocalStatus struct {
 	RegisteredKeyImageCount    int
 	RegisteredTxKeyCount       int
 	PendingKeyImageReplayCount int
-	PendingTxKeyReplayCount    int
 	PendingKeyImageOutputCount int
 	PendingKeyImageTxCount     int
 	PendingFinalizePhaseCount  int

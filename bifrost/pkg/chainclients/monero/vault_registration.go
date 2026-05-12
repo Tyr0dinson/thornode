@@ -3,13 +3,11 @@ package monero
 import (
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"strings"
 
 	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/rs/zerolog"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -77,71 +75,6 @@ func keyImageRefsFromVault(vault ttypes.Vault) []xmrFrostApplyKeyImageRef {
 	}
 
 	return refs
-}
-
-func txKeyEntriesFromVault(
-	bridge thorclient.ThorchainBridge,
-	chain common.Chain,
-	vault ttypes.Vault,
-) ([]xmrFrostRegisterTxKeyEntry, error) {
-	if bridge == nil || len(vault.TxKeysXmr) == 0 {
-		return nil, nil
-	}
-
-	vaultPubKey := keyImageCatchupVaultPubKey(vault)
-	if vaultPubKey.IsEmpty() {
-		return nil, nil
-	}
-
-	helper := &Client{
-		chain:           chain,
-		thorchainBridge: bridge,
-	}
-	type orderedEntry struct {
-		entry          xmrFrostRegisterTxKeyEntry
-		observedHeight int64
-	}
-	entries := make([]orderedEntry, 0, len(vault.TxKeysXmr))
-	for _, ref := range makeOutgoingInventoryRefs(vault.TxKeysXmr) {
-		meta, err := helper.getOutgoingInventoryReplayMeta(vaultPubKey, ref.txHash)
-		if err != nil {
-			return nil, fmt.Errorf("fail to build tx-key registration metadata for %s: %w", ref.txHash, err)
-		}
-		entries = append(entries, orderedEntry{
-			entry: xmrFrostRegisterTxKeyEntry{
-				TxHash:      ref.txHash,
-				TxKeys:      append([]string(nil), ref.txKeys...),
-				FromAddress: meta.FromAddress,
-				ToAddress:   meta.ToAddress,
-				Amount:      meta.Amount,
-				Fee:         meta.Fee,
-				Memo:        meta.Memo,
-			},
-			observedHeight: meta.ObservedHeight,
-		})
-	}
-
-	sort.SliceStable(entries, func(i, j int) bool {
-		leftHeight := entries[i].observedHeight
-		rightHeight := entries[j].observedHeight
-		if leftHeight == rightHeight {
-			return strings.ToLower(strings.TrimSpace(entries[i].entry.TxHash)) <
-				strings.ToLower(strings.TrimSpace(entries[j].entry.TxHash))
-		}
-		if leftHeight <= 0 {
-			return false
-		}
-		if rightHeight <= 0 {
-			return true
-		}
-		return leftHeight < rightHeight
-	})
-
-	out := make([]xmrFrostRegisterTxKeyEntry, 0, len(entries))
-	for _, entry := range entries {
-		out = append(out, entry.entry)
-	}
-	return out, nil
 }
 
 func ensureFrostVaultRegistered(

@@ -268,6 +268,18 @@ pub struct RegisteredKeyImageRef {
     pub key_image: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PendingKeyImage {
+    pub key_image: String,
+    pub height_seen: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ApplyPendingKeyImagesOutcome {
+    pub applied: usize,
+    pub pending: usize,
+}
+
 fn enforce_private_dir_permissions(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -712,6 +724,169 @@ impl Store {
         };
         let key_images: Vec<RegisteredKeyImageRef> = serde_json::from_slice(&raw)?;
         Ok(key_images)
+    }
+
+    pub fn save_pending_key_images(
+        &self,
+        vault_pub_key: &str,
+        key_images: &[String],
+        height_seen: u64,
+    ) -> Result<usize> {
+        let tree = self.db.open_tree("pending_key_images")?;
+        let mut saved = 0usize;
+        for key_image in key_images {
+            let key_image = key_image.trim().to_ascii_lowercase();
+            if key_image.is_empty() {
+                continue;
+            }
+            let key = format!("{}:{}", vault_pub_key, key_image);
+            if let Some(existing) = tree.get(key.as_bytes())? {
+                let existing: PendingKeyImage = serde_json::from_slice(&existing)?;
+                if existing.height_seen <= height_seen {
+                    continue;
+                }
+            }
+            let pending = PendingKeyImage {
+                key_image,
+                height_seen,
+            };
+            tree.insert(key.as_bytes(), serde_json::to_vec(&pending)?)?;
+            saved += 1;
+        }
+        tree.flush()?;
+        Ok(saved)
+    }
+
+    pub fn load_pending_key_images(&self, vault_pub_key: &str) -> Result<Vec<PendingKeyImage>> {
+        let tree = self.db.open_tree("pending_key_images")?;
+        let prefix = format!("{}:", vault_pub_key);
+        let mut pending = Vec::new();
+        for item in tree.scan_prefix(prefix.as_bytes()) {
+            let (_, value) = item?;
+            pending.push(serde_json::from_slice(&value)?);
+        }
+        pending.sort_by(|left: &PendingKeyImage, right: &PendingKeyImage| {
+            left.height_seen
+                .cmp(&right.height_seen)
+                .then(left.key_image.cmp(&right.key_image))
+        });
+        Ok(pending)
+    }
+
+    pub fn apply_pending_key_images(
+        &self,
+        vault_pub_key: &str,
+    ) -> Result<ApplyPendingKeyImagesOutcome> {
+        let pending = self.load_pending_key_images(vault_pub_key)?;
+        if pending.is_empty() {
+            return Ok(ApplyPendingKeyImagesOutcome::default());
+        }
+
+        let by_key_image: HashMap<String, u64> = pending
+            .iter()
+            .map(|pending| (pending.key_image.clone(), pending.height_seen))
+            .collect();
+
+        let applied_spends = self.cas_update_outputs(vault_pub_key, |outputs| {
+            let mut applied_spends = Vec::new();
+            for output in outputs.iter_mut() {
+                let Some(key_image) = output
+                    .key_image
+                    .as_ref()
+                    .map(|key_image| key_image.trim().to_ascii_lowercase())
+                else {
+                    continue;
+                };
+                let Some(height_seen) = by_key_image.get(&key_image).copied() else {
+                    continue;
+                };
+                let output_ref = output.ref_key();
+
+                if output.state != OutputState::Spent {
+                    output.state = OutputState::Spent;
+                }
+                output.reservation = None;
+                if output.spent_by_key_image_height.is_none()
+                    || output.spent_by_key_image_height == Some(RECONCILED_KEY_IMAGE_SPEND_HEIGHT)
+                {
+                    output.spent_by_key_image_height = Some(height_seen);
+                }
+                applied_spends.push((key_image, height_seen, output_ref));
+            }
+            Ok(applied_spends)
+        })?;
+
+        if !applied_spends.is_empty() {
+            let applied_key_images: HashSet<String> = applied_spends
+                .iter()
+                .map(|(key_image, _, _)| key_image.clone())
+                .collect();
+            let tree = self.db.open_tree("pending_key_images")?;
+            for key_image in &applied_key_images {
+                let key = format!("{}:{}", vault_pub_key, key_image);
+                tree.remove(key.as_bytes())?;
+            }
+            tree.flush()?;
+            self.backfill_scan_block_spent_refs(vault_pub_key, &applied_spends)?;
+        }
+
+        Ok(ApplyPendingKeyImagesOutcome {
+            applied: applied_spends.len(),
+            pending: pending.len().saturating_sub(applied_spends.len()),
+        })
+    }
+
+    fn backfill_scan_block_spent_refs(
+        &self,
+        vault_pub_key: &str,
+        applied_spends: &[(String, u64, OutputRef)],
+    ) -> Result<()> {
+        let mut refs_by_height: HashMap<u64, Vec<&OutputRef>> = HashMap::new();
+        for (_, height, output_ref) in applied_spends {
+            refs_by_height.entry(*height).or_default().push(output_ref);
+        }
+
+        for (height, refs) in refs_by_height {
+            let Some(mut meta) = self.load_scan_block_meta(vault_pub_key, height)? else {
+                continue;
+            };
+            let mut changed = false;
+            for output_ref in refs {
+                if !meta.spent_by_key_images.iter().any(|existing| {
+                    existing.tx_hash == output_ref.tx_hash
+                        && existing.output_index == output_ref.output_index
+                }) {
+                    meta.spent_by_key_images.push(output_ref.clone());
+                    changed = true;
+                }
+            }
+            if changed {
+                self.save_scan_block_meta(vault_pub_key, &meta)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn prune_pending_key_images_from_height(
+        &self,
+        vault_pub_key: &str,
+        from_height: u64,
+    ) -> Result<usize> {
+        let tree = self.db.open_tree("pending_key_images")?;
+        let prefix = format!("{}:", vault_pub_key);
+        let mut to_delete = Vec::new();
+        for item in tree.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = item?;
+            let pending: PendingKeyImage = serde_json::from_slice(&value)?;
+            if pending.height_seen >= from_height {
+                to_delete.push(key);
+            }
+        }
+        for key in &to_delete {
+            tree.remove(key)?;
+        }
+        tree.flush()?;
+        Ok(to_delete.len())
     }
 
     /// Merge scanner-produced outputs into the store, preserving any
@@ -1749,6 +1924,7 @@ impl Store {
                 Ok(())
             })?;
         }
+        self.prune_pending_key_images_from_height(vault_pub_key, from_height)?;
         self.save_scan_height(vault_pub_key, from_height.saturating_sub(1))?;
         Ok(())
     }
@@ -3073,6 +3249,89 @@ mod tests {
         let chain_spent = by_tx.get("tx-chain-spent").unwrap();
         assert_eq!(chain_spent.state, OutputState::Spent);
         assert_eq!(chain_spent.spent_by_key_image_height, Some(77));
+    }
+
+    #[test]
+    fn pending_key_images_apply_after_output_key_image_is_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let vault = "thorpub1vault";
+
+        let output = sample_scanned_output("tx-pending", 0);
+        store.save_outputs(vault, &[output]).unwrap();
+        store
+            .save_scan_block_meta(
+                vault,
+                &ScanBlockMeta {
+                    height: 222,
+                    block_hash: "h222".to_string(),
+                    parent_hash: "h221".to_string(),
+                    added_outputs: Vec::new(),
+                    spent_key_images: vec!["ki-pending".to_string()],
+                    spent_by_key_images: Vec::new(),
+                },
+            )
+            .unwrap();
+
+        store
+            .save_pending_key_images(vault, &["ki-pending".to_string()], 222)
+            .unwrap();
+        let pending_before_bind = store.apply_pending_key_images(vault).unwrap();
+        assert_eq!(pending_before_bind.applied, 0);
+        assert_eq!(pending_before_bind.pending, 1);
+
+        store
+            .apply_key_images(
+                vault,
+                &[("tx-pending".to_string(), 0, "ki-pending".to_string())],
+                false,
+            )
+            .unwrap();
+        let pending_after_bind = store.apply_pending_key_images(vault).unwrap();
+        assert_eq!(pending_after_bind.applied, 1);
+        assert_eq!(pending_after_bind.pending, 0);
+
+        let outputs = store.load_outputs(vault).unwrap();
+        assert_eq!(outputs[0].state, OutputState::Spent);
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(222));
+        assert!(store.load_pending_key_images(vault).unwrap().is_empty());
+        let meta = store.load_scan_block_meta(vault, 222).unwrap().unwrap();
+        assert_eq!(meta.spent_by_key_images.len(), 1);
+        assert_eq!(meta.spent_by_key_images[0].tx_hash, "tx-pending");
+        assert_eq!(meta.spent_by_key_images[0].output_index, 0);
+    }
+
+    #[test]
+    fn pending_key_images_keep_earliest_height_and_rollback_prunes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let vault = "thorpub1vault";
+
+        store
+            .save_pending_key_images(vault, &["ki-early".to_string()], 222)
+            .unwrap();
+        store
+            .save_pending_key_images(vault, &["ki-early".to_string()], 333)
+            .unwrap();
+        let pending = store.load_pending_key_images(vault).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].height_seen, 222);
+
+        store
+            .save_scan_block_meta(
+                vault,
+                &ScanBlockMeta {
+                    height: 222,
+                    block_hash: "h222".to_string(),
+                    parent_hash: "h221".to_string(),
+                    added_outputs: Vec::new(),
+                    spent_key_images: vec!["ki-early".to_string()],
+                    spent_by_key_images: Vec::new(),
+                },
+            )
+            .unwrap();
+        store.rollback_scan_state_from_height(vault, 222).unwrap();
+        assert!(store.load_pending_key_images(vault).unwrap().is_empty());
     }
 
     #[test]

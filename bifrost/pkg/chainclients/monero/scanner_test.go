@@ -81,10 +81,10 @@ func TestDedupeTxInItemsPreservesReplayMetadata(t *testing.T) {
 		t.Fatalf("expected one deduped item, got %d", len(deduped))
 	}
 	if len(deduped[0].TxKeys) != 1 || deduped[0].TxKeys[0] != "tx-key" {
-		t.Fatalf("expected txkey replay metadata to be preserved, got %#v", deduped[0].TxKeys)
+		t.Fatalf("expected txkey metadata to be preserved, got %#v", deduped[0].TxKeys)
 	}
 	if len(deduped[0].XmrKeyImages) != 1 || deduped[0].XmrKeyImages[0].KeyImage != "key-image" {
-		t.Fatalf("expected keyimage replay metadata to be preserved, got %#v", deduped[0].XmrKeyImages)
+		t.Fatalf("expected keyimage metadata to be preserved, got %#v", deduped[0].XmrKeyImages)
 	}
 }
 

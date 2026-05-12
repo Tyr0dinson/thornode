@@ -169,112 +169,7 @@ func TestSyncTrackedVaultRegistrationsRegistersNewVaultInRescanMode(t *testing.T
 	assert.Equal(t, 0, resetReqs, "bifrost must not call reset in the sync flow — sidecar defaults rescan=true on fresh register")
 }
 
-func TestTxKeyCatchupNeedsReplayUsesSignerOutgoingStateOnly(t *testing.T) {
-	t.Parallel()
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	txHash := strings.Repeat("a", 64)
-	txKey := strings.Repeat("1", 64)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+vaultPubKey.String():
-			http.NotFound(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	require.NoError(t, err)
-
-	client := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
-	}
-
-	stateCheck, err := client.outgoingInventoryNeedsReplay(vaultPubKey.String(), []xmrOutgoingInventoryRef{{
-		txHash: txHash,
-		txKeys: []string{txKey},
-	}})
-	require.NoError(t, err)
-	assert.True(t, stateCheck.needsReplay)
-	assert.Empty(t, stateCheck.removeHashes)
-}
-
-func TestTxKeyCatchupNeedsReplayReturnsSignerError(t *testing.T) {
-	t.Parallel()
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "boom", http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	require.NoError(t, err)
-
-	client := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
-	}
-
-	_, err = client.outgoingInventoryNeedsReplay(vaultPubKey.String(), []xmrOutgoingInventoryRef{{
-		txHash: strings.Repeat("a", 64),
-		txKeys: []string{strings.Repeat("1", 64)},
-	}})
-	require.Error(t, err)
-}
-
-func TestTxKeyCatchupNeedsReplayAcceptsRegisteredInventoryBeforeMined(t *testing.T) {
-	t.Parallel()
-
-	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
-	txHash := strings.Repeat("a", 64)
-	txKey := strings.Repeat("1", 64)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/outbounds/"+vaultPubKey.String():
-			require.NoError(t, json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
-				VaultPubKey: vaultPubKey.String(),
-				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
-					TxHash:              txHash,
-					TxKeys:              []string{txKey},
-					RegisteredInventory: true,
-					Status:              xmrFrostOutgoingStatusObservedMempool,
-				}},
-			}))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	require.NoError(t, err)
-
-	client := &Client{
-		chain:       common.XMRChain,
-		frostSigner: signer,
-		logger:      testLogger(),
-	}
-
-	stateCheck, err := client.outgoingInventoryNeedsReplay(vaultPubKey.String(), []xmrOutgoingInventoryRef{{
-		txHash: txHash,
-		txKeys: []string{txKey},
-	}})
-	require.NoError(t, err)
-	assert.False(t, stateCheck.needsReplay)
-	assert.Empty(t, stateCheck.removeHashes)
-}
-
-func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing.T) {
+func TestSyncTrackedVaultRegistrationsSkipsTxKeyMetadataLoads(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -397,8 +292,8 @@ func TestSyncTrackedVaultRegistrationsSkipsRepeatedTxKeyMetadataLoads(t *testing
 
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
-	assert.Equal(t, 1, bridge.observedTxCalls)
-	assert.Equal(t, 1, bridge.txStatusCalls)
+	assert.Equal(t, 0, bridge.observedTxCalls)
+	assert.Equal(t, 0, bridge.txStatusCalls)
 }
 
 func TestSyncTrackedVaultRegistrationsReregistersWhenSignerInventoryFingerprintMismatches(t *testing.T) {
@@ -539,7 +434,7 @@ func TestSyncTrackedVaultRegistrationsReregistersWhenLocalKeyImageApplyLagsChain
 	assert.Equal(t, 1, registerCalls)
 }
 
-func TestSyncTrackedVaultRegistrationsReregistersWhenLocalTxKeyApplyLagsChainInventory(t *testing.T) {
+func TestSyncTrackedVaultRegistrationsIgnoresLocalTxKeyApplyLag(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -651,13 +546,13 @@ func TestSyncTrackedVaultRegistrationsReregistersWhenLocalTxKeyApplyLagsChainInv
 	require.NoError(t, err)
 
 	mu.Lock()
-	assert.Equal(t, 1, registerCalls)
+	assert.Equal(t, 0, registerCalls)
 	mu.Unlock()
 
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
-	assert.Equal(t, 1, bridge.observedTxCalls)
-	assert.Equal(t, 1, bridge.txStatusCalls)
+	assert.Equal(t, 0, bridge.observedTxCalls)
+	assert.Equal(t, 0, bridge.txStatusCalls)
 }
 
 func TestDrivePendingScannerRescansUsesScannerSyncPath(t *testing.T) {
@@ -735,7 +630,7 @@ func TestDrivePendingScannerRescansUsesScannerSyncPath(t *testing.T) {
 	assert.Equal(t, int64(72), syncRequests[0].ReorgWindow)
 }
 
-func TestDrivePendingScannerRescansQueuesRecoveredUnauthorizedSpend(t *testing.T) {
+func TestDrivePendingScannerRescansDoesNotQueueRecoveredObservations(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -832,11 +727,7 @@ func TestDrivePendingScannerRescansQueuesRecoveredUnauthorizedSpend(t *testing.T
 
 	txIn, err := scanner.FetchTxs(121, 121)
 	require.NoError(t, err)
-	require.Len(t, txIn.TxArray, 1)
-	assert.Equal(t, spendTxID, txIn.TxArray[0].Tx)
-	assert.Equal(t, "NOOP:UNAUTHORIZED", txIn.TxArray[0].Memo)
-	assert.Equal(t, vaultAddress, txIn.TxArray[0].Sender)
-	assert.True(t, txIn.TxArray[0].ObservedVaultPubKey.Equals(vaultPubKey))
+	require.Empty(t, txIn.TxArray)
 
 	mu.Lock()
 	defer mu.Unlock()
