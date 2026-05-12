@@ -789,16 +789,47 @@ func TestShouldSweepXMRMigration(t *testing.T) {
 	tests := []struct {
 		name         string
 		tx           stypes.TxOutItem
+		vault        ttypes.Vault
 		maxGasAtomic uint64
 		expected     bool
 	}{
 		{
-			name: "migrate with gas",
+			name: "final migrate with gas",
 			tx: stypes.TxOutItem{
 				Memo: "MIGRATE:123",
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(9)),
+				},
+				MaxGas: common.Gas{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+				},
+			},
+			vault: ttypes.Vault{
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(10)),
+				},
 			},
 			maxGasAtomic: 1,
 			expected:     true,
+		},
+		{
+			name: "partial migrate with gas",
+			tx: stypes.TxOutItem{
+				Memo: "MIGRATE:123",
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(4)),
+				},
+				MaxGas: common.Gas{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+				},
+			},
+			vault: ttypes.Vault{
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(10)),
+				},
+			},
+			maxGasAtomic: 1,
+			expected:     false,
 		},
 		{
 			name: "migrate without gas",
@@ -822,7 +853,7 @@ func TestShouldSweepXMRMigration(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := shouldSweepXMRMigration(tc.tx, tc.maxGasAtomic); got != tc.expected {
+			if got := shouldSweepXMRMigration(tc.tx, tc.maxGasAtomic, tc.vault); got != tc.expected {
 				t.Fatalf("expected %t, got %t", tc.expected, got)
 			}
 		})
@@ -845,14 +876,217 @@ func TestShouldSweepXMRFinalIncludesInactiveVaultReroute(t *testing.T) {
 		Memo:      "",
 	}
 
-	if !c.shouldSweepXMRFinal(tx, 1, ttypes.VaultStatus_InactiveVault) {
+	if !c.shouldSweepXMRFinal(tx, 1, ttypes.VaultStatus_InactiveVault, ttypes.Vault{}) {
 		t.Fatalf("expected inactive vault reroute to known vault to sweep final amount")
 	}
-	if c.shouldSweepXMRFinal(tx, 0, ttypes.VaultStatus_InactiveVault) {
+	if c.shouldSweepXMRFinal(tx, 0, ttypes.VaultStatus_InactiveVault, ttypes.Vault{}) {
 		t.Fatalf("expected zero gas to disable final sweep")
 	}
-	if c.shouldSweepXMRFinal(tx, 1, ttypes.VaultStatus_ActiveVault) {
+	if c.shouldSweepXMRFinal(tx, 1, ttypes.VaultStatus_ActiveVault, ttypes.Vault{}) {
 		t.Fatalf("expected active vault reroute to use normal change handling")
+	}
+}
+
+func TestValidateXMRSignTxTwoRoundMigrationOnlySweepsFinalRound(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	const (
+		thorVaultBalance = 10_000_000
+		maxGas           = 120_000
+		partialAmount    = 4_608_907
+		finalAmount      = thorVaultBalance - maxGas
+	)
+
+	balanceAtomic := uint64(thorVaultBalance * moneroAtomicToThorchain)
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:          balanceAtomic,
+			UnlockedBalance:  balanceAtomic,
+			SpendableBalance: uint64Ptr(balanceAtomic),
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{
+			vaultPubKey.String(): {
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_RetiringVault,
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(thorVaultBalance)),
+				},
+			},
+		}},
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddr,
+		},
+	}
+
+	buildMigrate := func(amount uint64) stypes.TxOutItem {
+		return stypes.TxOutItem{
+			Chain:            common.XMRChain,
+			ToAddress:        testOutboundXMRDestination(),
+			VaultPubKey:      vaultPubKey,
+			VaultPubKeyEddsa: vaultPubKey,
+			VaultPubKeyFrost: vaultPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(amount)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(maxGas)),
+			},
+			Memo: "MIGRATE:123",
+		}
+	}
+
+	partialReq, err := c.validateXMRSignTx(buildMigrate(partialAmount), 100, true)
+	if err != nil {
+		t.Fatalf("partial migrate should validate: %v", err)
+	}
+	if partialReq.sweepIfFinal {
+		t.Fatalf("partial migrate must not sweep selected inputs; it should leave positive change on the source vault")
+	}
+
+	finalReq, err := c.validateXMRSignTx(buildMigrate(finalAmount), 100, true)
+	if err != nil {
+		t.Fatalf("final migrate should validate: %v", err)
+	}
+	if !finalReq.sweepIfFinal {
+		t.Fatalf("final migrate should fold unused max gas into the destination amount")
+	}
+}
+
+func TestValidateXMRSignTxInactiveVaultRefundRerouteSweeps(t *testing.T) {
+	t.Parallel()
+
+	sourcePubKey, sourceAddr := testVaultPubKeyAndAddress(t)
+	targetPubKey, targetAddr := testVaultPubKeyAndAddress(t)
+	depositAmount := uint64(1_000_000)
+	maxGas := uint64(120_000)
+	balanceAtomic := uint64((depositAmount + maxGas) * moneroAtomicToThorchain)
+
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		sourcePubKey.String(): {
+			Balance:          balanceAtomic,
+			UnlockedBalance:  balanceAtomic,
+			SpendableBalance: uint64Ptr(balanceAtomic),
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{
+			sourcePubKey.String(): {
+				PubKeyFrost: sourcePubKey,
+				Status:      ttypes.VaultStatus_InactiveVault,
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(depositAmount+maxGas)),
+				},
+			},
+			targetPubKey.String(): {
+				PubKeyFrost: targetPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+			},
+		}},
+		vaultAddressMap: map[string]common.Address{
+			sourcePubKey.String(): sourceAddr,
+			targetPubKey.String(): targetAddr,
+		},
+	}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        targetAddr,
+		VaultPubKey:      sourcePubKey,
+		VaultPubKeyEddsa: sourcePubKey,
+		VaultPubKeyFrost: sourcePubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(depositAmount)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(maxGas)),
+		},
+		Memo: "",
+	}
+
+	req, err := c.validateXMRSignTx(tx, 100, true)
+	if err != nil {
+		t.Fatalf("inactive vault refund reroute should validate: %v", err)
+	}
+	if !req.sweepIfFinal {
+		t.Fatalf("inactive vault refund reroute should sweep with zero dummy change")
+	}
+}
+
+func TestValidateXMRSignTxConsolidateLeavesSweepToSidecarMemo(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	balanceAtomic := uint64(10 * moneroAtomicToThorchain)
+	balanceServer := newFrostBalanceServer(t, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:          balanceAtomic,
+			UnlockedBalance:  balanceAtomic,
+			SpendableBalance: uint64Ptr(balanceAtomic),
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: frostSigner,
+		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{
+			vaultPubKey.String(): {
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(10)),
+				},
+			},
+		}},
+		vaultAddressMap: map[string]common.Address{
+			vaultPubKey.String(): vaultAddr,
+		},
+	}
+
+	tx := stypes.TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        vaultAddr,
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyEddsa: vaultPubKey,
+		VaultPubKeyFrost: vaultPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(5)),
+		},
+		Memo: "consolidate",
+	}
+
+	req, err := c.validateXMRSignTx(tx, 100, true)
+	if err != nil {
+		t.Fatalf("consolidate should validate: %v", err)
+	}
+	if req.sweepIfFinal {
+		t.Fatalf("consolidate should be selected by memo inside the sidecar, not by bifrost final-sweep flag")
 	}
 }
 
@@ -881,6 +1115,15 @@ func TestValidateXMRSignTxAllowsShortFinalMigrateBalanceForExactSignerAttempt(t 
 	c := &Client{
 		chain:       common.XMRChain,
 		frostSigner: frostSigner,
+		thorchainBridge: &mockMoneroBridge{vaultByPubKey: map[string]ttypes.Vault{
+			vaultPubKey.String(): {
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_RetiringVault,
+				Coins: common.Coins{
+					common.NewCoin(common.XMRAsset, cosmos.NewUint(3)),
+				},
+			},
+		}},
 		vaultAddressMap: map[string]common.Address{
 			vaultPubKey.String(): vaultAddr,
 		},

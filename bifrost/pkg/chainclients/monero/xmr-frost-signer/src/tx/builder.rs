@@ -154,7 +154,8 @@ pub async fn build_unsigned_transaction(
     } else {
         vec![memo.as_bytes().to_vec()]
     };
-    let sweep_amount = is_consolidate_memo(memo) || sweep_if_final;
+    let consolidate_sweep = is_consolidate_memo(memo);
+    let zero_dummy_sweep = consolidate_sweep || sweep_if_final;
 
     // Build the signable transaction. Each added input increases the on-wire
     // size and therefore `necessary_fee`, so we may need to grow the input set
@@ -225,10 +226,12 @@ pub async fn build_unsigned_transaction(
         .ok_or_else(|| anyhow::anyhow!("selected input total overflow"))?;
     let mut signable = signable;
     let mut fee = signable.necessary_fee();
-    let mut final_amount = if sweep_amount {
+    let mut final_amount = if consolidate_sweep {
         let used_total_u64 = u64::try_from(used_total)
             .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
         final_migrate_amount(used_total_u64, fee)?
+    } else if sweep_if_final {
+        final_sweep_amount(amount, max_gas_atomic, fee)?
     } else {
         amount
     };
@@ -244,7 +247,7 @@ pub async fn build_unsigned_transaction(
     if positive_change == 0 {
         // Real positive change always goes back to SELF (`change`). The sweep
         // destination is only used for the mandatory zero-amount dummy output.
-        let dummy_output = if sweep_amount { &to } else { &change };
+        let dummy_output = if zero_dummy_sweep { &to } else { &change };
         signable = build_signable_for_selection(
             rpc,
             &used,
@@ -261,10 +264,12 @@ pub async fn build_unsigned_transaction(
         .await?;
         let rebuilt_fee = signable.necessary_fee();
         if rebuilt_fee != fee {
-            if sweep_amount {
+            if consolidate_sweep {
                 let used_total_u64 = u64::try_from(used_total)
                     .map_err(|_| anyhow::anyhow!("selected input total exceeds u64"))?;
                 final_amount = final_migrate_amount(used_total_u64, rebuilt_fee)?;
+            } else if sweep_if_final {
+                final_amount = final_sweep_amount(amount, max_gas_atomic, rebuilt_fee)?;
             }
             signable = build_signable_for_selection(
                 rpc,
@@ -452,6 +457,15 @@ fn final_migrate_amount(requested_total: u64, fee: u64) -> Result<u64> {
     requested_total
         .checked_sub(fee)
         .ok_or_else(|| anyhow::anyhow!("actual fee exceeds requested migrate total"))
+}
+
+fn final_sweep_amount(amount: u64, max_gas: u64, fee: u64) -> Result<u64> {
+    if fee > max_gas {
+        anyhow::bail!("actual fee exceeds requested max gas");
+    }
+    amount
+        .checked_add(max_gas - fee)
+        .ok_or_else(|| anyhow::anyhow!("amount + spare gas overflow"))
 }
 
 fn is_consolidate_memo(memo: &str) -> bool {
@@ -711,8 +725,8 @@ mod tests {
         let amount = 461_674_480_000;
         let max_gas = 360_000_000;
         let actual_fee = 185_520_000;
-        let requested_total = amount + max_gas;
-        let final_amount = final_migrate_amount(requested_total, actual_fee).unwrap();
+        let selected_total = amount + max_gas + 99;
+        let final_amount = final_sweep_amount(amount, max_gas, actual_fee).unwrap();
 
         assert_eq!(
             final_amount,
@@ -721,17 +735,69 @@ mod tests {
         );
         assert_eq!(
             final_amount + actual_fee,
-            requested_total,
+            amount + max_gas,
             "observed coin + gas must equal scheduled coin + max gas"
+        );
+        assert_ne!(
+            final_amount + actual_fee,
+            selected_total,
+            "final migrate must not sweep selected input surplus"
+        );
+    }
+
+    #[test]
+    fn normal_migrate_keeps_requested_amount_and_returns_positive_change() {
+        let requested_amount = 400;
+        let actual_fee = 50;
+        let selected_total = 1_000;
+
+        assert_eq!(
+            positive_change_amount(selected_total, requested_amount, actual_fee).unwrap(),
+            550
+        );
+        assert_eq!(
+            single_payment(&test_featured_address(31, 37), requested_amount)[0].1,
+            requested_amount
+        );
+    }
+
+    #[test]
+    fn inactive_refund_sweep_adds_unused_max_gas_to_next_vault() {
+        let refund_amount = 1_000;
+        let max_gas = 120;
+        let actual_fee = 45;
+        let selected_total = refund_amount + max_gas + 200;
+        let final_amount = final_sweep_amount(refund_amount, max_gas, actual_fee).unwrap();
+
+        assert_eq!(final_amount, refund_amount + 75);
+        assert_eq!(final_amount + actual_fee, refund_amount + max_gas);
+        assert_ne!(
+            final_amount + actual_fee,
+            selected_total,
+            "inactive refund reroute must not leak selected-input surplus"
+        );
+        assert_eq!(
+            zero_dummy_payments(
+                &test_featured_address(31, 37),
+                &test_featured_address(41, 43),
+                final_amount
+            )[1]
+            .1,
+            0
         );
     }
 
     #[test]
     fn final_sweep_rejects_fee_above_requested_total() {
-        assert!(final_migrate_amount(100, 101)
+        assert!(final_sweep_amount(100, 10, 11)
             .unwrap_err()
             .to_string()
-            .contains("actual fee exceeds requested migrate total"));
+            .contains("actual fee exceeds requested max gas"));
+    }
+
+    #[test]
+    fn consolidate_sweep_uses_selected_total_less_fee() {
+        assert_eq!(final_migrate_amount(1_000, 90).unwrap(), 910);
     }
 
     #[test]
@@ -744,28 +810,8 @@ mod tests {
 
     #[test]
     fn zero_dummy_payments_add_second_zero_output_to_dummy_address() {
-        let spend = &Scalar::from(31u64) * ED25519_BASEPOINT_TABLE;
-        let view = &Scalar::from(37u64) * ED25519_BASEPOINT_TABLE;
-        let to = MoneroAddress::new(
-            Network::Mainnet,
-            AddressType::Featured {
-                subaddress: true,
-                payment_id: None,
-                guaranteed: true,
-            },
-            spend,
-            view,
-        );
-        let dummy = MoneroAddress::new(
-            Network::Mainnet,
-            AddressType::Featured {
-                subaddress: true,
-                payment_id: None,
-                guaranteed: true,
-            },
-            &Scalar::from(41u64) * ED25519_BASEPOINT_TABLE,
-            &Scalar::from(43u64) * ED25519_BASEPOINT_TABLE,
-        );
+        let to = test_featured_address(31, 37);
+        let dummy = test_featured_address(41, 43);
 
         let payments = zero_dummy_payments(&to, &dummy, 123);
         assert_eq!(payments, vec![(to, 123), (dummy, 0)]);
@@ -776,6 +822,19 @@ mod tests {
         assert_eq!(positive_change_amount(100, 80, 20).unwrap(), 0);
         assert_eq!(positive_change_amount(100, 70, 20).unwrap(), 10);
         assert!(positive_change_amount(100, 90, 20).is_err());
+    }
+
+    fn test_featured_address(spend_scalar: u64, view_scalar: u64) -> MoneroAddress {
+        MoneroAddress::new(
+            Network::Mainnet,
+            AddressType::Featured {
+                subaddress: true,
+                payment_id: None,
+                guaranteed: true,
+            },
+            &Scalar::from(spend_scalar) * ED25519_BASEPOINT_TABLE,
+            &Scalar::from(view_scalar) * ED25519_BASEPOINT_TABLE,
+        )
     }
 
     #[test]

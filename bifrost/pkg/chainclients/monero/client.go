@@ -3498,14 +3498,15 @@ func (c *Client) validateXMRSignTx(tx stypes.TxOutItem, thorchainHeight int64, r
 	}
 
 	vaultStatus := ttypes.VaultStatus_InactiveVault
+	vault := ttypes.Vault{}
 	if c.thorchainBridge != nil {
-		vault, err := c.getVaultByPubKey(vaultPubKey)
+		vault, err = c.getVaultByPubKey(vaultPubKey)
 		if err != nil {
 			return xmrValidatedSignRequest{}, fmt.Errorf("fail to resolve xmr vault %s: %w", vaultPubKey.String(), err)
 		}
 		vaultStatus = vault.Status
 	}
-	sweepIfFinal := c.shouldSweepXMRFinal(tx, xmrMaxGasToAtomicOrZero(tx.MaxGas), vaultStatus)
+	sweepIfFinal := c.shouldSweepXMRFinal(tx, xmrMaxGasToAtomicOrZero(tx.MaxGas), vaultStatus, vault)
 
 	if err = c.ensureXMRVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas, sweepIfFinal); err != nil {
 		return xmrValidatedSignRequest{}, err
@@ -3819,15 +3820,27 @@ func xmrMaxGasToAtomicOrZero(maxGas common.Gas) uint64 {
 	return v
 }
 
-func shouldSweepXMRMigration(tx stypes.TxOutItem, maxGasAtomic uint64) bool {
-	if maxGasAtomic == 0 {
+func shouldSweepXMRMigration(tx stypes.TxOutItem, maxGasAtomic uint64, vault ttypes.Vault) bool {
+	if maxGasAtomic == 0 || !isXMRMigrateMemo(tx.GetMemo()) {
 		return false
 	}
-	return isXMRMigrateMemo(tx.GetMemo())
+	xmrCoin := tx.Coins.GetCoin(common.XMRAsset)
+	if xmrCoin.IsEmpty() {
+		return false
+	}
+	maxGasCoin := tx.MaxGas.ToCoins().GetCoin(common.XMRAsset)
+	if maxGasCoin.IsEmpty() {
+		return false
+	}
+	vaultCoin := vault.GetCoin(common.XMRAsset)
+	if vaultCoin.IsEmpty() {
+		return false
+	}
+	return xmrCoin.Amount.Add(maxGasCoin.Amount).Equal(vaultCoin.Amount)
 }
 
-func (c *Client) shouldSweepXMRFinal(tx stypes.TxOutItem, maxGasAtomic uint64, vaultStatus ttypes.VaultStatus) bool {
-	if shouldSweepXMRMigration(tx, maxGasAtomic) {
+func (c *Client) shouldSweepXMRFinal(tx stypes.TxOutItem, maxGasAtomic uint64, vaultStatus ttypes.VaultStatus, vault ttypes.Vault) bool {
+	if shouldSweepXMRMigration(tx, maxGasAtomic, vault) {
 		return true
 	}
 	if maxGasAtomic == 0 || vaultStatus != ttypes.VaultStatus_InactiveVault {
