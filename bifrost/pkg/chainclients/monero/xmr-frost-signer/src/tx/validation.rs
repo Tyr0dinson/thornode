@@ -243,6 +243,18 @@ fn parse_pruned_transaction(tx_hex: &str) -> Result<Transaction<Pruned>> {
         .context("failed to decode pruned transaction")
 }
 
+pub fn actual_fee_from_transaction_hex(tx_hex: &str) -> Result<u64> {
+    let tx = parse_pruned_transaction(tx_hex)?;
+    let Transaction::V2 {
+        proofs: Some(proofs),
+        ..
+    } = tx
+    else {
+        anyhow::bail!("expected a v2 RingCT transaction with proofs");
+    };
+    Ok(proofs.base.fee)
+}
+
 pub fn materialize_owned_outputs_from_tx_keys(
     tx_hash: &str,
     tx_hex: &str,
@@ -731,6 +743,20 @@ fn synthetic_pruned_tx_hex(fee: u64, extra: Vec<u8>, outputs: Vec<SyntheticOutpu
 }
 
 #[cfg(test)]
+pub(crate) fn synthetic_fee_only_transaction_hex(fee: u64) -> String {
+    let output = SyntheticOutput {
+        output: Output {
+            amount: None,
+            key: point_from_scalar(1).compress(),
+            view_tag: Some(0),
+        },
+        encrypted_amount: EncryptedAmount::Compact { amount: [0; 8] },
+        commitment: point_from_scalar(2),
+    };
+    synthetic_pruned_tx_hex(fee, vec![], vec![output])
+}
+
+#[cfg(test)]
 #[allow(dead_code)]
 pub(crate) fn synthetic_untracked_outbound_case_for_tests() -> SyntheticOutboundCase {
     let recipient = MoneroAddress::new(
@@ -1001,6 +1027,16 @@ mod tests {
         .expect("lower actual fee should be accepted under the provided cap");
         assert!(validated.tracked_owned_output);
         assert_eq!(validated.actual_fee, fee);
+    }
+
+    #[test]
+    fn actual_fee_from_transaction_hex_reads_ringct_fee() {
+        let fee = 186_000_000u64;
+        let tx_hex = synthetic_fee_only_transaction_hex(fee);
+
+        let actual_fee = actual_fee_from_transaction_hex(&tx_hex).unwrap();
+
+        assert_eq!(actual_fee, fee);
     }
 
     #[test]

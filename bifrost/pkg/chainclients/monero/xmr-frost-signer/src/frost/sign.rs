@@ -23,6 +23,7 @@ use crate::state::{
 use crate::tx::builder::{self, UnsignedTransaction};
 use crate::tx::daemon::DaemonClient;
 use crate::tx::fee;
+use crate::tx::validation;
 use crate::xmr;
 
 /// TTL for signing sessions before cleanup.
@@ -33,6 +34,11 @@ const PREPARE_SPIN_RETRIES: usize = 64;
 const PREPARE_YIELD_RETRIES: usize = 64;
 const PREPARE_SLEEP_BASE_MICROS: u64 = 50;
 const PREPARE_SLEEP_MAX_MICROS: u64 = 5_000;
+
+fn completed_transaction_actual_fee(tx_hex: &str) -> Result<u64> {
+    validation::actual_fee_from_transaction_hex(tx_hex)
+        .context("failed to extract actual fee from completed transaction")
+}
 
 #[derive(Debug, Clone, PartialEq)]
 enum SignPhase {
@@ -661,8 +667,17 @@ impl SignCoordinator {
         };
         let tx_hash = hex::encode(tx.hash());
         let tx_hex = hex::encode(tx.serialize());
-        let fee = unsigned_tx.fee;
+        let estimated_fee = unsigned_tx.fee;
         let tx_keys = unsigned_tx.tx_keys.clone();
+        let fee = completed_transaction_actual_fee(&tx_hex)?;
+        if fee != estimated_fee {
+            info!(
+                estimated_fee,
+                actual_fee = fee,
+                tx_hash,
+                "completed Monero transaction fee differs from signable estimate"
+            );
+        }
         OutputLifecycle::new(self.store.as_ref())
             .bind_reservation_tx_hash(&vault_pub_key, session_id, msg_id, &tx_hash)
             .context("failed to bind reservation tx hash")?;
@@ -960,6 +975,18 @@ mod tests {
             address: Some("48from".to_string()),
             note: None,
         }
+    }
+
+    #[test]
+    fn completed_transaction_fee_uses_serialized_ringct_fee_not_requested_gas() {
+        let requested_gas_fee = 800_000_000u64;
+        let actual_ringct_fee = 186_000_000u64;
+        let tx_hex = validation::synthetic_fee_only_transaction_hex(actual_ringct_fee);
+
+        let observed_fee = completed_transaction_actual_fee(&tx_hex).unwrap();
+
+        assert_eq!(observed_fee, actual_ringct_fee);
+        assert_ne!(observed_fee, requested_gas_fee);
     }
 
     #[test]
