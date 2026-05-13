@@ -916,6 +916,125 @@ func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.
 	}))
 }
 
+func TestIsDeckItemStaleKeepsRegisteredKeyImagesWhenLocalHydrationFails(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("3", 64)
+	vault := ttypes.Vault{
+		PubKeyFrost:            vaultPubKey,
+		VaultCreationHeightXmr: 100,
+		KeyImagesXmr:           []*common.XmrKeyImageRef{{TxHash: txHash, OutputIndex: 1, KeyImage: "ki-1"}},
+		Membership:             []string{"node"},
+	}
+	var registerCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/monero/vaults/register" {
+			registerCalls++
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{vaultPubKey.String(): vault},
+			},
+		},
+	}
+
+	stale := c.IsDeckItemStale(&stypes.TxInItem{
+		BlockHeight:         200,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  common.XMRSeededDummyAddress('8', []byte("deck-stale-dest")),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 1, KeyImage: "ki-1", ProofC: "c", ProofS: "s"},
+		},
+	})
+
+	assert.False(t, stale)
+	assert.Equal(t, 1, registerCalls)
+}
+
+func TestIsDeckItemStaleHydratesAndValidatesRegisteredKeyImagesBeforeDrop(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("4", 64)
+	keyImage := "ki-1"
+	vault := ttypes.Vault{
+		PubKeyFrost:            vaultPubKey,
+		VaultCreationHeightXmr: 100,
+		KeyImagesXmr:           []*common.XmrKeyImageRef{{TxHash: txHash, OutputIndex: 1, KeyImage: keyImage}},
+		Membership:             []string{"node"},
+	}
+	var registerReq xmrFrostRegisterVaultRequest
+	var applyReq xmrFrostApplyKeyImagesRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/monero/vaults/register":
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&registerReq))
+			_ = json.NewEncoder(w).Encode(xmrFrostRegisterVaultResponse{Registered: true})
+		case r.URL.Path == "/v1/monero/key-image/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostKeyImageValidateResponse{Valid: true})
+		case r.URL.Path == "/v1/monero/outputs/apply-key-images":
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&applyReq))
+			_ = json.NewEncoder(w).Encode(xmrFrostApplyKeyImagesResponse{Applied: 1})
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/outputs/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{
+				Outputs: []xmrFrostOutputEntry{{TxHash: txHash, OutputIndex: 1, Amount: 1, Height: 200}},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{
+		chain:       common.XMRChain,
+		frostSigner: signer,
+		logger:      testLogger(),
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{vaultPubKey.String(): vault},
+			},
+		},
+	}
+
+	stale := c.IsDeckItemStale(&stypes.TxInItem{
+		BlockHeight:         200,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  common.XMRSeededDummyAddress('8', []byte("deck-stale-dest-2")),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		XmrKeyImages: []*common.XmrKeyImageProof{
+			{TxHash: txHash, OutputIndex: 1, KeyImage: keyImage, ProofC: "c", ProofS: "s"},
+		},
+	})
+
+	require.True(t, stale)
+	require.Len(t, registerReq.KeyImages, 1)
+	assert.Equal(t, txHash, registerReq.KeyImages[0].TxHash)
+	require.Len(t, applyReq.KeyImages, 1)
+	assert.Equal(t, keyImage, applyReq.KeyImages[0].KeyImage)
+}
+
 func TestXMRLocalSyncStateForVaultIgnoresOtherVaultRescans(t *testing.T) {
 	t.Parallel()
 

@@ -4446,7 +4446,10 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 		return false
 	}
 	if len(item.XmrKeyImages) > 0 {
-		return xmrKeyImageProofsAlreadyRegistered(item.XmrKeyImages, vault.KeyImagesXmr)
+		if !xmrKeyImageProofsAlreadyRegistered(item.XmrKeyImages, vault.KeyImagesXmr) {
+			return false
+		}
+		return c.ensureRegisteredXMRKeyImagesAppliedForDeckItem(item, vault)
 	}
 	for _, ref := range vault.TxKeysXmr {
 		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
@@ -4458,10 +4461,109 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 	}
 	for _, proof := range vault.KeyImagesXmr {
 		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
-			return true
+			return c.ensureRegisteredXMRKeyImagesAppliedForDeckItem(item, vault)
 		}
 	}
 	return false
+}
+
+func (c *Client) ensureRegisteredXMRKeyImagesAppliedForDeckItem(item *stypes.TxInItem, vault ttypes.Vault) bool {
+	if c == nil || item == nil || c.frostSigner == nil {
+		return true
+	}
+	txHash := normalizeTxID(item.Tx)
+	vaultPubKey := keyImageCatchupVaultPubKey(vault)
+	if vaultPubKey.IsEmpty() {
+		vaultPubKey = item.ObservedVaultPubKey
+	}
+	if vaultPubKey.IsEmpty() || txHash == "" {
+		return false
+	}
+
+	refs := xmrRegisteredKeyImageRefsForTx(txHash, vault.KeyImagesXmr)
+	if len(refs) == 0 {
+		return true
+	}
+
+	if _, err := ensureFrostVaultRegisteredWithKeyImages(
+		c.logger,
+		c.frostSigner,
+		c.chain,
+		vaultPubKey,
+		c.localVaultBootstrap,
+		"deck_stale_hydration",
+		vault.VaultCreationHeightXmr,
+		refs,
+	); err != nil {
+		c.logger.Info().
+			Err(err).
+			Str("tx_hash", txHash).
+			Str("vault_pub_key", vaultPubKey.String()).
+			Msg("keeping XMR deck item because registered key-images could not be hydrated locally")
+		return false
+	}
+
+	if len(item.XmrKeyImages) == 0 {
+		result, err := c.frostSigner.ApplyKeyImages(vaultPubKey.String(), refs, true)
+		if err != nil {
+			c.logger.Info().
+				Err(err).
+				Str("tx_hash", txHash).
+				Str("vault_pub_key", vaultPubKey.String()).
+				Msg("keeping XMR deck item because registered key-images could not be applied locally")
+			return false
+		}
+		if result.NotFound > 0 {
+			c.logger.Info().
+				Str("tx_hash", txHash).
+				Str("vault_pub_key", vaultPubKey.String()).
+				Int("not_found", result.NotFound).
+				Msg("keeping XMR deck item until registered key-images have local outputs")
+			return false
+		}
+		c.signalXMRKeyImageBacklogChanged()
+		return true
+	}
+
+	tx := xmrObservedTxFromTxInItem(item)
+	if tx.Tx.Chain.IsEmpty() {
+		tx.Tx.Chain = common.XMRChain
+	}
+	tx.FinaliseHeight = tx.BlockHeight
+	inbound := c.isObservedInboundToVault(item)
+	trackedOutboundChange := c.isObservedOutboundFromVault(item)
+	if err := c.validateObservedTxKeyImages(tx, inbound, trackedOutboundChange); err != nil {
+		c.logger.Info().
+			Err(err).
+			Str("tx_hash", txHash).
+			Str("vault_pub_key", vaultPubKey.String()).
+			Msg("keeping XMR deck item until registered key-images validate locally")
+		return false
+	}
+	return true
+}
+
+func xmrRegisteredKeyImageRefsForTx(txHash string, registered []*common.XmrKeyImageRef) []xmrFrostApplyKeyImageRef {
+	txHash = normalizeTxID(txHash)
+	if txHash == "" {
+		return nil
+	}
+	refs := make([]xmrFrostApplyKeyImageRef, 0)
+	for _, ref := range registered {
+		if ref == nil || normalizeTxID(ref.TxHash) != txHash {
+			continue
+		}
+		keyImage := strings.ToLower(strings.TrimSpace(ref.KeyImage))
+		if keyImage == "" {
+			continue
+		}
+		refs = append(refs, xmrFrostApplyKeyImageRef{
+			TxHash:      txHash,
+			OutputIndex: ref.OutputIndex,
+			KeyImage:    keyImage,
+		})
+	}
+	return refs
 }
 
 func xmrKeyImagesRegisteredForTx(txHash string, registered []*common.XmrKeyImageRef) bool {
