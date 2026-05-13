@@ -62,8 +62,8 @@ func (c *EVMClient) unstuckAction() {
 	rescheduleBufferBlocks := config.GetBifrost().Signer.RescheduleBufferBlocks
 	txWaitBlocks := signingPeriod - rescheduleBufferBlocks
 
-	// ProcessSignedTxItems serializes list-process-remove so scanner cleanup
-	// cannot interleave with unstuck decisions for the same signed item.
+	// ProcessSignedTxItems snapshots signed items and removes selected unchanged
+	// items after this callback finishes, so unstuck I/O does not hold the lock.
 	if err := c.evmScanner.blockMetaAccessor.ProcessSignedTxItems(func(item evmtypes.SignedTxItem) (bool, bool, error) {
 		clog := c.logger.With().
 			Str("txid", item.Hash).

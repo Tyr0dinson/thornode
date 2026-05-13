@@ -4,10 +4,10 @@ import (
 	evmtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 )
 
-// BlockMetaUpdateFunc mutates a block meta while the accessor holds its block-meta write lock.
+// BlockMetaUpdateFunc mutates a block meta snapshot before the accessor commits requested saves.
 type BlockMetaUpdateFunc func(blockMeta *evmtypes.BlockMeta) (save bool, err error)
 
-// SignedTxItemProcessFunc processes a signed tx item while the accessor holds its signed-tx write lock.
+// SignedTxItemProcessFunc processes a signed tx item snapshot before the accessor removes requested items.
 type SignedTxItemProcessFunc func(item evmtypes.SignedTxItem) (remove bool, stop bool, err error)
 
 // BlockMetaAccessor define methods need to access block meta storage

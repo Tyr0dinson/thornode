@@ -722,8 +722,8 @@ func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) 
 func (e *EVMScanner) reprocessTxs() ([]int64, error) {
 	var rescanBlockHeights []int64
 	var errataBlocks []stypes.ErrataBlock
-	// UpdateBlockMetas owns the read-modify-save sequence while reorg handling
-	// rewrites hashes and transaction lists for each cached block.
+	// UpdateBlockMetas snapshots cached metas and commits updates after this
+	// callback finishes, so RPC calls below do not hold the accessor lock.
 	err := e.blockMetaAccessor.UpdateBlockMetas(func(blockMeta *types.BlockMeta) (bool, error) {
 		metaTxs := make([]types.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
@@ -770,12 +770,12 @@ func (e *EVMScanner) reprocessTxs() ([]int64, error) {
 		blockMeta.Transactions = metaTxs
 		return true, nil
 	})
+	if err != nil {
+		return rescanBlockHeights, fmt.Errorf("fail to update block metas from local storage: %w", err)
+	}
 	// Queue sends can block, so send errata after releasing the accessor lock.
 	for _, errataBlock := range errataBlocks {
 		e.globalErrataQueue <- errataBlock
-	}
-	if err != nil {
-		return rescanBlockHeights, fmt.Errorf("fail to update block metas from local storage: %w", err)
 	}
 	return rescanBlockHeights, nil
 }

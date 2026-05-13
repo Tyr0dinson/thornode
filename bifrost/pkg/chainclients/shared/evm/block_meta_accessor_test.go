@@ -2,7 +2,9 @@ package evm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -103,7 +105,7 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaAccessor(c *C) {
 	c.Assert(db.Close(), IsNil)
 }
 
-// TestBlockMetaUpdates covers the accessor-owned helpers for locked block meta updates.
+// TestBlockMetaUpdates covers the accessor-owned helpers for block meta updates.
 func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaUpdates(c *C) {
 	memStorage := storage.NewMemStorage()
 	db, err := leveldb.Open(memStorage, nil)
@@ -145,7 +147,27 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaUpdates(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta.Transactions, HasLen, 2)
 
+	appendStarted := make(chan struct{})
+	appendDone := make(chan error, 1)
+	go func() {
+		<-appendStarted
+		_, appendErr := blockMetaAccessor.AppendBlockMetaTransaction(blockMeta.Height, evmtypes.TransactionMeta{
+			Hash:        "0xthird",
+			BlockHeight: blockMeta.Height,
+		})
+		appendDone <- appendErr
+	}()
+
 	err = blockMetaAccessor.UpdateBlockMetas(func(blockMeta *evmtypes.BlockMeta) (bool, error) {
+		close(appendStarted)
+		select {
+		case appendErr := <-appendDone:
+			if appendErr != nil {
+				return false, appendErr
+			}
+		case <-time.After(time.Second):
+			return false, errors.New("concurrent append blocked")
+		}
 		blockMeta.BlockHash = "updated"
 		return true, nil
 	})
@@ -154,4 +176,139 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaUpdates(c *C) {
 	blockMeta, err = blockMetaAccessor.GetBlockMeta(blockMeta.Height)
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta.BlockHash, Equals, "updated")
+	c.Assert(blockMeta.Transactions, HasLen, 3)
+
+	err = blockMetaAccessor.UpdateBlockMetas(func(blockMeta *evmtypes.BlockMeta) (bool, error) {
+		blockMeta.BlockHash = "skipped"
+		return false, nil
+	})
+	c.Assert(err, IsNil)
+
+	blockMeta, err = blockMetaAccessor.GetBlockMeta(blockMeta.Height)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, "updated")
+
+	boom := errors.New("boom")
+	err = blockMetaAccessor.UpdateBlockMetas(func(blockMeta *evmtypes.BlockMeta) (bool, error) {
+		return false, boom
+	})
+	c.Assert(err, Equals, boom)
+}
+
+func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaUpdateConflictsWithConcurrentHashUpdate(c *C) {
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	c.Assert(err, IsNil)
+	defer db.Close()
+
+	blockMetaAccessor, err := NewLevelDBBlockMetaAccessor(PrefixBlockMeta, PrefixSignedTxItem, db)
+	c.Assert(err, IsNil)
+
+	block, err := CreateBlock(200)
+	c.Assert(err, IsNil)
+	blockMeta := evmtypes.NewBlockMeta(block, stypes.TxIn{
+		TxArray: []*stypes.TxInItem{{Tx: "0xfirst"}},
+	})
+	c.Assert(blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+
+	updateStarted := make(chan struct{})
+	saveDone := make(chan error, 1)
+	go func() {
+		<-updateStarted
+		current, getErr := blockMetaAccessor.GetBlockMeta(blockMeta.Height)
+		if getErr != nil {
+			saveDone <- getErr
+			return
+		}
+		current.BlockHash = "concurrent"
+		saveDone <- blockMetaAccessor.SaveBlockMeta(current.Height, current)
+	}()
+
+	err = blockMetaAccessor.UpdateBlockMetas(func(blockMeta *evmtypes.BlockMeta) (bool, error) {
+		close(updateStarted)
+		select {
+		case saveErr := <-saveDone:
+			if saveErr != nil {
+				return false, saveErr
+			}
+		case <-time.After(time.Second):
+			return false, errors.New("concurrent save blocked")
+		}
+		blockMeta.BlockHash = "callback"
+		return true, nil
+	})
+	c.Assert(err, ErrorMatches, "block meta block hash changed during update:.*")
+
+	blockMeta, err = blockMetaAccessor.GetBlockMeta(blockMeta.Height)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, "concurrent")
+}
+
+func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaUpdatePreservesConcurrentHashWhenCallbackDoesNotChangeHash(c *C) {
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	c.Assert(err, IsNil)
+	defer db.Close()
+
+	blockMetaAccessor, err := NewLevelDBBlockMetaAccessor(PrefixBlockMeta, PrefixSignedTxItem, db)
+	c.Assert(err, IsNil)
+
+	block, err := CreateBlock(250)
+	c.Assert(err, IsNil)
+	blockMeta := evmtypes.NewBlockMeta(block, stypes.TxIn{
+		TxArray: []*stypes.TxInItem{{Tx: "0xfirst"}},
+	})
+	c.Assert(blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+
+	updateStarted := make(chan struct{})
+	saveDone := make(chan error, 1)
+	go func() {
+		<-updateStarted
+		current, getErr := blockMetaAccessor.GetBlockMeta(blockMeta.Height)
+		if getErr != nil {
+			saveDone <- getErr
+			return
+		}
+		current.BlockHash = "concurrent"
+		saveDone <- blockMetaAccessor.SaveBlockMeta(current.Height, current)
+	}()
+
+	err = blockMetaAccessor.UpdateBlockMetas(func(blockMeta *evmtypes.BlockMeta) (bool, error) {
+		close(updateStarted)
+		select {
+		case saveErr := <-saveDone:
+			if saveErr != nil {
+				return false, saveErr
+			}
+		case <-time.After(time.Second):
+			return false, errors.New("concurrent save blocked")
+		}
+		blockMeta.Transactions = append(blockMeta.Transactions, evmtypes.TransactionMeta{
+			Hash:        "0xsecond",
+			BlockHeight: blockMeta.Height,
+		})
+		return true, nil
+	})
+	c.Assert(err, IsNil)
+
+	blockMeta, err = blockMetaAccessor.GetBlockMeta(blockMeta.Height)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, "concurrent")
+	c.Assert(blockMeta.Transactions, HasLen, 2)
+}
+
+func (s *EthereumBlockMetaAccessorTestSuite) TestCloneBlockMetaCopiesEmptyTransactions(c *C) {
+	blockMeta := &evmtypes.BlockMeta{
+		Height:       300,
+		Transactions: make([]evmtypes.TransactionMeta, 0, 1),
+	}
+
+	clone := cloneBlockMeta(blockMeta)
+	c.Assert(clone.Transactions, NotNil)
+
+	clone.Transactions = append(clone.Transactions, evmtypes.TransactionMeta{
+		Hash:        "0xadded",
+		BlockHeight: blockMeta.Height,
+	})
+	c.Assert(blockMeta.Transactions, HasLen, 0)
 }

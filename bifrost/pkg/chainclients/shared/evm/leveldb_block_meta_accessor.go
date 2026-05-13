@@ -3,6 +3,7 @@ package evm
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -142,26 +143,54 @@ func (t *LevelDBBlockMetaAccessor) AppendBlockMetaTransaction(height int64, tx e
 	return true, nil
 }
 
-// UpdateBlockMetas serializes read-modify-save cycles for all stored block metas.
+// UpdateBlockMetas snapshots block metas, runs the update callback without holding
+// the block-meta lock, and then commits requested saves under the lock.
 func (t *LevelDBBlockMetaAccessor) UpdateBlockMetas(update BlockMetaUpdateFunc) error {
-	t.blockMetaMu.Lock()
-	defer t.blockMetaMu.Unlock()
-
-	blockMetas, err := t.getBlockMetas()
+	blockMetas, err := t.GetBlockMetas()
 	if err != nil {
 		return err
 	}
+
+	type blockMetaUpdate struct {
+		original *evmtypes.BlockMeta
+		updated  *evmtypes.BlockMeta
+	}
+
+	updates := make([]blockMetaUpdate, 0, len(blockMetas))
 	for _, blockMeta := range blockMetas {
-		// The callback runs under blockMetaMu and must not call block-meta
-		// accessor methods, or it would deadlock on this same mutex.
+		original := cloneBlockMeta(blockMeta)
 		save, err := update(blockMeta)
 		if err != nil {
 			return err
 		}
-		if !save {
+		if save {
+			updates = append(updates, blockMetaUpdate{
+				original: original,
+				updated:  cloneBlockMeta(blockMeta),
+			})
+		}
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	t.blockMetaMu.Lock()
+	defer t.blockMetaMu.Unlock()
+
+	for _, item := range updates {
+		current, err := t.getBlockMeta(item.original.Height)
+		if err != nil {
+			return err
+		}
+		if current == nil {
 			continue
 		}
-		if err := t.saveBlockMeta(blockMeta.Height, blockMeta); err != nil {
+
+		merged, err := mergeBlockMetaUpdate(item.updated, item.original, current)
+		if err != nil {
+			return err
+		}
+		if err := t.saveBlockMeta(item.original.Height, merged); err != nil {
 			return err
 		}
 	}
@@ -237,6 +266,27 @@ func (t *LevelDBBlockMetaAccessor) removeSignedTxItem(hash string) error {
 	return t.db.Delete([]byte(key), nil)
 }
 
+// getSignedTxItem reads one signed tx item without taking a lock; callers must already hold signedTxItemMu.
+func (t *LevelDBBlockMetaAccessor) getSignedTxItem(hash string) (*evmtypes.SignedTxItem, error) {
+	key := t.getSignedTxItemKey(hash)
+	exist, err := t.db.Has([]byte(key), nil)
+	if err != nil {
+		return nil, fmt.Errorf("fail to check whether signed tx item(%s) exist: %w", key, err)
+	}
+	if !exist {
+		return nil, nil
+	}
+	v, err := t.db.Get([]byte(key), nil)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get signed tx item(%s) from storage: %w", key, err)
+	}
+	var item evmtypes.SignedTxItem
+	if err = json.Unmarshal(v, &item); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal signed tx item from json: %w", err)
+	}
+	return &item, nil
+}
+
 // GetSignedTxItems get all the signed tx items that in the key value store
 func (t *LevelDBBlockMetaAccessor) GetSignedTxItems() ([]evmtypes.SignedTxItem, error) {
 	t.signedTxItemMu.RLock()
@@ -267,24 +317,20 @@ func (t *LevelDBBlockMetaAccessor) getSignedTxItems() ([]evmtypes.SignedTxItem, 
 	return txItems, nil
 }
 
-// ProcessSignedTxItems serializes list-process-delete cycles for signed tx items.
+// ProcessSignedTxItems snapshots signed tx items, runs the process callback without
+// holding the signed-tx lock, and removes requested unchanged items under the lock.
 func (t *LevelDBBlockMetaAccessor) ProcessSignedTxItems(process SignedTxItemProcessFunc) error {
-	t.signedTxItemMu.Lock()
-	defer t.signedTxItemMu.Unlock()
-
-	txItems, err := t.getSignedTxItems()
+	txItems, err := t.GetSignedTxItems()
 	if err != nil {
 		return err
 	}
 	for _, item := range txItems {
-		// The callback runs under signedTxItemMu and must not call signed-tx
-		// accessor methods, or it would deadlock on this same mutex.
 		remove, stop, err := process(item)
 		if err != nil {
 			return err
 		}
 		if remove {
-			if err := t.removeSignedTxItem(item.Hash); err != nil {
+			if err = t.removeSignedTxItemIfUnchanged(item); err != nil {
 				return err
 			}
 		}
@@ -293,4 +339,85 @@ func (t *LevelDBBlockMetaAccessor) ProcessSignedTxItems(process SignedTxItemProc
 		}
 	}
 	return nil
+}
+
+func (t *LevelDBBlockMetaAccessor) removeSignedTxItemIfUnchanged(item evmtypes.SignedTxItem) error {
+	t.signedTxItemMu.Lock()
+	defer t.signedTxItemMu.Unlock()
+
+	current, err := t.getSignedTxItem(item.Hash)
+	if err != nil {
+		return err
+	}
+	if current == nil || !reflect.DeepEqual(*current, item) {
+		return nil
+	}
+	return t.removeSignedTxItem(item.Hash)
+}
+
+func cloneBlockMeta(blockMeta *evmtypes.BlockMeta) *evmtypes.BlockMeta {
+	if blockMeta == nil {
+		return nil
+	}
+	clone := *blockMeta
+	if blockMeta.Transactions != nil {
+		clone.Transactions = make([]evmtypes.TransactionMeta, len(blockMeta.Transactions))
+		copy(clone.Transactions, blockMeta.Transactions)
+	}
+	return &clone
+}
+
+func mergeBlockMetaUpdate(updated, original, current *evmtypes.BlockMeta) (*evmtypes.BlockMeta, error) {
+	if updated.Height != original.Height {
+		return nil, fmt.Errorf("block meta height changed by update: original=%d updated=%d", original.Height, updated.Height)
+	}
+	if current.Height != original.Height {
+		return nil, fmt.Errorf("block meta height changed during update: original=%d current=%d", original.Height, current.Height)
+	}
+
+	merged := cloneBlockMeta(updated)
+	var err error
+	merged.PreviousHash, err = mergeBlockMetaStringField("previous hash", original.PreviousHash, updated.PreviousHash, current.PreviousHash)
+	if err != nil {
+		return nil, err
+	}
+	merged.BlockHash, err = mergeBlockMetaStringField("block hash", original.BlockHash, updated.BlockHash, current.BlockHash)
+	if err != nil {
+		return nil, err
+	}
+	mergeCurrentBlockMetaTransactions(merged, original, current)
+	return merged, nil
+}
+
+func mergeBlockMetaStringField(name, original, updated, current string) (string, error) {
+	if updated == original {
+		return current, nil
+	}
+	if current == original || current == updated {
+		return updated, nil
+	}
+	return "", fmt.Errorf("block meta %s changed during update: original=%s updated=%s current=%s", name, original, updated, current)
+}
+
+func mergeCurrentBlockMetaTransactions(updated, original, current *evmtypes.BlockMeta) {
+	originalTxs := make(map[string]struct{}, len(original.Transactions))
+	for _, tx := range original.Transactions {
+		originalTxs[tx.Hash] = struct{}{}
+	}
+
+	updatedTxs := make(map[string]struct{}, len(updated.Transactions))
+	for _, tx := range updated.Transactions {
+		updatedTxs[tx.Hash] = struct{}{}
+	}
+
+	for _, tx := range current.Transactions {
+		if _, existedInSnapshot := originalTxs[tx.Hash]; existedInSnapshot {
+			continue
+		}
+		if _, alreadyUpdated := updatedTxs[tx.Hash]; alreadyUpdated {
+			continue
+		}
+		updated.Transactions = append(updated.Transactions, tx)
+		updatedTxs[tx.Hash] = struct{}{}
+	}
 }

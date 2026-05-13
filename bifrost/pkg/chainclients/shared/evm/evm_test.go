@@ -1,6 +1,7 @@
 package evm
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -130,7 +131,7 @@ func (s *UtilsSuite) TestSignedTxItems(c *C) {
 	// Remove non-existent item should not error
 	c.Assert(accessor.RemoveSignedTxItem("0xnonexistent"), IsNil)
 
-	// ProcessSignedTxItems should delete items as part of the same locked iteration.
+	// ProcessSignedTxItems should delete items selected by the processing callback.
 	c.Assert(accessor.ProcessSignedTxItems(func(item types.SignedTxItem) (bool, bool, error) {
 		c.Assert(item.Hash, Equals, "0xdef456")
 		return true, false, nil
@@ -138,6 +139,44 @@ func (s *UtilsSuite) TestSignedTxItems(c *C) {
 	items, err = accessor.GetSignedTxItems()
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 0)
+
+	item3 := types.SignedTxItem{Hash: "0xaaa111", Height: 102, VaultPubKey: "pubkey3"}
+	item4 := types.SignedTxItem{Hash: "0xbbb222", Height: 103, VaultPubKey: "pubkey4"}
+	c.Assert(accessor.AddSignedTxItem(item3), IsNil)
+	c.Assert(accessor.AddSignedTxItem(item4), IsNil)
+
+	var processed []string
+	c.Assert(accessor.ProcessSignedTxItems(func(item types.SignedTxItem) (bool, bool, error) {
+		processed = append(processed, item.Hash)
+		return false, true, nil
+	}), IsNil)
+	c.Assert(processed, DeepEquals, []string{"0xaaa111"})
+
+	items, err = accessor.GetSignedTxItems()
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 2)
+
+	c.Assert(accessor.ProcessSignedTxItems(func(item types.SignedTxItem) (bool, bool, error) {
+		if item.Hash == "0xaaa111" {
+			if err = accessor.AddSignedTxItem(types.SignedTxItem{Hash: "0xccc333", Height: 104, VaultPubKey: "pubkey5"}); err != nil {
+				return false, false, err
+			}
+			return true, false, nil
+		}
+		return false, false, nil
+	}), IsNil)
+
+	items, err = accessor.GetSignedTxItems()
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 2)
+	c.Assert(items[0].Hash, Equals, "0xbbb222")
+	c.Assert(items[1].Hash, Equals, "0xccc333")
+
+	boom := errors.New("boom")
+	err = accessor.ProcessSignedTxItems(func(item types.SignedTxItem) (bool, bool, error) {
+		return false, false, boom
+	})
+	c.Assert(err, Equals, boom)
 }
 
 // ----- TokenManager additional tests -----
