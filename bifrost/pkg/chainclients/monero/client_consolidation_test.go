@@ -334,7 +334,6 @@ func TestLoadConsolidationSettingsCachesMimirReads(t *testing.T) {
 			mimirXMRConsolidationCooldownBlocks:      3,
 			mimirXMRConsolidationMinUnlockedOutputs:  4,
 			mimirXMRConsolidationTargetOutputs:       2,
-			mimirXMRConsolidationMinUnlockedAtomic:   42,
 			mimirXMRConsolidationReserveBps:          75,
 			mimirXMRConsolidationChurnLookahead:      8,
 			mimirXMRConsolidationMaxRetries:          5,
@@ -351,8 +350,8 @@ func TestLoadConsolidationSettingsCachesMimirReads(t *testing.T) {
 	if !first.Enabled || !second.Enabled {
 		t.Fatal("expected consolidation settings to remain enabled")
 	}
-	if bridge.mimirCallCount() != 9 {
-		t.Fatalf("expected one mimir fetch round (9 calls), got %d", bridge.mimirCallCount())
+	if bridge.mimirCallCount() != 8 {
+		t.Fatalf("expected one mimir fetch round (8 calls), got %d", bridge.mimirCallCount())
 	}
 
 	client.consolidationSettingsMu.Lock()
@@ -360,7 +359,7 @@ func TestLoadConsolidationSettingsCachesMimirReads(t *testing.T) {
 	client.consolidationSettingsMu.Unlock()
 
 	_ = client.loadConsolidationSettings()
-	if bridge.mimirCallCount() != 18 {
+	if bridge.mimirCallCount() != 16 {
 		t.Fatalf("expected cache refresh after ttl expiry, got %d mimir calls", bridge.mimirCallCount())
 	}
 }
@@ -552,7 +551,7 @@ func TestRunConsolidationPassUsesSpendableBalanceForAmount(t *testing.T) {
 	}
 }
 
-func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.T) {
+func TestRunConsolidationPassConsolidatesSmallBalanceWhenOutputCountIsHigh(t *testing.T) {
 	t.Parallel()
 
 	localNodePubKey, _ := testVaultPubKeyAndAddress(t)
@@ -566,14 +565,10 @@ func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.
 		Chains:      []string{common.XMRChain.String()},
 	}
 
-	minSpendableAtomic := int64(4_000_000_000_000)
 	bridge := &consolidationBridge{
 		nodeStatus:  ttypes.NodeStatus_Active,
 		blockHeight: 20,
 		asgards:     ttypes.Vaults{vault},
-		mimir: map[string]int64{
-			mimirXMRConsolidationMinUnlockedAtomic: minSpendableAtomic,
-		},
 	}
 	tssServer := &consolidationTSS{
 		sequence: []consolidationTSSResponse{
@@ -583,9 +578,9 @@ func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.
 	sidecar := &consolidationSidecar{
 		balanceByVault: map[string]xmrFrostBalanceResponse{
 			vaultPubKey.String(): {
-				Balance:          5_000_000_000_000,
-				UnlockedBalance:  5_000_000_000_000,
-				SpendableBalance: uint64Ptr(3_000_000_000_000),
+				Balance:          3_000_000_000,
+				UnlockedBalance:  3_000_000_000,
+				SpendableBalance: uint64Ptr(3_000_000_000),
 			},
 		},
 		outputsByVault: map[string][]xmrFrostOutputEntry{
@@ -598,11 +593,11 @@ func TestRunConsolidationPassSkipsWhenSpendableBalanceBelowThreshold(t *testing.
 	if err := client.runConsolidationPass(); err != nil {
 		t.Fatalf("runConsolidationPass failed: %v", err)
 	}
-	if tssServer.callCount() != 0 {
-		t.Fatalf("expected no FrostKeySign call when spendable balance is below threshold, got %d", tssServer.callCount())
+	if tssServer.callCount() != 1 {
+		t.Fatalf("expected FrostKeySign call for high output count despite small balance, got %d", tssServer.callCount())
 	}
-	if sidecar.broadcasts() != 0 {
-		t.Fatalf("expected no broadcast when spendable balance is below threshold, got %d", sidecar.broadcasts())
+	if sidecar.broadcasts() != 1 {
+		t.Fatalf("expected broadcast for high output count despite small balance, got %d", sidecar.broadcasts())
 	}
 }
 

@@ -54,7 +54,6 @@ const (
 	mimirXMRConsolidationCooldownBlocks      = "XMRConsolidationCooldownBlocks"
 	mimirXMRConsolidationMinUnlockedOutputs  = "XMRConsolidationMinUnlockedOutputs"
 	mimirXMRConsolidationTargetOutputs       = "XMRConsolidationTargetOutputs"
-	mimirXMRConsolidationMinUnlockedAtomic   = "XMRConsolidationMinUnlockedAtomic"
 	mimirXMRConsolidationReserveBps          = "XMRConsolidationReserveBps"
 	mimirXMRConsolidationChurnLookahead      = "XMRConsolidationChurnLookaheadBlocks"
 	mimirXMRConsolidationMaxRetries          = "XMRConsolidationMaxRetries"
@@ -63,8 +62,7 @@ const (
 	defaultXMRConsolidationCooldownBlocks      = int64(30)
 	defaultXMRConsolidationMinUnlockedOutputs  = int64(40)
 	defaultXMRConsolidationTargetOutputs       = int64(15)
-	defaultXMRConsolidationMinUnlockedAtomic   = uint64(1_000_000_000_000) // 1 XMR (piconero)
-	defaultXMRConsolidationReserveBps          = int64(50)                 // 0.50%
+	defaultXMRConsolidationReserveBps          = int64(50) // 0.50%
 	defaultXMRConsolidationChurnLookahead      = int64(720)
 	defaultXMRConsolidationMaxRetries          = int64(3)
 	defaultXMRConsolidationMinReserveAtomic    = uint64(50_000_000) // 0.00005 XMR (piconero)
@@ -182,7 +180,6 @@ type xmrConsolidationSettings struct {
 	CooldownBlocks      int64
 	MinUnlockedOutputs  int64
 	TargetOutputs       int64
-	MinUnlockedAtomic   uint64
 	ReserveBps          int64
 	ChurnLookahead      int64
 	MaxRetries          int64
@@ -2715,14 +2712,6 @@ func (c *Client) consolidateVault(
 	}
 
 	spendableAtomic := spendableBalanceAtomic(balance)
-	if spendableAtomic < settings.MinUnlockedAtomic {
-		c.logConsolidationSkip(vault, stateKey, thorchainHeight, state, "spendable balance below threshold", func(e *zerolog.Event) {
-			e.Uint64("spendable_atomic", spendableAtomic).
-				Uint64("min_unlocked_atomic", settings.MinUnlockedAtomic)
-		})
-		return
-	}
-
 	outputs, err := c.frostSigner.GetOutputs(stateKey)
 	if err != nil {
 		c.logConsolidationSkip(vault, stateKey, thorchainHeight, state, "fail to query outputs", func(e *zerolog.Event) {
@@ -3072,7 +3061,6 @@ func (c *Client) loadConsolidationSettings() xmrConsolidationSettings {
 		CooldownBlocks:      c.getMimirInt64(mimirXMRConsolidationCooldownBlocks, fallbackInt64(c.cfg.XMRConsolidationCooldownBlocks, defaultXMRConsolidationCooldownBlocks)),
 		MinUnlockedOutputs:  c.getMimirInt64(mimirXMRConsolidationMinUnlockedOutputs, fallbackInt64(c.cfg.XMRConsolidationMinUnlockedOutputs, defaultXMRConsolidationMinUnlockedOutputs)),
 		TargetOutputs:       c.getMimirInt64(mimirXMRConsolidationTargetOutputs, fallbackInt64(c.cfg.XMRConsolidationTargetOutputs, defaultXMRConsolidationTargetOutputs)),
-		MinUnlockedAtomic:   c.getMimirUint64(mimirXMRConsolidationMinUnlockedAtomic, fallbackUint64(c.cfg.XMRConsolidationMinUnlockedAtomic, defaultXMRConsolidationMinUnlockedAtomic)),
 		ReserveBps:          c.getMimirInt64(mimirXMRConsolidationReserveBps, fallbackInt64(c.cfg.XMRConsolidationReserveBps, defaultXMRConsolidationReserveBps)),
 		ChurnLookahead:      c.getMimirInt64(mimirXMRConsolidationChurnLookahead, fallbackInt64(c.cfg.XMRConsolidationChurnLookaheadBlocks, defaultXMRConsolidationChurnLookahead)),
 		MaxRetries:          c.getMimirInt64(mimirXMRConsolidationMaxRetries, fallbackInt64(c.cfg.XMRConsolidationMaxRetries, defaultXMRConsolidationMaxRetries)),
@@ -3088,9 +3076,6 @@ func (c *Client) loadConsolidationSettings() xmrConsolidationSettings {
 	}
 	if settings.TargetOutputs <= 0 {
 		settings.TargetOutputs = defaultXMRConsolidationTargetOutputs
-	}
-	if settings.MinUnlockedAtomic == 0 {
-		settings.MinUnlockedAtomic = defaultXMRConsolidationMinUnlockedAtomic
 	}
 	if settings.ReserveBps <= 0 {
 		settings.ReserveBps = defaultXMRConsolidationReserveBps

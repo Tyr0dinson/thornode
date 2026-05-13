@@ -847,7 +847,7 @@ type BifrostChainConfiguration struct {
 	XMRConsolidationMinUnlockedOutputs int64 `mapstructure:"xmr_consolidation_min_unlocked_outputs"`
 	// XMRConsolidationTargetOutputs is the desired unlocked output count after consolidation.
 	XMRConsolidationTargetOutputs int64 `mapstructure:"xmr_consolidation_target_outputs"`
-	// XMRConsolidationMinUnlockedAtomic is the minimum unlocked atomic balance required before consolidation.
+	// XMRConsolidationMinUnlockedAtomic is deprecated and ignored; XMR consolidation is output-count driven.
 	XMRConsolidationMinUnlockedAtomic uint64 `mapstructure:"xmr_consolidation_min_unlocked_atomic"`
 	// XMRConsolidationReserveBps is the piconero reserve (in basis points) retained to absorb fee variance.
 	XMRConsolidationReserveBps int64 `mapstructure:"xmr_consolidation_reserve_bps"`
