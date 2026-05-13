@@ -13,9 +13,9 @@ bifrost falls back to the existing `rpc_host` / `api_host` fields (backward-comp
 chains:
   BTC:
     providers:
-      - name: local               # human-readable label for logs/metrics
+      - name: local # human-readable label for logs/metrics
         rpc_host: http://localhost:8332
-        priority: 1               # lower number = preferred
+        priority: 1 # lower number = preferred
         type: bitcoin-rpc
         username: user
         password: pass
@@ -29,14 +29,14 @@ chains:
         priority: 3
         type: bitcoin-rpc
     failover:
-      error_threshold: 5          # errors within error_window before marking unhealthy
+      error_threshold: 5 # errors within error_window before marking unhealthy
       error_window: 60s
-      health_check_interval: 10s  # how often to probe unhealthy providers
-      max_block_lag: 3            # blocks behind consensus tip before eviction
-      min_recovery_checks: 3      # passing checks required to restore a provider
+      health_check_interval: 10s # how often to probe unhealthy providers
+      max_block_lag: 3 # blocks behind consensus tip before eviction
+      min_recovery_checks: 3 # passing checks required to restore a provider
       recovery_check_interval: 30s
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number providers
-      rate_limit_backoff: 30s     # minimum sleep on HTTP 429 (rate limit); does NOT trigger failover
+      rate_limit_backoff: 30s # minimum sleep on HTTP 429 (rate limit); does NOT trigger failover
   ETH:
     providers:
       - name: local
@@ -52,17 +52,17 @@ chains:
 
 ## Provider Types
 
-| Type | Chains | Notes |
-|---|---|---|
-| `bitcoin-rpc` | BTC, LTC, BCH, DOGE | Standard Bitcoin JSON-RPC |
-| `zcash-rpc` | ZEC | Zcash JSON-RPC dialect |
-| `evm-rpc` | ETH, AVAX, BSC, BASE, POL | Ethereum JSON-RPC |
-| `blockchair-rest` | BTC, LTC, BCH, DOGE, ZEC | Read-only REST API |
-| `blockcypher-rest` | BTC, LTC, DOGE | Read-only REST API (no BCH/ZEC) |
-| `cosmos-grpc` | GAIA, NOBLE | Cosmos SDK gRPC |
-| `solana-rpc` | SOL | Solana JSON-RPC |
-| `tron-api` | TRON | Tron HTTP API + JSON-RPC |
-| `xrp-rpc` | XRP | XRP Ledger JSON-RPC |
+| Type               | Chains                    | Notes                           |
+| ------------------ | ------------------------- | ------------------------------- |
+| `bitcoin-rpc`      | BTC, LTC, BCH, DOGE       | Standard Bitcoin JSON-RPC       |
+| `zcash-rpc`        | ZEC                       | Zcash JSON-RPC dialect          |
+| `evm-rpc`          | ETH, AVAX, BSC, BASE, POL | Ethereum JSON-RPC               |
+| `blockchair-rest`  | BTC, LTC, BCH, DOGE, ZEC  | Read-only REST API              |
+| `blockcypher-rest` | BTC, LTC, DOGE            | Read-only REST API (no BCH/ZEC) |
+| `cosmos-grpc`      | GAIA, NOBLE               | Cosmos SDK gRPC                 |
+| `solana-rpc`       | SOL                       | Solana JSON-RPC                 |
+| `tron-api`         | TRON                      | Tron HTTP API + JSON-RPC        |
+| `xrp-rpc`          | XRP                       | XRP Ledger JSON-RPC             |
 
 ## Blockchair Limitation
 

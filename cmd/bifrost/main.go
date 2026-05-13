@@ -189,8 +189,9 @@ func main() {
 		if chainCfg.Disabled {
 			continue
 		}
-		if len(chainCfg.GetProviders()) == 0 {
-			log.Fatal().Stringer("chain", chainCfg.ChainID).Msg("no providers configured for chain")
+		p0 := chainCfg.GetProviders()[0]
+		if p0.RPCHost == "" && p0.APIHost == "" && p0.CosmosGRPCHost == "" {
+			log.Fatal().Stringer("chain", chainCfg.ChainID).Msg("no host configured for chain provider")
 		}
 		// Normalize scheme on all provider hosts.
 		// Must copy→mutate→reassign because cfgChains is a map of structs (not pointers).

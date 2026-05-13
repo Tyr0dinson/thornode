@@ -152,7 +152,7 @@ func NewCosmosClient(
 	}
 
 	c.cosmosScanner, err = NewCosmosBlockScanner(
-		c.cfg.RPCHost,
+		cfg.GetProviders()[0].RPCHost,
 		c.cfg.BlockScanner,
 		c.storage,
 		c.thorchainBridge,

@@ -95,25 +95,11 @@ func (c *Client) GetBlockHash(height int64) (string, error) {
 	return resp.Data[0].Hash, nil
 }
 
-func (c *Client) GetBlockVerboseTxs(hash string) (*btcjson.GetBlockVerboseTxResult, error) {
-	var resp BlockDetailResponse
-	if err := c.get("/dashboards/block/"+hash, nil, &resp); err != nil {
-		return nil, err
-	}
-	detail, ok := resp.Data[hash]
-	if !ok {
-		return nil, fmt.Errorf("blockchair: block %s not found in response", hash)
-	}
-	result := &btcjson.GetBlockVerboseTxResult{
-		Hash:   detail.Block.Hash,
-		Height: detail.Block.ID,
-	}
-	// Only Txid is populated — full tx data requires per-tx API calls (scope limitation).
-	result.Tx = make([]btcjson.TxRawResult, len(detail.TxHashes))
-	for i, txid := range detail.TxHashes {
-		result.Tx[i] = btcjson.TxRawResult{Txid: txid}
-	}
-	return result, nil
+func (c *Client) GetBlockVerboseTxs(_ string) (*btcjson.GetBlockVerboseTxResult, error) {
+	// Blockchair does not provide full Vin/Vout data in block responses; returning stubs
+	// would cause the UTXO client to silently drop all observations for the block.
+	// Return ErrNotSupported so withFallback falls through to the next provider.
+	return nil, ErrNotSupported
 }
 
 func (c *Client) GetBlockVerbose(hash string) (*btcjson.GetBlockVerboseResult, error) {

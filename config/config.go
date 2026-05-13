@@ -1050,7 +1050,7 @@ func (c BifrostChainConfiguration) GetProviders() []ChainProviderConfig {
 	if len(c.Providers) > 0 {
 		sorted := make([]ChainProviderConfig, len(c.Providers))
 		copy(sorted, c.Providers)
-		sort.Slice(sorted, func(i, j int) bool {
+		sort.SliceStable(sorted, func(i, j int) bool {
 			return sorted[i].Priority < sorted[j].Priority
 		})
 		return sorted
@@ -1125,6 +1125,11 @@ func (b *BifrostChainConfiguration) Validate() {
 			log.Fatal().
 				Str("chain", b.ChainID.String()).
 				Msg("api host is required")
+		}
+		if b.RPCHost == "" && len(b.Providers) == 0 {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Msg("rpc host or providers list is required")
 		}
 	default:
 		if b.RPCHost == "" && len(b.Providers) == 0 {
