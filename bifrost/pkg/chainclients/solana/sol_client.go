@@ -112,7 +112,7 @@ func NewSOLClient(
 	formattedPub := base58.Encode(pub.Bytes())
 
 	// create rpc clients
-	rpcClient := rpc.NewSolRPC(cfg.RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
+	rpcClient := rpc.NewSolRPC(cfg.GetProviders()[0].RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
 
 	c := &SOLClient{
 		logger:        log.With().Str("module", "sol").Stringer("chain", cfg.ChainID).Logger(),

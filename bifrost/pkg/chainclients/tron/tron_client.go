@@ -112,7 +112,7 @@ func NewTronClient(
 		stopchan:  make(chan struct{}),
 		whitelist: whitelist,
 		api:       api.NewTronApi(config.APIHost, config.BlockScanner.HTTPRequestTimeout),
-		rpc:       rpc.NewTronRpc(config.RPCHost, config.BlockScanner.HTTPRequestTimeout),
+		rpc:       rpc.NewTronRpc(config.GetProviders()[0].RPCHost, config.BlockScanner.HTTPRequestTimeout),
 	}
 
 	client.tssKeyManager, err = tss.NewKeySign(server, bridge)

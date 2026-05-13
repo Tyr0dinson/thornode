@@ -16,6 +16,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -129,6 +130,21 @@ func getGRPCConn(host string, tls bool) (*grpc.ClientConn, error) {
 	}
 
 	return grpc.NewClient(host, grpc.WithTransportCredentials(creds))
+}
+
+// getGRPCConnWithFallbacks tries providers in slice order and returns the first
+// whose CosmosGRPCHost is non-empty. Falls back to host/tls if none match.
+func getGRPCConnWithFallbacks(providers []config.ChainProviderConfig, host string, tls bool) (*grpc.ClientConn, error) {
+	for _, p := range providers {
+		if p.CosmosGRPCHost == "" {
+			continue
+		}
+		conn, err := getGRPCConn(p.CosmosGRPCHost, p.CosmosGRPCTLS)
+		if err == nil {
+			return conn, nil
+		}
+	}
+	return getGRPCConn(host, tls)
 }
 
 func unmarshalJSONToPb(filePath string, msg proto.Message) error {
