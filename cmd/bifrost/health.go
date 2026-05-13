@@ -52,10 +52,20 @@ type P2PStatusResponse struct {
 }
 
 type ProviderEntry struct {
+	// Legacy single-host fields (backward compat).
 	RPCHost   string `json:"rpc_host,omitempty"`
 	APIHost   string `json:"api_host,omitempty"`
 	ChainHost string `json:"chain_host,omitempty"`
 	GRPCHost  string `json:"grpc_host,omitempty"`
+	// Providers lists all configured providers for this chain.
+	Providers []ProviderSummary `json:"providers,omitempty"`
+}
+
+type ProviderSummary struct {
+	Name     string `json:"name"`
+	Priority int    `json:"priority"`
+	Type     string `json:"type"`
+	Host     string `json:"host"`
 }
 
 type ProviderResponse map[string]ProviderEntry
@@ -106,6 +116,7 @@ func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]
 			APIHost:   classifyHost(cfg.APIHost),
 			ChainHost: classifyHost(cfg.ChainHost),
 			GRPCHost:  classifyHost(cfg.CosmosGRPCHost),
+			Providers: buildProviderSummaries(cfg),
 		}
 	}
 	providerPayload, err := json.MarshalIndent(res, "", "  ")
@@ -415,6 +426,27 @@ func (s *HealthServer) providerStatus(w http.ResponseWriter, _ *http.Request) {
 	if _, err := w.Write(s.providerPayload); err != nil {
 		s.logger.Error().Err(err).Msg("fail to write to response")
 	}
+}
+
+func buildProviderSummaries(cfg config.BifrostChainConfiguration) []ProviderSummary {
+	providers := cfg.GetProviders()
+	summaries := make([]ProviderSummary, len(providers))
+	for i, p := range providers {
+		host := p.RPCHost
+		if p.CosmosGRPCHost != "" {
+			host = p.CosmosGRPCHost
+		}
+		if p.APIHost != "" {
+			host = p.APIHost
+		}
+		summaries[i] = ProviderSummary{
+			Name:     p.Name,
+			Priority: p.Priority,
+			Type:     p.Type,
+			Host:     classifyHost(host),
+		}
+	}
+	return summaries
 }
 
 // classifyHost returns "self-hosted" when rawURL resolves to a loopback, private,
