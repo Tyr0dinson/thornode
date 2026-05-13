@@ -219,12 +219,14 @@ func mergeObservedTxMetadata(dst *common.ObservedTx, src common.ObservedTx) {
 	}
 
 	// XMR scanner observations can arrive in two shapes for the same chain tx:
-	// a scanner-only view with fallback gas, and a tx-key-backed view with the
-	// actual Monero fee. Once tx keys exist, their gas is authoritative.
+	// a scanner-only view with fallback gas, and a delayed/proof-backed view
+	// with the actual Monero fee. The actual fee can be above or below the
+	// fallback, so prefer the more authoritative XMR observation phase rather
+	// than comparing amounts.
 	if dst.Tx.Chain.Equals(common.XMRChain) &&
 		dst.Tx.EqualsExIgnoreGas(src.Tx) &&
-		len(src.TxKeys) > 0 &&
-		!src.Tx.Gas.IsEmpty() {
+		!src.Tx.Gas.IsEmpty() &&
+		xmrObservedTxGasPriority(src) > xmrObservedTxGasPriority(*dst) {
 		dst.Tx.Gas = src.Tx.Gas
 	}
 
@@ -268,6 +270,19 @@ func mergeObservedTxMetadata(dst *common.ObservedTx, src common.ObservedTx) {
 		}
 		dst.Signers = append(dst.Signers, signer)
 		existingSigners[signer] = struct{}{}
+	}
+}
+
+func xmrObservedTxGasPriority(tx common.ObservedTx) int {
+	switch {
+	case len(tx.TxKeys) > 0 || len(tx.XmrKeyImages) > 0:
+		return 3
+	case tx.FinaliseHeight > tx.BlockHeight:
+		return 2
+	case !tx.Tx.Gas.IsEmpty():
+		return 1
+	default:
+		return 0
 	}
 }
 
