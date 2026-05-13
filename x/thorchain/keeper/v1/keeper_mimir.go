@@ -154,9 +154,5 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		}
 	}
 
-	if strings.HasPrefix(key, "L1DYNAMICFEE") {
-		return true
-	}
-
-	return false
+	return strings.HasPrefix(key, "L1DYNAMICFEE")
 }
