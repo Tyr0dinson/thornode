@@ -177,12 +177,15 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 	// Build signing payload
 	era := types.ImmortalEra()
-	payload := types.SigningPayload(
+	payload, err := types.SigningPayload(
 		callData, era, uint64(nonce), 0,
 		c.params.CheckMetadataHash, types.MetadataModeDisabled,
 		rv.SpecVersion, rv.TransactionVersion,
 		genesisHash, genesisHash,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("fail to sign transaction: %w", err)
+	}
 
 	// Sign — if payload > 256 bytes, hash first (Substrate convention)
 	signingData := payload
