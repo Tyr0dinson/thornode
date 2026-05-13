@@ -185,10 +185,38 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 
 	for _, op := range a.Ops {
 		for { // run each op until continue or finished
-			result := op(c)
-			if result.Error != nil {
-				a.Log().Err(result.Error).Stringer("op", op).Msg("op failed")
+			// Run the Op in a goroutine so a blocking Op cannot bypass
+			// Actor.Timeout. The framework's contract is that each retry of an
+			// Op completes within Actor.Timeout; an Op that blocks past the
+			// deadline is a bug, but the framework should still fail the actor
+			// cleanly rather than spinning until the job-level timeout fires.
+			resultCh := make(chan OpResult, 1)
+			go func() { resultCh <- op(c) }()
+
+			var deadline <-chan time.Time
+			if a.Timeout > 0 {
+				remaining := a.Timeout - time.Since(start)
+				if remaining <= 0 {
+					a.Log().Err(ErrTimeout).Stringer("op", op).Msg("actor timed out (no budget remaining)")
+					return ErrTimeout
+				}
+				deadline = time.After(remaining)
 			}
+
+			var result OpResult
+			select {
+			case result = <-resultCh:
+				if result.Error != nil {
+					a.Log().Err(result.Error).Stringer("op", op).Msg("op failed")
+				}
+			case <-deadline:
+				// Op is still in flight past the actor's deadline. Abandon it
+				// (the goroutine drains into the buffered channel) and fail
+				// the actor with ErrTimeout.
+				a.Log().Err(ErrTimeout).Stringer("op", op).Msg("actor timed out (op blocked past deadline)")
+				return ErrTimeout
+			}
+
 			if result.Finish {
 				return result.Error
 			}
