@@ -233,8 +233,8 @@ func (s *ExtrinsicSuite) TestSigningPayloadContainsAllFields(c *C) {
 	blockHash := make([]byte, 32)
 	blockHash[0] = 0xBB
 
-	payload := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, 100, 1, genesisHash, blockHash)
-
+	payload, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, 100, 1, genesisHash, blockHash)
+	c.Assert(err, IsNil)
 	c.Assert(payload[0], Equals, byte(5))
 	c.Assert(payload[1], Equals, byte(3))
 	c.Assert(payload[len(payload)-1], Equals, byte(0x00))

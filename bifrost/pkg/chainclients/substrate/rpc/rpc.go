@@ -356,9 +356,7 @@ func (c *Client) GetMetadata(blockHash string) (string, error) {
 
 	var hexData string
 	if err := json.Unmarshal(result, &hexData); err != nil {
-		if err := json.Unmarshal(result, &hexData); err != nil {
-			return "", fmt.Errorf("failed to unmarshal metadata: %w", err)
-		}
+		return "", fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
 
 	return hexData, nil

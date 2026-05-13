@@ -33,7 +33,8 @@ func newTestScanner() *Scanner {
 		cfg: config.BifrostBlockScannerConfiguration{
 			ChainID: common.TAOChain,
 		},
-		pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(),
+		pubkeyMgr:  pubkeymanager.NewMockPoolAddressValidator(),
+		nonceCache: newNonceCache(),
 	}
 	return s
 }

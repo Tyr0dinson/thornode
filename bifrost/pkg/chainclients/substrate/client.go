@@ -33,6 +33,11 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
+const (
+	defaultMaxPendingNonces = 3
+	migrationTxCacheBlocks  = 100
+)
+
 // Client is a generic client for Substrate blockchains.
 type Client struct {
 	*generic.Client
@@ -66,6 +71,11 @@ func NewClient(
 ) (*Client, error) {
 	if bridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
+	}
+
+	// default
+	if config.MaxPendingNonces == 0 {
+		config.MaxPendingNonces = defaultMaxPendingNonces
 	}
 
 	logger := log.With().
@@ -106,7 +116,7 @@ func NewClient(
 
 	c.chainScanner, err = NewScanner(
 		config.BlockScanner,
-		c.ReportSolvency,
+		c.reportSolvencyFromScanner,
 		c.rpcClient,
 		pubkeyMgr,
 	)
@@ -215,14 +225,19 @@ func (c *Client) GetAccountByAddress(addr string, height *big.Int) (common.Accou
 // Follows the same insolvent-first pattern as XRP/SOL/ETH: reports only insolvent
 // vaults during normal operation, or all-solvent when the scanner is halted.
 func (c *Client) ReportSolvency(height int64) error {
-	if !c.ShouldReportSolvency(height) {
+	return c.reportSolvency(height)
+}
+
+func (c *Client) reportSolvencyFromScanner(height int64) error {
+	if !c.IsBlockScannerHealthy() {
 		return nil
 	}
 
-	// When the block scanner is not healthy, only report from the auto-unhalt
-	// SolvencyCheckRunner (which passes chainHeight). FetchTxs passes
-	// PreviousHeight+1, so skip those to avoid noise during halts.
-	if !c.IsBlockScannerHealthy() && height == c.blockScanner.PreviousHeight()+1 {
+	return c.reportSolvency(height)
+}
+
+func (c *Client) reportSolvency(height int64) error {
+	if !c.ShouldReportSolvency(height) {
 		return nil
 	}
 
@@ -467,7 +482,8 @@ func (c *Client) createAndSignExtrinsic(
 	specVersion, txVersion := c.chainScanner.getRuntimeVersion()
 
 	// Construct signing payload
-	payload := stypes.SigningPayload(
+	var payload []byte
+	payload, err = stypes.SigningPayload(
 		callData,
 		era,
 		uint64(nonce),
@@ -479,6 +495,9 @@ func (c *Client) createAndSignExtrinsic(
 		genesisHashBytes,
 		blockHashBytes,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct payload: %w", err)
+	}
 
 	// Sign the payload
 	// If payload > 256 bytes, hash it first (Substrate convention)
@@ -537,7 +556,15 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 			// The migration cache tells us which: a hit means the scanner saw the
 			// tx land — treat as success; a miss means abandon, since re-broad-
 			// casting risks a double-spend.
-			if !c.migrationTxCache.Has(txHash) {
+			extrinsic, parseErr := stypes.ParseSignedExtrinsic(rawTx, c.chainScanner.params.CheckMetadataHash)
+			if parseErr != nil {
+				return "", fmt.Errorf("failed to parse extrinsic: %w", parseErr)
+			}
+			cacheKey := migrationTxCacheKey(
+				c.GetAddress(txOutItem.GetVaultPubKey()),
+				extrinsic.Nonce,
+			)
+			if !c.migrationTxCache.Has(cacheKey) {
 				c.logger.Err(err).Str("txid", txHash).Msg("stale nonce, no scanner observation")
 				return "", types.ErrAbandonTxOut
 			}
@@ -586,7 +613,17 @@ func (c *Client) OnObservedTxIn(txIn ttypes.TxInItem, height int64) {
 	if err != nil || !memo.IsInternal() {
 		return
 	}
-	c.migrationTxCache.Add(txIn.Tx)
+
+	nonce, found := c.chainScanner.nonceCache.Get(txIn.Tx)
+	if !found {
+		c.logger.Debug().
+			Str("tx", txIn.Tx).
+			Msg("no nonce found in cache")
+		return
+	}
+	cacheKey := migrationTxCacheKey(txIn.Sender, nonce)
+	c.migrationTxCache.Add(cacheKey, uint64(height))
+	c.migrationTxCache.Purge(height - migrationTxCacheBlocks)
 }
 
 // --------------------------------- helpers ---------------------------------

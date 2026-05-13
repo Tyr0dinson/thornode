@@ -1,6 +1,7 @@
 package substrate
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,7 @@ import (
 const (
 	FeeCacheSize    = 200
 	FeeUpdatePeriod = 20
+	NonceHashBlocks = 100
 )
 
 // Scanner is a generic block scanner for Substrate chains.
@@ -38,8 +40,9 @@ type Scanner struct {
 
 	// Set once at construction, immutable thereafter.
 	genesisHash string
+	params      Params
 
-	params Params
+	nonceCache *nonceCache
 
 	// Cached runtime metadata (protected by mu)
 	mu                sync.RWMutex
@@ -70,6 +73,7 @@ func NewScanner(
 		rpcClient:        rpcClient,
 		solvencyReporter: solvencyReporter,
 		pubkeyMgr:        pubkeyMgr,
+		nonceCache:       newNonceCache(),
 	}
 
 	rv, err := rpcClient.GetRuntimeVersion("")
@@ -213,6 +217,8 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 			s.logger.Err(err).Msg("failed to report solvency")
 		}
 	}
+
+	s.nonceCache.Purge(fetchHeight - NonceHashBlocks)
 
 	return txIn, nil
 }
@@ -385,124 +391,35 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	// Compute extrinsic hash (Blake2b-256 of the raw encoded extrinsic)
 	txHash := stypes.ExtrinsicHash(raw)
 
-	// Decode the length prefix
-	_, consumed, err := stypes.DecodeCompact(raw)
+	var extrinsic *stypes.Extrinsic
+	extrinsic, err = stypes.ParseSignedExtrinsic(raw, s.params.CheckMetadataHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode extrinsic length: %w", err)
-	}
-	body := raw[consumed:]
-
-	if len(body) == 0 {
-		return nil, fmt.Errorf("empty extrinsic body")
-	}
-
-	// Check if this is a signed extrinsic (bit 7 set) using format version 4
-	versionByte := body[0]
-	if versionByte&0x80 == 0 {
-		return nil, nil // Unsigned extrinsic
-	}
-	if versionByte&0x7F != 4 {
-		return nil, fmt.Errorf("unsupported extrinsic version: %d", versionByte&0x7F)
-	}
-
-	// Parse signed extrinsic (version 4)
-	pos := 1
-
-	// Signer: MultiAddress type
-	if pos >= len(body) {
-		return nil, fmt.Errorf("extrinsic too short for signer type")
-	}
-	signerType := body[pos]
-	pos++
-
-	if signerType != stypes.MultiAddressID {
-		return nil, fmt.Errorf("unsupported signer type: %d", signerType)
-	}
-
-	// 32-byte signer account ID
-	if pos+32 > len(body) {
-		return nil, fmt.Errorf("extrinsic too short for signer")
-	}
-	signerPubkey := body[pos : pos+32]
-	pos += 32
-
-	// Signature type: Ed25519 (0x00) and Sr25519 (0x01) use 64-byte signatures,
-	// ECDSA (0x02) uses 65 bytes. Reject unknown types to prevent parser misalignment.
-	if pos >= len(body) {
-		return nil, fmt.Errorf("extrinsic too short for signature type")
-	}
-	sigType := body[pos]
-	pos++
-	sigLen := 64
-	if sigType == 0x02 { // ECDSA
-		sigLen = 65
-	} else if sigType > 0x02 {
-		return nil, fmt.Errorf("unsupported signature type: %d", sigType)
-	}
-
-	if pos+sigLen > len(body) {
-		return nil, fmt.Errorf("extrinsic too short for signature")
-	}
-	pos += sigLen
-
-	// Era
-	if pos >= len(body) {
-		return nil, fmt.Errorf("extrinsic too short for era")
-	}
-	if body[pos] == 0x00 {
-		pos++ // immortal era
-	} else {
-		if pos+2 > len(body) {
-			return nil, fmt.Errorf("extrinsic too short for mortal era")
+		if errors.Is(err, stypes.ErrUnsignedExtrinsic) {
+			return nil, nil
 		}
-		pos += 2 // mortal era
+		return nil, fmt.Errorf("failed to parse extrinsic: %w", err)
 	}
 
-	// Nonce (compact)
-	_, nonceLen, err := stypes.DecodeCompact(body[pos:])
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode nonce: %w", err)
-	}
-	pos += nonceLen
-
-	// Tip (compact)
-	_, tipLen, err := stypes.DecodeCompact(body[pos:])
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode tip: %w", err)
-	}
-	pos += tipLen
-
-	// CheckMetadataHash mode byte (RFC-0078, present in DOT/KSM/TAO runtimes).
-	// Chains without this extension would not have this byte
-	if s.params.CheckMetadataHash {
-		if pos >= len(body) {
-			return nil, fmt.Errorf("extrinsic too short for metadata mode byte")
-		}
-		pos++ // skip metadata mode byte
-	}
-
-	// The remainder is call data
-	callData := body[pos:]
-	if len(callData) < 2 {
+	if len(extrinsic.CallData) < 2 {
 		return nil, fmt.Errorf("call data too short")
 	}
 
 	// Get sender SS58 address
-	senderAddr, err := ss58.Encode(s.cfg.ChainID.SS58Prefix(), signerPubkey)
+	senderAddr, err := ss58.Encode(s.cfg.ChainID.SS58Prefix(), extrinsic.Signer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode sender address: %w", err)
 	}
 
-	palletIdx := callData[0]
-	callIdx := callData[1]
+	palletIdx := extrinsic.CallData[0]
+	callIdx := extrinsic.CallData[1]
 
 	var txItem *ttypes.TxInItem
 	switch {
 	case palletIdx == s.params.Index(BalancesPallet) && s.isTransferCall(callIdx):
-		txItem, err = s.parseTransfer(callData[2:], senderAddr, txHash, blockHeight, "", actualFee)
+		txItem, err = s.parseTransfer(extrinsic.CallData[2:], senderAddr, txHash, blockHeight, "", actualFee)
 
 	case palletIdx == s.params.Index(UtilityPallet) && callIdx == s.params.Index(UtilityBatchAllCall):
-		txItem, err = s.parseBatchAll(callData[2:], senderAddr, txHash, blockHeight, actualFee)
+		txItem, err = s.parseBatchAll(extrinsic.CallData[2:], senderAddr, txHash, blockHeight, actualFee)
 
 	default:
 		return nil, nil
@@ -510,6 +427,8 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	if err != nil || txItem == nil {
 		return txItem, err
 	}
+
+	s.nonceCache.Add(txItem.Tx, extrinsic.Nonce, uint64(blockHeight))
 
 	// Filter oversized memos (defense-in-depth, matches UTXO/EVM/Gaia scanners).
 	if len([]byte(txItem.Memo)) > constants.MaxMemoSize {

@@ -604,6 +604,7 @@ bifrost:
     tao:
       <<: *default-chain
       chain_id: TAO
+      max_pending_nonces: 3
       block_scanner:
         <<: *default-block-scanner
         block_height_discover_back_off: 1s
@@ -621,6 +622,7 @@ bifrost:
     dot:
       <<: *default-chain
       chain_id: DOT
+      max_pending_nonces: 3
       block_scanner:
         <<: *default-block-scanner
         block_height_discover_back_off: 1s

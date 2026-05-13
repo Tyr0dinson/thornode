@@ -1,6 +1,7 @@
 package substrate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -230,7 +232,8 @@ func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 		nonces:           make(map[string]nonceMetadata),
 		migrationTxCache: newMigrationTxCache(),
 		chainScanner: &Scanner{
-			params: ChainParams[common.TAOChain],
+			params:     ChainParams[common.TAOChain],
+			nonceCache: newNonceCache(),
 		},
 	}
 }
@@ -504,6 +507,24 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 		},
 	}
 
+	signerPubkey := bytes.Repeat([]byte{0xAB}, 32)
+	c.Assert(len(signerPubkey), Equals, 32)
+
+	cmtPub := cmted25519.PubKey(signerPubkey)
+	cosmosPubAny, err := cryptocodec.FromCmtPubKeyInterface(cmtPub)
+	c.Assert(err, IsNil)
+	bech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, cosmosPubAny)
+	c.Assert(err, IsNil)
+	vaultPubKey, err := common.NewPubKey(bech32)
+	c.Assert(err, IsNil)
+
+	expectedSenderSS58, err := ss58.Encode(common.TAOChain.SS58Prefix(), signerPubkey)
+	c.Assert(err, IsNil)
+	vaultAddr, err := vaultPubKey.GetAddress(common.TAOChain)
+	c.Assert(err, IsNil)
+	c.Assert(vaultAddr.String(), Equals, expectedSenderSS58,
+		Commentf("vault pubkey and signer pubkey must produce the same SS58"))
+
 	for _, tt := range tests {
 		h := newRPCHandler()
 		h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
@@ -512,15 +533,38 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 		srv := httptest.NewServer(h)
 
 		cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
-		rawTx := []byte{0x01, 0x02, 0x03}
-		// Pre-compute the hash BroadcastTx will see, so the cache key matches.
+
+		params := ChainParams[common.TAOChain]
+		ext := &subtypes.Extrinsic{
+			Signer:            signerPubkey,
+			SignatureType:     subtypes.SignatureTypeEd25519,
+			Signature:         make([]byte, 64),
+			Era:               subtypes.ImmortalEra(),
+			Nonce:             1,
+			Tip:               0,
+			MetadataMode:      subtypes.MetadataModeDisabled,
+			CheckMetadataHash: params.CheckMetadataHash,
+			CallData: subtypes.BalanceTransferKeepAlive(
+				params.Index(BalancesPallet),
+				params.Index(BalancesTransferKeepAliveCall),
+				bytes.Repeat([]byte{0x01}, 32), // non-zero destination
+				cosmos.NewUint(100),
+			),
+		}
+
+		rawTx := subtypes.EncodeSignedExtrinsic(ext)
 		expectedHash := subtypes.ExtrinsicHash(rawTx)
 
 		if tt.prePopulate {
-			cl.migrationTxCache.Add(expectedHash)
+			cacheKey := migrationTxCacheKey(expectedSenderSS58, ext.Nonce)
+			cl.migrationTxCache.Add(cacheKey, 123456)
 		}
 
-		txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
+		txOutItem := stypes.TxOutItem{
+			Chain:            common.TAOChain,
+			VaultPubKeyEddsa: vaultPubKey,
+			Memo:             "OUT:hash",
+		}
 		gotHash, err := cl.BroadcastTx(txOutItem, rawTx)
 
 		if tt.wantErr != nil {
@@ -682,6 +726,12 @@ func (s *ClientSuite) TestOnObservedTxIn_PopulatesMigrationCache(c *C) {
 		// the shared signer cache (the generic OnObservedTxIn may write to it
 		// for OUT memos; not at issue here, but defensive).
 		txID := fmt.Sprintf("0x%064x", i+1)
+		nonce := uint64(1)
+
+		// Pre-populate the nonce cache the way the scanner would have, since
+		// OnObservedTxIn reads (txID -> nonce) out of it before writing to the
+		// migration cache.
+		cl.chainScanner.nonceCache.Add(txID, nonce, 100)
 
 		txIn := stypes.TxInItem{
 			Tx:     txID,
@@ -691,7 +741,8 @@ func (s *ClientSuite) TestOnObservedTxIn_PopulatesMigrationCache(c *C) {
 
 		cl.OnObservedTxIn(txIn, 100)
 
-		got := cl.migrationTxCache.Has(txID)
+		cacheKey := migrationTxCacheKey(tt.sender, nonce)
+		got := cl.migrationTxCache.Has(cacheKey)
 		c.Check(got, Equals, tt.wantHas,
 			Commentf("%s: cache.Has(%s) = %v, want %v", tt.name, txID, got, tt.wantHas))
 	}
@@ -771,4 +822,10 @@ func (s *ClientSuite) TestReserveNonce_MaxPendingNoncesCap(c *C) {
 
 		srv.Close()
 	}
+}
+
+func (s *ClientSuite) TestReportSolvency_DoesNotRecurse(c *C) {
+	cl := newTestClient(nil)
+	// only check that the function returns and not recurse infinitely
+	_ = cl.ReportSolvency(1)
 }

@@ -197,6 +197,10 @@ func (c *Client) Sign(
 // msg must be a 32-byte digest — callers are responsible for hashing the
 // payload, since Ecrecover silently returns wrong results otherwise.
 func verifySecp256k1(msg, sig []byte, pub common.PubKey) error {
+	if len(msg) != 32 {
+		return fmt.Errorf("msg must be 32 byte, got: %d", len(msg))
+	}
+
 	sigPub, err := crypto.Ecrecover(msg, sig)
 	if err != nil {
 		return fmt.Errorf("failed to get public key from signature: %w", err)

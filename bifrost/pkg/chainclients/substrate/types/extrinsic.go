@@ -40,6 +40,10 @@ type Extrinsic struct {
 	CallData          []byte
 }
 
+// ErrUnsignedExtrinsic indicates the version byte's bit 7 is clear (the
+// extrinsic is an inherent or otherwise unsigned).
+var ErrUnsignedExtrinsic = fmt.Errorf("unsigned extrinsic")
+
 // BalanceTransferKeepAlive creates the call data for a Balances::transfer_keep_alive call.
 // palletIndex: the pallet index for Balances
 // callIndex: the call index for transfer_keep_alive within Balances
@@ -96,7 +100,10 @@ func SigningPayload(
 	metadataMode byte,
 	specVersion, txVersion uint32,
 	genesisHash, blockHash []byte,
-) []byte {
+) ([]byte, error) {
+	if checkMetadataHash && metadataMode != MetadataModeDisabled {
+		return nil, fmt.Errorf("metadata mode not implemented")
+	}
 	payload := make([]byte, 0, 256)
 	// Call data
 	payload = append(payload, callData...)
@@ -114,10 +121,10 @@ func SigningPayload(
 	payload = append(payload, genesisHash...)
 	payload = append(payload, blockHash...)
 	// CheckMetadataHash implicit: Option<[u8;32]>::None when mode == 0
-	if checkMetadataHash && metadataMode == MetadataModeDisabled {
+	if checkMetadataHash {
 		payload = append(payload, 0x00) // Option::None
 	}
-	return payload
+	return payload, nil
 }
 
 // EncodeSignedExtrinsic assembles a signed extrinsic from its components.
@@ -225,4 +232,128 @@ func HexEncodeHead(data []byte, n int) string {
 		return hex.EncodeToString(data)
 	}
 	return hex.EncodeToString(data[:n])
+}
+
+func ParseSignedExtrinsic(data []byte, checkMetadataHash bool) (*Extrinsic, error) {
+	// Decode the length prefix
+	_, consumed, err := DecodeCompact(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode extrinsic length: %w", err)
+	}
+	body := data[consumed:]
+
+	if len(body) == 0 {
+		return nil, fmt.Errorf("empty extrinsic body")
+	}
+
+	// Check if this is a signed extrinsic (bit 7 set) using format version 4
+	versionByte := body[0]
+	if versionByte&0x80 == 0 {
+		return nil, ErrUnsignedExtrinsic
+	}
+	if versionByte&0x7F != 4 {
+		return nil, fmt.Errorf("unsupported extrinsic version: %d", versionByte&0x7F)
+	}
+
+	// Parse signed extrinsic (version 4)
+	pos := 1
+
+	// Signer: MultiAddress type
+	if pos >= len(body) {
+		return nil, fmt.Errorf("extrinsic too short for signer type")
+	}
+	signerType := body[pos]
+	pos++
+
+	if signerType != MultiAddressID {
+		return nil, fmt.Errorf("unsupported signer type: %d", signerType)
+	}
+
+	// 32-byte signer account ID
+	if pos+32 > len(body) {
+		return nil, fmt.Errorf("extrinsic too short for signer")
+	}
+	signerPubkey := body[pos : pos+32]
+	pos += 32
+
+	// Signature type: Ed25519 (0x00) and Sr25519 (0x01) use 64-byte signatures,
+	// ECDSA (0x02) uses 65 bytes. Reject unknown types to prevent parser misalignment.
+	if pos >= len(body) {
+		return nil, fmt.Errorf("extrinsic too short for signature type")
+	}
+	sigType := body[pos]
+	pos++
+	sigLen := 64
+	if sigType == 0x02 { // ECDSA
+		sigLen = 65
+	} else if sigType > 0x02 {
+		return nil, fmt.Errorf("unsupported signature type: %d", sigType)
+	}
+
+	if pos+sigLen > len(body) {
+		return nil, fmt.Errorf("extrinsic too short for signature")
+	}
+	signature := body[pos : pos+sigLen]
+	pos += sigLen
+
+	// Era
+	if pos >= len(body) {
+		return nil, fmt.Errorf("extrinsic too short for era")
+	}
+	eraStart := pos
+	if body[pos] == 0x00 {
+		pos++ // immortal era
+	} else {
+		if pos+2 > len(body) {
+			return nil, fmt.Errorf("extrinsic too short for mortal era")
+		}
+		pos += 2 // mortal era
+	}
+	era := body[eraStart:pos]
+
+	// Nonce (compact)
+	nonceVal, nonceLen, err := DecodeCompact(body[pos:])
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode nonce: %w", err)
+	}
+	if !nonceVal.BigInt().IsUint64() {
+		return nil, fmt.Errorf("nonce exceeds uint64")
+	}
+	pos += nonceLen
+
+	// Tip (compact)
+	tipVal, tipLen, err := DecodeCompact(body[pos:])
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode tip: %w", err)
+	}
+	if !tipVal.BigInt().IsUint64() {
+		return nil, fmt.Errorf("tip exceeds uint64")
+	}
+	pos += tipLen
+
+	// CheckMetadataHash mode byte (RFC-0078, present in DOT/KSM/TAO runtimes).
+	// Chains without this extension would not have this byte
+	var metadataMode byte
+	if checkMetadataHash {
+		if pos >= len(body) {
+			return nil, fmt.Errorf("extrinsic too short for metadata mode byte")
+		}
+		metadataMode = body[pos]
+		pos++ // skip metadata mode byte
+	}
+
+	// The remainder is call data
+	callData := body[pos:]
+
+	return &Extrinsic{
+		Signer:            signerPubkey,
+		Signature:         signature,
+		SignatureType:     sigType,
+		Era:               era,
+		Nonce:             nonceVal.Uint64(),
+		Tip:               tipVal.Uint64(),
+		MetadataMode:      metadataMode,
+		CheckMetadataHash: checkMetadataHash,
+		CallData:          callData,
+	}, nil
 }
