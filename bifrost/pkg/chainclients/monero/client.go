@@ -3910,7 +3910,7 @@ func (c *Client) ValidateOutboundObservation(tx common.ObservedTx) error {
 		return fmt.Errorf("xmr finalized outbound is missing tx keys for %s", tx.Tx.ID)
 	}
 
-	trackedOutboundChange := len(tx.XmrKeyImages) > 0
+	trackedOutboundChange := len(tx.XmrKeyImages) > 0 || isXMRConsolidateSelfSendObservedTx(tx)
 	outgoingAudit, err := c.lookupXMROutgoingAudit(tx.ObservedPubKey, tx.Tx.ID.String())
 	if err != nil {
 		return fmt.Errorf("fail to query xmr outbound audit via sidecar: %w", err)
@@ -4168,7 +4168,7 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return item, true, nil
 	}
 
-	trackedOutboundChange := len(item.XmrKeyImages) > 0
+	trackedOutboundChange := len(item.XmrKeyImages) > 0 || isXMRConsolidateSelfSendItem(item)
 	if isOutboundFromVault {
 		if len(item.TxKeys) == 0 {
 			c.logger.Info().
@@ -5345,6 +5345,28 @@ func isOutboundObservationMemo(memoText string) bool {
 		return false
 	}
 	return parsedMemo.IsOutbound()
+}
+
+func isXMRConsolidateSelfSendItem(item *stypes.TxInItem) bool {
+	if item == nil {
+		return false
+	}
+	parsedMemo, err := memo.ParseMemo(common.LatestVersion, strings.TrimSpace(item.Memo))
+	if err != nil || !parsedMemo.IsType(memo.TxConsolidate) {
+		return false
+	}
+	return strings.TrimSpace(item.Sender) != "" && strings.EqualFold(strings.TrimSpace(item.Sender), strings.TrimSpace(item.To))
+}
+
+func isXMRConsolidateSelfSendObservedTx(tx common.ObservedTx) bool {
+	if tx.IsEmpty() || !tx.Tx.Chain.Equals(common.XMRChain) {
+		return false
+	}
+	parsedMemo, err := memo.ParseMemo(common.LatestVersion, strings.TrimSpace(tx.Tx.Memo))
+	if err != nil || !parsedMemo.IsType(memo.TxConsolidate) {
+		return false
+	}
+	return !tx.Tx.FromAddress.IsEmpty() && tx.Tx.FromAddress.Equals(tx.Tx.ToAddress)
 }
 
 func (c *Client) shouldSkipObservedXMRInboundChange(

@@ -2319,6 +2319,83 @@ func TestPrepareObservedTxInItemGeneratesKeyImagesForSelfConsolidate(t *testing.
 	require.Len(t, applyReqs[0].KeyImages, 2)
 }
 
+func TestPrepareObservedTxInItemWaitsForSelfConsolidateKeyImageEvenWithoutChangeAudit(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("1", 64)
+	txKey := strings.Repeat("6", 64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/monero/outbounds/" + url.PathEscape(vaultPubKey.String()):
+			trackedOwnedChange := false
+			localChangeMaterialized := false
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash:                  txHash,
+					TxKeys:                  []string{txKey},
+					HasOwnedChange:          &trackedOwnedChange,
+					LocalChangeMaterialized: &localChangeMaterialized,
+					FromAddress:             vaultAddr.String(),
+					ToAddress:               vaultAddr.String(),
+					Amount:                  10,
+					Memo:                    "consolidate",
+					Status:                  "observed_mined",
+				}},
+			})
+		case "/v1/monero/outbounds/validate":
+			_ = json.NewEncoder(w).Encode(xmrFrostValidateOutboundResponse{Tracked: false, ActualFee: 1 * moneroAtomicToThorchain})
+		default:
+			_ = json.NewEncoder(w).Encode(xmrFrostOutputsResponse{})
+		}
+	}))
+	defer server.Close()
+
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		chain:           common.XMRChain,
+		localNodePubKey: common.PubKey("member-a"),
+		frostSigner:     signer,
+		tssServer:       &mockKeyImageTssServer{},
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{
+					vaultPubKey.String(): {
+						PubKey:      vaultPubKey,
+						PubKeyEddsa: vaultPubKey,
+						PubKeyFrost: vaultPubKey,
+						Membership:  []string{"member-a", "member-b", "member-c"},
+					},
+				},
+			},
+			version: semver.MustParse("3.0.0"),
+		},
+		logger:          testLogger(),
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): vaultAddr},
+	}
+
+	item := &stypes.TxInItem{
+		BlockHeight:         100,
+		Tx:                  txHash,
+		Sender:              vaultAddr.String(),
+		To:                  vaultAddr.String(),
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		ObservedVaultPubKey: vaultPubKey,
+		Memo:                "consolidate",
+		TxKeys:              []string{txKey},
+	}
+
+	prepared, include, err := c.PrepareObservedTxInItem(item, true, 110)
+	require.NoError(t, err)
+	require.False(t, include)
+	require.Nil(t, prepared)
+}
+
 func TestPrepareObservedTxInItemGeneratesKeyImagesForFinalOutboundChange(t *testing.T) {
 	t.Parallel()
 
