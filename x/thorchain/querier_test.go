@@ -677,6 +677,7 @@ func (s *QuerierSuite) TestQueryTxVotersUsesConsensusXMRGas(c *C) {
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(26868)),
 	}
 	actualObs := common.NewObservedTx(actualTx, s.ctx.BlockHeight(), observedPubKey, s.ctx.BlockHeight())
+	actualObs.FinaliseHeight = actualObs.BlockHeight + 30
 	actualObs.TxKeys = []string{"tx-key"}
 
 	nodes := make([]NodeAccount, 4)

@@ -156,16 +156,32 @@ func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
 func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) *common.ObservedTx {
 	finalTx := m.getConsensusTx(nodeAccounts, true)
 	if !finalTx.IsEmpty() {
+		m.mergeConsensusTxMetadata(&finalTx)
 		return &finalTx
 	}
 	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
+		m.mergeConsensusTxMetadata(&m.Tx)
 		return &m.Tx
 	}
 	discoverTx := m.getConsensusTx(nodeAccounts, false)
 	if !discoverTx.IsEmpty() {
+		m.mergeConsensusTxMetadata(&discoverTx)
 		return &discoverTx
 	}
+	m.mergeConsensusTxMetadata(&m.Tx)
 	return &m.Tx
+}
+
+func (m *ObservedTxVoter) mergeConsensusTxMetadata(tx *common.ObservedTx) {
+	if tx == nil || tx.IsEmpty() {
+		return
+	}
+	for _, observed := range m.Txs {
+		if !sameObservedTxConsensusKey(*tx, observed) {
+			continue
+		}
+		mergeObservedTxMetadata(tx, observed)
+	}
 }
 
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) common.ObservedTx {
