@@ -22,14 +22,15 @@ Priority:
 
 - Get birthdays, pubkeys, viewkey, and keyimages from THOR for all nodes.
 - Collect inbounds and spent keyimages from each block.
-- Call `scanner.reconcile()`, which resolves keyimages to outputs to mark them as spent.
+- Commit scan batches to the sidecar; it persists outputs, scan metadata, applies known keyimages, and prunes old scan metadata.
 
 ## Scanner Inventory
 
 - Pubkey and birthday.
 - Outputs are unspent or spent, where spent means a spent keyimage was found on-chain.
 - Scanner balance is total unspent outputs and is used for solvency.
-- Txkeys are only used to audit outgoing transactions against the THOR schedule, with slash if invalid.
+- Txkeys are used to audit outgoing transactions against the THOR schedule, with slash if invalid.
+- Txkeys are persisted as outbound audit inventory, but are not part of rescan mode.
 
 ## Solvency Checker
 
@@ -42,10 +43,10 @@ If non-signing nodes validate a txkey and find an incorrect amount, destination 
 ## Gas
 
 - Gas limit is how many units; gas rate is how expensive those units are; gas used is limit times rate.
-- Gas limit is initially hardcoded to `10000`, safe for 1 to 15 inputs.
+- Gas budget is `12 * 10000 = 120000`.
 - Every gas cycle, active nodes observe gas rate and update.
-- Gas limit is proportional to inputs used: 10 inputs means `10 * 10000 * rate`.
-- Gas is a ceiling; signers use less than or equal to the ceiling.
+- Gas is not multiplied by input count.
+- Gas is a ceiling; signers must use less than or equal to the ceiling.
 - Consolidate can use whatever gas it needs.
 - Final migrate sends the remainder into the vault.
 
@@ -67,6 +68,7 @@ Signers then inhibit keysign rescheduling until enough Monero blocks have passed
 
 - Signing nodes produce keyshares.
 - FROST keyshare is encrypted and attested to THOR, allowing emergency recovery, same as ECDSA and EDDSA.
+- THOR stores FROST pubkey, FROST keyshare backup, and observed Monero height.
 - Birthday is saved on-chain.
 
 ## Inbounds
@@ -88,7 +90,8 @@ Signers then inhibit keysign rescheduling until enough Monero blocks have passed
 - Joiners join, begin.
 - Change is always returned to self for `OUT`, `REFUND`, `CONSOLIDATE`, and `MIGRATE`.
 - Signers attest with txkey.
-- Non-signers validate txkey and attest on first observation. Txkey is discarded if valid.
+- Non-signers validate txkey and attest on first observation.
+- Valid txkeys are persisted as outbound audit inventory.
 - Signers wait one block, then see the inbound change.
 - Inbound is processed. If coming from self, signers realize it is already observed and needs finalization, then kick off keyimage-gen.
 - Non-signing nodes validate keyimage and attest.
@@ -102,7 +105,7 @@ Signers then inhibit keysign rescheduling until enough Monero blocks have passed
 
 ## Consolidate
 
-- Every 15 outputs, consolidate down to 1 output.
+- Consolidate from 10 unlocked outputs down to 5.
 - Second output is zero-amount and can be ignored for keyimage-gen.
 
 ## Zero-Output Change
@@ -123,15 +126,15 @@ Important for repairing inventory: inbounds, spent or unspent state, and total b
 - Inbounds are spent or unspent, and contain hash plus amount.
 - Keyimages are pending or applied to an inbound. If applied, the inbound is spent.
 - Total balance can be validated on every node, signing or non-signing. Do not rely on scanner balance view; it will not be correct for watch-only vaults.
-- `reconcile()` takes all pending keyimages and applies them to found inbounds.
-- If a spent keyimage is found before the inbound, a later `reconcile()` will apply it.
-- `reconcile()` is called after a batch in rescan or after a block in normal mode.
+- Rescan does not replay txkeys.
+- Scan batches apply known keyimages to found outputs.
+- If a spent keyimage is found before the inbound, a later scan batch will apply it.
 
 ## Normal Mode
 
 - No work stream if not yet at tip.
 - At tip when scan for all vaults is at tip.
-- Rescan only finds inbounds and spent keyimages, then reconciles them.
+- Rescan finds inbounds and spent keyimages, then commits them through sidecar scan batch state.
 - Signing nodes produce keyimages and signatures and attest. Non-signing nodes validate and attest just with keyimage and inbound.
 - All nodes can cache keyimage signatures, but signatures are not attested to THOR. Finalization only happens if validated, so inbounds finalized on THOR means correct validation.
 
@@ -139,14 +142,15 @@ Important for repairing inventory: inbounds, spent or unspent state, and total b
 
 - Active nodes continue to attest to inbounds to old vaults.
 - If enough active nodes finalize an inbound, 67 percent of active, then it can be processed. Default is `REFUND`.
-- If user did not add a refund address, then it cannot refund, so sweep.
-- In this case, sweep by `NOOP:NOVAULT` to latest vault: add to vault accounting, not pool accounting.
+- If user did not add a refund address, the memo is empty.
+- Empty memo automatically adds funds to vault accounting, not pool accounting.
 - Some signing nodes will be standby signing nodes, and they need to join the keysign ceremony even if standby.
-- `REFUND` or sweep tx needs txkey.
+- `REFUND` needs txkey.
 - Inbound to new vault needs to be handled.
 
 ## Reorg
 
 - If Monero reorgs and an inbound or outbound disappears, nodes will see it and need to do `ERRATA`.
 - `ERRATA` will undo the inbound or outbound and reverse accounting.
-- Delete keyimages associated with that inbound, or the change output from that outbound.
+- Scanner stores block metadata and detects parent-hash mismatch.
+- On reorg, scanner reconfirms affected txs, emits errata for missing txs, and rescans the reorg window.
