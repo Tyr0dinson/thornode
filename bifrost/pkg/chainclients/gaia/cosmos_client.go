@@ -116,9 +116,16 @@ func NewCosmosClient(
 		pubkey:  pk,
 	}
 
-	grpcConn, err := getGRPCConnWithFallbacks(cfg.GetProviders(), cfg.CosmosGRPCHost, cfg.CosmosGRPCTLS)
+	grpcConn, chosenProvider, err := getGRPCConnWithFallbacks(cfg.GetProviders(), cfg.CosmosGRPCHost, cfg.CosmosGRPCTLS)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create grpc connection,err: %w", err)
+	}
+	// Use the same provider's RPC host for the scanner so gRPC and tendermint RPC
+	// always point at the same backend. Fall back to provider[0] when no gRPC
+	// provider was reachable (legacy single-host config).
+	scannerHost := chosenProvider.RPCHost
+	if scannerHost == "" {
+		scannerHost = cfg.GetProviders()[0].RPCHost
 	}
 
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
@@ -152,7 +159,7 @@ func NewCosmosClient(
 	}
 
 	c.cosmosScanner, err = NewCosmosBlockScanner(
-		cfg.GetProviders()[0].RPCHost,
+		scannerHost,
 		c.cfg.BlockScanner,
 		c.storage,
 		c.thorchainBridge,

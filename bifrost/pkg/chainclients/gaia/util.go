@@ -135,8 +135,9 @@ func getGRPCConn(host string, tls bool) (*grpc.ClientConn, error) {
 }
 
 // getGRPCConnWithFallbacks tries providers in slice order and returns the first
-// whose CosmosGRPCHost is non-empty and reachable via TCP. Falls back to host/tls if none match.
-func getGRPCConnWithFallbacks(providers []config.ChainProviderConfig, host string, tls bool) (*grpc.ClientConn, error) {
+// whose CosmosGRPCHost is non-empty and reachable via TCP, along with that provider's config.
+// Falls back to host/tls if none match; returned config is the zero value in that case.
+func getGRPCConnWithFallbacks(providers []config.ChainProviderConfig, host string, tls bool) (*grpc.ClientConn, config.ChainProviderConfig, error) {
 	for _, p := range providers {
 		if p.CosmosGRPCHost == "" {
 			continue
@@ -145,11 +146,12 @@ func getGRPCConnWithFallbacks(providers []config.ChainProviderConfig, host strin
 		if conn, err := net.DialTimeout("tcp", p.CosmosGRPCHost, 3*time.Second); err == nil {
 			_ = conn.Close()
 			if grpcConn, err := getGRPCConn(p.CosmosGRPCHost, p.CosmosGRPCTLS); err == nil {
-				return grpcConn, nil
+				return grpcConn, p, nil
 			}
 		}
 	}
-	return getGRPCConn(host, tls)
+	conn, err := getGRPCConn(host, tls)
+	return conn, config.ChainProviderConfig{}, err
 }
 
 func unmarshalJSONToPb(filePath string, msg proto.Message) error {
