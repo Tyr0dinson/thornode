@@ -25,6 +25,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/blockchair"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/blockcypher"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -119,8 +121,9 @@ func NewClient(
 
 	logger := log.Logger.With().Stringer("chain", cfg.ChainID).Logger()
 
-	// create rpc client
-	rpcClient, err := rpc.NewClient(
+	// create rpc client with optional REST fallbacks
+	falloverCfg := cfg.GetFailoverConfig()
+	rpcClient, err := rpc.NewClientWithFallbacks(
 		cfg.RPCHost,
 		cfg.UserName,
 		cfg.Password,
@@ -128,6 +131,8 @@ func NewClient(
 		cfg.BlockScanner.HTTPRequestTimeout,
 		cfg.ChainID,
 		logger,
+		buildUTXOFallbacks(cfg.ChainID, cfg.Providers, logger),
+		falloverCfg.RateLimitBackoff,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc client: %w", err)
@@ -200,6 +205,73 @@ func NewClient(
 	c.updateNetworkInfo()
 
 	return c, nil
+}
+
+const maxProviderResponseBytes = 10 * 1024 * 1024 // 10 MB
+
+// buildUTXOFallbacks constructs UTXOReader adapters for REST providers in the config.
+// RPC-type entries are skipped — the primary rpc.Client already handles those.
+func buildUTXOFallbacks(chain common.Chain, providers []config.ChainProviderConfig, log zerolog.Logger) []rpc.UTXOReader {
+	var fallbacks []rpc.UTXOReader
+	for _, p := range providers {
+		switch p.Type {
+		case config.ProviderTypeBlockchair:
+			slug := blockchairChainSlug(chain)
+			if slug == "" {
+				log.Warn().Str("chain", chain.String()).Str("provider", p.Name).Msg("blockchair does not support chain, skipping")
+				continue
+			}
+			host := p.APIHost
+			if host == "" {
+				host = "https://api.blockchair.com"
+			}
+			fallbacks = append(fallbacks, blockchair.NewClient(host, slug, p.Password, maxProviderResponseBytes))
+		case config.ProviderTypeBlockCypher:
+			coin, chainStr := blockcypherCoinChain(chain)
+			if coin == "" {
+				log.Warn().Str("chain", chain.String()).Str("provider", p.Name).Msg("blockcypher does not support chain, skipping")
+				continue
+			}
+			host := p.APIHost
+			if host == "" {
+				host = "https://api.blockcypher.com/v1"
+			}
+			fallbacks = append(fallbacks, blockcypher.NewClient(host, coin, chainStr, p.Password, maxProviderResponseBytes))
+		default:
+			// bitcoin-rpc / zcash-rpc secondary nodes: not yet supported as fallbacks
+		}
+	}
+	return fallbacks
+}
+
+func blockchairChainSlug(chain common.Chain) string {
+	switch chain {
+	case common.BTCChain:
+		return "bitcoin"
+	case common.LTCChain:
+		return "litecoin"
+	case common.BCHChain:
+		return "bitcoin-cash"
+	case common.DOGEChain:
+		return "dogecoin"
+	case common.ZECChain:
+		return "zcash"
+	default:
+		return ""
+	}
+}
+
+func blockcypherCoinChain(chain common.Chain) (coin, chainStr string) {
+	switch chain {
+	case common.BTCChain:
+		return "btc", "main"
+	case common.LTCChain:
+		return "ltc", "main"
+	case common.DOGEChain:
+		return "doge", "main"
+	default:
+		return "", "" // BCH and ZEC not supported by BlockCypher
+	}
 }
 
 // GetConfig returns the chain configuration.
