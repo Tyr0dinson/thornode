@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
@@ -193,6 +194,7 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 	}
 	wg.Wait()
 	// we test one of node is not ready
+	msgID = conversion.RandStringBytesMask(64)
 	var expected []string
 	for _, el := range pcs[:3] {
 		expected = append(expected, el.host.ID().String())
@@ -213,6 +215,37 @@ func TestNewPartyCoordinatorTimeOut(t *testing.T) {
 		}(el)
 	}
 	wg.Wait()
+}
+
+func TestPartyCoordinatorReplaysPendingLeaderRequests(t *testing.T) {
+	hosts := setupHosts(t, 4)
+	pc := NewPartyCoordinator(hosts[0], time.Second)
+	defer pc.Stop()
+
+	var peerIDs []peer.ID
+	for _, h := range hosts {
+		peerIDs = append(peerIDs, h.ID())
+	}
+
+	msgID := conversion.RandStringBytesMask(64)
+	pc.recordPendingJoinRequest(msgID, hosts[1].ID())
+	pc.recordPendingJoinRequest(msgID, hosts[2].ID())
+
+	peerGroup, err := pc.createJoinPartyGroups(msgID, hosts[0].ID(), peerIDs, 2)
+	assert.Nil(t, err)
+
+	onlinePeers, _ := peerGroup.getPeersStatus()
+	assert.Len(t, onlinePeers, 2)
+	assert.Contains(t, onlinePeers, hosts[1].ID())
+	assert.Contains(t, onlinePeers, hosts[2].ID())
+
+	select {
+	case <-peerGroup.notify:
+	case <-time.After(time.Second):
+		t.Fatal("expected pending join replay to notify leader")
+	}
+
+	assert.Empty(t, pc.pendingJoinReqs[msgID])
 }
 
 func TestGetPeerIDs(t *testing.T) {

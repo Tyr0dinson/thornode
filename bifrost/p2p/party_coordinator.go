@@ -33,6 +33,7 @@ type PartyCoordinator struct {
 	stopChan           chan struct{}
 	timeout            time.Duration
 	peersGroup         map[string]*peerStatus
+	pendingJoinReqs    map[string]map[peer.ID]struct{}
 	joinPartyGroupLock *sync.Mutex
 	streamMgr          *StreamMgr
 }
@@ -49,6 +50,7 @@ func NewPartyCoordinator(host host.Host, timeout time.Duration) *PartyCoordinato
 		stopChan:           make(chan struct{}),
 		timeout:            timeout,
 		peersGroup:         make(map[string]*peerStatus),
+		pendingJoinReqs:    make(map[string]map[peer.ID]struct{}),
 		joinPartyGroupLock: &sync.Mutex{},
 		streamMgr:          NewStreamMgr(),
 	}
@@ -91,14 +93,15 @@ func (pc *PartyCoordinator) processRespMsg(respMsg *messages.JoinPartyLeaderComm
 
 func (pc *PartyCoordinator) processReqMsg(requestMsg *messages.JoinPartyLeaderComm, stream network.Stream) {
 	pc.streamMgr.AddStream(requestMsg.ID, stream)
+	remotePeer := stream.Conn().RemotePeer()
 	pc.joinPartyGroupLock.Lock()
 	peerGroup, ok := pc.peersGroup[requestMsg.ID]
 	pc.joinPartyGroupLock.Unlock()
 	if !ok {
-		pc.logger.Info().Msg("this party is not ready")
+		pc.recordPendingJoinRequest(requestMsg.ID, remotePeer)
+		pc.logger.Info().Str("msg_id", requestMsg.ID).Msg("this party is not ready; queued join request")
 		return
 	}
-	remotePeer := stream.Conn().RemotePeer()
 	partyFormed, err := peerGroup.updatePeer(remotePeer)
 	if err != nil {
 		pc.logger.Error().Err(err).Msg("receive msg from unknown peer")
@@ -184,6 +187,7 @@ func (pc *PartyCoordinator) removePeerGroup(messageID string) {
 	pc.joinPartyGroupLock.Lock()
 	defer pc.joinPartyGroupLock.Unlock()
 	delete(pc.peersGroup, messageID)
+	delete(pc.pendingJoinReqs, messageID)
 }
 
 func (pc *PartyCoordinator) createJoinPartyGroups(messageID string, leaderID peer.ID, peerIDs []peer.ID, threshold int) (*peerStatus, error) {
@@ -191,7 +195,41 @@ func (pc *PartyCoordinator) createJoinPartyGroups(messageID string, leaderID pee
 	defer pc.joinPartyGroupLock.Unlock()
 	peerStatus := newPeerStatus(peerIDs, pc.host.ID(), leaderID, threshold)
 	pc.peersGroup[messageID] = peerStatus
+	pc.applyPendingJoinRequestsLocked(messageID, peerStatus)
 	return peerStatus, nil
+}
+
+func (pc *PartyCoordinator) recordPendingJoinRequest(messageID string, remotePeer peer.ID) {
+	if messageID == "" || remotePeer == "" {
+		return
+	}
+	pc.joinPartyGroupLock.Lock()
+	defer pc.joinPartyGroupLock.Unlock()
+	if _, ok := pc.peersGroup[messageID]; ok {
+		return
+	}
+	if pc.pendingJoinReqs[messageID] == nil {
+		pc.pendingJoinReqs[messageID] = make(map[peer.ID]struct{})
+	}
+	pc.pendingJoinReqs[messageID][remotePeer] = struct{}{}
+}
+
+func (pc *PartyCoordinator) applyPendingJoinRequestsLocked(messageID string, peerGroup *peerStatus) {
+	pending := pc.pendingJoinReqs[messageID]
+	if len(pending) == 0 {
+		return
+	}
+	delete(pc.pendingJoinReqs, messageID)
+	for remotePeer := range pending {
+		partyFormed, err := peerGroup.updatePeer(remotePeer)
+		if err != nil {
+			pc.logger.Debug().Err(err).Str("msg_id", messageID).Str("remote_peer", remotePeer.String()).Msg("ignore pending join request from unknown peer")
+			continue
+		}
+		if partyFormed {
+			peerGroup.notify <- true
+		}
+	}
 }
 
 func (pc *PartyCoordinator) getPeerIDs(ids []string) ([]peer.ID, error) {
