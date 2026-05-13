@@ -158,6 +158,5 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		return true
 	}
 
-	// all min slip mimirs are operational, but not SlipMinBpsMax
-	return strings.HasSuffix(key, "SLIPMINBPS")
+	return false
 }

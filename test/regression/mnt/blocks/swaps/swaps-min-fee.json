@@ -1244,12 +1244,6 @@
               "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "to": "",
               "type": "bond"
-            },
-            {
-              "key": "L1SLIPMINBPS",
-              "msg_index": "0",
-              "type": "set_mimir",
-              "value": "500"
             }
           ]
         }
@@ -1592,6 +1586,12 @@
               "node_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
               "to": "",
               "type": "bond"
+            },
+            {
+              "key": "L1SLIPMINBPS",
+              "msg_index": "0",
+              "type": "set_mimir",
+              "value": "500"
             }
           ]
         }
