@@ -154,12 +154,12 @@ func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
 
 // GetTx return the tx that has super majority
 func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) *common.ObservedTx {
-	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
-		return &m.Tx
-	}
 	finalTx := m.getConsensusTx(nodeAccounts, true)
 	if !finalTx.IsEmpty() {
 		return &finalTx
+	}
+	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
+		return &m.Tx
 	}
 	discoverTx := m.getConsensusTx(nodeAccounts, false)
 	if !discoverTx.IsEmpty() {

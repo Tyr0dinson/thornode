@@ -2006,6 +2006,15 @@ func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVoters
 		}
 	}
 
+	nodeAccounts, err := qs.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node accounts: %w", err)
+	}
+	consensusTx := voter.Tx
+	if tx := voter.GetTx(nodeAccounts); tx != nil && !tx.IsEmpty() {
+		consensusTx = *tx
+	}
+
 	var txs []types.QueryObservedTx
 	// Leave this nil (null rather than []) if the source is nil.
 	if voter.Txs != nil {
@@ -2017,7 +2026,7 @@ func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVoters
 
 	return &types.QueryObservedTxVoter{
 		TxID:            voter.TxID,
-		Tx:              castObservedTx(voter.Tx),
+		Tx:              castObservedTx(consensusTx),
 		Height:          voter.Height,
 		Txs:             txs,
 		Actions:         voter.Actions,

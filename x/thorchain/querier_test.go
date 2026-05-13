@@ -649,6 +649,58 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	c.Assert(len(voter.Txs[0].Tx.Coins) == 0, Equals, false)
 }
 
+func (s *QuerierSuite) TestQueryTxVotersUsesConsensusXMRGas(c *C) {
+	txID := GetRandomTxHash()
+	fromAddr, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	toAddr, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	observedPubKey := GetRandomPubKey()
+
+	baseTx := common.Tx{
+		ID:          txID,
+		Chain:       common.XMRChain,
+		FromAddress: fromAddr,
+		ToAddress:   toAddr,
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)),
+		},
+		Gas: common.Gas{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(80000)),
+		},
+		Memo: "MIGRATE:123",
+	}
+	fallbackObs := common.NewObservedTx(baseTx, s.ctx.BlockHeight(), observedPubKey, s.ctx.BlockHeight())
+
+	actualTx := baseTx
+	actualTx.Gas = common.Gas{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(26868)),
+	}
+	actualObs := common.NewObservedTx(actualTx, s.ctx.BlockHeight(), observedPubKey, s.ctx.BlockHeight())
+	actualObs.TxKeys = []string{"tx-key"}
+
+	nodes := make([]NodeAccount, 4)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(s.k.SetNodeAccount(s.ctx, nodes[i]), IsNil)
+	}
+
+	voter := NewObservedTxVoter(txID, nil)
+	voter.Tx = fallbackObs
+	voter.Add(fallbackObs, nodes[0].NodeAddress)
+	voter.Add(fallbackObs, nodes[1].NodeAddress)
+	voter.Add(actualObs, nodes[2].NodeAddress)
+	voter.Add(actualObs, nodes[3].NodeAddress)
+	s.k.SetObservedTxInVoter(s.ctx, voter)
+
+	queryTxVoterResp, err := s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{
+		TxId: txID.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(queryTxVoterResp.Tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset).Amount.Uint64(), Equals, uint64(26868))
+	c.Assert(queryTxVoterResp.Txs, HasLen, 2)
+}
+
 func (s *QuerierSuite) TestQueryTxStages(c *C) {
 	tx := GetRandomTx()
 	// test getTxInVoter
