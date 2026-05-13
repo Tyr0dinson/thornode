@@ -3,12 +3,10 @@ package evm
 import (
 	"context"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -20,7 +18,6 @@ import (
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	ethclient "github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -127,51 +124,10 @@ func NewEVMClient(
 
 	clog := log.With().Str("module", "evm").Stringer("chain", cfg.ChainID).Logger()
 
-	// create rpc client based on what authentication config is set
-	var ethClient *ethclient.Client
-	switch {
-	case cfg.AuthorizationBearer != "":
-
-		clog.Info().Msg("initializing evm client with bearer token")
-		authFn := func(h http.Header) error {
-			h.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.AuthorizationBearer))
-			return nil
-		}
-		var rpcClient *rpc.Client
-		rpcClient, err = rpc.DialOptions(
-			context.Background(),
-			cfg.RPCHost,
-			rpc.WithHTTPAuth(authFn),
-		)
-		if err != nil {
-			return nil, err
-		}
-		ethClient = ethclient.NewClient(rpcClient)
-
-	case cfg.UserName != "" && cfg.Password != "":
-		clog.Info().Msg("initializing evm client with http basic auth")
-
-		authFn := func(h http.Header) error {
-			auth := base64.StdEncoding.EncodeToString([]byte(cfg.UserName + ":" + cfg.Password))
-			h.Set("Authorization", fmt.Sprintf("Basic %s", auth))
-			return nil
-		}
-		var rpcClient *rpc.Client
-		rpcClient, err = rpc.DialOptions(
-			context.Background(),
-			cfg.RPCHost,
-			rpc.WithHTTPAuth(authFn),
-		)
-		if err != nil {
-			return nil, err
-		}
-		ethClient = ethclient.NewClient(rpcClient)
-
-	default:
-		ethClient, err = ethclient.Dial(cfg.RPCHost)
-		if err != nil {
-			return nil, fmt.Errorf("fail to dial ETH rpc host(%s): %w", cfg.RPCHost, err)
-		}
+	// create rpc client — try providers in priority order until one connects
+	ethClient, err := evm.DialWithFallbacks(cfg.GetProviders())
+	if err != nil {
+		return nil, fmt.Errorf("fail to dial EVM rpc: %w", err)
 	}
 
 	rpcClient, err := evm.NewEthRPC(

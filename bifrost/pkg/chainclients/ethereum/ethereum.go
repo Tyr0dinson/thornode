@@ -128,9 +128,9 @@ func NewClient(thorKeys *thorclient.Keys,
 		return nil, err
 	}
 
-	ethClient, err := ethclient.Dial(cfg.RPCHost)
+	ethClient, err := evm.DialWithFallbacks(cfg.GetProviders())
 	if err != nil {
-		return nil, fmt.Errorf("fail to dial ETH rpc host(%s): %w", cfg.RPCHost, err)
+		return nil, fmt.Errorf("fail to dial ETH rpc: %w", err)
 	}
 	chainID, err := getChainID(ethClient, cfg.BlockScanner.HTTPRequestTimeout)
 	if err != nil {
