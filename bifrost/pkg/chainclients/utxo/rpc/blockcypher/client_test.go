@@ -58,23 +58,12 @@ func (s *BlockcypherSuite) TestGetBlockHashNotFound(c *C) {
 
 func (s *BlockcypherSuite) TestGetBlockVerboseTxs(c *C) {
 	const hash = "blockhash1"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c.Assert(r.URL.Path, Equals, "/v1/btc/main/blocks/"+hash)
-		c.Assert(r.URL.Query().Get("txids"), Equals, "true")
-		c.Assert(r.URL.Query().Get("limit"), Equals, "500")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"hash": hash, "height": int64(800000),
-			"txids": []string{"tx1", "tx2", "tx3"},
-		})
-	}))
-	defer srv.Close()
-
-	result, err := newTestClient(srv).GetBlockVerboseTxs(hash)
-	c.Assert(err, IsNil)
-	c.Assert(result.Hash, Equals, hash)
-	c.Assert(len(result.Tx), Equals, 3)
-	c.Assert(result.Tx[0].Txid, Equals, "tx1")
-	c.Assert(result.Tx[2].Txid, Equals, "tx3")
+	// BlockCypher returns txid-only stubs that would be silently dropped by ignoreTx.
+	// The adapter returns ErrNotSupported so withFallback falls through to a real node.
+	cl := blockcypher.NewClient("http://unused", "btc", "main", "", 1<<20)
+	result, err := cl.GetBlockVerboseTxs(hash)
+	c.Assert(err, Equals, blockcypher.ErrNotSupported)
+	c.Assert(result, IsNil)
 }
 
 func (s *BlockcypherSuite) TestGetRawTransactionVerbose(c *C) {

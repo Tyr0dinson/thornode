@@ -131,7 +131,7 @@ func NewClient(
 		cfg.BlockScanner.HTTPRequestTimeout,
 		cfg.ChainID,
 		logger,
-		buildUTXOFallbacks(cfg.ChainID, cfg.Providers, logger),
+		buildUTXOFallbacks(cfg.ChainID, cfg.GetProviders(), logger),
 		failoverCfg.RateLimitBackoff,
 	)
 	if err != nil {

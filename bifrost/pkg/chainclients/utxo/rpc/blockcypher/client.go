@@ -98,25 +98,10 @@ func (c *Client) GetBlockHash(height int64) (string, error) {
 	return resp.Hash, nil
 }
 
-func (c *Client) GetBlockVerboseTxs(hash string) (*btcjson.GetBlockVerboseTxResult, error) {
-	q := url.Values{
-		"txids": {"true"},
-		"limit": {"500"},
-	}
-	var resp BlockResponse
-	if err := c.get("/blocks/"+hash, q, &resp); err != nil {
-		return nil, err
-	}
-	result := &btcjson.GetBlockVerboseTxResult{
-		Hash:   resp.Hash,
-		Height: resp.Height,
-	}
-	// Only Txid is populated — full tx data requires per-tx API calls (scope limitation).
-	result.Tx = make([]btcjson.TxRawResult, len(resp.TxIDs))
-	for i, txid := range resp.TxIDs {
-		result.Tx[i] = btcjson.TxRawResult{Txid: txid}
-	}
-	return result, nil
+func (c *Client) GetBlockVerboseTxs(_ string) (*btcjson.GetBlockVerboseTxResult, error) {
+	// BlockCypher returns txid-only stubs; returning them silently drops all observations.
+	// Return ErrNotSupported so withFallback falls through to the next provider.
+	return nil, ErrNotSupported
 }
 
 func (c *Client) GetBlockVerbose(hash string) (*btcjson.GetBlockVerboseResult, error) {
