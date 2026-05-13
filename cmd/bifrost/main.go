@@ -185,17 +185,31 @@ func main() {
 	cfgChains := cfg.GetChains()
 
 	// ensure we have a protocol for chain RPC Hosts
-	for _, chainCfg := range cfgChains {
+	for chain, chainCfg := range cfgChains {
 		if chainCfg.Disabled {
 			continue
 		}
-		if len(chainCfg.RPCHost) == 0 {
-			log.Fatal().Err(err).Stringer("chain", chainCfg.ChainID).Msg("missing chain RPC host")
-			return
+		if len(chainCfg.GetProviders()) == 0 {
+			log.Fatal().Stringer("chain", chainCfg.ChainID).Msg("no providers configured for chain")
 		}
-		if !strings.HasPrefix(chainCfg.RPCHost, "http") {
-			chainCfg.RPCHost = fmt.Sprintf("http://%s", chainCfg.RPCHost)
+		// Normalize scheme on all provider hosts.
+		// Must copy→mutate→reassign because cfgChains is a map of structs (not pointers).
+		for j, p := range chainCfg.Providers {
+			if p.RPCHost != "" && !strings.HasPrefix(p.RPCHost, "http") {
+				chainCfg.Providers[j].RPCHost = "http://" + p.RPCHost
+			}
+			if p.APIHost != "" && !strings.HasPrefix(p.APIHost, "http") {
+				chainCfg.Providers[j].APIHost = "http://" + p.APIHost
+			}
 		}
+		// Also normalize legacy flat fields for backward compat.
+		if chainCfg.RPCHost != "" && !strings.HasPrefix(chainCfg.RPCHost, "http") {
+			chainCfg.RPCHost = "http://" + chainCfg.RPCHost
+		}
+		if chainCfg.APIHost != "" && !strings.HasPrefix(chainCfg.APIHost, "http") {
+			chainCfg.APIHost = "http://" + chainCfg.APIHost
+		}
+		cfgChains[chain] = chainCfg
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)
 	chains, restart := chainclients.LoadChains(k, cfgChains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
