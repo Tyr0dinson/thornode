@@ -190,7 +190,8 @@ func main() {
 			continue
 		}
 		p0 := chainCfg.GetProviders()[0]
-		if p0.RPCHost == "" && p0.APIHost == "" && p0.CosmosGRPCHost == "" {
+		restType := p0.Type == config.ProviderTypeBlockchair || p0.Type == config.ProviderTypeBlockCypher
+		if !restType && p0.RPCHost == "" && p0.APIHost == "" && p0.CosmosGRPCHost == "" {
 			log.Fatal().Stringer("chain", chainCfg.ChainID).Msg("no host configured for chain provider")
 		}
 		// Normalize scheme on all provider hosts.

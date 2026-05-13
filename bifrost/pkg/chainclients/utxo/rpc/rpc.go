@@ -525,7 +525,7 @@ func isRateLimitError(err error) bool {
 		return false
 	}
 	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "429") || strings.Contains(s, "too many requests")
+	return strings.Contains(s, "status 429") || strings.Contains(s, "too many requests")
 }
 
 // Ethereum RPC returns an error with the response appended to the HTTP status like:

@@ -122,7 +122,7 @@ func NewClient(
 	logger := log.Logger.With().Stringer("chain", cfg.ChainID).Logger()
 
 	// create rpc client with optional REST fallbacks
-	falloverCfg := cfg.GetFailoverConfig()
+	failoverCfg := cfg.GetFailoverConfig()
 	rpcClient, err := rpc.NewClientWithFallbacks(
 		cfg.RPCHost,
 		cfg.UserName,
@@ -132,7 +132,7 @@ func NewClient(
 		cfg.ChainID,
 		logger,
 		buildUTXOFallbacks(cfg.ChainID, cfg.Providers, logger),
-		falloverCfg.RateLimitBackoff,
+		failoverCfg.RateLimitBackoff,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc client: %w", err)
@@ -221,22 +221,36 @@ func buildUTXOFallbacks(chain common.Chain, providers []config.ChainProviderConf
 				log.Warn().Str("chain", chain.String()).Str("provider", p.Name).Msg("blockchair does not support chain, skipping")
 				continue
 			}
-			host := p.APIHost
+			host := p.RPCHost
+			if host == "" {
+				host = p.APIHost
+			}
 			if host == "" {
 				host = "https://api.blockchair.com"
 			}
-			fallbacks = append(fallbacks, blockchair.NewClient(host, slug, p.Password, maxProviderResponseBytes))
+			key := p.AuthorizationBearer
+			if key == "" {
+				key = p.Password
+			}
+			fallbacks = append(fallbacks, blockchair.NewClient(host, slug, key, maxProviderResponseBytes))
 		case config.ProviderTypeBlockCypher:
 			coin, chainStr := blockcypherCoinChain(chain)
 			if coin == "" {
 				log.Warn().Str("chain", chain.String()).Str("provider", p.Name).Msg("blockcypher does not support chain, skipping")
 				continue
 			}
-			host := p.APIHost
+			host := p.RPCHost
+			if host == "" {
+				host = p.APIHost
+			}
 			if host == "" {
 				host = "https://api.blockcypher.com/v1"
 			}
-			fallbacks = append(fallbacks, blockcypher.NewClient(host, coin, chainStr, p.Password, maxProviderResponseBytes))
+			key := p.AuthorizationBearer
+			if key == "" {
+				key = p.Password
+			}
+			fallbacks = append(fallbacks, blockcypher.NewClient(host, coin, chainStr, key, maxProviderResponseBytes))
 		default:
 			// bitcoin-rpc / zcash-rpc secondary nodes: not yet supported as fallbacks
 		}

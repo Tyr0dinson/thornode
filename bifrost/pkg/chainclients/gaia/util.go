@@ -4,7 +4,9 @@ import (
 	"crypto/x509"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
+	"time"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -133,15 +135,18 @@ func getGRPCConn(host string, tls bool) (*grpc.ClientConn, error) {
 }
 
 // getGRPCConnWithFallbacks tries providers in slice order and returns the first
-// whose CosmosGRPCHost is non-empty. Falls back to host/tls if none match.
+// whose CosmosGRPCHost is non-empty and reachable via TCP. Falls back to host/tls if none match.
 func getGRPCConnWithFallbacks(providers []config.ChainProviderConfig, host string, tls bool) (*grpc.ClientConn, error) {
 	for _, p := range providers {
 		if p.CosmosGRPCHost == "" {
 			continue
 		}
-		conn, err := getGRPCConn(p.CosmosGRPCHost, p.CosmosGRPCTLS)
-		if err == nil {
-			return conn, nil
+		// grpc.NewClient is lazy — probe TCP reachability before committing.
+		if conn, err := net.DialTimeout("tcp", p.CosmosGRPCHost, 3*time.Second); err == nil {
+			_ = conn.Close()
+			if grpcConn, err := getGRPCConn(p.CosmosGRPCHost, p.CosmosGRPCTLS); err == nil {
+				return grpcConn, nil
+			}
 		}
 	}
 	return getGRPCConn(host, tls)
