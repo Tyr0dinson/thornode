@@ -190,6 +190,16 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 			// Op completes within Actor.Timeout; an Op that blocks past the
 			// deadline is a bug, but the framework should still fail the actor
 			// cleanly rather than spinning until the job-level timeout fires.
+			//
+			// LIMITATION: the Op signature has no cancellation channel, so an
+			// Op that blocks past the deadline becomes a zombie goroutine: it
+			// continues to run with a live reference to *OpConfig and may
+			// mutate shared User locks until it returns naturally. The DAG
+			// scheduler in this codebase responds to ErrTimeout by calling
+			// log.Fatal (process exit), which bounds the zombie's blast
+			// radius to the few microseconds before os.Exit. If that
+			// failure-handling strategy ever changes, Op should be migrated
+			// to accept a context.Context so the framework can signal cancel.
 			resultCh := make(chan OpResult, 1)
 			go func() { resultCh <- op(c) }()
 
@@ -203,18 +213,29 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 				deadline = time.After(remaining)
 			}
 
+			// Prefer a result that's already ready over the deadline, so an Op
+			// that returns at the same instant the deadline fires is not
+			// spuriously reported as a timeout. Without this, Go's select picks
+			// pseudo-randomly between simultaneously-ready cases.
 			var result OpResult
 			select {
 			case result = <-resultCh:
 				if result.Error != nil {
 					a.Log().Err(result.Error).Stringer("op", op).Msg("op failed")
 				}
-			case <-deadline:
-				// Op is still in flight past the actor's deadline. Abandon it
-				// (the goroutine drains into the buffered channel) and fail
-				// the actor with ErrTimeout.
-				a.Log().Err(ErrTimeout).Stringer("op", op).Msg("actor timed out (op blocked past deadline)")
-				return ErrTimeout
+			default:
+				select {
+				case result = <-resultCh:
+					if result.Error != nil {
+						a.Log().Err(result.Error).Stringer("op", op).Msg("op failed")
+					}
+				case <-deadline:
+					// Op is still in flight past the actor's deadline. Abandon
+					// it (the goroutine drains into the buffered channel) and
+					// fail the actor with ErrTimeout. See LIMITATION above.
+					a.Log().Err(ErrTimeout).Stringer("op", op).Msg("actor timed out (op blocked past deadline)")
+					return ErrTimeout
+				}
 			}
 
 			if result.Finish {
