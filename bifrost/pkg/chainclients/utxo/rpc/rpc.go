@@ -46,11 +46,13 @@ type rpcClient interface {
 // Client represents a client connection to a UTXO daemon. Internally this uses the
 // Ethereum JSON-RPC 2.0 implementation, which allows batching and connection reuse.
 type Client struct {
-	client     rpcClient
-	log        zerolog.Logger
-	chain      common.Chain
-	maxRetries int
-	timeout    time.Duration
+	client           rpcClient
+	log              zerolog.Logger
+	chain            common.Chain
+	maxRetries       int
+	timeout          time.Duration
+	fallbacks        []UTXOReader
+	rateLimitBackoff time.Duration
 }
 
 // NewClient returns a client connection to a UTXO daemon.
@@ -96,10 +98,37 @@ func NewClient(host, user, password string, maxRetries int, timeout time.Duratio
 	return &client, nil
 }
 
+// NewClientWithFallbacks wraps NewClient and attaches read-only fallback providers.
+// Fallbacks are tried in slice order after the primary exhausts its retries.
+// rateLimitBackoff is the sleep duration when the primary returns HTTP 429 — no
+// failover occurs on rate-limit errors.
+func NewClientWithFallbacks(
+	host, user, password string,
+	maxRetries int,
+	timeout time.Duration,
+	chain common.Chain,
+	log zerolog.Logger,
+	fallbacks []UTXOReader,
+	rateLimitBackoff time.Duration,
+) (*Client, error) {
+	cl, err := NewClient(host, user, password, maxRetries, timeout, chain, log)
+	if err != nil {
+		return nil, err
+	}
+	cl.fallbacks = fallbacks
+	cl.rateLimitBackoff = rateLimitBackoff
+	return cl, nil
+}
+
 // GetBlockCount returns the number of blocks in the longest block chain.
 func (c *Client) GetBlockCount() (int64, error) {
 	var count int64
-	err := c.Call(&count, "getblockcount")
+	err := c.callRaw(&count, "getblockcount")
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		var ferr error
+		count, ferr = fb.GetBlockCount()
+		return ferr
+	})
 	return count, extractBTCError(err)
 }
 
@@ -125,41 +154,73 @@ func (c *Client) SendRawTransaction(tx SerializableTx, maxFeeParam any) (string,
 // GetBlockHash returns the hash of the block in best-block-chain at the given height.
 func (c *Client) GetBlockHash(height int64) (string, error) {
 	var hash string
-	err := c.Call(&hash, "getblockhash", height)
+	err := c.callRaw(&hash, "getblockhash", height)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		var ferr error
+		hash, ferr = fb.GetBlockHash(height)
+		return ferr
+	})
 	return hash, extractBTCError(err)
 }
 
-// GetBlockVerbose returns information about the block with verbosity 2.
+// GetBlockVerboseTxs returns information about the block with verbosity 2.
 func (c *Client) GetBlockVerboseTxs(hash string) (*btcjson.GetBlockVerboseTxResult, error) {
 	var block btcjson.GetBlockVerboseTxResult
-	err := c.Call(&block, "getblock", hash, 2)
+	err := c.callRaw(&block, "getblock", hash, 2)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		result, ferr := fb.GetBlockVerboseTxs(hash)
+		if ferr == nil {
+			block = *result
+		}
+		return ferr
+	})
 	return &block, extractBTCError(err)
 }
 
 // GetBlockVerbose returns information about the block with verbosity 1.
 func (c *Client) GetBlockVerbose(hash string) (*btcjson.GetBlockVerboseResult, error) {
 	var block btcjson.GetBlockVerboseResult
-	err := c.Call(&block, "getblock", hash, 1)
+	err := c.callRaw(&block, "getblock", hash, 1)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		result, ferr := fb.GetBlockVerbose(hash)
+		if ferr == nil {
+			block = *result
+		}
+		return ferr
+	})
 	return &block, extractBTCError(err)
 }
 
 // GetBlockStats returns statistics about the block at the given hash.
 func (c *Client) GetBlockStats(hash string) (*btcjson.GetBlockStatsResult, error) {
 	var stats btcjson.GetBlockStatsResult
-	err := c.Call(&stats, "getblockstats", hash)
+	err := c.callRaw(&stats, "getblockstats", hash)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		result, ferr := fb.GetBlockStats(hash)
+		if ferr == nil {
+			stats = *result
+		}
+		return ferr
+	})
 	return &stats, extractBTCError(err)
 }
 
 // GetMempoolEntry returns mempool data for the given transaction.
 func (c *Client) GetMempoolEntry(txid string) (*btcjson.GetMempoolEntryResult, error) {
 	var entry btcjson.GetMempoolEntryResult
-	err := c.Call(&entry, "getmempoolentry", txid)
+	err := c.callRaw(&entry, "getmempoolentry", txid)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		result, ferr := fb.GetMempoolEntry(txid)
+		if ferr == nil {
+			entry = *result
+		}
+		return ferr
+	})
 	return &entry, extractBTCError(err)
 }
 
 // BatchGetMempoolEntry returns mempool data for the given transactions.
 func (c *Client) BatchGetMempoolEntry(txids []string) ([]*btcjson.GetMempoolEntryResult, []error, error) {
-	// create batch request
 	batch := []rpc.BatchElem{}
 	for _, txid := range txids {
 		batch = append(batch, rpc.BatchElem{
@@ -169,13 +230,20 @@ func (c *Client) BatchGetMempoolEntry(txids []string) ([]*btcjson.GetMempoolEntr
 		})
 	}
 
-	// call batch request
-	err := c.BatchCall(batch)
-	if err != nil {
-		return nil, nil, err
+	// Use retry directly (not BatchCall) so the raw error reaches isRateLimitError.
+	if rawErr := c.retry(func() error { return c.batchCall(batch) }); rawErr != nil {
+		if !isRateLimitError(rawErr) {
+			for _, fb := range c.fallbacks {
+				if results, errs, ferr := fb.BatchGetMempoolEntry(txids); ferr == nil {
+					return results, errs, nil
+				}
+			}
+		} else if c.rateLimitBackoff > 0 {
+			time.Sleep(c.rateLimitBackoff)
+		}
+		return nil, nil, extractBTCError(rawErr)
 	}
 
-	// collect results
 	errs := make([]error, len(txids))
 	results := make([]*btcjson.GetMempoolEntryResult, len(txids))
 	var ok bool
@@ -193,44 +261,65 @@ func (c *Client) BatchGetMempoolEntry(txids []string) ([]*btcjson.GetMempoolEntr
 // GetRawMempool returns all transaction ids in the mempool.
 func (c *Client) GetRawMempool() ([]string, error) {
 	var txids []string
-	err := c.Call(&txids, "getrawmempool")
+	err := c.callRaw(&txids, "getrawmempool")
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		var ferr error
+		txids, ferr = fb.GetRawMempool()
+		return ferr
+	})
 	return txids, extractBTCError(err)
 }
 
 // GetRawTransactionVerbose returns a raw transaction for the transaction id.
 func (c *Client) GetRawTransactionVerbose(txid string) (*btcjson.TxRawResult, error) {
 	var tx btcjson.TxRawResult
-	err := c.Call(&tx, "getrawtransaction", txid, true)
+	err := c.callRaw(&tx, "getrawtransaction", txid, true)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		result, ferr := fb.GetRawTransactionVerbose(txid)
+		if ferr == nil {
+			tx = *result
+		}
+		return ferr
+	})
 	return &tx, extractBTCError(err)
 }
 
 // GetRawTransaction returns a raw transaction string for the transaction id.
 func (c *Client) GetRawTransaction(txid string) (string, error) {
 	var tx string
-	err := c.Call(&tx, "getrawtransaction", txid, false)
+	err := c.callRaw(&tx, "getrawtransaction", txid, false)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		var ferr error
+		tx, ferr = fb.GetRawTransaction(txid)
+		return ferr
+	})
 	return tx, extractBTCError(err)
 }
 
 // BatchGetRawTransactionVerbose returns a raw transaction for given transaction ids.
 func (c *Client) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRawResult, []error, error) {
-	// create batch request
 	batch := make([]rpc.BatchElem, 0, len(txids))
 	for _, txid := range txids {
-		args := []interface{}{txid, true}
 		batch = append(batch, rpc.BatchElem{
 			Method: "getrawtransaction",
-			Args:   args,
+			Args:   []interface{}{txid, true},
 			Result: &btcjson.TxRawResult{},
 		})
 	}
 
-	// call batch request
-	err := c.BatchCall(batch)
-	if err != nil {
-		return nil, nil, err
+	if rawErr := c.retry(func() error { return c.batchCall(batch) }); rawErr != nil {
+		if !isRateLimitError(rawErr) {
+			for _, fb := range c.fallbacks {
+				if results, errs, ferr := fb.BatchGetRawTransactionVerbose(txids); ferr == nil {
+					return results, errs, nil
+				}
+			}
+		} else if c.rateLimitBackoff > 0 {
+			time.Sleep(c.rateLimitBackoff)
+		}
+		return nil, nil, extractBTCError(rawErr)
 	}
 
-	// collect results
 	errs := make([]error, len(txids))
 	results := make([]*btcjson.TxRawResult, len(txids))
 	var ok bool
@@ -360,11 +449,25 @@ func (c *Client) ListUnspent(address string) ([]btcjson.ListUnspentResult, error
 
 func (c *Client) GetNetworkInfo() (*btcjson.GetNetworkInfoResult, error) {
 	var info btcjson.GetNetworkInfoResult
-	err := c.Call(&info, "getnetworkinfo")
+	err := c.callRaw(&info, "getnetworkinfo")
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		result, ferr := fb.GetNetworkInfo()
+		if ferr == nil {
+			info = *result
+		}
+		return ferr
+	})
 	return &info, extractBTCError(err)
 }
 
 func (c *Client) Call(result any, method string, args ...interface{}) error {
+	err := c.callRaw(result, method, args...)
+	return extractBTCError(err)
+}
+
+// callRaw performs a JSON-RPC call with retry but without extractBTCError, so the raw
+// HTTP status (e.g. "429 Too Many Requests: ...") is preserved for withFallback to inspect.
+func (c *Client) callRaw(result any, method string, args ...interface{}) error {
 	fn := func() error {
 		if c.timeout <= 0 {
 			return c.client.Call(result, method, args...)
@@ -373,9 +476,7 @@ func (c *Client) Call(result any, method string, args ...interface{}) error {
 		defer cancel()
 		return c.client.CallContext(ctx, result, method, args...)
 	}
-
-	err := c.retry(fn)
-	return extractBTCError(err)
+	return c.retry(fn)
 }
 
 func (c *Client) BatchCall(batch []rpc.BatchElem) error {
@@ -397,6 +498,35 @@ func (c *Client) batchCall(batch []rpc.BatchElem) error {
 ////////////////////////////////////////////////////////////////////////////////////////
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
+
+// withFallback tries fn against each fallback provider when err is non-nil.
+// If err is a rate-limit (HTTP 429), no failover occurs — the caller backs off instead.
+func (c *Client) withFallback(err error, fn func(UTXOReader) error) error {
+	if err == nil {
+		return nil
+	}
+	if isRateLimitError(err) {
+		if c.rateLimitBackoff > 0 {
+			time.Sleep(c.rateLimitBackoff)
+		}
+		return err
+	}
+	for _, fb := range c.fallbacks {
+		if ferr := fn(fb); ferr == nil {
+			return nil
+		}
+	}
+	return err
+}
+
+// isRateLimitError reports whether err represents an HTTP 429 response.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "429") || strings.Contains(s, "too many requests")
+}
 
 // Ethereum RPC returns an error with the response appended to the HTTP status like:
 // 404 Not Found: {"error":{"code":-32601,"message":"Method not found"},"id":1}

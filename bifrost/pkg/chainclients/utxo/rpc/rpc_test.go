@@ -1067,6 +1067,154 @@ func (s *RPCSuite) TestZecClientTimeout(c *C) {
 }
 
 // ---------------------------------------------------------------------------
+// mockUTXOReader — minimal UTXOReader for fallback tests
+// ---------------------------------------------------------------------------
+
+type mockUTXOReader struct {
+	getBlockCountFn func() (int64, error)
+	called          bool
+}
+
+var errMockNotSupported = errors.New("not supported by mock")
+
+func (m *mockUTXOReader) GetBlockCount() (int64, error) {
+	m.called = true
+	if m.getBlockCountFn != nil {
+		return m.getBlockCountFn()
+	}
+	return 0, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetBlockHash(_ int64) (string, error) {
+	return "", errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetBlockVerboseTxs(_ string) (*btcjson.GetBlockVerboseTxResult, error) {
+	return nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetBlockVerbose(_ string) (*btcjson.GetBlockVerboseResult, error) {
+	return nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetBlockStats(_ string) (*btcjson.GetBlockStatsResult, error) {
+	return nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetMempoolEntry(_ string) (*btcjson.GetMempoolEntryResult, error) {
+	return nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) BatchGetMempoolEntry(txids []string) ([]*btcjson.GetMempoolEntryResult, []error, error) {
+	return nil, nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetRawMempool() ([]string, error) {
+	return nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetRawTransactionVerbose(_ string) (*btcjson.TxRawResult, error) {
+	return nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetRawTransaction(_ string) (string, error) {
+	return "", errMockNotSupported
+}
+
+func (m *mockUTXOReader) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRawResult, []error, error) {
+	return nil, nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) GetNetworkInfo() (*btcjson.GetNetworkInfoResult, error) {
+	return nil, errMockNotSupported
+}
+
+func (m *mockUTXOReader) Call(_ any, _ string, _ ...interface{}) error {
+	return errMockNotSupported
+}
+
+func (m *mockUTXOReader) BatchCall(_ []ethrpc.BatchElem) error {
+	return errMockNotSupported
+}
+
+// ---------------------------------------------------------------------------
+// NewClientWithFallbacks / withFallback tests
+// ---------------------------------------------------------------------------
+
+func (s *RPCSuite) TestFallbackTriedOnPrimaryFailure(c *C) {
+	srv := newErrorServer(500)
+	defer srv.Close()
+
+	mock := &mockUTXOReader{
+		getBlockCountFn: func() (int64, error) { return 12345, nil },
+	}
+
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	c.Assert(err, IsNil)
+
+	count, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, int64(12345))
+	c.Assert(mock.called, Equals, true)
+}
+
+func (s *RPCSuite) TestFallbackNotTriedOnSuccess(c *C) {
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		return 800000, nil
+	})
+	defer srv.Close()
+
+	mock := &mockUTXOReader{}
+
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	c.Assert(err, IsNil)
+
+	count, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, int64(800000))
+	c.Assert(mock.called, Equals, false)
+}
+
+func (s *RPCSuite) TestFallbackNotTriedOnRateLimit(c *C) {
+	srv := newErrorServer(429)
+	defer srv.Close()
+
+	mock := &mockUTXOReader{
+		getBlockCountFn: func() (int64, error) { return 99999, nil },
+	}
+
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	c.Assert(err, IsNil)
+
+	_, err = cl.GetBlockCount()
+	c.Assert(err, NotNil)
+	c.Assert(mock.called, Equals, false)
+}
+
+func (s *RPCSuite) TestAllFallbacksFailReturnsError(c *C) {
+	srv := newErrorServer(500)
+	defer srv.Close()
+
+	mock := &mockUTXOReader{
+		getBlockCountFn: func() (int64, error) { return 0, errors.New("fallback also failed") },
+	}
+
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	c.Assert(err, IsNil)
+
+	_, err = cl.GetBlockCount()
+	c.Assert(err, NotNil)
+	c.Assert(mock.called, Equals, true)
+}
+
+func (s *RPCSuite) TestIsRateLimitError(c *C) {
+	c.Assert(isRateLimitError(nil), Equals, false)
+	c.Assert(isRateLimitError(errors.New("429 too many requests")), Equals, true)
+	c.Assert(isRateLimitError(errors.New("blockcypher /blocks returned status 429: rate limited")), Equals, true)
+	c.Assert(isRateLimitError(errors.New("500 internal server error")), Equals, false)
+}
+
+// ---------------------------------------------------------------------------
 // Mock rpcClient – asserts BatchCallContext is used (not BatchCall)
 // ---------------------------------------------------------------------------
 
