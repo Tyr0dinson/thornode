@@ -138,6 +138,150 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapBasicFlow(c *C) {
 	c.Assert(tnAcc2.VolumeTor.Equal(volume.MulUint64(2)), Equals, true)
 }
 
+func (s *DynamicFeeMgrSuite) TestCreditSwapNoAffiliateBucket(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+
+	volume := cosmos.NewUint(500_000)
+	fees := cosmos.NewUint(5_000)
+
+	dfm.CreditSwap(ctx,
+		nil, nil,
+		common.BTCAsset, common.RuneAsset(),
+		volume, fees,
+	)
+
+	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+
+	acc, err := k.GetDynamicFeeAccumulator(ctx, dynamicFeeNoAffiliateThorname, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(acc.VolumeTor.Equal(volume), Equals, true)
+	c.Assert(acc.FeesTor.Equal(fees), Equals, true)
+
+	rec, err := k.GetDynamicFeeRecord(ctx, dynamicFeeNoAffiliateThorname, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(rec.DynamicBps, Equals, uint64(1))
+}
+
+func (s *DynamicFeeMgrSuite) TestGetDynamicBpsNoAffiliateBucket(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+
+	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	rec := types.DynamicFeeRecord{
+		Thorname:   dynamicFeeNoAffiliateThorname,
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 42,
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 42}},
+	}
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+
+	bps := dfm.GetDynamicBps(ctx, nil, nil, common.BTCAsset, common.RuneAsset())
+	c.Assert(bps, Equals, uint64(42))
+}
+
+func (s *DynamicFeeMgrSuite) TestRawAddressAndStringUseNoAffiliateBucket(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+
+	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	rec := types.DynamicFeeRecord{
+		Thorname:   dynamicFeeNoAffiliateThorname,
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 42,
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 42}},
+	}
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+
+	addr := GetRandomTHORAddress().String()
+	bps := dfm.GetDynamicBps(ctx,
+		[]string{addr}, []cosmos.Uint{cosmos.ZeroUint()},
+		common.BTCAsset, common.RuneAsset(),
+	)
+	c.Assert(bps, Equals, uint64(42))
+
+	dfm.CreditSwap(ctx,
+		[]string{"not-a-thorname"}, []cosmos.Uint{cosmos.ZeroUint()},
+		common.BTCAsset, common.RuneAsset(),
+		cosmos.NewUint(500_000), cosmos.NewUint(5_000),
+	)
+	acc, err := k.GetDynamicFeeAccumulator(ctx, dynamicFeeNoAffiliateThorname, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(acc.VolumeTor.Equal(cosmos.NewUint(500_000)), Equals, true)
+	c.Assert(acc.FeesTor.Equal(cosmos.NewUint(5_000)), Equals, true)
+}
+
+func (s *DynamicFeeMgrSuite) TestUnwhitelistedThornameDoesNotUseNoAffiliateBucket(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+
+	registerThorname(ctx, k, "rando", 0)
+
+	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	rec := types.DynamicFeeRecord{
+		Thorname:   dynamicFeeNoAffiliateThorname,
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 42,
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 42}},
+	}
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+
+	bps := dfm.GetDynamicBps(ctx,
+		[]string{"rando"}, []cosmos.Uint{cosmos.NewUint(100)},
+		common.BTCAsset, common.RuneAsset(),
+	)
+	c.Assert(bps, Equals, uint64(0))
+
+	dfm.CreditSwap(ctx,
+		[]string{"rando"}, []cosmos.Uint{cosmos.NewUint(100)},
+		common.BTCAsset, common.RuneAsset(),
+		cosmos.NewUint(500_000), cosmos.NewUint(5_000),
+	)
+	acc, err := k.GetDynamicFeeAccumulator(ctx, dynamicFeeNoAffiliateThorname, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(acc.VolumeTor.IsZero(), Equals, true)
+}
+
+func (s *DynamicFeeMgrSuite) TestNoAffiliateBucketIgnoresWhitelistRemoval(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+
+	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	rec := types.DynamicFeeRecord{
+		Thorname:   dynamicFeeNoAffiliateThorname,
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 42,
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 42}},
+	}
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-"+dynamicFeeNoAffiliateThorname, 0)
+	dfm.cleanupRemovedThornames(ctx)
+
+	got, err := k.GetDynamicFeeRecord(ctx, dynamicFeeNoAffiliateThorname, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(got.DynamicBps, Equals, uint64(42))
+}
+
 // TestGetDynamicBpsBasic verifies the simple lookup path returns the stored DynamicBps value.
 func (s *DynamicFeeMgrSuite) TestGetDynamicBpsBasic(c *C) {
 	ctx, mgr := setupManagerForTest(c)

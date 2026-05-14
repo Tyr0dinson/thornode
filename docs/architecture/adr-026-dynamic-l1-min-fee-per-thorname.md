@@ -146,9 +146,11 @@ or reverses when fees responded negatively.
 - **Pair identity:** non-RUNE endpoints, direction-agnostic, alphabetically
   normalized. Chain-distinct (`BTC.BTC` and `BSC.BTCB` are different pairs).
 - **Attribution unit:** registered thornames that are explicitly
-  whitelisted via Mimir (`DYNAMICFEE-WHITELIST-{thorname}`). Raw-address
-  affiliates, unregistered thornames, and registered-but-unwhitelisted
-  thornames receive `L1SlipMinBPS` and are not tracked.
+  whitelisted via Mimir (`DYNAMICFEE-WHITELIST-{thorname}`), plus the
+  reserved `NO_AFFILIATE` bucket for unaffiliated flow. Raw-address
+  affiliates and unregistered strings are treated as unaffiliated.
+  Registered-but-unwhitelisted thornames receive `L1SlipMinBPS` and are
+  not tracked.
 - **Whitelist states:** `1` = active (dynamic floor applied at swap time),
   `2` = monitor (state computed but not applied — swaps use
   `L1SlipMinBPS`), `0` or absent = not enrolled.
@@ -199,6 +201,11 @@ or reverses when fees responded negatively.
   `L1DynamicFeeCeilingBPS`. The ceiling is not capped at
   `L1SlipMinBPS` — a whitelisted thorname whose fees degrade can
   experience a _worse_ floor than the default, by design.
+- **No-affiliate bucket**: Swaps with no affiliate memo entry are tracked
+  under the reserved synthetic thorname `NO_AFFILIATE`, per pair. This
+  bucket does not require THORName registration or a whitelist Mimir.
+  Raw-address affiliates and unregistered strings also fall into this
+  bucket so they cannot opt out of unaffiliated competition.
 - **Anchor**: The most-recent index in a record's history at which
   `bps_at_close` differs from its predecessor. The controller
   evaluates "did my last move help?" by comparing the fees window
@@ -218,6 +225,9 @@ or reverses when fees responded negatively.
   `L1DynamicFeeFloorBPS`. Starting at the floor means the algorithm's
   first real move is always **up** — a probe into the pricing
   landscape to generate the first gradient datapoint.
+- The no-affiliate bucket follows the same record lifecycle and
+  controller rules, but is always eligible because it has no external
+  whitelist state.
 - The first epoch with activity seals a history entry at
   `bps_at_close = floor`. The second consecutive epoch with activity
   probes up to `floor + step`; from that point onward there is a prior
@@ -318,9 +328,11 @@ DollarsPerRune / 1e8`). When `DollarsPerRune == 0` (no TOR anchor
      and `fees_tor` to the `(thorname, pair)` current-epoch
      accumulator. (Multi-affiliate memos credit each eligible listed
      thorname in full — no proportional split.)
-   - Otherwise (raw address, unregistered thorname, or a registered
-     thorname with whitelist state `0` / absent), no thorname-level
-     credit is recorded.
+   - If the memo has no affiliate entries, or contains only raw
+     addresses / unregistered strings, credit the swap to the
+     `(NO_AFFILIATE, pair)` accumulator.
+   - Otherwise (registered thorname with whitelist state `0` / absent),
+     no thorname-level credit is recorded.
 5. **Streaming swaps.** Each sub-swap is credited independently as it
    completes, into the epoch in which its completion block lands. A
    streaming swap that spans an epoch boundary is therefore split
@@ -334,9 +346,13 @@ For an in-scope L1 swap, at the point slip fees are computed:
 
 1. If `L1DynamicFeeEnabled != 1` → use `L1SlipMinBPS`. See
    [Disabled state](#disabled-state) for the full contract.
-2. If the swap has no affiliate, or the affiliate is a raw address, or
-   the affiliate thorname is not registered → use `L1SlipMinBPS`.
-3. Look up the affiliate thorname's whitelist state:
+2. If the swap has no affiliate, or the affiliate field contains only raw
+   addresses / unregistered strings → use the `NO_AFFILIATE` bucket's
+   `dynamic_bps` when a `(NO_AFFILIATE, pair)` record exists; otherwise
+   use `L1SlipMinBPS`.
+3. If the affiliate is a registered but unwhitelisted thorname → use
+   `L1SlipMinBPS`.
+4. Look up the affiliate thorname's whitelist state:
    - State `1` (active): if a `(thorname, pair)` record exists →
      use `record.dynamic_bps`. Otherwise → use `L1SlipMinBPS` (the
      first in-scope swap for this pair creates the record but the
@@ -347,7 +363,7 @@ For an in-scope L1 swap, at the point slip fees are computed:
      `dynamic_bps` continues to be computed each epoch, but it is
      **not** applied to the swap.
    - State `0` or absent: use `L1SlipMinBPS`.
-4. For multi-affiliate memos, the thorname with the **largest
+5. For multi-affiliate memos, the thorname with the **largest
    affiliate-bps split** is the one whose record applies (ties broken
    by order of appearance). This prevents a free-rider exploit where
    an integrator co-lists an active thorname as a token secondary to
@@ -555,7 +571,7 @@ is used anywhere in the algorithm.
   the "no baseline" edge where `fees_before` is zero.
 - Unit tests on attribution: L1-only filtering, pair normalization,
   RUNE-endpoint handling, multi-affiliate credit, streaming sub-swap
-  crediting, raw-address / unregistered-thorname exclusion,
+  crediting, raw-address / unregistered-string no-affiliate bucketing,
   whitelist state gating (state `0`/absent, `1`, `2`).
 - Unit tests on epoch rollover: sealing into history, floor/ceiling
   clamping at either bound, pruning at 30 epochs, cold start,

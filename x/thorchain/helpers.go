@@ -454,7 +454,7 @@ func getMinSlipBps(
 		ref = constants.SecuredAssetSlipMinBps
 	default:
 		ref = constants.L1SlipMinBps
-		if dynamicFeeMgr != nil && len(affiliates) > 0 {
+		if dynamicFeeMgr != nil {
 			dynBps := dynamicFeeMgr.GetDynamicBps(ctx, affiliates, affiliateBps, sourceAsset, targetAsset)
 			if dynBps > 0 {
 				return cosmos.SafeUintFromInt64(int64(dynBps))

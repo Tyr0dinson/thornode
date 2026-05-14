@@ -16,6 +16,8 @@ type DynamicFeeMgr struct {
 	keeper keeper.Keeper
 }
 
+const dynamicFeeNoAffiliateThorname = "NO_AFFILIATE"
+
 func newDynamicFeeMgr(keeper keeper.Keeper) *DynamicFeeMgr {
 	return &DynamicFeeMgr{keeper: keeper}
 }
@@ -58,14 +60,17 @@ func dynamicFeeWhitelistState(ctx cosmos.Context, k keeper.Keeper, thorname stri
 // to static — see ADR §4 free-rider discussion. First-wins on ties matches
 // the prior largest-bps-only behavior.
 //
-// Returns "", false when the inputs are malformed, empty, or no affiliate
-// satisfies the eligibility predicate.
-func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, allowedStates ...int64) (string, bool) {
+// Returns the selected affiliate, whether one was selected, and whether the
+// memo contained any registered THORName with positive bps. The latter lets the
+// caller distinguish raw-address / random-string affiliate spam from a real
+// THORName that is intentionally unenrolled or monitor-only for live fees.
+func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, allowedStates ...int64) (string, bool, bool) {
 	if len(affiliates) == 0 || len(affiliates) != len(affiliateBps) {
-		return "", false
+		return "", false, false
 	}
 	bestIdx := -1
 	bestBps := cosmos.ZeroUint()
+	hasRegisteredTHORName := false
 	for i, bps := range affiliateBps {
 		aff := affiliates[i]
 		if aff == "" {
@@ -73,6 +78,9 @@ func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates
 		}
 		if !m.keeper.THORNameExists(ctx, aff) {
 			continue
+		}
+		if !bps.IsZero() {
+			hasRegisteredTHORName = true
 		}
 		if !slices.Contains(allowedStates, dynamicFeeWhitelistState(ctx, m.keeper, aff)) {
 			continue
@@ -83,9 +91,23 @@ func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates
 		}
 	}
 	if bestIdx < 0 {
-		return "", false
+		return "", false, hasRegisteredTHORName
 	}
-	return affiliates[bestIdx], true
+	return affiliates[bestIdx], true, hasRegisteredTHORName
+}
+
+func (m *DynamicFeeMgr) dynamicFeeBucket(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, allowedStates ...int64) (string, bool) {
+	if len(affiliates) == 0 && len(affiliateBps) == 0 {
+		return dynamicFeeNoAffiliateThorname, true
+	}
+	aff, ok, hasRegisteredTHORName := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, allowedStates...)
+	if ok {
+		return aff, true
+	}
+	if len(affiliates) == len(affiliateBps) && !hasRegisteredTHORName {
+		return dynamicFeeNoAffiliateThorname, true
+	}
+	return "", false
 }
 
 // CreditSwap accumulates volume and fees for a (thorname, pair) into the
@@ -106,7 +128,7 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 	// Allow whitelist state 1 (active) or 2 (monitor) so monitor-mode
 	// thornames still accumulate the revenue signal without affecting
 	// live fee charging.
-	aff, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, 1, 2)
+	aff, ok := m.dynamicFeeBucket(ctx, affiliates, affiliateBps, 1, 2)
 	if !ok {
 		return
 	}
@@ -154,9 +176,6 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 // signal toward zero and trigger spurious controller reversals on the next
 // epoch boundary.
 func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*EventSwap, affiliates []string, affiliateBps []cosmos.Uint) {
-	if len(affiliates) == 0 {
-		return
-	}
 	dollarsPerRune := mgr.Keeper().DollarsPerRune(ctx)
 	if dollarsPerRune.IsZero() {
 		return
@@ -199,7 +218,7 @@ func (m *DynamicFeeMgr) GetDynamicBps(ctx cosmos.Context, affiliates []string, a
 
 	// Only state 1 (active) thornames govern live fees; monitor-mode
 	// (state 2) entries are excluded so they do not drive the floor.
-	thorname, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, 1)
+	thorname, ok := m.dynamicFeeBucket(ctx, affiliates, affiliateBps, 1)
 	if !ok {
 		return 0
 	}
@@ -569,6 +588,9 @@ func (m *DynamicFeeMgr) clearAccumulators(ctx cosmos.Context) {
 
 func (m *DynamicFeeMgr) cleanupRemovedThornames(ctx cosmos.Context) {
 	for _, thorname := range m.keeper.GetRemovedDynamicFeeWhitelistThornames(ctx) {
+		if strings.EqualFold(thorname, dynamicFeeNoAffiliateThorname) {
+			continue
+		}
 		if err := m.keeper.DeleteAllDynamicFeeStateForThorname(ctx, thorname); err != nil {
 			ctx.Logger().Error("fail to cleanup dynamic fee state for removed thorname", "thorname", thorname, "error", err)
 		}
