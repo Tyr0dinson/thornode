@@ -1152,6 +1152,58 @@ func TestBumpConsolidationReserveHandlesScaledStepOverflow(t *testing.T) {
 	}
 }
 
+func TestConsolidationSigningIDUsesCoordinationEpoch(t *testing.T) {
+	t.Parallel()
+
+	const amountAtomic = uint64(4_900_000_000_000)
+	vaultPubKey := "cthorpub1zcjduepqh5p72qfjl9rv4twt93lqlsddx4gp8pe2jl9mq033qsf76n98p25szzc9z2"
+	epochA := xmrLeaderEpochHeight(21_193, 40)
+	epochB := xmrLeaderEpochHeight(21_198, 40)
+	if epochA != epochB {
+		t.Fatalf("expected heights in same signing epoch, got %d and %d", epochA, epochB)
+	}
+
+	idA := xmrConsolidationSigningID(vaultPubKey, epochA, 1, amountAtomic)
+	idB := xmrConsolidationSigningID(vaultPubKey, epochB, 1, amountAtomic)
+	if idA != idB {
+		t.Fatalf("expected same consolidation signing id in same epoch, got %q != %q", idA, idB)
+	}
+
+	reqA := tssp.FrostKeySignRequest{
+		VaultPubKey:   vaultPubKey,
+		ToAddress:     "49consolidationvault",
+		AmountAtomic:  amountAtomic,
+		Memo:          "consolidate",
+		SignerPubKeys: []string{"cthorpub-c", "cthorpub-a", "cthorpub-b"},
+		BlockHeight:   epochA,
+		RequestID:     idA,
+	}
+	reqB := reqA
+	reqB.BlockHeight = epochB
+	reqB.RequestID = idB
+
+	msgA, err := tssp.FrostKeySignMsgID(reqA)
+	if err != nil {
+		t.Fatalf("msg id A: %v", err)
+	}
+	msgB, err := tssp.FrostKeySignMsgID(reqB)
+	if err != nil {
+		t.Fatalf("msg id B: %v", err)
+	}
+	if msgA != msgB {
+		t.Fatalf("expected same consolidation msg id in same epoch, got %q != %q", msgA, msgB)
+	}
+
+	nextEpoch := xmrLeaderEpochHeight(21_201, 40)
+	if nextEpoch == epochA {
+		t.Fatalf("expected next signing epoch to differ from %d", epochA)
+	}
+	nextID := xmrConsolidationSigningID(vaultPubKey, nextEpoch, 1, amountAtomic)
+	if nextID == idA {
+		t.Fatal("expected consolidation signing id to rotate across signing epochs")
+	}
+}
+
 func TestScaledConsolidationCooldownCapsOnOverflow(t *testing.T) {
 	t.Parallel()
 

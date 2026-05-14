@@ -2747,6 +2747,7 @@ func (c *Client) consolidateVault(
 		return
 	}
 
+	coordinationHeight := xmrLeaderEpochHeight(thorchainHeight, c.getSigningTransactionPeriod())
 	maxRetries := settings.MaxRetries
 	if maxRetries <= 0 {
 		maxRetries = 1
@@ -2778,7 +2779,7 @@ func (c *Client) consolidateVault(
 			},
 			Memo:      memo.NewConsolidateMemo().String(),
 			GasRate:   gasRate,
-			SigningID: fmt.Sprintf("xmr-consolidation:%s:%d:%d:%d", stateKey, thorchainHeight, attempt, amountAtomic),
+			SigningID: xmrConsolidationSigningID(stateKey, coordinationHeight, attempt, amountAtomic),
 		}
 
 		rawTx, _, observation, signErr := c.SignTx(txOutItem, thorchainHeight)
@@ -2975,6 +2976,16 @@ func scaleUint64ByBasisPoints(value uint64, bps int64) uint64 {
 		return math.MaxUint64
 	}
 	return scaled.Uint64()
+}
+
+func xmrConsolidationSigningID(vaultPubKey string, coordinationHeight, attempt int64, amountAtomic uint64) string {
+	return fmt.Sprintf(
+		"xmr-consolidation:%s:%d:%d:%d",
+		strings.TrimSpace(vaultPubKey),
+		coordinationHeight,
+		attempt,
+		amountAtomic,
+	)
 }
 
 func scaledConsolidationCooldown(baseCooldown, consecutiveFails int64) int64 {
