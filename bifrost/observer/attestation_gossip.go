@@ -142,7 +142,7 @@ type AttestationGossip struct {
 	avMu       sync.Mutex
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
-	observerApplySpentOutputRefs      func(tx common.ObservedTx)
+	observerApplySpentOutputRefs      func(tx common.ObservedTx) bool
 	applySpentRefsSem                 chan struct{}
 
 	batcher *AttestationBatcher
@@ -331,23 +331,29 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 	s.observerHandleObservedTxCommitted = o.handleObservedTxCommitted
 }
 
-func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.ObservedTx)) {
+func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.ObservedTx) bool) {
 	s.observerApplySpentOutputRefs = fn
 }
 
-func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx) {
+func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx, onSuccess func()) {
 	if s.observerApplySpentOutputRefs == nil {
 		return
 	}
 	if s.applySpentRefsSem == nil {
-		go s.observerApplySpentOutputRefs(tx)
+		go func() {
+			if s.observerApplySpentOutputRefs(tx) && onSuccess != nil {
+				onSuccess()
+			}
+		}()
 		return
 	}
 	select {
 	case s.applySpentRefsSem <- struct{}{}:
 		go func() {
 			defer func() { <-s.applySpentRefsSem }()
-			s.observerApplySpentOutputRefs(tx)
+			if s.observerApplySpentOutputRefs(tx) && onSuccess != nil {
+				onSuccess()
+			}
 		}()
 	default:
 		s.logger.Warn().
@@ -383,7 +389,7 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
 		len(qtx.ObsTx.SpentOutputRefs) > 0 &&
 		len(qtx.ObsTx.SpentOutputRefs) <= common.MaxXMRSpentOutputRefs {
-		s.applySpentRefsAsync(qtx.ObsTx)
+		s.applySpentRefsAsync(qtx.ObsTx, nil)
 	}
 
 	k := observedTxKey(qtx.ObsTx, qtx.Inbound, qtx.AllowFutureObservation)

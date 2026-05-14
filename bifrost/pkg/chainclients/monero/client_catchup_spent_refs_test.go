@@ -143,6 +143,7 @@ func TestCatchupSpentOutputRefsIncludesInactiveVaultFromPubkeys(t *testing.T) {
 			BlockHeight:    100,
 			ObservedPubKey: frostKey,
 			FinaliseHeight: 100,
+			XmrTxKey:       strings.Repeat("6", 64),
 		},
 	}
 

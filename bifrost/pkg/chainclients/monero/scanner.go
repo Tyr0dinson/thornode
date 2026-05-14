@@ -961,7 +961,14 @@ func (s *Scanner) transferToTxInItem(
 		"",
 		nil,
 	)
-	item.XmrTxKey = strings.TrimSpace(transfer.TxKey)
+	txKey := strings.ToLower(strings.TrimSpace(transfer.TxKey))
+	if txKey != "" {
+		if err := common.ValidateXMRTxKey(common.XMRChain, txKey); err != nil {
+			s.logger.Warn().Err(err).Str("txid", transfer.TxID).Msg("skip transfer: invalid xmr tx key")
+			return nil, false
+		}
+	}
+	item.XmrTxKey = txKey
 	return item, true
 }
 

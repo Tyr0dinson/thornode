@@ -57,7 +57,7 @@ func export(out io.Writer, path string, routine int, failExportInvariants bool) 
 	appState, _ := export["app_state"].(map[string]any)
 	thorchain, _ := appState["thorchain"].(map[string]any)
 	delete(thorchain, "store_version")
-	deleteEmptySpentOutputRefs(thorchain)
+	deleteEmptyXMROutboundMetadata(thorchain)
 	deleteEmptyPOLReserveDeposits(thorchain)
 
 	// ignore node account version for comparison
@@ -147,7 +147,7 @@ func exportBlocks(out io.Writer, path string) error {
 		blocks = append(blocks, block)
 		f.Close()
 	}
-	deleteEmptyBlockSpentOutputRefs(blocks)
+	deleteEmptyBlockXMROutboundMetadata(blocks)
 
 	// check whether existing blocks export exists
 	_, err = os.Stat(blocksPath)
@@ -306,7 +306,7 @@ func checkExportChanges(out io.Writer, newExport map[string]any, path string) er
 	}
 	if appState, ok := oldExport["app_state"].(map[string]any); ok {
 		if thorchain, ok := appState["thorchain"].(map[string]any); ok {
-			deleteEmptySpentOutputRefs(thorchain)
+			deleteEmptyXMROutboundMetadata(thorchain)
 			deleteEmptyPOLReserveDeposits(thorchain)
 		}
 	}
@@ -342,8 +342,8 @@ func checkBlocksChanges(out io.Writer, newBlocks []openapi.BlockResponse, path s
 	if err != nil {
 		localLog.Err(err).Msg("failed to decode existing blocks")
 	}
-	deleteEmptyBlockSpentOutputRefs(oldBlocks)
-	deleteEmptyBlockSpentOutputRefs(newBlocks)
+	deleteEmptyBlockXMROutboundMetadata(oldBlocks)
+	deleteEmptyBlockXMROutboundMetadata(newBlocks)
 
 	// compare blocks
 	diff := cmp.Diff(oldBlocks, newBlocks)
@@ -356,29 +356,29 @@ func checkBlocksChanges(out io.Writer, newBlocks []openapi.BlockResponse, path s
 	return nil
 }
 
-func deleteEmptyBlockSpentOutputRefs(blocks []openapi.BlockResponse) {
+func deleteEmptyBlockXMROutboundMetadata(blocks []openapi.BlockResponse) {
 	for i := range blocks {
 		for j := range blocks[i].Txs {
-			deleteEmptySpentOutputRefs(blocks[i].Txs[j].Tx)
+			deleteEmptyXMROutboundMetadata(blocks[i].Txs[j].Tx)
 		}
 	}
 }
 
-func deleteEmptySpentOutputRefs(value any) {
+func deleteEmptyXMROutboundMetadata(value any) {
 	switch v := value.(type) {
 	case map[string]interface{}:
 		if refs, ok := v["spent_output_refs"]; ok && isEmptyJSONList(refs) {
 			delete(v, "spent_output_refs")
 		}
-		if txKey, ok := v["xmr_tx_key"]; ok && strings.TrimSpace(fmt.Sprint(txKey)) == "" {
+		if txKey, ok := v["xmr_tx_key"].(string); ok && strings.TrimSpace(txKey) == "" {
 			delete(v, "xmr_tx_key")
 		}
 		for _, child := range v {
-			deleteEmptySpentOutputRefs(child)
+			deleteEmptyXMROutboundMetadata(child)
 		}
 	case []interface{}:
 		for _, child := range v {
-			deleteEmptySpentOutputRefs(child)
+			deleteEmptyXMROutboundMetadata(child)
 		}
 	}
 }

@@ -1697,8 +1697,16 @@ func (c *Client) RestoreKeyshare(vaultPubKey common.PubKey, keyBytesHex string) 
 }
 
 func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
+	_ = c.applySpentOutputRefs(tx)
+}
+
+func (c *Client) ApplySpentOutputRefsWithResult(tx common.ObservedTx) bool {
+	return c.applySpentOutputRefs(tx)
+}
+
+func (c *Client) applySpentOutputRefs(tx common.ObservedTx) bool {
 	if c.sidecar == nil || len(tx.SpentOutputRefs) == 0 {
-		return
+		return false
 	}
 	if err := validateXMRSpentRefsForSidecar(tx); err != nil {
 		c.logger.Warn().
@@ -1706,7 +1714,7 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 			Str("tx_hash", tx.Tx.ID.String()).
 			Str("vault", tx.ObservedPubKey.String()).
 			Msg("skip invalid xmr spent output refs")
-		return
+		return false
 	}
 	vaultPubKey := tx.ObservedPubKey.String()
 	txHash := tx.Tx.ID.String()
@@ -1723,14 +1731,14 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 				Str("vault", vaultPubKey).
 				Int("refs", len(refs)).
 				Msg("mark-spent transient 404 (will be reconciled by catchup)")
-			return
+			return false
 		}
 		c.logger.Err(err).
 			Str("tx_hash", txHash).
 			Str("vault", vaultPubKey).
 			Int("refs", len(refs)).
 			Msg("failed to apply spent output refs from attestation")
-		return
+		return false
 	}
 	c.logger.Info().
 		Str("tx_hash", txHash).
@@ -1738,6 +1746,7 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 		Int("marked", result.Marked).
 		Int("not_found", result.NotFound).
 		Msg("applied spent output refs from attestation")
+	return result.NotFound == 0
 }
 
 func xmrSpentRefsToSidecar(refs []common.OutputRef) []sidecar.SpentRef {
@@ -1778,6 +1787,12 @@ func validateXMRSpentRefsForSidecar(tx common.ObservedTx) error {
 		return fmt.Errorf("spent output refs are only valid for XMR observed txs")
 	}
 	if err := validateFixedHex(tx.Tx.ID.String(), 32, "spend tx hash"); err != nil {
+		return err
+	}
+	if strings.TrimSpace(tx.XmrTxKey) == "" {
+		return fmt.Errorf("xmr spent refs require outbound tx key")
+	}
+	if err := validateFixedHex(tx.XmrTxKey, 32, "xmr tx key"); err != nil {
 		return err
 	}
 	if !common.XMRChain.IsValidAddress(tx.Tx.ToAddress) {

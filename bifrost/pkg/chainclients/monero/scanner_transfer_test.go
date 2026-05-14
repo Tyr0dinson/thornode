@@ -1,6 +1,7 @@
 package monero
 
 import (
+	"strings"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
@@ -55,6 +56,48 @@ func TestTransferToTxInItemUsesFeeFallback(t *testing.T) {
 	}
 	if item.Gas[0].Amount.Uint64() != 123 {
 		t.Fatalf("expected fallback fee 123, got %d", item.Gas[0].Amount.Uint64())
+	}
+}
+
+func TestTransferToTxInItemNormalizesXMRTxKey(t *testing.T) {
+	pk := common.PubKey("thorpub1testvault")
+	txKey := strings.Repeat("A", 64)
+
+	s := &Scanner{
+		logger:             log.Logger,
+		currentBlockHeight: atomic.NewInt64(0),
+		lastFee:            atomic.NewUint64(0),
+	}
+	item, ok := s.transferToTxInItem(sidecar.Transfer{
+		TxID:   strings.Repeat("A", 64),
+		Amount: 10000,
+		Fee:    0,
+		TxKey:  " \t" + txKey + "\n",
+	}, unknownSenderAddress("sender", "8abc"), unknownSenderAddress("receiver", "8def"), pk, "", 100)
+	if !ok {
+		t.Fatal("expected transfer to convert to tx in item")
+	}
+	if item.XmrTxKey != strings.ToLower(txKey) {
+		t.Fatalf("expected normalized tx key %q, got %q", strings.ToLower(txKey), item.XmrTxKey)
+	}
+}
+
+func TestTransferToTxInItemRejectsInvalidXMRTxKey(t *testing.T) {
+	pk := common.PubKey("thorpub1testvault")
+
+	s := &Scanner{
+		logger:             log.Logger,
+		currentBlockHeight: atomic.NewInt64(0),
+		lastFee:            atomic.NewUint64(0),
+	}
+	item, ok := s.transferToTxInItem(sidecar.Transfer{
+		TxID:   strings.Repeat("A", 64),
+		Amount: 10000,
+		Fee:    0,
+		TxKey:  "not-a-64-byte-hex-key",
+	}, unknownSenderAddress("sender", "8abc"), unknownSenderAddress("receiver", "8def"), pk, "", 100)
+	if ok || item != nil {
+		t.Fatalf("expected invalid tx key transfer to be rejected, got item=%v ok=%v", item, ok)
 	}
 }
 

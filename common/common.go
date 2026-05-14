@@ -13,13 +13,17 @@ import (
 
 var LatestVersion semver.Version = semver.MustParse("999.0.0")
 
+const xmrObservedTxMetadataSignablePayloadVersion = "xmr_meta_v1"
+
 func (o *ObservedTx) IsValid() bool {
 	return o != nil
 }
 
 // GetSignablePayload returns the data that is signed for verification.
 // When XMR outbound metadata is present, append it to the signed payload so
-// all attestors commit to the same tx key and spent-output set.
+// all attestors commit to the same tx key and spent-output set. This byte
+// layout is consensus-critical: changing it after XMR is live requires an
+// explicit version transition so mixed attestors do not sign different bytes.
 func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 	txBz, err := o.Tx.Marshal()
 	if err != nil {
@@ -34,7 +38,7 @@ func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Grow(len(txBz) + len(xmrTxKey) + len(refs)*128)
 	buf.Write(txBz)
-	fmt.Fprintf(&buf, "\nxmr_tx_key:%d:%s\nxmr_spent_output_refs:%d\n", len(xmrTxKey), xmrTxKey, len(refs))
+	fmt.Fprintf(&buf, "\n%s\nxmr_tx_key:%d:%s\nxmr_spent_output_refs:%d\n", xmrObservedTxMetadataSignablePayloadVersion, len(xmrTxKey), xmrTxKey, len(refs))
 	for _, ref := range refs {
 		refBz, marshalErr := ref.Marshal()
 		if marshalErr != nil {

@@ -954,8 +954,9 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback fires for locally attested XMR outbound with spent refs", func(t *testing.T) {
 		var callbackTx *common.ObservedTx
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			callbackTx = &tx
+			return true
 		})
 
 		refs := []common.OutputRef{
@@ -966,6 +967,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 			Tx:              common.Tx{ID: "xmr-out-1", Chain: common.XMRChain},
 			ObservedPubKey:  "pk1",
 			SpentOutputRefs: refs,
+			XmrTxKey:        "1111111111111111111111111111111111111111111111111111111111111111",
 		}
 		att := common.AttestTx{
 			ObsTx:                  tx,
@@ -982,16 +984,18 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		assert.Equal(t, "aaa111", callbackTx.SpentOutputRefs[0].TxHash)
 	})
 
-	t.Run("callback does not import peer XMR attestation before quorum commit", func(t *testing.T) {
-		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
-			called = true
+	t.Run("callback imports peer XMR attestation before quorum commit", func(t *testing.T) {
+		var callbackTx *common.ObservedTx
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
+			callbackTx = &tx
+			return true
 		})
 
 		tx := common.ObservedTx{
 			Tx:              common.Tx{ID: "xmr-peer-out-1", Chain: common.XMRChain},
 			ObservedPubKey:  "pk1",
 			SpentOutputRefs: []common.OutputRef{{TxHash: "x", OutputIndex: 0, KeyImage: "ki_x", SpendTxHash: "xmr-peer-out-1"}},
+			XmrTxKey:        "3333333333333333333333333333333333333333333333333333333333333333",
 		}
 		privKey := secp256k1.GenPrivKey()
 		att := common.AttestTx{
@@ -1002,13 +1006,16 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		ag.handleObservedTxAttestation(context.Background(), att)
 
 		time.Sleep(50 * time.Millisecond)
-		assert.False(t, called)
+		require.NotNil(t, callbackTx)
+		assert.Equal(t, tx.Tx.ID, callbackTx.Tx.ID)
+		assert.Equal(t, tx.XmrTxKey, callbackTx.XmrTxKey)
 	})
 
 	t.Run("callback does not fire for non-XMR chain", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			called = true
+			return true
 		})
 
 		tx := common.ObservedTx{
@@ -1030,8 +1037,9 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback does not fire for inbound XMR", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			called = true
+			return true
 		})
 
 		tx := common.ObservedTx{
@@ -1053,8 +1061,9 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback does not fire when refs exceed cap", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			called = true
+			return true
 		})
 
 		refs := make([]common.OutputRef, 33)

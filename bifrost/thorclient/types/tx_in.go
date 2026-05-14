@@ -99,7 +99,7 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedVaultPubKey) {
 		return false
 	}
-	if t.XmrTxKey != other.XmrTxKey {
+	if normalizeXMRTxKey(t.XmrTxKey) != normalizeXMRTxKey(other.XmrTxKey) {
 		return false
 	}
 	return true
@@ -134,7 +134,7 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedPubKey) {
 		return false
 	}
-	if t.XmrTxKey != other.XmrTxKey {
+	if normalizeXMRTxKey(t.XmrTxKey) != normalizeXMRTxKey(other.XmrTxKey) {
 		return false
 	}
 	return true
@@ -178,6 +178,10 @@ func (t *TxInItem) IsEmpty() bool {
 		t.Gas.IsEmpty() &&
 		t.ObservedVaultPubKey.IsEmpty() &&
 		t.XmrTxKey == ""
+}
+
+func normalizeXMRTxKey(txKey string) string {
+	return strings.ToLower(strings.TrimSpace(txKey))
 }
 
 // CacheHash calculate the has used for signer cache

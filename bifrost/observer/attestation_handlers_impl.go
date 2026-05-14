@@ -1,7 +1,6 @@
 package observer
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"time"
@@ -43,13 +42,14 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 
 	// Import verified XMR outbound metadata into the local sidecar outside the
 	// lock. This does not add a local attestation; the scanner must later
-	// observe the sidecar-verified outbound before this node signs it.
+	// observe the sidecar-verified outbound before this node signs it. Peer
+	// attestations are enough to trigger the import because the sidecar requires
+	// the tx key and verifies the spend transaction before exposing a local
+	// observation.
 	var applySpentRefs *common.ObservedTx
 	isXMROutboundWithRefs := obsTx.Tx.Chain.Equals(common.XMRChain) && !tx.Inbound &&
 		len(obsTx.SpentOutputRefs) > 0 && len(obsTx.SpentOutputRefs) <= common.MaxXMRSpentOutputRefs
-	isLocalAttestation := tx.Attestation != nil && bytes.Equal(tx.Attestation.PubKey, s.pubKey)
-	if isXMROutboundWithRefs && isNewAttestation && isLocalAttestation && !state.spentRefsApplied {
-		state.spentRefsApplied = true
+	if isXMROutboundWithRefs && isNewAttestation && !state.spentRefsApplied {
 		cp := obsTx
 		applySpentRefs = &cp
 	}
@@ -82,7 +82,11 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	// Apply XMR spent output refs outside the lock to avoid holding the
 	// mutex during a blocking HTTP call to the sidecar.
 	if applySpentRefs != nil && s.observerApplySpentOutputRefs != nil {
-		s.applySpentRefsAsync(*applySpentRefs)
+		s.applySpentRefsAsync(*applySpentRefs, func() {
+			state.mu.Lock()
+			defer state.mu.Unlock()
+			state.spentRefsApplied = true
+		})
 	}
 }
 

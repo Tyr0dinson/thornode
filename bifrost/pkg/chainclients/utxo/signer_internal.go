@@ -502,7 +502,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
@@ -516,7 +516,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
+		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}

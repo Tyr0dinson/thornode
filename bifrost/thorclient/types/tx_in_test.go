@@ -1,6 +1,8 @@
 package types
 
 import (
+	"strings"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	. "gopkg.in/check.v1"
@@ -68,6 +70,12 @@ func (s *TxInTestSuite) TestTxInItemEquals(c *C) {
 
 	// Equal items
 	c.Check(item1.Equals(item2), Equals, true)
+
+	item1.XmrTxKey = strings.Repeat("A", 64)
+	item2.XmrTxKey = strings.Repeat("a", 64)
+	c.Check(item1.Equals(item2), Equals, true)
+	item1.XmrTxKey = ""
+	item2.XmrTxKey = ""
 
 	// Different BlockHeight
 	item2.BlockHeight = 200
@@ -357,6 +365,12 @@ func (s *TxInTestSuite) TestTxInItemEqualsObservedTx(c *C) {
 
 	// Equal items
 	c.Check(item.EqualsObservedTx(observedTx), Equals, true)
+
+	item.XmrTxKey = strings.Repeat("A", 64)
+	observedTx.XmrTxKey = strings.Repeat("a", 64)
+	c.Check(item.EqualsObservedTx(observedTx), Equals, true)
+	item.XmrTxKey = ""
+	observedTx.XmrTxKey = ""
 
 	// Invalid tx ID
 	item2 := item.Copy()

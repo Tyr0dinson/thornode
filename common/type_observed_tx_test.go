@@ -116,6 +116,53 @@ func (s ObservedTxSuite) TestValidateXMRTxKey(c *C) {
 	c.Assert(err, ErrorMatches, "xmr tx key must be hex")
 }
 
+func (s ObservedTxSuite) TestGetSignablePayloadXMRTxKeyMetadata(c *C) {
+	txKeyUpper := strings.ToUpper(testXMRTxKey)
+	txKeyLower := strings.ToLower(testXMRTxKey)
+
+	withUpperKey := makeXMRObservedTx(c, nil)
+	withUpperKey.XmrTxKey = txKeyUpper
+	upperPayload, err := withUpperKey.GetSignablePayload()
+	c.Assert(err, IsNil)
+
+	withLowerKey := makeXMRObservedTx(c, nil)
+	withLowerKey.XmrTxKey = txKeyLower
+	lowerPayload, err := withLowerKey.GetSignablePayload()
+	c.Assert(err, IsNil)
+
+	emptyTx := makeXMRObservedTx(c, nil)
+	emptyPayload, err := emptyTx.GetSignablePayload()
+	c.Assert(err, IsNil)
+
+	c.Assert(string(upperPayload), Equals, string(lowerPayload))
+	c.Assert(string(lowerPayload) == string(emptyPayload), Equals, false)
+	c.Assert(strings.Contains(string(lowerPayload), xmrObservedTxMetadataSignablePayloadVersion), Equals, true)
+	c.Assert(strings.Contains(string(lowerPayload), "xmr_tx_key:64:"+txKeyLower), Equals, true)
+}
+
+func (s ObservedTxSuite) TestGetSignablePayloadXMRMetadataDeterministicAcrossRefOrder(c *C) {
+	a := makeRef(testRefTxHashA, 0, testKeyImageA, testSpendTxHash)
+	b := makeRef(testRefTxHashB, 1, testKeyImageB, testSpendTxHash)
+
+	tx1 := makeXMRObservedTx(c, []OutputRef{a, b})
+	tx1.XmrTxKey = testXMRTxKey
+	payload1, err := tx1.GetSignablePayload()
+	c.Assert(err, IsNil)
+
+	tx2 := makeXMRObservedTx(c, []OutputRef{b, a})
+	tx2.XmrTxKey = strings.ToUpper(testXMRTxKey)
+	payload2, err := tx2.GetSignablePayload()
+	c.Assert(err, IsNil)
+
+	txNoRefs := makeXMRObservedTx(c, nil)
+	txNoRefs.XmrTxKey = testXMRTxKey
+	payloadNoRefs, err := txNoRefs.GetSignablePayload()
+	c.Assert(err, IsNil)
+
+	c.Assert(string(payload1), Equals, string(payload2))
+	c.Assert(string(payload1) == string(payloadNoRefs), Equals, false)
+}
+
 // helpers for consensus-equality tests
 
 func makeXMRObservedTx(c *C, refs []OutputRef) ObservedTx {

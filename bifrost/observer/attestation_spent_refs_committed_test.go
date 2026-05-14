@@ -18,8 +18,9 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 
 	t.Run("applies spent refs for XMR outbound on committed event", func(t *testing.T) {
 		var callbackTx *common.ObservedTx
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			callbackTx = &tx
+			return true
 		})
 
 		refs := []common.OutputRef{
@@ -71,8 +72,9 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 
 	t.Run("does not apply spent refs for non-XMR committed event", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			called = true
+			return true
 		})
 
 		tx := common.ObservedTx{
@@ -113,8 +115,9 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 
 	t.Run("does not apply spent refs for inbound XMR committed event", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			called = true
+			return true
 		})
 
 		tx := common.ObservedTx{
@@ -156,8 +159,9 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 
 	t.Run("does not apply spent refs when no refs present", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) bool {
 			called = true
+			return true
 		})
 
 		tx := common.ObservedTx{

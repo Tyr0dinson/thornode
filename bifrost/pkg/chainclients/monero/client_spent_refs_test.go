@@ -183,6 +183,36 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	assert.Equal(t, spendTxHash, capturedRefs[1].SpendTxHash)
 }
 
+func TestValidateXMRSpentRefsForSidecarRequiresTxKey(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "test-vault-missing-tx-key")
+	vaultAddr, err := vaultPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+	spendTxHash := testXMRHash("missing-tx-key")
+
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          common.TxID(spendTxHash),
+			Chain:       common.XMRChain,
+			FromAddress: vaultAddr,
+			ToAddress:   testOutboundXMRDestination(),
+			Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50))),
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		},
+		100,
+		vaultPubKey,
+		100,
+	)
+	obsTx.SpentOutputRefs = []common.OutputRef{
+		*testXMROutputRef("missing-key-spent", 0, spendTxHash),
+	}
+
+	err = validateXMRSpentRefsForSidecar(obsTx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "outbound tx key")
+}
+
 func TestApplySpentOutputRefsFromTxInItemUsesObservationHeight(t *testing.T) {
 	t.Parallel()
 

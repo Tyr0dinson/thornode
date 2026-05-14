@@ -143,9 +143,9 @@ type AttestationState[T AttestableItem] struct {
 	lastAttestationsSent     time.Time
 	lastCommittedAttestation time.Time
 
-	// spentRefsApplied tracks whether XMR spent output refs have already been
-	// sent to the sidecar for this tx, so we only fire once per tx rather than
-	// once per peer attestation.
+	// spentRefsApplied tracks whether XMR spent output refs have been
+	// successfully applied to the sidecar for this tx. Failed imports are left
+	// retryable so later peer attestations can recover transient sidecar races.
 	spentRefsApplied bool
 
 	mu sync.Mutex
