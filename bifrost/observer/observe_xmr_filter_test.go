@@ -121,6 +121,38 @@ func TestFilterObservationsXMRToObservedTx(t *testing.T) {
 	require.Equal(t, item.TxKeys, obsTxs[0].TxKeys)
 }
 
+func TestFilterObservationsXMRConsolidateSelfSendKeepsInboundAndOutbound(t *testing.T) {
+	t.Parallel()
+
+	cache, err := lru.New(8)
+	require.NoError(t, err)
+
+	poolPubKey := randomXMRObservedPubKey(t)
+	poolAddress, err := poolPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+	obs := &Observer{
+		signedTxOutCache: cache,
+		pubkeyMgr:        newXMRPubKeyMgr(t, poolPubKey),
+	}
+	item := &types.TxInItem{
+		BlockHeight: 100,
+		Tx:          "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890",
+		Memo:        "consolidate",
+		Sender:      poolAddress.String(),
+		To:          poolAddress.String(),
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(149549601))),
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(28752))},
+		TxKeys:      []string{"11", "22"},
+	}
+
+	filtered := obs.filterObservations(common.XMRChain, []*types.TxInItem{item}, true)
+	require.Len(t, filtered, 2)
+
+	coalesced, changed := coalesceXMRMetadataDuplicateDeckItems(common.XMRChain, filtered)
+	require.False(t, changed)
+	require.Len(t, coalesced, 2)
+}
+
 func TestFilterObservationsNonXMRStillRequiresPoolValidation(t *testing.T) {
 	t.Parallel()
 

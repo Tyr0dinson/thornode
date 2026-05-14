@@ -1,6 +1,8 @@
 package observer
 
 import (
+	"strings"
+
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
@@ -72,6 +74,9 @@ func coalesceXMRMetadataDuplicateDeckItems(chain common.Chain, items []*types.Tx
 			if !txInItemMatchesIgnoringXMRMetadata(existing, item) {
 				continue
 			}
+			if isConsolidateSelfSendItem(existing) && isConsolidateSelfSendItem(item) {
+				continue
+			}
 			if mergeXMRMetadataIntoTxInItem(existing, item) {
 				changed = true
 			}
@@ -88,6 +93,13 @@ func coalesceXMRMetadataDuplicateDeckItems(chain common.Chain, items []*types.Tx
 		}
 	}
 	return out, changed
+}
+
+func isConsolidateSelfSendItem(item *types.TxInItem) bool {
+	return item != nil &&
+		item.Sender != "" &&
+		item.Sender == item.To &&
+		strings.EqualFold(item.Memo, "consolidate")
 }
 
 func filteredObservationForVault(item *types.TxInItem, vaultPubKey common.PubKey) *types.TxInItem {

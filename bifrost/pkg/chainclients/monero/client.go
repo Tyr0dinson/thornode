@@ -2863,7 +2863,6 @@ func (c *Client) observeSignedXMRConsolidation(item *stypes.TxInItem, txHash str
 		Chain:                  c.chain,
 		TxArray:                []*stypes.TxInItem{item},
 		MemPool:                true,
-		Filtered:               true,
 		ConfirmationRequired:   1,
 		AllowFutureObservation: true,
 	}
