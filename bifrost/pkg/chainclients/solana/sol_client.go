@@ -37,6 +37,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // signerCacheExpiryOverride, when > 0, replaces the config-sourced signer-cache
@@ -348,6 +349,15 @@ func (c *SOLClient) GetAccount(pk common.PubKey, height *big.Int) (common.Accoun
 	}
 
 	return c.GetAccountByAddress(addr.String(), height)
+}
+
+// GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
+func (c *SOLClient) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error) {
+	accountPubKey, err := vault.AlgoPubKey(c.GetChain())
+	if err != nil {
+		return common.Account{}, err
+	}
+	return c.GetAccount(accountPubKey, height)
 }
 
 // GetAccountByAddress return account information

@@ -39,6 +39,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	bifrosttss "gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -225,6 +226,9 @@ type Client struct {
 // not a runtime assertion miss which lets the signer discard the outbound.
 var _ types.SpentOutputRefsApplier = (*Client)(nil)
 
+// Compile-time check that the Monero client still satisfies reporter.ChainClient.
+var _ reporter.ChainClient = (*Client)(nil)
+
 // validateMoneroDaemonNetwork binds THORChain mainnet builds to Monero mainnet.
 // Other deployments may choose a different daemon network; the sidecar
 // compatibility check validates its supported value and reported identity.
@@ -390,13 +394,8 @@ func NewClient(
 	c.scanner.SetAuthenticatedInternalInboundReplayStore(internalReplayStore)
 	c.scanner.SetClaimQuarantineHandler(c.signedTxPayloadStore.QuarantineReverted)
 	c.scanner.SetLocalSignedTxHandler(c.signedTxPayloadStore.IsLocallySignedTx)
-	// Wire solvency reporting to the per-block scan loop. Without this, the
-	// chain client's ReportSolvency only fires from the auto-unhalt
-	// SolvencyCheckRunner — which itself is gated on the chain being already
-	// halted, so vault drift is never detected during normal operation.
-	// Match the XRP / Solana wiring pattern (their scanners take a
-	// SolvencyReporter callback in their constructors).
-	c.scanner.SetSolvencyReporter(c.ReportSolvency)
+	// Solvency reporting is handled by the shared reporter dispatcher through
+	// blockScanner.Start, matching the other chain clients.
 	if err := c.loadVaultAddressMap(); err != nil {
 		c.logger.Warn().Err(err).Msg("fail to load persisted monero vault addresses")
 	}
@@ -407,15 +406,12 @@ func NewClient(
 func (c *Client) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
-	globalSolvencyQueue chan stypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
+	reporterDispatcher reporter.Dispatcher,
 ) {
 	c.ensureConsolidationState()
-	c.globalSolvencyQueue = globalSolvencyQueue
 	c.scanner.SetErrataQueue(globalErrataQueue)
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 	c.wg.Add(1)
 	go c.consolidationRunner()
 	c.wg.Add(1)
@@ -3647,6 +3643,15 @@ func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.A
 	return c.GetAccountByAddress(addr.String(), height)
 }
 
+// GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
+func (c *Client) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error) {
+	accountPubKey, err := vault.AlgoPubKey(c.GetChain())
+	if err != nil {
+		return common.Account{}, err
+	}
+	return c.GetAccount(accountPubKey, height)
+}
+
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
 	return c.getAccountByAddress(address, height, false)
 }
@@ -3743,6 +3748,14 @@ func (c *Client) GetChain() common.Chain {
 
 func (c *Client) GetConfig() config.BifrostChainConfiguration {
 	return c.cfg
+}
+
+// GetGasEstimateForSolvency returns the current XMR fee estimate used by solvency checks.
+func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
+	if c.scanner == nil || c.scanner.lastFee == nil {
+		return cosmos.ZeroUint()
+	}
+	return cosmos.NewUint(3 * totalFeeAtomicToThorchain(c.scanner.lastFee.Load()))
 }
 
 func (c *Client) CustomKeygen() bool {

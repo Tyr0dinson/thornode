@@ -48,7 +48,7 @@ func (s *UtilTestSuite) TestFromThorchainToCosmos(c *C) {
 	thorchainCoin := common.Coin{
 		Asset:    thorchainAsset,
 		Amount:   cosmos.NewUint(600000000),
-		Decimals: 6,
+		Decimals: common.THORChainDecimals,
 	}
 	cosmosCoin, err := s.scanner.fromThorchainToCosmos(thorchainCoin)
 	c.Assert(err, IsNil)

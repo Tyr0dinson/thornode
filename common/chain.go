@@ -312,6 +312,21 @@ func (c Chain) NativeGasToThorchain(native cosmos.Uint) cosmos.Uint {
 	return native.MulUint64(One).Quo(gasRateUnitsPerOne)
 }
 
+// NativeGasToThorchainCeil converts native gas units to THORChain units (1e8),
+// rounding up when the chain gas unit is finer than THORChain precision.
+func (c Chain) NativeGasToThorchainCeil(native cosmos.Uint) cosmos.Uint {
+	amount := c.NativeGasToThorchain(native)
+
+	_, gasRateUnitsPerOne := c.GetGasUnits()
+	if gasRateUnitsPerOne.GT(cosmos.NewUint(One)) {
+		if native.GT(amount.Mul(gasRateUnitsPerOne).QuoUint64(One)) {
+			amount = amount.Add(cosmos.OneUint())
+		}
+	}
+
+	return amount
+}
+
 // ThorchainToNativeGas converts THORChain units (1e8) to native gas units.
 func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 	_, gasRateUnitsPerOne := c.GetGasUnits()
@@ -323,7 +338,7 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 // metadata; it does not describe the precision of the Amount field.
 func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchain(native))
-	coin.Decimals = c.GetGasAssetDecimal()
+	coin.Decimals = THORChainDecimals
 	return coin
 }
 
@@ -335,16 +350,8 @@ func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 // In this case we add 1 unit to avoid under-reporting which could
 // mis-state vault solvency and risk failed broadcasts.
 func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
-	coin := c.NativeGasToThorCoin(native)
-
-	if c.GetGasAssetDecimal() > THORChainDecimals {
-		_, gasRateUnitsPerOne := c.GetGasUnits()
-		amount := coin.Amount.Mul(gasRateUnitsPerOne).QuoUint64(One)
-		if native.GT(amount) {
-			coin.Amount = coin.Amount.Add(cosmos.OneUint())
-		}
-	}
-
+	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchainCeil(native))
+	coin.Decimals = THORChainDecimals
 	return coin
 }
 

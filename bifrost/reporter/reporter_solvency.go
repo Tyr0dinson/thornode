@@ -72,20 +72,12 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	msgHeight := solvencyMsgHeight(chain, height)
 	queryHeight := big.NewInt(height)
 	for _, asgard := range chainVaults {
-		accountPubKey, err := asgard.AlgoPubKey(chain)
-		if err != nil {
-			r.logger.Err(err).Stringer("vault", asgard.PubKey).Msg("fail to get chain-specific vault pubkey for account lookup")
-			continue
-		}
-
-		var acct common.Account
-		acct, err = r.client.GetAccount(accountPubKey, queryHeight)
+		acct, err := r.client.GetVaultAccount(asgard, queryHeight)
 		if err != nil {
 			r.logger.Err(err).
 				Stringer("vault", asgard.PubKey).
-				Stringer("account_lookup_pubkey", accountPubKey).
 				Int64("query_height", height).
-				Msg("fail to get account balance")
+				Msg("fail to get vault-scoped account balance")
 			continue
 		}
 		var msg *types.MsgSolvency
@@ -213,7 +205,7 @@ func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {
 // estimation is initialized before solvency checks are meaningful.
 func (r *solvencyReporter) requiresNonZeroGas() bool {
 	switch r.client.GetChain() {
-	case common.GAIAChain, common.NOBLEChain, common.XRPChain:
+	case common.GAIAChain, common.NOBLEChain, common.XRPChain, common.XMRChain:
 		return true
 	default:
 		return false
@@ -251,7 +243,7 @@ func (r *solvencyReporter) solvencyBlocks() int64 {
 	switch r.client.GetChain() {
 	case common.ETHChain:
 		return 20
-	case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain:
+	case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain, common.XMRChain:
 		return 10
 	case common.BTCChain, common.BCHChain:
 		return 2

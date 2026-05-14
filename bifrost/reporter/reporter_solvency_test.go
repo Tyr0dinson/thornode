@@ -80,6 +80,14 @@ func (m *mockChainClient) GetAccount(pk common.PubKey, height *big.Int) (common.
 	}
 	return m.account, m.err
 }
+
+func (m *mockChainClient) GetVaultAccount(vault ctypes.Vault, height *big.Int) (common.Account, error) {
+	accountPubKey, err := vault.AlgoPubKey(m.chain)
+	if err != nil {
+		return common.Account{}, err
+	}
+	return m.GetAccount(accountPubKey, height)
+}
 func (m *mockChainClient) GetBlockScannerHeight() (int64, error) { return m.blockScannerHeight, nil }
 func (m *mockChainClient) IsBlockScannerHealthy() bool           { return m.blockScannerIsHealthy }
 func (m *mockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan types.ErrataBlock, reportDispatcher Dispatcher) {
@@ -109,6 +117,26 @@ func (m *mockChainClient) GetAddress(poolPubKey common.PubKey) string {
 
 func (m *mockChainClient) GetGasEstimateForSolvency() cosmos.Uint {
 	return m.gas
+}
+
+type mockVaultAccountChainClient struct {
+	*mockChainClient
+	vaultAccounts        map[string]common.Account
+	getAccountCalls      int
+	getVaultAccountCalls int
+}
+
+func (m *mockVaultAccountChainClient) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
+	m.getAccountCalls++
+	return m.mockChainClient.GetAccount(pk, height)
+}
+
+func (m *mockVaultAccountChainClient) GetVaultAccount(vault ctypes.Vault, _ *big.Int) (common.Account, error) {
+	m.getVaultAccountCalls++
+	if acct, ok := m.vaultAccounts[vault.PubKey.String()]; ok {
+		return acct, nil
+	}
+	return common.Account{}, fmt.Errorf("missing vault account for %s", vault.PubKey)
 }
 
 type mimirMap struct {
@@ -877,6 +905,47 @@ func (s *SolvencySuite) TestCollectAllSolventUsesChainVaultCount(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(msg.PubKey.Equals(solVault.PubKey), Equals, true)
 	c.Assert(msg.Chain.Equals(common.SOLChain), Equals, true)
+}
+
+func (s *SolvencySuite) TestCollectUsesVaultScopedAccountLookupWhenAvailable(c *C) {
+	vault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{vault}, nil
+	}
+
+	baseClient := &mockChainClient{
+		chain:                 common.ETHChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 1,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 40,
+			},
+		},
+		accounts: map[string]common.Account{
+			vault.PubKey.String(): {Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))},
+		},
+		blockScannerHeight: 200,
+	}
+	client := &mockVaultAccountChainClient{
+		mockChainClient: baseClient,
+		vaultAccounts: map[string]common.Account{
+			vault.PubKey.String(): {Coins: vault.Coins},
+		},
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromBlockScanner, client.blockScannerHeight)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 0)
+	c.Assert(client.getVaultAccountCalls, Equals, 1)
+	c.Assert(client.getAccountCalls, Equals, 0)
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, client.blockScannerHeight)
 }
 
 // TestCollectAllSolventPathRequiresRunner verifies the auto-unhalt "all solvent"

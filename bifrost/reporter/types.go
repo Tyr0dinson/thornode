@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // alias
@@ -23,6 +24,7 @@ type ChainClient interface {
 	GetBlockScannerHeight() (int64, error)
 	GetGasEstimateForSolvency() cosmos.Uint
 	GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error)
+	GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error)
 	GetChain() common.Chain
 	GetConfig() config.BifrostChainConfiguration
 	IsBlockScannerHealthy() bool

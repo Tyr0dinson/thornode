@@ -128,26 +128,37 @@ func (s ChainSuite) TestNativeGasToThorCoinCeil(c *C) {
 	// DOT: 1e10 planck per DOT, 1e8 thor units per DOT, so 100 planck = 1 thor unit.
 	c.Assert(DOTChain.NativeGasToThorCoinCeil(cosmos.NewUint(100)).Amount.Uint64(),
 		Equals, uint64(1)) // exact: no ceil
+	c.Assert(DOTChain.NativeGasToThorchainCeil(cosmos.NewUint(100)).Uint64(),
+		Equals, uint64(1))
 	c.Assert(DOTChain.NativeGasToThorCoinCeil(cosmos.NewUint(105)).Amount.Uint64(),
 		Equals, uint64(2)) // 5 planck dropped → +1
+	c.Assert(DOTChain.NativeGasToThorchainCeil(cosmos.NewUint(105)).Uint64(),
+		Equals, uint64(2))
 	c.Assert(DOTChain.NativeGasToThorCoinCeil(cosmos.NewUint(199)).Amount.Uint64(),
 		Equals, uint64(2)) // 99 planck dropped → +1
 	c.Assert(DOTChain.NativeGasToThorCoinCeil(cosmos.NewUint(0)).Amount.Uint64(),
 		Equals, uint64(0)) // zero stays zero
 	c.Assert(DOTChain.NativeGasToThorCoinCeil(cosmos.NewUint(100)).Decimals,
-		Equals, int64(10))
+		Equals, int64(THORChainDecimals))
 
 	// TAO: 1e9 rao per TAO, 1e8 thor units per TAO, so 10 rao = 1 thor unit.
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(10)).Amount.Uint64(),
 		Equals, uint64(1))
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(15)).Amount.Uint64(),
 		Equals, uint64(2))
+	c.Assert(TAOChain.NativeGasToThorchainCeil(cosmos.NewUint(15)).Uint64(),
+		Equals, uint64(2))
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(19)).Amount.Uint64(),
 		Equals, uint64(2))
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(0)).Amount.Uint64(),
 		Equals, uint64(0))
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(10)).Decimals,
-		Equals, int64(9))
+		Equals, int64(THORChainDecimals))
+
+	// EVM gas rates are tracked in gwei, which is finer than 1e8 even though
+	// gas asset amounts are normalized to THORChain precision.
+	c.Assert(ETHChain.NativeGasToThorchainCeil(cosmos.NewUint(1)).Uint64(),
+		Equals, uint64(1))
 
 	// Chains with decimal <= 8 take the no-ceil path.
 	c.Assert(BTCChain.NativeGasToThorCoinCeil(cosmos.NewUint(50_000_000)).Amount.Uint64(),

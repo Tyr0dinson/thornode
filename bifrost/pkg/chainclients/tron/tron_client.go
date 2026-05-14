@@ -41,6 +41,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	tcconfig "gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 const (
@@ -371,6 +372,15 @@ func (c *TronClient) GetAccount(
 		return common.Account{}, err
 	}
 	return c.GetAccountByAddress(address.String(), height)
+}
+
+// GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
+func (c *TronClient) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error) {
+	accountPubKey, err := vault.AlgoPubKey(c.GetChain())
+	if err != nil {
+		return common.Account{}, err
+	}
+	return c.GetAccount(accountPubKey, height)
 }
 
 // GetAccountByAddress returns the account for the given address.

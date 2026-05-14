@@ -47,6 +47,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -281,6 +282,15 @@ func (c *CosmosClient) GetAccount(pkey common.PubKey, height *big.Int) (common.A
 		return common.Account{}, fmt.Errorf("failed to convert address (%s) from bech32: %w", pkey, err)
 	}
 	return c.GetAccountByAddress(addr.String(), height)
+}
+
+// GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
+func (c *CosmosClient) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error) {
+	accountPubKey, err := vault.AlgoPubKey(c.GetChain())
+	if err != nil {
+		return common.Account{}, err
+	}
+	return c.GetAccount(accountPubKey, height)
 }
 
 func (c *CosmosClient) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {

@@ -37,6 +37,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	binarycodec "github.com/Peersyst/xrpl-go/binary-codec"
 	"github.com/Peersyst/xrpl-go/xrpl/hash"
@@ -248,6 +249,15 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 		return common.Account{}, fmt.Errorf("failed to convert address (%s) from bech32: %w", pkey, err)
 	}
 	return c.GetAccountByAddress(addr.String(), height)
+}
+
+// GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
+func (c *Client) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error) {
+	accountPubKey, err := vault.AlgoPubKey(c.GetChain())
+	if err != nil {
+		return common.Account{}, err
+	}
+	return c.GetAccount(accountPubKey, height)
 }
 
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
@@ -544,15 +554,25 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	}
 
 	// gas rate from gas rate units to THORChain decimals
-	gasCoin := c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(tx.GasRate)))
-	if gasCoin.Amount.IsZero() {
-		gasCoin.Amount = cosmos.OneUint()
+	gasRate := c.cfg.ChainID.NativeGasToThorchain(cosmos.NewUint(uint64(tx.GasRate)))
+	if gasRate.IsZero() {
+		gasRate = cosmos.OneUint()
 	}
-
-	// TODO: Optionally
-	// (to avoid overpaying for already-queued TxOutItems when changing units),
+	// To avoid overpaying for already-queued TxOutItems when changing units,
 	// rather than assuming Transaction Size 1 here,
 	// use the tx.MaxGas instead like GAIA?
+	gasCoin := common.NewCoin(common.XRPAsset, gasRate)
+
+	if !tx.MaxGas.IsEmpty() {
+		maxGasCoins := tx.MaxGas.ToCoins()
+		if len(maxGasCoins) != 1 {
+			return nil, nil, nil, errors.New("exactly one gas coin must be provided")
+		}
+		if !maxGasCoins[0].Asset.Equals(c.GetChain().GetGasAsset()) {
+			return nil, nil, nil, errors.New("gas coin asset must match chain gas asset")
+		}
+		gasCoin = maxGasCoins[0]
+	}
 
 	feeCurrency, err := fromThorchainToXrp(gasCoin)
 	if err != nil {

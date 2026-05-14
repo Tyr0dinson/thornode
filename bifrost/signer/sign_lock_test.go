@@ -6,14 +6,16 @@ import (
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	thtypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
 type mockChainNoVaultLock struct{}
 
-func (m *mockChainNoVaultLock) Start(chan thtypes.TxIn, chan thtypes.ErrataBlock, chan thtypes.Solvency, chan common.NetworkFee) {
+func (m *mockChainNoVaultLock) Start(chan thtypes.TxIn, chan thtypes.ErrataBlock, chan common.NetworkFee, reporter.Dispatcher) {
 }
 func (m *mockChainNoVaultLock) Stop()                       {}
 func (m *mockChainNoVaultLock) IsBlockScannerHealthy() bool { return true }
@@ -40,6 +42,7 @@ func (m *mockChainNoVaultLock) OnObservedTxIn(thtypes.TxInItem, int64)   {}
 func (m *mockChainNoVaultLock) GetConfirmationCount(thtypes.TxIn) int64  { return 0 }
 func (m *mockChainNoVaultLock) ConfirmationCountReady(thtypes.TxIn) bool { return true }
 func (m *mockChainNoVaultLock) GetBlockScannerHeight() (int64, error)    { return 0, nil }
+func (m *mockChainNoVaultLock) GetGasEstimateForSolvency() cosmos.Uint   { return cosmos.ZeroUint() }
 func (m *mockChainNoVaultLock) GetLatestTxForVault(string) (string, string, error) {
 	return "", "", nil
 }

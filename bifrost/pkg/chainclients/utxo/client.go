@@ -35,6 +35,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -368,6 +369,15 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 		common.Coins{
 			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(totalAmt))),
 		}, false), nil
+}
+
+// GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
+func (c *Client) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error) {
+	accountPubKey, err := vault.AlgoPubKey(c.GetChain())
+	if err != nil {
+		return common.Account{}, err
+	}
+	return c.GetAccount(accountPubKey, height)
 }
 
 // GetAccountByAddress is unimplemented for UTXO chains.
