@@ -10,6 +10,7 @@ use axum::{
 use bech32::{decode as bech32_decode, encode as bech32_encode, FromBase32, ToBase32, Variant};
 use monero_wallet::rpc::Rpc;
 use monero_wallet::transaction::{Input, Pruned, Transaction};
+use monero_wallet::WalletOutput;
 use rand::rngs::OsRng;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
@@ -665,6 +666,70 @@ fn commit_scan_batch(
         added_refs_per_block,
         outputs_after_scan,
     })
+}
+
+fn wallet_output_payload_decodes(output: &TrackedOutput) -> bool {
+    let Some(payload) = output.wallet_output_hex.as_ref() else {
+        return false;
+    };
+    let Ok(bytes) = hex::decode(payload) else {
+        return false;
+    };
+    WalletOutput::read(&mut bytes.as_slice()).is_ok()
+}
+
+async fn hydrate_key_image_wallet_output(
+    state: &Arc<AppState>,
+    vault_pub_key: &str,
+    tx_hash: &str,
+    output_index: u32,
+) -> Result<(), String> {
+    let tracked = state
+        .store
+        .load_outputs(vault_pub_key)
+        .map_err(|e| format!("failed to load tracked outputs before key-image prepare: {e}"))?
+        .into_iter()
+        .find(|output| output.tx_hash == tx_hash && output.output_index == output_index)
+        .ok_or_else(|| format!("tracked output {tx_hash}:{output_index} not found"))?;
+    if wallet_output_payload_decodes(&tracked) {
+        return Ok(());
+    }
+
+    let height = tracked.height;
+    let rpc = state.daemon.oxide_rpc().await.map_err(|e| {
+        format!("failed to initialize monero RPC for key-image output hydration: {e}")
+    })?;
+    let block = rpc
+        .get_scannable_block_by_number(height as usize)
+        .await
+        .map_err(|e| format!("failed to fetch output source block {height}: {e}"))?;
+
+    {
+        let mut scanner = state.scanner.lock();
+        scanner
+            .scan_block_for_vault_with_added(vault_pub_key, height, block)
+            .map_err(|e| format!("failed to hydrate output payload from source block: {e}"))?;
+    }
+    let outputs_after_scan = state.scanner.lock().get_all_outputs(vault_pub_key);
+    OutputLifecycle::new(state.store.as_ref())
+        .merge_scanned_outputs(vault_pub_key, &outputs_after_scan)
+        .map_err(|e| format!("failed to persist hydrated output payload: {e}"))?;
+
+    let healed = state
+        .store
+        .load_outputs(vault_pub_key)
+        .map_err(|e| format!("failed to reload hydrated output: {e}"))?
+        .into_iter()
+        .find(|output| output.tx_hash == tx_hash && output.output_index == output_index)
+        .ok_or_else(|| {
+            format!("tracked output {tx_hash}:{output_index} disappeared after hydration")
+        })?;
+    if !wallet_output_payload_decodes(&healed) {
+        return Err(format!(
+            "tracked output {tx_hash}:{output_index} still lacks a decodable wallet output payload after hydration"
+        ));
+    }
+    Ok(())
 }
 
 fn replay_reconciled_key_image_spends(
@@ -1495,29 +1560,49 @@ pub async fn key_image_prepare(
     };
     match check_idempotency(&state, "key_image_prepare", &msg_id, &payload_hashes) {
         Ok(IdempotencyCheck::Replay(status, response)) => {
-            let cached_session_id = response
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let session_valid = cached_session_id
-                .as_ref()
-                .map(|sid| state.key_images.session_exists(sid))
-                .unwrap_or(true);
-            if session_valid {
-                return (status, Json(response));
-            }
-            info!(
-                msg_id,
-                cached_session_id = ?cached_session_id,
-                "key_image_prepare cached session not found in memory, clearing stale idempotency"
-            );
-            if let Err(e) = state.store.clear_idempotency("key_image_prepare", &msg_id) {
-                error!(
+            if !status.is_success() || response.get("error").is_some() {
+                info!(
                     msg_id,
-                    error = %e,
-                    "failed to clear stale key_image_prepare idempotency record"
+                    status = status.as_u16(),
+                    "key_image_prepare cached failure found, clearing idempotency for retry"
                 );
-                return internal_error_response(format!("failed to clear stale idempotency: {e}"));
+                if let Err(e) = state.store.clear_idempotency("key_image_prepare", &msg_id) {
+                    error!(
+                        msg_id,
+                        error = %e,
+                        "failed to clear failed key_image_prepare idempotency record"
+                    );
+                    return internal_error_response(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ));
+                }
+            } else {
+                let cached_session_id = response
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let session_valid = cached_session_id
+                    .as_ref()
+                    .map(|sid| state.key_images.session_exists(sid))
+                    .unwrap_or(true);
+                if session_valid {
+                    return (status, Json(response));
+                }
+                info!(
+                    msg_id,
+                    cached_session_id = ?cached_session_id,
+                    "key_image_prepare cached session not found in memory, clearing stale idempotency"
+                );
+                if let Err(e) = state.store.clear_idempotency("key_image_prepare", &msg_id) {
+                    error!(
+                        msg_id,
+                        error = %e,
+                        "failed to clear stale key_image_prepare idempotency record"
+                    );
+                    return internal_error_response(format!(
+                        "failed to clear stale idempotency: {e}"
+                    ));
+                }
             }
         }
         Ok(IdempotencyCheck::Conflict) => {
@@ -1559,6 +1644,18 @@ pub async fn key_image_prepare(
             &response,
         );
         return (StatusCode::BAD_REQUEST, Json(response));
+    }
+
+    if let Err(e) =
+        hydrate_key_image_wallet_output(&state, &vault_pub_key, &tx_hash, req.output_index).await
+    {
+        warn!(
+            vault = %vault_pub_key,
+            tx_hash,
+            output_index = req.output_index,
+            error = %e,
+            "failed to hydrate wallet output payload before key-image prepare"
+        );
     }
 
     let (status, response_json) =

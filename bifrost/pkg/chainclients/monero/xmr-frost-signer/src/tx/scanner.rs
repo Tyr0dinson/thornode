@@ -227,11 +227,6 @@ impl Scanner {
             return Ok(Vec::new());
         };
 
-        let mut known = HashSet::new();
-        for output in &state.outputs {
-            known.insert((output.tx_hash.clone(), output.output_index));
-        }
-
         let block_tx_count = block.block.transactions.len();
         let scanned = state
             .wallet_scanner
@@ -244,11 +239,12 @@ impl Scanner {
             height,
             block_txs = block_tx_count,
             wallet_scanner_outputs = scanned.len(),
-            known_outputs = known.len(),
+            known_outputs = state.outputs.len(),
             "scan_block_for_vault_with_added debug"
         );
 
         let mut added = 0usize;
+        let mut repaired = 0usize;
         let mut added_outputs = Vec::new();
         for wallet_output in scanned {
             if wallet_output.commitment().amount == 0 {
@@ -258,16 +254,12 @@ impl Scanner {
             let Ok(output_index) = u32::try_from(wallet_output.index_in_transaction()) else {
                 continue;
             };
-            if known.contains(&(tx_hash.clone(), output_index)) {
-                continue;
-            }
-
             let (sub_major, sub_minor) = wallet_output
                 .subaddress()
                 .map(|s| (s.account(), s.address()))
                 .unwrap_or(subaddress::EXTERNAL);
 
-            state.outputs.push(TrackedOutput {
+            let tracked = TrackedOutput {
                 tx_hash: tx_hash.clone(),
                 output_index,
                 amount: wallet_output.commitment().amount,
@@ -281,11 +273,26 @@ impl Scanner {
                 wallet_output_hex: Some(hex::encode(wallet_output.serialize())),
                 address: Some(resolve_output_address(state, sub_major, sub_minor)),
                 note: extract_note(&wallet_output),
-            });
+            };
+
+            if let Some(existing) = state.outputs.iter_mut().find(|existing| {
+                existing.tx_hash == tracked.tx_hash && existing.output_index == tracked.output_index
+            }) {
+                if tracked.wallet_output_hex.is_some()
+                    && existing.wallet_output_hex != tracked.wallet_output_hex
+                {
+                    existing.wallet_output_hex = tracked.wallet_output_hex;
+                    existing.address = tracked.address;
+                    existing.note = tracked.note;
+                    repaired += 1;
+                }
+                continue;
+            }
+
+            state.outputs.push(tracked);
             if let Some(output) = state.outputs.last() {
                 added_outputs.push(output.clone());
             }
-            known.insert((tx_hash, output_index));
             added += 1;
         }
 
@@ -294,6 +301,7 @@ impl Scanner {
             vault = vault_pub_key,
             height,
             added_outputs = added,
+            repaired_outputs = repaired,
             "scanned vault block"
         );
         Ok(added_outputs)
@@ -849,6 +857,56 @@ mod tests {
         let added = scanner.upsert_outputs("thorpub1vault", vec![zero]);
         assert_eq!(added, 0);
         assert_eq!(scanner.get_all_outputs("thorpub1vault").len(), 1);
+    }
+
+    #[test]
+    fn upsert_repairs_missing_wallet_output_payload_without_resetting_lifecycle() {
+        let mut scanner = Scanner::new();
+        let base = Scalar::from(7u64);
+        let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
+
+        let mut existing = TrackedOutput {
+            tx_hash: "tx-a".to_string(),
+            output_index: 1,
+            amount: 10,
+            height: 10,
+            key_image: Some("key-image-a".to_string()),
+            spent_by_key_image_height: Some(20),
+            state: crate::state::store::OutputState::Spent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: None,
+            address: Some("48old".to_string()),
+            note: None,
+        };
+        let mut repaired = existing.clone();
+        repaired.wallet_output_hex = Some("aa".to_string());
+        repaired.address = Some("48new".to_string());
+        repaired.note = Some("memo".to_string());
+
+        scanner
+            .register_vault(
+                "thorpub1vault",
+                &group_key_hex,
+                ChainNetworkMode::Mocknet,
+                vec![existing.clone()],
+                None,
+            )
+            .unwrap();
+
+        let changed = scanner.upsert_outputs("thorpub1vault", vec![repaired]);
+        assert_eq!(changed, 1);
+
+        let outputs = scanner.get_all_outputs("thorpub1vault");
+        assert_eq!(outputs.len(), 1);
+        existing.wallet_output_hex = Some("aa".to_string());
+        existing.address = Some("48new".to_string());
+        existing.note = Some("memo".to_string());
+        assert_eq!(outputs[0].wallet_output_hex, existing.wallet_output_hex);
+        assert_eq!(outputs[0].state, crate::state::store::OutputState::Spent);
+        assert_eq!(outputs[0].key_image, Some("key-image-a".to_string()));
+        assert_eq!(outputs[0].spent_by_key_image_height, Some(20));
     }
 
     #[test]
