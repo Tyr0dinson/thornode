@@ -2974,6 +2974,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TssMetric"
+        tx_keys:
+          type: array
+          items:
+            type: string
 
     Node:
       type: object

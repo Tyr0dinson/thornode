@@ -2325,8 +2325,13 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 		ctx.Logger().Error("fail to get keysign metrics", "error", err)
 	}
 
+	observedTx := *voter.GetTx(nodeAccounts)
+	if keysignMetric != nil {
+		keysignMetric.TxKeys = append([]string(nil), observedTx.TxKeys...)
+	}
+
 	result := types.QueryTxResponse{
-		ObservedTx:      castObservedTx(*voter.GetTx(nodeAccounts)),
+		ObservedTx:      castObservedTx(observedTx),
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,

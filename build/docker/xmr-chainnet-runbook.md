@@ -432,6 +432,14 @@ bash build/docker/xmr-chainnet-check-pools-vaults.sh --node dog
 bash build/docker/xmr-chainnet-check-pools-vaults.sh --node all
 ```
 
+Check compact sidecar inventory across nodes:
+
+```bash
+bash build/docker/xmr-chainnet-inventory-check.sh
+bash build/docker/xmr-chainnet-inventory-check.sh --host root@91.99.89.216
+bash build/docker/xmr-chainnet-inventory-check.sh --node all --vault <cthorpub1...>
+```
+
 ### Driving a birthday reset scanner
 
 Use the reset tool when a signer needs to forget local Monero scan state and replay from

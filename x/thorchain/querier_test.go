@@ -787,7 +787,9 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	c.Assert(s.k.SetNodeAccount(s.ctx, nodeAccount), IsNil)
 	voter, err := s.k.GetObservedTxInVoter(s.ctx, tx.ID)
 	c.Assert(err, IsNil)
-	voter.Add(NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight()), nodeAccount.NodeAddress)
+	observedTx := NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight())
+	observedTx.TxKeys = []string{"tx-key-1", "tx-key-2"}
+	voter.Add(observedTx, nodeAccount.NodeAddress)
 	s.k.SetObservedTxInVoter(s.ctx, voter)
 	queryTxResp, err = s.queryServer.Tx(s.ctx, &types.QueryTxRequest{
 		TxId: tx.ID.String(),
@@ -813,6 +815,7 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	c.Assert(newTx.Tx.ToAddress == nil, Equals, false)
 	c.Assert(newTx.Tx.Chain == nil, Equals, false)
 	c.Assert(len(newTx.Tx.Coins) == 0, Equals, false)
+	c.Assert(newTx.KeysignMetrics.TxKeys, DeepEquals, []string{"tx-key-1", "tx-key-2"})
 }
 
 func (s *QuerierSuite) TestQueryKeyGen(c *C) {

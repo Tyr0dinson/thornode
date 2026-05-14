@@ -23,4 +23,5 @@ message TssKeysignMetric {
     (gogoproto.customname) = "TxID"
   ];
   repeated NodeTssTime node_tss_times = 2 [ (gogoproto.nullable) = false ];
+  repeated string tx_keys = 3 [ (gogoproto.jsontag) = "tx_keys,omitempty" ];
 }

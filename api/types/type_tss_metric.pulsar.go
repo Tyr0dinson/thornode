@@ -1092,10 +1092,57 @@ func (x *_TssKeysignMetric_2_list) IsValid() bool {
 	return x.list != nil
 }
 
+var _ protoreflect.List = (*_TssKeysignMetric_3_list)(nil)
+
+type _TssKeysignMetric_3_list struct {
+	list *[]string
+}
+
+func (x *_TssKeysignMetric_3_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_TssKeysignMetric_3_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfString((*x.list)[i])
+}
+
+func (x *_TssKeysignMetric_3_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.String()
+	concreteValue := valueUnwrapped
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_TssKeysignMetric_3_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.String()
+	concreteValue := valueUnwrapped
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_TssKeysignMetric_3_list) AppendMutable() protoreflect.Value {
+	panic(fmt.Errorf("AppendMutable can not be called on message TssKeysignMetric at list field TxKeys as it is not of Message kind"))
+}
+
+func (x *_TssKeysignMetric_3_list) Truncate(n int) {
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_TssKeysignMetric_3_list) NewElement() protoreflect.Value {
+	v := ""
+	return protoreflect.ValueOfString(v)
+}
+
+func (x *_TssKeysignMetric_3_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_TssKeysignMetric                protoreflect.MessageDescriptor
 	fd_TssKeysignMetric_tx_id          protoreflect.FieldDescriptor
 	fd_TssKeysignMetric_node_tss_times protoreflect.FieldDescriptor
+	fd_TssKeysignMetric_tx_keys        protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -1103,6 +1150,7 @@ func init() {
 	md_TssKeysignMetric = File_types_type_tss_metric_proto.Messages().ByName("TssKeysignMetric")
 	fd_TssKeysignMetric_tx_id = md_TssKeysignMetric.Fields().ByName("tx_id")
 	fd_TssKeysignMetric_node_tss_times = md_TssKeysignMetric.Fields().ByName("node_tss_times")
+	fd_TssKeysignMetric_tx_keys = md_TssKeysignMetric.Fields().ByName("tx_keys")
 }
 
 var _ protoreflect.Message = (*fastReflection_TssKeysignMetric)(nil)
@@ -1182,6 +1230,12 @@ func (x *fastReflection_TssKeysignMetric) Range(f func(protoreflect.FieldDescrip
 			return
 		}
 	}
+	if len(x.TxKeys) != 0 {
+		value := protoreflect.ValueOfList(&_TssKeysignMetric_3_list{list: &x.TxKeys})
+		if !f(fd_TssKeysignMetric_tx_keys, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -1201,6 +1255,8 @@ func (x *fastReflection_TssKeysignMetric) Has(fd protoreflect.FieldDescriptor) b
 		return x.TxId != ""
 	case "types.TssKeysignMetric.node_tss_times":
 		return len(x.NodeTssTimes) != 0
+	case "types.TssKeysignMetric.tx_keys":
+		return len(x.TxKeys) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignMetric"))
@@ -1221,6 +1277,8 @@ func (x *fastReflection_TssKeysignMetric) Clear(fd protoreflect.FieldDescriptor)
 		x.TxId = ""
 	case "types.TssKeysignMetric.node_tss_times":
 		x.NodeTssTimes = nil
+	case "types.TssKeysignMetric.tx_keys":
+		x.TxKeys = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignMetric"))
@@ -1245,6 +1303,12 @@ func (x *fastReflection_TssKeysignMetric) Get(descriptor protoreflect.FieldDescr
 			return protoreflect.ValueOfList(&_TssKeysignMetric_2_list{})
 		}
 		listValue := &_TssKeysignMetric_2_list{list: &x.NodeTssTimes}
+		return protoreflect.ValueOfList(listValue)
+	case "types.TssKeysignMetric.tx_keys":
+		if len(x.TxKeys) == 0 {
+			return protoreflect.ValueOfList(&_TssKeysignMetric_3_list{})
+		}
+		listValue := &_TssKeysignMetric_3_list{list: &x.TxKeys}
 		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
@@ -1272,6 +1336,10 @@ func (x *fastReflection_TssKeysignMetric) Set(fd protoreflect.FieldDescriptor, v
 		lv := value.List()
 		clv := lv.(*_TssKeysignMetric_2_list)
 		x.NodeTssTimes = *clv.list
+	case "types.TssKeysignMetric.tx_keys":
+		lv := value.List()
+		clv := lv.(*_TssKeysignMetric_3_list)
+		x.TxKeys = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignMetric"))
@@ -1298,6 +1366,12 @@ func (x *fastReflection_TssKeysignMetric) Mutable(fd protoreflect.FieldDescripto
 		}
 		value := &_TssKeysignMetric_2_list{list: &x.NodeTssTimes}
 		return protoreflect.ValueOfList(value)
+	case "types.TssKeysignMetric.tx_keys":
+		if x.TxKeys == nil {
+			x.TxKeys = []string{}
+		}
+		value := &_TssKeysignMetric_3_list{list: &x.TxKeys}
+		return protoreflect.ValueOfList(value)
 	case "types.TssKeysignMetric.tx_id":
 		panic(fmt.Errorf("field tx_id of message types.TssKeysignMetric is not mutable"))
 	default:
@@ -1318,6 +1392,9 @@ func (x *fastReflection_TssKeysignMetric) NewField(fd protoreflect.FieldDescript
 	case "types.TssKeysignMetric.node_tss_times":
 		list := []*NodeTssTime{}
 		return protoreflect.ValueOfList(&_TssKeysignMetric_2_list{list: &list})
+	case "types.TssKeysignMetric.tx_keys":
+		list := []string{}
+		return protoreflect.ValueOfList(&_TssKeysignMetric_3_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignMetric"))
@@ -1397,6 +1474,12 @@ func (x *fastReflection_TssKeysignMetric) ProtoMethods() *protoiface.Methods {
 				n += 1 + l + runtime.Sov(uint64(l))
 			}
 		}
+		if len(x.TxKeys) > 0 {
+			for _, s := range x.TxKeys {
+				l = len(s)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1425,6 +1508,15 @@ func (x *fastReflection_TssKeysignMetric) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.TxKeys) > 0 {
+			for iNdEx := len(x.TxKeys) - 1; iNdEx >= 0; iNdEx-- {
+				i -= len(x.TxKeys[iNdEx])
+				copy(dAtA[i:], x.TxKeys[iNdEx])
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.TxKeys[iNdEx])))
+				i--
+				dAtA[i] = 0x1a
+			}
 		}
 		if len(x.NodeTssTimes) > 0 {
 			for iNdEx := len(x.NodeTssTimes) - 1; iNdEx >= 0; iNdEx-- {
@@ -1563,6 +1655,38 @@ func (x *fastReflection_TssKeysignMetric) ProtoMethods() *protoiface.Methods {
 				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.NodeTssTimes[len(x.NodeTssTimes)-1]); err != nil {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TxKeys", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.TxKeys = append(x.TxKeys, string(dAtA[iNdEx:postIndex]))
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -1705,6 +1829,7 @@ type TssKeysignMetric struct {
 
 	TxId         string         `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
 	NodeTssTimes []*NodeTssTime `protobuf:"bytes,2,rep,name=node_tss_times,json=nodeTssTimes,proto3" json:"node_tss_times,omitempty"`
+	TxKeys       []string       `protobuf:"bytes,3,rep,name=tx_keys,json=txKeys,proto3" json:"tx_keys,omitempty"`
 }
 
 func (x *TssKeysignMetric) Reset() {
@@ -1741,6 +1866,13 @@ func (x *TssKeysignMetric) GetNodeTssTimes() []*NodeTssTime {
 	return nil
 }
 
+func (x *TssKeysignMetric) GetTxKeys() []string {
+	if x != nil {
+		return x.TxKeys
+	}
+	return nil
+}
+
 var File_types_type_tss_metric_proto protoreflect.FileDescriptor
 
 var file_types_type_tss_metric_proto_rawDesc = []byte{
@@ -1765,7 +1897,7 @@ var file_types_type_tss_metric_proto_rawDesc = []byte{
 	0x69, 0x6d, 0x65, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x74, 0x79, 0x70,
 	0x65, 0x73, 0x2e, 0x4e, 0x6f, 0x64, 0x65, 0x54, 0x73, 0x73, 0x54, 0x69, 0x6d, 0x65, 0x42, 0x04,
 	0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0c, 0x6e, 0x6f, 0x64, 0x65, 0x54, 0x73, 0x73, 0x54, 0x69, 0x6d,
-	0x65, 0x73, 0x22, 0xa1, 0x01, 0x0a, 0x10, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67,
+	0x65, 0x73, 0x22, 0xd1, 0x01, 0x0a, 0x10, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67,
 	0x6e, 0x4d, 0x65, 0x74, 0x72, 0x69, 0x63, 0x12, 0x4d, 0x0a, 0x05, 0x74, 0x78, 0x5f, 0x69, 0x64,
 	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x38, 0xe2, 0xde, 0x1f, 0x04, 0x54, 0x78, 0x49, 0x44,
 	0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74,
@@ -1775,7 +1907,10 @@ var file_types_type_tss_metric_proto_rawDesc = []byte{
 	0x73, 0x73, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12,
 	0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x4e, 0x6f, 0x64, 0x65, 0x54, 0x73, 0x73, 0x54, 0x69,
 	0x6d, 0x65, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0c, 0x6e, 0x6f, 0x64, 0x65, 0x54, 0x73,
-	0x73, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x42, 0x7f, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79,
+	0x73, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x12, 0x2e, 0x0a, 0x07, 0x74, 0x78, 0x5f, 0x6b, 0x65, 0x79,
+	0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x09, 0x42, 0x15, 0xea, 0xde, 0x1f, 0x11, 0x74, 0x78, 0x5f,
+	0x6b, 0x65, 0x79, 0x73, 0x2c, 0x6f, 0x6d, 0x69, 0x74, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x06,
+	0x74, 0x78, 0x4b, 0x65, 0x79, 0x73, 0x42, 0x7f, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79,
 	0x70, 0x65, 0x73, 0x42, 0x12, 0x54, 0x79, 0x70, 0x65, 0x54, 0x73, 0x73, 0x4d, 0x65, 0x74, 0x72,
 	0x69, 0x63, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61,
 	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
