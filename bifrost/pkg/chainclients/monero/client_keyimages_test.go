@@ -1352,6 +1352,8 @@ func TestPrepareObservedTxInItemRetriesMissingOutboundTxBeforeTerminalDrop(t *te
 	txHash := strings.Repeat("v", 64)
 	destination := common.XMRSeededDummyAddress('8', []byte("txkey-validation-retry"))
 	validateCalls := 0
+	pruneCalls := 0
+	var pruneReq xmrFrostPruneOutgoingTransfersRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1364,6 +1366,12 @@ func TestPrepareObservedTxInItemRetriesMissingOutboundTxBeforeTerminalDrop(t *te
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/validate":
 			validateCalls++
 			http.Error(w, fmt.Sprintf(`{"error":"transaction %s not found"}`, txHash), http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/prune":
+			pruneCalls++
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&pruneReq))
+			_ = json.NewEncoder(w).Encode(xmrFrostPruneOutgoingTransfersResponse{
+				Removed: []string{txHash},
+			})
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
@@ -1436,6 +1444,11 @@ func TestPrepareObservedTxInItemRetriesMissingOutboundTxBeforeTerminalDrop(t *te
 	require.False(t, include)
 	require.Nil(t, prepared)
 	require.Equal(t, 3, validateCalls)
+	require.Equal(t, 1, pruneCalls)
+	require.Equal(t, vaultPubKey.String(), pruneReq.VaultPubKey)
+	require.Equal(t, []string{txHash}, pruneReq.TxHashes)
+	require.False(t, pruneReq.ObservedMinedOnly)
+	require.False(t, pruneReq.TxKeyBackedOnly)
 }
 
 func TestPrepareObservedTxInItemRetriesOutboundTxKeyValidationWhenSidecarUnavailable(t *testing.T) {

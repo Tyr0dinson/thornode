@@ -4109,6 +4109,18 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 						return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", recordErr)
 					}
 					if workItem.AttemptCount >= xmrMissingOutboundTxRetryLimit {
+						pruneResp, pruneErr := c.frostSigner.PruneOutgoingTransfers(xmrFrostPruneOutgoingTransfersRequest{
+							VaultPubKey: item.ObservedVaultPubKey.String(),
+							TxHashes:    []string{item.Tx},
+						})
+						if pruneErr != nil {
+							return nil, false, fmt.Errorf("fail to prune terminal XMR outbound lifecycle state: %w", pruneErr)
+						}
+						c.logger.Info().
+							Str("tx_hash", normalizeTxID(item.Tx)).
+							Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+							Strs("removed", pruneResp.Removed).
+							Msg("pruned terminal XMR outbound lifecycle state")
 						return nil, false, fmt.Errorf("%w: xmr outbound tx-key validation failed after %d attempts: %w", types.ErrTerminalObservation, workItem.AttemptCount, validateErr)
 					}
 					c.logger.Info().
