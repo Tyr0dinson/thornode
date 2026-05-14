@@ -8,12 +8,18 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-const xmrPoolBalanceReconcileMimirKey = "ChainnetXMRPoolBalanceReconcile4818"
+const xmrPoolBalanceReconcileMimirKey = "ChainnetXMRVaultPoolBalanceReconcile13287"
+
+var chainnetXMRVaultBalanceTargets = map[common.PubKey]cosmos.Uint{
+	common.PubKey("cthorpub1zcjduepqh5p72qfjl9rv4twt93lqlsddx4gp8pe2jl9mq033qsf76n98p25szzc9z2"): cosmos.NewUint(82594084),
+	common.PubKey("cthorpub1zcjduepq5yf9tavdaru7rs5aaypppgn8hl3vflrw7nsutullerlmjx6vngasv8vhw3"): cosmos.NewUint(138248484),
+}
 
 type xmrPoolBalanceReconcileStats struct {
 	activeVaults int
-	oldBalance   cosmos.Uint
-	newBalance   cosmos.Uint
+	oldPool      cosmos.Uint
+	newPool      cosmos.Uint
+	vaultChanges int
 	changed      bool
 }
 
@@ -37,8 +43,9 @@ func runChainnetXMRPoolBalanceReconcileOnce(ctx cosmos.Context, mgr Manager) err
 		"completed one-time chainnet XMR pool balance reconcile",
 		"mimir_key", xmrPoolBalanceReconcileMimirKey,
 		"active_vaults", stats.activeVaults,
-		"old_balance_asset", stats.oldBalance.String(),
-		"new_balance_asset", stats.newBalance.String(),
+		"old_pool_balance_asset", stats.oldPool.String(),
+		"new_pool_balance_asset", stats.newPool.String(),
+		"vault_changes", stats.vaultChanges,
 		"changed", stats.changed,
 	)
 	return nil
@@ -46,37 +53,57 @@ func runChainnetXMRPoolBalanceReconcileOnce(ctx cosmos.Context, mgr Manager) err
 
 func reconcileChainnetXMRPoolBalance(ctx cosmos.Context, mgr Manager) (xmrPoolBalanceReconcileStats, error) {
 	stats := xmrPoolBalanceReconcileStats{
-		oldBalance: cosmos.ZeroUint(),
-		newBalance: cosmos.ZeroUint(),
+		oldPool: cosmos.ZeroUint(),
+		newPool: cosmos.ZeroUint(),
 	}
 
 	pool, err := mgr.Keeper().GetPool(ctx, common.XMRAsset)
 	if err != nil {
 		return stats, err
 	}
-	stats.oldBalance = pool.BalanceAsset
+	stats.oldPool = pool.BalanceAsset
 
 	vaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		return stats, err
 	}
-	for _, vault := range vaults {
-		if !vault.HasFunds() {
+	for i := range vaults {
+		vault := vaults[i]
+		target, ok := chainnetXMRVaultBalanceTargets[vault.PubKeyFrost]
+		if !ok {
 			continue
 		}
-		xmrCoin := vault.GetCoin(common.XMRAsset)
-		if xmrCoin.IsEmpty() {
-			continue
-		}
+
 		stats.activeVaults++
-		stats.newBalance = stats.newBalance.Add(xmrCoin.Amount)
+		stats.newPool = stats.newPool.Add(target)
+
+		current := vault.GetCoin(common.XMRAsset).Amount
+		if current.Equal(target) {
+			continue
+		}
+
+		vault.SubFunds(common.NewCoins(common.NewCoin(common.XMRAsset, current)))
+		vault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, target)))
+		if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+			return stats, err
+		}
+		stats.vaultChanges++
+		stats.changed = true
 	}
 
-	if pool.BalanceAsset.Equal(stats.newBalance) {
+	if stats.activeVaults != len(chainnetXMRVaultBalanceTargets) {
+		ctx.Logger().Info(
+			"chainnet XMR vault pool reconcile did not find every target active vault",
+			"found_active_targets", stats.activeVaults,
+			"expected_active_targets", len(chainnetXMRVaultBalanceTargets),
+		)
+	}
+
+	if pool.BalanceAsset.Equal(stats.newPool) {
 		return stats, nil
 	}
 
-	pool.BalanceAsset = stats.newBalance
+	pool.BalanceAsset = stats.newPool
 	if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
 		return stats, err
 	}
