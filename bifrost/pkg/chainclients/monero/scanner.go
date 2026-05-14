@@ -343,6 +343,7 @@ func (s *Scanner) transfersToTxInItems(resp xmrFrostTransfersResponse, fetchHeig
 	}
 
 	outgoingVaultsByTxID := s.outgoingVaultsByTxID(resp.Outgoing)
+	authorizedOutgoingByTxID := s.authorizedOutgoingByTxID(resp.Outgoing)
 	s.rememberObservedOutgoingVaults(outgoingVaultsByTxID, fetchHeight)
 	txItems := make([]*stypes.TxInItem, 0, len(resp.Incoming)+len(resp.Outgoing))
 	for _, transfer := range resp.Incoming {
@@ -398,6 +399,21 @@ func (s *Scanner) transfersToTxInItems(resp xmrFrostTransfersResponse, fetchHeig
 
 		memoText := s.transferMemo(transfer, false)
 		if common.IsXMRUnknownSenderAddress(common.Address(to)) {
+			if _, ok := authorizedOutgoingByTxID[normalizeTxID(transfer.TxID)]; ok {
+				s.logger.Info().
+					Str("txid", transfer.TxID).
+					Str("vault_pub_key", vaultPubKey.String()).
+					Msg("skip synthetic unauthorized XMR spend because authorized outgoing record exists")
+				continue
+			}
+			if transfer.Locked {
+				s.logger.Info().
+					Str("txid", transfer.TxID).
+					Str("vault_pub_key", vaultPubKey.String()).
+					Uint64("confirmations", transfer.Confirmations).
+					Msg("wait for XMR unauthorized spend grace period before attesting")
+				continue
+			}
 			memoText = "NOOP:UNAUTHORIZED"
 			transfer.TxKeys = nil
 		}
@@ -410,6 +426,33 @@ func (s *Scanner) transfersToTxInItems(resp xmrFrostTransfersResponse, fetchHeig
 	}
 
 	return s.dedupeTxInItemsByTxID(txItems), nil
+}
+
+func (s *Scanner) authorizedOutgoingByTxID(outgoing []xmrFrostTransferEntry) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, transfer := range outgoing {
+		txID := normalizeTxID(transfer.TxID)
+		if txID == "" || len(transfer.TxKeys) == 0 {
+			continue
+		}
+		to := strings.TrimSpace(transfer.Address)
+		if to == "" || common.IsXMRUnknownSenderAddress(common.Address(to)) {
+			continue
+		}
+		memoText := strings.TrimSpace(transfer.Note)
+		if strings.EqualFold(memoText, "NOOP:UNAUTHORIZED") {
+			continue
+		}
+		sender, vaultPubKey := s.resolveOutgoingSender(transfer)
+		if sender == "" || vaultPubKey.IsEmpty() {
+			continue
+		}
+		result[txID] = struct{}{}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func (s *Scanner) queueReplayTxInItems(items []*stypes.TxInItem) {

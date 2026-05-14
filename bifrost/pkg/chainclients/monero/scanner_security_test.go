@@ -591,6 +591,87 @@ func TestFetchTxsObservesConsolidateOutgoingSelfSend(t *testing.T) {
 	}
 }
 
+func TestFetchTxsPrefersAuthorizedConsolidateOverSyntheticUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("4", 64)
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vaultAddress := vaultAddr.String()
+	unauthorized := xmrFrostTransferEntry{
+		TxID:        txID,
+		Address:     common.XMRUnknownSenderAddress(txID, vaultAddress),
+		FromAddress: vaultAddress,
+		VaultPubKey: vaultPubKey.String(),
+		Amount:      uint64(2 * moneroAtomicToThorchain),
+		Fee:         uint64(moneroAtomicToThorchain),
+		Height:      100,
+		Note:        "NOOP:UNAUTHORIZED",
+	}
+	consolidate := xmrFrostTransferEntry{
+		TxID:        txID,
+		Address:     vaultAddress,
+		FromAddress: vaultAddress,
+		VaultPubKey: vaultPubKey.String(),
+		TxKeys:      testFrostTxKeys(),
+		Amount:      uint64(2 * moneroAtomicToThorchain),
+		Fee:         uint64(moneroAtomicToThorchain),
+		Height:      100,
+		Note:        "consolidate",
+	}
+
+	frostServer := newFrostTransfersServer(
+		t,
+		nil,
+		[]xmrFrostTransferEntry{unauthorized, consolidate},
+		[]string{vaultAddress},
+	)
+	defer frostServer.Close()
+
+	frostSigner, err := NewFrostSignerWithEndpoint(
+		config.BifrostChainConfiguration{},
+		frostServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+	scanner := NewScanner(
+		log.Logger,
+		frostSigner,
+		&scannerMemoBridge{
+			asgards: ttypes.Vaults{{
+				PubKeyEddsa: vaultPubKey,
+				PubKey:      vaultPubKey,
+				PubKeyFrost: vaultPubKey,
+				Status:      ttypes.VaultStatus_ActiveVault,
+			}},
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+
+	txIn, err := scanner.FetchTxs(100, 100)
+	if err != nil {
+		t.Fatalf("fetch txs: %v", err)
+	}
+	if len(txIn.TxArray) != 1 {
+		t.Fatalf("expected only authorized consolidate observation, got %d", len(txIn.TxArray))
+	}
+	item := txIn.TxArray[0]
+	if item.Memo != "consolidate" {
+		t.Fatalf("expected consolidate memo, got %q", item.Memo)
+	}
+	if item.To != vaultAddress {
+		t.Fatalf("expected vault destination %s, got %s", vaultAddress, item.To)
+	}
+	if common.IsXMRUnknownSenderAddress(common.Address(item.To)) {
+		t.Fatalf("authorized consolidate should not observe xmrunknown destination: %s", item.To)
+	}
+	if len(item.TxKeys) == 0 {
+		t.Fatal("expected authorized consolidate observation to carry tx keys")
+	}
+}
+
 func TestFetchTxsSkipsRetiringMigrateChangeWithoutOutgoingRecord(t *testing.T) {
 	t.Parallel()
 

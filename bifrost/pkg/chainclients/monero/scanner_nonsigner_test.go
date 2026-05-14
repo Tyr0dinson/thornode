@@ -289,6 +289,39 @@ func TestUnauthorizedSpendToUnknownAddressCannotFallThroughAsNormalOutbound(t *t
 	}
 }
 
+func TestLockedUnauthorizedSpendWaitsForGracePeriod(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
+	vaultAddress := vaultAddr.String()
+	spendTxID := strings.Repeat("fc", 32)
+
+	unauthorized := xmrFrostTransferEntry{
+		TxID:          spendTxID,
+		Address:       common.XMRUnknownSenderAddress(spendTxID, vaultAddress),
+		FromAddress:   vaultAddress,
+		VaultPubKey:   vaultPubKey.String(),
+		Amount:        2 * moneroAtomicToThorchain,
+		Fee:           30_000_000,
+		Height:        302,
+		Confirmations: 3,
+		Note:          "NOOP:UNAUTHORIZED",
+		Locked:        true,
+	}
+
+	frost := newMockFrostServer(t, 302, []xmrFrostTransferEntry{unauthorized})
+	defer frost.Close()
+
+	scanner := newTestScanner(t, frost.URL, vaultPubKey)
+	txIn, err := scanner.FetchTxs(302, 350)
+	if err != nil {
+		t.Fatalf("FetchTxs: %v", err)
+	}
+	if len(txIn.TxArray) != 0 {
+		t.Fatalf("locked unauthorized spend should wait for grace period, got %d observations", len(txIn.TxArray))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
