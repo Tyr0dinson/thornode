@@ -2327,7 +2327,7 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 
 	observedTx := *voter.GetTx(nodeAccounts)
 	if keysignMetric != nil {
-		keysignMetric.TxKeys = append([]string(nil), observedTx.TxKeys...)
+		keysignMetric.TxKeys = qs.getObservedTxKeys(ctx, observedTx, nodeAccounts)
 	}
 
 	result := types.QueryTxResponse{
@@ -2339,6 +2339,44 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 	}
 
 	return &result, nil
+}
+
+func (qs queryServer) getObservedTxKeys(ctx cosmos.Context, observedTx ObservedTx, nodeAccounts NodeAccounts) []string {
+	txKeys := make([]string, 0, len(observedTx.TxKeys))
+	seen := make(map[string]struct{}, len(observedTx.TxKeys))
+	addTxKeys := func(keys []string) {
+		for _, txKey := range keys {
+			if txKey == "" {
+				continue
+			}
+			if _, ok := seen[txKey]; ok {
+				continue
+			}
+			seen[txKey] = struct{}{}
+			txKeys = append(txKeys, txKey)
+		}
+	}
+
+	addTxKeys(observedTx.TxKeys)
+	for _, outHashStr := range observedTx.OutHashes {
+		outHash, err := common.NewTxID(outHashStr)
+		if err != nil {
+			ctx.Logger().Error("fail to parse outbound hash for tx keys", "out_hash", outHashStr, "error", err)
+			continue
+		}
+		outVoter, err := qs.mgr.Keeper().GetObservedTxOutVoter(ctx, outHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed tx out voter for tx keys", "out_hash", outHash, "error", err)
+			continue
+		}
+		outTx := outVoter.GetTx(nodeAccounts)
+		if outTx == nil || outTx.IsEmpty() {
+			continue
+		}
+		addTxKeys(outTx.TxKeys)
+	}
+
+	return txKeys
 }
 
 func extractBlockHeight(ctx cosmos.Context, heightStr string) (int64, error) {

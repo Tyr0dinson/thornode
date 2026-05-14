@@ -785,12 +785,22 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 
 	nodeAccount := GetRandomValidatorNode(NodeActive)
 	c.Assert(s.k.SetNodeAccount(s.ctx, nodeAccount), IsNil)
+	outID := GetRandomTxHash()
 	voter, err := s.k.GetObservedTxInVoter(s.ctx, tx.ID)
 	c.Assert(err, IsNil)
 	observedTx := NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight())
-	observedTx.TxKeys = []string{"tx-key-1", "tx-key-2"}
+	observedTx.OutHashes = []string{outID.String()}
 	voter.Add(observedTx, nodeAccount.NodeAddress)
 	s.k.SetObservedTxInVoter(s.ctx, voter)
+
+	outTx := tx
+	outTx.ID = outID
+	outObservedTx := NewObservedTx(outTx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight())
+	outObservedTx.TxKeys = []string{"tx-key-1", "tx-key-2"}
+	outVoter := NewObservedTxVoter(outID, nil)
+	outVoter.Add(outObservedTx, nodeAccount.NodeAddress)
+	s.k.SetObservedTxOutVoter(s.ctx, outVoter)
+
 	queryTxResp, err = s.queryServer.Tx(s.ctx, &types.QueryTxRequest{
 		TxId: tx.ID.String(),
 	})
