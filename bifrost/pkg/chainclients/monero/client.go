@@ -4456,22 +4456,78 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 		if !xmrKeyImageProofsAlreadyRegistered(item.XmrKeyImages, vault.KeyImagesXmr) {
 			return false
 		}
-		return c.ensureRegisteredXMRKeyImagesAppliedForDeckItem(item, vault)
+		return c.ensureRegisteredXMRKeyImagesAppliedForDeckItem(item, vault) &&
+			c.prunePendingXMROutgoingLifecycleForStaleDeckItem(item)
 	}
 	for _, ref := range vault.TxKeysXmr {
 		if ref != nil && normalizeTxID(ref.TxHash) == txHash {
 			if c.isObservedInboundToVault(item) && !xmrKeyImagesRegisteredForTx(txHash, vault.KeyImagesXmr) {
 				return false
 			}
-			return true
+			return c.prunePendingXMROutgoingLifecycleForStaleDeckItem(item)
 		}
 	}
 	for _, proof := range vault.KeyImagesXmr {
 		if proof != nil && normalizeTxID(proof.TxHash) == txHash {
-			return c.ensureRegisteredXMRKeyImagesAppliedForDeckItem(item, vault)
+			return c.ensureRegisteredXMRKeyImagesAppliedForDeckItem(item, vault) &&
+				c.prunePendingXMROutgoingLifecycleForStaleDeckItem(item)
 		}
 	}
 	return false
+}
+
+func (c *Client) prunePendingXMROutgoingLifecycleForStaleDeckItem(item *stypes.TxInItem) bool {
+	if c == nil || item == nil || c.frostSigner == nil {
+		return true
+	}
+	txHash := normalizeTxID(item.Tx)
+	vaultPubKey := item.ObservedVaultPubKey
+	if txHash == "" || vaultPubKey.IsEmpty() {
+		return false
+	}
+	state, err := c.frostSigner.GetOutgoingTransferState(vaultPubKey.String())
+	if err != nil {
+		if isFrostHTTPStatus(err, http.StatusNotFound) {
+			return true
+		}
+		c.logger.Info().
+			Err(err).
+			Str("tx_hash", txHash).
+			Str("vault_pub_key", vaultPubKey.String()).
+			Msg("keeping XMR deck item because outgoing lifecycle state could not be checked")
+		return false
+	}
+	shouldPrune := false
+	for _, record := range state.Outgoing {
+		if normalizeTxID(record.TxHash) != txHash {
+			continue
+		}
+		if record.isObservedMined() {
+			return true
+		}
+		shouldPrune = true
+	}
+	if !shouldPrune {
+		return true
+	}
+	pruneResp, err := c.frostSigner.PruneOutgoingTransfers(xmrFrostPruneOutgoingTransfersRequest{
+		VaultPubKey: vaultPubKey.String(),
+		TxHashes:    []string{txHash},
+	})
+	if err != nil {
+		c.logger.Info().
+			Err(err).
+			Str("tx_hash", txHash).
+			Str("vault_pub_key", vaultPubKey.String()).
+			Msg("keeping XMR deck item because pending outgoing lifecycle state could not be pruned")
+		return false
+	}
+	c.logger.Info().
+		Str("tx_hash", txHash).
+		Str("vault_pub_key", vaultPubKey.String()).
+		Strs("removed", pruneResp.Removed).
+		Msg("pruned pending XMR outgoing lifecycle state for stale deck item")
+	return true
 }
 
 func (c *Client) ensureRegisteredXMRKeyImagesAppliedForDeckItem(item *stypes.TxInItem, vault ttypes.Vault) bool {

@@ -916,6 +916,63 @@ func TestIsDeckItemStaleAllowsKeyImageReplayWhenOnlyTxKeysRegistered(t *testing.
 	}))
 }
 
+func TestIsDeckItemStalePrunesPendingOutgoingLifecycle(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	txHash := strings.Repeat("4", 64)
+	vault := ttypes.Vault{
+		PubKey: vaultPubKey,
+		TxKeysXmr: []*common.XmrTxKeyRef{
+			{TxHash: txHash, TxKeys: []string{"tx-key"}},
+		},
+	}
+	pruneCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/outbounds/"):
+			_ = json.NewEncoder(w).Encode(xmrFrostOutgoingTransfersStateResponse{
+				VaultPubKey: vaultPubKey.String(),
+				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
+					TxHash: txHash,
+					Status: xmrFrostOutgoingStatusSignedPending,
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/prune":
+			pruneCalls++
+			var req xmrFrostPruneOutgoingTransfersRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.Equal(t, vaultPubKey.String(), req.VaultPubKey)
+			require.Equal(t, []string{txHash}, req.TxHashes)
+			_ = json.NewEncoder(w).Encode(xmrFrostPruneOutgoingTransfersResponse{
+				Removed: []string{txHash},
+			})
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	signer, err := NewFrostSignerWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	c := &Client{
+		frostSigner: signer,
+		thorchainBridge: &keyImageTestBridge{
+			mockMoneroBridge: mockMoneroBridge{
+				vaultByPubKey: map[string]ttypes.Vault{vaultPubKey.String(): vault},
+			},
+		},
+		logger: testLogger(),
+	}
+
+	assert.True(t, c.IsDeckItemStale(&stypes.TxInItem{
+		Tx:                  txHash,
+		ObservedVaultPubKey: vaultPubKey,
+	}))
+	require.Equal(t, 1, pruneCalls)
+}
+
 func TestIsDeckItemStaleKeepsRegisteredKeyImagesWhenLocalHydrationFails(t *testing.T) {
 	t.Parallel()
 
