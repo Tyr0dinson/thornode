@@ -380,7 +380,7 @@ pub fn materialize_owned_outputs_from_tx_keys(
                         output_key,
                         key_offset,
                         &commitment,
-                        Some(subaddress),
+                        (subaddress != (0, 0)).then_some(subaddress),
                         &extra_data,
                     )),
                 });

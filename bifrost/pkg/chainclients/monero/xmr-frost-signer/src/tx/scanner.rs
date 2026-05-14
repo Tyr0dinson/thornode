@@ -406,23 +406,34 @@ impl Scanner {
             return 0;
         };
 
-        let mut known: HashSet<(String, u32)> = state
-            .outputs
-            .iter()
-            .map(|output| (output.tx_hash.clone(), output.output_index))
-            .collect();
-        let mut added = 0usize;
+        let mut changed = 0usize;
         for output in outputs {
             if output.amount == 0 {
                 continue;
             }
-            if !known.insert((output.tx_hash.clone(), output.output_index)) {
+            if let Some(existing) = state.outputs.iter_mut().find(|existing| {
+                existing.tx_hash == output.tx_hash && existing.output_index == output.output_index
+            }) {
+                if output.wallet_output_hex.is_some()
+                    && existing.wallet_output_hex != output.wallet_output_hex
+                {
+                    let state = existing.state;
+                    let reservation = existing.reservation.clone();
+                    let key_image = existing.key_image.clone();
+                    let spent_by_key_image_height = existing.spent_by_key_image_height;
+                    *existing = output;
+                    existing.state = state;
+                    existing.reservation = reservation;
+                    existing.key_image = key_image;
+                    existing.spent_by_key_image_height = spent_by_key_image_height;
+                    changed += 1;
+                }
                 continue;
             }
             state.outputs.push(output);
-            added += 1;
+            changed += 1;
         }
-        added
+        changed
     }
 
     pub fn mark_spent_by_refs(&mut self, vault_pub_key: &str, refs: &[(String, u32)]) {

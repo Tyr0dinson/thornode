@@ -8129,12 +8129,14 @@ mod tests {
             .store
             .load_outputs(VALID_VAULT_PUB_KEY)
             .expect("outputs should load");
-        assert!(
-            outputs
-                .iter()
-                .any(|output| output.tx_hash == tx_hash && output.wallet_output_hex.is_some()),
-            "owned change output should be materialized for key-image generation"
-        );
+        let wallet_output_hex = outputs
+            .iter()
+            .find(|output| output.tx_hash == tx_hash)
+            .and_then(|output| output.wallet_output_hex.as_deref())
+            .expect("owned change output should be materialized for key-image generation");
+        let bytes = hex::decode(wallet_output_hex).expect("wallet output should be hex");
+        monero_wallet::WalletOutput::read(&mut bytes.as_slice())
+            .expect("materialized wallet output should be readable by key-image generation");
     }
 
     #[tokio::test]
