@@ -405,6 +405,8 @@ func TestGetAccountByAddressRegistersVaultBeforeBalanceQuery(t *testing.T) {
 				Balance:         7 * moneroAtomicToThorchain,
 				UnlockedBalance: 7 * moneroAtomicToThorchain,
 			})
+		case r.URL.Path == "/v1/monero/transfers" && r.URL.Query().Get("mempool") == "true":
+			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
 		default:
 			http.NotFound(w, r)
 		}
@@ -455,6 +457,8 @@ func TestGetAccountByAddressUsesTotalBalanceWhenSpendableBalanceProvided(t *test
 				UnlockedBalance:  9 * moneroAtomicToThorchain,
 				SpendableBalance: uint64Ptr(3 * moneroAtomicToThorchain),
 			})
+		case r.URL.Path == "/v1/monero/transfers" && r.URL.Query().Get("mempool") == "true":
+			_ = json.NewEncoder(w).Encode(xmrFrostTransfersResponse{})
 		default:
 			http.NotFound(w, r)
 		}

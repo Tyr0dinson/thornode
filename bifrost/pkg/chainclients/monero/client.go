@@ -4700,6 +4700,10 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get monero wallet balance for %s: %w", address, err)
 	}
+	pendingSelfSend, err := c.xmrPendingSelfSendMempoolAmount(pubKey, common.Address(address))
+	if err != nil {
+		return common.Account{}, fmt.Errorf("fail to get monero mempool self-send balance for %s: %w", address, err)
+	}
 	// Account reporting (used by solvency comparison vs thornode's vault.coins)
 	// must use the TOTAL on-chain balance — locked + unlocked. Locked outputs
 	// (those in the 10-conf maturity window) DO exist on chain and must count
@@ -4707,7 +4711,7 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	// triggers a false-positive insolvency report during normal operation.
 	// Spendability for sign-time input selection is a separate concern handled
 	// by ensureXMRVaultBalance which uses spendableBalanceAtomic.
-	amount := cosmos.NewUint(balance.Balance / moneroAtomicToThorchain)
+	amount := cosmos.NewUint((balance.Balance + pendingSelfSend) / moneroAtomicToThorchain)
 	return common.Account{
 		Sequence:      0,
 		AccountNumber: 0,
@@ -4716,6 +4720,46 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 		),
 		HasMemoFlag: false,
 	}, nil
+}
+
+func (c *Client) xmrPendingSelfSendMempoolAmount(vaultPubKey common.PubKey, vaultAddress common.Address) (uint64, error) {
+	if c.frostSigner == nil || vaultPubKey.IsEmpty() || vaultAddress.IsEmpty() {
+		return 0, nil
+	}
+
+	transfers, err := c.frostSigner.GetMemPoolTransfers()
+	if err != nil {
+		return 0, err
+	}
+
+	vaultPubKeyString := vaultPubKey.String()
+	vaultAddressString := vaultAddress.String()
+	seen := make(map[string]struct{})
+	var total uint64
+	for _, tx := range transfers.Outgoing {
+		if !strings.EqualFold(strings.TrimSpace(tx.VaultPubKey), vaultPubKeyString) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(tx.FromAddress), vaultAddressString) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(tx.Address), vaultAddressString) {
+			continue
+		}
+		txID := strings.ToLower(strings.TrimSpace(tx.TxID))
+		if txID == "" {
+			continue
+		}
+		if _, ok := seen[txID]; ok {
+			continue
+		}
+		seen[txID] = struct{}{}
+		if ^uint64(0)-total < tx.Amount {
+			return 0, fmt.Errorf("pending self-send mempool balance overflow for vault %s", vaultPubKey)
+		}
+		total += tx.Amount
+	}
+	return total, nil
 }
 
 func (c *Client) findVaultPubKeyByAddress(address string) (common.PubKey, bool) {

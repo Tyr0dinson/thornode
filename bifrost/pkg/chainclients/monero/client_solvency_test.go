@@ -57,6 +57,58 @@ func TestShouldReportSolvencyRequiresInitializedState(t *testing.T) {
 	}
 }
 
+func TestXMRAccountIncludesSameVaultMempoolSelfSend(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
+	baseBalance := uint64(10 * moneroAtomicToThorchain)
+	pendingSelfSend := uint64(90 * moneroAtomicToThorchain)
+	c, server := newTestXMRSolvencyClient(t, 500, ttypes.Vaults{{
+		PubKey:      vaultPubKey,
+		PubKeyEddsa: vaultPubKey,
+		PubKeyFrost: vaultPubKey,
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100))),
+	}}, map[string]xmrFrostBalanceResponse{
+		vaultPubKey.String(): {
+			Balance:          baseBalance,
+			UnlockedBalance:  baseBalance,
+			SpendableBalance: uint64Ptr(baseBalance),
+		},
+	}, map[string][]xmrFrostOutgoingTransferStateEntry{
+		vaultPubKey.String(): {{
+			TxHash:        strings.Repeat("a", 64),
+			Status:        xmrFrostOutgoingStatusObservedMempool,
+			FromAddress:   vaultAddress.String(),
+			ToAddress:     vaultAddress.String(),
+			Amount:        pendingSelfSend,
+			Fee:           1,
+			Memo:          "consolidate",
+			PlannedHeight: 500,
+			CreatedAt:     1,
+		}, {
+			TxHash:        strings.Repeat("b", 64),
+			Status:        xmrFrostOutgoingStatusObservedMempool,
+			FromAddress:   vaultAddress.String(),
+			ToAddress:     testOutboundXMRDestination().String(),
+			Amount:        pendingSelfSend,
+			Fee:           1,
+			Memo:          "OUT:ignored",
+			PlannedHeight: 500,
+			CreatedAt:     2,
+		}},
+	})
+	defer server.Close()
+
+	acct, err := c.GetAccountByAddress(vaultAddress.String(), nil)
+	if err != nil {
+		t.Fatalf("get account: %v", err)
+	}
+	coin := acct.Coins.GetCoin(common.XMRAsset)
+	if !coin.Amount.Equal(cosmos.NewUint(100)) {
+		t.Fatalf("expected same-vault mempool self-send to count toward account balance, got %s", coin.Amount)
+	}
+}
+
 func newFrostSolvencyStateServer(
 	t *testing.T,
 	chainHeight int64,
@@ -89,6 +141,28 @@ func newFrostSolvencyStateServer(
 				VaultPubKey: pk,
 				Outgoing:    append([]xmrFrostOutgoingTransferStateEntry(nil), outgoingByPubKey[pk]...),
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/transfers" && r.URL.Query().Get("mempool") == "true":
+			resp := xmrFrostTransfersResponse{}
+			for pk, outgoing := range outgoingByPubKey {
+				for _, tx := range outgoing {
+					if !strings.EqualFold(tx.Status, xmrFrostOutgoingStatusObservedMempool) {
+						continue
+					}
+					resp.Outgoing = append(resp.Outgoing, xmrFrostTransferEntry{
+						TxID:        tx.TxHash,
+						Address:     tx.ToAddress,
+						FromAddress: tx.FromAddress,
+						VaultPubKey: pk,
+						TxKeys:      append([]string(nil), tx.TxKeys...),
+						Amount:      tx.Amount,
+						Fee:         tx.Fee,
+						Height:      tx.PlannedHeight,
+						Note:        tx.Memo,
+						Locked:      true,
+					})
+				}
+			}
+			_ = json.NewEncoder(w).Encode(resp)
 		default:
 			http.NotFound(w, r)
 		}
