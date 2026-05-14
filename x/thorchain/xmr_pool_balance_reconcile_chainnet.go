@@ -8,11 +8,11 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-const xmrPoolBalanceReconcileMimirKey = "ChainnetXMRVaultPoolBalanceReconcile13287"
+const xmrPoolBalanceReconcileMimirKey = "ChainnetXMRVaultPoolBalanceReconcile22360"
 
 var chainnetXMRVaultBalanceTargets = map[common.PubKey]cosmos.Uint{
-	common.PubKey("cthorpub1zcjduepqh5p72qfjl9rv4twt93lqlsddx4gp8pe2jl9mq033qsf76n98p25szzc9z2"): cosmos.NewUint(82594084),
-	common.PubKey("cthorpub1zcjduepq5yf9tavdaru7rs5aaypppgn8hl3vflrw7nsutullerlmjx6vngasv8vhw3"): cosmos.NewUint(138248484),
+	common.PubKey("cthorpub1zcjduepqh5p72qfjl9rv4twt93lqlsddx4gp8pe2jl9mq033qsf76n98p25szzc9z2"): cosmos.NewUint(159549601),
+	common.PubKey("cthorpub1zcjduepq5yf9tavdaru7rs5aaypppgn8hl3vflrw7nsutullerlmjx6vngasv8vhw3"): cosmos.NewUint(155614641),
 }
 
 type xmrPoolBalanceReconcileStats struct {

@@ -465,8 +465,8 @@ bifrost:
       xmr_consolidation_enabled: true
       xmr_consolidation_check_interval_blocks: 10
       xmr_consolidation_cooldown_blocks: 30
-      xmr_consolidation_min_unlocked_outputs: 4
-      xmr_consolidation_target_outputs: 1
+      xmr_consolidation_min_unlocked_outputs: 10
+      xmr_consolidation_target_outputs: 5
       xmr_consolidation_min_unlocked_atomic: 1000000000000 # 1 XMR in piconero
       xmr_consolidation_reserve_bps: 50 # 0.50%
       xmr_consolidation_churn_lookahead_blocks: 720

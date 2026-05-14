@@ -60,8 +60,8 @@ const (
 
 	defaultXMRConsolidationCheckIntervalBlocks = int64(10)
 	defaultXMRConsolidationCooldownBlocks      = int64(30)
-	defaultXMRConsolidationMinUnlockedOutputs  = int64(40)
-	defaultXMRConsolidationTargetOutputs       = int64(15)
+	defaultXMRConsolidationMinUnlockedOutputs  = int64(10)
+	defaultXMRConsolidationTargetOutputs       = int64(5)
 	defaultXMRConsolidationReserveBps          = int64(50) // 0.50%
 	defaultXMRConsolidationChurnLookahead      = int64(720)
 	defaultXMRConsolidationMaxRetries          = int64(3)
