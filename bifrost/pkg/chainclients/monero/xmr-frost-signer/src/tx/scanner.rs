@@ -180,6 +180,11 @@ impl Scanner {
             }
         }
 
+        let outputs: Vec<TrackedOutput> = outputs
+            .into_iter()
+            .filter(|output| output.amount != 0)
+            .collect();
+
         self.vault_states.insert(
             vault_pub_key.to_string(),
             VaultScanState {
@@ -246,6 +251,9 @@ impl Scanner {
         let mut added = 0usize;
         let mut added_outputs = Vec::new();
         for wallet_output in scanned {
+            if wallet_output.commitment().amount == 0 {
+                continue;
+            }
             let tx_hash = hex::encode(wallet_output.transaction());
             let Ok(output_index) = u32::try_from(wallet_output.index_in_transaction()) else {
                 continue;
@@ -299,6 +307,9 @@ impl Scanner {
         let mut total = 0u64;
         let mut unlocked = 0u64;
         for output in &state.outputs {
+            if output.amount == 0 {
+                continue;
+            }
             if output.is_spent() {
                 continue;
             }
@@ -322,7 +333,7 @@ impl Scanner {
         state
             .outputs
             .iter()
-            .filter(|o| o.height >= from_height && !o.is_spent())
+            .filter(|o| o.amount != 0 && o.height >= from_height && !o.is_spent())
             .map(|o| {
                 let confirmations = self.current_height.saturating_sub(o.height);
                 Transfer {
@@ -350,7 +361,7 @@ impl Scanner {
             .map(|s| {
                 s.outputs
                     .iter()
-                    .filter(|o| o.is_available_for_spend_at(self.current_height))
+                    .filter(|o| o.amount != 0 && o.is_available_for_spend_at(self.current_height))
                     .cloned()
                     .collect()
             })
@@ -360,7 +371,13 @@ impl Scanner {
     pub fn get_all_outputs(&self, vault_pub_key: &str) -> Vec<TrackedOutput> {
         self.vault_states
             .get(vault_pub_key)
-            .map(|s| s.outputs.clone())
+            .map(|s| {
+                s.outputs
+                    .iter()
+                    .filter(|output| output.amount != 0)
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -396,6 +413,9 @@ impl Scanner {
             .collect();
         let mut added = 0usize;
         for output in outputs {
+            if output.amount == 0 {
+                continue;
+            }
             if !known.insert((output.tx_hash.clone(), output.output_index)) {
                 continue;
             }
@@ -776,6 +796,48 @@ mod tests {
             assert!(parsed.is_subaddress());
             assert!(address.starts_with('8'));
         }
+    }
+
+    #[test]
+    fn zero_amount_outputs_are_not_registered_or_upserted() {
+        let mut scanner = Scanner::new();
+        let base = Scalar::from(7u64);
+        let group_key_hex = hex::encode((&base * ED25519_BASEPOINT_TABLE).compress().to_bytes());
+
+        let positive = TrackedOutput {
+            tx_hash: "tx-positive".to_string(),
+            output_index: 0,
+            amount: 10,
+            height: 10,
+            key_image: None,
+            spent_by_key_image_height: None,
+            state: crate::state::store::OutputState::Unspent,
+            reservation: None,
+            subaddress_major: 0,
+            subaddress_minor: 0,
+            wallet_output_hex: Some("aa".to_string()),
+            address: Some("48a".to_string()),
+            note: None,
+        };
+        let mut zero = positive.clone();
+        zero.tx_hash = "tx-zero".to_string();
+        zero.output_index = 1;
+        zero.amount = 0;
+
+        scanner
+            .register_vault(
+                "thorpub1vault",
+                &group_key_hex,
+                ChainNetworkMode::Mocknet,
+                vec![positive, zero.clone()],
+                None,
+            )
+            .unwrap();
+        assert_eq!(scanner.get_all_outputs("thorpub1vault").len(), 1);
+
+        let added = scanner.upsert_outputs("thorpub1vault", vec![zero]);
+        assert_eq!(added, 0);
+        assert_eq!(scanner.get_all_outputs("thorpub1vault").len(), 1);
     }
 
     #[test]

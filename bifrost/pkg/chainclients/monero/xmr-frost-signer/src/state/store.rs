@@ -130,6 +130,10 @@ pub struct TrackedOutput {
 impl TrackedOutput {
     pub const MIN_SPENDABLE_CONFIRMATIONS: u64 = 10;
 
+    pub fn is_zero_amount(&self) -> bool {
+        self.amount == 0
+    }
+
     pub fn ref_key(&self) -> OutputRef {
         OutputRef {
             tx_hash: self.tx_hash.clone(),
@@ -623,6 +627,10 @@ impl Store {
         match raw {
             Some(bytes) => {
                 let outputs: Vec<TrackedOutput> = serde_json::from_slice(bytes)?;
+                let outputs: Vec<TrackedOutput> = outputs
+                    .into_iter()
+                    .filter(|output| !output.is_zero_amount())
+                    .collect();
                 for output in &outputs {
                     output.validate()?;
                 }
@@ -643,6 +651,7 @@ impl Store {
             let current = tree.get(key)?;
             let mut outputs = Self::decode_outputs(current.as_deref())?;
             let result = mutate(&mut outputs)?;
+            outputs.retain(|output| !output.is_zero_amount());
             for output in &outputs {
                 output.validate()?;
             }
@@ -670,10 +679,15 @@ impl Store {
     /// Save tracked outputs for a vault.
     pub fn save_outputs(&self, vault_pub_key: &str, outputs: &[TrackedOutput]) -> Result<()> {
         let tree = self.db.open_tree("outputs")?;
-        for output in outputs {
+        let outputs: Vec<TrackedOutput> = outputs
+            .iter()
+            .filter(|output| !output.is_zero_amount())
+            .cloned()
+            .collect();
+        for output in &outputs {
             output.validate()?;
         }
-        let value = serde_json::to_vec(outputs)?;
+        let value = serde_json::to_vec(&outputs)?;
         tree.insert(vault_pub_key.as_bytes(), value)?;
         tree.flush()?;
         Ok(())
@@ -922,6 +936,9 @@ impl Store {
             // protected reservation/spent state from the store.
             existing.clear();
             for scanned_output in scanned {
+                if scanned_output.is_zero_amount() {
+                    continue;
+                }
                 let mut output = scanned_output.clone();
                 let key = (output.tx_hash.clone(), output.output_index);
                 if let Some((state, reservation)) = protected.get(&key) {
@@ -3171,6 +3188,31 @@ mod tests {
         assert_eq!(outputs[0].key_image.as_deref(), Some("key-image-0"));
         assert_eq!(outputs[0].spent_by_key_image_height, Some(123));
         assert_eq!(outputs[0].state, OutputState::Spent);
+    }
+
+    #[test]
+    fn zero_amount_outputs_are_not_persisted_or_loaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let vault = "thorpub1vault";
+
+        let positive = sample_scanned_output("tx-positive", 0);
+        let mut zero = sample_scanned_output("tx-zero", 1);
+        zero.amount = 0;
+
+        store
+            .save_outputs(vault, &[positive.clone(), zero.clone()])
+            .unwrap();
+        let outputs = store.load_outputs(vault).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].tx_hash, positive.tx_hash);
+
+        store
+            .merge_scanned_outputs(vault, &[positive, zero])
+            .unwrap();
+        let outputs = store.load_outputs(vault).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].tx_hash, "tx-positive");
     }
 
     #[test]
