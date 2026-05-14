@@ -4473,29 +4473,38 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 				c.prunePendingXMROutgoingLifecycleForStaleDeckItem(item)
 		}
 	}
+	if c.isObservedOutboundFromVault(item) {
+		ok, pruned := c.prunePendingXMROutgoingLifecycleIfPresentForStaleDeckItem(item)
+		return ok && pruned
+	}
 	return false
 }
 
 func (c *Client) prunePendingXMROutgoingLifecycleForStaleDeckItem(item *stypes.TxInItem) bool {
+	ok, _ := c.prunePendingXMROutgoingLifecycleIfPresentForStaleDeckItem(item)
+	return ok
+}
+
+func (c *Client) prunePendingXMROutgoingLifecycleIfPresentForStaleDeckItem(item *stypes.TxInItem) (bool, bool) {
 	if c == nil || item == nil || c.frostSigner == nil {
-		return true
+		return true, false
 	}
 	txHash := normalizeTxID(item.Tx)
 	vaultPubKey := item.ObservedVaultPubKey
 	if txHash == "" || vaultPubKey.IsEmpty() {
-		return false
+		return false, false
 	}
 	state, err := c.frostSigner.GetOutgoingTransferState(vaultPubKey.String())
 	if err != nil {
 		if isFrostHTTPStatus(err, http.StatusNotFound) {
-			return true
+			return true, false
 		}
 		c.logger.Info().
 			Err(err).
 			Str("tx_hash", txHash).
 			Str("vault_pub_key", vaultPubKey.String()).
 			Msg("keeping XMR deck item because outgoing lifecycle state could not be checked")
-		return false
+		return false, false
 	}
 	shouldPrune := false
 	for _, record := range state.Outgoing {
@@ -4503,12 +4512,12 @@ func (c *Client) prunePendingXMROutgoingLifecycleForStaleDeckItem(item *stypes.T
 			continue
 		}
 		if record.isObservedMined() {
-			return true
+			return true, false
 		}
 		shouldPrune = true
 	}
 	if !shouldPrune {
-		return true
+		return true, false
 	}
 	pruneResp, err := c.frostSigner.PruneOutgoingTransfers(xmrFrostPruneOutgoingTransfersRequest{
 		VaultPubKey: vaultPubKey.String(),
@@ -4520,14 +4529,14 @@ func (c *Client) prunePendingXMROutgoingLifecycleForStaleDeckItem(item *stypes.T
 			Str("tx_hash", txHash).
 			Str("vault_pub_key", vaultPubKey.String()).
 			Msg("keeping XMR deck item because pending outgoing lifecycle state could not be pruned")
-		return false
+		return false, false
 	}
 	c.logger.Info().
 		Str("tx_hash", txHash).
 		Str("vault_pub_key", vaultPubKey.String()).
 		Strs("removed", pruneResp.Removed).
 		Msg("pruned pending XMR outgoing lifecycle state for stale deck item")
-	return true
+	return true, len(pruneResp.Removed) > 0
 }
 
 func (c *Client) ensureRegisteredXMRKeyImagesAppliedForDeckItem(item *stypes.TxInItem, vault ttypes.Vault) bool {
