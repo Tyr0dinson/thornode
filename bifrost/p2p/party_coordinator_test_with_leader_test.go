@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 )
 
 func init() {
@@ -246,6 +247,42 @@ func TestPartyCoordinatorReplaysPendingLeaderRequests(t *testing.T) {
 	}
 
 	assert.Empty(t, pc.pendingJoinReqs[msgID])
+}
+
+func TestPartyCoordinatorReplaysPendingLeaderResponse(t *testing.T) {
+	hosts := setupHosts(t, 4)
+	pc := NewPartyCoordinator(hosts[1], time.Second)
+	defer pc.Stop()
+
+	var peerIDs []peer.ID
+	var peerIDStrings []string
+	for _, h := range hosts {
+		peerIDs = append(peerIDs, h.ID())
+		peerIDStrings = append(peerIDStrings, h.ID().String())
+	}
+
+	msgID := conversion.RandStringBytesMask(64)
+	resp := &messages.JoinPartyLeaderComm{
+		ID:      msgID,
+		Type:    messages.JoinPartyLeaderComm_Success,
+		PeerIDs: peerIDStrings[:3],
+	}
+	pc.recordPendingLeaderResponse(msgID, hosts[0].ID(), resp)
+
+	peerGroup, err := pc.createJoinPartyGroups(msgID, hosts[0].ID(), peerIDs, 2)
+	assert.Nil(t, err)
+
+	select {
+	case <-peerGroup.notify:
+	case <-time.After(time.Second):
+		t.Fatal("expected pending leader response replay to notify follower")
+	}
+
+	leaderResp := peerGroup.getLeaderResponse()
+	assert.NotNil(t, leaderResp)
+	assert.Equal(t, messages.JoinPartyLeaderComm_Success, leaderResp.Type)
+	assert.Equal(t, peerIDStrings[:3], leaderResp.PeerIDs)
+	assert.Empty(t, pc.pendingLeaderResps)
 }
 
 func TestGetPeerIDs(t *testing.T) {

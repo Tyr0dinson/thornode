@@ -34,8 +34,14 @@ type PartyCoordinator struct {
 	timeout            time.Duration
 	peersGroup         map[string]*peerStatus
 	pendingJoinReqs    map[string]map[peer.ID]struct{}
+	pendingLeaderResps map[string]pendingLeaderResponse
 	joinPartyGroupLock *sync.Mutex
 	streamMgr          *StreamMgr
+}
+
+type pendingLeaderResponse struct {
+	peerID peer.ID
+	resp   messages.JoinPartyLeaderComm
 }
 
 // NewPartyCoordinator create a new instance of PartyCoordinator
@@ -51,6 +57,7 @@ func NewPartyCoordinator(host host.Host, timeout time.Duration) *PartyCoordinato
 		timeout:            timeout,
 		peersGroup:         make(map[string]*peerStatus),
 		pendingJoinReqs:    make(map[string]map[peer.ID]struct{}),
+		pendingLeaderResps: make(map[string]pendingLeaderResponse),
 		joinPartyGroupLock: &sync.Mutex{},
 		streamMgr:          NewStreamMgr(),
 	}
@@ -75,6 +82,7 @@ func (pc *PartyCoordinator) processRespMsg(respMsg *messages.JoinPartyLeaderComm
 	peerGroup, ok := pc.peersGroup[respMsg.ID]
 	pc.joinPartyGroupLock.Unlock()
 	if !ok {
+		pc.recordPendingLeaderResponse(respMsg.ID, remotePeer, respMsg)
 		pc.logger.Info().Msgf("message ID from peer(%s) can not be found", remotePeer)
 		return
 	}
@@ -188,6 +196,7 @@ func (pc *PartyCoordinator) removePeerGroup(messageID string) {
 	defer pc.joinPartyGroupLock.Unlock()
 	delete(pc.peersGroup, messageID)
 	delete(pc.pendingJoinReqs, messageID)
+	delete(pc.pendingLeaderResps, messageID)
 }
 
 func (pc *PartyCoordinator) createJoinPartyGroups(messageID string, leaderID peer.ID, peerIDs []peer.ID, threshold int) (*peerStatus, error) {
@@ -196,6 +205,7 @@ func (pc *PartyCoordinator) createJoinPartyGroups(messageID string, leaderID pee
 	peerStatus := newPeerStatus(peerIDs, pc.host.ID(), leaderID, threshold)
 	pc.peersGroup[messageID] = peerStatus
 	pc.applyPendingJoinRequestsLocked(messageID, peerStatus)
+	pc.applyPendingLeaderResponseLocked(messageID, peerStatus)
 	return peerStatus, nil
 }
 
@@ -230,6 +240,39 @@ func (pc *PartyCoordinator) applyPendingJoinRequestsLocked(messageID string, pee
 			peerGroup.notify <- true
 		}
 	}
+}
+
+func (pc *PartyCoordinator) recordPendingLeaderResponse(messageID string, remotePeer peer.ID, respMsg *messages.JoinPartyLeaderComm) {
+	if messageID == "" || remotePeer == "" || respMsg == nil {
+		return
+	}
+	pc.joinPartyGroupLock.Lock()
+	defer pc.joinPartyGroupLock.Unlock()
+	if _, ok := pc.peersGroup[messageID]; ok {
+		return
+	}
+	pc.pendingLeaderResps[messageID] = pendingLeaderResponse{
+		peerID: remotePeer,
+		resp:   *respMsg,
+	}
+}
+
+func (pc *PartyCoordinator) applyPendingLeaderResponseLocked(messageID string, peerGroup *peerStatus) {
+	pending, ok := pc.pendingLeaderResps[messageID]
+	if !ok {
+		return
+	}
+	delete(pc.pendingLeaderResps, messageID)
+	if pending.peerID != peerGroup.getLeader() {
+		pc.logger.Debug().
+			Str("msg_id", messageID).
+			Str("remote_peer", pending.peerID.String()).
+			Str("expected_leader", peerGroup.getLeader().String()).
+			Msg("ignore pending leader response from non-leader")
+		return
+	}
+	peerGroup.setLeaderResponse(&pending.resp)
+	peerGroup.notify <- true
 }
 
 func (pc *PartyCoordinator) getPeerIDs(ids []string) ([]peer.ID, error) {
