@@ -96,6 +96,11 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				AggregatorTargetLimit: &cosmos.Uint{},
 			}
 
+			if refundActionAlreadyScheduled(ctx, mgr, toi) {
+				ctx.Logger().Info("skip duplicate refund action", "in_hash", toi.InHash.String(), "coin", toi.Coin.String(), "memo", toi.GetMemo())
+				continue
+			}
+
 			sender := tx.Tx.ObservedSender()
 			if coin.Asset.GetChain().Equals(common.XMRChain) && usesSourceSender && sender.RefundAddressRequired {
 				if vault.Status == InactiveVault {
@@ -165,6 +170,22 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 	}
 
 	return nil
+}
+
+func refundActionAlreadyScheduled(ctx cosmos.Context, mgr Manager, toi TxOutItem) bool {
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, toi.InHash)
+	if err != nil {
+		return false
+	}
+	for _, action := range voter.Actions {
+		if action.InHash.Equals(toi.InHash) &&
+			action.Coin.Asset.Equals(toi.Coin.Asset) &&
+			action.GetMemo() == toi.GetMemo() &&
+			action.Chain.Equals(toi.Chain) {
+			return true
+		}
+	}
+	return false
 }
 
 // unrefundableCoinCleanup - update the accounting for a failed outbound of toi.Coin
