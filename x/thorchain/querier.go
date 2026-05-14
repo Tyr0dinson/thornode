@@ -3637,17 +3637,28 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		advIter.Close()
 	}
 
-	// save pool state
+	// save pool state - the end-block loop restores these between iterations so
+	// each simulated sub-swap of a streaming swap sees the original pool depth
 	pools, err := mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools: %w", err)
 	}
+	cdc := mgr.Keeper().Cdc()
 
 	// simulate the handler
 	_, err = NewInternalHandler(mgr)(ctx, msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to simulate handler: %w", err)
 	}
+
+	// touchedPools is the set of pools mutated while processing this swap. It is
+	// detected on the first end-block iteration by diffing against the snapshot
+	// and reused thereafter: simulate() only ever processes a single MsgSwap, so
+	// every streaming sub-swap follows the same route and touches the same pools.
+	// Restoring only these (rather than every pool, every iteration) keeps the
+	// per-iteration restore O(route) instead of O(all pools).
+	var touchedPools []Pool
+	touchedDetected := false
 
 	// simulate end block, loop it until the swap queue is empty
 	queueEmpty := false
@@ -3668,7 +3679,23 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 			}
 		}
 
-		for _, pool := range pools {
+		// restore pool depths to the pre-swap snapshot. On the first iteration
+		// the touched set is unknown, so diff every pool against the snapshot;
+		// thereafter only the pools the swap actually moved need restoring.
+		if !touchedDetected {
+			for i := range pools {
+				var current Pool
+				current, err = mgr.Keeper().GetPool(ctx, pools[i].Asset)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get pool: %w", err)
+				}
+				if !bytes.Equal(cdc.MustMarshal(&current), cdc.MustMarshal(&pools[i])) {
+					touchedPools = append(touchedPools, pools[i])
+				}
+			}
+			touchedDetected = true
+		}
+		for _, pool := range touchedPools {
 			_ = mgr.Keeper().SetPool(ctx, pool)
 		}
 
