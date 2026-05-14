@@ -3624,8 +3624,12 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 	iter.Close()
 
+	// AdvSwapQueueEnabled reads a config/mimir value that does not change during
+	// simulation, so resolve it once instead of on every end-block iteration.
+	advSwapQueueEnabled := mgr.Keeper().AdvSwapQueueEnabled(ctx)
+
 	// reset the advanced swap queue if enabled
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	if advSwapQueueEnabled {
 		advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		for ; advIter.Valid(); advIter.Next() {
 			mgr.Keeper().DeleteKey(ctx, advIter.Key())
@@ -3657,7 +3661,7 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		}
 
 		// process advanced swap queue if enabled
-		if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if advSwapQueueEnabled {
 			err = mgr.AdvSwapQueueMgr().EndBlock(blockCtx, mgr, false)
 			if err != nil {
 				return nil, fmt.Errorf("failed to simulate end block for advanced queue: %w", err)
@@ -3674,7 +3678,7 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		iter.Close()
 
 		advQueueEmpty := true
-		if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if advSwapQueueEnabled {
 			advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 			advQueueEmpty = !advIter.Valid()
 			advIter.Close()
