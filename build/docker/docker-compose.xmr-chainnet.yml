@@ -163,6 +163,7 @@ services:
     environment:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+      XMR_FROST_AUTH_BEARER: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
     volumes:
       - xmr-frost-data:/var/lib/xmr-frost
     networks:
@@ -179,6 +180,7 @@ services:
     environment:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+      XMR_FROST_AUTH_BEARER: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
     volumes:
       - xmr-frost-data-cat:/var/lib/xmr-frost
     ports: []
@@ -188,6 +190,7 @@ services:
     environment:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+      XMR_FROST_AUTH_BEARER: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
     volumes:
       - xmr-frost-data-fox:/var/lib/xmr-frost
     ports: []
@@ -197,6 +200,7 @@ services:
     environment:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat answer"
+      XMR_FROST_AUTH_BEARER: "goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat answer"
     volumes:
       - xmr-frost-data-goat:/var/lib/xmr-frost
     ports: []
@@ -206,6 +210,7 @@ services:
     environment:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale away"
+      XMR_FROST_AUTH_BEARER: "whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale away"
     volumes:
       - xmr-frost-data-whale:/var/lib/xmr-frost
     ports: []
@@ -215,6 +220,7 @@ services:
     environment:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf analyst"
+      XMR_FROST_AUTH_BEARER: "wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf analyst"
     volumes:
       - xmr-frost-data-wolf:/var/lib/xmr-frost
     ports: []
@@ -224,6 +230,7 @@ services:
     environment:
       <<: *frost-env
       SIGNER_SEED_PHRASE: "eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle bitter"
+      XMR_FROST_AUTH_BEARER: "eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle bitter"
     volumes:
       - xmr-frost-data-eagle:/var/lib/xmr-frost
     ports: []
@@ -434,6 +441,7 @@ services:
     environment:
       <<: *bifrost-env
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
       CHAIN_API: thornode:1317
       CHAIN_RPC: thornode:27147
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode:50051
@@ -460,6 +468,7 @@ services:
     environment:
       <<: *bifrost-env
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
       PEER: bifrost
       CHAIN_API: thornode-cat:1317
       CHAIN_RPC: thornode-cat:27147
@@ -481,6 +490,7 @@ services:
     environment:
       <<: *bifrost-env
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
       PEER: bifrost
       CHAIN_API: thornode-fox:1317
       CHAIN_RPC: thornode-fox:27147
@@ -502,6 +512,7 @@ services:
     environment:
       <<: *bifrost-env
       SIGNER_SEED_PHRASE: "goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat answer"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat answer"
       PEER: bifrost
       CHAIN_API: thornode-goat:1317
       CHAIN_RPC: thornode-goat:27147
@@ -523,6 +534,7 @@ services:
     environment:
       <<: *bifrost-env
       SIGNER_SEED_PHRASE: "whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale away"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale away"
       PEER: bifrost
       CHAIN_API: thornode-whale:1317
       CHAIN_RPC: thornode-whale:27147
@@ -544,6 +556,7 @@ services:
     environment:
       <<: *bifrost-env
       SIGNER_SEED_PHRASE: "wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf analyst"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf analyst"
       PEER: bifrost
       CHAIN_API: thornode-wolf:1317
       CHAIN_RPC: thornode-wolf:27147
@@ -565,6 +578,7 @@ services:
     environment:
       <<: *bifrost-env
       SIGNER_SEED_PHRASE: "eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle bitter"
+      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle bitter"
       PEER: bifrost
       CHAIN_API: thornode-eagle:1317
       CHAIN_RPC: thornode-eagle:27147
