@@ -4190,8 +4190,8 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
 					Str("memo", item.Memo).
 					Int("key_image_count", len(item.XmrKeyImages)).
-					Msg("skipping repaired chainnet XMR D26 outbound finalization without tx-key")
-				return nil, false, nil
+					Msg("terminally dropping repaired chainnet XMR D26 outbound finalization without tx-key")
+				return nil, false, fmt.Errorf("%w: repaired chainnet XMR D26 outbound lacks tx-key", types.ErrTerminalObservation)
 			}
 			c.logger.Info().
 				Str("tx_hash", normalizeTxID(item.Tx)).
@@ -4216,8 +4216,8 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 					Str("tx_hash", normalizeTxID(item.Tx)).
 					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
 					Str("memo", item.Memo).
-					Msg("skipping repaired chainnet XMR D26 outbound finalization without tx-key")
-				return nil, false, nil
+					Msg("terminally dropping repaired chainnet XMR D26 outbound finalization without tx-key")
+				return nil, false, fmt.Errorf("%w: repaired chainnet XMR D26 outbound lacks tx-key", types.ErrTerminalObservation)
 			}
 			c.logger.Info().
 				Str("tx_hash", normalizeTxID(item.Tx)).
