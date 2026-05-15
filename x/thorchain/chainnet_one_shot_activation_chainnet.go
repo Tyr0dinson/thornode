@@ -3,4 +3,4 @@
 
 package thorchain
 
-const chainnetOneShotActivationHeight = 11000
+const chainnetOneShotActivationHeight = 10000
