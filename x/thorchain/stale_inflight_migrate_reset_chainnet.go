@@ -36,6 +36,9 @@ func runChainnetStaleInFlightMigrateResetOnce(ctx cosmos.Context, mgr Manager) e
 	if mgr == nil || mgr.Keeper() == nil {
 		return nil
 	}
+	if ctx.BlockHeight() < chainnetOneShotActivationHeight {
+		return nil
+	}
 
 	doneAt, err := mgr.Keeper().GetMimir(ctx, chainnetStaleInFlightMigrateResetMimirKey)
 	if err == nil && doneAt > 0 {

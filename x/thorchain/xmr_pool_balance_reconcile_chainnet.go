@@ -27,6 +27,9 @@ func runChainnetXMRPoolBalanceReconcileOnce(ctx cosmos.Context, mgr Manager) err
 	if mgr == nil || mgr.Keeper() == nil {
 		return nil
 	}
+	if ctx.BlockHeight() < chainnetOneShotActivationHeight {
+		return nil
+	}
 
 	doneAt, err := mgr.Keeper().GetMimir(ctx, xmrPoolBalanceReconcileMimirKey)
 	if err == nil && doneAt > 0 {

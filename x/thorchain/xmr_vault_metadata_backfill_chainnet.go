@@ -11,6 +11,9 @@ func runChainnetXMRVaultMetadataBackfillOnce(ctx cosmos.Context, mgr Manager) er
 	if mgr == nil || mgr.Keeper() == nil {
 		return nil
 	}
+	if ctx.BlockHeight() < chainnetOneShotActivationHeight {
+		return nil
+	}
 
 	doneAt, err := mgr.Keeper().GetMimir(ctx, xmrVaultMetadataBackfillMimirKey)
 	if err == nil && doneAt > 0 {
