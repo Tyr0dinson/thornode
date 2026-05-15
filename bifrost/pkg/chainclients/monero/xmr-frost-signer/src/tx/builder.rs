@@ -67,7 +67,7 @@ pub async fn build_unsigned_transaction(
     ensure_supported_address_type("change", &change, chain_network)?;
     ensure_address_network_mode("change", &change, chain_network)?;
 
-    let dust = dust_threshold.unwrap_or(0);
+    let _dust_threshold = dust_threshold;
     let max = max_inputs.unwrap_or(15) as usize;
     let requested_total = if sweep_if_final {
         amount
@@ -97,10 +97,9 @@ pub async fn build_unsigned_transaction(
 
     let mut candidates =
         decode_candidate_outputs(available_outputs, excluded_inputs, current_height)?;
-    // Filter sub-dust outputs.
-    if dust > 0 {
-        candidates.retain(|(tracked, _)| tracked.amount >= dust);
-    }
+    // Do not filter sub-dust outputs here. This is the signer spend path, and
+    // final sweeps must be able to consume every owned output. Observation
+    // filtering belongs in the scanner/observer layer.
     // Deterministic sort: height ASC (oldest first), then tx_hash ASC.
     // Matches BTC UTXO selection (most confirmations first, then TxID).
     candidates.sort_by(|a, b| {
@@ -385,7 +384,7 @@ pub fn select_outbound_input_refs(
     let requested_total = amount
         .checked_add(fee)
         .ok_or_else(|| anyhow::anyhow!("amount + fee overflow"))?;
-    let dust = dust_threshold.unwrap_or(0);
+    let _dust_threshold = dust_threshold;
 
     let mut candidates = available_outputs
         .iter()
@@ -396,7 +395,6 @@ pub fn select_outbound_input_refs(
                 .as_ref()
                 .is_some_and(|hex| !hex.trim().is_empty())
         })
-        .filter(|output| dust == 0 || output.amount >= dust)
         .cloned()
         .collect::<Vec<_>>();
     candidates.sort_by(|a, b| {
@@ -692,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn select_outbound_input_refs_skips_non_spendable_or_subdust_outputs() {
+    fn select_outbound_input_refs_skips_non_spendable_but_spends_subdust_outputs() {
         let outputs = vec![
             tracked_output("a", 0, 40, 10, OutputState::Spent, Some("aa")),
             tracked_output("b", 0, 50, 11, OutputState::Reserved, Some("bb")),
@@ -703,8 +701,23 @@ mod tests {
 
         let refs = select_outbound_input_refs(&outputs, 100, 30, 25, Some(75))
             .expect("selection should succeed");
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].tx_hash, "e");
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].tx_hash, "d");
+        assert_eq!(refs[1].tx_hash, "e");
+    }
+
+    #[test]
+    fn select_outbound_input_refs_can_sweep_with_subdust_remainder() {
+        let outputs = vec![
+            tracked_output("main", 0, 44_265_509, 10, OutputState::Unspent, Some("aa")),
+            tracked_output("dust", 0, 4_128, 11, OutputState::Unspent, Some("bb")),
+        ];
+
+        let refs = select_outbound_input_refs(&outputs, 44_149_637, 120_000, 25, Some(10_000))
+            .expect("final sweep selection should include sub-dust remainder");
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].tx_hash, "main");
+        assert_eq!(refs[1].tx_hash, "dust");
     }
 
     #[test]
