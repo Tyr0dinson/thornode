@@ -4109,18 +4109,10 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 						return nil, false, fmt.Errorf("fail to record XMR tx-key validation attempt: %w", recordErr)
 					}
 					if workItem.AttemptCount >= xmrMissingOutboundTxRetryLimit {
-						pruneResp, pruneErr := c.frostSigner.PruneOutgoingTransfers(xmrFrostPruneOutgoingTransfersRequest{
-							VaultPubKey: item.ObservedVaultPubKey.String(),
-							TxHashes:    []string{item.Tx},
-						})
-						if pruneErr != nil {
-							return nil, false, fmt.Errorf("fail to prune terminal XMR outbound lifecycle state: %w", pruneErr)
-						}
 						c.logger.Info().
 							Str("tx_hash", normalizeTxID(item.Tx)).
 							Str("vault_pub_key", item.ObservedVaultPubKey.String()).
-							Strs("removed", pruneResp.Removed).
-							Msg("pruned terminal XMR outbound lifecycle state")
+							Msg("dropping terminal XMR outbound observation without pruning local tx-key state")
 						return nil, false, fmt.Errorf("%w: xmr outbound tx-key validation failed after %d attempts: %w", types.ErrTerminalObservation, workItem.AttemptCount, validateErr)
 					}
 					c.logger.Info().
@@ -4473,10 +4465,6 @@ func (c *Client) IsDeckItemStale(item *stypes.TxInItem) bool {
 				c.prunePendingXMROutgoingLifecycleForStaleDeckItem(item)
 		}
 	}
-	if c.isObservedOutboundFromVault(item) {
-		ok, pruned := c.prunePendingXMROutgoingLifecycleIfPresentForStaleDeckItem(item)
-		return ok && pruned
-	}
 	return false
 }
 
@@ -4511,17 +4499,16 @@ func (c *Client) prunePendingXMROutgoingLifecycleIfPresentForStaleDeckItem(item 
 		if normalizeTxID(record.TxHash) != txHash {
 			continue
 		}
-		if record.isObservedMined() {
-			return true, false
-		}
 		shouldPrune = true
 	}
 	if !shouldPrune {
 		return true, false
 	}
 	pruneResp, err := c.frostSigner.PruneOutgoingTransfers(xmrFrostPruneOutgoingTransfersRequest{
-		VaultPubKey: vaultPubKey.String(),
-		TxHashes:    []string{txHash},
+		VaultPubKey:       vaultPubKey.String(),
+		TxHashes:          []string{txHash},
+		ObservedMinedOnly: true,
+		TxKeyBackedOnly:   true,
 	})
 	if err != nil {
 		c.logger.Info().

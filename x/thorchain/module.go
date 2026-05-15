@@ -192,6 +192,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	if err := runChainnetXMRPoolBalanceReconcileOnce(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to run one-time chainnet XMR pool balance reconcile", "error", err)
 	}
+	if err := runChainnetXMRD26MigrateRepairOnce(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to run one-time chainnet XMR D26 migrate repair", "error", err)
+	}
 
 	version := am.mgr.GetVersion()
 	localVer := semver.MustParse(constants.SWVersion.String())

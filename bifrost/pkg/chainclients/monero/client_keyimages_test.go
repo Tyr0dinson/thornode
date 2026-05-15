@@ -936,7 +936,8 @@ func TestIsDeckItemStalePrunesPendingOutgoingLifecycle(t *testing.T) {
 				VaultPubKey: vaultPubKey.String(),
 				Outgoing: []xmrFrostOutgoingTransferStateEntry{{
 					TxHash: txHash,
-					Status: xmrFrostOutgoingStatusSignedPending,
+					TxKeys: []string{"tx-key"},
+					Status: xmrFrostOutgoingStatusObservedMined,
 				}},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/prune":
@@ -945,6 +946,8 @@ func TestIsDeckItemStalePrunesPendingOutgoingLifecycle(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 			require.Equal(t, vaultPubKey.String(), req.VaultPubKey)
 			require.Equal(t, []string{txHash}, req.TxHashes)
+			require.True(t, req.ObservedMinedOnly)
+			require.True(t, req.TxKeyBackedOnly)
 			_ = json.NewEncoder(w).Encode(xmrFrostPruneOutgoingTransfersResponse{
 				Removed: []string{txHash},
 			})
@@ -973,7 +976,7 @@ func TestIsDeckItemStalePrunesPendingOutgoingLifecycle(t *testing.T) {
 	require.Equal(t, 1, pruneCalls)
 }
 
-func TestIsDeckItemStalePrunesPendingOutgoingLifecycleWithoutThorMetadata(t *testing.T) {
+func TestIsDeckItemStaleKeepsPendingOutgoingLifecycleWithoutThorMetadata(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
@@ -993,13 +996,7 @@ func TestIsDeckItemStalePrunesPendingOutgoingLifecycleWithoutThorMetadata(t *tes
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/prune":
 			pruneCalls++
-			var req xmrFrostPruneOutgoingTransfersRequest
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-			require.Equal(t, vaultPubKey.String(), req.VaultPubKey)
-			require.Equal(t, []string{txHash}, req.TxHashes)
-			_ = json.NewEncoder(w).Encode(xmrFrostPruneOutgoingTransfersResponse{
-				Removed: []string{txHash},
-			})
+			http.Error(w, "unexpected prune", http.StatusInternalServerError)
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
@@ -1018,12 +1015,12 @@ func TestIsDeckItemStalePrunesPendingOutgoingLifecycleWithoutThorMetadata(t *tes
 		logger: testLogger(),
 	}
 
-	assert.True(t, c.IsDeckItemStale(&stypes.TxInItem{
+	assert.False(t, c.IsDeckItemStale(&stypes.TxInItem{
 		Tx:                  txHash,
 		Sender:              vaultAddr.String(),
 		ObservedVaultPubKey: vaultPubKey,
 	}))
-	require.Equal(t, 1, pruneCalls)
+	require.Zero(t, pruneCalls)
 }
 
 func TestIsDeckItemStaleKeepsOutboundWithoutThorMetadataWhenNoPendingLifecycle(t *testing.T) {
@@ -1502,7 +1499,6 @@ func TestPrepareObservedTxInItemRetriesMissingOutboundTxBeforeTerminalDrop(t *te
 	destination := common.XMRSeededDummyAddress('8', []byte("txkey-validation-retry"))
 	validateCalls := 0
 	pruneCalls := 0
-	var pruneReq xmrFrostPruneOutgoingTransfersRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1517,10 +1513,7 @@ func TestPrepareObservedTxInItemRetriesMissingOutboundTxBeforeTerminalDrop(t *te
 			http.Error(w, fmt.Sprintf(`{"error":"transaction %s not found"}`, txHash), http.StatusNotFound)
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outbounds/prune":
 			pruneCalls++
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&pruneReq))
-			_ = json.NewEncoder(w).Encode(xmrFrostPruneOutgoingTransfersResponse{
-				Removed: []string{txHash},
-			})
+			http.Error(w, "unexpected prune", http.StatusInternalServerError)
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
@@ -1593,11 +1586,7 @@ func TestPrepareObservedTxInItemRetriesMissingOutboundTxBeforeTerminalDrop(t *te
 	require.False(t, include)
 	require.Nil(t, prepared)
 	require.Equal(t, 3, validateCalls)
-	require.Equal(t, 1, pruneCalls)
-	require.Equal(t, vaultPubKey.String(), pruneReq.VaultPubKey)
-	require.Equal(t, []string{txHash}, pruneReq.TxHashes)
-	require.False(t, pruneReq.ObservedMinedOnly)
-	require.False(t, pruneReq.TxKeyBackedOnly)
+	require.Zero(t, pruneCalls)
 }
 
 func TestPrepareObservedTxInItemRetriesOutboundTxKeyValidationWhenSidecarUnavailable(t *testing.T) {
