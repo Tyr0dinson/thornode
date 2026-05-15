@@ -531,6 +531,8 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
 	}
 
+	// Cosmos txs pay an explicit fee coin; use MaxGas as that fee and
+	// convert its 1e8 THORChain amount back to the native Cosmos denom.
 	gasCoins := tx.MaxGas.ToCoins()
 	if len(gasCoins) != 1 {
 		err = errors.New("exactly one gas coin must be provided")

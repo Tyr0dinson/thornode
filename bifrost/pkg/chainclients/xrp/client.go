@@ -554,24 +554,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	}
 
 	// gas rate from gas rate units to THORChain decimals
-	gasRate := c.cfg.ChainID.NativeGasToThorchain(cosmos.NewUint(uint64(tx.GasRate)))
-	if gasRate.IsZero() {
-		gasRate = cosmos.OneUint()
-	}
-	// To avoid overpaying for already-queued TxOutItems when changing units,
-	// rather than assuming Transaction Size 1 here,
-	// use the tx.MaxGas instead like GAIA?
-	gasCoin := common.NewCoin(common.XRPAsset, gasRate)
-
-	if !tx.MaxGas.IsEmpty() {
-		maxGasCoins := tx.MaxGas.ToCoins()
-		if len(maxGasCoins) != 1 {
-			return nil, nil, nil, errors.New("exactly one gas coin must be provided")
-		}
-		if !maxGasCoins[0].Asset.Equals(c.GetChain().GetGasAsset()) {
-			return nil, nil, nil, errors.New("gas coin asset must match chain gas asset")
-		}
-		gasCoin = maxGasCoins[0]
+	gasCoin := c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(tx.GasRate)))
+	if gasCoin.Amount.IsZero() {
+		gasCoin.Amount = cosmos.OneUint()
 	}
 
 	feeCurrency, err := fromThorchainToXrp(gasCoin)

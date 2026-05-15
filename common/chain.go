@@ -338,7 +338,7 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 // metadata; it does not describe the precision of the Amount field.
 func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchain(native))
-	coin.Decimals = THORChainDecimals
+	coin.Decimals = c.GetGasAssetDecimal()
 	return coin
 }
 
@@ -351,7 +351,7 @@ func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 // mis-state vault solvency and risk failed broadcasts.
 func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
 	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchainCeil(native))
-	coin.Decimals = THORChainDecimals
+	coin.Decimals = c.GetGasAssetDecimal()
 	return coin
 }
 

@@ -139,7 +139,7 @@ func (s ChainSuite) TestNativeGasToThorCoinCeil(c *C) {
 	c.Assert(DOTChain.NativeGasToThorCoinCeil(cosmos.NewUint(0)).Amount.Uint64(),
 		Equals, uint64(0)) // zero stays zero
 	c.Assert(DOTChain.NativeGasToThorCoinCeil(cosmos.NewUint(100)).Decimals,
-		Equals, int64(THORChainDecimals))
+		Equals, DOTChain.GetGasAssetDecimal())
 
 	// TAO: 1e9 rao per TAO, 1e8 thor units per TAO, so 10 rao = 1 thor unit.
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(10)).Amount.Uint64(),
@@ -153,7 +153,7 @@ func (s ChainSuite) TestNativeGasToThorCoinCeil(c *C) {
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(0)).Amount.Uint64(),
 		Equals, uint64(0))
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(10)).Decimals,
-		Equals, int64(THORChainDecimals))
+		Equals, TAOChain.GetGasAssetDecimal())
 
 	// EVM gas rates are tracked in gwei, which is finer than 1e8 even though
 	// gas asset amounts are normalized to THORChain precision.

@@ -206,7 +206,7 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 }
 
 // TestGetGasEstimateForSolvency verifies SOL keeps the legacy 3x MaxGasLimit
-// breathing room using the scanner's lamport fee rate, converted to THORChain units.
+// breathing room and converts the native lamport fee to THORChain 1e8 units.
 func (s *SolTestSuite) TestGetGasEstimateForSolvency(c *C) {
 	client := &SOLClient{
 		cfg: config.BifrostChainConfiguration{
