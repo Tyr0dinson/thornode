@@ -16,6 +16,7 @@ const (
 	chainnetXMRD26MigrateTxID           = "D26DFB9FA3040AD07D695A4415B2B26A61BD7E4724729BBAD63681FB0A28ECFA"
 	chainnetXMRD26SourceVault           = "cthorpub1zcjduepqg2800hkdq7z8fjp6j386s70wj6j7mz2mclz42pe9crantvlrpr6q0vdrs8"
 	chainnetXMRD26QueuedAmount          = 49981460
+	chainnetXMRD26RepairActivation      = 11000
 )
 
 type chainnetXMRD26MigrateRepairStats struct {
@@ -30,6 +31,9 @@ type chainnetXMRD26MigrateRepairStats struct {
 
 func runChainnetXMRD26MigrateRepairOnce(ctx cosmos.Context, mgr Manager) error {
 	if mgr == nil || mgr.Keeper() == nil {
+		return nil
+	}
+	if ctx.BlockHeight() < chainnetXMRD26RepairActivation {
 		return nil
 	}
 
