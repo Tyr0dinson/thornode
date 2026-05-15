@@ -790,6 +790,14 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	c.Assert(err, IsNil)
 	observedTx := NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight())
 	observedTx.OutHashes = []string{outID.String()}
+	observedTx.TxKeys = []string{"in-tx-key"}
+	observedTx.XmrKeyImages = []*common.XmrKeyImageProof{{
+		TxHash:      tx.ID.String(),
+		OutputIndex: 0,
+		KeyImage:    "in-key-image",
+		ProofC:      "proof-c",
+		ProofS:      "proof-s",
+	}}
 	voter.Add(observedTx, nodeAccount.NodeAddress)
 	s.k.SetObservedTxInVoter(s.ctx, voter)
 
@@ -809,23 +817,30 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	result, err := queryTxResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
 	var newTx struct {
-		openapi.ObservedTx `json:"observed_tx"`
-		KeysignMetrics     types.TssKeysignMetric `json:"keysign_metric,omitempty"`
+		ObservedTx struct {
+			openapi.ObservedTx
+			TxKeys       []string                   `json:"tx_keys"`
+			XmrKeyImages []*common.XmrKeyImageProof `json:"xmr_key_images"`
+		} `json:"observed_tx"`
+		KeysignMetrics types.TssKeysignMetric `json:"keysign_metric,omitempty"`
 	}
 	c.Assert(json.Unmarshal(result, &newTx), IsNil)
 
 	// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
-	c.Assert(newTx.ExternalObservedHeight == nil, Equals, false)
-	c.Assert(*newTx.ExternalObservedHeight <= 0, Equals, false)
-	c.Assert(newTx.ObservedPubKey == nil, Equals, false)
-	c.Assert(newTx.ExternalConfirmationDelayHeight == nil, Equals, false)
-	c.Assert(*newTx.ExternalConfirmationDelayHeight <= 0, Equals, false)
-	c.Assert(newTx.Tx.Id == nil, Equals, false)
-	c.Assert(newTx.Tx.FromAddress == nil, Equals, false)
-	c.Assert(newTx.Tx.ToAddress == nil, Equals, false)
-	c.Assert(newTx.Tx.Chain == nil, Equals, false)
-	c.Assert(len(newTx.Tx.Coins) == 0, Equals, false)
-	c.Assert(newTx.KeysignMetrics.TxKeys, DeepEquals, []string{"tx-key-1", "tx-key-2"})
+	c.Assert(newTx.ObservedTx.ExternalObservedHeight == nil, Equals, false)
+	c.Assert(*newTx.ObservedTx.ExternalObservedHeight <= 0, Equals, false)
+	c.Assert(newTx.ObservedTx.ObservedPubKey == nil, Equals, false)
+	c.Assert(newTx.ObservedTx.ExternalConfirmationDelayHeight == nil, Equals, false)
+	c.Assert(*newTx.ObservedTx.ExternalConfirmationDelayHeight <= 0, Equals, false)
+	c.Assert(newTx.ObservedTx.Tx.Id == nil, Equals, false)
+	c.Assert(newTx.ObservedTx.Tx.FromAddress == nil, Equals, false)
+	c.Assert(newTx.ObservedTx.Tx.ToAddress == nil, Equals, false)
+	c.Assert(newTx.ObservedTx.Tx.Chain == nil, Equals, false)
+	c.Assert(len(newTx.ObservedTx.Tx.Coins) == 0, Equals, false)
+	c.Assert(newTx.ObservedTx.TxKeys, DeepEquals, []string{"in-tx-key"})
+	c.Assert(newTx.ObservedTx.XmrKeyImages, HasLen, 1)
+	c.Assert(newTx.ObservedTx.XmrKeyImages[0].KeyImage, Equals, "in-key-image")
+	c.Assert(newTx.KeysignMetrics.TxKeys, DeepEquals, []string{"in-tx-key", "tx-key-1", "tx-key-2"})
 }
 
 func (s *QuerierSuite) TestQueryKeyGen(c *C) {
@@ -1248,6 +1263,17 @@ func (s *QuerierSuite) TestQueryBalanceModule(c *C) {
 
 func (s *QuerierSuite) TestQueryVault(c *C) {
 	vault := GetRandomVault()
+	vault.PubKeyFrost = GetRandomPubKey()
+	vault.VaultCreationHeightXmr = 12345
+	vault.KeyImagesXmr = []*common.XmrKeyImageRef{{
+		TxHash:      GetRandomTxHash().String(),
+		OutputIndex: 1,
+		KeyImage:    "vault-key-image",
+	}}
+	vault.TxKeysXmr = []*common.XmrTxKeyRef{{
+		TxHash: GetRandomTxHash().String(),
+		TxKeys: []string{"vault-tx-key"},
+	}}
 
 	queryVaultResp, err := s.queryServer.Vault(s.ctx, &types.QueryVaultRequest{
 		PubKey: "ETH",
@@ -1271,6 +1297,12 @@ func (s *QuerierSuite) TestQueryVault(c *C) {
 	c.Assert(vault.Type, Equals, returnVault.Type)
 	c.Assert(vault.Status, Equals, returnVault.Status)
 	c.Assert(vault.BlockHeight, Equals, returnVault.BlockHeight)
+	c.Assert(vault.PubKeyFrost.Equals(returnVault.PubKeyFrost), Equals, true)
+	c.Assert(returnVault.VaultCreationHeightXmr, Equals, int64(12345))
+	c.Assert(returnVault.KeyImagesXmr, HasLen, 1)
+	c.Assert(returnVault.KeyImagesXmr[0].KeyImage, Equals, "vault-key-image")
+	c.Assert(returnVault.TxKeysXmr, HasLen, 1)
+	c.Assert(returnVault.TxKeysXmr[0].TxKeys, DeepEquals, []string{"vault-tx-key"})
 }
 
 func (s *QuerierSuite) TestQueryVersion(c *C) {

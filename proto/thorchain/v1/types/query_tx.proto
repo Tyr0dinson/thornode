@@ -87,6 +87,8 @@ message QueryObservedTx {
     (gogoproto.nullable) = true
   ];
   reserved 12;
+  repeated string tx_keys = 13;
+  repeated common.XmrKeyImageProof xmr_key_images = 14;
 }
 
 // Same as ObservedTxVoter, but changes height (openapi spec)
