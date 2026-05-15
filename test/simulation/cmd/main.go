@@ -48,7 +48,9 @@ const (
 	// starts relaying stable block production from the supernode.
 	tronRPCReadinessTimeout   = 4 * time.Minute
 	solanaRPCReadinessTimeout = 4 * time.Minute
-	zecRPCReadinessTimeout    = 4 * time.Minute
+	// ZEC mocknet can start well below the activation/maturity height needed by
+	// the simulation; give it enough time to mine up to the 500-block bootstrap.
+	zecRPCReadinessTimeout = 10 * time.Minute
 )
 
 var bifrostReadinessEndpoints = []string{
