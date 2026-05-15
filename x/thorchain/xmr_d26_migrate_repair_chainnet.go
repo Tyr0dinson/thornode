@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	chainnetXMRD26MigrateRepairMimirKey = "ChainnetXMRD26MigrateRepair"
-	chainnetXMRD26MigrateTxID           = "D26DFB9FA3040AD07D695A4415B2B26A61BD7E4724729BBAD63681FB0A28ECFA"
-	chainnetXMRD26SourceVault           = "cthorpub1zcjduepqg2800hkdq7z8fjp6j386s70wj6j7mz2mclz42pe9crantvlrpr6q0vdrs8"
-	chainnetXMRD26QueuedAmount          = 49981460
+	chainnetXMRD26MigrateRepairMimirKey  = "ChainnetXMRD26MigrateRepair"
+	chainnetXMRD26PendingCleanupMimirKey = "ChainnetXMRD26MigratePendingCleanup"
+	chainnetXMRD26MigrateTxID            = "D26DFB9FA3040AD07D695A4415B2B26A61BD7E4724729BBAD63681FB0A28ECFA"
+	chainnetXMRD26SourceVault            = "cthorpub1zcjduepqg2800hkdq7z8fjp6j386s70wj6j7mz2mclz42pe9crantvlrpr6q0vdrs8"
+	chainnetXMRD26QueuedAmount           = 49981460
 )
 
 type chainnetXMRD26MigrateRepairStats struct {
@@ -34,6 +35,9 @@ func runChainnetXMRD26MigrateRepairOnce(ctx cosmos.Context, mgr Manager) error {
 	}
 	if ctx.BlockHeight() < chainnetOneShotActivationHeight {
 		return nil
+	}
+	if err := cleanupChainnetXMRD26MigratePendingOnce(ctx, mgr); err != nil {
+		return err
 	}
 
 	doneAt, err := mgr.Keeper().GetMimir(ctx, chainnetXMRD26MigrateRepairMimirKey)
@@ -57,6 +61,33 @@ func runChainnetXMRD26MigrateRepairOnce(ctx cosmos.Context, mgr Manager) error {
 		"txout_items_removed", stats.txOutItemsRemoved,
 		"txout_blocks_touched", stats.txOutBlocksTouched,
 		"in_flight_cleared", stats.inFlightCleared,
+	)
+	return nil
+}
+
+func cleanupChainnetXMRD26MigratePendingOnce(ctx cosmos.Context, mgr Manager) error {
+	doneAt, err := mgr.Keeper().GetMimir(ctx, chainnetXMRD26PendingCleanupMimirKey)
+	if err == nil && doneAt > 0 {
+		return nil
+	}
+
+	sourceVaultPubKey := common.PubKey(chainnetXMRD26SourceVault)
+	sourceVault, err := mgr.Keeper().GetVault(ctx, sourceVaultPubKey)
+	if err != nil {
+		return err
+	}
+	oldPending := append([]int64(nil), sourceVault.PendingTxBlockHeights...)
+	if len(oldPending) > 0 {
+		sourceVault.PendingTxBlockHeights = nil
+		if err := mgr.Keeper().SetVault(ctx, sourceVault); err != nil {
+			return err
+		}
+	}
+	mgr.Keeper().SetMimir(ctx, chainnetXMRD26PendingCleanupMimirKey, ctx.BlockHeight())
+	ctx.Logger().Info(
+		"completed one-time chainnet XMR D26 pending cleanup",
+		"mimir_key", chainnetXMRD26PendingCleanupMimirKey,
+		"old_pending_heights", oldPending,
 	)
 	return nil
 }
