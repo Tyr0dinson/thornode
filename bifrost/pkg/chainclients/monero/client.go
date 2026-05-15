@@ -57,6 +57,8 @@ const (
 	mimirXMRConsolidationReserveBps          = "XMRConsolidationReserveBps"
 	mimirXMRConsolidationChurnLookahead      = "XMRConsolidationChurnLookaheadBlocks"
 	mimirXMRConsolidationMaxRetries          = "XMRConsolidationMaxRetries"
+	mimirChainnetXMRD26MigrateRepair         = "ChainnetXMRD26MigrateRepair"
+	chainnetXMRD26MigrateTxID                = "d26dfb9fa3040ad07d695a4415b2b26a61bd7e4724729bbad63681fb0a28ecfa"
 
 	defaultXMRConsolidationCheckIntervalBlocks = int64(10)
 	defaultXMRConsolidationCooldownBlocks      = int64(30)
@@ -3117,6 +3119,14 @@ func (c *Client) getMimirValue(key string) (int64, bool) {
 	return value, true
 }
 
+func (c *Client) isChainnetRepairedD26Migrate(item *stypes.TxInItem) bool {
+	if item == nil || !isXMRMigrateMemo(item.Memo) || !strings.EqualFold(normalizeTxID(item.Tx), chainnetXMRD26MigrateTxID) {
+		return false
+	}
+	value, ok := c.getMimirValue(mimirChainnetXMRD26MigrateRepair)
+	return ok && value > 0
+}
+
 func (c *Client) getMimirInt64(key string, fallback int64) int64 {
 	value, ok := c.getMimirValue(key)
 	if !ok {
@@ -4060,7 +4070,14 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 		return nil, false, nil
 	}
 	if isInboundToVault && isXMRMigrateMemo(item.Memo) && len(item.TxKeys) == 0 {
-		if txKeys, sourceVaultPubKey, ok := c.registeredXMRTxKeysForMigrateSender(item); ok {
+		if c.isChainnetRepairedD26Migrate(item) && len(item.XmrKeyImages) > 0 {
+			c.logger.Info().
+				Str("tx_hash", normalizeTxID(item.Tx)).
+				Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
+				Int("key_image_count", len(item.XmrKeyImages)).
+				Str("memo", item.Memo).
+				Msg("allowing repaired chainnet XMR D26 migrate key-image finalization without tx-key")
+		} else if txKeys, sourceVaultPubKey, ok := c.registeredXMRTxKeysForMigrateSender(item); ok {
 			c.logger.Info().
 				Str("tx_hash", normalizeTxID(item.Tx)).
 				Str("observed_vault_pub_key", item.ObservedVaultPubKey.String()).
@@ -4167,6 +4184,15 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	}
 	if len(item.XmrKeyImages) > 0 {
 		if isOutboundFromVault && len(item.TxKeys) == 0 {
+			if c.isChainnetRepairedD26Migrate(item) {
+				c.logger.Info().
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+					Str("memo", item.Memo).
+					Int("key_image_count", len(item.XmrKeyImages)).
+					Msg("skipping repaired chainnet XMR D26 outbound finalization without tx-key")
+				return nil, false, nil
+			}
 			c.logger.Info().
 				Str("tx_hash", normalizeTxID(item.Tx)).
 				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
@@ -4185,6 +4211,14 @@ func (c *Client) PrepareObservedTxInItem(item *stypes.TxInItem, finalized bool, 
 	trackedOutboundChange := len(item.XmrKeyImages) > 0 || isXMRConsolidateSelfSendItem(item)
 	if isOutboundFromVault {
 		if len(item.TxKeys) == 0 {
+			if c.isChainnetRepairedD26Migrate(item) {
+				c.logger.Info().
+					Str("tx_hash", normalizeTxID(item.Tx)).
+					Str("vault_pub_key", item.ObservedVaultPubKey.String()).
+					Str("memo", item.Memo).
+					Msg("skipping repaired chainnet XMR D26 outbound finalization without tx-key")
+				return nil, false, nil
+			}
 			c.logger.Info().
 				Str("tx_hash", normalizeTxID(item.Tx)).
 				Str("vault_pub_key", item.ObservedVaultPubKey.String()).
