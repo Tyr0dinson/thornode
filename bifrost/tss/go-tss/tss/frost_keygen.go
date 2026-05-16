@@ -287,6 +287,12 @@ func (c *FrostKeygenCoordinator) Execute(
 			Blame:  blame.NewBlame("local signer is not in active signer set", nil),
 		}
 	}
+	if missing := missingSignersForFullParticipation(activeSet, originalByNormalized); len(missing) > 0 {
+		return FrostKeygenResponse{
+			Status: tcommon.Fail,
+			Blame:  buildBlame("frost keygen requires all signers online", frostDKGRound1, missing),
+		}
+	}
 
 	threshold, err := conversion.GetThreshold(len(activeSet.originalByNormalized))
 	if err != nil {

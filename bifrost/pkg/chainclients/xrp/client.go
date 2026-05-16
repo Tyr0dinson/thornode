@@ -373,7 +373,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	if gasRate.IsZero() {
 		gasRate = cosmos.OneUint()
 	}
-	gasCoin := common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate)))
+	gasCoin := common.NewCoin(common.XRPAsset, gasRate)
 
 	// TODO: Optionally
 	// (to avoid overpaying for already-queued TxOutItems when changing units),

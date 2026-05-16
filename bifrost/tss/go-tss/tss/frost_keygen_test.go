@@ -202,6 +202,36 @@ func TestFrostKeygenRejectsIncompleteParticipantSet(t *testing.T) {
 	}
 }
 
+func TestFrostKeygenExecuteRejectsPartialActiveSet(t *testing.T) {
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	_, _, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet([]string{testPubKeys[0], testPubKeys[1]}, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+
+	sidecar := &mockFrostSidecarKeygen{}
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", make(chan *p2p.Message, 1), time.Second)
+	coord.sidecar = sidecar
+	resp := coord.Execute(FrostKeygenRequest{
+		VaultPubKey:   "vault",
+		SignerPubKeys: members,
+	}, activeSet, nil)
+
+	if resp.Status != tcommon.Fail {
+		t.Fatalf("expected failure for partial active set, got %+v", resp)
+	}
+	if !strings.Contains(resp.Blame.FailReason, "requires all signers online") {
+		t.Fatalf("unexpected failure reason: %q", resp.Blame.FailReason)
+	}
+	if len(sidecar.round1Reqs) != 0 {
+		t.Fatalf("sidecar should not be called for partial active set")
+	}
+}
+
 func TestFrostKeygenJoinThresholdRequiresFullParticipation(t *testing.T) {
 	if got := frostKeygenJoinThreshold(4); got != 3 {
 		t.Fatalf("expected full participation threshold for 4 signers to be 3, got %d", got)

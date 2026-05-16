@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"google.golang.org/protobuf/proto"
@@ -47,12 +48,21 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	if m.QuoTx.Inbound {
+		if len(tx.SpentOutputRefs) > 0 {
+			return cosmos.ErrUnknownRequest("spent output refs are only valid for outbound observed transactions")
+		}
+		if strings.TrimSpace(tx.XmrTxKey) != "" {
+			return cosmos.ErrUnknownRequest("xmr tx key is only valid for outbound observed transactions")
+		}
 		if !tx.Tx.ToAddress.Equals(obAddr) {
 			return cosmos.ErrUnknownRequest("request is not an inbound observed transaction")
 		}
 	} else {
 		if !tx.Tx.FromAddress.Equals(obAddr) {
 			return cosmos.ErrUnknownRequest("request is not an outbound observed transaction")
+		}
+		if tx.Tx.Chain.Equals(common.XMRChain) && strings.TrimSpace(tx.XmrTxKey) == "" {
+			return cosmos.ErrUnknownRequest("xmr outbound observations must include xmr tx key")
 		}
 	}
 	if len(tx.Signers) > 0 {

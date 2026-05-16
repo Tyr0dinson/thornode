@@ -812,8 +812,8 @@ func handleObservedTxOutQuorum(
 			ctx.Logger().Error("fail to save vault", "error", err)
 		}
 	}
-	if len(tx.SpentOutputRefs) > 0 {
-		if err := k.SetXMRSpentOutputRefs(ctx, tx.ObservedPubKey, tx.Tx.ID, tx.SpentOutputRefs, tx.BlockHeight, ctx.BlockHeight()); err != nil {
+	if refTx := consensusXMRSpentOutputRefsTx(voter, activeNodeAccounts); len(refTx.SpentOutputRefs) > 0 {
+		if err := k.SetXMRSpentOutputRefs(ctx, refTx.ObservedPubKey, refTx.Tx.ID, refTx.SpentOutputRefs, refTx.BlockHeight, ctx.BlockHeight()); err != nil {
 			ctx.Logger().Error("fail to save xmr spent output refs", "error", err)
 		}
 	}
@@ -826,6 +826,45 @@ func handleObservedTxOutQuorum(
 	ctx.Logger().Info("tx out processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+func consensusXMRSpentOutputRefsTx(voter ObservedTxVoter, nas NodeAccounts) common.ObservedTx {
+	for _, candidate := range voter.Txs {
+		if !candidate.Tx.Chain.Equals(common.XMRChain) || len(candidate.SpentOutputRefs) == 0 {
+			continue
+		}
+
+		voters := make(map[string]struct{})
+		for _, tx := range voter.Txs {
+			if tx.IsFinal() != candidate.IsFinal() {
+				continue
+			}
+			if !tx.ObservedPubKey.Equals(candidate.ObservedPubKey) {
+				continue
+			}
+			if !tx.Tx.EqualsEx(candidate.Tx) {
+				continue
+			}
+			if !tx.HasEquivalentXMRTxKey(candidate) {
+				continue
+			}
+			if !common.SpentOutputRefsEqual(tx.SpentOutputRefs, candidate.SpentOutputRefs) {
+				continue
+			}
+			for _, signer := range tx.GetSigners() {
+				if !nas.IsNodeKeys(signer) {
+					continue
+				}
+				voters[signer.String()] = struct{}{}
+			}
+		}
+
+		if HasSuperMajority(len(voters), len(nas)) {
+			return candidate
+		}
+	}
+
+	return common.ObservedTx{}
 }
 
 // detectVaultSubFundsClamp inspects coins about to be debited from a vault and
@@ -933,8 +972,13 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 	k := mgr.Keeper()
 	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	searchPeriod := signingTransPeriod
-	if tx.Tx.Chain.Equals(common.XMRChain) {
+	switch {
+	case tx.Tx.Chain.Equals(common.XMRChain):
 		searchPeriod = signingTransPeriod * xmrSigningPeriodMultiplier
+	case isObservedEVMAggregatorOutbound(tx):
+		searchPeriod = signingTransPeriod * evmAggregatorSigningPeriodMultiplier
+	case isObservedEVMTokenOutbound(tx):
+		searchPeriod = signingTransPeriod * evmTokenSigningPeriodMultiplier
 	}
 
 	// Search recent TxOut blocks for matching TxOutItem
@@ -964,8 +1008,9 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 			continue
 		}
 		for _, item := range txOut.TxArray {
-			// Skip if already has an OutHash (already processed)
-			if !item.OutHash.IsEmpty() {
+			// Skip unrelated completed outbounds. The current observed tx may have
+			// already marked its matching TxOutItem before this memo lookup runs.
+			if !item.OutHash.IsEmpty() && !item.OutHash.Equals(tx.Tx.ID) {
 				continue
 			}
 			if !item.Chain.Equals(tx.Tx.Chain) {

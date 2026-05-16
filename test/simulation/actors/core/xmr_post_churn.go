@@ -9,6 +9,7 @@ import (
 	atypes "gitlab.com/thorchain/thornode/v3/api/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -24,9 +25,7 @@ type XMRPostChurnActor struct {
 
 const (
 	xmrPostChurnNewNodesPerChurn = int64(3)
-	// Keep this above the 300s FROST keygen timeout, but low enough that a
-	// missed local keygen gets a retry before the actor deadline.
-	xmrPostChurnChurnRetryInterval = int64(360)
+	xmrPostChurnRetryInterval    = int64(1)
 )
 
 func NewXMRPostChurnActor(rng *rand.Rand) *Actor {
@@ -93,7 +92,17 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	txid, err := a.broadcastMimir(node, accAddr, "NUMBEROFNEWNODESPERCHURN", xmrPostChurnNewNodesPerChurn)
+	txid, err := a.broadcastMimir(node, accAddr, constants.ChurnRetryInterval.String(), xmrPostChurnRetryInterval)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast churn retry interval mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", xmrPostChurnRetryInterval).
+		Str("txid", txid.String()).
+		Msg("broadcasted churn retry interval mimir")
+
+	txid, err = a.broadcastMimir(node, accAddr, constants.NumberOfNewNodesPerChurn.String(), xmrPostChurnNewNodesPerChurn)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast node expansion mimir")
 		return OpResult{Continue: false}
@@ -103,17 +112,7 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		Str("txid", txid.String()).
 		Msg("broadcasted node expansion mimir")
 
-	txid, err = a.broadcastMimir(node, accAddr, "CHURNRETRYINTERVAL", xmrPostChurnChurnRetryInterval)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to broadcast churn retry mimir")
-		return OpResult{Continue: false}
-	}
-	a.Log().Info().
-		Int64("value", xmrPostChurnChurnRetryInterval).
-		Str("txid", txid.String()).
-		Msg("broadcasted churn retry mimir")
-
-	txid, err = a.broadcastMimir(node, accAddr, "HALTCHURNING", 0)
+	txid, err = a.broadcastMimir(node, accAddr, "HaltChurning", 0)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast churn mimir")
 		return OpResult{Continue: false}
@@ -131,13 +130,18 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 	}
 
 	activeNodes := 0
+	statusCounts := map[string]int{}
 	for _, node := range nodes {
+		statusCounts[node.Status]++
 		if node.Status == atypes.NodeStatus_Active.String() {
 			activeNodes++
 		}
 	}
 	if activeNodes <= 1 {
-		a.Log().Info().Msg("waiting for churn to activate additional nodes")
+		a.Log().Info().
+			Int("active_nodes", activeNodes).
+			Interface("node_statuses", statusCounts).
+			Msg("waiting for churn to activate additional nodes")
 		return OpResult{Continue: false}
 	}
 

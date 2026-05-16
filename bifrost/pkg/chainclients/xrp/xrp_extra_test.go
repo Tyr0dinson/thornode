@@ -985,6 +985,8 @@ func (s *XrpTestSuite) TestSignTxFullPath(c *C) {
 	c.Check(checkpoint, IsNil) // nil checkpoint since we got txIn
 	c.Check(txIn, NotNil)
 	c.Check(txIn.Memo, Equals, "OUT:txhash123")
+	c.Assert(txIn.Gas, HasLen, 1)
+	c.Check(txIn.Gas[0].Amount.Equal(common.XRPChain.NativeGasToThorchain(cosmos.NewUint(uint64(txOut.GasRate)))), Equals, true)
 }
 
 // Test SignTx with checkpoint (deserialized metadata)

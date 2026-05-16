@@ -204,6 +204,19 @@ func (s ObservedTxSuite) TestEqualsConsensus_OneRefDiffers(c *C) {
 	c.Assert(tx1.HasEquivalentSpentOutputRefs(tx2), Equals, false)
 }
 
+func (s ObservedTxSuite) TestEqualsConsensus_MissingRefsDoesNotSplitConsensus(c *C) {
+	ref := makeRef(testRefTxHashA, 0, testKeyImageA, testSpendTxHash)
+	txWithRefs := makeXMRObservedTx(c, []OutputRef{ref})
+	txWithoutRefs := makeXMRObservedTx(c, nil)
+	txWithRefs.XmrTxKey = testXMRTxKey
+	txWithoutRefs.XmrTxKey = testXMRTxKey
+
+	c.Assert(txWithRefs.Equals(txWithoutRefs), Equals, false)
+	c.Assert(txWithRefs.EqualsConsensus(txWithoutRefs), Equals, true)
+	c.Assert(txWithRefs.EqualsConsensusIgnoreGas(txWithoutRefs), Equals, true)
+	c.Assert(txWithRefs.HasEquivalentSpentOutputRefs(txWithoutRefs), Equals, true)
+}
+
 func (s ObservedTxSuite) TestEqualsConsensus_OneXMRTxKeyDiffers(c *C) {
 	tx1 := makeXMRObservedTx(c, nil)
 	tx2 := makeXMRObservedTx(c, nil)

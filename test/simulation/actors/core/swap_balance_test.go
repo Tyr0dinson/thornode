@@ -184,6 +184,38 @@ func TestAcquireUserForAmountSkipsImpossibleStrictQuotedAmount(t *testing.T) {
 	}
 }
 
+func TestAcquireUserForAmountSkipsImpossibleStrictQuotedAmountWithLockedUsers(t *testing.T) {
+	t.Parallel()
+
+	from, err := common.NewAsset("ETH.TKN-0X17AB05351FC94A1A67BF3F56DDBB941AE6C63E25")
+	if err != nil {
+		t.Fatalf("failed to parse token asset: %v", err)
+	}
+
+	actor := newSwapBalanceTestActor(from, common.BTCAsset, 9, 10)
+
+	first := newTestSwapUser(t, "first", from, sdkmath.NewUint(120), common.BTCAsset, sdkmath.ZeroUint())
+	second := newTestSwapUser(t, "second", from, sdkmath.NewUint(140), common.BTCAsset, sdkmath.ZeroUint())
+	if !second.Acquire() {
+		t.Fatal("expected to lock second user")
+	}
+	t.Cleanup(second.Release)
+
+	result := actor.acquireUserForAmount(&simtypes.OpConfig{Users: []*simtypes.User{first, second}}, sdkmath.NewUint(150), false)
+	if result.Continue || result.Error != nil || !result.Finish {
+		t.Fatalf("expected impossible acquisition to finish even with locked insufficient users, got %+v", result)
+	}
+	if actor.user != nil {
+		t.Fatalf("expected no user to be selected")
+	}
+	if first.IsLocked() {
+		t.Fatalf("expected unlocked insufficient user to be released")
+	}
+	if !second.IsLocked() {
+		t.Fatalf("expected externally locked user to remain locked")
+	}
+}
+
 func newSwapBalanceTestActor(from, to common.Asset, seed1, seed2 uint64) *SwapActor {
 	//nolint:gosec // deterministic simulation test RNG, not security-sensitive randomness.
 	rng := rand.New(rand.NewPCG(seed1, seed2))
@@ -250,6 +282,35 @@ func TestOutboundAmountPlusGasPrefersActualGas(t *testing.T) {
 	want := sdkmath.NewUint(83_844_446)
 	if !got.Equal(want) {
 		t.Fatalf("expected outbound amount plus gas %s, got %s", want, got)
+	}
+}
+
+func TestOutboundAmountPlusGasIgnoresDifferentGasAsset(t *testing.T) {
+	t.Parallel()
+
+	out := openapi.Tx{
+		Coins: []openapi.Coin{{
+			Asset:  "BASE.TKN-0X17AB05351FC94A1A67BF3F56DDBB941AE6C63E25",
+			Amount: "9185458",
+		}},
+		Gas: []openapi.Coin{{
+			Asset:  common.BaseETHAsset.String(),
+			Amount: "10799280",
+		}},
+	}
+
+	got, err := outboundAmountPlusGas(out, openapi.TxOutItem{}, common.Asset{
+		Chain:  common.BASEChain,
+		Symbol: common.Symbol("TKN-0X17AB05351FC94A1A67BF3F56DDBB941AE6C63E25"),
+		Ticker: "TKN",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	want := sdkmath.NewUint(9_185_458)
+	if !got.Equal(want) {
+		t.Fatalf("expected token amount only %s, got %s", want, got)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // ValidatorMgr is to manage a list of validators , and rotate them
@@ -136,6 +137,66 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	return vm.churn(ctx)
 }
 
+func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortypes.KeygenType) (bool, error) {
+	lookback := keygenResultValidityBlocks(ctx, vm.k, keygenType)
+	startHeight := ctx.BlockHeight() - lookback
+	if startHeight < genesisBlockHeight {
+		startHeight = genesisBlockHeight
+	}
+
+	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return false, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
+	if err != nil {
+		return false, fmt.Errorf("fail to get init vaults: %w", err)
+	}
+	readyVaults := append(append(Vaults(nil), activeVaults...), initVaults...)
+
+	for height := ctx.BlockHeight(); height >= startHeight; height-- {
+		keygenBlock, err := vm.k.GetKeygenBlock(ctx, height)
+		if err != nil {
+			return false, fmt.Errorf("fail to get keygen block: %w", err)
+		}
+		for _, keygen := range keygenBlock.Keygens {
+			if keygen.Type != keygenType {
+				continue
+			}
+			// At the retry boundary a replacement keygen may be scheduled for the
+			// current height while reports for the previous keygen are still valid
+			// through this block. Treat only strictly younger keygens as pending.
+			if ctx.BlockHeight()-height >= keygenResultValidityBlocks(ctx, vm.k, keygen.Type) {
+				continue
+			}
+			if !keygenResolvedByVaults(keygen, readyVaults) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func keygenResolvedByVaults(keygen Keygen, vaults Vaults) bool {
+	members := keygen.GetMembers()
+	for _, vault := range vaults {
+		if !vault.MembershipEquals(members) {
+			continue
+		}
+		switch keygen.Type {
+		case XMRMonovaultKeygen:
+			if vault.HasChain(common.XMRChain) {
+				return true
+			}
+		case AsgardKeygen:
+			if !vault.HasChain(common.XMRChain) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (vm *ValidatorMgr) churn(ctx cosmos.Context) error {
 	cacheCtx, commit := ctx.CacheContext()
 	if err := vm.churnInner(cacheCtx); err != nil {
@@ -194,9 +255,17 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	}
 	if ok {
 		splitGroups := vm.splitNext(ctx, next, asgardSize)
-		for _, nodeAccSet := range splitGroups {
-			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
-				return err
+		pendingAsgard, err := vm.hasPendingKeygen(ctx, AsgardKeygen)
+		if err != nil {
+			return err
+		}
+		if pendingAsgard {
+			ctx.Logger().Info("Skipping regular Asgard keygen due to pending keygen")
+		} else {
+			for _, nodeAccSet := range splitGroups {
+				if triggerErr := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); triggerErr != nil {
+					return triggerErr
+				}
 			}
 		}
 		allVaults, err := vm.k.GetAsgardVaults(ctx)
@@ -204,14 +273,22 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 			return err
 		}
 		if shouldMaintainXMRMonovault(allVaults, len(next)) {
-			// Keep the dedicated XMR monovault in the same keygen block as the
-			// regular churn so both vault families are ready together at rotation
-			// time. Once an XMR monovault already exists, later churns still need a
-			// replacement monovault whenever the validator membership changes.
-			// triggerKeygen's membership-aware dedupe keeps same-membership rounds
-			// from being rescheduled.
-			if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
+			pendingXMR, err := vm.hasPendingKeygen(ctx, XMRMonovaultKeygen)
+			if err != nil {
 				return err
+			}
+			if pendingXMR {
+				ctx.Logger().Info("Skipping XMR FROST keygen due to pending keygen")
+			} else {
+				// Keep the dedicated XMR monovault in the same keygen block as the
+				// regular churn so both vault families are ready together at rotation
+				// time. Once an XMR monovault already exists, later churns still need a
+				// replacement monovault whenever the validator membership changes.
+				// triggerKeygen's membership-aware dedupe keeps same-membership rounds
+				// from being rescheduled.
+				if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -1581,5 +1658,60 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 		}
 	}
 
+	if !rotation {
+		needsKeygen, keygenErr := vm.regularVaultMembershipNeedsKeygen(ctx, active)
+		if keygenErr != nil {
+			return nil, false, keygenErr
+		}
+		rotation = needsKeygen
+	}
+
 	return active, rotation, nil
+}
+
+func (vm *ValidatorMgr) regularVaultMembershipNeedsKeygen(ctx cosmos.Context, active NodeAccounts) (bool, error) {
+	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
+	if asgardSize <= 0 {
+		return false, nil
+	}
+	expectedGroups := vm.splitNext(ctx, active, asgardSize)
+	if len(expectedGroups) == 0 {
+		return false, nil
+	}
+
+	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return false, fmt.Errorf("fail to get active asgards: %w", err)
+	}
+	if len(activeVaults) == 0 {
+		return false, nil
+	}
+	regularVaults := make(Vaults, 0, len(activeVaults))
+	for _, vault := range activeVaults {
+		if vault.HasChain(common.XMRChain) {
+			continue
+		}
+		regularVaults = append(regularVaults, vault)
+	}
+	if len(regularVaults) != len(expectedGroups) {
+		return true, nil
+	}
+
+	for _, group := range expectedGroups {
+		members := make(common.PubKeys, 0, len(group))
+		for _, na := range group {
+			members = append(members, na.PubKeySet.Secp256k1)
+		}
+		found := false
+		for _, vault := range regularVaults {
+			if vault.MembershipEquals(members) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return true, nil
+		}
+	}
+	return false, nil
 }

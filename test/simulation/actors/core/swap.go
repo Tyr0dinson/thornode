@@ -53,6 +53,13 @@ var (
 	xmrSwapSlot                   = make(chan struct{}, 1)
 )
 
+func swapQuoteRecommendedMinAttempts(from, to common.Asset) int {
+	if from.Chain.Equals(common.XMRChain) || to.Chain.Equals(common.XMRChain) {
+		return 64
+	}
+	return 4
+}
+
 func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
 	a := &SwapActor{
 		Actor: *NewActor(fmt.Sprintf("Swap %s => %s", from, to), rng),
@@ -121,14 +128,18 @@ func retryAmountAtRecommendedMin(currentAmount, minAmount sdkmath.Uint) sdkmath.
 	return base.Add(buffer)
 }
 
-func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount sdkmath.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
+func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount, maxAmount sdkmath.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
 	currentAmount := amount
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < swapQuoteRecommendedMinAttempts(from, to); attempt++ {
 		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, extended)
 		if err != nil {
 			minAmount, ok := getRecommendedMinAmountInFromError(err)
 			if ok {
-				currentAmount = retryAmountAtRecommendedMin(currentAmount, minAmount)
+				nextAmount := retryAmountAtRecommendedMin(currentAmount, minAmount)
+				if !maxAmount.IsZero() && nextAmount.GT(maxAmount) {
+					return openapi.QuoteSwapResponse{}, nextAmount, fmt.Errorf("recommended minimum swap amount exceeds spendable balance")
+				}
+				currentAmount = nextAmount
 				continue
 			}
 			return openapi.QuoteSwapResponse{}, currentAmount, err
@@ -136,6 +147,9 @@ func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount sdkmath.Uint, 
 
 		minAmount, ok := getRecommendedMinAmountIn(quote)
 		if ok && currentAmount.LT(minAmount) {
+			if !maxAmount.IsZero() && minAmount.GT(maxAmount) {
+				return openapi.QuoteSwapResponse{}, minAmount, fmt.Errorf("recommended minimum swap amount exceeds spendable balance")
+			}
 			currentAmount = minAmount
 			continue
 		}
@@ -247,16 +261,10 @@ func outboundAmountPlusGas(out openapi.Tx, action openapi.TxOutItem, to common.A
 	}
 
 	for _, gasCoin := range gasCoins {
-		if gasCoin.Asset == to.String() {
-			outAmountPlusGas = outAmountPlusGas.Add(cosmos.NewUintFromString(gasCoin.Amount))
+		if gasCoin.Asset != to.String() {
 			continue
 		}
-
-		gasAssetValue, err := thornode.ConvertAssetAmount(gasCoin, to.String())
-		if err != nil {
-			return sdkmath.ZeroUint(), err
-		}
-		outAmountPlusGas = outAmountPlusGas.Add(gasAssetValue)
+		outAmountPlusGas = outAmountPlusGas.Add(cosmos.NewUintFromString(gasCoin.Amount))
 	}
 
 	return outAmountPlusGas, nil
@@ -320,6 +328,20 @@ func (a *SwapActor) releaseXMRSwapSlot() {
 	a.Log().Info().Msg("released XMR swap slot")
 }
 
+func (a *SwapActor) userSpendableBalance(user *User) (sdkmath.Uint, error) {
+	client, ok := user.ChainClients[a.from.Chain]
+	if !ok {
+		return sdkmath.ZeroUint(), fmt.Errorf("missing chain client for %s", a.from.Chain)
+	}
+
+	fromAcct, err := client.GetAccount(nil)
+	if err != nil {
+		return sdkmath.ZeroUint(), err
+	}
+	fromBalance := accountAssetAmount(fromAcct, a.from)
+	return swapSpendableBalance(a.from, fromBalance), nil
+}
+
 func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.Uint, allowPartial bool) OpResult {
 	a.swapAmount = targetAmount
 	a.fromBalance = sdkmath.ZeroUint()
@@ -333,11 +355,25 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 	availableUsers := 0
 	insufficientBalanceUsers := 0
 	accountErrorUsers := 0
+	strictReadableUsers := 0
+	strictInsufficientUsers := 0
 
 	for _, user := range config.Users {
 		// skip users already being used
 		if !user.Acquire() {
 			lockedUsers++
+			if !allowPartial {
+				spendableBalance, err := a.userSpendableBalance(user)
+				if err != nil {
+					a.Log().Error().Err(err).Msg("failed to get locked user from account")
+					accountErrorUsers++
+					continue
+				}
+				strictReadableUsers++
+				if spendableBalance.LT(targetAmount) {
+					strictInsufficientUsers++
+				}
+			}
 			continue
 		}
 		availableUsers++
@@ -360,6 +396,12 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 		fromBalance := accountAssetAmount(fromAcct, a.from)
 		spendableBalance := swapSpendableBalance(a.from, fromBalance)
 		candidateAmount := swapAmountForBalance(a.from, targetAmount, fromBalance)
+		if !allowPartial {
+			strictReadableUsers++
+			if spendableBalance.LT(targetAmount) {
+				strictInsufficientUsers++
+			}
+		}
 		if candidateAmount.IsZero() {
 			a.Log().Error().Msg("user has insufficient from balance")
 			insufficientBalanceUsers++
@@ -442,9 +484,11 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 		}
 	}
 
-	if !allowPartial && availableUsers > 0 && lockedUsers == 0 && accountErrorUsers == 0 && insufficientBalanceUsers == availableUsers {
+	if !allowPartial && strictReadableUsers > 0 && accountErrorUsers == 0 && strictInsufficientUsers == strictReadableUsers {
 		a.Log().Info().
 			Int("available_users", availableUsers).
+			Int("locked_users", lockedUsers).
+			Int("strict_readable_users", strictReadableUsers).
 			Stringer("target_amount", targetAmount).
 			Msg("skipping swap because required amount exceeds every available user balance")
 		return OpResult{
@@ -485,7 +529,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 			return openapi.QuoteSwapResponse{}, result
 		}
 
-		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.from.Chain.IsUTXO())
 		if err != nil {
 			if quoteAmount.GT(a.fromBalance) {
 				a.Log().Info().

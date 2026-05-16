@@ -158,7 +158,7 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if !m.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
 		return false
 	}
-	if !m.HasEquivalentSpentOutputRefs(tx2) {
+	if !spentOutputRefsEqual(m.SpentOutputRefs, tx2.SpentOutputRefs) {
 		return false
 	}
 	if !m.HasEquivalentXMRTxKey(tx2) {
@@ -169,6 +169,13 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 
 func (m ObservedTx) HasEquivalentSpentOutputRefs(tx2 ObservedTx) bool {
 	if !m.Tx.Chain.Equals(XMRChain) && !tx2.Tx.Chain.Equals(XMRChain) {
+		return true
+	}
+	// Spent-output refs are supporting XMR metadata. Signers can provide them,
+	// while non-signing observers may only have the tx key needed to validate
+	// the outbound. Do not split consensus when one side lacks refs; still reject
+	// conflicting non-empty ref sets.
+	if len(m.SpentOutputRefs) == 0 || len(tx2.SpentOutputRefs) == 0 {
 		return true
 	}
 	return spentOutputRefsEqual(m.SpentOutputRefs, tx2.SpentOutputRefs)

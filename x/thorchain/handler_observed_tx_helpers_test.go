@@ -631,6 +631,48 @@ func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundSingleMat
 	c.Assert(result, Equals, item.OriginalMemo)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundMatchesCurrentOutHash(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 300)
+
+	vaultPubKey := GetRandomPubKey()
+	observedTxID := GetRandomTxHash()
+	inHash := GetRandomTxHash()
+
+	item := TxOutItem{
+		Chain:        common.ETHChain,
+		ToAddress:    GetRandomETHAddress(),
+		VaultPubKey:  vaultPubKey,
+		Coin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		Memo:         "",
+		OriginalMemo: "OUT:" + inHash.String(),
+		InHash:       inHash,
+		GasRate:      100,
+		MaxGas:       common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+		OutHash:      observedTxID,
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	txOut := NewTxOut(100)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:        observedTxID,
+			Chain:     common.ETHChain,
+			ToAddress: item.ToAddress,
+			Coins:     common.Coins{item.Coin},
+			Memo:      "",
+		},
+		ObservedPubKey: vaultPubKey,
+	}
+
+	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
+	c.Assert(result, Equals, item.OriginalMemo)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExtendedXMRWindow(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
@@ -668,6 +710,47 @@ func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExten
 			Memo:      "",
 		},
 		ObservedPubKey: vaultPubKeyFrost,
+	}
+
+	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
+	c.Assert(result, Equals, item.OriginalMemo)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExtendedEVMTokenWindow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+
+	vaultPubKey := GetRandomPubKey()
+	inHash, _ := common.NewTxID("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+	tokenAsset, err := common.NewAsset("ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306")
+	c.Assert(err, IsNil)
+
+	item := TxOutItem{
+		Chain:        common.ETHChain,
+		ToAddress:    GetRandomETHAddress(),
+		VaultPubKey:  vaultPubKey,
+		Coin:         common.NewCoin(tokenAsset, cosmos.NewUint(1000000)),
+		Memo:         "OUT:" + inHash.String(),
+		OriginalMemo: "SWAP:" + tokenAsset.String() + ":0x1234567890123456789012345678901234567890",
+		InHash:       inHash,
+		GasRate:      100,
+		MaxGas:       common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	txOut := NewTxOut(75)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			Chain:     common.ETHChain,
+			ToAddress: item.ToAddress,
+			Coins:     common.Coins{item.Coin},
+			Memo:      "",
+		},
+		ObservedPubKey: vaultPubKey,
 	}
 
 	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)

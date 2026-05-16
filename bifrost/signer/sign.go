@@ -77,6 +77,11 @@ type pendingKeygenBroadcast struct {
 	observedMoneroHeight int64
 }
 
+type keygenRequestResult struct {
+	item pendingKeygenBroadcast
+	ok   bool
+}
+
 type keygenBackups struct {
 	keyshares      []byte
 	keysharesEddsa []byte
@@ -87,6 +92,8 @@ var (
 	encryptKeysharesFn    = tss.EncryptKeyshares
 	encryptRawKeysharesFn = tss.EncryptRawKeyshares
 )
+
+const secp256k1VerificationSignatureTimeout = 30 * time.Second
 
 type vaultLocker interface {
 	GetVaultLock(vaultPubKey string) *sync.Mutex
@@ -237,7 +244,14 @@ func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
 	// Monero outbounds need sign-time observation even when global auto-observe is disabled.
 	// The chain scanner can later see the mined tx as an incoming change output, which is
 	// insufficient to attribute the scheduled outbound on THORChain.
-	return s.cfg.Signer.AutoObserve || tx.Chain.Equals(common.XMRChain)
+	if tx.Chain.Equals(common.XMRChain) {
+		return true
+	}
+
+	// Memoless outbounds are intentionally broadcast without the canonical memo on-chain.
+	// The signer still has OriginalMemo, so submit the observation directly instead of
+	// waiting for a scanner observation that cannot reconstruct the inbound linkage.
+	return s.cfg.Signer.AutoObserve || (tx.Memo == "" && tx.OriginalMemo != "")
 }
 
 // signTransactions - looks for work to do by getting a list of all unsigned
@@ -436,118 +450,146 @@ func singleKeygenBlock(height int64, keygen ttypes.Keygen) ttypes.KeygenBlock {
 
 func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 	s.logger.Info().Interface("keygenBlock", keygenBlock).Msg("processing keygen block")
-	pendingBroadcasts := make([]pendingKeygenBroadcast, 0, len(keygenBlock.Keygens))
 
-	// NOTE: in practice there is only one keygen in the keygen block
+	results := make(chan keygenRequestResult, len(keygenBlock.Keygens))
+	var wg sync.WaitGroup
+	var regularKeygenMu sync.Mutex
 	for _, keygenReq := range keygenBlock.Keygens {
-		keygenStart := time.Now()
-		keygenTime := time.Since(keygenStart).Milliseconds()
-		keygenChains := s.keygenChainsForType(keygenReq.Type)
-		var pubKey common.PubKeySet
-		var blame []ttypes.Blame
-		var frostPubKey common.PubKey
-		var frostKeyshareHex string
-		var observedMoneroHeight int64
-		var err error
-		var secp256k1Sig []byte
+		keygenReq := keygenReq
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if keygenReq.Type != ttypes.KeygenType_XMRMonovaultKeygen {
+				// go-tss keygen state is shared by regular Asgard keygens. Keep those
+				// serialized while allowing the independent XMR/FROST sidecar keygen
+				// to run in parallel with them.
+				regularKeygenMu.Lock()
+				defer regularKeygenMu.Unlock()
+			}
+			results <- s.processKeygenRequest(keygenBlock.Height, keygenReq)
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
-		switch keygenReq.Type {
-		case ttypes.KeygenType_XMRMonovaultKeygen:
-			pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
-				keygenChains,
-				keygenReq.GetMembers().Strings(),
-				keygenBlock.Height,
-				common.EmptyPubKey,
-				common.EmptyPubKey,
-			)
-			if err != nil {
-				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
-				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("xmr monovault keygen hooks failed")
-				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-					continue
-				}
-				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after xmr monovault keygen failure")
-				continue
-			}
-			if pubKey.Ed25519.IsEmpty() {
-				pubKey.Ed25519 = frostPubKey
-			}
-			if frostPubKey.IsEmpty() {
-				frostPubKey = pubKey.Ed25519
-			}
-			pubKey.Secp256k1 = frostPubKey
-		default:
-			pubKey, blame, err = s.tssKeygen.GenerateNewKey(keygenBlock.Height, keygenReq.GetMembers())
-			if len(blame) > 0 {
-				for _, b := range blame {
-					s.logger.Error().
-						Str("reason", b.FailReason).
-						Interface("nodes", b.BlameNodes).
-						Msg("keygen blame")
-				}
-			}
-			if err != nil {
-				s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
-				s.logger.Error().Err(err).Msg("fail to generate new pubkey")
-			}
-
-			// re-enqueue the keygen block to retry if we failed to generate a key
-			if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-					continue
-				}
-				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
-				continue
-			}
-
-			// Give chain clients with custom keygen logic a chance to initialize chain-specific
-			// signer state (for example Monero multisig address mapping) before keygen is finalized.
-			pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
-				keygenChains,
-				keygenReq.GetMembers().Strings(),
-				keygenBlock.Height,
-				pubKey.Secp256k1,
-				pubKey.Ed25519,
-			)
-			if err != nil {
-				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
-				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
-				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-					continue
-				}
-				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
-				continue
-			}
-
-			// generate a verification signature to ensure we can sign with the new key
-			secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1)
-		}
-
-		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-			if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-				continue
-			}
-			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after empty keygen result")
+	for result := range results {
+		if !result.ok {
 			continue
 		}
+		s.flushPendingKeygenBroadcasts([]pendingKeygenBroadcast{result.item})
+	}
+}
 
-		pendingBroadcasts = append(pendingBroadcasts, pendingKeygenBroadcast{
-			height:               keygenBlock.Height,
+func (s *Signer) processKeygenRequest(height int64, keygenReq ttypes.Keygen) keygenRequestResult {
+	keygenStart := time.Now()
+	keygenChains := s.keygenChainsForType(keygenReq.Type)
+	var pubKey common.PubKeySet
+	var blame []ttypes.Blame
+	var frostPubKey common.PubKey
+	var frostKeyshareHex string
+	var observedMoneroHeight int64
+	var err error
+	var secp256k1Sig []byte
+
+	switch keygenReq.Type {
+	case ttypes.KeygenType_XMRMonovaultKeygen:
+		pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
+			keygenChains,
+			keygenReq.GetMembers().Strings(),
+			height,
+			common.EmptyPubKey,
+			common.EmptyPubKey,
+		)
+		if err != nil {
+			s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
+			s.logger.Error().Err(err).Interface("keygen", keygenReq).Msg("xmr keygen hooks failed")
+			if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
+				return keygenRequestResult{}
+			}
+			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after xmr keygen failure")
+			return keygenRequestResult{}
+		}
+		if pubKey.Ed25519.IsEmpty() {
+			pubKey.Ed25519 = frostPubKey
+		}
+		if frostPubKey.IsEmpty() {
+			frostPubKey = pubKey.Ed25519
+		}
+		pubKey.Secp256k1 = frostPubKey
+	default:
+		pubKey, blame, err = s.tssKeygen.GenerateNewKey(height, keygenReq.GetMembers())
+		if len(blame) > 0 {
+			for _, b := range blame {
+				s.logger.Error().
+					Str("reason", b.FailReason).
+					Interface("nodes", b.BlameNodes).
+					Msg("keygen blame")
+			}
+		}
+		if err != nil {
+			s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
+			s.logger.Error().Err(err).Msg("fail to generate new pubkey")
+		}
+
+		// re-enqueue the keygen block to retry if we failed to generate a key
+		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+			if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
+				return keygenRequestResult{}
+			}
+			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
+			return keygenRequestResult{}
+		}
+
+		// Give chain clients with custom keygen logic a chance to initialize chain-specific
+		// signer state (for example Monero multisig address mapping) before keygen is finalized.
+		pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
+			keygenChains,
+			keygenReq.GetMembers().Strings(),
+			height,
+			pubKey.Secp256k1,
+			pubKey.Ed25519,
+		)
+		if err != nil {
+			s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
+			s.logger.Error().Err(err).Interface("keygen", keygenReq).Msg("custom keygen hooks failed")
+			if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
+				return keygenRequestResult{}
+			}
+			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
+			return keygenRequestResult{}
+		}
+
+		// generate a verification signature to ensure we can sign with the new key
+		secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1)
+	}
+
+	if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+		if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
+			return keygenRequestResult{}
+		}
+		s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after empty keygen result")
+		return keygenRequestResult{}
+	}
+
+	return keygenRequestResult{
+		ok: true,
+		item: pendingKeygenBroadcast{
+			height:               height,
 			poolPk:               pubKey.Secp256k1,
 			secp256k1Signature:   secp256k1Sig,
 			blame:                blame,
 			input:                keygenReq.GetMembers(),
 			keygenType:           keygenReq.Type,
 			chains:               keygenChains,
-			keygenTime:           keygenTime,
+			keygenTime:           time.Since(keygenStart).Milliseconds(),
 			poolPubKeyEddsa:      pubKey.Ed25519,
 			poolPubKeyFrost:      frostPubKey,
 			frostKeyshareHex:     frostKeyshareHex,
 			observedMoneroHeight: observedMoneroHeight,
-		})
+		},
 	}
-
-	s.flushPendingKeygenBroadcasts(pendingBroadcasts)
 }
 
 func (s *Signer) flushPendingKeygenBroadcasts(pending []pendingKeygenBroadcast) {
@@ -555,38 +597,41 @@ func (s *Signer) flushPendingKeygenBroadcasts(pending []pendingKeygenBroadcast) 
 		return
 	}
 
-	msgs := make([]sdktypes.Msg, len(pending))
+	type buildResult struct {
+		index int
+		msg   sdktypes.Msg
+		err   error
+	}
+
+	results := make(chan buildResult, len(pending))
 	for i, item := range pending {
-		// Keep the final THORChain submit batched per block, but build the
-		// individual keygen messages in-process one at a time. In practice there
-		// are at most two messages here (regular Asgard + XMR monovault), and the
-		// real backup/encryption work inside buildKeygenMsg has shown signs of
-		// wedging some nodes when both builders run concurrently.
-		msg, err := s.buildKeygenMsg(item.height, item.poolPk, item.secp256k1Signature, item.blame, item.input, item.keygenType, item.chains, item.keygenTime, item.poolPubKeyEddsa, item.poolPubKeyFrost, item.frostKeyshareHex, item.observedMoneroHeight)
+		i, item := i, item
+		go func() {
+			msg, err := s.buildKeygenMsg(item.height, item.poolPk, item.secp256k1Signature, item.blame, item.input, item.keygenType, item.chains, item.keygenTime, item.poolPubKeyEddsa, item.poolPubKeyFrost, item.frostKeyshareHex, item.observedMoneroHeight)
+			results <- buildResult{index: i, msg: msg, err: err}
+		}()
+	}
+
+	for range pending {
+		result := <-results
+		item := pending[result.index]
+		if result.err != nil {
+			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
+			s.logger.Error().Err(result.err).Str("keygen_type", item.keygenType.String()).Msg("fail to build keygen")
+			continue
+		}
+		txID, err := s.broadcastKeygenMsgs(item.height, result.msg)
 		if err != nil {
 			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
-			s.logger.Error().Err(err).Str("keygen_type", item.keygenType.String()).Msg("fail to build keygen")
-			return
+			s.logger.Error().Err(err).Str("keygen_type", item.keygenType.String()).Msg("fail to broadcast keygen")
+			continue
 		}
-		msgs[i] = msg
-	}
-
-	txID, err := s.broadcastKeygenMsgs(pending[0].height, msgs...)
-	if err != nil {
-		s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
-		s.logger.Error().Err(err).Msg("fail to broadcast keygen")
-		return
-	}
-
-	for _, item := range pending {
 		s.logger.Info().
 			Stringer("txid", txID).
 			Int64("block", item.height).
 			Str("keygen_type", item.keygenType.String()).
 			Msg("sent keygen tx to thorchain")
 
-		// Broadcast all keygen messages for the block together so the XMR
-		// monovault vote cannot be stranded behind a separate THORChain tx path.
 		if !item.poolPk.IsEmpty() {
 			algo := common.SigningAlgoSecp256k1
 			if item.keygenType == ttypes.KeygenType_XMRMonovaultKeygen {
@@ -699,6 +744,27 @@ func (s *Signer) runCustomKeygenHooks(
 // signature will be included in the TssPool message if successful, and verified by
 // THORNode before the keygen is accepted.
 func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
+	type verificationResult struct {
+		sig []byte
+	}
+	resultCh := make(chan verificationResult, 1)
+	go func() {
+		resultCh <- verificationResult{sig: s.secp256k1VerificationSignatureSync(pk)}
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result.sig
+	case <-time.After(secp256k1VerificationSignatureTimeout):
+		s.logger.Warn().
+			Stringer("pubkey", pk).
+			Stringer("timeout", secp256k1VerificationSignatureTimeout).
+			Msg("timed out generating optional secp256k1 keygen check signature")
+		return nil
+	}
+}
+
+func (s *Signer) secp256k1VerificationSignatureSync(pk common.PubKey) []byte {
 	// create keysign instance
 	ks, err := tss.NewKeySign(s.tssServer, s.thorchainBridge)
 	if err != nil {

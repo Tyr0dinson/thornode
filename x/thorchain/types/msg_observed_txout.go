@@ -52,9 +52,6 @@ func (m *MsgObservedTxOut) ValidateBasic() error {
 		if tx.Tx.Chain.Equals(common.XMRChain) && strings.TrimSpace(tx.XmrTxKey) == "" {
 			return cosmos.ErrUnknownRequest("xmr outbound observations must include xmr tx key")
 		}
-		if tx.Tx.Chain.Equals(common.XMRChain) && len(tx.SpentOutputRefs) == 0 {
-			return cosmos.ErrUnknownRequest("xmr outbound observations must include spent output refs")
-		}
 		if len(tx.Signers) > 0 {
 			return cosmos.ErrUnknownRequest("signers must be empty")
 		}

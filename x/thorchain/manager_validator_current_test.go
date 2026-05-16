@@ -852,6 +852,50 @@ func (vts *ValidatorMgrTestSuite) TestFindNextVaultNodeAccountsBFT(c *C) {
 	c.Assert(nasAfter, HasLen, 4, Commentf("%d", len(nasAfter)))
 }
 
+func (vts *ValidatorMgrTestSuite) TestRegularVaultMembershipNeedsKeygenWhenActiveVaultMembershipStale(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	active := make(NodeAccounts, 0, 3)
+	expectedMembers := make(common.PubKeys, 0, 3)
+	for i := 0; i < 3; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		active = append(active, na)
+		expectedMembers = append(expectedMembers, na.PubKeySet.Secp256k1)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	}
+
+	needsKeygen, err := validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, false)
+
+	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
+	xmr.Membership = expectedMembers.Strings()
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, true)
+
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	regular.Membership = expectedMembers[:2].Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, true)
+
+	regular.Membership = expectedMembers.Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, false)
+}
+
 func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
@@ -892,6 +936,38 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	c.Assert(networkDummy.nas, HasLen, 4)
 	c.Assert(networkDummy.xmrNas, HasLen, 4)
 	c.Assert(networkDummy.xmrNas.Contains(ready), Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestHasPendingKeygenExpiresAtRetryBoundary(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), 2)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	members := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	keygen, err := NewKeygen(2, members.Strings(), AsgardKeygen)
+	c.Assert(err, IsNil)
+	xmrKeygen, err := NewKeygen(2, members.Strings(), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	keygenBlock := NewKeygenBlock(2)
+	keygenBlock.Keygens = []Keygen{keygen, xmrKeygen}
+	k.SetKeygenBlock(ctx, keygenBlock)
+
+	unrelatedVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	unrelatedVault.Membership = common.PubKeys{GetRandomPubKey()}.Strings()
+	c.Assert(k.SetVault(ctx, unrelatedVault), IsNil)
+
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(3), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(4), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(4), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
 }
 
 func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {

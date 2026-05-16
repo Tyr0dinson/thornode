@@ -553,8 +553,16 @@ func (c *Communication) Start(priKeyBytes []byte) error {
 	if err == nil {
 		c.wg.Add(1)
 		go c.ProcessBroadcast()
-	} else if c.nodeGater != nil {
-		c.nodeGater.Stop()
+	} else {
+		if c.host != nil {
+			if closeErr := c.host.Close(); closeErr != nil {
+				c.logger.Err(closeErr).Msg("fail to close partially started host")
+			}
+			c.host = nil
+		}
+		if c.nodeGater != nil {
+			c.nodeGater.Stop()
+		}
 	}
 	return err
 }

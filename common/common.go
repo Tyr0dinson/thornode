@@ -91,6 +91,12 @@ func SpentOutputRefIdentity(ref OutputRef) string {
 	return spentOutputRefIdentity(ref)
 }
 
+// SpentOutputRefsEqual returns whether two XMR spent-output ref sets are
+// exactly equivalent after canonical ordering/case normalization.
+func SpentOutputRefsEqual(lhs, rhs []OutputRef) bool {
+	return spentOutputRefsEqual(lhs, rhs)
+}
+
 func spentOutputRefsEqual(lhs, rhs []OutputRef) bool {
 	if len(lhs) != len(rhs) {
 		return false

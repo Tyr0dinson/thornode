@@ -139,12 +139,11 @@ func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutRequiresXMRTxKey(c *C) {
 	c.Assert(msg.ValidateBasic(), NotNil)
 
 	tx.XmrTxKey = strings.Repeat("a", 64)
-	tx.SpentOutputRefs = []common.OutputRef{validXMRSpentRefForMsgTest(tx)}
 	msg = NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
 	c.Assert(msg.ValidateBasic(), IsNil)
 }
 
-func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutRequiresXMRSpentRefs(c *C) {
+func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutAllowsOptionalXMRSpentRefs(c *C) {
 	pk := getRandomXMRPubKeyForMsgTest(c)
 	fromAddress, err := pk.GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
@@ -163,7 +162,7 @@ func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutRequiresXMRSpentRefs(c *C) {
 	tx.XmrTxKey = strings.Repeat("a", 64)
 
 	msg := NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
-	c.Assert(msg.ValidateBasic(), NotNil)
+	c.Assert(msg.ValidateBasic(), IsNil)
 
 	tx.SpentOutputRefs = []common.OutputRef{validXMRSpentRefForMsgTest(tx)}
 	msg = NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
