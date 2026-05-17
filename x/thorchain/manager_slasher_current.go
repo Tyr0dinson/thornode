@@ -1234,7 +1234,7 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 				ctx.Logger().Info("validator's bond is zero, can't be slashed", "node address", na.NodeAddress.String())
 				continue
 			}
-			runeSlashed := s.slashAndUpdateNodeAccount(ctx, na, coin, vault, totalBond, totalRuneToSlash)
+			runeSlashed := s.slashAndUpdateNodeAccount(ctx, mgr, na, coin, vault, totalBond, totalRuneToSlash)
 			totalRuneSlashed = totalRuneSlashed.Add(runeSlashed)
 		}
 
@@ -1279,15 +1279,18 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 
 // slashAndUpdateNodeAccount slashes a NodeAccount a portion of the value of coin based on their
 // portion of the total bond of the offending Vault's membership. Return the amount of RUNE slashed
-func (s *SlasherImpl) slashAndUpdateNodeAccount(ctx cosmos.Context, na types.NodeAccount, coin common.Coin, vault types.Vault, totalBond, totalSlashAmountInRune cosmos.Uint) cosmos.Uint {
+func (s *SlasherImpl) slashAndUpdateNodeAccount(ctx cosmos.Context, mgr Manager, na types.NodeAccount, coin common.Coin, vault types.Vault, totalBond, totalSlashAmountInRune cosmos.Uint) cosmos.Uint {
 	slashAmountRune := common.GetSafeShare(na.Bond, totalBond, totalSlashAmountInRune)
-	if slashAmountRune.GT(na.Bond) {
-		ctx.Logger().Info("slash amount is larger than bond", "slash amount", slashAmountRune, "bond", na.Bond)
-		slashAmountRune = na.Bond
-	}
 
+	// Vault slashing is handled by the generic proportional bond-debit helper,
+	// so provider balances continue to sum to the updated node bond before the
+	// slashed RUNE is moved to Asgard or reserve.
+	na, slashAmountRune, err := mgr.Keeper().DebitNodeBond(ctx, na, slashAmountRune)
+	if err != nil {
+		ctx.Logger().Error("fail to slash node bond", "error", err, "node address", na.NodeAddress.String())
+		return cosmos.ZeroUint()
+	}
 	ctx.Logger().Info("slash node account", "node address", na.NodeAddress.String(), "amount", slashAmountRune.String(), "total slash amount", totalSlashAmountInRune)
-	na.Bond = common.SafeSub(na.Bond, slashAmountRune)
 
 	bondEvent := NewEventBond(slashAmountRune, BondCost, common.Tx{}, &na, nil)
 	if err := s.eventMgr.EmitEvent(ctx, bondEvent); err != nil {
@@ -1308,10 +1311,6 @@ func (s *SlasherImpl) slashAndUpdateNodeAccount(ctx cosmos.Context, na types.Nod
 			telemetry.NewLabel("vault_status", vault.Status.String()),
 		),
 	)
-
-	if err := s.keeper.SetNodeAccount(ctx, na); err != nil {
-		ctx.Logger().Error("fail to save node account for slash", "error", err)
-	}
 
 	return slashAmountRune
 }

@@ -119,12 +119,14 @@ func (h BanHandler) handle(ctx cosmos.Context, msg MsgBan) (*cosmos.Result, erro
 	slash := h.mgr.Keeper().GetConfigInt64(ctx, constants.BondSlashBan)
 	slashAmt := cosmos.ZeroUint()
 	if slash > 0 {
-		// compute slash and decrement banned node bond
+		// DebitNodeBond caps the slash to the available bond and applies the
+		// debit proportionally to every bond provider before the bank transfer.
 		slashAmt = cosmos.NewUint(uint64(slash))
-		if slashAmt.GT(toBan.Bond) {
-			slashAmt = toBan.Bond
+		toBan, slashAmt, err = h.mgr.Keeper().DebitNodeBond(ctx, toBan, slashAmt)
+		if err != nil {
+			ctx.Logger().Error("fail to slash bond", "error", err)
+			return nil, err
 		}
-		toBan.Bond = common.SafeSub(toBan.Bond, slashAmt)
 
 		// transfer the slash amount from bond to reserve
 		coin := common.NewCoin(common.RuneNative, slashAmt)

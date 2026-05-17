@@ -113,6 +113,14 @@ func (k *TestRagnarokKeeperHappyPath) SetNodeAccount(_ cosmos.Context, na NodeAc
 	return nil
 }
 
+func (k *TestRagnarokKeeperHappyPath) DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error) {
+	if amount.GT(na.Bond) {
+		amount = na.Bond
+	}
+	na.Bond = common.SafeSub(na.Bond, amount)
+	return na, amount, k.SetNodeAccount(ctx, na)
+}
+
 func (k *TestRagnarokKeeperHappyPath) GetPool(_ cosmos.Context, _ common.Asset) (Pool, error) {
 	return k.pool, nil
 }

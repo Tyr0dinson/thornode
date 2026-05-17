@@ -589,13 +589,15 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 						}
 
 						slashBond := network.CalcNodeRewards(cosmos.NewUint(uint64(escalatedSlashPoints)))
-						if slashBond.GT(na.Bond) {
-							slashBond = na.Bond
+						// Failed keygen is a bond debit. DebitNodeBond caps the
+						// debit to the node bond and scales all bond providers
+						// down proportionally before the slashed RUNE moves to
+						// the reserve.
+						na, slashBond, err = h.mgr.Keeper().DebitNodeBond(ctx, na, slashBond)
+						if err != nil {
+							return fmt.Errorf("fail to slash node bond: %w", err)
 						}
 						ctx.Logger().Info("fail keygen , slash bond", "address", na.NodeAddress, "amount", slashBond.String())
-						// take out bond from the node account and add it to the Reserve
-						// thus good behaviour nodes and liquidity providers will get reward
-						na.Bond = common.SafeSub(na.Bond, slashBond)
 						coin := common.NewCoin(common.RuneNative, slashBond)
 						if !coin.Amount.IsZero() {
 							if err := h.mgr.Keeper().SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(coin)); err != nil {

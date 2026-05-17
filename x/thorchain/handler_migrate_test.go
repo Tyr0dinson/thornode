@@ -107,6 +107,14 @@ func (k *TestMigrateKeeperHappyPath) SetNodeAccount(_ cosmos.Context, na NodeAcc
 	return nil
 }
 
+func (k *TestMigrateKeeperHappyPath) DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error) {
+	if amount.GT(na.Bond) {
+		amount = na.Bond
+	}
+	na.Bond = common.SafeSub(na.Bond, amount)
+	return na, amount, k.SetNodeAccount(ctx, na)
+}
+
 func (k *TestMigrateKeeperHappyPath) GetPool(_ cosmos.Context, _ common.Asset) (Pool, error) {
 	return k.pool, nil
 }

@@ -200,6 +200,7 @@ type KeeperNodeAccount interface {
 	ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccAddress) error
 	SetBondProviders(ctx cosmos.Context, _ BondProviders) error
 	GetBondProviders(ctx cosmos.Context, add cosmos.AccAddress) (BondProviders, error)
+	DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error)
 	DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error
 	RemoveLowBondValidatorAccounts(ctx cosmos.Context) error
 }

@@ -116,13 +116,12 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 		return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorized", msg.Signer))
 	}
 	cost := h.mgr.Keeper().GetNativeTxFee(ctx)
-	if cost.GT(nodeAccount.Bond) {
-		cost = nodeAccount.Bond
-	}
-	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cost)
-	if err = h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
-		ctx.Logger().Error("fail to save node account", "error", err)
-		return fmt.Errorf("fail to save node account: %w", err)
+	// Set-Mimir costs follow the same accounting rule as slashes and fees:
+	// reduce the node bond and scale all bond-provider balances down to match.
+	nodeAccount, cost, err = h.mgr.Keeper().DebitNodeBond(ctx, nodeAccount, cost)
+	if err != nil {
+		ctx.Logger().Error("fail to deduct bond cost", "error", err)
+		return err
 	}
 	// move set mimir cost from bond module to reserve
 	coin := common.NewCoin(common.RuneNative, cost)

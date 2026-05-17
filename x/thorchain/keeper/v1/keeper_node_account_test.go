@@ -356,6 +356,102 @@ func (s *KeeperNodeAccountSuite) TestBondProviders(c *C) {
 	c.Assert(providers.Providers, HasLen, 1)
 }
 
+func (s *KeeperNodeAccountSuite) TestDebitNodeBond(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	operator, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	provider := GetRandomBech32Addr()
+	bps := NewBondProviders(na.NodeAddress)
+	bps.Providers = []BondProvider{
+		{BondAddress: operator, Bond: cosmos.NewUint(600)},
+		{BondAddress: provider, Bond: cosmos.NewUint(400)},
+	}
+	c.Assert(k.SetBondProviders(ctx, bps), IsNil)
+
+	updated, deducted, err := k.DebitNodeBond(ctx, na, cosmos.NewUint(100))
+	c.Assert(err, IsNil)
+	c.Check(deducted.Equal(cosmos.NewUint(100)), Equals, true)
+	c.Check(updated.Bond.Equal(cosmos.NewUint(900)), Equals, true)
+
+	bps, err = k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(bps.Get(operator).Bond.Equal(cosmos.NewUint(540)), Equals, true)
+	c.Check(bps.Get(provider).Bond.Equal(cosmos.NewUint(360)), Equals, true)
+}
+
+func (s *KeeperNodeAccountSuite) TestDeductNativeTxFeeFromBondUpdatesBondProviders(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	operator, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	provider := GetRandomBech32Addr()
+	operatorBond := cosmos.NewUint(600 * common.One)
+	providerBond := cosmos.NewUint(400 * common.One)
+	bps := NewBondProviders(na.NodeAddress)
+	bps.Providers = []BondProvider{
+		{BondAddress: operator, Bond: operatorBond},
+		{BondAddress: provider, Bond: providerBond},
+	}
+	c.Assert(k.SetBondProviders(ctx, bps), IsNil)
+
+	coin := common.NewCoin(common.RuneAsset(), na.Bond)
+	c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, BondName, common.NewCoins(coin)), IsNil)
+
+	fee := k.GetNativeTxFee(ctx)
+	expectedBond := common.SafeSub(na.Bond, fee)
+	expectedBps := bps
+	expectedBps.Adjust(expectedBond)
+
+	c.Assert(k.DeductNativeTxFeeFromBond(ctx, na.NodeAddress), IsNil)
+
+	updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(expectedBond), Equals, true)
+
+	bps, err = k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(bps.Get(operator).Bond.Equal(expectedBps.Get(operator).Bond), Equals, true)
+	c.Check(bps.Get(provider).Bond.Equal(expectedBps.Get(provider).Bond), Equals, true)
+}
+
+func (s *KeeperNodeAccountSuite) TestDebitNodeBondCapsAtNodeBond(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	operator, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	provider := GetRandomBech32Addr()
+	bps := NewBondProviders(na.NodeAddress)
+	bps.Providers = []BondProvider{
+		{BondAddress: operator, Bond: cosmos.NewUint(600)},
+		{BondAddress: provider, Bond: cosmos.NewUint(400)},
+	}
+	c.Assert(k.SetBondProviders(ctx, bps), IsNil)
+
+	updated, slashed, err := k.DebitNodeBond(ctx, na, cosmos.NewUint(1500))
+	c.Assert(err, IsNil)
+	c.Check(slashed.Equal(cosmos.NewUint(1000)), Equals, true)
+	c.Check(updated.Bond.IsZero(), Equals, true)
+
+	bps, err = k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(bps.Get(operator).Bond.IsZero(), Equals, true)
+	c.Check(bps.Get(provider).Bond.IsZero(), Equals, true)
+}
+
 func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(10)
@@ -470,6 +566,10 @@ func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts_PartialSendF
 	c.Assert(err, IsNil)
 	c.Check(len(bpsStore.Providers), Equals, 2,
 		Commentf("bond providers should be preserved on partial send failure"))
+	c.Check(bpsStore.Get(providerAddr1).Bond.IsZero(), Equals, true,
+		Commentf("first provider bond should be cleared after a successful refund"))
+	c.Check(bpsStore.Get(providerAddr2).Bond.Equal(halfBond), Equals, true,
+		Commentf("second provider bond should remain recoverable"))
 
 	// The first provider should have received their funds.
 	bal1 := k.GetBalance(ctx, providerAddr1)

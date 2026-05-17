@@ -67,6 +67,14 @@ func (k *TestBanKeeper) SetNodeAccount(_ cosmos.Context, na NodeAccount) error {
 	return k.err
 }
 
+func (k *TestBanKeeper) DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error) {
+	if amount.GT(na.Bond) {
+		amount = na.Bond
+	}
+	na.Bond = common.SafeSub(na.Bond, amount)
+	return na, amount, k.SetNodeAccount(ctx, na)
+}
+
 func (k *TestBanKeeper) GetNetwork(ctx cosmos.Context) (Network, error) {
 	return k.network, nil
 }
@@ -227,6 +235,14 @@ func (k *TestBanKeeperHelper) SetNodeAccount(ctx cosmos.Context, na NodeAccount)
 		return errKaboom
 	}
 	return k.Keeper.SetNodeAccount(ctx, na)
+}
+
+func (k *TestBanKeeperHelper) DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error) {
+	if amount.GT(na.Bond) {
+		amount = na.Bond
+	}
+	na.Bond = common.SafeSub(na.Bond, amount)
+	return na, amount, k.SetNodeAccount(ctx, na)
 }
 
 func (s *HandlerBanSuite) TestBanHandlerValidation(c *C) {

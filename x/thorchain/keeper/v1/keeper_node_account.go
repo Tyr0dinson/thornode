@@ -308,7 +308,8 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 			bps.Adjust(na.Bond)
 			totalSent := cosmos.ZeroUint()
 			sendFailed := false
-			for _, provider := range bps.Providers {
+			for i := range bps.Providers {
+				provider := bps.Providers[i]
 				if provider.Bond.IsZero() || provider.BondAddress.Empty() {
 					continue
 				}
@@ -325,18 +326,29 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 					ctx.EventManager().EmitEvents(events)
 				}
 				totalSent = totalSent.Add(provider.Bond)
+
+				// This provider has already received their bond back. If a later
+				// provider transfer fails, the node account and bond-provider
+				// record are kept for retry; clearing the successful provider here
+				// prevents the retry path from paying them a second time.
+				bps.Providers[i].Bond = cosmos.ZeroUint()
 			}
 			// sanity check
 			if totalSent.GT(na.Bond) {
 				return dbError(ctx, "", fmt.Errorf("total bond returned greater than node bond"))
 			}
 
-			// If any send failed, preserve node account and bond providers
-			// so funds remain recoverable in a future attempt.
 			if sendFailed {
+				// A partial low-bond cleanup is deliberately not terminal. The
+				// successful sends are removed from both ledgers, and the unsent
+				// provider balances remain on the node so a later cleanup pass can
+				// recover them when the bond module has enough spendable RUNE.
 				na.Bond = na.Bond.Sub(totalSent)
 				if err = k.SetNodeAccount(ctx, na); err != nil {
 					return dbError(ctx, "", fmt.Errorf("fail to save node account: %w", err))
+				}
+				if err = k.SetBondProviders(ctx, bps); err != nil {
+					return dbError(ctx, "", fmt.Errorf("fail to save bond providers: %w", err))
 				}
 				continue
 			}
@@ -701,23 +713,110 @@ func (k KVStore) SetBondProviders(ctx cosmos.Context, record BondProviders) erro
 	return nil
 }
 
+// capBondDebit normalizes a requested bond debit to the amount that can
+// actually be charged to the node.
+func capBondDebit(na NodeAccount, amount cosmos.Uint) cosmos.Uint {
+	if amount.GT(na.Bond) {
+		return na.Bond
+	}
+	return amount
+}
+
+// getBondProvidersForAccounting returns the provider ledger that should move
+// with NodeAccount.Bond.
+//
+// Nodes can exist without an explicit BondProviders record. That is equivalent
+// to saying the node operator owns the whole node bond, so this helper builds
+// that provider record in memory before applying a debit. The debit helper will
+// persist the resulting provider record together with the updated node account.
+func (k KVStore) getBondProvidersForAccounting(ctx cosmos.Context, na NodeAccount) (BondProviders, error) {
+	bps, err := k.GetBondProviders(ctx, na.NodeAddress)
+	if err != nil {
+		return BondProviders{}, err
+	}
+
+	if len(bps.Providers) == 0 {
+		nodeOperator, err := na.BondAddress.AccAddress()
+		if err != nil {
+			return BondProviders{}, fmt.Errorf("fail to parse bond address(%s): %w", na.BondAddress, err)
+		}
+		provider := NewBondProvider(nodeOperator)
+		provider.Bond = na.Bond
+		bps.Providers = append(bps.Providers, provider)
+		bps.NodeOperatorFee = cosmos.SafeUintFromInt64(k.GetConfigInt64(ctx, constants.NodeOperatorFee))
+	}
+
+	return bps, nil
+}
+
+// setNodeBondAccounting persists the two records that represent bonded RUNE.
+func (k KVStore) setNodeBondAccounting(ctx cosmos.Context, na NodeAccount, bps BondProviders) error {
+	if err := k.SetNodeAccount(ctx, na); err != nil {
+		return fmt.Errorf("fail to save node account: %w", err)
+	}
+	if err := k.SetBondProviders(ctx, bps); err != nil {
+		return fmt.Errorf("fail to save bond providers: %w", err)
+	}
+	return nil
+}
+
+// DebitNodeBond subtracts bonded RUNE from a node and applies the same debit
+// proportionally across all bond providers.
+//
+// This helper intentionally uses one simple rule for every bond debit: if the
+// node-level bond goes down, each provider loses an amount proportional to
+// their current provider bond. That applies to slashes, Mimir costs, native tx
+// fees, and other bond-cost events until a more specific economic rule is
+// introduced.
+//
+// The provider ledger is normalized before the debit so any existing drift or
+// reward adjustment is accounted for against the current NodeAccount.Bond. The
+// node bond is then reduced, and a second Adjust scales all provider balances
+// down to the new total. The returned amount is the actual debit after capping
+// to available node bond; callers must use that value for module transfers and
+// events.
+func (k KVStore) DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error) {
+	amount = capBondDebit(na, amount)
+	if amount.IsZero() {
+		return na, cosmos.ZeroUint(), nil
+	}
+
+	bps, err := k.getBondProvidersForAccounting(ctx, na)
+	if err != nil {
+		return na, cosmos.ZeroUint(), err
+	}
+
+	bps.Adjust(na.Bond)
+	na.Bond = common.SafeSub(na.Bond, amount)
+	bps.Adjust(na.Bond)
+
+	if err = k.setNodeBondAccounting(ctx, na, bps); err != nil {
+		return na, cosmos.ZeroUint(), err
+	}
+
+	return na, amount, nil
+}
+
 func (k KVStore) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error {
 	fee := k.GetNativeTxFee(ctx)
 	if fee.IsZero() {
 		return nil // no fee
 	}
 
-	// deduct fee from node account's bond
 	na, err := k.GetNodeAccount(ctx, nodeAddr)
 	if err != nil {
 		return err
 	}
 	if na.Bond.LT(fee) {
-		return fmt.Errorf("not enound bond for fee")
+		return fmt.Errorf("not enough bond for fee")
 	}
-	na.Bond = common.SafeSub(na.Bond, fee)
-	if err = k.SetNodeAccount(ctx, na); err != nil {
-		return fmt.Errorf("fail to save node account: %w", err)
+
+	// Debit the node bond before moving funds. DebitNodeBond also updates
+	// BondProviders proportionally, so the provider ledger continues to sum to
+	// the node-level bond after the fee is paid.
+	na, fee, err = k.DebitNodeBond(ctx, na, fee)
+	if err != nil {
+		return err
 	}
 
 	// transfer fee from bond module to reserve

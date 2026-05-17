@@ -400,6 +400,10 @@ func (k KVStoreDummy) GetBondProviders(ctx cosmos.Context, _ cosmos.AccAddress) 
 	return BondProviders{}, kaboom
 }
 
+func (k KVStoreDummy) DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error) {
+	return na, cosmos.ZeroUint(), kaboom
+}
+
 func (k KVStoreDummy) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error {
 	return kaboom
 }
