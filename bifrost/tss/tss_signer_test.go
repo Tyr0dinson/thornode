@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -30,11 +31,15 @@ var _ = Suite(&KeySignTestSuite{})
 // ---------------------------------------------------------------------------
 
 type mockTssServer struct {
-	resp keysign.Response
-	err  error
+	resp      keysign.Response
+	err       error
+	onKeySign func(req keysign.Request)
 }
 
 func (m *mockTssServer) KeySign(req keysign.Request) (keysign.Response, error) {
+	if m.onKeySign != nil {
+		m.onKeySign(req)
+	}
 	return m.resp, m.err
 }
 
@@ -43,10 +48,17 @@ func (m *mockTssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 // ---------------------------------------------------------------------------
 
 type mockBridgeForKeysign struct {
-	version     semver.Version
-	versionErr  error
-	blockHeight int64
-	blockErr    error
+	version      semver.Version
+	versionErr   error
+	blockHeight  int64
+	blockErr     error
+	asgards      stypes.Vaults
+	asgardsErr   error
+	mimirs       map[string]int64
+	mimirErr     error
+	ctx          client.Context
+	broadcasts   []sdk.Msg
+	broadcastErr error
 }
 
 var _ thorclient.ThorchainBridge = (*mockBridgeForKeysign)(nil)
@@ -58,7 +70,7 @@ func (m *mockBridgeForKeysign) FetchActiveNodes() ([]common.PubKey, error)  { re
 func (m *mockBridgeForKeysign) GetKeysignParty(common.PubKey) (common.PubKeys, error) {
 	return nil, nil
 }
-func (m *mockBridgeForKeysign) GetAsgards() (stypes.Vaults, error) { return nil, nil }
+func (m *mockBridgeForKeysign) GetAsgards() (stypes.Vaults, error) { return m.asgards, m.asgardsErr }
 func (m *mockBridgeForKeysign) GetVault(string) (stypes.Vault, error) {
 	return stypes.Vault{}, nil
 }
@@ -67,7 +79,7 @@ func (m *mockBridgeForKeysign) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}
 }
 func (m *mockBridgeForKeysign) GetConstants() (map[string]int64, error) { return nil, nil }
-func (m *mockBridgeForKeysign) GetContext() client.Context              { return client.Context{} }
+func (m *mockBridgeForKeysign) GetContext() client.Context              { return m.ctx }
 func (m *mockBridgeForKeysign) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) {
 	return nil, nil
 }
@@ -76,7 +88,15 @@ func (m *mockBridgeForKeysign) GetKeygenStdTx(common.PubKey, []byte, []byte, []s
 	return nil, nil
 }
 
-func (m *mockBridgeForKeysign) GetMimir(string) (int64, error)                { return 0, nil }
+func (m *mockBridgeForKeysign) GetMimir(key string) (int64, error) {
+	if m.mimirErr != nil {
+		return 0, m.mimirErr
+	}
+	if m.mimirs == nil {
+		return 0, nil
+	}
+	return m.mimirs[key], nil
+}
 func (m *mockBridgeForKeysign) GetMimirWithRef(string, string) (int64, error) { return 0, nil }
 func (m *mockBridgeForKeysign) GetInboundOutbound(common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error) {
 	return nil, nil, nil
@@ -132,7 +152,10 @@ func (m *mockBridgeForKeysign) GetBlockTimestamp(int64) (time.Time, error) {
 }
 func (m *mockBridgeForKeysign) GetLastObservedInHeight(common.Chain) (int64, error) { return 0, nil }
 func (m *mockBridgeForKeysign) GetLastSignedOutHeight(common.Chain) (int64, error)  { return 0, nil }
-func (m *mockBridgeForKeysign) Broadcast(...sdk.Msg) (common.TxID, error)           { return "", nil }
+func (m *mockBridgeForKeysign) Broadcast(msgs ...sdk.Msg) (common.TxID, error) {
+	m.broadcasts = append(m.broadcasts, msgs...)
+	return common.TxID("mimir-tx"), m.broadcastErr
+}
 func (m *mockBridgeForKeysign) BroadcastWithBlocking(...sdk.Msg) (common.TxID, error) {
 	return "", nil
 }
@@ -153,6 +176,16 @@ func (m *mockBridgeForKeysign) GetReferenceMemo(common.Chain, string) (string, e
 	return "", nil
 }
 func (m *mockBridgeForKeysign) GetReferenceMemoByTxHash(string) (string, error) { return "", nil }
+
+func testKeysignPoolPubKey(c *C) common.PubKey {
+	pubKey, err := common.NewPubKey("thorpub1addwnpepq2ryyje5zr09lq7gqptjwnxqsy2vcdngvwd6z7yt5yjcnyj8c8cn559xe69")
+	c.Assert(err, IsNil)
+	return pubKey
+}
+
+func testKeysignSignerAddress() sdk.AccAddress {
+	return sdk.AccAddress(bytes.Repeat([]byte{1}, 20))
+}
 
 // ---------------------------------------------------------------------------
 // KeysignError Tests
@@ -401,6 +434,238 @@ func (s *KeySignTestSuite) TestRemoteSignBlame(c *C) {
 	c.Assert(errors.As(err, &ke), Equals, true)
 	c.Assert(ke.Blame.FailReason, Equals, "timeout")
 	c.Assert(len(ke.Blame.BlameNodes), Equals, 1)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerPaillierValidationBroadcastsHaltSigning(c *C) {
+	poolPubKey := testKeysignPoolPubKey(c)
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Status: tsscommon.Fail,
+			Blame: blame.Blame{
+				FailReason: blame.TssPaillierValidationFail,
+				Round:      "paillier_validation",
+				BlameNodes: []blame.Node{{
+					Pubkey:    "thorpub1badparticipant",
+					BlameData: []byte("small_factor=65537"),
+				}},
+			},
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:     semver.MustParse("1.0.0"),
+		blockHeight: 123,
+		asgards: stypes.Vaults{
+			stypes.NewVault(100, stypes.VaultStatus_ActiveVault, stypes.VaultType_AsgardVault, poolPubKey, common.Chains{common.ETHChain}.Strings(), nil),
+		},
+		ctx: client.Context{}.WithFromAddress(testKeysignSignerAddress()),
+	}
+	ks, _ := NewKeySign(server, bridge)
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: poolPubKey.String(), Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner(poolPubKey.String(), common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, NotNil)
+	var securityErr PaillierValidationSecurityError
+	c.Assert(errors.As(result.Err, &securityErr), Equals, true)
+	c.Assert(securityErr.PoolPubKey, Equals, poolPubKey.String())
+	c.Assert(securityErr.Reason, Equals, "small_factor=65537")
+	var keysignErr KeysignError
+	c.Assert(errors.As(result.Err, &keysignErr), Equals, true)
+	c.Assert(keysignErr.Blame.FailReason, Equals, blame.TssPaillierValidationFail)
+	c.Assert(bridge.broadcasts, HasLen, 2)
+	haltSigning, ok := bridge.broadcasts[0].(*stypes.MsgMimir)
+	c.Assert(ok, Equals, true)
+	c.Assert(haltSigning.Key, Equals, "HALTSIGNING")
+	c.Assert(haltSigning.Value, Equals, int64(123))
+	c.Assert(bytes.Equal(haltSigning.Signer, testKeysignSignerAddress()), Equals, true)
+	haltChurning, ok := bridge.broadcasts[1].(*stypes.MsgMimir)
+	c.Assert(ok, Equals, true)
+	c.Assert(haltChurning.Key, Equals, "HaltChurning")
+	c.Assert(haltChurning.Value, Equals, int64(123))
+	c.Assert(bytes.Equal(haltChurning.Signer, testKeysignSignerAddress()), Equals, true)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerPaillierValidationBroadcastsForRetiringAsgard(c *C) {
+	poolPubKey := testKeysignPoolPubKey(c)
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Status: tsscommon.Fail,
+			Blame: blame.Blame{
+				FailReason: blame.TssPaillierValidationFail,
+				Round:      "paillier_validation",
+				BlameNodes: []blame.Node{{
+					Pubkey:    "thorpub1badparticipant",
+					BlameData: []byte("small_factor=65537"),
+				}},
+			},
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:     semver.MustParse("1.0.0"),
+		blockHeight: 123,
+		asgards: stypes.Vaults{
+			stypes.NewVault(100, stypes.VaultStatus_RetiringVault, stypes.VaultType_AsgardVault, poolPubKey, common.Chains{common.ETHChain}.Strings(), nil),
+		},
+		ctx: client.Context{}.WithFromAddress(testKeysignSignerAddress()),
+	}
+	ks, _ := NewKeySign(server, bridge)
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: poolPubKey.String(), Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner(poolPubKey.String(), common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, NotNil)
+	var securityErr PaillierValidationSecurityError
+	c.Assert(errors.As(result.Err, &securityErr), Equals, true)
+	var keysignErr KeysignError
+	c.Assert(errors.As(result.Err, &keysignErr), Equals, true)
+	c.Assert(bridge.broadcasts, HasLen, 2)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerPaillierValidationSkipsEmergencyMimirWhenDisabled(c *C) {
+	poolPubKey := testKeysignPoolPubKey(c)
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Status: tsscommon.Fail,
+			Blame: blame.Blame{
+				FailReason: blame.TssPaillierValidationFail,
+				Round:      "paillier_validation",
+				BlameNodes: []blame.Node{{
+					Pubkey:    "thorpub1badparticipant",
+					BlameData: []byte("small_factor=65537"),
+				}},
+			},
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:     semver.MustParse("1.0.0"),
+		blockHeight: 123,
+		mimirs: map[string]int64{
+			disableTSSPaillierIncidentMimirKey: 1,
+		},
+		asgards: stypes.Vaults{
+			stypes.NewVault(100, stypes.VaultStatus_ActiveVault, stypes.VaultType_AsgardVault, poolPubKey, common.Chains{common.ETHChain}.Strings(), nil),
+		},
+		ctx: client.Context{}.WithFromAddress(testKeysignSignerAddress()),
+	}
+	ks, _ := NewKeySign(server, bridge)
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: poolPubKey.String(), Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner(poolPubKey.String(), common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, NotNil)
+	var securityErr PaillierValidationSecurityError
+	c.Assert(errors.As(result.Err, &securityErr), Equals, true)
+	c.Assert(bridge.broadcasts, HasLen, 0)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerPaillierValidationCanBeDisabledByMimir(c *C) {
+	defer tsscommon.SetPaillierValidationEnabled(true)
+
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Status: tsscommon.Fail,
+			Blame:  blame.Blame{FailReason: "expected test stop"},
+		},
+		onKeySign: func(keysign.Request) {
+			c.Assert(tsscommon.IsPaillierValidationEnabled(), Equals, false)
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:     semver.MustParse("1.0.0"),
+		blockHeight: 123,
+		mimirs: map[string]int64{
+			disableTSSPaillierValidationMimirKey: 1,
+		},
+	}
+	ks, _ := NewKeySign(server, bridge)
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, NotNil)
+	c.Assert(tsscommon.IsPaillierValidationEnabled(), Equals, false)
+}
+
+func (s *KeySignTestSuite) TestPaillierValidationMimirDebounce(c *C) {
+	poolPubKey := testKeysignPoolPubKey(c)
+	bridge := &mockBridgeForKeysign{
+		blockHeight: 123,
+		asgards: stypes.Vaults{
+			stypes.NewVault(100, stypes.VaultStatus_ActiveVault, stypes.VaultType_AsgardVault, poolPubKey, common.Chains{common.ETHChain}.Strings(), nil),
+		},
+		ctx: client.Context{}.WithFromAddress(testKeysignSignerAddress()),
+	}
+	ks, _ := NewKeySign(&mockTssServer{}, bridge)
+	thorchainBlame := stypes.Blame{
+		FailReason: blame.TssPaillierValidationFail,
+		Round:      "paillier_validation",
+		BlameNodes: []stypes.Node{{
+			Pubkey:    "thorpub1badparticipant",
+			BlameData: []byte("small_factor=65537"),
+		}},
+	}
+
+	ks.handlePaillierValidationSecurityIncident(poolPubKey.String(), "small_factor=65537", thorchainBlame, 123)
+	ks.handlePaillierValidationSecurityIncident(poolPubKey.String(), "small_factor=65537", thorchainBlame, 123)
+
+	c.Assert(bridge.broadcasts, HasLen, 2)
+
+	ks.paillierValidationMimirVotes[paillierValidationMimirDebounceKey(poolPubKey.String(), "small_factor=65537")] = paillierValidationMimirVote{
+		last:    time.Now().Add(-paillierValidationMimirFailureDebounceWindow - time.Second),
+		success: true,
+	}
+	ks.handlePaillierValidationSecurityIncident(poolPubKey.String(), "small_factor=65537", thorchainBlame, 123)
+
+	c.Assert(bridge.broadcasts, HasLen, 2)
+}
+
+func (s *KeySignTestSuite) TestPaillierValidationMimirFailedBroadcastRetriesSooner(c *C) {
+	poolPubKey := testKeysignPoolPubKey(c)
+	bridge := &mockBridgeForKeysign{
+		blockHeight:  123,
+		broadcastErr: fmt.Errorf("broadcast failed"),
+		asgards: stypes.Vaults{
+			stypes.NewVault(100, stypes.VaultStatus_ActiveVault, stypes.VaultType_AsgardVault, poolPubKey, common.Chains{common.ETHChain}.Strings(), nil),
+		},
+		ctx: client.Context{}.WithFromAddress(testKeysignSignerAddress()),
+	}
+	ks, _ := NewKeySign(&mockTssServer{}, bridge)
+	thorchainBlame := stypes.Blame{
+		FailReason: blame.TssPaillierValidationFail,
+		Round:      "paillier_validation",
+		BlameNodes: []stypes.Node{{
+			Pubkey:    "thorpub1badparticipant",
+			BlameData: []byte("small_factor=65537"),
+		}},
+	}
+
+	ks.handlePaillierValidationSecurityIncident(poolPubKey.String(), "small_factor=65537", thorchainBlame, 123)
+	ks.handlePaillierValidationSecurityIncident(poolPubKey.String(), "small_factor=65537", thorchainBlame, 123)
+	c.Assert(bridge.broadcasts, HasLen, 2)
+
+	ks.paillierValidationMimirVotes[paillierValidationMimirDebounceKey(poolPubKey.String(), "small_factor=65537")] = paillierValidationMimirVote{
+		last:    time.Now().Add(-paillierValidationMimirFailureDebounceWindow - time.Second),
+		success: false,
+	}
+	ks.handlePaillierValidationSecurityIncident(poolPubKey.String(), "small_factor=65537", thorchainBlame, 123)
+
+	c.Assert(bridge.broadcasts, HasLen, 4)
 }
 
 func (s *KeySignTestSuite) TestRemoteSignNotSelected(c *C) {

@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	tssblame "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -24,10 +25,20 @@ import (
 const (
 	maxKeysignPerRequest = 15 // the maximum number of messages include in one single TSS keysign request
 	tssKeysignTimeout    = 5  // in minutes, the maximum time bifrost is going to wait before the tss result come back
+
+	haltSigningMimirKey                          = "HALTSIGNING"
+	haltChurningMimirKey                         = "HaltChurning"
+	paillierValidationMimirSuccessDebounceWindow = 5 * time.Minute
+	paillierValidationMimirFailureDebounceWindow = time.Minute
 )
 
 type tssServer interface {
 	KeySign(req keysign.Request) (keysign.Response, error)
+}
+
+type paillierValidationMimirVote struct {
+	last    time.Time
+	success bool
 }
 
 // KeySign is a proxy between signer and TSS
@@ -40,6 +51,9 @@ type KeySign struct {
 	wg             *sync.WaitGroup
 	taskQueue      chan *tssKeySignTask
 	done           chan struct{}
+
+	paillierValidationMimirMu    sync.Mutex
+	paillierValidationMimirVotes map[string]paillierValidationMimirVote
 }
 
 // NewKeySign create a new instance of KeySign
@@ -51,6 +65,8 @@ func NewKeySign(server tssServer, bridge thorclient.ThorchainBridge) (*KeySign, 
 		wg:        &sync.WaitGroup{},
 		taskQueue: make(chan *tssKeySignTask),
 		done:      make(chan struct{}),
+
+		paillierValidationMimirVotes: make(map[string]paillierValidationMimirVote),
 	}, nil
 }
 
@@ -307,6 +323,7 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 		s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get block height from thorchain: %w", err))
 		return
 	}
+	syncPaillierValidationMimir(s.logger, s.bridge, blockHeight)
 	// this is just round the block height to the nearest 20
 	tssMsg.BlockHeight = blockHeight / 20 * 20
 
@@ -359,6 +376,122 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 		blame.BlameNodes[i].BlameSignature = n.BlameSignature
 	}
 
+	if keySignResp.Blame.FailReason == tssblame.TssPaillierValidationFail {
+		reason := paillierValidationReason(blame)
+		securityErr := NewPaillierValidationSecurityError(poolPubKey, reason, blame)
+		s.handlePaillierValidationSecurityIncident(poolPubKey, reason, blame, blockHeight)
+		s.setTssKeySignTasksFail(tasks, securityErr)
+		return
+	}
+
 	// Blame need to be passed back to thorchain , so as thorchain can use the information to slash relevant node account
 	s.setTssKeySignTasksFail(tasks, NewKeysignError(blame))
+}
+
+func paillierValidationReason(blame types.Blame) string {
+	for _, node := range blame.BlameNodes {
+		if len(node.BlameData) > 0 {
+			return string(node.BlameData)
+		}
+	}
+	if blame.FailReason != "" {
+		return blame.FailReason
+	}
+	return "unknown"
+}
+
+func paillierValidationBlamedPubKey(blame types.Blame) string {
+	for _, node := range blame.BlameNodes {
+		if node.Pubkey != "" {
+			return node.Pubkey
+		}
+	}
+	return ""
+}
+
+func (s *KeySign) handlePaillierValidationSecurityIncident(poolPubKey, reason string, blame types.Blame, blockHeight int64) {
+	blamedPubKey := paillierValidationBlamedPubKey(blame)
+	event := func() *zerolog.Event {
+		return s.logger.Error().
+			Str("event", "SECURITY").
+			Str("severity", "CRITICAL").
+			Str("security_event", "tss_paillier_validation_failure").
+			Str("pool_pub_key", poolPubKey).
+			Str("reason", reason).
+			Str("blamed_participant_pub_key", blamedPubKey).
+			Strs("mimir_keys", []string{haltSigningMimirKey, haltChurningMimirKey}).
+			Int64("height", blockHeight)
+	}
+
+	incidentMimirDisabled, err := isActiveMimir(s.bridge, disableTSSPaillierIncidentMimirKey, blockHeight)
+	if err != nil {
+		event().Err(err).Str("mimir_key", disableTSSPaillierIncidentMimirKey).Msg("SECURITY CRITICAL Paillier validation failure; failed to fetch incident Mimir gate, continuing with emergency votes")
+	} else if incidentMimirDisabled {
+		event().Str("mimir_key", disableTSSPaillierIncidentMimirKey).Msg("SECURITY CRITICAL Paillier validation failure; emergency Mimir votes disabled by Mimir")
+		return
+	}
+	if !s.shouldBroadcastPaillierValidationMimir(poolPubKey, reason) {
+		event().Bool("debounced", true).Msg("SECURITY CRITICAL Paillier validation failure; emergency Mimir votes skipped by debounce")
+		return
+	}
+
+	ctx := s.bridge.GetContext()
+	if ctx.FromAddress.Empty() {
+		event().Msg("SECURITY CRITICAL Paillier validation failure; emergency Mimir votes skipped because signer address is empty")
+		return
+	}
+
+	haltSigningMsg := types.NewMsgMimir(haltSigningMimirKey, blockHeight, ctx.FromAddress)
+	haltChurningMsg := types.NewMsgMimir(haltChurningMimirKey, blockHeight, ctx.FromAddress)
+	txID, err := s.bridge.Broadcast(haltSigningMsg, haltChurningMsg)
+	if err != nil {
+		s.markPaillierValidationMimirBroadcast(poolPubKey, reason, false)
+		event().Err(err).Msg("SECURITY CRITICAL Paillier validation failure; failed to broadcast emergency Mimir votes")
+		return
+	}
+	s.markPaillierValidationMimirBroadcast(poolPubKey, reason, true)
+	event().Str("tx_id", txID.String()).Msg("SECURITY CRITICAL Paillier validation failure; broadcast emergency Mimir votes")
+}
+
+func (s *KeySign) shouldBroadcastPaillierValidationMimir(poolPubKey, reason string) bool {
+	s.paillierValidationMimirMu.Lock()
+	defer s.paillierValidationMimirMu.Unlock()
+
+	if s.paillierValidationMimirVotes == nil {
+		s.paillierValidationMimirVotes = make(map[string]paillierValidationMimirVote)
+	}
+
+	debounceKey := paillierValidationMimirDebounceKey(poolPubKey, reason)
+	now := time.Now()
+	if vote, ok := s.paillierValidationMimirVotes[debounceKey]; ok {
+		window := paillierValidationMimirFailureDebounceWindow
+		if vote.success {
+			window = paillierValidationMimirSuccessDebounceWindow
+		}
+		if now.Sub(vote.last) < window {
+			return false
+		}
+	}
+	s.paillierValidationMimirVotes[debounceKey] = paillierValidationMimirVote{
+		last:    now,
+		success: false,
+	}
+	return true
+}
+
+func (s *KeySign) markPaillierValidationMimirBroadcast(poolPubKey, reason string, success bool) {
+	s.paillierValidationMimirMu.Lock()
+	defer s.paillierValidationMimirMu.Unlock()
+
+	if s.paillierValidationMimirVotes == nil {
+		s.paillierValidationMimirVotes = make(map[string]paillierValidationMimirVote)
+	}
+	s.paillierValidationMimirVotes[paillierValidationMimirDebounceKey(poolPubKey, reason)] = paillierValidationMimirVote{
+		last:    time.Now(),
+		success: success,
+	}
+}
+
+func paillierValidationMimirDebounceKey(poolPubKey, reason string) string {
+	return poolPubKey + "|" + reason
 }

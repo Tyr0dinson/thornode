@@ -30,6 +30,7 @@ import (
 
 type TssKeySign struct {
 	logger          zerolog.Logger
+	msgID           string
 	tssCommonStruct *common.TssCommon
 	stopChan        chan struct{} // channel to indicate whether we should stop
 	localParties    []*tss.PartyID
@@ -52,6 +53,7 @@ func NewTssKeySign(
 	logItems := []string{"keySign", msgID}
 	return &TssKeySign{
 		logger:          log.With().Strs("module", logItems).Logger(),
+		msgID:           msgID,
 		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privKey, msgNum),
 		stopChan:        stopChan,
 		localParties:    make([]*tss.PartyID, 0),
@@ -120,6 +122,7 @@ func (tKeySign *TssKeySign) SignMessage(msgsToSign [][]byte, localStateItem stor
 		return nil, fmt.Errorf("fail to unmarshal the local saved data")
 	}
 	if err := common.ValidateECDSALocalPartySaveData(localData); err != nil {
+		tKeySign.reportPaillierValidationFailure(localStateItem, err)
 		return nil, fmt.Errorf("fail to validate the keygen saved data: %w", err)
 	}
 
@@ -198,6 +201,35 @@ func (tKeySign *TssKeySign) SignMessage(msgsToSign [][]byte, localStateItem stor
 	})
 
 	return results, nil
+}
+
+func (tKeySign *TssKeySign) reportPaillierValidationFailure(localStateItem storage.KeygenLocalState, err error) {
+	participantIndex := -1
+	reason := err.Error()
+	if validationErr, ok := common.AsPaillierValidationError(err); ok {
+		participantIndex = validationErr.ParticipantIndex
+		reason = validationErr.Reason
+	}
+	participantPubKey := common.ParticipantPubKeyAt(localStateItem.ParticipantKeys, participantIndex)
+
+	common.LogPaillierValidationFailure(tKeySign.logger, common.PaillierValidationLogContext{
+		Operation:         common.PaillierValidationOperationKeysign,
+		PoolPubKey:        localStateItem.PubKey,
+		ParticipantPubKey: participantPubKey,
+		LocalNodePubKey:   localStateItem.LocalPartyKey,
+		MsgID:             tKeySign.msgID,
+		EmergencyAction:   "refuse_local_signing_operator_should_consider_HALTSIGNING",
+	}, err)
+
+	if participantPubKey == "" {
+		return
+	}
+	tKeySign.tssCommonStruct.GetBlameMgr().GetBlame().SetBlame(
+		blame.TssPaillierValidationFail,
+		[]blame.Node{blame.NewNode(participantPubKey, []byte(reason), nil)},
+		false,
+		"paillier_validation",
+	)
 }
 
 func (tKeySign *TssKeySign) processKeySign(reqNum int, errChan chan struct{}, outCh <-chan tss.Message, endCh chan *tsslibcommon.SignatureData) ([]*tsslibcommon.SignatureData, error) {

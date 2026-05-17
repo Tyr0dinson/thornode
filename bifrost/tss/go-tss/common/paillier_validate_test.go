@@ -1,9 +1,11 @@
 package common
 
 import (
+	"errors"
 	"math/big"
 
 	"github.com/binance-chain/tss-lib/crypto/paillier"
+	dto "github.com/prometheus/client_model/go"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common/testutil"
@@ -31,6 +33,24 @@ func (s *PaillierValidateSuite) TestValidateECDSALocalPartySaveDataRejectsSmallF
 	err := ValidateECDSALocalPartySaveData(data)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*small factor 65537.*")
+
+	var validationErr *PaillierValidationError
+	c.Assert(errors.As(err, &validationErr), Equals, true)
+	c.Assert(validationErr.ParticipantIndex, Equals, 1)
+	c.Assert(validationErr.Reason, Equals, "small_factor=65537")
+}
+
+// TestValidateECDSALocalPartySaveDataCanBeDisabled verifies the process-local
+// emergency gate bypasses validation when Bifrost disables it from Mimir.
+func (s *PaillierValidateSuite) TestValidateECDSALocalPartySaveDataCanBeDisabled(c *C) {
+	SetPaillierValidationEnabled(false)
+	defer SetPaillierValidationEnabled(true)
+
+	data := testutil.MakeValidECDSALocalPartySaveData(nil)
+	data.PaillierPKs[1].N = testutil.MakeSmallFactorPaillierModulus(65537)
+
+	c.Assert(ValidateECDSALocalPartySaveData(data), IsNil)
+	c.Assert(IsPaillierValidationEnabled(), Equals, false)
 }
 
 // TestValidatePaillierPublicKeyRejectsIncidentModulus locks in the concrete
@@ -83,6 +103,21 @@ func (s *PaillierValidateSuite) TestValidateECDSALocalPartySaveDataRejectsMissin
 	err := ValidateECDSALocalPartySaveData(data)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "missing local share ID")
+
+	var validationErr *PaillierValidationError
+	c.Assert(errors.As(err, &validationErr), Equals, true)
+	c.Assert(validationErr.ParticipantIndex, Equals, paillierValidationUnknownParticipant)
+	c.Assert(validationErr.Reason, Equals, "missing_local_share_id")
+}
+
+// TestRecordPaillierValidationFailureMetric verifies the exported counter uses
+// bounded reason labels while the log path can keep exact failure details.
+func (s *PaillierValidateSuite) TestRecordPaillierValidationFailureMetric(c *C) {
+	before := paillierValidationFailureMetricValue(c, PaillierValidationOperationKeysign, "small_factor")
+	RecordPaillierValidationFailure(PaillierValidationOperationKeysign, "small_factor=65537")
+	after := paillierValidationFailureMetricValue(c, PaillierValidationOperationKeysign, "small_factor")
+
+	c.Assert(after, Equals, before+1)
 }
 
 // mustParseBigInt keeps long decimal modulus fixtures readable while failing
@@ -91,4 +126,11 @@ func mustParseBigInt(c *C, value string) *big.Int {
 	n, ok := new(big.Int).SetString(value, 10)
 	c.Assert(ok, Equals, true)
 	return n
+}
+
+func paillierValidationFailureMetricValue(c *C, operation, reason string) float64 {
+	metric := &dto.Metric{}
+	err := paillierValidationFailureCounter.WithLabelValues(operation, reason).Write(metric)
+	c.Assert(err, IsNil)
+	return metric.Counter.GetValue()
 }

@@ -6,6 +6,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	tsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 )
 
 type Metric struct {
@@ -61,6 +63,7 @@ func (m *Metric) Enable() {
 	prometheus.MustRegister(m.keyGenTime)
 	prometheus.MustRegister(m.keySignTime)
 	prometheus.MustRegister(m.joinPartyTime)
+	tsscommon.RegisterPaillierValidationMetric()
 }
 
 func NewMetric() *Metric {

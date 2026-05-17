@@ -31,7 +31,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common/testutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	tcommon "gitlab.com/thorchain/thornode/v3/common"
 )
@@ -471,6 +473,35 @@ func (s *TssECDSAKeysignTestSuite) TestSignMessageInvalidLocalData(c *C) {
 	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, testPubKeys)
 	c.Assert(err, NotNil)
 	c.Assert(sig, IsNil)
+}
+
+func (s *TssECDSAKeysignTestSuite) TestSignMessageRejectsWeakPaillierLocalState(c *C) {
+	conf := common.TssConfig{}
+	stopChan := make(chan struct{})
+	ks := NewTssKeySign("localP2PID", conf, nil, stopChan, "msgID", s.nodePrivKeys[0], nil, nil, 1)
+
+	localData := testutil.MakeValidECDSALocalPartySaveData(nil)
+	localData.PaillierPKs[1].N = testutil.MakeSmallFactorPaillierModulus(65537)
+	localDataBytes, err := json.Marshal(localData)
+	c.Assert(err, IsNil)
+
+	localState := storage.KeygenLocalState{
+		PubKey:          "poolPubKey",
+		LocalPartyKey:   testPubKeys[0],
+		ParticipantKeys: testPubKeys,
+		LocalData:       localDataBytes,
+	}
+
+	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, testPubKeys)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*fail to validate the keygen saved data.*small factor 65537.*")
+	c.Assert(sig, IsNil)
+
+	blameInfo := ks.tssCommonStruct.GetBlameMgr().GetBlame()
+	c.Assert(blameInfo.FailReason, Equals, blame.TssPaillierValidationFail)
+	c.Assert(blameInfo.BlameNodes, HasLen, 1)
+	c.Assert(blameInfo.BlameNodes[0].Pubkey, Equals, testPubKeys[1])
+	c.Assert(string(blameInfo.BlameNodes[0].BlameData), Equals, "small_factor=65537")
 }
 
 func (s *TssECDSAKeysignTestSuite) TestSignMessageInvalidParties(c *C) {

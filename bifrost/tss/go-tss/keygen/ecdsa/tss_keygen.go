@@ -27,6 +27,7 @@ import (
 type TssKeyGen struct {
 	logger          zerolog.Logger
 	localNodePubKey string
+	msgID           string
 	preParams       *bkg.LocalPreParams
 	tssCommonStruct *common.TssCommon
 	stopChan        chan struct{} // channel to indicate whether we should stop
@@ -52,6 +53,7 @@ func NewTssKeyGen(localP2PID string,
 			Str("module", "keygen").
 			Str("msgID", msgID).Logger(),
 		localNodePubKey: localNodePubKey,
+		msgID:           msgID,
 		preParams:       preParam,
 		tssCommonStruct: common.NewTssCommon(localP2PID, broadcastChan, conf, msgID, privateKey, 1),
 		stopChan:        stopChan,
@@ -223,18 +225,18 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			if msg.ECDSAPub == nil {
 				return nil, errors.New("keygen result missing ECDSA public key")
 			}
-			tKeyGen.logger.Debug().Msgf("keygen finished successfully: %s", msg.ECDSAPub.Y().String())
-			err := tKeyGen.tssCommonStruct.NotifyTaskDone()
-			if err != nil {
-				tKeyGen.logger.Error().Err(err).Msg("fail to broadcast the keysign done")
-			}
-			if err := common.ValidateECDSALocalPartySaveData(msg); err != nil {
-				tKeyGen.logger.Error().Err(err).Msg("keygen result failed Paillier validation")
-				return nil, fmt.Errorf("keygen result failed Paillier validation: %w", err)
-			}
 			pubKey, _, err := conversion.GetTssPubKeyECDSA(msg.ECDSAPub)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get thorchain pubkey: %w", err)
+			}
+			if err := common.ValidateECDSALocalPartySaveData(msg); err != nil {
+				tKeyGen.reportPaillierValidationFailure(pubKey, keyGenLocalStateItem.ParticipantKeys, err)
+				return nil, fmt.Errorf("keygen result failed Paillier validation: %w", err)
+			}
+			tKeyGen.logger.Debug().Msgf("keygen finished successfully: %s", msg.ECDSAPub.Y().String())
+			err = tKeyGen.tssCommonStruct.NotifyTaskDone()
+			if err != nil {
+				tKeyGen.logger.Error().Err(err).Msg("fail to broadcast the keygen done")
 			}
 			marshaledMsg, err := json.Marshal(msg)
 			if err != nil {
@@ -252,5 +254,32 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			}
 			return msg.ECDSAPub, nil
 		}
+	}
+}
+
+func (tKeyGen *TssKeyGen) reportPaillierValidationFailure(keygenPubKey string, participantKeys []string, err error) {
+	participantIndex := -1
+	reason := err.Error()
+	if validationErr, ok := common.AsPaillierValidationError(err); ok {
+		participantIndex = validationErr.ParticipantIndex
+		reason = validationErr.Reason
+	}
+	participantPubKey := common.ParticipantPubKeyAt(participantKeys, participantIndex)
+
+	common.LogPaillierValidationFailure(tKeyGen.logger, common.PaillierValidationLogContext{
+		Operation:         common.PaillierValidationOperationKeygen,
+		KeygenPubKey:      keygenPubKey,
+		ParticipantPubKey: participantPubKey,
+		LocalNodePubKey:   tKeyGen.localNodePubKey,
+		MsgID:             tKeyGen.msgID,
+	}, err)
+
+	if participantPubKey != "" {
+		tKeyGen.tssCommonStruct.GetBlameMgr().GetBlame().SetBlame(
+			blame.TssPaillierValidationFail,
+			[]blame.Node{blame.NewNode(participantPubKey, []byte(reason), nil)},
+			false,
+			"paillier_validation",
+		)
 	}
 }

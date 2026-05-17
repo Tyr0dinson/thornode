@@ -68,6 +68,13 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 	if len(pKeys) == 0 {
 		return common.EmptyPubKeySet, nil, nil
 	}
+	mimirBlockHeight := keygenBlockHeight
+	if blockHeight, heightErr := kg.bridge.GetBlockHeight(); heightErr != nil {
+		kg.logger.Error().Err(heightErr).Msg("fail to get block height for Paillier validation Mimir, using keygen height")
+	} else {
+		mimirBlockHeight = blockHeight
+	}
+	syncPaillierValidationMimir(kg.logger, kg.bridge, mimirBlockHeight)
 
 	// add some logging
 	defer func() {

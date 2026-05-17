@@ -13,6 +13,8 @@ const (
 	TssSyncFail   = "signers fail to sync before keygen/keysign"
 	TssBrokenMsg  = "tss share verification failed"
 	InternalError = "fail to start the join party "
+
+	TssPaillierValidationFail = "tss Paillier validation failed"
 )
 
 var (

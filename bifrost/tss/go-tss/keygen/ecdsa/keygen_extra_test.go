@@ -41,6 +41,27 @@ func (s *errorSaveStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
 	return nil, nil
 }
 
+type recordingStateMgr struct {
+	saveLocalStateCalls int
+}
+
+func (s *recordingStateMgr) SaveLocalState(_ storage.KeygenLocalState) error {
+	s.saveLocalStateCalls++
+	return nil
+}
+
+func (s *recordingStateMgr) GetLocalState(_ string) (storage.KeygenLocalState, error) {
+	return storage.KeygenLocalState{}, nil
+}
+
+func (s *recordingStateMgr) SaveAddressBook(_ map[peer.ID]addr.AddrList) error {
+	return nil
+}
+
+func (s *recordingStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
+	return nil, nil
+}
+
 type TssECDSAKeygenExtraSuite struct{}
 
 var _ = Suite(&TssECDSAKeygenExtraSuite{})
@@ -196,6 +217,42 @@ func (s *TssECDSAKeygenExtraSuite) TestProcessKeyGenEndChSaveError(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(strings.Contains(err.Error(), "fail to save keygen result to storage"), Equals, true)
+}
+
+func (s *TssECDSAKeygenExtraSuite) TestProcessKeyGenRejectsWeakPaillierBeforeSave(c *C) {
+	conf := common.TssConfig{
+		KeyGenTimeout:  60 * time.Second,
+		KeySignTimeout: 60 * time.Second,
+	}
+	stateManager := &recordingStateMgr{}
+	instance := NewTssKeyGen("peer1", conf, "localPub", nil, nil, nil, "msg1", stateManager, nil, nil)
+
+	errChan := make(chan struct{})
+	outCh := make(chan btss.Message, 1)
+	endCh := make(chan bkg.LocalPartySaveData, 1)
+	localState := storage.KeygenLocalState{
+		ParticipantKeys: []string{"node0", "node1"},
+		LocalPartyKey:   "localPub",
+	}
+
+	curve := btss.S256()
+	ecPoint, err := bcrypto.NewECPoint(curve, curve.Params().Gx, curve.Params().Gy)
+	c.Assert(err, IsNil)
+	data := testutil.MakeValidECDSALocalPartySaveData(ecPoint)
+	data.PaillierPKs[1].N = testutil.MakeSmallFactorPaillierModulus(65537)
+	endCh <- data
+
+	result, err := instance.processKeyGen(errChan, outCh, endCh, localState)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(strings.Contains(err.Error(), "keygen result failed Paillier validation"), Equals, true)
+	c.Assert(stateManager.saveLocalStateCalls, Equals, 0)
+
+	blameInfo := instance.tssCommonStruct.GetBlameMgr().GetBlame()
+	c.Assert(blameInfo.FailReason, Equals, blame.TssPaillierValidationFail)
+	c.Assert(blameInfo.BlameNodes, HasLen, 1)
+	c.Assert(blameInfo.BlameNodes[0].Pubkey, Equals, "node1")
+	c.Assert(string(blameInfo.BlameNodes[0].BlameData), Equals, "small_factor=65537")
 }
 
 func (s *TssECDSAKeygenExtraSuite) TestGenerateNewKeyInvalidParties(c *C) {

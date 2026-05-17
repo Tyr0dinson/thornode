@@ -7,6 +7,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
+
+	tsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 )
 
 func getGaugeVecValue(metric *prometheus.GaugeVec, label string) (float64, error) {
@@ -149,10 +151,11 @@ func TestMetric_Enable(t *testing.T) {
 	metrics.UpdateKeySign(time.Second, true)
 	metrics.KeygenJoinParty(time.Second, true)
 	metrics.KeysignJoinParty(time.Second, true)
+	tsscommon.RecordPaillierValidationFailure(tsscommon.PaillierValidationOperationKeysign, "small_factor=65537")
 
 	mfs, err := newReg.Gather()
 	assert.NoError(t, err)
-	assert.Equal(t, 6, len(mfs))
+	assert.Equal(t, 7, len(mfs))
 }
 
 func TestNewMetric(t *testing.T) {

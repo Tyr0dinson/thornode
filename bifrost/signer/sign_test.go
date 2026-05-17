@@ -159,6 +159,9 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	if key == "MAXOUTBOUNDATTEMPTS" {
 		return 100, nil
 	}
+	if strings.HasPrefix(key, "DisableTSSPaillier") {
+		return 0, nil
+	}
 	panic("not implemented")
 }
 

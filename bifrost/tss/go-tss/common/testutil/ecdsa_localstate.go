@@ -50,3 +50,10 @@ func MakeValidECDSALocalPartySaveData(ecPoint *bcrypto.ECPoint) ecdsaKeygen.Loca
 func MakePaillierTestModulus(delta int64) *big.Int {
 	return new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 2048), big.NewInt(delta))
 }
+
+// MakeSmallFactorPaillierModulus returns a 2048-bit-sized odd composite value
+// with the supplied small factor for negative validation tests.
+func MakeSmallFactorPaillierModulus(factor int64) *big.Int {
+	cofactor := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 2032), big.NewInt(17))
+	return new(big.Int).Mul(cofactor, big.NewInt(factor))
+}
