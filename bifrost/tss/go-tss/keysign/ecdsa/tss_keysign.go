@@ -119,9 +119,8 @@ func (tKeySign *TssKeySign) SignMessage(msgsToSign [][]byte, localStateItem stor
 	if err != nil {
 		return nil, fmt.Errorf("fail to unmarshal the local saved data")
 	}
-	ret := localData.ValidateWithProof()
-	if !ret {
-		return nil, errors.New("fail to valid the keygen saved data")
+	if err := common.ValidateECDSALocalPartySaveData(localData); err != nil {
+		return nil, fmt.Errorf("fail to validate the keygen saved data: %w", err)
 	}
 
 	keySignPartyMap := new(sync.Map)

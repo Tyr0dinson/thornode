@@ -220,10 +220,17 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			}
 
 		case msg := <-endCh:
+			if msg.ECDSAPub == nil {
+				return nil, errors.New("keygen result missing ECDSA public key")
+			}
 			tKeyGen.logger.Debug().Msgf("keygen finished successfully: %s", msg.ECDSAPub.Y().String())
 			err := tKeyGen.tssCommonStruct.NotifyTaskDone()
 			if err != nil {
 				tKeyGen.logger.Error().Err(err).Msg("fail to broadcast the keysign done")
+			}
+			if err := common.ValidateECDSALocalPartySaveData(msg); err != nil {
+				tKeyGen.logger.Error().Err(err).Msg("keygen result failed Paillier validation")
+				return nil, fmt.Errorf("keygen result failed Paillier validation: %w", err)
 			}
 			pubKey, _, err := conversion.GetTssPubKeyECDSA(msg.ECDSAPub)
 			if err != nil {

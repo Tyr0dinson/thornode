@@ -17,6 +17,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common/testutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
 	tcommon "gitlab.com/thorchain/thornode/v3/common"
 )
@@ -188,8 +189,8 @@ func (s *TssECDSAKeygenExtraSuite) TestProcessKeyGenEndChSaveError(c *C) {
 	ecPoint, err := bcrypto.NewECPoint(curve, curve.Params().Gx, curve.Params().Gy)
 	c.Assert(err, IsNil)
 
-	// Send LocalPartySaveData with valid ECDSAPub
-	endCh <- bkg.LocalPartySaveData{ECDSAPub: ecPoint}
+	// Send LocalPartySaveData with valid ECDSAPub and Paillier state.
+	endCh <- testutil.MakeValidECDSALocalPartySaveData(ecPoint)
 
 	result, err := instance.processKeyGen(errChan, outCh, endCh, localState)
 	c.Assert(err, NotNil)
