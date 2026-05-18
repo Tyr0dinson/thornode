@@ -135,8 +135,8 @@ unit-tests:
   stage: test
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
   before_script:
-    - go get github.com/boumenot/gocover-cobertura
-    - go get gotest.tools/gotestsum@v1.12.3
+    - go install github.com/boumenot/gocover-cobertura@v1.4.0
+    - go install gotest.tools/gotestsum@v1.13.0
   script:
     - make test-coverage-sum
   artifacts:
