@@ -227,11 +227,11 @@
           "node_operator_fee": "0",
           "providers": [
             {
-              "bond": "4999999000000",
+              "bond": "4999997666667",
               "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
             },
             {
-              "bond": "2500000000000",
+              "bond": "2499999333333",
               "bond_address": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
             }
           ]

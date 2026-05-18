@@ -217,7 +217,7 @@
           "node_operator_fee": "500",
           "providers": [
             {
-              "bond": "10000000000",
+              "bond": "9994000000",
               "bond_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
             }
           ]

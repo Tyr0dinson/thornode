@@ -219,8 +219,13 @@
       "bond_providers": [
         {
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-          "node_operator_fee": "0",
-          "providers": []
+          "node_operator_fee": "500",
+          "providers": [
+            {
+              "bond": "4999998000000",
+              "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+            }
+          ]
         }
       ],
       "chain_contracts": [],
