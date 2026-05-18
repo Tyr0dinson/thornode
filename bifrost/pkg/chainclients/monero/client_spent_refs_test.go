@@ -57,7 +57,7 @@ func TestBuildOutboundObservationIncludesSpentRefs(t *testing.T) {
 	obs := c.buildOutboundObservation(tx, "txhash123", txKey, 5000000, spentRefs)
 	require.NotNil(t, obs, "observation should not be nil")
 	require.Equal(t, 3, len(obs.SpentOutputRefs), "observation should carry all spent refs")
-	require.Equal(t, txKey, obs.XmrTxKey, "observation should carry xmr tx key")
+	require.Equal(t, txKey, obs.TxKey, "observation should carry tx key")
 
 	assert.Equal(t, "aaa111", obs.SpentOutputRefs[0].TxHash)
 	assert.Equal(t, uint32(0), obs.SpentOutputRefs[0].OutputIndex)
@@ -263,7 +263,7 @@ func TestApplySpentOutputRefsFromTxInItemUsesObservationHeight(t *testing.T) {
 		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 		ObservedVaultPubKey: vaultPubKey,
 		SpentOutputRefs:     refs,
-		XmrTxKey:            strings.Repeat("4", 64),
+		TxKey:               strings.Repeat("4", 64),
 	})
 
 	mu.Lock()

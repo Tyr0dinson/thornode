@@ -968,7 +968,7 @@ func (s *Scanner) transferToTxInItem(
 			return nil, false
 		}
 	}
-	item.XmrTxKey = txKey
+	item.TxKey = txKey
 	return item, true
 }
 

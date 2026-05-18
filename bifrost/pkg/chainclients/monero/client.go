@@ -950,7 +950,7 @@ func (c *Client) applySpentOutputRefsFromTxInItem(obs *stypes.TxInItem) {
 		obs.BlockHeight,
 	)
 	obsTx.SpentOutputRefs = xmrOutputRefsFromPointers(obs.SpentOutputRefs)
-	obsTx.XmrTxKey = obs.XmrTxKey
+	obsTx.XmrTxKey = obs.TxKey
 	c.ApplySpentOutputRefs(obsTx)
 }
 
@@ -1666,7 +1666,7 @@ func (c *Client) buildOutboundObservation(tx stypes.TxOutItem, txHash, txKey str
 		item.SpentOutputRefs = refs
 	}
 	if item != nil {
-		item.XmrTxKey = txKey
+		item.TxKey = txKey
 	}
 	return item
 }

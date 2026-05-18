@@ -185,7 +185,7 @@ func (m ObservedTx) HasEquivalentXMRTxKey(tx2 ObservedTx) bool {
 	if !m.Tx.Chain.Equals(XMRChain) && !tx2.Tx.Chain.Equals(XMRChain) {
 		return true
 	}
-	return normalizeXMRTxKey(m.XmrTxKey) == normalizeXMRTxKey(tx2.XmrTxKey)
+	return normalizeHexString(m.XmrTxKey) == normalizeHexString(tx2.XmrTxKey)
 }
 
 func (m ObservedTx) EqualsConsensus(tx2 ObservedTx) bool {

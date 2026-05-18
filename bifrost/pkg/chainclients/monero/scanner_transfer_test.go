@@ -59,7 +59,7 @@ func TestTransferToTxInItemUsesFeeFallback(t *testing.T) {
 	}
 }
 
-func TestTransferToTxInItemNormalizesXMRTxKey(t *testing.T) {
+func TestTransferToTxInItemNormalizesTxKey(t *testing.T) {
 	pk := common.PubKey("thorpub1testvault")
 	txKey := strings.Repeat("A", 64)
 
@@ -77,12 +77,12 @@ func TestTransferToTxInItemNormalizesXMRTxKey(t *testing.T) {
 	if !ok {
 		t.Fatal("expected transfer to convert to tx in item")
 	}
-	if item.XmrTxKey != strings.ToLower(txKey) {
-		t.Fatalf("expected normalized tx key %q, got %q", strings.ToLower(txKey), item.XmrTxKey)
+	if item.TxKey != strings.ToLower(txKey) {
+		t.Fatalf("expected normalized tx key %q, got %q", strings.ToLower(txKey), item.TxKey)
 	}
 }
 
-func TestTransferToTxInItemRejectsInvalidXMRTxKey(t *testing.T) {
+func TestTransferToTxInItemRejectsInvalidTxKey(t *testing.T) {
 	pk := common.PubKey("thorpub1testvault")
 
 	s := &Scanner{

@@ -71,11 +71,11 @@ func (s *TxInTestSuite) TestTxInItemEquals(c *C) {
 	// Equal items
 	c.Check(item1.Equals(item2), Equals, true)
 
-	item1.XmrTxKey = strings.Repeat("A", 64)
-	item2.XmrTxKey = strings.Repeat("a", 64)
+	item1.TxKey = strings.Repeat("A", 64)
+	item2.TxKey = strings.Repeat("a", 64)
 	c.Check(item1.Equals(item2), Equals, true)
-	item1.XmrTxKey = ""
-	item2.XmrTxKey = ""
+	item1.TxKey = ""
+	item2.TxKey = ""
 
 	// Different BlockHeight
 	item2.BlockHeight = 200
@@ -366,10 +366,10 @@ func (s *TxInTestSuite) TestTxInItemEqualsObservedTx(c *C) {
 	// Equal items
 	c.Check(item.EqualsObservedTx(observedTx), Equals, true)
 
-	item.XmrTxKey = strings.Repeat("A", 64)
+	item.TxKey = strings.Repeat("A", 64)
 	observedTx.XmrTxKey = strings.Repeat("a", 64)
 	c.Check(item.EqualsObservedTx(observedTx), Equals, true)
-	item.XmrTxKey = ""
+	item.TxKey = ""
 	observedTx.XmrTxKey = ""
 
 	// Invalid tx ID

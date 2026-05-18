@@ -29,7 +29,7 @@ func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	xmrTxKey := normalizeXMRTxKey(o.XmrTxKey)
+	xmrTxKey := normalizeHexString(o.XmrTxKey)
 	if len(o.SpentOutputRefs) == 0 && xmrTxKey == "" {
 		return txBz, nil
 	}
@@ -51,8 +51,8 @@ func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func normalizeXMRTxKey(txKey string) string {
-	return strings.ToLower(strings.TrimSpace(txKey))
+func normalizeHexString(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 // normalizeSpentOutputRefs returns a sorted copy of refs with the three
@@ -130,7 +130,7 @@ func observedTxXMRMetadataUniqueHash(base string, chain Chain, txKey string, ref
 	if !chain.Equals(XMRChain) {
 		return base
 	}
-	txKey = normalizeXMRTxKey(txKey)
+	txKey = normalizeHexString(txKey)
 	if txKey == "" && len(refs) == 0 {
 		return base
 	}

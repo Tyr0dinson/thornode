@@ -65,8 +65,8 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 	var signerOutbound int
 	for _, item := range signerTxIn.TxArray {
 		if item.Sender == vaultAddr.String() {
-			if item.XmrTxKey != outboundTxKey {
-				t.Fatalf("signer outbound missing tx key: got %q", item.XmrTxKey)
+			if item.TxKey != outboundTxKey {
+				t.Fatalf("signer outbound missing tx key: got %q", item.TxKey)
 			}
 			signerOutbound++
 		}
@@ -86,8 +86,8 @@ func TestNonSignerCanObserveImportedOutbound(t *testing.T) {
 	var nonSignerOutbound int
 	for _, item := range nonSignerTxIn.TxArray {
 		if item.Sender == vaultAddr.String() {
-			if item.XmrTxKey != outboundTxKey {
-				t.Fatalf("non-signer outbound missing imported tx key: got %q", item.XmrTxKey)
+			if item.TxKey != outboundTxKey {
+				t.Fatalf("non-signer outbound missing imported tx key: got %q", item.TxKey)
 			}
 			nonSignerOutbound++
 		}

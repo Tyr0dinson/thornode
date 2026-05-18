@@ -35,7 +35,7 @@ type TxInItem struct {
 	AggregatorTarget      string              `json:"aggregator_target"`
 	AggregatorTargetLimit *cosmos.Uint        `json:"aggregator_target_limit"`
 	SpentOutputRefs       []*common.OutputRef `json:"spent_output_refs,omitempty"`
-	XmrTxKey              string              `json:"xmr_tx_key,omitempty"`
+	TxKey                 string              `json:"tx_key,omitempty"`
 	CommittedUnFinalised  bool                `json:"committed_pre_final"`
 }
 type TxInStatus byte
@@ -99,7 +99,7 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedVaultPubKey) {
 		return false
 	}
-	if normalizeXMRTxKey(t.XmrTxKey) != normalizeXMRTxKey(other.XmrTxKey) {
+	if normalizeHexString(t.TxKey) != normalizeHexString(other.TxKey) {
 		return false
 	}
 	return true
@@ -134,7 +134,7 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedPubKey) {
 		return false
 	}
-	if normalizeXMRTxKey(t.XmrTxKey) != normalizeXMRTxKey(other.XmrTxKey) {
+	if normalizeHexString(t.TxKey) != normalizeHexString(other.XmrTxKey) {
 		return false
 	}
 	return true
@@ -162,7 +162,7 @@ func (t *TxInItem) Copy() *TxInItem {
 		AggregatorTarget:      t.AggregatorTarget,
 		AggregatorTargetLimit: t.AggregatorTargetLimit,
 		SpentOutputRefs:       refs,
-		XmrTxKey:              t.XmrTxKey,
+		TxKey:                 t.TxKey,
 		CommittedUnFinalised:  t.CommittedUnFinalised,
 	}
 }
@@ -177,11 +177,11 @@ func (t *TxInItem) IsEmpty() bool {
 		t.Coins.IsEmpty() &&
 		t.Gas.IsEmpty() &&
 		t.ObservedVaultPubKey.IsEmpty() &&
-		t.XmrTxKey == ""
+		t.TxKey == ""
 }
 
-func normalizeXMRTxKey(txKey string) string {
-	return strings.ToLower(strings.TrimSpace(txKey))
+func normalizeHexString(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 // CacheHash calculate the has used for signer cache
