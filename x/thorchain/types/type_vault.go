@@ -66,25 +66,6 @@ func (m Vault) IsAsgard() bool {
 	return m.IsType(VaultType_AsgardVault)
 }
 
-// IsXMRMonovault is retained for legacy tests that assert the old dedicated
-// THOR+XMR shape. Runtime XMR routing should use chain capability/readiness
-// checks rather than this vault-topology predicate.
-func (m Vault) IsXMRMonovault() bool {
-	if !m.IsAsgard() {
-		return false
-	}
-	chains := m.GetChains().Distinct()
-	if !chains.Has(common.XMRChain) {
-		return false
-	}
-	for _, chain := range chains {
-		if !chain.Equals(common.THORChain) && !chain.Equals(common.XMRChain) {
-			return false
-		}
-	}
-	return true
-}
-
 // IsActive return true when the vault is in active status
 func (m Vault) IsActive() bool {
 	return m.Status == VaultStatus_ActiveVault

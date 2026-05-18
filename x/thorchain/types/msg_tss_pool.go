@@ -122,9 +122,6 @@ func (m *MsgTssPool) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("ID cannot be blank")
 	}
 	minPubKeys := 2
-	if m.KeygenType == KeygenType_XMRMonovaultKeygen {
-		minPubKeys = 1
-	}
 	if len(m.PubKeys) < minPubKeys {
 		return cosmos.ErrUnknownRequest(fmt.Sprintf("Must have at least %d pub keys", minPubKeys))
 	}
@@ -179,17 +176,6 @@ func (m *MsgTssPool) ValidateBasic() error {
 	if _, err := common.NewPubKey(m.PoolPubKey.String()); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	if m.KeygenType == KeygenType_XMRMonovaultKeygen && m.IsSuccess() {
-		if m.PoolPubKeyFrost.IsEmpty() {
-			return cosmos.ErrUnknownRequest("xmr frost pool pubkey cannot be empty")
-		}
-		if _, err := m.PoolPubKeyFrost.GetAddress(common.XMRChain); err != nil {
-			return cosmos.ErrUnknownRequest("invalid xmr frost pool pubkey")
-		}
-		if m.ObservedMoneroHeight <= 0 {
-			return cosmos.ErrUnknownRequest("xmr observed monero height must be greater than zero")
-		}
-	}
 	chains := m.GetChains()
 	if len(chains) != len(m.Chains) {
 		return cosmos.ErrUnknownRequest("One or more chains were not valid")
@@ -199,6 +185,17 @@ func (m *MsgTssPool) ValidateBasic() error {
 	}
 	if len(chains) != len(chains.Distinct()) {
 		return cosmos.ErrUnknownRequest("cannot have duplicate chains")
+	}
+	if chains.Has(common.XMRChain) && m.IsSuccess() {
+		if m.PoolPubKeyFrost.IsEmpty() {
+			return cosmos.ErrUnknownRequest("xmr frost pool pubkey cannot be empty")
+		}
+		if _, err := m.PoolPubKeyFrost.GetAddress(common.XMRChain); err != nil {
+			return cosmos.ErrUnknownRequest("invalid xmr frost pool pubkey")
+		}
+		if m.ObservedMoneroHeight <= 0 {
+			return cosmos.ErrUnknownRequest("xmr observed monero height must be greater than zero")
+		}
 	}
 
 	if err := validateKeysharesBackup(m.KeysharesBackup, "keyshares backup", MinKeysharesBackupSize); err != nil {

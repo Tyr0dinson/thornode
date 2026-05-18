@@ -76,23 +76,23 @@ func (s *MsgTssPoolSuite) TestMsgTssPool(c *C) {
 	c.Assert(err3, NotNil)
 	c.Check(errors.Is(err3, se.ErrUnknownRequest), Equals, true)
 
-	xmrMonovaultPk := GetRandomPubKey()
+	xmrPoolPk := GetRandomPubKey()
 	xmrFrostPk := GetRandomEd25519PubKey()
-	xmrMember := []string{GetRandomPubKey().String()}
+	xmrMember := []string{GetRandomPubKey().String(), GetRandomPubKey().String(), GetRandomPubKey().String()}
 	xmrSigner, err := common.PubKey(xmrMember[0]).GetThorAddress()
 	c.Assert(err, IsNil)
 	xmrMsg, err := NewMsgTssPoolV3(
 		xmrMember,
-		xmrMonovaultPk,
+		xmrPoolPk,
 		nil,
 		nil,
-		KeygenType_XMRMonovaultKeygen,
+		KeygenType_AsgardKeygen,
 		1,
 		nil,
 		common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings(),
 		xmrSigner,
 		keygenTime,
-		common.EmptyPubKey,
+		GetRandomEd25519PubKey(),
 		nil,
 		nil,
 		xmrFrostPk,
@@ -108,7 +108,7 @@ func (s *MsgTssPoolSuite) TestXMRMsgTssPoolIDIncludesFrostKeyAndMoneroHeight(c *
 	poolPk := GetRandomPubKey()
 	frostPk := GetRandomEd25519PubKey()
 	otherFrostPk := GetRandomEd25519PubKey()
-	member := []string{GetRandomPubKey().String()}
+	member := []string{GetRandomPubKey().String(), GetRandomPubKey().String(), GetRandomPubKey().String()}
 	addr, err := common.PubKey(member[0]).GetThorAddress()
 	c.Assert(err, IsNil)
 
@@ -117,13 +117,13 @@ func (s *MsgTssPoolSuite) TestXMRMsgTssPoolIDIncludesFrostKeyAndMoneroHeight(c *
 		poolPk,
 		nil,
 		nil,
-		KeygenType_XMRMonovaultKeygen,
+		KeygenType_AsgardKeygen,
 		1,
 		nil,
 		common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings(),
 		addr,
 		1024,
-		common.EmptyPubKey,
+		GetRandomEd25519PubKey(),
 		nil,
 		nil,
 		frostPk,
@@ -136,13 +136,13 @@ func (s *MsgTssPoolSuite) TestXMRMsgTssPoolIDIncludesFrostKeyAndMoneroHeight(c *
 		poolPk,
 		nil,
 		nil,
-		KeygenType_XMRMonovaultKeygen,
+		KeygenType_AsgardKeygen,
 		1,
 		nil,
 		common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings(),
 		addr,
 		1024,
-		common.EmptyPubKey,
+		GetRandomEd25519PubKey(),
 		nil,
 		nil,
 		otherFrostPk,
@@ -156,13 +156,13 @@ func (s *MsgTssPoolSuite) TestXMRMsgTssPoolIDIncludesFrostKeyAndMoneroHeight(c *
 		poolPk,
 		nil,
 		nil,
-		KeygenType_XMRMonovaultKeygen,
+		KeygenType_AsgardKeygen,
 		1,
 		nil,
 		common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings(),
 		addr,
 		1024,
-		common.EmptyPubKey,
+		GetRandomEd25519PubKey(),
 		nil,
 		nil,
 		frostPk,
@@ -175,7 +175,7 @@ func (s *MsgTssPoolSuite) TestXMRMsgTssPoolIDIncludesFrostKeyAndMoneroHeight(c *
 func (s *MsgTssPoolSuite) TestMsgTssPoolFrostKeysharesBackupValidation(c *C) {
 	poolPk := GetRandomPubKey()
 	frostPk := GetRandomEd25519PubKey()
-	member := []string{GetRandomPubKey().String()}
+	member := []string{GetRandomPubKey().String(), GetRandomPubKey().String(), GetRandomPubKey().String()}
 	addr, err := common.PubKey(member[0]).GetThorAddress()
 	c.Assert(err, IsNil)
 
@@ -189,13 +189,13 @@ func (s *MsgTssPoolSuite) TestMsgTssPoolFrostKeysharesBackupValidation(c *C) {
 		poolPk,
 		nil,
 		nil,
-		KeygenType_XMRMonovaultKeygen,
+		KeygenType_AsgardKeygen,
 		1,
 		nil,
 		common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings(),
 		addr,
 		1024,
-		common.EmptyPubKey,
+		GetRandomEd25519PubKey(),
 		nil,
 		validBackup,
 		frostPk,

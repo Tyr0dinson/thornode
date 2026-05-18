@@ -19,7 +19,7 @@ func (s *NetworkManagerTestSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
-func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesActive(c *C) {
+func (s *NetworkManagerTestSuite) TestRotateVaultRetiresSharedMembershipVaults(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 
@@ -38,7 +38,7 @@ func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesAc
 	activeXMR := GetRandomVault()
 	activeXMR.Status = ActiveVault
 	activeXMR.Type = AsgardVault
-	activeXMR.Chains = xmrMonovaultChains().Strings()
+	activeXMR.Chains = common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings()
 	activeXMR.Membership = append([]string(nil), oldRegularA.Membership...)
 
 	newRegularA := GetRandomVault()
@@ -63,63 +63,57 @@ func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesAc
 
 	activeXMRAfter, err := mgr.Keeper().GetVault(ctx, activeXMR.PubKey)
 	c.Assert(err, IsNil)
-	c.Assert(activeXMRAfter.Status, Equals, ActiveVault)
+	c.Assert(activeXMRAfter.Status, Equals, RetiringVault)
 
 	newRegularAAfter, err := mgr.Keeper().GetVault(ctx, newRegularA.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(newRegularAAfter.Status, Equals, ActiveVault)
 }
 
-func (s *NetworkManagerTestSuite) TestRotateVaultXMRMonovaultRetiresOnlyXMRFamilies(c *C) {
+func (s *NetworkManagerTestSuite) TestRotateVaultUsesStandardMembershipForXMRCapableVaults(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	sharedMember := GetRandomPubKey()
 
 	oldRegular := GetRandomVault()
 	oldRegular.Status = ActiveVault
 	oldRegular.Type = AsgardVault
 	oldRegular.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+	oldRegular.Membership = common.PubKeys{sharedMember}.Strings()
 
 	oldHybridXMR := GetRandomVault()
 	oldHybridXMR.Status = ActiveVault
 	oldHybridXMR.Type = AsgardVault
 	oldHybridXMR.Chains = common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings()
+	oldHybridXMR.Membership = common.PubKeys{GetRandomPubKey()}.Strings()
 
-	oldDedicatedXMR := GetRandomVault()
-	oldDedicatedXMR.Status = ActiveVault
-	oldDedicatedXMR.Type = AsgardVault
-	oldDedicatedXMR.Chains = xmrMonovaultChains().Strings()
-	oldDedicatedXMR.PubKeyFrost = GetRandomEd25519PubKey()
+	newXMRCapable := GetRandomVault()
+	newXMRCapable.Status = InitVault
+	newXMRCapable.Type = AsgardVault
+	newXMRCapable.Chains = common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings()
+	newXMRCapable.PubKeyFrost = GetRandomEd25519PubKey()
+	newXMRCapable.Membership = common.PubKeys{sharedMember}.Strings()
 
-	newDedicatedXMR := GetRandomVault()
-	newDedicatedXMR.Status = InitVault
-	newDedicatedXMR.Type = AsgardVault
-	newDedicatedXMR.Chains = xmrMonovaultChains().Strings()
-	newDedicatedXMR.PubKeyFrost = GetRandomEd25519PubKey()
-
-	for _, vault := range []Vault{oldRegular, oldHybridXMR, oldDedicatedXMR, newDedicatedXMR} {
+	for _, vault := range []Vault{oldRegular, oldHybridXMR, newXMRCapable} {
 		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	}
 
-	c.Assert(networkMgr.RotateVault(ctx, newDedicatedXMR), IsNil)
+	c.Assert(networkMgr.RotateVault(ctx, newXMRCapable), IsNil)
 
 	oldRegularAfter, err := mgr.Keeper().GetVault(ctx, oldRegular.PubKey)
 	c.Assert(err, IsNil)
-	c.Assert(oldRegularAfter.Status, Equals, ActiveVault)
+	c.Assert(oldRegularAfter.Status, Equals, RetiringVault)
 
 	oldHybridXMRAfter, err := mgr.Keeper().GetVault(ctx, oldHybridXMR.PubKey)
 	c.Assert(err, IsNil)
-	c.Assert(oldHybridXMRAfter.Status, Equals, RetiringVault)
+	c.Assert(oldHybridXMRAfter.Status, Equals, ActiveVault)
 
-	oldDedicatedXMRAfter, err := mgr.Keeper().GetVault(ctx, oldDedicatedXMR.PubKey)
-	c.Assert(err, IsNil)
-	c.Assert(oldDedicatedXMRAfter.Status, Equals, RetiringVault)
-
-	newDedicatedXMRAfter, err := mgr.Keeper().GetVault(ctx, newDedicatedXMR.PubKey)
+	newDedicatedXMRAfter, err := mgr.Keeper().GetVault(ctx, newXMRCapable.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(newDedicatedXMRAfter.Status, Equals, ActiveVault)
 }
 
-func (s *NetworkManagerTestSuite) TestTriggerKeygenIgnoresXMRMonovaultMembershipCollision(c *C) {
+func (s *NetworkManagerTestSuite) TestTriggerKeygenSkipsExistingMembership(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 
@@ -131,7 +125,7 @@ func (s *NetworkManagerTestSuite) TestTriggerKeygenIgnoresXMRMonovaultMembership
 	activeXMR := GetRandomVault()
 	activeXMR.Status = ActiveVault
 	activeXMR.Type = AsgardVault
-	activeXMR.Chains = xmrMonovaultChains().Strings()
+	activeXMR.Chains = common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings()
 	activeXMR.Membership = membership
 	activeXMR.PubKeyFrost = GetRandomEd25519PubKey()
 	c.Assert(mgr.Keeper().SetVault(ctx, activeXMR), IsNil)
@@ -140,32 +134,7 @@ func (s *NetworkManagerTestSuite) TestTriggerKeygenIgnoresXMRMonovaultMembership
 
 	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
 	c.Assert(err, IsNil)
-	c.Assert(keygenBlock.Keygens, HasLen, 1)
-	c.Assert(keygenBlock.Keygens[0].Type, Equals, AsgardKeygen)
-}
-
-func (s *NetworkManagerTestSuite) TestTriggerXMRKeygenIgnoresRegularVaultMembershipCollision(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
-
-	na1 := GetRandomValidatorNode(NodeActive)
-	na2 := GetRandomValidatorNode(NodeActive)
-	nas := NodeAccounts{na1, na2}
-	membership := []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
-
-	activeRegular := GetRandomVault()
-	activeRegular.Status = ActiveVault
-	activeRegular.Type = AsgardVault
-	activeRegular.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
-	activeRegular.Membership = membership
-	c.Assert(mgr.Keeper().SetVault(ctx, activeRegular), IsNil)
-
-	c.Assert(networkMgr.TriggerXMRKeygen(ctx, nas), IsNil)
-
-	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
-	c.Assert(err, IsNil)
-	c.Assert(keygenBlock.Keygens, HasLen, 1)
-	c.Assert(keygenBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
+	c.Assert(keygenBlock.Keygens, HasLen, 0)
 }
 
 func (s *NetworkManagerTestSuite) TestUpdateNetwork(c *C) {
@@ -611,8 +580,7 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount), IsNil)
 	mgr.Keeper().SetMimir(ctx, "HaltChurning", 1)
 	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
-	// make sure the regular vault is created and the dedicated XMR monovault is
-	// scheduled through keygen instead of being pre-created.
+	// Single-node genesis creates the standard shared Asgard vault with XMR.
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(vaults, HasLen, 1)
@@ -620,18 +588,12 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 
 	c.Assert(regularVault.PubKey.Equals(nodeAccount.PubKeySet.Secp256k1), Equals, true)
 	c.Assert(regularVault.PubKeyEddsa.Equals(nodeAccount.PubKeySet.Ed25519), Equals, true)
-	c.Assert(regularVault.PubKeyFrost.IsEmpty(), Equals, true)
-	c.Assert(regularVault.HasChain(common.XMRChain), Equals, false)
+	c.Assert(regularVault.PubKeyFrost.Equals(nodeAccount.PubKeySet.Ed25519), Equals, true)
+	c.Assert(regularVault.HasChain(common.XMRChain), Equals, true)
 
 	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.Keygens, HasLen, 0)
-
-	xmrBootstrapHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
-	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, xmrBootstrapHeight)
-	c.Assert(err, IsNil)
-	c.Assert(keygenBlock.Keygens, HasLen, 1)
-	c.Assert(keygenBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
 
 	// fail to get asgard vaults should return an error
 	helper.failToGetAsgardVaults = true
@@ -661,12 +623,6 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.Keygens, HasLen, 1)
 	c.Assert(keygenBlock.Keygens[0].Type, Equals, AsgardKeygen)
-
-	xmrBootstrapHeight = xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
-	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, xmrBootstrapHeight)
-	c.Assert(err, IsNil)
-	c.Assert(keygenBlock.Keygens, HasLen, 1)
-	c.Assert(keygenBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
 
 	ctx, mgr = setupManagerForTest(c)
 	helper = NewVaultGenesisSetupTestHelper(mgr.Keeper())
@@ -736,7 +692,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C)
 	c.Assert(items[0].VaultPubKeyFrost.Equals(retiringVault.PubKeyFrost), Equals, true)
 }
 
-func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingOnNonMigratePendingActivity(c *C) {
+func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRFundingOnNonMigratePendingActivity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -748,12 +704,12 @@ func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingO
 		TransactionFeeRate: 1,
 	}), IsNil)
 	targetKey := GetRandomEd25519PubKey()
-	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil, targetKey)
 	target.PubKeyFrost = targetKey
 	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
 
 	retiringKey := GetRandomEd25519PubKey()
-	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, xmrMonovaultChains().Strings(), nil, retiringKey)
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil, retiringKey)
 	retiring.PubKeyFrost = retiringKey
 	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One))))
 	retiring.PendingTxBlockHeights = []int64{ctx.BlockHeight()}
@@ -785,12 +741,12 @@ func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c
 	}), IsNil)
 
 	targetKey := GetRandomEd25519PubKey()
-	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil, targetKey)
 	target.PubKeyFrost = targetKey
 	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
 
 	retiringKey := GetRandomEd25519PubKey()
-	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, xmrMonovaultChains().Strings(), nil, retiringKey)
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil, retiringKey)
 	retiring.PubKeyFrost = retiringKey
 	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One))))
 	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
@@ -832,12 +788,12 @@ func (*NetworkManagerTestSuite) TestMigrateFundsLeavesXMRDustBufferForFinalRound
 	}), IsNil)
 
 	targetKey := GetRandomEd25519PubKey()
-	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, xmrMonovaultChains().Strings(), nil, targetKey)
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, targetKey, common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil, targetKey)
 	target.PubKeyFrost = targetKey
 	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
 
 	retiringKey := GetRandomEd25519PubKey()
-	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, xmrMonovaultChains().Strings(), nil, retiringKey)
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, retiringKey, common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil, retiringKey)
 	retiring.PubKeyFrost = retiringKey
 	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(10*common.One))))
 	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)

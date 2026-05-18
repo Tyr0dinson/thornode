@@ -1187,7 +1187,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesUsesChainSpecificVaultSelection(
 	c.Assert(xmrPubKey, Equals, xmrFrostKey.String())
 }
 
-func (s *QuerierSuite) TestQueryInboundAddressesDoesNotAdvertiseRetiringXMRVaultWithoutActiveMonovault(c *C) {
+func (s *QuerierSuite) TestQueryInboundAddressesDoesNotAdvertiseRetiringXMRVaultWithoutActiveXMRVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	regularPubKey := GetRandomPubKey()
@@ -1200,7 +1200,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesDoesNotAdvertiseRetiringXMRVault
 		RetiringVault,
 		AsgardVault,
 		retiringXMRPubKey,
-		common.Chains{common.THORChain, common.XMRChain}.Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		nil,
 		common.EmptyPubKey,
 	)

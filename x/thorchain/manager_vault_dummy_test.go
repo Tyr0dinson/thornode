@@ -7,7 +7,6 @@ import (
 
 type NetworkMgrDummy struct {
 	nas     NodeAccounts
-	xmrNas  NodeAccounts
 	vault   Vault
 	rotated Vaults
 }
@@ -32,11 +31,6 @@ func (vm *NetworkMgrDummy) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 func (vm *NetworkMgrDummy) TriggerKeygen(_ cosmos.Context, nas NodeAccounts) error {
 	vm.nas = nas
-	return nil
-}
-
-func (vm *NetworkMgrDummy) TriggerXMRKeygen(_ cosmos.Context, nas NodeAccounts) error {
-	vm.xmrNas = nas
 	return nil
 }
 

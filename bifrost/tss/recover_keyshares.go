@@ -241,7 +241,7 @@ func msgMatchesRecoveryTarget(m *types.MsgTssPool, signer ctypes.AccAddress, tar
 	}
 	switch target.kind {
 	case recoveryTargetFrost:
-		return m.KeygenType == types.KeygenType_XMRMonovaultKeygen && m.PoolPubKeyFrost.Equals(target.pubKey)
+		return m.GetChains().Has(common.XMRChain) && m.PoolPubKeyFrost.Equals(target.pubKey)
 	case recoveryTargetLegacy:
 		return m.PoolPubKey.Equals(target.pubKey)
 	default:

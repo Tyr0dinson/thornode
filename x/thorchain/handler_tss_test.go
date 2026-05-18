@@ -676,7 +676,7 @@ func (s *HandlerTssSuite) TestTssHandlerAcceptsKeygenAtRetryBoundary(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
-	const retryBlocks int64 = 30
+	retryBlocks := keygenResultValidityBlocks(helper.ctx, helper.keeper, AsgardKeygen)
 	helper.keeper.SetMimir(helper.ctx, constants.ChurnRetryInterval.String(), retryBlocks)
 
 	msg, err := NewMsgTssPoolV2(
@@ -749,33 +749,34 @@ func (s *HandlerTssSuite) TestKeygenSuccessHandler(c *C) {
 	}
 }
 
-func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
+func (s *HandlerTssSuite) TestXMRAsgardKeygenFinalizesOnSuperMajority(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
 	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
 	keygenBlock.Keygens = []Keygen{{
-		Type:    XMRMonovaultKeygen,
+		Type:    AsgardKeygen,
 		Members: helper.members.Strings(),
 	}}
 	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
 
 	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomEd25519PubKey()
 	frostPubKey := GetRandomEd25519PubKey()
 	observedMoneroHeight := int64(777)
 	keygenTime := int64(1024)
 	msg, err := NewMsgTssPoolV3(
 		helper.members.Strings(),
 		poolPubKey,
+		[]byte("sig-a"),
 		nil,
-		nil,
-		XMRMonovaultKeygen,
+		AsgardKeygen,
 		helper.ctx.BlockHeight(),
 		nil,
-		xmrMonovaultChains().Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		helper.signer,
 		keygenTime,
-		common.EmptyPubKey,
+		poolEddsaPubKey,
 		nil,
 		validTssKeyshareBackup(),
 		frostPubKey,
@@ -784,13 +785,20 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 	c.Assert(err, IsNil)
 	msg.ObservedMoneroHeight = observedMoneroHeight
 
-	voter := NewTssVoter(msg.ID, helper.members.Strings(), poolPubKey, common.EmptyPubKey)
+	setKeygenMemberNodeAccount(c, helper, helper.members[0], NodeActive)
+	for _, member := range helper.members[1:] {
+		setKeygenMemberNodeAccount(c, helper, member, NodeReady)
+	}
+
+	voter := NewTssVoter(msg.ID, helper.members.Strings(), poolPubKey, poolEddsaPubKey)
 	voter.PoolPubKeyFrost = frostPubKey
 	voter.ObservedMoneroHeight = observedMoneroHeight
 	for _, member := range helper.members[1:6] {
 		addr, addrErr := member.GetThorAddress()
 		c.Assert(addrErr, IsNil)
 		voter.Signers = append(voter.Signers, addr.String())
+		voter.Chains = append(voter.Chains, msg.Chains...)
+		voter.Secp256K1Signatures = append(voter.Secp256K1Signatures, "sig-a")
 	}
 	helper.keeper.SetTssVoter(helper.ctx, voter)
 
@@ -807,24 +815,25 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 	vault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
 	c.Assert(err, IsNil)
 	c.Assert(vault.Status, Equals, InitVault)
-	c.Assert(vault.IsXMRMonovault(), Equals, true)
-	c.Assert(vault.PubKeyEddsa.IsEmpty(), Equals, true)
+	c.Assert(vault.HasChain(common.XMRChain), Equals, true)
+	c.Assert(vault.PubKeyEddsa.Equals(poolEddsaPubKey), Equals, true)
 	c.Assert(vault.PubKeyFrost.Equals(frostPubKey), Equals, true)
 	c.Assert(vault.VaultCreationHeightXmr, Equals, observedMoneroHeight)
 }
 
-func (s *HandlerTssSuite) TestXMRMonovaultKeygenRejectsMismatchedLatchedFields(c *C) {
+func (s *HandlerTssSuite) TestXMRAsgardKeygenRejectsMismatchedLatchedFields(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
 	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
 	keygenBlock.Keygens = []Keygen{{
-		Type:    XMRMonovaultKeygen,
+		Type:    AsgardKeygen,
 		Members: helper.members.Strings(),
 	}}
 	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
 
 	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomEd25519PubKey()
 	frostPubKey := GetRandomEd25519PubKey()
 	keygenTime := int64(1024)
 	observedMoneroHeight := int64(777)
@@ -833,13 +842,13 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenRejectsMismatchedLatchedFields(c
 		poolPubKey,
 		nil,
 		nil,
-		XMRMonovaultKeygen,
+		AsgardKeygen,
 		helper.ctx.BlockHeight(),
 		nil,
-		xmrMonovaultChains().Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		helper.signer,
 		keygenTime,
-		common.EmptyPubKey,
+		poolEddsaPubKey,
 		nil,
 		validTssKeyshareBackup(),
 		frostPubKey,
@@ -847,7 +856,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenRejectsMismatchedLatchedFields(c
 	)
 	c.Assert(err, IsNil)
 
-	voter := NewTssVoter(msg.ID, helper.members.Strings(), poolPubKey, common.EmptyPubKey)
+	voter := NewTssVoter(msg.ID, helper.members.Strings(), poolPubKey, poolEddsaPubKey)
 	voter.PoolPubKeyFrost = frostPubKey
 	voter.ObservedMoneroHeight = observedMoneroHeight
 	helper.keeper.SetTssVoter(helper.ctx, voter)
@@ -863,14 +872,14 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenRejectsMismatchedLatchedFields(c
 	c.Assert(err, ErrorMatches, ".*invalid tss message.*")
 }
 
-func (s *HandlerTssSuite) TestXMRMonovaultRejectsMismatchedFrostKeyOrHeight(c *C) {
+func (s *HandlerTssSuite) TestXMRAsgardRejectsMismatchedFrostKeyOrHeight(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
 	members := helper.members[:4]
 	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
 	keygenBlock.Keygens = []Keygen{{
-		Type:    XMRMonovaultKeygen,
+		Type:    AsgardKeygen,
 		Members: members.Strings(),
 	}}
 	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
@@ -881,6 +890,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultRejectsMismatchedFrostKeyOrHeight(c *C
 
 	keygenTime := int64(1024)
 	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomEd25519PubKey()
 	frostPubKey := GetRandomEd25519PubKey()
 	signerOne, err := members[0].GetThorAddress()
 	c.Assert(err, IsNil)
@@ -888,15 +898,15 @@ func (s *HandlerTssSuite) TestXMRMonovaultRejectsMismatchedFrostKeyOrHeight(c *C
 	msg, err := NewMsgTssPoolV3(
 		members.Strings(),
 		poolPubKey,
+		[]byte("sig-a"),
 		nil,
-		nil,
-		XMRMonovaultKeygen,
+		AsgardKeygen,
 		helper.ctx.BlockHeight(),
 		nil,
-		xmrMonovaultChains().Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		signerOne,
 		keygenTime,
-		common.EmptyPubKey,
+		poolEddsaPubKey,
 		nil,
 		validTssKeyshareBackup(),
 		frostPubKey,
@@ -919,13 +929,13 @@ func (s *HandlerTssSuite) TestXMRMonovaultRejectsMismatchedFrostKeyOrHeight(c *C
 		poolPubKey,
 		nil,
 		nil,
-		XMRMonovaultKeygen,
+		AsgardKeygen,
 		helper.ctx.BlockHeight(),
 		nil,
-		xmrMonovaultChains().Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		signerTwo,
 		keygenTime,
-		common.EmptyPubKey,
+		poolEddsaPubKey,
 		nil,
 		validTssKeyshareBackup(),
 		GetRandomEd25519PubKey(),
@@ -998,6 +1008,7 @@ func (s *HandlerTssSuite) TestAsgardKeygenWithReadyMembersFinalizesOnSuperMajori
 		addr, addrErr := member.GetThorAddress()
 		c.Assert(addrErr, IsNil)
 		voter.Signers = append(voter.Signers, addr.String())
+		voter.Chains = append(voter.Chains, msg.Chains...)
 	}
 	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
 	helper.keeper.SetTssVoter(helper.ctx, voter)
@@ -1015,7 +1026,7 @@ func (s *HandlerTssSuite) TestAsgardKeygenWithReadyMembersFinalizesOnSuperMajori
 	c.Assert(vault.Status, Equals, InitVault)
 }
 
-func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitingForXMR(c *C) {
+func (s *HandlerTssSuite) TestXMRCapableAsgardKeygenRotatesWithStandardAsgardFlow(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	mgr := NewDummyMgrWithKeeper(helper.keeper)
 	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
@@ -1029,17 +1040,15 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 			Type:    AsgardKeygen,
 			Members: members.Strings(),
 		},
-		{
-			Type:    XMRMonovaultKeygen,
-			Members: members.Strings(),
-		},
 	}
 	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
 
 	poolPubKey := GetRandomPubKey()
-	poolEddsaPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomEd25519PubKey()
+	frostPubKey := GetRandomEd25519PubKey()
+	observedMoneroHeight := int64(777)
 	keygenTime := int64(1024)
-	msg, err := NewMsgTssPoolV2(
+	msg, err := NewMsgTssPoolV3(
 		members.Strings(),
 		poolPubKey,
 		nil,
@@ -1047,13 +1056,14 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 		AsgardKeygen,
 		helper.ctx.BlockHeight(),
 		nil,
-		common.Chains{common.RuneAsset().Chain}.Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		helper.signer,
 		keygenTime,
 		poolEddsaPubKey,
 		nil,
-		nil,
-		common.EmptyPubKey,
+		validTssKeyshareBackup(),
+		frostPubKey,
+		observedMoneroHeight,
 	)
 	c.Assert(err, IsNil)
 
@@ -1067,20 +1077,26 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 		addr, addrErr := member.GetThorAddress()
 		c.Assert(addrErr, IsNil)
 		voter.Signers = append(voter.Signers, addr.String())
+		voter.Chains = append(voter.Chains, msg.Chains...)
 	}
 	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
+	voter.PoolPubKeyFrost = frostPubKey
+	voter.ObservedMoneroHeight = observedMoneroHeight
 	helper.keeper.SetTssVoter(helper.ctx, voter)
 
 	_, err = handler.Run(helper.ctx, msg)
 	c.Assert(err, IsNil)
 
-	regularVault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
+	vault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
 	c.Assert(err, IsNil)
-	c.Assert(regularVault.Status, Equals, ActiveVault)
-	c.Assert(regularVault.IsXMRMonovault(), Equals, false)
+	c.Assert(vault.Status, Equals, ActiveVault)
+	c.Assert(vault.HasChain(common.XMRChain), Equals, true)
+	c.Assert(vault.PubKeyEddsa.Equals(poolEddsaPubKey), Equals, true)
+	c.Assert(vault.PubKeyFrost.Equals(frostPubKey), Equals, true)
+	c.Assert(vault.VaultCreationHeightXmr, Equals, observedMoneroHeight)
 }
 
-func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *C) {
+func (s *HandlerTssSuite) TestXMRCapableAsgardRotatesSharedMembershipVault(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	mgr := NewDummyMgrWithKeeper(helper.keeper)
 	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
@@ -1093,10 +1109,11 @@ func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *
 		ActiveVault,
 		AsgardVault,
 		GetRandomPubKey(),
-		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		nil,
 		GetRandomEd25519PubKey(),
 	)
+	oldRegular.PubKeyFrost = GetRandomEd25519PubKey()
 	oldRegular.Membership = members.Strings()
 	c.Assert(helper.keeper.SetVault(helper.ctx, oldRegular), IsNil)
 
@@ -1104,10 +1121,6 @@ func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *
 	keygenBlock.Keygens = []Keygen{
 		{
 			Type:    AsgardKeygen,
-			Members: members.Strings(),
-		},
-		{
-			Type:    XMRMonovaultKeygen,
 			Members: members.Strings(),
 		},
 	}
@@ -1120,6 +1133,7 @@ func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *
 
 	keygenTime := int64(1024)
 	xmrPoolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomEd25519PubKey()
 	xmrFrostPubKey := GetRandomEd25519PubKey()
 	observedMoneroHeight := int64(777)
 	xmrMsg, err := NewMsgTssPoolV3(
@@ -1127,27 +1141,29 @@ func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *
 		xmrPoolPubKey,
 		nil,
 		nil,
-		XMRMonovaultKeygen,
+		AsgardKeygen,
 		helper.ctx.BlockHeight(),
 		nil,
-		xmrMonovaultChains().Strings(),
+		common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(),
 		helper.signer,
 		keygenTime,
-		common.EmptyPubKey,
+		poolEddsaPubKey,
 		nil,
 		validTssKeyshareBackup(),
 		xmrFrostPubKey,
 		observedMoneroHeight,
 	)
 	c.Assert(err, IsNil)
-	xmrVoter := NewTssVoter(xmrMsg.ID, members.Strings(), xmrPoolPubKey, common.EmptyPubKey)
+	xmrVoter := NewTssVoter(xmrMsg.ID, members.Strings(), xmrPoolPubKey, poolEddsaPubKey)
 	xmrVoter.PoolPubKeyFrost = xmrFrostPubKey
 	xmrVoter.ObservedMoneroHeight = observedMoneroHeight
 	for _, member := range members[1:3] {
 		addr, addrErr := member.GetThorAddress()
 		c.Assert(addrErr, IsNil)
 		xmrVoter.Signers = append(xmrVoter.Signers, addr.String())
+		xmrVoter.Chains = append(xmrVoter.Chains, xmrMsg.Chains...)
 	}
+	xmrVoter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
 	helper.keeper.SetTssVoter(helper.ctx, xmrVoter)
 
 	_, err = handler.Run(helper.ctx, xmrMsg)
@@ -1156,52 +1172,10 @@ func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *
 	xmrVault, err := helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
 	c.Assert(err, IsNil)
 	c.Assert(xmrVault.Status, Equals, ActiveVault)
-	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
-
-	oldRegular, err = helper.keeper.GetVault(helper.ctx, oldRegular.PubKey)
-	c.Assert(err, IsNil)
-	c.Assert(oldRegular.Status, Equals, ActiveVault)
-
-	regularPoolPubKey := GetRandomPubKey()
-	regularEddsaPubKey := GetRandomPubKey()
-	regularMsg, err := NewMsgTssPoolV2(
-		members.Strings(),
-		regularPoolPubKey,
-		nil,
-		nil,
-		AsgardKeygen,
-		helper.ctx.BlockHeight(),
-		nil,
-		common.Chains{common.RuneAsset().Chain}.Strings(),
-		helper.signer,
-		keygenTime,
-		regularEddsaPubKey,
-		nil,
-		nil,
-		common.EmptyPubKey,
-	)
-	c.Assert(err, IsNil)
-	regularVoter := NewTssVoter(regularMsg.ID, members.Strings(), regularPoolPubKey, regularEddsaPubKey)
-	for _, member := range members[1:3] {
-		addr, addrErr := member.GetThorAddress()
-		c.Assert(addrErr, IsNil)
-		regularVoter.Signers = append(regularVoter.Signers, addr.String())
-	}
-	regularVoter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
-	helper.keeper.SetTssVoter(helper.ctx, regularVoter)
-
-	_, err = handler.Run(helper.ctx, regularMsg)
-	c.Assert(err, IsNil)
-
-	regularVault, err := helper.keeper.GetVault(helper.ctx, regularPoolPubKey)
-	c.Assert(err, IsNil)
-	c.Assert(regularVault.Status, Equals, ActiveVault)
-	c.Assert(regularVault.HasChain(common.XMRChain), Equals, false)
-
-	xmrVault, err = helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
-	c.Assert(err, IsNil)
-	c.Assert(xmrVault.Status, Equals, ActiveVault)
-	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
+	c.Assert(xmrVault.HasChain(common.XMRChain), Equals, true)
+	c.Assert(xmrVault.HasChain(common.BTCChain), Equals, true)
+	c.Assert(xmrVault.PubKeyEddsa.Equals(poolEddsaPubKey), Equals, true)
+	c.Assert(xmrVault.PubKeyFrost.Equals(xmrFrostPubKey), Equals, true)
 
 	oldRegular, err = helper.keeper.GetVault(helper.ctx, oldRegular.PubKey)
 	c.Assert(err, IsNil)

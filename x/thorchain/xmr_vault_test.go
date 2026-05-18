@@ -7,9 +7,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-type XMRMonovaultSuite struct{}
+type XMRVaultSuite struct{}
 
-var _ = Suite(&XMRMonovaultSuite{})
+var _ = Suite(&XMRVaultSuite{})
 
 func getRandomXMRFrostPubKey(c *C) common.PubKey {
 	pubKey, err := common.NewPubKeyFromCrypto(cometed25519.GenPrivKey().PubKey())
@@ -19,22 +19,17 @@ func getRandomXMRFrostPubKey(c *C) common.PubKey {
 	return pubKey
 }
 
-func (s *XMRMonovaultSuite) TestShouldMaintainXMRMonovaultSingleValidator(c *C) {
-	c.Assert(shouldMaintainXMRMonovault(nil, 1), Equals, true)
-}
-
-func (s *XMRMonovaultSuite) TestSelectActiveVaultForChainPrefersRegularTHORVaults(c *C) {
+func (s *XMRVaultSuite) TestSelectActiveVaultForChainAcceptsXMRCapableAsgard(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
-	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
+	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil, GetRandomPubKey())
 	xmr.PubKeyFrost = getRandomXMRFrostPubKey(c)
 
-	selected, err := selectActiveVaultForChain(ctx, k, Vaults{xmr, regular}, common.THORChain, 0)
+	selected, err := selectActiveVaultForChain(ctx, k, Vaults{xmr}, common.XMRChain, 0)
 	c.Assert(err, IsNil)
-	c.Assert(selected.PubKey.Equals(regular.PubKey), Equals, true)
+	c.Assert(selected.PubKey.Equals(xmr.PubKey), Equals, true)
 }
 
-func (s *XMRMonovaultSuite) TestPreferredActiveVaultsForChainAcceptsXMRCapableVault(c *C) {
+func (s *XMRVaultSuite) TestPreferredActiveVaultsForChainAcceptsXMRCapableVault(c *C) {
 	hybrid := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil)
 	hybrid.PubKeyFrost = getRandomXMRFrostPubKey(c)
 
@@ -43,7 +38,7 @@ func (s *XMRMonovaultSuite) TestPreferredActiveVaultsForChainAcceptsXMRCapableVa
 	c.Assert(filtered[0].PubKey.Equals(hybrid.PubKey), Equals, true)
 }
 
-func (s *XMRMonovaultSuite) TestPreferredActiveVaultsForChainRejectsXMRVaultWithoutFrost(c *C) {
+func (s *XMRVaultSuite) TestPreferredActiveVaultsForChainRejectsXMRVaultWithoutFrost(c *C) {
 	hybrid := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil)
 	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
 
@@ -51,7 +46,7 @@ func (s *XMRMonovaultSuite) TestPreferredActiveVaultsForChainRejectsXMRVaultWith
 	c.Assert(filtered, HasLen, 0)
 }
 
-func (s *XMRMonovaultSuite) TestFilterActiveVaultsForOutboundChainRejectsXMRVaultWithoutFrost(c *C) {
+func (s *XMRVaultSuite) TestFilterActiveVaultsForOutboundChainRejectsXMRVaultWithoutFrost(c *C) {
 	hybrid := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil)
 	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
 
@@ -59,7 +54,7 @@ func (s *XMRMonovaultSuite) TestFilterActiveVaultsForOutboundChainRejectsXMRVaul
 	c.Assert(filtered, HasLen, 0)
 }
 
-func (s *XMRMonovaultSuite) TestFilterActiveVaultsForOutboundChainKeepsXMRCapableVaultForOtherChains(c *C) {
+func (s *XMRVaultSuite) TestFilterActiveVaultsForOutboundChainKeepsXMRCapableVaultForOtherChains(c *C) {
 	hybrid := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings(), nil)
 	hybrid.PubKeyFrost = getRandomXMRFrostPubKey(c)
 

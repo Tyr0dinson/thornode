@@ -33,15 +33,6 @@ type assetAmount struct {
 	Amount math.Int
 }
 
-const xmrMonovaultGenesisBootstrapDelayBlocks int64 = 128
-
-func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
-	if currentHeight < 1 {
-		currentHeight = 1
-	}
-	return currentHeight + xmrMonovaultGenesisBootstrapDelayBlocks
-}
-
 // newNetworkMgr create a new vault manager
 func newNetworkMgr(k keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) *NetworkMgr {
 	return &NetworkMgr{
@@ -71,11 +62,6 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 		return errors.New("no active accounts,cannot proceed")
 	}
 	if len(active) == 1 {
-		// Single-node genesis still bootstraps the regular shared Asgard directly.
-		// XMR stays hard-cut over to its own dedicated vault family, but fresh
-		// bifrost instances start the THOR scanner from tip. Schedule the first
-		// dedicated XMR keygen a few blocks later so bifrost can actually observe
-		// it instead of seeding a hybrid/shared vault.
 		supportChains := common.Chains{
 			common.THORChain,
 			common.BTCChain,
@@ -92,28 +78,20 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			common.XRPChain,
 			common.SOLChain,
 			common.POLChain,
+			common.XMRChain,
 			common.ZECChain,
 		}
 		pubSet := active[0].PubKeySet
 		vault := NewVaultV2(0, ActiveVault, AsgardVault, pubSet.Secp256k1, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains), pubSet.Ed25519)
+		vault.PubKeyFrost = pubSet.Ed25519
 		vault.Membership = common.PubKeys{pubSet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
-		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())); err != nil {
-			return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
-		}
 	} else {
-		// Multi-node genesis should schedule both the regular split-Asgard churn
-		// family and the dedicated XMR monovault family. The XMR keygen needs a
-		// small bootstrap delay so fresh bifrost instances do not miss a height-1
-		// THOR keygen before their scanner is live.
 		err := vm.TriggerKeygen(ctx, active)
 		if err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
-		}
-		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())); err != nil {
-			return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
 		}
 	}
 	return nil
@@ -1425,10 +1403,6 @@ func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 	return vm.triggerKeygen(ctx, nas, AsgardKeygen)
 }
 
-func (vm *NetworkMgr) TriggerXMRKeygen(ctx cosmos.Context, nas NodeAccounts) error {
-	return vm.triggerKeygen(ctx, nas, XMRMonovaultKeygen)
-}
-
 func (vm *NetworkMgr) triggerKeygen(ctx cosmos.Context, nas NodeAccounts, keygenType types.KeygenType) error {
 	return vm.scheduleKeygen(ctx, nas, keygenType, ctx.BlockHeight())
 }
@@ -1468,12 +1442,6 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 		if !vault.MembershipEquals(keygen.GetMembers()) {
 			continue
 		}
-		if keygenType == XMRMonovaultKeygen && !vault.HasChain(common.XMRChain) {
-			continue
-		}
-		if keygenType == AsgardKeygen && vault.HasChain(common.XMRChain) {
-			continue
-		}
 		if vault.Status == ActiveVault {
 			ctx.Logger().Info("skip keygen due to vault already existing")
 			return nil
@@ -1509,19 +1477,10 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 	// find vaults the new vault conflicts with, mark them as inactive
 	for _, asgard := range active {
 		conflicts := false
-		switch {
-		case vault.HasChain(common.XMRChain):
-			conflicts = asgard.HasChain(common.XMRChain)
-		default:
-			if asgard.HasChain(common.XMRChain) {
-				conflicts = false
+		for _, member := range asgard.GetMembership() {
+			if vault.Contains(member) {
+				conflicts = true
 				break
-			}
-			for _, member := range asgard.GetMembership() {
-				if vault.Contains(member) {
-					conflicts = true
-					break
-				}
 			}
 		}
 		if !conflicts {

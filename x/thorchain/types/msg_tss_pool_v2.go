@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -25,7 +26,7 @@ func NewMsgTssPoolV2(
 	poolPubKeyFrost common.PubKey,
 ) (*MsgTssPool, error) {
 	id, err := getTssID(pks, poolpk, height, bl)
-	if keygenType == KeygenType_XMRMonovaultKeygen {
+	if tssPoolChainsIncludeXMR(chains) && !poolPubKeyFrost.IsEmpty() {
 		id, err = getXMRTssID(pks, poolpk, height, bl, poolPubKeyFrost, 0)
 	}
 	if err != nil {
@@ -72,7 +73,7 @@ func NewMsgTssPoolV3(
 		return nil, err
 	}
 	msg.ObservedMoneroHeight = observedMoneroHeight
-	if keygenType == KeygenType_XMRMonovaultKeygen {
+	if tssPoolChainsIncludeXMR(chains) && !poolPubKeyFrost.IsEmpty() {
 		id, idErr := getXMRTssID(pks, poolpk, height, bl, poolPubKeyFrost, observedMoneroHeight)
 		if idErr != nil {
 			return nil, fmt.Errorf("fail to get tss id: %w", idErr)
@@ -80,4 +81,13 @@ func NewMsgTssPoolV3(
 		msg.ID = id
 	}
 	return msg, nil
+}
+
+func tssPoolChainsIncludeXMR(chains []string) bool {
+	for _, chain := range chains {
+		if strings.EqualFold(strings.TrimSpace(chain), common.XMRChain.String()) {
+			return true
+		}
+	}
+	return false
 }

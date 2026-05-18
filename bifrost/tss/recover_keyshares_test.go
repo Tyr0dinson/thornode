@@ -59,9 +59,10 @@ func (s *RecoverKeysharesSuite) TestMsgMatchesRecoveryTargetRequiresExactKeyType
 
 	xmrMsg := &types.MsgTssPool{
 		Signer:          signer,
-		KeygenType:      types.KeygenType_XMRMonovaultKeygen,
+		KeygenType:      types.KeygenType_AsgardKeygen,
 		PoolPubKey:      legacyPubKey,
 		PoolPubKeyFrost: frostPubKey,
+		Chains:          common.Chains{common.THORChain, common.XMRChain}.Strings(),
 	}
 	frostTarget := keyshareRecoveryTarget{kind: recoveryTargetFrost, pubKey: frostPubKey}
 	legacyTarget := keyshareRecoveryTarget{kind: recoveryTargetLegacy, pubKey: legacyPubKey}
@@ -75,6 +76,7 @@ func (s *RecoverKeysharesSuite) TestMsgMatchesRecoveryTargetRequiresExactKeyType
 		Signer:     signer,
 		KeygenType: types.KeygenType_AsgardKeygen,
 		PoolPubKey: legacyPubKey,
+		Chains:     common.Chains{common.THORChain}.Strings(),
 	}
 	c.Check(msgMatchesRecoveryTarget(legacyMsg, signer, legacyTarget), Equals, true)
 	c.Check(msgMatchesRecoveryTarget(legacyMsg, signer, frostTarget), Equals, false)

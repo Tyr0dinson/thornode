@@ -87,14 +87,6 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		return nil
 	}
 	expectedActiveVaults := splitAsgardGroupCount(len(nas), asgardSize)
-	// Do not treat the dedicated XMR monovault as a missing active vault until
-	// it actually exists in the active set. Counting a future monovault here
-	// causes regular churn retries to overlap a still-settling Asgard keygen,
-	// which can keep the delayed successful round from ever becoming the lone
-	// init-vault set that RotateVault expects.
-	if hasDedicatedXMRMonovault(vaults) {
-		expectedActiveVaults++
-	}
 	incompleteChurnCheck := len(vaults) != expectedActiveVaults
 	oldVaultCheck := ctx.BlockHeight()-lastChurnHeight > churnInterval
 	retryChurn := (oldVaultCheck || incompleteChurnCheck) && onChurnTick
@@ -184,14 +176,8 @@ func keygenResolvedByVaults(keygen Keygen, vaults Vaults) bool {
 			continue
 		}
 		switch keygen.Type {
-		case XMRMonovaultKeygen:
-			if vault.HasChain(common.XMRChain) {
-				return true
-			}
 		case AsgardKeygen:
-			if !vault.HasChain(common.XMRChain) {
-				return true
-			}
+			return true
 		}
 	}
 	return false
@@ -265,29 +251,6 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 			for _, nodeAccSet := range splitGroups {
 				if triggerErr := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); triggerErr != nil {
 					return triggerErr
-				}
-			}
-		}
-		allVaults, err := vm.k.GetAsgardVaults(ctx)
-		if err != nil {
-			return err
-		}
-		if shouldMaintainXMRMonovault(allVaults, len(next)) {
-			pendingXMR, err := vm.hasPendingKeygen(ctx, XMRMonovaultKeygen)
-			if err != nil {
-				return err
-			}
-			if pendingXMR {
-				ctx.Logger().Info("Skipping XMR FROST keygen due to pending keygen")
-			} else {
-				// Keep the dedicated XMR monovault in the same keygen block as the
-				// regular churn so both vault families are ready together at rotation
-				// time. Once an XMR monovault already exists, later churns still need a
-				// replacement monovault whenever the validator membership changes.
-				// triggerKeygen's membership-aware dedupe keeps same-membership rounds
-				// from being rescheduled.
-				if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
-					return err
 				}
 			}
 		}

@@ -1996,7 +1996,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	if len(members) == 0 {
 		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires non-empty member set")
 	}
-	requestedVaultKey := monovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
+	requestedVaultKey := frostKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
 	version := strings.TrimSpace(req.ThorchainVersion)
 	if version == "" && c.thorchainBridge != nil {
 		chainVersion, versionErr := c.thorchainBridge.GetThorchainVersion()
@@ -2080,7 +2080,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	}, nil
 }
 
-func monovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members []string) string {
+func frostKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members []string) string {
 	var canonicalMembers []string
 	for _, member := range members {
 		member = strings.TrimSpace(member)
@@ -2090,7 +2090,7 @@ func monovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members [
 	}
 	sort.Strings(canonicalMembers)
 	labelInput := fmt.Sprintf(
-		"thorchain-xmr-monovault-keygen\nheight=%d\npool=%s\nmembers=%s",
+		"thorchain-xmr-frost-keygen\nheight=%d\npool=%s\nmembers=%s",
 		blockHeight,
 		strings.TrimSpace(poolPubKey.String()),
 		strings.Join(canonicalMembers, ","),

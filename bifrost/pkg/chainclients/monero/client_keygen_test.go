@@ -139,7 +139,7 @@ func TestClientKeygenPersistsVaultAddress(t *testing.T) {
 		t.Fatal("expected deterministic non-empty vault key label")
 	}
 	if tssServer.lastReq.VaultPubKey == frostVaultPubKey.String() {
-		t.Fatalf("expected synthetic monovault key label, got final vault pubkey %s", tssServer.lastReq.VaultPubKey)
+		t.Fatalf("expected synthetic FROST keygen label, got final vault pubkey %s", tssServer.lastReq.VaultPubKey)
 	}
 	if tssServer.lastReq.ExpectedAddr != "" {
 		t.Fatalf("expected empty expected_addr, got %s", tssServer.lastReq.ExpectedAddr)
@@ -290,7 +290,7 @@ func TestClientKeygenRegistersObservedMoneroHeightAsBirthday(t *testing.T) {
 	}
 }
 
-func TestClientKeygenAllowsMonovaultRequestWithoutPreseededEddsaKey(t *testing.T) {
+func TestClientKeygenAllowsFrostRequestWithoutPreseededEddsaKey(t *testing.T) {
 	t.Parallel()
 
 	frostVaultPubKey, expectedAddress := testVaultPubKeyAndAddress(t)
@@ -333,9 +333,9 @@ func TestClientKeygenAllowsMonovaultRequestWithoutPreseededEddsaKey(t *testing.T
 		t.Fatalf("expected deterministic non-empty vault key label")
 	}
 	if tssServer.lastReq.VaultPubKey == frostVaultPubKey.String() {
-		t.Fatalf("expected synthetic monovault key label, got final vault pubkey")
+		t.Fatalf("expected synthetic FROST keygen label, got final vault pubkey")
 	}
 	if !strings.HasPrefix(tssServer.lastReq.VaultPubKey, "tthorpub1") {
-		t.Fatalf("unexpected monovault key label: %s", tssServer.lastReq.VaultPubKey)
+		t.Fatalf("unexpected FROST keygen label: %s", tssServer.lastReq.VaultPubKey)
 	}
 }

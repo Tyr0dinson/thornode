@@ -86,8 +86,8 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 		return err
 	}
 
-	if msg.KeygenType != AsgardKeygen && msg.KeygenType != XMRMonovaultKeygen {
-		return fmt.Errorf("only asgard or xmr monovault keygens allowed for tss")
+	if msg.KeygenType != AsgardKeygen {
+		return fmt.Errorf("only asgard keygens allowed for tss")
 	}
 
 	if !msg.PoolPubKeyEddsa.IsEmpty() {
@@ -98,7 +98,7 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 
 	var newMsg *MsgTssPool
 	var err error
-	if msg.KeygenType == XMRMonovaultKeygen {
+	if msg.GetChains().Has(common.XMRChain) {
 		newMsg, err = NewMsgTssPoolV3(
 			msg.PubKeys,
 			msg.PoolPubKey,
@@ -176,23 +176,14 @@ func keygenResultValidityBlocks(ctx cosmos.Context, k keeper.Keeper, keygenType 
 	if blocks <= 0 {
 		blocks = constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval)
 	}
-	if keygenType == XMRMonovaultKeygen {
+	if keygenType == AsgardKeygen {
 		blocks = max(blocks, durationToBlocks(6*time.Minute))
 	}
 	return blocks
 }
 
 func keygenResultValidityBlocksForBlock(ctx cosmos.Context, k keeper.Keeper, keygenType types.KeygenType, keygenBlock KeygenBlock) int64 {
-	blocks := keygenResultValidityBlocks(ctx, k, keygenType)
-	if keygenType != AsgardKeygen {
-		return blocks
-	}
-	for _, keygen := range keygenBlock.Keygens {
-		if keygen.Type == XMRMonovaultKeygen {
-			return max(blocks, keygenResultValidityBlocks(ctx, k, XMRMonovaultKeygen))
-		}
-	}
-	return blocks
+	return keygenResultValidityBlocks(ctx, k, keygenType)
 }
 
 func durationToBlocks(d time.Duration) int64 {
@@ -479,7 +470,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 		// Finalize once at least len(PubKeys) - MaxAbsentKeygenReporters members have reported
 		// success. During churn, when ready nodes are being promoted into the new vault,
 		// finalize on first supermajority so one delayed ready-node observation does not stall
-		// rotation forever. The dedicated XMR monovault also finalizes on first supermajority.
+		// rotation forever.
 		// The VaultExists check is the re-entry guard: late reporters arriving after
 		// finalization must not re-create the vault or re-trigger churn.
 		maxAbsent := h.mgr.Keeper().GetConfigInt64(ctx, constants.MaxAbsentKeygenReporters)
@@ -491,10 +482,6 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 		if msg.KeygenType == AsgardKeygen && voter.HasConsensus() && !asgardKeygenRequiresCompleteConsensus(ctx, h.mgr.Keeper(), voter) {
 			shouldFinalizeVault = true
 		}
-		if msg.KeygenType == XMRMonovaultKeygen && voter.HasConsensus() {
-			shouldFinalizeVault = true
-		}
-
 		if shouldFinalizeVault && !h.mgr.Keeper().VaultExists(ctx, voter.PoolPubKey) {
 			ctx.Logger().Info(
 				"tss keygen results success",
@@ -529,18 +516,14 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 			vaultType := AsgardVault
 			chains := voter.ConsensusChains()
-			if msg.KeygenType == XMRMonovaultKeygen {
-				chains = xmrMonovaultChains()
-			}
 			vaultPubKeyEddsa := voter.PoolPubKeyEddsa
-			if msg.KeygenType == XMRMonovaultKeygen {
+			if chains.Has(common.XMRChain) {
 				if voter.PoolPubKeyFrost.IsEmpty() {
-					return fmt.Errorf("xmr monovault keygen requires pool_pub_key_frost")
+					return fmt.Errorf("xmr asgard keygen requires pool_pub_key_frost")
 				}
 				if voter.ObservedMoneroHeight <= 0 {
-					return fmt.Errorf("xmr monovault keygen requires observed_monero_height")
+					return fmt.Errorf("xmr asgard keygen requires observed_monero_height")
 				}
-				vaultPubKeyEddsa = common.EmptyPubKey
 			}
 			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains), vaultPubKeyEddsa)
 			vault.PubKeyFrost = voter.PoolPubKeyFrost
@@ -704,20 +687,6 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 			}
 		} else {
 			ctx.Logger().Info("not enough regular keygen yet")
-		}
-	}
-
-	if keygenBlockHasType(keygenBlock, XMRMonovaultKeygen) {
-		xmrInitVaults := filterVaultsByKeygenType(initVaults, keygenBlock, XMRMonovaultKeygen)
-		if keygenTypeReady(keygenBlock, readyVaults, XMRMonovaultKeygen) {
-			if len(xmrInitVaults) > 0 {
-				ctx.Logger().Info("tss keygen results xmr monovault", "vaults", len(xmrInitVaults))
-				if rotateErr := h.tryRotateInitVaults(ctx, xmrInitVaults); rotateErr != nil {
-					return fmt.Errorf("fail to rotate xmr monovault: %w", rotateErr)
-				}
-			}
-		} else {
-			ctx.Logger().Info("not enough xmr keygen yet")
 		}
 	}
 

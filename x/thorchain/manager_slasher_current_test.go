@@ -399,7 +399,7 @@ func (s *SlashingSuite) TestInactiveVaultDrainedReroute(c *C) {
 	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
 }
 
-func (s *SlashingSuite) TestInactiveXMRVaultDrainedRerouteUsesMonovault(c *C) {
+func (s *SlashingSuite) TestInactiveXMRVaultDrainedRerouteUsesActiveXMRVault(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	txOutStore := NewTxStoreDummy()
 	ver := GetCurrentVersion()
@@ -415,7 +415,7 @@ func (s *SlashingSuite) TestInactiveXMRVaultDrainedRerouteUsesMonovault(c *C) {
 	inactiveVault := GetRandomVault()
 	inactiveVault.Type = AsgardVault
 	inactiveVault.Status = InactiveVault
-	inactiveVault.Chains = common.Chains{common.THORChain, common.XMRChain}.Strings()
+	inactiveVault.Chains = common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings()
 	inactiveVault.Coins = common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.ZeroUint()),
 	}
@@ -431,7 +431,7 @@ func (s *SlashingSuite) TestInactiveXMRVaultDrainedRerouteUsesMonovault(c *C) {
 	xmrVault := GetRandomVault()
 	xmrVault.Type = AsgardVault
 	xmrVault.Status = ActiveVault
-	xmrVault.Chains = common.Chains{common.THORChain, common.XMRChain}.Strings()
+	xmrVault.Chains = common.Chains{common.THORChain, common.XMRChain, common.BTCChain}.Strings()
 	xmrVault.PubKeyFrost = GetRandomEd25519PubKey()
 	xmrVault.Coins = common.Coins{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(50*common.One)),

@@ -943,7 +943,7 @@ func (s *SignSuite) TestRunCustomKeygenHooksCarriesFrostPubKeyWithoutOverride(c 
 	c.Assert(updatedPoolFrost.Equals(frost), Equals, true)
 }
 
-func (s *SignSuite) TestRunCustomKeygenHooksClearsEddsaForXMRFrostKeygen(c *C) {
+func (s *SignSuite) TestRunCustomKeygenHooksPreservesEddsaForXMRFrostKeygen(c *C) {
 	bridge := fakeBridge{s.bridge}
 	frost := types2.GetRandomPubKey()
 	custom := &MockCustomKeygenChainClient{
@@ -964,7 +964,7 @@ func (s *SignSuite) TestRunCustomKeygenHooksClearsEddsaForXMRFrostKeygen(c *C) {
 	updatedPoolED, updatedPoolFrost, _, _, err := sign.runCustomKeygenHooks(common.Chains{common.THORChain, common.XMRChain}, []string{"nodeA", "nodeB"}, 1234, poolPK, poolED)
 	c.Assert(err, IsNil)
 	c.Assert(custom.calledPoolED.Equals(poolED), Equals, true)
-	c.Assert(updatedPoolED.IsEmpty(), Equals, true)
+	c.Assert(updatedPoolED.Equals(poolED), Equals, true)
 	c.Assert(updatedPoolFrost.Equals(frost), Equals, true)
 }
 
@@ -1018,12 +1018,12 @@ func (s *SignSuite) TestFlushPendingKeygenBroadcastsBroadcastsIndividually(c *C)
 		},
 		{
 			height:               2700,
-			poolPk:               xmrPK,
+			poolPk:               asgardPK,
 			input:                common.PubKeys{memberA, memberB},
-			keygenType:           types2.KeygenType_XMRMonovaultKeygen,
-			chains:               common.Chains{common.THORChain, common.XMRChain},
+			keygenType:           types2.KeygenType_AsgardKeygen,
+			chains:               common.Chains{common.THORChain, common.BTCChain, common.XMRChain},
 			keygenTime:           1,
-			poolPubKeyEddsa:      xmrPK,
+			poolPubKeyEddsa:      asgardED,
 			poolPubKeyFrost:      xmrPK,
 			observedMoneroHeight: 12345,
 		},
@@ -1138,12 +1138,12 @@ func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesConcurrently(c
 		},
 		{
 			height:               2700,
-			poolPk:               xmrPK,
+			poolPk:               asgardPK,
 			input:                common.PubKeys{memberA, memberB},
-			keygenType:           types2.KeygenType_XMRMonovaultKeygen,
-			chains:               common.Chains{common.THORChain, common.XMRChain},
+			keygenType:           types2.KeygenType_AsgardKeygen,
+			chains:               common.Chains{common.THORChain, common.BTCChain, common.XMRChain},
 			keygenTime:           1,
-			poolPubKeyEddsa:      xmrPK,
+			poolPubKeyEddsa:      asgardPK,
 			poolPubKeyFrost:      xmrPK,
 			frostKeyshareHex:     "abcd",
 			observedMoneroHeight: 12345,
@@ -1157,51 +1157,16 @@ func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesConcurrently(c
 	c.Assert(elapsed < 350*time.Millisecond, Equals, true)
 }
 
-func (s *SignSuite) TestProcessKeygenBlockKeepsSuccessfulSiblingWhenAnotherFails(c *C) {
-	bridge := &retryAwareKeygenBridge{
-		batchingKeygenBridge: batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}},
-		mimirs: map[string]int64{
-			constants.ChurnRetryInterval.String():  1000,
-			constants.KeygenRetryInterval.String(): 0,
-		},
-	}
-	successFrost := types2.GetRandomPubKey()
-	custom := &MockCustomKeygenChainClient{
-		MockChainClient: &MockChainClient{},
-		results: []chainclienttypes.CustomKeygenResult{
-			{PoolPubKeyFrost: successFrost},
-			{},
-		},
-		errs: []error{
-			nil,
-			errors.New("boom"),
-		},
-	}
+func (s *SignSuite) TestKeygenChainsIncludeXMRWhenEnabled(c *C) {
+	cfg := config.Bifrost{}
+	cfg.Chains.BTC.Disabled = false
+	cfg.Chains.XMR.Disabled = false
 	sign := &Signer{
-		chains: map[common.Chain]chainclients.ChainClient{
-			common.XMRChain: custom,
-		},
-		thorchainBridge: bridge,
-		pubkeyMgr:       pubkeymanager.NewMockPoolAddressValidator(),
-		logger:          log.With().Str("module", "signer").Logger(),
-		errCounter:      s.metrics.GetCounterVec(metrics.SignerError),
+		cfg: cfg,
 	}
 
-	memberA := types2.GetRandomPubKey()
-	memberB := types2.GetRandomPubKey()
-	memberC := types2.GetRandomPubKey()
-	memberD := types2.GetRandomPubKey()
-	keygenA, err := types2.NewKeygen(2700, []string{memberA.String(), memberB.String()}, types2.KeygenType_XMRMonovaultKeygen)
-	c.Assert(err, IsNil)
-	keygenB, err := types2.NewKeygen(2700, []string{memberC.String(), memberD.String()}, types2.KeygenType_XMRMonovaultKeygen)
-	c.Assert(err, IsNil)
-
-	sign.processKeygenBlock(types2.KeygenBlock{
-		Height:  2700,
-		Keygens: []types2.Keygen{keygenA, keygenB},
-	})
-
-	c.Assert(custom.callCount, Equals, 2)
-	c.Assert(bridge.batchSizes, HasLen, 1)
-	c.Assert(bridge.batchSizes[0], Equals, 1)
+	chains := sign.keygenChainsForType(types2.KeygenType_AsgardKeygen)
+	c.Assert(chains.Has(common.THORChain), Equals, true)
+	c.Assert(chains.Has(common.BTCChain), Equals, true)
+	c.Assert(chains.Has(common.XMRChain), Equals, true)
 }
