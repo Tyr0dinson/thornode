@@ -156,6 +156,7 @@ func (m *mockBridgeForKeysign) Broadcast(msgs ...sdk.Msg) (common.TxID, error) {
 	m.broadcasts = append(m.broadcasts, msgs...)
 	return common.TxID("mimir-tx"), m.broadcastErr
 }
+
 func (m *mockBridgeForKeysign) BroadcastWithBlocking(...sdk.Msg) (common.TxID, error) {
 	return "", nil
 }
@@ -178,9 +179,7 @@ func (m *mockBridgeForKeysign) GetReferenceMemo(common.Chain, string) (string, e
 func (m *mockBridgeForKeysign) GetReferenceMemoByTxHash(string) (string, error) { return "", nil }
 
 func testKeysignPoolPubKey(c *C) common.PubKey {
-	pubKey, err := common.NewPubKey("thorpub1addwnpepq2ryyje5zr09lq7gqptjwnxqsy2vcdngvwd6z7yt5yjcnyj8c8cn559xe69")
-	c.Assert(err, IsNil)
-	return pubKey
+	return stypes.GetRandomPubKey()
 }
 
 func testKeysignSignerAddress() sdk.AccAddress {
