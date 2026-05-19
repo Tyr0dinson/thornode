@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
+.PHONY: adr28 build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -489,6 +489,9 @@ docker-gitlab-build:
 ########################################################################################
 # Tools
 ########################################################################################
+
+adr28:
+	@go run ./tools/adr28
 
 thorscan-build:
 	@docker build tools/thorscan -f tools/thorscan/Dockerfile \
