@@ -58,7 +58,9 @@ func executeADR28(sdkCtx cosmos.Context, k keeper.Keeper) error {
 
 	shortfall := sortedCoins(liabilities.SafeSub(assets...))
 
-	if err := printCoins("gross liabilities", shortfall); err != nil {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	if err := printCoins(w, "gross liabilities", shortfall); err != nil {
 		return err
 	}
 
@@ -66,7 +68,7 @@ func executeADR28(sdkCtx cosmos.Context, k keeper.Keeper) error {
 	if err != nil {
 		return err
 	}
-	if err := printCoins("reserve liquidity", reserveLiquidity); err != nil {
+	if err := printCoins(w, "reserve liquidity", reserveLiquidity); err != nil {
 		return err
 	}
 
@@ -74,37 +76,41 @@ func executeADR28(sdkCtx cosmos.Context, k keeper.Keeper) error {
 	if err != nil {
 		return err
 	}
-	if err := printCoins("treasury liquidity", treasuryLiquidity); err != nil {
+	if err := printCoins(w, "treasury liquidity", treasuryLiquidity); err != nil {
 		return err
 	}
 
-	afterReserve, err := allocateLiquidity("reserve liquidity", shortfall, reserveLiquidity)
+	afterReserve, err := allocateLiquidity(w, "reserve liquidity", shortfall, reserveLiquidity)
 	if err != nil {
 		return err
 	}
 
-	afterTreasury, err := allocateLiquidity("treasury liquidity", afterReserve, treasuryLiquidity)
+	afterTreasury, err := allocateLiquidity(w, "treasury liquidity", afterReserve, treasuryLiquidity)
 	if err != nil {
 		return err
 	}
 
-	remaining, err := allocateSynths(sdkCtx, k, afterTreasury)
+	remaining, err := allocateSynths(w, sdkCtx, k, afterTreasury)
 	if err != nil {
 		return err
 	}
 
-	if err := printCoins("liability remaining", remaining); err != nil {
+	if err := printCoins(w, "liability remaining", remaining); err != nil {
 		return err
 	}
 
 	reserveRemaining := reserveLiquidity.SafeSub(shortfall...)
-	if err := printCoins("reserve remaining", reserveRemaining); err != nil {
+	if err := printCoins(w, "reserve remaining", reserveRemaining); err != nil {
 		return err
 	}
 
 	treasuryRemaining := treasuryLiquidity.SafeSub(afterReserve...)
-	if err := printCoins("treasury remaining", treasuryRemaining); err != nil {
+	if err := printCoins(w, "treasury remaining", treasuryRemaining); err != nil {
 		return err
+	}
+
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush ADR28 output: %w", err)
 	}
 
 	return nil
@@ -280,13 +286,12 @@ func liquidity(sdkCtx cosmos.Context, k keeper.Keeper, address common.Address) (
 	return total, nil
 }
 
-func printCoins(label string, coins common.Coins) error {
+func printCoins(w *tabwriter.Writer, label string, coins common.Coins) error {
 	coins = sortedCoins(coins)
-	if _, err := fmt.Printf("%s (%d assets)\n", label, len(coins)); err != nil {
+	if _, err := fmt.Fprintf(w, "%s (%d assets)\n", label, len(coins)); err != nil {
 		return fmt.Errorf("print %s header: %w", label, err)
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, coin := range coins {
 		if _, err := fmt.Fprintf(w, "%s.%s\t%s\n", coin.Asset.Chain, coin.Asset.Ticker, formatAmount(coin.Amount)); err != nil {
 			return fmt.Errorf("print %s row for %s: %w", label, coin.Asset, err)
@@ -295,19 +300,15 @@ func printCoins(label string, coins common.Coins) error {
 	if _, err := fmt.Fprintln(w); err != nil {
 		return fmt.Errorf("print %s footer: %w", label, err)
 	}
-	if err := w.Flush(); err != nil {
-		return fmt.Errorf("flush %s: %w", label, err)
-	}
 	return nil
 }
 
-func allocateLiquidity(label string, coins, liquidity common.Coins) (common.Coins, error) {
+func allocateLiquidity(w *tabwriter.Writer, label string, coins, liquidity common.Coins) (common.Coins, error) {
 	coins = sortedCoins(coins)
 	remaining := common.NewCoins()
-	if _, err := fmt.Printf("%s consumption (%d assets)\n", label, len(coins)); err != nil {
+	if _, err := fmt.Fprintf(w, "%s consumption (%d assets)\n", label, len(coins)); err != nil {
 		return nil, fmt.Errorf("print %s consumption header: %w", label, err)
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n",
 		"asset",
 		"consumed",
@@ -325,9 +326,6 @@ func allocateLiquidity(label string, coins, liquidity common.Coins) (common.Coin
 
 	if _, err := fmt.Fprintln(w); err != nil {
 		return nil, fmt.Errorf("print %s consumption footer: %w", label, err)
-	}
-	if err := w.Flush(); err != nil {
-		return nil, fmt.Errorf("flush %s consumption: %w", label, err)
 	}
 	return remaining, nil
 }
@@ -358,13 +356,12 @@ func allocateLiquidityCoin(label string, w *tabwriter.Writer, coin, liquidity co
 	return common.NewCoin(coin.Asset, common.SafeSub(coin.Amount, consumed)), nil
 }
 
-func allocateSynths(sdkCtx cosmos.Context, k keeper.Keeper, coins common.Coins) (common.Coins, error) {
+func allocateSynths(w *tabwriter.Writer, sdkCtx cosmos.Context, k keeper.Keeper, coins common.Coins) (common.Coins, error) {
 	coins = sortedCoins(coins)
 	remaining := common.NewCoins()
-	if _, err := fmt.Printf("synth consumption (%d assets)\n", len(coins)); err != nil {
+	if _, err := fmt.Fprintf(w, "synth consumption (%d assets)\n", len(coins)); err != nil {
 		return nil, fmt.Errorf("print synth consumption header: %w", err)
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 		"asset",
 		"consumed",
@@ -383,9 +380,6 @@ func allocateSynths(sdkCtx cosmos.Context, k keeper.Keeper, coins common.Coins) 
 
 	if _, err := fmt.Fprintln(w); err != nil {
 		return nil, fmt.Errorf("print synth consumption footer: %w", err)
-	}
-	if err := w.Flush(); err != nil {
-		return nil, fmt.Errorf("flush synth consumption: %w", err)
 	}
 	return remaining, nil
 }
