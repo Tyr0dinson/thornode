@@ -947,7 +947,9 @@ func (c *TronClient) sign(
 			return nil, err
 		}
 	} else {
-		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
+		// RemoteSign validates the Tron payload against this TxOut intent before
+		// asking TSS to sign the raw transaction digest.
+		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String(), tss.NewTxOutSigningIntent(txOutItem, thorchainHeight))
 		if err == nil && signature != nil {
 			return append(signature, recovery...), nil
 		}

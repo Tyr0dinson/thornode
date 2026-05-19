@@ -27,6 +27,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -1515,7 +1516,7 @@ func (s *ExtraTestSuite) TestSignMsgBadPubkey(c *C) {
 	c.Assert(err, IsNil)
 
 	// signMsg with invalid pubkey should fail
-	_, err = cc.signMsg(txBuilder, common.PubKey("invalid"), 0, 0, 0)
+	_, err = cc.signMsg(txBuilder, common.PubKey("invalid"), 0, 0, tss.SigningIntent{})
 	c.Assert(err, NotNil)
 }
 

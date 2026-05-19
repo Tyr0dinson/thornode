@@ -59,11 +59,11 @@ type zecDigestSigner struct {
 	afterSign  func()
 }
 
-func (s *zecDigestSigner) RemoteSign(msg []byte, _ common.SigningAlgo, _ string, height int64) ([]byte, []byte, error) {
+func (s *zecDigestSigner) RemoteSign(msg []byte, _ common.SigningAlgo, _ string, intent tss.SigningIntent) ([]byte, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.digests = append(s.digests, append([]byte(nil), msg...))
-	s.heights = append(s.heights, height)
+	s.heights = append(s.heights, intent.Height)
 	if s.fail {
 		return nil, nil, errors.New("injected signing failure")
 	}

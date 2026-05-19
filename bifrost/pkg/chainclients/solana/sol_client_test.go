@@ -409,7 +409,7 @@ type mockSOLThorchainKeyManager struct {
 }
 
 // RemoteSign returns the configured TSS error to exercise SignTx failure paths.
-func (m *mockSOLThorchainKeyManager) RemoteSign(_ []byte, _ common.SigningAlgo, _ string, _ int64) ([]byte, []byte, error) {
+func (m *mockSOLThorchainKeyManager) RemoteSign(_ []byte, _ common.SigningAlgo, _ string, _ tss.SigningIntent) ([]byte, []byte, error) {
 	return nil, nil, m.err
 }
 

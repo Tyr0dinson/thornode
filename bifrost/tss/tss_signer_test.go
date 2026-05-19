@@ -19,6 +19,7 @@ import (
 	tsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -73,6 +74,8 @@ type mockBridgeForKeysign struct {
 	keysignPartyCalls     int
 	lastKeysignPartyKey   common.PubKey
 	lastKeysignPartyBlock int64
+	keysignTxOut          tctypes.TxOutItem
+	keysignErr            error
 }
 
 var _ thorclient.ThorchainBridge = (*mockBridgeForKeysign)(nil)
@@ -211,8 +214,39 @@ func (m *mockBridgeForKeysign) BroadcastWithBlocking(...sdk.Msg) (common.TxID, e
 	return "", nil
 }
 
-func (m *mockBridgeForKeysign) GetKeysign(int64, string) (tctypes.TxOut, error) {
-	return tctypes.TxOut{}, nil
+func (m *mockBridgeForKeysign) GetKeysign(height int64, _ string) (tctypes.TxOut, error) {
+	if m.keysignErr != nil {
+		return tctypes.TxOut{}, m.keysignErr
+	}
+	if m.keysignTxOut.Chain.IsEmpty() {
+		return tctypes.TxOut{}, nil
+	}
+	coin := common.NoCoin
+	if len(m.keysignTxOut.Coins) > 0 {
+		coin = m.keysignTxOut.Coins[0]
+	}
+	return tctypes.TxOut{
+		Height: height,
+		TxArray: []tctypes.TxArrayItem{
+			{
+				Chain:                 m.keysignTxOut.Chain,
+				ToAddress:             m.keysignTxOut.ToAddress,
+				VaultPubKey:           m.keysignTxOut.VaultPubKey,
+				Coin:                  coin,
+				Memo:                  m.keysignTxOut.Memo,
+				OriginalMemo:          m.keysignTxOut.OriginalMemo,
+				MaxGas:                m.keysignTxOut.MaxGas,
+				GasRate:               m.keysignTxOut.GasRate,
+				InHash:                m.keysignTxOut.InHash,
+				OutHash:               m.keysignTxOut.OutHash,
+				Aggregator:            m.keysignTxOut.Aggregator,
+				AggregatorTargetAsset: m.keysignTxOut.AggregatorTargetAsset,
+				AggregatorTargetLimit: m.keysignTxOut.AggregatorTargetLimit,
+				VaultPubKeyEddsa:      m.keysignTxOut.VaultPubKeyEddsa,
+				VaultPubKeyFrost:      m.keysignTxOut.VaultPubKeyFrost,
+			},
+		},
+	}, nil
 }
 
 func (m *mockBridgeForKeysign) GetNodeAccount(string) (*stypes.NodeAccount, error) { return nil, nil }
@@ -229,6 +263,29 @@ func (m *mockBridgeForKeysign) GetReferenceMemo(common.Chain, string) (string, e
 	return "", nil
 }
 func (m *mockBridgeForKeysign) GetReferenceMemoByTxHash(string) (string, error) { return "", nil }
+
+func (m *mockBridgeForKeysign) signingIntent(poolPubKey string, algo common.SigningAlgo, height int64) SigningIntent {
+	chain := common.ETHChain
+	vaultPubKey := common.PubKey(poolPubKey)
+	vaultPubKeyEddsa := common.EmptyPubKey
+	if algo == common.SigningAlgoEd25519 {
+		chain = common.SOLChain
+		vaultPubKey = common.PubKey("vaultpub")
+		vaultPubKeyEddsa = common.PubKey(poolPubKey)
+	}
+	tx := tctypes.TxOutItem{
+		Chain:            chain,
+		ToAddress:        common.Address("to-address"),
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyEddsa: vaultPubKeyEddsa,
+		Coins:            common.Coins{common.NewCoin(chain.GetGasAsset(), cosmos.NewUint(1))},
+		Memo:             "test",
+		GasRate:          1,
+		Height:           height,
+	}
+	m.keysignTxOut = tx
+	return NewTxOutSigningIntent(tx, height)
+}
 
 // ---------------------------------------------------------------------------
 // KeysignError Tests
@@ -355,12 +412,12 @@ func (s *KeySignTestSuite) TestGetSignatureHighS(c *C) {
 
 func (s *KeySignTestSuite) TestRemoteSignEmptyMsg(c *C) {
 	ks, _ := NewKeySign(&mockTssServer{}, &mockBridgeForKeysign{})
-	sig, recoveryID, err := ks.RemoteSign(nil, common.SigningAlgoSecp256k1, "poolpub", 0)
+	sig, recoveryID, err := ks.RemoteSign(nil, common.SigningAlgoSecp256k1, "poolpub", SigningIntent{})
 	c.Assert(err, IsNil)
 	c.Assert(sig, IsNil)
 	c.Assert(recoveryID, IsNil)
 
-	sig, recoveryID, err = ks.RemoteSign([]byte{}, common.SigningAlgoSecp256k1, "poolpub", 0)
+	sig, recoveryID, err = ks.RemoteSign([]byte{}, common.SigningAlgoSecp256k1, "poolpub", SigningIntent{})
 	c.Assert(err, IsNil)
 	c.Assert(sig, IsNil)
 	c.Assert(recoveryID, IsNil)
@@ -397,7 +454,7 @@ func (s *KeySignTestSuite) TestRemoteSignSecp256k1Success(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoSecp256k1, "poolpub", 100)
+	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoSecp256k1, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoSecp256k1, 100))
 	c.Assert(err, IsNil)
 	c.Assert(sig, NotNil)
 	c.Assert(len(sig), Equals, 64)
@@ -416,13 +473,18 @@ func (s *KeySignTestSuite) TestRemoteSignUsesBatchInterval(c *C) {
 			Status: tsscommon.Success,
 		},
 	}
-	ks, err := NewKeySign(server, &mockBridgeForKeysign{version: semver.MustParse("1.0.0")})
+	bridge := &mockBridgeForKeysign{
+		version:     semver.MustParse("1.0.0"),
+		blockHeight: 100,
+	}
+	ks, err := NewKeySign(server, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
 	defer ks.Stop()
 
+	intent := bridge.signingIntent("poolpub", common.SigningAlgoEd25519, 100)
 	start := time.Now()
-	sig, _, err := ks.RemoteSign(msg, common.SigningAlgoEd25519, "poolpub", 100)
+	sig, _, err := ks.RemoteSign(msg, common.SigningAlgoEd25519, "poolpub", intent)
 	elapsed := time.Since(start)
 	c.Assert(err, IsNil)
 	c.Assert(sig, DeepEquals, sigBytes)
@@ -457,7 +519,7 @@ func (s *KeySignTestSuite) TestRemoteSignEd25519Success(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoEd25519, "poolpub", 100)
+	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoEd25519, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoEd25519, 100))
 	c.Assert(err, IsNil)
 	c.Assert(sig, NotNil)
 	c.Assert(len(sig), Equals, 64)
@@ -479,7 +541,7 @@ func (s *KeySignTestSuite) TestRemoteSignError(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", 100)
+	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoSecp256k1, 100))
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*fail to tss sign.*")
 }
@@ -506,7 +568,7 @@ func (s *KeySignTestSuite) TestRemoteSignBlame(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", 100)
+	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoSecp256k1, 100))
 	c.Assert(err, NotNil)
 	// The error is wrapped via fmt.Errorf, so use errors.As
 	var ke KeysignError
@@ -538,7 +600,7 @@ func (s *KeySignTestSuite) TestRemoteSignNotSelected(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoSecp256k1, "poolpub", 100)
+	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoSecp256k1, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoSecp256k1, 100))
 	c.Assert(errors.Is(err, ErrNotSelectedForKeysign), Equals, true)
 	c.Assert(sig, IsNil)
 	c.Assert(recovery, IsNil)
@@ -569,7 +631,7 @@ func (s *KeySignTestSuite) TestRemoteSignEd25519NotSelected(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoEd25519, "poolpub", 100)
+	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoEd25519, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoEd25519, 100))
 	c.Assert(errors.Is(err, ErrNotSelectedForKeysign), Equals, true)
 	c.Assert(sig, IsNil)
 	c.Assert(recovery, IsNil)
@@ -586,9 +648,9 @@ func (s *KeySignTestSuite) TestRemoteSignRequiresHeight(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", 0)
+	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoSecp256k1, 0))
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Matches, ".*keysign task height must be positive.*")
+	c.Assert(err.Error(), Matches, ".*missing txout height.*")
 	c.Assert(bridge.keysignPartyCalls, Equals, 0)
 }
 
@@ -604,7 +666,7 @@ func (s *KeySignTestSuite) TestRemoteSignUsesRequestedHeight(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", 456)
+	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoSecp256k1, 456))
 	c.Assert(errors.Is(err, ErrNotSelectedForKeysign), Equals, true)
 	c.Assert(bridge.keysignPartyCalls, Equals, 1)
 	c.Assert(bridge.lastKeysignPartyBlock, Equals, int64(456))
@@ -637,7 +699,7 @@ func (s *KeySignTestSuite) TestRemoteSignMsgNotFound(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", 100)
+	_, _, err = ks.RemoteSign([]byte("test msg"), common.SigningAlgoSecp256k1, "poolpub", bridge.signingIntent("poolpub", common.SigningAlgoSecp256k1, 100))
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*didn't find signature.*")
 }

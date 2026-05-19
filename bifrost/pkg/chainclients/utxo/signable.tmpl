@@ -20,18 +20,20 @@ import (
 {{- range $chain, $pkg := . }}
 
 type tssSignable{{ ToUpper $chain }} struct {
-	poolPubKey      common.PubKey
-	tssKeyManager   tss.ThorchainKeyManager
-	log             zerolog.Logger
-	thorchainHeight int64
+	poolPubKey    common.PubKey
+	tssKeyManager tss.ThorchainKeyManager
+	signingIntent tss.SigningIntent
+	log           zerolog.Logger
 }
 
-func newTssSignable{{ ToUpper $chain }}(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger, thorchainHeight int64) *tssSignable{{ ToUpper $chain }} {
+// newTssSignable{{ ToUpper $chain }} builds the UTXO signer with the TxOut intent
+// that authorizes every payload signed for this outbound.
+func newTssSignable{{ ToUpper $chain }}(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, signingIntent tss.SigningIntent, log zerolog.Logger) *tssSignable{{ ToUpper $chain }} {
 	return &tssSignable{{ ToUpper $chain }}{
-		poolPubKey:      poolPubKey,
-		tssKeyManager:   tssKeyManager,
-		log:             log,
-		thorchainHeight: thorchainHeight,
+		poolPubKey:    poolPubKey,
+		tssKeyManager: tssKeyManager,
+		signingIntent: signingIntent,
+		log:           log,
 	}
 }
 
@@ -41,7 +43,9 @@ func (ts *tssSignable{{ ToUpper $chain }}) SignECDSA(payload []byte) (*{{ $chain
 func (ts *tssSignable{{ ToUpper $chain }}) Sign(payload []byte) (*{{ $chain }}ec.Signature, error) {
 {{- end }}
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
-	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
+	// Forward the TxOut intent with each input signature so RemoteSign can
+	// reject payloads that do not belong to THORChain's current /keysign item.
+	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.signingIntent)
 	if err != nil {
 		return nil, err
 	}

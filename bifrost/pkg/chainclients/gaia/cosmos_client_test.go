@@ -36,6 +36,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -479,7 +480,7 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 		vaultPubKey,
 		uint64(meta.AccountNumber),
 		uint64(meta.SeqNumber),
-		0,
+		tss.SigningIntent{},
 	)
 	c.Assert(err, IsNil)
 }

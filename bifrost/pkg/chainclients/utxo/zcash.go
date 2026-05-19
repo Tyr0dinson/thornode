@@ -340,7 +340,9 @@ func (c *Client) signUTXOZEC(zecTx *zcash.Tx, hashes *zcash.SigHashes, tx stypes
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
 		signable = btctxscript.NewPrivateKeySignable(c.nodePrivKey)
 	} else {
-		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		// Store the signing intent on the signable so each input signature is
+		// authorized before the payload reaches TSS.
+		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.signingIntentForTxOut(tx), c.log)
 	}
 
 	blakeHash, err := hashes.SignatureHash(idx)

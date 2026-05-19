@@ -72,17 +72,17 @@ func (s *KeysignWrapperTestSuite) TestGetPubKey(c *C) {
 }
 
 func (s *KeysignWrapperTestSuite) TestSign(c *C) {
-	buf, err := s.wrapper.Sign(nil, types.GetRandomPubKey(), 100)
+	buf, err := s.wrapper.Sign(nil, types.GetRandomPubKey(), tss.SigningIntent{})
 	c.Assert(err, NotNil)
 	c.Assert(buf, IsNil)
 	createdTx := etypes.NewTransaction(0, ecommon.HexToAddress("0x7d182d6a138eaa06f6f452bc3f8fc57e17d1e193"), big.NewInt(1), MaxContractGas, big.NewInt(1), []byte("whatever"))
-	buf, err = s.wrapper.Sign(createdTx, common.EmptyPubKey, 100)
+	buf, err = s.wrapper.Sign(createdTx, common.EmptyPubKey, tss.SigningIntent{})
 	c.Assert(err, NotNil)
 	c.Assert(buf, IsNil)
-	_, err = s.wrapper.Sign(createdTx, s.wrapper.pubKey, 100)
+	_, err = s.wrapper.Sign(createdTx, s.wrapper.pubKey, tss.SigningIntent{})
 	c.Assert(err, IsNil)
 	// test sign with TSS
-	buf, err = s.wrapper.Sign(createdTx, types.GetRandomPubKey(), 100)
+	buf, err = s.wrapper.Sign(createdTx, types.GetRandomPubKey(), tss.SigningIntent{})
 	c.Assert(err, NotNil)
 	c.Assert(buf, IsNil)
 }

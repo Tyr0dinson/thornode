@@ -476,7 +476,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		}
 	}
 
-	txBytes, err := c.signMsg(msg, tx.VaultPubKey, thorchainHeight)
+	txBytes, err := c.signMsg(msg, tx.VaultPubKey, tss.NewTxOutSigningIntent(tx, thorchainHeight))
 	if err != nil {
 		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
 			return nil, nil, nil, nil
@@ -517,7 +517,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 func (c *Client) signMsg(
 	payment *transactions.Payment,
 	pubkey common.PubKey,
-	thorchainHeight int64,
+	intent tss.SigningIntent,
 ) ([]byte, error) {
 	xrpPubKey, err := pubkey.Secp256K1()
 	if err != nil {
@@ -544,7 +544,9 @@ func (c *Client) signMsg(
 	} else {
 		hashedMsg := sha512.Sum512(signBytes)
 		var signature []byte
-		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
+		// The XRP signer hashes its own canonical sign bytes, while the intent
+		// ties that hash back to the scheduled THORChain TxOut.
+		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String(), intent)
 		if err != nil {
 			c.logger.Err(err).Msg("xrp remote sign")
 			return nil, fmt.Errorf("error, xrp remote sign: %w", err)

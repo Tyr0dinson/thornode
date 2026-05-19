@@ -34,7 +34,9 @@ func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amoun
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
 		signable = btctxscript.NewPrivateKeySignable(c.nodePrivKey)
 	} else {
-		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		// Store the signing intent on the signable so each input signature is
+		// authorized before the payload reaches TSS.
+		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.signingIntentForTxOut(tx), c.log)
 	}
 
 	witness, err := btctxscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, btctxscript.SigHashAll, signable, true)

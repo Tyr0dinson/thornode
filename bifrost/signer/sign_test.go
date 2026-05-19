@@ -320,6 +320,18 @@ func (b *processTestBridge) GetBlockHeight() (int64, error) {
 	return b.ThorchainBridge.GetBlockHeight()
 }
 
+// fakeKeysignBridge gives signer tests a scheduled TxOut response so the TSS
+// signing authorization gate can pass for realistic outbound fixtures.
+type fakeKeysignBridge struct {
+	fakeBridge
+	keysign types.TxOut
+}
+
+// GetKeysign returns the static signed keysign payload configured by each test.
+func (b fakeKeysignBridge) GetKeysign(int64, string) (types.TxOut, error) {
+	return b.keysign, nil
+}
+
 type batchingKeygenBridge struct {
 	fakeBridge
 	batchSizes []int
@@ -538,6 +550,38 @@ func newFakeTss(msg string, succeedOnly bool) *fakeTssServer {
 	}
 }
 
+func testKeysignTxOut(height int64, items ...types.TxOutItem) types.TxOut {
+	txArray := make([]types.TxArrayItem, 0, len(items))
+	for _, item := range items {
+		var coin common.Coin
+		if len(item.Coins) > 0 {
+			// TxArrayItem carries a single coin, while Bifrost's TxOutItem uses
+			// common.Coins. These tests only need one-coin outbounds.
+			coin = item.Coins[0]
+		}
+		txArray = append(txArray, types.TxArrayItem{
+			Chain:                 item.Chain,
+			ToAddress:             item.ToAddress,
+			VaultPubKey:           item.VaultPubKey,
+			Coin:                  coin,
+			Memo:                  item.Memo,
+			OriginalMemo:          item.OriginalMemo,
+			MaxGas:                item.MaxGas,
+			GasRate:               item.GasRate,
+			InHash:                item.InHash,
+			Aggregator:            item.Aggregator,
+			AggregatorTargetAsset: item.AggregatorTargetAsset,
+			AggregatorTargetLimit: item.AggregatorTargetLimit,
+			VaultPubKeyEddsa:      item.VaultPubKeyEddsa,
+			VaultPubKeyFrost:      item.VaultPubKeyFrost,
+		})
+	}
+	return types.TxOut{
+		Height:  height,
+		TxArray: txArray,
+	}
+}
+
 // --------------------------------- chain client ---------------------------------
 
 type MockChainClient struct {
@@ -570,7 +614,10 @@ func (b *MockChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []b
 	}
 
 	b.signCount += 1
-	sig, _, err := b.ks.RemoteSign([]byte(tai.Memo), common.SigningAlgoSecp256k1, tai.VaultPubKey.String(), height)
+	if tai.Height == 0 {
+		tai.Height = height
+	}
+	sig, _, err := b.ks.RemoteSign([]byte(tai.Memo), common.SigningAlgoSecp256k1, tai.VaultPubKey.String(), tss.NewTxOutSigningIntent(tai, height))
 
 	return sig, []byte(tai.Memo), nil, err
 }
@@ -870,8 +917,22 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 
 	// start a mock keysign
 	msg := "foobar"
+	const txOutHeight int64 = 1
+	txOutItem := types.TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+		Memo:        msg,
+		VaultPubKey: vaultPubKey,
+		Height:      txOutHeight,
+		Coins: common.Coins{ // must be set or signer overrides memo
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		},
+	}
 	tssServer := newFakeTss(msg, true)
-	bridge := fakeBridge{s.bridge}
+	bridge := fakeKeysignBridge{
+		fakeBridge: fakeBridge{s.bridge},
+		keysign:    testKeysignTxOut(txOutHeight, txOutItem),
+	}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -894,19 +955,9 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	// create a signer store with fake txouts
 	sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
 	c.Assert(err, IsNil)
-	const txOutHeight int64 = 1
 	err = sign.storage.Set(TxOutStoreItem{
-		Height: txOutHeight,
-		TxOutItem: types.TxOutItem{
-			Chain:       common.ETHChain,
-			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
-			Memo:        msg,
-			VaultPubKey: vaultPubKey,
-			Height:      txOutHeight,
-			Coins: common.Coins{ // must be set or signer overrides memo
-				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
-			},
-		},
+		Height:    txOutHeight,
+		TxOutItem: txOutItem,
 	})
 	c.Assert(err, IsNil)
 
@@ -956,8 +1007,64 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 
 	// start a mock keysign, succeeds on 5th try
 	msg := "foobar"
+	const txOutHeight int64 = 1
+	txOutItem1 := types.TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+		Memo:        msg,
+		VaultPubKey: vaultPubKey,
+		Height:      txOutHeight,
+		Coins: common.Coins{ // must be set or signer overrides memo
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		},
+	}
+	txOutItem2 := types.TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+		Memo:        msg,
+		VaultPubKey: vaultPubKey,
+		Height:      txOutHeight,
+		Coins: common.Coins{ // must be set or signer overrides memo
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		},
+	}
+	txOutItem3 := types.TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   "0xd58610f89265a2fb637ac40edf59141ff873b266",
+		Memo:        msg,
+		VaultPubKey: vaultPubKey,
+		Height:      txOutHeight,
+		Coins: common.Coins{ // must be set or signer overrides memo
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		},
+	}
+	ignoredTxOutItem := types.TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+		Memo:        msg,
+		VaultPubKey: "thorpub1addwnpepqtspqyy6gk22u37ztra4hq3hdakc0w0k60sfy849mlml2vrpfr0wvm6uz09",
+		Height:      txOutHeight,
+		Coins: common.Coins{ // must be set or signer overrides memo
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		},
+	}
+	msg2 := "foobar2"
+	btcTxOutItem := types.TxOutItem{
+		Chain:       common.BTCChain,
+		ToAddress:   "tbtc1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
+		VaultPubKey: vaultPubKey,
+		Memo:        msg2,
+		Height:      txOutHeight,
+		Coins: common.Coins{
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(1000000)),
+		},
+	}
+	keysign := testKeysignTxOut(txOutHeight, txOutItem1, txOutItem2, txOutItem3, btcTxOutItem)
 	tssServer := newFakeTss(msg, false)
-	bridge := fakeBridge{s.bridge}
+	bridge := fakeKeysignBridge{
+		fakeBridge: fakeBridge{s.bridge},
+		keysign:    keysign,
+	}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -980,87 +1087,43 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	// create a signer store with fake txouts
 	sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
 	c.Assert(err, IsNil)
-	const txOutHeight int64 = 1
 	err = sign.storage.Set(TxOutStoreItem{
-		Height: txOutHeight,
-		TxOutItem: types.TxOutItem{
-			Chain:       common.ETHChain,
-			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
-			Memo:        msg,
-			VaultPubKey: vaultPubKey,
-			Height:      txOutHeight,
-			Coins: common.Coins{ // must be set or signer overrides memo
-				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
-			},
-		},
+		Height:    txOutHeight,
+		TxOutItem: txOutItem1,
 	})
 	c.Assert(err, IsNil)
 	err = sign.storage.Set(TxOutStoreItem{
-		Height: txOutHeight,
-		TxOutItem: types.TxOutItem{
-			Chain:       common.ETHChain,
-			ToAddress:   "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-			Memo:        msg,
-			VaultPubKey: vaultPubKey,
-			Height:      txOutHeight,
-			Coins: common.Coins{ // must be set or signer overrides memo
-				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
-			},
-		},
+		Height:    txOutHeight,
+		TxOutItem: txOutItem2,
 	})
 	c.Assert(err, IsNil)
 	err = sign.storage.Set(TxOutStoreItem{
-		Height: txOutHeight,
-		TxOutItem: types.TxOutItem{
-			Chain:       common.ETHChain,
-			ToAddress:   "0xd58610f89265a2fb637ac40edf59141ff873b266",
-			Memo:        msg,
-			VaultPubKey: vaultPubKey,
-			Height:      txOutHeight,
-			Coins: common.Coins{ // must be set or signer overrides memo
-				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
-			},
-		},
+		Height:    txOutHeight,
+		TxOutItem: txOutItem3,
 	})
 	c.Assert(err, IsNil)
 
 	// this will be ignored entirely since the vault pubkey is different
 	err = sign.storage.Set(TxOutStoreItem{
-		Height: txOutHeight,
-		TxOutItem: types.TxOutItem{
-			Chain:       common.ETHChain,
-			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
-			Memo:        msg,
-			VaultPubKey: "thorpub1addwnpepqtspqyy6gk22u37ztra4hq3hdakc0w0k60sfy849mlml2vrpfr0wvm6uz09",
-			Height:      txOutHeight,
-			Coins: common.Coins{ // must be set or signer overrides memo
-				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
-			},
-		},
+		Height:    txOutHeight,
+		TxOutItem: ignoredTxOutItem,
 	})
 	c.Assert(err, IsNil)
 
 	// create the same on different chain, should move independently
-	msg2 := "foobar2"
 	tssServer2 := newFakeTss(msg2, true) // this one succeeds on first try
-	bridge2 := fakeBridge{s.bridge}
+	bridge2 := fakeKeysignBridge{
+		fakeBridge: fakeBridge{s.bridge},
+		keysign:    keysign,
+	}
 	ks2, err := tss.NewKeySign(tssServer2, bridge2)
 	c.Assert(err, IsNil)
 	ks2.Start()
 	cc2 := &MockChainClient{ks: ks2}
 	sign.chains[common.BTCChain] = cc2
 	tois2 := TxOutStoreItem{
-		Height: txOutHeight,
-		TxOutItem: types.TxOutItem{
-			Chain:       common.BTCChain,
-			ToAddress:   "tbtc1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
-			VaultPubKey: vaultPubKey,
-			Memo:        msg2,
-			Height:      txOutHeight,
-			Coins: common.Coins{
-				common.NewCoin(common.BTCAsset, cosmos.NewUint(1000000)),
-			},
-		},
+		Height:    txOutHeight,
+		TxOutItem: btcTxOutItem,
 	}
 	err = sign.storage.Set(tois2)
 	c.Assert(err, IsNil)

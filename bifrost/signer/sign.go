@@ -971,10 +971,11 @@ func (s *Signer) secp256k1VerificationSignatureSync(pk common.PubKey, thorchainH
 
 	// sign the public key with its own private key
 	data := []byte(pk.String())
-	// The check signature proves the newly generated secp256k1 key can sign
-	// before thornode has saved the new vault, so attach an empty policy and
-	// let go-tss resolve the full local keygen membership.
-	sigBytes, _, err := ks.RemoteSign(data, common.SigningAlgoSecp256k1, pk.String(), thorchainHeight)
+	// This is the only non-TxOut RemoteSign flow: keygen self-signs the new
+	// pool pubkey so THORNode can verify ownership of the generated key.
+	intent := tss.NewKeygenVerificationSigningIntent(pk)
+	intent.Height = thorchainHeight
+	sigBytes, _, err := ks.RemoteSign(data, common.SigningAlgoSecp256k1, pk.String(), intent)
 	if err != nil {
 		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
 			return nil

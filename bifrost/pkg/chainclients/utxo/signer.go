@@ -71,9 +71,30 @@ const ZecExtraFee = int(0)
 // Client - Signing
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// signingIntentForTxOut selects the authorization model for this UTXO signing
+// request. Normal outbounds must match THORChain /keysign; local consolidate
+// maintenance uses a stricter vault self-send intent instead.
+func (c *Client) signingIntentForTxOut(tx stypes.TxOutItem) tss.SigningIntent {
+	if isUTXOConsolidationTxOut(tx) {
+		return tss.NewUTXOConsolidationSigningIntent(tx, tx.Height)
+	}
+	return tss.NewTxOutSigningIntent(tx, tx.Height)
+}
+
+// isUTXOConsolidationTxOut identifies the local maintenance transaction that
+// folds many vault UTXOs back into the same vault.
+func isUTXOConsolidationTxOut(tx stypes.TxOutItem) bool {
+	return tx.Chain.IsUTXO() && strings.EqualFold(strings.TrimSpace(tx.Memo), "consolidate")
+}
+
 // SignTx builds and signs the outbound transaction. Returns the signed transaction, a
 // serialized checkpoint on error, and an error.
 func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []byte, *stypes.TxInItem, error) {
+	// The UTXO input signer only receives the TxOutItem, so preserve the
+	// THORChain height here for later /keysign authorization checks.
+	if tx.Height == 0 {
+		tx.Height = thorchainHeight
+	}
 	if !tx.Chain.Equals(c.cfg.ChainID) {
 		return nil, nil, nil, errors.New("wrong chain")
 	}

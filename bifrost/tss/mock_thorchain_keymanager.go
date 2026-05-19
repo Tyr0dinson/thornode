@@ -31,7 +31,10 @@ func (k *MockThorchainKeyManager) ExportAsKeyStore(password string) (*EncryptedK
 	return nil, nil
 }
 
-func (k *MockThorchainKeyManager) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, thorchainHeight int64) ([]byte, []byte, error) {
+// RemoteSign returns deterministic fixture signatures for legacy signer tests.
+// The mock ignores SigningIntent because the production authorization gate is
+// covered in the real KeySign implementation.
+func (k *MockThorchainKeyManager) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, _ SigningIntent) ([]byte, []byte, error) {
 	// this is the key we are using to test TSS keysign result in BTC chain
 	// tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn
 	if poolPubKey == "tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn" {

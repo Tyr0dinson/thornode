@@ -29,7 +29,9 @@ func (c *Client) signUTXODOGE(redeemTx *dogewire.MsgTx, tx stypes.TxOutItem, amo
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
 		signable = dogetxscript.NewPrivateKeySignable((*dogeec.PrivateKey)(c.nodePrivKey))
 	} else {
-		signable = newTssSignableDOGE(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		// Store the signing intent on the signable so each input signature is
+		// authorized before the payload reaches TSS.
+		signable = newTssSignableDOGE(tx.VaultPubKey, c.tssKeySigner, c.signingIntentForTxOut(tx), c.log)
 	}
 
 	sig, err := dogetxscript.RawTxInSignature(redeemTx, idx, sourceScript, dogetxscript.SigHashAll, signable)

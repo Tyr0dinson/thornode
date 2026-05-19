@@ -16,17 +16,22 @@ func init() {
 }
 
 func TestKeySignUsesBatchInterval(t *testing.T) {
-	ks, err := tss.NewKeySign(newFakeTss("foobar", true), fakeBridge{nil})
+	// A key in the current bech32 config, so this test leaves the config alone.
+	poolPubKey := ttypes.GetRandomPubKey()
+	// The keygen self-signature is the signing intent that needs no scheduled
+	// TxOut from the bridge, so the message is the pool pubkey itself.
+	msg := poolPubKey.String()
+	ks, err := tss.NewKeySign(newFakeTss(msg, true), fakeBridge{nil})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ks.Start()
 	defer ks.Stop()
 
-	// A key in the current bech32 config, so this test leaves the config alone.
-	poolPubKey := ttypes.GetRandomPubKey().String()
+	intent := tss.NewKeygenVerificationSigningIntent(poolPubKey)
+	intent.Height = 1
 	start := time.Now()
-	sig, _, err := ks.RemoteSign([]byte("foobar"), common.SigningAlgoSecp256k1, poolPubKey, 1)
+	sig, _, err := ks.RemoteSign([]byte(msg), common.SigningAlgoSecp256k1, poolPubKey.String(), intent)
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatal(err)

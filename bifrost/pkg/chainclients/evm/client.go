@@ -1414,7 +1414,9 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 
 // sign is design to sign a given message with keysign party and keysign wrapper
 func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
-	rawBytes, err := c.kw.Sign(tx, poolPubKey, height)
+	// Bind the raw EVM transaction hash to the THORChain TxOut that requested it
+	// before delegating to the shared signing wrapper.
+	rawBytes, err := c.kw.Sign(tx, poolPubKey, tss.NewTxOutSigningIntent(txOutItem, height))
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
 	}

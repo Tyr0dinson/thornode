@@ -1,10 +1,12 @@
 package tss
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"math/big"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,11 +100,19 @@ func (s *KeySign) Stop() {
 	close(s.taskQueue)
 }
 
-// RemoteSign sends the request to the local task queue with the caller's
-// consensus-scheduled THORChain height.
-func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, thorchainHeight int64) ([]byte, []byte, error) {
+// RemoteSign sends an authorized request to the local TSS task queue. The
+// signing intent is required for every non-empty message so raw hashes cannot
+// be signed unless they map to an expected THORChain action.
+func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, intent SigningIntent) ([]byte, []byte, error) {
 	if len(msg) == 0 {
 		return nil, nil, nil
+	}
+
+	// Keep the authorization check before base64 encoding and queueing so a
+	// refused request never reaches the local TSS server.
+	if err := s.authorizeRemoteSign(msg, algo, poolPubKey, intent); err != nil {
+		s.logUnauthorizedSignRequest(algo, poolPubKey, intent, err)
+		return nil, nil, err
 	}
 
 	encodedMsg := base64.StdEncoding.EncodeToString(msg)
@@ -110,7 +120,7 @@ func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey str
 		Algo:       algo,
 		PoolPubKey: poolPubKey,
 		Msg:        encodedMsg,
-		Height:     thorchainHeight,
+		Height:     intent.Height,
 		Resp:       make(chan tssKeySignResult, 1),
 	}
 	s.taskQueue <- &task
@@ -145,6 +155,241 @@ func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey str
 	case <-time.After(RemoteSignTimeout):
 		return nil, nil, fmt.Errorf("TIMEOUT: fail to sign message:%s after %d minutes", encodedMsg, int(RemoteSignTimeout/time.Minute))
 	}
+}
+
+// authorizeRemoteSign is the central gate between Bifrost chain clients and raw
+// TSS signing. Every non-empty RemoteSign call must declare why the message is
+// allowed to be signed.
+func (s *KeySign) authorizeRemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
+	switch intent.Type {
+	case SigningIntentTxOut:
+		return s.authorizeTxOutSign(algo, poolPubKey, intent)
+	case SigningIntentKeygenVerification:
+		return authorizeKeygenVerificationSign(msg, algo, poolPubKey, intent)
+	case SigningIntentEVMUnstuck:
+		return s.authorizeEVMUnstuckSign(msg, algo, poolPubKey, intent)
+	case SigningIntentUTXOConsolidation:
+		return s.authorizeUTXOConsolidationSign(algo, poolPubKey, intent)
+	default:
+		return UnauthorizedSignRequestError{Reason: "missing signing intent"}
+	}
+}
+
+// authorizeTxOutSign verifies that the requested signature maps to a currently
+// scheduled THORChain TxOut for the same height and vault.
+func (s *KeySign) authorizeTxOutSign(algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
+	return s.authorizeScheduledTxOutSign(algo, poolPubKey, intent)
+}
+
+// authorizeEVMUnstuckSign authorizes a replacement/cancel transaction only when
+// it is tied to an existing scheduled outbound and the EVM wrapper already
+// proved the raw hash belongs to a zero-value vault self-send.
+func (s *KeySign) authorizeEVMUnstuckSign(msg []byte, algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
+	if !intent.TxOut.Chain.IsEVM() {
+		return UnauthorizedSignRequestError{Reason: "evm unstuck intent must use an EVM chain"}
+	}
+	// The replacement transaction itself is not present in THORChain's TxOut, so
+	// require the wrapper to bind the inspected transaction hash into the intent.
+	if len(intent.MessageHash) == 0 {
+		return UnauthorizedSignRequestError{Reason: "missing evm unstuck message hash"}
+	}
+	if !bytes.Equal(msg, intent.MessageHash) {
+		return UnauthorizedSignRequestError{Reason: "evm unstuck message hash mismatch"}
+	}
+	return s.authorizeScheduledTxOutSign(algo, poolPubKey, intent)
+}
+
+// authorizeScheduledTxOutSign contains the common checks for signing requests
+// that must correspond to a current THORChain /keysign item.
+func (s *KeySign) authorizeScheduledTxOutSign(algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
+	tx := intent.TxOut
+	if intent.Height <= 0 {
+		return UnauthorizedSignRequestError{Reason: "missing txout height"}
+	}
+	if tx.Chain.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "missing txout chain"}
+	}
+	// The signer must use the algorithm implied by the outbound chain. This
+	// prevents accidentally treating an EdDSA vault key as a secp256k1 signer, or
+	// the inverse.
+	if tx.Chain.GetSigningAlgo() != algo {
+		return UnauthorizedSignRequestError{Reason: fmt.Sprintf("signing algo mismatch: chain=%s algo=%s", tx.Chain, algo)}
+	}
+	// Bifrost should never create a new signature for an outbound that already
+	// has an observed/broadcast hash attached.
+	if !tx.OutHash.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "txout already has an out hash"}
+	}
+
+	expectedPoolPubKey := tx.VaultPubKey
+	if algo == common.SigningAlgoEd25519 {
+		// EdDSA chains use the separate EdDSA vault pubkey, while GetKeysign is
+		// still keyed by the ECDSA vault pubkey below.
+		expectedPoolPubKey = tx.VaultPubKeyEddsa
+	}
+	if expectedPoolPubKey.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "missing txout signing pubkey"}
+	}
+	if poolPubKey != expectedPoolPubKey.String() {
+		return UnauthorizedSignRequestError{Reason: "pool pubkey does not match signing intent"}
+	}
+	if s.bridge == nil {
+		return UnauthorizedSignRequestError{Reason: "thorchain bridge is unavailable"}
+	}
+
+	// Re-fetch the signed keysign payload from THORChain rather than trusting
+	// only the caller-provided TxOutItem.
+	keysign, err := s.bridge.GetKeysign(intent.Height, tx.VaultPubKey.String())
+	if err != nil {
+		return UnauthorizedSignRequestError{Reason: fmt.Sprintf("failed to fetch scheduled keysign: %v", err)}
+	}
+	if keysign.Height != 0 && keysign.Height != intent.Height {
+		return UnauthorizedSignRequestError{Reason: fmt.Sprintf("scheduled keysign height mismatch: %d != %d", keysign.Height, intent.Height)}
+	}
+
+	for _, item := range keysign.TxArray {
+		scheduledTx := item.TxOutItem(intent.Height)
+		if !scheduledTx.Equals(tx) {
+			continue
+		}
+		// A matching scheduled TxOut is only signable while THORChain still
+		// considers it unsigned.
+		if !item.OutHash.IsEmpty() {
+			return UnauthorizedSignRequestError{Reason: "scheduled txout already has an out hash"}
+		}
+		return nil
+	}
+
+	return UnauthorizedSignRequestError{Reason: "txout was not found in scheduled keysign"}
+}
+
+// authorizeUTXOConsolidationSign authorizes the local maintenance path that
+// spends a vault's UTXOs back into the same active Asgard vault.
+func (s *KeySign) authorizeUTXOConsolidationSign(algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
+	tx := intent.TxOut
+	if intent.Height <= 0 {
+		return UnauthorizedSignRequestError{Reason: "missing consolidation height"}
+	}
+	if !tx.Chain.IsUTXO() {
+		return UnauthorizedSignRequestError{Reason: "utxo consolidation intent must use a UTXO chain"}
+	}
+	if algo != common.SigningAlgoSecp256k1 || tx.Chain.GetSigningAlgo() != algo {
+		return UnauthorizedSignRequestError{Reason: fmt.Sprintf("signing algo mismatch: chain=%s algo=%s", tx.Chain, algo)}
+	}
+	if tx.VaultPubKey.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "missing consolidation vault pubkey"}
+	}
+	if poolPubKey != tx.VaultPubKey.String() {
+		return UnauthorizedSignRequestError{Reason: "pool pubkey does not match consolidation vault"}
+	}
+	if !tx.OutHash.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "consolidation txout already has an out hash"}
+	}
+	if !tx.InHash.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "consolidation txout must not have an inbound hash"}
+	}
+	if strings.ToLower(strings.TrimSpace(tx.Memo)) != "consolidate" {
+		return UnauthorizedSignRequestError{Reason: "consolidation memo must be consolidate"}
+	}
+	if len(tx.Coins) != 1 {
+		return UnauthorizedSignRequestError{Reason: "consolidation must contain exactly one coin"}
+	}
+	coin := tx.Coins[0]
+	if !coin.Asset.Equals(tx.Chain.GetGasAsset()) {
+		return UnauthorizedSignRequestError{Reason: "consolidation coin must be the chain gas asset"}
+	}
+	if coin.Amount.IsZero() {
+		return UnauthorizedSignRequestError{Reason: "consolidation amount must be positive"}
+	}
+	expectedAddress, err := tx.VaultPubKey.GetAddress(tx.Chain)
+	if err != nil {
+		return UnauthorizedSignRequestError{Reason: fmt.Sprintf("failed to derive consolidation vault address: %v", err)}
+	}
+	if !strings.EqualFold(tx.ToAddress.String(), expectedAddress.String()) {
+		return UnauthorizedSignRequestError{Reason: "consolidation destination must be the vault address"}
+	}
+	if s.bridge == nil {
+		return UnauthorizedSignRequestError{Reason: "thorchain bridge is unavailable"}
+	}
+	vault, err := s.bridge.GetVault(tx.VaultPubKey.String())
+	if err != nil {
+		return UnauthorizedSignRequestError{Reason: fmt.Sprintf("failed to fetch consolidation vault: %v", err)}
+	}
+	if vault.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "consolidation vault was not found"}
+	}
+	if !vault.PubKey.Equals(tx.VaultPubKey) {
+		return UnauthorizedSignRequestError{Reason: "consolidation vault pubkey mismatch"}
+	}
+	if !vault.IsAsgard() {
+		return UnauthorizedSignRequestError{Reason: "consolidation vault is not an Asgard vault"}
+	}
+	if !vault.IsActive() {
+		return UnauthorizedSignRequestError{Reason: "consolidation vault is not active"}
+	}
+	if !vault.GetChains().Has(tx.Chain) {
+		return UnauthorizedSignRequestError{Reason: "consolidation vault does not support chain"}
+	}
+	return nil
+}
+
+// authorizeKeygenVerificationSign allows the one intentionally raw signing flow:
+// signing the newly generated secp256k1 pool pubkey with itself during keygen.
+func authorizeKeygenVerificationSign(msg []byte, algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
+	if algo != common.SigningAlgoSecp256k1 {
+		return UnauthorizedSignRequestError{Reason: "keygen verification must use secp256k1"}
+	}
+	if intent.KeygenPubKey.IsEmpty() {
+		return UnauthorizedSignRequestError{Reason: "missing keygen verification pubkey"}
+	}
+	if poolPubKey != intent.KeygenPubKey.String() {
+		return UnauthorizedSignRequestError{Reason: "pool pubkey does not match keygen verification pubkey"}
+	}
+	// Keep this carve-out narrow: the only permitted message is the exact pool
+	// pubkey string that THORNode later verifies in the TssPool message.
+	if string(msg) != intent.KeygenPubKey.String() {
+		return UnauthorizedSignRequestError{Reason: "keygen verification message must match pubkey"}
+	}
+	return nil
+}
+
+// logUnauthorizedSignRequest emits a high-signal security event without logging
+// raw message bytes.
+func (s *KeySign) logUnauthorizedSignRequest(algo common.SigningAlgo, poolPubKey string, intent SigningIntent, err error) {
+	event := s.logger.Error().
+		Str("security", "SECURITY").
+		Str("severity", "CRITICAL").
+		Str("event", "unauthorized_tss_sign_request").
+		Str("algo", string(algo)).
+		Str("pool_pub_key", poolPubKey).
+		Err(err)
+
+	switch intent.Type {
+	case SigningIntentTxOut:
+		event = event.
+			Int64("height", intent.Height).
+			Str("txout_hash", intent.TxOut.Hash()).
+			Str("txout_chain", intent.TxOut.Chain.String()).
+			Str("txout_vault_pubkey", intent.TxOut.VaultPubKey.String()).
+			Str("txout_signing_id", intent.TxOut.SigningID)
+	case SigningIntentKeygenVerification:
+		event = event.Str("keygen_pubkey", intent.KeygenPubKey.String())
+	case SigningIntentEVMUnstuck:
+		event = event.
+			Int64("height", intent.Height).
+			Str("txout_hash", intent.TxOut.Hash()).
+			Str("txout_chain", intent.TxOut.Chain.String()).
+			Str("txout_vault_pubkey", intent.TxOut.VaultPubKey.String()).
+			Str("txout_signing_id", intent.TxOut.SigningID)
+	case SigningIntentUTXOConsolidation:
+		event = event.
+			Int64("height", intent.Height).
+			Str("chain", intent.TxOut.Chain.String()).
+			Str("vault_pubkey", intent.TxOut.VaultPubKey.String()).
+			Str("to_address", intent.TxOut.ToAddress.String())
+	}
+
+	event.Msg("refuse unauthorized TSS signing request")
 }
 
 type tssKeySignTask struct {

@@ -30,7 +30,9 @@ func (c *Client) signUTXOLTC(redeemTx *ltcwire.MsgTx, tx stypes.TxOutItem, amoun
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
 		signable = ltctxscript.NewPrivateKeySignable((*ltcec.PrivateKey)(c.nodePrivKey))
 	} else {
-		signable = newTssSignableLTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		// Store the signing intent on the signable so each input signature is
+		// authorized before the payload reaches TSS.
+		signable = newTssSignableLTC(tx.VaultPubKey, c.tssKeySigner, c.signingIntentForTxOut(tx), c.log)
 	}
 
 	witness, err := ltctxscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, ltctxscript.SigHashAll, signable, true)

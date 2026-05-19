@@ -868,7 +868,9 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 			return types.Transaction{}, fmt.Errorf("failed to sign local transaction: %w", err)
 		}
 	} else {
-		sig, _, err = c.tssKeyManager.RemoteSign(message, common.SigningAlgoEd25519, txOut.VaultPubKeyEddsa.String(), thorchainHeight)
+		// RemoteSign verifies the Solana message against this TxOut intent
+		// before the raw Ed25519 payload reaches TSS.
+		sig, _, err = c.tssKeyManager.RemoteSign(message, common.SigningAlgoEd25519, txOut.VaultPubKeyEddsa.String(), tss.NewTxOutSigningIntent(txOut, thorchainHeight))
 		if err != nil {
 			return types.Transaction{}, fmt.Errorf("failed to sign remote transaction: %w", err)
 		}

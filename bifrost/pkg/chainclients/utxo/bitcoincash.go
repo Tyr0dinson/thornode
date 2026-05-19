@@ -29,7 +29,9 @@ func (c *Client) signUTXOBCH(redeemTx *bchwire.MsgTx, tx stypes.TxOutItem, amoun
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
 		signable = bchtxscript.NewPrivateKeySignable((*bchec.PrivateKey)(c.nodePrivKey))
 	} else {
-		signable = newTssSignableBCH(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		// Store the signing intent on the signable so each input signature is
+		// authorized before the payload reaches TSS.
+		signable = newTssSignableBCH(tx.VaultPubKey, c.tssKeySigner, c.signingIntentForTxOut(tx), c.log)
 	}
 
 	sig, err := bchtxscript.RawTxInECDSASignature(redeemTx, idx, sourceScript, bchtxscript.SigHashAll, signable, amount)

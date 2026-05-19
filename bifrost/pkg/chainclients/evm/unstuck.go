@@ -14,6 +14,7 @@ import (
 	evmtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -180,7 +181,14 @@ func (c *EVMClient) unstuckTx(clog zerolog.Logger, item evmtypes.SignedTxItem) e
 		currentGasRate,
 		nil,
 	)
-	rawBytes, err := c.kw.Sign(canceltx, pubKey, item.TxOutItem.Height)
+	// Retry/cancel transactions are tied back to the original TxOut when the
+	// stored signed item still carries it. Without that context RemoteSign will
+	// refuse to produce a fresh TSS signature.
+	intent := tss.SigningIntent{}
+	if item.TxOutItem != nil {
+		intent = tss.NewEVMUnstuckSigningIntent(*item.TxOutItem, item.TxOutItem.Height)
+	}
+	rawBytes, err := c.kw.Sign(canceltx, pubKey, intent)
 	if err != nil {
 		return fmt.Errorf("fail to sign tx for cancelling with nonce: %d, err: %w", tx.Nonce(), err)
 	}

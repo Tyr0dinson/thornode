@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -359,7 +360,7 @@ func (s *XrpTestSuite) TestSign(c *C) {
 	}
 
 	// Sign the message (verifies signature within)
-	_, err = client.signMsg(msg, vaultPubKey, 0)
+	_, err = client.signMsg(msg, vaultPubKey, tss.SigningIntent{})
 	c.Assert(err, IsNil)
 }
 

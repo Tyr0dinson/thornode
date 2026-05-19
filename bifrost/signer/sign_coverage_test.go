@@ -2119,10 +2119,25 @@ func (s *SignCoverageSuite) TestNewFakeTss(c *C) {
 
 func (s *SignCoverageSuite) TestProcessTransaction_Round7Error(c *C) {
 	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
+	item := TxOutStoreItem{
+		TxOutItem: types.TxOutItem{
+			Chain:       common.ETHChain,
+			VaultPubKey: vaultPubKey,
+			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+			Memo:        "test-memo",
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+			},
+		},
+		Height: 90,
+	}
 
 	// Create a TSS keysign that returns round 7 failure
 	tssServer := newFakeTss("test-memo", false) // will fail on first attempt
-	bridge := fakeBridge{nil}
+	bridge := fakeKeysignBridge{
+		fakeBridge: fakeBridge{nil},
+		keysign:    testKeysignTxOut(item.Height, item.TxOutItem),
+	}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -2155,19 +2170,6 @@ func (s *SignCoverageSuite) TestProcessTransaction_Round7Error(c *C) {
 		storage:             storage,
 		localPubKeyECDSA:    vaultPubKey,
 		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
-	}
-
-	item := TxOutStoreItem{
-		TxOutItem: types.TxOutItem{
-			Chain:       common.ETHChain,
-			VaultPubKey: vaultPubKey,
-			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
-			Memo:        "test-memo",
-			Coins: common.Coins{
-				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
-			},
-		},
-		Height: 90,
 	}
 
 	err = storage.Set(item)

@@ -20,23 +20,27 @@ import (
 )
 
 type tssSignableBCH struct {
-	poolPubKey      common.PubKey
-	tssKeyManager   tss.ThorchainKeyManager
-	log             zerolog.Logger
-	thorchainHeight int64
+	poolPubKey    common.PubKey
+	tssKeyManager tss.ThorchainKeyManager
+	signingIntent tss.SigningIntent
+	log           zerolog.Logger
 }
 
-func newTssSignableBCH(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger, thorchainHeight int64) *tssSignableBCH {
+// newTssSignableBCH builds the UTXO signer with the TxOut intent that
+// authorizes every payload signed for this outbound.
+func newTssSignableBCH(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, signingIntent tss.SigningIntent, log zerolog.Logger) *tssSignableBCH {
 	return &tssSignableBCH{
-		poolPubKey:      poolPubKey,
-		tssKeyManager:   tssKeyManager,
-		log:             log,
-		thorchainHeight: thorchainHeight,
+		poolPubKey:    poolPubKey,
+		tssKeyManager: tssKeyManager,
+		signingIntent: signingIntent,
+		log:           log,
 	}
 }
 func (ts *tssSignableBCH) SignECDSA(payload []byte) (*bchec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
-	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
+	// Forward the TxOut intent with each input signature so RemoteSign can
+	// reject payloads that do not belong to THORChain's current /keysign item.
+	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.signingIntent)
 	if err != nil {
 		return nil, err
 	}
@@ -84,23 +88,27 @@ func (ts *tssSignableBCH) GetPubKey() *bchec.PublicKey {
 }
 
 type tssSignableBTC struct {
-	poolPubKey      common.PubKey
-	tssKeyManager   tss.ThorchainKeyManager
-	log             zerolog.Logger
-	thorchainHeight int64
+	poolPubKey    common.PubKey
+	tssKeyManager tss.ThorchainKeyManager
+	signingIntent tss.SigningIntent
+	log           zerolog.Logger
 }
 
-func newTssSignableBTC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger, thorchainHeight int64) *tssSignableBTC {
+// newTssSignableBTC builds the UTXO signer with the TxOut intent that
+// authorizes every payload signed for this outbound.
+func newTssSignableBTC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, signingIntent tss.SigningIntent, log zerolog.Logger) *tssSignableBTC {
 	return &tssSignableBTC{
-		poolPubKey:      poolPubKey,
-		tssKeyManager:   tssKeyManager,
-		log:             log,
-		thorchainHeight: thorchainHeight,
+		poolPubKey:    poolPubKey,
+		tssKeyManager: tssKeyManager,
+		signingIntent: signingIntent,
+		log:           log,
 	}
 }
 func (ts *tssSignableBTC) Sign(payload []byte) (*btcec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
-	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
+	// Forward the TxOut intent with each input signature so RemoteSign can
+	// reject payloads that do not belong to THORChain's current /keysign item.
+	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.signingIntent)
 	if err != nil {
 		return nil, err
 	}
@@ -143,23 +151,27 @@ func (ts *tssSignableBTC) GetPubKey() *btcec.PublicKey {
 }
 
 type tssSignableDOGE struct {
-	poolPubKey      common.PubKey
-	tssKeyManager   tss.ThorchainKeyManager
-	log             zerolog.Logger
-	thorchainHeight int64
+	poolPubKey    common.PubKey
+	tssKeyManager tss.ThorchainKeyManager
+	signingIntent tss.SigningIntent
+	log           zerolog.Logger
 }
 
-func newTssSignableDOGE(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger, thorchainHeight int64) *tssSignableDOGE {
+// newTssSignableDOGE builds the UTXO signer with the TxOut intent that
+// authorizes every payload signed for this outbound.
+func newTssSignableDOGE(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, signingIntent tss.SigningIntent, log zerolog.Logger) *tssSignableDOGE {
 	return &tssSignableDOGE{
-		poolPubKey:      poolPubKey,
-		tssKeyManager:   tssKeyManager,
-		log:             log,
-		thorchainHeight: thorchainHeight,
+		poolPubKey:    poolPubKey,
+		tssKeyManager: tssKeyManager,
+		signingIntent: signingIntent,
+		log:           log,
 	}
 }
 func (ts *tssSignableDOGE) Sign(payload []byte) (*dogeec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
-	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
+	// Forward the TxOut intent with each input signature so RemoteSign can
+	// reject payloads that do not belong to THORChain's current /keysign item.
+	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.signingIntent)
 	if err != nil {
 		return nil, err
 	}
@@ -202,23 +214,27 @@ func (ts *tssSignableDOGE) GetPubKey() *dogeec.PublicKey {
 }
 
 type tssSignableLTC struct {
-	poolPubKey      common.PubKey
-	tssKeyManager   tss.ThorchainKeyManager
-	log             zerolog.Logger
-	thorchainHeight int64
+	poolPubKey    common.PubKey
+	tssKeyManager tss.ThorchainKeyManager
+	signingIntent tss.SigningIntent
+	log           zerolog.Logger
 }
 
-func newTssSignableLTC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger, thorchainHeight int64) *tssSignableLTC {
+// newTssSignableLTC builds the UTXO signer with the TxOut intent that
+// authorizes every payload signed for this outbound.
+func newTssSignableLTC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, signingIntent tss.SigningIntent, log zerolog.Logger) *tssSignableLTC {
 	return &tssSignableLTC{
-		poolPubKey:      poolPubKey,
-		tssKeyManager:   tssKeyManager,
-		log:             log,
-		thorchainHeight: thorchainHeight,
+		poolPubKey:    poolPubKey,
+		tssKeyManager: tssKeyManager,
+		signingIntent: signingIntent,
+		log:           log,
 	}
 }
 func (ts *tssSignableLTC) Sign(payload []byte) (*ltcec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
-	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
+	// Forward the TxOut intent with each input signature so RemoteSign can
+	// reject payloads that do not belong to THORChain's current /keysign item.
+	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.signingIntent)
 	if err != nil {
 		return nil, err
 	}

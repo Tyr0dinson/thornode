@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -1976,7 +1977,7 @@ func (s *XrpTestSuite) TestSignMsgLocalKeyManager(c *C) {
 	c.Assert(err, IsNil)
 
 	// signMsg with local key - should succeed
-	txBytes, err := client.signMsg(payment, vaultPubKey, 0)
+	txBytes, err := client.signMsg(payment, vaultPubKey, tss.SigningIntent{})
 	c.Assert(err, IsNil)
 	c.Check(len(txBytes) > 0, Equals, true)
 }
@@ -2566,7 +2567,7 @@ func (s *XrpTestSuite) TestSignMsgBadPubKey(c *C) {
 	c.Assert(err, IsNil)
 
 	// signMsg with invalid pubkey
-	_, err = client.signMsg(nil, common.PubKey("invalid"), 0)
+	_, err = client.signMsg(nil, common.PubKey("invalid"), tss.SigningIntent{})
 	c.Assert(err, NotNil)
 }
 

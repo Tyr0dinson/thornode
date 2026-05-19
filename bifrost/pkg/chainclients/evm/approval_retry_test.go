@@ -35,7 +35,7 @@ import (
 
 type nonselectedKeyManager struct{ tss.ThorchainKeyManager }
 
-func (nonselectedKeyManager) RemoteSign([]byte, common.SigningAlgo, string, int64) ([]byte, []byte, error) {
+func (nonselectedKeyManager) RemoteSign([]byte, common.SigningAlgo, string, tss.SigningIntent) ([]byte, []byte, error) {
 	return nil, nil, tss.ErrNotSelectedForKeysign
 }
 
@@ -510,7 +510,7 @@ type countingKeyManager struct {
 	err    error
 }
 
-func (m *countingKeyManager) RemoteSign(hash []byte, _ common.SigningAlgo, _ string, _ int64) ([]byte, []byte, error) {
+func (m *countingKeyManager) RemoteSign(hash []byte, _ common.SigningAlgo, _ string, _ tss.SigningIntent) ([]byte, []byte, error) {
 	m.calls++
 	m.hashes = append(m.hashes, append([]byte(nil), hash...))
 	if m.err != nil {
