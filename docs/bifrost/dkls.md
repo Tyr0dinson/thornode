@@ -234,7 +234,7 @@ multihost-7                     7 nodes / 7 hosts    n/a           1.019s       
 multihost-14-20260518T115810Z   14 nodes / 14 hosts  9.467s        n/a            3.820-4.061s first result     0.636-0.752s first result
                                                                                    3.912-4.149s all observed     0.713-0.821s all observed
 multihost-21-20260518T180730Z   21 nodes / 21 hosts  240.381s*     4.662s         5.834s first result           0.922s first result
-multihost-21-gg20-redo          21 nodes / 21 hosts  14.362s       pending        pending                       pending
+multihost-21-gg20-redo          21 nodes / 21 hosts  14.362s       pending        6.090s first result           pending
 multihost-28-20260519T002201Z   28 nodes / 28 hosts  19.480s       6.532s         8.603s first result           1.085s first result
 ```
 
@@ -250,14 +250,27 @@ The 28-node values are from the accepted 27-member GG20 vault and 26-member
 DKLS vault. Keyshare sizes measured on node28 were 109,265 bytes for GG20
 and 2,192,598 bytes for DKLS.
 
+The 2026-05-19 14-node GG20 keysign rerun reused the first 14 multihost boxes
+but has not produced a new high-node GG20 vault yet. The live chain remains at
+one active node and 13 ready nodes, with genesis repeatedly selected for
+low-bond churn. No replacement timing is recorded from that rerun.
+
 ### Keyshare Sizes
 
 ```text
 run                            engine  vault members  keyshare size
 multihost-21-gg20-redo         GG20    20             83,104 bytes
-multihost-21-gg20-redo         DKLS    pending        pending
+multihost-21-gg20-redo         DKLS    19             1,578,861 bytes
 multihost-28-20260519T002201Z  GG20    27             109,265 bytes
 multihost-28-20260519T002201Z  DKLS    26             2,192,598 bytes
+```
+
+Raw rerun artifacts:
+
+```text
+build/docker/dkls-chainnet-results/multihost-21-gg20-redo-20260519T052046Z-gg20keygen-redo/
+build/docker/dkls-chainnet-results/multihost-14-gg20keysign-20260519T062933Z-14-gg20keysign/
+build/docker/dkls-chainnet-results/multihost-14-gg20keysign-20260519T073257Z-14-gg20keysign-lowbondfix/
 ```
 
 ## Blame Testing

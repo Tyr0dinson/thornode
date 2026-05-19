@@ -996,8 +996,9 @@ multihost_timing() {
     exit 1
   }
   local active_count=$((NODE_COUNT - 1))
-  local bootstrap_new=$((active_count - 1))
-  local index addr gg20_vault dkls1_vault dkls2_vault inbound start doge_txid gg20_migration_txid dkls_migration_txid
+  local bootstrap_new="$active_count"
+  local index addr gg20_vault dkls1_vault dkls2_vault inbound start doge_txid gg20_migration_txid dkls_migration_txid bootstrap_bond
+  bootstrap_bond="${DKLS_CHAINNET_BOOTSTRAP_BOND:-20010000000000}"
   mkdir -p "$OUT_DIR"
   log "timing output: $OUT_DIR/tss-timings.csv"
 
@@ -1018,7 +1019,7 @@ multihost_timing() {
   for index in $(seq 2 "$NODE_COUNT"); do
     log "set node keys/ip/version node $index"
     addr=$(remote_node_address "$index")
-    remote_tx "$index" "deposit 70000000000000 THOR.RUNE BOND:$addr --gas auto" | grep -E 'code:|txhash:' || true
+    remote_tx "$index" "deposit $bootstrap_bond THOR.RUNE BOND:$addr --gas auto" | grep -E 'code:|txhash:' || true
     sleep 8
     remote_set_node_keys "$index"
     sleep 8
@@ -1027,7 +1028,7 @@ multihost_timing() {
     remote_tx "$index" "set-version --gas auto" | grep -E 'code:|txhash:' || true
     sleep 8
   done
-  remote_tx 1 "deposit 70000000000000 THOR.RUNE BOND:$(node_field 1 address) --gas auto" | grep -E 'code:|txhash:' || true
+  remote_tx 1 "deposit $bootstrap_bond THOR.RUNE BOND:$(node_field 1 address) --gas auto" | grep -E 'code:|txhash:' || true
   remote_restart_bifrosts
   wait_after_bifrost_restart
 
