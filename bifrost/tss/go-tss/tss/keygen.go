@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
@@ -142,6 +143,14 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	// following http response aborts, it still counted as a successful keygen
 	// as the Tss model runs successfully.
 	beforeKeygen := time.Now()
+	if leader == "NONE" || t.p2pCommunication.GetLocalPeerID() == leader {
+		t.logger.Info().
+			Str("msg_id", msgID).
+			Str("leader_peer_id", leader).
+			Int("participants", len(req.Keys)).
+			Int64("block_height", req.BlockHeight).
+			Msg("GG20 keygen ceremony leader started")
+	}
 	k, err := keygenInstance.GenerateNewKey(req)
 	keygenTime := time.Since(beforeKeygen)
 	if err != nil {
@@ -167,6 +176,13 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		t.logger.Error().Err(err).Msg("failed to generate new tss pubkey from generated key")
 		status = common.Fail
 	}
+	if status == common.Success {
+		t.logger.Info().
+			Str("msg_id", msgID).
+			Str("local_pubkey", t.localNodePubKey).
+			Str("pubkey", newPubKey).
+			Msg("GG20 keygen ceremony party produced")
+	}
 
 	blameNodes := *blameMgr.GetBlame()
 	t.logger.Trace().Msgf("returning from keygen with status=%d, blaming=%+v", status, blameNodes.BlameNodes)
@@ -180,6 +196,21 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 }
 
 func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error) {
+	if req.Engine == storage.SigningEngineDKLS {
+		ecdsaResp, err := t.DKLSKeygen(req)
+		if err != nil {
+			return []keygen.Response{ecdsaResp}, nil
+		}
+		eddsaReq := req
+		eddsaReq.Engine = storage.SigningEngineGG20
+		eddsaReq.Algo = tcommon.SigningAlgoEd25519
+		eddsaResp, err := t.Keygen(eddsaReq)
+		if err != nil {
+			return []keygen.Response{ecdsaResp, eddsaResp}, nil
+		}
+		return []keygen.Response{ecdsaResp, eddsaResp}, nil
+	}
+
 	// this is the algo we currently support
 	algos := []tcommon.SigningAlgo{tcommon.SigningAlgoSecp256k1, tcommon.SigningAlgoEd25519}
 	t.tssKeyGenLocker.Lock()
@@ -337,6 +368,15 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 		reqAlgo := req      // shallow copy
 		reqAlgo.Algo = algo // set correct algorithm for this iteration
 		beforeKeygen := time.Now()
+		algoMsgID := msgID + string(algo)
+		if algo == tcommon.SigningAlgoSecp256k1 && (leader == "NONE" || t.p2pCommunication.GetLocalPeerID() == leader) {
+			t.logger.Info().
+				Str("msg_id", algoMsgID).
+				Str("leader_peer_id", leader).
+				Int("participants", len(req.Keys)).
+				Int64("block_height", req.BlockHeight).
+				Msg("GG20 keygen ceremony leader started")
+		}
 		k, keygenErr = instance.GenerateNewKey(reqAlgo)
 		keygenTime := time.Since(beforeKeygen)
 		if keygenErr != nil {
@@ -364,6 +404,13 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 			t.logger.Error().Err(keygenErr).Msg("fail to generate the new Tss key")
 			status = common.Fail
 			break
+		}
+		if algo == tcommon.SigningAlgoSecp256k1 && status == common.Success {
+			t.logger.Info().
+				Str("msg_id", algoMsgID).
+				Str("local_pubkey", t.localNodePubKey).
+				Str("pubkey", newPubKey).
+				Msg("GG20 keygen ceremony party produced")
 		}
 		resp := keygen.NewResponse(
 			algo,

@@ -1,0 +1,48 @@
+########################################################################################
+# Optional DKLS abort-test override for docker-compose.dkls-chainnet.yml.
+#
+# Example:
+#   DKLS_ABORT_MODE=corrupt \
+#   DKLS_ABORT_PHASE=keygen \
+#   DKLS_ABORT_LOCAL_PUBKEY=cthorpub... \
+#   docker compose --env-file .env \
+#     -f docker-compose.dkls-chainnet.yml \
+#     -f docker-compose.dkls-abort.yml up -d --no-deps --force-recreate bifrost bifrost-cat ...
+#
+########################################################################################
+
+x-dkls-abort-env: &dkls-abort-env
+  BIFROST_DKLS_ABORT_MODE: "${DKLS_ABORT_MODE:-}"
+  BIFROST_DKLS_ABORT_PHASE: "${DKLS_ABORT_PHASE:-}"
+  BIFROST_DKLS_ABORT_LOCAL_PUBKEY: "${DKLS_ABORT_LOCAL_PUBKEY:-}"
+  BIFROST_DKLS_ABORT_AFTER_OUTPUTS: "${DKLS_ABORT_AFTER_OUTPUTS:-}"
+  BIFROST_DKLS_ABORT_AFTER_INPUTS: "${DKLS_ABORT_AFTER_INPUTS:-}"
+
+services:
+  bifrost:
+    environment:
+      <<: *dkls-abort-env
+
+  bifrost-cat:
+    environment:
+      <<: *dkls-abort-env
+
+  bifrost-fox:
+    environment:
+      <<: *dkls-abort-env
+
+  bifrost-goat:
+    environment:
+      <<: *dkls-abort-env
+
+  bifrost-whale:
+    environment:
+      <<: *dkls-abort-env
+
+  bifrost-wolf:
+    environment:
+      <<: *dkls-abort-env
+
+  bifrost-eagle:
+    environment:
+      <<: *dkls-abort-env

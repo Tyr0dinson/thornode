@@ -46,6 +46,8 @@ THORChain's TSS implementation uses the GG20 (Gennaro and Goldfeder 2020) protoc
 - Core cryptographic primitives and multi-party computation
 - Implements GG20 protocol for ECDSA and EdDSA
 
+ECDSA signing can alternatively use DKLS23 for new vaults when Mimir `EnableDKLS` is set to `1`. Existing GG20 vaults keep their stored GG20 keyshares and continue signing with GG20 until churn migrates funds to DKLS-generated vaults. DKLS support is provided through THORChain-owned Go wrapper code under `dkls/go-wrappers/go-dkls`; native `libgodkls` artifacts are bundled under `dkls/go-wrappers/includes`.
+
 ## Key Generation (KeyGen) Process
 
 The KeyGen process uses a cryptographic protocol that allows multiple parties (THORNodes) to jointly generate a shared public key and individual secret shares without any single party ever knowing or being able to reconstruct the complete private key. This creates a TSS vault where only the members who participated in the KeyGen ceremony can sign transactions. This TSS vault is an [Asgard vault](vault-behaviors.md) and is what holds funds for the protocol.

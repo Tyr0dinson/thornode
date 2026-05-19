@@ -6,6 +6,7 @@ import (
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	. "gopkg.in/check.v1"
 
+	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -81,4 +82,52 @@ func (s MsgTssKeysignFailSuite) TestMsgTssKeysignFail(c *C) {
 	err6 := msg6.ValidateBasic()
 	c.Check(err6, NotNil)
 	c.Check(errors.Is(err6, se.ErrUnknownRequest), Equals, true)
+}
+
+// TestMsgTssKeysignFailRoundNormalization verifies that constructors canonicalize
+// outgoing rounds while on-chain validation only accepts canonical names.
+func (s MsgTssKeysignFailSuite) TestMsgTssKeysignFailRoundNormalization(c *C) {
+	blame := Blame{
+		FailReason: "fail to TSS sign",
+		Round:      "thorchain.tsslib.ecdsa.signing.SignRound7Message",
+		BlameNodes: []Node{
+			{Pubkey: GetRandomPubKey().String()},
+			{Pubkey: GetRandomPubKey().String()},
+		},
+	}
+	coins := common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100)),
+	}
+	signer := GetRandomBech32Addr()
+	pubKey := GetRandomPubKey()
+
+	msgRaw, err := NewMsgTssKeysignFail(1, blame, "hello", coins, signer, pubKey)
+	c.Assert(err, IsNil)
+	c.Check(msgRaw.Blame.Round, Equals, tssMessages.KEYSIGN7)
+
+	blame.Round = tssMessages.KEYSIGN7
+	msgCanonical, err := NewMsgTssKeysignFail(1, blame, "hello", coins, signer, pubKey)
+	c.Assert(err, IsNil)
+	c.Check(msgRaw.ID, Equals, msgCanonical.ID)
+
+	msgCanonical.Blame.Round = "thorchain.tsslib.ecdsa.signing.SignRound7Message"
+	err = msgCanonical.ValidateBasic()
+	c.Check(err, NotNil)
+	c.Check(errors.Is(err, se.ErrUnknownRequest), Equals, true)
+
+	msgCanonical.Blame.Round = "invalid-round"
+	err = msgCanonical.ValidateBasic()
+	c.Check(err, NotNil)
+	c.Check(errors.Is(err, se.ErrUnknownRequest), Equals, true)
+
+	// Empty round is allowed (e.g. blame with no specific nodes).
+	msgCanonical.Blame.Round = ""
+	err = msgCanonical.ValidateBasic()
+	c.Check(err, IsNil)
+
+	blame.Round = tssMessages.DKLSKEYSIGNABORT
+	msgDKLS, err := NewMsgTssKeysignFail(1, blame, "hello", coins, signer, pubKey)
+	c.Assert(err, IsNil)
+	c.Check(msgDKLS.Blame.Round, Equals, tssMessages.DKLSKEYSIGNABORT)
+	c.Check(msgDKLS.ValidateBasic(), IsNil)
 }

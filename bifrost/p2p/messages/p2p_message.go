@@ -23,6 +23,12 @@ const (
 	TSSControlMsg
 	// TSSTaskDone is the message of Tss process notification
 	TSSTaskDone
+	// TSSDKLSKeyGenMsg is a DKLS keygen protocol message.
+	TSSDKLSKeyGenMsg
+	// TSSDKLSKeySignMsg is a DKLS keysign protocol message.
+	TSSDKLSKeySignMsg
+	// TSSDKLSKeySignResultMsg is a DKLS keysign result message for non-active signers.
+	TSSDKLSKeySignResultMsg
 	// Unknown is the message indicates the undefined message type
 	Unknown
 )
@@ -38,6 +44,12 @@ func (msgType THORChainTSSMessageType) String() string {
 		return "TSSKeyGenVerMsg"
 	case TSSKeySignVerMsg:
 		return "TSSKeySignVerMsg"
+	case TSSDKLSKeyGenMsg:
+		return "TSSDKLSKeyGenMsg"
+	case TSSDKLSKeySignMsg:
+		return "TSSDKLSKeySignMsg"
+	case TSSDKLSKeySignResultMsg:
+		return "TSSDKLSKeySignResultMsg"
 	default:
 		return "Unknown"
 	}

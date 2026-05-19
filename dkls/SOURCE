@@ -1,0 +1,4 @@
+DKLS_UPSTREAM_REPOSITORY=https://github.com/silence-laboratories/silent-shard-dkls23-ll.git
+DKLS_UPSTREAM_REF=e22cea6efb7650b928ee869251e01f3d35b68b55
+DKLS_UPSTREAM_PACKAGE=dkls23-ll
+DKLS_UPSTREAM_SL_CRYPTO_REV=f366497

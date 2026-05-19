@@ -1,0 +1,468 @@
+########################################################################################
+# Private THORChain 7-node cluster (6 active + 1 standby, churning) + Dogecoin regtest
+#
+# Usage:
+#   docker compose -f docker-compose.dkls-chainnet.yml build --no-cache
+#   docker compose -f docker-compose.dkls-chainnet.yml up -d
+#   bash dkls-chainnet-post-deploy.sh
+#
+# Validators are dog/cat/fox/goat/whale/wolf/eagle. Dog is genesis and uses the
+# unsuffixed services thornode/bifrost; explicit *-dog DNS aliases are attached
+# below. Others join via validator.sh.
+# DesiredValidatorSet=6 plus 7 local validators gives 6 active + 1 standby.
+# The post-deploy script gates fast churn: it enables churn only to produce the
+# next 6-member vault, halts churn while fund migration settles, then repeats.
+#
+# Tear down:
+#   docker compose -f docker-compose.dkls-chainnet.yml down
+#   docker volume rm docker_thornode docker_thornode-{cat,fox,goat,whale,wolf,eagle} \
+#     docker_bifrost docker_bifrost-{cat,fox,goat,whale,wolf,eagle}
+#
+# Static chainnet config is baked into constants_chainnet.go. Runtime Mimir is
+# only used for live operational toggles such as HaltChurning and EnableDKLS.
+#
+# IMPORTANT: Post-deploy script restarts bifrosts in order (dog first, then
+# others) to establish libp2p bootstrap connections. Simultaneous start via
+# compose leaves bifrosts unable to discover peers for TSS keygen.
+#
+########################################################################################
+
+x-dog-seed: &dog-seed "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+x-cat-seed: &cat-seed "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+x-fox-seed: &fox-seed "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+x-goat-seed: &goat-seed "goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat answer"
+x-whale-seed: &whale-seed "whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale away"
+x-wolf-seed: &wolf-seed "wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf analyst"
+x-eagle-seed: &eagle-seed "eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle bitter"
+
+volumes:
+  thornode: {}
+  thornode-cat: {}
+  thornode-fox: {}
+  thornode-goat: {}
+  thornode-whale: {}
+  thornode-wolf: {}
+  thornode-eagle: {}
+  bifrost: {}
+  bifrost-cat: {}
+  bifrost-fox: {}
+  bifrost-goat: {}
+  bifrost-whale: {}
+  bifrost-wolf: {}
+  bifrost-eagle: {}
+
+x-disabled-chains: &disabled-chains
+  BIFROST_CHAINS_BTC_DISABLED: "true"
+  BIFROST_CHAINS_BCH_DISABLED: "true"
+  BIFROST_CHAINS_LTC_DISABLED: "true"
+  BIFROST_CHAINS_DOGE_DISABLED: "false"
+  BIFROST_CHAINS_ETH_DISABLED: "true"
+  BIFROST_CHAINS_AVAX_DISABLED: "true"
+  BIFROST_CHAINS_BSC_DISABLED: "true"
+  BIFROST_CHAINS_BASE_DISABLED: "true"
+  BIFROST_CHAINS_GAIA_DISABLED: "true"
+  BIFROST_CHAINS_NOBLE_DISABLED: "true"
+  BIFROST_CHAINS_SOL_DISABLED: "true"
+  BIFROST_CHAINS_XRP_DISABLED: "true"
+  BIFROST_CHAINS_TRON_DISABLED: "true"
+  BIFROST_CHAINS_POL_DISABLED: "true"
+  BIFROST_CHAINS_ZEC_DISABLED: "true"
+  BIFROST_CHAINS_SUI_DISABLED: "true"
+  BIFROST_CHAINS_ADA_DISABLED: "true"
+
+x-thorchain-env: &thorchain-env
+  NET: chainnet
+  CHAIN_ID: thorchain
+  SIGNER_NAME: thorchain
+  SIGNER_PASSWD: password
+  THORNODE_GRPC_ENABLE: "true"
+  THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+  THOR_BLOCK_TIME: "6s"
+  PORT_RPC: "27147"
+  PORT_API: "1317"
+  THOR_SEED_NODES_ENDPOINT: ""
+  FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+  EXTRA_FUND_ACCOUNT_1: "cthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p0cdl2t" # cat
+  EXTRA_FUND_ACCOUNT_2: "cthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4pak8t6" # fox
+  EXTRA_FUND_ACCOUNT_3: "cthor1yvyh2uq8ly0aa44aretj0w0hnqx7rsfzl9rd6z" # goat
+  EXTRA_FUND_ACCOUNT_4: "cthor1rsq5yj5gv96f9aag8c42gmxyq63ee3pcsq3h6c" # whale
+  EXTRA_FUND_ACCOUNT_5: "cthor1l8373d0wlhyjukqx60gxs0mck4f3utgxjaxj6l" # wolf
+  EXTRA_FUND_ACCOUNT_6: "cthor1lc4rwftmqqzr0tykf623uyqwzcrrltvnsjtxy8" # eagle
+  <<: *disabled-chains
+
+x-bifrost-env: &bifrost-env
+  NET: chainnet
+  CHAIN_ID: thorchain
+  SIGNER_NAME: thorchain
+  SIGNER_PASSWD: password
+  THOR_SEED_NODES_ENDPOINT: ""
+  THOR_BLOCK_TIME: "6s"
+  BLOCK_SCANNER_BACKOFF: "5s"
+  BIFROST_METRICS_PPROF_ENABLED: "true"
+  BIFROST_SIGNER_BACKUP_KEYSHARES: "true"
+  BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+  BIFROST_SIGNER_AUTO_OBSERVE: "false"
+  BIFROST_SIGNER_KEYGEN_TIMEOUT: "55s"
+  BIFROST_SIGNER_KEYSIGN_TIMEOUT: "55s"
+  BIFROST_SIGNER_PARTY_TIMEOUT: "50s"
+  LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+  DOGE_HOST: "${DOGE_HOST:-dogecoin:18332}"
+  BIFROST_CHAINS_DOGE_CHAIN_NETWORK: "mocknet"
+  BIFROST_CHAINS_DOGE_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+  <<: *disabled-chains
+
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "256m"
+    max-file: "3"
+
+services:
+  # ================================ Dogecoin ======================================
+
+  dogecoin:
+    profiles:
+      - local-dogecoin
+    user: root
+    image: registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9
+    restart: unless-stopped
+    environment:
+      BLOCK_TIME: "1"
+      DOGE_MASTER_ADDR: "mnaioCtEGdw6bd6rWJ13Mbre1kN5rPa2Mo"
+    ports:
+      - "18332:18332"
+    logging: *logging
+
+  # ================================ THORNodes =====================================
+
+  thornode:
+    build:
+      context: ../../
+      dockerfile: ./build/docker/Dockerfile
+      args:
+        TAG: chainnet
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    hostname: thornode
+    environment:
+      <<: *thorchain-env
+      SEED: thornode
+      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+    ports:
+      - "27147:27147"
+      - "1317:1317"
+      - "50051:50051"
+      - "9090:9090"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode:/root/.thornode
+    networks:
+      default:
+        aliases:
+          - thornode-dog
+    entrypoint: /docker/scripts/genesis.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-cat:
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    hostname: thornode-cat
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-cat
+      SEEDS: thornode,thornode-fox
+      AUTO_BOND: "true"
+      SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-cat:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-fox:
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    hostname: thornode-fox
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-fox
+      SEEDS: thornode,thornode-cat
+      AUTO_BOND: "true"
+      SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-fox:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-goat:
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    hostname: thornode-goat
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-goat
+      SEEDS: thornode,thornode-cat,thornode-fox
+      AUTO_BOND: "true"
+      SIGNER_SEED_PHRASE: "goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat goat answer"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-goat:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-whale:
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    hostname: thornode-whale
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-whale
+      SEEDS: thornode,thornode-cat,thornode-fox
+      AUTO_BOND: "true"
+      SIGNER_SEED_PHRASE: "whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale away"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-whale:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-wolf:
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    hostname: thornode-wolf
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-wolf
+      SEEDS: thornode,thornode-cat,thornode-fox,thornode-goat
+      AUTO_BOND: "true"
+      SIGNER_SEED_PHRASE: "wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf analyst"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-wolf:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-eagle:
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    hostname: thornode-eagle
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *thorchain-env
+      PEER: thornode
+      SEED: thornode-eagle
+      SEEDS: thornode,thornode-cat,thornode-fox,thornode-goat
+      AUTO_BOND: "true"
+      SIGNER_SEED_PHRASE: "eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle bitter"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-eagle:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  # ================================ Bifrosts ======================================
+
+  bifrost: &bifrost
+    image: thornode:dkls-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: *dog-seed
+      CHAIN_API: thornode:1317
+      CHAIN_RPC: thornode:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode:50051
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../dkls/go-wrappers/includes/linux/${DKLS_LIB_ARCH:-arm64}/libgodkls.so:/usr/lib/libgodkls.so:ro"
+      - bifrost:/var/data/bifrost
+      - thornode:/root/.thornode
+    networks:
+      default:
+        aliases:
+          - bifrost-dog
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-cat:
+    <<: *bifrost
+    depends_on:
+      thornode-cat:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: *cat-seed
+      PEER: bifrost
+      CHAIN_API: thornode-cat:1317
+      CHAIN_RPC: thornode-cat:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-cat:50051
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../dkls/go-wrappers/includes/linux/${DKLS_LIB_ARCH:-arm64}/libgodkls.so:/usr/lib/libgodkls.so:ro"
+      - bifrost-cat:/var/data/bifrost
+      - thornode-cat:/root/.thornode
+    command: ["bifrost"]
+
+  bifrost-fox:
+    <<: *bifrost
+    depends_on:
+      thornode-fox:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: *fox-seed
+      PEER: bifrost
+      CHAIN_API: thornode-fox:1317
+      CHAIN_RPC: thornode-fox:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-fox:50051
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../dkls/go-wrappers/includes/linux/${DKLS_LIB_ARCH:-arm64}/libgodkls.so:/usr/lib/libgodkls.so:ro"
+      - bifrost-fox:/var/data/bifrost
+      - thornode-fox:/root/.thornode
+    command: ["bifrost"]
+
+  bifrost-goat:
+    <<: *bifrost
+    depends_on:
+      thornode-goat:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: *goat-seed
+      PEER: bifrost
+      CHAIN_API: thornode-goat:1317
+      CHAIN_RPC: thornode-goat:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-goat:50051
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../dkls/go-wrappers/includes/linux/${DKLS_LIB_ARCH:-arm64}/libgodkls.so:/usr/lib/libgodkls.so:ro"
+      - bifrost-goat:/var/data/bifrost
+      - thornode-goat:/root/.thornode
+    command: ["bifrost"]
+
+  bifrost-whale:
+    <<: *bifrost
+    depends_on:
+      thornode-whale:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: *whale-seed
+      PEER: bifrost
+      CHAIN_API: thornode-whale:1317
+      CHAIN_RPC: thornode-whale:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-whale:50051
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../dkls/go-wrappers/includes/linux/${DKLS_LIB_ARCH:-arm64}/libgodkls.so:/usr/lib/libgodkls.so:ro"
+      - bifrost-whale:/var/data/bifrost
+      - thornode-whale:/root/.thornode
+    command: ["bifrost"]
+
+  bifrost-wolf:
+    <<: *bifrost
+    depends_on:
+      thornode-wolf:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: *wolf-seed
+      PEER: bifrost
+      CHAIN_API: thornode-wolf:1317
+      CHAIN_RPC: thornode-wolf:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-wolf:50051
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../dkls/go-wrappers/includes/linux/${DKLS_LIB_ARCH:-arm64}/libgodkls.so:/usr/lib/libgodkls.so:ro"
+      - bifrost-wolf:/var/data/bifrost
+      - thornode-wolf:/root/.thornode
+    command: ["bifrost"]
+
+  bifrost-eagle:
+    <<: *bifrost
+    depends_on:
+      thornode-eagle:
+        condition: service_healthy
+    environment:
+      <<: *bifrost-env
+      SIGNER_SEED_PHRASE: *eagle-seed
+      PEER: bifrost
+      CHAIN_API: thornode-eagle:1317
+      CHAIN_RPC: thornode-eagle:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-eagle:50051
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../dkls/go-wrappers/includes/linux/${DKLS_LIB_ARCH:-arm64}/libgodkls.so:/usr/lib/libgodkls.so:ro"
+      - bifrost-eagle:/var/data/bifrost
+      - thornode-eagle:/root/.thornode
+    command: ["bifrost"]

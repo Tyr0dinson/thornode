@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -104,6 +105,12 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 	keyGenReq := keygen.Request{
 		Keys: keys,
 	}
+	enableDKLS, err := kg.bridge.GetMimir(constants.MimirKeyEnableDKLS)
+	if err != nil {
+		kg.logger.Err(err).Msg("fail to get EnableDKLS mimir")
+	} else if enableDKLS == 1 {
+		keyGenReq.Engine = storage.SigningEngineDKLS
+	}
 	currentVersion := kg.getVersion()
 	keyGenReq.Version = currentVersion.String()
 
@@ -150,6 +157,7 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 			// Create a generic blame with the error message
 			b.FailReason = err.Error()
 		}
+		kg.applyDKLSKeygenTimeoutFallbackBlame(&b, keyGenReq.Engine, pKeys, err)
 		blame = append(blame, b)
 		return common.EmptyPubKeySet, blame, fmt.Errorf("fail to keygen: %w", err)
 	}
@@ -167,6 +175,9 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 			b.BlameNodes[i].Pubkey = n.Pubkey
 			b.BlameNodes[i].BlameData = n.BlameData
 			b.BlameNodes[i].BlameSignature = n.BlameSignature
+		}
+		if resp.Algo == common.SigningAlgoSecp256k1 {
+			kg.applyDKLSKeygenTimeoutFallbackBlame(&b, keyGenReq.Engine, pKeys, fmt.Errorf("%s", b.FailReason))
 		}
 
 		// Only add blame if it contains actual blame information
@@ -209,4 +220,67 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 	}
 
 	return common.NewPubKeySet(ecdsaPubKey, eddsaPubKey), blame, nil
+}
+
+func (kg *KeyGen) applyDKLSKeygenTimeoutFallbackBlame(b *types.Blame, engine string, pKeys common.PubKeys, cause error) {
+	if b == nil || engine != storage.SigningEngineDKLS || len(b.BlameNodes) > 0 || cause == nil {
+		return
+	}
+	if !strings.Contains(cause.Error(), "DKLS session timeout") {
+		return
+	}
+	vaults, err := kg.bridge.GetAsgards()
+	if err != nil {
+		kg.logger.Err(err).Msg("fail to get active asgards for DKLS keygen timeout blame")
+		return
+	}
+	nodes := dklsIncomingKeygenBlameNodes(pKeys.Strings(), activeAsgardMembers(vaults))
+	if len(nodes) == 0 {
+		return
+	}
+	if b.FailReason == "" {
+		b.FailReason = cause.Error()
+	}
+	if b.Round == "" {
+		b.Round = types.CanonicalTssRound("DKLSKeygenAbort", common.SigningAlgoSecp256k1)
+	}
+	b.BlameNodes = nodes
+}
+
+func activeAsgardMembers(vaults types.Vaults) map[string]struct{} {
+	members := make(map[string]struct{})
+	for _, vault := range vaults {
+		if !vault.IsAsgard() || !vault.IsActive() {
+			continue
+		}
+		for _, member := range vault.Membership {
+			if member == "" {
+				continue
+			}
+			members[member] = struct{}{}
+		}
+	}
+	return members
+}
+
+func dklsIncomingKeygenBlameNodes(keygenMembers []string, activeMembers map[string]struct{}) []types.Node {
+	if len(activeMembers) == 0 {
+		return nil
+	}
+	nodes := make([]types.Node, 0)
+	seen := make(map[string]struct{})
+	for _, member := range keygenMembers {
+		if member == "" {
+			continue
+		}
+		if _, ok := activeMembers[member]; ok {
+			continue
+		}
+		if _, ok := seen[member]; ok {
+			continue
+		}
+		seen[member] = struct{}{}
+		nodes = append(nodes, types.Node{Pubkey: member})
+	}
+	return nodes
 }

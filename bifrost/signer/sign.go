@@ -2,6 +2,7 @@ package signer
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/big"
@@ -57,6 +58,46 @@ type Signer struct {
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
 	pipeline              *pipeline
+}
+
+func normalizeFailedKeygenBlame(blames []ttypes.Blame) []ttypes.Blame {
+	if len(blames) == 0 {
+		return nil
+	}
+
+	// Prefer the protocol-specific blame. Generic join/sync blame can include
+	// the same node again, which makes MsgTssPool invalid on-chain.
+	specific := make([]ttypes.Blame, 0, len(blames))
+	for _, b := range blames {
+		if b.Round != "" && len(b.BlameNodes) > 0 {
+			specific = append(specific, b)
+		}
+	}
+	if len(specific) > 0 {
+		blames = specific
+	}
+
+	seen := make(map[string]struct{})
+	normalized := make([]ttypes.Blame, 0, len(blames))
+	for _, b := range blames {
+		nodes := make([]ttypes.Node, 0, len(b.BlameNodes))
+		for _, node := range b.BlameNodes {
+			if node.Pubkey == "" {
+				continue
+			}
+			if _, ok := seen[node.Pubkey]; ok {
+				continue
+			}
+			seen[node.Pubkey] = struct{}{}
+			nodes = append(nodes, node)
+		}
+		if len(nodes) == 0 {
+			continue
+		}
+		b.BlameNodes = nodes
+		normalized = append(normalized, b)
+	}
+	return normalized
 }
 
 // NewSigner create a new instance of signer
@@ -385,10 +426,18 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 
 		// re-enqueue the keygen block to retry if we failed to generate a key
 		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+			blame = normalizeFailedKeygenBlame(blame)
+			if len(blame) > 0 {
+				if err = s.sendKeygenToThorchain(keygenBlock.Height, common.EmptyPubKey, nil, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime, common.EmptyPubKey); err != nil {
+					s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
+					s.logger.Error().Err(err).Msg("fail to broadcast failed keygen")
+				}
+			}
 			if s.scheduleKeygenRetry(keygenBlock) {
 				return
 			}
 			s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries")
+			continue
 		}
 
 		// generate a verification signature to ensure we can sign with the new key
@@ -451,6 +500,11 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 		s.logger.Error().Err(err).Msg("fail to get secp256k1 pubkey")
 	}
 	if !signature.Verify(data, spk) {
+		digest := sha256.Sum256(data)
+		if signature.Verify(digest[:], spk) {
+			s.logger.Info().Msg("secp256k1 check signature verified")
+			return sigBytes
+		}
 		s.logger.Error().Msg("secp256k1 check signature verification failed")
 	} else {
 		s.logger.Info().Msg("secp256k1 check signature verified")

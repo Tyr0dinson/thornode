@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"math/big"
@@ -64,7 +65,12 @@ var verifySecp256K1Signature = func(pk common.PubKey, sig []byte) error {
 	if err != nil {
 		return fmt.Errorf("fail to get secp256k1 pubkey: %w", err)
 	}
-	if !signature.Verify([]byte(pk.String()), spk) {
+	msg := []byte(pk.String())
+	if !signature.Verify(msg, spk) {
+		digest := sha256.Sum256(msg)
+		if signature.Verify(digest[:], spk) {
+			return nil
+		}
 		return fmt.Errorf("signature verification failed")
 	}
 	return nil

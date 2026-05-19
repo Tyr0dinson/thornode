@@ -27,6 +27,7 @@ COPY Makefile Makefile
 COPY version version
 COPY tools/thorscan tools/thorscan
 COPY tools/recover-keyshare-backup tools/recover-keyshare-backup
+COPY dkls dkls
 
 ARG TAG=mainnet
 ARG COMMIT=unknown
@@ -38,6 +39,7 @@ RUN make install
 ########################################################################################
 
 FROM debian:bullseye-20241111-slim@sha256:60a596681410bd31a48e5975806a24cd78328f3fd6b9ee5bc64dca6d46a51f29
+ARG TARGETARCH=amd64
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
@@ -56,6 +58,8 @@ RUN apt-get update && \
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
 COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/api/libwasmvm.*.so /usr/lib
+COPY --from=build /app/dkls/go-wrappers/includes/linux/${TARGETARCH}/libgodkls.so /usr/lib/libgodkls.so
+ENV LD_LIBRARY_PATH=/usr/lib:/usr/local/lib
 
 COPY build/scripts /scripts
 

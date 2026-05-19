@@ -86,6 +86,9 @@ chain/ethereum/deployment/routerv6/grinder/target
 # Test outputs
 test-results/
 results/
+build/docker/dkls-chainnet-results/
+build/docker/dkls-chainnet-generated/
+build/docker/docker-compose.dkls-chainnet-timing.yml
 test/regression/mnt/blocks/**/[0-9]*.json
 *.prof
 test/performance/results

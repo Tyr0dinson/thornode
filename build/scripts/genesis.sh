@@ -65,6 +65,15 @@ genesis_init() {
     fi
     add_account "$FAUCET" rune 40000000000000000
 
+    for ((i = 1; i <= ${EXTRA_FUND_ACCOUNT_COUNT:-6}; i++)); do
+      EXTRA_VAR="EXTRA_FUND_ACCOUNT_$i"
+      EXTRA="${!EXTRA_VAR-}"
+      if [ -n "$EXTRA" ]; then
+        echo "Funding extra account: $EXTRA"
+        add_account "$EXTRA" rune 200000000000000
+      fi
+    done
+
     reserve 5000000000000000
 
     set_bond_module # set bond module balance for invariant
@@ -77,6 +86,15 @@ genesis_init() {
     fi
     # 400M RUNE to faucet + 50M to reserve = 450M of 500M MaxRuneSupply
     add_account "$FAUCET" rune 40000000000000000
+
+    for ((i = 1; i <= ${EXTRA_FUND_ACCOUNT_COUNT:-6}; i++)); do
+      EXTRA_VAR="EXTRA_FUND_ACCOUNT_$i"
+      EXTRA="${!EXTRA_VAR-}"
+      if [ -n "$EXTRA" ]; then
+        echo "Funding extra account: $EXTRA"
+        add_account "$EXTRA" rune 200000000000000
+      fi
+    done
 
     reserve 5000000000000000
 

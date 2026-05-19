@@ -2,6 +2,7 @@ package keysign
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/big"
@@ -88,7 +89,13 @@ func (n *notifier) verifySignature(data *common.SignatureData, msg []byte) error
 		if err != nil {
 			return err
 		}
-		verified := ecdsa.Verify(pub.ToECDSA(), msg, new(big.Int).SetBytes(data.GetSignature().R), new(big.Int).SetBytes(data.GetSignature().S))
+		r := new(big.Int).SetBytes(data.GetSignature().R)
+		s := new(big.Int).SetBytes(data.GetSignature().S)
+		verified := ecdsa.Verify(pub.ToECDSA(), msg, r, s)
+		if !verified && len(msg) != 32 {
+			digest := sha256.Sum256(msg)
+			verified = ecdsa.Verify(pub.ToECDSA(), digest[:], r, s)
+		}
 		if !verified {
 			return fmt.Errorf("secp256k1 signature did not verify")
 		}

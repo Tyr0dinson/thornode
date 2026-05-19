@@ -1466,8 +1466,8 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 		rotation = true
 		active = active[toRemove:]
 	}
-	newNode, err := vm.k.GetMimir(ctx, constants.NumberOfNewNodesPerChurn.String())
-	if err != nil || newNode <= 0 {
+	newNode := vm.k.GetConfigInt64(ctx, constants.NumberOfNewNodesPerChurn)
+	if newNode <= 0 {
 		newNode = 1
 	}
 

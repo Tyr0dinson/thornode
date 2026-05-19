@@ -93,18 +93,26 @@ func InitLog(level string, pretty bool, serviceValue string) {
 	log.Logger = log.Output(out).With().Str("service", serviceValue).Logger()
 }
 
-func generateSignature(msg []byte, msgID string, privKey tcrypto.PrivKey) ([]byte, error) {
+func GenerateSignature(msg []byte, msgID string, privKey tcrypto.PrivKey) ([]byte, error) {
 	var dataForSigning bytes.Buffer
 	dataForSigning.Write(msg)
 	dataForSigning.WriteString(msgID)
 	return privKey.Sign(dataForSigning.Bytes())
 }
 
-func verifySignature(pubKey tcrypto.PubKey, message, sig []byte, msgID string) bool {
+func VerifySignature(pubKey tcrypto.PubKey, message, sig []byte, msgID string) bool {
 	var dataForSign bytes.Buffer
 	dataForSign.Write(message)
 	dataForSign.WriteString(msgID)
 	return pubKey.VerifySignature(dataForSign.Bytes(), sig)
+}
+
+func generateSignature(msg []byte, msgID string, privKey tcrypto.PrivKey) ([]byte, error) {
+	return GenerateSignature(msg, msgID, privKey)
+}
+
+func verifySignature(pubKey tcrypto.PubKey, message, sig []byte, msgID string) bool {
+	return VerifySignature(pubKey, message, sig, msgID)
 }
 
 func getHighestFreq(confirmedList map[string]string) (string, int, error) {

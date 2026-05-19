@@ -2,6 +2,7 @@ package tss
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,13 +16,17 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/rs/zerolog/log"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/cmd"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func TestTSSKeyGen(t *testing.T) { TestingT(t) }
@@ -29,6 +34,15 @@ func TestTSSKeyGen(t *testing.T) { TestingT(t) }
 type KeyGenTestSuite struct{}
 
 var _ = Suite(&KeyGenTestSuite{})
+
+type dklsKeygenBridge struct {
+	thorclient.ThorchainBridge
+	asgards ttypes.Vaults
+}
+
+func (b *dklsKeygenBridge) GetAsgards() (ttypes.Vaults, error) {
+	return b.asgards, nil
+}
 
 func (*KeyGenTestSuite) SetUpSuite(c *C) {
 	thorchain.SetupConfigForTest()
@@ -87,4 +101,58 @@ func (kts *KeyGenTestSuite) TestNewTssKenGen(c *C) {
 	kg, err := NewTssKeyGen(k, nil, b)
 	c.Assert(err, IsNil)
 	c.Assert(kg, NotNil)
+}
+
+func (kts *KeyGenTestSuite) TestDKLSIncomingKeygenBlameNodesBlamesOnlyStandby(c *C) {
+	active := map[string]struct{}{
+		"active-1": {},
+		"active-2": {},
+		"active-3": {},
+	}
+	got := dklsIncomingKeygenBlameNodes([]string{"active-1", "active-2", "standby-1", "active-3"}, active)
+	c.Assert(got, HasLen, 1)
+	c.Assert(got[0].Pubkey, Equals, "standby-1")
+}
+
+func (kts *KeyGenTestSuite) TestDKLSIncomingKeygenBlameNodesNeedsActiveMembership(c *C) {
+	got := dklsIncomingKeygenBlameNodes([]string{"active-1", "standby-1"}, nil)
+	c.Assert(got, HasLen, 0)
+}
+
+func (kts *KeyGenTestSuite) TestActiveAsgardMembersIgnoresRetiringVaults(c *C) {
+	vaults := ttypes.Vaults{
+		{
+			Type:       ttypes.VaultType_AsgardVault,
+			Status:     ttypes.VaultStatus_RetiringVault,
+			Membership: []string{"retiring-1"},
+		},
+		{
+			Type:       ttypes.VaultType_AsgardVault,
+			Status:     ttypes.VaultStatus_ActiveVault,
+			Membership: []string{"active-1", "active-2"},
+		},
+	}
+	active := activeAsgardMembers(vaults)
+	_, hasRetiring := active["retiring-1"]
+	_, hasActive := active["active-1"]
+	c.Assert(hasRetiring, Equals, false)
+	c.Assert(hasActive, Equals, true)
+}
+
+func (kts *KeyGenTestSuite) TestApplyDKLSKeygenTimeoutFallbackBlame(c *C) {
+	kg := &KeyGen{
+		bridge: &dklsKeygenBridge{
+			asgards: ttypes.Vaults{{
+				Type:       ttypes.VaultType_AsgardVault,
+				Status:     ttypes.VaultStatus_ActiveVault,
+				Membership: []string{"active-1", "active-2"},
+			}},
+		},
+		logger: log.With().Str("module", "tss_keygen_test").Logger(),
+	}
+	b := ttypes.Blame{FailReason: "DKLS session timeout: produced=0 missing="}
+	kg.applyDKLSKeygenTimeoutFallbackBlame(&b, storage.SigningEngineDKLS, common.PubKeys{"active-1", "standby-1", "active-2"}, errors.New(b.FailReason))
+	c.Assert(b.BlameNodes, HasLen, 1)
+	c.Assert(b.BlameNodes[0].Pubkey, Equals, "standby-1")
+	c.Assert(b.Round, Equals, "DKLSKeygenAbort")
 }
