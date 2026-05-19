@@ -365,7 +365,7 @@ func allocateSynths(w *tabwriter.Writer, sdkCtx cosmos.Context, k keeper.Keeper,
 	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 		"asset",
 		"consumed",
-		"remaining",
+		"saver_remaining",
 		"bps",
 	); err != nil {
 		return nil, fmt.Errorf("print synth consumption columns: %w", err)
@@ -389,29 +389,40 @@ func allocateSynth(sdkCtx cosmos.Context, k keeper.Keeper, w *tabwriter.Writer, 
 		return coin, nil
 	}
 
-	pool, err := k.GetPool(sdkCtx, coin.Asset.GetLayer1Asset())
+	synthAsset := coin.Asset.GetLayer1Asset().GetSyntheticAsset()
+	saverPool, err := k.GetPool(sdkCtx, synthAsset)
 	if err != nil {
-		return coin, fmt.Errorf("get pool for %s: %w", coin.Asset, err)
+		return coin, fmt.Errorf("get saver pool for %s: %w", synthAsset, err)
 	}
-	if pool.IsEmpty() || pool.BalanceAsset.IsZero() {
+	if saverPool.IsEmpty() || saverPool.BalanceAsset.IsZero() {
 		return coin, nil
 	}
 
-	currentSupply := k.GetTotalSupply(sdkCtx, pool.Asset.GetSyntheticAsset())
-
-	if currentSupply.IsZero() {
-		return coin, nil
+	currentBalance := saverPool.BalanceAsset
+	consumed := coin.Amount
+	if currentBalance.LT(consumed) {
+		consumed = currentBalance
 	}
+	remainingBalance := common.SafeSub(currentBalance, consumed)
 
-	newSupply := common.SafeSub(currentSupply, coin.Amount)
-	consumed := currentSupply.Sub(newSupply)
+	burnCoin := common.NewCoin(synthAsset, consumed)
+	if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ModuleName, common.NewCoins(burnCoin)); err != nil {
+		return coin, fmt.Errorf("move synth from asgard to module for burn %s: %w", burnCoin, err)
+	}
+	if err := k.BurnFromModule(sdkCtx, types.ModuleName, burnCoin); err != nil {
+		return coin, fmt.Errorf("burn synth %s: %w", burnCoin, err)
+	}
+	saverPool.BalanceAsset = remainingBalance
+	if err := k.SetPool(sdkCtx, saverPool); err != nil {
+		return coin, fmt.Errorf("set saver pool %s: %w", synthAsset, err)
+	}
 
 	if _, err := fmt.Fprintf(w, "%s.%s\t%s\t%s\t%s\n",
 		coin.Asset.Chain,
 		coin.Asset.Ticker,
 		formatAmount(consumed),
-		formatAmount(newSupply),
-		consumed.Mul(math.NewUint(10000)).Quo(currentSupply),
+		formatAmount(remainingBalance),
+		consumed.Mul(math.NewUint(10000)).Quo(currentBalance),
 	); err != nil {
 		return coin, fmt.Errorf("print synth allocation row for %s: %w", coin.Asset, err)
 	}
