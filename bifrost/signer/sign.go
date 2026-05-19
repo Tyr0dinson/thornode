@@ -490,53 +490,50 @@ func (s *Signer) processKeygenRequest(height int64, keygenReq ttypes.Keygen) key
 	var err error
 	var secp256k1Sig []byte
 
-	switch keygenReq.Type {
-	default:
-		pubKey, blame, err = s.tssKeygen.GenerateNewKey(height, keygenReq.GetMembers())
-		if len(blame) > 0 {
-			for _, b := range blame {
-				s.logger.Error().
-					Str("reason", b.FailReason).
-					Interface("nodes", b.BlameNodes).
-					Msg("keygen blame")
-			}
+	pubKey, blame, err = s.tssKeygen.GenerateNewKey(height, keygenReq.GetMembers())
+	if len(blame) > 0 {
+		for _, b := range blame {
+			s.logger.Error().
+				Str("reason", b.FailReason).
+				Interface("nodes", b.BlameNodes).
+				Msg("keygen blame")
 		}
-		if err != nil {
-			s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
-			s.logger.Error().Err(err).Msg("fail to generate new pubkey")
-		}
-
-		// re-enqueue the keygen block to retry if we failed to generate a key
-		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-			if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
-				return keygenRequestResult{}
-			}
-			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
-			return keygenRequestResult{}
-		}
-
-		// Give chain clients with custom keygen logic a chance to initialize chain-specific
-		// signer state (for example Monero multisig address mapping) before keygen is finalized.
-		pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
-			keygenChains,
-			keygenReq.GetMembers().Strings(),
-			height,
-			pubKey.Secp256k1,
-			pubKey.Ed25519,
-		)
-		if err != nil {
-			s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
-			s.logger.Error().Err(err).Interface("keygen", keygenReq).Msg("custom keygen hooks failed")
-			if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
-				return keygenRequestResult{}
-			}
-			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
-			return keygenRequestResult{}
-		}
-
-		// generate a verification signature to ensure we can sign with the new key
-		secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1)
 	}
+	if err != nil {
+		s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
+		s.logger.Error().Err(err).Msg("fail to generate new pubkey")
+	}
+
+	// re-enqueue the keygen block to retry if we failed to generate a key
+	if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+		if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
+			return keygenRequestResult{}
+		}
+		s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
+		return keygenRequestResult{}
+	}
+
+	// Give chain clients with custom keygen logic a chance to initialize chain-specific
+	// signer state (for example Monero multisig address mapping) before keygen is finalized.
+	pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
+		keygenChains,
+		keygenReq.GetMembers().Strings(),
+		height,
+		pubKey.Secp256k1,
+		pubKey.Ed25519,
+	)
+	if err != nil {
+		s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
+		s.logger.Error().Err(err).Interface("keygen", keygenReq).Msg("custom keygen hooks failed")
+		if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {
+			return keygenRequestResult{}
+		}
+		s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
+		return keygenRequestResult{}
+	}
+
+	// generate a verification signature to ensure we can sign with the new key
+	secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1)
 
 	if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
 		if s.scheduleKeygenRetry(singleKeygenBlock(height, keygenReq)) {

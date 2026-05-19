@@ -316,7 +316,8 @@
               "original_memo": "OUT:0000000000000000000000000000000000000000000000000000000000000002",
               "to_address": "cosmos100000000000000000000000000000000708mjz",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
+              "vault_pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ],
           "finalised_height": "6",
@@ -394,7 +395,6 @@
           "asset": "GAIA.NAMI"
         }
       ],
-      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "200000000",
@@ -466,7 +466,8 @@
               "original_memo": "OUT:0000000000000000000000000000000000000000000000000000000000000002",
               "to_address": "cosmos100000000000000000000000000000000708mjz",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
+              "vault_pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ]
         }
@@ -490,6 +491,7 @@
             "XRP",
             "SOL",
             "POL",
+            "XMR",
             "ZEC"
           ],
           "coins": [
@@ -510,6 +512,7 @@
           ],
           "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
           "pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
+          "pub_key_frost": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
           "routers": null,
           "status": "ActiveVault",
           "type": "AsgardVault"

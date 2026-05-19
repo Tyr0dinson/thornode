@@ -16,7 +16,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
 asserts:
-  - .|length == 15
+  - .|length == 16
   # all addresses should be for the dog mnemonic
   - .[]|select(.chain == "AVAX")|.address == "{{ addr_avax_dog }}"
   - .[]|select(.chain == "BCH")|.address == "{{ addr_bch_dog }}"
@@ -32,11 +32,12 @@ asserts:
   - .[]|select(.chain == "XRP")|.address == "{{ addr_xrp_dog }}"
   - .[]|select(.chain == "SOL")|.address == "{{ addr_sol_dog }}"
   - .[]|select(.chain == "POL")|.address == "{{ addr_pol_dog }}"
+  - .[]|select(.chain == "XMR")|.address == "{{ addr_xmr_dog }}"
   - .[]|select(.chain == "ZEC")|.address == "{{ addr_zec_dog_tex }}"
-  # initialize should only expose the regular vault family until the dedicated
-  # XMR monovault keygen has produced an active vault.
+  # XMR and ZEC use the standard Asgard's Ed25519/FROST key; other external
+  # chains use the standard Asgard secp256k1 key.
   - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length == 14'
-  - '[.[]|select(.pub_key == "{{ pubkey_dog_eddsa }}")]|length == 1'
+  - '[.[]|select(.pub_key == "{{ pubkey_dog_eddsa }}")]|length == 2'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network?height=1000

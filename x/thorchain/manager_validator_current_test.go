@@ -934,8 +934,8 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementAsgardKeygen
 
 func (vts *ValidatorMgrTestSuite) TestHasPendingKeygenExpiresAtRetryBoundary(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	validityBlocks := keygenResultValidityBlocks(ctx, k, AsgardKeygen)
-	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), validityBlocks)
+	retryBlocks := int64(5)
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
 	mgr := NewDummyMgrWithKeeper(k)
 	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 
@@ -950,14 +950,13 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingKeygenExpiresAtRetryBoundary(c *
 	unrelatedVault.Membership = common.PubKeys{GetRandomPubKey()}.Strings()
 	c.Assert(k.SetVault(ctx, unrelatedVault), IsNil)
 
-	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(2+validityBlocks-1), AsgardKeygen)
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(2+retryBlocks-1), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, true)
 
-	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(2+validityBlocks), AsgardKeygen)
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(2+retryBlocks), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
-
 }
 
 func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {

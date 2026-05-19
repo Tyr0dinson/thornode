@@ -127,11 +127,6 @@ type batchingKeygenBridge struct {
 	batchSizes []int
 }
 
-type retryAwareKeygenBridge struct {
-	batchingKeygenBridge
-	mimirs map[string]int64
-}
-
 type timingKeygenBridge struct {
 	batchingKeygenBridge
 	buildDelay time.Duration
@@ -184,13 +179,6 @@ func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
 func (b *batchingKeygenBridge) Broadcast(msgs ...sdktypes.Msg) (common.TxID, error) {
 	b.batchSizes = append(b.batchSizes, len(msgs))
 	return common.TxID("batched-keygen-tx"), nil
-}
-
-func (b *retryAwareKeygenBridge) GetMimir(key string) (int64, error) {
-	if value, ok := b.mimirs[key]; ok {
-		return value, nil
-	}
-	return b.batchingKeygenBridge.GetMimir(key)
 }
 
 func (b *timingKeygenBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types2.Blame, inputPks common.PubKeys, keygenType types2.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdktypes.Msg, error) {

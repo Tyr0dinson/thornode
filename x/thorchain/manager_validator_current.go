@@ -130,7 +130,7 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 }
 
 func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortypes.KeygenType) (bool, error) {
-	lookback := keygenResultValidityBlocks(ctx, vm.k, keygenType)
+	lookback := keygenRetryPendingBlocks(ctx, vm.k)
 	startHeight := ctx.BlockHeight() - lookback
 	if startHeight < genesisBlockHeight {
 		startHeight = genesisBlockHeight
@@ -158,7 +158,7 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 			// At the retry boundary a replacement keygen may be scheduled for the
 			// current height while reports for the previous keygen are still valid
 			// through this block. Treat only strictly younger keygens as pending.
-			if ctx.BlockHeight()-height >= keygenResultValidityBlocks(ctx, vm.k, keygen.Type) {
+			if ctx.BlockHeight()-height >= lookback {
 				continue
 			}
 			if !keygenResolvedByVaults(keygen, readyVaults) {
@@ -169,14 +169,24 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 	return false, nil
 }
 
+func keygenRetryPendingBlocks(ctx cosmos.Context, k keeper.Keeper) int64 {
+	blocks := k.GetConfigInt64(ctx, constants.ChurnRetryInterval)
+	if blocks <= 0 {
+		blocks = constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval)
+	}
+	if blocks < 1 {
+		return 1
+	}
+	return blocks
+}
+
 func keygenResolvedByVaults(keygen Keygen, vaults Vaults) bool {
 	members := keygen.GetMembers()
 	for _, vault := range vaults {
 		if !vault.MembershipEquals(members) {
 			continue
 		}
-		switch keygen.Type {
-		case AsgardKeygen:
+		if keygen.Type == AsgardKeygen {
 			return true
 		}
 	}

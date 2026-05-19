@@ -24,8 +24,10 @@ type XMRPostChurnActor struct {
 }
 
 const (
-	xmrPostChurnNewNodesPerChurn = int64(3)
-	xmrPostChurnRetryInterval    = int64(1)
+	xmrPostChurnDesiredValidatorSet = int64(4)
+	xmrPostChurnNewNodesPerChurn    = int64(3)
+	xmrPostChurnInterval            = int64(30)
+	xmrPostChurnRetryInterval       = int64(120)
 )
 
 func NewXMRPostChurnActor(rng *rand.Rand) *Actor {
@@ -101,6 +103,26 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		Int64("value", xmrPostChurnRetryInterval).
 		Str("txid", txid.String()).
 		Msg("broadcasted churn retry interval mimir")
+
+	txid, err = a.broadcastMimir(node, accAddr, constants.ChurnInterval.String(), xmrPostChurnInterval)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast churn interval mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", xmrPostChurnInterval).
+		Str("txid", txid.String()).
+		Msg("broadcasted churn interval mimir")
+
+	txid, err = a.broadcastMimir(node, accAddr, constants.DesiredValidatorSet.String(), xmrPostChurnDesiredValidatorSet)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast desired validator set mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", xmrPostChurnDesiredValidatorSet).
+		Str("txid", txid.String()).
+		Msg("broadcasted desired validator set mimir")
 
 	txid, err = a.broadcastMimir(node, accAddr, constants.NumberOfNewNodesPerChurn.String(), xmrPostChurnNewNodesPerChurn)
 	if err != nil {

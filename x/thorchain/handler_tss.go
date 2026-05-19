@@ -675,15 +675,6 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 				if rotateErr := h.tryRotateInitVaults(ctx, regularInitVaults); rotateErr != nil {
 					return fmt.Errorf("fail to rotate regular vaults: %w", rotateErr)
 				}
-				activeVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-				if err != nil {
-					return fmt.Errorf("fail to refresh active vaults: %w", err)
-				}
-				initVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
-				if err != nil {
-					return fmt.Errorf("fail to refresh init vaults: %w", err)
-				}
-				readyVaults = append(append(Vaults(nil), activeVaults...), initVaults...)
 			}
 		} else {
 			ctx.Logger().Info("not enough regular keygen yet")
