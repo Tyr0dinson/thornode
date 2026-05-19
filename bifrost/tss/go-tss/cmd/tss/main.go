@@ -25,6 +25,7 @@ var (
 	pretty     bool
 	baseFolder string
 	tssAddr    string
+	tssAuth    string
 )
 
 func main() {
@@ -67,7 +68,7 @@ func main() {
 	if nil != err {
 		log.Fatal(err)
 	}
-	s := NewTssHttpServer(tssAddr, tss)
+	s := NewTssHttpServerWithAuth(tssAddr, tss, tssAuth)
 	go func() {
 		if err := s.Start(); err != nil {
 			fmt.Println(err)
@@ -84,6 +85,7 @@ func main() {
 func parseFlags() (tssConf common.TssConfig, p2pConf p2p.Config) {
 	// we setup the configure for the general configuration
 	flag.StringVar(&tssAddr, "tss-port", "127.0.0.1:8080", "tss port")
+	flag.StringVar(&tssAuth, "tss-auth-secret", "", "optional bearer token required for go-tss HTTP control endpoints")
 	flag.BoolVar(&help, "h", false, "Display Help")
 	flag.StringVar(&logLevel, "loglevel", "info", "Log Level")
 	flag.BoolVar(&pretty, "pretty-log", false, "Enables unstructured prettified logging. This is useful for local debugging")
