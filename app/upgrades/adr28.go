@@ -88,14 +88,11 @@ func executeADR28(sdkCtx cosmos.Context, k keeper.Keeper) error {
 		return err
 	}
 
-	if err := printCoins("net liability", afterTreasury); err != nil {
-		return err
-	}
-
 	remaining, err := allocateSynths(sdkCtx, k, afterTreasury)
 	if err != nil {
 		return err
 	}
+
 	if err := printCoins("liability remaining", remaining); err != nil {
 		return err
 	}
