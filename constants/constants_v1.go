@@ -176,7 +176,7 @@ func NewConstantValue() *ConstantVals {
 			DevFundAddress:       "thor1sgnuptp32y2fht3258vlx68mq8wsk2uz4wrshu", // dev fund address for ADR 18
 			MarketingFundAddress: "thor1usj8cqjmjea32csxn5fma96ffeulln40gyrahn", // marketing fund address for ADR 21
 			OverSolvencyAddress:  "thor1lhufh0mwasa0lk9udppdegmvnkgqt08f0m9p5g", // over-solvency sweep destination address
-			RequiredPriceFeeds:   "ATOM,AVAX,BCH,BNB,BTC,DOGE,ETH,LTC,RUNE,SOL,TRX,USDC,USDT,XRP,ZEC",
+			RequiredPriceFeeds:   "ATOM,AVAX,BCH,BNB,BTC,DOGE,DOT,ETH,LTC,RUNE,SOL,TAO,TRX,USDC,USDT,XRP,ZEC",
 			WasmArbContract:      "thor1n5a08r0zvmqca39ka2tgwlkjy9ugalutk7fjpzptfppqcccnat2ska5t4g", // deployed instance of https://gitlab.com/thorchain/rujira/-/tree/main/contracts/rujira-thorchain-swap
 		},
 	}
