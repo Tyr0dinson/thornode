@@ -35,6 +35,8 @@ bifrost:
       - SOL
       - POL
       - ZEC
+      - TAO
+      - DOT
   thorchain:
     chain_id: thorchain
     chain_host: localhost:1317
@@ -627,6 +629,8 @@ bifrost:
         - USDC/USDT
         - XRP/USDT
         - ZEC/USDT
+        - TAO/USDT
+        - DOT/USDT
       symbol_mapping: []
 
     bitfinex:
@@ -666,6 +670,7 @@ bifrost:
         - LTC/USDT
         - RUNE/USDT
         - SOL/USDT
+        - TAO/USDT
         - XRP/USDT
       symbol_mapping: []
 
@@ -680,8 +685,12 @@ bifrost:
       pairs:
         - AVAX/USDT
         - BTC/USDT
+        - DOT/USDT
         - ETH/USDT
+        - LTC/USDT
         - RUNE/USDT
+        - TAO/USDT
+        - TRX/USDT
         - ZEC/USDT
       symbol_mapping: []
 
@@ -694,6 +703,7 @@ bifrost:
       ws_endpoints: []
       pairs:
         - BTC/USD
+        - SOL/USD
         - USDC/USD
         - USDT/USD
       symbol_mapping: []
@@ -715,6 +725,7 @@ bifrost:
         - BNB/USDT
         - BTC/USDT
         - DOGE/USDT
+        - DOT/USDT
         - ETH/USDT
         - LTC/USDT
         - RUNE/USDT
@@ -738,9 +749,11 @@ bifrost:
         - BCH/USD
         - BTC/USD
         - DOGE/USD
+        - DOT/USD
         - ETH/USD
         - LTC/USD
         - SOL/USD
+        - TAO/USD
         - USDT/USD
         - XRP/USD
         - ZEC/USD
@@ -761,9 +774,11 @@ bifrost:
         - BNB/USDT
         - BTC/USDT
         - DOGE/USDT
+        - DOT/USDT
         - ETH/USDT
         - LTC/USDT
         - SOL/USDT
+        - TAO/USDT
         - TRX/USDT
         - XRP/USDT
       symbol_mapping: []
@@ -782,9 +797,11 @@ bifrost:
         - BNB/USDT
         - BTC/USDT
         - DOGE/USDT
+        - DOT/USDT
         - ETH/USDT
         - LTC/USDT
         - SOL/USDT
+        - TAO/USDT
         - TRX/USDT
         - ZEC/USDT
       symbol_mapping: []
@@ -800,6 +817,7 @@ bifrost:
       pairs:
         - BTC/USD
         - ETH/USD
+        - SOL/USD
         - USDT/USD
         - XRP/USD
       symbol_mapping: []
@@ -822,6 +840,7 @@ bifrost:
         - LTC/USDT
         - RUNE/USDT
         - SOL/USDT
+        - TAO/USDT
         - TRX/USDT
         - USDC/USDT
         - ZEC/USDT
@@ -857,6 +876,7 @@ bifrost:
         - BCH/USDT
         - BNB/USDT
         - BTC/USDT
+        - DOT/USDT
         - ETH/USDT
         - LTC/USDT
         - SOL/USDT
@@ -876,6 +896,7 @@ bifrost:
       pairs:
         - BTC/USD
         - DOGE/USD
+        - TAO/USD
         - USDC/USDT
         - USDT/USD
         - XRP/USD
@@ -899,9 +920,11 @@ bifrost:
         - BCH/USDT
         - BNB/USDT
         - DOGE/USDT
+        - DOT/USDT
         - LTC/USDT
         - RUNE/USDT
         - SOL/USDT
+        - TAO/USDT
         - TRX/USDT
         - XRP/USDT
         - ZEC/USDT
@@ -922,9 +945,10 @@ bifrost:
         - BNB/USDT
         - DOGE/USDT
         - LTC/USDT
-        - USDC/USDT
         - SOL/USDT
+        - TAO/USDT
         - TRX/USDT
+        - USDC/USDT
         - XRP/USDT
       symbol_mapping: []
 
@@ -942,10 +966,12 @@ bifrost:
         - BNB/USDT
         - BTC/USDT
         - DOGE/USDT
+        - DOT/USDT
         - ETH/USDT
         - LTC/USDT
         - RUNE/USDT
         - SOL/USDT
+        - TAO/USDT
         - TRX/USDT
         - USDC/USDT
         - XRP/USDT
@@ -966,6 +992,7 @@ bifrost:
         - BCH/USDT
         - BTC/USDT
         - DOGE/USDT
+        - DOT/USDT
         - ETH/USDT
         - LTC/USDT
         - SOL/USDT
