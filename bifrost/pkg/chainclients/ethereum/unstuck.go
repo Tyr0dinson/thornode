@@ -13,6 +13,7 @@ import (
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/rs/zerolog"
 
+	sharedevm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -191,13 +192,18 @@ func (c *Client) unstuckTx(clog zerolog.Logger, item types.SignedTxItem) error {
 		cancelTx = etypes.NewTransaction(tx.Nonce(), ecommon.HexToAddress(address.String()), big.NewInt(0), c.cfg.BlockScanner.MaxGasLimit, currentGasRate, nil)
 	}
 
-	// Retry/cancel transactions are tied back to the original TxOut when the
-	// stored signed item still carries it. Without that context RemoteSign will
-	// refuse to produce a fresh TSS signature.
-	intent := tss.SigningIntent{}
-	if item.TxOutItem != nil {
-		intent = tss.NewEVMUnstuckSigningIntent(*item.TxOutItem, item.TxOutItem.Height)
+	signable, reason, err := sharedevm.IsEVMUnstuckTxOutSignable(c.bridge, item.TxOutItem)
+	if err != nil {
+		return fmt.Errorf("fail to preflight unstuck keysign: %w", err)
 	}
+	if !signable {
+		clog.Warn().Str("reason", reason).Msg("skip unstuck signing")
+		return nil
+	}
+
+	// Retry/cancel transactions are tied back to the original TxOut. TSS repeats
+	// this check as the final authorization boundary before signing.
+	intent := tss.NewEVMUnstuckSigningIntent(*item.TxOutItem, item.TxOutItem.Height)
 	rawBytes, err := c.kw.Sign(cancelTx, pubKey, intent)
 	if err != nil {
 		return fmt.Errorf("fail to sign tx for cancelling with nonce: %d, err: %w", tx.Nonce(), err)

@@ -1,8 +1,10 @@
 package evm
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,10 +34,11 @@ import (
 )
 
 type UnstuckTestSuite struct {
-	thorKeys *thorclient.Keys
-	bridge   thorclient.ThorchainBridge
-	m        *metrics.Metrics
-	server   *httptest.Server
+	thorKeys         *thorclient.Keys
+	bridge           thorclient.ThorchainBridge
+	m                *metrics.Metrics
+	server           *httptest.Server
+	keysignResponses map[string]ttypes.TxOut
 }
 
 var _ = Suite(&UnstuckTestSuite{})
@@ -45,6 +48,7 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	c.Assert(s.m, NotNil)
 	setupMocknetThorConfig()
 	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
+	s.keysignResponses = make(map[string]ttypes.TxOut)
 
 	cfg := config.BifrostClientConfiguration{
 		ChainID:      "thorchain",
@@ -80,6 +84,16 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	var lastBroadcastTxJSON []byte
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.RequestURI, thorclient.KeysignEndpoint) {
+			txOut, ok := s.keysignResponses[req.RequestURI]
+			if !ok {
+				http.NotFound(rw, req)
+				return
+			}
+			writeUnstuckKeysignResponse(c, rw, s.thorKeys, txOut)
+			return
+		}
+
 		switch req.RequestURI {
 		case thorclient.ThorchainConstants:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/constants/constants.json")
@@ -289,6 +303,51 @@ func (s *UnstuckTestSuite) TearDownTest(c *C) {
 	c.Assert(os.Unsetenv("NET"), IsNil)
 }
 
+func (s *UnstuckTestSuite) addKeysignResponse(toi ttypes.TxOutItem, outHash common.TxID) {
+	s.keysignResponses[fmt.Sprintf("%s/%d/%s", thorclient.KeysignEndpoint, toi.Height, toi.VaultPubKey.String())] = ttypes.TxOut{
+		Height: toi.Height,
+		TxArray: []ttypes.TxArrayItem{
+			{
+				Chain:                 toi.Chain,
+				ToAddress:             toi.ToAddress,
+				VaultPubKey:           toi.VaultPubKey,
+				Coin:                  toi.Coins[0],
+				Memo:                  toi.Memo,
+				OriginalMemo:          toi.OriginalMemo,
+				MaxGas:                toi.MaxGas,
+				GasRate:               toi.GasRate,
+				InHash:                toi.InHash,
+				OutHash:               outHash,
+				Aggregator:            toi.Aggregator,
+				AggregatorTargetAsset: toi.AggregatorTargetAsset,
+				AggregatorTargetLimit: toi.AggregatorTargetLimit,
+				VaultPubKeyEddsa:      toi.VaultPubKeyEddsa,
+				VaultPubKeyFrost:      toi.VaultPubKeyFrost,
+			},
+		},
+	}
+}
+
+func writeUnstuckKeysignResponse(c *C, rw http.ResponseWriter, keys *thorclient.Keys, txOut ttypes.TxOut) {
+	buf, err := json.Marshal(txOut)
+	c.Assert(err, IsNil)
+	priv, err := keys.GetPrivateKey()
+	c.Assert(err, IsNil)
+	sig, err := priv.Sign(buf)
+	c.Assert(err, IsNil)
+	resp := struct {
+		Keysign   ttypes.TxOut `json:"keysign"`
+		Signature string       `json:"signature"`
+	}{
+		Keysign:   txOut,
+		Signature: base64.StdEncoding.EncodeToString(sig),
+	}
+	buf, err = json.Marshal(resp)
+	c.Assert(err, IsNil)
+	_, err = rw.Write(buf)
+	c.Assert(err, IsNil)
+}
+
 func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 	config.Init()
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
@@ -348,6 +407,7 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 		InHash:      inHash,
 		Height:      800,
 	}
+	s.addKeysignResponse(toi, common.TxID(""))
 	stuckTxID := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
 	err = e.signerCacheManager.SetSigned(toi.CacheHash(), toi.CacheVault(e.GetChain()), stuckTxID)
 	c.Assert(err, IsNil)
