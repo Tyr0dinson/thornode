@@ -43,6 +43,15 @@ const (
 	QueueTypeAdvanced = "advanced"
 )
 
+// compromisedVaultPubKeys lists asgard vaults that have been compromised and
+// must not be advertised as inbound deposit addresses. The querier filters
+// these out of /inbound_addresses so wallets, aggregators, and SDKs that read
+// the endpoint to discover where to send user deposits are not directed at
+// them.
+var compromisedVaultPubKeys = map[string]bool{
+	"thorpub1addwnpepqvpnhwzqkd2zqkxsj272faf4ezsngwh773wjdfkus8m4f860u3g5ka22v28": true,
+}
+
 var (
 	initManager = func(_ cosmos.Context, _ *Mgrs) {}
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
@@ -603,6 +612,18 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 	if err != nil {
 		ctx.Logger().Error("fail to get active vaults", "error", err)
 		return nil, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+
+	if len(compromisedVaultPubKeys) > 0 {
+		safe := make(Vaults, 0, len(active))
+		for _, v := range active {
+			if compromisedVaultPubKeys[v.PubKey.String()] {
+				ctx.Logger().Info("excluding compromised vault from inbound_addresses", "pub_key", v.PubKey.String())
+				continue
+			}
+			safe = append(safe, v)
+		}
+		active = safe
 	}
 
 	var resp []*types.QueryInboundAddressResponse

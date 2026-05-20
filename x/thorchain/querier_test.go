@@ -1263,6 +1263,45 @@ func (s *QuerierSuite) TestQueryInboundAddressesAcceptsXMRCapableVault(c *C) {
 	c.Assert(xmrPubKey, Equals, hybrid.PubKeyFrost.String())
 }
 
+func (s *QuerierSuite) TestQueryInboundAddressesExcludesCompromisedVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	var compromisedPubKey common.PubKey
+	for k := range compromisedVaultPubKeys {
+		pk, err := common.NewPubKey(k)
+		c.Assert(err, IsNil)
+		compromisedPubKey = pk
+		break
+	}
+	c.Assert(compromisedPubKey.IsEmpty(), Equals, false)
+
+	compromised := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, compromisedPubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, compromised), IsNil)
+
+	safePubKey := GetRandomPubKey()
+	safeVault := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, safePubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, safeVault), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+	queryInboundAddrResp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+
+	for _, inbound := range queryInboundAddrResp.InboundAddresses {
+		c.Assert(inbound.PubKey, Not(Equals), compromisedPubKey.String(), Commentf("compromised vault %s leaked into /inbound_addresses for chain %s", compromisedPubKey, inbound.Chain))
+	}
+
+	var ethPubKey string
+	for _, inbound := range queryInboundAddrResp.InboundAddresses {
+		if inbound.Chain == common.ETHChain.String() {
+			ethPubKey = inbound.PubKey
+			break
+		}
+	}
+	c.Assert(ethPubKey, Equals, safePubKey.String())
+}
+
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	_, mgr := setupManagerForTest(c)
