@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -63,7 +64,7 @@ func (kg *KeyGen) getVersion() semver.Version {
 	return kg.currentVersion
 }
 
-func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) (pk common.PubKeySet, blame []types.Blame, err error) {
+func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys, chains common.Chains) (pk common.PubKeySet, blame []types.Blame, err error) {
 	// No need to do key gen
 	if len(pKeys) == 0 {
 		return common.EmptyPubKeySet, nil, nil
@@ -103,6 +104,12 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 	}
 	keyGenReq := keygen.Request{
 		Keys: keys,
+	}
+	enableSchnorr, err := kg.bridge.GetMimir(constants.MimirKeyEnableFrostBTC)
+	if err != nil {
+		kg.logger.Err(err).Msg("fail to get EnableFrostBTC mimir")
+	} else if enableSchnorr == 1 && schnorrKeygenChains(chains) {
+		keyGenReq.Engine = storage.SigningEngineSchnorr
 	}
 	currentVersion := kg.getVersion()
 	keyGenReq.Version = currentVersion.String()
@@ -177,6 +184,7 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 
 	// If there were any individual response blames, return error
 	if len(blame) > 0 {
+		blame = dedupeKeygenBlameNodes(blame)
 		return common.EmptyPubKeySet, blame, fmt.Errorf("fail to keygen: individual algorithm failures")
 	}
 
@@ -209,4 +217,37 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 	}
 
 	return common.NewPubKeySet(ecdsaPubKey, eddsaPubKey), blame, nil
+}
+
+func dedupeKeygenBlameNodes(blames []types.Blame) []types.Blame {
+	seen := make(map[string]struct{})
+	result := make([]types.Blame, 0, len(blames))
+	for _, b := range blames {
+		nodes := make([]types.Node, 0, len(b.BlameNodes))
+		for _, n := range b.BlameNodes {
+			if _, ok := seen[n.Pubkey]; ok {
+				continue
+			}
+			seen[n.Pubkey] = struct{}{}
+			nodes = append(nodes, n)
+		}
+		b.BlameNodes = nodes
+		if !b.IsEmpty() {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
+func schnorrKeygenChains(chains common.Chains) bool {
+	if !chains.Has(common.BTCChain) {
+		return false
+	}
+	for _, chain := range chains.Distinct() {
+		if chain.IsEmpty() || chain == common.THORChain || chain == common.BTCChain {
+			continue
+		}
+		return false
+	}
+	return true
 }

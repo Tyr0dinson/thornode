@@ -22,6 +22,7 @@ COPY config config
 COPY constants constants
 COPY log log
 COPY openapi openapi
+COPY schnorr schnorr
 COPY scripts/check-env.sh scripts/check-env.sh
 COPY x x
 COPY Makefile Makefile
@@ -39,6 +40,7 @@ RUN make install
 ########################################################################################
 
 FROM debian:bullseye-20241111-slim@sha256:60a596681410bd31a48e5975806a24cd78328f3fd6b9ee5bc64dca6d46a51f29
+ARG TARGETARCH
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
@@ -57,6 +59,9 @@ RUN apt-get update && \
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
 COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/api/libwasmvm.*.so /usr/lib
+COPY --from=build /app/schnorr/go-wrappers/includes/linux/${TARGETARCH}/libgoschnorr.so /usr/lib/libgoschnorr.so
+
+ENV LD_LIBRARY_PATH=/usr/lib:/usr/local/lib
 
 COPY build/scripts /scripts
 

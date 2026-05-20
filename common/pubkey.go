@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec"
+	btcec2 "github.com/btcsuite/btcd/btcec/v2"
+	btcschnorr "github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
@@ -110,6 +112,40 @@ func (p PubKey) EVMPubkeyToAddress() (Address, error) {
 	}
 	str := strings.ToLower(eth.PubkeyToAddress(*pub.ToECDSA()).String())
 	return NewAddress(str)
+}
+
+func (p PubKey) GetTaprootAddress(chain Chain) (Address, error) {
+	if p.IsEmpty() {
+		return NoAddress, nil
+	}
+	if !chain.Equals(BTCChain) {
+		return NoAddress, fmt.Errorf("taproot address is only supported for BTC")
+	}
+	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+	if err != nil {
+		return NoAddress, err
+	}
+	pubkey, err := btcec2.ParsePubKey(pk.Bytes())
+	if err != nil {
+		return NoAddress, fmt.Errorf("fail to parse secp256k1 pubkey for taproot: %w", err)
+	}
+
+	var net *chaincfg.Params
+	switch CurrentChainNetwork {
+	case MockNet:
+		net = &chaincfg.RegressionNetParams
+	case TestNet:
+		net = &chaincfg.TestNet3Params
+	case MainNet, StageNet, ChainNet:
+		net = &chaincfg.MainNetParams
+	default:
+		return NoAddress, fmt.Errorf("unsupported network")
+	}
+	addr, err := btcutil.NewAddressTaproot(btcschnorr.SerializePubKey(pubkey), net)
+	if err != nil {
+		return NoAddress, fmt.Errorf("fail to bech32m encode taproot address, err: %w", err)
+	}
+	return NewAddress(addr.String())
 }
 
 // GetAddress will return an address for the given chain

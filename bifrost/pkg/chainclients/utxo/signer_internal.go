@@ -51,7 +51,7 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 // set of utxos that can cover the amount.
 func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
 	// get all unspent utxos
-	addr, err := pubkey.GetAddress(c.cfg.ChainID)
+	addr, err := c.getVaultAddress(pubkey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pubkey, err)
 	}
@@ -165,7 +165,7 @@ func formatUtxoKey(txID string, vout uint32) string {
 // vinsUnspent will return true if all the vins are unspent.
 func (c *Client) vinsUnspent(tx stypes.TxOutItem, vins []*wire.TxIn) (bool, error) {
 	// get all unspent utxos
-	addr, err := tx.VaultPubKey.GetAddress(c.cfg.ChainID)
+	addr, err := c.getVaultAddress(tx.VaultPubKey)
 	if err != nil {
 		return false, fmt.Errorf("fail to get address from pubkey(%s): %w", tx.VaultPubKey, err)
 	}
@@ -246,7 +246,7 @@ func (c *Client) getPaymentAmount(tx stypes.TxOutItem) btcutil.Amount {
 
 // getSourceScript retrieve pay to addr script from tx source
 func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
-	sourceAddr, err := tx.VaultPubKey.GetAddress(c.cfg.ChainID)
+	sourceAddr, err := c.getVaultAddress(tx.VaultPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get source address: %w", err)
 	}
@@ -274,6 +274,9 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 		}
 		return ltctxscript.PayToAddrScript(addr)
 	case common.BTCChain:
+		if c.isSchnorrVault(tx.VaultPubKey) {
+			return c.getSchnorrSourceScript(tx.VaultPubKey)
+		}
 		var addr btcutil.Address
 		addr, err = btcutil.DecodeAddress(sourceAddr.String(), c.getChainCfgBTC())
 		if err != nil {
@@ -759,7 +762,9 @@ func (c *Client) buildConsolidateTxOutItem(vault types.Vault, utxos []btcjson.Li
 		total += amt
 	}
 
-	addr, err := vault.PubKey.GetAddress(c.cfg.ChainID)
+	var addr common.Address
+	var err error
+	addr, err = c.getVaultAddress(vault.PubKey)
 	if err != nil {
 		return stypes.TxOutItem{}, fmt.Errorf("get address for pubkey %s: %w", vault.PubKey, err)
 	}

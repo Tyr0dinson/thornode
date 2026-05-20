@@ -1,0 +1,1006 @@
+########################################################################################
+# Generated SCHNORR timing chainnet: 7 nodes, 6 active + 1 standby
+# Regenerate with: bash schnorr-chainnet-generate-compose.sh <7|14|21|28>
+########################################################################################
+
+volumes:
+  thornode:
+  thornode-node02:
+  thornode-node03:
+  thornode-node04:
+  thornode-node05:
+  thornode-node06:
+  thornode-node07:
+  bifrost:
+  bifrost-node02:
+  bifrost-node03:
+  bifrost-node04:
+  bifrost-node05:
+  bifrost-node06:
+  bifrost-node07:
+
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "512m"
+    max-file: "4"
+
+services:
+  bitcoin:
+    profiles:
+      - local-bitcoin
+    user: root
+    image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-daemon-26.2
+    restart: unless-stopped
+    environment:
+      BLOCK_TIME: "1"
+      BTC_MASTER_ADDR: "bcrt1qf4l5dlqhaujgkxxqmug4stfvmvt58vx2h44c39"
+    ports:
+      - "18443:18443"
+      - "18444:18444"
+    entrypoint: "/scripts/entrypoint-mock.sh"
+    logging: *logging
+
+  thornode:
+    build:
+      context: ../../
+      dockerfile: ./build/docker/Dockerfile
+      args:
+        TAG: chainnet
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    hostname: thornode
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THORNODE_GRPC_ENABLE: "true"
+      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      PORT_RPC: "27147"
+      PORT_API: "1317"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_CHAINNET_DESIRED_VALIDATOR_SET: "6"
+      THOR_CHAINNET_ASGARD_SIZE: "6"
+      THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "5"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      EXTRA_FUND_ACCOUNT_COUNT: "7"
+      FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+      EXTRA_FUND_ACCOUNT_1: "cthor1nptw6qt8wek88nq0wzua2j566pmk77l4qqn5kz"
+      EXTRA_FUND_ACCOUNT_2: "cthor19vg6qf9xkwwvjzu6yatuudgrj04tk7qud0y54x"
+      EXTRA_FUND_ACCOUNT_3: "cthor1fkx7dgkk7kd6sl2lfqndf2arje86tyx2c0g6tq"
+      EXTRA_FUND_ACCOUNT_4: "cthor15040spwdfm0nrr9ufnyp4auv097n0zkya98ett"
+      EXTRA_FUND_ACCOUNT_5: "cthor1ceee9nx2pf70qryyv9szdttcgqza2vsaldll8p"
+      EXTRA_FUND_ACCOUNT_6: "cthor13kjfxw4qxmnmp7vcen6zkmrshcjc580w37fpnd"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SEED: "thornode"
+      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+    ports:
+      - "27147:27147"
+      - "1317:1317"
+      - "50051:50051"
+      - "9090:9090"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode:/root/.thornode
+    networks:
+      default:
+        aliases:
+          - thornode-dog
+    entrypoint: /docker/scripts/genesis.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-node02:
+    image: thornode:schnorr-chainnet
+    depends_on:
+      thornode:
+        condition: service_healthy
+    restart: unless-stopped
+    hostname: thornode-node02
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THORNODE_GRPC_ENABLE: "true"
+      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      PORT_RPC: "27147"
+      PORT_API: "1317"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_CHAINNET_DESIRED_VALIDATOR_SET: "6"
+      THOR_CHAINNET_ASGARD_SIZE: "6"
+      THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "5"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      EXTRA_FUND_ACCOUNT_COUNT: "7"
+      FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+      EXTRA_FUND_ACCOUNT_1: "cthor1nptw6qt8wek88nq0wzua2j566pmk77l4qqn5kz"
+      EXTRA_FUND_ACCOUNT_2: "cthor19vg6qf9xkwwvjzu6yatuudgrj04tk7qud0y54x"
+      EXTRA_FUND_ACCOUNT_3: "cthor1fkx7dgkk7kd6sl2lfqndf2arje86tyx2c0g6tq"
+      EXTRA_FUND_ACCOUNT_4: "cthor15040spwdfm0nrr9ufnyp4auv097n0zkya98ett"
+      EXTRA_FUND_ACCOUNT_5: "cthor1ceee9nx2pf70qryyv9szdttcgqza2vsaldll8p"
+      EXTRA_FUND_ACCOUNT_6: "cthor13kjfxw4qxmnmp7vcen6zkmrshcjc580w37fpnd"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SEED: "thornode-node02"
+      SIGNER_SEED_PHRASE: "gas what black angry live laptop great eyebrow please media true snake they clay casual wear poverty wife nurse despair wave three canal tomorrow"
+      PEER: "thornode"
+      AUTO_BOND: "true"
+      SEEDS: "thornode"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-node02:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-node03:
+    image: thornode:schnorr-chainnet
+    depends_on:
+      thornode:
+        condition: service_healthy
+    restart: unless-stopped
+    hostname: thornode-node03
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THORNODE_GRPC_ENABLE: "true"
+      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      PORT_RPC: "27147"
+      PORT_API: "1317"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_CHAINNET_DESIRED_VALIDATOR_SET: "6"
+      THOR_CHAINNET_ASGARD_SIZE: "6"
+      THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "5"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      EXTRA_FUND_ACCOUNT_COUNT: "7"
+      FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+      EXTRA_FUND_ACCOUNT_1: "cthor1nptw6qt8wek88nq0wzua2j566pmk77l4qqn5kz"
+      EXTRA_FUND_ACCOUNT_2: "cthor19vg6qf9xkwwvjzu6yatuudgrj04tk7qud0y54x"
+      EXTRA_FUND_ACCOUNT_3: "cthor1fkx7dgkk7kd6sl2lfqndf2arje86tyx2c0g6tq"
+      EXTRA_FUND_ACCOUNT_4: "cthor15040spwdfm0nrr9ufnyp4auv097n0zkya98ett"
+      EXTRA_FUND_ACCOUNT_5: "cthor1ceee9nx2pf70qryyv9szdttcgqza2vsaldll8p"
+      EXTRA_FUND_ACCOUNT_6: "cthor13kjfxw4qxmnmp7vcen6zkmrshcjc580w37fpnd"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SEED: "thornode-node03"
+      SIGNER_SEED_PHRASE: "essence pig excuse pride decade damage ball grant alpha love often face fortune pill return patch replace buffalo parent gorilla advice fortune palm mass"
+      PEER: "thornode"
+      AUTO_BOND: "true"
+      SEEDS: "thornode,thornode-node02"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-node03:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-node04:
+    image: thornode:schnorr-chainnet
+    depends_on:
+      thornode:
+        condition: service_healthy
+    restart: unless-stopped
+    hostname: thornode-node04
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THORNODE_GRPC_ENABLE: "true"
+      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      PORT_RPC: "27147"
+      PORT_API: "1317"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_CHAINNET_DESIRED_VALIDATOR_SET: "6"
+      THOR_CHAINNET_ASGARD_SIZE: "6"
+      THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "5"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      EXTRA_FUND_ACCOUNT_COUNT: "7"
+      FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+      EXTRA_FUND_ACCOUNT_1: "cthor1nptw6qt8wek88nq0wzua2j566pmk77l4qqn5kz"
+      EXTRA_FUND_ACCOUNT_2: "cthor19vg6qf9xkwwvjzu6yatuudgrj04tk7qud0y54x"
+      EXTRA_FUND_ACCOUNT_3: "cthor1fkx7dgkk7kd6sl2lfqndf2arje86tyx2c0g6tq"
+      EXTRA_FUND_ACCOUNT_4: "cthor15040spwdfm0nrr9ufnyp4auv097n0zkya98ett"
+      EXTRA_FUND_ACCOUNT_5: "cthor1ceee9nx2pf70qryyv9szdttcgqza2vsaldll8p"
+      EXTRA_FUND_ACCOUNT_6: "cthor13kjfxw4qxmnmp7vcen6zkmrshcjc580w37fpnd"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SEED: "thornode-node04"
+      SIGNER_SEED_PHRASE: "embark win infant spend evil reduce problem online world ritual goose depart include taxi twin gain forum fit case super cat reflect vault way"
+      PEER: "thornode"
+      AUTO_BOND: "true"
+      SEEDS: "thornode,thornode-node02,thornode-node03"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-node04:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-node05:
+    image: thornode:schnorr-chainnet
+    depends_on:
+      thornode:
+        condition: service_healthy
+    restart: unless-stopped
+    hostname: thornode-node05
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THORNODE_GRPC_ENABLE: "true"
+      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      PORT_RPC: "27147"
+      PORT_API: "1317"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_CHAINNET_DESIRED_VALIDATOR_SET: "6"
+      THOR_CHAINNET_ASGARD_SIZE: "6"
+      THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "5"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      EXTRA_FUND_ACCOUNT_COUNT: "7"
+      FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+      EXTRA_FUND_ACCOUNT_1: "cthor1nptw6qt8wek88nq0wzua2j566pmk77l4qqn5kz"
+      EXTRA_FUND_ACCOUNT_2: "cthor19vg6qf9xkwwvjzu6yatuudgrj04tk7qud0y54x"
+      EXTRA_FUND_ACCOUNT_3: "cthor1fkx7dgkk7kd6sl2lfqndf2arje86tyx2c0g6tq"
+      EXTRA_FUND_ACCOUNT_4: "cthor15040spwdfm0nrr9ufnyp4auv097n0zkya98ett"
+      EXTRA_FUND_ACCOUNT_5: "cthor1ceee9nx2pf70qryyv9szdttcgqza2vsaldll8p"
+      EXTRA_FUND_ACCOUNT_6: "cthor13kjfxw4qxmnmp7vcen6zkmrshcjc580w37fpnd"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SEED: "thornode-node05"
+      SIGNER_SEED_PHRASE: "device option consider jacket barely trade vehicle seed repair pink album peasant illness hair grace vocal capable wave master problem grab gym token divorce"
+      PEER: "thornode"
+      AUTO_BOND: "true"
+      SEEDS: "thornode,thornode-node02,thornode-node03,thornode-node04"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-node05:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-node06:
+    image: thornode:schnorr-chainnet
+    depends_on:
+      thornode:
+        condition: service_healthy
+    restart: unless-stopped
+    hostname: thornode-node06
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THORNODE_GRPC_ENABLE: "true"
+      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      PORT_RPC: "27147"
+      PORT_API: "1317"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_CHAINNET_DESIRED_VALIDATOR_SET: "6"
+      THOR_CHAINNET_ASGARD_SIZE: "6"
+      THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "5"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      EXTRA_FUND_ACCOUNT_COUNT: "7"
+      FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+      EXTRA_FUND_ACCOUNT_1: "cthor1nptw6qt8wek88nq0wzua2j566pmk77l4qqn5kz"
+      EXTRA_FUND_ACCOUNT_2: "cthor19vg6qf9xkwwvjzu6yatuudgrj04tk7qud0y54x"
+      EXTRA_FUND_ACCOUNT_3: "cthor1fkx7dgkk7kd6sl2lfqndf2arje86tyx2c0g6tq"
+      EXTRA_FUND_ACCOUNT_4: "cthor15040spwdfm0nrr9ufnyp4auv097n0zkya98ett"
+      EXTRA_FUND_ACCOUNT_5: "cthor1ceee9nx2pf70qryyv9szdttcgqza2vsaldll8p"
+      EXTRA_FUND_ACCOUNT_6: "cthor13kjfxw4qxmnmp7vcen6zkmrshcjc580w37fpnd"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SEED: "thornode-node06"
+      SIGNER_SEED_PHRASE: "cinnamon suspect old dynamic awake wheel blue toward canvas asset wish alley service wealth crunch struggle reopen popular mandate replace august rain wall limb"
+      PEER: "thornode"
+      AUTO_BOND: "true"
+      SEEDS: "thornode,thornode-node03,thornode-node04,thornode-node05"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-node06:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  thornode-node07:
+    image: thornode:schnorr-chainnet
+    depends_on:
+      thornode:
+        condition: service_healthy
+    restart: unless-stopped
+    hostname: thornode-node07
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THORNODE_GRPC_ENABLE: "true"
+      THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      PORT_RPC: "27147"
+      PORT_API: "1317"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_CHAINNET_DESIRED_VALIDATOR_SET: "6"
+      THOR_CHAINNET_ASGARD_SIZE: "6"
+      THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "5"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      EXTRA_FUND_ACCOUNT_COUNT: "7"
+      FAUCET: "cthor1zf3gsk7edzwl9syyefvfhle37cjtql35layy8z"
+      EXTRA_FUND_ACCOUNT_1: "cthor1nptw6qt8wek88nq0wzua2j566pmk77l4qqn5kz"
+      EXTRA_FUND_ACCOUNT_2: "cthor19vg6qf9xkwwvjzu6yatuudgrj04tk7qud0y54x"
+      EXTRA_FUND_ACCOUNT_3: "cthor1fkx7dgkk7kd6sl2lfqndf2arje86tyx2c0g6tq"
+      EXTRA_FUND_ACCOUNT_4: "cthor15040spwdfm0nrr9ufnyp4auv097n0zkya98ett"
+      EXTRA_FUND_ACCOUNT_5: "cthor1ceee9nx2pf70qryyv9szdttcgqza2vsaldll8p"
+      EXTRA_FUND_ACCOUNT_6: "cthor13kjfxw4qxmnmp7vcen6zkmrshcjc580w37fpnd"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SEED: "thornode-node07"
+      SIGNER_SEED_PHRASE: "note virtual ketchup urban laugh junk ride injury have supreme brother that purity spend derive chicken broccoli bird raccoon beef stay empower blur menu"
+      PEER: "thornode"
+      AUTO_BOND: "true"
+      SEEDS: "thornode,thornode-node04,thornode-node05,thornode-node06"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-node07:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    command: ["thornode", "start"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:27147/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  bifrost:
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode:
+        condition: service_healthy
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      BLOCK_SCANNER_BACKOFF: "5s"
+      BIFROST_METRICS_PPROF_ENABLED: "true"
+      BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
+      BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+      BIFROST_SIGNER_AUTO_OBSERVE: "false"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "60s"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "60s"
+      BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
+      LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      BTC_HOST: "${BTC_HOST:-bitcoin:18443/wallet/}"
+      BIFROST_CHAINS_BTC_CHAIN_NETWORK: "mocknet"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+      CHAIN_API: "thornode:1317"
+      CHAIN_RPC: "thornode:27147"
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode:50051"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - bifrost:/var/data/bifrost
+      - thornode:/root/.thornode
+    networks:
+      default:
+        aliases:
+          - bifrost-dog
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-node02:
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode-node02:
+        condition: service_healthy
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      BLOCK_SCANNER_BACKOFF: "5s"
+      BIFROST_METRICS_PPROF_ENABLED: "true"
+      BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
+      BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+      BIFROST_SIGNER_AUTO_OBSERVE: "false"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "60s"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "60s"
+      BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
+      LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      BTC_HOST: "${BTC_HOST:-bitcoin:18443/wallet/}"
+      BIFROST_CHAINS_BTC_CHAIN_NETWORK: "mocknet"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "gas what black angry live laptop great eyebrow please media true snake they clay casual wear poverty wife nurse despair wave three canal tomorrow"
+      CHAIN_API: "thornode-node02:1317"
+      CHAIN_RPC: "thornode-node02:27147"
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode-node02:50051"
+      PEER: "bifrost"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - bifrost-node02:/var/data/bifrost
+      - thornode-node02:/root/.thornode
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-node03:
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode-node03:
+        condition: service_healthy
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      BLOCK_SCANNER_BACKOFF: "5s"
+      BIFROST_METRICS_PPROF_ENABLED: "true"
+      BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
+      BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+      BIFROST_SIGNER_AUTO_OBSERVE: "false"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "60s"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "60s"
+      BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
+      LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      BTC_HOST: "${BTC_HOST:-bitcoin:18443/wallet/}"
+      BIFROST_CHAINS_BTC_CHAIN_NETWORK: "mocknet"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "essence pig excuse pride decade damage ball grant alpha love often face fortune pill return patch replace buffalo parent gorilla advice fortune palm mass"
+      CHAIN_API: "thornode-node03:1317"
+      CHAIN_RPC: "thornode-node03:27147"
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode-node03:50051"
+      PEER: "bifrost"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - bifrost-node03:/var/data/bifrost
+      - thornode-node03:/root/.thornode
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-node04:
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode-node04:
+        condition: service_healthy
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      BLOCK_SCANNER_BACKOFF: "5s"
+      BIFROST_METRICS_PPROF_ENABLED: "true"
+      BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
+      BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+      BIFROST_SIGNER_AUTO_OBSERVE: "false"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "60s"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "60s"
+      BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
+      LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      BTC_HOST: "${BTC_HOST:-bitcoin:18443/wallet/}"
+      BIFROST_CHAINS_BTC_CHAIN_NETWORK: "mocknet"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "embark win infant spend evil reduce problem online world ritual goose depart include taxi twin gain forum fit case super cat reflect vault way"
+      CHAIN_API: "thornode-node04:1317"
+      CHAIN_RPC: "thornode-node04:27147"
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode-node04:50051"
+      PEER: "bifrost"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - bifrost-node04:/var/data/bifrost
+      - thornode-node04:/root/.thornode
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-node05:
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode-node05:
+        condition: service_healthy
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      BLOCK_SCANNER_BACKOFF: "5s"
+      BIFROST_METRICS_PPROF_ENABLED: "true"
+      BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
+      BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+      BIFROST_SIGNER_AUTO_OBSERVE: "false"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "60s"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "60s"
+      BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
+      LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      BTC_HOST: "${BTC_HOST:-bitcoin:18443/wallet/}"
+      BIFROST_CHAINS_BTC_CHAIN_NETWORK: "mocknet"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "device option consider jacket barely trade vehicle seed repair pink album peasant illness hair grace vocal capable wave master problem grab gym token divorce"
+      CHAIN_API: "thornode-node05:1317"
+      CHAIN_RPC: "thornode-node05:27147"
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode-node05:50051"
+      PEER: "bifrost"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - bifrost-node05:/var/data/bifrost
+      - thornode-node05:/root/.thornode
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-node06:
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode-node06:
+        condition: service_healthy
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      BLOCK_SCANNER_BACKOFF: "5s"
+      BIFROST_METRICS_PPROF_ENABLED: "true"
+      BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
+      BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+      BIFROST_SIGNER_AUTO_OBSERVE: "false"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "60s"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "60s"
+      BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
+      LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      BTC_HOST: "${BTC_HOST:-bitcoin:18443/wallet/}"
+      BIFROST_CHAINS_BTC_CHAIN_NETWORK: "mocknet"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "cinnamon suspect old dynamic awake wheel blue toward canvas asset wish alley service wealth crunch struggle reopen popular mandate replace august rain wall limb"
+      CHAIN_API: "thornode-node06:1317"
+      CHAIN_RPC: "thornode-node06:27147"
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode-node06:50051"
+      PEER: "bifrost"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - bifrost-node06:/var/data/bifrost
+      - thornode-node06:/root/.thornode
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+
+  bifrost-node07:
+    image: thornode:schnorr-chainnet
+    restart: unless-stopped
+    depends_on:
+      thornode-node07:
+        condition: service_healthy
+    environment:
+      NET: "chainnet"
+      CHAIN_ID: "thorchain"
+      SIGNER_NAME: "thorchain"
+      SIGNER_PASSWD: "password"
+      THOR_SEED_NODES_ENDPOINT: ""
+      THOR_BLOCK_TIME: "6s"
+      SKIP_EVM_DEPLOY: "true"
+      BLOCK_SCANNER_BACKOFF: "5s"
+      BIFROST_METRICS_PPROF_ENABLED: "true"
+      BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
+      BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
+      BIFROST_SIGNER_AUTO_OBSERVE: "false"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "60s"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "60s"
+      BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
+      LD_LIBRARY_PATH: "/usr/lib:/usr/local/lib"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "10"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "120"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "120"
+      JAIL_TIME_KEYGEN: "120"
+      JAIL_TIME_KEYSIGN: "120"
+      BTC_HOST: "${BTC_HOST:-bitcoin:18443/wallet/}"
+      BIFROST_CHAINS_BTC_CHAIN_NETWORK: "mocknet"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_DISABLED: "false"
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_AVAX_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_NOBLE_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_TRON_DISABLED: "true"
+      BIFROST_CHAINS_POL_DISABLED: "true"
+      BIFROST_CHAINS_ZEC_DISABLED: "true"
+      BIFROST_CHAINS_XMR_DISABLED: "true"
+      BIFROST_CHAINS_SUI_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+      SIGNER_SEED_PHRASE: "note virtual ketchup urban laugh junk ride injury have supreme brother that purity spend derive chicken broccoli bird raccoon beef stay empower blur menu"
+      CHAIN_API: "thornode-node07:1317"
+      CHAIN_RPC: "thornode-node07:27147"
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode-node07:50051"
+      PEER: "bifrost"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - bifrost-node07:/var/data/bifrost
+      - thornode-node07:/root/.thornode
+    entrypoint: /docker/scripts/bifrost.sh
+    command: ["bifrost", "-p"]
+    logging: *logging
+

@@ -736,6 +736,50 @@ func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C)
 	c.Assert(items[0].VaultPubKeyFrost.Equals(retiringVault.PubKeyFrost), Equals, true)
 }
 
+func (*NetworkManagerTestSuite) TestMigrateFundsUsesSchnorrBTCTaprootTarget(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	interval := mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval)
+	c.Assert(interval > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(interval)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+		Chain:              common.BTCChain,
+		TransactionSize:    1000,
+		TransactionFeeRate: 100,
+	}), IsNil)
+
+	retiringVault := GetRandomVault()
+	retiringVault.Status = RetiringVault
+	retiringVault.StatusSince = 0
+	retiringVault.Chains = common.Chains{common.BTCChain}.Strings()
+	retiringVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	activeVault := GetRandomVault()
+	activeVault.Status = ActiveVault
+	activeVault.Chains = common.Chains{common.BTCChain}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+	mgr.Keeper().SetVaultSigningEngine(ctx, activeVault.PubKey, "schnorr")
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+
+	legacyAddress, err := activeVault.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	taprootAddress, err := activeVault.PubKey.GetTaprootAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(items[0].Chain, Equals, common.BTCChain)
+	c.Assert(items[0].ToAddress.Equals(taprootAddress), Equals, true)
+	c.Assert(items[0].ToAddress.Equals(legacyAddress), Equals, false)
+	c.Assert(items[0].VaultPubKey.Equals(retiringVault.PubKey), Equals, true)
+}
+
 func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingOnNonMigratePendingActivity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()

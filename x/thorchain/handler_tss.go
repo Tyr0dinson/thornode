@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"math/big"
@@ -10,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
-	"github.com/btcsuite/btcd/btcec"
+	legacybtcec "github.com/btcsuite/btcd/btcec"
+	btcec "github.com/btcsuite/btcd/btcec/v2"
+	btcschnorr "github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
@@ -60,12 +63,12 @@ var verifySecp256K1Signature = func(pk common.PubKey, sig []byte) error {
 	s := new(big.Int).SetBytes(sig[32:])
 
 	// reject high-S signatures (BIP-62) to prevent signature malleability
-	halfOrder := new(big.Int).Rsh(btcec.S256().N, 1)
+	halfOrder := new(big.Int).Rsh(legacybtcec.S256().N, 1)
 	if s.Cmp(halfOrder) == 1 {
 		return fmt.Errorf("high-S signature rejected (BIP-62)")
 	}
 
-	signature := &btcec.Signature{R: r, S: s}
+	signature := &legacybtcec.Signature{R: r, S: s}
 
 	// verify the signature
 	spk, err := pk.Secp256K1()
@@ -76,6 +79,52 @@ var verifySecp256K1Signature = func(pk common.PubKey, sig []byte) error {
 		return fmt.Errorf("signature verification failed")
 	}
 	return nil
+}
+
+var verifySchnorrCheckSignature = func(pk common.PubKey, sig []byte) error {
+	if len(sig) != btcschnorr.SignatureSize {
+		return fmt.Errorf("invalid schnorr signature length")
+	}
+
+	legacyPK, err := pk.Secp256K1()
+	if err != nil {
+		return fmt.Errorf("fail to get secp256k1 pubkey: %w", err)
+	}
+	pubKey, err := btcec.ParsePubKey(legacyPK.SerializeCompressed())
+	if err != nil {
+		return fmt.Errorf("fail to parse schnorr pubkey: %w", err)
+	}
+	signature, err := btcschnorr.ParseSignature(sig)
+	if err != nil {
+		return fmt.Errorf("invalid schnorr signature: %w", err)
+	}
+	msg := []byte(pk.String())
+	if len(msg) != sha256.Size {
+		digest := sha256.Sum256(msg)
+		msg = digest[:]
+	}
+	if !signature.Verify(msg, pubKey) {
+		return fmt.Errorf("schnorr signature verification failed")
+	}
+	return nil
+}
+
+func tssPoolUsesSchnorrCheckSignature(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) bool {
+	enableSchnorr, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyEnableFrostBTC)
+	if msg.KeygenType != AsgardKeygen || err != nil || enableSchnorr != 1 {
+		return false
+	}
+	chains, err := common.NewChains(msg.Chains)
+	if err != nil || !chains.Has(common.BTCChain) {
+		return false
+	}
+	for _, chain := range chains.Distinct() {
+		if chain.IsEmpty() || chain == common.THORChain || chain == common.BTCChain {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
@@ -131,11 +180,18 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 
 	// verify the check signatures if provided (only a subset of members in signing party)
 	if len(msg.Secp256K1Signature) > 0 {
-		err = verifySecp256K1Signature(msg.PoolPubKey, msg.Secp256K1Signature)
+		checkSignatureAlgo := "secp256k1"
+		if tssPoolUsesSchnorrCheckSignature(ctx, h.mgr, msg) {
+			checkSignatureAlgo = "schnorr"
+			err = verifySchnorrCheckSignature(msg.PoolPubKey, msg.Secp256K1Signature)
+		} else {
+			err = verifySecp256K1Signature(msg.PoolPubKey, msg.Secp256K1Signature)
+		}
 		if err != nil {
 			ctx.Logger().Error(
 				"invalid secp256k1 check signature",
 				"err", err,
+				"algo", checkSignatureAlgo,
 				"ID", msg.ID,
 				"signer", msg.Signer.String(),
 				"pubkey", msg.PoolPubKey,
@@ -482,6 +538,10 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 						)
 					}
 				}
+
+				if !tssPoolUsesSchnorrCheckSignature(ctx, h.mgr, msg) && verifySchnorrCheckSignature(voter.PoolPubKey, []byte(consensusSig)) == nil {
+					h.mgr.Keeper().SetVaultSigningEngine(ctx, voter.PoolPubKey, "schnorr")
+				}
 			}
 
 			// Update the BlockHeight to reflect the newly reached state.
@@ -519,6 +579,9 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 				return fmt.Errorf("fail to save vault: %w", err)
+			}
+			if tssPoolUsesSchnorrCheckSignature(ctx, h.mgr, msg) || h.mgr.Keeper().IsVaultSchnorr(ctx, vault.PubKey) {
+				h.mgr.Keeper().SetVaultSigningEngine(ctx, vault.PubKey, "schnorr")
 			}
 			keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
 			if err != nil {

@@ -71,8 +71,8 @@ genesis_init() {
     fi
     add_account "$FAUCET" rune 40000000000000000
 
-    for i in 1 2 3 4 5; do
-      eval "EXTRA=\$EXTRA_FUND_ACCOUNT_$i"
+    for i in 1 2 3 4 5 6; do
+      EXTRA=$(printenv "EXTRA_FUND_ACCOUNT_$i" || true)
       if [ -n "$EXTRA" ]; then
         echo "Funding extra account: $EXTRA"
         add_account "$EXTRA" rune 200000000000000
@@ -92,8 +92,8 @@ genesis_init() {
     # 400M RUNE to faucet + 50M to reserve = 450M of 500M MaxRuneSupply
     add_account "$FAUCET" rune 40000000000000000
 
-    for i in 1 2 3 4 5; do
-      eval "EXTRA=\$EXTRA_FUND_ACCOUNT_$i"
+    for i in 1 2 3 4 5 6; do
+      EXTRA=$(printenv "EXTRA_FUND_ACCOUNT_$i" || true)
       if [ -n "$EXTRA" ]; then
         echo "Funding extra account: $EXTRA"
         add_account "$EXTRA" rune 200000000000000

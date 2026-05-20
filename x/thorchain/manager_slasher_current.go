@@ -652,7 +652,7 @@ func (s *SlasherImpl) queueRecoverySwap(
 	recoveryTxID := s.generateRecoveryTxID(ctx, txID, recoveryType)
 
 	// Get vault's address for the chain of this coin for tracking purposes.
-	vaultAddr, err := vault.GetAddress(toi.Coin.Asset.GetChain())
+	vaultAddr, err := mgr.Keeper().GetVaultAddress(ctx, vault, toi.Coin.Asset.GetChain())
 	if err != nil {
 		return fmt.Errorf("failed to get vault address for chain %s: %w", toi.Coin.Asset.GetChain(), err)
 	}

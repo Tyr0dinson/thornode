@@ -132,6 +132,12 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 				httpTestHandler(c, rw, "../../../../test/fixtures/btc/sendrawtransaction.json")
 			case "importaddress":
 				httpTestHandler(c, rw, "../../../../test/fixtures/btc/importaddress.json")
+			case "getdescriptorinfo":
+				_, err = rw.Write([]byte(`{ "result": { "descriptor": "addr(bc1qtest)#checksum" }, "error": null, "id": 1 }`))
+				c.Assert(err, IsNil)
+			case "importdescriptors":
+				_, err = rw.Write([]byte(`{ "result": [{ "success": true }], "error": null, "id": 1 }`))
+				c.Assert(err, IsNil)
 			case "createwallet":
 				_, err = rw.Write([]byte(`{ "result": null, "error": null, "id": 1 }`))
 				c.Assert(err, IsNil)

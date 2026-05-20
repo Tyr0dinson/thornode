@@ -988,6 +988,40 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	c.Assert(resp[0].PubKey, Equals, pubKey)
 }
 
+func (s *QuerierSuite) TestQueryPoolAddressesUsesSchnorrBTCTaprootAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pubKey := GetRandomPubKey()
+	asgard := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+	mgr.Keeper().SetVaultSigningEngine(ctx, pubKey, "schnorr")
+
+	legacyAddress, err := pubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	taprootAddress, err := pubKey.GetTaprootAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+	queryInboundAddrResp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+
+	resp := []struct {
+		Chain   common.Chain   `json:"chain"`
+		PubKey  common.PubKey  `json:"pub_key"`
+		Address common.Address `json:"address"`
+	}{}
+	result, err := queryInboundAddrResp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+	c.Assert(json.Unmarshal(result, &resp), IsNil)
+	c.Assert(len(resp), Equals, 1)
+	c.Assert(resp[0].Chain, Equals, common.BTCChain)
+	c.Assert(resp[0].PubKey, Equals, pubKey)
+	c.Assert(resp[0].Address, Equals, taprootAddress)
+	c.Assert(resp[0].Address, Not(Equals), legacyAddress)
+}
+
 func (s *QuerierSuite) TestQueryPoolAddressesXMRUsesFrostPubKey(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

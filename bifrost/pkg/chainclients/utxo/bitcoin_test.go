@@ -74,6 +74,20 @@ func init() {
 	}
 
 	btcChainRPCs["getnetworkinfo"] = loadFixture("../../../../test/fixtures/btc/getnetworkinfo.json")
+	btcChainRPCs["getdescriptorinfo"] = map[string]interface{}{
+		"result": map[string]interface{}{
+			"descriptor": "addr(bc1qtest)#checksum",
+		},
+		"error": nil,
+		"id":    1,
+	}
+	btcChainRPCs["importdescriptors"] = map[string]interface{}{
+		"result": []map[string]interface{}{
+			{"success": true},
+		},
+		"error": nil,
+		"id":    1,
+	}
 	btcChainRPCs["getblockhash"] = loadFixture("../../../../test/fixtures/btc/blockhash.json")
 	btcChainRPCs["getblock"] = loadFixture("../../../../test/fixtures/btc/block_verbose.json")
 	btcChainRPCs["getblockcount"] = loadFixture("../../../../test/fixtures/btc/blockcount.json")

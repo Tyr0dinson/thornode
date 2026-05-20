@@ -252,12 +252,22 @@ func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
 
 // GetAddress returns chain address for the given public key.
 func (c *Client) GetAddress(pubkey common.PubKey) string {
-	addr, err := pubkey.GetAddress(c.cfg.ChainID)
+	addr, err := c.getVaultAddress(pubkey)
 	if err != nil {
 		c.log.Error().Err(err).Str("pubkey", pubkey.String()).Msg("fail to get pool address")
 		return ""
 	}
 	return addr.String()
+}
+
+func (c *Client) getVaultAddress(pubkey common.PubKey) (common.Address, error) {
+	if c.isSchnorrVault(pubkey) {
+		return c.getSchnorrVaultAddress(pubkey)
+	}
+	if c.cfg.ChainID.Equals(common.BTCChain) {
+		return c.getBitcoinVaultAddress(pubkey)
+	}
+	return pubkey.GetAddress(c.cfg.ChainID)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -296,7 +306,7 @@ func (c *Client) Stop() {
 
 // RegisterPublicKey imports the provided public key in the chain daemon.
 func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
-	addr, err := pubkey.GetAddress(c.cfg.ChainID)
+	addr, err := c.getVaultAddress(pubkey)
 	if err != nil {
 		return fmt.Errorf("fail to get address from pubkey(%s): %w", pubkey, err)
 	}
@@ -311,7 +321,11 @@ func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
 		}
 	}
 
-	err = c.rpc.ImportAddress(addr.String())
+	if c.cfg.ChainID.Equals(common.BTCChain) {
+		err = c.rpc.ImportDescriptorAddress(addr.String())
+	} else {
+		err = c.rpc.ImportAddress(addr.String())
+	}
 	if err != nil {
 		c.log.Error().Err(err).
 			Str("pubkey", pubkey.String()).
@@ -329,7 +343,7 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 	}
 
 	// get all unspent utxos
-	addr, err := pubkey.GetAddress(c.cfg.ChainID)
+	addr, err := c.getVaultAddress(pubkey)
 	if err != nil {
 		return acct, fmt.Errorf("fail to get address from pubkey(%s): %w", pubkey, err)
 	}

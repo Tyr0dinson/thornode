@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -28,6 +29,10 @@ const (
 
 type tssServer interface {
 	KeySign(req keysign.Request) (keysign.Response, error)
+}
+
+type localStateEngineReader interface {
+	LocalStateEngine(poolPubKey string) string
 }
 
 // KeySign is a proxy between signer and TSS
@@ -91,6 +96,14 @@ func (s *KeySign) Stop() {
 	close(s.taskQueue)
 }
 
+func (s *KeySign) LocalStateEngine(poolPubKey string) string {
+	reader, ok := s.server.(localStateEngineReader)
+	if !ok {
+		return storage.SigningEngineGG20
+	}
+	return reader.LocalStateEngine(poolPubKey)
+}
+
 // RemoteSign send the request to local task queue
 func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string) ([]byte, []byte, error) {
 	if len(msg) == 0 {
@@ -125,6 +138,15 @@ func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey str
 			return nil, nil, nil
 		}
 		s.logger.Debug().Str("R", resp.R).Str("S", resp.S).Str("recovery", resp.RecoveryID).Msg("tss result")
+		if resp.R == "" && resp.RecoveryID == "" {
+			sBytes, err := base64.StdEncoding.DecodeString(resp.S)
+			if err != nil {
+				return nil, nil, fmt.Errorf("fail to decode schnorr tss signature: %w", err)
+			}
+			if len(sBytes) == 64 {
+				return sBytes, nil, nil
+			}
+		}
 		data, err := getSignature(resp.R, resp.S)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode tss signature: %w", err)

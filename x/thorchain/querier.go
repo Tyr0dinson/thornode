@@ -643,7 +643,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			ctx.Logger().Error("fail to select active vault for chain", "chain", chain.String(), "error", err)
 			return nil, fmt.Errorf("fail to select active vault for chain %s: %w", chain, err)
 		}
-		vaultAddress, err := vault.GetAddress(chain)
+		vaultAddress, err := k.GetVaultAddress(ctx, vault, chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)

@@ -47,3 +47,10 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveBlackList(c *C) {
 	c.Check(k.IsOperationalMimir("POLReserveFoo-BTC-BTC"), Equals, false)
 	c.Check(k.IsOperationalMimir("POLReserveDeposit-BTC-BTC"), Equals, false)
 }
+
+func (s *KeeperMimirSuite) TestEnableFrostBTCIsOperationalMimir(c *C) {
+	_, k := setupKeeperForTest(c)
+	c.Check(k.IsOperationalMimir("EnableFrostBTC"), Equals, true)
+	c.Check(k.IsOperationalMimir("enablefrostbtc"), Equals, true)
+	c.Check(k.IsOperationalMimir("EnableSchnorr"), Equals, false)
+}

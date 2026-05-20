@@ -378,7 +378,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err
 		}
-		address, err = vault.GetAddress(chain)
+		address, err = mgr.Keeper().GetVaultAddress(ctx, vault, chain)
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err
 		}

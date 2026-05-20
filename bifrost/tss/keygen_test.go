@@ -19,6 +19,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/cmd"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
@@ -32,6 +33,14 @@ var _ = Suite(&KeyGenTestSuite{})
 
 func (*KeyGenTestSuite) SetUpSuite(c *C) {
 	thorchain.SetupConfigForTest()
+}
+
+func (kts *KeyGenTestSuite) TestSchnorrKeygenChains(c *C) {
+	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain, common.BTCChain}), Equals, true)
+	c.Assert(schnorrKeygenChains(common.Chains{common.BTCChain}), Equals, true)
+	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain}), Equals, false)
+	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain, common.BTCChain, common.DOGEChain}), Equals, false)
+	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain, common.DOGEChain}), Equals, false)
 }
 
 const (

@@ -39,6 +39,12 @@ const (
 	TSSFrostDKGRound3Msg
 	// TSSFrostDKGResultMsg is final DKG result propagation for non-active signers
 	TSSFrostDKGResultMsg
+	// TSSSchnorrKeyGenMsg is a Schnorr/FROST keygen protocol message.
+	TSSSchnorrKeyGenMsg
+	// TSSSchnorrKeySignMsg is a Schnorr/FROST keysign protocol message.
+	TSSSchnorrKeySignMsg
+	// TSSSchnorrKeySignResultMsg is a Schnorr/FROST keysign result message.
+	TSSSchnorrKeySignResultMsg
 	// Unknown is the message indicates the undefined message type
 	Unknown
 )
@@ -70,6 +76,12 @@ func (msgType THORChainTSSMessageType) String() string {
 		return "TSSFrostDKGRound3Msg"
 	case TSSFrostDKGResultMsg:
 		return "TSSFrostDKGResultMsg"
+	case TSSSchnorrKeyGenMsg:
+		return "TSSSchnorrKeyGenMsg"
+	case TSSSchnorrKeySignMsg:
+		return "TSSSchnorrKeySignMsg"
+	case TSSSchnorrKeySignResultMsg:
+		return "TSSSchnorrKeySignResultMsg"
 	default:
 		return "Unknown"
 	}

@@ -169,6 +169,12 @@ func (t *TssServer) generateSignature(
 			Blame:  blame.Blame{},
 		}, nil
 	}
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Str("pool_pub_key", req.PoolPubKey).
+		Int("participants", len(signers)).
+		Bool("leader", len(req.SignerPubKeys) > 0 && req.SignerPubKeys[0] == t.localNodePubKey).
+		Msg("GG20 keysign ceremony started")
 	signatureData, err := keysignInstance.SignMessage(msgsToSign, localStateItem, signers)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.
@@ -188,6 +194,11 @@ func (t *TssServer) generateSignature(
 	if err := t.signatureNotifier.BroadcastSignature(msgID, signatureData, allPeersID); err != nil {
 		return keysign.Response{}, fmt.Errorf("fail to broadcast signature:%w", err)
 	}
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Str("pool_pub_key", req.PoolPubKey).
+		Int("messages", len(msgsToSign)).
+		Msg("GG20 keysign ceremony party produced")
 
 	return t.batchSignatures(tcommon.SigningAlgo(req.Algo), signatureData, msgsToSign), nil
 }
@@ -266,6 +277,9 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
 	if err != nil {
 		return emptyResp, fmt.Errorf("fail to get local keygen state: %w", err)
+	}
+	if algo == tcommon.SigningAlgoSecp256k1 && localStateItem.Engine() == storage.SigningEngineSchnorr {
+		return t.SchnorrKeySign(req, localStateItem)
 	}
 
 	var msgsToSign [][]byte

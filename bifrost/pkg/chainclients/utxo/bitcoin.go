@@ -1,19 +1,39 @@
 package utxo
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
+	btcec "github.com/btcsuite/btcd/btcec/v2"
+	btcschnorr "github.com/btcsuite/btcd/btcec/v2/schnorr"
 	btcjson "github.com/btcsuite/btcd/btcjson"
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	btcwire "github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
+const schnorrSigHashAllAnyoneCanPay = 0x81
+
 func (c *Client) getChainCfgBTC() *btcchaincfg.Params {
+	switch strings.ToLower(strings.TrimSpace(c.cfg.ChainNetwork)) {
+	case "mocknet", "regtest", "regression":
+		return &btcchaincfg.RegressionNetParams
+	case "testnet", "testnet3":
+		return &btcchaincfg.TestNet3Params
+	case "mainnet", "stagenet", "chainnet":
+		return &btcchaincfg.MainNetParams
+	}
+
 	switch common.CurrentChainNetwork {
 	case common.MockNet:
 		return &btcchaincfg.RegressionNetParams
@@ -27,7 +47,66 @@ func (c *Client) getChainCfgBTC() *btcchaincfg.Params {
 	}
 }
 
+func (c *Client) getBitcoinVaultAddress(pubkey common.PubKey) (common.Address, error) {
+	secpPubKey, err := pubkey.Secp256K1()
+	if err != nil {
+		return common.NoAddress, err
+	}
+	addr, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(secpPubKey.SerializeCompressed()), c.getChainCfgBTC())
+	if err != nil {
+		return common.NoAddress, err
+	}
+	return common.NewAddress(addr.String())
+}
+
+type schnorrEngineReader interface {
+	LocalStateEngine(poolPubKey string) string
+}
+
+func (c *Client) isSchnorrVault(pubkey common.PubKey) bool {
+	if c.cfg.ChainID != common.BTCChain {
+		return false
+	}
+	reader, ok := c.tssKeySigner.(schnorrEngineReader)
+	if !ok {
+		return false
+	}
+	return reader.LocalStateEngine(pubkey.String()) == storage.SigningEngineSchnorr
+}
+
+func (c *Client) schnorrVaultPubKey(pubkey common.PubKey) (*btcec.PublicKey, error) {
+	secpPubKey, err := pubkey.Secp256K1()
+	if err != nil {
+		return nil, err
+	}
+	return btcec.ParsePubKey(secpPubKey.SerializeCompressed())
+}
+
+func (c *Client) getSchnorrVaultAddress(pubkey common.PubKey) (common.Address, error) {
+	taprootKey, err := c.schnorrVaultPubKey(pubkey)
+	if err != nil {
+		return common.NoAddress, err
+	}
+	addr, err := btcutil.NewAddressTaproot(btcschnorr.SerializePubKey(taprootKey), c.getChainCfgBTC())
+	if err != nil {
+		return common.NoAddress, err
+	}
+	return common.NewAddress(addr.String())
+}
+
+func (c *Client) getSchnorrSourceScript(pubkey common.PubKey) ([]byte, error) {
+	taprootKey, err := c.schnorrVaultPubKey(pubkey)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte{0x51, 0x20}, btcschnorr.SerializePubKey(taprootKey)...), nil
+}
+
 func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int) error {
+	if c.isSchnorrVault(tx.VaultPubKey) {
+		return c.signTaprootUTXOBTC(redeemTx, tx, amount, sourceScript, idx)
+	}
+
 	sigHashes := btctxscript.NewTxSigHashes(redeemTx)
 
 	var signable btctxscript.Signable
@@ -64,6 +143,89 @@ func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amoun
 	return nil
 }
 
+func (c *Client) signTaprootUTXOBTC(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int) error {
+	sigHash, err := taprootKeySpendSigHash(redeemTx, idx, amount, sourceScript)
+	if err != nil {
+		return fmt.Errorf("fail to get taproot sighash: %w", err)
+	}
+
+	var sig []byte
+	if tx.VaultPubKey.Equals(c.nodePubKey) {
+		privKey, _ := btcec.PrivKeyFromBytes(c.nodePrivKey.Serialize())
+		signature, err := btcschnorr.Sign(privKey, sigHash)
+		if err != nil {
+			return fmt.Errorf("fail to schnorr sign: %w", err)
+		}
+		sig = signature.Serialize()
+	} else {
+		sig, _, err = c.tssKeySigner.RemoteSign(sigHash, common.SigningAlgoSecp256k1, tx.VaultPubKey.String())
+		if err != nil {
+			return fmt.Errorf("fail to tss schnorr sign: %w", err)
+		}
+	}
+	if len(sig) != btcschnorr.SignatureSize {
+		return fmt.Errorf("invalid schnorr signature length: %d", len(sig))
+	}
+	sig = append(sig, schnorrSigHashAllAnyoneCanPay)
+
+	taprootKey, err := c.schnorrVaultPubKey(tx.VaultPubKey)
+	if err != nil {
+		return err
+	}
+	parsedSig, err := btcschnorr.ParseSignature(sig[:btcschnorr.SignatureSize])
+	if err != nil {
+		return fmt.Errorf("fail to parse schnorr signature: %w", err)
+	}
+	if !parsedSig.Verify(sigHash, taprootKey) {
+		return fmt.Errorf("schnorr signature failed local verification")
+	}
+
+	redeemTx.TxIn[idx].Witness = btcwire.TxWitness{sig}
+	return nil
+}
+
+func taprootKeySpendSigHash(tx *btcwire.MsgTx, idx int, amount int64, sourceScript []byte) ([]byte, error) {
+	if idx < 0 || idx >= len(tx.TxIn) {
+		return nil, fmt.Errorf("invalid input index %d", idx)
+	}
+
+	var outputs bytes.Buffer
+	for _, txOut := range tx.TxOut {
+		if err := btcwire.WriteTxOut(&outputs, 0, tx.Version, txOut); err != nil {
+			return nil, err
+		}
+	}
+	hashOutputs := sha256.Sum256(outputs.Bytes())
+
+	var msg bytes.Buffer
+	msg.WriteByte(schnorrSigHashAllAnyoneCanPay)
+	if err := binary.Write(&msg, binary.LittleEndian, tx.Version); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&msg, binary.LittleEndian, tx.LockTime); err != nil {
+		return nil, err
+	}
+	msg.Write(hashOutputs[:])
+	msg.WriteByte(0) // key-path spend, no annex.
+
+	txIn := tx.TxIn[idx]
+	msg.Write(txIn.PreviousOutPoint.Hash[:])
+	if err := binary.Write(&msg, binary.LittleEndian, txIn.PreviousOutPoint.Index); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&msg, binary.LittleEndian, uint64(amount)); err != nil {
+		return nil, err
+	}
+	if err := btcwire.WriteVarBytes(&msg, 0, sourceScript); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(&msg, binary.LittleEndian, txIn.Sequence); err != nil {
+		return nil, err
+	}
+
+	return chainhash.TaggedHash(chainhash.TagTapSighash, append([]byte{0x00}, msg.Bytes()...))[:], nil
+}
+
 func (c *Client) getAddressesFromScriptPubKeyBTC(scriptPubKey btcjson.ScriptPubKeyResult) []string {
 	addresses := scriptPubKey.Addresses
 	if len(addresses) > 0 {
@@ -82,6 +244,17 @@ func (c *Client) getAddressesFromScriptPubKeyBTC(scriptPubKey btcjson.ScriptPubK
 	if err != nil {
 		c.log.Err(err).Msg("fail to extract addresses from script pub key")
 		return nil
+	}
+
+	// Chainnet test clusters can point Bifrost at a regtest bitcoind for mining
+	// while THORChain still publishes chainnet BTC addresses. Decode observed
+	// scripts using the THORChain network so address comparisons remain stable,
+	// but keep c.getChainCfgBTC for RPC import/signing against the daemon.
+	if common.CurrentChainNetwork == common.ChainNet && c.getChainCfgBTC() == &btcchaincfg.RegressionNetParams {
+		_, chainnetAddresses, _, chainnetErr := btctxscript.ExtractPkScriptAddrs(buf, &btcchaincfg.MainNetParams)
+		if chainnetErr == nil && len(chainnetAddresses) > 0 {
+			extractedAddresses = chainnetAddresses
+		}
 	}
 	for _, item := range extractedAddresses {
 		addresses = append(addresses, item.String())

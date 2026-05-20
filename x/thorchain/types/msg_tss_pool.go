@@ -175,9 +175,12 @@ func (m *MsgTssPool) ValidateBasic() error {
 			return cosmos.ErrUnknownRequest("Pool pubkey cannot be empty")
 		}
 	}
-	// ensure pool pubkey is a valid bech32 pubkey
-	if _, err := common.NewPubKey(m.PoolPubKey.String()); err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
+	// Failed keygen messages are blame-only and may not have a pool pubkey.
+	if !m.PoolPubKey.IsEmpty() {
+		// ensure pool pubkey is a valid bech32 pubkey
+		if _, err := common.NewPubKey(m.PoolPubKey.String()); err != nil {
+			return cosmos.ErrUnknownRequest(err.Error())
+		}
 	}
 	if m.KeygenType == KeygenType_XMRMonovaultKeygen && m.IsSuccess() {
 		if m.PoolPubKeyFrost.IsEmpty() {

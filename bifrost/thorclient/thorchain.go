@@ -411,6 +411,15 @@ func (b *thorchainBridge) GetInboundOutbound(txIns common.ObservedTxs) (common.O
 
 		vaultToAddress := tx.Tx.ToAddress.Equals(obAddr)
 		vaultFromAddress := tx.Tx.FromAddress.Equals(obAddr)
+		if chain.Equals(common.BTCChain) && !vaultToAddress && !vaultFromAddress {
+			if taprootAddr, taprootErr := tx.ObservedPubKey.GetTaprootAddress(chain); taprootErr == nil && !taprootAddr.IsEmpty() {
+				vaultToAddress = tx.Tx.ToAddress.Equals(taprootAddr)
+				vaultFromAddress = tx.Tx.FromAddress.Equals(taprootAddr)
+				if vaultToAddress || vaultFromAddress {
+					obAddr = taprootAddr
+				}
+			}
+		}
 		var inInboundArray, inOutboundArray bool
 		if vaultToAddress {
 			inInboundArray = inbound.Contains(tx)

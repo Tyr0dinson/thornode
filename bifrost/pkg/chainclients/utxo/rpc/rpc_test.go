@@ -583,6 +583,41 @@ func (s *RPCSuite) TestImportAddress(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *RPCSuite) TestImportDescriptorAddress(c *C) {
+	log := zerolog.Nop()
+	var methods []string
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		methods = append(methods, method)
+		switch method {
+		case "getdescriptorinfo":
+			c.Assert(params, HasLen, 1)
+			c.Assert(params[0], Equals, "addr(bcrt1ptest)")
+			return map[string]interface{}{"descriptor": "addr(bcrt1ptest)#checksum"}, nil
+		case "importdescriptors":
+			c.Assert(params, HasLen, 1)
+			imports, ok := params[0].([]interface{})
+			c.Assert(ok, Equals, true)
+			c.Assert(imports, HasLen, 1)
+			importReq, ok := imports[0].(map[string]interface{})
+			c.Assert(ok, Equals, true)
+			c.Assert(importReq["desc"], Equals, "addr(bcrt1ptest)#checksum")
+			c.Assert(importReq["timestamp"], Equals, "now")
+			return []map[string]interface{}{{"success": true}}, nil
+		default:
+			c.Fatalf("unexpected method: %s", method)
+		}
+		return nil, nil
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	err = cl.ImportDescriptorAddress("bcrt1ptest")
+	c.Assert(err, IsNil)
+	c.Assert(methods, DeepEquals, []string{"getdescriptorinfo", "importdescriptors"})
+}
+
 // ---------------------------------------------------------------------------
 // ImportAddressRescan tests
 // ---------------------------------------------------------------------------

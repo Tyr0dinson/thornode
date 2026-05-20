@@ -156,7 +156,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			for _, item := range txOut.TxArray {
 				if item.OutHash.IsEmpty() {
 					var toAddress common.Address
-					toAddress, err = vault.GetAddress(item.Coin.Asset.GetChain())
+					toAddress, err = k.GetVaultAddress(ctx, vault, item.Coin.Asset.GetChain())
 					if err != nil {
 						ctx.Logger().Error("failed to get address of chain", "error", err)
 						continue
@@ -273,6 +273,34 @@ func (k KVStore) SetVault(ctx cosmos.Context, vault Vault) error {
 
 	k.setVault(ctx, k.GetKey(prefixVault, vault.PubKey.String()), vault)
 	return nil
+}
+
+func (k KVStore) SetVaultSigningEngine(ctx cosmos.Context, pk common.PubKey, engine string) {
+	if pk.IsEmpty() || len(engine) == 0 {
+		return
+	}
+	k.setString(ctx, string(k.GetKey(prefixVaultSigningEngine, pk.String())), engine)
+}
+
+func (k KVStore) GetVaultSigningEngine(ctx cosmos.Context, pk common.PubKey) string {
+	var engine string
+	_, err := k.getString(ctx, string(k.GetKey(prefixVaultSigningEngine, pk.String())), &engine)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault signing engine", "pubkey", pk.String(), "error", err)
+		return ""
+	}
+	return engine
+}
+
+func (k KVStore) IsVaultSchnorr(ctx cosmos.Context, pk common.PubKey) bool {
+	return k.GetVaultSigningEngine(ctx, pk) == "schnorr"
+}
+
+func (k KVStore) GetVaultAddress(ctx cosmos.Context, vault Vault, chain common.Chain) (common.Address, error) {
+	if chain.Equals(common.BTCChain) && k.IsVaultSchnorr(ctx, vault.PubKey) {
+		return vault.PubKey.GetTaprootAddress(chain)
+	}
+	return vault.GetAddress(chain)
 }
 
 // VaultExists check whether the given pubkey is associated with a vault

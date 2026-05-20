@@ -63,6 +63,26 @@ func (s *KeeperVaultSuite) TestVaultV2(c *C) {
 	c.Assert(v.PubKeyEddsa, Equals, eddsaPubKey)
 }
 
+func (s *KeeperVaultSuite) TestVaultSigningEngineAddress(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pubKey, common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	legacyAddr, err := k.GetVaultAddress(ctx, vault, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(legacyAddr.String()[:4], Equals, "bc1q")
+	c.Assert(k.IsVaultSchnorr(ctx, pubKey), Equals, false)
+
+	k.SetVaultSigningEngine(ctx, pubKey, "schnorr")
+	c.Assert(k.GetVaultSigningEngine(ctx, pubKey), Equals, "schnorr")
+	c.Assert(k.IsVaultSchnorr(ctx, pubKey), Equals, true)
+	taprootAddr, err := k.GetVaultAddress(ctx, vault, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(taprootAddr.String()[:4], Equals, "bc1p")
+	c.Assert(taprootAddr.String(), Not(Equals), legacyAddr.String())
+}
+
 func (s *KeeperVaultSuite) TestVaultFrostIndex(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

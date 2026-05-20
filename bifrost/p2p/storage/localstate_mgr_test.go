@@ -77,6 +77,7 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 	item, err := fsm.GetLocalState(stateItem.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(reflect.DeepEqual(stateItem, item), Equals, true)
+	c.Assert(item.Engine(), Equals, SigningEngineGG20)
 
 	// test migration from v1 to v2
 	stateItemV1 := keygenLocalStateV1{
@@ -95,6 +96,18 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 	itemV1, err := fsm.GetLocalState(stateItemV1.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(item, DeepEquals, itemV1)
+	c.Assert(itemV1.Engine(), Equals, SigningEngineGG20)
+}
+
+func (s *FileStateMgrTestSuite) TestKeygenLocalStateEngine(c *C) {
+	state := KeygenLocalState{}
+	c.Assert(state.Engine(), Equals, SigningEngineGG20)
+
+	state.SigningEngine = SigningEngineSchnorr
+	c.Assert(state.Engine(), Equals, SigningEngineSchnorr)
+
+	state.SigningEngine = SigningEngineDKLS
+	c.Assert(state.Engine(), Equals, SigningEngineDKLS)
 }
 
 func (s *FileStateMgrTestSuite) TestSaveAddressBook(c *C) {

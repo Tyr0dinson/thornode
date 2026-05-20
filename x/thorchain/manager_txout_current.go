@@ -435,7 +435,7 @@ func (tos *TxOutStorage) selectFallbackVault(ctx cosmos.Context, toi TxOutItem, 
 		}
 
 		// Skip if vault address matches ToAddress (prevent self-sends)
-		fromAddr, err := originalVault.GetAddress(toi.Chain)
+		fromAddr, err := tos.keeper.GetVaultAddress(ctx, originalVault, toi.Chain)
 		if err != nil || fromAddr.IsEmpty() || toi.ToAddress.Equals(fromAddr) {
 			continue
 		}
@@ -556,7 +556,7 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 
 	for _, vault := range vaults {
 		// Ensure THORNode are not sending from and to the same address
-		fromAddr, err := vault.GetAddress(toi.Chain)
+		fromAddr, err := tos.keeper.GetVaultAddress(ctx, vault, toi.Chain)
 		if err != nil || fromAddr.IsEmpty() || toi.ToAddress.Equals(fromAddr) {
 			continue
 		}

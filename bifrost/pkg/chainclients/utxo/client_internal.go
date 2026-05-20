@@ -31,7 +31,30 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (c *Client) getAsgardAddress() ([]common.Address, error) {
-	return utxo.GetAsgardAddressCached(&c.asgardCache, c.cfg.ChainID, c.bridge, constants.ThorchainBlockTime)
+	addresses, err := utxo.GetAsgardAddressCached(&c.asgardCache, c.cfg.ChainID, c.bridge, constants.ThorchainBlockTime)
+	if !c.cfg.ChainID.Equals(common.BTCChain) {
+		return addresses, err
+	}
+	if _, ok := c.tssKeySigner.(schnorrEngineReader); !ok {
+		return addresses, err
+	}
+
+	vaults, vaultErr := c.bridge.GetAsgards()
+	if vaultErr != nil {
+		c.log.Debug().Err(vaultErr).Msg("skip schnorr asgard address enrichment")
+		return addresses, err
+	}
+	for _, vault := range vaults {
+		if vault.PubKey.IsEmpty() || !c.isSchnorrVault(vault.PubKey) {
+			continue
+		}
+		addr, addrErr := vault.PubKey.GetTaprootAddress(common.BTCChain)
+		if addrErr != nil || addr.IsEmpty() {
+			continue
+		}
+		addresses = append(addresses, addr)
+	}
+	return addresses, err
 }
 
 func (c *Client) isAsgardAddress(addressToCheck string) bool {

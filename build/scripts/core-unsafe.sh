@@ -133,6 +133,6 @@ init_mocknet() {
 
 # set external ip to localhost in mocknet
 if [ "$NET" = "mocknet" ]; then
-  EXTERNAL_IP="$(hostname -i)"
+  EXTERNAL_IP="${EXTERNAL_IP:-$(hostname -i)}"
   export EXTERNAL_IP
 fi

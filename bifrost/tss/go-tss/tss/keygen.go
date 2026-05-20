@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
@@ -142,6 +143,11 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	// following http response aborts, it still counted as a successful keygen
 	// as the Tss model runs successfully.
 	beforeKeygen := time.Now()
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Int("participants", len(req.Keys)).
+		Bool("leader", leader == t.p2pCommunication.GetLocalPeerID()).
+		Msg("GG20 keygen ceremony started")
 	k, err := keygenInstance.GenerateNewKey(req)
 	keygenTime := time.Since(beforeKeygen)
 	if err != nil {
@@ -170,6 +176,10 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 
 	blameNodes := *blameMgr.GetBlame()
 	t.logger.Trace().Msgf("returning from keygen with status=%d, blaming=%+v", status, blameNodes.BlameNodes)
+	t.logger.Info().
+		Str("msg_id", msgID).
+		Str("pubkey", newPubKey).
+		Msg("GG20 keygen ceremony party produced")
 	return keygen.NewResponse(
 		req.Algo,
 		newPubKey,
@@ -180,6 +190,21 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 }
 
 func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error) {
+	if req.Engine == storage.SigningEngineSchnorr {
+		ecdsaResp, err := t.SchnorrKeygen(req)
+		if err != nil {
+			return []keygen.Response{ecdsaResp}, nil
+		}
+		eddsaReq := req
+		eddsaReq.Engine = storage.SigningEngineGG20
+		eddsaReq.Algo = tcommon.SigningAlgoEd25519
+		eddsaResp, err := t.Keygen(eddsaReq)
+		if err != nil {
+			return []keygen.Response{ecdsaResp, eddsaResp}, nil
+		}
+		return []keygen.Response{ecdsaResp, eddsaResp}, nil
+	}
+
 	// this is the algo we currently support
 	algos := []tcommon.SigningAlgo{tcommon.SigningAlgoSecp256k1, tcommon.SigningAlgoEd25519}
 	t.tssKeyGenLocker.Lock()

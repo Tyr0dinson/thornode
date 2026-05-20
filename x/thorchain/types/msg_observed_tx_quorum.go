@@ -42,16 +42,13 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 	if err := tx.Valid(); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	obAddr, err := tx.ObservedPubKey.GetAddress(tx.Tx.Coins[0].Asset.GetChain())
-	if err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
-	}
+	chain := tx.Tx.Coins[0].Asset.GetChain()
 	if m.QuoTx.Inbound {
-		if !tx.Tx.ToAddress.Equals(obAddr) {
+		if !observedTxAddressMatchesPubKey(chain, tx.ObservedPubKey, tx.Tx.ToAddress) {
 			return cosmos.ErrUnknownRequest("request is not an inbound observed transaction")
 		}
 	} else {
-		if !tx.Tx.FromAddress.Equals(obAddr) {
+		if !observedTxAddressMatchesPubKey(chain, tx.ObservedPubKey, tx.Tx.FromAddress) {
 			return cosmos.ErrUnknownRequest("request is not an outbound observed transaction")
 		}
 	}

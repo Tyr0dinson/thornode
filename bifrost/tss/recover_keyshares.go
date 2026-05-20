@@ -23,6 +23,11 @@ import (
 )
 
 func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge) error {
+	if !conf.Signer.BackupKeyshares {
+		log.Info().Msg("key shares backup disabled, skipping key shares recovery")
+		return nil
+	}
+
 	tctx := thorchain.GetContext()
 
 	// fetch the node account

@@ -693,7 +693,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				target := vm.k.GetMostSecure(ctx, targetVaults, signingTransactionPeriod)
 				// get address of asgard pubkey
 				var addr common.Address
-				addr, err = target.GetAddress(coin.Asset.GetChain())
+				addr, err = vm.k.GetVaultAddress(ctx, target, coin.Asset.GetChain())
 				if err != nil {
 					return err
 				}
@@ -3077,7 +3077,7 @@ func (vm *NetworkMgr) createSwapToOverSolvency(ctx cosmos.Context, mgr Manager, 
 	var chainAddr common.Address
 	for _, vault := range activeVaults {
 		if vault.HasAsset(l1Asset) {
-			addr, addrErr := vault.GetAddress(chain)
+			addr, addrErr := mgr.Keeper().GetVaultAddress(ctx, vault, chain)
 			if addrErr != nil {
 				ctx.Logger().Error("failed to get vault address for chain", "chain", chain, "error", addrErr)
 				continue

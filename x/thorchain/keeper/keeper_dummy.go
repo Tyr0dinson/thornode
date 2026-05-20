@@ -500,6 +500,14 @@ func (k KVStoreDummy) SetVault(_ cosmos.Context, _ Vault) error { return kaboom 
 func (k KVStoreDummy) GetVault(_ cosmos.Context, _ common.PubKey) (Vault, error) {
 	return Vault{}, kaboom
 }
+func (k KVStoreDummy) SetVaultSigningEngine(_ cosmos.Context, _ common.PubKey, _ string) {}
+func (k KVStoreDummy) GetVaultSigningEngine(_ cosmos.Context, _ common.PubKey) string {
+	return ""
+}
+func (k KVStoreDummy) IsVaultSchnorr(_ cosmos.Context, _ common.PubKey) bool { return false }
+func (k KVStoreDummy) GetVaultAddress(_ cosmos.Context, vault Vault, chain common.Chain) (common.Address, error) {
+	return vault.GetAddress(chain)
+}
 func (k KVStoreDummy) GetAsgardVaults(_ cosmos.Context) (Vaults, error) { return nil, kaboom }
 func (k KVStoreDummy) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
 	return nil, kaboom

@@ -305,6 +305,13 @@ func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, com
 	if strings.EqualFold(cpi.PoolAddress.String(), addr) {
 		return true, cpi
 	}
+	if chain.Equals(common.BTCChain) {
+		taprootAddr, err := key.GetTaprootAddress(chain)
+		if err == nil && strings.EqualFold(taprootAddr.String(), addr) {
+			cpi.PoolAddress = taprootAddr
+			return true, cpi
+		}
+	}
 	return false, common.EmptyChainPoolInfo
 }
 

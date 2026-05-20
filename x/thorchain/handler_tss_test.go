@@ -1,12 +1,16 @@
 package thorchain
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/blang/semver"
+	btcec "github.com/btcsuite/btcd/btcec/v2"
+	btcschnorr "github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	. "gopkg.in/check.v1"
 
@@ -1272,6 +1276,41 @@ func (s *HandlerTssSuite) TestAsgardKeygenAllActiveStillWaitsForCompleteConsensu
 // ConsensusCheckSignature quorum in tests; signature-verification is bypassed
 // via the verifySecp256K1Signature override.
 var keygenCheckSig = []byte("fakeCheckSignature")
+
+func (s *HandlerTssSuite) TestVerifySchnorrCheckSignature(c *C) {
+	privKey := secp256k1.GenPrivKey()
+	bech32PubKey, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey.PubKey())
+	c.Assert(err, IsNil)
+	pubKey, err := common.NewPubKey(bech32PubKey)
+	c.Assert(err, IsNil)
+
+	schnorrPrivKey, _ := btcec.PrivKeyFromBytes(privKey.Bytes())
+	digest := sha256.Sum256([]byte(pubKey.String()))
+	signature, err := btcschnorr.Sign(schnorrPrivKey, digest[:])
+	c.Assert(err, IsNil)
+
+	c.Assert(verifySchnorrCheckSignature(pubKey, signature.Serialize()), IsNil)
+
+	badSignature := signature.Serialize()
+	badSignature[0] ^= 1
+	c.Assert(verifySchnorrCheckSignature(pubKey, badSignature), NotNil)
+}
+
+func (s *HandlerTssSuite) TestTssPoolUsesSchnorrCheckSignature(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	msg := &MsgTssPool{
+		KeygenType: AsgardKeygen,
+		Chains:     common.Chains{common.THORChain, common.BTCChain}.Strings(),
+	}
+
+	c.Assert(tssPoolUsesSchnorrCheckSignature(helper.ctx, mgr, msg), Equals, false)
+	helper.keeper.SetMimir(helper.ctx, constants.MimirKeyEnableFrostBTC, 1)
+	c.Assert(tssPoolUsesSchnorrCheckSignature(helper.ctx, mgr, msg), Equals, true)
+
+	msg.Chains = common.Chains{common.THORChain, common.BTCChain, common.DOGEChain}.Strings()
+	c.Assert(tssPoolUsesSchnorrCheckSignature(helper.ctx, mgr, msg), Equals, false)
+}
 
 func (s *HandlerTssSuite) TestKeygenSuccessHandlerBufferDefault(c *C) {
 	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }

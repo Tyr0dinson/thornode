@@ -52,6 +52,12 @@ func (s *PubKeyTestSuite) TestPubKeyGetAddress(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(addrBTC.String(), Equals, d.addrBTC.mocknet)
 
+		addrBTCTaproot, err := pk.GetTaprootAddress(BTCChain)
+		c.Assert(err, IsNil)
+		c.Assert(addrBTCTaproot.String()[:5], Equals, "bcrt1")
+		c.Assert(addrBTCTaproot.String()[:6], Equals, "bcrt1p")
+		c.Assert(addrBTCTaproot.String(), Not(Equals), addrBTC.String())
+
 		addrLTC, err := pk.GetAddress(LTCChain)
 		c.Assert(err, IsNil)
 		c.Assert(addrLTC.String(), Equals, d.addrLTC.mocknet)

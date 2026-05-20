@@ -2,6 +2,7 @@ package signer
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,10 +17,13 @@ import (
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/btcsuite/btcd/btcec"
+	btcecV2 "github.com/btcsuite/btcd/btcec/v2"
+	btcschnorr "github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/cenkalti/backoff"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/v3/app"
@@ -477,7 +481,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			}
 			pubKey.Secp256k1 = frostPubKey
 		default:
-			pubKey, blame, err = s.tssKeygen.GenerateNewKey(keygenBlock.Height, keygenReq.GetMembers())
+			pubKey, blame, err = s.tssKeygen.GenerateNewKey(keygenBlock.Height, keygenReq.GetMembers(), keygenChains)
 			if len(blame) > 0 {
 				for _, b := range blame {
 					s.logger.Error().
@@ -491,8 +495,9 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 				s.logger.Error().Err(err).Msg("fail to generate new pubkey")
 			}
 
-			// re-enqueue the keygen block to retry if we failed to generate a key
-			if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+			// Blame-only keygen failures still need to be broadcast so THORChain
+			// can jail/slash the blamed node even though no pool key was produced.
+			if (pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty()) && len(blame) == 0 {
 				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
 					continue
 				}
@@ -523,7 +528,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1)
 		}
 
-		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+		if (pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty()) && len(blame) == 0 {
 			if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
 				continue
 			}
@@ -727,6 +732,14 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 		s.logger.Error().Int("len", len(sigBytes)).Msg("unexpected sigBytes length")
 		return nil
 	}
+	if s.tssServer.LocalStateEngine(pk.String()) == storage.SigningEngineSchnorr {
+		if err := schnorrVerificationSignature(pk, sigBytes); err != nil {
+			s.logger.Error().Err(err).Msg("schnorr check signature verification failed")
+		} else {
+			s.logger.Info().Msg("schnorr check signature verified")
+		}
+		return sigBytes
+	}
 	r := new(big.Int).SetBytes(sigBytes[:32])
 	ss := new(big.Int).SetBytes(sigBytes[32:])
 	signature := &btcec.Signature{R: r, S: ss}
@@ -744,6 +757,33 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 	}
 
 	return sigBytes
+}
+
+func schnorrVerificationSignature(pk common.PubKey, sigBytes []byte) error {
+	if len(sigBytes) != btcschnorr.SignatureSize {
+		return fmt.Errorf("invalid schnorr signature length: %d", len(sigBytes))
+	}
+	spk, err := pk.Secp256K1()
+	if err != nil {
+		return fmt.Errorf("fail to get secp256k1 pubkey: %w", err)
+	}
+	pubKey, err := btcecV2.ParsePubKey(spk.SerializeCompressed())
+	if err != nil {
+		return fmt.Errorf("fail to parse schnorr pubkey: %w", err)
+	}
+	signature, err := btcschnorr.ParseSignature(sigBytes)
+	if err != nil {
+		return fmt.Errorf("invalid schnorr signature: %w", err)
+	}
+	data := []byte(pk.String())
+	if len(data) != sha256.Size {
+		digest := sha256.Sum256(data)
+		data = digest[:]
+	}
+	if !signature.Verify(data, pubKey) {
+		return fmt.Errorf("schnorr signature verification failed")
+	}
+	return nil
 }
 
 func (s *Signer) buildKeygenMsg(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame []ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, chains common.Chains, keygenTime int64, poolPubKeyEddsa common.PubKey, poolPubKeyFrost common.PubKey, frostKeyshareHex string, observedMoneroHeight int64) (sdktypes.Msg, error) {
