@@ -3,6 +3,7 @@ package signer
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -25,6 +26,7 @@ import (
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog/log"
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 
@@ -1072,6 +1074,33 @@ func (s *SignSuite) TestBuildKeygenBackupsRunsEncryptionsInParallel(c *C) {
 	c.Assert(string(backups.keysharesEddsa), Equals, filepath.Base(eddsaPath))
 	c.Assert(backups.keysharesFrost, DeepEquals, []byte{0xab, 0xcd})
 	c.Assert(elapsed < 400*time.Millisecond, Equals, true)
+}
+
+func (s *SignSuite) TestFrostKeyshareHexFromLocalStatePath(c *C) {
+	tmpDir := c.MkDir()
+	path := filepath.Join(tmpDir, "localstate-frost.json")
+	state := storage.KeygenLocalState{
+		PubKey:        "frost-pubkey",
+		LocalData:     []byte{0xab, 0xcd},
+		SigningEngine: storage.SigningEngineFrost,
+	}
+	raw, err := json.Marshal(state)
+	c.Assert(err, IsNil)
+	c.Assert(os.WriteFile(path, raw, 0o600), IsNil)
+
+	keyshareHex, ok, err := frostKeyshareHexFromLocalStatePath(path)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+	c.Assert(keyshareHex, Equals, "abcd")
+
+	legacyPath := filepath.Join(tmpDir, "localstate-gg20.json")
+	state.SigningEngine = storage.SigningEngineGG20
+	raw, err = json.Marshal(state)
+	c.Assert(err, IsNil)
+	c.Assert(os.WriteFile(legacyPath, raw, 0o600), IsNil)
+	_, ok, err = frostKeyshareHexFromLocalStatePath(legacyPath)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, false)
 }
 
 func (s *SignSuite) TestFlushPendingKeygenBroadcastsBuildsMessagesSequentially(c *C) {

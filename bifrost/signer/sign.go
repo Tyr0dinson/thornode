@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -797,6 +798,15 @@ func (s *Signer) buildKeygenMsg(height int64, poolPk common.PubKey, secp256k1Sig
 			eddsaKeysharePath = filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPubKeyEddsa))
 		}
 	}
+	if frostKeyshareHex == "" && secpKeysharePath != "" {
+		keyshareHex, ok, err := frostKeyshareHexFromLocalStatePath(secpKeysharePath)
+		if err != nil {
+			s.logger.Error().Err(err).Str("path", secpKeysharePath).Msg("fail to read frost keyshare backup")
+		} else if ok {
+			frostKeyshareHex = keyshareHex
+			secpKeysharePath = ""
+		}
+	}
 
 	backups := s.buildKeygenBackups(secpKeysharePath, eddsaKeysharePath, frostKeyshareHex)
 	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, backups.keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, backups.keysharesEddsa, backups.keysharesFrost, poolPubKeyFrost, observedMoneroHeight)
@@ -907,6 +917,24 @@ func (s *Signer) buildKeygenBackups(secpKeysharePath, eddsaKeysharePath, frostKe
 	}
 
 	return backups
+}
+
+func frostKeyshareHexFromLocalStatePath(path string) (string, bool, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, err
+	}
+	var state storage.KeygenLocalState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return "", false, err
+	}
+	if state.Engine() != storage.SigningEngineFrost {
+		return "", false, nil
+	}
+	if len(state.LocalData) == 0 {
+		return "", false, fmt.Errorf("frost local state has empty local data")
+	}
+	return hex.EncodeToString(state.LocalData), true, nil
 }
 
 func (s *Signer) broadcastKeygenMsgs(height int64, msgs ...sdktypes.Msg) (common.TxID, error) {
