@@ -1,12 +1,16 @@
 package tss
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"os"
 	"path/filepath"
 
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/common"
+	frostsession "gitlab.com/thorchain/thornode/v3/frost/go-wrappers/go-frost/sessions"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -151,7 +155,13 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredDecompressedKeysharesDoesNotLe
 }
 
 func (s *RecoverKeysharesSuite) TestWriteRecoveredRawKeysharesWritesOwnerOnlyFile(c *C) {
-	rawKeyshares := []byte("deadbeefcafebabe")
+	participants := []string{"node-a", "node-b", "node-c"}
+	shares, pubKeyCompressed, err := frostsession.KeygenWithThreshold(participants, 2)
+	c.Assert(err, IsNil)
+	rawKeyshares := shares[participants[0]]
+	_, err = frostsession.DecodeKeyshare(rawKeyshares)
+	c.Assert(err, IsNil)
+
 	encrypted, err := EncryptRawKeyshares(rawKeyshares, Mnemonic)
 	c.Assert(err, IsNil)
 
@@ -170,4 +180,44 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredRawKeysharesWritesOwnerOnlyFil
 	recovered, err := os.ReadFile(path)
 	c.Assert(err, IsNil)
 	c.Assert(recovered, DeepEquals, rawKeyshares)
+
+	_, err = frostsession.DecodeKeyshare(recovered)
+	c.Assert(err, IsNil)
+	msg := sha256.Sum256([]byte("recovered-frost-keyshare"))
+	sig, err := frostsession.Sign(recovered, msg[:])
+	c.Assert(err, IsNil)
+	c.Assert(frostsession.Verify(pubKeyCompressed, msg[:], sig), IsNil)
+}
+
+func (s *RecoverKeysharesSuite) TestWriteRecoveredFrostLocalStateRestoresUsableKeyshare(c *C) {
+	participants := []string{"node-a", "node-b", "node-c"}
+	shares, pubKeyCompressed, err := frostsession.KeygenWithThreshold(participants, 2)
+	c.Assert(err, IsNil)
+	rawKeyshares := shares[participants[1]]
+	encrypted, err := EncryptRawKeyshares(rawKeyshares, Mnemonic)
+	c.Assert(err, IsNil)
+
+	dir, err := os.MkdirTemp("", "recover-frost-localstate-*")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	pubKey := types.GetRandomPubKey()
+	path := filepath.Join(dir, "localstate-frost.json")
+	err = writeRecoveredFrostLocalState(path, encrypted, Mnemonic, pubKey)
+	c.Assert(err, IsNil)
+
+	raw, err := os.ReadFile(path)
+	c.Assert(err, IsNil)
+	var state storage.KeygenLocalState
+	c.Assert(json.Unmarshal(raw, &state), IsNil)
+	c.Assert(state.PubKey, Equals, pubKey.String())
+	c.Assert(state.SigningEngine, Equals, storage.SigningEngineFrost)
+	c.Assert(state.LocalPartyKey, Equals, participants[1])
+	c.Assert(state.ParticipantKeys, DeepEquals, participants)
+	c.Assert(state.LocalData, DeepEquals, rawKeyshares)
+
+	msg := sha256.Sum256([]byte("recovered-frost-local-state"))
+	sig, err := frostsession.Sign(state.LocalData, msg[:])
+	c.Assert(err, IsNil)
+	c.Assert(frostsession.Verify(pubKeyCompressed, msg[:], sig), IsNil)
 }

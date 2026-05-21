@@ -3,6 +3,7 @@ package tss
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -15,9 +16,11 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/app"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	frostsession "gitlab.com/thorchain/thornode/v3/frost/go-wrappers/go-frost/sessions"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -142,13 +145,19 @@ func recoverLegacyKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainB
 	if err != nil {
 		return err
 	}
-	if len(backups.secp256k1) == 0 {
-		return fmt.Errorf("key shares backup not found for %s", target.pubKey)
-	}
-
 	seedPhrase, err := recoverySeedPhrase()
 	if err != nil {
 		return err
+	}
+	if len(backups.frost) > 0 {
+		if err = writeRecoveredFrostLocalState(keysharesPath, backups.frost, seedPhrase, target.pubKey); err != nil {
+			return fmt.Errorf("failed to recover frost key shares: %w", err)
+		}
+		log.Info().Str("path", keysharesPath).Msgf("recovered frost key shares for %s", signer)
+		return nil
+	}
+	if len(backups.secp256k1) == 0 {
+		return fmt.Errorf("key shares backup not found for %s", target.pubKey)
 	}
 
 	if err = writeRecoveredDecompressedKeyshares(keysharesPath, backups.secp256k1, seedPhrase); err != nil {
@@ -306,6 +315,33 @@ func writeRecoveredRawKeyshares(path string, encrypted []byte, seedPhrase string
 	}
 
 	return writeRecoveredBytes(path, rawKeyshares)
+}
+
+func writeRecoveredFrostLocalState(path string, encrypted []byte, seedPhrase string, pubKey common.PubKey) error {
+	if len(encrypted) == 0 {
+		return fmt.Errorf("encrypted frost key shares backup is empty")
+	}
+
+	rawKeyshares, err := DecryptRawKeyshares(encrypted, seedPhrase)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt frost key shares: %w", err)
+	}
+	decoded, err := frostsession.DecodeKeyshare(rawKeyshares)
+	if err != nil {
+		return fmt.Errorf("failed to decode frost key shares: %w", err)
+	}
+	localState := storage.KeygenLocalState{
+		PubKey:          pubKey.String(),
+		LocalData:       rawKeyshares,
+		ParticipantKeys: decoded.Participants,
+		LocalPartyKey:   decoded.Participant,
+		SigningEngine:   storage.SigningEngineFrost,
+	}
+	rawLocalState, err := json.Marshal(localState)
+	if err != nil {
+		return fmt.Errorf("failed to marshal frost local state: %w", err)
+	}
+	return writeRecoveredBytes(path, rawLocalState)
 }
 
 func writeRecoveredBytes(path string, data []byte) error {
