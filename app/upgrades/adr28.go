@@ -57,8 +57,24 @@ func executeADR28(sdkCtx cosmos.Context, k keeper.Keeper) error {
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "\nrune removed\t%s\n", formatAmount(runeRemoved)); err != nil {
+	if _, err := fmt.Fprintf(w, "\nRUNE removed\t%s\n\n", formatAmount(runeRemoved)); err != nil {
 		return errorsmod.Wrap(err, "print rune removed total")
+	}
+
+	remainingTreasury, err := liquidity(sdkCtx, k, treasury)
+	if err != nil {
+		return err
+	}
+	if err := printCoins(w, "remaning treasury", remainingTreasury); err != nil {
+		return err
+	}
+
+	remainingReserve, err := liquidity(sdkCtx, k, reserve)
+	if err != nil {
+		return err
+	}
+	if err := printCoins(w, "remaining reserve", remainingReserve); err != nil {
+		return err
 	}
 
 	if err := w.Flush(); err != nil {
@@ -209,6 +225,63 @@ func securedAssets(sdkCtx cosmos.Context, k keeper.Keeper) (common.Coins, error)
 	return total, nil
 }
 
+func liquidity(sdkCtx cosmos.Context, k keeper.Keeper, address common.Address) (common.Coins, error) {
+	iterator := k.GetPoolIterator(sdkCtx)
+	defer iterator.Close()
+
+	total := common.Coins{}
+	for ; iterator.Valid(); iterator.Next() {
+		var pool types.Pool
+		if err := k.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+			return nil, fmt.Errorf("unmarshal pool: %w", err)
+		}
+		if pool.IsEmpty() || pool.BalanceAsset.IsZero() {
+			continue
+		}
+		if !pool.Asset.IsExternalL1Asset() {
+			continue
+		}
+
+		synthSupply := k.GetTotalSupply(sdkCtx, pool.Asset.GetSyntheticAsset())
+		lp, err := k.GetLiquidityProvider(sdkCtx, pool.Asset, address)
+		if err != nil {
+			return nil, fmt.Errorf("get liquidity provider for %s at %s: %w", pool.Asset, address, err)
+		}
+		if lp.Units.IsZero() {
+			continue
+		}
+
+		err, assetRedeemValue := lp.GetAssetRedeemValue(pool, synthSupply)
+		if err != nil {
+			return nil, fmt.Errorf("get liquidity asset redeem value for %s at %s: %w", pool.Asset, address, err)
+		}
+		if assetRedeemValue.IsZero() {
+			continue
+		}
+
+		total = total.Add(common.NewCoin(pool.Asset, assetRedeemValue).WithDecimals(pool.Decimals))
+	}
+
+	return total, nil
+}
+
+func printCoins(w *tabwriter.Writer, label string, coins common.Coins) error {
+	coins = sortedCoins(coins)
+	if _, err := fmt.Fprintf(w, "%s (%d assets)\n", label, len(coins)); err != nil {
+		return fmt.Errorf("print %s header: %w", label, err)
+	}
+
+	for _, coin := range coins {
+		if _, err := fmt.Fprintf(w, "%s.%s\t%s\n", coin.Asset.Chain, coin.Asset.Ticker, formatAmount(coin.Amount)); err != nil {
+			return fmt.Errorf("print %s row for %s: %w", label, coin.Asset, err)
+		}
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return fmt.Errorf("print %s footer: %w", label, err)
+	}
+	return nil
+}
+
 func processLiabilities(
 	w *tabwriter.Writer,
 	sdkCtx cosmos.Context,
@@ -330,10 +403,10 @@ func allocateLiquidity(
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, consumed)
 	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeRemoved)
 	pool.LPUnits = common.SafeSub(pool.LPUnits, unitsConsumed)
-	if err := k.SetPool(sdkCtx, pool); err != nil {
-		return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "set pool %s after %s rune deduction", pool.Asset, label)
-	}
 	if !unitsConsumed.IsZero() {
+		if err := k.SetPool(sdkCtx, pool); err != nil {
+			return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "set pool %s after %s rune deduction", pool.Asset, label)
+		}
 		lp.LastWithdrawHeight = sdkCtx.BlockHeight()
 		lp.RuneDepositValue = common.SafeSub(lp.RuneDepositValue, common.GetSafeShare(unitsConsumed, lp.Units, lp.RuneDepositValue))
 		lp.AssetDepositValue = common.SafeSub(lp.AssetDepositValue, common.GetSafeShare(unitsConsumed, lp.Units, lp.AssetDepositValue))
