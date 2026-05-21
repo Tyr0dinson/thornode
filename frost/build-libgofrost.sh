@@ -2,17 +2,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CRATE_DIR="$ROOT_DIR/schnorr/rust/libgoschnorr"
+CRATE_DIR="$ROOT_DIR/frost/rust/libgofrost"
 TARGET_DIR="$CRATE_DIR/target/release"
 
 case "$(uname -s)" in
 Darwin)
   OS_DIR="darwin"
-  LIB_NAME="libgoschnorr.dylib"
+  LIB_NAME="libgofrost.dylib"
   ;;
 Linux)
   OS_DIR="linux"
-  LIB_NAME="libgoschnorr.so"
+  LIB_NAME="libgofrost.so"
   ;;
 *)
   echo "unsupported OS: $(uname -s)" >&2
@@ -29,7 +29,7 @@ x86_64 | amd64) ARCH_DIR="amd64" ;;
   ;;
 esac
 
-OUT_DIR="${OUT_DIR:-$ROOT_DIR/schnorr/go-wrappers/includes/$OS_DIR/$ARCH_DIR}"
+OUT_DIR="${OUT_DIR:-$ROOT_DIR/frost/go-wrappers/includes/$OS_DIR/$ARCH_DIR}"
 mkdir -p "$OUT_DIR"
 
 cargo build --release --manifest-path "$CRATE_DIR/Cargo.toml"

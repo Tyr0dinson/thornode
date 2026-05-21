@@ -30,7 +30,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	tcommon "gitlab.com/thorchain/thornode/v3/common"
-	frostsession "gitlab.com/thorchain/thornode/v3/schnorr/go-wrappers/go-schnorr/sessions"
+	frostsession "gitlab.com/thorchain/thornode/v3/frost/go-wrappers/go-frost/sessions"
 )
 
 const (

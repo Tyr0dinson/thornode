@@ -345,7 +345,7 @@ for row in rows:
     lines += [
         "    volumes:",
         '      - "../scripts:/docker/scripts"',
-        '      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"',
+        '      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"',
         f"      - {vol_b}:/var/data/bifrost",
         f"      - {vol_t}:/root/.thornode",
     ]

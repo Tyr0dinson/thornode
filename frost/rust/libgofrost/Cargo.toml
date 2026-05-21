@@ -1,11 +1,11 @@
 [package]
-name = "libgoschnorr"
+name = "libgofrost"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.81"
 
 [lib]
-name = "goschnorr"
+name = "gofrost"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]

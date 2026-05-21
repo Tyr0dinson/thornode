@@ -14,15 +14,15 @@ Only `BTCChain` uses this feature. DOGE, LTC, BCH, ZEC, EVM chains, THORChain, a
 
 ## Build And Shipping
 
-The native engine lives in `schnorr/rust/libgoschnorr` and wraps Zcash FROST `frost-secp256k1-tr` for BIP340/Taproot.
+The native engine lives in `frost/rust/libgofrost` and wraps Zcash FROST `frost-secp256k1-tr` for BIP340/Taproot.
 
-The Go wrapper lives in `schnorr/go-wrappers/go-schnorr`.
+The Go wrapper lives in `frost/go-wrappers/go-frost`.
 
 Native libraries are bundled under:
 
-- `schnorr/go-wrappers/includes/linux/amd64`
-- `schnorr/go-wrappers/includes/linux/arm64`
-- `schnorr/go-wrappers/includes/darwin/arm64`
+- `frost/go-wrappers/includes/linux/amd64`
+- `frost/go-wrappers/includes/linux/arm64`
+- `frost/go-wrappers/includes/darwin/arm64`
 
 Docker packages the Linux shared library into the Bifrost runtime image.
 

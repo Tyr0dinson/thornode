@@ -743,7 +743,7 @@ print_keyshare_engines() {
       file="/root/.thornode/localstate-'"$pubkey"'.json"
       if [ ! -f "$file" ]; then
         echo missing
-      elif grep -q "\"signing_engine\":\"schnorr\"" "$file"; then
+      elif grep -q "\"signing_engine\":\"frost\"" "$file"; then
         echo frost
       elif grep -q "\"signing_engine\":\"gg20\"" "$file"; then
         echo gg20

@@ -1,6 +1,6 @@
-# THORChain Schnorr Go Wrappers
+# THORChain FROST Go Wrappers
 
-This package is the in-repo Go wrapper boundary for Bitcoin Taproot Schnorr/FROST.
+This package is the in-repo Go wrapper boundary for Bitcoin Taproot FROST.
 
 Target upstream:
 
@@ -15,12 +15,12 @@ the FROST DKG/signing state.
 Build the native library before running Go tests that import this package:
 
 ```bash
-schnorr/build-libgoschnorr.sh
+frost/build-libgofrost.sh
 ```
 
-The Rust crate is in `schnorr/rust/libgoschnorr` and pins
+The Rust crate is in `frost/rust/libgofrost` and pins
 `frost-secp256k1-tr = 3.0.0`.
 
-Docker images need `libgoschnorr.so` in
-`schnorr/go-wrappers/includes/linux/{amd64,arm64}` before build. The runtime
+Docker images need `libgofrost.so` in
+`frost/go-wrappers/includes/linux/{amd64,arm64}` before build. The runtime
 image copies the matching library into `/usr/lib`.

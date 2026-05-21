@@ -14,7 +14,7 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 
 #[repr(C)]
-pub struct GoSchnorrBuf {
+pub struct GoFrostBuf {
     pub ptr: *mut u8,
     pub len: usize,
 }
@@ -141,7 +141,7 @@ fn read_json<'a, T: Deserialize<'a>>(ptr: *const u8, len: usize) -> Result<T, Wr
     serde_json::from_slice(bytes).map_err(|e| WrapperError::Message(e.to_string()))
 }
 
-fn write_json<T: Serialize>(value: &T, out: *mut GoSchnorrBuf) -> i32 {
+fn write_json<T: Serialize>(value: &T, out: *mut GoFrostBuf) -> i32 {
     if out.is_null() {
         return -1;
     }
@@ -151,11 +151,11 @@ fn write_json<T: Serialize>(value: &T, out: *mut GoSchnorrBuf) -> i32 {
     }
 }
 
-fn write_bytes(mut bytes: Vec<u8>, out: *mut GoSchnorrBuf) -> i32 {
+fn write_bytes(mut bytes: Vec<u8>, out: *mut GoFrostBuf) -> i32 {
     if out.is_null() {
         return -1;
     }
-    let buf = GoSchnorrBuf {
+    let buf = GoFrostBuf {
         ptr: bytes.as_mut_ptr(),
         len: bytes.len(),
     };
@@ -164,7 +164,7 @@ fn write_bytes(mut bytes: Vec<u8>, out: *mut GoSchnorrBuf) -> i32 {
     0
 }
 
-fn write_error(err: WrapperError, out: *mut GoSchnorrBuf) -> i32 {
+fn write_error(err: WrapperError, out: *mut GoFrostBuf) -> i32 {
     let ffi = match err {
         WrapperError::Ffi(e) => e,
         WrapperError::Message(message) => FfiError {
@@ -274,7 +274,7 @@ fn keygen(input: KeygenInput) -> Result<KeygenOutput, WrapperError> {
     for (participant_index, participant, key_package) in keyed_packages {
         let stored = StoredShare {
             version: 1,
-            engine: "schnorr".to_string(),
+            engine: "frost".to_string(),
             participant: participant.clone(),
             participants: participants.clone(),
             participant_index,
@@ -351,7 +351,7 @@ fn sign_session_new(input: SessionInput) -> Result<SessionKind, WrapperError> {
     .map_err(|e| WrapperError::Message(e.to_string()))?;
     if message.len() != 32 {
         return Err(WrapperError::Message(format!(
-            "schnorr messages must be 32 bytes, got {}",
+            "FROST messages must be 32 bytes, got {}",
             message.len()
         )));
     }
@@ -445,7 +445,7 @@ impl KeygenSession {
                     );
                     let stored = StoredShare {
                         version: 1,
-                        engine: "schnorr".to_string(),
+                        engine: "frost".to_string(),
                         participant: self.local.clone(),
                         participants: self.participants.clone(),
                         participant_index: self.local_index,
@@ -521,7 +521,7 @@ impl SignSession {
 
 fn sign(input: SignInput) -> Result<SignOutput, WrapperError> {
     if B64.decode(&input.message).map_err(|e| WrapperError::Message(e.to_string()))?.len() != 32 {
-        return Err(WrapperError::Message("schnorr messages must be 32 bytes".to_string()));
+        return Err(WrapperError::Message("FROST messages must be 32 bytes".to_string()));
     }
     let message = B64.decode(&input.message).map_err(|e| WrapperError::Message(e.to_string()))?;
     let share_bytes = B64.decode(&input.share).map_err(|e| WrapperError::Message(e.to_string()))?;
@@ -529,7 +529,7 @@ fn sign(input: SignInput) -> Result<SignOutput, WrapperError> {
         serde_json::from_slice(&share_bytes).map_err(|e| WrapperError::Message(e.to_string()))?;
     if share.all_key_packages.is_empty() {
         return Err(WrapperError::Message(
-            "one-shot signing is unavailable for distributed schnorr keyshares".to_string(),
+            "one-shot signing is unavailable for distributed FROST keyshares".to_string(),
         ));
     }
     let public_key_package = PublicKeyPackage::deserialize(
@@ -654,12 +654,12 @@ fn with_session<T>(
     let session = sessions
         .get_mut(handle as usize)
         .and_then(Option::as_mut)
-        .ok_or_else(|| WrapperError::Message(format!("invalid schnorr session handle {handle}")))?;
+        .ok_or_else(|| WrapperError::Message(format!("invalid frost session handle {handle}")))?;
     f(session)
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_keygen(ptr: *const u8, len: usize, out: *mut GoSchnorrBuf) -> i32 {
+pub extern "C" fn gofrost_keygen(ptr: *const u8, len: usize, out: *mut GoFrostBuf) -> i32 {
     match read_json::<KeygenInput>(ptr, len).and_then(keygen) {
         Ok(value) => write_json(&value, out),
         Err(err) => write_error(err, out),
@@ -667,7 +667,7 @@ pub extern "C" fn goschnorr_keygen(ptr: *const u8, len: usize, out: *mut GoSchno
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_sign(ptr: *const u8, len: usize, out: *mut GoSchnorrBuf) -> i32 {
+pub extern "C" fn gofrost_sign(ptr: *const u8, len: usize, out: *mut GoFrostBuf) -> i32 {
     match read_json::<SignInput>(ptr, len).and_then(sign) {
         Ok(value) => write_json(&value, out),
         Err(err) => write_error(err, out),
@@ -675,7 +675,7 @@ pub extern "C" fn goschnorr_sign(ptr: *const u8, len: usize, out: *mut GoSchnorr
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_verify(ptr: *const u8, len: usize, out: *mut GoSchnorrBuf) -> i32 {
+pub extern "C" fn gofrost_verify(ptr: *const u8, len: usize, out: *mut GoFrostBuf) -> i32 {
     match read_json::<VerifyInput>(ptr, len).and_then(|input| verify(input).map(|_| ())) {
         Ok(()) => write_json(&serde_json::json!({"ok": true}), out),
         Err(err) => write_error(err, out),
@@ -683,11 +683,11 @@ pub extern "C" fn goschnorr_verify(ptr: *const u8, len: usize, out: *mut GoSchno
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_keygen_session_new(
+pub extern "C" fn gofrost_keygen_session_new(
     ptr: *const u8,
     len: usize,
     handle_out: *mut i32,
-    err_out: *mut GoSchnorrBuf,
+    err_out: *mut GoFrostBuf,
 ) -> i32 {
     if handle_out.is_null() {
         return write_error(WrapperError::Message("null handle output".to_string()), err_out);
@@ -702,11 +702,11 @@ pub extern "C" fn goschnorr_keygen_session_new(
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_sign_session_new(
+pub extern "C" fn gofrost_sign_session_new(
     ptr: *const u8,
     len: usize,
     handle_out: *mut i32,
-    err_out: *mut GoSchnorrBuf,
+    err_out: *mut GoFrostBuf,
 ) -> i32 {
     if handle_out.is_null() {
         return write_error(WrapperError::Message("null handle output".to_string()), err_out);
@@ -721,9 +721,9 @@ pub extern "C" fn goschnorr_sign_session_new(
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_session_output_message(
+pub extern "C" fn gofrost_session_output_message(
     handle: i32,
-    out: *mut GoSchnorrBuf,
+    out: *mut GoFrostBuf,
 ) -> i32 {
     match with_session(handle, |session| {
         let output = match session {
@@ -742,12 +742,12 @@ pub extern "C" fn goschnorr_session_output_message(
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_session_message_receiver(
+pub extern "C" fn gofrost_session_message_receiver(
     _handle: i32,
     ptr: *const u8,
     len: usize,
     index: u32,
-    out: *mut GoSchnorrBuf,
+    out: *mut GoFrostBuf,
 ) -> i32 {
     let result = (|| {
         if ptr.is_null() {
@@ -764,12 +764,12 @@ pub extern "C" fn goschnorr_session_message_receiver(
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_session_input_message(
+pub extern "C" fn gofrost_session_input_message(
     handle: i32,
     ptr: *const u8,
     len: usize,
     finished_out: *mut u32,
-    err_out: *mut GoSchnorrBuf,
+    err_out: *mut GoFrostBuf,
 ) -> i32 {
     if finished_out.is_null() {
         return write_error(WrapperError::Message("null finished output".to_string()), err_out);
@@ -794,16 +794,16 @@ pub extern "C" fn goschnorr_session_input_message(
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_session_finish(handle: i32, out: *mut GoSchnorrBuf) -> i32 {
+pub extern "C" fn gofrost_session_finish(handle: i32, out: *mut GoFrostBuf) -> i32 {
     match with_session(handle, |session| match session {
         SessionKind::Keygen(s) => s
             .result
             .clone()
-            .ok_or_else(|| WrapperError::Message("schnorr keygen session is not finished".to_string())),
+            .ok_or_else(|| WrapperError::Message("FROST keygen session is not finished".to_string())),
         SessionKind::Sign(s) => s
             .result
             .clone()
-            .ok_or_else(|| WrapperError::Message("schnorr sign session is not finished".to_string())),
+            .ok_or_else(|| WrapperError::Message("FROST sign session is not finished".to_string())),
     }) {
         Ok(bytes) => write_bytes(bytes, out),
         Err(err) => write_error(err, out),
@@ -811,7 +811,7 @@ pub extern "C" fn goschnorr_session_finish(handle: i32, out: *mut GoSchnorrBuf) 
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_session_abort_message(handle: i32, out: *mut GoSchnorrBuf) -> i32 {
+pub extern "C" fn gofrost_session_abort_message(handle: i32, out: *mut GoFrostBuf) -> i32 {
     let result = with_session(handle, |session| {
         let (phase, local, participants) = match session {
             SessionKind::Keygen(s) => ("keygen_abort", s.local.clone(), s.participants.clone()),
@@ -832,7 +832,7 @@ pub extern "C" fn goschnorr_session_abort_message(handle: i32, out: *mut GoSchno
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_session_free(handle: i32) -> i32 {
+pub extern "C" fn gofrost_session_free(handle: i32) -> i32 {
     let mut sessions = SESSIONS.lock().expect("session lock poisoned");
     if let Some(slot) = sessions.get_mut(handle as usize) {
         *slot = None;
@@ -841,7 +841,7 @@ pub extern "C" fn goschnorr_session_free(handle: i32) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn goschnorr_free(ptr: *mut c_void, len: usize) {
+pub extern "C" fn gofrost_free(ptr: *mut c_void, len: usize) {
     if ptr.is_null() || len == 0 {
         return;
     }

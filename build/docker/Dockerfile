@@ -22,7 +22,7 @@ COPY config config
 COPY constants constants
 COPY log log
 COPY openapi openapi
-COPY schnorr schnorr
+COPY frost frost
 COPY scripts/check-env.sh scripts/check-env.sh
 COPY x x
 COPY Makefile Makefile
@@ -59,7 +59,7 @@ RUN apt-get update && \
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
 COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/api/libwasmvm.*.so /usr/lib
-COPY --from=build /app/schnorr/go-wrappers/includes/linux/${TARGETARCH}/libgoschnorr.so /usr/lib/libgoschnorr.so
+COPY --from=build /app/frost/go-wrappers/includes/linux/${TARGETARCH}/libgofrost.so /usr/lib/libgofrost.so
 
 ENV LD_LIBRARY_PATH=/usr/lib:/usr/local/lib
 

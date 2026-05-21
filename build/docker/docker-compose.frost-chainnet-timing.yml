@@ -609,7 +609,7 @@ services:
       BIFROST_THORCHAIN_CHAIN_EBIFROST: "thornode:50051"
     volumes:
       - "../scripts:/docker/scripts"
-      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"
       - bifrost:/var/data/bifrost
       - thornode:/root/.thornode
     networks:
@@ -677,7 +677,7 @@ services:
       PEER: "bifrost"
     volumes:
       - "../scripts:/docker/scripts"
-      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"
       - bifrost-node02:/var/data/bifrost
       - thornode-node02:/root/.thornode
     entrypoint: /docker/scripts/bifrost.sh
@@ -741,7 +741,7 @@ services:
       PEER: "bifrost"
     volumes:
       - "../scripts:/docker/scripts"
-      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"
       - bifrost-node03:/var/data/bifrost
       - thornode-node03:/root/.thornode
     entrypoint: /docker/scripts/bifrost.sh
@@ -805,7 +805,7 @@ services:
       PEER: "bifrost"
     volumes:
       - "../scripts:/docker/scripts"
-      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"
       - bifrost-node04:/var/data/bifrost
       - thornode-node04:/root/.thornode
     entrypoint: /docker/scripts/bifrost.sh
@@ -869,7 +869,7 @@ services:
       PEER: "bifrost"
     volumes:
       - "../scripts:/docker/scripts"
-      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"
       - bifrost-node05:/var/data/bifrost
       - thornode-node05:/root/.thornode
     entrypoint: /docker/scripts/bifrost.sh
@@ -933,7 +933,7 @@ services:
       PEER: "bifrost"
     volumes:
       - "../scripts:/docker/scripts"
-      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"
       - bifrost-node06:/var/data/bifrost
       - thornode-node06:/root/.thornode
     entrypoint: /docker/scripts/bifrost.sh
@@ -997,7 +997,7 @@ services:
       PEER: "bifrost"
     volumes:
       - "../scripts:/docker/scripts"
-      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"
+      - "../../frost/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgofrost.so:/usr/lib/libgofrost.so:ro"
       - bifrost-node07:/var/data/bifrost
       - thornode-node07:/root/.thornode
     entrypoint: /docker/scripts/bifrost.sh

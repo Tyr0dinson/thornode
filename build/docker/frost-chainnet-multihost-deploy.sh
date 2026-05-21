@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NODE_COUNT="${FROST_NODE_COUNT:-7}"
 RUN_STAMP="${RUN_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
-BRANCH="${FROST_GIT_BRANCH:-feat-schnorr}"
+BRANCH="${FROST_GIT_BRANCH:-feat-frost}"
 GIT_URL="${FROST_GIT_URL:-https://gitlab.com/thorchain/thornode.git}"
 REMOTE_REPO_DIR="${REMOTE_REPO_DIR:-/opt/frost-thornode}"
 NODE_NAME_PREFIX="${FROST_NODE_NAME_PREFIX:-frost-thornode}"
