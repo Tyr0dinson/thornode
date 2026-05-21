@@ -8,7 +8,6 @@ import (
 	"sort"
 	"text/tabwriter"
 
-	"cosmossdk.io/math"
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
@@ -47,65 +46,13 @@ func executeADR28(sdkCtx cosmos.Context, k keeper.Keeper) error {
 		return fmt.Errorf("get reserve module address: %w", err)
 	}
 
-	assets, err := assets(sdkCtx, k)
+	liabilities, err := liabilityShortfall(sdkCtx, k)
 	if err != nil {
 		return err
 	}
-	liabilities, err := liabilities(sdkCtx, k)
-	if err != nil {
-		return err
-	}
-
-	shortfall := sortedCoins(liabilities.SafeSub(assets...))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-
-	if err := printCoins(w, "gross liabilities", shortfall); err != nil {
-		return err
-	}
-
-	reserveLiquidity, err := liquidity(sdkCtx, k, reserve)
-	if err != nil {
-		return err
-	}
-	if err := printCoins(w, "reserve liquidity", reserveLiquidity); err != nil {
-		return err
-	}
-
-	treasuryLiquidity, err := liquidity(sdkCtx, k, treasury)
-	if err != nil {
-		return err
-	}
-	if err := printCoins(w, "treasury liquidity", treasuryLiquidity); err != nil {
-		return err
-	}
-
-	afterReserve, err := allocateLiquidity(w, "reserve", shortfall, reserveLiquidity)
-	if err != nil {
-		return err
-	}
-
-	afterTreasury, err := allocateLiquidity(w, "treasury", afterReserve, treasuryLiquidity)
-	if err != nil {
-		return err
-	}
-
-	remaining, err := allocateSynths(w, sdkCtx, k, afterTreasury)
-	if err != nil {
-		return err
-	}
-
-	if err := printCoins(w, "liability remaining", remaining); err != nil {
-		return err
-	}
-
-	reserveRemaining := reserveLiquidity.SafeSub(shortfall...)
-	if err := printCoins(w, "reserve remaining", reserveRemaining); err != nil {
-		return err
-	}
-
-	treasuryRemaining := treasuryLiquidity.SafeSub(afterReserve...)
-	if err := printCoins(w, "treasury remaining", treasuryRemaining); err != nil {
+	if err := processLiabilities(w, sdkCtx, k, liabilities, treasury, reserve); err != nil {
 		return err
 	}
 
@@ -165,6 +112,18 @@ func assets(sdkCtx cosmos.Context, k keeper.Keeper) (common.Coins, error) {
 	}
 
 	return total, nil
+}
+
+func liabilityShortfall(sdkCtx cosmos.Context, k keeper.Keeper) (common.Coins, error) {
+	assets, err := assets(sdkCtx, k)
+	if err != nil {
+		return nil, err
+	}
+	liabilities, err := liabilities(sdkCtx, k)
+	if err != nil {
+		return nil, err
+	}
+	return sortedCoins(liabilities.SafeSub(assets...)), nil
 }
 
 func liabilities(sdkCtx cosmos.Context, k keeper.Keeper) (common.Coins, error) {
@@ -245,189 +204,174 @@ func securedAssets(sdkCtx cosmos.Context, k keeper.Keeper) (common.Coins, error)
 	return total, nil
 }
 
-func liquidity(sdkCtx cosmos.Context, k keeper.Keeper, address common.Address) (common.Coins, error) {
-
-	iterator := k.GetPoolIterator(sdkCtx)
-	defer iterator.Close()
-
-	total := common.Coins{}
-	for ; iterator.Valid(); iterator.Next() {
-		var pool types.Pool
-		if err := k.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
-			return nil, fmt.Errorf("unmarshal pool: %w", err)
-		}
-		if pool.IsEmpty() || pool.BalanceAsset.IsZero() {
-			continue
-		}
-		if !pool.Asset.IsExternalL1Asset() {
-			continue
-		}
-
-		synthSupply := k.GetTotalSupply(sdkCtx, pool.Asset.GetSyntheticAsset())
-		lp, err := k.GetLiquidityProvider(sdkCtx, pool.Asset, address)
-		if err != nil {
-			return nil, fmt.Errorf("get liquidity provider for %s at %s: %w", pool.Asset, address, err)
-		}
-		if lp.Units.IsZero() {
-			continue
-		}
-
-		err, assetRedeemValue := lp.GetAssetRedeemValue(pool, synthSupply)
-		if err != nil {
-			return nil, fmt.Errorf("get liquidity asset redeem value for %s at %s: %w", pool.Asset, address, err)
-		}
-		if assetRedeemValue.IsZero() {
-			continue
-		}
-
-		total = total.Add(common.NewCoin(pool.Asset, assetRedeemValue).WithDecimals(pool.Decimals))
+func processLiabilities(
+	w *tabwriter.Writer,
+	sdkCtx cosmos.Context,
+	k keeper.Keeper,
+	liabilities common.Coins,
+	treasury common.Address,
+	reserve common.Address,
+) error {
+	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		"liability", "treasury", "", "reserve", "", "synth", "", "", "remaining",
+	); err != nil {
+		return fmt.Errorf("print liability header: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+		"available", "consumed", "available", "consumed", "available", "consumed", "bps",
+	); err != nil {
+		return fmt.Errorf("print liability columns: %w", err)
 	}
 
-	return total, nil
-}
-
-func printCoins(w *tabwriter.Writer, label string, coins common.Coins) error {
-	coins = sortedCoins(coins)
-	if _, err := fmt.Fprintf(w, "%s (%d assets)\n", label, len(coins)); err != nil {
-		return fmt.Errorf("print %s header: %w", label, err)
-	}
-
-	for _, coin := range coins {
-		if _, err := fmt.Fprintf(w, "%s.%s\t%s\n", coin.Asset.Chain, coin.Asset.Ticker, formatAmount(coin.Amount)); err != nil {
-			return fmt.Errorf("print %s row for %s: %w", label, coin.Asset, err)
+	for _, liability := range sortedCoins(liabilities) {
+		if err := processLiability(w, sdkCtx, k, liability, treasury, reserve); err != nil {
+			return err
 		}
 	}
-	if _, err := fmt.Fprintln(w); err != nil {
-		return fmt.Errorf("print %s footer: %w", label, err)
-	}
+
 	return nil
 }
 
-func allocateLiquidity(w *tabwriter.Writer, label string, coins, liquidity common.Coins) (common.Coins, error) {
-	coins = sortedCoins(coins)
-	remaining := common.NewCoins()
-	if _, err := fmt.Fprintf(w, "%s liquidity consumption\n", label); err != nil {
-		return nil, fmt.Errorf("print %s consumption header: %w", label, err)
+func processLiability(
+	w *tabwriter.Writer,
+	sdkCtx cosmos.Context,
+	k keeper.Keeper,
+	liability common.Coin,
+	treasury common.Address,
+	reserve common.Address,
+) error {
+	if _, err := fmt.Fprintf(w, "%s\t", formatCoin(liability)); err != nil {
+		return fmt.Errorf("print liability row for %s: %w", liability.Asset, err)
 	}
-	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n",
-		"asset",
-		"consumed",
-		"remaining",
-	); err != nil {
-		return nil, fmt.Errorf("print %s consumption columns: %w", label, err)
+
+	remaining := liability
+
+	var err error
+	remaining, err = allocateLiquidity(w, sdkCtx, k, "treasury", remaining, treasury)
+	if err != nil {
+		return err
 	}
-	for _, coin := range coins {
-		remainingCoin, err := allocateLiquidityCoin(label, w, coin, liquidity.GetCoin(coin.Asset))
-		if err != nil {
-			return nil, err
+
+	remaining, err = allocateLiquidity(w, sdkCtx, k, "reserve", remaining, reserve)
+	if err != nil {
+		return err
+	}
+
+	remaining, err = allocateSynth(w, sdkCtx, k, remaining)
+	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintf(w, "%s\n", formatAmount(remaining.Amount)); err != nil {
+		return fmt.Errorf("print remaining for %s: %w", liability.Asset, err)
+	}
+
+	return nil
+}
+
+func allocateLiquidity(
+	w *tabwriter.Writer,
+	sdkCtx cosmos.Context,
+	k keeper.Keeper,
+	label string,
+	liability common.Coin,
+	address common.Address,
+) (common.Coin, error) {
+	available, err := liquidityValue(sdkCtx, k, address, liability.Asset)
+	if err != nil {
+		return liability, err
+	}
+	consumed := consumeAmount(liability.Amount, available)
+	if _, err := fmt.Fprintf(w, "%s\t%s\t", formatAmount(available), formatAmount(consumed)); err != nil {
+		return liability, fmt.Errorf("print %s allocation for %s: %w", label, liability.Asset, err)
+	}
+
+	return common.NewCoin(liability.Asset, common.SafeSub(liability.Amount, consumed)), nil
+}
+
+func liquidityValue(sdkCtx cosmos.Context, k keeper.Keeper, address common.Address, asset common.Asset) (cosmos.Uint, error) {
+	pool, err := k.GetPool(sdkCtx, asset)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("get pool for %s: %w", asset, err)
+	}
+	if pool.IsEmpty() || pool.BalanceAsset.IsZero() || !pool.Asset.IsExternalL1Asset() {
+		return cosmos.ZeroUint(), nil
+	}
+
+	synthSupply := k.GetTotalSupply(sdkCtx, pool.Asset.GetSyntheticAsset())
+	lp, err := k.GetLiquidityProvider(sdkCtx, pool.Asset, address)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("get liquidity provider for %s at %s: %w", pool.Asset, address, err)
+	}
+	if lp.Units.IsZero() {
+		return cosmos.ZeroUint(), nil
+	}
+
+	err, assetRedeemValue := lp.GetAssetRedeemValue(pool, synthSupply)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("get liquidity asset redeem value for %s at %s: %w", pool.Asset, address, err)
+	}
+	return assetRedeemValue, nil
+}
+
+func allocateSynth(w *tabwriter.Writer, sdkCtx cosmos.Context, k keeper.Keeper, liability common.Coin) (common.Coin, error) {
+	if liability.Asset.IsEmpty() {
+		if err := printSynthAllocation(w, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()); err != nil {
+			return liability, err
 		}
-		remaining = remaining.Add(remainingCoin)
+		return liability, nil
 	}
 
-	if _, err := fmt.Fprintln(w); err != nil {
-		return nil, fmt.Errorf("print %s consumption footer: %w", label, err)
-	}
-	return remaining, nil
-}
-
-func allocateLiquidityCoin(label string, w *tabwriter.Writer, coin, liquidity common.Coin) (common.Coin, error) {
-	if coin.IsEmpty() {
-		return coin, nil
-	}
-	if liquidity.IsEmpty() || liquidity.Amount.IsZero() {
-		return coin, nil
-	}
-
-	consumed := coin.Amount
-	if liquidity.Amount.LT(consumed) {
-		consumed = liquidity.Amount
-	}
-	remainingLiquidity := common.SafeSub(liquidity.Amount, consumed)
-
-	if _, err := fmt.Fprintf(w, "%s.%s\t%s\t%s\n",
-		coin.Asset.Chain,
-		coin.Asset.Ticker,
-		formatAmount(consumed),
-		formatAmount(remainingLiquidity),
-	); err != nil {
-		return coin, fmt.Errorf("print %s allocation row for %s: %w", label, coin.Asset, err)
-	}
-
-	return common.NewCoin(coin.Asset, common.SafeSub(coin.Amount, consumed)), nil
-}
-
-func allocateSynths(w *tabwriter.Writer, sdkCtx cosmos.Context, k keeper.Keeper, coins common.Coins) (common.Coins, error) {
-	coins = sortedCoins(coins)
-	remaining := common.NewCoins()
-	if _, err := fmt.Fprintf(w, "synth consumption\n"); err != nil {
-		return nil, fmt.Errorf("print synth consumption header: %w", err)
-	}
-	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-		"asset",
-		"consumed",
-		"saver_remaining",
-		"bps",
-	); err != nil {
-		return nil, fmt.Errorf("print synth consumption columns: %w", err)
-	}
-	for _, coin := range coins {
-		remainingCoin, err := allocateSynth(sdkCtx, k, w, coin)
-		if err != nil {
-			return nil, err
-		}
-		remaining = remaining.Add(remainingCoin)
-	}
-
-	if _, err := fmt.Fprintln(w); err != nil {
-		return nil, fmt.Errorf("print synth consumption footer: %w", err)
-	}
-	return remaining, nil
-}
-
-func allocateSynth(sdkCtx cosmos.Context, k keeper.Keeper, w *tabwriter.Writer, coin common.Coin) (common.Coin, error) {
-	if coin.IsEmpty() {
-		return coin, nil
-	}
-
-	synthAsset := coin.Asset.GetLayer1Asset().GetSyntheticAsset()
+	synthAsset := liability.Asset.GetLayer1Asset().GetSyntheticAsset()
 	saverPool, err := k.GetPool(sdkCtx, synthAsset)
 	if err != nil {
-		return coin, fmt.Errorf("get saver pool for %s: %w", synthAsset, err)
+		return liability, fmt.Errorf("get saver pool for %s: %w", synthAsset, err)
 	}
 	if saverPool.IsEmpty() || saverPool.BalanceAsset.IsZero() {
-		return coin, nil
+		if err := printSynthAllocation(w, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()); err != nil {
+			return liability, err
+		}
+		return liability, nil
 	}
 
-	currentBalance := saverPool.BalanceAsset
-	consumed := coin.Amount
-	if currentBalance.LT(consumed) {
-		consumed = currentBalance
+	available := saverPool.BalanceAsset
+	consumed := consumeAmount(liability.Amount, available)
+	bps := cosmos.ZeroUint()
+	if !consumed.IsZero() {
+		bps = consumed.Mul(cosmos.NewUint(10000)).Quo(available)
+		remainingBalance := common.SafeSub(saverPool.BalanceAsset, consumed)
+		burnCoin := common.NewCoin(synthAsset, consumed)
+		if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ModuleName, common.NewCoins(burnCoin)); err != nil {
+			return liability, fmt.Errorf("move synth from asgard to module for burn %s: %w", burnCoin, err)
+		}
+		if err := k.BurnFromModule(sdkCtx, types.ModuleName, burnCoin); err != nil {
+			return liability, fmt.Errorf("burn synth %s: %w", burnCoin, err)
+		}
+		saverPool.BalanceAsset = remainingBalance
+		if err := k.SetPool(sdkCtx, saverPool); err != nil {
+			return liability, fmt.Errorf("set saver pool %s: %w", synthAsset, err)
+		}
 	}
-	remainingBalance := common.SafeSub(currentBalance, consumed)
-
-	burnCoin := common.NewCoin(synthAsset, consumed)
-	if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ModuleName, common.NewCoins(burnCoin)); err != nil {
-		return coin, fmt.Errorf("move synth from asgard to module for burn %s: %w", burnCoin, err)
-	}
-	if err := k.BurnFromModule(sdkCtx, types.ModuleName, burnCoin); err != nil {
-		return coin, fmt.Errorf("burn synth %s: %w", burnCoin, err)
-	}
-	saverPool.BalanceAsset = remainingBalance
-	if err := k.SetPool(sdkCtx, saverPool); err != nil {
-		return coin, fmt.Errorf("set saver pool %s: %w", synthAsset, err)
-	}
-
-	if _, err := fmt.Fprintf(w, "%s.%s\t%s\t%s\t%s\n",
-		coin.Asset.Chain,
-		coin.Asset.Ticker,
-		formatAmount(consumed),
-		formatAmount(remainingBalance),
-		consumed.Mul(math.NewUint(10000)).Quo(currentBalance),
-	); err != nil {
-		return coin, fmt.Errorf("print synth allocation row for %s: %w", coin.Asset, err)
+	if err := printSynthAllocation(w, available, consumed, bps); err != nil {
+		return liability, err
 	}
 
-	return common.NewCoin(coin.Asset, common.SafeSub(coin.Amount, consumed)), nil
+	return common.NewCoin(liability.Asset, common.SafeSub(liability.Amount, consumed)), nil
+}
+
+func consumeAmount(liability, available cosmos.Uint) cosmos.Uint {
+	consumed := liability
+	if available.LT(consumed) {
+		consumed = available
+	}
+	return consumed
+}
+
+func printSynthAllocation(w *tabwriter.Writer, available, consumed, bps cosmos.Uint) error {
+	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t", formatAmount(available), formatAmount(consumed), bps); err != nil {
+		return fmt.Errorf("print synth allocation: %w", err)
+	}
+	return nil
 }
 
 func sortedCoins(coins common.Coins) common.Coins {
@@ -435,6 +379,10 @@ func sortedCoins(coins common.Coins) common.Coins {
 		return coins[i].Asset.String() < coins[j].Asset.String()
 	})
 	return coins.NoneEmpty()
+}
+
+func formatCoin(coin common.Coin) string {
+	return fmt.Sprintf("%s.%s %s", coin.Asset.Chain, coin.Asset.Ticker, formatAmount(coin.Amount))
 }
 
 func formatAmount(amount cosmos.Uint) string {
