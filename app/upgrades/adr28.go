@@ -293,11 +293,10 @@ func allocateLiquidity(
 	}
 	consumed := consumeAmount(liability.Amount, available)
 	runeRemoved := consumeRune(available, consumed, runeAvailable)
-	if !runeRemoved.IsZero() {
-		pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeRemoved)
-		if err := k.SetPool(sdkCtx, pool); err != nil {
-			return liability, cosmos.ZeroUint(), fmt.Errorf("set pool %s after %s rune deduction: %w", pool.Asset, label, err)
-		}
+	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, consumed)
+	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeRemoved)
+	if err := k.SetPool(sdkCtx, pool); err != nil {
+		return liability, cosmos.ZeroUint(), fmt.Errorf("set pool %s after %s rune deduction: %w", pool.Asset, label, err)
 	}
 	if _, err := fmt.Fprintf(w, "%s\t%s\t", formatAmount(available), formatAmount(consumed)); err != nil {
 		return liability, cosmos.ZeroUint(), fmt.Errorf("print %s allocation for %s: %w", label, liability.Asset, err)
@@ -358,20 +357,18 @@ func allocateSynth(w *tabwriter.Writer, sdkCtx cosmos.Context, k keeper.Keeper, 
 	available := saverPool.BalanceAsset
 	consumed := consumeAmount(liability.Amount, available)
 	bps := cosmos.ZeroUint()
-	if !consumed.IsZero() {
-		bps = consumed.Mul(cosmos.NewUint(10000)).Quo(available)
-		remainingBalance := common.SafeSub(saverPool.BalanceAsset, consumed)
-		burnCoin := common.NewCoin(synthAsset, consumed)
-		if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ModuleName, common.NewCoins(burnCoin)); err != nil {
-			return liability, fmt.Errorf("move synth from asgard to module for burn %s: %w", burnCoin, err)
-		}
-		if err := k.BurnFromModule(sdkCtx, types.ModuleName, burnCoin); err != nil {
-			return liability, fmt.Errorf("burn synth %s: %w", burnCoin, err)
-		}
-		saverPool.BalanceAsset = remainingBalance
-		if err := k.SetPool(sdkCtx, saverPool); err != nil {
-			return liability, fmt.Errorf("set saver pool %s: %w", synthAsset, err)
-		}
+	bps = consumed.Mul(cosmos.NewUint(10000)).Quo(available)
+	remainingBalance := common.SafeSub(saverPool.BalanceAsset, consumed)
+	burnCoin := common.NewCoin(synthAsset, consumed)
+	if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ModuleName, common.NewCoins(burnCoin)); err != nil {
+		return liability, fmt.Errorf("move synth from asgard to module for burn %s: %w", burnCoin, err)
+	}
+	if err := k.BurnFromModule(sdkCtx, types.ModuleName, burnCoin); err != nil {
+		return liability, fmt.Errorf("burn synth %s: %w", burnCoin, err)
+	}
+	saverPool.BalanceAsset = remainingBalance
+	if err := k.SetPool(sdkCtx, saverPool); err != nil {
+		return liability, fmt.Errorf("set saver pool %s: %w", synthAsset, err)
 	}
 	if err := printSynthAllocation(w, available, consumed, bps); err != nil {
 		return liability, err
