@@ -404,6 +404,12 @@ func allocateLiquidity(
 	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeRemoved)
 	pool.LPUnits = common.SafeSub(pool.LPUnits, unitsConsumed)
 	if !unitsConsumed.IsZero() {
+		if !runeRemoved.IsZero() {
+			runeCoin := common.NewCoin(common.RuneAsset(), runeRemoved)
+			if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ReserveName, common.NewCoins(runeCoin)); err != nil {
+				return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "move %s rune from asgard to reserve after %s deduction", runeCoin, label)
+			}
+		}
 		if err := k.SetPool(sdkCtx, pool); err != nil {
 			return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "set pool %s after %s rune deduction", pool.Asset, label)
 		}
