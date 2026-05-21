@@ -141,7 +141,7 @@ func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey str
 		if resp.R == "" && resp.RecoveryID == "" {
 			sBytes, err := base64.StdEncoding.DecodeString(resp.S)
 			if err != nil {
-				return nil, nil, fmt.Errorf("fail to decode schnorr tss signature: %w", err)
+				return nil, nil, fmt.Errorf("fail to decode frost tss signature: %w", err)
 			}
 			if len(sBytes) == 64 {
 				return sBytes, nil, nil

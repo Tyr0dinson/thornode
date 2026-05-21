@@ -988,13 +988,13 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	c.Assert(resp[0].PubKey, Equals, pubKey)
 }
 
-func (s *QuerierSuite) TestQueryPoolAddressesUsesSchnorrBTCTaprootAddress(c *C) {
+func (s *QuerierSuite) TestQueryPoolAddressesUsesFROSTBTCTaprootAddress(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	pubKey := GetRandomPubKey()
 	asgard := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, common.Chains{common.BTCChain}.Strings(), nil)
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
-	mgr.Keeper().SetVaultSigningEngine(ctx, pubKey, "schnorr")
+	mgr.Keeper().SetVaultSigningEngine(ctx, pubKey, "frost")
 
 	legacyAddress, err := pubKey.GetAddress(common.BTCChain)
 	c.Assert(err, IsNil)

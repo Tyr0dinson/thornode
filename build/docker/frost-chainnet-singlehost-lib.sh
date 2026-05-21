@@ -3,12 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-COMPOSE_FILE="${SCHNORR_CHAINNET_COMPOSE_FILE:-docker-compose.schnorr-chainnet-timing.yml}"
+COMPOSE_FILE="${FROST_CHAINNET_COMPOSE_FILE:-docker-compose.frost-chainnet-timing.yml}"
 COMPOSE_FILE_PATH="$SCRIPT_DIR/$COMPOSE_FILE"
-ABORT_COMPOSE_FILE_PATH="$SCRIPT_DIR/docker-compose.schnorr-abort.yml"
+ABORT_COMPOSE_FILE_PATH="$SCRIPT_DIR/docker-compose.frost-abort.yml"
 COMPOSE_PROFILE_ARGS=()
-if [ -n "${SCHNORR_CHAINNET_COMPOSE_PROFILES:-local-bitcoin}" ]; then
-  IFS=',' read -r -a _compose_profiles <<<"${SCHNORR_CHAINNET_COMPOSE_PROFILES:-local-bitcoin}"
+if [ -n "${FROST_CHAINNET_COMPOSE_PROFILES:-local-bitcoin}" ]; then
+  IFS=',' read -r -a _compose_profiles <<<"${FROST_CHAINNET_COMPOSE_PROFILES:-local-bitcoin}"
   for _compose_profile in "${_compose_profiles[@]}"; do
     COMPOSE_PROFILE_ARGS+=(--profile "$_compose_profile")
   done
@@ -29,24 +29,24 @@ WOLF_RPC="tcp://thornode-wolf:27147"
 EAGLE_RPC="tcp://thornode-eagle:27147"
 BTC_RPC_USER="${BTC_RPC_USER:-thorchain}"
 BTC_RPC_PASSWORD="${BTC_RPC_PASSWORD:-password}"
-BTC_WALLET_NAME="${BTC_WALLET_NAME:-thornode-schnorr}"
+BTC_WALLET_NAME="${BTC_WALLET_NAME:-thornode-frost}"
 BTC_MINING_ADDRESS="${BTC_MINING_ADDRESS:-bcrt1qf4l5dlqhaujgkxxqmug4stfvmvt58vx2h44c39}"
 BTC_LP_AMOUNT="${BTC_LP_AMOUNT:-10000}"
 POLL_SECONDS="${POLL_SECONDS:-30}"
 FAST_POLL_SECONDS="${FAST_POLL_SECONDS:-5}"
 INITIAL_CHURN_INTERVAL="${INITIAL_CHURN_INTERVAL:-10}"
 INITIAL_CHURN_RETRY_INTERVAL="${INITIAL_CHURN_RETRY_INTERVAL:-10}"
-SCHNORR_CHURN_INTERVAL="${SCHNORR_CHURN_INTERVAL:-10}"
-SCHNORR_CHURN_RETRY_INTERVAL="${SCHNORR_CHURN_RETRY_INTERVAL:-10}"
+FROST_CHURN_INTERVAL="${FROST_CHURN_INTERVAL:-10}"
+FROST_CHURN_RETRY_INTERVAL="${FROST_CHURN_RETRY_INTERVAL:-10}"
 CHURN_MIGRATE_ROUNDS="${CHURN_MIGRATE_ROUNDS:-2}"
-# 20 chainnet blocks has been about two minutes in the SCHNORR/BTC cluster.
+# 20 chainnet blocks has been about two minutes in the FROST/BTC cluster.
 FUND_MIGRATION_INTERVAL="${FUND_MIGRATION_INTERVAL:-20}"
 INITIAL_KEYGEN_CHECKS="${INITIAL_KEYGEN_CHECKS:-20}"
-SCHNORR_KEYGEN_CHECKS="${SCHNORR_KEYGEN_CHECKS:-50}"
-SCHNORR_ABORT_CHECKS="${SCHNORR_ABORT_CHECKS:-30}"
-SECOND_SCHNORR_KEYGEN_CHECKS="${SECOND_SCHNORR_KEYGEN_CHECKS:-70}"
+FROST_KEYGEN_CHECKS="${FROST_KEYGEN_CHECKS:-50}"
+FROST_ABORT_CHECKS="${FROST_ABORT_CHECKS:-30}"
+SECOND_FROST_KEYGEN_CHECKS="${SECOND_FROST_KEYGEN_CHECKS:-70}"
 RETIRING_EMPTY_CHECKS="${RETIRING_EMPTY_CHECKS:-80}"
-RESULTS_DIR="${RESULTS_DIR:-$SCRIPT_DIR/schnorr-chainnet-results}"
+RESULTS_DIR="${RESULTS_DIR:-$SCRIPT_DIR/frost-chainnet-results}"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 RESULTS_CSV="${RESULTS_CSV:-$RESULTS_DIR/tss-timings.csv}"
 RESULTS_JSONL="${RESULTS_JSONL:-$RESULTS_DIR/tss-timings.jsonl}"
@@ -59,12 +59,12 @@ GOAT_SEED="goat goat goat goat goat goat goat goat goat goat goat goat goat goat
 WHALE_SEED="whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale whale away"
 WOLF_SEED="wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf wolf analyst"
 EAGLE_SEED="eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle eagle bitter"
-NODE_META_FILE="${SCHNORR_CHAINNET_NODE_META:-}"
+NODE_META_FILE="${FROST_CHAINNET_NODE_META-}"
 if [ -z "$NODE_META_FILE" ]; then
   for candidate in \
-    "$SCRIPT_DIR/schnorr-chainnet-generated/nodes-7-chainnet.tsv" \
-    "$SCRIPT_DIR/schnorr-chainnet-generated/nodes-7.tsv" \
-    "$SCRIPT_DIR/schnorr-chainnet-generated/nodes-7-mocknet.tsv"; do
+    "$SCRIPT_DIR/frost-chainnet-generated/nodes-7-chainnet.tsv" \
+    "$SCRIPT_DIR/frost-chainnet-generated/nodes-7.tsv" \
+    "$SCRIPT_DIR/frost-chainnet-generated/nodes-7-mocknet.tsv"; do
     if [ -f "$candidate" ]; then
       NODE_META_FILE="$candidate"
       break
@@ -271,7 +271,7 @@ active_vault_shape() {
 }
 
 active_vault_pubkey() {
-  local expected="${SCHNORR_EXPECTED_VAULT_SIZE-}"
+  local expected="${FROST_EXPECTED_VAULT_SIZE-}"
   if [ -n "$expected" ]; then
     curl -s localhost:1317/thorchain/vaults/asgard 2>/dev/null | jq -r --argjson expected "$expected" '
       [.[] | select(.status=="ActiveVault") | select((.membership | length)==$expected) | (.pub_key | if type=="object" then .value else . end)] | .[0] // ""
@@ -573,8 +573,8 @@ PY
 bifrost_logs_since() {
   local since="$1"
   local name container
-  if [ -n "${SCHNORR_TIMING_LOG_FILE-}" ]; then
-    cat "$SCHNORR_TIMING_LOG_FILE"
+  if [ -n "${FROST_TIMING_LOG_FILE-}" ]; then
+    cat "$FROST_TIMING_LOG_FILE"
     return 0
   fi
   for name in $(node_names); do
@@ -670,8 +670,8 @@ print_keygen_ceremony_timing() {
   local pubkey="$3"
   local since="$4"
 
-  if [ "$engine" = "schnorr" ]; then
-    print_ceremony_timing "$label keygen" "SCHNORR keygen ceremony leader started" "SCHNORR keygen ceremony party produced" "$since"
+  if [ "$engine" = "frost" ]; then
+    print_ceremony_timing "$label keygen" "FROST keygen ceremony leader started" "FROST keygen ceremony party produced" "$since"
   else
     print_ceremony_timing "$label keygen" "GG20 keygen ceremony leader started" "GG20 keygen ceremony party produced" "$since" "$pubkey"
   fi
@@ -683,8 +683,8 @@ print_keysign_ceremony_timing() {
   local pool_pubkey="$3"
   local since="$4"
 
-  if [ "$engine" = "schnorr" ]; then
-    print_ceremony_timing "$label keysign" "SCHNORR keysign ceremony leader started" "SCHNORR keysign ceremony party produced" "$since" "$pool_pubkey" 1
+  if [ "$engine" = "frost" ]; then
+    print_ceremony_timing "$label keysign" "FROST keysign ceremony leader started" "FROST keysign ceremony party produced" "$since" "$pool_pubkey" 1
   else
     print_ceremony_timing "$label keysign" "GG20 keysign ceremony leader started" "GG20 keysign ceremony party produced" "$since" "$pool_pubkey" 1
   fi
@@ -744,7 +744,7 @@ print_keyshare_engines() {
       if [ ! -f "$file" ]; then
         echo missing
       elif grep -q "\"signing_engine\":\"schnorr\"" "$file"; then
-        echo schnorr
+        echo frost
       elif grep -q "\"signing_engine\":\"gg20\"" "$file"; then
         echo gg20
       else
@@ -849,11 +849,11 @@ set_version() {
   tx "$container" "set-version --node $rpc" | grep -E "code:|txhash:" || true
 }
 
-if [ "${SCHNORR_CHAINNET_LIB_ONLY:-0}" = "1" ]; then
+if [ "${FROST_CHAINNET_LIB_ONLY:-0}" = "1" ]; then
   # shellcheck disable=SC2317
   return 0 2>/dev/null || exit 0
 fi
 
-echo "ERROR: schnorr-chainnet-singlehost-lib.sh is an internal library." >&2
-echo "Use schnorr-chainnet-blame.sh or schnorr-chainnet-timing-run.sh." >&2
+echo "ERROR: frost-chainnet-singlehost-lib.sh is an internal library." >&2
+echo "Use frost-chainnet-blame.sh or frost-chainnet-timing-run.sh." >&2
 exit 1

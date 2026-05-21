@@ -109,9 +109,9 @@ var verifySchnorrCheckSignature = func(pk common.PubKey, sig []byte) error {
 	return nil
 }
 
-func tssPoolUsesSchnorrCheckSignature(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) bool {
-	enableSchnorr, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyEnableFrostBTC)
-	if msg.KeygenType != AsgardKeygen || err != nil || enableSchnorr != 1 {
+func tssPoolUsesFrostCheckSignature(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) bool {
+	enableFrost, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyEnableFrostBTC)
+	if msg.KeygenType != AsgardKeygen || err != nil || enableFrost != 1 {
 		return false
 	}
 	chains, err := common.NewChains(msg.Chains)
@@ -181,7 +181,7 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 	// verify the check signatures if provided (only a subset of members in signing party)
 	if len(msg.Secp256K1Signature) > 0 {
 		checkSignatureAlgo := "secp256k1"
-		if tssPoolUsesSchnorrCheckSignature(ctx, h.mgr, msg) {
+		if tssPoolUsesFrostCheckSignature(ctx, h.mgr, msg) {
 			checkSignatureAlgo = "schnorr"
 			err = verifySchnorrCheckSignature(msg.PoolPubKey, msg.Secp256K1Signature)
 		} else {
@@ -539,8 +539,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 					}
 				}
 
-				if !tssPoolUsesSchnorrCheckSignature(ctx, h.mgr, msg) && verifySchnorrCheckSignature(voter.PoolPubKey, []byte(consensusSig)) == nil {
-					h.mgr.Keeper().SetVaultSigningEngine(ctx, voter.PoolPubKey, "schnorr")
+				if !tssPoolUsesFrostCheckSignature(ctx, h.mgr, msg) && verifySchnorrCheckSignature(voter.PoolPubKey, []byte(consensusSig)) == nil {
+					h.mgr.Keeper().SetVaultSigningEngine(ctx, voter.PoolPubKey, "frost")
 				}
 			}
 
@@ -580,8 +580,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 				return fmt.Errorf("fail to save vault: %w", err)
 			}
-			if tssPoolUsesSchnorrCheckSignature(ctx, h.mgr, msg) || h.mgr.Keeper().IsVaultSchnorr(ctx, vault.PubKey) {
-				h.mgr.Keeper().SetVaultSigningEngine(ctx, vault.PubKey, "schnorr")
+			if tssPoolUsesFrostCheckSignature(ctx, h.mgr, msg) || h.mgr.Keeper().IsVaultFrost(ctx, vault.PubKey) {
+				h.mgr.Keeper().SetVaultSigningEngine(ctx, vault.PubKey, "frost")
 			}
 			keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
 			if err != nil {

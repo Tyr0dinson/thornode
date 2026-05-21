@@ -504,7 +504,7 @@ func (k KVStoreDummy) SetVaultSigningEngine(_ cosmos.Context, _ common.PubKey, _
 func (k KVStoreDummy) GetVaultSigningEngine(_ cosmos.Context, _ common.PubKey) string {
 	return ""
 }
-func (k KVStoreDummy) IsVaultSchnorr(_ cosmos.Context, _ common.PubKey) bool { return false }
+func (k KVStoreDummy) IsVaultFrost(_ cosmos.Context, _ common.PubKey) bool { return false }
 func (k KVStoreDummy) GetVaultAddress(_ cosmos.Context, vault Vault, chain common.Chain) (common.Address, error) {
 	return vault.GetAddress(chain)
 }

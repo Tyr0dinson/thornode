@@ -261,8 +261,8 @@ func (c *Client) GetAddress(pubkey common.PubKey) string {
 }
 
 func (c *Client) getVaultAddress(pubkey common.PubKey) (common.Address, error) {
-	if c.isSchnorrVault(pubkey) {
-		return c.getSchnorrVaultAddress(pubkey)
+	if c.isFrostVault(pubkey) {
+		return c.getTaprootVaultAddress(pubkey)
 	}
 	if c.cfg.ChainID.Equals(common.BTCChain) {
 		return c.getBitcoinVaultAddress(pubkey)

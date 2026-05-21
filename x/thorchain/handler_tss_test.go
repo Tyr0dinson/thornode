@@ -1296,7 +1296,7 @@ func (s *HandlerTssSuite) TestVerifySchnorrCheckSignature(c *C) {
 	c.Assert(verifySchnorrCheckSignature(pubKey, badSignature), NotNil)
 }
 
-func (s *HandlerTssSuite) TestTssPoolUsesSchnorrCheckSignature(c *C) {
+func (s *HandlerTssSuite) TestTssPoolUsesFROSTCheckSignature(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	mgr := NewDummyMgrWithKeeper(helper.keeper)
 	msg := &MsgTssPool{
@@ -1304,12 +1304,12 @@ func (s *HandlerTssSuite) TestTssPoolUsesSchnorrCheckSignature(c *C) {
 		Chains:     common.Chains{common.THORChain, common.BTCChain}.Strings(),
 	}
 
-	c.Assert(tssPoolUsesSchnorrCheckSignature(helper.ctx, mgr, msg), Equals, false)
+	c.Assert(tssPoolUsesFrostCheckSignature(helper.ctx, mgr, msg), Equals, false)
 	helper.keeper.SetMimir(helper.ctx, constants.MimirKeyEnableFrostBTC, 1)
-	c.Assert(tssPoolUsesSchnorrCheckSignature(helper.ctx, mgr, msg), Equals, true)
+	c.Assert(tssPoolUsesFrostCheckSignature(helper.ctx, mgr, msg), Equals, true)
 
 	msg.Chains = common.Chains{common.THORChain, common.BTCChain, common.DOGEChain}.Strings()
-	c.Assert(tssPoolUsesSchnorrCheckSignature(helper.ctx, mgr, msg), Equals, false)
+	c.Assert(tssPoolUsesFrostCheckSignature(helper.ctx, mgr, msg), Equals, false)
 }
 
 func (s *HandlerTssSuite) TestKeygenSuccessHandlerBufferDefault(c *C) {

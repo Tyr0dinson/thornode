@@ -59,22 +59,22 @@ func (c *Client) getBitcoinVaultAddress(pubkey common.PubKey) (common.Address, e
 	return common.NewAddress(addr.String())
 }
 
-type schnorrEngineReader interface {
+type frostEngineReader interface {
 	LocalStateEngine(poolPubKey string) string
 }
 
-func (c *Client) isSchnorrVault(pubkey common.PubKey) bool {
+func (c *Client) isFrostVault(pubkey common.PubKey) bool {
 	if c.cfg.ChainID != common.BTCChain {
 		return false
 	}
-	reader, ok := c.tssKeySigner.(schnorrEngineReader)
+	reader, ok := c.tssKeySigner.(frostEngineReader)
 	if !ok {
 		return false
 	}
-	return reader.LocalStateEngine(pubkey.String()) == storage.SigningEngineSchnorr
+	return reader.LocalStateEngine(pubkey.String()) == storage.SigningEngineFrost
 }
 
-func (c *Client) schnorrVaultPubKey(pubkey common.PubKey) (*btcec.PublicKey, error) {
+func (c *Client) taprootVaultPubKey(pubkey common.PubKey) (*btcec.PublicKey, error) {
 	secpPubKey, err := pubkey.Secp256K1()
 	if err != nil {
 		return nil, err
@@ -82,8 +82,8 @@ func (c *Client) schnorrVaultPubKey(pubkey common.PubKey) (*btcec.PublicKey, err
 	return btcec.ParsePubKey(secpPubKey.SerializeCompressed())
 }
 
-func (c *Client) getSchnorrVaultAddress(pubkey common.PubKey) (common.Address, error) {
-	taprootKey, err := c.schnorrVaultPubKey(pubkey)
+func (c *Client) getTaprootVaultAddress(pubkey common.PubKey) (common.Address, error) {
+	taprootKey, err := c.taprootVaultPubKey(pubkey)
 	if err != nil {
 		return common.NoAddress, err
 	}
@@ -94,8 +94,8 @@ func (c *Client) getSchnorrVaultAddress(pubkey common.PubKey) (common.Address, e
 	return common.NewAddress(addr.String())
 }
 
-func (c *Client) getSchnorrSourceScript(pubkey common.PubKey) ([]byte, error) {
-	taprootKey, err := c.schnorrVaultPubKey(pubkey)
+func (c *Client) getTaprootSourceScript(pubkey common.PubKey) ([]byte, error) {
+	taprootKey, err := c.taprootVaultPubKey(pubkey)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (c *Client) getSchnorrSourceScript(pubkey common.PubKey) ([]byte, error) {
 }
 
 func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int) error {
-	if c.isSchnorrVault(tx.VaultPubKey) {
+	if c.isFrostVault(tx.VaultPubKey) {
 		return c.signTaprootUTXOBTC(redeemTx, tx, amount, sourceScript, idx)
 	}
 
@@ -168,7 +168,7 @@ func (c *Client) signTaprootUTXOBTC(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem
 	}
 	sig = append(sig, schnorrSigHashAllAnyoneCanPay)
 
-	taprootKey, err := c.schnorrVaultPubKey(tx.VaultPubKey)
+	taprootKey, err := c.taprootVaultPubKey(tx.VaultPubKey)
 	if err != nil {
 		return err
 	}

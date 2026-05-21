@@ -35,7 +35,7 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	if !c.cfg.ChainID.Equals(common.BTCChain) {
 		return addresses, err
 	}
-	if _, ok := c.tssKeySigner.(schnorrEngineReader); !ok {
+	if _, ok := c.tssKeySigner.(frostEngineReader); !ok {
 		return addresses, err
 	}
 
@@ -45,7 +45,7 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 		return addresses, err
 	}
 	for _, vault := range vaults {
-		if vault.PubKey.IsEmpty() || !c.isSchnorrVault(vault.PubKey) {
+		if vault.PubKey.IsEmpty() || !c.isFrostVault(vault.PubKey) {
 			continue
 		}
 		addr, addrErr := vault.PubKey.GetTaprootAddress(common.BTCChain)

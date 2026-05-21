@@ -2,19 +2,19 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCHNORR_CHAINNET_LIB_ONLY=1 source "$SCRIPT_DIR/schnorr-chainnet-singlehost-lib.sh"
+FROST_CHAINNET_LIB_ONLY=1 source "$SCRIPT_DIR/frost-chainnet-singlehost-lib.sh"
 
 usage() {
   cat <<'EOF'
 Usage:
-  build/docker/schnorr-chainnet-blame.sh
+  build/docker/frost-chainnet-blame.sh
 
-Single-host SCHNORR blame evaluation. Runs SCHNORR keygen and keysign blame cases
+Single-host FROST blame evaluation. Runs FROST keygen and keysign blame cases
 against the local docker-compose chainnet.
 
 Useful env:
   BLAME_STAGE=all|keygen|keygen-existing|keysign-prepare|keysign-funded-active|keysign-existing
-  SCHNORR_KEYSIGN_BLAME_VAULT=<vault pubkey>  # required for keysign-existing
+  FROST_KEYSIGN_BLAME_VAULT=<vault pubkey>  # required for keysign-existing
 EOF
 }
 
@@ -30,8 +30,8 @@ run | "") ;;
   ;;
 esac
 
-BLAME_RESULTS_DIR="${BLAME_RESULTS_DIR:-$SCRIPT_DIR/schnorr-chainnet-results}"
-BLAME_RESULTS_JSONL="${BLAME_RESULTS_JSONL:-$BLAME_RESULTS_DIR/schnorr-blame.jsonl}"
+BLAME_RESULTS_DIR="${BLAME_RESULTS_DIR:-$SCRIPT_DIR/frost-chainnet-results}"
+BLAME_RESULTS_JSONL="${BLAME_RESULTS_JSONL:-$BLAME_RESULTS_DIR/frost-blame.jsonl}"
 BLAME_CHURN_RETRY_INTERVAL="${BLAME_CHURN_RETRY_INTERVAL:-80}"
 BLAME_JAIL_BLOCKS="${BLAME_JAIL_BLOCKS:-120}"
 BLAME_POLL_SECONDS="${BLAME_POLL_SECONDS:-10}"
@@ -122,7 +122,7 @@ random_vault_member_row() {
   done | sort -R | head -1
 }
 
-active_schnorr_vault_pubkey() {
+active_frost_vault_pubkey() {
   local pubkey
   pubkey=$(active_vault_pubkey)
   [ -n "$pubkey" ] || return 1
@@ -138,7 +138,7 @@ active_schnorr_vault_pubkey() {
 wait_for_blame_vault_ready() {
   local label="$1" checks="${2:-80}" vault size
   for i in $(seq 1 "$checks"); do
-    vault=$(active_schnorr_vault_pubkey || true)
+    vault=$(active_frost_vault_pubkey || true)
     if [ -n "$vault" ]; then
       size=$(curl -s localhost:1317/thorchain/vaults/asgard | jq -r --arg vault "$vault" '
         [.[] | select((if (.pub_key|type)=="object" then .pub_key.value else .pub_key end)==$vault) | (.membership|length)] | .[0] // 0
@@ -200,20 +200,20 @@ vault_member_baseline() {
 
 restart_bifrosts_clean() {
   local clear_books="${1:-0}"
-  export SCHNORR_ABORT_MODE=
-  export SCHNORR_ABORT_PHASE=
-  export SCHNORR_ABORT_LOCAL_PUBKEY=
-  export SCHNORR_ABORT_AFTER_OUTPUTS=
-  export SCHNORR_ABORT_AFTER_INPUTS=
-  clear_schnorr_abort_config
+  export FROST_ABORT_MODE=
+  export FROST_ABORT_PHASE=
+  export FROST_ABORT_LOCAL_PUBKEY=
+  export FROST_ABORT_AFTER_OUTPUTS=
+  export FROST_ABORT_AFTER_INPUTS=
+  clear_frost_abort_config
   restart_bifrosts_ordered compose "$clear_books"
 }
 
-clear_schnorr_abort_config() {
+clear_frost_abort_config() {
   local name container
   for name in $(node_names); do
     container=$(bifrost_container_for_name "$name")
-    docker exec "$container" sh -lc 'rm -f /var/data/bifrost/schnorr-abort.env' 2>/dev/null || true
+    docker exec "$container" sh -lc 'rm -f /var/data/bifrost/frost-abort.env' 2>/dev/null || true
   done
 }
 
@@ -234,22 +234,22 @@ wait_blocks() {
 settle_blame_case() {
   local label="$1"
   mimir_quorum HALTCHURNING 1
-  clear_schnorr_abort_config
+  clear_frost_abort_config
   restart_bifrosts_clean
   wait_blocks "$BLAME_SETTLE_BLOCKS" "$label"
 }
 
-set_schnorr_abort_config() {
+set_frost_abort_config() {
   local phase="$1" mode="$2" target_pubkey="$3" after_outputs="${4:-1}" after_inputs="${5-}"
   local name container
   for name in $(node_names); do
     container=$(bifrost_container_for_name "$name")
-    docker exec -i "$container" sh -lc "cat >/var/data/bifrost/schnorr-abort.env" 2>/dev/null <<EOF || true
-BIFROST_SCHNORR_ABORT_MODE=$mode
-BIFROST_SCHNORR_ABORT_PHASE=$phase
-BIFROST_SCHNORR_ABORT_LOCAL_PUBKEY=$target_pubkey
-BIFROST_SCHNORR_ABORT_AFTER_OUTPUTS=$after_outputs
-BIFROST_SCHNORR_ABORT_AFTER_INPUTS=$after_inputs
+    docker exec -i "$container" sh -lc "cat >/var/data/bifrost/frost-abort.env" 2>/dev/null <<EOF || true
+BIFROST_FROST_ABORT_MODE=$mode
+BIFROST_FROST_ABORT_PHASE=$phase
+BIFROST_FROST_ABORT_LOCAL_PUBKEY=$target_pubkey
+BIFROST_FROST_ABORT_AFTER_OUTPUTS=$after_outputs
+BIFROST_FROST_ABORT_AFTER_INPUTS=$after_inputs
 EOF
   done
 }
@@ -287,12 +287,12 @@ wait_for_active_bifrost_p2p() {
 
 restart_bifrosts_with_abort() {
   local phase="$1" mode="$2" target_pubkey="$3" after_outputs="${4:-1}" after_inputs="${5-}"
-  export SCHNORR_ABORT_MODE="$mode"
-  export SCHNORR_ABORT_PHASE="$phase"
-  export SCHNORR_ABORT_LOCAL_PUBKEY="$target_pubkey"
-  export SCHNORR_ABORT_AFTER_OUTPUTS="$after_outputs"
-  export SCHNORR_ABORT_AFTER_INPUTS="$after_inputs"
-  set_schnorr_abort_config "$phase" "$mode" "$target_pubkey" "$after_outputs" "$after_inputs"
+  export FROST_ABORT_MODE="$mode"
+  export FROST_ABORT_PHASE="$phase"
+  export FROST_ABORT_LOCAL_PUBKEY="$target_pubkey"
+  export FROST_ABORT_AFTER_OUTPUTS="$after_outputs"
+  export FROST_ABORT_AFTER_INPUTS="$after_inputs"
+  set_frost_abort_config "$phase" "$mode" "$target_pubkey" "$after_outputs" "$after_inputs"
   wait_for_active_bifrost_p2p 60 5
 }
 
@@ -303,7 +303,7 @@ wait_for_onchain_keygen_blame() {
   for i in $(seq 1 "$BLAME_KEYGEN_CHECKS"); do
     sleep "$BLAME_POLL_SECONDS"
     echo "  [$i/$BLAME_KEYGEN_CHECKS] height=$(chain_height)"
-    logs=$(bifrost_logs_since "$since" | grep -Ei 'keygen blame|sent keygen tx|Received a TxHash|failed tx|SCHNORR.*abort|corrupt|malformed|auth|identifiable|sender-skew|missing participant' | tail -120 || true)
+    logs=$(bifrost_logs_since "$since" | grep -Ei 'keygen blame|sent keygen tx|Received a TxHash|failed tx|FROST.*abort|corrupt|malformed|auth|identifiable|sender-skew|missing participant' | tail -120 || true)
     [ -n "$logs" ] && printf '%s\n' "$logs"
     txid=$(printf '%s\n' "$logs" | sed -n 's/.*txid=\([A-F0-9]\{64\}\).*/\1/p; s/.*TxHash of \([A-F0-9]\{64\}\).*/\1/p' | tail -1)
     reason=$(docker logs --since "$since" docker-thornode-1 2>&1 | grep -E 'tss keygen results blame' | grep "$target_addr" | tail -1 | sed -n 's/.*reason=\("[^"]*"\).*/\1/p' || true)
@@ -314,12 +314,12 @@ wait_for_onchain_keygen_blame() {
     echo "  target state: slash=$slash/$base_slash release=$release/$base_release jail=${jail_reason:-none} txid=${txid:-none}"
     if [ "${slash:-0}" -gt "$base_slash" ] || [ "${release:-0}" -gt "$base_release" ]; then
       echo "  on-chain blame landed for $case_name: addr=$target_addr slash=$slash jail_reason=${jail_reason:-none} txid=${txid:-unknown}"
-      record_blame_result keygen "$case_name" "$SCHNORR_ABORT_MODE" "$target_pubkey" "$target_addr" pass "${txid-}" "base_slash=$base_slash slash=$slash base_release=$base_release release=$release jail=$jail_reason reason=${reason:-unknown}"
+      record_blame_result keygen "$case_name" "$FROST_ABORT_MODE" "$target_pubkey" "$target_addr" pass "${txid-}" "base_slash=$base_slash slash=$slash base_release=$base_release release=$release jail=$jail_reason reason=${reason:-unknown}"
       return 0
     fi
   done
 
-  record_blame_result keygen "$case_name" "$SCHNORR_ABORT_MODE" "$target_pubkey" "$target_addr" fail "${txid-}" "base_slash=$base_slash slash=${slash:-unknown} base_release=$base_release release=${release:-unknown} no new on-chain slash or jail observed"
+  record_blame_result keygen "$case_name" "$FROST_ABORT_MODE" "$target_pubkey" "$target_addr" fail "${txid-}" "base_slash=$base_slash slash=${slash:-unknown} base_release=$base_release release=${release:-unknown} no new on-chain slash or jail observed"
   return 1
 }
 
@@ -335,7 +335,7 @@ wait_for_onchain_keysign_blame() {
   for i in $(seq 1 "$BLAME_KEYSIGN_CHECKS"); do
     sleep "$BLAME_POLL_SECONDS"
     echo "  [$i/$BLAME_KEYSIGN_CHECKS] height=$(chain_height)"
-    logs=$(bifrost_logs_since "$since" | grep -Ei 'keysign failure|post keysign failure|Received a TxHash|failed tx|SCHNORR.*abort|corrupt|malformed|auth|identifiable|sender-skew|result' | tail -120 || true)
+    logs=$(bifrost_logs_since "$since" | grep -Ei 'keysign failure|post keysign failure|Received a TxHash|failed tx|FROST.*abort|corrupt|malformed|auth|identifiable|sender-skew|result' | tail -120 || true)
     [ -n "$logs" ] && printf '%s\n' "$logs"
     txid=$(printf '%s\n' "$logs" | sed -n 's/.*tx_id":"\([A-F0-9]\{64\}\)".*/\1/p; s/.*tx_id=\([A-F0-9]\{64\}\).*/\1/p; s/.*TxHash of \([A-F0-9]\{64\}\).*/\1/p' | tail -1)
     reason=$(docker logs --since "$since" docker-thornode-1 2>&1 | grep -E 'tss keysign failure' | grep "$target_pubkey" | tail -1 | sed -n 's/.*reason=\("[^"]*"\).*/\1/p' || true)
@@ -346,12 +346,12 @@ wait_for_onchain_keysign_blame() {
     echo "  target state: slash=$slash/$base_slash release=$release/$base_release jail=${jail_reason:-none} txid=${txid:-none}"
     if [ "${slash:-0}" -gt "$base_slash" ] || [ "${release:-0}" -gt "$base_release" ]; then
       echo "  on-chain keysign blame landed for $case_name: addr=$target_addr slash=$slash jail_reason=${jail_reason:-none} txid=${txid:-unknown}"
-      record_blame_result keysign "$case_name" "$SCHNORR_ABORT_MODE" "$target_pubkey" "$target_addr" pass "${txid-}" "vault=$vault_pubkey base_slash=$base_slash slash=$slash base_release=$base_release release=$release jail=$jail_reason reason=${reason:-unknown}"
+      record_blame_result keysign "$case_name" "$FROST_ABORT_MODE" "$target_pubkey" "$target_addr" pass "${txid-}" "vault=$vault_pubkey base_slash=$base_slash slash=$slash base_release=$base_release release=$release jail=$jail_reason reason=${reason:-unknown}"
       return 0
     fi
   done
 
-  record_blame_result keysign "$case_name" "$SCHNORR_ABORT_MODE" "$target_pubkey" "$target_addr" fail "${txid-}" "vault=$vault_pubkey base_slash=$base_slash slash=${slash:-unknown} base_release=$base_release release=${release:-unknown} no new on-chain slash or jail observed"
+  record_blame_result keysign "$case_name" "$FROST_ABORT_MODE" "$target_pubkey" "$target_addr" fail "${txid-}" "vault=$vault_pubkey base_slash=$base_slash slash=${slash:-unknown} base_release=$base_release release=${release:-unknown} no new on-chain slash or jail observed"
   return 1
 }
 
@@ -362,7 +362,7 @@ wait_for_onchain_keysign_blame_any() {
   for i in $(seq 1 "$BLAME_KEYSIGN_CHECKS"); do
     sleep "$BLAME_POLL_SECONDS"
     echo "  [$i/$BLAME_KEYSIGN_CHECKS] height=$(chain_height)"
-    logs=$(bifrost_logs_since "$since" | grep -Ei 'keysign failure|post keysign failure|Received a TxHash|failed tx|SCHNORR.*abort|identifiable|sender-skew|result' | tail -120 || true)
+    logs=$(bifrost_logs_since "$since" | grep -Ei 'keysign failure|post keysign failure|Received a TxHash|failed tx|FROST.*abort|identifiable|sender-skew|result' | tail -120 || true)
     [ -n "$logs" ] && printf '%s\n' "$logs"
     txid=$(printf '%s\n' "$logs" | sed -n 's/.*tx_id":"\([A-F0-9]\{64\}\)".*/\1/p; s/.*tx_id=\([A-F0-9]\{64\}\).*/\1/p; s/.*TxHash of \([A-F0-9]\{64\}\).*/\1/p' | tail -1)
     while IFS=$'\t' read -r pubkey addr base_slash base_release; do
@@ -375,13 +375,13 @@ wait_for_onchain_keysign_blame_any() {
         reason=$(docker logs --since "$since" docker-thornode-1 2>&1 | grep -E 'tss keysign failure' | grep "$pubkey" | tail -1 | sed -n 's/.*reason=\("[^"]*"\).*/\1/p' || true)
         echo "  on-chain keysign blame landed for $case_name: addr=$addr slash=$slash jail_reason=${jail_reason:-none} txid=${txid:-unknown}"
         LAST_KEYSIGN_BLAMED_PUBKEY="$pubkey"
-        record_blame_result keysign "$case_name" "$SCHNORR_ABORT_MODE" "$pubkey" "$addr" pass "${txid-}" "vault=$vault_pubkey base_slash=$base_slash slash=$slash base_release=$base_release release=$release jail=$jail_reason reason=${reason:-unknown}"
+        record_blame_result keysign "$case_name" "$FROST_ABORT_MODE" "$pubkey" "$addr" pass "${txid-}" "vault=$vault_pubkey base_slash=$base_slash slash=$slash base_release=$base_release release=$release jail=$jail_reason reason=${reason:-unknown}"
         return 0
       fi
     done <"$baseline_file"
   done
 
-  record_blame_result keysign "$case_name" "$SCHNORR_ABORT_MODE" "" "" fail "${txid-}" "vault=$vault_pubkey no member slash/release changed"
+  record_blame_result keysign "$case_name" "$FROST_ABORT_MODE" "" "" fail "${txid-}" "vault=$vault_pubkey no member slash/release changed"
   return 1
 }
 
@@ -438,7 +438,7 @@ trigger_rune_to_btc_swap() {
   sleep "$FAST_POLL_SECONDS"
 }
 
-bootstrap_straight_to_schnorr() {
+bootstrap_straight_to_frost() {
   echo "[0/8] Preflight"
   preflight
 
@@ -503,7 +503,7 @@ bootstrap_straight_to_schnorr() {
 
   echo "[8/8] Halting before keygen blame matrix"
   mimir_quorum HALTCHURNING 1
-  dump_chain_state "SCHNORR blame bootstrap ready"
+  dump_chain_state "FROST blame bootstrap ready"
 }
 
 run_keygen_blame_case() {
@@ -516,7 +516,7 @@ run_keygen_blame_case() {
   echo "============================================"
 
   mimir_quorum HALTCHURNING 1
-  clear_schnorr_abort_config
+  clear_frost_abort_config
   local current_vault
   current_vault=$(active_vault_pubkey)
   row=$(random_vault_member_row "$current_vault" || true)
@@ -573,68 +573,68 @@ prepare_keysign_blame() {
   restart_bifrosts_clean
   local old_vault funded_vault signing_vault next_vault inbound start
 
-  old_vault=$(active_schnorr_vault_pubkey)
+  old_vault=$(active_frost_vault_pubkey)
   [ -n "$old_vault" ] || {
-    echo "ERROR: no active SCHNORR vault before successful churn"
+    echo "ERROR: no active FROST vault before successful churn"
     return 1
   }
-  echo "  clean churn from SCHNORR vault=$old_vault"
+  echo "  clean churn from FROST vault=$old_vault"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   mimir_quorum HALTCHURNING 0
   funded_vault=""
-  for i in $(seq 1 "$SECOND_SCHNORR_KEYGEN_CHECKS"); do
+  for i in $(seq 1 "$SECOND_FROST_KEYGEN_CHECKS"); do
     sleep "$POLL_SECONDS"
     current_vault=$(active_vault_pubkey)
     current_shape=$(active_vault_shape)
-    echo "  clean churn [$i/$SECOND_SCHNORR_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
+    echo "  clean churn [$i/$SECOND_FROST_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
     if [ "$current_shape" = "6" ] && [ -n "$current_vault" ] && [ "$current_vault" != "$old_vault" ]; then
       funded_vault="$current_vault"
-      print_keygen_ceremony_timing "SCHNORR clean" "schnorr" "$funded_vault" "$start"
-      wait_for_checksign_log "SCHNORR clean" "$start"
+      print_keygen_ceremony_timing "FROST clean" "frost" "$funded_vault" "$start"
+      wait_for_checksign_log "FROST clean" "$start"
       break
     fi
   done
   [ -n "$funded_vault" ] || {
-    dump_chain_state "clean SCHNORR churn timeout"
+    dump_chain_state "clean FROST churn timeout"
     return 1
   }
 
   mimir_quorum HALTCHURNING 1
-  wait_for_retiring_vault_empty "pre-blame SCHNORR" "$old_vault"
+  wait_for_retiring_vault_empty "pre-blame FROST" "$old_vault"
 
   inbound=$(btc_inbound_address)
   if [ -z "$inbound" ] || [ "$inbound" = "null" ]; then
     echo "ERROR: no BTC inbound address"
     return 1
   fi
-  echo "  funding active SCHNORR vault=$funded_vault"
+  echo "  funding active FROST vault=$funded_vault"
   add_btc_lp_funds "$inbound"
 
   signing_vault="$funded_vault"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   mimir_quorum HALTCHURNING 0
   next_vault=""
-  for i in $(seq 1 "$SECOND_SCHNORR_KEYGEN_CHECKS"); do
+  for i in $(seq 1 "$SECOND_FROST_KEYGEN_CHECKS"); do
     sleep "$POLL_SECONDS"
     current_vault=$(active_vault_pubkey)
     current_shape=$(active_vault_shape)
-    echo "  keysign-stage churn [$i/$SECOND_SCHNORR_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
+    echo "  keysign-stage churn [$i/$SECOND_FROST_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
     if [ "$current_shape" = "6" ] && [ -n "$current_vault" ] && [ "$current_vault" != "$signing_vault" ]; then
       next_vault="$current_vault"
-      print_keygen_ceremony_timing "SCHNORR keysign-stage" "schnorr" "$next_vault" "$start"
-      wait_for_checksign_log "SCHNORR keysign-stage" "$start"
+      print_keygen_ceremony_timing "FROST keysign-stage" "frost" "$next_vault" "$start"
+      wait_for_checksign_log "FROST keysign-stage" "$start"
       break
     fi
   done
   [ -n "$next_vault" ] || {
-    dump_chain_state "keysign-stage SCHNORR churn timeout"
+    dump_chain_state "keysign-stage FROST churn timeout"
     return 1
   }
 
   mimir_quorum HALTCHURNING 1
-  SCHNORR_KEYSIGN_BLAME_VAULT="$signing_vault"
-  echo "  retiring funded SCHNORR vault for keysign blame=$SCHNORR_KEYSIGN_BLAME_VAULT"
-  dump_chain_state "ready for SCHNORR keysign blame"
+  FROST_KEYSIGN_BLAME_VAULT="$signing_vault"
+  echo "  retiring funded FROST vault for keysign blame=$FROST_KEYSIGN_BLAME_VAULT"
+  dump_chain_state "ready for FROST keysign blame"
 }
 
 create_clean_frost_vault_for_keysign() {
@@ -643,19 +643,19 @@ create_clean_frost_vault_for_keysign() {
   echo "Creating clean FROST vault for keysign blame; old_vault=${old_vault:-none}"
   mimir_quorum HALTCHURNING 1
   mimir_quorum NumberOfNewNodesPerChurn 5
-  clear_schnorr_abort_config
+  clear_frost_abort_config
   restart_bifrosts_clean
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   mimir_quorum HALTCHURNING 0
-  for i in $(seq 1 "$SECOND_SCHNORR_KEYGEN_CHECKS"); do
+  for i in $(seq 1 "$SECOND_FROST_KEYGEN_CHECKS"); do
     sleep "$POLL_SECONDS"
     current_vault=$(active_vault_pubkey)
     current_shape=$(active_vault_shape)
-    echo "  clean FROST churn [$i/$SECOND_SCHNORR_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
+    echo "  clean FROST churn [$i/$SECOND_FROST_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
     if [ -n "$current_vault" ] && [ "$current_vault" != "$old_vault" ]; then
-      SCHNORR_KEYSIGN_BLAME_VAULT="$current_vault"
-      print_keygen_ceremony_timing "SCHNORR clean" "schnorr" "$current_vault" "$start"
-      wait_for_checksign_log "SCHNORR clean" "$start"
+      FROST_KEYSIGN_BLAME_VAULT="$current_vault"
+      print_keygen_ceremony_timing "FROST clean" "frost" "$current_vault" "$start"
+      wait_for_checksign_log "FROST clean" "$start"
       print_keyshare_engines "$current_vault"
       mimir_quorum HALTCHURNING 1
       return 0
@@ -668,7 +668,7 @@ create_clean_frost_vault_for_keysign() {
 prepare_keysign_blame_current_flow() {
   local inbound vault
   create_clean_frost_vault_for_keysign
-  vault="${SCHNORR_KEYSIGN_BLAME_VAULT-}"
+  vault="${FROST_KEYSIGN_BLAME_VAULT-}"
   [ -n "$vault" ] || {
     echo "ERROR: no FROST vault for keysign blame"
     return 1
@@ -682,7 +682,7 @@ prepare_keysign_blame_current_flow() {
   echo "  funding active FROST vault=$vault inbound=$inbound"
   add_btc_lp_funds "$inbound"
   wait_blocks "$BLAME_SETTLE_BLOCKS" "after BTC LP funding"
-  dump_chain_state "ready for SCHNORR keysign blame"
+  dump_chain_state "ready for FROST keysign blame"
 }
 
 prepare_keysign_blame_from_funded_active() {
@@ -690,36 +690,36 @@ prepare_keysign_blame_from_funded_active() {
   echo "Preparing keysign blame stage from funded active vault"
   local signing_vault next_vault start current_vault current_shape
 
-  signing_vault=$(active_schnorr_vault_pubkey)
+  signing_vault=$(active_frost_vault_pubkey)
   [ -n "$signing_vault" ] || {
-    echo "ERROR: no active funded SCHNORR vault"
+    echo "ERROR: no active funded FROST vault"
     return 1
   }
   echo "  signing vault=$signing_vault"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   mimir_quorum HALTCHURNING 0
   next_vault=""
-  for i in $(seq 1 "$SECOND_SCHNORR_KEYGEN_CHECKS"); do
+  for i in $(seq 1 "$SECOND_FROST_KEYGEN_CHECKS"); do
     sleep "$POLL_SECONDS"
     current_vault=$(active_vault_pubkey)
     current_shape=$(active_vault_shape)
-    echo "  keysign-stage churn [$i/$SECOND_SCHNORR_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
+    echo "  keysign-stage churn [$i/$SECOND_FROST_KEYGEN_CHECKS] active_shape=${current_shape:-none} vault=${current_vault:-none}"
     if [ "$current_shape" = "6" ] && [ -n "$current_vault" ] && [ "$current_vault" != "$signing_vault" ]; then
       next_vault="$current_vault"
-      print_keygen_ceremony_timing "SCHNORR keysign-stage" "schnorr" "$next_vault" "$start"
-      wait_for_checksign_log "SCHNORR keysign-stage" "$start"
+      print_keygen_ceremony_timing "FROST keysign-stage" "frost" "$next_vault" "$start"
+      wait_for_checksign_log "FROST keysign-stage" "$start"
       break
     fi
   done
   [ -n "$next_vault" ] || {
-    dump_chain_state "keysign-stage SCHNORR churn timeout"
+    dump_chain_state "keysign-stage FROST churn timeout"
     return 1
   }
 
   mimir_quorum HALTCHURNING 1
-  SCHNORR_KEYSIGN_BLAME_VAULT="$signing_vault"
-  echo "  retiring funded SCHNORR vault for keysign blame=$SCHNORR_KEYSIGN_BLAME_VAULT"
-  dump_chain_state "ready for SCHNORR keysign blame"
+  FROST_KEYSIGN_BLAME_VAULT="$signing_vault"
+  echo "  retiring funded FROST vault for keysign blame=$FROST_KEYSIGN_BLAME_VAULT"
+  dump_chain_state "ready for FROST keysign blame"
 }
 
 run_keysign_blame_case() {
@@ -734,7 +734,7 @@ run_keysign_blame_case() {
   for attempt in $(seq 1 "$BLAME_KEYSIGN_MAX_ATTEMPTS"); do
     echo "  keysign attempt $attempt/$BLAME_KEYSIGN_MAX_ATTEMPTS"
     mimir_quorum HALTCHURNING 1
-    clear_schnorr_abort_config
+    clear_frost_abort_config
 
     if [ "$case_name" = "default_exit" ]; then
       baseline_file=$(mktemp)
@@ -751,9 +751,9 @@ run_keysign_blame_case() {
       rm -f "$baseline_file"
     else
       row=$(random_vault_member_row "$vault_pubkey" "$used_pubkeys" || true)
-      if { [ -z "$row" ] || [ "$row" = "null" ]; } && [ "${SCHNORR_KEYSIGN_ALLOW_TARGET_REUSE:-1}" = "1" ]; then
+      if { [ -z "$row" ] || [ "$row" = "null" ]; } && [ "${FROST_KEYSIGN_ALLOW_TARGET_REUSE:-1}" = "1" ]; then
         echo "  no unused released signer remains; reusing a released vault signer"
-        row=$(random_vault_member_row "$vault_pubkey" "${SCHNORR_KEYSIGN_HARD_EXCLUDED_PUBKEYS-}" || true)
+        row=$(random_vault_member_row "$vault_pubkey" "${FROST_KEYSIGN_HARD_EXCLUDED_PUBKEYS-}" || true)
       fi
       if [ -z "$row" ] || [ "$row" = "null" ]; then
         dump_chain_state "missing released vault member for $case_name"
@@ -786,18 +786,18 @@ run_keysign_blame_case() {
 
 run_keysign_blame_matrix() {
   local vault_pubkey="$1"
-  local used="${SCHNORR_KEYSIGN_USED_PUBKEYS-}"
-  local start_case="${SCHNORR_KEYSIGN_START_CASE:-default_exit}"
+  local used="${FROST_KEYSIGN_USED_PUBKEYS-}"
+  local start_case="${FROST_KEYSIGN_START_CASE:-default_exit}"
   local started=0
   local dog_pubkey
 
   dog_pubkey=$(curl -s localhost:1317/thorchain/nodes 2>/dev/null | jq -r --arg addr "$DOG_NODE_ADDR" '.[] | select(.node_address==$addr) | .pub_key_set.secp256k1 // ""' 2>/dev/null || true)
   if [ -n "$dog_pubkey" ] && [ "$dog_pubkey" != "null" ]; then
     used="${used:+$used,}$dog_pubkey"
-    export SCHNORR_KEYSIGN_HARD_EXCLUDED_PUBKEYS="${SCHNORR_KEYSIGN_HARD_EXCLUDED_PUBKEYS:+$SCHNORR_KEYSIGN_HARD_EXCLUDED_PUBKEYS,}$dog_pubkey"
+    export FROST_KEYSIGN_HARD_EXCLUDED_PUBKEYS="${FROST_KEYSIGN_HARD_EXCLUDED_PUBKEYS:+$FROST_KEYSIGN_HARD_EXCLUDED_PUBKEYS,}$dog_pubkey"
   fi
 
-  if [ "$start_case" = "default_exit" ] && [ "${SCHNORR_KEYSIGN_SKIP_DEFAULT_EXIT:-0}" != "1" ]; then
+  if [ "$start_case" = "default_exit" ] && [ "${FROST_KEYSIGN_SKIP_DEFAULT_EXIT:-0}" != "1" ]; then
     started=1
     run_keysign_blame_case default_exit exit "$vault_pubkey" "$used" 1 ""
     used="${used:+$used,}$LAST_KEYSIGN_BLAMED_PUBKEY"
@@ -826,12 +826,12 @@ run_keysign_blame_matrix() {
     if ! asgard_vault_exists "$vault_pubkey"; then
       echo "  keysign blame vault $vault_pubkey no longer exists; preparing a fresh funded retiring vault for native_error"
       prepare_keysign_blame_from_funded_active
-      vault_pubkey="${SCHNORR_KEYSIGN_BLAME_VAULT-}"
+      vault_pubkey="${FROST_KEYSIGN_BLAME_VAULT-}"
       [ -n "$vault_pubkey" ] || {
-        echo "ERROR: SCHNORR_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
+        echo "ERROR: FROST_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
         return 1
       }
-      used="${SCHNORR_KEYSIGN_USED_PUBKEYS-}"
+      used="${FROST_KEYSIGN_USED_PUBKEYS-}"
       if [ -n "$dog_pubkey" ] && [ "$dog_pubkey" != "null" ]; then
         used="${used:+$used,}$dog_pubkey"
       fi
@@ -843,34 +843,34 @@ run_keysign_blame_matrix() {
 }
 
 echo "============================================"
-echo "SCHNORR/BTC Chainnet Blame Run"
+echo "FROST/BTC Chainnet Blame Run"
 echo "============================================"
-echo "This script bootstraps directly to SCHNORR, validates keygen blame cases, churns/funds/churns, then validates keysign blame cases."
+echo "This script bootstraps directly to FROST, validates keygen blame cases, churns/funds/churns, then validates keysign blame cases."
 echo "Results: $BLAME_RESULTS_JSONL"
 echo "Stage: $BLAME_STAGE"
 
 if [ "$BLAME_STAGE" = "keygen-existing" ]; then
   mimir_quorum HALTCHURNING 1
-  wait_for_blame_vault_ready "existing pre-blame SCHNORR" 60
-  dump_chain_state "existing SCHNORR blame bootstrap ready"
+  wait_for_blame_vault_ready "existing pre-blame FROST" 60
+  dump_chain_state "existing FROST blame bootstrap ready"
   run_keygen_blame_matrix
   echo ""
   echo "============================================"
-  echo "SCHNORR KEYGEN BLAME MATRIX COMPLETE"
+  echo "FROST KEYGEN BLAME MATRIX COMPLETE"
   echo "============================================"
   echo "Results: $BLAME_RESULTS_JSONL"
   exit 0
 fi
 
 if [ "$BLAME_STAGE" = "keysign-existing" ]; then
-  [ -n "${SCHNORR_KEYSIGN_BLAME_VAULT-}" ] || {
-    echo "ERROR: SCHNORR_KEYSIGN_BLAME_VAULT is required for BLAME_STAGE=keysign-existing"
+  [ -n "${FROST_KEYSIGN_BLAME_VAULT-}" ] || {
+    echo "ERROR: FROST_KEYSIGN_BLAME_VAULT is required for BLAME_STAGE=keysign-existing"
     exit 1
   }
-  run_keysign_blame_matrix "$SCHNORR_KEYSIGN_BLAME_VAULT"
+  run_keysign_blame_matrix "$FROST_KEYSIGN_BLAME_VAULT"
   echo ""
   echo "============================================"
-  echo "SCHNORR KEYSIGN BLAME MATRIX COMPLETE"
+  echo "FROST KEYSIGN BLAME MATRIX COMPLETE"
   echo "============================================"
   echo "Results: $BLAME_RESULTS_JSONL"
   exit 0
@@ -878,14 +878,14 @@ fi
 
 if [ "$BLAME_STAGE" = "keysign-prepare" ]; then
   prepare_keysign_blame_current_flow
-  [ -n "${SCHNORR_KEYSIGN_BLAME_VAULT-}" ] || {
-    echo "ERROR: SCHNORR_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
+  [ -n "${FROST_KEYSIGN_BLAME_VAULT-}" ] || {
+    echo "ERROR: FROST_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
     exit 1
   }
-  run_keysign_blame_matrix "$SCHNORR_KEYSIGN_BLAME_VAULT"
+  run_keysign_blame_matrix "$FROST_KEYSIGN_BLAME_VAULT"
   echo ""
   echo "============================================"
-  echo "SCHNORR KEYSIGN BLAME MATRIX COMPLETE"
+  echo "FROST KEYSIGN BLAME MATRIX COMPLETE"
   echo "============================================"
   echo "Results: $BLAME_RESULTS_JSONL"
   exit 0
@@ -893,38 +893,38 @@ fi
 
 if [ "$BLAME_STAGE" = "keysign-funded-active" ]; then
   prepare_keysign_blame_current_flow
-  [ -n "${SCHNORR_KEYSIGN_BLAME_VAULT-}" ] || {
-    echo "ERROR: SCHNORR_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
+  [ -n "${FROST_KEYSIGN_BLAME_VAULT-}" ] || {
+    echo "ERROR: FROST_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
     exit 1
   }
-  run_keysign_blame_matrix "$SCHNORR_KEYSIGN_BLAME_VAULT"
+  run_keysign_blame_matrix "$FROST_KEYSIGN_BLAME_VAULT"
   echo ""
   echo "============================================"
-  echo "SCHNORR KEYSIGN BLAME MATRIX COMPLETE"
+  echo "FROST KEYSIGN BLAME MATRIX COMPLETE"
   echo "============================================"
   echo "Results: $BLAME_RESULTS_JSONL"
   exit 0
 fi
 
-bootstrap_straight_to_schnorr
+bootstrap_straight_to_frost
 run_keygen_blame_matrix
 if [ "$BLAME_STAGE" = "keygen" ]; then
   echo ""
   echo "============================================"
-  echo "SCHNORR KEYGEN BLAME MATRIX COMPLETE"
+  echo "FROST KEYGEN BLAME MATRIX COMPLETE"
   echo "============================================"
   echo "Results: $BLAME_RESULTS_JSONL"
   exit 0
 fi
 prepare_keysign_blame_current_flow
-[ -n "${SCHNORR_KEYSIGN_BLAME_VAULT-}" ] || {
-  echo "ERROR: SCHNORR_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
+[ -n "${FROST_KEYSIGN_BLAME_VAULT-}" ] || {
+  echo "ERROR: FROST_KEYSIGN_BLAME_VAULT was not set after keysign preparation"
   exit 1
 }
-run_keysign_blame_matrix "$SCHNORR_KEYSIGN_BLAME_VAULT"
+run_keysign_blame_matrix "$FROST_KEYSIGN_BLAME_VAULT"
 
 echo ""
 echo "============================================"
-echo "SCHNORR KEYGEN + KEYSIGN BLAME MATRICES COMPLETE"
+echo "FROST KEYGEN + KEYSIGN BLAME MATRICES COMPLETE"
 echo "============================================"
 echo "Results: $BLAME_RESULTS_JSONL"

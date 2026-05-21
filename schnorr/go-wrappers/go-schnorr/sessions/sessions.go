@@ -138,7 +138,7 @@ func SignSessionNew(participants []string, local string, shareBytes, msg []byte)
 
 func SessionOutputMessage(handle Handle) ([]byte, error) {
 	var out C.GoSchnorrBuf
-	code := C.goschnorr_session_output_message(C.int32_t(handle), &out)
+	code := C.goschnorr_session_output_message(C.int32_t(handle), &out) //nolint:gocritic // cgo wrapper false-positive.
 	defer C.goschnorr_free(unsafe.Pointer(out.ptr), out.len)
 	outBytes := C.GoBytes(unsafe.Pointer(out.ptr), C.int(out.len))
 	if code != 0 {
@@ -156,7 +156,7 @@ func SessionMessageReceiver(handle Handle, msg []byte, index int) (string, error
 	if len(msg) > 0 {
 		ptr = (*C.uint8_t)(unsafe.Pointer(&msg[0]))
 	}
-	code := C.goschnorr_session_message_receiver(C.int32_t(handle), ptr, C.size_t(len(msg)), C.uint32_t(index), &out)
+	code := C.goschnorr_session_message_receiver(C.int32_t(handle), ptr, C.size_t(len(msg)), C.uint32_t(index), &out) //nolint:gocritic // cgo wrapper false-positive.
 	defer C.goschnorr_free(unsafe.Pointer(out.ptr), out.len)
 	outBytes := C.GoBytes(unsafe.Pointer(out.ptr), C.int(out.len))
 	if code != 0 {
@@ -172,7 +172,7 @@ func SessionInputMessage(handle Handle, msg []byte) (bool, error) {
 	if len(msg) > 0 {
 		ptr = (*C.uint8_t)(unsafe.Pointer(&msg[0]))
 	}
-	code := C.goschnorr_session_input_message(C.int32_t(handle), ptr, C.size_t(len(msg)), &finished, &errOut)
+	code := C.goschnorr_session_input_message(C.int32_t(handle), ptr, C.size_t(len(msg)), &finished, &errOut) //nolint:gocritic // cgo wrapper false-positive.
 	defer C.goschnorr_free(unsafe.Pointer(errOut.ptr), errOut.len)
 	if code != 0 {
 		errBytes := C.GoBytes(unsafe.Pointer(errOut.ptr), C.int(errOut.len))
@@ -183,7 +183,7 @@ func SessionInputMessage(handle Handle, msg []byte) (bool, error) {
 
 func SessionFinish(handle Handle) ([]byte, error) {
 	var out C.GoSchnorrBuf
-	code := C.goschnorr_session_finish(C.int32_t(handle), &out)
+	code := C.goschnorr_session_finish(C.int32_t(handle), &out) //nolint:gocritic // cgo wrapper false-positive.
 	defer C.goschnorr_free(unsafe.Pointer(out.ptr), out.len)
 	outBytes := C.GoBytes(unsafe.Pointer(out.ptr), C.int(out.len))
 	if code != 0 {
@@ -194,7 +194,7 @@ func SessionFinish(handle Handle) ([]byte, error) {
 
 func SessionAbortMessage(handle Handle) ([]byte, error) {
 	var out C.GoSchnorrBuf
-	code := C.goschnorr_session_abort_message(C.int32_t(handle), &out)
+	code := C.goschnorr_session_abort_message(C.int32_t(handle), &out) //nolint:gocritic // cgo wrapper false-positive.
 	defer C.goschnorr_free(unsafe.Pointer(out.ptr), out.len)
 	outBytes := C.GoBytes(unsafe.Pointer(out.ptr), C.int(out.len))
 	if code != 0 {

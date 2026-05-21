@@ -2,38 +2,38 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NODE_COUNT="${SCHNORR_NODE_COUNT:-7}"
+NODE_COUNT="${FROST_NODE_COUNT:-7}"
 RUN_STAMP="${RUN_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
-BRANCH="${SCHNORR_GIT_BRANCH:-feat-schnorr}"
-GIT_URL="${SCHNORR_GIT_URL:-https://gitlab.com/thorchain/thornode.git}"
-REMOTE_REPO_DIR="${REMOTE_REPO_DIR:-/opt/schnorr-thornode}"
-NODE_NAME_PREFIX="${SCHNORR_NODE_NAME_PREFIX:-dkls-thornode}"
-THORNET="${SCHNORR_THORNET:-mocknet}"
-RUNTIME_NET="${SCHNORR_RUNTIME_NET:-mocknet}"
-OUT_DIR="${SCHNORR_MULTIHOST_OUT_DIR:-$SCRIPT_DIR/schnorr-chainnet-results/multihost-${NODE_COUNT}}"
+BRANCH="${FROST_GIT_BRANCH:-feat-schnorr}"
+GIT_URL="${FROST_GIT_URL:-https://gitlab.com/thorchain/thornode.git}"
+REMOTE_REPO_DIR="${REMOTE_REPO_DIR:-/opt/frost-thornode}"
+NODE_NAME_PREFIX="${FROST_NODE_NAME_PREFIX:-frost-thornode}"
+THORNET="${FROST_THORNET:-mocknet}"
+RUNTIME_NET="${FROST_RUNTIME_NET:-mocknet}"
+OUT_DIR="${FROST_MULTIHOST_OUT_DIR:-$SCRIPT_DIR/frost-chainnet-results/multihost-${NODE_COUNT}}"
 INVENTORY="$OUT_DIR/inventory.tsv"
-NODE_META="$SCRIPT_DIR/schnorr-chainnet-generated/nodes-${NODE_COUNT}-${THORNET}.tsv"
-BTC_HOST="${BTC_HOST:-}"
-BTC_SERVER_NAME="${SCHNORR_BTC_SERVER_NAME:-dkls-bitcoin-regtest}"
+NODE_META="$SCRIPT_DIR/frost-chainnet-generated/nodes-${NODE_COUNT}-${THORNET}.tsv"
+BTC_HOST="${BTC_HOST-}"
+BTC_SERVER_NAME="${FROST_BTC_SERVER_NAME:-frost-bitcoin-regtest}"
 BTC_MINING_ADDRESS="${BTC_MINING_ADDRESS:-bcrt1qf4l5dlqhaujgkxxqmug4stfvmvt58vx2h44c39}"
-HCLOUD_ENABLED="${SCHNORR_HCLOUD_ENABLED:-${HCLOUD:-ON}}"
-DO_ENABLED="${SCHNORR_DO_ENABLED:-${DO:-OFF}}"
+HCLOUD_ENABLED="${FROST_HCLOUD_ENABLED:-${HCLOUD:-ON}}"
+DO_ENABLED="${FROST_DO_ENABLED:-${DO:-OFF}}"
 
-HCLOUD_SERVER_LIMIT="${SCHNORR_HCLOUD_SERVER_LIMIT:-11}"
-HCLOUD_PRIMARY_IP_LIMIT="${SCHNORR_HCLOUD_PRIMARY_IP_LIMIT:-20}"
-HCLOUD_RESERVED_SERVER_SLOTS="${SCHNORR_HCLOUD_RESERVED_SERVER_SLOTS:-0}"
-HCLOUD_RESERVED_PRIMARY_IP_SLOTS="${SCHNORR_HCLOUD_RESERVED_PRIMARY_IP_SLOTS:-0}"
-HCLOUD_LOCATION="${SCHNORR_HCLOUD_LOCATION:-sin}"
-HCLOUD_IMAGE="${SCHNORR_HCLOUD_IMAGE:-ubuntu-24.04}"
-DO_REGION="${SCHNORR_DO_REGION:-sgp1}"
-DO_IMAGE="${SCHNORR_DO_IMAGE:-ubuntu-24-04-x64}"
-DO_SSH_KEY="${SCHNORR_DO_SSH_KEY-}"
-RESET_REMOTE_STATE="${SCHNORR_MULTHOST_RESET_REMOTE_STATE:-${SCHNORR_MULTIHOST_RESET_REMOTE_STATE:-0}}"
+HCLOUD_SERVER_LIMIT="${FROST_HCLOUD_SERVER_LIMIT:-11}"
+HCLOUD_PRIMARY_IP_LIMIT="${FROST_HCLOUD_PRIMARY_IP_LIMIT:-20}"
+HCLOUD_RESERVED_SERVER_SLOTS="${FROST_HCLOUD_RESERVED_SERVER_SLOTS:-0}"
+HCLOUD_RESERVED_PRIMARY_IP_SLOTS="${FROST_HCLOUD_RESERVED_PRIMARY_IP_SLOTS:-0}"
+HCLOUD_LOCATION="${FROST_HCLOUD_LOCATION:-sin}"
+HCLOUD_IMAGE="${FROST_HCLOUD_IMAGE:-ubuntu-24.04}"
+DO_REGION="${FROST_DO_REGION:-sgp1}"
+DO_IMAGE="${FROST_DO_IMAGE:-ubuntu-24-04-x64}"
+DO_SSH_KEY="${FROST_DO_SSH_KEY-}"
+RESET_REMOTE_STATE="${FROST_MULTHOST_RESET_REMOTE_STATE:-${FROST_MULTIHOST_RESET_REMOTE_STATE:-0}}"
 
 case "$NODE_COUNT" in
 7 | 14 | 21 | 28) ;;
 *)
-  echo "ERROR: SCHNORR_NODE_COUNT must be one of 7,14,21,28" >&2
+  echo "ERROR: FROST_NODE_COUNT must be one of 7,14,21,28" >&2
   exit 1
   ;;
 esac
@@ -47,9 +47,9 @@ log() {
 usage() {
   cat <<'EOF'
 Usage:
-  build/docker/schnorr-chainnet-multihost-deploy.sh [deploy|timing|deploy-timing|destroy|matrix]
+  build/docker/frost-chainnet-multihost-deploy.sh [deploy|timing|deploy-timing|destroy|matrix]
 
-Multi-host GG20 -> SCHNORR timing evaluation. Each THORNode runs on its own
+Multi-host GG20 -> FROST timing evaluation. Each THORNode runs on its own
 server. Supports 7, 14, 21, and 28 node runs.
 
 Commands:
@@ -59,17 +59,17 @@ Commands:
   deploy-existing-timing
                 Start from an existing inventory, then run timing flow.
   destroy        Delete servers from the current inventory.
-  matrix         Run deploy-timing for SCHNORR_MULTIHOST_COUNTS, destroying after each run.
+  matrix         Run deploy-timing for FROST_MULTIHOST_COUNTS, destroying after each run.
 
 Provider env:
   HCLOUD=ON|OFF
   DO=ON|OFF
-  SCHNORR_HCLOUD_SSH_KEY=dkls-codex
-  SCHNORR_DO_SSH_KEY=<digitalocean ssh key id>
+  FROST_HCLOUD_SSH_KEY=frost-codex
+  FROST_DO_SSH_KEY=<digitalocean ssh key id>
 
 Scale env:
-  SCHNORR_NODE_COUNT=7|14|21|28
-  SCHNORR_MULTIHOST_COUNTS="7 14 21 28"
+  FROST_NODE_COUNT=7|14|21|28
+  FROST_MULTIHOST_COUNTS="7 14 21 28"
 EOF
 }
 
@@ -89,21 +89,21 @@ json_len_or_zero() {
 }
 
 hcloud_available_slots() {
-  if [ -n "${SCHNORR_HCLOUD_AVAILABLE_SLOTS-}" ]; then
-    echo "$SCHNORR_HCLOUD_AVAILABLE_SLOTS"
+  if [ -n "${FROST_HCLOUD_AVAILABLE_SLOTS-}" ]; then
+    echo "$FROST_HCLOUD_AVAILABLE_SLOTS"
     return
   fi
-  if ! hcloud server list -o json >/tmp/schnorr-hcloud-servers.json 2>/dev/null; then
+  if ! hcloud server list -o json >/tmp/frost-hcloud-servers.json 2>/dev/null; then
     echo 0
     return
   fi
-  if ! hcloud primary-ip list -o json >/tmp/schnorr-hcloud-primary-ips.json 2>/dev/null; then
+  if ! hcloud primary-ip list -o json >/tmp/frost-hcloud-primary-ips.json 2>/dev/null; then
     echo 0
     return
   fi
   local servers primary_ips server_slots ip_slots
-  servers=$(json_len_or_zero </tmp/schnorr-hcloud-servers.json)
-  primary_ips=$(json_len_or_zero </tmp/schnorr-hcloud-primary-ips.json)
+  servers=$(json_len_or_zero </tmp/frost-hcloud-servers.json)
+  primary_ips=$(json_len_or_zero </tmp/frost-hcloud-primary-ips.json)
   server_slots=$((HCLOUD_SERVER_LIMIT - servers - HCLOUD_RESERVED_SERVER_SLOTS))
   ip_slots=$((HCLOUD_PRIMARY_IP_LIMIT - primary_ips - HCLOUD_RESERVED_PRIMARY_IP_SLOTS))
   [ "$server_slots" -lt 0 ] && server_slots=0
@@ -156,11 +156,11 @@ require_do_ssh_key() {
     return
   fi
   cat >&2 <<'EOF'
-ERROR: SCHNORR_DO_SSH_KEY is required for DigitalOcean multihost deploys.
+ERROR: FROST_DO_SSH_KEY is required for DigitalOcean multihost deploys.
 Register the local public key once, then pass the numeric key ID:
 
-  doctl compute ssh-key import schnorr-codex --public-key-file ~/.ssh/id_ed25519.pub
-  SCHNORR_DO_SSH_KEY=<id> build/docker/schnorr-chainnet-multihost-deploy.sh deploy
+  doctl compute ssh-key import frost-codex --public-key-file ~/.ssh/id_ed25519.pub
+  FROST_DO_SSH_KEY=<id> build/docker/frost-chainnet-multihost-deploy.sh deploy
 
 Do not rely on cloud-init root user_data here. These droplets can force an
 expired root-password change before non-interactive SSH, which blocks bootstrap.
@@ -169,27 +169,27 @@ EOF
 }
 
 require_hcloud_ssh_key() {
-  if [ -n "${SCHNORR_HCLOUD_SSH_KEY-}" ]; then
+  if [ -n "${FROST_HCLOUD_SSH_KEY-}" ]; then
     return
   fi
   cat >&2 <<'EOF'
-ERROR: SCHNORR_HCLOUD_SSH_KEY is required for Hetzner multihost deploys.
+ERROR: FROST_HCLOUD_SSH_KEY is required for Hetzner multihost deploys.
 
-  HCLOUD=ON DO=OFF SCHNORR_HCLOUD_SSH_KEY=dkls-codex build/docker/schnorr-chainnet-multihost-deploy.sh deploy
+  HCLOUD=ON DO=OFF FROST_HCLOUD_SSH_KEY=frost-codex build/docker/frost-chainnet-multihost-deploy.sh deploy
 EOF
   exit 1
 }
 
 hcloud_type_for_node() {
-  echo "${SCHNORR_HCLOUD_NODE_TYPE:-cpx32}"
+  echo "${FROST_HCLOUD_NODE_TYPE:-cpx32}"
 }
 
 do_size_for_node() {
-  echo "${SCHNORR_DO_NODE_SIZE:-s-4vcpu-8gb}"
+  echo "${FROST_DO_NODE_SIZE:-s-4vcpu-8gb}"
 }
 
 ssh_user_data() {
-  local pubkey_file="${SCHNORR_SSH_PUBLIC_KEY_FILE:-$HOME/.ssh/id_ed25519.pub}"
+  local pubkey_file="${FROST_SSH_PUBLIC_KEY_FILE:-$HOME/.ssh/id_ed25519.pub}"
   [ -f "$pubkey_file" ] || {
     echo "ERROR: missing SSH public key $pubkey_file" >&2
     return 1
@@ -213,8 +213,8 @@ create_hcloud_node() {
   local index="$1"
   local name ip
   name=$(node_name "$index")
-  if hcloud server describe "$name" -o json >/tmp/schnorr-hcloud-node.json 2>/dev/null; then
-    ip=$(jq -r '.public_net.ipv4.ip // ""' </tmp/schnorr-hcloud-node.json)
+  if hcloud server describe "$name" -o json >/tmp/frost-hcloud-node.json 2>/dev/null; then
+    ip=$(jq -r '.public_net.ipv4.ip // ""' </tmp/frost-hcloud-node.json)
     [ -n "$ip" ] || {
       echo "ERROR: existing $name has no IPv4" >&2
       return 1
@@ -230,7 +230,7 @@ create_hcloud_node() {
     --location "$HCLOUD_LOCATION"
     --without-ipv6
     --start-after-create
-    --ssh-key "$SCHNORR_HCLOUD_SSH_KEY"
+    --ssh-key "$FROST_HCLOUD_SSH_KEY"
   )
   hcloud "${args[@]}" >/dev/null
   ip=$(hcloud server ip "$name")
@@ -244,18 +244,18 @@ create_hcloud_node() {
 create_hcloud_btc_node() {
   local name="$BTC_SERVER_NAME"
   local ip
-  if hcloud server describe "$name" -o json >/tmp/schnorr-hcloud-btc.json 2>/dev/null; then
-    jq -r '.public_net.ipv4.ip // ""' </tmp/schnorr-hcloud-btc.json
+  if hcloud server describe "$name" -o json >/tmp/frost-hcloud-btc.json 2>/dev/null; then
+    jq -r '.public_net.ipv4.ip // ""' </tmp/frost-hcloud-btc.json
     return
   fi
   hcloud server create \
     --name "$name" \
-    --type "${SCHNORR_HCLOUD_BTC_NODE_TYPE:-cax11}" \
+    --type "${FROST_HCLOUD_BTC_NODE_TYPE:-cax11}" \
     --image "$HCLOUD_IMAGE" \
     --location "$HCLOUD_LOCATION" \
     --without-ipv6 \
     --start-after-create \
-    --ssh-key "$SCHNORR_HCLOUD_SSH_KEY" >/dev/null
+    --ssh-key "$FROST_HCLOUD_SSH_KEY" >/dev/null
   ip=$(hcloud server ip "$name")
   [ -n "$ip" ] || {
     echo "ERROR: created $name but could not resolve IPv4" >&2
@@ -284,7 +284,7 @@ create_do_node() {
     --arg image "$DO_IMAGE" \
     --arg ssh_key "$DO_SSH_KEY" \
     --arg user_data "$(ssh_user_data)" \
-    '{name:$name, region:$region, size:$size, image:$image, monitoring:true, tags:["schnorr-multihost"]}
+    '{name:$name, region:$region, size:$size, image:$image, monitoring:true, tags:["frost-multihost"]}
     + (if $ssh_key != "" then {ssh_keys: [$ssh_key]} else {user_data:$user_data} end)')
   response=$(do_api POST /droplets "$payload")
   id=$(echo "$response" | jq -r '.droplet.id')
@@ -310,7 +310,7 @@ do_node_exists() {
 
 ensure_node_meta() {
   if [ ! -f "$NODE_META" ]; then
-    SCHNORR_NODE_COUNT="$NODE_COUNT" SCHNORR_THORNET="$THORNET" SCHNORR_FORCE_BUILD="${SCHNORR_FORCE_BUILD:-1}" "$SCRIPT_DIR/schnorr-chainnet-generate-compose.sh" "$NODE_COUNT"
+    FROST_NODE_COUNT="$NODE_COUNT" FROST_THORNET="$THORNET" FROST_FORCE_BUILD="${FROST_FORCE_BUILD:-1}" "$SCRIPT_DIR/frost-chainnet-generate-compose.sh" "$NODE_COUNT"
   fi
 }
 
@@ -438,7 +438,7 @@ services:
       dockerfile: ./build/docker/Dockerfile
       args:
         TAG: "$THORNET"
-    image: thornode:schnorr-chainnet
+    image: thornode:frost-chainnet
     restart: unless-stopped
     hostname: thornode
     environment:
@@ -462,12 +462,12 @@ services:
       THOR_CHAINNET_DESIRED_VALIDATOR_SET: "$active_count"
       THOR_CHAINNET_ASGARD_SIZE: "$active_count"
       THOR_CHAINNET_NUMBER_OF_NEW_NODES_PER_CHURN: "$new_nodes"
-      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "${SCHNORR_CHAINNET_CHURN_RETRY_INTERVAL:-10}"
-      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "${SCHNORR_CHAINNET_KEYGEN_RETRY_INTERVAL:-10}"
-      THOR_CHAINNET_JAIL_TIME_KEYGEN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
-      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
-      JAIL_TIME_KEYGEN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
-      JAIL_TIME_KEYSIGN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "${FROST_CHAINNET_CHURN_RETRY_INTERVAL:-10}"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "${FROST_CHAINNET_KEYGEN_RETRY_INTERVAL:-10}"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
+      JAIL_TIME_KEYGEN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
+      JAIL_TIME_KEYSIGN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
       THOR_CHAINNET_SIGNING_TRANSACTION_PERIOD: "30"
       EXTRA_FUND_ACCOUNT_COUNT: "$((NODE_COUNT - 1))"
       FAUCET: "$(node_field 1 address)"
@@ -504,7 +504,7 @@ $(fund_env | sed 's/^/      /')
     entrypoint: /docker/scripts/${role}.sh
     command: ["thornode", "start"]
   bifrost:
-    image: thornode:schnorr-chainnet
+    image: thornode:frost-chainnet
     restart: unless-stopped
     depends_on:
       - thornode
@@ -525,15 +525,15 @@ $(fund_env | sed 's/^/      /')
       BIFROST_SIGNER_BACKUP_KEYSHARES: "false"
       BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "20"
       BIFROST_SIGNER_AUTO_OBSERVE: "false"
-      BIFROST_SIGNER_KEYGEN_TIMEOUT: "${SCHNORR_BIFROST_KEYGEN_TIMEOUT:-60s}"
-      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "${SCHNORR_BIFROST_KEYSIGN_TIMEOUT:-60s}"
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: "${FROST_BIFROST_KEYGEN_TIMEOUT:-60s}"
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: "${FROST_BIFROST_KEYSIGN_TIMEOUT:-60s}"
       BIFROST_SIGNER_PARTY_TIMEOUT: "55s"
-      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "${SCHNORR_CHAINNET_CHURN_RETRY_INTERVAL:-10}"
-      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "${SCHNORR_CHAINNET_KEYGEN_RETRY_INTERVAL:-10}"
-      THOR_CHAINNET_JAIL_TIME_KEYGEN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
-      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
-      JAIL_TIME_KEYGEN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
-      JAIL_TIME_KEYSIGN: "${SCHNORR_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
+      THOR_CHAINNET_CHURN_RETRY_INTERVAL: "${FROST_CHAINNET_CHURN_RETRY_INTERVAL:-10}"
+      THOR_CHAINNET_KEYGEN_RETRY_INTERVAL: "${FROST_CHAINNET_KEYGEN_RETRY_INTERVAL:-10}"
+      THOR_CHAINNET_JAIL_TIME_KEYGEN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
+      THOR_CHAINNET_JAIL_TIME_KEYSIGN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
+      JAIL_TIME_KEYGEN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYGEN:-120}"
+      JAIL_TIME_KEYSIGN: "${FROST_CHAINNET_CONFIG_JAIL_TIME_KEYSIGN:-120}"
       BIFROST_TSS_EXTERNAL_IP: "$public_ip"
       BIFROST_TSS_BOOTSTRAP_PEERS: "$tss_peers"
       PEER: "$tss_wait_peers"
@@ -541,7 +541,7 @@ $(fund_env | sed 's/^/      /')
       BTC_HOST: "$BTC_HOST"
       BIFROST_CHAINS_BTC_CHAIN_NETWORK: mocknet
       BIFROST_CHAINS_BTC_BLOCK_SCANNER_START_BLOCK_HEIGHT: "0"
-      BIFROST_CHAINS_BTC_BLOCK_SCANNER_MAX_HEALTHY_LAG: "${SCHNORR_BTC_MAX_HEALTHY_LAG:-8h}"
+      BIFROST_CHAINS_BTC_BLOCK_SCANNER_MAX_HEALTHY_LAG: "${FROST_BTC_MAX_HEALTHY_LAG:-8h}"
       BIFROST_CHAINS_BTC_DISABLED: "false"
       BIFROST_CHAINS_DOGE_DISABLED: "true"
       BIFROST_CHAINS_BCH_DISABLED: "true"
@@ -570,8 +570,8 @@ $(fund_env | sed 's/^/      /')
     entrypoint: /docker/scripts/bifrost.sh
     command: ["bifrost", "-p"]
 volumes:
-  thornode:
-  bifrost:
+  thornode: {}
+  bifrost: {}
 YAML
 }
 
@@ -612,6 +612,7 @@ REMOTE
 
 remote_start_bitcoin() {
   local ip="$1"
+  local wallet_name="${BTC_WALLET_NAME:-thornode-frost}"
   remote_prepare "$ip"
   ssh_raw_stdin "$ip" "bash -s" <<REMOTE
 set -euo pipefail
@@ -635,26 +636,25 @@ volumes:
   bitcoin: {}
 YAML
 cd /opt/bitcoin-regtest
-if [ "${SCHNORR_RESET_BTC_STATE:-0}" = "1" ]; then
+if [ "${FROST_RESET_BTC_STATE:-0}" = "1" ]; then
   docker compose down -v --remove-orphans || true
 fi
 docker compose up -d
 until docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" getblockchaininfo >/dev/null 2>&1; do
   sleep 2
 done
-wallet="${BTC_WALLET_NAME:-thornode-schnorr}"
-if ! docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" listwallets | jq -e --arg wallet "\$wallet" 'index($wallet)' >/dev/null; then
-  if ! docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" loadwallet "\$wallet" >/dev/null 2>&1; then
-    docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" createwallet "\$wallet" false false "" false true >/dev/null
+if ! docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" listwallets | grep -F "\"${wallet_name}\"" >/dev/null; then
+  if ! docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" loadwallet "${wallet_name}" >/dev/null 2>&1; then
+    docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" createwallet "${wallet_name}" false false "" false true >/dev/null
   fi
 fi
-balance=\$(docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" -rpcwallet="\$wallet" getbalance)
+balance=\$(docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" -rpcwallet="${wallet_name}" getbalance)
 if awk "BEGIN { exit !(\$balance < 2) }"; then
-  mine_addr=\$(docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" -rpcwallet="\$wallet" getnewaddress)
+  mine_addr=\$(docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" -rpcwallet="${wallet_name}" getnewaddress)
   docker exec bitcoin-regtest-bitcoin-1 bitcoin-cli -regtest -rpcuser="${BTC_RPC_USER:-thorchain}" -rpcpassword="${BTC_RPC_PASSWORD:-password}" generatetoaddress 101 "\$mine_addr" >/dev/null
 fi
 REMOTE
-  BTC_HOST="$ip:18443/wallet/${BTC_WALLET_NAME:-thornode-schnorr}"
+  BTC_HOST="$ip:18443/wallet/${BTC_WALLET_NAME:-thornode-frost}"
   export BTC_HOST
   log "bitcoin regtest: $BTC_HOST"
 }
@@ -678,16 +678,16 @@ remote_write_compose() {
     seeds="$genesis_ip"
   fi
   if [ "$RESET_REMOTE_STATE" = "1" ]; then
-    ssh_raw "$ip" "cd $REMOTE_REPO_DIR/build/docker 2>/dev/null && docker compose -f docker-compose.schnorr-chainnet-multihost.yml down -v --remove-orphans || true"
+    ssh_raw "$ip" "cd $REMOTE_REPO_DIR/build/docker 2>/dev/null && docker compose -f docker-compose.frost-chainnet-multihost.yml down -v --remove-orphans || true"
   fi
   ssh_raw "$ip" "mkdir -p $REMOTE_REPO_DIR/build/docker"
-  compose_for_node "$index" "$seed" "$public_ip" "$genesis_ip" "$seeds" "$tss_peers" "$tss_wait_peers" | ssh_raw_stdin "$ip" "cat > $REMOTE_REPO_DIR/build/docker/docker-compose.schnorr-chainnet-multihost.yml"
+  compose_for_node "$index" "$seed" "$public_ip" "$genesis_ip" "$seeds" "$tss_peers" "$tss_wait_peers" | ssh_raw_stdin "$ip" "cat > $REMOTE_REPO_DIR/build/docker/docker-compose.frost-chainnet-multihost.yml"
 }
 
 remote_start_node() {
   local index="$1"
   local ip="$2"
-  ssh_raw "$ip" "cd $REMOTE_REPO_DIR/build/docker && docker compose -f docker-compose.schnorr-chainnet-multihost.yml up -d --build"
+  ssh_raw "$ip" "cd $REMOTE_REPO_DIR/build/docker && docker compose -f docker-compose.frost-chainnet-multihost.yml up -d --build"
   wait_remote_node "$index" "$ip"
 }
 
@@ -701,7 +701,7 @@ wait_remote_node() {
     sleep 5
   done
   log "ERROR: node $index containers not ready on $ip"
-  ssh_raw "$ip" "cd $REMOTE_REPO_DIR/build/docker && docker compose -f docker-compose.schnorr-chainnet-multihost.yml ps || true; docker ps -a || true; docker logs --tail 120 docker-thornode-1 2>&1 || true"
+  ssh_raw "$ip" "cd $REMOTE_REPO_DIR/build/docker && docker compose -f docker-compose.frost-chainnet-multihost.yml ps || true; docker ps -a || true; docker logs --tail 120 docker-thornode-1 2>&1 || true"
   return 1
 }
 
@@ -773,13 +773,13 @@ remote_restart_bifrosts() {
   local index
   for index in $(seq 1 "$NODE_COUNT"); do
     log "restart bifrost node $index"
-    ssh_node "$index" "cd $REMOTE_REPO_DIR/build/docker && docker compose -f docker-compose.schnorr-chainnet-multihost.yml restart bifrost" >/dev/null
+    ssh_node "$index" "cd $REMOTE_REPO_DIR/build/docker && docker compose -f docker-compose.frost-chainnet-multihost.yml restart bifrost" >/dev/null
     sleep 5
   done
 }
 
 wait_after_bifrost_restart() {
-  local hold="${SCHNORR_TSS_SYNC_HOLD:-180}"
+  local hold="${FROST_TSS_SYNC_HOLD:-180}"
   [ "$hold" -gt 0 ] || return 0
   log "wait ${hold}s for TSS/libp2p sync after bifrost restart"
   sleep "$hold"
@@ -873,7 +873,7 @@ seed_btc_network_fee() {
   local i addr
   log "seed BTC fee-bearing regtest blocks"
   btc_rpc settxfee "[0.001]" >/dev/null || true
-  for i in $(seq 1 "${SCHNORR_BTC_FEE_SEED_BLOCKS:-12}"); do
+  for i in $(seq 1 "${FROST_BTC_FEE_SEED_BLOCKS:-12}"); do
     addr=$(btc_rpc getnewaddress)
     btc_rpc sendtoaddress "[\"$addr\",0.001]" >/dev/null
     btc_rpc generatetoaddress "[1,\"$BTC_MINING_ADDRESS\"]" >/dev/null
@@ -897,18 +897,69 @@ wait_btc_network_fee() {
 
 add_btc_lp() {
   local inbound="$1"
+  local bitcoin_inbound
   local memo
   local memo_hex raw funded signed txid
   memo="ADD:BTC.BTC:$(node_field 1 address)"
   memo_hex=$(printf "%s" "$memo" | xxd -p -c 256)
-  log "fund BTC LP inbound=$inbound memo=$memo" >&2
-  raw=$(btc_rpc createrawtransaction "[[],{\"$inbound\":1,\"data\":\"$memo_hex\"}]")
+  bitcoin_inbound=$(btc_daemon_address "$inbound")
+  log "fund BTC LP inbound=$inbound daemon_inbound=$bitcoin_inbound memo=$memo" >&2
+  raw=$(btc_rpc createrawtransaction "[[],{\"$bitcoin_inbound\":1,\"data\":\"$memo_hex\"}]")
   funded=$(btc_rpc fundrawtransaction "[\"$raw\",{\"feeRate\":0.001}]" | jq -r '.hex')
   signed=$(btc_rpc signrawtransactionwithwallet "[\"$funded\"]" | jq -r '.hex')
   txid=$(btc_rpc sendrawtransaction "[\"$signed\"]")
   btc_rpc generatetoaddress "[6,\"$BTC_MINING_ADDRESS\"]" >/dev/null
   log "BTC LP tx=$txid" >&2
   printf '%s\n' "$txid"
+}
+
+btc_daemon_address() {
+  local addr="$1"
+  if [[ $addr != bc1* ]]; then
+    printf '%s\n' "$addr"
+    return 0
+  fi
+  python3 - "$addr" <<'PY'
+import sys
+
+CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+BECH32M_CONST = 0x2bc830a3
+BECH32_CONST = 1
+
+def hrp_expand(hrp):
+    return [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp]
+
+def polymod(values):
+    chk = 1
+    for v in values:
+        top = chk >> 25
+        chk = (chk & 0x1ffffff) << 5 ^ v
+        for i, g in enumerate([0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]):
+            if (top >> i) & 1:
+                chk ^= g
+    return chk
+
+def decode(bech):
+    bech = bech.lower()
+    pos = bech.rfind("1")
+    if pos < 1:
+        raise SystemExit("invalid bech32 address")
+    hrp = bech[:pos]
+    data = [CHARSET.find(c) for c in bech[pos + 1:]]
+    if any(v < 0 for v in data):
+        raise SystemExit("invalid bech32 charset")
+    spec = BECH32M_CONST if polymod(hrp_expand(hrp) + data) == BECH32M_CONST else BECH32_CONST
+    return data[:-6], spec
+
+def encode(hrp, data, spec):
+    values = hrp_expand(hrp) + data
+    pm = polymod(values + [0, 0, 0, 0, 0, 0]) ^ spec
+    checksum = [(pm >> 5 * (5 - i)) & 31 for i in range(6)]
+    return hrp + "1" + "".join(CHARSET[d] for d in data + checksum)
+
+data, spec = decode(sys.argv[1])
+print(encode("bcrt", data, spec))
+PY
 }
 
 top_up_active_bonds() {
@@ -1025,7 +1076,7 @@ record_tss_timing() {
   python3 - "$OUT_DIR/bifrost.log" "$OUT_DIR/tss-timings.csv" "$RUN_STAMP" "$phase" "$engine" "$label" "$pool_pubkey" <<'PY'
 import csv, json, re, sys
 log_path, csv_path, run_id, phase, engine, label, pool_pubkey = sys.argv[1:]
-engine_label = "Schnorr" if engine == "schnorr" else engine.upper()
+engine_label = "FROST" if engine == "frost" else engine.upper()
 start_pat = f"{engine_label} {phase} ceremony started"
 stop_pat = f"{engine_label} {phase} ceremony party produced"
 rows = []
@@ -1096,7 +1147,7 @@ collect_keyshare_sizes() {
 write_final_report() {
   local report="$OUT_DIR/report.md"
   {
-    echo "# Schnorr BTC 7-node timing run"
+    echo "# FROST BTC 7-node timing run"
     echo
     echo "- run: $RUN_STAMP"
     echo "- nodes: $NODE_COUNT"
@@ -1158,9 +1209,9 @@ multihost_timing() {
   }
   local active_count=$((NODE_COUNT - 1))
   local bootstrap_new=$((active_count - 1))
-  local index addr gg20_vault schnorr1_vault schnorr2_vault inbound start btc_txid gg20_migration_txid schnorr_migration_txid bootstrap_bond joiner_fee_fund
-  bootstrap_bond="${SCHNORR_CHAINNET_BOOTSTRAP_BOND:-20010000000000}"
-  joiner_fee_fund="${SCHNORR_CHAINNET_JOINER_FEE_FUND:-1000000000}"
+  local index addr gg20_vault frost1_vault frost2_vault inbound start btc_txid gg20_migration_txid frost_migration_txid bootstrap_bond joiner_fee_fund
+  bootstrap_bond="${FROST_CHAINNET_BOOTSTRAP_BOND:-20010000000000}"
+  joiner_fee_fund="${FROST_CHAINNET_JOINER_FEE_FUND:-1000000000}"
   mkdir -p "$OUT_DIR"
   log "timing output: $OUT_DIR/tss-timings.csv"
 
@@ -1171,15 +1222,15 @@ multihost_timing() {
   single_mimir DesiredValidatorSet "$active_count"
   single_mimir AsgardSize "$active_count"
   single_mimir NumberOfNewNodesPerChurn "$bootstrap_new"
-  single_mimir ChurnInterval "${SCHNORR_CHAINNET_CHURN_INTERVAL:-10}"
-  single_mimir ChurnRetryInterval "${SCHNORR_CHAINNET_CHURN_RETRY_INTERVAL:-10}"
-  single_mimir KeygenRetryInterval "${SCHNORR_CHAINNET_KEYGEN_RETRY_INTERVAL:-10}"
+  single_mimir ChurnInterval "${FROST_CHAINNET_CHURN_INTERVAL:-10}"
+  single_mimir ChurnRetryInterval "${FROST_CHAINNET_CHURN_RETRY_INTERVAL:-10}"
+  single_mimir KeygenRetryInterval "${FROST_CHAINNET_KEYGEN_RETRY_INTERVAL:-10}"
   single_mimir DisableXMRMonovaultKeygen 1
-  single_mimir JailTimeKeygen "${SCHNORR_CHAINNET_JAIL_TIME_KEYGEN:-11}"
-  single_mimir JailTimeKeysign "${SCHNORR_CHAINNET_JAIL_TIME_KEYSIGN:-11}"
-  single_mimir ChurnMigrateRounds "${SCHNORR_CHAINNET_CHURN_MIGRATE_ROUNDS:-2}"
-  single_mimir FundMigrationInterval "${SCHNORR_CHAINNET_FUND_MIGRATION_INTERVAL:-30}"
-  single_mimir SigningTransactionPeriod "${SCHNORR_CHAINNET_SIGNING_TRANSACTION_PERIOD:-30}"
+  single_mimir JailTimeKeygen "${FROST_CHAINNET_JAIL_TIME_KEYGEN:-11}"
+  single_mimir JailTimeKeysign "${FROST_CHAINNET_JAIL_TIME_KEYSIGN:-11}"
+  single_mimir ChurnMigrateRounds "${FROST_CHAINNET_CHURN_MIGRATE_ROUNDS:-2}"
+  single_mimir FundMigrationInterval "${FROST_CHAINNET_FUND_MIGRATION_INTERVAL:-30}"
+  single_mimir SigningTransactionPeriod "${FROST_CHAINNET_SIGNING_TRANSACTION_PERIOD:-30}"
   single_mimir BadValidatorRedline 0
 
   log "milestone: register joiners"
@@ -1209,7 +1260,7 @@ multihost_timing() {
   log "GG20 vault=$gg20_vault"
   quorum_mimir HaltChurning 1
   record_tss_timing keygen gg20 "GG20 initial" "$start" "$gg20_vault"
-  if [ "${SCHNORR_STOP_AFTER_GG20_KEYGEN:-0}" = "1" ]; then
+  if [ "${FROST_STOP_AFTER_GG20_KEYGEN:-0}" = "1" ]; then
     quorum_mimir HaltChurning 1
     log "stopping after GG20 keygen as requested: $OUT_DIR/tss-timings.csv"
     return
@@ -1229,23 +1280,23 @@ multihost_timing() {
   inbound=$(btc_inbound_address)
   btc_txid=$(add_btc_lp "$inbound")
   wait_btc_lp_observed "$gg20_vault" "$btc_txid" 240
-  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before SCHNORR churn"
+  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before FROST churn"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   quorum_mimir EnableFrostBTC 1
   quorum_mimir DisableXMRMonovaultKeygen 1
   quorum_mimir HaltChurning 0
-  schnorr1_vault=$(wait_for_vault_change "SCHNORR1 vault" "$gg20_vault" 160)
-  log "SCHNORR1 vault=$schnorr1_vault"
-  record_tss_timing keygen schnorr "SCHNORR first" "$start" "$schnorr1_vault"
-  if [ "${SCHNORR_STOP_AFTER_SCHNORR_KEYGEN:-0}" = "1" ]; then
+  frost1_vault=$(wait_for_vault_change "FROST1 vault" "$gg20_vault" 160)
+  log "FROST1 vault=$frost1_vault"
+  record_tss_timing keygen frost "FROST first" "$start" "$frost1_vault"
+  if [ "${FROST_STOP_AFTER_FROST_KEYGEN:-0}" = "1" ]; then
     quorum_mimir HaltChurning 1
-    log "stopping after SCHNORR keygen as requested: $OUT_DIR/tss-timings.csv"
+    log "stopping after FROST keygen as requested: $OUT_DIR/tss-timings.csv"
     return
   fi
   gg20_migration_txid=$(wait_migration_broadcast "$start" "$gg20_vault" || true)
   log "GG20 migration tx=${gg20_migration_txid:-none}"
   record_tss_timing keysign gg20 "GG20 migration" "$start" "$gg20_vault"
-  if [ "${SCHNORR_STOP_AFTER_GG20_KEYSIGN:-0}" = "1" ]; then
+  if [ "${FROST_STOP_AFTER_GG20_KEYSIGN:-0}" = "1" ]; then
     quorum_mimir HaltChurning 1
     log "stopping after GG20 keysign as requested: $OUT_DIR/tss-timings.csv"
     return
@@ -1253,17 +1304,17 @@ multihost_timing() {
   wait_retiring_vault_empty "$gg20_vault" "GG20 migration" 240
 
   quorum_mimir HaltChurning 1
-  wait_vault_shape "pre-SCHNORR2" "$active_count" 160
-  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before SCHNORR2 churn"
+  wait_vault_shape "pre-FROST2" "$active_count" 160
+  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before FROST2 churn"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   quorum_mimir HaltChurning 0
-  schnorr2_vault=$(wait_for_vault_change "SCHNORR2 vault" "$schnorr1_vault" 160)
-  log "SCHNORR2 vault=$schnorr2_vault"
-  record_tss_timing keygen schnorr "SCHNORR second" "$start" "$schnorr2_vault"
-  schnorr_migration_txid=$(wait_migration_broadcast "$start" "$schnorr1_vault" || true)
-  log "SCHNORR migration tx=${schnorr_migration_txid:-none}"
-  record_tss_timing keysign schnorr "SCHNORR migration" "$start" "$schnorr1_vault"
-  wait_retiring_vault_empty "$schnorr1_vault" "SCHNORR migration" 240
+  frost2_vault=$(wait_for_vault_change "FROST2 vault" "$frost1_vault" 160)
+  log "FROST2 vault=$frost2_vault"
+  record_tss_timing keygen frost "FROST second" "$start" "$frost2_vault"
+  frost_migration_txid=$(wait_migration_broadcast "$start" "$frost1_vault" || true)
+  log "FROST migration tx=${frost_migration_txid:-none}"
+  record_tss_timing keysign frost "FROST migration" "$start" "$frost1_vault"
+  wait_retiring_vault_empty "$frost1_vault" "FROST migration" 240
   quorum_mimir HaltChurning 1
   collect_keyshare_sizes
   write_final_report
@@ -1366,7 +1417,7 @@ destroy() {
     esac
     log "deleted node $index $provider $name"
   done <"$INVENTORY"
-  if [ "${SCHNORR_DESTROY_BTC:-0}" = "1" ] && hcloud server describe "$BTC_SERVER_NAME" >/dev/null 2>&1; then
+  if [ "${FROST_DESTROY_BTC:-0}" = "1" ] && hcloud server describe "$BTC_SERVER_NAME" >/dev/null 2>&1; then
     hcloud server delete "$BTC_SERVER_NAME" >/dev/null || true
     log "deleted bitcoin regtest $BTC_SERVER_NAME"
   fi
@@ -1374,7 +1425,7 @@ destroy() {
 
 matrix() {
   local count
-  for count in ${SCHNORR_MULTIHOST_COUNTS:-7 14 21 28}; do
+  for count in ${FROST_MULTIHOST_COUNTS:-7 14 21 28}; do
     case "$count" in
     7 | 14 | 21 | 28) ;;
     *)
@@ -1383,11 +1434,11 @@ matrix() {
       ;;
     esac
     log "============================================"
-    log "SCHNORR multihost timing matrix count=$count"
+    log "FROST multihost timing matrix count=$count"
     log "============================================"
-    SCHNORR_NODE_COUNT="$count" SCHNORR_DESTROY_BTC=0 "$0" destroy || true
-    SCHNORR_NODE_COUNT="$count" SCHNORR_MULTIHOST_RESET_REMOTE_STATE=1 "$0" deploy-timing
-    SCHNORR_NODE_COUNT="$count" SCHNORR_DESTROY_BTC=0 "$0" destroy || true
+    FROST_NODE_COUNT="$count" FROST_DESTROY_BTC=0 "$0" destroy || true
+    FROST_NODE_COUNT="$count" FROST_MULTIHOST_RESET_REMOTE_STATE=1 "$0" deploy-timing
+    FROST_NODE_COUNT="$count" FROST_DESTROY_BTC=0 "$0" destroy || true
   done
 }
 
@@ -1397,7 +1448,7 @@ resume_after_gg20() {
     exit 1
   }
   local active_count=$((NODE_COUNT - 1))
-  local gg20_vault schnorr1_vault schnorr2_vault start gg20_migration_txid schnorr_migration_txid
+  local gg20_vault frost1_vault frost2_vault start gg20_migration_txid frost_migration_txid
   mkdir -p "$OUT_DIR"
   gg20_vault=$(active_vault_pubkey)
   [ -n "$gg20_vault" ] || {
@@ -1406,17 +1457,17 @@ resume_after_gg20() {
   }
   log "resume after GG20 vault=$gg20_vault"
   wait_vault_shape "post-GG20-resume" "$active_count" 60
-  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before SCHNORR churn"
+  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before FROST churn"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   quorum_mimir EnableFrostBTC 1
   quorum_mimir DisableXMRMonovaultKeygen 1
   quorum_mimir HaltChurning 0
-  schnorr1_vault=$(wait_for_vault_change "SCHNORR1 vault" "$gg20_vault" 160)
-  log "SCHNORR1 vault=$schnorr1_vault"
-  record_tss_timing keygen schnorr "SCHNORR first" "$start" "$schnorr1_vault"
-  if [ "${SCHNORR_STOP_AFTER_SCHNORR_KEYGEN:-0}" = "1" ]; then
+  frost1_vault=$(wait_for_vault_change "FROST1 vault" "$gg20_vault" 160)
+  log "FROST1 vault=$frost1_vault"
+  record_tss_timing keygen frost "FROST first" "$start" "$frost1_vault"
+  if [ "${FROST_STOP_AFTER_FROST_KEYGEN:-0}" = "1" ]; then
     quorum_mimir HaltChurning 1
-    log "stopping after SCHNORR keygen as requested: $OUT_DIR/tss-timings.csv"
+    log "stopping after FROST keygen as requested: $OUT_DIR/tss-timings.csv"
     return
   fi
   gg20_migration_txid=$(wait_migration_broadcast "$start" "$gg20_vault" || true)
@@ -1424,56 +1475,56 @@ resume_after_gg20() {
   wait_retiring_vault_empty "$gg20_vault" "GG20 migration" 240
 
   quorum_mimir HaltChurning 1
-  wait_vault_shape "pre-SCHNORR2" "$active_count" 160
-  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before SCHNORR2 churn"
+  wait_vault_shape "pre-FROST2" "$active_count" 160
+  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before FROST2 churn"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   quorum_mimir HaltChurning 0
-  schnorr2_vault=$(wait_for_vault_change "SCHNORR2 vault" "$schnorr1_vault" 160)
-  log "SCHNORR2 vault=$schnorr2_vault"
-  record_tss_timing keygen schnorr "SCHNORR second" "$start" "$schnorr2_vault"
-  schnorr_migration_txid=$(wait_migration_broadcast "$start" "$schnorr1_vault" || true)
-  record_tss_timing keysign schnorr "SCHNORR migration" "$start" "$schnorr1_vault"
-  wait_retiring_vault_empty "$schnorr1_vault" "SCHNORR migration" 240
+  frost2_vault=$(wait_for_vault_change "FROST2 vault" "$frost1_vault" 160)
+  log "FROST2 vault=$frost2_vault"
+  record_tss_timing keygen frost "FROST second" "$start" "$frost2_vault"
+  frost_migration_txid=$(wait_migration_broadcast "$start" "$frost1_vault" || true)
+  record_tss_timing keysign frost "FROST migration" "$start" "$frost1_vault"
+  wait_retiring_vault_empty "$frost1_vault" "FROST migration" 240
   quorum_mimir HaltChurning 1
   collect_keyshare_sizes
   write_final_report
   log "timing complete: $OUT_DIR/tss-timings.csv"
 }
 
-resume_after_schnorr1() {
+resume_after_frost1() {
   [ -f "$INVENTORY" ] || {
     echo "ERROR: missing inventory $INVENTORY" >&2
     exit 1
   }
   local active_count=$((NODE_COUNT - 1))
-  local gg20_vault schnorr1_vault schnorr2_vault start schnorr_migration_txid
+  local gg20_vault frost1_vault frost2_vault start frost_migration_txid
   mkdir -p "$OUT_DIR"
   gg20_vault=$(api /thorchain/vaults/asgard | jq -r '[.[] | select(.status=="RetiringVault") | (.pub_key | if type=="object" then .value else . end)] | .[0] // ""')
-  schnorr1_vault=$(active_vault_pubkey)
+  frost1_vault=$(active_vault_pubkey)
   [ -n "$gg20_vault" ] || {
     echo "ERROR: no retiring GG20 vault found" >&2
     exit 1
   }
-  [ -n "$schnorr1_vault" ] || {
-    echo "ERROR: no active SCHNORR1 vault found" >&2
+  [ -n "$frost1_vault" ] || {
+    echo "ERROR: no active FROST1 vault found" >&2
     exit 1
   }
-  log "resume after SCHNORR1 gg20=$gg20_vault schnorr1=$schnorr1_vault"
-  record_tss_timing keygen schnorr "SCHNORR first" "$(date -u -v-30M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" "$schnorr1_vault"
+  log "resume after FROST1 gg20=$gg20_vault frost1=$frost1_vault"
+  record_tss_timing keygen frost "FROST first" "$(date -u -v-30M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" "$frost1_vault"
   record_tss_timing keysign gg20 "GG20 migration" "$(date -u -v-30M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" "$gg20_vault"
   wait_retiring_vault_empty "$gg20_vault" "GG20 migration" 240
 
   quorum_mimir HaltChurning 1
-  wait_vault_shape "pre-SCHNORR2" "$active_count" 160
-  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before SCHNORR2 churn"
+  wait_vault_shape "pre-FROST2" "$active_count" 160
+  wait_btc_scanners_healthy 10 || log "WARN: BTC scanner health did not fully settle before FROST2 churn"
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   quorum_mimir HaltChurning 0
-  schnorr2_vault=$(wait_for_vault_change "SCHNORR2 vault" "$schnorr1_vault" 160)
-  log "SCHNORR2 vault=$schnorr2_vault"
-  record_tss_timing keygen schnorr "SCHNORR second" "$start" "$schnorr2_vault"
-  schnorr_migration_txid=$(wait_migration_broadcast "$start" "$schnorr1_vault" || true)
-  record_tss_timing keysign schnorr "SCHNORR migration" "$start" "$schnorr1_vault"
-  wait_retiring_vault_empty "$schnorr1_vault" "SCHNORR migration" 240
+  frost2_vault=$(wait_for_vault_change "FROST2 vault" "$frost1_vault" 160)
+  log "FROST2 vault=$frost2_vault"
+  record_tss_timing keygen frost "FROST second" "$start" "$frost2_vault"
+  frost_migration_txid=$(wait_migration_broadcast "$start" "$frost1_vault" || true)
+  record_tss_timing keysign frost "FROST migration" "$start" "$frost1_vault"
+  wait_retiring_vault_empty "$frost1_vault" "FROST migration" 240
   quorum_mimir HaltChurning 1
   collect_keyshare_sizes
   write_final_report
@@ -1495,7 +1546,7 @@ deploy-existing-timing)
 destroy) destroy ;;
 matrix) matrix ;;
 resume-after-gg20) resume_after_gg20 ;;
-resume-after-schnorr1) resume_after_schnorr1 ;;
+resume-after-frost1) resume_after_frost1 ;;
 *)
   usage >&2
   exit 1

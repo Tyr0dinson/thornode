@@ -736,7 +736,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C)
 	c.Assert(items[0].VaultPubKeyFrost.Equals(retiringVault.PubKeyFrost), Equals, true)
 }
 
-func (*NetworkManagerTestSuite) TestMigrateFundsUsesSchnorrBTCTaprootTarget(c *C) {
+func (*NetworkManagerTestSuite) TestMigrateFundsUsesFROSTBTCTaprootTarget(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 
@@ -762,7 +762,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsUsesSchnorrBTCTaprootTarget(c *C
 	activeVault.Status = ActiveVault
 	activeVault.Chains = common.Chains{common.BTCChain}.Strings()
 	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
-	mgr.Keeper().SetVaultSigningEngine(ctx, activeVault.PubKey, "schnorr")
+	mgr.Keeper().SetVaultSigningEngine(ctx, activeVault.PubKey, "frost")
 
 	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
 

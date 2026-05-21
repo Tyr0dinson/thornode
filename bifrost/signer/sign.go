@@ -732,7 +732,7 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 		s.logger.Error().Int("len", len(sigBytes)).Msg("unexpected sigBytes length")
 		return nil
 	}
-	if s.tssServer.LocalStateEngine(pk.String()) == storage.SigningEngineSchnorr {
+	if s.tssServer.LocalStateEngine(pk.String()) == storage.SigningEngineFrost {
 		if err := schnorrVerificationSignature(pk, sigBytes); err != nil {
 			s.logger.Error().Err(err).Msg("schnorr check signature verification failed")
 		} else {

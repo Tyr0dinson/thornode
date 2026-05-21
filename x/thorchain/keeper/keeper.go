@@ -314,7 +314,7 @@ type KeeperVault interface {
 	GetVault(ctx cosmos.Context, pk common.PubKey) (Vault, error)
 	SetVaultSigningEngine(ctx cosmos.Context, pk common.PubKey, engine string)
 	GetVaultSigningEngine(ctx cosmos.Context, pk common.PubKey) string
-	IsVaultSchnorr(ctx cosmos.Context, pk common.PubKey) bool
+	IsVaultFrost(ctx cosmos.Context, pk common.PubKey) bool
 	GetVaultAddress(ctx cosmos.Context, vault Vault, chain common.Chain) (common.Address, error)
 	HasValidVaultPools(ctx cosmos.Context) (bool, error)
 	GetAsgardVaults(ctx cosmos.Context) (Vaults, error)

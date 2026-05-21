@@ -103,11 +103,8 @@ func (s *FileStateMgrTestSuite) TestKeygenLocalStateEngine(c *C) {
 	state := KeygenLocalState{}
 	c.Assert(state.Engine(), Equals, SigningEngineGG20)
 
-	state.SigningEngine = SigningEngineSchnorr
-	c.Assert(state.Engine(), Equals, SigningEngineSchnorr)
-
-	state.SigningEngine = SigningEngineDKLS
-	c.Assert(state.Engine(), Equals, SigningEngineDKLS)
+	state.SigningEngine = SigningEngineFrost
+	c.Assert(state.Engine(), Equals, SigningEngineFrost)
 }
 
 func (s *FileStateMgrTestSuite) TestSaveAddressBook(c *C) {

@@ -3,19 +3,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-NODE_COUNT="${1:-${SCHNORR_NODE_COUNT:-7}}"
+NODE_COUNT="${1:-${FROST_NODE_COUNT:-7}}"
 ACTIVE_COUNT=$((NODE_COUNT - 1))
 NEW_NODES_PER_CHURN=$((ACTIVE_COUNT - 1))
-OUT_DIR="${SCHNORR_CHAINNET_GENERATED_DIR:-$SCRIPT_DIR/schnorr-chainnet-generated}"
-COMPOSE_OUT="${SCHNORR_CHAINNET_COMPOSE_OUT:-$SCRIPT_DIR/docker-compose.schnorr-chainnet-timing.yml}"
-IMAGE="${SCHNORR_THORNODE_IMAGE:-thornode:schnorr-chainnet}"
+OUT_DIR="${FROST_CHAINNET_GENERATED_DIR:-$SCRIPT_DIR/frost-chainnet-generated}"
+COMPOSE_OUT="${FROST_CHAINNET_COMPOSE_OUT:-$SCRIPT_DIR/docker-compose.frost-chainnet-timing.yml}"
+IMAGE="${FROST_THORNODE_IMAGE:-thornode:frost-chainnet}"
 PASSWORD="${PASSWORD:-password}"
-THORNET="${SCHNORR_THORNET:-mocknet}"
+THORNET="${FROST_THORNET:-mocknet}"
 NODE_META="$OUT_DIR/nodes-${NODE_COUNT}-${THORNET}.tsv"
 case "$THORNET" in
-mocknet) THOR_HRP="${SCHNORR_THOR_HRP:-tthor}" ;;
-chainnet) THOR_HRP="${SCHNORR_THOR_HRP:-cthor}" ;;
-*) THOR_HRP="${SCHNORR_THOR_HRP:-thor}" ;;
+mocknet) THOR_HRP="${FROST_THOR_HRP:-tthor}" ;;
+chainnet) THOR_HRP="${FROST_THOR_HRP:-cthor}" ;;
+*) THOR_HRP="${FROST_THOR_HRP:-thor}" ;;
 esac
 
 case "$NODE_COUNT" in
@@ -28,7 +28,7 @@ esac
 
 mkdir -p "$OUT_DIR"
 
-if [ "${SCHNORR_FORCE_BUILD:-0}" = "1" ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+if [ "${FROST_FORCE_BUILD:-0}" = "1" ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   docker build -t "$IMAGE" --build-arg TAG="$THORNET" -f "$SCRIPT_DIR/Dockerfile" "$REPO_ROOT"
 fi
 
@@ -215,16 +215,16 @@ def emit_env(lines, env, indent):
 
 lines = [
     "########################################################################################",
-    f"# Generated SCHNORR timing chainnet: {len(rows)} nodes, {active_count} active + 1 standby",
-    "# Regenerate with: bash schnorr-chainnet-generate-compose.sh <7|14|21|28>",
+    f"# Generated FROST timing chainnet: {len(rows)} nodes, {active_count} active + 1 standby",
+    "# Regenerate with: bash frost-chainnet-generate-compose.sh <7|14|21|28>",
     "########################################################################################",
     "",
     "volumes:",
 ]
 for row in rows:
-    lines.append(f"  {volume_name('thornode', row)}:")
+    lines.append(f"  {volume_name('thornode', row)}: {{}}")
 for row in rows:
-    lines.append(f"  {volume_name('bifrost', row)}:")
+    lines.append(f"  {volume_name('bifrost', row)}: {{}}")
 
 lines += [
     "",
@@ -266,13 +266,13 @@ for row in rows:
         ]
     else:
         lines += [
-            "    image: thornode:schnorr-chainnet",
+            "    image: thornode:frost-chainnet",
             "    depends_on:",
             "      thornode:",
             "        condition: service_healthy",
         ]
     if row["name"] == "dog":
-        lines.append("    image: thornode:schnorr-chainnet")
+        lines.append("    image: thornode:frost-chainnet")
     lines += [
         "    restart: unless-stopped",
         f"    hostname: {svc}",
@@ -328,7 +328,7 @@ for row in rows:
     vol_t = volume_name("thornode", row)
     lines += [
         f"  {svc}:",
-        "    image: thornode:schnorr-chainnet",
+        "    image: thornode:frost-chainnet",
         "    restart: unless-stopped",
         "    depends_on:",
         f"      {thor_svc}:",
@@ -345,7 +345,7 @@ for row in rows:
     lines += [
         "    volumes:",
         '      - "../scripts:/docker/scripts"',
-        '      - "../../schnorr/go-wrappers/includes/linux/${SCHNORR_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"',
+        '      - "../../schnorr/go-wrappers/includes/linux/${FROST_LIB_ARCH:-arm64}/libgoschnorr.so:/usr/lib/libgoschnorr.so:ro"',
         f"      - {vol_b}:/var/data/bifrost",
         f"      - {vol_t}:/root/.thornode",
     ]

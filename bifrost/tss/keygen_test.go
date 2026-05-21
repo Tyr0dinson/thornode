@@ -35,12 +35,12 @@ func (*KeyGenTestSuite) SetUpSuite(c *C) {
 	thorchain.SetupConfigForTest()
 }
 
-func (kts *KeyGenTestSuite) TestSchnorrKeygenChains(c *C) {
-	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain, common.BTCChain}), Equals, true)
-	c.Assert(schnorrKeygenChains(common.Chains{common.BTCChain}), Equals, true)
-	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain}), Equals, false)
-	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain, common.BTCChain, common.DOGEChain}), Equals, false)
-	c.Assert(schnorrKeygenChains(common.Chains{common.THORChain, common.DOGEChain}), Equals, false)
+func (kts *KeyGenTestSuite) TestFrostKeygenChains(c *C) {
+	c.Assert(frostKeygenChains(common.Chains{common.THORChain, common.BTCChain}), Equals, true)
+	c.Assert(frostKeygenChains(common.Chains{common.BTCChain}), Equals, true)
+	c.Assert(frostKeygenChains(common.Chains{common.THORChain}), Equals, false)
+	c.Assert(frostKeygenChains(common.Chains{common.THORChain, common.BTCChain, common.DOGEChain}), Equals, false)
+	c.Assert(frostKeygenChains(common.Chains{common.THORChain, common.DOGEChain}), Equals, false)
 }
 
 const (

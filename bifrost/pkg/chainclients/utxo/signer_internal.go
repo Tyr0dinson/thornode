@@ -274,8 +274,8 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 		}
 		return ltctxscript.PayToAddrScript(addr)
 	case common.BTCChain:
-		if c.isSchnorrVault(tx.VaultPubKey) {
-			return c.getSchnorrSourceScript(tx.VaultPubKey)
+		if c.isFrostVault(tx.VaultPubKey) {
+			return c.getTaprootSourceScript(tx.VaultPubKey)
 		}
 		var addr btcutil.Address
 		addr, err = btcutil.DecodeAddress(sourceAddr.String(), c.getChainCfgBTC())

@@ -1,6 +1,8 @@
 package keeperv1
 
 import (
+	"strings"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -71,16 +73,22 @@ func (s *KeeperVaultSuite) TestVaultSigningEngineAddress(c *C) {
 
 	legacyAddr, err := k.GetVaultAddress(ctx, vault, common.BTCChain)
 	c.Assert(err, IsNil)
-	c.Assert(legacyAddr.String()[:4], Equals, "bc1q")
-	c.Assert(k.IsVaultSchnorr(ctx, pubKey), Equals, false)
+	c.Assert(hasBTCAddressPrefix(legacyAddr.String(), "q"), Equals, true)
+	c.Assert(k.IsVaultFrost(ctx, pubKey), Equals, false)
 
-	k.SetVaultSigningEngine(ctx, pubKey, "schnorr")
-	c.Assert(k.GetVaultSigningEngine(ctx, pubKey), Equals, "schnorr")
-	c.Assert(k.IsVaultSchnorr(ctx, pubKey), Equals, true)
+	k.SetVaultSigningEngine(ctx, pubKey, "frost")
+	c.Assert(k.GetVaultSigningEngine(ctx, pubKey), Equals, "frost")
+	c.Assert(k.IsVaultFrost(ctx, pubKey), Equals, true)
 	taprootAddr, err := k.GetVaultAddress(ctx, vault, common.BTCChain)
 	c.Assert(err, IsNil)
-	c.Assert(taprootAddr.String()[:4], Equals, "bc1p")
+	c.Assert(hasBTCAddressPrefix(taprootAddr.String(), "p"), Equals, true)
 	c.Assert(taprootAddr.String(), Not(Equals), legacyAddr.String())
+}
+
+func hasBTCAddressPrefix(addr, witnessVersion string) bool {
+	return strings.HasPrefix(addr, "bc1"+witnessVersion) ||
+		strings.HasPrefix(addr, "tb1"+witnessVersion) ||
+		strings.HasPrefix(addr, "bcrt1"+witnessVersion)
 }
 
 func (s *KeeperVaultSuite) TestVaultFrostIndex(c *C) {

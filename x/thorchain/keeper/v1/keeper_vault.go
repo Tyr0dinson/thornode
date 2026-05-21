@@ -292,12 +292,12 @@ func (k KVStore) GetVaultSigningEngine(ctx cosmos.Context, pk common.PubKey) str
 	return engine
 }
 
-func (k KVStore) IsVaultSchnorr(ctx cosmos.Context, pk common.PubKey) bool {
-	return k.GetVaultSigningEngine(ctx, pk) == "schnorr"
+func (k KVStore) IsVaultFrost(ctx cosmos.Context, pk common.PubKey) bool {
+	return k.GetVaultSigningEngine(ctx, pk) == "frost"
 }
 
 func (k KVStore) GetVaultAddress(ctx cosmos.Context, vault Vault, chain common.Chain) (common.Address, error) {
-	if chain.Equals(common.BTCChain) && k.IsVaultSchnorr(ctx, vault.PubKey) {
+	if chain.Equals(common.BTCChain) && k.IsVaultFrost(ctx, vault.PubKey) {
 		return vault.PubKey.GetTaprootAddress(chain)
 	}
 	return vault.GetAddress(chain)
