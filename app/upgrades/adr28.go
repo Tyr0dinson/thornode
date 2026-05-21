@@ -216,12 +216,12 @@ func processLiabilities(
 	treasury common.Address,
 	reserve common.Address,
 ) (cosmos.Uint, error) {
-	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-		"liability", "treasury", "", "reserve", "", "synth", "", "", "remaining",
+	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		"asset", "liability", "treasury", "", "reserve", "", "synth", "", "", "remaining",
 	); err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("print liability header: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+	if _, err := fmt.Fprintf(w, "\t\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 		"available", "consumed", "available", "consumed", "available", "consumed", "bps",
 	); err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("print liability columns: %w", err)
@@ -410,7 +410,7 @@ func sortedCoins(coins common.Coins) common.Coins {
 }
 
 func formatCoin(coin common.Coin) string {
-	return fmt.Sprintf("%s.%s %s", coin.Asset.Chain, coin.Asset.Ticker, formatAmount(coin.Amount))
+	return fmt.Sprintf("%s.%s\t%s", coin.Asset.Chain, coin.Asset.Ticker, formatAmount(coin.Amount))
 }
 
 func formatAmount(amount cosmos.Uint) string {
