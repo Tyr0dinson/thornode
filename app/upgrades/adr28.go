@@ -370,28 +370,111 @@ func allocateSynth(w *tabwriter.Writer, sdkCtx cosmos.Context, k keeper.Keeper, 
 		}
 		return liability, nil
 	}
+	if saverPool.LPUnits.IsZero() {
+		if err := printSynthAllocation(w, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()); err != nil {
+			return liability, err
+		}
+		return liability, nil
+	}
+
+	saverLPs, saverLPUnits, err := saverLiquidityProviders(sdkCtx, k, synthAsset)
+	if err != nil {
+		return liability, err
+	}
+	if !saverLPUnits.Equal(saverPool.LPUnits) {
+		return liability, fmt.Errorf("saver LP units mismatch for %s: pool %s LPs %s", synthAsset, saverPool.LPUnits, saverLPUnits)
+	}
 
 	available := saverPool.BalanceAsset
 	consumed := consumeAmount(liability.Amount, available)
+	unitsConsumed := common.GetSafeShare(consumed, available, saverPool.LPUnits)
+	if unitsConsumed.IsZero() {
+		consumed = cosmos.ZeroUint()
+	}
 	bps := cosmos.ZeroUint()
-	bps = consumed.Mul(cosmos.NewUint(10000)).Quo(available)
-	remainingBalance := common.SafeSub(saverPool.BalanceAsset, consumed)
-	burnCoin := common.NewCoin(synthAsset, consumed)
-	if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ModuleName, common.NewCoins(burnCoin)); err != nil {
-		return liability, errorsmod.Wrapf(err, "move synth from asgard to module for burn %s", burnCoin)
-	}
-	if err := k.BurnFromModule(sdkCtx, types.ModuleName, burnCoin); err != nil {
-		return liability, errorsmod.Wrapf(err, "burn synth %s", burnCoin)
-	}
-	saverPool.BalanceAsset = remainingBalance
-	if err := k.SetPool(sdkCtx, saverPool); err != nil {
-		return liability, errorsmod.Wrapf(err, "set saver pool %s", synthAsset)
+	if !consumed.IsZero() {
+		bps = consumed.Mul(cosmos.NewUint(10000)).Quo(available)
+		remainingBalance := common.SafeSub(saverPool.BalanceAsset, consumed)
+		burnCoin := common.NewCoin(synthAsset, consumed)
+		if err := k.SendFromModuleToModule(sdkCtx, types.AsgardName, types.ModuleName, common.NewCoins(burnCoin)); err != nil {
+			return liability, errorsmod.Wrapf(err, "move synth from asgard to module for burn %s", burnCoin)
+		}
+		if err := k.BurnFromModule(sdkCtx, types.ModuleName, burnCoin); err != nil {
+			return liability, errorsmod.Wrapf(err, "burn synth %s", burnCoin)
+		}
+		consumeSaverLiquidityProviders(sdkCtx, k, saverLPs, saverPool.LPUnits, unitsConsumed)
+		saverPool.BalanceAsset = remainingBalance
+		saverPool.LPUnits = common.SafeSub(saverPool.LPUnits, unitsConsumed)
+		if err := k.SetPool(sdkCtx, saverPool); err != nil {
+			return liability, errorsmod.Wrapf(err, "set saver pool %s", synthAsset)
+		}
 	}
 	if err := printSynthAllocation(w, available, consumed, bps); err != nil {
 		return liability, err
 	}
 
 	return common.NewCoin(liability.Asset, common.SafeSub(liability.Amount, consumed)), nil
+}
+
+func saverLiquidityProviders(sdkCtx cosmos.Context, k keeper.Keeper, synthAsset common.Asset) ([]types.LiquidityProvider, cosmos.Uint, error) {
+	iterator := k.GetLiquidityProviderIterator(sdkCtx, synthAsset)
+	defer iterator.Close()
+
+	saverLPs := []types.LiquidityProvider{}
+	totalUnits := cosmos.ZeroUint()
+	for ; iterator.Valid(); iterator.Next() {
+		var lp types.LiquidityProvider
+		if err := k.Cdc().Unmarshal(iterator.Value(), &lp); err != nil {
+			return nil, cosmos.ZeroUint(), errorsmod.Wrapf(err, "unmarshal saver LP for %s", synthAsset)
+		}
+		if lp.Units.IsZero() {
+			continue
+		}
+		saverLPs = append(saverLPs, lp)
+		totalUnits = totalUnits.Add(lp.Units)
+	}
+
+	return saverLPs, totalUnits, nil
+}
+
+func consumeSaverLiquidityProviders(
+	sdkCtx cosmos.Context,
+	k keeper.Keeper,
+	saverLPs []types.LiquidityProvider,
+	poolUnits cosmos.Uint,
+	unitsConsumed cosmos.Uint,
+) {
+	remainingUnitsConsumed := unitsConsumed
+	remainingPoolUnits := poolUnits
+	for _, lp := range saverLPs {
+		if remainingUnitsConsumed.IsZero() {
+			return
+		}
+
+		lpUnits := lp.Units
+		lpUnitsConsumed := common.GetSafeShare(remainingUnitsConsumed, remainingPoolUnits, lpUnits)
+		if lpUnitsConsumed.GT(remainingUnitsConsumed) {
+			lpUnitsConsumed = remainingUnitsConsumed
+		}
+		if lpUnitsConsumed.GT(lpUnits) {
+			lpUnitsConsumed = lpUnits
+		}
+		remainingPoolUnits = common.SafeSub(remainingPoolUnits, lpUnits)
+		if lpUnitsConsumed.IsZero() {
+			continue
+		}
+
+		lp.LastWithdrawHeight = sdkCtx.BlockHeight()
+		lp.RuneDepositValue = common.SafeSub(lp.RuneDepositValue, common.GetSafeShare(lpUnitsConsumed, lpUnits, lp.RuneDepositValue))
+		lp.AssetDepositValue = common.SafeSub(lp.AssetDepositValue, common.GetSafeShare(lpUnitsConsumed, lpUnits, lp.AssetDepositValue))
+		lp.Units = common.SafeSub(lp.Units, lpUnitsConsumed)
+		if !lp.Units.Add(lp.PendingAsset).Add(lp.PendingRune).IsZero() {
+			k.SetLiquidityProvider(sdkCtx, lp)
+		} else {
+			k.RemoveLiquidityProvider(sdkCtx, lp)
+		}
+		remainingUnitsConsumed = common.SafeSub(remainingUnitsConsumed, lpUnitsConsumed)
+	}
 }
 
 func consumeAmount(liability, available cosmos.Uint) cosmos.Uint {
