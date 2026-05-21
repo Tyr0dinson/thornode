@@ -288,51 +288,67 @@ func allocateLiquidity(
 	liability common.Coin,
 	address common.Address,
 ) (common.Coin, cosmos.Uint, error) {
-	available, runeAvailable, pool, err := liquidityValue(sdkCtx, k, address, liability.Asset)
+	pool, err := k.GetPool(sdkCtx, liability.Asset)
 	if err != nil {
-		return liability, cosmos.ZeroUint(), err
+		return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "get pool for %s", liability.Asset)
 	}
-	consumed := consumeAmount(liability.Amount, available)
-	runeRemoved := consumeRune(available, consumed, runeAvailable)
+
+	available := cosmos.ZeroUint()
+	consumed := cosmos.ZeroUint()
+	runeRemoved := cosmos.ZeroUint()
+	unitsConsumed := cosmos.ZeroUint()
+	var lp types.LiquidityProvider
+
+	if !pool.IsEmpty() && !pool.BalanceAsset.IsZero() && pool.Asset.IsExternalL1Asset() {
+		synthSupply := k.GetTotalSupply(sdkCtx, pool.Asset.GetSyntheticAsset())
+		lp, err = k.GetLiquidityProvider(sdkCtx, pool.Asset, address)
+		if err != nil {
+			return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "get liquidity provider for %s at %s", pool.Asset, address)
+		}
+		if !lp.Units.IsZero() {
+			pool.CalcUnits(synthSupply)
+			poolUnits := pool.GetPoolUnits()
+			if !poolUnits.IsZero() {
+				if pool.Status == types.PoolStatus_Available && lp.RuneDepositValue.IsZero() && lp.AssetDepositValue.IsZero() {
+					lp.RuneDepositValue = lp.RuneDepositValue.Add(common.GetSafeShare(lp.Units, poolUnits, pool.BalanceRune))
+					lp.AssetDepositValue = lp.AssetDepositValue.Add(common.GetSafeShare(lp.Units, poolUnits, pool.BalanceAsset))
+				}
+
+				available = common.GetSafeShare(lp.Units, poolUnits, pool.BalanceAsset)
+				runeAvailable := common.GetSafeShare(lp.Units, poolUnits, pool.BalanceRune)
+				consumed = consumeAmount(liability.Amount, available)
+				unitsConsumed = common.GetSafeShare(consumed, available, lp.Units)
+				if !unitsConsumed.IsZero() {
+					runeRemoved = consumeRune(available, consumed, runeAvailable)
+				} else {
+					consumed = cosmos.ZeroUint()
+				}
+			}
+		}
+	}
+
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, consumed)
 	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeRemoved)
+	pool.LPUnits = common.SafeSub(pool.LPUnits, unitsConsumed)
 	if err := k.SetPool(sdkCtx, pool); err != nil {
 		return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "set pool %s after %s rune deduction", pool.Asset, label)
+	}
+	if !unitsConsumed.IsZero() {
+		lp.LastWithdrawHeight = sdkCtx.BlockHeight()
+		lp.RuneDepositValue = common.SafeSub(lp.RuneDepositValue, common.GetSafeShare(unitsConsumed, lp.Units, lp.RuneDepositValue))
+		lp.AssetDepositValue = common.SafeSub(lp.AssetDepositValue, common.GetSafeShare(unitsConsumed, lp.Units, lp.AssetDepositValue))
+		lp.Units = common.SafeSub(lp.Units, unitsConsumed)
+		if !lp.Units.Add(lp.PendingAsset).Add(lp.PendingRune).IsZero() {
+			k.SetLiquidityProvider(sdkCtx, lp)
+		} else {
+			k.RemoveLiquidityProvider(sdkCtx, lp)
+		}
 	}
 	if _, err := fmt.Fprintf(w, "%s\t%s\t", formatAmount(available), formatAmount(consumed)); err != nil {
 		return liability, cosmos.ZeroUint(), errorsmod.Wrapf(err, "print %s allocation for %s", label, liability.Asset)
 	}
 
 	return common.NewCoin(liability.Asset, common.SafeSub(liability.Amount, consumed)), runeRemoved, nil
-}
-
-func liquidityValue(sdkCtx cosmos.Context, k keeper.Keeper, address common.Address, asset common.Asset) (cosmos.Uint, cosmos.Uint, types.Pool, error) {
-	pool, err := k.GetPool(sdkCtx, asset)
-	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), pool, errorsmod.Wrapf(err, "get pool for %s", asset)
-	}
-	if pool.IsEmpty() || pool.BalanceAsset.IsZero() || !pool.Asset.IsExternalL1Asset() {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), pool, nil
-	}
-
-	synthSupply := k.GetTotalSupply(sdkCtx, pool.Asset.GetSyntheticAsset())
-	lp, err := k.GetLiquidityProvider(sdkCtx, pool.Asset, address)
-	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), pool, errorsmod.Wrapf(err, "get liquidity provider for %s at %s", pool.Asset, address)
-	}
-	if lp.Units.IsZero() {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), pool, nil
-	}
-
-	err, assetRedeemValue := lp.GetAssetRedeemValue(pool, synthSupply)
-	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), pool, errorsmod.Wrapf(err, "get liquidity asset redeem value for %s at %s", pool.Asset, address)
-	}
-	err, runeRedeemValue := lp.GetRuneRedeemValue(pool, synthSupply)
-	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), pool, errorsmod.Wrapf(err, "get liquidity rune redeem value for %s at %s", pool.Asset, address)
-	}
-	return assetRedeemValue, runeRedeemValue, pool, nil
 }
 
 func allocateSynth(w *tabwriter.Writer, sdkCtx cosmos.Context, k keeper.Keeper, liability common.Coin) (common.Coin, error) {
