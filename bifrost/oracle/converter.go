@@ -188,7 +188,7 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 			rates = append(rates, types.Ticker{
 				Pair:   types.CurrencyPair{Base: denom, Quote: "USD"},
 				Price:  rate,
-				Volume: new(big.Float).Mul(volume, rate),
+				Volume: new(big.Float).Copy(volume),
 			})
 		}
 

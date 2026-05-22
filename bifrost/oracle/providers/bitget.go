@@ -184,7 +184,7 @@ func (p *BitgetProvider) HandleWsMessage(msg []byte) error {
 
 	if len(msg) == 4 {
 		if string(msg) == "pong" {
-			p.lastKeepalive = time.Now()
+			p.markAlive()
 			return nil
 		}
 	}
@@ -193,5 +193,5 @@ func (p *BitgetProvider) HandleWsMessage(msg []byte) error {
 }
 
 func (p *BitgetProvider) Ping() error {
-	return p.ws.Write(p.ctx, websocket.MessageText, []byte("ping"))
+	return p.writeRaw(websocket.MessageText, []byte("ping"))
 }

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -207,7 +206,7 @@ func (p *CoinwProvider) HandleWsMessage(msg []byte) error {
 
 	err = json.Unmarshal(msg, &pongMsg)
 	if err == nil && pongMsg.Event == "pong" {
-		p.lastKeepalive = time.Now()
+		p.markAlive()
 		return nil
 	}
 
@@ -219,5 +218,5 @@ func (p *CoinwProvider) Ping() error {
 		"event": "ping",
 	}
 
-	return wsjson.Write(p.ctx, p.ws, msg)
+	return p.writeJson(msg)
 }

@@ -200,9 +200,9 @@ func (s *ConverterTestSuite) TestUsdConversion(c *C) {
 
 	tickersBySymbol := map[string]map[string]types.Ticker{
 		"BTC/USD": {
-			"coinbase": newTicker("BTC/USD", 100_000, 1),
-			"crypto":   newTicker("BTC/USD", 100_000, 1),
-			"kraken":   newTicker("BTC/USD", 100_000, 1),
+			"coinbase": newTicker("BTC/USD", 100_000, 5),
+			"crypto":   newTicker("BTC/USD", 100_000, 5),
+			"kraken":   newTicker("BTC/USD", 100_000, 5),
 		},
 		"USDT/USD": {
 			"kraken":   newTicker("USDT/USD", 1.002, 100_000),

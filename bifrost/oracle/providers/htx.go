@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -194,14 +193,14 @@ func (p *HtxProvider) HandleWsMessage(msg []byte) error {
 
 	err = json.Unmarshal(msg, &pingMsg)
 	if err == nil && pingMsg.Ping > 0 {
-		err = wsjson.Write(p.ctx, p.ws, map[string]any{
+		err = p.writeJson(map[string]any{
 			"pong": pingMsg.Ping,
 		})
 		if err != nil {
 			p.logger.Err(err).Msg("fail to write pong")
 			return err
 		}
-		p.lastKeepalive = time.Now()
+		p.markAlive()
 	}
 
 	return nil

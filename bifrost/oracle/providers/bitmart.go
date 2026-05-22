@@ -168,7 +168,7 @@ func (p *BitmartProvider) HandleWsMessage(msg []byte) error {
 	}
 
 	if len(msg) == 4 && string(msg) == "pong" {
-		p.lastKeepalive = time.Now()
+		p.markAlive()
 		return nil
 	}
 
@@ -176,5 +176,5 @@ func (p *BitmartProvider) HandleWsMessage(msg []byte) error {
 }
 
 func (p *BitmartProvider) Ping() error {
-	return p.ws.Write(p.ctx, websocket.MessageText, []byte("ping"))
+	return p.writeRaw(websocket.MessageText, []byte("ping"))
 }

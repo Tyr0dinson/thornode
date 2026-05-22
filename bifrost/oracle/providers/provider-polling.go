@@ -53,7 +53,7 @@ func (p *pollingProvider) init(provider types.PollingProvider) error {
 
 func (p *pollingProvider) Start() {
 	p.logger.Info().Msg("starting provider")
-	p.wg.Add(1)
+	// p.wg.Add(1)
 
 	go func() {
 		ticker := time.NewTicker(p.config.PollingInterval)

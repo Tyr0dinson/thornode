@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -22,7 +23,7 @@ const (
 type websocketProvider struct {
 	*baseProvider
 	wsEndpoint      string
-	ws              *websocket.Conn
+	ws              atomic.Pointer[websocket.Conn]
 	poll            func()
 	handleWsMessage func([]byte) error
 	preconnect      func() error
@@ -30,7 +31,7 @@ type websocketProvider struct {
 	getSubs         func() ([]map[string]any, error)
 	backoff         time.Duration
 
-	lastKeepalive     time.Time
+	lastKeepalive     atomic.Int64
 	keepaliveInterval time.Duration
 	keepaliveTimeout  time.Duration
 }
@@ -61,6 +62,22 @@ func newWebsocketProvider(
 	return &provider, nil
 }
 
+func (p *websocketProvider) writeJson(msg any) error {
+	ws := p.ws.Load()
+	if ws == nil {
+		return fmt.Errorf("ws not connected")
+	}
+	return wsjson.Write(p.ctx, ws, msg)
+}
+
+func (p *websocketProvider) writeRaw(t websocket.MessageType, data []byte) error {
+	ws := p.ws.Load()
+	if ws == nil {
+		return fmt.Errorf("ws not connected")
+	}
+	return ws.Write(p.ctx, t, data)
+}
+
 func (p *websocketProvider) init(provider types.WebsocketProvider) error {
 	err := p.baseProvider.init(provider)
 	if err != nil {
@@ -83,7 +100,7 @@ func (p *websocketProvider) subscribe() error {
 	}
 
 	for i, msg := range msgs {
-		err := wsjson.Write(p.ctx, p.ws, msg)
+		err = p.writeJson(msg)
 		if err != nil {
 			p.logger.Err(err).Msg("fail to subscribe")
 			return err
@@ -100,8 +117,9 @@ func (p *websocketProvider) subscribe() error {
 func (p *websocketProvider) connect() error {
 	p.logger.Info().Msg("connecting")
 
-	if p.ws != nil {
-		_ = p.ws.Close(websocket.StatusNormalClosure, "")
+	ws := p.ws.Load()
+	if ws != nil {
+		_ = ws.Close(websocket.StatusNormalClosure, "")
 		time.Sleep(time.Second)
 	}
 
@@ -111,11 +129,12 @@ func (p *websocketProvider) connect() error {
 		return err
 	}
 
-	p.ws, _, err = websocket.Dial(p.ctx, p.wsEndpoint, nil)
+	ws, _, err = websocket.Dial(p.ctx, p.wsEndpoint, nil)
 	if err != nil {
 		p.logger.Err(err).Msg("failed to connect")
 		return err
 	}
+	p.ws.Store(ws)
 
 	err = p.subscribe()
 	if err != nil {
@@ -123,7 +142,7 @@ func (p *websocketProvider) connect() error {
 		return err
 	}
 
-	p.lastKeepalive = time.Now()
+	p.markAlive()
 
 	time.Sleep(time.Second)
 
@@ -140,6 +159,14 @@ func (p *websocketProvider) reconnect() error {
 	}
 }
 
+func (p *websocketProvider) markAlive() {
+	p.lastKeepalive.Store(time.Now().UnixNano())
+}
+
+func (p *websocketProvider) sinceAlive() time.Duration {
+	return time.Since(time.Unix(0, p.lastKeepalive.Load()))
+}
+
 func (p *websocketProvider) PrepareConnection() error {
 	return nil
 }
@@ -150,7 +177,7 @@ func (p *websocketProvider) Ping() error {
 
 func (p *websocketProvider) Start() {
 	p.logger.Info().Msg("starting provider")
-	p.wg.Add(1)
+	// p.wg.Add(1)
 
 	p.poll()
 
@@ -160,16 +187,38 @@ func (p *websocketProvider) Start() {
 		return
 	}
 
+	if p.keepaliveTimeout > 0 {
+		go func() {
+			ticker := time.NewTicker(keepaliveCheckInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-p.ctx.Done():
+					return
+				case <-ticker.C:
+					ws := p.ws.Load()
+					if ws != nil && p.sinceAlive() > p.keepaliveTimeout {
+						_ = ws.Close(websocket.StatusInternalError, "keepalive timeout")
+					}
+				}
+			}
+		}()
+	}
+
 	go func() {
-		defer p.ws.Close(websocket.StatusNormalClosure, "")
+		defer func() {
+			// get pointer and replace it with nil so no further action can
+			// be made to it
+			ws := p.ws.Swap(nil)
+			if ws != nil {
+				_ = ws.Close(websocket.StatusNormalClosure, "")
+			}
+		}()
 
-		var ping, check *time.Ticker
+		var ticker *time.Ticker
 		if p.keepaliveInterval > 0 {
-			ping = time.NewTicker(p.keepaliveInterval)
-			defer ping.Stop()
-
-			check = time.NewTicker(keepaliveCheckInterval)
-			defer check.Stop()
+			ticker = time.NewTicker(p.keepaliveInterval)
+			defer ticker.Stop()
 		}
 
 		for {
@@ -179,13 +228,15 @@ func (p *websocketProvider) Start() {
 			default:
 			}
 
-			if p.ws == nil {
+			ws := p.ws.Load()
+
+			if ws == nil {
 				_ = p.reconnect()
 				continue
 			}
 
 			var msg []byte
-			_, msg, err = p.ws.Read(p.ctx)
+			_, msg, err = ws.Read(p.ctx)
 			if err != nil {
 				_ = p.reconnect()
 				continue
@@ -203,29 +254,21 @@ func (p *websocketProvider) Start() {
 					Msg("fail handling message")
 			}
 
-			if ping == nil {
+			// reset backoff
+			p.backoff = minBackoff
+
+			if ticker == nil {
 				continue
 			}
 
 			select {
-			case <-ping.C:
+			case <-ticker.C:
 				err = p.ping()
 				if err != nil {
 					p.logger.Err(err).Msg("failed to send ping")
 				}
-			case <-check.C:
-				if time.Since(p.lastKeepalive) > p.keepaliveTimeout {
-					p.logger.Error().Msg("keepalive timeout reached")
-					err = p.reconnect()
-					if err != nil {
-						p.logger.Err(err).Msg("failed to reconnect")
-					}
-				}
 			default:
 			}
-
-			// reset backoff
-			p.backoff = minBackoff
 		}
 	}()
 }

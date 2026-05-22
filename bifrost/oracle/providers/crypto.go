@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -181,7 +180,7 @@ func (p *CryptoProvider) HandleWsMessage(msg []byte) error {
 			"id":     heartbeat.Id,
 			"method": "public/respond-heartbeat",
 		}
-		err = wsjson.Write(p.ctx, p.ws, r)
+		err = p.writeJson(r)
 		if err != nil {
 			p.logger.Err(err).Msg("fail to send heartbeat response")
 			return err

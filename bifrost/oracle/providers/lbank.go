@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
@@ -172,7 +171,7 @@ func (p *LbankProvider) HandleWsMessage(msg []byte) error {
 			"pong":   pingMsg.Ping,
 		}
 
-		err = wsjson.Write(p.ctx, p.ws, msg)
+		err = p.writeJson(msg)
 		if err != nil {
 			p.logger.Err(err).Msg("fail to subscribe")
 			return err

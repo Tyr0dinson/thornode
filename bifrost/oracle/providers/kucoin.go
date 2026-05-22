@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -208,7 +207,7 @@ func (p *KucoinProvider) HandleWsMessage(msg []byte) error {
 
 	err = json.Unmarshal(msg, &pongMsg)
 	if err == nil && pongMsg.Type == "pong" {
-		p.lastKeepalive = time.Now()
+		p.markAlive()
 		return nil
 	}
 
@@ -229,5 +228,5 @@ func (p *KucoinProvider) Ping() error {
 		"type": "ping",
 	}
 
-	return wsjson.Write(p.ctx, p.ws, msg)
+	return p.writeJson(msg)
 }
