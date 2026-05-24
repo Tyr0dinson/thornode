@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	tsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -93,16 +95,31 @@ func (s *KeySign) Stop() {
 
 // RemoteSign send the request to local task queue
 func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string) ([]byte, []byte, error) {
+	return s.remoteSign(msg, algo, poolPubKey, false)
+}
+
+// RemoteSignWithLocalStateParty signs using local TSS keygen state instead of a
+// vault-backed keysign party. This is only for keygen self-check signatures,
+// which run before thornode has saved the new vault.
+func (s *KeySign) RemoteSignWithLocalStateParty(msg []byte, algo common.SigningAlgo, poolPubKey string) ([]byte, []byte, error) {
+	return s.remoteSign(msg, algo, poolPubKey, true)
+}
+
+// remoteSign queues a TSS signing task and waits for the worker to return the
+// signature material. useLocalStateParty is reserved for keygen check-signs,
+// which have local keygen state but no thornode vault record yet.
+func (s *KeySign) remoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, useLocalStateParty bool) ([]byte, []byte, error) {
 	if len(msg) == 0 {
 		return nil, nil, nil
 	}
 
 	encodedMsg := base64.StdEncoding.EncodeToString(msg)
 	task := tssKeySignTask{
-		Algo:       algo,
-		PoolPubKey: poolPubKey,
-		Msg:        encodedMsg,
-		Resp:       make(chan tssKeySignResult, 1),
+		Algo:               algo,
+		PoolPubKey:         poolPubKey,
+		Msg:                encodedMsg,
+		Resp:               make(chan tssKeySignResult, 1),
+		UseLocalStateParty: useLocalStateParty,
 	}
 	s.taskQueue <- &task
 	select {
@@ -122,7 +139,7 @@ func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey str
 
 		if len(resp.R) == 0 && len(resp.S) == 0 {
 			// this means the node tried to do keysign , however this node has not been chosen to take part in the keysign committee
-			return nil, nil, nil
+			return nil, nil, ErrNotActiveSigner
 		}
 		s.logger.Debug().Str("R", resp.R).Str("S", resp.S).Str("recovery", resp.RecoveryID).Msg("tss result")
 		data, err := getSignature(resp.R, resp.S)
@@ -144,6 +161,10 @@ type tssKeySignTask struct {
 	Algo       common.SigningAlgo
 	Msg        string
 	Resp       chan tssKeySignResult
+
+	// UseLocalStateParty bypasses vault-backed signer filtering for keygen
+	// check-signatures that run before the new vault exists on thornode.
+	UseLocalStateParty bool
 }
 
 type tssKeySignResult struct {
@@ -195,17 +216,23 @@ func (s *KeySign) processKeySignTasks() {
 				if totalTasks > maxKeysignPerRequest {
 					totalTasks = maxKeysignPerRequest
 				}
-				s.wg.Add(1)
 				signingTask := v[:totalTasks]
 				tasks[k] = v[totalTasks:]
 
-				// split by algo
-				signingTasksSecp256k1 := make([]*tssKeySignTask, 0)
+				// Split by algorithm and by signer source. Secp256k1 keygen
+				// self-checks use local keygen state, while normal Secp256k1
+				// vault signing uses thornode's filtered keysign party.
+				signingTasksSecp256k1Vault := make([]*tssKeySignTask, 0)
+				signingTasksSecp256k1LocalState := make([]*tssKeySignTask, 0)
 				signingTasksEd25519 := make([]*tssKeySignTask, 0)
 				for _, task := range signingTask {
 					switch task.Algo {
 					case common.SigningAlgoSecp256k1:
-						signingTasksSecp256k1 = append(signingTasksSecp256k1, task)
+						if task.UseLocalStateParty {
+							signingTasksSecp256k1LocalState = append(signingTasksSecp256k1LocalState, task)
+						} else {
+							signingTasksSecp256k1Vault = append(signingTasksSecp256k1Vault, task)
+						}
 					case common.SigningAlgoEd25519:
 						signingTasksEd25519 = append(signingTasksEd25519, task)
 					default:
@@ -214,10 +241,16 @@ func (s *KeySign) processKeySignTasks() {
 					}
 				}
 
-				if len(signingTasksSecp256k1) > 0 {
-					go s.toLocalTSSSigner(k, common.SigningAlgoSecp256k1, signingTasksSecp256k1)
+				if len(signingTasksSecp256k1Vault) > 0 {
+					s.wg.Add(1)
+					go s.toLocalTSSSigner(k, common.SigningAlgoSecp256k1, signingTasksSecp256k1Vault)
+				}
+				if len(signingTasksSecp256k1LocalState) > 0 {
+					s.wg.Add(1)
+					go s.toLocalTSSSigner(k, common.SigningAlgoSecp256k1, signingTasksSecp256k1LocalState)
 				}
 				if len(signingTasksEd25519) > 0 {
+					s.wg.Add(1)
 					go s.toLocalTSSSigner(k, common.SigningAlgoEd25519, signingTasksEd25519)
 				}
 			}
@@ -273,6 +306,29 @@ func (s *KeySign) getVersion() semver.Version {
 	return s.currentVersion
 }
 
+// getCompromisedVaultMimir reports whether the vault-level operational Mimir is
+// set. A positive value disables normal Secp256k1 signing for that vault before
+// go-tss opens a join party.
+func (s *KeySign) getCompromisedVaultMimir(poolPubKey string) (bool, error) {
+	val, err := s.bridge.GetMimirWithRef(constants.MimirTemplateCompromisedVault, poolPubKey)
+	if err != nil {
+		return false, err
+	}
+	if val > 0 {
+		return true, nil
+	}
+
+	// Some Mimir paths normalize node-vote and event keys to uppercase. Support
+	// that spelling as well so operators can recover even if the flag was set in
+	// uppercase form.
+	key := fmt.Sprintf(constants.MimirTemplateCompromisedVault, poolPubKey)
+	val, err = s.bridge.GetMimir(strings.ToUpper(key))
+	if err != nil {
+		return false, err
+	}
+	return val > 0, nil
+}
+
 func (s *KeySign) setTssKeySignTasksFail(tasks []*tssKeySignTask, err error) {
 	for _, item := range tasks {
 		select {
@@ -310,11 +366,50 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 	// this is just round the block height to the nearest 20
 	tssMsg.BlockHeight = blockHeight / 20 * 20
 
+	useLocalStateParty := len(tasks) > 0 && tasks[0].UseLocalStateParty
+	if algo == common.SigningAlgoSecp256k1 && !useLocalStateParty {
+		// The compromise mimir is a simple flag: any positive value disables
+		// normal ECDSA signing from this vault before go-tss opens a join party.
+		flagged, err := s.getCompromisedVaultMimir(poolPubKey)
+		if err != nil {
+			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get compromised vault mimir: %w", err))
+			return
+		}
+		if flagged {
+			s.setTssKeySignTasksFail(tasks, fmt.Errorf("vault %s is flagged as compromised", poolPubKey))
+			return
+		}
+
+		// Filtered signer selection is intentionally scoped to normal GG20/ECDSA
+		// keysign. EdDSA/FROST paths do not use this vulnerable Paillier flow, and
+		// keygen check-signs must use the local state because their vault is not
+		// stored on thornode yet.
+		signers, err := s.bridge.GetKeysignParty(common.PubKey(poolPubKey))
+		if err != nil {
+			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get keysign party: %w", err))
+			return
+		}
+		tssMsg.SignerPubKeys = signers.Strings()
+	}
+
 	s.logger.Info().Msgf("msgToSign to tss Local node PoolPubKey: %s, Messages: %+v, block height: %d", tssMsg.PoolPubKey, tssMsg.Messages, tssMsg.BlockHeight)
 
 	keySignResp, err := s.server.KeySign(tssMsg)
 	if err != nil {
 		s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail tss keysign: %w", err))
+		return
+	}
+
+	// Status values are success=1, fail=2, NA=0. NA with no signatures or blame
+	// is the explicit stand-down response for a local node excluded from the
+	// filtered ECDSA signer set.
+	if keySignResp.Status == tsscommon.NA &&
+		len(keySignResp.Signatures) == 0 &&
+		keySignResp.Blame.FailReason == "" &&
+		len(keySignResp.Blame.BlameNodes) == 0 {
+		for _, t := range tasks {
+			t.Resp <- tssKeySignResult{}
+		}
 		return
 	}
 

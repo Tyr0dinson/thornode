@@ -138,6 +138,9 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 
 	// Past this point, compare only upper-case strings due to case sensitivity.
 	key = strings.ToUpper(key)
+	if strings.HasPrefix(key, "COMPROMISEDVAULT-") {
+		return true
+	}
 	partialMatches := []string{
 		"HALT",
 		"PAUSE",

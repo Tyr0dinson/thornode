@@ -168,6 +168,50 @@ func (s *NetworkManagerTestSuite) TestTriggerXMRKeygenIgnoresRegularVaultMembers
 	c.Assert(keygenBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
 }
 
+func (s *NetworkManagerTestSuite) TestTriggerKeygenExcludesForcedToLeaveNodes(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	eligible := GetRandomValidatorNode(NodeActive)
+	forced := GetRandomValidatorNode(NodeActive)
+	forced.ForcedToLeave = true
+
+	c.Assert(networkMgr.TriggerKeygen(ctx, NodeAccounts{eligible, forced}), IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Assert(keygenBlock.Keygens[0].Members, DeepEquals, common.PubKeys{eligible.PubKeySet.Secp256k1}.Strings())
+}
+
+func (s *NetworkManagerTestSuite) TestTriggerKeygenErrorsWhenAllNodesForcedToLeave(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	forced := GetRandomValidatorNode(NodeActive)
+	forced.ForcedToLeave = true
+
+	err := networkMgr.TriggerKeygen(ctx, NodeAccounts{forced})
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "no eligible keygen members")
+}
+
+func (s *NetworkManagerTestSuite) TestTriggerKeygenErrorsWhenFilteringDropsBelowMinimum(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	minMembers := int(mgr.Keeper().GetConstants().GetInt64Value(constants.MinimumNodesForBFT))
+	nas := make(NodeAccounts, minMembers)
+	for i := range nas {
+		nas[i] = GetRandomValidatorNode(NodeActive)
+	}
+	nas[0].ForcedToLeave = true
+
+	err := networkMgr.TriggerKeygen(ctx, nas)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, "not enough eligible keygen members: got .*")
+}
+
 func (s *NetworkManagerTestSuite) TestUpdateNetwork(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())

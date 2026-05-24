@@ -295,6 +295,9 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *stypes.TxInItem, err error) {
 	defer func() {
 		if err != nil {
+			if errors.Is(err, tss.ErrNotActiveSigner) {
+				return
+			}
 			var keysignError tss.KeysignError
 			if errors.As(err, &keysignError) {
 				if len(keysignError.Blame.BlameNodes) == 0 {
@@ -404,6 +407,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 
 	txBytes, err := c.signMsg(msg, tx.VaultPubKey)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotActiveSigner) {
+			return nil, nil, nil, err
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to sign message: %w", err)
 	}
 
@@ -468,6 +474,9 @@ func (c *Client) signMsg(
 		var signature []byte
 		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String())
 		if err != nil {
+			if errors.Is(err, tss.ErrNotActiveSigner) {
+				return nil, err
+			}
 			c.logger.Err(err).Msg("xrp remote sign")
 			return nil, fmt.Errorf("error, xrp remote sign: %w", err)
 		}

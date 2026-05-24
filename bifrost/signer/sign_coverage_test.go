@@ -711,6 +711,52 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_KeysignError(c *C) {
 	c.Assert(err.Error(), Equals, "sign failed")
 }
 
+func (s *SignCoverageSuite) TestProcessTransaction_NotActiveSignerRemovesItem(c *C) {
+	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
+	bridge := &mockSignBridge{
+		blockHeight: 100,
+		constants: map[string]int64{
+			constants.SigningTransactionPeriod.String(): 300,
+			constants.ChurnInterval.String():            43200,
+		},
+		mimirs:  map[string]int64{},
+		keysign: types.TxOut{},
+	}
+	storage, err := NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	defer storage.Close()
+
+	sign := &Signer{
+		logger:            log.With().Str("module", "test").Logger(),
+		cfg:               config.Bifrost{Signer: config.BifrostSignerConfiguration{RescheduleBufferBlocks: 100}},
+		thorchainBridge:   bridge,
+		constantsProvider: NewConstantsProvider(bridge),
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.ETHChain: &MockSignErrorChainClient{
+				signErr:    tss.ErrNotActiveSigner,
+				checkpoint: []byte("ignored-checkpoint"),
+			},
+		},
+		pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(),
+		m:         GetMetricForTest(c),
+		storage:   storage,
+	}
+
+	item := TxOutStoreItem{
+		TxOutItem: types.TxOutItem{
+			Chain:       common.ETHChain,
+			VaultPubKey: vaultPubKey,
+			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+		},
+		Height: 90,
+	}
+	c.Assert(storage.Set(item), IsNil)
+
+	sign.processTransaction(item)
+
+	c.Assert(storage.List(), HasLen, 0)
+}
+
 func (s *SignCoverageSuite) TestSignAndBroadcast_SignReturnsCheckpoint(c *C) {
 	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
 	bridge := &mockSignBridge{

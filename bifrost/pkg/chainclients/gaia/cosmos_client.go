@@ -334,6 +334,9 @@ func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem, thorchainHeight in
 func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *stypes.TxInItem, err error) {
 	defer func() {
 		if err != nil {
+			if errors.Is(err, tss.ErrNotActiveSigner) {
+				return
+			}
 			var keysignError tss.KeysignError
 			if errors.As(err, &keysignError) {
 				if len(keysignError.Blame.BlameNodes) == 0 {
@@ -463,6 +466,9 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		uint64(meta.SeqNumber),
 	)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotActiveSigner) {
+			return nil, nil, nil, err
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to sign message: %w", err)
 	}
 

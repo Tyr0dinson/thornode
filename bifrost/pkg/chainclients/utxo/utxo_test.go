@@ -1,13 +1,17 @@
 package utxo
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/hashicorp/go-multierror"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	bifrosttss "gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	. "gopkg.in/check.v1"
@@ -34,6 +38,19 @@ func TestUpdateCurrentBlockHeightMonotonic(t *testing.T) {
 	client.updateCurrentBlockHeight(110)
 	if got := client.getCurrentBlockHeight(); got != 110 {
 		t.Fatalf("expected current block height to advance to 110, got %d", got)
+	}
+}
+
+func TestIsOnlyNotActiveSignerError(t *testing.T) {
+	wrapped := fmt.Errorf("fail to get witness: %w", bifrosttss.ErrNotActiveSigner)
+	onlyNotActive := multierror.Append(nil, wrapped, bifrosttss.ErrNotActiveSigner)
+	if !isOnlyNotActiveSignerError(onlyNotActive) {
+		t.Fatal("expected only not-active-signer errors to be classified")
+	}
+
+	mixed := multierror.Append(nil, wrapped, errors.New("signature verification failed"))
+	if isOnlyNotActiveSignerError(mixed) {
+		t.Fatal("expected mixed signing errors not to be classified as stand-down")
 	}
 }
 

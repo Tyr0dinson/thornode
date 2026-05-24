@@ -27,6 +27,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	bifrosttss "gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
@@ -42,6 +43,30 @@ const ZecExtraFee = int(0)
 ////////////////////////////////////////////////////////////////////////////////////////
 // Client - Signing
 ////////////////////////////////////////////////////////////////////////////////////////
+
+// isOnlyNotActiveSignerError reports whether every signing failure is the local
+// node intentionally standing down because it is not in the active signer set.
+// Mixed failures still need the normal keysign-failure path.
+func isOnlyNotActiveSignerError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var multiErr *multierror.Error
+	if errors.As(err, &multiErr) {
+		if len(multiErr.Errors) == 0 {
+			return false
+		}
+		for _, item := range multiErr.Errors {
+			if !errors.Is(item, bifrosttss.ErrNotActiveSigner) {
+				return false
+			}
+		}
+		return true
+	}
+
+	return errors.Is(err, bifrosttss.ErrNotActiveSigner)
+}
 
 // SignTx builds and signs the outbound transaction. Returns the signed transaction, a
 // serialized checkpoint on error, and an error.
@@ -289,6 +314,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 	wg.Wait()
 	if utxoErr != nil {
+		if isOnlyNotActiveSignerError(utxoErr) {
+			return nil, nil, nil, bifrosttss.ErrNotActiveSigner
+		}
 		err = utxo.PostKeysignFailure(c.bridge, tx, c.log, thorchainHeight, utxoErr)
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}

@@ -1425,12 +1425,28 @@ func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 	return vm.triggerKeygen(ctx, nas, AsgardKeygen)
 }
 
+// TriggerXMRKeygen schedules a dedicated XMR monovault keygen.
 func (vm *NetworkMgr) TriggerXMRKeygen(ctx cosmos.Context, nas NodeAccounts) error {
 	return vm.triggerKeygen(ctx, nas, XMRMonovaultKeygen)
 }
 
+// triggerKeygen schedules a keygen of the requested type at the current block height.
 func (vm *NetworkMgr) triggerKeygen(ctx cosmos.Context, nas NodeAccounts, keygenType types.KeygenType) error {
 	return vm.scheduleKeygen(ctx, nas, keygenType, ctx.BlockHeight())
+}
+
+// keygenEligibleNodeAccounts returns the node accounts allowed to receive new
+// key shares. Forced-to-leave nodes are a hard exclusion from new vaults.
+func keygenEligibleNodeAccounts(nas NodeAccounts) NodeAccounts {
+	out := make(NodeAccounts, 0, len(nas))
+	for _, na := range nas {
+		if na.ForcedToLeave {
+			// Do not give a forced-to-leave node fresh key material in any new vault.
+			continue
+		}
+		out = append(out, na)
+	}
+	return out
 }
 
 func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keygenType types.KeygenType, keygenHeight int64) error {
@@ -1440,6 +1456,17 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 			ctx.Logger().Info("churn event skipped due to mimir has halted churning")
 			return nil
 		}
+	}
+	minMembers := int(vm.k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT))
+	originalMemberCount := len(nas)
+	// Apply membership eligibility before creating the keygen record so bifrost
+	// never receives a new keygen that includes a forced-to-leave member.
+	nas = keygenEligibleNodeAccounts(nas)
+	if len(nas) == 0 {
+		return fmt.Errorf("no eligible keygen members")
+	}
+	if originalMemberCount >= minMembers && len(nas) < minMembers {
+		return fmt.Errorf("not enough eligible keygen members: got %d, need %d", len(nas), minMembers)
 	}
 	var members []string
 	for i := range nas {
