@@ -512,7 +512,10 @@ func (b *thorchainBridge) FetchNodeStatus() (stypes.NodeStatus, error) {
 	return na.Status, nil
 }
 
-// GetKeysignParty call into thorchain to get the node accounts that should be join together to sign the message
+// GetKeysignParty returns the vault members eligible to join a vault-backed
+// Secp256k1 keysign ceremony. It joins vault membership with current node
+// account state so forced-to-leave members are filtered before go-tss starts a
+// join party.
 func (b *thorchainBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
 	vault, err := b.GetVault(vaultPubKey.String())
 	if err != nil {
@@ -522,7 +525,39 @@ func (b *thorchainBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.Pub
 	if len(members) == 0 {
 		return common.PubKeys{}, fmt.Errorf("vault %s has empty signer membership", vaultPubKey.String())
 	}
-	return members, nil
+	nodes, err := b.GetNodeAccounts()
+	if err != nil {
+		return common.PubKeys{}, fmt.Errorf("fail to get node accounts for key sign party: %w", err)
+	}
+	nodesByPubKey := make(map[string]*stypes.QueryNodeResponse, len(nodes))
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		// Vault membership is expressed in secp256k1 pubkeys, so use the same
+		// key to join vault members with current node-account state.
+		nodesByPubKey[node.PubKeySet.Secp256k1.String()] = node
+	}
+
+	eligible := make(common.PubKeys, 0, len(members))
+	for _, member := range members {
+		node, ok := nodesByPubKey[member.String()]
+		if !ok {
+			// Fail closed if a vault member cannot be resolved to node state.
+			// Otherwise bifrost could accidentally include a forced-to-leave
+			// member whose state was not available to this query.
+			return common.PubKeys{}, fmt.Errorf("vault member %s has no matching node account", member.String())
+		}
+		if node.GetForcedToLeave() {
+			// Exclude the known unsafe member before go-tss starts joining peers.
+			continue
+		}
+		eligible = append(eligible, member)
+	}
+	if len(eligible) == 0 {
+		return common.PubKeys{}, fmt.Errorf("vault %s has no eligible signer membership", vaultPubKey.String())
+	}
+	return eligible, nil
 }
 
 // IsCatchingUp returns bool for if thorchain is catching up to the rest of the

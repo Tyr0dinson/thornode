@@ -102,19 +102,34 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 	}
-	var requestedPath string
+	var requestedVault bool
+	var requestedNodes bool
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		requestedPath = req.URL.Path
 		rw.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(rw).Encode(map[string]any{
-			"block_height": 100,
-			"pub_key":      vaultPubKey.String(),
-			"coins":        []string{},
-			"type":         "AsgardVault",
-			"status":       "ActiveVault",
-			"membership":   members.Strings(),
-		}); err != nil {
-			t.Fatalf("failed to encode vault response: %v", err)
+		switch req.URL.Path {
+		case "/thorchain/vault/" + vaultPubKey.String():
+			requestedVault = true
+			if err := json.NewEncoder(rw).Encode(map[string]any{
+				"block_height": 100,
+				"pub_key":      vaultPubKey.String(),
+				"coins":        []string{},
+				"type":         "AsgardVault",
+				"status":       "ActiveVault",
+				"membership":   members.Strings(),
+			}); err != nil {
+				t.Fatalf("failed to encode vault response: %v", err)
+			}
+		case NodeAccountsEndpoint:
+			requestedNodes = true
+			nodes := []*stypes.QueryNodeResponse{
+				{PubKeySet: common.PubKeySet{Secp256k1: members[0]}},
+				{PubKeySet: common.PubKeySet{Secp256k1: members[1]}},
+			}
+			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
+				t.Fatalf("failed to encode nodes response: %v", err)
+			}
+		default:
+			http.NotFound(rw, req)
 		}
 	}))
 	defer server.Close()
@@ -130,11 +145,110 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetKeysignParty returned error: %v", err)
 	}
-	if requestedPath != "/thorchain/vault/"+vaultPubKey.String() {
-		t.Fatalf("expected vault endpoint, got %s", requestedPath)
+	if !requestedVault || !requestedNodes {
+		t.Fatalf("expected vault and nodes endpoints to be requested")
 	}
 	if !party.Equals(members) {
 		t.Fatalf("expected members %v, got %v", members, party)
+	}
+}
+
+func TestGetKeysignPartyExcludesForcedToLeave(t *testing.T) {
+	vaultPubKey := stypes.GetRandomPubKey()
+	members := common.PubKeys{
+		stypes.GetRandomPubKey(),
+		stypes.GetRandomPubKey(),
+		stypes.GetRandomPubKey(),
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/thorchain/vault/" + vaultPubKey.String():
+			if err := json.NewEncoder(rw).Encode(map[string]any{
+				"block_height": 100,
+				"pub_key":      vaultPubKey.String(),
+				"coins":        []string{},
+				"type":         "AsgardVault",
+				"status":       "ActiveVault",
+				"membership":   members.Strings(),
+			}); err != nil {
+				t.Fatalf("failed to encode vault response: %v", err)
+			}
+		case NodeAccountsEndpoint:
+			nodes := []*stypes.QueryNodeResponse{
+				{PubKeySet: common.PubKeySet{Secp256k1: members[0]}},
+				{PubKeySet: common.PubKeySet{Secp256k1: members[1]}, ForcedToLeave: true},
+				{PubKeySet: common.PubKeySet{Secp256k1: members[2]}},
+			}
+			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
+				t.Fatalf("failed to encode nodes response: %v", err)
+			}
+		default:
+			http.NotFound(rw, req)
+		}
+	}))
+	defer server.Close()
+
+	httpClient := retryablehttp.NewClient()
+	httpClient.Logger = nil
+	bridge := &thorchainBridge{
+		cfg:        config.BifrostClientConfiguration{ChainHost: server.Listener.Addr().String()},
+		httpClient: httpClient,
+	}
+
+	party, err := bridge.GetKeysignParty(vaultPubKey)
+	if err != nil {
+		t.Fatalf("GetKeysignParty returned error: %v", err)
+	}
+	expected := common.PubKeys{members[0], members[2]}
+	if !party.Equals(expected) {
+		t.Fatalf("expected members %v, got %v", expected, party)
+	}
+}
+
+func TestGetKeysignPartyFailsWhenVaultMemberMissingNodeState(t *testing.T) {
+	vaultPubKey := stypes.GetRandomPubKey()
+	members := common.PubKeys{
+		stypes.GetRandomPubKey(),
+		stypes.GetRandomPubKey(),
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/thorchain/vault/" + vaultPubKey.String():
+			if err := json.NewEncoder(rw).Encode(map[string]any{
+				"block_height": 100,
+				"pub_key":      vaultPubKey.String(),
+				"coins":        []string{},
+				"type":         "AsgardVault",
+				"status":       "ActiveVault",
+				"membership":   members.Strings(),
+			}); err != nil {
+				t.Fatalf("failed to encode vault response: %v", err)
+			}
+		case NodeAccountsEndpoint:
+			nodes := []*stypes.QueryNodeResponse{
+				{PubKeySet: common.PubKeySet{Secp256k1: members[0]}},
+			}
+			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
+				t.Fatalf("failed to encode nodes response: %v", err)
+			}
+		default:
+			http.NotFound(rw, req)
+		}
+	}))
+	defer server.Close()
+
+	httpClient := retryablehttp.NewClient()
+	httpClient.Logger = nil
+	bridge := &thorchainBridge{
+		cfg:        config.BifrostClientConfiguration{ChainHost: server.Listener.Addr().String()},
+		httpClient: httpClient,
+	}
+
+	_, err := bridge.GetKeysignParty(vaultPubKey)
+	if err == nil || !strings.Contains(err.Error(), "has no matching node account") {
+		t.Fatalf("expected missing node account error, got %v", err)
 	}
 }
 

@@ -153,6 +153,9 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	if strings.HasPrefix(upperKey, "HALT") {
 		return 0, nil
 	}
+	if strings.HasPrefix(upperKey, "COMPROMISEDVAULT-") {
+		return 0, nil
+	}
 	if key == constants.SignerConcurrency.String() {
 		return 3, nil
 	}
@@ -165,6 +168,16 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 func (b fakeBridge) GetMimirWithRef(template, ref string) (int64, error) {
 	key := fmt.Sprintf(template, ref)
 	return b.GetMimir(key)
+}
+
+// GetKeysignParty returns raw vault membership for tests that do not exercise
+// forced-to-leave filtering in the bridge itself.
+func (b fakeBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
+	vault, err := b.GetVault(vaultPubKey.String())
+	if err != nil {
+		return common.PubKeys{}, err
+	}
+	return vault.GetMembership(), nil
 }
 
 func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {

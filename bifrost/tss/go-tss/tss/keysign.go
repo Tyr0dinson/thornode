@@ -71,20 +71,12 @@ func (t *TssServer) generateSignature(
 
 	// we use the old join party
 	if oldJoinParty {
-		allParticipants = req.SignerPubKeys
 		myPk, err := conversion.GetPubKeyFromPeerID(ourPeerString)
 		if err != nil {
 			t.logger.Info().Msgf("fail to convert the p2p id(%s) to pubkey, turn to wait for signature", ourPeerString)
 			return keysign.Response{}, p2p.ErrNotActiveSigner
 		}
-		isSignMember := false
-		for _, el := range allParticipants {
-			if myPk == el {
-				isSignMember = true
-				break
-			}
-		}
-		if !isSignMember {
+		if !containsSignerPubKey(allParticipants, myPk) {
 			t.logger.Info().Msgf("we(%s) are not the active signer", ourPeerString)
 			return keysign.Response{}, p2p.ErrNotActiveSigner
 		}
@@ -111,7 +103,7 @@ func (t *TssServer) generateSignature(
 				}, nil
 			}
 
-			blameNodes, err := blameMgr.NodeSyncBlame(req.SignerPubKeys, onlinePeers)
+			blameNodes, err := blameMgr.NodeSyncBlame(allParticipants, onlinePeers)
 			if err != nil {
 				t.logger.Err(err).Msg("fail to get peers to blame")
 			}
@@ -200,6 +192,50 @@ func (t *TssServer) updateKeySignResult(result keysign.Response, timeSpent time.
 	t.tssMetrics.UpdateKeySign(timeSpent, false)
 }
 
+// keysignParticipants returns the requested signer subset after validating it
+// against the full keygen participant list. Empty requestedSigners preserves the
+// historical behavior of using every local-state participant.
+func keysignParticipants(allParticipants, requestedSigners []string) ([]string, error) {
+	if len(requestedSigners) == 0 {
+		return append([]string(nil), allParticipants...), nil
+	}
+
+	participantSet := make(map[string]struct{}, len(allParticipants))
+	for _, participant := range allParticipants {
+		participantSet[normalizePubKey(participant)] = struct{}{}
+	}
+
+	selected := make([]string, 0, len(requestedSigners))
+	seen := make(map[string]struct{}, len(requestedSigners))
+	for _, signer := range requestedSigners {
+		normalized := normalizePubKey(signer)
+		if normalized == "" {
+			return nil, errors.New("requested keysign signer pubkey is empty")
+		}
+		if _, ok := participantSet[normalized]; !ok {
+			return nil, fmt.Errorf("requested keysign signer %s is not a vault participant", strings.TrimSpace(signer))
+		}
+		if _, ok := seen[normalized]; ok {
+			return nil, fmt.Errorf("duplicate requested keysign signer %s", strings.TrimSpace(signer))
+		}
+		seen[normalized] = struct{}{}
+		selected = append(selected, strings.TrimSpace(signer))
+	}
+	return selected, nil
+}
+
+// containsSignerPubKey reports whether signer is in participants, normalizing
+// whitespace and case to match the validation rules in keysignParticipants.
+func containsSignerPubKey(participants []string, signer string) bool {
+	signer = normalizePubKey(signer)
+	for _, participant := range participants {
+		if normalizePubKey(participant) == signer {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	t.logger.Info().Str("pool pub key", req.PoolPubKey).
 		Str("signer pub keys", strings.Join(req.SignerPubKeys, ",")).
@@ -246,23 +282,6 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		return keysign.Response{}, fmt.Errorf("unsupported signing algo: %s", algo)
 	}
 
-	keySignChannels := keysignInstance.GetTssKeySignChannels()
-	t.p2pCommunication.SetSubscribe(messages.TSSKeySignMsg, msgID, keySignChannels)
-	t.p2pCommunication.SetSubscribe(messages.TSSKeySignVerMsg, msgID, keySignChannels)
-	t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, msgID, keySignChannels)
-	t.p2pCommunication.SetSubscribe(messages.TSSTaskDone, msgID, keySignChannels)
-
-	defer func() {
-		t.p2pCommunication.CancelSubscribe(messages.TSSKeySignMsg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSKeySignVerMsg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, msgID)
-
-		t.p2pCommunication.ReleaseStream(msgID)
-		t.signatureNotifier.ReleaseStream(msgID)
-		t.partyCoordinator.ReleaseStream(msgID)
-	}()
-
 	localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
 	if err != nil {
 		return emptyResp, fmt.Errorf("fail to get local keygen state: %w", err)
@@ -301,15 +320,52 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		return emptyResp, errors.New("empty signer pub keys")
 	}
 
+	activeParticipants := localStateItem.ParticipantKeys
+	if oldJoinParty || (algo == tcommon.SigningAlgoSecp256k1 && len(req.SignerPubKeys) > 0) {
+		// For new ECDSA join-party requests, SignerPubKeys is the filtered vault
+		// party from bifrost. EdDSA keeps the existing all-participant behavior.
+		activeParticipants, err = keysignParticipants(localStateItem.ParticipantKeys, req.SignerPubKeys)
+		if err != nil {
+			return emptyResp, err
+		}
+	}
+
+	// Threshold is based on the full keygen participant set, not the filtered
+	// active signer list. Removing unsafe members must not lower the vault's TSS
+	// security threshold.
 	threshold, err := conversion.GetThreshold(len(localStateItem.ParticipantKeys))
 	if err != nil {
 		t.logger.Error().Err(err).Msg("fail to get the threshold")
 		return emptyResp, errors.New("fail to get threshold")
 	}
-	if len(req.SignerPubKeys) <= threshold && oldJoinParty {
-		t.logger.Error().Msgf("not enough signers, threshold=%d and signers=%d", threshold, len(req.SignerPubKeys))
+	if len(activeParticipants) <= threshold {
+		t.logger.Error().Msgf("not enough signers, threshold=%d and signers=%d", threshold, len(activeParticipants))
 		return emptyResp, errors.New("not enough signers")
 	}
+	if algo == tcommon.SigningAlgoSecp256k1 &&
+		len(req.SignerPubKeys) > 0 &&
+		!containsSignerPubKey(activeParticipants, localStateItem.LocalPartyKey) {
+		// Stand down before subscriptions and goroutines. An excluded node is not
+		// expected to see the signature stream for this ceremony.
+		return keysign.Response{Status: common.NA}, nil
+	}
+
+	keySignChannels := keysignInstance.GetTssKeySignChannels()
+	t.p2pCommunication.SetSubscribe(messages.TSSKeySignMsg, msgID, keySignChannels)
+	t.p2pCommunication.SetSubscribe(messages.TSSKeySignVerMsg, msgID, keySignChannels)
+	t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, msgID, keySignChannels)
+	t.p2pCommunication.SetSubscribe(messages.TSSTaskDone, msgID, keySignChannels)
+
+	defer func() {
+		t.p2pCommunication.CancelSubscribe(messages.TSSKeySignMsg, msgID)
+		t.p2pCommunication.CancelSubscribe(messages.TSSKeySignVerMsg, msgID)
+		t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
+		t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, msgID)
+
+		t.p2pCommunication.ReleaseStream(msgID)
+		t.signatureNotifier.ReleaseStream(msgID)
+		t.partyCoordinator.ReleaseStream(msgID)
+	}()
 
 	blameMgr := keysignInstance.GetTssCommonStruct().GetBlameMgr()
 
@@ -342,7 +398,9 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	// we generate the signature ourselves
 	go func() {
 		defer wg.Done()
-		generatedSig, errGen = t.generateSignature(msgID, msgsToSign, req, threshold, localStateItem.ParticipantKeys, localStateItem, blameMgr, keysignInstance, sigChan)
+		// Join-party and NodeSyncBlame use activeParticipants so excluded vault
+		// members are not invited or blamed for the filtered ceremony.
+		generatedSig, errGen = t.generateSignature(msgID, msgsToSign, req, threshold, activeParticipants, localStateItem, blameMgr, keysignInstance, sigChan)
 	}()
 	wg.Wait()
 	close(sigChan)

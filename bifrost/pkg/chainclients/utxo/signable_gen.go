@@ -38,6 +38,12 @@ func (ts *tssSignableBCH) SignECDSA(payload []byte) (*bchec.Signature, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(result) == 0 {
+		return nil, tss.ErrNotActiveSigner
+	}
+	if len(result) < 64 {
+		return nil, fmt.Errorf("TSS signature is too short: got %d bytes", len(result))
+	}
 	var sig bchec.Signature
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
@@ -97,6 +103,12 @@ func (ts *tssSignableBTC) Sign(payload []byte) (*btcec.Signature, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(result) == 0 {
+		return nil, tss.ErrNotActiveSigner
+	}
+	if len(result) < 64 {
+		return nil, fmt.Errorf("TSS signature is too short: got %d bytes", len(result))
+	}
 	var sig btcec.Signature
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
@@ -151,6 +163,12 @@ func (ts *tssSignableDOGE) Sign(payload []byte) (*dogeec.Signature, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(result) == 0 {
+		return nil, tss.ErrNotActiveSigner
+	}
+	if len(result) < 64 {
+		return nil, fmt.Errorf("TSS signature is too short: got %d bytes", len(result))
+	}
 	var sig dogeec.Signature
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
@@ -204,6 +222,12 @@ func (ts *tssSignableLTC) Sign(payload []byte) (*ltcec.Signature, error) {
 	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String())
 	if err != nil {
 		return nil, err
+	}
+	if len(result) == 0 {
+		return nil, tss.ErrNotActiveSigner
+	}
+	if len(result) < 64 {
+		return nil, fmt.Errorf("TSS signature is too short: got %d bytes", len(result))
 	}
 	var sig ltcec.Signature
 	sig.R = new(big.Int).SetBytes(result[:32])

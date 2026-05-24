@@ -1079,6 +1079,9 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		var approvalRawTx []byte
 		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, height, tx)
 		if err != nil {
+			if errors.Is(err, tss.ErrNotActiveSigner) {
+				return nil, nil, nil, err
+			}
 			c.logger.Err(err).Msg("fail to sign approval transaction")
 			return nil, nonceBytes, nil, fmt.Errorf("fail to sign approval transaction: %w", err)
 		}
@@ -1162,6 +1165,9 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 	// Sign main transaction
 	rawTx, err = c.sign(outboundTx, tx.VaultPubKey, height, tx)
+	if errors.Is(err, tss.ErrNotActiveSigner) {
+		return nil, nil, nil, err
+	}
 	if err != nil || len(rawTx) == 0 {
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
@@ -1378,6 +1384,9 @@ func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, heigh
 	rawBytes, err := c.kw.Sign(tx, poolPubKey)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
+	}
+	if errors.Is(err, tss.ErrNotActiveSigner) {
+		return nil, err
 	}
 	var keysignError tss.KeysignError
 	if errors.As(err, &keysignError) {

@@ -551,6 +551,9 @@ func (c *TronClient) SignTx(
 
 	signature, err := c.sign(hash, txOutItem)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotActiveSigner) {
+			return nil, nil, nil, err
+		}
 		c.logger.Err(err).Msg("failed to sign tx")
 		return nil, nil, nil, err
 	}
@@ -760,6 +763,9 @@ func (c *TronClient) sign(
 		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String())
 		if err == nil && signature != nil {
 			return append(signature, recovery...), nil
+		}
+		if errors.Is(err, tss.ErrNotActiveSigner) {
+			return nil, err
 		}
 
 		var keysignError tss.KeysignError

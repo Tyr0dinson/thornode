@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/blang/semver"
@@ -18,6 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -30,12 +32,27 @@ var _ = Suite(&KeySignTestSuite{})
 // ---------------------------------------------------------------------------
 
 type mockTssServer struct {
-	resp keysign.Response
-	err  error
+	resp    keysign.Response
+	err     error
+	lastReq keysign.Request
+	reqs    []keysign.Request
+	mu      sync.Mutex
 }
 
 func (m *mockTssServer) KeySign(req keysign.Request) (keysign.Response, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastReq = req
+	m.reqs = append(m.reqs, req)
 	return m.resp, m.err
+}
+
+// requests returns a copy of all captured keysign requests so assertions can
+// inspect concurrent signer dispatch without racing the mock.
+func (m *mockTssServer) requests() []keysign.Request {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]keysign.Request(nil), m.reqs...)
 }
 
 // ---------------------------------------------------------------------------
@@ -43,10 +60,22 @@ func (m *mockTssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 // ---------------------------------------------------------------------------
 
 type mockBridgeForKeysign struct {
-	version     semver.Version
-	versionErr  error
-	blockHeight int64
-	blockErr    error
+	version          semver.Version
+	versionErr       error
+	blockHeight      int64
+	blockErr         error
+	keysignParty     common.PubKeys
+	keysignPartyErr  error
+	keysignPartyCall int
+	mimirValue       int64
+	mimirErr         error
+	mimirTemplate    string
+	mimirRef         string
+	mimirCall        int
+	mimirKeyValue    int64
+	mimirKeyErr      error
+	mimirKey         string
+	mimirKeyCall     int
 }
 
 var _ thorclient.ThorchainBridge = (*mockBridgeForKeysign)(nil)
@@ -56,7 +85,8 @@ func (m *mockBridgeForKeysign) EnsureNodeWhitelistedWithTimeout() error     { re
 func (m *mockBridgeForKeysign) FetchNodeStatus() (stypes.NodeStatus, error) { return 0, nil }
 func (m *mockBridgeForKeysign) FetchActiveNodes() ([]common.PubKey, error)  { return nil, nil }
 func (m *mockBridgeForKeysign) GetKeysignParty(common.PubKey) (common.PubKeys, error) {
-	return nil, nil
+	m.keysignPartyCall++
+	return m.keysignParty, m.keysignPartyErr
 }
 func (m *mockBridgeForKeysign) GetAsgards() (stypes.Vaults, error) { return nil, nil }
 func (m *mockBridgeForKeysign) GetVault(string) (stypes.Vault, error) {
@@ -76,8 +106,21 @@ func (m *mockBridgeForKeysign) GetKeygenStdTx(common.PubKey, []byte, []byte, []s
 	return nil, nil
 }
 
-func (m *mockBridgeForKeysign) GetMimir(string) (int64, error)                { return 0, nil }
-func (m *mockBridgeForKeysign) GetMimirWithRef(string, string) (int64, error) { return 0, nil }
+// GetMimir captures direct Mimir lookups used by uppercase fallback checks.
+func (m *mockBridgeForKeysign) GetMimir(key string) (int64, error) {
+	m.mimirKeyCall++
+	m.mimirKey = key
+	return m.mimirKeyValue, m.mimirKeyErr
+}
+
+// GetMimirWithRef captures templated Mimir lookups used by the primary
+// CompromisedVault check.
+func (m *mockBridgeForKeysign) GetMimirWithRef(template, ref string) (int64, error) {
+	m.mimirCall++
+	m.mimirTemplate = template
+	m.mimirRef = ref
+	return m.mimirValue, m.mimirErr
+}
 func (m *mockBridgeForKeysign) GetInboundOutbound(common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error) {
 	return nil, nil, nil
 }
@@ -427,7 +470,7 @@ func (s *KeySignTestSuite) TestRemoteSignNotSelected(c *C) {
 	defer ks.Stop()
 
 	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoSecp256k1, "poolpub")
-	c.Assert(err, IsNil)
+	c.Assert(errors.Is(err, ErrNotActiveSigner), Equals, true)
 	c.Assert(sig, IsNil)
 	c.Assert(recovery, IsNil)
 }
@@ -556,6 +599,11 @@ func (s *KeySignTestSuite) TestToLocalTSSSignerSuccess(c *C) {
 	bridge := &mockBridgeForKeysign{
 		version:     semver.MustParse("1.0.0"),
 		blockHeight: 100,
+		keysignParty: common.PubKeys{
+			stypes.GetRandomPubKey(),
+			stypes.GetRandomPubKey(),
+			stypes.GetRandomPubKey(),
+		},
 	}
 	ks, _ := NewKeySign(server, bridge)
 
@@ -570,6 +618,164 @@ func (s *KeySignTestSuite) TestToLocalTSSSignerSuccess(c *C) {
 	c.Assert(result.Err, IsNil)
 	c.Assert(result.R, Equals, rB64)
 	c.Assert(result.S, Equals, sB64)
+	c.Assert(server.lastReq.SignerPubKeys, DeepEquals, bridge.keysignParty.Strings())
+	c.Assert(bridge.keysignPartyCall, Equals, 1)
+	c.Assert(bridge.mimirCall, Equals, 1)
+	c.Assert(bridge.mimirTemplate, Equals, constants.MimirTemplateCompromisedVault)
+	c.Assert(bridge.mimirRef, Equals, "poolpub")
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerCompromisedVaultFailsBeforeKeysignParty(c *C) {
+	server := &mockTssServer{}
+	bridge := &mockBridgeForKeysign{
+		version:     semver.MustParse("1.0.0"),
+		blockHeight: 100,
+		mimirValue:  50,
+	}
+	ks, _ := NewKeySign(server, bridge)
+
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, NotNil)
+	c.Assert(result.Err.Error(), Matches, ".*vault poolpub is flagged as compromised.*")
+	c.Assert(bridge.mimirCall, Equals, 1)
+	c.Assert(bridge.keysignPartyCall, Equals, 0)
+	c.Assert(server.lastReq.PoolPubKey, Equals, "")
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerCompromisedVaultUppercaseMimir(c *C) {
+	server := &mockTssServer{}
+	bridge := &mockBridgeForKeysign{
+		version:       semver.MustParse("1.0.0"),
+		blockHeight:   100,
+		mimirKeyValue: 50,
+	}
+	ks, _ := NewKeySign(server, bridge)
+
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, NotNil)
+	c.Assert(result.Err.Error(), Matches, ".*vault poolpub is flagged as compromised.*")
+	c.Assert(bridge.mimirCall, Equals, 1)
+	c.Assert(bridge.mimirKeyCall, Equals, 1)
+	c.Assert(bridge.mimirKey, Equals, "COMPROMISEDVAULT-POOLPUB")
+	c.Assert(bridge.keysignPartyCall, Equals, 0)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerLocalStatePartyBypassesKeysignParty(c *C) {
+	msg1 := base64.StdEncoding.EncodeToString([]byte("msg1"))
+	rBytes := make([]byte, 32)
+	rBytes[0] = 0x01
+	sBytes := make([]byte, 32)
+	sBytes[0] = 0x02
+	rB64 := base64.StdEncoding.EncodeToString(rBytes)
+	sB64 := base64.StdEncoding.EncodeToString(sBytes)
+	recoveryB64 := base64.StdEncoding.EncodeToString([]byte{0x00})
+
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Signatures: []keysign.Signature{
+				{Msg: msg1, R: rB64, S: sB64, RecoveryID: recoveryB64},
+			},
+			Status: tsscommon.Success,
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:         semver.MustParse("1.0.0"),
+		blockHeight:     100,
+		keysignPartyErr: fmt.Errorf("party error"),
+		mimirValue:      50,
+	}
+	ks, _ := NewKeySign(server, bridge)
+
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoSecp256k1, Msg: msg1, Resp: make(chan tssKeySignResult, 1), UseLocalStateParty: true},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, IsNil)
+	c.Assert(server.lastReq.SignerPubKeys, HasLen, 0)
+	c.Assert(bridge.keysignPartyCall, Equals, 0)
+	c.Assert(bridge.mimirCall, Equals, 0)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerMapsNAResponseToEmptyResult(c *C) {
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Status: tsscommon.NA,
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:     semver.MustParse("1.0.0"),
+		blockHeight: 100,
+		keysignParty: common.PubKeys{
+			stypes.GetRandomPubKey(),
+			stypes.GetRandomPubKey(),
+			stypes.GetRandomPubKey(),
+		},
+	}
+	ks, _ := NewKeySign(server, bridge)
+
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, IsNil)
+	c.Assert(result.R, Equals, "")
+	c.Assert(result.S, Equals, "")
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerEdDSABypassesKeysignParty(c *C) {
+	msg1 := base64.StdEncoding.EncodeToString([]byte("msg1"))
+	sBytes := make([]byte, 32)
+	sBytes[0] = 0x02
+	sB64 := base64.StdEncoding.EncodeToString(sBytes)
+
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Signatures: []keysign.Signature{
+				{Msg: msg1, S: sB64},
+			},
+			Status: tsscommon.Success,
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:         semver.MustParse("1.0.0"),
+		blockHeight:     100,
+		keysignPartyErr: fmt.Errorf("party error"),
+	}
+	ks, _ := NewKeySign(server, bridge)
+
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoEd25519, Msg: msg1, Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoEd25519, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, IsNil)
+	c.Assert(server.lastReq.SignerPubKeys, HasLen, 0)
+	c.Assert(bridge.keysignPartyCall, Equals, 0)
 }
 
 func (s *KeySignTestSuite) TestToLocalTSSSignerServerError(c *C) {

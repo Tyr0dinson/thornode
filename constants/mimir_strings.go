@@ -26,6 +26,7 @@ const (
 	MimirTemplatePauseLPDeposit            = "PauseLPDeposit-%s"            // Use with Asset MimirString
 	MimirTemplateHaltSigning               = "HaltSigning%s"                // Use with Chain (mixed case, e.g., HaltSigningETH)
 	MimirTemplateHaltTrading               = "Halt%sTrading"                // Use with Chain (mixed case, e.g., HaltETHTrading)
+	MimirTemplateCompromisedVault          = "CompromisedVault-%s"          // Use with vault PubKey
 	MimirKeyHaltTradingGlobal              = "HaltTrading"                  // Global trading halt
 
 	MimirRefL1           = "L1"           // Use with SwapSlipBasisPoints

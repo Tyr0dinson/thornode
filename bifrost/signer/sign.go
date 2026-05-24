@@ -711,7 +711,7 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 
 	// sign the public key with its own private key
 	data := []byte(pk.String())
-	sigBytes, _, err := ks.RemoteSign(data, common.SigningAlgoSecp256k1, pk.String())
+	sigBytes, _, err := ks.RemoteSignWithLocalStateParty(data, common.SigningAlgoSecp256k1, pk.String())
 	if err != nil {
 		// this is expected in some cases if we were not in the signing party
 		s.logger.Info().Err(err).Msg("fail secp256k1 check signing")
@@ -1045,6 +1045,13 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		tx.SigningID = item.Key()
 		startKeySign := time.Now()
 		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
+		if errors.Is(err, tss.ErrNotActiveSigner) {
+			s.logger.Info().
+				Str("chain", tx.Chain.String()).
+				Str("vault_pubkey", tx.VaultPubKey.String()).
+				Msg("local node is not in active keysign party; skipping outbound")
+			return nil, nil, nil
+		}
 		if err != nil {
 			s.logger.Error().Err(err).Msg("fail to sign tx")
 			return checkpoint, nil, err
