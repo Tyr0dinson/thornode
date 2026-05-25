@@ -108,6 +108,9 @@ func fetchActiveRagnarokChains(cl *http.Client, endpoint string) (map[string]str
 	return chains, nil
 }
 
+// fetchRagnarokInProgress checks the network-level ragnarok endpoint because
+// solvency halts can be raised during the drain before per-chain ragnarok Mimir
+// and outbound queue state are visible to the watcher.
 func fetchRagnarokInProgress(cl *http.Client, endpoint string) (bool, error) {
 	resp, err := cl.Get(endpoint)
 	if err != nil {
