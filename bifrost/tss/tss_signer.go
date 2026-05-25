@@ -413,32 +413,6 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 		return
 	}
 
-	// Status values are success=1, fail=2, NA=0. NA with no signatures or blame
-	// is the explicit stand-down response for a local node excluded from the
-	// filtered ECDSA signer set.
-	if keySignResp.Status == tsscommon.NA &&
-		len(keySignResp.Signatures) == 0 &&
-		keySignResp.Blame.FailReason == "" &&
-		len(keySignResp.Blame.BlameNodes) == 0 {
-		for _, t := range tasks {
-			t.Resp <- tssKeySignResult{}
-		}
-		return
-	}
-
-	// Status values are success=1, fail=2, NA=0. NA with no signatures or blame
-	// is the explicit stand-down response for a local node excluded from the
-	// filtered ECDSA signer set.
-	if keySignResp.Status == tsscommon.NA &&
-		len(keySignResp.Signatures) == 0 &&
-		keySignResp.Blame.FailReason == "" &&
-		len(keySignResp.Blame.BlameNodes) == 0 {
-		for _, t := range tasks {
-			t.Resp <- tssKeySignResult{}
-		}
-		return
-	}
-
 	// 1 means success,2 means fail , 0 means NA
 	if keySignResp.Status == 1 && len(keySignResp.Blame.BlameNodes) == 0 {
 		s.logger.Info().Msgf("response: %+v", keySignResp)
