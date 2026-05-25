@@ -25,8 +25,10 @@ type XMRPostChurnActor struct {
 const (
 	xmrPostChurnNewNodesPerChurn = int64(3)
 	// Keep this above the 300s FROST keygen timeout, but low enough that a
-	// missed local keygen gets a retry before the actor deadline.
-	xmrPostChurnChurnRetryInterval = int64(360)
+	// missed local keygen gets a retry before the actor deadline. This matches
+	// the mocknet ChurnRetryInterval override; 360 would also clear the timeout,
+	// but using one value avoids a misleading reviewer-only delta.
+	xmrPostChurnChurnRetryInterval = int64(365)
 )
 
 func NewXMRPostChurnActor(rng *rand.Rand) *Actor {

@@ -370,9 +370,9 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 	if algo == common.SigningAlgoSecp256k1 && !useLocalStateParty {
 		// The compromise mimir is a simple flag: any positive value disables
 		// normal ECDSA signing from this vault before go-tss opens a join party.
-		flagged, err := s.getCompromisedVaultMimir(poolPubKey)
-		if err != nil {
-			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get compromised vault mimir: %w", err))
+		flagged, flaggedErr := s.getCompromisedVaultMimir(poolPubKey)
+		if flaggedErr != nil {
+			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get compromised vault mimir: %w", flaggedErr))
 			return
 		}
 		if flagged {
@@ -384,9 +384,9 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 		// keysign. EdDSA/FROST paths do not use this vulnerable Paillier flow, and
 		// keygen check-signs must use the local state because their vault is not
 		// stored on thornode yet.
-		signers, err := s.bridge.GetKeysignParty(common.PubKey(poolPubKey))
-		if err != nil {
-			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get keysign party: %w", err))
+		signers, signersErr := s.bridge.GetKeysignParty(common.PubKey(poolPubKey))
+		if signersErr != nil {
+			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get keysign party: %w", signersErr))
 			return
 		}
 		tssMsg.SignerPubKeys = signers.Strings()
@@ -394,9 +394,9 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 
 	s.logger.Info().Msgf("msgToSign to tss Local node PoolPubKey: %s, Messages: %+v, block height: %d", tssMsg.PoolPubKey, tssMsg.Messages, tssMsg.BlockHeight)
 
-	keySignResp, err := s.server.KeySign(tssMsg)
-	if err != nil {
-		s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail tss keysign: %w", err))
+	keySignResp, respErr := s.server.KeySign(tssMsg)
+	if respErr != nil {
+		s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail tss keysign: %w", respErr))
 		return
 	}
 

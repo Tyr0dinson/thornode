@@ -114,6 +114,38 @@ func TestSignAndBroadcastTxDoesNotReplaceSubmittedOneShotMemo(t *testing.T) {
 	}
 }
 
+func TestSignAndBroadcastTxAcceptsSubmittedSolanaTransaction(t *testing.T) {
+	prevDelay := solanaSimTxBroadcastRetryDelay
+	prevAttempts := solanaSimTxMaxBroadcastAttempts
+	solanaSimTxBroadcastRetryDelay = 0
+	solanaSimTxMaxBroadcastAttempts = 4
+	defer func() {
+		solanaSimTxBroadcastRetryDelay = prevDelay
+		solanaSimTxMaxBroadcastAttempts = prevAttempts
+	}()
+
+	client := &retryLiteChainClient{
+		broadcastTxIDs: []string{"submitted"},
+		broadcastErrs: []error{
+			errors.New("broadcasted tx submitted not confirmed on solana node after 1m0s"),
+		},
+	}
+
+	txid, err := SignAndBroadcastTx(client, SimTx{Chain: common.SOLChain})
+	if err != nil {
+		t.Fatalf("expected submitted solana txid to be accepted, got %v", err)
+	}
+	if txid != "submitted" {
+		t.Fatalf("expected submitted txid, got %s", txid)
+	}
+	if client.signCalls != 1 {
+		t.Fatalf("expected 1 sign attempt, got %d", client.signCalls)
+	}
+	if client.broadcastCalls != 1 {
+		t.Fatalf("expected 1 broadcast attempt, got %d", client.broadcastCalls)
+	}
+}
+
 func TestSignAndBroadcastTxRetriesTronTransportFailures(t *testing.T) {
 	prevDelay := tronSimTxBroadcastRetryDelay
 	prevAttempts := tronSimTxMaxBroadcastAttempts

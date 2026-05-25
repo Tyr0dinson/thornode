@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	rand "math/rand/v2"
 	"reflect"
 	"testing"
@@ -178,6 +179,8 @@ func TestAcquireUserForAmountSkipsImpossibleStrictQuotedAmount(t *testing.T) {
 	}
 }
 
+// newSwapBalanceTestActor creates a SwapActor with deterministic RNG for
+// balance-selection unit tests.
 func newSwapBalanceTestActor(from, to common.Asset, seed1, seed2 uint64) *SwapActor {
 	//nolint:gosec // deterministic simulation test RNG, not security-sensitive randomness.
 	rng := rand.New(rand.NewPCG(seed1, seed2))
@@ -213,6 +216,55 @@ func TestAcquireUserForAmountTracksSpendableGasBalance(t *testing.T) {
 	err := actor.updateSwapAmount(sdkmath.NewUint(96_000_000), "recommended minimum inbound amount")
 	if err == nil {
 		t.Fatal("expected quoted amount above spendable balance to fail")
+	}
+}
+
+func TestFinishAfterPostSelectionFundingErrorReleasesResources(t *testing.T) {
+	actor := newSwapBalanceTestActor(common.ZECAsset, common.XMRAsset, 9, 10)
+	user := newTestSwapUser(t, "selected", common.ZECAsset, sdkmath.NewUint(100), common.XMRAsset, sdkmath.ZeroUint())
+	if !user.Acquire() {
+		t.Fatal("expected user lock")
+	}
+	actor.user = user
+
+	select {
+	case targetXMRSwapSlot <- struct{}{}:
+		actor.targetXMRSwapSlotAcquired = true
+	default:
+		t.Fatal("target XMR swap slot was already held")
+	}
+	t.Cleanup(func() {
+		if actor.targetXMRSwapSlotAcquired {
+			actor.releaseTargetXMRSwapSlot()
+		}
+		if actor.user != nil {
+			actor.releaseUserSelection()
+		}
+	})
+
+	err := errors.New("fail to get unspent UTXO: insufficient balance: 0.000000 < 4.012694")
+	if !isPostSelectionFundingError(err) {
+		t.Fatal("expected insufficient balance error to be classified as post-selection funding failure")
+	}
+
+	result := actor.finishAfterPostSelectionFundingError(err)
+	if !result.Finish || result.Continue || result.Error != nil {
+		t.Fatalf("expected finished skip result, got %+v", result)
+	}
+	if actor.user != nil {
+		t.Fatal("expected selected user to be cleared")
+	}
+	if user.IsLocked() {
+		t.Fatal("expected selected user to be released")
+	}
+	if actor.targetXMRSwapSlotAcquired {
+		t.Fatal("expected target XMR swap slot to be released")
+	}
+
+	select {
+	case <-targetXMRSwapSlot:
+		t.Fatal("expected target XMR swap slot channel to be empty")
+	default:
 	}
 }
 
