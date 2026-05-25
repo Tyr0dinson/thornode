@@ -986,7 +986,7 @@ services:
       - "8091:8091"
     environment:
       TRON_NODE_TYPE: mocknet-fullnode
-      TRON_SEED_NODE: docker-tron-supernode-1:18888
+      TRON_SEED_NODE: tron-supernode:18888
     healthcheck:
       # The simulator signs TRON txs with wall-clock timestamps, but TRON sets tx
       # expiration from the fullnode's latest block. Require a fresh fullnode tip

@@ -48,7 +48,7 @@ const (
 	// starts relaying stable block production from the supernode.
 	tronRPCReadinessTimeout   = 4 * time.Minute
 	solanaRPCReadinessTimeout = 4 * time.Minute
-	zecRPCReadinessTimeout    = 4 * time.Minute
+	zecRPCReadinessTimeout    = 8 * time.Minute
 )
 
 var bifrostReadinessEndpoints = []string{
@@ -91,6 +91,8 @@ func simulationStages() []simulationStage {
 		{name: "memoless-swaps", defaultOn: true, constructor: suites.MemolessSwaps},
 		{name: "consolidate", defaultOn: true, constructor: features.Consolidate},
 		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
+		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},
+		{name: "forced-to-leave-keysign", defaultOn: false, constructor: core.NewForcedToLeaveKeysignActor},
 		{name: "inactive-vault-refunds", defaultOn: false, constructor: features.InactiveVaultRefunds},
 		{name: "solvency", defaultOn: true, constructor: core.NewSolvencyCheckActor},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},

@@ -108,6 +108,23 @@ func fetchActiveRagnarokChains(cl *http.Client, endpoint string) (map[string]str
 	return chains, nil
 }
 
+func fetchRagnarokInProgress(cl *http.Client, endpoint string) (bool, error) {
+	resp, err := cl.Get(endpoint)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("ragnarok response returned non-200 status: %d", resp.StatusCode)
+	}
+
+	var inProgress bool
+	if err = json.NewDecoder(resp.Body).Decode(&inProgress); err != nil {
+		return false, err
+	}
+	return inProgress, nil
+}
+
 func haltedChains(activeHalts map[string]int64) []string {
 	chains := make([]string, 0, len(activeHalts))
 	for k := range activeHalts {
@@ -144,6 +161,7 @@ func NewSolvencyHalt() *Watcher {
 		Fn: func(config *OpConfig) error {
 			endpoint := fmt.Sprintf("%s/thorchain/mimir", thornodeURL)
 			queueEndpoint := fmt.Sprintf("%s/thorchain/queue/outbound", thornodeURL)
+			ragnarokEndpoint := fmt.Sprintf("%s/thorchain/ragnarok", thornodeURL)
 
 			activeHalts, err := fetchActiveSolvencyHalts(httpClient, endpoint)
 			if err != nil {
@@ -173,6 +191,20 @@ func NewSolvencyHalt() *Watcher {
 				activeHalts = recheck
 			}
 			if transient {
+				return nil
+			}
+
+			// During protocol ragnarok, solvency Mimir can be raised while funds
+			// are actively draining and before the outbound queue/per-chain
+			// ragnarok Mimir checks below see the same state. Treat the network
+			// ragnarok endpoint as the source of truth for that transition window.
+			networkRagnarok, err := fetchRagnarokInProgress(httpClient, ragnarokEndpoint)
+			if err != nil {
+				cl.Error().Err(err).Msg("failed to get ragnarok response")
+			} else if networkRagnarok {
+				cl.Warn().
+					Strs("chains", haltedChains(activeHalts)).
+					Msg("ignoring solvency halt while network ragnarok drains")
 				return nil
 			}
 

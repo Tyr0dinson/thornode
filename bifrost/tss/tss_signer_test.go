@@ -47,14 +47,6 @@ func (m *mockTssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	return m.resp, m.err
 }
 
-// requests returns a copy of all captured keysign requests so assertions can
-// inspect concurrent signer dispatch without racing the mock.
-func (m *mockTssServer) requests() []keysign.Request {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]keysign.Request(nil), m.reqs...)
-}
-
 // ---------------------------------------------------------------------------
 // Mock ThorchainBridge (full interface)
 // ---------------------------------------------------------------------------
@@ -121,6 +113,7 @@ func (m *mockBridgeForKeysign) GetMimirWithRef(template, ref string) (int64, err
 	m.mimirRef = ref
 	return m.mimirValue, m.mimirErr
 }
+
 func (m *mockBridgeForKeysign) GetInboundOutbound(common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error) {
 	return nil, nil, nil
 }
