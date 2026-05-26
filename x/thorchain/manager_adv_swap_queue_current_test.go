@@ -4468,6 +4468,46 @@ func (s AdvSwapQueueSuite) TestGetMaxSwapQuantityHonorsDynamicFloor(c *C) {
 	c.Assert(qWithAff*5, Equals, qNoAff, Commentf("dynamic 50bps is 5x the static 10bps → 1/5 the sub-swaps"))
 }
 
+func (s AdvSwapQueueSuite) TestGetMaxSwapQuantityHonorsPerAssetFloor(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 14400)
+
+	vm := newSwapQueueAdv(k)
+	deposit := cosmos.NewUint(1000 * common.One)
+
+	msg := MsgSwap{
+		Tx: common.Tx{
+			Coins: common.Coins{common.NewCoin(common.RuneAsset(), deposit)},
+			Memo:  "=:BTC.BTC:" + GetRandomBTCAddress().String(),
+		},
+		TargetAsset: common.BTCAsset,
+		State: &types.SwapState{
+			Deposit:  deposit,
+			Interval: 1,
+			Quantity: 0,
+		},
+	}
+	qClass, err := vm.getMaxSwapQuantity(ctx, mgr, common.RuneAsset(), common.BTCAsset, msg)
+	c.Assert(err, IsNil)
+
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.L1SlipMinBps, common.BTCAsset.MimirString()), 50)
+	qAsset, err := vm.getMaxSwapQuantity(ctx, mgr, common.RuneAsset(), common.BTCAsset, msg)
+	c.Assert(err, IsNil)
+
+	c.Assert(qAsset < qClass, Equals, true, Commentf("50 bps per-asset floor should yield fewer sub-swaps than static 10 bps"))
+	c.Assert(qAsset*5, Equals, qClass, Commentf("per-asset 50bps is 5x the static 10bps -> 1/5 the sub-swaps"))
+}
+
 // TestRapidSwapFailedMarketSwapSkip verifies that failed market swaps on rapid swap
 // iteration 1+ do not count as attempts. This prevents rapid swaps from burning through
 // all subswaps of a streaming swap in a single block when swaps fail.

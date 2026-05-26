@@ -56,6 +56,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `SecuredAssetSlipMinBps`: Minimum secured asset swap fee in basis points
 - `SynthSlipMinBps`: Minimum synth asset swap fee in basis points
 - `DerivedSlipMinBps`: Minimum derived asset swap fee in basis points
+- `<Class>SlipMinBps-<asset>`: Per-asset minimum swap fee override for supported classes. The asset suffix uses `Asset.MimirString()` format, for example `L1SlipMinBps-BTC-BTC`, `SynthSlipMinBps-BTC-BTC`, `TradeAccountsSlipMinBps-BTC-BTC`, `DerivedSlipMinBps-THOR-BTC`, `SecuredAssetSlipMinBps-BTC-BTC`, or `StableSlipMinBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48`. An explicitly set value of `0` disables the class floor for that asset. For L1 swaps with affiliate dynamic fees, the effective floor is the greater of the dynamic fee and the static/per-asset floor.
 
 ## Memoless Transactions
 

@@ -84,7 +84,7 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 	}
 
 	// nothing else to verify if this is not a min slip mimir
-	if !strings.HasSuffix(strings.ToUpper(msg.Key), "SLIPMINBPS") {
+	if !constants.IsSlipMinBpsMimirKey(msg.Key) {
 		return nil
 	}
 

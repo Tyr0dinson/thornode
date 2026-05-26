@@ -494,6 +494,7 @@ func getMinSlipBps(
 	}
 
 	var ref constants.ConstantName
+	isL1 := false
 	switch {
 	case asset.IsSyntheticAsset():
 		ref = constants.SynthSlipMinBps
@@ -505,21 +506,44 @@ func getMinSlipBps(
 		ref = constants.SecuredAssetSlipMinBps
 	default:
 		ref = constants.L1SlipMinBps
-		if dynamicFeeMgr != nil && len(affiliates) > 0 {
-			dynBps := dynamicFeeMgr.GetDynamicBps(ctx, affiliates, affiliateBps, sourceAsset, targetAsset)
-			if dynBps > 0 {
-				return cosmos.SafeUintFromInt64(int64(dynBps))
-			}
-		}
+		isL1 = true
 	}
+
+	minSlipBps := cosmos.SafeUintFromInt64(k.GetConfigInt64(ctx, ref))
 	if stableOverride {
 		stableBps := k.GetConfigInt64(ctx, constants.StableSlipMinBps)
 		if stableBps > 0 {
-			return cosmos.SafeUintFromInt64(stableBps)
+			ref = constants.StableSlipMinBps
+			minSlipBps = cosmos.SafeUintFromInt64(stableBps)
+		} else if assetBps, ok := getAssetSlipMinBps(ctx, k, constants.StableSlipMinBps, asset); ok {
+			ref = constants.StableSlipMinBps
+			minSlipBps = assetBps
 		}
 	}
-	minFeeMimir := k.GetConfigInt64(ctx, ref)
-	return cosmos.SafeUintFromInt64(minFeeMimir)
+	if assetBps, ok := getAssetSlipMinBps(ctx, k, ref, asset); ok {
+		minSlipBps = assetBps
+	}
+
+	if isL1 && dynamicFeeMgr != nil && len(affiliates) > 0 {
+		dynBps := cosmos.NewUint(dynamicFeeMgr.GetDynamicBps(ctx, affiliates, affiliateBps, sourceAsset, targetAsset))
+		if dynBps.GT(minSlipBps) {
+			minSlipBps = dynBps
+		}
+	}
+
+	return minSlipBps
+}
+
+func getAssetSlipMinBps(ctx cosmos.Context, k keeper.Keeper, ref constants.ConstantName, asset common.Asset) (cosmos.Uint, bool) {
+	if asset.IsEmpty() {
+		return cosmos.ZeroUint(), false
+	}
+	key := constants.AssetSlipMinBpsMimirKey(ref, asset.MimirString())
+	value, err := k.GetMimir(ctx, key)
+	if err != nil || value < 0 {
+		return cosmos.ZeroUint(), false
+	}
+	return cosmos.SafeUintFromInt64(value), true
 }
 
 func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {

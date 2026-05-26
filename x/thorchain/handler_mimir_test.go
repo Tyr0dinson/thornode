@@ -172,6 +172,27 @@ func (HandlerMimirSuite) TestRevShareValidation(c *C) {
 	c.Assert(h.validate(ctx, mkMsg("REVSHARE-foo+bar", 100)), NotNil)
 }
 
+func (HandlerMimirSuite) TestPerAssetSlipMinBpsValidation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	h := NewMimirHandler(mgr)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	mkMsg := func(key string, value int64) MsgMimir {
+		return MsgMimir{Key: key, Value: value, Signer: na.NodeAddress}
+	}
+
+	max := k.GetConfigInt64(ctx, constants.SlipMinBpsMax)
+	c.Assert(h.validate(ctx, mkMsg("L1SlipMinBps-BTC-BTC", max)), IsNil)
+	c.Assert(h.validate(ctx, mkMsg("SynthSlipMinBps-BTC-BTC", max)), IsNil)
+	c.Assert(h.validate(ctx, mkMsg("TradeAccountsSlipMinBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", max)), IsNil)
+	c.Assert(h.validate(ctx, mkMsg("StableSlipMinBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", max)), IsNil)
+
+	c.Assert(h.validate(ctx, mkMsg("L1SlipMinBps-BTC-BTC", max+1)), NotNil)
+}
+
 func (HandlerMimirSuite) TestRevShareIsOperational(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	_ = ctx

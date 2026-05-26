@@ -64,3 +64,18 @@ func (s *KeeperMimirSuite) TestDisableTSSSignerFilteringIsEconomicMimir(c *C) {
 
 	c.Check(k.IsOperationalMimir(constants.MimirKeyDisableTSSSignerFiltering), Equals, false)
 }
+
+func (s *KeeperMimirSuite) TestIsOperationalMimirPerAssetSlipMinBps(c *C) {
+	_, k := setupKeeperForTest(c)
+
+	c.Check(k.IsOperationalMimir("L1SlipMinBps-BTC-BTC"), Equals, true)
+	c.Check(k.IsOperationalMimir("SynthSlipMinBps-BTC-BTC"), Equals, true)
+	c.Check(k.IsOperationalMimir("TradeAccountsSlipMinBps-BTC-BTC"), Equals, true)
+	c.Check(k.IsOperationalMimir("DerivedSlipMinBps-THOR-BTC"), Equals, true)
+	c.Check(k.IsOperationalMimir("SecuredAssetSlipMinBps-BTC-BTC"), Equals, true)
+	c.Check(k.IsOperationalMimir("StableSlipMinBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"), Equals, true)
+
+	c.Check(k.IsOperationalMimir("SlipMinBpsMax-BTC-BTC"), Equals, false)
+	c.Check(k.IsOperationalMimir("SomethingSlipMinBps-BTC-BTC"), Equals, false)
+	c.Check(k.IsOperationalMimir("WasmArbSlipMinBps-BTC-BTC"), Equals, false)
+}

@@ -2518,6 +2518,43 @@ func (s *HelperSuite) TestGetMinSlipBpsStableOverride(c *C) {
 	c.Assert(result.Uint64(), Equals, uint64(10))
 }
 
+func (s *HelperSuite) TestGetMinSlipBpsPerAssetOverride(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.L1SlipMinBps, common.BTCAsset.MimirString()), 25)
+
+	result := getMinSlipBps(ctx, k, common.NoAddress, common.BTCAsset, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(25))
+
+	result = getMinSlipBps(ctx, k, common.NoAddress, common.ETHAsset, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(10))
+
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.L1SlipMinBps, common.BTCAsset.MimirString()), 0)
+	result = getMinSlipBps(ctx, k, common.NoAddress, common.BTCAsset, false, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(0))
+}
+
+func (s *HelperSuite) TestGetMinSlipBpsStablePerAssetOverride(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	busd, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, "StableSlipMinBps", 3)
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.StableSlipMinBps, busd.MimirString()), 8)
+
+	result := getMinSlipBps(ctx, k, common.NoAddress, busd, true, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(8))
+
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.StableSlipMinBps, busd.MimirString()), 0)
+	result = getMinSlipBps(ctx, k, common.NoAddress, busd, true, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	c.Assert(result.Uint64(), Equals, uint64(0))
+}
+
 func (s *HelperSuite) TestGetMinSlipBpsWasmArbContract(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -2593,6 +2630,40 @@ func (s *HelperSuite) TestGetMinSlipBpsDynamicOverridesStable(c *C) {
 	// No dynamic record, no stable override → L1 default (10).
 	result = getMinSlipBps(ctx, k, common.NoAddress, btc, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
 	c.Assert(result.Uint64(), Equals, uint64(10))
+}
+
+func (s *HelperSuite) TestGetMinSlipBpsDynamicTakesMaxWithPerAsset(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	btc := common.BTCAsset
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.L1SlipMinBps, btc.MimirString()), 50)
+	setDynamicFeeTestMimirs(ctx, k)
+
+	registerThorname(ctx, k, "mytn", 1)
+
+	pairA, pairB, ok := dynamicFeePairKey(btc, common.RuneAsset())
+	c.Assert(ok, Equals, true)
+	rec := types.DynamicFeeRecord{
+		Thorname:   "mytn",
+		PairAssetA: pairA,
+		PairAssetB: pairB,
+		DynamicBps: 25,
+	}
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+
+	dfm := newDynamicFeeMgr(k)
+	affiliates := []string{"mytn"}
+	affBps := []cosmos.Uint{cosmos.NewUint(100)}
+
+	result := getMinSlipBps(ctx, k, common.NoAddress, btc, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(50))
+
+	rec.DynamicBps = 75
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+	result = getMinSlipBps(ctx, k, common.NoAddress, btc, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
+	c.Assert(result.Uint64(), Equals, uint64(75))
 }
 
 // TestGetMinSlipBpsNonL1IgnoresDynamic verifies that synth, trade and derived
