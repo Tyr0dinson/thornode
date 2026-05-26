@@ -318,20 +318,13 @@ func TestAttestObservedTx(t *testing.T) {
 }
 
 func TestAttestObservedTxPropagatesAllowFutureObservation(t *testing.T) {
-	ag, _, _, grpcClient, bridge, _ := setupTestGossip(t)
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
 
 	ag.avMu.Lock()
 	ag.activeVals = map[peer.ID]bool{ag.host.ID(): true}
 	ag.avMu.Unlock()
 
 	vaultPubKey := thorchain.GetRandomPubKey()
-	selfPubKey, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, ag.privKey.PubKey())
-	require.NoError(t, err)
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
-		require.Equal(t, vaultPubKey, pubKey)
-		return common.PubKeys{common.PubKey(selfPubKey)}, nil
-	}
-
 	tx := &common.ObservedTx{
 		Tx: common.Tx{
 			ID:    "future-observation-tx",
@@ -346,7 +339,7 @@ func TestAttestObservedTxPropagatesAllowFutureObservation(t *testing.T) {
 		return &ebifrost.SendQuorumTxResult{}, nil
 	}
 
-	err = ag.AttestObservedTx(context.Background(), tx, false, true)
+	err := ag.AttestObservedTx(context.Background(), tx, false, true)
 	require.NoError(t, err)
 
 	key := txKey{
@@ -940,7 +933,7 @@ func TestConcurrentAttestationHandling(t *testing.T) {
 }
 
 func TestXMRSpentOutputRefsCallback(t *testing.T) {
-	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag, _, _, _, _, _ := setupTestGossip(t)
 
 	origVerifySignature := verifySignature
 	defer func() { verifySignature = origVerifySignature }()

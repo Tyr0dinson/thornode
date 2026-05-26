@@ -54,6 +54,16 @@ func (w *KeySignWrapper) GetPubKey() common.PubKey {
 
 // Sign the given transaction
 func (w *KeySignWrapper) Sign(tx *etypes.Transaction, poolPubKey common.PubKey) ([]byte, error) {
+	return w.signAtHeight(tx, poolPubKey, 0)
+}
+
+// SignAtHeight signs the transaction using a caller-supplied THORChain height
+// so TSS can use the same jail-aware signer policy as the outbound item.
+func (w *KeySignWrapper) SignAtHeight(tx *etypes.Transaction, poolPubKey common.PubKey, thorchainHeight int64) ([]byte, error) {
+	return w.signAtHeight(tx, poolPubKey, thorchainHeight)
+}
+
+func (w *KeySignWrapper) signAtHeight(tx *etypes.Transaction, poolPubKey common.PubKey, thorchainHeight int64) ([]byte, error) {
 	if tx == nil {
 		return nil, errors.New("tx is nil")
 	}
@@ -65,7 +75,7 @@ func (w *KeySignWrapper) Sign(tx *etypes.Transaction, poolPubKey common.PubKey) 
 	if w.pubKey.Equals(poolPubKey) {
 		sig, err = w.sign(tx)
 	} else {
-		sig, err = w.signTSS(tx, poolPubKey.String())
+		sig, err = w.signTSS(tx, poolPubKey.String(), thorchainHeight)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("fail to sign tx: %w", err)
@@ -86,14 +96,19 @@ func (w *KeySignWrapper) sign(tx *etypes.Transaction) ([]byte, error) {
 	return ecrypto.Sign(hash[:], w.privKey)
 }
 
-func (w *KeySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string) ([]byte, error) {
+func (w *KeySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string, thorchainHeight int64) ([]byte, error) {
 	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, poolPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pub key: %w", err)
 	}
 
 	hash := w.signer.Hash(tx)
-	sig, recovery, err := w.tssKeyManager.RemoteSign(hash[:], common.SigningAlgoSecp256k1, poolPubKey)
+	var sig, recovery []byte
+	if heightAware, ok := w.tssKeyManager.(tss.HeightAwareThorchainKeyManager); ok && thorchainHeight > 0 {
+		sig, recovery, err = heightAware.RemoteSignAtHeight(hash[:], common.SigningAlgoSecp256k1, poolPubKey, thorchainHeight)
+	} else {
+		sig, recovery, err = w.tssKeyManager.RemoteSign(hash[:], common.SigningAlgoSecp256k1, poolPubKey)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("fail to TSS sign: %w", err)
 	}

@@ -405,7 +405,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		}
 	}
 
-	txBytes, err := c.signMsg(msg, tx.VaultPubKey)
+	txBytes, err := c.signMsg(msg, tx.VaultPubKey, thorchainHeight)
 	if err != nil {
 		if errors.Is(err, tss.ErrNotActiveSigner) {
 			return nil, nil, nil, err
@@ -446,6 +446,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 func (c *Client) signMsg(
 	payment *transactions.Payment,
 	pubkey common.PubKey,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	xrpPubKey, err := pubkey.Secp256K1()
 	if err != nil {
@@ -472,7 +473,7 @@ func (c *Client) signMsg(
 	} else {
 		hashedMsg := sha512.Sum512(signBytes)
 		var signature []byte
-		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String())
+		signature, _, err = c.tssKeyManager.RemoteSignAtHeight(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
 		if err != nil {
 			if errors.Is(err, tss.ErrNotActiveSigner) {
 				return nil, err

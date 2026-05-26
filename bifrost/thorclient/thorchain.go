@@ -27,6 +27,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -512,11 +513,23 @@ func (b *thorchainBridge) FetchNodeStatus() (stypes.NodeStatus, error) {
 	return na.Status, nil
 }
 
-// GetKeysignParty returns the vault members eligible to join a vault-backed
-// Secp256k1 keysign ceremony. It joins vault membership with current node
-// account state so forced-to-leave members are filtered before go-tss starts a
-// join party.
+// GetKeysignParty returns the vault members eligible to join an ECDSA keysign
+// ceremony using the current rounded THORChain height. Callers with an outbound
+// signing height should use GetKeysignPartyAtHeight so all signers use the same
+// jail release view.
 func (b *thorchainBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
+	blockHeight, err := b.GetBlockHeight()
+	if err != nil {
+		return common.PubKeys{}, fmt.Errorf("fail to get block height for key sign party: %w", err)
+	}
+	return b.GetKeysignPartyAtHeight(vaultPubKey, common.RoundKeysignPolicyHeight(blockHeight))
+}
+
+// GetKeysignPartyAtHeight returns the effective signer party for an ECDSA
+// keysign at the supplied THORChain height. Forced-to-leave and missing members
+// are never selected. Jailed members are kept as deterministic fallback signers
+// only when clean members cannot satisfy the original vault threshold.
+func (b *thorchainBridge) GetKeysignPartyAtHeight(vaultPubKey common.PubKey, blockHeight int64) (common.PubKeys, error) {
 	vault, err := b.GetVault(vaultPubKey.String())
 	if err != nil {
 		return common.PubKeys{}, fmt.Errorf("fail to get key sign party from thorchain: %w", err)
@@ -529,6 +542,14 @@ func (b *thorchainBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.Pub
 	if err != nil {
 		return common.PubKeys{}, fmt.Errorf("fail to get node accounts for key sign party: %w", err)
 	}
+	threshold, err := conversion.GetThreshold(len(members))
+	if err != nil {
+		return common.PubKeys{}, fmt.Errorf("fail to calculate key sign threshold: %w", err)
+	}
+	return filterKeysignParty(members, nodes, blockHeight, threshold+1)
+}
+
+func filterKeysignParty(members common.PubKeys, nodes []*stypes.QueryNodeResponse, blockHeight int64, requiredSigners int) (common.PubKeys, error) {
 	nodesByPubKey := make(map[string]*stypes.QueryNodeResponse, len(nodes))
 	for _, node := range nodes {
 		if node == nil {
@@ -539,25 +560,60 @@ func (b *thorchainBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.Pub
 		nodesByPubKey[node.PubKeySet.Secp256k1.String()] = node
 	}
 
-	eligible := make(common.PubKeys, 0, len(members))
+	preferred := make(map[string]struct{}, len(members))
+	fallback := make(common.PubKeys, 0)
+	excluded := 0
 	for _, member := range members {
 		node, ok := nodesByPubKey[member.String()]
 		if !ok {
-			// Fail closed if a vault member cannot be resolved to node state.
-			// Otherwise bifrost could accidentally include a forced-to-leave
-			// member whose state was not available to this query.
-			return common.PubKeys{}, fmt.Errorf("vault member %s has no matching node account", member.String())
+			// Exclude members omitted from the bonded node list instead of
+			// blocking the whole vault immediately. The original vault threshold
+			// check below still prevents an undersized signing party.
+			excluded++
+			continue
 		}
 		if node.GetForcedToLeave() {
 			// Exclude the known unsafe member before go-tss starts joining peers.
+			excluded++
 			continue
 		}
-		eligible = append(eligible, member)
+
+		jail := node.GetJail()
+		if jail != nil && jail.GetReleaseHeight() > blockHeight {
+			fallback = append(fallback, member)
+			continue
+		}
+		preferred[member.String()] = struct{}{}
 	}
-	if len(eligible) == 0 {
-		return common.PubKeys{}, fmt.Errorf("vault %s has no eligible signer membership", vaultPubKey.String())
+
+	selected := make(map[string]struct{}, len(members))
+	for member := range preferred {
+		selected[member] = struct{}{}
 	}
-	return eligible, nil
+	for _, member := range fallback {
+		if len(selected) >= requiredSigners {
+			break
+		}
+		selected[member.String()] = struct{}{}
+	}
+	if len(selected) < requiredSigners {
+		return common.PubKeys{}, fmt.Errorf(
+			"not enough eligible signers: need %d of %d, got %d after excluding %d forced-to-leave or missing members and using %d jailed fallback members",
+			requiredSigners,
+			len(members),
+			len(selected),
+			excluded,
+			len(fallback),
+		)
+	}
+
+	signers := make(common.PubKeys, 0, len(selected))
+	for _, member := range members {
+		if _, ok := selected[member.String()]; ok {
+			signers = append(signers, member)
+		}
+	}
+	return signers, nil
 }
 
 // IsCatchingUp returns bool for if thorchain is catching up to the rest of the

@@ -352,7 +352,7 @@ func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 // SignTx returns the signed transaction.
 func (c *TronClient) SignTx(
 	txOutItem types.TxOutItem,
-	_ int64,
+	thorchainHeight int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
 	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
 		prevTxID, err := c.signerCacheManager.GetTransactionHash(txOutItem.CacheHash())
@@ -549,7 +549,7 @@ func (c *TronClient) SignTx(
 		return nil, nil, nil, err
 	}
 
-	signature, err := c.sign(hash, txOutItem)
+	signature, err := c.sign(hash, txOutItem, thorchainHeight)
 	if err != nil {
 		if errors.Is(err, tss.ErrNotActiveSigner) {
 			return nil, nil, nil, err
@@ -747,6 +747,7 @@ func (c *TronClient) ReportSolvency(height int64) error {
 func (c *TronClient) sign(
 	data []byte,
 	txOutItem types.TxOutItem,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	var err error
 	var signature, recovery []byte
@@ -760,7 +761,7 @@ func (c *TronClient) sign(
 			return nil, err
 		}
 	} else {
-		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String())
+		signature, recovery, err = c.tssKeyManager.RemoteSignAtHeight(data, common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
 		if err == nil && signature != nil {
 			return append(signature, recovery...), nil
 		}

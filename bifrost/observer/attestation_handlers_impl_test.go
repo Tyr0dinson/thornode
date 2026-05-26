@@ -590,16 +590,12 @@ func TestRefactoredHandlersIntegration(t *testing.T) {
 // TestXMRNonSignerDoesNotBlindCoAttest verifies that a non-signing node does
 // not sign a peer-supplied XMR outbound observation it cannot prove locally.
 func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
-	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag, _, _, _, _, _ := setupTestGossip(t)
 
 	origVerifySignature := verifySignature
 	defer func() { verifySignature = origVerifySignature }()
 	verifySignature = func(signBz, signature, attester []byte) error {
 		return nil
-	}
-
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
-		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
 	}
 
 	obsTx := common.ObservedTx{
@@ -653,16 +649,12 @@ func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
 // TestXMRBlindCoAttestationSkipsNonXMR verifies that non-XMR observations do
 // not trigger any extra local attestation.
 func TestXMRBlindCoAttestationSkipsNonXMR(t *testing.T) {
-	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag, _, _, _, _, _ := setupTestGossip(t)
 
 	origVerifySignature := verifySignature
 	defer func() { verifySignature = origVerifySignature }()
 	verifySignature = func(signBz, signature, attester []byte) error {
 		return nil
-	}
-
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
-		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
 	}
 
 	// BTC outbound — should NOT trigger co-attestation.
@@ -711,16 +703,12 @@ func TestXMRBlindCoAttestationSkipsNonXMR(t *testing.T) {
 // TestXMRBlindCoAttestationIdempotent verifies that receiving the same XMR
 // outbound peer attestation twice does not add a local attestation.
 func TestXMRBlindCoAttestationIdempotent(t *testing.T) {
-	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	ag, _, _, _, _, _ := setupTestGossip(t)
 
 	origVerifySignature := verifySignature
 	defer func() { verifySignature = origVerifySignature }()
 	verifySignature = func(signBz, signature, attester []byte) error {
 		return nil
-	}
-
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
-		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
 	}
 
 	obsTx := common.ObservedTx{

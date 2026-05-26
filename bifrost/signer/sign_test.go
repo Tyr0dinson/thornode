@@ -156,6 +156,9 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	if strings.HasPrefix(upperKey, "COMPROMISEDVAULT-") {
 		return 0, nil
 	}
+	if key == constants.MimirKeyDisableTSSSignerFiltering {
+		return 0, nil
+	}
 	if key == constants.SignerConcurrency.String() {
 		return 3, nil
 	}

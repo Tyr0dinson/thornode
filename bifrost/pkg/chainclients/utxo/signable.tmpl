@@ -20,16 +20,18 @@ import (
 {{- range $chain, $pkg := . }}
 
 type tssSignable{{ ToUpper $chain }} struct {
-	poolPubKey    common.PubKey
-	tssKeyManager tss.ThorchainKeyManager
-	log           zerolog.Logger
+	poolPubKey      common.PubKey
+	tssKeyManager   tss.ThorchainKeyManager
+	log             zerolog.Logger
+	thorchainHeight int64
 }
 
-func newTssSignable{{ ToUpper $chain }}(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger) *tssSignable{{ ToUpper $chain }} {
+func newTssSignable{{ ToUpper $chain }}(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger, thorchainHeight int64) *tssSignable{{ ToUpper $chain }} {
 	return &tssSignable{{ ToUpper $chain }}{
-		poolPubKey:    poolPubKey,
-		tssKeyManager: tssKeyManager,
-		log:           log,
+		poolPubKey:      poolPubKey,
+		tssKeyManager:   tssKeyManager,
+		log:             log,
+		thorchainHeight: thorchainHeight,
 	}
 }
 
@@ -37,12 +39,18 @@ func newTssSignable{{ ToUpper $chain }}(poolPubKey common.PubKey, tssKeyManager 
 func (ts *tssSignable{{ ToUpper $chain }}) SignECDSA(payload []byte) (*{{ $chain }}ec.Signature, error) {
 {{- else }}
 func (ts *tssSignable{{ ToUpper $chain }}) Sign(payload []byte) (*{{ $chain }}ec.Signature, error) {
-{{- end }}
-	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
-	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String())
-	if err != nil {
-		return nil, err
-	}
+	{{- end }}
+		ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
+		var result []byte
+		var err error
+		if heightAware, ok := ts.tssKeyManager.(tss.HeightAwareThorchainKeyManager); ok && ts.thorchainHeight > 0 {
+			result, _, err = heightAware.RemoteSignAtHeight(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
+		} else {
+			result, _, err = ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String())
+		}
+		if err != nil {
+			return nil, err
+		}
 	if len(result) == 0 {
 		return nil, tss.ErrNotActiveSigner
 	}
@@ -53,7 +61,8 @@ func (ts *tssSignable{{ ToUpper $chain }}) Sign(payload []byte) (*{{ $chain }}ec
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
 
-	// verify the signature
+	// Verify the signature and fail-fast on verification failure.
+	// Invalid signatures must be rejected immediately to prevent NULLFAIL errors and signature mispairing.
 	if sig.Verify(payload, ts.GetPubKey()) {
 		ts.log.Info().Msg("we can verify the signature successfully")
 	} else {

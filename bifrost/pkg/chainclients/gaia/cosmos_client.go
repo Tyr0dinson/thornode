@@ -464,6 +464,7 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		tx.VaultPubKey,
 		uint64(meta.AccountNumber),
 		uint64(meta.SeqNumber),
+		thorchainHeight,
 	)
 	if err != nil {
 		if errors.Is(err, tss.ErrNotActiveSigner) {
@@ -497,6 +498,7 @@ func (c *CosmosClient) signMsg(
 	pubkey common.PubKey,
 	account uint64,
 	sequence uint64,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey.String())
 	if err != nil {
@@ -533,7 +535,7 @@ func (c *CosmosClient) signMsg(
 		}
 	} else {
 		hashedMsg := crypto.Sha256(signBytes)
-		sigData.Signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg, common.SigningAlgoSecp256k1, pubkey.String())
+		sigData.Signature, _, err = c.tssKeyManager.RemoteSignAtHeight(hashedMsg, common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
 		if err != nil {
 			return nil, err
 		}

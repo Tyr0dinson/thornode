@@ -2,6 +2,8 @@ package keeperv1
 
 import (
 	. "gopkg.in/check.v1"
+
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type KeeperMimirSuite struct{}
@@ -54,4 +56,10 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirCompromisedVault(c *C) {
 	c.Check(k.IsOperationalMimir("CompromisedVault-tthorpub1addwnpepq0"), Equals, true)
 	c.Check(k.IsOperationalMimir("COMPROMISEDVAULT-TTHORPUB1ADDWNPEPQ0"), Equals, true)
 	c.Check(k.IsOperationalMimir("CompromisedVault"), Equals, false)
+}
+
+func (s *KeeperMimirSuite) TestDisableTSSSignerFilteringIsEconomicMimir(c *C) {
+	_, k := setupKeeperForTest(c)
+
+	c.Check(k.IsOperationalMimir(constants.MimirKeyDisableTSSSignerFiltering), Equals, false)
 }

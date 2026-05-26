@@ -57,18 +57,11 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		applySpentRefs = &cp
 	}
 
-	// Determine the number of validators needed for attestation
-	var total int
-	if k.AllowFutureObservation {
-		keysignParty, err := s.getKeysignParty(obsTx.ObservedPubKey)
-		if err != nil {
-			s.logger.Error().Err(err).Msg("fail to get key sign party")
-			return
-		}
-		total = len(keysignParty)
-	} else {
-		total = s.activeValidatorCount()
-	}
+	// Determine the number of validators needed for attestation. Observation
+	// attestations are not TSS signing, so use active-validator quorum for both
+	// normal and future outbound observations.
+	attestationCount := state.AttestationCount()
+	total := s.activeValidatorCount()
 
 	hasSuperMajority := types.HasSuperMajority(state.AttestationCount(), total)
 

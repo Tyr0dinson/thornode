@@ -95,20 +95,26 @@ func (s *KeySign) Stop() {
 
 // RemoteSign send the request to local task queue
 func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string) ([]byte, []byte, error) {
-	return s.remoteSign(msg, algo, poolPubKey, false)
+	return s.remoteSign(msg, algo, poolPubKey, 0, false)
+}
+
+// RemoteSignAtHeight signs at a caller-supplied THORChain height so all nodes
+// in the same outbound ceremony use the same jail-aware signer policy.
+func (s *KeySign) RemoteSignAtHeight(msg []byte, algo common.SigningAlgo, poolPubKey string, thorchainHeight int64) ([]byte, []byte, error) {
+	return s.remoteSign(msg, algo, poolPubKey, thorchainHeight, false)
 }
 
 // RemoteSignWithLocalStateParty signs using local TSS keygen state instead of a
 // vault-backed keysign party. This is only for keygen self-check signatures,
 // which run before thornode has saved the new vault.
 func (s *KeySign) RemoteSignWithLocalStateParty(msg []byte, algo common.SigningAlgo, poolPubKey string) ([]byte, []byte, error) {
-	return s.remoteSign(msg, algo, poolPubKey, true)
+	return s.remoteSign(msg, algo, poolPubKey, 0, true)
 }
 
 // remoteSign queues a TSS signing task and waits for the worker to return the
 // signature material. useLocalStateParty is reserved for keygen check-signs,
 // which have local keygen state but no thornode vault record yet.
-func (s *KeySign) remoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, useLocalStateParty bool) ([]byte, []byte, error) {
+func (s *KeySign) remoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, thorchainHeight int64, useLocalStateParty bool) ([]byte, []byte, error) {
 	if len(msg) == 0 {
 		return nil, nil, nil
 	}
@@ -119,6 +125,7 @@ func (s *KeySign) remoteSign(msg []byte, algo common.SigningAlgo, poolPubKey str
 		PoolPubKey:         poolPubKey,
 		Msg:                encodedMsg,
 		Resp:               make(chan tssKeySignResult, 1),
+		ThorchainHeight:    thorchainHeight,
 		UseLocalStateParty: useLocalStateParty,
 	}
 	s.taskQueue <- &task
@@ -161,6 +168,10 @@ type tssKeySignTask struct {
 	Algo       common.SigningAlgo
 	Msg        string
 	Resp       chan tssKeySignResult
+
+	// ThorchainHeight pins signer policy selection to the outbound's THORChain
+	// height. A zero value falls back to the current bridge height.
+	ThorchainHeight int64
 
 	// UseLocalStateParty bypasses vault-backed signer filtering for keygen
 	// check-signatures that run before the new vault exists on thornode.
@@ -206,7 +217,7 @@ func (s *KeySign) processKeySignTasks() {
 				}
 				totalTasks := len(v)
 				// send no more than maxKeysignPerRequest messages in a single TSS keysign request
-				// SECURITY FIX: Always sort tasks to ensure deterministic ordering across all nodes.
+				// Always sort tasks to ensure deterministic ordering across all nodes.
 				// The order of messages in the slice is non-deterministic due to goroutine execution timing.
 				// All bifrosts MUST send messages in the same order for TSS signature pairing to work correctly.
 				sort.SliceStable(v, func(i, j int) bool {
@@ -222,7 +233,7 @@ func (s *KeySign) processKeySignTasks() {
 				// Split by algorithm and by signer source. Secp256k1 keygen
 				// self-checks use local keygen state, while normal Secp256k1
 				// vault signing uses thornode's filtered keysign party.
-				signingTasksSecp256k1Vault := make([]*tssKeySignTask, 0)
+				signingTasksSecp256k1Vault := make(map[int64][]*tssKeySignTask)
 				signingTasksSecp256k1LocalState := make([]*tssKeySignTask, 0)
 				signingTasksEd25519 := make([]*tssKeySignTask, 0)
 				for _, task := range signingTask {
@@ -231,7 +242,7 @@ func (s *KeySign) processKeySignTasks() {
 						if task.UseLocalStateParty {
 							signingTasksSecp256k1LocalState = append(signingTasksSecp256k1LocalState, task)
 						} else {
-							signingTasksSecp256k1Vault = append(signingTasksSecp256k1Vault, task)
+							signingTasksSecp256k1Vault[task.ThorchainHeight] = append(signingTasksSecp256k1Vault[task.ThorchainHeight], task)
 						}
 					case common.SigningAlgoEd25519:
 						signingTasksEd25519 = append(signingTasksEd25519, task)
@@ -241,9 +252,11 @@ func (s *KeySign) processKeySignTasks() {
 					}
 				}
 
-				if len(signingTasksSecp256k1Vault) > 0 {
-					s.wg.Add(1)
-					go s.toLocalTSSSigner(k, common.SigningAlgoSecp256k1, signingTasksSecp256k1Vault)
+				for _, tasksAtHeight := range signingTasksSecp256k1Vault {
+					if len(tasksAtHeight) > 0 {
+						s.wg.Add(1)
+						go s.toLocalTSSSigner(k, common.SigningAlgoSecp256k1, tasksAtHeight)
+					}
 				}
 				if len(signingTasksSecp256k1LocalState) > 0 {
 					s.wg.Add(1)
@@ -329,6 +342,22 @@ func (s *KeySign) getCompromisedVaultMimir(poolPubKey string) (bool, error) {
 	return val > 0, nil
 }
 
+func (s *KeySign) isTSSSignerFilteringDisabled() (bool, error) {
+	val, err := s.bridge.GetMimir(constants.MimirKeyDisableTSSSignerFiltering)
+	if err != nil {
+		return false, err
+	}
+	return val > 0, nil
+}
+
+func (s *KeySign) isTSSSignerFilteringDisabled() (bool, error) {
+	val, err := s.bridge.GetMimir(constants.MimirKeyDisableTSSSignerFiltering)
+	if err != nil {
+		return false, err
+	}
+	return val > 0, nil
+}
+
 func (s *KeySign) setTssKeySignTasksFail(tasks []*tssKeySignTask, err error) {
 	for _, item := range tasks {
 		select {
@@ -340,6 +369,29 @@ func (s *KeySign) setTssKeySignTasksFail(tasks []*tssKeySignTask, err error) {
 			continue
 		}
 	}
+}
+
+func (s *KeySign) keysignPolicyHeight(tasks []*tssKeySignTask) (int64, error) {
+	if len(tasks) > 0 && tasks[0].ThorchainHeight > 0 {
+		return common.RoundKeysignPolicyHeight(tasks[0].ThorchainHeight), nil
+	}
+
+	blockHeight, err := s.bridge.GetBlockHeight()
+	if err != nil {
+		return 0, fmt.Errorf("fail to get block height from thorchain: %w", err)
+	}
+	return common.RoundKeysignPolicyHeight(blockHeight), nil
+}
+
+type keysignPartyAtHeightBridge interface {
+	GetKeysignPartyAtHeight(vaultPubKey common.PubKey, blockHeight int64) (common.PubKeys, error)
+}
+
+func getKeysignPartyAtHeight(bridge thorclient.ThorchainBridge, vaultPubKey common.PubKey, blockHeight int64) (common.PubKeys, error) {
+	if heightAware, ok := bridge.(keysignPartyAtHeightBridge); ok {
+		return heightAware.GetKeysignPartyAtHeight(vaultPubKey, blockHeight)
+	}
+	return bridge.GetKeysignParty(vaultPubKey)
 }
 
 // toLocalTSSSigner will send the request to local signer
@@ -357,14 +409,12 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 	currentVersion := s.getVersion()
 	tssMsg.Version = currentVersion.String()
 	s.logger.Debug().Msg("new TSS join party")
-	// get current thorchain block height
-	blockHeight, err := s.bridge.GetBlockHeight()
+	policyHeight, err := s.keysignPolicyHeight(tasks)
 	if err != nil {
-		s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get block height from thorchain: %w", err))
+		s.setTssKeySignTasksFail(tasks, err)
 		return
 	}
-	// this is just round the block height to the nearest 20
-	tssMsg.BlockHeight = blockHeight / 20 * 20
+	tssMsg.BlockHeight = policyHeight
 
 	useLocalStateParty := len(tasks) > 0 && tasks[0].UseLocalStateParty
 	if algo == common.SigningAlgoSecp256k1 && !useLocalStateParty {
@@ -380,16 +430,25 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 			return
 		}
 
-		// Filtered signer selection is intentionally scoped to normal GG20/ECDSA
-		// keysign. EdDSA/FROST paths do not use this vulnerable Paillier flow, and
-		// keygen check-signs must use the local state because their vault is not
-		// stored on thornode yet.
-		signers, signersErr := s.bridge.GetKeysignParty(common.PubKey(poolPubKey))
-		if signersErr != nil {
-			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get keysign party: %w", signersErr))
+		filteringDisabled, filteringErr := s.isTSSSignerFilteringDisabled()
+		if filteringErr != nil {
+			s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get TSS signer filtering mimir: %w", filteringErr))
 			return
 		}
-		tssMsg.SignerPubKeys = signers.Strings()
+		if filteringDisabled {
+			s.logger.Warn().Str("pool_pub_key", poolPubKey).Msg("TSS signer filtering disabled by Mimir")
+		} else {
+			// Filtered signer selection is intentionally scoped to normal GG20/ECDSA
+			// keysign. EdDSA/FROST paths do not use this vulnerable Paillier flow, and
+			// keygen check-signs must use the local state because their vault is not
+			// stored on thornode yet.
+			keysignParty, keysignPartyErr := getKeysignPartyAtHeight(s.bridge, common.PubKey(poolPubKey), policyHeight)
+			if keysignPartyErr != nil {
+				s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail to get keysign party: %w", keysignPartyErr))
+				return
+			}
+			tssMsg.SignerPubKeys = keysignParty.Strings()
+		}
 	}
 
 	s.logger.Info().Msgf("msgToSign to tss Local node PoolPubKey: %s, Messages: %+v, block height: %d", tssMsg.PoolPubKey, tssMsg.Messages, tssMsg.BlockHeight)

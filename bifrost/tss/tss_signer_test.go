@@ -52,22 +52,26 @@ func (m *mockTssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 // ---------------------------------------------------------------------------
 
 type mockBridgeForKeysign struct {
-	version          semver.Version
-	versionErr       error
-	blockHeight      int64
-	blockErr         error
-	keysignParty     common.PubKeys
-	keysignPartyErr  error
-	keysignPartyCall int
-	mimirValue       int64
-	mimirErr         error
-	mimirTemplate    string
-	mimirRef         string
-	mimirCall        int
-	mimirKeyValue    int64
-	mimirKeyErr      error
-	mimirKey         string
-	mimirKeyCall     int
+	version            semver.Version
+	versionErr         error
+	blockHeight        int64
+	blockErr           error
+	keysignParty       common.PubKeys
+	keysignPartyErr    error
+	keysignPartyCall   int
+	keysignPartyHeight int64
+	mimirValue         int64
+	mimirErr           error
+	mimirTemplate      string
+	mimirRef           string
+	mimirCall          int
+	mimirKeyValue      int64
+	mimirKeyErr        error
+	mimirKey           string
+	mimirKeyCall       int
+	filteringValue     int64
+	filteringErr       error
+	filteringCall      int
 }
 
 var _ thorclient.ThorchainBridge = (*mockBridgeForKeysign)(nil)
@@ -78,6 +82,12 @@ func (m *mockBridgeForKeysign) FetchNodeStatus() (stypes.NodeStatus, error) { re
 func (m *mockBridgeForKeysign) FetchActiveNodes() ([]common.PubKey, error)  { return nil, nil }
 func (m *mockBridgeForKeysign) GetKeysignParty(common.PubKey) (common.PubKeys, error) {
 	m.keysignPartyCall++
+	return m.keysignParty, m.keysignPartyErr
+}
+
+func (m *mockBridgeForKeysign) GetKeysignPartyAtHeight(_ common.PubKey, blockHeight int64) (common.PubKeys, error) {
+	m.keysignPartyCall++
+	m.keysignPartyHeight = blockHeight
 	return m.keysignParty, m.keysignPartyErr
 }
 func (m *mockBridgeForKeysign) GetAsgards() (stypes.Vaults, error) { return nil, nil }
@@ -102,6 +112,10 @@ func (m *mockBridgeForKeysign) GetKeygenStdTx(common.PubKey, []byte, []byte, []s
 func (m *mockBridgeForKeysign) GetMimir(key string) (int64, error) {
 	m.mimirKeyCall++
 	m.mimirKey = key
+	if key == constants.MimirKeyDisableTSSSignerFiltering {
+		m.filteringCall++
+		return m.filteringValue, m.filteringErr
+	}
 	return m.mimirKeyValue, m.mimirKeyErr
 }
 
@@ -347,11 +361,13 @@ func (s *KeySignTestSuite) TestRemoteSignSecp256k1Success(c *C) {
 	ks.Start()
 	defer ks.Stop()
 
-	sig, recovery, err := ks.RemoteSign(msg, common.SigningAlgoSecp256k1, "poolpub")
+	sig, recovery, err := ks.RemoteSignAtHeight(msg, common.SigningAlgoSecp256k1, "poolpub", 127)
 	c.Assert(err, IsNil)
 	c.Assert(sig, NotNil)
 	c.Assert(len(sig), Equals, 64)
 	c.Assert(recovery, NotNil)
+	c.Assert(server.lastReq.BlockHeight, Equals, int64(120))
+	c.Assert(bridge.keysignPartyHeight, Equals, int64(120))
 }
 
 func (s *KeySignTestSuite) TestRemoteSignEd25519Success(c *C) {
@@ -613,9 +629,11 @@ func (s *KeySignTestSuite) TestToLocalTSSSignerSuccess(c *C) {
 	c.Assert(result.S, Equals, sB64)
 	c.Assert(server.lastReq.SignerPubKeys, DeepEquals, bridge.keysignParty.Strings())
 	c.Assert(bridge.keysignPartyCall, Equals, 1)
+	c.Assert(bridge.keysignPartyHeight, Equals, int64(100))
 	c.Assert(bridge.mimirCall, Equals, 1)
 	c.Assert(bridge.mimirTemplate, Equals, constants.MimirTemplateCompromisedVault)
 	c.Assert(bridge.mimirRef, Equals, "poolpub")
+	c.Assert(bridge.filteringCall, Equals, 1)
 }
 
 func (s *KeySignTestSuite) TestToLocalTSSSignerCompromisedVaultFailsBeforeKeysignParty(c *C) {
@@ -665,6 +683,70 @@ func (s *KeySignTestSuite) TestToLocalTSSSignerCompromisedVaultUppercaseMimir(c 
 	c.Assert(bridge.mimirKeyCall, Equals, 1)
 	c.Assert(bridge.mimirKey, Equals, "COMPROMISEDVAULT-POOLPUB")
 	c.Assert(bridge.keysignPartyCall, Equals, 0)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerFilteringDisabledByMimir(c *C) {
+	msg1 := base64.StdEncoding.EncodeToString([]byte("msg1"))
+	rBytes := make([]byte, 32)
+	rBytes[0] = 0x01
+	sBytes := make([]byte, 32)
+	sBytes[0] = 0x02
+	rB64 := base64.StdEncoding.EncodeToString(rBytes)
+	sB64 := base64.StdEncoding.EncodeToString(sBytes)
+	recoveryB64 := base64.StdEncoding.EncodeToString([]byte{0x00})
+
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Signatures: []keysign.Signature{
+				{Msg: msg1, R: rB64, S: sB64, RecoveryID: recoveryB64},
+			},
+			Status: tsscommon.Success,
+		},
+	}
+	bridge := &mockBridgeForKeysign{
+		version:         semver.MustParse("1.0.0"),
+		blockHeight:     100,
+		keysignPartyErr: fmt.Errorf("party should not be queried"),
+		filteringValue:  1,
+	}
+	ks, _ := NewKeySign(server, bridge)
+
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoSecp256k1, Msg: msg1, Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, IsNil)
+	c.Assert(server.lastReq.SignerPubKeys, HasLen, 0)
+	c.Assert(bridge.filteringCall, Equals, 1)
+	c.Assert(bridge.keysignPartyCall, Equals, 0)
+}
+
+func (s *KeySignTestSuite) TestToLocalTSSSignerFilteringMimirError(c *C) {
+	server := &mockTssServer{}
+	bridge := &mockBridgeForKeysign{
+		version:      semver.MustParse("1.0.0"),
+		blockHeight:  100,
+		filteringErr: fmt.Errorf("filtering mimir error"),
+	}
+	ks, _ := NewKeySign(server, bridge)
+
+	tasks := []*tssKeySignTask{
+		{PoolPubKey: "poolpub", Algo: common.SigningAlgoSecp256k1, Msg: "msg1", Resp: make(chan tssKeySignResult, 1)},
+	}
+
+	ks.wg.Add(1)
+	ks.toLocalTSSSigner("poolpub", common.SigningAlgoSecp256k1, tasks)
+
+	result := <-tasks[0].Resp
+	c.Assert(result.Err, NotNil)
+	c.Assert(result.Err.Error(), Matches, ".*fail to get TSS signer filtering mimir.*")
+	c.Assert(bridge.filteringCall, Equals, 1)
+	c.Assert(bridge.keysignPartyCall, Equals, 0)
+	c.Assert(server.lastReq.PoolPubKey, Equals, "")
 }
 
 func (s *KeySignTestSuite) TestToLocalTSSSignerLocalStatePartyBypassesKeysignParty(c *C) {

@@ -39,3 +39,7 @@ type ThorchainKeyManager interface {
 	Start()
 	Stop()
 }
+
+type HeightAwareThorchainKeyManager interface {
+	RemoteSignAtHeight(msg []byte, algo common.SigningAlgo, poolPubKey string, thorchainHeight int64) ([]byte, []byte, error)
+}

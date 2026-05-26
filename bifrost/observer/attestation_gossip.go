@@ -323,13 +323,6 @@ func (s *AttestationGossip) activeValidatorCount() int {
 	return len(s.activeVals)
 }
 
-func (s *AttestationGossip) getKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
-	if s.bridge == nil {
-		return nil, fmt.Errorf("thorchain bridge is nil")
-	}
-	return s.bridge.GetKeysignParty(vaultPubKey)
-}
-
 // Check if a public key belongs to an active validator
 func (s *AttestationGossip) isActiveValidator(p peer.ID) bool {
 	s.avMu.Lock()

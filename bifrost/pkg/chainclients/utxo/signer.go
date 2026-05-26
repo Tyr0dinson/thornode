@@ -277,30 +277,30 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 					signErr = fmt.Errorf("unexpected doge signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXODOGE(msgTx, tx, amount, sourceScript, i)
+				signErr = c.signUTXODOGE(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.BCHChain:
 				msgTx, ok := stx.(*bchwire.MsgTx)
 				if !ok {
 					signErr = fmt.Errorf("unexpected bch signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXOBCH(msgTx, tx, amount, sourceScript, i)
+				signErr = c.signUTXOBCH(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.LTCChain:
 				msgTx, ok := stx.(*ltcwire.MsgTx)
 				if !ok {
 					signErr = fmt.Errorf("unexpected ltc signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXOLTC(msgTx, tx, amount, sourceScript, i)
+				signErr = c.signUTXOLTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.BTCChain:
 				msgTx, ok := stx.(*btcwire.MsgTx)
 				if !ok {
 					signErr = fmt.Errorf("unexpected btc signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i)
+				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.ZECChain:
-				signErr = c.signUTXOZEC(zecTx, tx, amount, sourceScript, i)
+				signErr = c.signUTXOZEC(zecTx, tx, amount, sourceScript, i, thorchainHeight)
 			default:
 				c.log.Fatal().Msg("unsupported chain")
 			}
