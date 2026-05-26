@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -103,6 +104,7 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 		stypes.GetRandomPubKey(),
 	}
 	var requestedVault bool
+	var requestedMimir bool
 	var requestedNodes bool
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
@@ -118,6 +120,11 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 				"membership":   members.Strings(),
 			}); err != nil {
 				t.Fatalf("failed to encode vault response: %v", err)
+			}
+		case MimirEndpoint + "/key/" + constants.MimirKeyDisableTSSSignerFiltering:
+			requestedMimir = true
+			if err := json.NewEncoder(rw).Encode(int64(-1)); err != nil {
+				t.Fatalf("failed to encode mimir response: %v", err)
 			}
 		case NodeAccountsEndpoint:
 			requestedNodes = true
@@ -145,8 +152,8 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetKeysignParty returned error: %v", err)
 	}
-	if !requestedVault || !requestedNodes {
-		t.Fatalf("expected vault and nodes endpoints to be requested")
+	if !requestedVault || !requestedMimir || !requestedNodes {
+		t.Fatalf("expected vault, mimir, and nodes endpoints to be requested")
 	}
 	if !party.Equals(members) {
 		t.Fatalf("expected members %v, got %v", members, party)
@@ -173,6 +180,10 @@ func TestGetKeysignPartyExcludesForcedToLeave(t *testing.T) {
 				"membership":   members.Strings(),
 			}); err != nil {
 				t.Fatalf("failed to encode vault response: %v", err)
+			}
+		case MimirEndpoint + "/key/" + constants.MimirKeyDisableTSSSignerFiltering:
+			if err := json.NewEncoder(rw).Encode(int64(-1)); err != nil {
+				t.Fatalf("failed to encode mimir response: %v", err)
 			}
 		case NodeAccountsEndpoint:
 			nodes := []*stypes.QueryNodeResponse{
@@ -206,6 +217,67 @@ func TestGetKeysignPartyExcludesForcedToLeave(t *testing.T) {
 	}
 }
 
+func TestGetKeysignPartyDisableFilteringMimirReturnsVaultMembership(t *testing.T) {
+	vaultPubKey := stypes.GetRandomPubKey()
+	members := common.PubKeys{
+		stypes.GetRandomPubKey(),
+		stypes.GetRandomPubKey(),
+		stypes.GetRandomPubKey(),
+	}
+	var requestedNodes bool
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/thorchain/vault/" + vaultPubKey.String():
+			if err := json.NewEncoder(rw).Encode(map[string]any{
+				"block_height": 100,
+				"pub_key":      vaultPubKey.String(),
+				"coins":        []string{},
+				"type":         "AsgardVault",
+				"status":       "ActiveVault",
+				"membership":   members.Strings(),
+			}); err != nil {
+				t.Fatalf("failed to encode vault response: %v", err)
+			}
+		case MimirEndpoint + "/key/" + constants.MimirKeyDisableTSSSignerFiltering:
+			if err := json.NewEncoder(rw).Encode(int64(1)); err != nil {
+				t.Fatalf("failed to encode mimir response: %v", err)
+			}
+		case NodeAccountsEndpoint:
+			requestedNodes = true
+			nodes := []*stypes.QueryNodeResponse{
+				{PubKeySet: common.PubKeySet{Secp256k1: members[0]}},
+				{PubKeySet: common.PubKeySet{Secp256k1: members[1]}, ForcedToLeave: true},
+				{PubKeySet: common.PubKeySet{Secp256k1: members[2]}},
+			}
+			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
+				t.Fatalf("failed to encode nodes response: %v", err)
+			}
+		default:
+			http.NotFound(rw, req)
+		}
+	}))
+	defer server.Close()
+
+	httpClient := retryablehttp.NewClient()
+	httpClient.Logger = nil
+	bridge := &thorchainBridge{
+		cfg:        config.BifrostClientConfiguration{ChainHost: server.Listener.Addr().String()},
+		httpClient: httpClient,
+	}
+
+	party, err := bridge.GetKeysignParty(vaultPubKey)
+	if err != nil {
+		t.Fatalf("GetKeysignParty returned error: %v", err)
+	}
+	if requestedNodes {
+		t.Fatalf("expected node accounts endpoint not to be requested when filtering is disabled")
+	}
+	if !party.Equals(members) {
+		t.Fatalf("expected unfiltered members %v, got %v", members, party)
+	}
+}
+
 func TestGetKeysignPartyFailsWhenVaultMemberMissingNodeState(t *testing.T) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
@@ -225,6 +297,10 @@ func TestGetKeysignPartyFailsWhenVaultMemberMissingNodeState(t *testing.T) {
 				"membership":   members.Strings(),
 			}); err != nil {
 				t.Fatalf("failed to encode vault response: %v", err)
+			}
+		case MimirEndpoint + "/key/" + constants.MimirKeyDisableTSSSignerFiltering:
+			if err := json.NewEncoder(rw).Encode(int64(-1)); err != nil {
+				t.Fatalf("failed to encode mimir response: %v", err)
 			}
 		case NodeAccountsEndpoint:
 			nodes := []*stypes.QueryNodeResponse{

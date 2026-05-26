@@ -525,6 +525,13 @@ func (b *thorchainBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.Pub
 	if len(members) == 0 {
 		return common.PubKeys{}, fmt.Errorf("vault %s has empty signer membership", vaultPubKey.String())
 	}
+	disableFiltering, err := b.GetMimir(constants.MimirKeyDisableTSSSignerFiltering)
+	if err != nil {
+		return common.PubKeys{}, fmt.Errorf("fail to get disable tss signer filtering mimir: %w", err)
+	}
+	if disableFiltering > 0 {
+		return members, nil
+	}
 	nodes, err := b.GetNodeAccounts()
 	if err != nil {
 		return common.PubKeys{}, fmt.Errorf("fail to get node accounts for key sign party: %w", err)
