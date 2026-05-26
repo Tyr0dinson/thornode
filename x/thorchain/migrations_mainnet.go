@@ -630,3 +630,380 @@ func (m Migrator) Migrate14to15(ctx sdk.Context) error {
 
 	return nil
 }
+
+// adr028PoolHaircut describes the pool-level depth adjustments applied by the
+// ADR-028 conciliation waterfall (steps 1–4).  All amounts are in 1e8 units.
+// Fields are populated from on-chain state snapshotted at upgrade height;
+// zero values mean the step does not apply to that pool.
+type adr028PoolHaircut struct {
+	asset common.Asset
+	// step1RuneHaircut: ΔR — reduce pool.BalanceRune by this amount and burn it
+	// from Asgard. pool.BalanceAsset is reduced proportionally:
+	// ΔA = ΔR × BalanceAsset / BalanceRune (symmetric AMM identity).
+	// LP units at the reserve address are NOT mutated; polPoolValue() reads
+	// pool.BalanceRune live so the depth reduction propagates automatically.
+	// After all step-1 pool writes, RUNEPool.ReserveUnits is re-solved to keep
+	// providers whole (see Migrate15to16 for the formula).
+	step1RuneHaircut uint64
+	// step2ReserveSynthBurn: synth amount (in the pool's synth denom) to burn
+	// directly from the reserve module bank. No pool balance change — the freed
+	// backing shifts from synth-claim to LP-claim on the next CalcUnits recompute.
+	step2ReserveSynthBurn uint64
+	// step3SaversHaircutBps: savers haircut in basis points applied to the synth
+	// vault pool (asset = synthAsset). Reduces every saver LP record pro-rata,
+	// reduces the synth pool LPUnits and BalanceAsset, and burns the corresponding
+	// synth supply from Asgard.
+	step3SaversHaircutBps uint64
+	// step4TreasuryDraw: ΔA — asset amount to draw from the treasury LP position.
+	// Reduces treasury LP units, pool.LPUnits, pool.BalanceAsset by ΔA, and
+	// pool.BalanceRune / Asgard RUNE by ΔR = ΔA × BalanceRune / BalanceAsset.
+	// Non-zero only for zero-saver assets where treasury holds LP coverage.
+	step4TreasuryDraw uint64
+}
+
+// vault2v28PubKey is the compromised Asgard vault whose keeper balance is
+// zeroed in step 0.  The vault's L1 assets churn to the new active vault
+// through normal bifrost operations.
+const vault2v28PubKey = common.PubKey("thorpub1addwnpepqvpnhwzqkd2zqkxsj272faf4ezsngwh773wjdfkus8m4f860u3g5ka22v28")
+
+
+// adr028TreasuryAddr is the treasury multisig providing step-4 LP coverage.
+const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
+
+// Migrate15to16 implements ADR-028 conciliation.
+// Waterfall order (ADR-028 §3, re-run amounts at upgrade height):
+//
+//	— zero vault 2v28 keeper balances (log only, no event).
+//	— POL haircut: reduce pool.BalanceRune/Asset, burn RUNE from Asgard,
+//	  then solve RUNEPool.ReserveUnits to hold providers whole.
+//	— reserve synth burn: burn reserve module's synth bank balances.
+//	— savers haircut: reduce saver LP units + synth pool depth pro-rata,
+//	  burn synths from Asgard.
+//	— treasury LP draw: cover residual for zero-saver pools with treasury LP.
+//
+// Snapshot date: 2026-05-25 (re-run before release at upgrade height).
+// POL drain = ΔR (RUNE to burn from Asgard; ΔA = ΔR×BalanceAsset/BalanceRune).
+// Only the reserve-bucket fraction (55.76%) of LP value is consumed;
+// providers are held whole via RUNEPool.ReserveUnits solve after all pool writes.
+func (m Migrator) Migrate15to16(ctx sdk.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+
+	// ── Step 0: zero vault 2v28 keeper record ───────────────────────────────
+	vault, err := m.mgr.Keeper().GetVault(ctx, vault2v28PubKey)
+	if err != nil {
+		return fmt.Errorf("conciliation: vault 2v28: fail to get vault 2v28: %w", err)
+	}
+	originalCoins := vault.Coins
+	vault.Coins = common.Coins{}
+	if err := m.mgr.Keeper().SetVault(ctx, vault); err != nil {
+		return fmt.Errorf("conciliation: vault 2v28: fail to zero vault 2v28: %w", err)
+	}
+	ctx.Logger().Info("conciliation: vault 2v28: zeroed vault 2v28 keeper record",
+		"pubkey", vault2v28PubKey,
+		"cleared_coins", originalCoins.String())
+
+	// ── Build per-pool haircut table (assets requiring NewAsset parsing) ─────
+	ethUSDT, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse ETH.USDT: %w", err)
+	}
+	avaxUSDC, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse AVAX.USDC: %w", err)
+	}
+	bscBNB, err := common.NewAsset("BSC.BNB-0XBB4CDB9CBD36B01BD1CBAEBF2DE08D9173BC095C")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse BSC.BNB: %w", err)
+	}
+	baseUSDC, err := common.NewAsset("BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse BASE.USDC: %w", err)
+	}
+	bscBUSD, err := common.NewAsset("BSC.BUSD-0XE9E7CEA3DEDCA5984780BAFC599BD69ADD087D56")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse BSC.BUSD: %w", err)
+	}
+	bscETH, err := common.NewAsset("BSC.ETH-0X2170ED0880AC9A755FD29B2688956BD959F933F8")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse BSC.ETH: %w", err)
+	}
+	bscBTCB, err := common.NewAsset("BSC.BTCB-0X7130D2A12B9BCBFAE4F2634D864A1EE1CE3EAD9C")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse BSC.BTCB: %w", err)
+	}
+
+	// Per-pool waterfall table — 2026-05-25 live-chain snapshot; re-run at upgrade height.
+	// Step1 = ΔR (raw 1e8 RUNE to burn from Asgard); ΔA derived at runtime.
+	// Step2 = synth units in 1e8 to burn from reserve bank (no pool mutation).
+	// Step3 = savers haircut bps applied to the synth vault pool.
+	// Step4 = ΔA (raw 1e8 asset) drawn from treasury LP; only assets w/ treasury coverage.
+	// Zero values mean the step does not apply to that pool.
+	haircuts := []adr028PoolHaircut{
+		// DOGE: fully covered by POL haircut (72,302 DOGE) + reserve synth burn (3,392,456 DOGE synths).
+		{asset: common.DOGEAsset, step1RuneHaircut: 1_419_918_684_958, step2ReserveSynthBurn: 339_245_565_058_092},
+		// BCH: fully covered by POL haircut (174 BCH).
+		{asset: common.BCHAsset, step1RuneHaircut: 13_013_460_708_269},
+		// BSC.BNB: fully covered by reserve synth burn (45.74 BNB synths).
+		{asset: bscBNB, step2ReserveSynthBurn: 4_574_000_000},
+		// ETH.USDT: POL haircut (198,410 USDT) + reserve synth burn (27,022 USDT) → residual 2591 bps savers haircut.
+		{asset: ethUSDT, step1RuneHaircut: 33_880_349_267_266, step2ReserveSynthBurn: 2_702_221_779_137, step3SaversHaircutBps: 2591},
+		// AVAX.USDC: synth units inflated, near-zero LP share → full 2713 bps savers haircut.
+		{asset: avaxUSDC, step3SaversHaircutBps: 2713},
+		// ETH.ETH: no POL or synth coverage → 1514 bps savers haircut.
+		{asset: common.ETHAsset, step3SaversHaircutBps: 1514},
+		// GAIA.ATOM: no POL or synth coverage → 3121 bps savers haircut.
+		{asset: common.ATOMAsset, step3SaversHaircutBps: 3121},
+		// Zero-saver pools with confirmed treasury LP coverage:
+		{asset: baseUSDC, step4TreasuryDraw: 4_904_100_000_000},
+		{asset: bscBUSD, step4TreasuryDraw: 3_214_300_000_000},
+		{asset: bscETH, step4TreasuryDraw: 1_600_000_000},
+		{asset: bscBTCB, step4TreasuryDraw: 51_000_000},
+	}
+
+	// ── Step 1: POL haircut (per pool) ──────────────────────────────────────
+	// Snapshot provider value BEFORE any pool write.
+	runePool, err := m.mgr.Keeper().GetRUNEPool(ctx)
+	if err != nil {
+		return fmt.Errorf("conciliation: pol haircut: fail to get RUNEPool: %w", err)
+	}
+	vPre, err := runePoolValue(ctx, m.mgr)
+	if err != nil {
+		return fmt.Errorf("conciliation: pol haircut: fail to compute runePoolValue pre: %w", err)
+	}
+	providerValuePre := common.GetSafeShare(runePool.PoolUnits, runePool.TotalUnits(), vPre)
+
+	totalStep1Rune := cosmos.ZeroUint()
+	for _, h := range haircuts {
+		if h.step1RuneHaircut == 0 {
+			continue
+		}
+		pool, err := m.mgr.Keeper().GetPool(ctx, h.asset)
+		if err != nil {
+			return fmt.Errorf("conciliation: pol haircut: fail to get pool %s: %w", h.asset, err)
+		}
+		deltaR := cosmos.NewUint(h.step1RuneHaircut)
+		if pool.BalanceRune.LT(deltaR) {
+			return fmt.Errorf("conciliation: pol haircut: pool %s BalanceRune %s < haircut %d — abort",
+				h.asset, pool.BalanceRune, h.step1RuneHaircut)
+		}
+		// ΔA = ΔR × BalanceAsset / BalanceRune (price-ratio preservation).
+		deltaA := common.GetSafeShare(deltaR, pool.BalanceRune, pool.BalanceAsset)
+		pool.BalanceRune = common.SafeSub(pool.BalanceRune, deltaR)
+		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, deltaA)
+		if err := m.mgr.Keeper().SetPool(ctx, pool); err != nil {
+			return fmt.Errorf("conciliation: pol haircut: fail to save pool %s: %w", h.asset, err)
+		}
+		// Burn ΔR from Asgard (bank pairing: Asgard→thorchain→burn).
+		runeCoin := common.NewCoin(common.RuneNative, deltaR)
+		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(runeCoin)); err != nil {
+			return fmt.Errorf("conciliation: pol haircut: fail to move RUNE from Asgard for %s: %w", h.asset, err)
+		}
+		if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, runeCoin); err != nil {
+			return fmt.Errorf("conciliation: pol haircut: fail to burn RUNE for %s: %w", h.asset, err)
+		}
+		mod := NewPoolMod(h.asset, deltaR, false, deltaA, false)
+		emitPoolBalanceChangedEvent(ctx, mod, "conciliation_pol_haircut", m.mgr)
+		burnEvt := NewEventMintBurn(BurnSupplyType, runeCoin.Asset.Native(), runeCoin.Amount, "conciliation_pol_haircut")
+		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+			ctx.Logger().Error("conciliation: pol haircut: fail to emit burn event", "error", err, "asset", h.asset)
+		}
+		totalStep1Rune = totalStep1Rune.Add(deltaR)
+		ctx.Logger().Info("conciliation: pol haircut: POL haircut applied",
+			"asset", h.asset, "delta_rune", deltaR, "delta_asset", deltaA)
+	}
+
+	// Re-snapshot after all pool writes, then solve RUNEPool.ReserveUnits so
+	// provider value is preserved (reserve absorbs the full POL loss).
+	vPost, err := runePoolValue(ctx, m.mgr)
+	if err != nil {
+		return fmt.Errorf("conciliation: pol haircut: fail to compute runePoolValue post: %w", err)
+	}
+	if providerValuePre.GTE(vPost) || runePool.TotalUnits().IsZero() {
+		// Edge case: reserve is fully wiped or no units — set ReserveUnits to 0.
+		ctx.Logger().Error("conciliation: pol haircut: providerValuePre >= vPost or TotalUnits=0; zeroing ReserveUnits",
+			"v_pre", vPre, "v_post", vPost, "provider_value_pre", providerValuePre)
+		runePool.ReserveUnits = cosmos.ZeroUint()
+	} else {
+		// ReserveUnits_post = PoolUnits × vPost / providerValuePre − PoolUnits
+		newTotalUnits := common.GetUncappedShare(runePool.PoolUnits, providerValuePre, vPost)
+		runePool.ReserveUnits = common.SafeSub(newTotalUnits, runePool.PoolUnits)
+	}
+	m.mgr.Keeper().SetRUNEPool(ctx, runePool)
+	ctx.Logger().Info("conciliation: pol haircut: RUNEPool.ReserveUnits adjusted",
+		"v_pre", vPre, "v_post", vPost,
+		"provider_value_pre", providerValuePre,
+		"new_reserve_units", runePool.ReserveUnits)
+
+	// Track POL withdrawal in the POL record so CurrentDeposit() stays accurate.
+	if !totalStep1Rune.IsZero() {
+		pol, err := m.mgr.Keeper().GetPOL(ctx)
+		if err != nil {
+			return fmt.Errorf("conciliation: pol haircut: fail to get POL: %w", err)
+		}
+		pol.RuneWithdrawn = pol.RuneWithdrawn.Add(totalStep1Rune)
+		if err := m.mgr.Keeper().SetPOL(ctx, pol); err != nil {
+			return fmt.Errorf("conciliation: pol haircut: fail to save POL: %w", err)
+		}
+	}
+
+	// ── Step 2: reserve synth burn ───────────────────────────────────────────
+	// Pure bank burn — no pool balance mutation.  FreedSynthUnits shifts from
+	// synth-claim to LP-claim on the next CalcUnits recompute.
+	for _, h := range haircuts {
+		if h.step2ReserveSynthBurn == 0 {
+			continue
+		}
+		synthAsset := h.asset.GetSyntheticAsset()
+		synthCoin := common.NewCoin(synthAsset, cosmos.NewUint(h.step2ReserveSynthBurn))
+		if err := m.mgr.Keeper().BurnFromModule(ctx, ReserveName, synthCoin); err != nil {
+			return fmt.Errorf("conciliation: reserve synth burn: fail to burn %s from reserve: %w", synthAsset, err)
+		}
+		burnEvt := NewEventMintBurn(BurnSupplyType, synthCoin.Asset.Native(), synthCoin.Amount, "conciliation_reserve_synth_burn")
+		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+			ctx.Logger().Error("conciliation: reserve synth burn: fail to emit burn event", "error", err, "asset", synthAsset)
+		}
+		ctx.Logger().Info("conciliation: reserve synth burn: burned reserve synths",
+			"asset", synthAsset, "amount", h.step2ReserveSynthBurn)
+	}
+
+	// ── Step 3: savers haircut ───────────────────────────────────────────────
+	// Operates on the synth vault pool (asset = synthAsset, one-sided LP with
+	// BalanceAsset only).  Reduces every saver LP unit pro-rata, reduces pool
+	// LPUnits and BalanceAsset, then burns the freed synth supply from Asgard.
+	for _, h := range haircuts {
+		if h.step3SaversHaircutBps == 0 {
+			continue
+		}
+		synthAsset := h.asset.GetSyntheticAsset()
+		saverPool, err := m.mgr.Keeper().GetPool(ctx, synthAsset)
+		if err != nil {
+			return fmt.Errorf("conciliation: savers haircut: fail to get saver pool %s: %w", synthAsset, err)
+		}
+		// burnAmt = pool.BalanceAsset × bps / 10000
+		burnAmt := saverPool.BalanceAsset.MulUint64(h.step3SaversHaircutBps).QuoUint64(10000)
+		if burnAmt.IsZero() {
+			ctx.Logger().Error("conciliation: savers haircut: zero burnAmt, skipping", "asset", synthAsset)
+			continue
+		}
+		// Collect all saver LP records before modifying (safe iteration pattern).
+		var saverLPs []LiquidityProvider
+		iter := m.mgr.Keeper().GetLiquidityProviderIterator(ctx, synthAsset)
+		for ; iter.Valid(); iter.Next() {
+			var lp LiquidityProvider
+			m.mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &lp)
+			saverLPs = append(saverLPs, lp)
+		}
+		_ = iter.Close()
+		// Reduce each saver's LP units pro-rata, accumulating actual deductions
+		// to use as the pool-level deduction. This avoids the divergence that
+		// arises from two independent ⌊× bps/10000⌋ truncations: the sum of
+		// per-LP truncations is always ≤ the pool-level truncation, which would
+		// leave saverPool.LPUnits < Σ lp.Units after the migration.
+		var sumLPDeductions cosmos.Uint = cosmos.ZeroUint()
+		for _, lp := range saverLPs {
+			deduct := lp.Units.MulUint64(h.step3SaversHaircutBps).QuoUint64(10000)
+			lp.Units = common.SafeSub(lp.Units, deduct)
+			m.mgr.Keeper().SetLiquidityProvider(ctx, lp)
+			sumLPDeductions = sumLPDeductions.Add(deduct)
+		}
+		// Reduce synth pool depth using the accumulated LP deduction so that
+		// saverPool.LPUnits == Σ lp.Units is maintained exactly.
+		saverPool.LPUnits = common.SafeSub(saverPool.LPUnits, sumLPDeductions)
+		saverPool.BalanceAsset = common.SafeSub(saverPool.BalanceAsset, burnAmt)
+		if err := m.mgr.Keeper().SetPool(ctx, saverPool); err != nil {
+			return fmt.Errorf("conciliation: savers haircut: fail to save saver pool %s: %w", synthAsset, err)
+		}
+		// Burn the freed synth supply from Asgard.
+		synthCoin := common.NewCoin(synthAsset, burnAmt)
+		if err := m.mgr.Keeper().BurnFromModule(ctx, AsgardName, synthCoin); err != nil {
+			return fmt.Errorf("conciliation: savers haircut: fail to burn synths from Asgard for %s: %w", synthAsset, err)
+		}
+		mod := NewPoolMod(synthAsset, cosmos.ZeroUint(), false, burnAmt, false)
+		emitPoolBalanceChangedEvent(ctx, mod, "conciliation_saver_haircut", m.mgr)
+		burnEvt := NewEventMintBurn(BurnSupplyType, synthCoin.Asset.Native(), synthCoin.Amount, "conciliation_saver_haircut")
+		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+			ctx.Logger().Error("conciliation: savers haircut: fail to emit burn event", "error", err, "asset", synthAsset)
+		}
+		ctx.Logger().Info("conciliation: savers haircut: savers haircut applied",
+			"asset", synthAsset, "bps", h.step3SaversHaircutBps, "burn_amt", burnAmt,
+			"lp_count", len(saverLPs))
+	}
+
+	// ── Step 4: treasury LP draw ─────────────────────────────────────────────
+	// Covers residual shortfall for zero-saver assets where treasury holds LP.
+	// ΔA = step4TreasuryDraw; ΔR = ΔA × BalanceRune / BalanceAsset.
+	// Treasury LP units are reduced by ΔA / BalanceAsset (proportional share).
+	treasuryAddr, err := common.NewAddress(adr028TreasuryAddr)
+	if err != nil {
+		return fmt.Errorf("conciliation: treasury draw: fail to parse treasury address: %w", err)
+	}
+	for _, h := range haircuts {
+		if h.step4TreasuryDraw == 0 {
+			continue
+		}
+		pool, err := m.mgr.Keeper().GetPool(ctx, h.asset)
+		if err != nil {
+			return fmt.Errorf("conciliation: treasury draw: fail to get pool %s: %w", h.asset, err)
+		}
+		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
+			ctx.Logger().Error("conciliation: treasury draw: pool has zero balance, skipping",
+				"asset", h.asset, "balance_asset", pool.BalanceAsset, "balance_rune", pool.BalanceRune)
+			continue
+		}
+		deltaA := cosmos.NewUint(h.step4TreasuryDraw)
+		// Explicit pre-condition: deltaA must not exceed pool depth. GetSafeShare
+		// silently caps deltaR at BalanceRune when deltaA > BalanceAsset, so the
+		// "LT(deltaR)" guard below would never fire. A bad snapshot amount must be
+		// a hard error, not a silent full-pool drain.
+		if deltaA.GT(pool.BalanceAsset) {
+			return fmt.Errorf("conciliation: treasury draw: pool %s step4TreasuryDraw %s exceeds BalanceAsset %s — snapshot out of date",
+				h.asset, deltaA, pool.BalanceAsset)
+		}
+		deltaR := common.GetSafeShare(deltaA, pool.BalanceAsset, pool.BalanceRune)
+		// LP units corresponding to ΔA of the pool (prop to total).
+		deltaLP := common.GetSafeShare(deltaA, pool.BalanceAsset, pool.LPUnits)
+		// Reduce treasury LP record.
+		treasuryLP, err := m.mgr.Keeper().GetLiquidityProvider(ctx, h.asset, treasuryAddr)
+		if err != nil {
+			ctx.Logger().Error("conciliation: treasury draw: fail to get treasury LP, skipping",
+				"asset", h.asset, "error", err)
+			continue
+		}
+		if treasuryLP.Units.LT(deltaLP) {
+			ctx.Logger().Error("conciliation: treasury draw: treasury LP units < deltaLP, capping",
+				"asset", h.asset, "treasury_units", treasuryLP.Units, "delta_lp", deltaLP)
+			deltaLP = treasuryLP.Units
+			// Recompute deltaA, deltaR from the capped deltaLP.
+			deltaA = common.GetSafeShare(deltaLP, pool.LPUnits, pool.BalanceAsset)
+			deltaR = common.GetSafeShare(deltaA, pool.BalanceAsset, pool.BalanceRune)
+		}
+		treasuryLP.Units = common.SafeSub(treasuryLP.Units, deltaLP)
+		m.mgr.Keeper().SetLiquidityProvider(ctx, treasuryLP)
+		pool.LPUnits = common.SafeSub(pool.LPUnits, deltaLP)
+		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, deltaA)
+		pool.BalanceRune = common.SafeSub(pool.BalanceRune, deltaR)
+		if err := m.mgr.Keeper().SetPool(ctx, pool); err != nil {
+			return fmt.Errorf("conciliation: treasury draw: fail to save pool %s: %w", h.asset, err)
+		}
+		// Burn ΔR from Asgard (bank pairing: Asgard→thorchain→burn).
+		runeCoin := common.NewCoin(common.RuneNative, deltaR)
+		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(runeCoin)); err != nil {
+			return fmt.Errorf("conciliation: treasury draw: fail to move RUNE from Asgard for %s: %w", h.asset, err)
+		}
+		if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, runeCoin); err != nil {
+			return fmt.Errorf("conciliation: treasury draw: fail to burn RUNE for %s: %w", h.asset, err)
+		}
+		mod := NewPoolMod(h.asset, deltaR, false, deltaA, false)
+		emitPoolBalanceChangedEvent(ctx, mod, "conciliation_treasury_draw", m.mgr)
+		burnEvt := NewEventMintBurn(BurnSupplyType, runeCoin.Asset.Native(), runeCoin.Amount, "conciliation_treasury_draw")
+		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+			ctx.Logger().Error("conciliation: treasury draw: fail to emit burn event", "error", err, "asset", h.asset)
+		}
+		ctx.Logger().Info("conciliation: treasury draw: treasury LP draw applied",
+			"asset", h.asset, "delta_asset", deltaA, "delta_rune", deltaR, "delta_lp", deltaLP)
+	}
+
+	return nil
+}
