@@ -887,6 +887,16 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 			ctx.Logger().Error("conciliation: savers haircut: zero burnAmt, skipping", "asset", synthAsset)
 			continue
 		}
+		// Cap burnAmt to what Asgard actually holds rather than aborting; log any shortfall.
+		asgardSynthBal := m.mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, synthAsset.Native())
+		if asgardSynthBal.LT(burnAmt) {
+			ctx.Logger().Error("conciliation: savers haircut: Asgard synth balance below burnAmt, capping — shortfall left",
+				"asset", synthAsset,
+				"asgard_balance", asgardSynthBal,
+				"burn_amt", burnAmt,
+				"shortfall", common.SafeSub(burnAmt, asgardSynthBal))
+			burnAmt = asgardSynthBal
+		}
 		// Collect all saver LP records before modifying (safe iteration pattern).
 		var saverLPs []LiquidityProvider
 		iter := m.mgr.Keeper().GetLiquidityProviderIterator(ctx, synthAsset)
@@ -935,6 +945,8 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// Covers residual shortfall for zero-saver assets where treasury holds LP.
 	// ΔA = step4TreasuryDraw; ΔR = ΔA × BalanceRune / BalanceAsset.
 	// Treasury LP units are reduced by ΔA / BalanceAsset (proportional share).
+	totalStep4PlannedRune := cosmos.ZeroUint()
+	totalStep4DrawnRune := cosmos.ZeroUint()
 	treasuryAddr, err := common.NewAddress(adr028TreasuryAddr)
 	if err != nil {
 		return fmt.Errorf("conciliation: treasury draw: fail to parse treasury address: %w", err)
@@ -962,6 +974,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 				h.asset, deltaA, pool.BalanceAsset)
 		}
 		deltaR := common.GetSafeShare(deltaA, pool.BalanceAsset, pool.BalanceRune)
+		plannedR := deltaR
 		// LP units corresponding to ΔA of the pool (prop to total).
 		deltaLP := common.GetSafeShare(deltaA, pool.BalanceAsset, pool.LPUnits)
 		// Reduce treasury LP record.
@@ -969,6 +982,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		if err != nil {
 			ctx.Logger().Error("conciliation: treasury draw: fail to get treasury LP, skipping",
 				"asset", h.asset, "error", err)
+			totalStep4PlannedRune = totalStep4PlannedRune.Add(plannedR)
 			continue
 		}
 		if treasuryLP.Units.LT(deltaLP) {
@@ -1001,9 +1015,15 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
 			ctx.Logger().Error("conciliation: treasury draw: fail to emit burn event", "error", err, "asset", h.asset)
 		}
+		totalStep4PlannedRune = totalStep4PlannedRune.Add(plannedR)
+		totalStep4DrawnRune = totalStep4DrawnRune.Add(deltaR)
 		ctx.Logger().Info("conciliation: treasury draw: treasury LP draw applied",
 			"asset", h.asset, "delta_asset", deltaA, "delta_rune", deltaR, "delta_lp", deltaLP)
 	}
+	ctx.Logger().Info("conciliation: treasury draw: coverage summary",
+		"total_planned_rune", totalStep4PlannedRune,
+		"total_drawn_rune", totalStep4DrawnRune,
+		"uncovered_rune", common.SafeSub(totalStep4PlannedRune, totalStep4DrawnRune))
 
 	return nil
 }
