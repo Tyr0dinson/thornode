@@ -96,7 +96,7 @@ func (s *ThorchainSuite) TestGetThorChainURL(c *C) {
 	c.Assert(uri, Equals, "http://"+s.server.Listener.Addr().String())
 }
 
-func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartyReadsVaultMembership(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
@@ -117,7 +117,7 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 				"status":       "ActiveVault",
 				"membership":   members.Strings(),
 			}); err != nil {
-				t.Fatalf("failed to encode vault response: %v", err)
+				c.Fatalf("failed to encode vault response: %v", err)
 			}
 		case NodeAccountsEndpoint:
 			requestedNodes = true
@@ -126,7 +126,7 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 				{PubKeySet: common.PubKeySet{Secp256k1: members[1]}},
 			}
 			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
-				t.Fatalf("failed to encode nodes response: %v", err)
+				c.Fatalf("failed to encode nodes response: %v", err)
 			}
 		default:
 			http.NotFound(rw, req)
@@ -143,17 +143,17 @@ func TestGetKeysignPartyReadsVaultMembership(t *testing.T) {
 
 	party, err := bridge.GetKeysignPartyAtHeight(vaultPubKey, 100)
 	if err != nil {
-		t.Fatalf("GetKeysignParty returned error: %v", err)
+		c.Fatalf("GetKeysignParty returned error: %v", err)
 	}
 	if !requestedVault || !requestedNodes {
-		t.Fatalf("expected vault and nodes endpoints to be requested")
+		c.Fatalf("expected vault and nodes endpoints to be requested")
 	}
 	if !party.Equals(members) {
-		t.Fatalf("expected members %v, got %v", members, party)
+		c.Fatalf("expected members %v, got %v", members, party)
 	}
 }
 
-func TestGetKeysignPartyExcludesForcedToLeave(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartyExcludesForcedToLeave(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
@@ -172,7 +172,7 @@ func TestGetKeysignPartyExcludesForcedToLeave(t *testing.T) {
 				"status":       "ActiveVault",
 				"membership":   members.Strings(),
 			}); err != nil {
-				t.Fatalf("failed to encode vault response: %v", err)
+				c.Fatalf("failed to encode vault response: %v", err)
 			}
 		case NodeAccountsEndpoint:
 			nodes := []*stypes.QueryNodeResponse{
@@ -181,7 +181,7 @@ func TestGetKeysignPartyExcludesForcedToLeave(t *testing.T) {
 				{PubKeySet: common.PubKeySet{Secp256k1: members[2]}},
 			}
 			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
-				t.Fatalf("failed to encode nodes response: %v", err)
+				c.Fatalf("failed to encode nodes response: %v", err)
 			}
 		default:
 			http.NotFound(rw, req)
@@ -198,15 +198,15 @@ func TestGetKeysignPartyExcludesForcedToLeave(t *testing.T) {
 
 	party, err := bridge.GetKeysignPartyAtHeight(vaultPubKey, 100)
 	if err != nil {
-		t.Fatalf("GetKeysignParty returned error: %v", err)
+		c.Fatalf("GetKeysignParty returned error: %v", err)
 	}
 	expected := common.PubKeys{members[0], members[2]}
 	if !party.Equals(expected) {
-		t.Fatalf("expected members %v, got %v", expected, party)
+		c.Fatalf("expected members %v, got %v", expected, party)
 	}
 }
 
-func TestGetKeysignPartyExcludesMembersMissingNodeState(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartyExcludesMembersMissingNodeState(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
@@ -214,38 +214,38 @@ func TestGetKeysignPartyExcludesMembersMissingNodeState(t *testing.T) {
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 	}
-	bridge, server, _ := newKeysignPartyTestBridge(t, vaultPubKey, members, keysignPartyTestNodes(common.PubKeys{members[0], members[1], members[2]}, nil))
+	bridge, server, _ := newKeysignPartyTestBridge(c, vaultPubKey, members, keysignPartyTestNodes(common.PubKeys{members[0], members[1], members[2]}, nil))
 	defer server.Close()
 
 	party, err := bridge.GetKeysignPartyAtHeight(vaultPubKey, 100)
 	if err != nil {
-		t.Fatalf("GetKeysignParty returned error: %v", err)
+		c.Fatalf("GetKeysignParty returned error: %v", err)
 	}
 	expected := common.PubKeys{members[0], members[1], members[2]}
 	if !party.Equals(expected) {
-		t.Fatalf("expected members %v, got %v", expected, party)
+		c.Fatalf("expected members %v, got %v", expected, party)
 	}
 }
 
-func TestGetKeysignPartyErrorsWhenAllMembersMissingNodeState(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartyErrorsWhenAllMembersMissingNodeState(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 	}
-	bridge, server, _ := newKeysignPartyTestBridge(t, vaultPubKey, members, nil)
+	bridge, server, _ := newKeysignPartyTestBridge(c, vaultPubKey, members, nil)
 	defer server.Close()
 
 	_, err := bridge.GetKeysignPartyAtHeight(vaultPubKey, 100)
 	if err == nil {
-		t.Fatal("expected no eligible signer membership error")
+		c.Fatal("expected no eligible signer membership error")
 	}
 	if !strings.Contains(err.Error(), "not enough eligible signers") {
-		t.Fatalf("unexpected error: %v", err)
+		c.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestGetKeysignPartySkipsJailedMemberWhenCleanMembersMeetThreshold(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartySkipsJailedMemberWhenCleanMembersMeetThreshold(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
@@ -253,22 +253,22 @@ func TestGetKeysignPartySkipsJailedMemberWhenCleanMembersMeetThreshold(t *testin
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 	}
-	bridge, server, _ := newKeysignPartyTestBridge(t, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
+	bridge, server, _ := newKeysignPartyTestBridge(c, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
 		members[1].String(): {jail: &stypes.NodeJail{ReleaseHeight: 200, Reason: "test jail"}},
 	}))
 	defer server.Close()
 
 	party, err := bridge.GetKeysignPartyAtHeight(vaultPubKey, 100)
 	if err != nil {
-		t.Fatalf("GetKeysignParty returned error: %v", err)
+		c.Fatalf("GetKeysignParty returned error: %v", err)
 	}
 	expected := common.PubKeys{members[0], members[2], members[3]}
 	if !party.Equals(expected) {
-		t.Fatalf("expected members %v, got %v", expected, party)
+		c.Fatalf("expected members %v, got %v", expected, party)
 	}
 }
 
-func TestGetKeysignPartyUsesJailedFallbackWhenNeeded(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartyUsesJailedFallbackWhenNeeded(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
@@ -276,7 +276,7 @@ func TestGetKeysignPartyUsesJailedFallbackWhenNeeded(t *testing.T) {
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 	}
-	bridge, server, _ := newKeysignPartyTestBridge(t, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
+	bridge, server, _ := newKeysignPartyTestBridge(c, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
 		members[1].String(): {jail: &stypes.NodeJail{ReleaseHeight: 200, Reason: "test jail"}},
 		members[2].String(): {jail: &stypes.NodeJail{ReleaseHeight: 200, Reason: "test jail"}},
 	}))
@@ -284,64 +284,62 @@ func TestGetKeysignPartyUsesJailedFallbackWhenNeeded(t *testing.T) {
 
 	party, err := bridge.GetKeysignPartyAtHeight(vaultPubKey, 100)
 	if err != nil {
-		t.Fatalf("GetKeysignParty returned error: %v", err)
+		c.Fatalf("GetKeysignParty returned error: %v", err)
 	}
 	expected := common.PubKeys{members[0], members[1], members[3]}
 	if !party.Equals(expected) {
-		t.Fatalf("expected members %v, got %v", expected, party)
+		c.Fatalf("expected members %v, got %v", expected, party)
 	}
 }
 
-func TestGetKeysignPartyTreatsReleasedJailAsPreferred(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartyTreatsReleasedJailAsPreferred(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 	}
-	bridge, server, _ := newKeysignPartyTestBridge(t, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
+	bridge, server, _ := newKeysignPartyTestBridge(c, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
 		members[1].String(): {jail: &stypes.NodeJail{ReleaseHeight: 80, Reason: "test jail"}},
 	}))
 	defer server.Close()
 
 	party, err := bridge.GetKeysignPartyAtHeight(vaultPubKey, 100)
 	if err != nil {
-		t.Fatalf("GetKeysignParty returned error: %v", err)
+		c.Fatalf("GetKeysignParty returned error: %v", err)
 	}
 	if !party.Equals(members) {
-		t.Fatalf("expected members %v, got %v", members, party)
+		c.Fatalf("expected members %v, got %v", members, party)
 	}
 }
 
-func TestGetKeysignPartyUsesCurrentRoundedHeight(t *testing.T) {
+func (s *ThorchainSuite) TestGetKeysignPartyUsesCurrentRoundedHeight(c *C) {
 	vaultPubKey := stypes.GetRandomPubKey()
 	members := common.PubKeys{
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 		stypes.GetRandomPubKey(),
 	}
-	bridge, server, requestedPaths := newKeysignPartyTestBridge(t, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
+	bridge, server, requestedPaths := newKeysignPartyTestBridge(c, vaultPubKey, members, keysignPartyTestNodesWithState(members, map[string]keysignPartyNodeState{
 		members[1].String(): {jail: &stypes.NodeJail{ReleaseHeight: 80, Reason: "test jail"}},
 	}))
 	defer server.Close()
 
 	party, err := bridge.GetKeysignParty(vaultPubKey)
 	if err != nil {
-		t.Fatalf("GetKeysignParty returned error: %v", err)
+		c.Fatalf("GetKeysignParty returned error: %v", err)
 	}
 	if !containsTestPath(*requestedPaths, LastBlockEndpoint) {
-		t.Fatalf("expected last block endpoint, got %v", *requestedPaths)
+		c.Fatalf("expected last block endpoint, got %v", *requestedPaths)
 	}
 	if !party.Equals(members) {
-		t.Fatalf("expected released jailed member to be preferred at current rounded height, got %v", party)
+		c.Fatalf("expected released jailed member to be preferred at current rounded height, got %v", party)
 	}
 }
 
 // newKeysignPartyTestBridge creates a minimal thornode HTTP fixture for the
 // vault and node-account endpoints used by GetKeysignParty.
-func newKeysignPartyTestBridge(t *testing.T, vaultPubKey common.PubKey, members common.PubKeys, nodes []*stypes.QueryNodeResponse) (*thorchainBridge, *httptest.Server, *[]string) {
-	t.Helper()
-
+func newKeysignPartyTestBridge(c *C, vaultPubKey common.PubKey, members common.PubKeys, nodes []*stypes.QueryNodeResponse) (*thorchainBridge, *httptest.Server, *[]string) {
 	requestedPaths := make([]string, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
@@ -356,11 +354,11 @@ func newKeysignPartyTestBridge(t *testing.T, vaultPubKey common.PubKey, members 
 				"status":       "ActiveVault",
 				"membership":   members.Strings(),
 			}); err != nil {
-				t.Fatalf("failed to encode vault response: %v", err)
+				c.Fatalf("failed to encode vault response: %v", err)
 			}
 		case NodeAccountsEndpoint:
 			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
-				t.Fatalf("failed to encode nodes response: %v", err)
+				c.Fatalf("failed to encode nodes response: %v", err)
 			}
 		case LastBlockEndpoint:
 			if err := json.NewEncoder(rw).Encode([]map[string]any{
@@ -369,7 +367,7 @@ func newKeysignPartyTestBridge(t *testing.T, vaultPubKey common.PubKey, members 
 					"thorchain": int64(127),
 				},
 			}); err != nil {
-				t.Fatalf("failed to encode last block response: %v", err)
+				c.Fatalf("failed to encode last block response: %v", err)
 			}
 		default:
 			http.NotFound(rw, req)
