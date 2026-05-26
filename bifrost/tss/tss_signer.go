@@ -350,14 +350,6 @@ func (s *KeySign) isTSSSignerFilteringDisabled() (bool, error) {
 	return val > 0, nil
 }
 
-func (s *KeySign) isTSSSignerFilteringDisabled() (bool, error) {
-	val, err := s.bridge.GetMimir(constants.MimirKeyDisableTSSSignerFiltering)
-	if err != nil {
-		return false, err
-	}
-	return val > 0, nil
-}
-
 func (s *KeySign) setTssKeySignTasksFail(tasks []*tssKeySignTask, err error) {
 	for _, item := range tasks {
 		select {
@@ -456,32 +448,6 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 	keySignResp, respErr := s.server.KeySign(tssMsg)
 	if respErr != nil {
 		s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail tss keysign: %w", respErr))
-		return
-	}
-
-	// Status values are success=1, fail=2, NA=0. NA with no signatures or blame
-	// is the explicit stand-down response for a local node excluded from the
-	// filtered ECDSA signer set.
-	if keySignResp.Status == tsscommon.NA &&
-		len(keySignResp.Signatures) == 0 &&
-		keySignResp.Blame.FailReason == "" &&
-		len(keySignResp.Blame.BlameNodes) == 0 {
-		for _, t := range tasks {
-			t.Resp <- tssKeySignResult{}
-		}
-		return
-	}
-
-	// Status values are success=1, fail=2, NA=0. NA with no signatures or blame
-	// is the explicit stand-down response for a local node excluded from the
-	// filtered ECDSA signer set.
-	if keySignResp.Status == tsscommon.NA &&
-		len(keySignResp.Signatures) == 0 &&
-		keySignResp.Blame.FailReason == "" &&
-		len(keySignResp.Blame.BlameNodes) == 0 {
-		for _, t := range tasks {
-			t.Resp <- tssKeySignResult{}
-		}
 		return
 	}
 

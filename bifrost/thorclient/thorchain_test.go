@@ -345,6 +345,7 @@ func newKeysignPartyTestBridge(t *testing.T, vaultPubKey common.PubKey, members 
 	requestedPaths := make([]string, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
+		requestedPaths = append(requestedPaths, req.URL.Path)
 		switch req.URL.Path {
 		case "/thorchain/vault/" + vaultPubKey.String():
 			if err := json.NewEncoder(rw).Encode(map[string]any{
@@ -358,20 +359,8 @@ func newKeysignPartyTestBridge(t *testing.T, vaultPubKey common.PubKey, members 
 				t.Fatalf("failed to encode vault response: %v", err)
 			}
 		case NodeAccountsEndpoint:
-			nodes := []*stypes.QueryNodeResponse{
-				{PubKeySet: common.PubKeySet{Secp256k1: members[0]}},
-			}
 			if err := json.NewEncoder(rw).Encode(nodes); err != nil {
 				t.Fatalf("failed to encode nodes response: %v", err)
-			}
-		case LastBlockEndpoint:
-			if err := json.NewEncoder(rw).Encode([]map[string]any{
-				{
-					"chain":     "THOR",
-					"thorchain": int64(127),
-				},
-			}); err != nil {
-				t.Fatalf("failed to encode last block response: %v", err)
 			}
 		case LastBlockEndpoint:
 			if err := json.NewEncoder(rw).Encode([]map[string]any{
@@ -386,7 +375,6 @@ func newKeysignPartyTestBridge(t *testing.T, vaultPubKey common.PubKey, members 
 			http.NotFound(rw, req)
 		}
 	}))
-	defer server.Close()
 
 	httpClient := retryablehttp.NewClient()
 	httpClient.Logger = nil

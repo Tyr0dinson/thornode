@@ -941,10 +941,6 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		return nil
 	}
 
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
-		return common.PubKeys{"pk1", "pk2", "pk3"}, nil
-	}
-
 	t.Run("callback fires for locally attested XMR outbound with spent refs", func(t *testing.T) {
 		var callbackTx *common.ObservedTx
 		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {

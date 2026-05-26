@@ -63,16 +63,16 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	attestationCount := state.AttestationCount()
 	total := s.activeValidatorCount()
 
-	hasSuperMajority := types.HasSuperMajority(state.AttestationCount(), total)
+	hasSuperMajority := types.HasSuperMajority(attestationCount, total)
 
 	// If we have a supermajority, send to thornode
 	if hasSuperMajority {
-		s.logger.Debug().Msgf("has supermajority: %d/%d", state.AttestationCount(), total)
+		s.logger.Debug().Msgf("has supermajority: %d/%d", attestationCount, total)
 
 		s.sendObservedTxAttestationsToThornode(ctx, obsTx, state, k.Inbound, k.AllowFutureObservation, true)
 	} else {
 		s.logger.Debug().Msgf("observed tx attestation received - %s, id: %s, inbound: %t, final: %t, quorum: %d/%d",
-			k.Chain, k.ID, k.Inbound, k.Finalized, state.AttestationCount(), total)
+			k.Chain, k.ID, k.Inbound, k.Finalized, attestationCount, total)
 	}
 
 	// Apply XMR spent output refs outside the lock to avoid holding the
