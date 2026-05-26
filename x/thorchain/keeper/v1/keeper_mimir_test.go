@@ -76,6 +76,7 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirPerAssetSlipMinBps(c *C) {
 	c.Check(k.IsOperationalMimir("StableSlipMinBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"), Equals, true)
 
 	c.Check(k.IsOperationalMimir("SlipMinBpsMax-BTC-BTC"), Equals, false)
+	c.Check(k.IsOperationalMimir("slipminbpsmax-btc-btc"), Equals, false)
 	c.Check(k.IsOperationalMimir("SomethingSlipMinBps-BTC-BTC"), Equals, false)
 	c.Check(k.IsOperationalMimir("WasmArbSlipMinBps-BTC-BTC"), Equals, false)
 }

@@ -191,6 +191,12 @@ func (HandlerMimirSuite) TestPerAssetSlipMinBpsValidation(c *C) {
 	c.Assert(h.validate(ctx, mkMsg("StableSlipMinBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", max)), IsNil)
 
 	c.Assert(h.validate(ctx, mkMsg("L1SlipMinBps-BTC-BTC", max+1)), NotNil)
+
+	k.SetMimir(ctx, constants.SlipMinBpsMaxMimirKey(common.XMRAsset.MimirString()), max+400)
+	c.Assert(h.validate(ctx, mkMsg("L1SlipMinBps-XMR-XMR", max+400)), IsNil)
+	c.Assert(h.validate(ctx, mkMsg("L1SlipMinBps-XMR-XMR", max+401)), NotNil)
+
+	c.Assert(h.validate(ctx, mkMsg("SlipMinBpsMax-XMR-XMR", max+400)), IsNil)
 }
 
 func (HandlerMimirSuite) TestRevShareIsOperational(c *C) {

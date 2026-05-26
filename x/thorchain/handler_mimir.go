@@ -89,11 +89,21 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 	}
 
 	// operational min slip validation
-	minSlipBpsMax := h.mgr.Keeper().GetConfigInt64(ctx, constants.SlipMinBpsMax)
+	minSlipBpsMax := h.getSlipMinBpsMax(ctx, msg.Key)
 	if msg.Value > minSlipBpsMax {
 		return cosmos.ErrUnknownRequest("min slip mimir exceeds SlipMinBpsMax")
 	}
 	return nil
+}
+
+func (h MimirHandler) getSlipMinBpsMax(ctx cosmos.Context, key string) int64 {
+	if assetRef, ok := constants.AssetSlipMinBpsAssetRef(key); ok {
+		assetMax, err := h.mgr.Keeper().GetMimir(ctx, constants.SlipMinBpsMaxMimirKey(assetRef))
+		if err == nil && assetMax >= 0 {
+			return assetMax
+		}
+	}
+	return h.mgr.Keeper().GetConfigInt64(ctx, constants.SlipMinBpsMax)
 }
 
 func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
