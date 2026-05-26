@@ -666,7 +666,6 @@ type adr028PoolHaircut struct {
 // through normal bifrost operations.
 const vault2v28PubKey = common.PubKey("thorpub1addwnpepqvpnhwzqkd2zqkxsj272faf4ezsngwh773wjdfkus8m4f860u3g5ka22v28")
 
-
 // adr028TreasuryAddr is the treasury multisig providing step-4 LP coverage.
 const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 
