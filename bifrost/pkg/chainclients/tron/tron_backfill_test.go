@@ -1712,9 +1712,10 @@ func (s *BackfillSuite) TestSignTxTRC20ValidToken(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(txIn, NotNil)
-	c.Assert(txIn.Gas, HasLen, 1)
-	c.Assert(txIn.Gas[0].Amount.Uint64(), Equals, uint64(100))
-	c.Assert(txIn.Gas[0].Decimals, Equals, int64(6))
+	c.Assert(txIn, HasLen, 1)
+	c.Assert(txIn[0].Gas, HasLen, 1)
+	c.Assert(txIn[0].Gas[0].Amount.Uint64(), Equals, uint64(100))
+	c.Assert(txIn[0].Gas[0].Decimals, Equals, int64(6))
 
 	// Verify the transaction has the right structure
 	var tx api.Transaction

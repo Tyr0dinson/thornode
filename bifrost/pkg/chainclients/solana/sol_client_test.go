@@ -884,9 +884,10 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)
-	c.Assert(obs.Gas, HasLen, 1)
-	c.Assert(obs.Gas[0].Amount.Uint64(), Equals, uint64(500))
-	c.Assert(obs.Gas[0].Decimals, Equals, int64(9))
+	c.Assert(obs, HasLen, 1)
+	c.Assert(obs[0].Gas, HasLen, 1)
+	c.Assert(obs[0].Gas[0].Amount.Uint64(), Equals, uint64(500))
+	c.Assert(obs[0].Gas[0].Decimals, Equals, int64(9))
 
 	// Already signed — signer cache should suppress re-signing
 	txOut := stypes.TxOutItem{
