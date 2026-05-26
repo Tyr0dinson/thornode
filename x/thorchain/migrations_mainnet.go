@@ -4,6 +4,7 @@
 package thorchain
 
 import (
+	"crypto/sha256"
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -11,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	v2 "gitlab.com/thorchain/thornode/v3/x/thorchain/migrations/v2"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // Migrator is a struct for handling in-place store migrations.
@@ -1023,6 +1025,113 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"total_planned_rune", totalStep4PlannedRune,
 		"total_drawn_rune", totalStep4DrawnRune,
 		"uncovered_rune", common.SafeSub(totalStep4PlannedRune, totalStep4DrawnRune))
+
+	// ── Step 6: stop stuck streaming swap and compensate user from reserve ──
+	// Tx 5071A7 was an ETH.DAI→ETH.USDT streaming swap (484/1182 sub-swaps done)
+	// whose remaining ~22,150 ETH.DAI was in vault 2v28 when the exploit hit.
+	// Allowing the remaining 698 sub-swaps to continue would credit phantom DAI
+	// to the pool and drain real ETH.USDT from a live vault, so we stop it here.
+	// The user is compensated with reserve RUNE priced at the ETH.DAI spot rate,
+	// swapped to their original target asset (ETH.USDT) via the swap queue.
+	const stuckStreamingTxStr = "5071A7399C528E8D5BDC1BA62E87001EB5EB17E9E25ABF2965F6A38A665FF729"
+	stuckTxID, err := common.NewTxID(stuckStreamingTxStr)
+	if err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to parse txid: %w", err)
+	}
+	stuckSwap, err := m.mgr.Keeper().GetStreamingSwap(ctx, stuckTxID)
+	if err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to get streaming swap: %w", err)
+	}
+	stuckQueueMsg, err := m.mgr.Keeper().GetSwapQueueItem(ctx, stuckTxID, 0)
+	if err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to get swap queue item: %w", err)
+	}
+
+	remainingDeposit := common.SafeSub(stuckSwap.Deposit, stuckSwap.In)
+	m.mgr.Keeper().RemoveStreamingSwap(ctx, stuckTxID)
+	m.mgr.Keeper().RemoveSwapQueueItem(ctx, stuckTxID, 0)
+	ctx.Logger().Info("conciliation: streaming swap: removed stuck streaming swap",
+		"tx", stuckStreamingTxStr, "remaining_deposit", remainingDeposit)
+
+	// Price remaining deposit in RUNE at the ETH.DAI pool spot rate.
+	ethDAI, err := common.NewAsset("ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F")
+	if err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to parse ETH.DAI: %w", err)
+	}
+	daiPool, err := m.mgr.Keeper().GetPool(ctx, ethDAI)
+	if err != nil || daiPool.BalanceAsset.IsZero() || daiPool.BalanceRune.IsZero() {
+		ctx.Logger().Error("conciliation: streaming swap: ETH.DAI pool unavailable; no reserve compensation issued",
+			"balance_asset", daiPool.BalanceAsset, "balance_rune", daiPool.BalanceRune)
+		return nil
+	}
+	runeCompensation := common.GetSafeShare(remainingDeposit, daiPool.BalanceAsset, daiPool.BalanceRune)
+	if runeCompensation.IsZero() {
+		ctx.Logger().Error("conciliation: streaming swap: zero RUNE compensation; skipping")
+		return nil
+	}
+
+	// Guard: reserve must have enough RUNE.
+	reserveBal := m.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	if runeCompensation.GT(reserveBal) {
+		ctx.Logger().Error("conciliation: streaming swap: reserve insufficient for compensation; skipping",
+			"required", runeCompensation, "reserve", reserveBal)
+		return nil
+	}
+
+	// Fund the swap from reserve.
+	runeCoin := common.NewCoin(common.RuneNative, runeCompensation)
+	if err := m.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(runeCoin)); err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to move reserve RUNE: %w", err)
+	}
+
+	// Build compensation swap: RUNE → original target asset → original destination.
+	reserveAddr, err := m.mgr.Keeper().GetModuleAddress(ReserveName)
+	if err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to get reserve address: %w", err)
+	}
+	asgardAccAddr := m.mgr.Keeper().GetModuleAccAddress(AsgardName)
+
+	// Derive a unique TxID so the compensation item doesn't collide with the
+	// original queue slot (which we just deleted, but TxID is also used as key
+	// in the observed-tx voter and other stores).
+	h := sha256.Sum256([]byte(fmt.Sprintf("adr028-streaming-compensation:%s:%d", stuckStreamingTxStr, ctx.BlockHeight())))
+	compTxID := common.TxID(fmt.Sprintf("%X", h))
+
+	compTx := common.Tx{
+		ID:          compTxID,
+		Chain:       common.THORChain,
+		FromAddress: reserveAddr,
+		ToAddress:   reserveAddr,
+		Coins:       common.NewCoins(runeCoin),
+		Memo:        fmt.Sprintf("adr028-compensation:%s", stuckStreamingTxStr),
+		Gas:         common.Gas{},
+	}
+	// Streaming into ETH.DAI (the original deposit asset) over 10 sub-swaps
+	// to reduce per-sub-swap slippage. The user receives DAI at the same ETH
+	// address they designated for their original swap output.
+	compSwap := NewMsgSwap(
+		compTx,
+		ethDAI,
+		stuckQueueMsg.Destination,
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"", "",
+		nil,
+		MarketSwap,
+		10, 1,
+		types.SwapVersion_v1,
+		asgardAccAddr,
+	)
+	if err := m.mgr.Keeper().SetSwapQueueItem(ctx, *compSwap, 0); err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to queue compensation swap: %w", err)
+	}
+	ctx.Logger().Info("conciliation: streaming swap: compensation swap queued",
+		"original_tx", stuckStreamingTxStr,
+		"comp_tx", compTxID,
+		"rune_compensation", runeCompensation,
+		"target_asset", ethDAI,
+		"destination", stuckQueueMsg.Destination)
 
 	return nil
 }
