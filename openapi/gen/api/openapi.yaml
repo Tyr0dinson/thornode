@@ -7134,6 +7134,7 @@ components:
             ttl: 2
             last_height: 9
             out: out
+          post_swap_memo: post_swap_memo
           signer: signer
         - aggregator_target_address: aggregator_target_address
           tx:
@@ -7185,6 +7186,7 @@ components:
             ttl: 2
             last_height: 9
             out: out
+          post_swap_memo: post_swap_memo
           signer: signer
         pagination:
           total: 1247
