@@ -905,14 +905,21 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 			saverLPs = append(saverLPs, lp)
 		}
 		_ = iter.Close()
-		// Reduce each saver's LP units pro-rata, accumulating actual deductions
-		// to use as the pool-level deduction. This avoids the divergence that
-		// arises from two independent ⌊× bps/10000⌋ truncations: the sum of
-		// per-LP truncations is always ≤ the pool-level truncation, which would
-		// leave saverPool.LPUnits < Σ lp.Units after the migration.
+		// Reduce each saver's LP units in proportion to the synth actually burned
+		// (deduct = lp.Units × burnAmt / BalanceAsset, on the pre-haircut depth),
+		// accumulating the exact per-LP deductions to use as the pool-level
+		// deduction. Deriving the unit reduction from burnAmt — rather than from
+		// bps directly — keeps it coupled to the asset reduction even when burnAmt
+		// was capped to the Asgard synth balance above; otherwise LPUnits would
+		// shrink by the full bps while BalanceAsset shrank by less, inflating the
+		// savers' value-per-unit. In the uncapped path burnAmt = ⌊BalanceAsset ×
+		// bps/10000⌋, so this matches the bps haircut. Accumulating per-LP
+		// truncations (not a pool-level ⌊⌋) keeps saverPool.LPUnits == Σ lp.Units
+		// exact.
+		poolAssetPre := saverPool.BalanceAsset
 		var sumLPDeductions cosmos.Uint = cosmos.ZeroUint()
 		for _, lp := range saverLPs {
-			deduct := lp.Units.MulUint64(h.step3SaversHaircutBps).QuoUint64(10000)
+			deduct := lp.Units.Mul(burnAmt).Quo(poolAssetPre)
 			lp.Units = common.SafeSub(lp.Units, deduct)
 			m.mgr.Keeper().SetLiquidityProvider(ctx, lp)
 			sumLPDeductions = sumLPDeductions.Add(deduct)
