@@ -714,10 +714,6 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse AVAX.USDC: %w", err)
 	}
-	bscBNB, err := common.NewAsset("BSC.BNB-0XBB4CDB9CBD36B01BD1CBAEBF2DE08D9173BC095C")
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse BSC.BNB: %w", err)
-	}
 	baseUSDC, err := common.NewAsset("BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913")
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse BASE.USDC: %w", err)
@@ -746,8 +742,8 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		{asset: common.DOGEAsset, step1RuneHaircut: 1_419_918_684_958, step2ReserveSynthBurn: 339_245_565_058_092},
 		// BCH: fully covered by POL haircut (174 BCH).
 		{asset: common.BCHAsset, step1RuneHaircut: 13_013_460_708_269},
-		// BSC.BNB: fully covered by reserve synth burn (45.74 BNB synths).
-		{asset: bscBNB, step2ReserveSynthBurn: 4_574_000_000},
+		// BSC.BNB: fully covered by reserve synth burn (45.74 native BNB synths; reserve holds ~143 BNB).
+		{asset: common.BNBBEP20Asset, step2ReserveSynthBurn: 4_574_000_000},
 		// ETH.USDT: POL haircut (198,410 USDT) + reserve synth burn (27,022 USDT) → residual 2591 bps savers haircut.
 		{asset: ethUSDT, step1RuneHaircut: 33_880_349_267_266, step2ReserveSynthBurn: 2_702_221_779_137, step3SaversHaircutBps: 2591},
 		// AVAX.USDC: synth units inflated, near-zero LP share → full 2713 bps savers haircut.
