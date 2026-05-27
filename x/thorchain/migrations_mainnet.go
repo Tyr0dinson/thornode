@@ -675,12 +675,13 @@ const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 // Waterfall order (ADR-028 §3, re-run amounts at upgrade height):
 //
 //	— zero vault 2v28 keeper balances (log only, no event).
-//	— POL haircut: reduce pool.BalanceRune/Asset, burn RUNE from Asgard,
-//	  then solve RUNEPool.ReserveUnits to hold providers whole.
+//	— POL haircut: reduce pool.BalanceRune/Asset, burn RUNE from Asgard.
 //	— reserve synth burn: burn reserve module's synth bank balances.
 //	— savers haircut: reduce saver LP units + synth pool depth pro-rata,
 //	  burn synths from Asgard.
 //	— treasury LP draw: cover residual for zero-saver pools with treasury LP.
+//	— POL provider-whole solve: after all of the above pool writes, solve
+//	  RUNEPool.ReserveUnits so the reserve bucket absorbs the full POL loss.
 //	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap and
 //	  refund the user's remaining deposit in ETH.DAI via reserve RUNE.
 //
@@ -812,28 +813,6 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		ctx.Logger().Info("conciliation: pol haircut: POL haircut applied",
 			"asset", h.asset, "delta_rune", deltaR, "delta_asset", deltaA)
 	}
-
-	// Re-snapshot after all pool writes, then solve RUNEPool.ReserveUnits so
-	// provider value is preserved (reserve absorbs the full POL loss).
-	vPost, err := runePoolValue(ctx, m.mgr)
-	if err != nil {
-		return fmt.Errorf("conciliation: pol haircut: fail to compute runePoolValue post: %w", err)
-	}
-	if providerValuePre.GTE(vPost) || runePool.TotalUnits().IsZero() {
-		// Edge case: reserve is fully wiped or no units — set ReserveUnits to 0.
-		ctx.Logger().Error("conciliation: pol haircut: providerValuePre >= vPost or TotalUnits=0; zeroing ReserveUnits",
-			"v_pre", vPre, "v_post", vPost, "provider_value_pre", providerValuePre)
-		runePool.ReserveUnits = cosmos.ZeroUint()
-	} else {
-		// ReserveUnits_post = PoolUnits × vPost / providerValuePre − PoolUnits
-		newTotalUnits := common.GetUncappedShare(runePool.PoolUnits, providerValuePre, vPost)
-		runePool.ReserveUnits = common.SafeSub(newTotalUnits, runePool.PoolUnits)
-	}
-	m.mgr.Keeper().SetRUNEPool(ctx, runePool)
-	ctx.Logger().Info("conciliation: pol haircut: RUNEPool.ReserveUnits adjusted",
-		"v_pre", vPre, "v_post", vPost,
-		"provider_value_pre", providerValuePre,
-		"new_reserve_units", runePool.ReserveUnits)
 
 	// Track POL withdrawal in the POL record so CurrentDeposit() stays accurate.
 	if !totalStep1Rune.IsZero() {
@@ -1030,6 +1009,34 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"total_planned_rune", totalStep4PlannedRune,
 		"total_drawn_rune", totalStep4DrawnRune,
 		"uncovered_rune", common.SafeSub(totalStep4PlannedRune, totalStep4DrawnRune))
+
+	// ── POL provider-whole solve (after all pool writes) ─────────────────────
+	// Now that Steps 1–4 have applied every pool mutation (POL haircut, reserve
+	// + savers synth burns, treasury draw), re-snapshot POL value and solve
+	// RUNEPool.ReserveUnits so provider value is preserved (the reserve bucket
+	// absorbs the entire loss). Steps 2–4 burn synths and draw treasury LP from
+	// pools that also hold POL, each of which raises POL value, so vPost must be
+	// taken here rather than right after Step 1. providerValuePre was captured
+	// before any pool write.
+	vPost, err := runePoolValue(ctx, m.mgr)
+	if err != nil {
+		return fmt.Errorf("conciliation: pol solve: fail to compute runePoolValue post: %w", err)
+	}
+	if providerValuePre.GTE(vPost) || runePool.TotalUnits().IsZero() {
+		// Edge case: reserve is fully wiped or no units — set ReserveUnits to 0.
+		ctx.Logger().Error("conciliation: pol solve: providerValuePre >= vPost or TotalUnits=0; zeroing ReserveUnits",
+			"v_pre", vPre, "v_post", vPost, "provider_value_pre", providerValuePre)
+		runePool.ReserveUnits = cosmos.ZeroUint()
+	} else {
+		// ReserveUnits_post = PoolUnits × vPost / providerValuePre − PoolUnits
+		newTotalUnits := common.GetUncappedShare(runePool.PoolUnits, providerValuePre, vPost)
+		runePool.ReserveUnits = common.SafeSub(newTotalUnits, runePool.PoolUnits)
+	}
+	m.mgr.Keeper().SetRUNEPool(ctx, runePool)
+	ctx.Logger().Info("conciliation: pol solve: RUNEPool.ReserveUnits adjusted",
+		"v_pre", vPre, "v_post", vPost,
+		"provider_value_pre", providerValuePre,
+		"new_reserve_units", runePool.ReserveUnits)
 
 	// ── Step 5: stop stuck streaming swap and compensate user from reserve ──
 	// Tx 5071A7 was an ETH.DAI→ETH.USDT streaming swap (484/1182 sub-swaps done)
