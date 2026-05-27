@@ -4,7 +4,6 @@
 package thorchain
 
 import (
-	"crypto/sha256"
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -12,7 +11,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	v2 "gitlab.com/thorchain/thornode/v3/x/thorchain/migrations/v2"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // Migrator is a struct for handling in-place store migrations.
@@ -682,8 +680,8 @@ const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 //	— treasury LP draw: cover residual for zero-saver pools with treasury LP.
 //	— POL provider-whole solve: after all of the above pool writes, solve
 //	  RUNEPool.ReserveUnits so the reserve bucket absorbs the full POL loss.
-//	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap and
-//	  refund the user's remaining deposit in ETH.DAI via reserve RUNE.
+//	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap; the
+//	  user's refund is issued by a follow-up migration (see Step 5).
 //
 // Snapshot date: 2026-05-25 (re-run before release at upgrade height).
 // POL drain = ΔR (RUNE to burn from Asgard; ΔA = ΔR×BalanceAsset/BalanceRune).
@@ -1038,124 +1036,61 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"provider_value_pre", providerValuePre,
 		"new_reserve_units", runePool.ReserveUnits)
 
-	// ── Step 5: stop stuck streaming swap and compensate user from reserve ──
+	// ── Step 5: stop the stuck streaming swap ────────────────────────────────
 	// Tx 5071A7 was an ETH.DAI→ETH.USDT streaming swap (484/1182 sub-swaps done)
 	// whose remaining ~22,150 ETH.DAI was in vault 2v28 when the exploit hit.
 	// Allowing the remaining 698 sub-swaps to continue would credit phantom DAI
 	// to the pool and drain real ETH.USDT from a live vault, so we stop it here.
-	// The user is refunded their remaining deposit in ETH.DAI (their original
-	// deposit asset): reserve RUNE priced at the ETH.DAI spot rate is queued as a
-	// RUNE→ETH.DAI swap to the user's original destination. We do NOT complete
-	// the swap to ETH.USDT — the user receives DAI, not USDT.
 	//
-	// Ordering note: every precondition below aborts the entire migration on
-	// failure, and the stuck swap/queue item are removed only AFTER the
-	// compensation swap is funded and queued. This guarantees we never delete
-	// the user's swap without a compensation swap in place — a partial failure
-	// rolls back the whole tx rather than silently leaving the user uncompensated.
+	// We ONLY stop the swap in this migration; the user's refund is issued by a
+	// FOLLOW-UP migration. Queuing a compensation swap here is unsafe: the swap
+	// queue executes later in EndBlock under the full swap-handler validation,
+	// which aborts the swap (refunding the RUNE back to the reserve) while
+	// trading is halted or streaming swaps are paused — both expected during the
+	// exploit response — silently leaving the user uncompensated with no retry.
+	// The follow-up migration queues the refund once those halts are lifted.
 	const stuckStreamingTxStr = "5071A7399C528E8D5BDC1BA62E87001EB5EB17E9E25ABF2965F6A38A665FF729"
 	stuckTxID, err := common.NewTxID(stuckStreamingTxStr)
 	if err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to parse txid: %w", err)
 	}
+
+	// Idempotent: if the swap already completed or was removed between the
+	// snapshot and the upgrade height there is nothing to stop. GetStreamingSwap
+	// returns a zero-valued record with a nil error when the key is absent, so
+	// check existence explicitly rather than acting on an empty record.
+	if !m.mgr.Keeper().StreamingSwapExists(ctx, stuckTxID) {
+		ctx.Logger().Info("conciliation: streaming swap: stuck swap already absent; nothing to stop",
+			"tx", stuckStreamingTxStr)
+		return nil
+	}
+
 	stuckSwap, err := m.mgr.Keeper().GetStreamingSwap(ctx, stuckTxID)
 	if err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to get streaming swap: %w", err)
 	}
-	stuckQueueMsg, err := m.mgr.Keeper().GetSwapQueueItem(ctx, stuckTxID, 0)
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to get swap queue item: %w", err)
-	}
-
 	remainingDeposit := common.SafeSub(stuckSwap.Deposit, stuckSwap.In)
 
-	// Price remaining deposit in RUNE at the ETH.DAI pool spot rate.
-	ethDAI, err := common.NewAsset("ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F")
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to parse ETH.DAI: %w", err)
-	}
-	daiPool, err := m.mgr.Keeper().GetPool(ctx, ethDAI)
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to get ETH.DAI pool: %w", err)
-	}
-	if daiPool.BalanceAsset.IsZero() || daiPool.BalanceRune.IsZero() {
-		return fmt.Errorf("conciliation: streaming swap: ETH.DAI pool unavailable (asset=%s rune=%s); aborting to avoid deleting the stuck swap without compensation",
-			daiPool.BalanceAsset, daiPool.BalanceRune)
-	}
-	runeCompensation := common.GetSafeShare(remainingDeposit, daiPool.BalanceAsset, daiPool.BalanceRune)
-	if runeCompensation.IsZero() {
-		return fmt.Errorf("conciliation: streaming swap: computed zero RUNE compensation (remaining_deposit=%s); aborting", remainingDeposit)
+	// Capture the user's original destination (held on the queue item) for the
+	// follow-up refund migration's records before we delete it; tolerate its
+	// absence since we are only stopping the swap here, not paying out.
+	var destination common.Address
+	if stuckQueueMsg, qErr := m.mgr.Keeper().GetSwapQueueItem(ctx, stuckTxID, 0); qErr == nil {
+		destination = stuckQueueMsg.Destination
 	}
 
-	// Guard: reserve must have enough RUNE.
-	reserveBal := m.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
-	if runeCompensation.GT(reserveBal) {
-		return fmt.Errorf("conciliation: streaming swap: reserve insufficient for compensation (required=%s reserve=%s); aborting",
-			runeCompensation, reserveBal)
-	}
-
-	// Fund the swap from reserve.
-	runeCoin := common.NewCoin(common.RuneNative, runeCompensation)
-	if err := m.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(runeCoin)); err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to move reserve RUNE: %w", err)
-	}
-
-	// Build compensation swap: RUNE → ETH.DAI → original destination.
-	reserveAddr, err := m.mgr.Keeper().GetModuleAddress(ReserveName)
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to get reserve address: %w", err)
-	}
-	asgardAccAddr := m.mgr.Keeper().GetModuleAccAddress(AsgardName)
-
-	// Derive a unique TxID so the compensation item doesn't collide with the
-	// original queue slot (which we delete below, but TxID is also used as key
-	// in the observed-tx voter and other stores).
-	h := sha256.Sum256([]byte(fmt.Sprintf("adr028-streaming-compensation:%s:%d", stuckStreamingTxStr, ctx.BlockHeight())))
-	compTxID := common.TxID(fmt.Sprintf("%X", h))
-
-	compTx := common.Tx{
-		ID:          compTxID,
-		Chain:       common.THORChain,
-		FromAddress: reserveAddr,
-		ToAddress:   reserveAddr,
-		Coins:       common.NewCoins(runeCoin),
-		Memo:        fmt.Sprintf("adr028-compensation:%s", stuckStreamingTxStr),
-		Gas:         common.Gas{},
-	}
-	// Streaming into ETH.DAI (the original deposit asset) over 10 sub-swaps
-	// to reduce per-sub-swap slippage. The user receives DAI at the same ETH
-	// address they designated for their original swap output.
-	compSwap := NewMsgSwap(
-		compTx,
-		ethDAI,
-		stuckQueueMsg.Destination,
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "",
-		nil,
-		MarketSwap,
-		10, 1,
-		types.SwapVersion_v1,
-		asgardAccAddr,
-	)
-	if err := m.mgr.Keeper().SetSwapQueueItem(ctx, *compSwap, 0); err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to queue compensation swap: %w", err)
-	}
-
-	// Compensation is now funded and queued: only now is it safe to remove the
-	// stuck streaming swap and its original queue item. The compensation item is
-	// keyed by compTxID (≠ stuckTxID), so it survives this removal.
+	// Remove the streaming-swap record and its queue item so the remaining
+	// sub-swaps never execute.
 	m.mgr.Keeper().RemoveStreamingSwap(ctx, stuckTxID)
 	m.mgr.Keeper().RemoveSwapQueueItem(ctx, stuckTxID, 0)
 
-	ctx.Logger().Info("conciliation: streaming swap: stopped stuck swap and queued compensation",
-		"original_tx", stuckStreamingTxStr,
-		"comp_tx", compTxID,
-		"remaining_deposit", remainingDeposit,
-		"rune_compensation", runeCompensation,
-		"target_asset", ethDAI,
-		"destination", stuckQueueMsg.Destination)
+	// Record the amount owed and the destination on-chain so the follow-up
+	// refund migration's snapshot can be verified against block logs at this
+	// height.
+	ctx.Logger().Info("conciliation: streaming swap: stopped stuck streaming swap; refund deferred to follow-up migration",
+		"tx", stuckStreamingTxStr,
+		"remaining_deposit_dai", remainingDeposit,
+		"destination", destination)
 
 	return nil
 }
