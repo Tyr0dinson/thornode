@@ -681,9 +681,9 @@ const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 //	— POL provider-whole solve: after all of the above pool writes, solve
 //	  RUNEPool.ReserveUnits so the reserve bucket absorbs the full POL loss.
 //	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap, pay
-//	  the already-produced ETH.USDT (StreamingSwap.Out) as an outbound, and log
-//	  the TradeTarget−Out shortfall the treasury refunds off-chain (no on-chain
-//	  fund movement for it).
+//	  the already-produced ETH.USDT (StreamingSwap.Out) as a best-effort outbound,
+//	  and log the remainder of the guaranteed minimum the treasury refunds
+//	  off-chain (no on-chain fund movement for it).
 //
 // Snapshot date: 2026-05-25 (re-run before release at upgrade height).
 // POL drain = ΔR (RUNE to burn from Asgard; ΔA = ΔR×BalanceAsset/BalanceRune).
@@ -1044,16 +1044,17 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	//   1. StreamingSwap.Out — ETH.USDT already produced by the completed
 	//      sub-swaps. The ETH.USDT pool was already debited for it; it never paid
 	//      out because the swap never completed. We schedule it as a normal
-	//      ETH.USDT outbound from a live Asgard vault — this CAN be paid and,
-	//      unlike a queued swap, persists in the outbound queue until ETH signing
-	//      resumes.
-	//   2. TradeTarget − Out — the unfulfilled remainder of the user's guaranteed
-	//      minimum output, whose input DAI was stuck in the drained 2v28 vault.
-	//      The treasury refunds this to the user off-chain from its own funds and
-	//      follows up for reimbursement separately, so the migration moves no
-	//      funds for it; we only log the amount owed. (We also do not queue an
-	//      on-chain swap: it would run later in EndBlock under full validation and
-	//      be aborted while trading is halted during the exploit response.)
+	//      ETH.USDT outbound from a live Asgard vault — unlike a queued swap, an
+	//      outbound persists in the queue until ETH signing resumes. If no active
+	//      vault holds enough ETH.USDT to schedule it, we log and skip rather than
+	//      abort the migration; the treasury then covers this portion off-chain.
+	//   2. The remainder of the user's guaranteed minimum not paid on-chain
+	//      (TradeTarget − amount actually scheduled) — its input DAI was stuck in
+	//      the drained 2v28 vault. The treasury refunds it to the user off-chain
+	//      from its own funds and follows up for reimbursement separately, so the
+	//      migration moves no funds for it; we only log the amount owed. (We also
+	//      do not queue an on-chain swap: it would run later in EndBlock under
+	//      full validation and be aborted while trading is halted.)
 	//
 	// Trading is halted at upgrade height, so no further sub-swaps execute and
 	// StreamingSwap.Out is final — we read it live and pay exactly that.
@@ -1077,32 +1078,47 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	if err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to get streaming swap: %w", err)
 	}
-	// The destination lives on the queue item (MsgSwap) and is required to pay
-	// the outbound, so a missing/empty destination is a hard error, not a guess.
-	stuckQueueMsg, err := m.mgr.Keeper().GetSwapQueueItem(ctx, stuckTxID, 0)
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to get swap queue item: %w", err)
-	}
-	destination := stuckQueueMsg.Destination
-	if destination.IsEmpty() {
-		return fmt.Errorf("conciliation: streaming swap: empty destination; cannot settle")
+	// The destination lives on the queue item (MsgSwap); it is needed only to pay
+	// the on-chain outbound. Tolerate its absence (best-effort) so a drifted or
+	// consumed queue item does not abort the upgrade — the treasury then refunds
+	// the full amount off-chain.
+	var destination common.Address
+	if stuckQueueMsg, qErr := m.mgr.Keeper().GetSwapQueueItem(ctx, stuckTxID, 0); qErr == nil {
+		destination = stuckQueueMsg.Destination
 	}
 
-	// 1. Pay the already-produced ETH.USDT (StreamingSwap.Out) as an outbound
-	//    from a live Asgard vault (the outbound fee is deducted by TxOutStore).
-	//    ethUSDT was parsed above for the haircut table.
+	// 1. Pay the already-produced ETH.USDT (StreamingSwap.Out) as a best-effort
+	//    outbound from a live Asgard vault (the outbound fee is deducted by
+	//    TxOutStore). ethUSDT was parsed above for the haircut table. Everything
+	//    here is best-effort: if the destination is unknown or no active vault
+	//    holds enough ETH.USDT to schedule it (e.g. the L1 USDT distribution at
+	//    upgrade height does not satisfy it), log and fall through rather than
+	//    abort the whole migration — the treasury then refunds this portion
+	//    off-chain too.
 	usdtOut := stuckSwap.Out
-	if !usdtOut.IsZero() {
+	usdtPaidOnChain := cosmos.ZeroUint()
+	switch {
+	case usdtOut.IsZero():
+		// No output produced yet; the whole guaranteed minimum is refunded off-chain.
+	case destination.IsEmpty():
+		ctx.Logger().Error("conciliation: streaming swap: unknown destination; skipping ETH.USDT outbound, treasury to refund off-chain",
+			"usdt_out", usdtOut)
+	default:
 		usdtCoin := common.NewCoin(ethUSDT, usdtOut)
 		if err := unsafeAddRefundOutbound(ctx, m.mgr, stuckStreamingTxStr, destination.String(), usdtCoin, ctx.BlockHeight()); err != nil {
-			return fmt.Errorf("conciliation: streaming swap: failed to schedule ETH.USDT outbound: %w", err)
+			ctx.Logger().Error("conciliation: streaming swap: could not schedule ETH.USDT outbound; treasury to refund it off-chain",
+				"error", err, "usdt_out", usdtOut, "beneficiary", destination)
+		} else {
+			usdtPaidOnChain = usdtOut
 		}
 	}
 
-	// 2. The TradeTarget − Out shortfall is refunded to the user off-chain by the
-	//    treasury from its own funds (it follows up for reimbursement separately).
-	//    The migration moves no funds for it — record the amount owed.
-	usdtShortfall := common.SafeSub(stuckSwap.TradeTarget, stuckSwap.Out)
+	// 2. Whatever is not paid on-chain (TradeTarget − usdtPaidOnChain — the
+	//    unfulfilled minimum plus any USDT that could not be scheduled above) is
+	//    refunded to the user off-chain by the treasury from its own funds; the
+	//    treasury follows up for reimbursement separately. The migration moves no
+	//    funds for it — record the amount owed.
+	usdtOffchainRefund := common.SafeSub(stuckSwap.TradeTarget, usdtPaidOnChain)
 
 	// 3. Stop the stuck swap: remove the streaming-swap record and queue item so
 	//    the remaining sub-swaps never execute.
@@ -1111,8 +1127,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 
 	ctx.Logger().Info("conciliation: streaming swap: settled stuck swap",
 		"tx", stuckStreamingTxStr,
-		"usdt_outbound", usdtOut,
-		"usdt_shortfall_offchain_refund", usdtShortfall,
+		"usdt_produced", usdtOut,
+		"usdt_paid_onchain", usdtPaidOnChain,
+		"usdt_offchain_refund", usdtOffchainRefund,
 		"beneficiary", destination)
 
 	return nil
