@@ -685,7 +685,7 @@ const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 //	  and log the remainder of the guaranteed minimum the treasury refunds
 //	  off-chain (no on-chain fund movement for it).
 //
-// Snapshot date: 2026-05-25 (re-run before release at upgrade height).
+// Snapshot date: 2026-05-26 (re-run before release at upgrade height).
 // POL drain = ΔR (RUNE to burn from Asgard; ΔA = ΔR×BalanceAsset/BalanceRune).
 // Only the reserve-bucket fraction (55.76%) of LP value is consumed;
 // providers are held whole via RUNEPool.ReserveUnits solve after all pool writes.
@@ -734,7 +734,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		return fmt.Errorf("adr028: failed to parse BSC.BTCB: %w", err)
 	}
 
-	// Per-pool waterfall table — 2026-05-25 live-chain snapshot; re-run at upgrade height.
+	// Per-pool waterfall table — 2026-05-26 live-chain snapshot; re-run at upgrade height.
 	// Step1 = ΔR (raw 1e8 RUNE to burn from Asgard); ΔA derived at runtime.
 	// Step2 = synth units in 1e8 to burn from reserve bank (no pool mutation).
 	// Step3 = savers haircut bps applied to the synth vault pool.
@@ -876,14 +876,19 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 			burnAmt = asgardSynthBal
 		}
 		// Collect all saver LP records before modifying (safe iteration pattern).
-		var saverLPs []LiquidityProvider
-		iter := m.mgr.Keeper().GetLiquidityProviderIterator(ctx, synthAsset)
-		for ; iter.Valid(); iter.Next() {
-			var lp LiquidityProvider
-			m.mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &lp)
-			saverLPs = append(saverLPs, lp)
-		}
-		_ = iter.Close()
+		// Drain inside a closure so the iterator is deferred-closed per pool — and
+		// on a MustUnmarshal panic — without leaking a defer across the haircuts loop.
+		saverLPs := func() []LiquidityProvider {
+			iter := m.mgr.Keeper().GetLiquidityProviderIterator(ctx, synthAsset)
+			defer iter.Close()
+			var lps []LiquidityProvider
+			for ; iter.Valid(); iter.Next() {
+				var lp LiquidityProvider
+				m.mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &lp)
+				lps = append(lps, lp)
+			}
+			return lps
+		}()
 		// Reduce each saver's LP units in proportion to the synth actually burned
 		// (deduct = lp.Units × burnAmt / BalanceAsset, on the pre-haircut depth),
 		// accumulating the exact per-LP deductions to use as the pool-level
@@ -896,7 +901,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		// truncations (not a pool-level ⌊⌋) keeps saverPool.LPUnits == Σ lp.Units
 		// exact.
 		poolAssetPre := saverPool.BalanceAsset
-		var sumLPDeductions cosmos.Uint = cosmos.ZeroUint()
+		sumLPDeductions := cosmos.ZeroUint()
 		for _, lp := range saverLPs {
 			deduct := lp.Units.Mul(burnAmt).Quo(poolAssetPre)
 			lp.Units = common.SafeSub(lp.Units, deduct)
@@ -1022,12 +1027,19 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	if err != nil {
 		return fmt.Errorf("conciliation: pol solve: fail to compute runePoolValue post: %w", err)
 	}
-	if providerValuePre.GTE(vPost) || runePool.TotalUnits().IsZero() {
+	switch {
+	case runePool.PoolUnits.IsZero():
+		// No provider (POL) units to hold whole — leave ReserveUnits untouched.
+		// Without this guard providerValuePre would be 0 and the solve below would
+		// collapse ReserveUnits to 0, wiping a reserve-only RUNEPool position.
+		ctx.Logger().Info("conciliation: pol solve: PoolUnits is zero; leaving ReserveUnits unchanged",
+			"reserve_units", runePool.ReserveUnits)
+	case providerValuePre.GTE(vPost) || runePool.TotalUnits().IsZero():
 		// Edge case: reserve is fully wiped or no units — set ReserveUnits to 0.
 		ctx.Logger().Error("conciliation: pol solve: providerValuePre >= vPost or TotalUnits=0; zeroing ReserveUnits",
 			"v_pre", vPre, "v_post", vPost, "provider_value_pre", providerValuePre)
 		runePool.ReserveUnits = cosmos.ZeroUint()
-	} else {
+	default:
 		// ReserveUnits_post = PoolUnits × vPost / providerValuePre − PoolUnits
 		newTotalUnits := common.GetUncappedShare(runePool.PoolUnits, providerValuePre, vPost)
 		runePool.ReserveUnits = common.SafeSub(newTotalUnits, runePool.PoolUnits)
