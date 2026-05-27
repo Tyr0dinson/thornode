@@ -681,6 +681,8 @@ const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 //	— savers haircut: reduce saver LP units + synth pool depth pro-rata,
 //	  burn synths from Asgard.
 //	— treasury LP draw: cover residual for zero-saver pools with treasury LP.
+//	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap and
+//	  refund the user's remaining deposit in ETH.DAI via reserve RUNE.
 //
 // Snapshot date: 2026-05-25 (re-run before release at upgrade height).
 // POL drain = ΔR (RUNE to burn from Asgard; ΔA = ΔR×BalanceAsset/BalanceRune).
@@ -1022,13 +1024,21 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"total_drawn_rune", totalStep4DrawnRune,
 		"uncovered_rune", common.SafeSub(totalStep4PlannedRune, totalStep4DrawnRune))
 
-	// ── Step 6: stop stuck streaming swap and compensate user from reserve ──
+	// ── Step 5: stop stuck streaming swap and compensate user from reserve ──
 	// Tx 5071A7 was an ETH.DAI→ETH.USDT streaming swap (484/1182 sub-swaps done)
 	// whose remaining ~22,150 ETH.DAI was in vault 2v28 when the exploit hit.
 	// Allowing the remaining 698 sub-swaps to continue would credit phantom DAI
 	// to the pool and drain real ETH.USDT from a live vault, so we stop it here.
-	// The user is compensated with reserve RUNE priced at the ETH.DAI spot rate,
-	// swapped to their original target asset (ETH.USDT) via the swap queue.
+	// The user is refunded their remaining deposit in ETH.DAI (their original
+	// deposit asset): reserve RUNE priced at the ETH.DAI spot rate is queued as a
+	// RUNE→ETH.DAI swap to the user's original destination. We do NOT complete
+	// the swap to ETH.USDT — the user receives DAI, not USDT.
+	//
+	// Ordering note: every precondition below aborts the entire migration on
+	// failure, and the stuck swap/queue item are removed only AFTER the
+	// compensation swap is funded and queued. This guarantees we never delete
+	// the user's swap without a compensation swap in place — a partial failure
+	// rolls back the whole tx rather than silently leaving the user uncompensated.
 	const stuckStreamingTxStr = "5071A7399C528E8D5BDC1BA62E87001EB5EB17E9E25ABF2965F6A38A665FF729"
 	stuckTxID, err := common.NewTxID(stuckStreamingTxStr)
 	if err != nil {
@@ -1044,10 +1054,6 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	}
 
 	remainingDeposit := common.SafeSub(stuckSwap.Deposit, stuckSwap.In)
-	m.mgr.Keeper().RemoveStreamingSwap(ctx, stuckTxID)
-	m.mgr.Keeper().RemoveSwapQueueItem(ctx, stuckTxID, 0)
-	ctx.Logger().Info("conciliation: streaming swap: removed stuck streaming swap",
-		"tx", stuckStreamingTxStr, "remaining_deposit", remainingDeposit)
 
 	// Price remaining deposit in RUNE at the ETH.DAI pool spot rate.
 	ethDAI, err := common.NewAsset("ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F")
@@ -1055,23 +1061,23 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		return fmt.Errorf("conciliation: streaming swap: failed to parse ETH.DAI: %w", err)
 	}
 	daiPool, err := m.mgr.Keeper().GetPool(ctx, ethDAI)
-	if err != nil || daiPool.BalanceAsset.IsZero() || daiPool.BalanceRune.IsZero() {
-		ctx.Logger().Error("conciliation: streaming swap: ETH.DAI pool unavailable; no reserve compensation issued",
-			"balance_asset", daiPool.BalanceAsset, "balance_rune", daiPool.BalanceRune)
-		return nil
+	if err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to get ETH.DAI pool: %w", err)
+	}
+	if daiPool.BalanceAsset.IsZero() || daiPool.BalanceRune.IsZero() {
+		return fmt.Errorf("conciliation: streaming swap: ETH.DAI pool unavailable (asset=%s rune=%s); aborting to avoid deleting the stuck swap without compensation",
+			daiPool.BalanceAsset, daiPool.BalanceRune)
 	}
 	runeCompensation := common.GetSafeShare(remainingDeposit, daiPool.BalanceAsset, daiPool.BalanceRune)
 	if runeCompensation.IsZero() {
-		ctx.Logger().Error("conciliation: streaming swap: zero RUNE compensation; skipping")
-		return nil
+		return fmt.Errorf("conciliation: streaming swap: computed zero RUNE compensation (remaining_deposit=%s); aborting", remainingDeposit)
 	}
 
 	// Guard: reserve must have enough RUNE.
 	reserveBal := m.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
 	if runeCompensation.GT(reserveBal) {
-		ctx.Logger().Error("conciliation: streaming swap: reserve insufficient for compensation; skipping",
-			"required", runeCompensation, "reserve", reserveBal)
-		return nil
+		return fmt.Errorf("conciliation: streaming swap: reserve insufficient for compensation (required=%s reserve=%s); aborting",
+			runeCompensation, reserveBal)
 	}
 
 	// Fund the swap from reserve.
@@ -1080,7 +1086,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		return fmt.Errorf("conciliation: streaming swap: failed to move reserve RUNE: %w", err)
 	}
 
-	// Build compensation swap: RUNE → original target asset → original destination.
+	// Build compensation swap: RUNE → ETH.DAI → original destination.
 	reserveAddr, err := m.mgr.Keeper().GetModuleAddress(ReserveName)
 	if err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to get reserve address: %w", err)
@@ -1088,7 +1094,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	asgardAccAddr := m.mgr.Keeper().GetModuleAccAddress(AsgardName)
 
 	// Derive a unique TxID so the compensation item doesn't collide with the
-	// original queue slot (which we just deleted, but TxID is also used as key
+	// original queue slot (which we delete below, but TxID is also used as key
 	// in the observed-tx voter and other stores).
 	h := sha256.Sum256([]byte(fmt.Sprintf("adr028-streaming-compensation:%s:%d", stuckStreamingTxStr, ctx.BlockHeight())))
 	compTxID := common.TxID(fmt.Sprintf("%X", h))
@@ -1122,9 +1128,17 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	if err := m.mgr.Keeper().SetSwapQueueItem(ctx, *compSwap, 0); err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to queue compensation swap: %w", err)
 	}
-	ctx.Logger().Info("conciliation: streaming swap: compensation swap queued",
+
+	// Compensation is now funded and queued: only now is it safe to remove the
+	// stuck streaming swap and its original queue item. The compensation item is
+	// keyed by compTxID (≠ stuckTxID), so it survives this removal.
+	m.mgr.Keeper().RemoveStreamingSwap(ctx, stuckTxID)
+	m.mgr.Keeper().RemoveSwapQueueItem(ctx, stuckTxID, 0)
+
+	ctx.Logger().Info("conciliation: streaming swap: stopped stuck swap and queued compensation",
 		"original_tx", stuckStreamingTxStr,
 		"comp_tx", compTxID,
+		"remaining_deposit", remainingDeposit,
 		"rune_compensation", runeCompensation,
 		"target_asset", ethDAI,
 		"destination", stuckQueueMsg.Destination)
