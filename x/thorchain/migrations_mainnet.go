@@ -680,8 +680,9 @@ const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 //	— treasury LP draw: cover residual for zero-saver pools with treasury LP.
 //	— POL provider-whole solve: after all of the above pool writes, solve
 //	  RUNEPool.ReserveUnits so the reserve bucket absorbs the full POL loss.
-//	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap; the
-//	  user's refund is issued by a follow-up migration (see Step 5).
+//	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap and
+//	  send a fixed RUNE refund from the reserve to the treasury multisig, which
+//	  refunds the user off-chain.
 //
 // Snapshot date: 2026-05-25 (re-run before release at upgrade height).
 // POL drain = ΔR (RUNE to burn from Asgard; ΔA = ΔR×BalanceAsset/BalanceRune).
@@ -1036,31 +1037,39 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"provider_value_pre", providerValuePre,
 		"new_reserve_units", runePool.ReserveUnits)
 
-	// ── Step 5: stop the stuck streaming swap ────────────────────────────────
+	// ── Step 5: stop the stuck streaming swap, fund refund via treasury ──────
 	// Tx 5071A7 was an ETH.DAI→ETH.USDT streaming swap (484/1182 sub-swaps done)
 	// whose remaining ~22,150 ETH.DAI was in vault 2v28 when the exploit hit.
 	// Allowing the remaining 698 sub-swaps to continue would credit phantom DAI
 	// to the pool and drain real ETH.USDT from a live vault, so we stop it here.
 	//
-	// We ONLY stop the swap in this migration; the user's refund is issued by a
-	// FOLLOW-UP migration. Queuing a compensation swap here is unsafe: the swap
-	// queue executes later in EndBlock under the full swap-handler validation,
-	// which aborts the swap (refunding the RUNE back to the reserve) while
-	// trading is halted or streaming swaps are paused — both expected during the
-	// exploit response — silently leaving the user uncompensated with no retry.
-	// The follow-up migration queues the refund once those halts are lifted.
+	// The user is made whole off-chain by the treasury: the reserve sends a
+	// fixed RUNE amount (the snapshot value of the remaining ETH.DAI) to the
+	// treasury multisig in this same migration, and the treasury refunds the
+	// user off-chain to their original destination. We deliberately do NOT queue
+	// an on-chain compensation swap — the swap queue runs later in EndBlock under
+	// full swap-handler validation, which would abort (refunding the RUNE back to
+	// the reserve) while trading is halted or streaming swaps are paused, both
+	// expected during the exploit response, silently leaving the user
+	// uncompensated. A direct module→treasury send is atomic with this migration
+	// and matches the established off-chain refund process. The beneficiary,
+	// amount, and original tx are logged on-chain for auditability.
 	const stuckStreamingTxStr = "5071A7399C528E8D5BDC1BA62E87001EB5EB17E9E25ABF2965F6A38A665FF729"
+	// step5TreasuryRefundRune is the RUNE value of the remaining ~22,150 ETH.DAI.
+	// It MUST be set from the snapshot and re-verified at upgrade height; the
+	// zero-guard below aborts the migration until it is set.
+	const step5TreasuryRefundRune = 0
 	stuckTxID, err := common.NewTxID(stuckStreamingTxStr)
 	if err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to parse txid: %w", err)
 	}
 
 	// Idempotent: if the swap already completed or was removed between the
-	// snapshot and the upgrade height there is nothing to stop. GetStreamingSwap
-	// returns a zero-valued record with a nil error when the key is absent, so
-	// check existence explicitly rather than acting on an empty record.
+	// snapshot and the upgrade height there is nothing to stop and nothing is
+	// owed. GetStreamingSwap returns a zero-valued record with a nil error when
+	// the key is absent, so check existence explicitly.
 	if !m.mgr.Keeper().StreamingSwapExists(ctx, stuckTxID) {
-		ctx.Logger().Info("conciliation: streaming swap: stuck swap already absent; nothing to stop",
+		ctx.Logger().Info("conciliation: streaming swap: stuck swap already absent; nothing to stop or refund",
 			"tx", stuckStreamingTxStr)
 		return nil
 	}
@@ -1071,26 +1080,43 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	}
 	remainingDeposit := common.SafeSub(stuckSwap.Deposit, stuckSwap.In)
 
-	// Capture the user's original destination (held on the queue item) for the
-	// follow-up refund migration's records before we delete it; tolerate its
-	// absence since we are only stopping the swap here, not paying out.
+	// Capture the user's original destination (held on the queue item) so the
+	// off-chain refund has the beneficiary on record; tolerate its absence.
 	var destination common.Address
 	if stuckQueueMsg, qErr := m.mgr.Keeper().GetSwapQueueItem(ctx, stuckTxID, 0); qErr == nil {
 		destination = stuckQueueMsg.Destination
 	}
 
-	// Remove the streaming-swap record and its queue item so the remaining
-	// sub-swaps never execute.
+	// Fund the off-chain refund: reserve → treasury multisig, in RUNE.
+	refundRune := cosmos.NewUint(step5TreasuryRefundRune)
+	if refundRune.IsZero() {
+		return fmt.Errorf("conciliation: streaming swap: step5TreasuryRefundRune is unset — re-verify snapshot before release")
+	}
+	reserveBal := m.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	if refundRune.GT(reserveBal) {
+		return fmt.Errorf("conciliation: streaming swap: reserve insufficient for treasury refund (required=%s reserve=%s); aborting",
+			refundRune, reserveBal)
+	}
+	treasuryAcc, err := treasuryAddr.AccAddress()
+	if err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to derive treasury account: %w", err)
+	}
+	refundCoin := common.NewCoin(common.RuneNative, refundRune)
+	if err := m.mgr.Keeper().SendFromModuleToAccount(ctx, ReserveName, treasuryAcc, common.NewCoins(refundCoin)); err != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to send refund to treasury: %w", err)
+	}
+
+	// Stop the stuck swap: remove the streaming-swap record and its queue item
+	// so the remaining sub-swaps never execute.
 	m.mgr.Keeper().RemoveStreamingSwap(ctx, stuckTxID)
 	m.mgr.Keeper().RemoveSwapQueueItem(ctx, stuckTxID, 0)
 
-	// Record the amount owed and the destination on-chain so the follow-up
-	// refund migration's snapshot can be verified against block logs at this
-	// height.
-	ctx.Logger().Info("conciliation: streaming swap: stopped stuck streaming swap; refund deferred to follow-up migration",
+	ctx.Logger().Info("conciliation: streaming swap: stopped stuck swap; funded off-chain refund via treasury",
 		"tx", stuckStreamingTxStr,
 		"remaining_deposit_dai", remainingDeposit,
-		"destination", destination)
+		"refund_rune", refundRune,
+		"treasury", adr028TreasuryAddr,
+		"beneficiary", destination)
 
 	return nil
 }
