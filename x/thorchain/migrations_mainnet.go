@@ -681,8 +681,9 @@ const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
 //	— POL provider-whole solve: after all of the above pool writes, solve
 //	  RUNEPool.ReserveUnits so the reserve bucket absorbs the full POL loss.
 //	— stuck streaming swap: stop the 2v28 ETH.DAI→ETH.USDT streaming swap, pay
-//	  the already-produced ETH.USDT (StreamingSwap.Out) as an outbound, and fund
-//	  the TradeTarget−Out shortfall (reserve→treasury RUNE) for off-chain refund.
+//	  the already-produced ETH.USDT (StreamingSwap.Out) as an outbound, and log
+//	  the TradeTarget−Out shortfall the treasury refunds off-chain (no on-chain
+//	  fund movement for it).
 //
 // Snapshot date: 2026-05-25 (re-run before release at upgrade height).
 // POL drain = ΔR (RUNE to burn from Asgard; ΔA = ΔR×BalanceAsset/BalanceRune).
@@ -1047,21 +1048,16 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	//      unlike a queued swap, persists in the outbound queue until ETH signing
 	//      resumes.
 	//   2. TradeTarget − Out — the unfulfilled remainder of the user's guaranteed
-	//      minimum output. Its input DAI was stuck in the drained 2v28 vault, so
-	//      it cannot be produced from the pool. The reserve funds this shortfall
-	//      to the treasury multisig (in RUNE), which refunds the user off-chain.
-	//      We deliberately do NOT queue an on-chain compensation swap — the swap
-	//      queue runs later in EndBlock under full validation and would be aborted
-	//      (RUNE refunded to the reserve) while trading is halted during the
-	//      exploit response, silently leaving the user uncompensated.
+	//      minimum output, whose input DAI was stuck in the drained 2v28 vault.
+	//      The treasury refunds this to the user off-chain from its own funds and
+	//      follows up for reimbursement separately, so the migration moves no
+	//      funds for it; we only log the amount owed. (We also do not queue an
+	//      on-chain swap: it would run later in EndBlock under full validation and
+	//      be aborted while trading is halted during the exploit response.)
 	//
 	// Trading is halted at upgrade height, so no further sub-swaps execute and
 	// StreamingSwap.Out is final — we read it live and pay exactly that.
 	const stuckStreamingTxStr = "5071A7399C528E8D5BDC1BA62E87001EB5EB17E9E25ABF2965F6A38A665FF729"
-	// step5TreasuryRefundRune is the RUNE value of the (TradeTarget − Out) USDT
-	// shortfall (see usdt_shortfall in the log below). It MUST be set from the
-	// snapshot and re-verified at upgrade height; the zero-guard aborts until set.
-	const step5TreasuryRefundRune = 0
 	stuckTxID, err := common.NewTxID(stuckStreamingTxStr)
 	if err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to parse txid: %w", err)
@@ -1103,26 +1099,10 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		}
 	}
 
-	// 2. Fund the (TradeTarget − Out) USDT shortfall to the treasury (in RUNE);
-	//    the treasury refunds the user off-chain.
+	// 2. The TradeTarget − Out shortfall is refunded to the user off-chain by the
+	//    treasury from its own funds (it follows up for reimbursement separately).
+	//    The migration moves no funds for it — record the amount owed.
 	usdtShortfall := common.SafeSub(stuckSwap.TradeTarget, stuckSwap.Out)
-	refundRune := cosmos.NewUint(step5TreasuryRefundRune)
-	if refundRune.IsZero() {
-		return fmt.Errorf("conciliation: streaming swap: step5TreasuryRefundRune is unset — re-verify snapshot before release")
-	}
-	reserveBal := m.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
-	if refundRune.GT(reserveBal) {
-		return fmt.Errorf("conciliation: streaming swap: reserve insufficient for treasury refund (required=%s reserve=%s); aborting",
-			refundRune, reserveBal)
-	}
-	treasuryAcc, err := treasuryAddr.AccAddress()
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to derive treasury account: %w", err)
-	}
-	refundCoin := common.NewCoin(common.RuneNative, refundRune)
-	if err := m.mgr.Keeper().SendFromModuleToAccount(ctx, ReserveName, treasuryAcc, common.NewCoins(refundCoin)); err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to send treasury refund: %w", err)
-	}
 
 	// 3. Stop the stuck swap: remove the streaming-swap record and queue item so
 	//    the remaining sub-swaps never execute.
@@ -1132,9 +1112,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	ctx.Logger().Info("conciliation: streaming swap: settled stuck swap",
 		"tx", stuckStreamingTxStr,
 		"usdt_outbound", usdtOut,
-		"usdt_shortfall", usdtShortfall,
-		"treasury_refund_rune", refundRune,
-		"treasury", adr028TreasuryAddr,
+		"usdt_shortfall_offchain_refund", usdtShortfall,
 		"beneficiary", destination)
 
 	return nil
