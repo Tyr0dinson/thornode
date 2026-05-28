@@ -809,7 +809,16 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	}
 	providerValuePre := common.GetSafeShare(runePool.PoolUnits, runePool.TotalUnits(), vPre)
 
-	totalStep1Rune := cosmos.ZeroUint()
+	// POL holds LP units in pools via the Reserve module's bech32 address.
+	// We need polAddress to compute POL's fractional share of each step-1
+	// haircut for accurate pol.RuneWithdrawn accounting (see below).
+	polAddress, err := m.mgr.Keeper().GetModuleAddress(ReserveName)
+	if err != nil {
+		return fmt.Errorf("conciliation: pol haircut: fail to get reserve module address: %w", err)
+	}
+
+	totalStep1Rune := cosmos.ZeroUint()         // sum of ΔR burned from Asgard (for logging/conservation)
+	totalPOLRuneWithdrawn := cosmos.ZeroUint()  // sum of POL's fractional share of ΔR per pool (for pol.RuneWithdrawn)
 	for _, h := range haircuts {
 		if h.step1RuneHaircut == 0 {
 			continue
@@ -823,6 +832,33 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 			return fmt.Errorf("conciliation: pol haircut: pool %s BalanceRune %s < haircut %d — abort",
 				h.asset, pool.BalanceRune, h.step1RuneHaircut)
 		}
+
+		// Snapshot POL's fractional share BEFORE applying the haircut so
+		// pol.RuneWithdrawn below records only POL's actual loss (not the full
+		// ΔR burn). Critical for pools where POL is not the sole/majority LP
+		// — for those, crediting the full ΔR would over-count POL's withdrawal
+		// and could push pol.CurrentDeposit() negative, breaking the
+		// maxPOLDeposit safety gate in manager_network_current.go.
+		//
+		// Compute CalcUnits in-memory on a local copy so the share denominator
+		// (LPUnits + SynthUnits) reflects the current synth supply rather than
+		// any stored-stale SynthUnits — critical for pools that are in the
+		// degenerate synth-overhang regime (supply > 2×BalanceAsset), where
+		// stored SynthUnits is correctly-but-astronomically inflated and POL's
+		// share-of-pool-value is effectively zero.
+		poolPreHaircut := pool
+		synthSupply := m.mgr.Keeper().GetTotalSupply(ctx, h.asset.GetSyntheticAsset())
+		poolPreHaircut.CalcUnits(synthSupply)
+		polLP, lpErr := m.mgr.Keeper().GetLiquidityProvider(ctx, h.asset, common.Address(polAddress.String()))
+		if lpErr == nil && !poolPreHaircut.GetPoolUnits().IsZero() && !polLP.Units.IsZero() {
+			polDeltaR := common.GetSafeShare(polLP.Units, poolPreHaircut.GetPoolUnits(), deltaR)
+			totalPOLRuneWithdrawn = totalPOLRuneWithdrawn.Add(polDeltaR)
+		}
+		// If POL has no LP in this pool (lpErr) or pool is degenerate (synth
+		// dominates → POL share ≈ 0), totalPOLRuneWithdrawn gets no contribution
+		// for this pool. The full ΔR is still burned from Asgard below — only
+		// POL's accounting is fractional.
+
 		// ΔA = ΔR × BalanceAsset / BalanceRune (price-ratio preservation).
 		deltaA := common.GetSafeShare(deltaR, pool.BalanceRune, pool.BalanceAsset)
 		pool.BalanceRune = common.SafeSub(pool.BalanceRune, deltaR)
@@ -850,15 +886,24 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	}
 
 	// Track POL withdrawal in the POL record so CurrentDeposit() stays accurate.
-	if !totalStep1Rune.IsZero() {
+	// IMPORTANT: only POL's fractional share of each pool's ΔR is recorded as a
+	// POL withdrawal — NOT the full ΔR sum. Recording the full ΔR would over-
+	// state POL's loss (treating it as if POL owned 100% of every haircut pool)
+	// and could push pol.RuneWithdrawn past pol.RuneDeposited → negative
+	// CurrentDeposit → broken maxPOLDeposit safety gate.
+	if !totalPOLRuneWithdrawn.IsZero() {
 		pol, err := m.mgr.Keeper().GetPOL(ctx)
 		if err != nil {
 			return fmt.Errorf("conciliation: pol haircut: fail to get POL: %w", err)
 		}
-		pol.RuneWithdrawn = pol.RuneWithdrawn.Add(totalStep1Rune)
+		pol.RuneWithdrawn = pol.RuneWithdrawn.Add(totalPOLRuneWithdrawn)
 		if err := m.mgr.Keeper().SetPOL(ctx, pol); err != nil {
 			return fmt.Errorf("conciliation: pol haircut: fail to save POL: %w", err)
 		}
+		ctx.Logger().Info("conciliation: pol haircut: POL.RuneWithdrawn adjusted",
+			"total_step1_rune_burned", totalStep1Rune,
+			"pol_fractional_withdrawn", totalPOLRuneWithdrawn,
+			"non_pol_share", common.SafeSub(totalStep1Rune, totalPOLRuneWithdrawn))
 	}
 
 	// ── Step 2: reserve synth burn ───────────────────────────────────────────
