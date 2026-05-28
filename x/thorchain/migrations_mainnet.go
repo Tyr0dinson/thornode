@@ -755,8 +755,13 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		{asset: ethUSDT, step1RuneHaircut: 33_880_349_267_266, step2ReserveSynthBurn: 2_702_221_779_137, step3SaversHaircutBps: 2591},
 		// AVAX.USDC: synth units inflated, near-zero LP share → full 2713 bps savers haircut.
 		{asset: avaxUSDC, step3SaversHaircutBps: 2713},
-		// ETH.ETH: no POL or synth coverage → 1514 bps savers haircut.
-		{asset: common.ETHAsset, step3SaversHaircutBps: 1514},
+		// ETH.ETH: POL haircut (1,086 ETH = ~$3.26M) closes the bifrost-observed
+		// absorbed loss from the vault 2v28 compromise (37.5% pool haircut, the
+		// largest single per-pool fraction in this migration; POL reserve
+		// absorbs the corresponding LP value loss via step-5 inflation).
+		// Stacked with the existing 1514 bps savers haircut (savers also absorb
+		// their share of the recap).
+		{asset: common.ETHAsset, step1RuneHaircut: 420_098_359_472_574, step3SaversHaircutBps: 1514},
 		// GAIA.ATOM: no POL or synth coverage → 3121 bps savers haircut.
 		{asset: common.ATOMAsset, step3SaversHaircutBps: 3121},
 		// Zero-saver pools with confirmed treasury LP coverage:
@@ -773,6 +778,23 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		{asset: common.TRXAsset, step1RuneHaircut: 175_184_824_163},
 		// XRP.XRP: closes 19 XRP L1 gap (<0.01% pool haircut).
 		{asset: common.XRPAsset, step1RuneHaircut: 4_831_551_272},
+		// ─── Full attack-recapitalization entries for bifrost-OBSERVED native
+		// gas-asset drains from vault 2v28. These losses were already absorbed
+		// economically at attack time (bifrost decremented vault.Coins as the
+		// attacker-initiated L1 outbounds were observed), but pool.BalanceAsset
+		// did NOT follow — leaving a pool/vault aggregate gap. Step-1 here
+		// closes that gap by reducing pool depth to match actual vault holdings;
+		// POL absorbs the LP value loss via step-5 ReserveUnits inflation.
+		// ΔR sized to match stolen_amount × poolRune/poolAsset at snapshot height
+		// 26,355,121; §3e re-verify these against fresh state at upgrade height.
+		// BTC.BTC: closes 40.73 BTC absorbed loss (~$4.07M), 19.0% pool haircut.
+		{asset: common.BTCAsset, step1RuneHaircut: 568_945_622_679_283},
+		// LTC.LTC: closes 6,866.75 LTC absorbed loss (~$686k), 41.5% pool haircut.
+		// Tied for largest per-pool fraction with ETH.ETH; significant L1 pool
+		// depth reduction expected.
+		{asset: common.LTCAsset, step1RuneHaircut: 69_426_603_965_037},
+		// AVAX.AVAX: closes 861 AVAX absorbed loss (~$26k), 1.1% pool haircut.
+		{asset: common.AVAXAsset, step1RuneHaircut: 1_444_896_137_532},
 	}
 
 	// ── Step 1: POL haircut (per pool) ──────────────────────────────────────
