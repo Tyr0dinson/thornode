@@ -745,38 +745,20 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// Step4 = ΔA (raw 1e8 asset) drawn from treasury LP; only assets w/ treasury coverage.
 	// Zero values mean the step does not apply to that pool.
 	haircuts := []adr028PoolHaircut{
-		// DOGE: POL haircut (72,302 DOGE) + reserve synth burn calibrated to
-		// preserve LP value-per-unit (146,940 DOGE synths burned, down from the
-		// original 3,392,456; the original sizing intentionally over-burned to
-		// drain historical insolvency into POL — calibration prefers LP-neutral).
-		{asset: common.DOGEAsset, step1RuneHaircut: 1_419_918_684_958, step2ReserveSynthBurn: 14_693_874_828_797},
-		// BCH: POL haircut (174 BCH) + 621 bps savers haircut calibrated to
-		// preserve LP value-per-unit (savers absorb ~348 BCH-synths so LPs
-		// don't take the step-1 depth-haircut + SynthUnits-inflation penalty).
-		{asset: common.BCHAsset, step1RuneHaircut: 13_013_460_708_269, step3SaversHaircutBps: 621},
-		// BSC.BNB: vault 2v28 held 0 BSC.BNB; the original 45.74 BNB-synth reserve
-		// burn would have written down chronic insolvency (POL-absorbed surplus)
-		// but caused LP windfall — removed for LP-neutrality. Reserve still holds
-		// the 45.74 BNB-synths against impaired backing; a separate cleanup can
-		// burn them if/when the protocol decides.
-		// {asset: common.BNBBEP20Asset, step2ReserveSynthBurn: 4_574_000_000},
-		// ETH.USDT: POL haircut (198,410 USDT) + reserve synth burn (27,022 USDT)
-		// + 1050 bps savers haircut calibrated to preserve LP value-per-unit
-		// (down from original 2591 bps; original over-burned to drain historical
-		// insolvency into POL).
-		{asset: ethUSDT, step1RuneHaircut: 33_880_349_267_266, step2ReserveSynthBurn: 2_702_221_779_137, step3SaversHaircutBps: 1050},
+		// DOGE: fully covered by POL haircut (72,302 DOGE) + reserve synth burn (3,392,456 DOGE synths).
+		{asset: common.DOGEAsset, step1RuneHaircut: 1_419_918_684_958, step2ReserveSynthBurn: 339_245_565_058_092},
+		// BCH: fully covered by POL haircut (174 BCH).
+		{asset: common.BCHAsset, step1RuneHaircut: 13_013_460_708_269},
+		// BSC.BNB: fully covered by reserve synth burn (45.74 native BNB synths; reserve holds ~143 BNB).
+		{asset: common.BNBBEP20Asset, step2ReserveSynthBurn: 4_574_000_000},
+		// ETH.USDT: POL haircut (198,410 USDT) + reserve synth burn (27,022 USDT) → residual 2591 bps savers haircut.
+		{asset: ethUSDT, step1RuneHaircut: 33_880_349_267_266, step2ReserveSynthBurn: 2_702_221_779_137, step3SaversHaircutBps: 2591},
 		// AVAX.USDC: synth units inflated, near-zero LP share → full 2713 bps savers haircut.
 		{asset: avaxUSDC, step3SaversHaircutBps: 2713},
-		// ETH.ETH: vault 2v28 held only 0.97 ETH (dust); original 1514 bps savers
-		// haircut would have written down chronic synth-side exposure but caused
-		// massive LP windfall (+83% v/u) absorbed by POL — removed for
-		// LP-neutrality. Savers retain their full claim against impaired backing;
-		// a separate cleanup can revisit if/when the protocol decides.
-		// {asset: common.ETHAsset, step3SaversHaircutBps: 1514},
-		// GAIA.ATOM: step1 POL haircut sized to close the L1 vault drop (239 ATOM,
-		// ~0.3% pool fraction) + 119 bps savers haircut calibrated to preserve LP
-		// value-per-unit (down from original 3121 bps; original over-burned).
-		{asset: common.ATOMAsset, step1RuneHaircut: 82_621_466_209, step3SaversHaircutBps: 119},
+		// ETH.ETH: no POL or synth coverage → 1514 bps savers haircut.
+		{asset: common.ETHAsset, step3SaversHaircutBps: 1514},
+		// GAIA.ATOM: no POL or synth coverage → 3121 bps savers haircut.
+		{asset: common.ATOMAsset, step3SaversHaircutBps: 3121},
 		// Zero-saver pools with confirmed treasury LP coverage:
 		{asset: baseUSDC, step4TreasuryDraw: 4_904_100_000_000},
 		{asset: bscBUSD, step4TreasuryDraw: 3_214_300_000_000},
@@ -785,10 +767,8 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		// ─── Pool-haircut entries closing additional vault 2v28 L1 backing
 		// drops surfaced by the snapshot dry-run. Each ΔR is sub-1% of pool
 		// RUNE; absorbed by POL via step-5 RUNEPool.ReserveUnits re-solve.
-		// ETH.USDC: closes 27,179 USDC L1 gap (0.8% pool haircut) + 93 bps
-		// savers haircut calibrated to preserve LP value-per-unit (savers
-		// absorb ~53.9k USDC-synths so LPs don't take the step-1 penalty).
-		{asset: ethUSDC, step1RuneHaircut: 4_640_667_267_256, step3SaversHaircutBps: 93},
+		// ETH.USDC: closes 27,179 USDC L1 gap (0.8% pool haircut).
+		{asset: ethUSDC, step1RuneHaircut: 4_640_667_267_256},
 		// TRON.TRX: closes 2,874 TRX L1 gap (0.9% pool haircut).
 		{asset: common.TRXAsset, step1RuneHaircut: 175_184_824_163},
 		// XRP.XRP: closes 19 XRP L1 gap (<0.01% pool haircut).
