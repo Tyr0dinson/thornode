@@ -733,6 +733,10 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse BSC.BTCB: %w", err)
 	}
+	ethUSDC, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	if err != nil {
+		return fmt.Errorf("adr028: failed to parse ETH.USDC: %w", err)
+	}
 
 	// Per-pool waterfall table — 2026-05-26 live-chain snapshot; re-run at upgrade height.
 	// Step1 = ΔR (raw 1e8 RUNE to burn from Asgard); ΔA derived at runtime.
@@ -760,6 +764,15 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		{asset: bscBUSD, step4TreasuryDraw: 3_214_300_000_000},
 		{asset: bscETH, step4TreasuryDraw: 1_600_000_000},
 		{asset: bscBTCB, step4TreasuryDraw: 51_000_000},
+		// ─── Pool-haircut entries closing additional vault 2v28 L1 backing
+		// drops surfaced by the snapshot dry-run. Each ΔR is sub-1% of pool
+		// RUNE; absorbed by POL via step-5 RUNEPool.ReserveUnits re-solve.
+		// ETH.USDC: closes 27,179 USDC L1 gap (0.8% pool haircut).
+		{asset: ethUSDC, step1RuneHaircut: 4_640_667_267_256},
+		// TRON.TRX: closes 2,874 TRX L1 gap (0.9% pool haircut).
+		{asset: common.TRXAsset, step1RuneHaircut: 175_184_824_163},
+		// XRP.XRP: closes 19 XRP L1 gap (<0.01% pool haircut).
+		{asset: common.XRPAsset, step1RuneHaircut: 4_831_551_272},
 	}
 
 	// ── Step 1: POL haircut (per pool) ──────────────────────────────────────
