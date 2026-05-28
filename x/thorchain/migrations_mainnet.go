@@ -943,10 +943,15 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		if err := m.mgr.Keeper().SetPool(ctx, saverPool); err != nil {
 			return fmt.Errorf("conciliation: savers haircut: fail to save saver pool %s: %w", synthAsset, err)
 		}
-		// Burn the freed synth supply from Asgard.
+		// Burn the freed synth supply from Asgard (bank pairing:
+		// Asgard→thorchain→burn — same idiom as step 1's RUNE burn, since
+		// AsgardName has no Burner permission in app.maccPerms).
 		synthCoin := common.NewCoin(synthAsset, burnAmt)
-		if err := m.mgr.Keeper().BurnFromModule(ctx, AsgardName, synthCoin); err != nil {
-			return fmt.Errorf("conciliation: savers haircut: fail to burn synths from Asgard for %s: %w", synthAsset, err)
+		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(synthCoin)); err != nil {
+			return fmt.Errorf("conciliation: savers haircut: fail to move synths from Asgard for %s: %w", synthAsset, err)
+		}
+		if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, synthCoin); err != nil {
+			return fmt.Errorf("conciliation: savers haircut: fail to burn synths for %s: %w", synthAsset, err)
 		}
 		mod := NewPoolMod(synthAsset, cosmos.ZeroUint(), false, burnAmt, false)
 		emitPoolBalanceChangedEvent(ctx, mod, "conciliation_saver_haircut", m.mgr)
