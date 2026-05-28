@@ -1048,6 +1048,50 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"total_drawn_rune", totalStep4DrawnRune,
 		"uncovered_rune", common.SafeSub(totalStep4PlannedRune, totalStep4DrawnRune))
 
+	// ── Step 4.5: recompute SynthUnits on every L1 pool the waterfall touched ─
+	//
+	// Steps 2 and 3 burn synth supply via direct bank ops (Reserve→ModuleName→burn
+	// for step 2; Asgard→ModuleName→burn for step 3); these do NOT update the L1
+	// pool's SynthUnits in the keeper — that recompute is normally deferred to
+	// the next swap/withdraw/add-liquidity on that pool via `pool.CalcUnits(...)`.
+	//
+	// Step 1 reduces BalanceAsset without touching synth supply; the formula
+	// SU = (LPUnits × supply) / (2×BalanceAsset − supply) has BalanceAsset in
+	// the denominator, so a depth haircut also inflates SynthUnits on next
+	// CalcUnits — meaning LPs lose MORE share than just the depth haircut.
+	//
+	// Without an explicit recompute here, two problems follow:
+	//   1. LPs withdrawing in the window between this upgrade block and the
+	//      first swap on the pool see stale SynthUnits → wrong (under-)payout.
+	//   2. Step 5's runePoolValue() reads GetPoolUnits() = LPUnits + SynthUnits;
+	//      stale-inflated SynthUnits inflates the denominator → POL's share-of-
+	//      pool-value computes too small → the solver pads ReserveUnits MORE
+	//      than necessary → POL over-absorbs.
+	//
+	// Fix: iterate every haircut-table entry whose step 1/2/3 touched the
+	// underlying L1 pool or its synth supply, call pool.CalcUnits(synthSupply)
+	// with the post-migration supply, persist via SetPool. Step 4 already keeps
+	// LPUnits and BalanceAsset proportional, so its pools also benefit (CalcUnits
+	// re-anchors them too without changing the ratio).
+	for _, h := range haircuts {
+		if h.step1RuneHaircut == 0 && h.step2ReserveSynthBurn == 0 &&
+			h.step3SaversHaircutBps == 0 && h.step4TreasuryDraw == 0 {
+			continue
+		}
+		pool, err := m.mgr.Keeper().GetPool(ctx, h.asset)
+		if err != nil {
+			return fmt.Errorf("conciliation: synthunits recompute: fail to get pool %s: %w", h.asset, err)
+		}
+		synthSupply := m.mgr.Keeper().GetTotalSupply(ctx, h.asset.GetSyntheticAsset())
+		oldSU := pool.SynthUnits
+		pool.CalcUnits(synthSupply)
+		if err := m.mgr.Keeper().SetPool(ctx, pool); err != nil {
+			return fmt.Errorf("conciliation: synthunits recompute: fail to save pool %s: %w", h.asset, err)
+		}
+		ctx.Logger().Info("conciliation: synthunits recompute: pool.SynthUnits recomputed",
+			"asset", h.asset, "synth_supply", synthSupply, "old_synth_units", oldSU, "new_synth_units", pool.SynthUnits)
+	}
+
 	// ── POL provider-whole solve (after all pool writes) ─────────────────────
 	// Now that Steps 1–4 have applied every pool mutation (POL haircut, reserve
 	// + savers synth burns, treasury draw), re-snapshot POL value and solve
