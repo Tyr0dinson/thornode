@@ -829,21 +829,49 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// ── Step 2: reserve synth burn ───────────────────────────────────────────
 	// Pure bank burn — no pool balance mutation.  FreedSynthUnits shifts from
 	// synth-claim to LP-claim on the next CalcUnits recompute.
+	//
+	// The Reserve module account has no Burner permission (see app.maccPerms),
+	// so the synth is first sent to thorchain.ModuleName (the only module with
+	// Minter+Burner) and burned from there — the standard cosmos-sdk pattern.
+	//
+	// Cap burnAmt to what Reserve actually holds rather than aborting, mirroring
+	// the step-3 idiom: snapshot drift may leave the Reserve synth balance below
+	// the planned amount, but a partial burn is still strictly better than
+	// halting the chain mid-upgrade. The shortfall is logged for off-chain
+	// reconciliation.
 	for _, h := range haircuts {
 		if h.step2ReserveSynthBurn == 0 {
 			continue
 		}
 		synthAsset := h.asset.GetSyntheticAsset()
-		synthCoin := common.NewCoin(synthAsset, cosmos.NewUint(h.step2ReserveSynthBurn))
-		if err := m.mgr.Keeper().BurnFromModule(ctx, ReserveName, synthCoin); err != nil {
-			return fmt.Errorf("conciliation: reserve synth burn: fail to burn %s from reserve: %w", synthAsset, err)
+		burnAmt := cosmos.NewUint(h.step2ReserveSynthBurn)
+		reserveSynthBal := m.mgr.Keeper().GetBalanceOfModule(ctx, ReserveName, synthAsset.Native())
+		if reserveSynthBal.LT(burnAmt) {
+			ctx.Logger().Error("conciliation: reserve synth burn: Reserve synth balance below burnAmt, capping — shortfall left",
+				"asset", synthAsset,
+				"reserve_balance", reserveSynthBal,
+				"burn_amt", burnAmt,
+				"shortfall", common.SafeSub(burnAmt, reserveSynthBal))
+			burnAmt = reserveSynthBal
+		}
+		if burnAmt.IsZero() {
+			ctx.Logger().Info("conciliation: reserve synth burn: nothing to burn, skipping",
+				"asset", synthAsset)
+			continue
+		}
+		synthCoin := common.NewCoin(synthAsset, burnAmt)
+		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, ModuleName, common.NewCoins(synthCoin)); err != nil {
+			return fmt.Errorf("conciliation: reserve synth burn: fail to send %s reserve→thorchain: %w", synthAsset, err)
+		}
+		if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, synthCoin); err != nil {
+			return fmt.Errorf("conciliation: reserve synth burn: fail to burn %s from thorchain: %w", synthAsset, err)
 		}
 		burnEvt := NewEventMintBurn(BurnSupplyType, synthCoin.Asset.Native(), synthCoin.Amount, "conciliation_reserve_synth_burn")
 		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
 			ctx.Logger().Error("conciliation: reserve synth burn: fail to emit burn event", "error", err, "asset", synthAsset)
 		}
 		ctx.Logger().Info("conciliation: reserve synth burn: burned reserve synths",
-			"asset", synthAsset, "amount", h.step2ReserveSynthBurn)
+			"asset", synthAsset, "amount", burnAmt)
 	}
 
 	// ── Step 3: savers haircut ───────────────────────────────────────────────
