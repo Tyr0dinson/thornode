@@ -817,8 +817,8 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		return fmt.Errorf("conciliation: pol haircut: fail to get reserve module address: %w", err)
 	}
 
-	totalStep1Rune := cosmos.ZeroUint()         // sum of ΔR burned from Asgard (for logging/conservation)
-	totalPOLRuneWithdrawn := cosmos.ZeroUint()  // sum of POL's fractional share of ΔR per pool (for pol.RuneWithdrawn)
+	totalStep1Rune := cosmos.ZeroUint()        // sum of ΔR burned from Asgard (for logging/conservation)
+	totalPOLRuneWithdrawn := cosmos.ZeroUint() // sum of POL's fractional share of ΔR per pool (for pol.RuneWithdrawn)
 	for _, h := range haircuts {
 		if h.step1RuneHaircut == 0 {
 			continue
@@ -1140,13 +1140,19 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// the denominator, so a depth haircut also inflates SynthUnits on next
 	// CalcUnits — meaning LPs lose MORE share than just the depth haircut.
 	//
-	// Without an explicit recompute here, two problems follow:
-	//   1. LPs withdrawing in the window between this upgrade block and the
-	//      first swap on the pool see stale SynthUnits → wrong (under-)payout.
-	//   2. Step 5's runePoolValue() reads GetPoolUnits() = LPUnits + SynthUnits;
-	//      stale-inflated SynthUnits inflates the denominator → POL's share-of-
-	//      pool-value computes too small → the solver pads ReserveUnits MORE
-	//      than necessary → POL over-absorbs.
+	// Without an explicit recompute here, LPs withdrawing in the window between
+	// this upgrade block and the first swap/withdraw/add on the pool would read
+	// the stale keeper-persisted SynthUnits → wrong (under-)payout. Closing that
+	// window is the reason this step exists and must be kept.
+	//
+	// NOTE: step 5's runePoolValue()/polPoolValue() does NOT depend on this
+	// recompute. polPoolValue (helpers.go) calls pool.CalcUnits(GetTotalSupply)
+	// on a fresh in-memory pool copy *before* reading GetPoolUnits(), so it never
+	// consumes the keeper-persisted SynthUnits field — the POL solve is correct
+	// whether or not step 4.5 has run. (An earlier comment here claimed a stale
+	// SynthUnits would inflate the POL denominator and make POL over-absorb; that
+	// is false for the reason just stated.) The persisted recompute matters only
+	// for the LP-withdraw window above.
 	//
 	// Fix: iterate every haircut-table entry whose step 1/2/3 touched the
 	// underlying L1 pool or its synth supply, call pool.CalcUnits(synthSupply)
