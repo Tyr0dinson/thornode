@@ -661,6 +661,68 @@ type adr028PoolHaircut struct {
 	step4TreasuryDraw uint64
 }
 
+// adr028SolveOverflowBps computes the strict-waterfall savers-overflow haircut
+// (in bps on the savers-pool BalanceAsset) needed to retire `residualUnits` of
+// total-pool units that the reserve-capped layer-1 POL removal could not absorb.
+//
+// It mirrors the dry-run computeCalibration regime split:
+//
+//	overhang (2·postA ≤ S): CalcUnits clamps, SU = postL·S is LINEAR in supply, so
+//	  burning supply by burn_perc = ΔR/preR retires exactly burn_perc of the units
+//	  → overflow_bps = ΔR·10000/preR (this is the BTC=1907 known-good shortcut).
+//	non-overhang (2·postA > S): SU = postL·S/(2·postA−S). Solve the post-removal
+//	  synth units target (SU_now − residualUnits), invert CalcUnits at (postL, postA)
+//	  for the supply S_target = 2·postA·SU_target/(postL+SU_target), and burn
+//	  b = S − S_target → overflow_bps = b·10000/saverPool.BalanceAsset.
+//
+// postL = L − x (LP units after layer-1 removal); postA = A after the ΔA depth cut.
+// Returns 0 if there is no savers pool (TRON.TRX, XRP.XRP) — the residual then
+// unavoidably falls on DLPs; the dry-run flags it (G9).
+func (m Migrator) adr028SolveOverflowBps(
+	ctx sdk.Context,
+	asset common.Asset,
+	postL, postA, synthSupply, targetT cosmos.Uint,
+) uint64 {
+	synthAsset := asset.GetSyntheticAsset()
+	saverPool, err := m.mgr.Keeper().GetPool(ctx, synthAsset)
+	if err != nil || saverPool.BalanceAsset.IsZero() {
+		// No savers pool / zero depth → no overflow lever (TRX/XRP).
+		return 0
+	}
+	// We want the realized post-overflow pool to satisfy
+	//   postL + CalcUnits(postL, postA, S−b) == targetT
+	// i.e. the remaining synth units must equal suTarget = targetT − postL. Solve
+	// the synth supply S_target that yields suTarget through the SAME CalcUnits the
+	// chain uses, picking the regime the solution actually lands in (this is the
+	// fix: invert the real post-cut CalcUnits, not a before-state proxy):
+	//   clamped     (suTarget/postL ≥ 2·postA): SU = postL·S      ⇒ S = suTarget/postL
+	//   non-clamped (otherwise):                 SU = postL·S/(2A−S) ⇒ S = 2A·suTarget/(postL+suTarget)
+	if postL.IsZero() {
+		return 0
+	}
+	twoPostA := postA.MulUint64(2)
+	suTarget := common.SafeSub(targetT, postL)
+	clampedS := suTarget.Quo(postL)
+	var sTarget cosmos.Uint
+	switch {
+	case !clampedS.IsZero() && clampedS.GTE(twoPostA):
+		sTarget = clampedS // overhang/clamped regime — linear, reachable
+	case postL.Add(suTarget).IsZero():
+		sTarget = cosmos.ZeroUint()
+	default:
+		sTarget = twoPostA.Mul(suTarget).Quo(postL.Add(suTarget))
+	}
+	if synthSupply.LTE(sTarget) {
+		return 0 // layer-1 (x) already met the target; no savers burn needed
+	}
+	b := common.SafeSub(synthSupply, sTarget)
+	bps := b.MulUint64(10000).Quo(saverPool.BalanceAsset)
+	if bps.GT(cosmos.NewUint(10000)) {
+		bps = cosmos.NewUint(10000) // never burn more synth than the savers pool holds
+	}
+	return bps.BigInt().Uint64()
+}
+
 // vault2v28PubKey is the compromised Asgard vault whose keeper balance is
 // zeroed in step 0.  The vault's L1 assets churn to the new active vault
 // through normal bifrost operations.
@@ -751,17 +813,21 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		{asset: common.BCHAsset, step1RuneHaircut: 13_013_460_708_269},
 		// BSC.BNB: fully covered by reserve synth burn (45.74 native BNB synths; reserve holds ~143 BNB).
 		{asset: common.BNBBEP20Asset, step2ReserveSynthBurn: 4_574_000_000},
-		// ETH.USDT: POL haircut (198,410 USDT) + reserve synth burn (27,022 USDT) → residual 2591 bps savers haircut.
-		{asset: ethUSDT, step1RuneHaircut: 33_880_349_267_266, step2ReserveSynthBurn: 2_702_221_779_137, step3SaversHaircutBps: 2591},
+		// ETH.USDT: POL haircut (198,410 USDT) + reserve synth burn (27,022 USDT).
+		// Savers overflow is RUNTIME-DERIVED by the strict waterfall (step1OverflowBps),
+		// no longer a tabled bps — it equals the residual the reserve-capped POL-unit
+		// removal could not absorb.
+		{asset: ethUSDT, step1RuneHaircut: 33_880_349_267_266, step2ReserveSynthBurn: 2_702_221_779_137},
 		// AVAX.USDC: synth units inflated, near-zero LP share → full 2713 bps savers haircut.
 		{asset: avaxUSDC, step3SaversHaircutBps: 2713},
 		// ETH.ETH: POL haircut (1,086 ETH = ~$3.26M) closes the bifrost-observed
 		// absorbed loss from the vault 2v28 compromise (37.5% pool haircut, the
 		// largest single per-pool fraction in this migration; POL reserve
 		// absorbs the corresponding LP value loss via step-5 inflation).
-		// Stacked with the existing 1514 bps savers haircut (savers also absorb
-		// their share of the recap).
-		{asset: common.ETHAsset, step1RuneHaircut: 420_098_359_472_574, step3SaversHaircutBps: 1514},
+		// Savers overflow is RUNTIME-DERIVED by the strict waterfall — for ETH's
+		// synth-overhang regime it lands at ≈ ΔR/R·10000 bps (clamp linearity),
+		// generalizing the BTC known-good result; no tabled bps.
+		{asset: common.ETHAsset, step1RuneHaircut: 420_098_359_472_574},
 		// GAIA.ATOM: no POL or synth coverage → 3121 bps savers haircut.
 		{asset: common.ATOMAsset, step3SaversHaircutBps: 3121},
 		// Zero-saver pools with confirmed treasury LP coverage:
@@ -788,6 +854,13 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		// ΔR sized to match stolen_amount × poolRune/poolAsset at snapshot height
 		// 26,355,121; §3e re-verify these against fresh state at upgrade height.
 		// BTC.BTC: closes 40.73 BTC absorbed loss (~$4.07M), 19.0% pool haircut.
+		// Savers overflow is RUNTIME-DERIVED by the strict waterfall. In BTC's
+		// synth-overhang regime CalcUnits is linear (SynthUnits = LPUnits·S), so
+		// the reserve_pool_capacity is ≈0 and the overflow lands at the SAME
+		// fraction as the L1 depth cut: ΔR/R·10000 ≈ 1907 bps (the prior tabled
+		// value). Burning the synth pool by ΔR/R drives LP value-per-unit drift
+		// to ~0: savers bear their proportional share via fewer (whole) synths,
+		// DLP & POL kept whole.
 		{asset: common.BTCAsset, step1RuneHaircut: 568_945_622_679_283},
 		// LTC.LTC: closes 6,866.75 LTC absorbed loss (~$686k), 41.5% pool haircut.
 		// Tied for largest per-pool fraction with ETH.ETH; significant L1 pool
@@ -819,6 +892,17 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 
 	totalStep1Rune := cosmos.ZeroUint()        // sum of ΔR burned from Asgard (for logging/conservation)
 	totalPOLRuneWithdrawn := cosmos.ZeroUint() // sum of POL's fractional share of ΔR per pool (for pol.RuneWithdrawn)
+	totalPOLUnitsRemoved := cosmos.ZeroUint()  // sum of POL pool LP units removed (layer 1, for logging)
+	// dlpTargetR/dlpTargetT: per step-1 pool, the PRE-migration BalanceRune and total
+	// pool units. The savers overflow is solved LAST (step 3) against the realized
+	// post-everything pool state to land total units at the DLP-neutral target
+	// Tfinal = R_current · T_orig / R_orig — absorbing the exact residual regardless
+	// of how step 1 (depth cut), step 2 (reserve burn + self-neutral paired cut) and
+	// the layer-1 POL removal composed. Reserve-first ordering: layer 1 (POL) absorbs
+	// up to its reserve cap, the step-2 reserve synth burn absorbs its share, and
+	// savers cover only what remains.
+	dlpTargetR := map[string]cosmos.Uint{}
+	dlpTargetT := map[string]cosmos.Uint{}
 	for _, h := range haircuts {
 		if h.step1RuneHaircut == 0 {
 			continue
@@ -846,11 +930,72 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		// degenerate synth-overhang regime (supply > 2×BalanceAsset), where
 		// stored SynthUnits is correctly-but-astronomically inflated and POL's
 		// share-of-pool-value is effectively zero.
+		//
+		// preR/preA/T/L are the PRE-haircut depth, total units and LP units used
+		// by the strict-waterfall layer-1 math below.
 		poolPreHaircut := pool
 		synthSupply := m.mgr.Keeper().GetTotalSupply(ctx, h.asset.GetSyntheticAsset())
 		poolPreHaircut.CalcUnits(synthSupply)
+		preR := poolPreHaircut.BalanceRune
+		T := poolPreHaircut.GetPoolUnits() // L + SU (pre-state)
+		L := poolPreHaircut.LPUnits
+		// Record pre-migration (R, T) so step 3 can solve the savers overflow against
+		// the realized post-everything state to land DLP value-per-unit at neutral.
+		dlpTargetR[h.asset.String()] = preR
+		dlpTargetT[h.asset.String()] = T
 		polLP, lpErr := m.mgr.Keeper().GetLiquidityProvider(ctx, h.asset, common.Address(polAddress.String()))
-		if lpErr == nil && !poolPreHaircut.GetPoolUnits().IsZero() && !polLP.Units.IsZero() {
+
+		// ── STRICT WATERFALL — Layer 1: remove POL's pool LP units ───────────
+		// To keep DLP value-per-unit neutral after a burn_perc = ΔR/R depth cut,
+		// total pool units must shrink by burn_perc. The IDEAL POL-only removal
+		// is x* = burn_perc·L (= ΔR·L/preR): removing the same FRACTION of LP
+		// units as the depth cut keeps (L−x)/L = 1−burn_perc, and since SU
+		// scales with LPUnits in BOTH CalcUnits regimes (non-clamped: SU∝L;
+		// clamped overhang: SU = L·S ∝ L), the post total units land at
+		// (1−burn_perc)·T — DLP v/u neutral.
+		//
+		// CEILING: we may remove at most the POL units economically backed by
+		// the RESERVE (vs RUNEPool providers): reserve_pool_capacity =
+		// polL · ReserveUnits / TotalUnits. Removing more drives vPost below
+		// providerValuePre, hitting step-5's wipe branch and forcing loss onto
+		// providers — forbidden. x = min(x*, reserveCap, polL).
+		xStar := cosmos.ZeroUint()
+		if !preR.IsZero() {
+			xStar = common.GetUncappedShare(deltaR, preR, L) // ΔR·L/preR
+		}
+		reserveCap := cosmos.ZeroUint()
+		if lpErr == nil && !runePool.TotalUnits().IsZero() {
+			reserveCap = common.GetSafeShare(runePool.ReserveUnits, runePool.TotalUnits(), polLP.Units)
+		}
+		x := xStar
+		if x.GT(reserveCap) {
+			x = reserveCap
+		}
+		if lpErr == nil && x.GT(polLP.Units) {
+			x = polLP.Units
+		}
+		if lpErr != nil {
+			x = cosmos.ZeroUint() // no POL LP record to remove from
+		}
+		if !x.IsZero() && lpErr == nil {
+			polLP.Units = common.SafeSub(polLP.Units, x)
+			m.mgr.Keeper().SetLiquidityProvider(ctx, polLP)
+			pool.LPUnits = common.SafeSub(pool.LPUnits, x)
+			totalPOLUnitsRemoved = totalPOLUnitsRemoved.Add(x)
+		}
+
+		// pol.RuneWithdrawn accounting: credit POL's RUNE-value of the units it
+		// ACTUALLY lost — the layer-1 removal (x units) plus the depth-cut value
+		// on POL's remaining units. We use the value of the removed units,
+		// 2·GetSafeShare(x, T, preR), which is POL's realized loss from layer 1.
+		// This keeps pol.CurrentDeposit() accurate without over-counting (the
+		// G4b invariant — RuneDeposited ≥ RuneWithdrawn — is dry-run asserted).
+		if lpErr == nil && !T.IsZero() && !x.IsZero() {
+			polDeltaR := common.GetSafeShare(x, T, preR).MulUint64(2)
+			totalPOLRuneWithdrawn = totalPOLRuneWithdrawn.Add(polDeltaR)
+		} else if lpErr == nil && !poolPreHaircut.GetPoolUnits().IsZero() && !polLP.Units.IsZero() {
+			// Fallback (no layer-1 removal happened, e.g. reserveCap=0): record
+			// POL's fractional share of the depth-cut ΔR as before.
 			polDeltaR := common.GetSafeShare(polLP.Units, poolPreHaircut.GetPoolUnits(), deltaR)
 			totalPOLRuneWithdrawn = totalPOLRuneWithdrawn.Add(polDeltaR)
 		}
@@ -858,6 +1003,13 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		// dominates → POL share ≈ 0), totalPOLRuneWithdrawn gets no contribution
 		// for this pool. The full ΔR is still burned from Asgard below — only
 		// POL's accounting is fractional.
+
+		// Savers overflow is NOT computed here — it is solved LAST in step 3 against
+		// the realized pool state (dlpTargetR/T), so it absorbs the exact residual
+		// after this depth cut, the step-2 reserve burn+pairing, and layer 1. Layer 1
+		// (reserve-first POL removal) is applied above; savers cover only the rest.
+		ctx.Logger().Info("conciliation: pol haircut: strict-waterfall layer 1",
+			"asset", h.asset, "x_star", xStar, "reserve_cap", reserveCap, "pol_units_removed", x)
 
 		// ΔA = ΔR × BalanceAsset / BalanceRune (price-ratio preservation).
 		deltaA := common.GetSafeShare(deltaR, pool.BalanceRune, pool.BalanceAsset)
@@ -903,7 +1055,8 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		ctx.Logger().Info("conciliation: pol haircut: POL.RuneWithdrawn adjusted",
 			"total_step1_rune_burned", totalStep1Rune,
 			"pol_fractional_withdrawn", totalPOLRuneWithdrawn,
-			"non_pol_share", common.SafeSub(totalStep1Rune, totalPOLRuneWithdrawn))
+			"non_pol_share", common.SafeSub(totalStep1Rune, totalPOLRuneWithdrawn),
+			"total_pol_units_removed", totalPOLUnitsRemoved)
 	}
 
 	// ── Step 2: reserve synth burn ───────────────────────────────────────────
@@ -952,6 +1105,61 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		}
 		ctx.Logger().Info("conciliation: reserve synth burn: burned reserve synths",
 			"asset", synthAsset, "amount", burnAmt)
+
+		// ── Self-neutral pairing (Option 2): retire the pool VALUE the burned reserve
+		// synths claimed, so DLP/saver value-per-unit is UNCHANGED. A bare burn drops
+		// SynthUnits and sprays that freed v/u onto everyone else; pairing it with a
+		// depth cut keeps the reserve's absorption position-neutral. Closed-form
+		// depth-keep fraction r = R'/R solving L(S−X)/(2A·r−(S−X)) = rT − L exactly
+		// (this accounts for A's own re-inflation of SU, which the naive R·ΔSU/T missed):
+		//   non-overhang (2A > S): r = (T(S−X) + 2AL) / (2AT)
+		//   overhang     (2A ≤ S): r = (S−X) / S      (CalcUnits clamp → SU = L·S)
+		// Cut R→rR, A→rA and burn the freed (1−r)·R RUNE; the asset-claim drop also
+		// tightens L1 solvency.
+		pool, perr := m.mgr.Keeper().GetPool(ctx, h.asset)
+		if perr != nil {
+			return fmt.Errorf("conciliation: reserve synth burn: fail to get pool %s: %w", h.asset, perr)
+		}
+		sPre := m.mgr.Keeper().GetTotalSupply(ctx, synthAsset).Add(burnAmt) // supply BEFORE the burn
+		if !pool.BalanceRune.IsZero() && !pool.BalanceAsset.IsZero() && !sPre.IsZero() {
+			L := pool.LPUnits
+			A := pool.BalanceAsset
+			twoA := A.MulUint64(2)
+			pCopy := pool
+			pCopy.CalcUnits(sPre)
+			T := pCopy.GetPoolUnits() // L + SU(pre-burn)
+			sMinusX := common.SafeSub(sPre, burnAmt)
+			var dRpair, dApair cosmos.Uint
+			if sPre.GTE(twoA) {
+				// overhang: ΔR = R·X/S, ΔA = A·X/S
+				dRpair = common.GetUncappedShare(burnAmt, sPre, pool.BalanceRune)
+				dApair = common.GetUncappedShare(burnAmt, sPre, A)
+			} else {
+				// non-overhang: drop = T·(2A−(S−X)) − 2A·L ; ΔR = R·drop/(2AT)
+				twoAT := twoA.Mul(T)
+				dropNum := common.SafeSub(T.Mul(common.SafeSub(twoA, sMinusX)), twoA.Mul(L))
+				if !twoAT.IsZero() {
+					dRpair = common.GetUncappedShare(dropNum, twoAT, pool.BalanceRune)
+					dApair = common.GetUncappedShare(dropNum, twoAT, A)
+				}
+			}
+			if !dRpair.IsZero() {
+				pool.BalanceRune = common.SafeSub(pool.BalanceRune, dRpair)
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, dApair)
+				if err := m.mgr.Keeper().SetPool(ctx, pool); err != nil {
+					return fmt.Errorf("conciliation: reserve synth burn: fail to save paired cut %s: %w", h.asset, err)
+				}
+				rc := common.NewCoin(common.RuneNative, dRpair)
+				if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(rc)); err != nil {
+					return fmt.Errorf("conciliation: reserve synth burn: fail to move paired RUNE %s: %w", h.asset, err)
+				}
+				if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, rc); err != nil {
+					return fmt.Errorf("conciliation: reserve synth burn: fail to burn paired RUNE %s: %w", h.asset, err)
+				}
+				ctx.Logger().Info("conciliation: reserve synth burn: self-neutral paired depth cut",
+					"asset", h.asset, "rune_cut", dRpair, "asset_cut", dApair)
+			}
+		}
 	}
 
 	// ── Step 3: savers haircut ───────────────────────────────────────────────
@@ -959,16 +1167,31 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// BalanceAsset only).  Reduces every saver LP unit pro-rata, reduces pool
 	// LPUnits and BalanceAsset, then burns the freed synth supply from Asgard.
 	for _, h := range haircuts {
-		if h.step3SaversHaircutBps == 0 {
+		synthAsset := h.asset.GetSyntheticAsset()
+		// Strict-waterfall OVERFLOW-LAST: for a step-1 pool, solve the savers haircut
+		// NOW (against the realized post-step-1/step-2/layer-1 pool state) so total
+		// pool units land at the DLP-neutral target Tfinal = R_current·T_orig/R_orig.
+		// This OVERRIDES any tabled step3SaversHaircutBps and absorbs the exact
+		// residual the reserve-first layers (POL + reserve burn) could not. Pure-savers
+		// pools (no step-1, e.g. AVAX.USDC, GAIA.ATOM) keep their tabled bps.
+		bps := h.step3SaversHaircutBps
+		if rOrig, ok := dlpTargetR[h.asset.String()]; ok && !rOrig.IsZero() {
+			cur, cerr := m.mgr.Keeper().GetPool(ctx, h.asset)
+			if cerr == nil {
+				sCur := m.mgr.Keeper().GetTotalSupply(ctx, synthAsset)
+				tFinal := common.GetUncappedShare(cur.BalanceRune, rOrig, dlpTargetT[h.asset.String()])
+				bps = m.adr028SolveOverflowBps(ctx, h.asset, cur.LPUnits, cur.BalanceAsset, sCur, tFinal)
+			}
+		}
+		if bps == 0 {
 			continue
 		}
-		synthAsset := h.asset.GetSyntheticAsset()
 		saverPool, err := m.mgr.Keeper().GetPool(ctx, synthAsset)
 		if err != nil {
 			return fmt.Errorf("conciliation: savers haircut: fail to get saver pool %s: %w", synthAsset, err)
 		}
 		// burnAmt = pool.BalanceAsset × bps / 10000
-		burnAmt := saverPool.BalanceAsset.MulUint64(h.step3SaversHaircutBps).QuoUint64(10000)
+		burnAmt := saverPool.BalanceAsset.MulUint64(bps).QuoUint64(10000)
 		if burnAmt.IsZero() {
 			ctx.Logger().Error("conciliation: savers haircut: zero burnAmt, skipping", "asset", synthAsset)
 			continue
@@ -1040,7 +1263,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 			ctx.Logger().Error("conciliation: savers haircut: fail to emit burn event", "error", err, "asset", synthAsset)
 		}
 		ctx.Logger().Info("conciliation: savers haircut: savers haircut applied",
-			"asset", synthAsset, "bps", h.step3SaversHaircutBps, "burn_amt", burnAmt,
+			"asset", synthAsset, "bps", bps, "burn_amt", burnAmt,
 			"lp_count", len(saverLPs))
 	}
 
@@ -1212,6 +1435,16 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"v_pre", vPre, "v_post", vPost,
 		"provider_value_pre", providerValuePre,
 		"new_reserve_units", runePool.ReserveUnits)
+	// STRICT-WATERFALL safety: the layer-1 removal is capped by reserve_pool_capacity
+	// precisely so that vPost never falls below providerValuePre, i.e. step 5's wipe
+	// branch is NEVER taken when any POL units were removed. If ReserveUnits is zero
+	// here while layer 1 removed POL units, the reserve ceiling was mis-derived and the
+	// loss spilled onto RUNEPool providers — log an ERROR for off-chain reconciliation.
+	if runePool.ReserveUnits.IsZero() && !totalPOLUnitsRemoved.IsZero() {
+		ctx.Logger().Error("conciliation: pol solve: ReserveUnits ZEROED despite layer-1 POL removal — reserve ceiling mis-derived; loss may have hit RUNEPool providers",
+			"total_pol_units_removed", totalPOLUnitsRemoved,
+			"v_pre", vPre, "v_post", vPost, "provider_value_pre", providerValuePre)
+	}
 
 	// ── Step 5: settle the stuck streaming swap ──────────────────────────────
 	// Tx 5071A7 was an ETH.DAI→ETH.USDT streaming swap, 484/1182 sub-swaps done.
