@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
@@ -121,6 +122,28 @@ func (s *FileStateMgrExtraSuite) TestSaveAddressBook_SkipsLoopback(c *C) {
 	addrs, err := fsm.RetrieveP2PAddresses()
 	c.Assert(err, IsNil)
 	c.Assert(addrs, HasLen, 1)
+}
+
+func (s *FileStateMgrExtraSuite) TestSaveAddressBook_OnionRoundTrip(c *C) {
+	dir := c.MkDir()
+	fsm, err := NewFileStateMgr(dir)
+	c.Assert(err, IsNil)
+
+	id := tnet.RandIdentityOrFatal(nil)
+	label := strings.Repeat("a", 56)
+	onionAddr, err := maddr.NewMultiaddr("/onion3/" + label + ":5040")
+	c.Assert(err, IsNil)
+
+	testAddr := make(map[peer.ID]addr.AddrList)
+	testAddr[id.ID()] = []maddr.Multiaddr{onionAddr}
+
+	err = fsm.SaveAddressBook(testAddr)
+	c.Assert(err, IsNil)
+
+	addrs, err := fsm.RetrieveP2PAddresses()
+	c.Assert(err, IsNil)
+	c.Assert(addrs, HasLen, 1)
+	c.Assert(addrs[0].String(), Equals, "/onion3/"+label+":5040/p2p/"+id.ID().String())
 }
 
 // ── RetrieveP2PAddresses error paths ─────────────────────────────────────

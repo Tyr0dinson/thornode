@@ -1,10 +1,13 @@
 package thorchain
 
 import (
+	"strings"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -14,6 +17,7 @@ type TestIPAddresslKeeper struct {
 	keeper.KVStoreDummy
 	na        NodeAccount
 	vaultNode NodeAccount
+	mimirs    map[string]int64
 }
 
 func (k *TestIPAddresslKeeper) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coins common.Coins) error {
@@ -30,6 +34,14 @@ func (k *TestIPAddresslKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccA
 func (k *TestIPAddresslKeeper) SetNodeAccount(_ cosmos.Context, na NodeAccount) error {
 	k.na = na
 	return nil
+}
+
+func (k *TestIPAddresslKeeper) GetMimir(_ cosmos.Context, key string) (int64, error) {
+	value, ok := k.mimirs[key]
+	if !ok {
+		return -1, nil
+	}
+	return value, nil
 }
 
 func (k *TestIPAddresslKeeper) GetNetwork(ctx cosmos.Context) (Network, error) {
@@ -58,6 +70,19 @@ func (s *HandlerIPAddressSuite) TestValidate(c *C) {
 	// happy path
 	msg := NewMsgSetIPAddress("8.8.8.8", keeper.na.NodeAddress)
 	err := handler.validate(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	onionAddr := strings.Repeat("a", 56) + ".onion"
+	msg = NewMsgSetIPAddress(onionAddr, keeper.na.NodeAddress)
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, NotNil)
+
+	keeper.mimirs = map[string]int64{constants.MimirKeyTorOnionValidator: 0}
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, NotNil)
+
+	keeper.mimirs[constants.MimirKeyTorOnionValidator] = 1
+	err = handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
 	// invalid msg

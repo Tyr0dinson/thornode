@@ -2,6 +2,19 @@
 
 set -o pipefail
 
+validate_onion_address() {
+  addr="$1"
+  if [ "${#addr}" -ne 62 ]; then
+    return 1
+  fi
+  case "$addr" in
+    *.onion) ;;
+    *) return 1 ;;
+  esac
+  label="${addr%.onion}"
+  [ -z "$(printf '%s' "$label" | tr -d 'a-z2-7')" ]
+}
+
 deploy_evm_contracts() {
   for CHAIN in ETH AVAX BASE POL; do
     (
@@ -59,7 +72,16 @@ init_mocknet() {
   # add IP address
   sleep 2 # wait for thorchain to commit a block
 
-  NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
+  if [ -n "$ONION_ADDRESS" ]; then
+    if ! validate_onion_address "$ONION_ADDRESS"; then
+      echo "ERROR: ONION_ADDRESS must be a valid Tor v3 .onion hostname"
+      echo "       56-char lowercase base32 label + .onion (62 chars total)"
+      exit 1
+    fi
+    NODE_IP_ADDRESS="$ONION_ADDRESS"
+  else
+    NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
+  fi
   until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-ip-address "$NODE_IP_ADDRESS" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
     sleep 5
   done

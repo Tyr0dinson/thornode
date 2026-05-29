@@ -81,6 +81,8 @@ bifrost:
     info_address: :6040
     bootstrap_peers: ""
     external_ip: ""
+    tor_socks_addr: ""
+    onion_addr: ""
     max_keyshare_recover_scan_blocks: 100
   chains:
     btc: &default-chain

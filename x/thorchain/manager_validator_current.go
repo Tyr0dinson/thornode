@@ -1364,8 +1364,8 @@ func (vm *ValidatorMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAcc
 	}
 
 	// Check that the node account has an IP address
-	if net.ParseIP(na.IPAddress) == nil {
-		return NodeStandby, fmt.Errorf("node account has invalid registered IP address")
+	if net.ParseIP(na.IPAddress) == nil && !IsValidOnionV3(na.IPAddress) {
+		return NodeStandby, fmt.Errorf("node account has invalid registered address")
 	}
 
 	// Check that the node account has an pubkey set

@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"strconv"
+	"strings"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/types"
@@ -854,6 +855,11 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C)
 
 	// Test normal operation first (should be Ready)
 	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	nodeAccount.IPAddress = strings.Repeat("a", 56) + ".onion"
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, k.GetConstants())
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 

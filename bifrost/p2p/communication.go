@@ -19,6 +19,7 @@ import (
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
+	tptu "github.com/libp2p/go-libp2p-transport-upgrader"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
@@ -69,6 +70,7 @@ type Communication struct {
 	streamCount      int64
 	BroadcastMsgChan chan *messages.BroadcastMsgChan
 	externalAddr     maddr.Multiaddr
+	onionAddr        maddr.Multiaddr
 	streamMgr        *StreamMgr
 	nodeGater        *NodeGater // gater to restrict connections to allowed nodes only
 }
@@ -77,6 +79,8 @@ type P2PConfig interface {
 	GetBootstrapPeers() ([]maddr.Multiaddr, error)
 	GetP2PPort() int
 	GetExternalIP() string
+	GetTorSOCKSAddr() string
+	GetOnionAddr() string
 	GetRendezvous() string
 }
 
@@ -131,6 +135,19 @@ func NewCommunication(cfg P2PConfig, stateManager *storage.FileStateMgr, bridge 
 			return nil, fmt.Errorf("fail to create listen with given external IP: %w", err)
 		}
 	}
+	var onionAddr maddr.Multiaddr = nil
+	if onionAddrStr := cfg.GetOnionAddr(); onionAddrStr != "" {
+		if externalIP != "" {
+			return nil, fmt.Errorf("ExternalIP and OnionAddr are mutually exclusive")
+		}
+		onionAddr, err = maddr.NewMultiaddr(onionAddrStr)
+		if err != nil {
+			return nil, fmt.Errorf("fail to parse onion addr: %w", err)
+		}
+		if _, err := onionDialTarget(onionAddr); err != nil {
+			return nil, fmt.Errorf("invalid onion addr: %w", err)
+		}
+	}
 
 	comm := &Communication{
 		config:           cfg,
@@ -144,6 +161,7 @@ func NewCommunication(cfg P2PConfig, stateManager *storage.FileStateMgr, bridge 
 		streamCount:      0,
 		BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1024),
 		externalAddr:     externalAddr,
+		onionAddr:        onionAddr,
 		streamMgr:        NewStreamMgr(),
 	}
 
@@ -330,6 +348,9 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	}
 
 	addressFactory := func(addrs []maddr.Multiaddr) []maddr.Multiaddr {
+		if c.onionAddr != nil {
+			return []maddr.Multiaddr{c.onionAddr}
+		}
 		if c.externalAddr != nil {
 			return []maddr.Multiaddr{c.externalAddr}
 		}
@@ -341,6 +362,11 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		libp2p.ListenAddrs([]maddr.Multiaddr{c.listenAddr}...),
 		libp2p.Identity(p2pPriKey),
 		libp2p.AddrsFactory(addressFactory),
+	}
+	if torSOCKSAddr := c.config.GetTorSOCKSAddr(); torSOCKSAddr != "" {
+		opts = append(opts, libp2p.Transport(func(upgrader *tptu.Upgrader) (*onionTransport, error) {
+			return newOnionTransport(torSOCKSAddr, upgrader)
+		}))
 	}
 
 	// Add connection gater if configured

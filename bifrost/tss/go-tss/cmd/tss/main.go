@@ -100,6 +100,8 @@ func parseFlags() (tssConf common.TssConfig, p2pConf p2p.Config) {
 		"Unique string to identify group of nodes. Share this with your friends to let them connect with you")
 	flag.IntVar(&p2pConf.Port, "p2p-port", 6668, "listening port local")
 	flag.StringVar(&p2pConf.ExternalIP, "external-ip", "", "external IP of this node")
+	flag.StringVar(&p2pConf.TorSOCKSAddr, "tor-socks-addr", "", "Tor SOCKS5 address for outbound .onion dialing")
+	flag.StringVar(&p2pConf.OnionAddr, "onion-addr", "", "onion3 multiaddr advertised by this node")
 	flag.Var(&p2pConf.BootstrapPeers, "peer", "Adds a peer multiaddress to the bootstrap list")
 	flag.Parse()
 	return

@@ -20,6 +20,17 @@ func (Test) TestAllChainsReturned(c *C) {
 	c.Assert(len(b.GetChains()), Equals, reflect.TypeOf(b.Chains).NumField())
 }
 
+func (Test) TestBifrostTSSBootstrapPeersAcceptMultiaddr(c *C) {
+	label := strings.Repeat("a", 56)
+	peerAddr := "/onion3/" + label + ":5040/p2p/16Uiu2HAm4TmEzUqy3q3Dv7HvdoSboHk5sFj2FH3npiN5vDbJC6gh"
+	cfg := BifrostTSSConfiguration{BootstrapPeers: []string{peerAddr}}
+
+	peers, err := cfg.GetBootstrapPeers()
+	c.Assert(err, IsNil)
+	c.Assert(peers, HasLen, 1)
+	c.Assert(peers[0].String(), Equals, peerAddr)
+}
+
 func (Test) TestAllDefaultDefined(c *C) {
 	// In order to override configuration values, defaults must first be defined
 	// in the default YAML file. This test ensures all fields have defaults defined.

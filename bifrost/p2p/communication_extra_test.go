@@ -35,6 +35,35 @@ func TestNewCommunicationWithInvalidExternalIP(t *testing.T) {
 	assert.Contains(t, err.Error(), "fail to create listen with given external IP")
 }
 
+func TestNewCommunicationWithOnionAddr(t *testing.T) {
+	onionAddr := "/onion3/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5040"
+	comm, err := NewCommunication(&Config{Port: 7788, RendezvousString: "test", OnionAddr: onionAddr}, nil, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, comm)
+	assert.Equal(t, onionAddr, comm.onionAddr.String())
+}
+
+func TestNewCommunicationRejectsExternalIPAndOnionAddr(t *testing.T) {
+	_, err := NewCommunication(&Config{
+		Port:             7788,
+		RendezvousString: "test",
+		ExternalIP:       "1.2.3.4",
+		OnionAddr:        "/onion3/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5040",
+	}, nil, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ExternalIP and OnionAddr are mutually exclusive")
+}
+
+func TestNewCommunicationRejectsNonOnionAddr(t *testing.T) {
+	_, err := NewCommunication(&Config{
+		Port:             7788,
+		RendezvousString: "test",
+		OnionAddr:        "/ip4/1.2.3.4/tcp/5040",
+	}, nil, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid onion addr")
+}
+
 func TestNewCommunicationWithBridge(t *testing.T) {
 	bridge := NewMockThorchainBridge()
 	comm, err := NewCommunication(&Config{Port: 7789, RendezvousString: "test"}, nil, bridge)
@@ -182,4 +211,8 @@ func (e *errConfig) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
 
 func (e *errConfig) GetP2PPort() int       { return 7799 }
 func (e *errConfig) GetExternalIP() string { return "" }
+func (e *errConfig) GetTorSOCKSAddr() string {
+	return ""
+}
+func (e *errConfig) GetOnionAddr() string  { return "" }
 func (e *errConfig) GetRendezvous() string { return "test" }

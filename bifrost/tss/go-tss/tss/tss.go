@@ -213,15 +213,56 @@ func (t *TssServer) GetKnownPeers() []PeerInfo {
 	infos := []PeerInfo{}
 	host := t.p2pCommunication.GetHost()
 
-	for _, conn := range host.Network().Conns() {
-		peer := conn.RemotePeer()
-		addrs := conn.RemoteMultiaddr()
-		ip, _ := addrs.ValueForProtocol(multiaddr.P_IP4)
+	for _, peer := range host.Network().Peers() {
+		addr := peerAddressFromMultiaddrs(host.Peerstore().Addrs(peer))
+		if addr == "" {
+			for _, conn := range host.Network().ConnsToPeer(peer) {
+				addr = peerAddressFromMultiaddr(conn.RemoteMultiaddr())
+				if addr != "" {
+					break
+				}
+			}
+		}
 		pi := PeerInfo{
 			ID:      peer.String(),
-			Address: ip,
+			Address: addr,
 		}
 		infos = append(infos, pi)
 	}
 	return infos
+}
+
+func peerAddressFromMultiaddrs(addrs []multiaddr.Multiaddr) string {
+	for _, addr := range addrs {
+		ip, _ := addr.ValueForProtocol(multiaddr.P_IP4)
+		if ip != "" {
+			return ip
+		}
+	}
+
+	for _, addr := range addrs {
+		onion := peerAddressFromMultiaddr(addr)
+		if onion != "" {
+			return onion
+		}
+	}
+
+	return ""
+}
+
+func peerAddressFromMultiaddr(addr multiaddr.Multiaddr) string {
+	ip, _ := addr.ValueForProtocol(multiaddr.P_IP4)
+	if ip != "" {
+		return ip
+	}
+
+	onion, _ := addr.ValueForProtocol(multiaddr.P_ONION3)
+	if onion == "" {
+		return ""
+	}
+	label, _, ok := strings.Cut(onion, ":")
+	if !ok || label == "" {
+		return ""
+	}
+	return label + ".onion"
 }

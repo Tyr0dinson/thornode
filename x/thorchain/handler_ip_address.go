@@ -6,6 +6,7 @@ import (
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -48,6 +49,15 @@ func (h IPAddressHandler) validate(ctx cosmos.Context, msg MsgSetIPAddress) erro
 
 	if err := validateIPAddressAuth(ctx, h.mgr.Keeper(), msg.Signer); err != nil {
 		return err
+	}
+	if IsValidOnionV3(msg.IPAddress) {
+		enabled, err := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyTorOnionValidator)
+		if err != nil {
+			return fmt.Errorf("fail to get %s mimir: %w", constants.MimirKeyTorOnionValidator, err)
+		}
+		if enabled < 1 {
+			return cosmos.ErrUnknownRequest("Tor v3 .onion validator addresses are not yet enabled")
+		}
 	}
 	return nil
 }

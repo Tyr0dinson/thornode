@@ -31,11 +31,15 @@ func (AddrListExtraTestSuite) TestConfigMethods(c *C) {
 		RendezvousString: "test-rendezvous",
 		Port:             1234,
 		ExternalIP:       "10.0.0.1",
+		TorSOCKSAddr:     "127.0.0.1:9050",
+		OnionAddr:        "/onion3/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5040",
 	}
 
 	c.Assert(cfg.GetRendezvous(), Equals, "test-rendezvous")
 	c.Assert(cfg.GetP2PPort(), Equals, 1234)
 	c.Assert(cfg.GetExternalIP(), Equals, "10.0.0.1")
+	c.Assert(cfg.GetTorSOCKSAddr(), Equals, "127.0.0.1:9050")
+	c.Assert(cfg.GetOnionAddr(), Equals, "/onion3/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5040")
 
 	peers, err := cfg.GetBootstrapPeers()
 	c.Assert(err, IsNil)

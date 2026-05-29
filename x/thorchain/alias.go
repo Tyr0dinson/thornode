@@ -214,6 +214,7 @@ var (
 	NewMsgApproveUpgrade           = types.NewMsgApproveUpgrade
 	NewMsgRejectUpgrade            = types.NewMsgRejectUpgrade
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
+	IsValidOnionV3                 = types.IsValidOnionV3
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
 	NewMsgWasmExec                 = types.NewMsgWasmExec
 	NewNetworkFee                  = types.NewNetworkFee

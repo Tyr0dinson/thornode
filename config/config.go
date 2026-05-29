@@ -126,6 +126,8 @@ func Init() {
 	))
 	assert(viper.BindEnv("bifrost.tss.bootstrap_peers", "PEER"))
 	assert(viper.BindEnv("bifrost.tss.external_ip", "EXTERNAL_IP"))
+	assert(viper.BindEnv("bifrost.tss.tor_socks_addr", "TOR_SOCKS_ADDR"))
+	assert(viper.BindEnv("bifrost.tss.onion_addr", "ONION_ADDR"))
 	assert(viper.BindEnv("bifrost.thorchain.chain_id", "CHAIN_ID"))
 	assert(viper.BindEnv("bifrost.thorchain.chain_host", "CHAIN_API"))
 	assert(viper.BindEnv(
@@ -1001,6 +1003,8 @@ type BifrostTSSConfiguration struct {
 	P2PPort                      int      `mapstructure:"p2p_port"`
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
+	TorSOCKSAddr                 string   `mapstructure:"tor_socks_addr"`
+	OnionAddr                    string   `mapstructure:"onion_addr"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
 }
 
@@ -1035,6 +1039,14 @@ func (c BifrostTSSConfiguration) GetExternalIP() string {
 	return c.ExternalIP
 }
 
+func (c BifrostTSSConfiguration) GetTorSOCKSAddr() string {
+	return c.TorSOCKSAddr
+}
+
+func (c BifrostTSSConfiguration) GetOnionAddr() string {
+	return c.OnionAddr
+}
+
 type WhitelistCosmosAsset struct {
 	Denom           string `mapstructure:"denom"`
 	Decimals        int    `mapstructure:"decimals"`
@@ -1044,8 +1056,26 @@ type WhitelistCosmosAsset struct {
 // GetBootstrapPeers return the internal bootstrap peers in a slice of maddr.Multiaddr
 func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
 	var addrs []maddr.Multiaddr
+	var peerHosts []string
 
-	for _, ip := range resolveAddrs(c.BootstrapPeers) {
+	for _, peerAddr := range c.BootstrapPeers {
+		peerAddr = strings.TrimSpace(peerAddr)
+		if peerAddr == "" {
+			continue
+		}
+		if strings.HasPrefix(peerAddr, "/") {
+			addr, err := maddr.NewMultiaddr(peerAddr)
+			if err != nil {
+				log.Error().Err(err).Str("addr", peerAddr).Msg("failed to parse bootstrap multiaddr")
+				continue
+			}
+			addrs = append(addrs, addr)
+			continue
+		}
+		peerHosts = append(peerHosts, peerAddr)
+	}
+
+	for _, ip := range resolveAddrs(peerHosts) {
 		if len(ip) == 0 {
 			continue
 		}

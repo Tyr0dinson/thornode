@@ -86,6 +86,19 @@ fetch_node_id() {
   curl -s "$1:$PORT_RPC/status" | jq -r .result.node_info.id
 }
 
+validate_onion_address() {
+  addr="$1"
+  if [ "${#addr}" -ne 62 ]; then
+    return 1
+  fi
+  case "$addr" in
+    *.onion) ;;
+    *) return 1 ;;
+  esac
+  label="${addr%.onion}"
+  [ -z "$(printf '%s' "$label" | tr -d 'a-z2-7')" ]
+}
+
 set_node_keys() {
   SIGNER_NAME="$1"
   SIGNER_PASSWD="$2"
@@ -101,7 +114,16 @@ set_ip_address() {
   SIGNER_NAME="$1"
   SIGNER_PASSWD="$2"
   PEER="$3"
-  NODE_IP_ADDRESS="${4:-$(curl -s http://whatismyip.akamai.com)}"
+  if [ -n "$ONION_ADDRESS" ]; then
+    if ! validate_onion_address "$ONION_ADDRESS"; then
+      echo "ERROR: ONION_ADDRESS must be a valid Tor v3 .onion hostname"
+      echo "       56-char lowercase base32 label + .onion (62 chars total)"
+      exit 1
+    fi
+    NODE_IP_ADDRESS="$ONION_ADDRESS"
+  else
+    NODE_IP_ADDRESS="${4:-$(curl -s http://whatismyip.akamai.com)}"
+  fi
   echo "Setting THORNode IP address $NODE_IP_ADDRESS"
   printf "%s\n%s\n" "$SIGNER_PASSWD" "$SIGNER_PASSWD" | thornode tx thorchain set-ip-address "$NODE_IP_ADDRESS" --node "tcp://$PEER:$PORT_RPC" --from "$SIGNER_NAME" --yes
 }

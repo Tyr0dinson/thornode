@@ -17,6 +17,8 @@ type Config struct {
 	Port             int
 	BootstrapPeers   addrList
 	ExternalIP       string
+	TorSOCKSAddr     string
+	OnionAddr        string
 }
 
 func (c *Config) GetRendezvous() string {
@@ -33,6 +35,14 @@ func (c *Config) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
 
 func (c *Config) GetExternalIP() string {
 	return c.ExternalIP
+}
+
+func (c *Config) GetTorSOCKSAddr() string {
+	return c.TorSOCKSAddr
+}
+
+func (c *Config) GetOnionAddr() string {
+	return c.OnionAddr
 }
 
 // String implement fmt.Stringer
