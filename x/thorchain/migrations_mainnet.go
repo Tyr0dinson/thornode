@@ -723,6 +723,43 @@ func (m Migrator) adr028SolveOverflowBps(
 	return bps.BigInt().Uint64()
 }
 
+// splitFreedRune disposes of RUNE freed by a pool-depth reduction. Instead of
+// burning the whole amount, it burns HALF and retains the other HALF in the
+// Reserve module. Either way the full `freed` amount leaves Asgard (so pool/vault
+// RUNE accounting is consistent); only its destination differs — half is destroyed
+// (Asgard→thorchain→burn, thorchain being the only Burner-permissioned module) and
+// half is credited to the Reserve (Asgard→Reserve). The odd 1e-8 unit, if any, goes
+// to the burn. Emits a mint/burn event for the burned half.
+func (m Migrator) splitFreedRune(ctx sdk.Context, freed cosmos.Uint, reason string) error {
+	if freed.IsZero() {
+		return nil
+	}
+	toReserve := freed.QuoUint64(2)
+	toBurn := common.SafeSub(freed, toReserve) // burn gets the odd unit
+	if !toBurn.IsZero() {
+		bc := common.NewCoin(common.RuneNative, toBurn)
+		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(bc)); err != nil {
+			return fmt.Errorf("move burn-half Asgard→thorchain: %w", err)
+		}
+		if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, bc); err != nil {
+			return fmt.Errorf("burn freed RUNE: %w", err)
+		}
+		burnEvt := NewEventMintBurn(BurnSupplyType, bc.Asset.Native(), bc.Amount, reason)
+		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+			ctx.Logger().Error("conciliation: freed-rune: emit burn event", "error", err, "reason", reason)
+		}
+	}
+	if !toReserve.IsZero() {
+		rc := common.NewCoin(common.RuneNative, toReserve)
+		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(rc)); err != nil {
+			return fmt.Errorf("move reserve-half Asgard→Reserve: %w", err)
+		}
+	}
+	ctx.Logger().Info("conciliation: freed RUNE split (burn half, reserve half)",
+		"reason", reason, "freed", freed, "burned", toBurn, "to_reserve", toReserve)
+	return nil
+}
+
 // vault2v28PubKey is the compromised Asgard vault whose keeper balance is
 // zeroed in step 0.  The vault's L1 assets churn to the new active vault
 // through normal bifrost operations.
@@ -1018,20 +1055,12 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		if err := m.mgr.Keeper().SetPool(ctx, pool); err != nil {
 			return fmt.Errorf("conciliation: pol haircut: fail to save pool %s: %w", h.asset, err)
 		}
-		// Burn ΔR from Asgard (bank pairing: Asgard→thorchain→burn).
-		runeCoin := common.NewCoin(common.RuneNative, deltaR)
-		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(runeCoin)); err != nil {
-			return fmt.Errorf("conciliation: pol haircut: fail to move RUNE from Asgard for %s: %w", h.asset, err)
-		}
-		if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, runeCoin); err != nil {
-			return fmt.Errorf("conciliation: pol haircut: fail to burn RUNE for %s: %w", h.asset, err)
+		// Freed RUNE: burn HALF, retain HALF in the Reserve (was: burn all).
+		if err := m.splitFreedRune(ctx, deltaR, "conciliation_pol_haircut"); err != nil {
+			return fmt.Errorf("conciliation: pol haircut: fail to dispose freed RUNE for %s: %w", h.asset, err)
 		}
 		mod := NewPoolMod(h.asset, deltaR, false, deltaA, false)
 		emitPoolBalanceChangedEvent(ctx, mod, "conciliation_pol_haircut", m.mgr)
-		burnEvt := NewEventMintBurn(BurnSupplyType, runeCoin.Asset.Native(), runeCoin.Amount, "conciliation_pol_haircut")
-		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
-			ctx.Logger().Error("conciliation: pol haircut: fail to emit burn event", "error", err, "asset", h.asset)
-		}
 		totalStep1Rune = totalStep1Rune.Add(deltaR)
 		ctx.Logger().Info("conciliation: pol haircut: POL haircut applied",
 			"asset", h.asset, "delta_rune", deltaR, "delta_asset", deltaA)
@@ -1149,12 +1178,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 				if err := m.mgr.Keeper().SetPool(ctx, pool); err != nil {
 					return fmt.Errorf("conciliation: reserve synth burn: fail to save paired cut %s: %w", h.asset, err)
 				}
-				rc := common.NewCoin(common.RuneNative, dRpair)
-				if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(rc)); err != nil {
-					return fmt.Errorf("conciliation: reserve synth burn: fail to move paired RUNE %s: %w", h.asset, err)
-				}
-				if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, rc); err != nil {
-					return fmt.Errorf("conciliation: reserve synth burn: fail to burn paired RUNE %s: %w", h.asset, err)
+				// Freed RUNE from the paired cut: burn HALF, retain HALF in the Reserve.
+				if err := m.splitFreedRune(ctx, dRpair, "conciliation_reserve_paired_cut"); err != nil {
+					return fmt.Errorf("conciliation: reserve synth burn: fail to dispose paired RUNE %s: %w", h.asset, err)
 				}
 				ctx.Logger().Info("conciliation: reserve synth burn: self-neutral paired depth cut",
 					"asset", h.asset, "rune_cut", dRpair, "asset_cut", dApair)
@@ -1327,20 +1353,12 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		if err := m.mgr.Keeper().SetPool(ctx, pool); err != nil {
 			return fmt.Errorf("conciliation: treasury draw: fail to save pool %s: %w", h.asset, err)
 		}
-		// Burn ΔR from Asgard (bank pairing: Asgard→thorchain→burn).
-		runeCoin := common.NewCoin(common.RuneNative, deltaR)
-		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(runeCoin)); err != nil {
-			return fmt.Errorf("conciliation: treasury draw: fail to move RUNE from Asgard for %s: %w", h.asset, err)
-		}
-		if err := m.mgr.Keeper().BurnFromModule(ctx, ModuleName, runeCoin); err != nil {
-			return fmt.Errorf("conciliation: treasury draw: fail to burn RUNE for %s: %w", h.asset, err)
+		// Freed RUNE: burn HALF, retain HALF in the Reserve (was: burn all).
+		if err := m.splitFreedRune(ctx, deltaR, "conciliation_treasury_draw"); err != nil {
+			return fmt.Errorf("conciliation: treasury draw: fail to dispose freed RUNE for %s: %w", h.asset, err)
 		}
 		mod := NewPoolMod(h.asset, deltaR, false, deltaA, false)
 		emitPoolBalanceChangedEvent(ctx, mod, "conciliation_treasury_draw", m.mgr)
-		burnEvt := NewEventMintBurn(BurnSupplyType, runeCoin.Asset.Native(), runeCoin.Amount, "conciliation_treasury_draw")
-		if err := m.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
-			ctx.Logger().Error("conciliation: treasury draw: fail to emit burn event", "error", err, "asset", h.asset)
-		}
 		totalStep4PlannedRune = totalStep4PlannedRune.Add(plannedR)
 		totalStep4DrawnRune = totalStep4DrawnRune.Add(deltaR)
 		ctx.Logger().Info("conciliation: treasury draw: treasury LP draw applied",
