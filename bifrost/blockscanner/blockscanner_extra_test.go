@@ -111,55 +111,6 @@ func (s *LevelDBStorageSuite) TestGetSetScanPos(c *C) {
 	c.Check(pos, Equals, int64(-10))
 }
 
-func (s *LevelDBStorageSuite) TestSetBlockScanStatus(c *C) {
-	db := newMemLevelDB(c)
-	defer db.Close()
-	store, _ := NewLevelDBScannerStorage(db)
-
-	block := Block{Height: 10, Txs: []string{"tx1", "tx2"}}
-	c.Assert(store.SetBlockScanStatus(block, Processing), IsNil)
-	c.Assert(store.SetBlockScanStatus(block, Finished), IsNil)
-}
-
-func (s *LevelDBStorageSuite) TestGetBlocksForRetry(c *C) {
-	db := newMemLevelDB(c)
-	defer db.Close()
-	store, _ := NewLevelDBScannerStorage(db)
-
-	blocks, err := store.GetBlocksForRetry(true)
-	c.Assert(err, IsNil)
-	c.Check(len(blocks), Equals, 0)
-
-	c.Assert(store.SetBlockScanStatus(Block{Height: 1, Txs: []string{"a"}}, Failed), IsNil)
-	c.Assert(store.SetBlockScanStatus(Block{Height: 2, Txs: []string{"b"}}, Finished), IsNil)
-	c.Assert(store.SetBlockScanStatus(Block{Height: 3, Txs: []string{"c"}}, Failed), IsNil)
-
-	blocks, err = store.GetBlocksForRetry(true)
-	c.Assert(err, IsNil)
-	c.Check(len(blocks), Equals, 2)
-
-	blocks, err = store.GetBlocksForRetry(false)
-	c.Assert(err, IsNil)
-	c.Check(len(blocks), Equals, 3)
-}
-
-func (s *LevelDBStorageSuite) TestRemoveBlockStatus(c *C) {
-	db := newMemLevelDB(c)
-	defer db.Close()
-	store, _ := NewLevelDBScannerStorage(db)
-
-	block := Block{Height: 5}
-	c.Assert(store.SetBlockScanStatus(block, Failed), IsNil)
-
-	blocks, _ := store.GetBlocksForRetry(true)
-	c.Check(len(blocks), Equals, 1)
-
-	c.Assert(store.RemoveBlockStatus(5), IsNil)
-
-	blocks, _ = store.GetBlocksForRetry(true)
-	c.Check(len(blocks), Equals, 0)
-}
-
 func (s *LevelDBStorageSuite) TestClose(c *C) {
 	db := newMemLevelDB(c)
 	store, _ := NewLevelDBScannerStorage(db)
@@ -287,13 +238,6 @@ func (s *MockStorageSuite) TestMockScannerStorage(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(pos, Equals, int64(100))
 
-	c.Assert(mss.SetBlockScanStatus(Block{Height: 10}, Failed), IsNil)
-	c.Assert(mss.RemoveBlockStatus(10), IsNil)
-
-	blocks, err := mss.GetBlocksForRetry(true)
-	c.Assert(err, IsNil)
-	c.Check(blocks, IsNil)
-
 	c.Check(mss.GetInternalDb(), IsNil)
 	c.Assert(mss.Close(), IsNil)
 }
@@ -331,21 +275,6 @@ func (s *DummyFetcherSuite) TestDummyFetcher(c *C) {
 	c.Check(err, NotNil)
 	_, err = d2.FetchTxs(1, 2)
 	c.Check(err, NotNil)
-}
-
-// ---------------------------------------------------------------------------
-// BlockScanStatus constants
-// ---------------------------------------------------------------------------
-
-type BlockScanStatusSuite struct{}
-
-var _ = Suite(&BlockScanStatusSuite{})
-
-func (s *BlockScanStatusSuite) TestBlockScanStatus(c *C) {
-	c.Check(Processing, Equals, BlockScanStatus(0))
-	c.Check(Failed, Equals, BlockScanStatus(1))
-	c.Check(Finished, Equals, BlockScanStatus(2))
-	c.Check(NotStarted, Equals, BlockScanStatus(3))
 }
 
 // ---------------------------------------------------------------------------

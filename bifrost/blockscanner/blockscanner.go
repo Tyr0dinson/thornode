@@ -174,15 +174,14 @@ func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, globalNetworkFeeQue
 	// Only use persisted scan position if no explicit start height was configured.
 	// When StartBlockHeight is set, it should always take precedence so operators
 	// can force a rescan from a specific height. If there is already persisted
-	// scan state, purge stale block metadata at or above that height so the
-	// scanner re-processes those blocks.
+	// scan state, rewind the scan position to that height so the scanner
+	// re-processes those blocks.
 	if b.cfg.StartBlockHeight > 0 {
 		if err == nil && currentPos > 0 {
-			removed, perr := b.scannerStorage.PurgeFromHeight(b.cfg.StartBlockHeight)
-			if perr != nil {
-				b.logger.Error().Err(perr).Int64("height", b.cfg.StartBlockHeight).Msg("fail to purge block metadata from start height")
-			} else if removed > 0 {
-				b.logger.Info().Int64("height", b.cfg.StartBlockHeight).Int("removed", removed).Msg("purged stale block metadata for rescan")
+			if serr := b.scannerStorage.SetScanPos(b.cfg.StartBlockHeight); serr != nil {
+				b.logger.Error().Err(serr).Int64("height", b.cfg.StartBlockHeight).Msg("fail to rewind scan pos for start height override")
+			} else {
+				b.logger.Info().Int64("height", b.cfg.StartBlockHeight).Msg("rewound scan pos for rescan")
 			}
 		}
 	} else if err == nil && currentPos > b.previousBlock {
