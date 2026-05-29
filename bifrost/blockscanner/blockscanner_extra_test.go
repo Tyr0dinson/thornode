@@ -730,9 +730,9 @@ func (s *BlockScannerExtraSuite) TestStartFloorAdvancesAboveStartHeight(c *C) {
 }
 
 func (s *BlockScannerExtraSuite) TestStartFloorRespectsHigherPersistedPos(c *C) {
-	// Floor < persisted pos (with StartBlockHeight set): the floor uses
-	// max(FloorBlockHeight, currentPos), so the scanner is never dragged below
-	// the persisted scan position.
+	// Floor < persisted pos (with StartBlockHeight set): the effective floor is
+	// max(FloorBlockHeight, persisted pos), so the scanner is never dragged below
+	// the persisted scan position (forward-only — never redo already-scanned work).
 	got := s.startScannerForFloorTest(c, 10, 100, 200)
 	c.Check(got, Equals, int64(200))
 }
@@ -741,6 +741,50 @@ func (s *BlockScannerExtraSuite) TestStartFloorAboveStartAndPersisted(c *C) {
 	// Floor above both StartBlockHeight and persisted pos: scanner advances to floor.
 	got := s.startScannerForFloorTest(c, 10, 500, 200)
 	c.Check(got, Equals, int64(500))
+}
+
+// TestRollbackNeverGoesBelowFloor is the reorg regression: a rollback (e.g. from
+// RollbackToLastObserved) must never drag the scanner below the configured floor,
+// otherwise it would re-enter the exact range the floor was set to skip.
+func (s *BlockScannerExtraSuite) TestRollbackNeverGoesBelowFloor(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+			_, _ = w.Write([]byte(`-1`))
+		case strings.HasPrefix(r.RequestURI, "/status"):
+			_, _ = w.Write([]byte(`{"result":{"sync_info":{"catching_up":false}}}`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):
+			_, _ = w.Write([]byte(`[{"chain":"NOOP","lastobservedin":0,"lastsignedout":0,"thorchain":0}]`))
+		}
+	}))
+	defer server.Close()
+	bridge := s.makeBridge(c, server)
+
+	mss := NewMockScannerStorage()
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		FloorBlockHeight:           500,
+		BlockScanProcessors:        1,
+		HTTPRequestTimeout:         time.Second,
+		BlockHeightDiscoverBackoff: time.Second,
+		BlockRetryInterval:         time.Second,
+		ChainID:                    common.ETHChain,
+		ScanMemPool:                false,
+	}, mss, m, bridge, &configFetcher{chainHeight: 0})
+	c.Assert(err, IsNil)
+
+	// Simulate the scanner having progressed well above the floor.
+	atomic.StoreInt64(&scanner.previousBlock, 1000)
+
+	// A rollback to above the floor is honored verbatim (rollback only moves down).
+	c.Assert(scanner.rollback(700), IsNil)
+	c.Check(scanner.PreviousHeight(), Equals, int64(700))
+
+	// A reorg rollback to below the floor must clamp to the floor, in memory and on disk.
+	c.Assert(scanner.rollback(200), IsNil)
+	c.Check(scanner.PreviousHeight(), Equals, int64(500))
+	pos, err := mss.GetScanPos()
+	c.Assert(err, IsNil)
+	c.Check(pos, Equals, int64(500))
 }
 
 func (s *BlockScannerExtraSuite) TestStartStopWithMempoolDisabled(c *C) {

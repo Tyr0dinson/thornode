@@ -144,6 +144,12 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 }
 
 func (b *BlockScanner) rollback(height int64) error {
+	// FloorBlockHeight is a hard lower bound: never roll back below it, even on a
+	// reorg. Without this clamp a rollback (e.g. RollbackToLastObserved) could drag
+	// the scanner back into a range the floor was configured to skip.
+	if b.cfg.FloorBlockHeight > 0 && height < b.cfg.FloorBlockHeight {
+		height = b.cfg.FloorBlockHeight
+	}
 	if b.PreviousHeight() <= height {
 		// height is already below rollback amount, proceed as normal
 		return nil
@@ -172,10 +178,9 @@ func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, globalNetworkFeeQue
 	}
 
 	// Only use persisted scan position if no explicit start height was configured.
-	// When StartBlockHeight is set, it should always take precedence so operators
-	// can force a rescan from a specific height. If there is already persisted
-	// scan state, rewind the scan position to that height so the scanner
-	// re-processes those blocks.
+	// When StartBlockHeight is set, rewind the persisted scan position to that
+	// height so operators can force a rescan from a specific height, durably
+	// across restarts.
 	if b.cfg.StartBlockHeight > 0 {
 		if err == nil && currentPos > 0 {
 			if serr := b.scannerStorage.SetScanPos(b.cfg.StartBlockHeight); serr != nil {
