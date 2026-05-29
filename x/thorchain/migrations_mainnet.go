@@ -1202,12 +1202,18 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		// pools (no step-1, e.g. AVAX.USDC, GAIA.ATOM) keep their tabled bps.
 		bps := h.step3SaversHaircutBps
 		if rOrig, ok := dlpTargetR[h.asset.String()]; ok && !rOrig.IsZero() {
+			// A GetPool failure here must abort, not silently fall through: for every
+			// step-1 pool the tabled bps is 0, so swallowing the error would skip the
+			// savers haircut entirely and under-allocate that pool's loss — an
+			// undetectable error in a one-shot consensus migration. (Matches the
+			// hard-error handling on the saver-pool GetPool just below.)
 			cur, cerr := m.mgr.Keeper().GetPool(ctx, h.asset)
-			if cerr == nil {
-				sCur := m.mgr.Keeper().GetTotalSupply(ctx, synthAsset)
-				tFinal := common.GetUncappedShare(cur.BalanceRune, rOrig, dlpTargetT[h.asset.String()])
-				bps = m.adr028SolveOverflowBps(ctx, h.asset, cur.LPUnits, cur.BalanceAsset, sCur, tFinal)
+			if cerr != nil {
+				return fmt.Errorf("conciliation: savers haircut: fail to re-read pool %s for overflow solve: %w", h.asset, cerr)
 			}
+			sCur := m.mgr.Keeper().GetTotalSupply(ctx, synthAsset)
+			tFinal := common.GetUncappedShare(cur.BalanceRune, rOrig, dlpTargetT[h.asset.String()])
+			bps = m.adr028SolveOverflowBps(ctx, h.asset, cur.LPUnits, cur.BalanceAsset, sCur, tFinal)
 		}
 		if bps == 0 {
 			continue
