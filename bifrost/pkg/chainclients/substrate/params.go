@@ -28,6 +28,9 @@ type Params struct {
 }
 
 func (p Params) ValidateMetadata(metadata *types.Metadata) error {
+	// for validating call/event/pallet string consts
+	keys := map[string]struct{}{}
+
 	for _, module := range metadata.Modules {
 		index, found := p.Indexes[module.Name]
 		if !found {
@@ -40,14 +43,23 @@ func (p Params) ValidateMetadata(metadata *types.Metadata) error {
 				module.Name, module.Index, p.Indexes[module.Name])
 		}
 
+		keys[module.Name] = struct{}{}
+
 		for _, call := range module.Calls {
 			key := module.Name + ":" + call.Name
-			if !p.isValidIndex(key, call.LookupIndex) {
+			configured, valid := p.isValidIndex(key, call.LookupIndex)
+			if !configured {
+				continue
+			}
+
+			if !valid {
 				return fmt.Errorf(
 					"invalid call index for %s: got %d, expected %d",
 					key, call.LookupIndex, p.Indexes[key],
 				)
 			}
+
+			keys[key] = struct{}{}
 		}
 
 		// only configured event is Balances::TransferEvent
@@ -57,28 +69,42 @@ func (p Params) ValidateMetadata(metadata *types.Metadata) error {
 
 		for _, event := range module.Events {
 			key := module.Name + ":" + event.Name
-			if !p.isValidIndex(key, event.LookupIndex) {
+			configured, valid := p.isValidIndex(key, event.LookupIndex)
+			if !configured {
+				continue
+			}
+
+			if !valid {
 				return fmt.Errorf(
 					"invalid event index for %s: got %d, expected %d",
 					key, event.LookupIndex, p.Indexes[key],
 				)
 			}
+
+			keys[key] = struct{}{}
+		}
+	}
+
+	// check if all configured keys exist in Metadata
+	for key := range p.Indexes {
+		_, found := keys[key]
+		if !found {
+			return fmt.Errorf("configured index key %q not found in metadata", key)
 		}
 	}
 
 	return nil
 }
 
-func (p Params) isValidIndex(key string, index int) bool {
-	expected, found := p.Indexes[key]
-	if !found {
-		// treat any unconfigured indexes as valid
-		return true
+func (p Params) isValidIndex(key string, index int) (configured, valid bool) {
+	expected, configured := p.Indexes[key]
+	if !configured {
+		return false, false
 	}
 	if int(expected) != index {
-		return false
+		return true, false
 	}
-	return true
+	return true, true
 }
 
 func (p Params) Index(key string) byte {

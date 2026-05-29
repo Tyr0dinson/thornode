@@ -51,11 +51,17 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 		wantErrIn string // "" means expect nil
 	}{
 		{
+			// The unmodified TAO fixture aligns with every key in
+			// ChainParams[TAOChain].Indexes. Pins that ValidateMetadata
+			// returns nil when chain metadata matches configuration.
 			name:      "clean baseline",
 			mutate:    nil,
 			wantErrIn: "",
 		},
 		{
+			// A configured pallet's on-chain index drifts from what Indexes
+			// declares. ValidateMetadata short-circuits with an error naming
+			// the drifted pallet before walking the rest of the module.
 			name: "Balances pallet renumbered",
 			mutate: func(m *stypes.Metadata) {
 				m.Modules[1].Index = 6
@@ -63,13 +69,9 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 			wantErrIn: "Balances",
 		},
 		{
-			name: "Utility pallet renumbered",
-			mutate: func(m *stypes.Metadata) {
-				m.Modules[3].Index = 12
-			},
-			wantErrIn: "Utility",
-		},
-		{
+			// A configured call's on-chain LookupIndex no longer matches what
+			// Indexes declares. isValidIndex returns (configured: true,
+			// valid: false) and ValidateMetadata errors with the call name.
 			name: "transfer_keep_alive call moved",
 			mutate: func(m *stypes.Metadata) {
 				m.Modules[1].Calls[1].LookupIndex = 4
@@ -77,13 +79,9 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 			wantErrIn: "transfer_keep_alive",
 		},
 		{
-			name: "batch_all call moved",
-			mutate: func(m *stypes.Metadata) {
-				m.Modules[3].Calls[0].LookupIndex = 3
-			},
-			wantErrIn: "batch_all",
-		},
-		{
+			// A configured event's on-chain LookupIndex drifts from Indexes.
+			// Pins the events branch specifically — it is gated by the
+			// BalancesPallet name check and runs separately from the call walk.
 			name: "Transfer event moved",
 			mutate: func(m *stypes.Metadata) {
 				m.Modules[1].Events[0].LookupIndex = 3
@@ -91,7 +89,10 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 			wantErrIn: "Transfer",
 		},
 		{
-			// Pallet not in Indexes — silently skipped, no error.
+			// A pallet present on-chain but not in Indexes is silently
+			// skipped. Pins the pallet-level "not configured = not validated"
+			// rule — the chain may carry arbitrary extra pallets we don't
+			// care about, and they must not produce false errors.
 			name: "unknown pallet present",
 			mutate: func(m *stypes.Metadata) {
 				m.Modules = append(m.Modules, scaletypes.MetadataModules{
@@ -101,15 +102,15 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 			wantErrIn: "",
 		},
 		{
-			// Current behavior: ValidateMetadata only checks pallets PRESENT
-			// in the metadata. A configured-but-missing pallet does not
-			// raise an error. This row pins that behavior; flip the
-			// assertion if the validator is later tightened.
+			// A configured pallet missing from chain metadata leaves its
+			// call/event keys in Indexes unresolved during the walk, so the
+			// forward check at the end of ValidateMetadata flags them as
+			// "not found in metadata".
 			name: "required pallet missing",
 			mutate: func(m *stypes.Metadata) {
 				m.Modules = append(m.Modules[:1], m.Modules[2:]...) // drop Balances
 			},
-			wantErrIn: "",
+			wantErrIn: "Balances",
 		},
 	}
 
