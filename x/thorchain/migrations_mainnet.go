@@ -1297,8 +1297,17 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// Covers residual shortfall for zero-saver assets where treasury holds LP.
 	// ΔA = step4TreasuryDraw; ΔR = ΔA × BalanceRune / BalanceAsset.
 	// Treasury LP units are reduced by ΔA / BalanceAsset (proportional share).
+	// Accounting convention: totalStep4PlannedRune / totalStep4DrawnRune track
+	// ONLY pools where a draw could be PRICED and attempted — i.e. pools with live
+	// depth. uncovered_rune = planned − drawn is then the RUNE for healthy pools we
+	// priced but could not fully draw (treasury-LP record missing → full plannedR
+	// uncovered; treasury units < needed → the capped-off slice). Pools skipped for
+	// zero depth cannot be priced (a draw on an empty pool is 0 RUNE), so forcing
+	// them into the netting would add a meaningless 0; they are reported separately
+	// in skipped_pools instead so off-chain reconciliation still sees them.
 	totalStep4PlannedRune := cosmos.ZeroUint()
 	totalStep4DrawnRune := cosmos.ZeroUint()
+	var step4SkippedPools []string
 	treasuryAddr, err := common.NewAddress(adr028TreasuryAddr)
 	if err != nil {
 		return fmt.Errorf("conciliation: treasury draw: fail to parse treasury address: %w", err)
@@ -1314,6 +1323,8 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
 			ctx.Logger().Error("conciliation: treasury draw: pool has zero balance, skipping",
 				"asset", h.asset, "balance_asset", pool.BalanceAsset, "balance_rune", pool.BalanceRune)
+			// Zero depth → no priceable draw; report separately (see convention above).
+			step4SkippedPools = append(step4SkippedPools, h.asset.String())
 			continue
 		}
 		deltaA := cosmos.NewUint(h.step4TreasuryDraw)
@@ -1367,7 +1378,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	ctx.Logger().Info("conciliation: treasury draw: coverage summary",
 		"total_planned_rune", totalStep4PlannedRune,
 		"total_drawn_rune", totalStep4DrawnRune,
-		"uncovered_rune", common.SafeSub(totalStep4PlannedRune, totalStep4DrawnRune))
+		"uncovered_rune", common.SafeSub(totalStep4PlannedRune, totalStep4DrawnRune),
+		"skipped_pools", step4SkippedPools,
+		"skipped_pool_count", len(step4SkippedPools))
 
 	// ── Step 4.5: recompute SynthUnits on every L1 pool the waterfall touched ─
 	//
@@ -1544,7 +1557,23 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	//    refunded to the user off-chain by the treasury from its own funds; the
 	//    treasury follows up for reimbursement separately. The migration moves no
 	//    funds for it — record the amount owed.
+	//
+	// POLICY / FINALITY CAVEAT: usdtPaidOnChain is the amount we *queued* as an
+	// outbound, and this netting assumes that queued outbound ultimately settles
+	// on-chain. A TxOutItem is durable — it persists in the outbound queue and is
+	// retried until ETH signing resumes — so under normal operation "queued" does
+	// reach the user. But if that outbound is *permanently* unsignable (vault
+	// churn, asset no longer held, manual queue surgery), the user would be short
+	// both on-chain (never delivered) and off-chain (already netted out here).
+	// The treasury MUST monitor finality of the usdt_paid_onchain outbound and
+	// top up the user off-chain if it never lands. We log this explicitly below.
 	usdtOffchainRefund := common.SafeSub(stuckSwap.TradeTarget, usdtPaidOnChain)
+	if !usdtPaidOnChain.IsZero() {
+		ctx.Logger().Warn("conciliation: streaming swap: off-chain refund nets out a QUEUED (not yet finalized) outbound; treasury must verify on-chain delivery and top up off-chain if it fails to settle",
+			"usdt_paid_onchain", usdtPaidOnChain,
+			"usdt_offchain_refund", usdtOffchainRefund,
+			"beneficiary", destination)
+	}
 
 	// 3. Stop the stuck swap: remove the streaming-swap record and queue item so
 	//    the remaining sub-swaps never execute.
