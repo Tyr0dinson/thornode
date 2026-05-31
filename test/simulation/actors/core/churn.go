@@ -64,6 +64,10 @@ func (a *ChurnActor) startChurn(config *OpConfig) OpResult {
 		return result
 	}
 
+	if result := waitForXMRFrostChurnReadiness(a.Log(), config); !result.Continue {
+		return result
+	}
+
 	// Broadcast the same churn Mimirs used by the XMR post-churn actor. The
 	// plain bootstrap cluster starts with a one-node active vault, so unhalting
 	// alone is not enough for tests that need a multi-member vault.
