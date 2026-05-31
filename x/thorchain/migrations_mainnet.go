@@ -877,8 +877,13 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		// RUNE; absorbed by POL via step-5 RUNEPool.ReserveUnits re-solve.
 		// ETH.USDC: closes 27,179 USDC L1 gap (0.8% pool haircut).
 		{asset: ethUSDC, step1RuneHaircut: 4_640_667_267_256},
-		// TRON.TRX: closes 2,874 TRX L1 gap (0.9% pool haircut).
-		{asset: common.TRXAsset, step1RuneHaircut: 175_184_824_163},
+		// TRON.TRX: closes 2,874 TRX L1 gap via TREASURY draw (not POL). The TRON
+		// pool is ~99.7% treasury1-owned and has 0 POL units + 0 savers, so a step-1
+		// POL haircut landed the whole loss on ordinary LPs (-88.41 bps DLP v/u
+		// drift, flagged by the dry-run). Drawing ΔA from treasury1's LP position
+		// (~1,228 of its 138,508 units) makes the treasury bear it and keeps the
+		// ~0.3% ordinary LPs whole. ΔA = 287_392_444_998 (2,873.92444998 TRX).
+		{asset: common.TRXAsset, step4TreasuryDraw: 287_392_444_998},
 		// XRP.XRP: closes 19 XRP L1 gap (<0.01% pool haircut).
 		{asset: common.XRPAsset, step1RuneHaircut: 4_831_551_272},
 		// ─── Full attack-recapitalization entries for bifrost-OBSERVED native
