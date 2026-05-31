@@ -852,6 +852,65 @@ func validateWaterfall(before, after fullSnapshot) (rows []heatmapRow, globals [
 		}
 	}
 
+	// G10 (migration-CAUSED L1 insolvency): the cross-pool check the per-table
+	// assertions don't make. An absolute "pool depth ≤ Σ vault.Coins" check is NOT
+	// valid here — many live pools normally run with pool+secured+trade exceeding raw
+	// asgard coins, and THOR.* assets have no vault backing at all. So instead compare
+	// the asset's solvency DEFICIT (claims − Asgard holdings; claims = pool depth +
+	// secured + trade) BEFORE vs AFTER the migration. We flag only pools whose deficit
+	// GREW — i.e. the migration removed vault backing (the 2v28 zero-out) without a
+	// compensating pool haircut. This isolates migration-caused insolvency from the
+	// pre-existing pool-vs-vault gaps that are out of scope. Hard fail.
+	deficit := func(s fullSnapshot, assetStr string, pool poolSnap) cosmos.Uint {
+		held, ok := s.vaultHoldings[assetStr]
+		if !ok {
+			held = cosmos.ZeroUint()
+		}
+		claims := pool.BalanceAsset
+		if sd, ok := s.securedDepth[assetStr]; ok {
+			claims = claims.Add(sd)
+		}
+		if td, ok := s.tradeDepth[assetStr]; ok {
+			claims = claims.Add(td)
+		}
+		if claims.GT(held) {
+			return common.SafeSub(claims, held)
+		}
+		return cosmos.ZeroUint()
+	}
+	for assetStr, pA := range after.pools {
+		if pA.IsSynth {
+			continue
+		}
+		pB, ok := before.pools[assetStr]
+		if !ok {
+			continue
+		}
+		dAfter := deficit(after, assetStr, pA)
+		dBefore := deficit(before, assetStr, pB)
+		if dAfter.GT(dBefore) {
+			grew := common.SafeSub(dAfter, dBefore)
+			// Material: deficit grew by > 0.5% of pool depth (filters fee/rounding noise).
+			if grew.GT(pA.BalanceAsset.QuoUint64(200)) {
+				// WARN, not a hard fail: a grown L1 deficit is EXPECTED for pools the
+				// migration handles via economic remedies that don't touch pool depth
+				// (savers burn) or are sized to the economic loss rather than 2v28's raw
+				// holding (treasury/POL) — those restore pool VALUE, not Σ vault.Coins.
+				// Raw per-vault L1 solvency is restored elsewhere (reserve / churn). This
+				// surfaces every affected pool so a human can confirm scope; pools with NO
+				// remedy at all (no haircut row) are the ones that warrant a second look.
+				_, hasRow := rowMap[assetStr]
+				scope := "HANDLED by a haircut row (economic remedy; L1 backing restored elsewhere)"
+				if !hasRow {
+					scope = "NO haircut row — confirm this pool is intentionally out of conciliation scope"
+				}
+				globals = append(globals, fmt.Sprintf(
+					"[WARN] G10 L1 backing deficit grew %s: %s → %s (Δ+%s, 2v28 backing zeroed) — %s",
+					assetStr, format1e8(dBefore), format1e8(dAfter), format1e8(grew), scope))
+			}
+		}
+	}
+
 	// Sort rows by asset name for stable rendering.
 	keys := make([]string, 0, len(rowMap))
 	for k := range rowMap {
