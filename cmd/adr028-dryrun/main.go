@@ -8,9 +8,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -350,7 +352,7 @@ func captureFull(a *app.THORChainApp, ctx cosmos.Context) fullSnapshot {
 // runMigration wires the manager exactly as x/thorchain's module does, captures
 // before-state from the uncached context, runs Migrate15to16 on a discarded cache
 // layer, and captures after-state from that cache. Nothing is ever committed.
-func runMigration(a *app.THORChainApp) (before, after fullSnapshot, migErr error) {
+func runMigration(a *app.THORChainApp, thornodeAPI string) (before, after fullSnapshot, migErr error) {
 	header := cmtproto.Header{Height: a.LastBlockHeight() + 1, Time: time.Now()}
 	ctx := a.NewUncachedContext(false, header)
 
@@ -364,6 +366,14 @@ func runMigration(a *app.THORChainApp) (before, after fullSnapshot, migErr error
 		a.WasmKeeper,
 	)
 
+	// Hybrid backfill: the Liquify pruned snapshot drops the stuck streaming-swap
+	// state, so step 6 (the streaming-swap settle) would take the no-op "already
+	// absent" path and go untested. Re-inject the real swap + queue item from the
+	// archive API ($tt) — the swap is frozen (trading halted), so the archive value
+	// equals the snapshot-height value — BEFORE the before-snapshot, so the real
+	// step-6 code runs and the existing ethUSDTScheduled==stuckSwapOut check fires.
+	backfillStuckSwap(mgrs.Keeper(), ctx, thornodeAPI)
+
 	before = captureFull(a, ctx)
 
 	cacheCtx, _ := ctx.CacheContext()
@@ -371,6 +381,103 @@ func runMigration(a *app.THORChainApp) (before, after fullSnapshot, migErr error
 
 	after = captureFull(a, cacheCtx)
 	return before, after, migErr
+}
+
+// backfillStuckSwap injects the stuck streaming swap (and its swap-queue item) from
+// the archive THORNode API into ctx when the pruned snapshot lacks it, so step 6 of
+// Migrate15to16 runs against real state instead of no-op'ing on the "already absent"
+// path. The swap is frozen (trading halted), so the value read live from $tt equals
+// the snapshot-height value (verified via ?height= archive query). No-op if the swap
+// is already present (non-pruned snapshot) or thornodeAPI is empty.
+func backfillStuckSwap(k keeper.Keeper, ctx cosmos.Context, thornodeAPI string) {
+	txid, err := common.NewTxID(stuckStreamingTxStr)
+	if err != nil {
+		return
+	}
+	if k.StreamingSwapExists(ctx, txid) {
+		fmt.Println("  [backfill] stuck streaming swap already present in snapshot — no injection needed")
+		return
+	}
+	if thornodeAPI == "" {
+		fmt.Println("  [backfill] snapshot lacks the stuck streaming swap and --thornode-api is empty — step 6 will take the 'absent' path (set --thornode-api to exercise it)")
+		return
+	}
+	var sr struct {
+		Interval    uint64 `json:"interval"`
+		Quantity    uint64 `json:"quantity"`
+		Count       uint64 `json:"count"`
+		Deposit     string `json:"deposit"`
+		In          string `json:"in"`
+		Out         string `json:"out"`
+		TradeTarget string `json:"trade_target"`
+	}
+	if err := httpGetJSON(thornodeAPI+"/thorchain/swap/streaming/"+stuckStreamingTxStr, &sr); err != nil {
+		fmt.Printf("  [backfill] WARN: could not fetch streaming swap from %s: %v — step 6 untested\n", thornodeAPI, err)
+		return
+	}
+	ss := thorchaintypes.StreamingSwap{
+		TxID:        txid,
+		Interval:    sr.Interval,
+		Quantity:    sr.Quantity,
+		Count:       sr.Count,
+		Deposit:     uintFromDecStr(sr.Deposit),
+		In:          uintFromDecStr(sr.In),
+		Out:         uintFromDecStr(sr.Out),
+		TradeTarget: uintFromDecStr(sr.TradeTarget),
+	}
+	k.SetStreamingSwap(ctx, ss)
+
+	// Queue item (for the Destination). Without it, step 6 still settles the swap but
+	// takes the unknown-destination path (full off-chain refund); with it, Out is paid
+	// on-chain to the recipient — the branch we want to exercise.
+	var queue []struct {
+		Tx struct {
+			ID string `json:"id"`
+		} `json:"tx"`
+		Destination string `json:"destination"`
+		TargetAsset string `json:"target_asset"`
+	}
+	dest := "(unknown — would refund fully off-chain)"
+	if qerr := httpGetJSON(thornodeAPI+"/thorchain/queue/swap", &queue); qerr == nil {
+		for _, q := range queue {
+			if !strings.EqualFold(q.Tx.ID, stuckStreamingTxStr) {
+				continue
+			}
+			target, aerr := common.NewAsset(q.TargetAsset)
+			daddr, derr := common.NewAddress(q.Destination)
+			if aerr == nil && derr == nil {
+				_ = k.SetSwapQueueItem(ctx, thorchaintypes.MsgSwap{
+					Tx:          common.Tx{ID: txid},
+					TargetAsset: target,
+					Destination: daddr,
+					TradeTarget: ss.TradeTarget,
+				}, 0)
+				dest = q.Destination
+			}
+			break
+		}
+	}
+	fmt.Printf("  [backfill] injected stuck streaming swap from %s: Out=%s TradeTarget=%s dest=%s\n",
+		thornodeAPI, format1e8(ss.Out), format1e8(ss.TradeTarget), dest)
+}
+
+func uintFromDecStr(s string) cosmos.Uint {
+	if bi, ok := new(big.Int).SetString(s, 10); ok {
+		return cosmos.NewUintFromBigInt(bi)
+	}
+	return cosmos.ZeroUint()
+}
+
+func httpGetJSON(url string, v interface{}) error {
+	resp, err := http.Get(url) // #nosec G107 -- local archive node URL from a flag
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("http %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(v)
 }
 
 // report prints before→after deltas and runs the structural invariant checks.
@@ -2116,6 +2223,8 @@ func main() {
 	defaultHome := filepath.Join(os.Getenv("HOME"), ".thornode-dryrun-copy")
 	home := flag.String("home", defaultHome, "thornode home dir (use a COPY of ~/.thornode)")
 	height := flag.Int64("height", 0, "committed height to load; 0 = latest")
+	thornodeAPI := flag.String("thornode-api", "http://100.64.0.4:31317",
+		"archive THORNode REST API used to backfill the pruned-out stuck streaming swap so step 6 runs against real state; empty disables backfill")
 	flag.Parse()
 
 	dataDir := filepath.Join(*home, "data")
@@ -2131,7 +2240,7 @@ func main() {
 	}
 	fmt.Printf("adr028-dryrun: loaded app at height %d\n", a.LastBlockHeight())
 
-	before, after, migErr := runMigration(a)
+	before, after, migErr := runMigration(a, *thornodeAPI)
 	invFailures := report(before.state, after.state, migErr)
 	rows, globals, mathFailures := validateWaterfall(before, after)
 	renderHeatmap(rows, globals)
