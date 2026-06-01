@@ -394,9 +394,8 @@ func (c *SOLClient) GetVaultLock(vaultPubKey string) *sync.Mutex {
 
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
-	nativeCurrentFee := cosmos.NewUint(3).
-		MulUint64(c.cfg.BlockScanner.MaxGasLimit).
-		MulUint64(c.solScanner.lastFeeRate.Load())
+	txSize, feeRate := c.solScanner.GetNetworkFee()
+	nativeCurrentFee := cosmos.NewUint(3).MulUint64(txSize).MulUint64(feeRate)
 	return c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
 }
 
@@ -429,7 +428,9 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards, err: %w", err)
 	}
 
-	currentFeeRate := c.GetGasEstimateForSolvency()
+	// leaving the legacy gas fee estimate calculation for comparison
+	nativeCurrentFee := cosmos.NewUint(3).MulUint64(c.cfg.BlockScanner.MaxGasLimit).MulUint64(c.solScanner.lastFeeRate.Load())
+	currentFeeRate := c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -525,6 +526,9 @@ func (c *SOLClient) nextSolvencyReportSlotMultiple(height int64) int64 {
 	current := c.getSolvencySlotMultiple()
 	if c.cfg.SolvencyBlocks <= 0 {
 		return current
+	}
+	if c.solScanner.lastFeeRate.Load() == 0 {
+		return false
 	}
 
 	crossedMultiple := height / c.cfg.SolvencyBlocks

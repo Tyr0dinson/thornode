@@ -1006,6 +1006,20 @@ func (s *SolvencySuite) TestShouldReportAtHeightSolChain(c *C) {
 	c.Assert(reporter.shouldReportAtHeight(101), Equals, true)
 }
 
+func (s *SolvencySuite) TestShouldReportAtHeightSolChainUsesDefaultCadence(c *C) {
+	client := &mockChainClient{
+		chain: common.SOLChain,
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1))),
+		},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+	reporter.setLastSolvencyCheckHeight(0)
+
+	c.Assert(reporter.shouldReportAtHeight(50), Equals, false)
+	c.Assert(reporter.shouldReportAtHeight(51), Equals, true)
+}
+
 func (s *SolvencySuite) TestShouldReportAtHeightEVMUsesCrossedConfiguredBoundary(c *C) {
 	client := &mockChainClient{
 		chain: common.AVAXChain,
@@ -1071,22 +1085,34 @@ func (s *SolvencySuite) TestShouldReportAtHeightBTCUsesTwoBlockFallback(c *C) {
 func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
 	gaiaAsset, err := common.NewAsset("gaia.atom")
 	c.Assert(err, IsNil)
-	client := &mockChainClient{
-		chain:                 common.GAIAChain,
-		blockScannerIsHealthy: true,
-		gas:                   cosmos.NewUint(0),
-		cfg: config.BifrostChainConfiguration{
-			SolvencyBlocks: 10,
-		},
-		account: common.Account{Coins: common.NewCoins(common.NewCoin(gaiaAsset, cosmos.NewUint(1)))},
+
+	testCases := []struct {
+		name  string
+		chain common.Chain
+		asset common.Asset
+	}{
+		{name: "gaia", chain: common.GAIAChain, asset: gaiaAsset},
+		{name: "sol", chain: common.SOLChain, asset: common.SOLAsset},
 	}
-	client.chainHeight = 20
-	client.blockScannerHeight = 20
 
-	reporter := newSolvencyReporter(client, &thorMockBridge{})
-	reporter.setLastSolvencyCheckHeight(0)
+	for _, tc := range testCases {
+		client := &mockChainClient{
+			chain:                 tc.chain,
+			blockScannerIsHealthy: true,
+			gas:                   cosmos.NewUint(0),
+			cfg: config.BifrostChainConfiguration{
+				SolvencyBlocks: 10,
+			},
+			account:            common.Account{Coins: common.NewCoins(common.NewCoin(tc.asset, cosmos.NewUint(1)))},
+			chainHeight:        20,
+			blockScannerHeight: 20,
+		}
 
-	c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, false)
+		reporter := newSolvencyReporter(client, &thorMockBridge{})
+		reporter.setLastSolvencyCheckHeight(0)
+
+		c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, false, Commentf(tc.name))
+	}
 }
 
 func (s *SolvencySuite) TestShouldReportRejectsNonPositiveHeight(c *C) {

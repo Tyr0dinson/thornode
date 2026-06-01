@@ -205,14 +205,14 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
-// TestGetGasEstimateForSolvency verifies SOL keeps the legacy 3x MaxGasLimit
-// breathing room and converts the native lamport fee to THORChain 1e8 units.
+// TestGetGasEstimateForSolvency verifies SOL uses the scanner's network-fee
+// shape (size=1, rate=lamports/signature) and converts to THORChain 1e8 units.
 func (s *SolTestSuite) TestGetGasEstimateForSolvency(c *C) {
 	client := &SOLClient{
 		cfg: config.BifrostChainConfiguration{
 			ChainID: common.SOLChain,
 			BlockScanner: config.BifrostBlockScannerConfiguration{
-				MaxGasLimit: 5_000,
+				MaxGasLimit: 0,
 			},
 		},
 		solScanner: &SOLScanner{},
@@ -220,7 +220,7 @@ func (s *SolTestSuite) TestGetGasEstimateForSolvency(c *C) {
 	client.solScanner.lastFeeRate.Store(2_000)
 
 	got := client.GetGasEstimateForSolvency()
-	c.Assert(got.Equal(cosmos.NewUint(3_000_000)), Equals, true)
+	c.Assert(got.Equal(cosmos.NewUint(600)), Equals, true)
 }
 
 func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {

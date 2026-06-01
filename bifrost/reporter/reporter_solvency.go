@@ -182,7 +182,7 @@ func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {
 		return false
 	}
 	if r.requiresNonZeroGas() && r.client.GetGasEstimateForSolvency().IsZero() {
-		// GAIA/NOBLE/XRP use observed fee as insolvency buffer and should not report
+		// GAIA/NOBLE/XRP/SOL/XMR use observed fee as insolvency buffer and should not report
 		// before scanner fee initialization.
 		return false
 	}
@@ -205,7 +205,7 @@ func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {
 // estimation is initialized before solvency checks are meaningful.
 func (r *solvencyReporter) requiresNonZeroGas() bool {
 	switch r.client.GetChain() {
-	case common.GAIAChain, common.NOBLEChain, common.XRPChain, common.XMRChain:
+	case common.GAIAChain, common.NOBLEChain, common.SOLChain, common.XRPChain, common.XMRChain:
 		return true
 	default:
 		return false
@@ -243,6 +243,8 @@ func (r *solvencyReporter) solvencyBlocks() int64 {
 	switch r.client.GetChain() {
 	case common.ETHChain:
 		return 20
+	case common.SOLChain:
+		return 50
 	case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain, common.XMRChain:
 		return 10
 	case common.BTCChain, common.BCHChain:

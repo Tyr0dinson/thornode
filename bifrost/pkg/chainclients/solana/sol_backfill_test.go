@@ -866,6 +866,10 @@ func (s *ClientBackfillSuite) TestShouldReportSolvency(c *C) {
 	// SolvencyBlocks = 10
 	c.Assert(client.ShouldReportSolvency(0), Equals, false)
 
+	// fee must be initialized before solvency reports are meaningful
+	c.Assert(client.ShouldReportSolvency(11), Equals, false)
+	client.solScanner.lastFeeRate.Store(5_000)
+
 	// solvencySlotMultiple is 0, so threshold is (0+1)*10 = 10
 	c.Assert(client.ShouldReportSolvency(11), Equals, true)
 	c.Assert(client.ShouldReportSolvency(10), Equals, false)
