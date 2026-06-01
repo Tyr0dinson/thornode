@@ -66,6 +66,7 @@ func TestAdr028PairedCut(t *testing.T) {
 		{"overhang sPre>2A", 1000, 100, 500, 2000, 300, 30, 100, 10},  // R*X/S=1000*30/300=100; A*X/S=10
 		{"overhang boundary sPre==2A", 1000, 100, 500, 2000, 200, 20, 100, 10},
 		{"non-overhang sPre<2A", 1000, 100, 500, 2000, 150, 30, 150, 15}, // drop=2000*80-200*500=60000; R*drop/(2AT)=1000*60000/400000=150
+		{"non-overhang T=0 guard", 1000, 100, 500, 0, 150, 30, 0, 0},     // 2AT=0 → degenerate guard returns (0,0)
 	}
 	for _, c := range cases {
 		dR, dA := adr028PairedCut(mu(c.R), mu(c.A), mu(c.L), mu(c.T), mu(c.sPre), mu(c.burnAmt))

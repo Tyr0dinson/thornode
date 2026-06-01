@@ -27,13 +27,11 @@ func adr028OverflowBps(postL, postA, synthSupply, targetT, saverDepth cosmos.Uin
 	twoPostA := postA.MulUint64(2)
 	suTarget := common.SafeSub(targetT, postL)
 	clampedS := suTarget.Quo(postL)
+	// postL > 0 here (early return above) ⇒ postL+suTarget > 0, so the Quo is safe.
 	var sTarget cosmos.Uint
-	switch {
-	case !clampedS.IsZero() && clampedS.GTE(twoPostA):
+	if !clampedS.IsZero() && clampedS.GTE(twoPostA) {
 		sTarget = clampedS // overhang/clamped regime — SU = postL·S, linear
-	case postL.Add(suTarget).IsZero():
-		sTarget = cosmos.ZeroUint()
-	default:
+	} else {
 		sTarget = twoPostA.Mul(suTarget).Quo(postL.Add(suTarget)) // non-clamped
 	}
 	if synthSupply.LTE(sTarget) {
