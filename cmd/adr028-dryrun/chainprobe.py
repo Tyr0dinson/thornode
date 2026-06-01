@@ -20,14 +20,18 @@ WHY NOT bifrost's chain clients: GetAccountByAddress is a no-op stub on the UTXO
 client, and the EVM/cosmos/tron clients only construct with a full bifrost
 runtime (live ThorchainBridge + TSS + keys + managers) — too heavy to embed in
 the offline dry-run for a read-only balance. The EVM read is a trivial eth_call,
-so we issue it directly. EVM chains only (AVAX/ETH/BSC/BASE); UTXO/GAIA/TRON are
-future work, and XRP/SOL have no mainnet daemon in the `valle` cluster.
+so we issue it directly. EVM chains only (AVAX/ETH/BSC/BASE); UTXO/GAIA/TRON and
+XRP (sdaemons has an xrp-daemon) are future work; SOL has no daemon exposed.
 
-SETUP (mainnet daemons live in the `valle` kube context, NOT tc-stagenet):
-  kubectl port-forward --context valle -n tdaemons svc/avalanche-daemon 19650:9650
-  kubectl port-forward --context valle -n tdaemons svc/ethereum-daemon  18546:8545
-  kubectl port-forward --context valle -n tdaemons svc/binance-smart-daemon 18547:8545
-  kubectl port-forward --context valle -n tdaemons svc/base-daemon       18545:8545
+SETUP — use the tc-stagenet `sdaemons` namespace, NOT valle/tdaemons:
+  Stagenet THORChain observes the MAINNET L1 chains, so sdaemons hold mainnet
+  data — and they are SEPARATE from the daemons mainnet validators rely on for
+  consensus, so probing them does not load consensus-critical infrastructure.
+  (Do NOT use valle/tdaemons: those ARE the mainnet validator daemons.)
+  kubectl port-forward --context tc-stagenet -n sdaemons svc/avalanche-daemon     19650:9650
+  kubectl port-forward --context tc-stagenet -n sdaemons svc/ethereum-daemon      18546:8545
+  kubectl port-forward --context tc-stagenet -n sdaemons svc/binance-smart-daemon 18547:8545
+  # base-daemon is not in sdaemons; xrp-daemon is available (51234) for future XRP support
 USAGE:
   THORNODE_API=http://100.64.0.4:31317 ./chainprobe.py
 """
