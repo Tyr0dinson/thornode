@@ -669,6 +669,21 @@ func validateWaterfall(before, after fullSnapshot) (rows []heatmapRow, globals [
 		}
 	}
 
+	// Configured step-4 treasury-draw ΔA (asset, 1e8) per pool. Asserting the
+	// REALIZED ΔA equals the configured amount catches huginn-bot's concern: unlike
+	// step 1 (which closes the L1 gap UNCONDITIONALLY), step 4 caps the draw at the
+	// treasury LP's units and recomputes ΔA — so if the treasury position has drifted
+	// below the needed units by upgrade height, the pool is left OVER-STATED vs the
+	// zeroed vault (a silent solvency gap) rather than fully reconciled. This makes
+	// the capped/skip path a hard failure instead of a silent pass.
+	expectedStep4Draw := map[string]cosmos.Uint{
+		"BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913": cosmos.NewUint(4_904_100_000_000),
+		"BSC.BUSD-0XE9E7CEA3DEDCA5984780BAFC599BD69ADD087D56":  cosmos.NewUint(3_214_300_000_000),
+		"BSC.ETH-0X2170ED0880AC9A755FD29B2688956BD959F933F8":   cosmos.NewUint(1_600_000_000),
+		"BSC.BTCB-0X7130D2A12B9BCBFAE4F2634D864A1EE1CE3EAD9C":  cosmos.NewUint(51_000_000),
+		"TRON.TRX":                                            cosmos.NewUint(287_392_444_998),
+	}
+
 	// STEP 4 — Treasury LP draw: L1 pools where Treasury LP units dropped.
 	for assetStr, lpB := range before.treasuryLPUnits {
 		lpA, ok := after.treasuryLPUnits[assetStr]
@@ -692,11 +707,20 @@ func validateWaterfall(before, after fullSnapshot) (rows []heatmapRow, globals [
 		deltaR := common.SafeSub(pB.BalanceRune, pA.BalanceRune)
 		deltaA := common.SafeSub(pB.BalanceAsset, pA.BalanceAsset)
 		totalStep4Rune = totalStep4Rune.Add(deltaR)
-		if deltaR.IsZero() || deltaA.IsZero() {
+		exp, hasExp := expectedStep4Draw[assetStr]
+		switch {
+		case deltaR.IsZero() || deltaA.IsZero():
 			getRow(assetStr).cells[3] = cell{cellFail, fmt.Sprintf("step-4 active but ΔR=%s ΔA=%s", format1e8(deltaR), format1e8(deltaA))}
 			bumpFail()
-		} else {
-			getRow(assetStr).cells[3] = cell{cellPass, fmt.Sprintf("ΔLP=%s ΔA=%s ΔR=%s", format1e8(deltaLP), format1e8(deltaA), format1e8(deltaR))}
+		case hasExp && !deltaA.Equal(exp):
+			getRow(assetStr).cells[3] = cell{cellFail, fmt.Sprintf("treasury draw capped/short: ΔA=%s ≠ configured %s → pool OVER-STATED vs zeroed vault", format1e8(deltaA), format1e8(exp))}
+			bumpFail()
+		default:
+			tag := ""
+			if hasExp {
+				tag = " (=configured; depth at vault-reality)"
+			}
+			getRow(assetStr).cells[3] = cell{cellPass, fmt.Sprintf("ΔLP=%s ΔA=%s ΔR=%s%s", format1e8(deltaLP), format1e8(deltaA), format1e8(deltaR), tag)}
 		}
 	}
 
