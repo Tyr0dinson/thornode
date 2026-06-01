@@ -31,7 +31,11 @@ SETUP — use the tc-stagenet `sdaemons` namespace, NOT valle/tdaemons:
   kubectl port-forward --context tc-stagenet -n sdaemons svc/avalanche-daemon     19650:9650
   kubectl port-forward --context tc-stagenet -n sdaemons svc/ethereum-daemon      18546:8545
   kubectl port-forward --context tc-stagenet -n sdaemons svc/binance-smart-daemon 18547:8545
-  # base-daemon is not in sdaemons; xrp-daemon is available (51234) for future XRP support
+  # BASE has no sdaemons daemon — bifrost uses a QuickNode endpoint. Pull it at runtime:
+  #   BASE_RPC=$(kubectl exec -n stagenet-v1 --context tc-stagenet bifrost-0 -- \
+  #             printenv BIFROST_CHAINS_BASE_RPC_HOST)
+  #   (it is credentialed — keep the URL OUT of committed files and logs.)
+  # xrp-daemon is available in sdaemons (51234) for future XRP support
 USAGE:
   THORNODE_API=http://100.64.0.4:31317 ./chainprobe.py
 """
