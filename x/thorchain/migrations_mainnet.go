@@ -689,38 +689,10 @@ func (m Migrator) adr028SolveOverflowBps(
 		// No savers pool / zero depth → no overflow lever (TRX/XRP).
 		return 0
 	}
-	// We want the realized post-overflow pool to satisfy
-	//   postL + CalcUnits(postL, postA, S−b) == targetT
-	// i.e. the remaining synth units must equal suTarget = targetT − postL. Solve
-	// the synth supply S_target that yields suTarget through the SAME CalcUnits the
-	// chain uses, picking the regime the solution actually lands in (this is the
-	// fix: invert the real post-cut CalcUnits, not a before-state proxy):
-	//   clamped     (suTarget/postL ≥ 2·postA): SU = postL·S      ⇒ S = suTarget/postL
-	//   non-clamped (otherwise):                 SU = postL·S/(2A−S) ⇒ S = 2A·suTarget/(postL+suTarget)
-	if postL.IsZero() {
-		return 0
-	}
-	twoPostA := postA.MulUint64(2)
-	suTarget := common.SafeSub(targetT, postL)
-	clampedS := suTarget.Quo(postL)
-	var sTarget cosmos.Uint
-	switch {
-	case !clampedS.IsZero() && clampedS.GTE(twoPostA):
-		sTarget = clampedS // overhang/clamped regime — linear, reachable
-	case postL.Add(suTarget).IsZero():
-		sTarget = cosmos.ZeroUint()
-	default:
-		sTarget = twoPostA.Mul(suTarget).Quo(postL.Add(suTarget))
-	}
-	if synthSupply.LTE(sTarget) {
-		return 0 // layer-1 (x) already met the target; no savers burn needed
-	}
-	b := common.SafeSub(synthSupply, sTarget)
-	bps := b.MulUint64(10000).Quo(saverPool.BalanceAsset)
-	if bps.GT(cosmos.NewUint(10000)) {
-		bps = cosmos.NewUint(10000) // never burn more synth than the savers pool holds
-	}
-	return bps.BigInt().Uint64()
+	// Pure arithmetic extracted to adr028OverflowBps (migration_math_15to16.go) so
+	// its regime switch and clamp are CI-unit-testable; see that file for the
+	// CalcUnits-inverse derivation.
+	return adr028OverflowBps(postL, postA, synthSupply, targetT, saverPool.BalanceAsset)
 }
 
 // splitFreedRune disposes of RUNE freed by a pool-depth reduction. Instead of
@@ -734,8 +706,7 @@ func (m Migrator) splitFreedRune(ctx sdk.Context, freed cosmos.Uint, reason stri
 	if freed.IsZero() {
 		return nil
 	}
-	toReserve := freed.QuoUint64(2)
-	toBurn := common.SafeSub(freed, toReserve) // burn gets the odd unit
+	toBurn, toReserve := adr028SplitFreed(freed) // pure split; odd 1e-8 unit → burn
 	if !toBurn.IsZero() {
 		bc := common.NewCoin(common.RuneNative, toBurn)
 		if err := m.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(bc)); err != nil {
@@ -1152,27 +1123,13 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		}
 		sPre := m.mgr.Keeper().GetTotalSupply(ctx, synthAsset).Add(burnAmt) // supply BEFORE the burn
 		if !pool.BalanceRune.IsZero() && !pool.BalanceAsset.IsZero() && !sPre.IsZero() {
-			L := pool.LPUnits
-			A := pool.BalanceAsset
-			twoA := A.MulUint64(2)
 			pCopy := pool
 			pCopy.CalcUnits(sPre)
 			T := pCopy.GetPoolUnits() // L + SU(pre-burn)
-			sMinusX := common.SafeSub(sPre, burnAmt)
-			var dRpair, dApair cosmos.Uint
-			if sPre.GTE(twoA) {
-				// overhang: ΔR = R·X/S, ΔA = A·X/S
-				dRpair = common.GetUncappedShare(burnAmt, sPre, pool.BalanceRune)
-				dApair = common.GetUncappedShare(burnAmt, sPre, A)
-			} else {
-				// non-overhang: drop = T·(2A−(S−X)) − 2A·L ; ΔR = R·drop/(2AT)
-				twoAT := twoA.Mul(T)
-				dropNum := common.SafeSub(T.Mul(common.SafeSub(twoA, sMinusX)), twoA.Mul(L))
-				if !twoAT.IsZero() {
-					dRpair = common.GetUncappedShare(dropNum, twoAT, pool.BalanceRune)
-					dApair = common.GetUncappedShare(dropNum, twoAT, A)
-				}
-			}
+			// Pure regime-branching arithmetic extracted to adr028PairedCut
+			// (migration_math_15to16.go) so the overhang/non-overhang boundary is
+			// CI-unit-testable.
+			dRpair, dApair := adr028PairedCut(pool.BalanceRune, pool.BalanceAsset, pool.LPUnits, T, sPre, burnAmt)
 			if !dRpair.IsZero() {
 				pool.BalanceRune = common.SafeSub(pool.BalanceRune, dRpair)
 				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, dApair)
