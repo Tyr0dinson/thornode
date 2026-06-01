@@ -760,13 +760,9 @@ func (m Migrator) splitFreedRune(ctx sdk.Context, freed cosmos.Uint, reason stri
 	return nil
 }
 
-// vault2v28PubKey is the compromised Asgard vault whose keeper balance is
-// zeroed in step 0.  The vault's L1 assets churn to the new active vault
-// through normal bifrost operations.
-const vault2v28PubKey = common.PubKey("thorpub1addwnpepqvpnhwzqkd2zqkxsj272faf4ezsngwh773wjdfkus8m4f860u3g5ka22v28")
-
-// adr028TreasuryAddr is the treasury multisig providing step-4 LP coverage.
-const adr028TreasuryAddr = "thor10qh5272ktq4wes8ex343ky9rsuehcypddjh08k"
+// vault2v28PubKey, adr028TreasuryAddr, stuckStreamingTxStr and the hex-qualified
+// adr028Asset* constants are defined in migration_data_15to16.go (build-tag-agnostic
+// so the mocknet data-validation test can reach them).
 
 // Migrate15to16 implements ADR-028 conciliation.
 // Waterfall order (ADR-028 §3, re-run amounts at upgrade height):
@@ -808,31 +804,31 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"cleared_coins", originalCoins.String())
 
 	// ── Build per-pool haircut table (assets requiring NewAsset parsing) ─────
-	ethUSDT, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	ethUSDT, err := common.NewAsset(adr028AssetETHUSDT)
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse ETH.USDT: %w", err)
 	}
-	avaxUSDC, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
+	avaxUSDC, err := common.NewAsset(adr028AssetAVAXUSDC)
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse AVAX.USDC: %w", err)
 	}
-	baseUSDC, err := common.NewAsset("BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913")
+	baseUSDC, err := common.NewAsset(adr028AssetBASEUSDC)
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse BASE.USDC: %w", err)
 	}
-	bscBUSD, err := common.NewAsset("BSC.BUSD-0XE9E7CEA3DEDCA5984780BAFC599BD69ADD087D56")
+	bscBUSD, err := common.NewAsset(adr028AssetBSCBUSD)
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse BSC.BUSD: %w", err)
 	}
-	bscETH, err := common.NewAsset("BSC.ETH-0X2170ED0880AC9A755FD29B2688956BD959F933F8")
+	bscETH, err := common.NewAsset(adr028AssetBSCETH)
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse BSC.ETH: %w", err)
 	}
-	bscBTCB, err := common.NewAsset("BSC.BTCB-0X7130D2A12B9BCBFAE4F2634D864A1EE1CE3EAD9C")
+	bscBTCB, err := common.NewAsset(adr028AssetBSCBTCB)
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse BSC.BTCB: %w", err)
 	}
-	ethUSDC, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	ethUSDC, err := common.NewAsset(adr028AssetETHUSDC)
 	if err != nil {
 		return fmt.Errorf("adr028: failed to parse ETH.USDC: %w", err)
 	}
@@ -1508,7 +1504,7 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	//
 	// Trading is halted at upgrade height, so no further sub-swaps execute and
 	// StreamingSwap.Out is final — we read it live and pay exactly that.
-	const stuckStreamingTxStr = "5071A7399C528E8D5BDC1BA62E87001EB5EB17E9E25ABF2965F6A38A665FF729"
+	// (stuckStreamingTxStr is defined in migration_data_15to16.go.)
 	stuckTxID, err := common.NewTxID(stuckStreamingTxStr)
 	if err != nil {
 		return fmt.Errorf("conciliation: streaming swap: failed to parse txid: %w", err)
