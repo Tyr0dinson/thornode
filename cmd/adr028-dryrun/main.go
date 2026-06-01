@@ -2223,8 +2223,12 @@ func main() {
 	defaultHome := filepath.Join(os.Getenv("HOME"), ".thornode-dryrun-copy")
 	home := flag.String("home", defaultHome, "thornode home dir (use a COPY of ~/.thornode)")
 	height := flag.Int64("height", 0, "committed height to load; 0 = latest")
-	thornodeAPI := flag.String("thornode-api", "http://100.64.0.4:31317",
-		"archive THORNode REST API used to backfill the pruned-out stuck streaming swap so step 6 runs against real state; empty disables backfill")
+	// Archive THORNode API for the step-6 backfill: $THORNODE_API (matching the
+	// chainprobe convention), overridable by --thornode-api. Not hard-coded to a
+	// specific node — the local endpoints move between clusters/contexts. Empty
+	// disables the backfill (step 6 then takes the no-op "absent" path).
+	thornodeAPI := flag.String("thornode-api", os.Getenv("THORNODE_API"),
+		"archive THORNode REST API to backfill the pruned-out stuck streaming swap so step 6 runs against real state; defaults to $THORNODE_API; empty disables backfill")
 	flag.Parse()
 
 	dataDir := filepath.Join(*home, "data")
