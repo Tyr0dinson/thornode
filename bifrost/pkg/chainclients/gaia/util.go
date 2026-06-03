@@ -134,24 +134,24 @@ func getGRPCConn(host string, tls bool) (*grpc.ClientConn, error) {
 	return grpc.NewClient(host, grpc.WithTransportCredentials(creds))
 }
 
-// getGRPCConnWithFallbacks tries providers in slice order and returns the first
-// whose CosmosGRPCHost is non-empty and reachable via TCP, along with that provider's config.
+// getGRPCConnWithFallbacks tries endpoints in slice order and returns the first
+// whose CosmosGRPCHost is non-empty and reachable via TCP, along with that endpoint's config.
 // Falls back to host/tls if none match; returned config is the zero value in that case.
-func getGRPCConnWithFallbacks(providers []config.ChainProviderConfig, host string, tls bool) (*grpc.ClientConn, config.ChainProviderConfig, error) {
-	for _, p := range providers {
-		if p.CosmosGRPCHost == "" {
+func getGRPCConnWithFallbacks(endpoints []config.ChainEndpointConfig, host string, tls bool) (*grpc.ClientConn, config.ChainEndpointConfig, error) {
+	for _, e := range endpoints {
+		if e.CosmosGRPCHost == "" {
 			continue
 		}
 		// grpc.NewClient is lazy — probe TCP reachability before committing.
-		if conn, err := net.DialTimeout("tcp", p.CosmosGRPCHost, 3*time.Second); err == nil {
+		if conn, err := net.DialTimeout("tcp", e.CosmosGRPCHost, 3*time.Second); err == nil {
 			_ = conn.Close()
-			if grpcConn, err := getGRPCConn(p.CosmosGRPCHost, p.CosmosGRPCTLS); err == nil {
-				return grpcConn, p, nil
+			if grpcConn, err := getGRPCConn(e.CosmosGRPCHost, e.CosmosGRPCTLS); err == nil {
+				return grpcConn, e, nil
 			}
 		}
 	}
 	conn, err := getGRPCConn(host, tls)
-	return conn, config.ChainProviderConfig{}, err
+	return conn, config.ChainEndpointConfig{}, err
 }
 
 func unmarshalJSONToPb(filePath string, msg proto.Message) error {

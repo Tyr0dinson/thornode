@@ -64,7 +64,6 @@ type ProviderEntry struct {
 type ProviderSummary struct {
 	Name     string `json:"name"`
 	Priority int    `json:"priority"`
-	Type     string `json:"type"`
 	Host     string `json:"host"`
 }
 
@@ -429,20 +428,19 @@ func (s *HealthServer) providerStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 func buildProviderSummaries(cfg config.BifrostChainConfiguration) []ProviderSummary {
-	providers := cfg.GetProviders()
-	summaries := make([]ProviderSummary, len(providers))
-	for i, p := range providers {
-		host := p.RPCHost
-		if p.CosmosGRPCHost != "" {
-			host = p.CosmosGRPCHost
+	endpoints := cfg.GetEndpoints()
+	summaries := make([]ProviderSummary, len(endpoints))
+	for i, e := range endpoints {
+		host := e.RPCHost
+		if e.CosmosGRPCHost != "" {
+			host = e.CosmosGRPCHost
 		}
-		if p.APIHost != "" {
-			host = p.APIHost
+		if e.APIHost != "" {
+			host = e.APIHost
 		}
 		summaries[i] = ProviderSummary{
-			Name:     p.Name,
-			Priority: p.Priority,
-			Type:     p.Type,
+			Name:     e.Name,
+			Priority: e.Priority,
 			Host:     classifyHost(host),
 		}
 	}

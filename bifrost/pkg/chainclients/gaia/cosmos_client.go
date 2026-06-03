@@ -116,21 +116,21 @@ func NewCosmosClient(
 		pubkey:  pk,
 	}
 
-	grpcConn, chosenProvider, err := getGRPCConnWithFallbacks(cfg.GetProviders(), cfg.CosmosGRPCHost, cfg.CosmosGRPCTLS)
+	grpcConn, chosenEndpoint, err := getGRPCConnWithFallbacks(cfg.GetEndpoints(), cfg.CosmosGRPCHost, cfg.CosmosGRPCTLS)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create grpc connection,err: %w", err)
 	}
-	// Use the same provider's RPC host for the scanner so gRPC and tendermint RPC
+	// Use the same endpoint's RPC host for the scanner so gRPC and tendermint RPC
 	// always point at the same backend.
-	// chosenProvider is zero when no gRPC provider was reachable (legacy single-host
-	// config); in that case fall back to provider[0]. If a provider was chosen but has
+	// chosenEndpoint is zero when no gRPC endpoint was reachable (legacy single-host
+	// config); in that case fall back to endpoint[0]. If an endpoint was chosen but has
 	// no RPCHost the config is invalid — fail loudly rather than silently misaligning.
-	scannerHost := chosenProvider.RPCHost
+	scannerHost := chosenEndpoint.RPCHost
 	if scannerHost == "" {
-		if chosenProvider.CosmosGRPCHost != "" {
-			return nil, fmt.Errorf("provider %q has cosmos_grpc_host but no rpc_host configured", chosenProvider.Name)
+		if chosenEndpoint.CosmosGRPCHost != "" {
+			return nil, fmt.Errorf("endpoint %q has cosmos_grpc_host but no rpc_host configured", chosenEndpoint.Name)
 		}
-		scannerHost = cfg.GetProviders()[0].RPCHost
+		scannerHost = cfg.GetEndpoints()[0].RPCHost
 	}
 
 	interfaceRegistry := codectypes.NewInterfaceRegistry()

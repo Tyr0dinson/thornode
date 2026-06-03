@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -299,6 +300,11 @@ func Init() {
 	if err := viper.Unmarshal(&config); err != nil {
 		log.Fatal().Err(err).Msg("failed to unmarshal config")
 	}
+
+	// Viper cannot bind environment variables to elements of a list, so per-chain
+	// endpoint overrides (e.g. BIFROST_CHAINS_BTC_ENDPOINTS_1_URL) are applied explicitly.
+	applyEndpointEnvOverrides()
+
 	// set back to toml for cometbft config
 	viper.SetConfigType("toml")
 
@@ -823,27 +829,17 @@ type BifrostAttestationGossipConfig struct {
 	PeerConcurrentReceives int `mapstructure:"peer_concurrent_receives"`
 }
 
-// Provider type constants — used in ChainProviderConfig.Type to select the adapter.
-const (
-	ProviderTypeBitcoinRPC  = "bitcoin-rpc"      // BTC, LTC, BCH, DOGE — standard Bitcoin JSON-RPC
-	ProviderTypeZcashRPC    = "zcash-rpc"        // ZEC — Zcash JSON-RPC (nonce handling)
-	ProviderTypeEVMRPC      = "evm-rpc"          // ETH, AVAX, BSC, BASE, POL — Ethereum JSON-RPC
-	ProviderTypeBlockchair  = "blockchair-rest"  // UTXO read-only via Blockchair REST API
-	ProviderTypeBlockCypher = "blockcypher-rest" // UTXO read-only via BlockCypher REST API
-	ProviderTypeCosmosGRPC  = "cosmos-grpc"      // GAIA, NOBLE — Cosmos SDK gRPC
-	ProviderTypeSolanaRPC   = "solana-rpc"       // SOL — Solana JSON-RPC
-	ProviderTypeTronAPI     = "tron-api"         // TRON — Tron HTTP API + JSON-RPC
-	ProviderTypeXRPRPC      = "xrp-rpc"          // XRP — XRP Ledger JSON-RPC
-)
-
-// ChainProviderConfig describes a single chain data provider endpoint.
-type ChainProviderConfig struct {
+// ChainEndpointConfig describes a single chain data endpoint used for automatic
+// failover. An endpoint is a full node RPC/API — either a self-hosted daemon or an
+// external provider exposing the same interface (e.g. another node hosted by the
+// operator). All endpoints for a chain speak that chain's native protocol, so there is
+// no per-endpoint "type" to configure.
+type ChainEndpointConfig struct {
 	Name                string `mapstructure:"name"`
 	RPCHost             string `mapstructure:"rpc_host"`
 	APIHost             string `mapstructure:"api_host"`
 	CosmosGRPCHost      string `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool   `mapstructure:"cosmos_grpc_tls"`
-	Type                string `mapstructure:"type"`
 	Priority            int    `mapstructure:"priority"`
 	UserName            string `mapstructure:"username"`
 	Password            string `mapstructure:"password"`
@@ -918,12 +914,13 @@ type BifrostChainConfiguration struct {
 	// When unset, wallet RPC falls back to authorization_bearer.
 	WalletAuthorizationBearer string `mapstructure:"wallet_authorization_bearer"`
 
-	// Providers is an ordered list of chain data providers. When set, RPCHost is used
-	// only as a backward-compat fallback for validation. Priority 1 is preferred.
-	// If empty, a single provider is synthesized from RPCHost + auth fields.
-	Providers []ChainProviderConfig `mapstructure:"providers"`
+	// Endpoints is an ordered list of chain data endpoints used for automatic failover.
+	// Each entry is a full node RPC/API (a self-hosted daemon or an external provider).
+	// Priority 1 is preferred. If empty, a single endpoint is synthesized from the legacy
+	// flat fields (RPCHost + auth), preserving backward compatibility for existing configs.
+	Endpoints []ChainEndpointConfig `mapstructure:"endpoints"`
 
-	// Failover controls how bifrost switches between providers.
+	// Failover controls how bifrost switches between endpoints.
 	// All zero values use sensible defaults (see GetFailoverConfig).
 	Failover ChainFailoverConfig `mapstructure:"failover"`
 
@@ -1043,19 +1040,20 @@ type BifrostChainConfiguration struct {
 	} `mapstructure:"utxo"`
 }
 
-// GetProviders returns the provider list for this chain configuration.
-// If Providers is empty it synthesizes a single provider from the legacy flat fields,
-// preserving backward compatibility for existing configs.
-func (c BifrostChainConfiguration) GetProviders() []ChainProviderConfig {
-	if len(c.Providers) > 0 {
-		sorted := make([]ChainProviderConfig, len(c.Providers))
-		copy(sorted, c.Providers)
+// GetEndpoints returns the endpoint list for this chain configuration, sorted by
+// priority (lowest number preferred). If no endpoints are configured it synthesizes a
+// single endpoint from the legacy flat fields, preserving backward compatibility for
+// existing configs.
+func (c BifrostChainConfiguration) GetEndpoints() []ChainEndpointConfig {
+	if len(c.Endpoints) > 0 {
+		sorted := make([]ChainEndpointConfig, len(c.Endpoints))
+		copy(sorted, c.Endpoints)
 		sort.SliceStable(sorted, func(i, j int) bool {
 			return sorted[i].Priority < sorted[j].Priority
 		})
 		return sorted
 	}
-	p := ChainProviderConfig{
+	return []ChainEndpointConfig{{
 		Name:                "primary",
 		RPCHost:             c.RPCHost,
 		APIHost:             c.APIHost,
@@ -1065,9 +1063,7 @@ func (c BifrostChainConfiguration) GetProviders() []ChainProviderConfig {
 		UserName:            c.UserName,
 		Password:            c.Password,
 		AuthorizationBearer: c.AuthorizationBearer,
-	}
-	p.Type = defaultProviderType(c.ChainID)
-	return []ChainProviderConfig{p}
+	}}
 }
 
 // GetFailoverConfig returns the failover configuration with defaults applied.
@@ -1097,25 +1093,142 @@ func (c BifrostChainConfiguration) GetFailoverConfig() ChainFailoverConfig {
 	return fc
 }
 
-func defaultProviderType(chain common.Chain) string {
-	switch chain {
-	case common.ZECChain:
-		return ProviderTypeZcashRPC
-	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain:
-		return ProviderTypeBitcoinRPC
-	case common.ETHChain, common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain:
-		return ProviderTypeEVMRPC
-	case common.GAIAChain, common.NOBLEChain:
-		return ProviderTypeCosmosGRPC
-	case common.SOLChain:
-		return ProviderTypeSolanaRPC
-	case common.TRONChain:
-		return ProviderTypeTronAPI
-	case common.XRPChain:
-		return ProviderTypeXRPRPC
-	default:
-		return ProviderTypeBitcoinRPC
+// bifrostChainConfigPtrs maps the chain token used in environment variable keys to a
+// pointer to its loaded chain configuration, so endpoint overrides can mutate it in place.
+func bifrostChainConfigPtrs() map[string]*BifrostChainConfiguration {
+	return map[string]*BifrostChainConfiguration{
+		"AVAX":  &config.Bifrost.Chains.AVAX,
+		"BCH":   &config.Bifrost.Chains.BCH,
+		"BSC":   &config.Bifrost.Chains.BSC,
+		"BTC":   &config.Bifrost.Chains.BTC,
+		"DOGE":  &config.Bifrost.Chains.DOGE,
+		"ETH":   &config.Bifrost.Chains.ETH,
+		"GAIA":  &config.Bifrost.Chains.GAIA,
+		"NOBLE": &config.Bifrost.Chains.NOBLE,
+		"LTC":   &config.Bifrost.Chains.LTC,
+		"BASE":  &config.Bifrost.Chains.BASE,
+		"TRON":  &config.Bifrost.Chains.TRON,
+		"XRP":   &config.Bifrost.Chains.XRP,
+		"XMR":   &config.Bifrost.Chains.XMR,
+		"SOL":   &config.Bifrost.Chains.SOL,
+		"POL":   &config.Bifrost.Chains.POL,
+		"ZEC":   &config.Bifrost.Chains.ZEC,
+		"SUI":   &config.Bifrost.Chains.SUI,
+		"ADA":   &config.Bifrost.Chains.ADA,
 	}
+}
+
+// endpointEnvRegexp matches per-endpoint override keys of the form
+// BIFROST_CHAINS_<CHAIN>_ENDPOINTS_<N>_<FIELD>, where <N> is the 1-based endpoint index.
+var endpointEnvRegexp = regexp.MustCompile(`^BIFROST_CHAINS_([A-Z0-9]+)_ENDPOINTS_([0-9]+)_(.+)$`)
+
+// applyEndpointEnvOverrides applies chain endpoint overrides from the process environment
+// to the loaded global configuration. See applyEndpointEnvOverridesTo for the supported
+// key format.
+func applyEndpointEnvOverrides() {
+	applyEndpointEnvOverridesTo(bifrostChainConfigPtrs(), os.Environ())
+}
+
+// applyEndpointEnvOverridesTo scans environ for endpoint overrides of the form
+// BIFROST_CHAINS_<CHAIN>_ENDPOINTS_<N>_<FIELD> and applies them to the matching chain.
+// Viper does not support binding environment variables to elements of a list, so this is
+// handled explicitly. <N> is 1-based; referenced entries beyond the configured list are
+// created on demand, and an endpoint with no explicit priority defaults to its position.
+//
+// Supported <FIELD> values (case-insensitive):
+//
+//	URL | RPC_HOST        -> rpc_host (the endpoint's primary URL)
+//	API_HOST             -> api_host
+//	COSMOS_GRPC_HOST     -> cosmos_grpc_host
+//	COSMOS_GRPC_TLS      -> cosmos_grpc_tls (bool)
+//	NAME                 -> name
+//	PRIORITY             -> priority (int)
+//	USERNAME             -> username
+//	PASSWORD             -> password
+//	AUTHORIZATION_BEARER -> authorization_bearer
+func applyEndpointEnvOverridesTo(chains map[string]*BifrostChainConfiguration, environ []string) {
+	type override struct {
+		idx   int
+		field string
+		value string
+	}
+	overrides := map[string][]override{}
+	maxIdx := map[string]int{}
+
+	for _, env := range environ {
+		eq := strings.IndexByte(env, '=')
+		if eq < 0 {
+			continue
+		}
+		key, value := env[:eq], env[eq+1:]
+		m := endpointEnvRegexp.FindStringSubmatch(key)
+		if m == nil {
+			continue
+		}
+		chain, idxStr, field := m[1], m[2], strings.ToUpper(m[3])
+		if _, ok := chains[chain]; !ok {
+			continue
+		}
+		idx, err := strconv.Atoi(idxStr)
+		if err != nil || idx < 1 {
+			continue
+		}
+		overrides[chain] = append(overrides[chain], override{idx: idx, field: field, value: value})
+		if idx > maxIdx[chain] {
+			maxIdx[chain] = idx
+		}
+	}
+
+	for chain, ovs := range overrides {
+		cfg := chains[chain]
+
+		// grow the endpoint list to hold the highest referenced index
+		for len(cfg.Endpoints) < maxIdx[chain] {
+			cfg.Endpoints = append(cfg.Endpoints, ChainEndpointConfig{})
+		}
+
+		for _, o := range ovs {
+			ep := &cfg.Endpoints[o.idx-1]
+			switch o.field {
+			case "URL", "RPC_HOST":
+				ep.RPCHost = o.value
+			case "API_HOST":
+				ep.APIHost = o.value
+			case "COSMOS_GRPC_HOST":
+				ep.CosmosGRPCHost = o.value
+			case "COSMOS_GRPC_TLS":
+				ep.CosmosGRPCTLS = parseEnvBool(o.value)
+			case "NAME":
+				ep.Name = o.value
+			case "PRIORITY":
+				if n, err := strconv.Atoi(strings.TrimSpace(o.value)); err == nil {
+					ep.Priority = n
+				}
+			case "USERNAME":
+				ep.UserName = o.value
+			case "PASSWORD":
+				ep.Password = o.value
+			case "AUTHORIZATION_BEARER":
+				ep.AuthorizationBearer = o.value
+			default:
+				log.Warn().Str("chain", chain).Str("field", o.field).
+					Msg("unknown chain endpoint environment field, ignoring")
+			}
+		}
+
+		// default each endpoint's priority to its 1-based position when unset so the
+		// configured order (ENDPOINTS_1, ENDPOINTS_2, ...) is also the failover order
+		for i := range cfg.Endpoints {
+			if cfg.Endpoints[i].Priority == 0 {
+				cfg.Endpoints[i].Priority = i + 1
+			}
+		}
+	}
+}
+
+func parseEnvBool(v string) bool {
+	b, err := strconv.ParseBool(strings.TrimSpace(v))
+	return err == nil && b
 }
 
 func (b *BifrostChainConfiguration) Validate() {
@@ -1126,16 +1239,16 @@ func (b *BifrostChainConfiguration) Validate() {
 				Str("chain", b.ChainID.String()).
 				Msg("api host is required")
 		}
-		if b.RPCHost == "" && len(b.Providers) == 0 {
+		if b.RPCHost == "" && len(b.Endpoints) == 0 {
 			log.Fatal().
 				Str("chain", b.ChainID.String()).
-				Msg("rpc host or providers list is required")
+				Msg("rpc host or endpoints list is required")
 		}
 	default:
-		if b.RPCHost == "" && len(b.Providers) == 0 {
+		if b.RPCHost == "" && len(b.Endpoints) == 0 {
 			log.Fatal().
 				Str("chain", b.ChainID.String()).
-				Msg("rpc host or providers list is required")
+				Msg("rpc host or endpoints list is required")
 		}
 	}
 

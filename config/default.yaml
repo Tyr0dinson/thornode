@@ -208,7 +208,7 @@ bifrost:
       cosmos_grpc_tls: false
       opt_to_retire: false
       solvency_blocks: 0
-      providers: []
+      endpoints: []
       failover:
         health_check_interval: 0s
         max_block_lag: 0

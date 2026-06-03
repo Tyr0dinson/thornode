@@ -1,0 +1,67 @@
+package config
+
+import "testing"
+
+// TestApplyEndpointEnvOverridesTo exercises the explicit environment-variable handling for
+// chain endpoint lists, which viper cannot bind to slice elements on its own.
+func TestApplyEndpointEnvOverridesTo(t *testing.T) {
+	btc := &BifrostChainConfiguration{}
+	gaia := &BifrostChainConfiguration{
+		// pre-existing yaml endpoint that env should be able to override in place
+		Endpoints: []ChainEndpointConfig{{Name: "yaml", CosmosGRPCHost: "old:9090"}},
+	}
+	chains := map[string]*BifrostChainConfiguration{"BTC": btc, "GAIA": gaia}
+
+	environ := []string{
+		"BIFROST_CHAINS_BTC_ENDPOINTS_1_URL=http://localhost:8332",
+		"BIFROST_CHAINS_BTC_ENDPOINTS_1_USERNAME=user",
+		"BIFROST_CHAINS_BTC_ENDPOINTS_1_PASSWORD=pass",
+		"BIFROST_CHAINS_BTC_ENDPOINTS_2_RPC_HOST=https://rpc.ankr.com/btc",
+		"BIFROST_CHAINS_BTC_ENDPOINTS_2_PRIORITY=5",
+		"BIFROST_CHAINS_GAIA_ENDPOINTS_1_COSMOS_GRPC_HOST=new:9090",
+		"BIFROST_CHAINS_GAIA_ENDPOINTS_1_COSMOS_GRPC_TLS=true",
+		// unrelated and malformed keys that must be ignored
+		"BIFROST_CHAINS_BTC_RPC_HOST=should-be-ignored",
+		"BIFROST_CHAINS_ZZZ_ENDPOINTS_1_URL=unknown-chain",
+		"NOT_AN_ENDPOINT=x",
+	}
+
+	applyEndpointEnvOverridesTo(chains, environ)
+
+	if len(btc.Endpoints) != 2 {
+		t.Fatalf("expected 2 BTC endpoints, got %d", len(btc.Endpoints))
+	}
+	if got := btc.Endpoints[0].RPCHost; got != "http://localhost:8332" {
+		t.Errorf("BTC endpoint 1 rpc_host = %q", got)
+	}
+	if got := btc.Endpoints[0].UserName; got != "user" {
+		t.Errorf("BTC endpoint 1 username = %q", got)
+	}
+	if got := btc.Endpoints[0].Password; got != "pass" {
+		t.Errorf("BTC endpoint 1 password = %q", got)
+	}
+	// endpoint 1 had no explicit priority, so it defaults to its position (1)
+	if got := btc.Endpoints[0].Priority; got != 1 {
+		t.Errorf("BTC endpoint 1 priority = %d, want 1", got)
+	}
+	if got := btc.Endpoints[1].RPCHost; got != "https://rpc.ankr.com/btc" {
+		t.Errorf("BTC endpoint 2 rpc_host = %q", got)
+	}
+	// explicit priority must be honored
+	if got := btc.Endpoints[1].Priority; got != 5 {
+		t.Errorf("BTC endpoint 2 priority = %d, want 5", got)
+	}
+
+	if len(gaia.Endpoints) != 1 {
+		t.Fatalf("expected 1 GAIA endpoint, got %d", len(gaia.Endpoints))
+	}
+	if got := gaia.Endpoints[0].CosmosGRPCHost; got != "new:9090" {
+		t.Errorf("GAIA endpoint 1 cosmos_grpc_host = %q, want override", got)
+	}
+	if !gaia.Endpoints[0].CosmosGRPCTLS {
+		t.Errorf("GAIA endpoint 1 cosmos_grpc_tls = false, want true")
+	}
+	if got := gaia.Endpoints[0].Name; got != "yaml" {
+		t.Errorf("GAIA endpoint 1 name = %q, want preserved yaml value", got)
+	}
+}

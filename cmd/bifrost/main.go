@@ -189,23 +189,22 @@ func main() {
 		if chainCfg.Disabled {
 			continue
 		}
-		for _, p := range chainCfg.GetProviders() {
-			restType := p.Type == config.ProviderTypeBlockchair || p.Type == config.ProviderTypeBlockCypher
-			if !restType && p.RPCHost == "" && p.APIHost == "" && p.CosmosGRPCHost == "" {
+		for _, e := range chainCfg.GetEndpoints() {
+			if e.RPCHost == "" && e.APIHost == "" && e.CosmosGRPCHost == "" {
 				log.Fatal().
 					Stringer("chain", chainCfg.ChainID).
-					Str("provider", p.Name).
-					Msg("no host configured for chain provider")
+					Str("endpoint", e.Name).
+					Msg("no host configured for chain endpoint")
 			}
 		}
-		// Normalize scheme on all provider hosts.
+		// Normalize scheme on all endpoint hosts.
 		// Must copy→mutate→reassign because cfgChains is a map of structs (not pointers).
-		for j, p := range chainCfg.Providers {
-			if p.RPCHost != "" && !strings.HasPrefix(p.RPCHost, "http") {
-				chainCfg.Providers[j].RPCHost = "http://" + p.RPCHost
+		for j, e := range chainCfg.Endpoints {
+			if e.RPCHost != "" && !strings.HasPrefix(e.RPCHost, "http") {
+				chainCfg.Endpoints[j].RPCHost = "http://" + e.RPCHost
 			}
-			if p.APIHost != "" && !strings.HasPrefix(p.APIHost, "http") {
-				chainCfg.Providers[j].APIHost = "http://" + p.APIHost
+			if e.APIHost != "" && !strings.HasPrefix(e.APIHost, "http") {
+				chainCfg.Endpoints[j].APIHost = "http://" + e.APIHost
 			}
 		}
 		// Also normalize legacy flat fields for backward compat.

@@ -12,13 +12,13 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
-// DialProvider dials a single provider using the appropriate auth method.
-func DialProvider(p config.ChainProviderConfig) (*ethclient.Client, error) {
-	host := p.RPCHost
+// DialEndpoint dials a single endpoint using the appropriate auth method.
+func DialEndpoint(e config.ChainEndpointConfig) (*ethclient.Client, error) {
+	host := e.RPCHost
 	switch {
-	case p.AuthorizationBearer != "":
+	case e.AuthorizationBearer != "":
 		authFn := func(h http.Header) error {
-			h.Set("Authorization", fmt.Sprintf("Bearer %s", p.AuthorizationBearer))
+			h.Set("Authorization", fmt.Sprintf("Bearer %s", e.AuthorizationBearer))
 			return nil
 		}
 		rc, err := rpc.DialOptions(context.Background(), host, rpc.WithHTTPAuth(authFn))
@@ -27,9 +27,9 @@ func DialProvider(p config.ChainProviderConfig) (*ethclient.Client, error) {
 		}
 		return ethclient.NewClient(rc), nil
 
-	case p.UserName != "" && p.Password != "":
+	case e.UserName != "" && e.Password != "":
 		authFn := func(h http.Header) error {
-			auth := base64.StdEncoding.EncodeToString([]byte(p.UserName + ":" + p.Password))
+			auth := base64.StdEncoding.EncodeToString([]byte(e.UserName + ":" + e.Password))
 			h.Set("Authorization", fmt.Sprintf("Basic %s", auth))
 			return nil
 		}
@@ -48,16 +48,16 @@ func DialProvider(p config.ChainProviderConfig) (*ethclient.Client, error) {
 	}
 }
 
-// DialWithFallbacks tries providers in slice order and returns the first that
-// connects successfully. Providers should be pre-sorted by priority (highest first).
-// Providers with empty RPCHost are skipped.
-func DialWithFallbacks(providers []config.ChainProviderConfig) (*ethclient.Client, error) {
+// DialWithFallbacks tries endpoints in slice order and returns the first that connects
+// successfully. Endpoints should be pre-sorted by priority (preferred first). Endpoints
+// with empty RPCHost are skipped.
+func DialWithFallbacks(endpoints []config.ChainEndpointConfig) (*ethclient.Client, error) {
 	var lastErr error
-	for _, p := range providers {
-		if p.RPCHost == "" {
+	for _, e := range endpoints {
+		if e.RPCHost == "" {
 			continue
 		}
-		cl, err := DialProvider(p)
+		cl, err := DialEndpoint(e)
 		if err != nil {
 			lastErr = err
 			continue
@@ -67,5 +67,5 @@ func DialWithFallbacks(providers []config.ChainProviderConfig) (*ethclient.Clien
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	return nil, fmt.Errorf("no EVM RPC providers configured")
+	return nil, fmt.Errorf("no EVM RPC endpoints configured")
 }

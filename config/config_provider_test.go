@@ -16,49 +16,48 @@ type ConfigSuite struct{}
 
 var _ = Suite(&ConfigSuite{})
 
-func (s *ConfigSuite) TestGetProvidersBackwardCompat(c *C) {
+func (s *ConfigSuite) TestGetEndpointsBackwardCompat(c *C) {
 	cfg := config.BifrostChainConfiguration{
 		ChainID:  common.BTCChain,
 		RPCHost:  "http://localhost:8332",
 		UserName: "user",
 		Password: "pass",
 	}
-	providers := cfg.GetProviders()
-	c.Assert(providers, HasLen, 1)
-	c.Assert(providers[0].Name, Equals, "primary")
-	c.Assert(providers[0].RPCHost, Equals, "http://localhost:8332")
-	c.Assert(providers[0].Priority, Equals, 1)
-	c.Assert(providers[0].UserName, Equals, "user")
-	c.Assert(providers[0].Password, Equals, "pass")
-	c.Assert(providers[0].Type, Equals, config.ProviderTypeBitcoinRPC)
+	endpoints := cfg.GetEndpoints()
+	c.Assert(endpoints, HasLen, 1)
+	c.Assert(endpoints[0].Name, Equals, "primary")
+	c.Assert(endpoints[0].RPCHost, Equals, "http://localhost:8332")
+	c.Assert(endpoints[0].Priority, Equals, 1)
+	c.Assert(endpoints[0].UserName, Equals, "user")
+	c.Assert(endpoints[0].Password, Equals, "pass")
 }
 
-func (s *ConfigSuite) TestGetProvidersUsesExplicitList(c *C) {
+func (s *ConfigSuite) TestGetEndpointsUsesExplicitList(c *C) {
 	cfg := config.BifrostChainConfiguration{
 		ChainID: common.BTCChain,
-		RPCHost: "http://localhost:8332", // ignored when Providers is set
-		Providers: []config.ChainProviderConfig{
-			{Name: "local", RPCHost: "http://localhost:8332", Priority: 1, Type: config.ProviderTypeBitcoinRPC},
-			{Name: "ankr", RPCHost: "https://rpc.ankr.com/btc/abc", Priority: 2, Type: config.ProviderTypeBitcoinRPC},
+		RPCHost: "http://localhost:8332", // ignored when Endpoints is set
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "local", RPCHost: "http://localhost:8332", Priority: 1},
+			{Name: "ankr", RPCHost: "https://rpc.ankr.com/btc/abc", Priority: 2},
 		},
 	}
-	providers := cfg.GetProviders()
-	c.Assert(providers, HasLen, 2)
-	c.Assert(providers[0].Name, Equals, "local")
-	c.Assert(providers[1].Name, Equals, "ankr")
+	endpoints := cfg.GetEndpoints()
+	c.Assert(endpoints, HasLen, 2)
+	c.Assert(endpoints[0].Name, Equals, "local")
+	c.Assert(endpoints[1].Name, Equals, "ankr")
 }
 
-func (s *ConfigSuite) TestGetProvidersReturnsSortedByPriority(c *C) {
+func (s *ConfigSuite) TestGetEndpointsReturnsSortedByPriority(c *C) {
 	cfg := config.BifrostChainConfiguration{
 		ChainID: common.BTCChain,
-		Providers: []config.ChainProviderConfig{
-			{Name: "ankr", RPCHost: "https://rpc.ankr.com/btc", Priority: 2, Type: config.ProviderTypeBitcoinRPC},
-			{Name: "local", RPCHost: "http://localhost:8332", Priority: 1, Type: config.ProviderTypeBitcoinRPC},
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "ankr", RPCHost: "https://rpc.ankr.com/btc", Priority: 2},
+			{Name: "local", RPCHost: "http://localhost:8332", Priority: 1},
 		},
 	}
-	providers := cfg.GetProviders()
-	c.Assert(providers[0].Name, Equals, "local")
-	c.Assert(providers[1].Name, Equals, "ankr")
+	endpoints := cfg.GetEndpoints()
+	c.Assert(endpoints[0].Name, Equals, "local")
+	c.Assert(endpoints[1].Name, Equals, "ankr")
 }
 
 func (s *ConfigSuite) TestFailoverConfigDefaults(c *C) {

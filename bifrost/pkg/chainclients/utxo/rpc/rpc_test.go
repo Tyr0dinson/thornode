@@ -1210,7 +1210,7 @@ func (s *RPCSuite) TestAllFallbacksFailReturnsError(c *C) {
 func (s *RPCSuite) TestIsRateLimitError(c *C) {
 	c.Assert(isRateLimitError(nil), Equals, false)
 	c.Assert(isRateLimitError(errors.New("429 too many requests")), Equals, true)
-	c.Assert(isRateLimitError(errors.New("blockcypher /blocks returned status 429: rate limited")), Equals, true)
+	c.Assert(isRateLimitError(errors.New("secondary endpoint returned status 429: rate limited")), Equals, true)
 	c.Assert(isRateLimitError(errors.New("500 internal server error")), Equals, false)
 }
 

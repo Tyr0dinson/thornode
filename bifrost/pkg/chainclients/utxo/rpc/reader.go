@@ -5,9 +5,11 @@ import (
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
-// UTXOReader is the read-only subset of *Client that fallback providers must implement.
-// Write operations (SendRawTransaction, wallet imports, CreateWallet, ListUnspent) are
-// deliberately excluded — hosted providers (Blockchair, BlockCypher) do not support them.
+// UTXOReader is the read-only subset of *Client that failover endpoints serve. Write
+// operations (SendRawTransaction, wallet imports, CreateWallet, ListUnspent) are
+// deliberately excluded — they are only ever issued against the primary endpoint. A
+// fallback is itself a full *Client pointing at a secondary node daemon, so it satisfies
+// this interface; only reads are routed to it when the primary is unavailable.
 type UTXOReader interface {
 	GetBlockCount() (int64, error)
 	GetBlockHash(height int64) (string, error)

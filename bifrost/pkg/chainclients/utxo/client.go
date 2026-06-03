@@ -25,8 +25,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/blockchair"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/blockcypher"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -121,17 +119,22 @@ func NewClient(
 
 	logger := log.Logger.With().Stringer("chain", cfg.ChainID).Logger()
 
-	// create rpc client with optional REST fallbacks
+	// Build the rpc client from the configured endpoints. The highest-priority endpoint
+	// is the primary; any remaining endpoints become automatic failover targets. Each
+	// endpoint is a full node daemon (self-hosted or an external provider), so failover
+	// reads are served by a peer rpc.Client rather than a partial REST adapter.
 	failoverCfg := cfg.GetFailoverConfig()
+	endpoints := cfg.GetEndpoints()
+	primary := endpoints[0]
 	rpcClient, err := rpc.NewClientWithFallbacks(
-		cfg.RPCHost,
-		cfg.UserName,
-		cfg.Password,
+		primary.RPCHost,
+		primary.UserName,
+		primary.Password,
 		cfg.MaxRPCRetries,
 		cfg.BlockScanner.HTTPRequestTimeout,
 		cfg.ChainID,
 		logger,
-		buildUTXOFallbacks(cfg.ChainID, cfg.GetProviders(), logger),
+		buildUTXOFallbacks(endpoints[1:], cfg.MaxRPCRetries, cfg.BlockScanner.HTTPRequestTimeout, cfg.ChainID, logger),
 		failoverCfg.RateLimitBackoff,
 	)
 	if err != nil {
@@ -207,85 +210,31 @@ func NewClient(
 	return c, nil
 }
 
-const maxProviderResponseBytes = 10 * 1024 * 1024 // 10 MB
-
-// buildUTXOFallbacks constructs UTXOReader adapters for REST providers in the config.
-// RPC-type entries are skipped — the primary rpc.Client already handles those.
-func buildUTXOFallbacks(chain common.Chain, providers []config.ChainProviderConfig, log zerolog.Logger) []rpc.UTXOReader {
+// buildUTXOFallbacks constructs read fallback clients from the given secondary endpoints.
+// Each fallback is a full rpc.Client pointing at another node daemon (self-hosted or an
+// external provider exposing the same RPC) — only read methods are routed to it during
+// failover, while writes always go to the primary.
+func buildUTXOFallbacks(endpoints []config.ChainEndpointConfig, maxRetries int, timeout time.Duration, chain common.Chain, log zerolog.Logger) []rpc.UTXOReader {
 	var fallbacks []rpc.UTXOReader
-	for _, p := range providers {
-		switch p.Type {
-		case config.ProviderTypeBlockchair:
-			slug := blockchairChainSlug(chain)
-			if slug == "" {
-				log.Warn().Str("chain", chain.String()).Str("provider", p.Name).Msg("blockchair does not support chain, skipping")
-				continue
-			}
-			host := p.RPCHost
-			if host == "" {
-				host = p.APIHost
-			}
-			if host == "" {
-				host = "https://api.blockchair.com"
-			}
-			key := p.AuthorizationBearer
-			if key == "" {
-				key = p.Password
-			}
-			fallbacks = append(fallbacks, blockchair.NewClient(host, slug, key, maxProviderResponseBytes))
-		case config.ProviderTypeBlockCypher:
-			coin, chainStr := blockcypherCoinChain(chain)
-			if coin == "" {
-				log.Warn().Str("chain", chain.String()).Str("provider", p.Name).Msg("blockcypher does not support chain, skipping")
-				continue
-			}
-			host := p.RPCHost
-			if host == "" {
-				host = p.APIHost
-			}
-			if host == "" {
-				host = "https://api.blockcypher.com/v1"
-			}
-			key := p.AuthorizationBearer
-			if key == "" {
-				key = p.Password
-			}
-			fallbacks = append(fallbacks, blockcypher.NewClient(host, coin, chainStr, key, maxProviderResponseBytes))
-		default:
-			// bitcoin-rpc / zcash-rpc secondary nodes: not yet supported as fallbacks
+	for _, e := range endpoints {
+		host := e.RPCHost
+		if host == "" {
+			host = e.APIHost
 		}
+		if host == "" {
+			log.Warn().Stringer("chain", chain).Str("endpoint", e.Name).
+				Msg("endpoint has no rpc host, skipping fallback")
+			continue
+		}
+		cl, err := rpc.NewClient(host, e.UserName, e.Password, maxRetries, timeout, chain, log)
+		if err != nil {
+			log.Warn().Err(err).Stringer("chain", chain).Str("endpoint", e.Name).
+				Msg("failed to create fallback rpc client, skipping")
+			continue
+		}
+		fallbacks = append(fallbacks, cl)
 	}
 	return fallbacks
-}
-
-func blockchairChainSlug(chain common.Chain) string {
-	switch chain {
-	case common.BTCChain:
-		return "bitcoin"
-	case common.LTCChain:
-		return "litecoin"
-	case common.BCHChain:
-		return "bitcoin-cash"
-	case common.DOGEChain:
-		return "dogecoin"
-	case common.ZECChain:
-		return "zcash"
-	default:
-		return ""
-	}
-}
-
-func blockcypherCoinChain(chain common.Chain) (coin, chainStr string) {
-	switch chain {
-	case common.BTCChain:
-		return "btc", "main"
-	case common.LTCChain:
-		return "ltc", "main"
-	case common.DOGEChain:
-		return "doge", "main"
-	default:
-		return "", "" // BCH and ZEC not supported by BlockCypher
-	}
 }
 
 // GetConfig returns the chain configuration.

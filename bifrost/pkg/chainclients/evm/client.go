@@ -124,8 +124,8 @@ func NewEVMClient(
 
 	clog := log.With().Str("module", "evm").Stringer("chain", cfg.ChainID).Logger()
 
-	// create rpc client — try providers in priority order until one connects
-	ethClient, err := evm.DialWithFallbacks(cfg.GetProviders())
+	// create rpc client — try endpoints in priority order until one connects
+	ethClient, err := evm.DialWithFallbacks(cfg.GetEndpoints())
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial EVM rpc: %w", err)
 	}
