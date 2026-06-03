@@ -1743,37 +1743,6 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 // the sidecar, such as the spend tx not being indexed yet or the sidecar being
 // temporarily unavailable.
 func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) bool {
-
-	interval := c.spentRefsRetryInterval
-	if interval <= 0 {
-		interval = constants.ThorchainBlockTime
-	}
-	maxAttempts := c.spentRefsRetryMaxAttempts
-	if maxAttempts <= 0 {
-		maxAttempts = defaultXMRSpentRefsRetryMaxAttempts
-	}
-
-	c.logger.Info().
-		Str("tx_hash", tx.Tx.ID.String()).
-		Str("vault", tx.ObservedPubKey.String()).
-		Dur("interval", interval).
-		Int("max_attempts", maxAttempts).
-		Msg("queued xmr spent output refs retry")
-
-	// Retry asynchronously so callers that still need to broadcast the tx, such
-	// as local sign/consolidation paths, are not blocked waiting for the tx to
-	// appear in the Monero daemon.
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		c.retrySpentOutputRefs(tx, interval, maxAttempts)
-	}()
-}
-
-// applySpentOutputRefsOnce performs one verified mark-spent attempt. It
-// returns true only for transient states where the sidecar cannot verify the
-// spend yet, such as the Monero tx not being available from the daemon.
-func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) bool {
 	if err := validateXMRSpentRefsForSidecar(tx); err != nil {
 		c.logger.Warn().
 			Err(err).
@@ -1835,42 +1804,6 @@ func isRetryableSpentRefsSidecarErr(err error) bool {
 // window. This covers peer pre-quorum imports where the XMR spend may not be
 // mined/indexed yet or where the local sidecar is temporarily unavailable, and
 // Thornode catchup cannot help until the refs are committed.
-func (c *Client) retrySpentOutputRefs(tx common.ObservedTx, interval time.Duration, maxAttempts int) {
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		// Wait before each retry so a just-gossiped outbound has time to appear
-		// in the Monero daemon/sidecar transaction lookup.
-		select {
-		case <-c.stopchan:
-			return
-		case <-timer.C:
-		}
-
-		if !c.applySpentOutputRefsOnce(tx) {
-			return
-		}
-		if attempt == maxAttempts {
-			break
-		}
-		// Keep the retry cadence simple and bounded; successful committed
-		// catchup can still reconcile the same refs independently later.
-		timer.Reset(interval)
-	}
-
-	c.logger.Warn().
-		Str("tx_hash", tx.Tx.ID.String()).
-		Str("vault", tx.ObservedPubKey.String()).
-		Int("attempts", maxAttempts).
-		Msg("xmr spent output refs retry exhausted")
-	return false
-}
-
-// retrySpentOutputRefs keeps retrying transient sidecar 404s for a bounded
-// window. This covers peer pre-quorum imports where the XMR spend may not be
-// mined/indexed yet and Thornode catchup cannot help until the refs are
-// committed.
 func (c *Client) retrySpentOutputRefs(tx common.ObservedTx, interval time.Duration, maxAttempts int) {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
