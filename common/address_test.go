@@ -3,7 +3,6 @@ package common
 import (
 	"fmt"
 
-	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
 )
 
@@ -322,7 +321,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 				_, found := testChains[other]
 
 				equal := false
-				if chain.OneOf(common.TAOChain, common.DOTChain) && chain == other {
+				if chain.OneOf(TAOChain, DOTChain) && chain.Equals(other) {
 					// different Substrate chains may use the same SS58 prefix
 					// in MockNet and share the same address
 					equal = chain.SS58Prefix() == other.SS58Prefix()
