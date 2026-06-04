@@ -160,6 +160,7 @@ type Client struct {
 	lastSolvencyCheckHeight *atomic.Int64
 	wg                      *sync.WaitGroup
 	stopchan                chan struct{}
+	lifecycleMu             sync.Mutex
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
@@ -575,7 +576,9 @@ func (c *Client) getSpentOutputCatchupVaultKeys() (common.PubKeys, error) {
 
 func (c *Client) Stop() {
 	c.blockScanner.Stop()
+	c.lifecycleMu.Lock()
 	close(c.stopchan)
+	c.lifecycleMu.Unlock()
 	c.wg.Wait()
 }
 
@@ -1731,6 +1734,31 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 	// Retry asynchronously so callers that still need to broadcast the tx, such
 	// as local sign/consolidation paths, are not blocked waiting for the tx to
 	// appear in the Monero daemon.
+	c.queueSpentOutputRefsRetry(tx, interval, maxAttempts)
+}
+
+func (c *Client) queueSpentOutputRefsRetry(tx common.ObservedTx, interval time.Duration, maxAttempts int) {
+	if c.wg == nil || c.stopchan == nil {
+		c.logger.Warn().
+			Str("tx_hash", tx.Tx.ID.String()).
+			Str("vault", tx.ObservedPubKey.String()).
+			Msg("skip xmr spent output refs retry: client lifecycle is not initialized")
+		return
+	}
+
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
+	select {
+	case <-c.stopchan:
+		c.logger.Debug().
+			Str("tx_hash", tx.Tx.ID.String()).
+			Str("vault", tx.ObservedPubKey.String()).
+			Msg("skip xmr spent output refs retry: client is stopping")
+		return
+	default:
+	}
+
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -1753,6 +1781,13 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) bool {
 	}
 	vaultPubKey := tx.ObservedPubKey.String()
 	txHash := tx.Tx.ID.String()
+	if c.sidecar == nil {
+		c.logger.Warn().
+			Str("tx_hash", txHash).
+			Str("vault", vaultPubKey).
+			Msg("skip xmr spent output refs: sidecar is not initialized")
+		return false
+	}
 
 	refs := xmrSpentRefsToSidecar(tx.SpentOutputRefs)
 	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, xmrOutboundMeta(tx.Tx))

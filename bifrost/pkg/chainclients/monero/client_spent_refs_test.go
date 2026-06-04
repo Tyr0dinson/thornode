@@ -443,6 +443,100 @@ func TestApplySpentOutputRefsDoesNotRetryTerminalSidecarError(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
+func TestApplySpentOutputRefsSkipsWhenSidecarMissing(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "test-vault-apply-spent-no-sidecar")
+	vaultAddr, err := vaultPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+	spendTxHash := testXMRHash("apply-spent-output-refs-no-sidecar")
+
+	c := &Client{
+		chain:  common.XMRChain,
+		logger: testLogger(),
+	}
+
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          common.TxID(spendTxHash),
+			Chain:       common.XMRChain,
+			FromAddress: vaultAddr,
+			ToAddress:   testOutboundXMRDestination(),
+			Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50))),
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		},
+		100,
+		vaultPubKey,
+		100,
+	)
+	obsTx.SpentOutputRefs = []common.OutputRef{*testXMROutputRef("spent-no-sidecar-a", 0, spendTxHash)}
+
+	require.NotPanics(t, func() {
+		c.ApplySpentOutputRefs(obsTx)
+	})
+}
+
+func TestApplySpentOutputRefsDoesNotQueueRetryAfterStop(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "test-vault-apply-spent-stopped")
+	vaultAddr, err := vaultPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+	spendTxHash := testXMRHash("apply-spent-output-refs-stopped")
+
+	var mu sync.Mutex
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/monero/outputs/mark-spent" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		http.Error(w, "tx not mined yet", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+
+	stopchan := make(chan struct{})
+	close(stopchan)
+	c := &Client{
+		chain:                     common.XMRChain,
+		sidecar:                   signer,
+		logger:                    testLogger(),
+		wg:                        &sync.WaitGroup{},
+		stopchan:                  stopchan,
+		spentRefsRetryInterval:    10 * time.Millisecond,
+		spentRefsRetryMaxAttempts: 3,
+	}
+
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          common.TxID(spendTxHash),
+			Chain:       common.XMRChain,
+			FromAddress: vaultAddr,
+			ToAddress:   testOutboundXMRDestination(),
+			Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50))),
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		},
+		100,
+		vaultPubKey,
+		100,
+	)
+	obsTx.SpentOutputRefs = []common.OutputRef{*testXMROutputRef("spent-stopped-a", 0, spendTxHash)}
+
+	c.ApplySpentOutputRefs(obsTx)
+	c.wg.Wait()
+	time.Sleep(25 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, calls, "closed stop channel should suppress async retries")
+}
+
 // TestApplySpentOutputRefsFromTxInItemUsesObservationHeight verifies the
 // observer-to-sidecar conversion preserves the observed tx hash/ref set when a
 // TxInItem is reconstructed into an ObservedTx for spent-ref import.
