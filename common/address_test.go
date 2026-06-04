@@ -321,7 +321,8 @@ func (s *AddressSuite) TestAddress(c *C) {
 				_, found := testChains[other]
 
 				equal := false
-				if chain.OneOf(TAOChain, DOTChain) {
+
+				if chain.OneOf(TAOChain, DOTChain) && other.OneOf(TAOChain, DOTChain) {
 					// different Substrate chains may use the same SS58 prefix
 					// in MockNet and share the same address
 					equal = chain.SS58Prefix() == other.SS58Prefix()
