@@ -151,18 +151,6 @@ func (c Chain) IsEVM() bool {
 	return false
 }
 
-// IsSubstrate returns true if given chain is an Substrate chain.
-// See working definition of a "Substrate" chain in the
-// `GetSubstrateChains` function description
-func (c Chain) IsSubstrate() bool {
-	for _, chain := range GetSubstrateChains() {
-		if c.Equals(chain) {
-			return true
-		}
-	}
-	return false
-}
-
 // IsUTXO returns true if given chain is a UTXO chain.
 func (c Chain) IsUTXO() bool {
 	utxoChains := GetUTXOChains()

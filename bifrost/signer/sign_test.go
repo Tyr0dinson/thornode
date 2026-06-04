@@ -652,7 +652,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	tois := sign.storage.List()
 	c.Assert(err, IsNil)
 	c.Assert(tois, HasLen, 1)
-	c.Assert(tois[0].Checkpoint, DeepEquals, []byte(msg))
+	c.Assert(tois[0].Checkpoint, IsNil)
 	c.Assert(len(tois[0].SignedTx), Equals, 64)
 
 	// second attempt should not sign and still fail broadcast
@@ -664,7 +664,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	tois = sign.storage.List()
 	c.Assert(err, IsNil)
 	c.Assert(tois, HasLen, 1)
-	c.Assert(tois[0].Checkpoint, DeepEquals, []byte(msg))
+	c.Assert(tois[0].Checkpoint, IsNil)
 	c.Assert(len(tois[0].SignedTx), Equals, 64)
 
 	// third attempt should not sign and succeed broadcast
@@ -683,16 +683,11 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	ks.Stop()
 }
 
-// TestBroadcastRetry_Substrate exercises the substrate-specific branches in
-// signAndBroadcast (sign.go:707-747) that the existing ETH-driven
-// TestBroadcastRetry never reaches:
-//
-//   - errors.Is(err, ErrAbandonTxOut) → storage.Remove(item).
-//   - tx.Chain.IsSubstrate() && len(SignedTx) > 0 && Checkpoint != nil →
-//     clear SignedTx and Observation, preserve Checkpoint, return checkpoint.
-//
-// The second branch implies the next signing cycle re-signs (signCount
-// increments) — a behavior asymmetric to the ETH path.
+// TestBroadcastRetry_Substrate verifies a substrate outbound follows the generic
+// broadcast-retry path: a failed broadcast preserves the stored SignedTx, and the
+// next cycle re-broadcasts it WITHOUT re-signing — so the original mortal era is
+// kept and a tx that cannot land expires on its own rather than being renewed
+// under a fresh era. It also covers ErrAbandonTxOut, which removes the item.
 func (s *SignSuite) TestBroadcastRetry_Substrate(c *C) {
 	tests := []struct {
 		name                string
@@ -709,12 +704,12 @@ func (s *SignSuite) TestBroadcastRetry_Substrate(c *C) {
 			wantStorageEmpty:   true,
 		},
 		{
-			name:                "broadcast failure clears SignedTx, preserves Checkpoint, re-signs on retry",
+			name:                "broadcast failure preserves SignedTx and re-broadcasts without re-signing",
 			broadcastErr:        nil, // default "broadcast failed"
 			broadcastFailCount:  1,   // 1st cycle fails, 2nd succeeds
 			wantStorageEmpty:    false,
 			runSecondCycle:      true,
-			wantSignCountAfter2: 2,
+			wantSignCountAfter2: 1, // re-broadcast path: SignTx is NOT called again
 		},
 	}
 
@@ -776,13 +771,12 @@ func (s *SignSuite) TestBroadcastRetry_Substrate(c *C) {
 			continue
 		}
 
-		// Substrate-specific assertion: SignedTx cleared, Checkpoint preserved.
+		// A failed broadcast keeps the signed tx for re-broadcast — the same as
+		// every other chain, with no substrate-specific clearing.
 		tois := sign.storage.List()
 		c.Assert(tois, HasLen, 1, Commentf("%s: storage should retain item", tt.name))
-		c.Check(len(tois[0].SignedTx), Equals, 0,
-			Commentf("%s: SignedTx should be cleared", tt.name))
-		c.Check(tois[0].Checkpoint, NotNil,
-			Commentf("%s: Checkpoint should be preserved", tt.name))
+		c.Check(len(tois[0].SignedTx) > 0, Equals, true,
+			Commentf("%s: SignedTx should be preserved for re-broadcast", tt.name))
 
 		if !tt.runSecondCycle {
 			close(sign.stopChan)
@@ -791,15 +785,12 @@ func (s *SignSuite) TestBroadcastRetry_Substrate(c *C) {
 			continue
 		}
 
-		// Second cycle: the substrate path re-signs because SignedTx was
-		// cleared, but tai.Checkpoint should now carry the preserved bytes.
-		// Flip the mock's assertion so SignTx panics if the checkpoint is
-		// missing — proves the checkpoint flowed through.
-		cc.assertCheckpoint = true
+		// Second cycle: the stored SignedTx is re-broadcast directly, so SignTx is
+		// not called again (signCount unchanged) and the broadcast now succeeds.
 		sign.processTransactions()
 		sign.pipeline.Wait()
 		c.Check(cc.signCount, Equals, tt.wantSignCountAfter2,
-			Commentf("%s: substrate path should re-sign on retry, got signCount=%d", tt.name, cc.signCount))
+			Commentf("%s: retry should re-broadcast, not re-sign, got signCount=%d", tt.name, cc.signCount))
 		c.Check(sign.storage.List(), HasLen, 0,
 			Commentf("%s: storage should be empty after successful broadcast", tt.name))
 

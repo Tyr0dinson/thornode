@@ -1048,7 +1048,6 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		s.logger.Info().Str("memo", tx.Memo).Msg("retrying broadcast of already signed tx")
 		signedTx = item.SignedTx
 		observation = item.Observation
-		checkpoint = item.Checkpoint // preserve for re-sign if broadcast fails again
 	} else {
 		tx.SigningID = item.Key()
 		startKeySign := time.Now()
@@ -1061,7 +1060,6 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 		// store immediately after a successful sign so the signed payload is saved even if broadcast crashes
 		item.SignedTx = signedTx
-		item.Checkpoint = checkpoint // persist for mortal-era re-sign detection on retry
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
 		}
@@ -1092,32 +1090,13 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 			return nil, nil, err
 		}
 
-		// Substrate chains (DOT, TAO) use mortal-era transactions that can expire
-		// before the signing window ends. On broadcast failure, clear SignedTx so
-		// the next attempt re-signs with a fresh era, and preserve the checkpoint
-		// so the re-sign reuses the same nonce. Other chains keep the stored
-		// signed tx and retry broadcast unchanged.
-		if tx.Chain.IsSubstrate() && len(item.SignedTx) > 0 && item.Checkpoint != nil {
-			s.logger.Info().
-				Str("memo", tx.Memo).
-				Msg("clearing stored signed tx for re-sign on next attempt")
-			item.SignedTx = nil
-			item.Observation = nil
-		} else {
-			item.SignedTx = signedTx
-			item.Observation = observation
-		}
+		item.SignedTx = signedTx
+		item.Observation = observation
 
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with signed tx")
 		}
 
-		if tx.Chain.IsSubstrate() {
-			// Return the checkpoint so it is preserved on the item for chains that use
-			// mortal-era (expiring) transactions. If the stored SignedTx expires, the
-			// checkpoint allows re-signing with the same nonce on a subsequent attempt.
-			return checkpoint, observation, err
-		}
 		return nil, observation, err
 	}
 	s.logger.Info().

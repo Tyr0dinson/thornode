@@ -400,11 +400,10 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		nil,
 	)
 
-	// Return checkpoint so the signer can retry with the same nonce if broadcast
-	// fails. Substrate extrinsics use a mortal era (configured per chain via
-	// MortalEraPeriod) and the signer pipeline stores SignedTx for broadcast retry.
-	// Once the era expires, the checkpoint allows re-signing with the same nonce
-	// against a fresh mortal era.
+	// Return the checkpoint with the signed extrinsic. Failed broadcasts are
+	// retried by re-broadcasting the stored SignedTx rather than re-signing, so the
+	// mortal era is preserved and an unlandable tx expires on its own. The checkpoint
+	// is only used to reuse this nonce if a keysign-failure retry must re-sign.
 	return rawTx, checkpointBytes, txIn, nil
 }
 
@@ -683,9 +682,9 @@ func (c *Client) reserveNonce(tx ttypes.TxOutItem, vaultAddr string, currentHeig
 			}
 		} else {
 			if currentHeight >= meta.BlockHeight+period {
-				// If cached nonce is ahead of on-chain and mortalEraPeriod blocks have passed,
-				// any pending transactions must have expired. Reset to on-chain nonce to recover
-				// from broadcast failures that left the cache stuck ahead.
+				// If the cached nonce is ahead of on-chain and MortalEraPeriod blocks have
+				// passed, any pending transaction has expired without landing. Reset to the
+				// on-chain nonce to recover from a stuck outbound that left the cache ahead.
 				c.logger.Warn().
 					Str("vault", vaultAddr).
 					Uint32("cached", meta.Nonce).
