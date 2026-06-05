@@ -58,6 +58,22 @@ func TestThorchainAmountToAtomicNil(t *testing.T) {
 	}
 }
 
+func TestEnforceXMRMaxGas(t *testing.T) {
+	t.Parallel()
+
+	if err := enforceXMRMaxGas(101, 100); err == nil {
+		t.Fatal("expected over-cap fee to be rejected")
+	} else if !strings.Contains(err.Error(), "exceeds scheduled max gas") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := enforceXMRMaxGas(100, 100); err != nil {
+		t.Fatalf("expected fee equal to cap to pass: %v", err)
+	}
+	if err := enforceXMRMaxGas(101, 0); err != nil {
+		t.Fatalf("expected zero cap to preserve legacy behavior: %v", err)
+	}
+}
+
 func TestCoinbaseThorchainConversion(t *testing.T) {
 	t.Parallel()
 

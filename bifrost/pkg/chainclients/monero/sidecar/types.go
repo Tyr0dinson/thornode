@@ -69,6 +69,7 @@ type SignPrepareReq struct {
 	MaxInputs                   int64      `json:"max_inputs,omitempty"`
 	DustThreshold               uint64     `json:"dust_threshold,omitempty"`
 	MaxSelectedInputValueAtomic uint64     `json:"max_selected_input_value_atomic,omitempty"`
+	MaxGasAtomic                uint64     `json:"max_gas_atomic,omitempty"`
 }
 
 type SignPrepareResp struct {

@@ -98,6 +98,7 @@ type validatedSignRequest struct {
 	fromAddress  string
 	toAddress    string
 	amountAtomic uint64
+	maxGasAtomic uint64
 }
 
 type consolidationSettings struct {
@@ -1391,6 +1392,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		MaxInputs:                   maxInputs,
 		DustThreshold:               dustThreshold,
 		MaxSelectedInputValueAtomic: maxSelectedInputValueAtomic,
+		MaxGasAtomic:                signReqCtx.maxGasAtomic,
 	}
 	resp, err := c.tssServer.FrostKeySign(frostReq, sidecar.NewFrostAdapter(c.sidecar))
 	if err != nil {
@@ -1409,6 +1411,9 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	msgID := strings.TrimSpace(resp.MsgID)
 	if msgID == "" {
 		return nil, nil, nil, fmt.Errorf("FROST keysign returned empty msg_id")
+	}
+	if err := enforceXMRMaxGas(resp.FeeAtomic, signReqCtx.maxGasAtomic); err != nil {
+		return nil, nil, nil, err
 	}
 	if validateErr := tssp.ValidateFrostEventuality(
 		frostReq,
@@ -1508,7 +1513,11 @@ func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requ
 		return validatedSignRequest{}, fmt.Errorf("derived monero vault address %s is not on %s", fromAddress, c.chain.String())
 	}
 
-	if err = c.ensureVaultBalance(vaultPubKey, amountAtomic, tx.MaxGas); err != nil {
+	maxGasAtomic, err := maxGasToAtomic(tx.MaxGas)
+	if err != nil {
+		return validatedSignRequest{}, fmt.Errorf("fail to convert xmr max gas for signing: %w", err)
+	}
+	if err = c.ensureVaultBalance(vaultPubKey, amountAtomic, maxGasAtomic); err != nil {
 		return validatedSignRequest{}, err
 	}
 
@@ -1517,6 +1526,7 @@ func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requ
 		fromAddress:  fromAddress,
 		toAddress:    tx.ToAddress.String(),
 		amountAtomic: amountAtomic,
+		maxGasAtomic: maxGasAtomic,
 	}, nil
 }
 
@@ -1527,7 +1537,7 @@ func isValidXMROutboundDestination(chain common.Chain, address common.Address) b
 	return common.IsSupportedXMRAddress(address.String())
 }
 
-func (c *Client) ensureVaultBalance(vaultPubKey common.PubKey, amountAtomic uint64, maxGas common.Gas) error {
+func (c *Client) ensureVaultBalance(vaultPubKey common.PubKey, amountAtomic, maxGasAtomic uint64) error {
 	if c.sidecar == nil {
 		return nil
 	}
@@ -1541,11 +1551,6 @@ func (c *Client) ensureVaultBalance(vaultPubKey common.PubKey, amountAtomic uint
 		return fmt.Errorf("fail to verify xmr vault balance for %s: %w", vaultPubKey.String(), err)
 	}
 	availableAtomic := spendableBalanceAtomic(balance)
-
-	maxGasAtomic, err := maxGasToAtomic(maxGas)
-	if err != nil {
-		return fmt.Errorf("fail to convert xmr max gas for balance guard: %w", err)
-	}
 
 	requiredAtomic := amountAtomic
 	if maxGasAtomic > 0 {
@@ -1571,6 +1576,13 @@ func (c *Client) ensureVaultBalance(vaultPubKey common.PubKey, amountAtomic uint
 	}
 
 	return nil
+}
+
+func enforceXMRMaxGas(actualFeeAtomic, maxGasAtomic uint64) error {
+	if maxGasAtomic == 0 || actualFeeAtomic <= maxGasAtomic {
+		return nil
+	}
+	return fmt.Errorf("actual xmr fee %d atomic exceeds scheduled max gas %d atomic", actualFeeAtomic, maxGasAtomic)
 }
 
 func spendableBalanceAtomic(balance sidecar.Balance) uint64 {

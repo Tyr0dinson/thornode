@@ -194,6 +194,9 @@ func TestSignTxPassesXMRDustThresholdInAtomicUnits(t *testing.T) {
 		Coins: common.Coins{
 			common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
 		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(2)),
+		},
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
@@ -211,6 +214,13 @@ func TestSignTxPassesXMRDustThresholdInAtomicUnits(t *testing.T) {
 	}
 	if tssServer.lastReq.DustThreshold != expected {
 		t.Fatalf("expected atomic dust threshold %d, got %d", expected, tssServer.lastReq.DustThreshold)
+	}
+	expectedMaxGas, err := thorchainAmountToAtomic(cosmos.NewUint(2))
+	if err != nil {
+		t.Fatalf("convert max gas: %v", err)
+	}
+	if tssServer.lastReq.MaxGasAtomic != expectedMaxGas {
+		t.Fatalf("expected atomic max gas %d, got %d", expectedMaxGas, tssServer.lastReq.MaxGasAtomic)
 	}
 }
 

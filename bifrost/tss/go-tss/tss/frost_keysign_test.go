@@ -173,6 +173,16 @@ func TestFrostKeySignIdentityIncludesSpendConstraints(t *testing.T) {
 		t.Fatalf("expected max selected input value to affect msg id")
 	}
 
+	changedMaxGas := base
+	changedMaxGas.MaxGasAtomic = 123
+	maxGasID, err := FrostKeySignMsgID(changedMaxGas)
+	if err != nil {
+		t.Fatalf("max gas msg id: %v", err)
+	}
+	if baseID == maxGasID {
+		t.Fatalf("expected max gas to affect msg id")
+	}
+
 	basePlan, err := FrostPlanHash(base, "fixed-msg-id")
 	if err != nil {
 		t.Fatalf("base plan hash: %v", err)
@@ -199,6 +209,13 @@ func TestFrostKeySignIdentityIncludesSpendConstraints(t *testing.T) {
 	}
 	if basePlan == selectedValuePlan {
 		t.Fatalf("expected max selected input value to affect plan hash")
+	}
+	maxGasPlan, err := FrostPlanHash(changedMaxGas, "fixed-msg-id")
+	if err != nil {
+		t.Fatalf("max gas plan hash: %v", err)
+	}
+	if basePlan == maxGasPlan {
+		t.Fatalf("expected max gas to affect plan hash")
 	}
 }
 
