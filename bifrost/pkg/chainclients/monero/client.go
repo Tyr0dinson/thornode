@@ -1412,7 +1412,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if msgID == "" {
 		return nil, nil, nil, fmt.Errorf("FROST keysign returned empty msg_id")
 	}
-	if err := enforceXMRMaxGas(resp.FeeAtomic, signReqCtx.maxGasAtomic); err != nil {
+	if err = enforceXMRMaxGas(resp.FeeAtomic, signReqCtx.maxGasAtomic); err != nil {
 		return nil, nil, nil, err
 	}
 	if validateErr := tssp.ValidateFrostEventuality(
