@@ -1570,7 +1570,7 @@ func (s TxOutStoreSuite) TestPrepareTxOutItemExcludesCompromisedVaults(c *C) {
 		ToAddress: GetRandomETHAddress(),
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
-	})
+	}, defaultTxOutPrepareOptions())
 	c.Assert(err, IsNil)
 	c.Assert(outputs, HasLen, 1)
 	c.Assert(outputs[0].VaultPubKey.Equals(activeCompromisedPubKey), Equals, false)
