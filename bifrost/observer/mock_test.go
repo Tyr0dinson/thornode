@@ -288,27 +288,6 @@ func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObse
 	return nil, nil
 }
 
-func (m *MockThorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
-	if m.getVaultFunc != nil {
-		return m.getVaultFunc(pubkey)
-	}
-	return stypes.Vault{}, nil
-}
-
-func (m *MockThorchainBridge) GetKeysign(blockHeight int64, pk string) (tctypes.TxOut, error) {
-	if m.getKeysignFunc != nil {
-		return m.getKeysignFunc(blockHeight, pk)
-	}
-	return tctypes.TxOut{}, nil
-}
-
-func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	if m.getObservedTxVoterFunc != nil {
-		return m.getObservedTxVoterFunc(txID)
-	}
-	return nil, nil
-}
-
 type MockStream struct {
 	network.Stream
 	reader io.Reader
@@ -462,27 +441,6 @@ func (m *MockThorchainBridge2) GetKeysignPolicy(pubKey common.PubKey, blockHeigh
 
 // GetVault allows bridge2 tests to inject vault data only when the path under
 // test needs it.
-func (m *MockThorchainBridge2) GetVault(pubkey string) (stypes.Vault, error) {
-	if m.getVaultFunc != nil {
-		return m.getVaultFunc(pubkey)
-	}
-	return stypes.Vault{}, nil
-}
-
-func (m *MockThorchainBridge2) GetKeysign(blockHeight int64, pk string) (tctypes.TxOut, error) {
-	if m.getKeysignFunc != nil {
-		return m.getKeysignFunc(blockHeight, pk)
-	}
-	return tctypes.TxOut{}, nil
-}
-
-func (m *MockThorchainBridge2) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	if m.getObservedTxVoterFunc != nil {
-		return m.getObservedTxVoterFunc(txID)
-	}
-	return nil, nil
-}
-
 func (m *MockThorchainBridge2) GetVault(pubkey string) (stypes.Vault, error) {
 	if m.getVaultFunc != nil {
 		return m.getVaultFunc(pubkey)
