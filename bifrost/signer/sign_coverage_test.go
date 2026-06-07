@@ -2166,6 +2166,10 @@ func (s *SignCoverageSuite) TestProcessTransaction_Round7Error(c *C) {
 			Coins: common.Coins{
 				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
 			},
+			// The keysign request derives its policy height from the outbound's
+			// scheduled height, which must be positive; without it the keysign
+			// fails before reaching TSS and never produces a terminal-round blame.
+			Height: 90,
 		},
 		Height: 90,
 	}
