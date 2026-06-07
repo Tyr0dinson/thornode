@@ -163,7 +163,7 @@ func (s *KeySign) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey str
 func (s *KeySign) authorizeRemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
 	switch intent.Type {
 	case SigningIntentTxOut:
-		return s.authorizeTxOutSign(algo, poolPubKey, intent)
+		return s.authorizeScheduledTxOutSign(algo, poolPubKey, intent)
 	case SigningIntentKeygenVerification:
 		return authorizeKeygenVerificationSign(msg, algo, poolPubKey, intent)
 	case SigningIntentEVMUnstuck:
@@ -173,12 +173,6 @@ func (s *KeySign) authorizeRemoteSign(msg []byte, algo common.SigningAlgo, poolP
 	default:
 		return UnauthorizedSignRequestError{Reason: "missing signing intent"}
 	}
-}
-
-// authorizeTxOutSign verifies that the requested signature maps to a currently
-// scheduled THORChain TxOut for the same height and vault.
-func (s *KeySign) authorizeTxOutSign(algo common.SigningAlgo, poolPubKey string, intent SigningIntent) error {
-	return s.authorizeScheduledTxOutSign(algo, poolPubKey, intent)
 }
 
 // authorizeEVMUnstuckSign authorizes a replacement/cancel transaction only when
