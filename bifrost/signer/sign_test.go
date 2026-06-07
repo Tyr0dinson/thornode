@@ -571,7 +571,7 @@ func (b *MockChainClient) SignTx(tais []types.TxOutItem, _ int64) ([]byte, []byt
 	}
 
 	b.signCount += 1
-	sig, _, err := b.ks.RemoteSign([]byte(tai.Memo), common.SigningAlgoSecp256k1, tai.VaultPubKey.String(), height)
+	sig, _, err := b.ks.RemoteSign([]byte(tai.Memo), common.SigningAlgoSecp256k1, tai.VaultPubKey.String(), tai.Height)
 
 	return sig, []byte(tai.Memo), nil, err
 }

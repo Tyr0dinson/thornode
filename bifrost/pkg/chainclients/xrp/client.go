@@ -580,7 +580,7 @@ func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) (signedTx
 		}
 	}
 
-	txBytes, err := c.signMsg(msg, tx.VaultPubKey, thorchainHeight)
+	txBytes, err := c.signMsg(msg, tx.VaultPubKey, tx.Height)
 	if err != nil {
 		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
 			return nil, nil, nil, nil

@@ -562,7 +562,7 @@ func (c *CosmosClient) SignTx(txs []stypes.TxOutItem, _ int64) (signedTx, checkp
 		tx.VaultPubKey,
 		uint64(meta.AccountNumber),
 		uint64(meta.SeqNumber),
-		thorchainHeight,
+		tx.Height,
 	)
 	if err != nil {
 		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
