@@ -378,6 +378,7 @@
           ],
           "finalised_height": "5",
           "height": "4",
+          "mempool_swap_tor": "0",
           "out_txs": [
             {
               "chain": "THOR",
