@@ -751,7 +751,7 @@ func (s *BlockScannerExtraSuite) startScannerForFloorTest(c *C, startHeight, flo
 
 	globalChan := make(chan types.TxIn, 1)
 	nfChan := make(chan common.NetworkFee, 1)
-	scanner.Start(globalChan, nfChan)
+	scanner.Start(globalChan, nfChan, nil)
 	height := scanner.PreviousHeight()
 	scanner.Stop()
 	return height

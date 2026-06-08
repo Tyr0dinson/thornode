@@ -337,7 +337,6 @@ func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, globalNetworkFeeQue
 	b.globalNetworkFeeQueue = globalNetworkFeeQueue
 	b.reporterDispatcher = reporterDispatcher
 
-
 	currentPos, err := b.scannerStorage.GetScanPos()
 	if err != nil {
 		b.logger.Error().Err(err).Msgf("fail to get current block scan pos, %s will start from %d", b.cfg.ChainID, b.previousBlock)
