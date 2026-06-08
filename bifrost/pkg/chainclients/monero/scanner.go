@@ -28,12 +28,6 @@ import (
 const (
 	// Monero uses 1e12 atomic units and THORChain uses 1e8 decimals.
 	moneroAtomicToThorchain = 10000
-	// typicalVaultOutboundWeight is the conservative vault/FROST outbound tx
-	// weight in Monero weight units used for THORChain network fee reporting.
-	// Keep it over-reserved for now so migration txs that spend many UTXOs are
-	// less likely to be blocked by fee spikes before the full MaxGas feedback and
-	// reschedule path lands.
-	typicalVaultOutboundWeight = 10000
 	// Retain the existing ceiling for reorg replay and per-call catch-up work.
 	maxSidecarScannerRewindBlocks int64 = 256
 	// Quiet-chain churn can roll Bifrost back farther than its reorg window.
