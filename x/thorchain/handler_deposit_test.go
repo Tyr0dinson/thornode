@@ -644,8 +644,8 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 				asset = common.BTCAsset.GetSecuredAsset()
 				seedPegged(
 					func(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txid common.TxID) (cosmos.Uint, error) {
-						coin, err := mgr.SecuredAssetManager().Deposit(ctx, asset, amount, owner, assetAddr, txid)
-						return cosmos.NewUintFromBigInt(coin.Amount.BigInt()), err
+						coin, depositErr := mgr.SecuredAssetManager().Deposit(ctx, asset, amount, owner, assetAddr, txid)
+						return cosmos.NewUintFromBigInt(coin.Amount.BigInt()), depositErr
 					},
 				)
 				fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(10*common.One)) // fund with nami
