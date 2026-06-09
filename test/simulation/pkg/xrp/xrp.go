@@ -80,7 +80,7 @@ func NewClient(_ common.Chain, host string, keys *thorclient.Keys) (LiteChainCli
 func (c *Client) GetHeight() (int64, error) {
 	ledgerIndex, err := c.rpcClient.GetLedgerIndex()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("fail to get latest ledger index: %w", err)
 	}
 
 	return int64(ledgerIndex.Int()), nil
@@ -383,12 +383,4 @@ func isAccountNotFoundXRPError(err error) bool {
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "actnotfound") ||
 		strings.Contains(errStr, "account not found")
-}
-
-func (c *Client) GetHeight() (int64, error) {
-	ledger, err := c.rpcClient.GetLedgerIndex()
-	if err != nil {
-		return 0, fmt.Errorf("fail to get latest ledger index: %w", err)
-	}
-	return int64(ledger), nil
 }
