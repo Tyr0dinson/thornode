@@ -2662,8 +2662,7 @@ func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signe
 	}
 	// Determine the smallest number of share tokens whose round-half-up
 	// conversion back to underlying collateral will cover the requested fee.
-	// In the spam-drain path, fee.Amount >= assetAvailable collapses to
-	// burnAmt == shareBalance, meaning we intentionally burn the entire
+	// If fee.Amount matches the full available balance, this burns the entire
 	// remaining position but never more than that.
 	burnAmt := common.GetSafeShareInverse(fee.Amount, shareBalance, assetAvailable)
 	if burnAmt.IsZero() {

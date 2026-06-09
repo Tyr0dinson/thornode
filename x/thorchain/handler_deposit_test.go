@@ -530,9 +530,10 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeRecalcOnPoolRatioChange(c *C) {
 
 func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 	type testCase struct {
-		name string
-		seed func()
-		bal  func() cosmos.Uint
+		name          string
+		seed          func()
+		seedUnderfund func(cosmos.Uint)
+		bal           func() cosmos.Uint
 	}
 
 	var (
@@ -616,6 +617,9 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 				c.Assert(k.SetPool(ctx, pool), IsNil)                                  // persist decimals change
 				fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(100_000_000)) // fund with 100 nami
 			},
+			seedUnderfund: func(amount cosmos.Uint) {
+				fundAccountWith(c, ctx, k, signer, asset, amount)
+			},
 			bal: func() cosmos.Uint {
 				return getAccBal(signer, asset)
 			},
@@ -625,6 +629,10 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 			seed: func() {
 				asset = common.BTCAsset.GetTradeAsset()
 				seedPegged(mgr.TradeAccountManager().Deposit)
+			},
+			seedUnderfund: func(amount cosmos.Uint) {
+				_, err = mgr.TradeAccountManager().Deposit(ctx, asset.GetLayer1Asset(), amount, signer, common.NoAddress, common.BlankTxID)
+				c.Assert(err, IsNil)
 			},
 			bal: func() cosmos.Uint {
 				return getTradeAssetBalanceOf(ctx, k, asset, signer)
@@ -641,6 +649,10 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 					},
 				)
 				fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(10*common.One)) // fund with nami
+			},
+			seedUnderfund: func(amount cosmos.Uint) {
+				_, err = mgr.SecuredAssetManager().Deposit(ctx, asset.GetLayer1Asset(), amount, signer, common.NoAddress, common.BlankTxID)
+				c.Assert(err, IsNil)
 			},
 			bal: func() cosmos.Uint {
 				return getSecuredAssetBalanceOf(ctx, k, asset, signer)
@@ -681,24 +693,20 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 		fee, err = calculateAltNativeTxFee(ctx, k, feeAsset)
 		c.Assert(err, IsNil)
 
-		// -- Test spam protection for direct native balances
-		// swap out balance - 1,5 x of the tx fee in asset -> 0.5 x fee remains in account
-		toAddr = GetRandomTHORAddress()
+		// -- Test insufficient alt-native fees are rejected without draining balances
+		c.Assert(fee.GT(cosmos.OneUint()), Equals, true)
+		signer = GetRandomBech32Addr()
+		tc.seedUnderfund(fee.Sub(cosmos.OneUint()))
 		bal := tc.bal()
-		swapOutAmt := bal.Sub(fee.MulUint64(3).QuoUint64(2)) // bal - 1.5 x fee
-		coins = common.Coins{common.NewCoin(asset, swapOutAmt)}
-		runSwap(coins, IsNil, IsNil, "") // should succeed
-		// 0 < amount left in account <= fee
-		bal = tc.bal()
-		c.Assert(!bal.IsZero() && bal.LTE(fee), Equals, true)
+		c.Assert(!bal.IsZero() && bal.LT(fee), Equals, true)
 		// now try swap the smallest unit of asset - should fail due to insufficient funds for tx fee
 		coins = common.Coins{common.NewCoin(asset, cosmos.OneUint())}
-		// ante should succeed (deduct the entire balance), swap should fail
-		runSwap(coins, IsNil, NotNil, "insufficient funds")
-		// the entire account balance was deducted
-		c.Assert(tc.bal().IsZero(), Equals, true)
-		// one more attempt – balance is zero, so ante should return error
+		// ante should reject and leave the remaining balance untouched
+		runSwap(coins, NotNil, IsNil, "insufficient funds")
+		c.Assert(tc.bal().String(), Equals, bal.String())
+		// one more attempt should still reject without draining funds
 		ctx = ctx.WithTxBytes([]byte(common.RandHexString(32)))
-		runSwap(coins, NotNil, NotNil, "insufficient funds")
+		runSwap(coins, NotNil, IsNil, "insufficient funds")
+		c.Assert(tc.bal().String(), Equals, bal.String())
 	}
 }

@@ -173,11 +173,9 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 	return ctx, deductNativeTxFeeFromAccount(ctx, k, msg.GetSigners()[0], msg)
 }
 
-// deductNativeTxFeeFromAccount charges the tx fee during ante. When the signer
-// cannot cover the full alt-native fee but still has a non-zero balance in the
-// fee asset, this intentionally drains the remaining balance as anti-spam
-// protection. Because this runs in ante, a successful fee deduction persists
-// even if the message handler later fails.
+// deductNativeTxFeeFromAccount charges the tx fee during ante. Because this
+// runs in ante, a successful fee deduction persists even if the message handler
+// later fails.
 func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, m sdk.Msg) error {
 	nativeTxFee := k.GetNativeTxFee(ctx)
 	nativeTxFeeCoin := common.NewCoin(common.RuneNative, nativeTxFee)
@@ -233,11 +231,8 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer co
 		return se.ErrInsufficientFunds
 	}
 
-	// If the fee asset cannot cover the quoted fee, confiscate the remainder.
-	// This is the intentional anti-spam path: ante succeeds after draining the
-	// account so the tx cannot be replayed for free.
 	if balanceFeeCoin.LT(feeCoin.Amount) {
-		feeCoin.Amount = balanceFeeCoin
+		return se.ErrInsufficientFunds
 	}
 
 	collected, err := collectAltNativeTxFee(ctx, k, signer, feeCoin)

@@ -423,7 +423,7 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 		c.Assert(err, NotNil)
 		c.Assert(strings.Contains(err.Error(), "fail to fetch native coin to pay tx fee: fail to find coins to pay tx fee"), Equals, true)
 
-		// Tets spam protection
+		// Insufficient alt-native fee should be rejected in ante, like RUNE fees.
 		pool.Status = PoolAvailable
 		c.Assert(k.SetPool(ctx, pool), IsNil)
 		nativeFeeInNami, err := calculateAltNativeTxFee(ctx, k, feeAsset)
@@ -444,20 +444,21 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 		c.Assert(!fromAfter.IsZero() && fromAfter.LT(nativeFeeInNami), Equals, true)
 		c.Assert(toAfter.String(), Equals, "1")
 
-		// Next run should revert and drain remaining NAMI; recipient unchanged
+		// Next run should fail in ante and leave balances unchanged.
+		fromBefore := fromAfter
+		toBefore := toAfter
 		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
-		c.Assert(err, IsNil)
-		_, err = handler.Run(ctx, msg)
 		c.Assert(err, NotNil)
 		c.Assert(strings.Contains(err.Error(), "insufficient funds"), Equals, true)
 		fromAfter = getAccBal(signer, feeAsset)
 		toAfter = getAccBal(toAcc, feeAsset)
-		c.Assert(fromAfter.IsZero(), Equals, true)
-		c.Assert(toAfter.String(), Equals, "1")
+		c.Assert(fromAfter.String(), Equals, fromBefore.String())
+		c.Assert(toAfter.String(), Equals, toBefore.String())
 
-		// One more time – balance is zero, so ante decorator should return error
+		// Repeating the tx should keep failing in ante without draining funds.
 		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
 		c.Assert(err, NotNil)
 		c.Assert(strings.Contains(err.Error(), "insufficient funds"), Equals, true)
+		c.Assert(getAccBal(signer, feeAsset).String(), Equals, fromBefore.String())
 	}
 }
