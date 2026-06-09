@@ -16,6 +16,7 @@ func init() {
 		BurnSynths:                 1,
 		MaxRuneSupply:              500_000_000_00000000,
 		MultipleAffiliatesMaxCount: 5,
+		MaxAbsentKeygenReporters:   0,
 	}
 	stringOverrides = map[ConstantName]string{
 		DevFundAddress:       "cthor1jydyvc8wt84jcdl6qex0ps9czfmcaqurljevkt",
