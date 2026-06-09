@@ -152,6 +152,32 @@ func TestSolvencyWatcherFailsPersistentHaltsWithoutMatchingRagnarok(t *testing.T
 	}
 }
 
+func TestSolvencyWatcherIgnoresExtendedTransientXMRHalt(t *testing.T) {
+	server, restore := setupSolvencyWatcherHTTPServer(
+		t,
+		func(path string, count int) string {
+			switch path {
+			case "/thorchain/mimir":
+				if count <= 2 {
+					return `{"SOLVENCYHALTXMRCHAIN":1735}`
+				}
+				return `{"SOLVENCYHALTXMRCHAIN":0}`
+			case "/thorchain/queue/outbound":
+				return `[]`
+			default:
+				return `{}`
+			}
+		},
+	)
+	defer server.Close()
+	defer restore()
+
+	watcher := NewSolvencyHalt()
+	if err := watcher.Fn(nil); err != nil {
+		t.Fatalf("expected extended transient XMR solvency halt to clear, got %v", err)
+	}
+}
+
 func setupSolvencyWatcherTestServer(t *testing.T, responder func(count int) string) (*httptest.Server, func()) {
 	return setupSolvencyWatcherHTTPServer(t, func(path string, count int) string {
 		if path == "/thorchain/mimir" {
@@ -175,17 +201,23 @@ func setupSolvencyWatcherHTTPServer(t *testing.T, responder func(path string, co
 	originalClient := httpClient
 	originalAttempts := solvencyHaltRecheckAttempts
 	originalDelay := solvencyHaltRecheckDelay
+	originalXMRAttempts := xmrSolvencyHaltRecheckAttempts
+	originalXMRDelay := xmrSolvencyHaltRecheckDelay
 
 	thornodeURL = server.URL
 	httpClient = server.Client()
 	solvencyHaltRecheckAttempts = 1
 	solvencyHaltRecheckDelay = 0
+	xmrSolvencyHaltRecheckAttempts = 1
+	xmrSolvencyHaltRecheckDelay = 0
 
 	restore := func() {
 		thornodeURL = originalURL
 		httpClient = originalClient
 		solvencyHaltRecheckAttempts = originalAttempts
 		solvencyHaltRecheckDelay = originalDelay
+		xmrSolvencyHaltRecheckAttempts = originalXMRAttempts
+		xmrSolvencyHaltRecheckDelay = originalXMRDelay
 	}
 
 	return server, restore

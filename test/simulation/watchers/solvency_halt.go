@@ -18,6 +18,12 @@ var (
 	// do not abort simulations that recover on the next poll.
 	solvencyHaltRecheckAttempts = 2
 	solvencyHaltRecheckDelay    = 2 * time.Second
+
+	// XMR can report a temporary solvency halt while the sidecar reconciles
+	// post-spend balance and change output state. Give that simulation-only
+	// transient longer to clear before treating it as a real halt.
+	xmrSolvencyHaltRecheckAttempts = 60
+	xmrSolvencyHaltRecheckDelay    = 5 * time.Second
 )
 
 // outboundQueueItem is the subset of outbound queue fields needed to identify
@@ -172,6 +178,19 @@ func allHaltedChainsInSet(activeHalts map[string]int64, coveredChains map[string
 	return true
 }
 
+func onlyXMRHalted(activeHalts map[string]int64) bool {
+	halted := haltedChains(activeHalts)
+	if len(halted) == 0 {
+		return false
+	}
+	for _, chain := range halted {
+		if chain != "XMR" {
+			return false
+		}
+	}
+	return true
+}
+
 // NewSolvencyHalt builds a watcher that fails the simulation on persistent,
 // unexpected solvency halts.
 func NewSolvencyHalt() *Watcher {
@@ -254,6 +273,33 @@ func NewSolvencyHalt() *Watcher {
 					Strs("chains", haltedChains(activeHalts)).
 					Msg("ignoring solvency halt while active ragnarok drains")
 				return nil
+			}
+
+			if onlyXMRHalted(activeHalts) {
+				for attempt := 0; attempt < xmrSolvencyHaltRecheckAttempts; attempt++ {
+					time.Sleep(xmrSolvencyHaltRecheckDelay)
+
+					recheck, recheckErr := fetchActiveSolvencyHalts(httpClient, endpoint)
+					if recheckErr != nil {
+						cl.Error().Err(recheckErr).
+							Int("attempt", attempt+1).
+							Msg("failed to recheck xmr solvency halt")
+						continue
+					}
+					if len(recheck) == 0 {
+						cl.Warn().
+							Int("attempt", attempt+1).
+							Msg("transient xmr solvency halt cleared on extended recheck")
+						return nil
+					}
+					activeHalts = recheck
+					if !onlyXMRHalted(activeHalts) {
+						cl.Error().
+							Strs("chains", haltedChains(activeHalts)).
+							Msg("non-xmr solvency halt detected during xmr transient recheck")
+						break
+					}
+				}
 			}
 
 			// Sort keys so log-only output and fatal errors are deterministic.
