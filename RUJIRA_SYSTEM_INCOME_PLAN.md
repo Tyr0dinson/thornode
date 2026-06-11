@@ -1,357 +1,237 @@
-# Plan: Rujira Revenue as Explicit THORChain System Income
+# Plan: Add `app_layer` Module to System Income
 
-**Status:** Design proposal for review (no code written yet)
-**Goal:** Allow Revenue Collector 4 to send RUNE that is counted as **Gross System Income** and flows through the existing system-income distribution (TCY, burn, dev fund, marketing, POL, incentive pendulum → LP/bond) in the **same block**, with explicit events so indexers stop inferring revenue from Reserve transfers.
+## Context
 
-Collector 4 address (mainnet): `thor1txum04wp8ykqudphxy9prtwsd9jpcm2kwdaxctxeeyr6g0r0we9qpfdktr`
+THORChain's per-block reward calculation (`UpdateNetwork` → `calcBlockRewards`)
+currently treats system income as two sources:
+
+```
+systemIncome = blockReward + totalLiquidityFees − totalRevShare
+```
+
+This plan adds a **third source**: a dedicated, unblocked cosmos module account
+`app_layer`. External "app layer" sources deposit RUNE into it; the protocol
+drains its full balance every block and folds it into system income:
+
+```
+systemIncome = blockReward + totalLiquidityFees + appLayerFees − totalRevShare
+```
+
+The drained RUNE is then distributed through the **same Incentive Pendulum split**
+as all other income (LPs, bonders, dev fund, burn, TCY, marketing, POL).
+
+> **First consumer: Rujira.** Rujira's Revenue Collector
+> (`thor1txum04wp8ykqudphxy9prtwsd9jpcm2kwdaxctxeeyr6g0r0we9qpfdktr`) is the
+> motivating use case — it sends RUNE to the `app_layer` module so its revenue is
+> counted as explicit, indexable system income instead of being inferred from
+> Reserve transfers. `app_layer` is intentionally generic so other sources can use
+> the same path.
 
 ---
 
-## 0. Key design decisions (read first)
+## Approach
 
-These facts shape everything below and correct assumptions in the original plan.
+Mirror exactly how `totalLiquidityFees` (swap fees) is already handled: **read a
+module balance in `UpdateNetwork`, drain it to Reserve, then pass it as a separate
+parameter to `calcBlockRewards`.** No custom KV accumulator is needed — **the
+module account IS the accumulator**, and draining it keeps fund balances and
+accounting consistent automatically (you can only distribute RUNE that is present).
 
-1. **There is no generic `AddSystemIncome()` in the keeper, and we will not add one.**
-   "System income" is computed once per block, inline, in `calcBlockRewards`
-   (`x/thorchain/manager_network_current.go:2176`):
-   ```go
-   systemIncome := blockReward.Add(totalLiquidityFees)        // notional figure
-   systemIncome = common.SafeSub(systemIncome, totalRevShare)
-   ```
-   We add a **dedicated per-block accumulator** and merge it here — exactly the
-   pattern REVSHARE uses (`processRevShare`, line 2042). We do **not** thread a
-   `source string` through keeper APIs.
+Reserve is the rail that funds all the existing split transfers (dev fund, burn,
+TCY, marketing, POL, pool/bond are all `SendFromModule(ReserveName, …)`); draining
+`app_layer` into Reserve lets that machinery distribute the funds unchanged, in the
+same block.
 
-2. **Rujira funds must NOT pass through the Reserve, because of the emission
-   curve.** This is the core reason for the whole change. The block reward is
-   `totalReserve / emissionCurve / blocksPerYear` (`manager_network_current.go:2164`),
-   and `totalReserve` is read fresh at EndBlock (`line 1840`). The Rujira deposit
-   handler runs *during the block* (DeliverTx), **before** EndBlock — so if the
-   funds landed in Reserve they would already be sitting there when `totalReserve`
-   is snapshotted, **inflating the emission-curve block reward** and partially
-   subjecting Rujira revenue to the very emission mechanics we want to bypass.
-   → Hold Rujira RUNE in a **dedicated `RujiraIncomeName` module account** (exactly
-   like `POLReserveName` / `TCYStakeName`), never Reserve. The emission snapshot
-   excludes it. Reserve is touched only as a transient rail *after* the snapshot
-   (see step 5).
+### Two ordering constraints (both must hold)
 
-   Note: all split *transfers* (dev fund, burn, TCY, marketing, POL, pool/bond)
-   are hardcoded `SendFromModule(ReserveName, …)`. Rather than refactor every one
-   to source from a second module, we move the Rujira balance into Reserve **after
-   the emission snapshot**, then add it to the notional `systemIncome`; the
-   existing payout machinery distributes it in full the same block. The funds are
-   in Reserve for a fraction of one EndBlock and are never emitted via the curve.
+1. **Read `totalReserve` BEFORE the drain.** `blockReward = totalReserve /
+   emissionCurve / blocksPerYear`. If `app_layer` RUNE were already in Reserve when
+   `totalReserve` is snapshotted (line 1840), it would inflate the emission-curve
+   block reward. The drain must happen after that read.
 
-3. **The module balance IS the accumulator.** Because funds live in a dedicated
-   module that is drained each block, `GetRuneBalanceOfModule(ctx, RujiraIncomeName)`
-   is the pending income. No KV accumulator, no overflow guard, no separate
-   "clear" step — and fund/accounting consistency is automatic (you can only
-   distribute RUNE that is physically present).
+2. **Drain only AFTER the early-return guards — on the distribution path.**
+   `UpdateNetwork` early-returns at `if totalReserve.IsZero()` (line 1843) and
+   `if availablePoolsRune.IsZero()` (line 1856). If the drain runs *before* those
+   guards, a guarded block moves the funds into Reserve and then returns **without
+   distributing** — stranding the RUNE in Reserve (subject to the emission curve)
+   and losing it from `app_layer` accounting (the module is now empty). Place the
+   drain **after line 1856** (e.g. alongside the `totalLiquidityFees` read, ~1862).
+   On a guarded block the funds then stay in `app_layer` and roll forward to the
+   next healthy block. No double-count, no stranding.
 
-4. **Distribution is immediate (same block), not slow emission.** Rujira is added
-   as a **separate term** to `systemIncome`, so it is distributed in full the
-   block it is processed — it does not go through `totalReserve / emissionCurve`.
+The safe window for the drain is therefore **between line 1856 and the
+`calcBlockRewards` call (~1892)**.
 
-**Critical invariant (the one real correctness trap):**
-`calcBlockRewards` and the split transfers are **not always reached** —
-`UpdateNetwork` early-returns when `availablePoolsRune` is zero
-(`manager_network_current.go:1856`) and on other guards. The Rujira→Reserve move
-must run **only on the path where distribution actually runs.** On any
-skipped/guarded block, do **not** move the funds — they stay in `RujiraIncomeName`
-and roll forward to the next block. Never move-without-distributing (would strand
-RUNE in Reserve); never distribute-twice. With the module-as-accumulator design
-this is automatic: if you don't move + distribute, the balance simply remains.
+### Access model
 
-**Alternative (only if "never touch Reserve, even transiently" is a hard
-requirement):** pay the Rujira-funded portion of each split directly from
-`RujiraIncomeName` to each destination. Much larger change — duplicates the split
-math and touches every transfer. The transient-rail approach above already keeps
-Rujira out of the emission curve, which is the actual concern, so this is not
-recommended unless explicitly required.
+The `app_layer` module is **unblocked** (like `TreasuryName` / `LendingName`), so
+any account can `MsgSend` RUNE to it directly — no memo or custom handler. Allowing
+any sender is harmless: contributing RUNE only adds to system income that is then
+distributed; it is not an attack vector. (If a future requirement needs to restrict
+contributions to a specific collector, gate it with a dedicated memo + handler —
+out of scope for this plan.)
 
 ---
 
-## 1. Collector address — config, NOT a bare `const`
+## Files to change
 
-Follow the `DevFundAddress` pattern (per-network constant) **and**
-make it overridable by Mimir so it can be rotated without a chain upgrade.
-
-Per-network defaults (`constants/constants_mocknet.go`, `_stagenet.go`,
-`_chainnet.go`, and the mainnet default in `constant_values.go`):
+### 1. `x/thorchain/types/keys.go`
+Add after `POLReserveName`:
 ```go
-// constants/constants_chainnet.go (mainnet)
-RujiraRevenueCollector: "thor1txum04wp8ykqudphxy9prtwsd9jpcm2kwdaxctxeeyr6g0r0we9qpfdktr",
-// constants/constants_mocknet.go (regtest) — use an addr that exists in regtest
-RujiraRevenueCollector: "tthor1...regtest_addr...",
-```
-Add `RujiraRevenueCollector` to the `constants` name enum (`constant_values.go`)
-and regenerate the stringer (`constantname_string.go` is generated).
-
-Lookup helper, with Mimir override:
-```go
-func getRujiraRevenueCollector(ctx cosmos.Context, k keeper.Keeper) (common.Address, error) {
-    // Mimir override (string mimir) if set, else network constant
-    if addr := k.GetConstants().GetStringValue(constants.RujiraRevenueCollector); addr != "" {
-        return common.NewAddress(addr)
-    }
-    return common.NoAddress, fmt.Errorf("rujira revenue collector not configured")
-}
-```
-**Decided:** per-network constant **+ Mimir override** (the form shown above), so
-the collector can be rotated without a chain upgrade.
-
----
-
-## 2. New memo: `rujira-income`
-
-**Decided** canonical memo string: `rujira-income` (type const `TxRujiraIncome`).
-
-`x/thorchain/memo/memo.go`:
-```go
-// add to the TxType const block
-TxRujiraIncome
-
-// stringToTxTypeMap
-"rujira-income": TxRujiraIncome,
-
-// txToStringMap
-TxRujiraIncome: "rujira-income",
-
-// IsInbound() — add TxRujiraIncome to the inbound case list
-// HasOutbound() — add TxRujiraIncome to the `return false` list (like TxReserve)
+// AppLayerName the name of the account used to receive app layer income
+AppLayerName = "app_layer"
 ```
 
-New parser `x/thorchain/memo/memo_rujira_income.go` (mirrors `memo_reserve.go`,
-no args):
+### 2. `x/thorchain/alias.go`
+Add to the `const` block:
 ```go
-package thorchain
-
-type RujiraIncomeMemo struct {
-    MemoBase
-}
-
-func (p *parser) ParseRujiraIncomeMemo() (RujiraIncomeMemo, error) {
-    return RujiraIncomeMemo{
-        MemoBase: MemoBase{TxType: TxRujiraIncome},
-    }, nil
-}
+AppLayerName = types.AppLayerName
 ```
-Wire `TxRujiraIncome` into the parser dispatch (`memo_parser.go`, same place the
-other `Parse*Memo` are called).
 
----
+### 3. `x/thorchain/keeper/v1/alias.go`
+Add (alongside `ReserveName`, `POLReserveName`, …):
+```go
+AppLayerName = types.AppLayerName
+```
 
-## 2b. Register the dedicated `RujiraIncomeName` module account
-
-Funds must live outside Reserve (see decision #2). Add a dedicated module account,
-mirroring `POLReserveName`.
-
-- Name const: `x/thorchain/types/keys.go` (e.g.
-  `RujiraIncomeName = "rujira_income"`) + alias in `x/thorchain/alias.go`.
-- Permissions: `app/app.go` `maccPerms` (`app.go:117`) — empty perms `{}` like
-  Reserve/POLReserve (no Minter/Burner):
+### 4. `app/app.go`
+- In `maccPerms` (line ~117), add empty perms (no Minter/Burner, like Reserve):
   ```go
-  thorchain.RujiraIncomeName: {},
+  thorchain.AppLayerName: {},
   ```
-- `app/app_test.go:101` asserts `maccPerms` matches; update accordingly.
+- In `BlockedAddresses()` (line ~935, next to the `LendingName` / `TreasuryName`
+  deletes at 942–943), unblock the module so it can receive external RUNE:
+  ```go
+  delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.AppLayerName).String())
+  ```
+- `app/app_test.go` asserts `maccPerms` matches — update accordingly.
 
-## 3. Route funds to the Rujira module (NOT Reserve)
-
-`x/thorchain/handler_deposit.go:174` — add a branch routing the new memo to
-`RujiraIncomeName`, **not** Reserve. **This alone moves the deposited RUNE into the
-Rujira module**; the handler needs no manual `SendFromAccountToModule`.
+### 5. `x/thorchain/genesis.go` (~line 382)
+Log the new module address at init (consistent with other modules):
 ```go
-case TxRujiraIncome:
-    targetModule = RujiraIncomeName
+appLayerAddr, _ := keeper.GetModuleAddress(AppLayerName)
+ctx.Logger().Info("AppLayer Module", "address", appLayerAddr.String())
 ```
-The existing guard at line 186 already rejects non-RUNE/TCY coins for non-Asgard
-modules, so a non-RUNE Rujira deposit is blocked here too (defence in depth; the
-handler also checks asset explicitly).
 
----
-
-## 4. Message + handler — reuse `MsgReserveContributor` (no new proto)
-
-No new proto Msg. The new memo maps to the existing `MsgReserveContributor`; the
-existing `ReserveContributorHandler` branches on the memo to apply Rujira-specific
-validation and emit the `system_income` event. (Trade-off: the reserve handler
-becomes dual-purpose, in exchange for avoiding a `.proto` edit + regen.)
-
-### 4a. Memo → Msg (`x/thorchain/handler.go:252`, in `processOneTxIn`)
-Reuse the same `MsgReserveContributor` the `ReserveMemo` case builds:
+### 6. `x/thorchain/manager_network_current.go` — `UpdateNetwork`
+**Drain the module after the guards** (after line 1856, before `calcBlockRewards`;
+NOT before the guards — see ordering constraint #2):
 ```go
-case ReserveMemo, RujiraIncomeMemo:
-    res := NewReserveContributor(tx.Tx.FromAddress, tx.Tx.Coins.GetCoin(common.RuneAsset()).Amount)
-    newMsg = NewMsgReserveContributor(tx.Tx, res, signer)
-```
-No new entry in `getInternalHandlerMapping` — it already routes
-`MsgReserveContributor` to `ReserveContributorHandler`.
-
-### 4b. Branch in `ReserveContributorHandler` (`handler_reserve_contrib.go`)
-Detect the Rujira variant from the memo. **Rujira-specific validation lives here**
-(sender == collector, asset == RUNE); a non-collector or non-RUNE deposit returns
-an error, which reverts the whole MsgDeposit (the deposit handler's fund routing
-in step 3 runs in the same cached context, so the funds are not committed).
-```go
-func (h ReserveContributorHandler) handle(ctx cosmos.Context, msg MsgReserveContributor) error {
-    memo, err := ParseMemo(ctx, ... , msg.Tx.Memo) // or pass type through
-    if err == nil && memo.GetType() == TxRujiraIncome {
-        return h.handleRujiraIncome(ctx, msg)
+// Drain app layer fees into Reserve each block (after the totalReserve snapshot
+// and after the early-return guards, so guarded blocks roll the funds forward
+// instead of stranding them in Reserve).
+appLayerFees := vm.k.GetRuneBalanceOfModule(ctx, AppLayerName)
+if !appLayerFees.IsZero() {
+    coin := common.NewCoin(common.RuneNative, appLayerFees)
+    if err = vm.k.SendFromModuleToModule(ctx, AppLayerName, ReserveName, common.NewCoins(coin)); err != nil {
+        return fmt.Errorf("fail to transfer app layer fees to reserve: %w", err)
     }
-    // ...existing reserve path: emit NewEventReserve...
-}
-
-func (h ReserveContributorHandler) handleRujiraIncome(ctx cosmos.Context, msg MsgReserveContributor) error {
-    coin := msg.Tx.Coins.GetCoin(common.RuneAsset())
-    if coin.IsEmpty() || !coin.Asset.IsRune() {
-        return fmt.Errorf("rujira income must be THOR.RUNE")
-    }
-    // Sender must be the configured collector.
-    // NOTE: guards DATA INTEGRITY / grief, not fund safety — a rogue sender would
-    // merely be donating their own RUNE into the same-block distribution.
-    collector, err := getRujiraRevenueCollector(ctx, h.mgr.Keeper())
-    if err != nil {
-        return err
-    }
-    if !msg.Tx.FromAddress.Equals(collector) {
-        return fmt.Errorf("unauthorized rujira income sender: %s", msg.Tx.FromAddress)
-    }
-    // Funds already in the RujiraIncome module (step 3); the module balance is the
-    // accumulator (decision #3). Nothing to credit — just emit the canonical event.
-    evt := NewEventSystemIncome("rujira", msg.Tx.FromAddress, common.RuneAsset(), coin.Amount, msg.Tx.ID)
-    if emitErr := h.mgr.EventMgr().EmitEvent(ctx, evt); emitErr != nil {
-        ctx.Logger().Error("fail to emit system_income event", "error", emitErr)
-    }
-    return nil
 }
 ```
-> **Alternative placement:** the collector check could instead live in the deposit
-> routing (step 3) to reject *before* funds move. Cleaner failure, but scatters
-> business logic into `handler_deposit.go`. Recommend keeping it in the handler;
-> the revert-on-error behaviour makes the ordering safe either way.
+Pass `appLayerFees` to `calcBlockRewards` (new param after `totalLiquidityFees`),
+and to the `NewEventRewards` call (see #9).
 
----
+### 7. `x/thorchain/manager_network_current.go` — `calcBlockRewards` (~line 2137)
+- Add `appLayerFees cosmos.Uint` parameter (after `totalLiquidityFees`).
+- Change the income line (line 2176):
+  ```go
+  systemIncome := blockReward.Add(totalLiquidityFees).Add(appLayerFees)
+  systemIncome = common.SafeSub(systemIncome, totalRevShare)
+  ```
+- Add `"app_layer_fees", appLayerFees,` to the existing
+  `ctx.Logger().Info("incentive pendulum", …)` attributes (~line 2251).
+- Thread the **gross** system income back for the event (#11): either return
+  `blockReward` (and let `UpdateNetwork` recompute
+  `gross = blockReward + totalLiquidityFees + appLayerFees − totalRevShare`), or
+  return the gross value directly as an added return value.
 
-## 5. Merge into Gross System Income at end-block — ORDER IS CRITICAL
-
-`x/thorchain/manager_network_current.go`, `UpdateNetwork`. The sequence must be:
-
-1. **Snapshot Reserve first** (existing line 1840) — Rujira module excluded, so the
-   emission-curve block reward is NOT inflated:
-   ```go
-   totalReserve := vm.k.GetRuneBalanceOfModule(ctx, ReserveName)   // unchanged
-   ```
-2. **Read the Rujira module balance** (after the snapshot), near the
-   `totalLiquidityFees` read (~1862):
-   ```go
-   rujiraIncome := vm.k.GetRuneBalanceOfModule(ctx, RujiraIncomeName)
-   ```
-3. **Fold into `systemIncome` as a separate term** — pass `rujiraIncome` into
-   `calcBlockRewards` (new param next to `totalLiquidityFees`), line 2176:
-   ```go
-   systemIncome := blockReward.Add(totalLiquidityFees).Add(rujiraIncome)
-   systemIncome = common.SafeSub(systemIncome, totalRevShare)
-   ```
-   (`blockReward` is still derived purely from `totalReserve`, untouched by Rujira.)
-4. **Move Rujira → Reserve only on the distribution path**, so the existing
-   `SendFromModule(ReserveName, …)` splits have the cash. Do this after the
-   emission snapshot and once past the `availablePoolsRune == 0` guard (line 1856):
-   ```go
-   if !rujiraIncome.IsZero() {
-       if err = vm.k.SendFromModuleToModule(ctx, RujiraIncomeName, ReserveName,
-           common.NewCoins(common.NewCoin(common.RuneNative, rujiraIncome))); err != nil {
-           return fmt.Errorf("fail to move rujira income to reserve: %w", err)
-       }
-   }
-   ```
-   On any early-return/guard path, **do not move** — the funds stay in
-   `RujiraIncomeName` and roll forward to the next block automatically. No double
-   count (we only add `rujiraIncome` to `systemIncome` on the path that also moves
-   + distributes it).
-
-Add `rujira` to the existing pendulum log line (~2251) for observability.
-
-> **Subtle ordering note for the reviewer:** the move in step 4 must be gated on
-> exactly the same condition as the distribution. Read `rujiraIncome` once; ensure
-> there is no path that adds it to `systemIncome` without also moving the funds
-> (would overdraw Reserve) or moves without adding (would mis-distribute).
-
----
-
-## 6. Event — `system_income` acceptance event
-
-Emitted in the handler (step 4b) when a Rujira deposit is accepted. This is the
-**canonical signal for indexers** — they derive Rujira Gross System Income from
-this event, not from Reserve transfers.
-
-New event type, mirror `EventRevShare` (`types/type_event.go:289` +
-`type_events.pb.go` regen + `.proto`). **Heads-up: events are protobuf-generated**
-— this requires editing the proto and `make proto-gen`, not just a hand-written
-struct.
+### 8. `proto/thorchain/v1/types/type_events.proto`
+Add field 8 to `EventRewards`:
+```proto
+string app_layer_fees = 8 [
+  (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+  (gogoproto.nullable) = false
+];
 ```
-event: system_income
-attrs: source=rujira, collector=<addr>, asset=THOR.RUNE, amount=<uint>, txid=<hash>
+Add a new `EventSystemIncome` message:
+```proto
+message EventSystemIncome {
+  string block_reward    = 1 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string liquidity_fees  = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string app_layer_fees  = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string rev_share       = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string system_income   = 5 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}
 ```
-(No aggregate `system_income_split` event — the per-tx gross above is sufficient.
-A split event would also be misleading since the bps deductions apply to the
-*pooled* system income, not to Rujira alone.)
+Then run `make proto-gen` to regenerate `type_events.pb.go`.
+
+### 9. `x/thorchain/types/type_event.go`
+- `NewEventRewards` (line 444): add `appLayerFees cosmos.Uint` param, set
+  `AppLayerFees: appLayerFees`, and add
+  `cosmos.NewAttribute("app_layer_fees", m.AppLayerFees.String())` to
+  `EventRewards.Events()`.
+- Add `NewEventSystemIncome` constructor + `Type()` / `Events()`:
+  - `Type()` → `"system_income"`.
+  - `Events()` attributes: `block_reward`, `liquidity_fees`, `app_layer_fees`,
+    `rev_share`, `system_income`.
+  - `system_income` is the **gross** (= sum of the inputs minus rev_share), so
+    indexers can reconcile it against the component attributes.
+
+### 10. `x/thorchain/alias.go`
+Add aliases for the new event:
+```go
+NewEventSystemIncome = types.NewEventSystemIncome
+EventSystemIncome    = types.EventSystemIncome
+```
+
+### 11. `x/thorchain/manager_network_current.go` — `UpdateNetwork`
+After `calcBlockRewards` (and the drain), emit the system income event before the
+rewards event (line ~2014):
+```go
+systemIncomeEvt := NewEventSystemIncome(blockReward, totalLiquidityFees, appLayerFees, totalRevShare, grossSystemIncome)
+if err = eventMgr.EmitEvent(ctx, systemIncomeEvt); err != nil {
+    return fmt.Errorf("fail to emit system income event: %w", err)
+}
+```
+Update the existing `NewEventRewards(...)` call (line 2014) to pass `appLayerFees`.
 
 ---
 
-## 7. Indexer (separate repo — out of scope for thornode)
+## Test plan
 
-Midgard/the indexer is not in this repo. The thornode deliverable is "emit the
-canonical `system_income` event." Track separately:
-- Derive Rujira Gross System Income from `system_income` events with
-  `source=rujira`.
-- **Remove** any logic that counts Collector-4 → Reserve transfers as gross
-  income, to avoid double counting once the event path is live.
+**Compilation / existing suites**
+- `x/thorchain/manager_network_current_test.go`: every `calcBlockRewards` call site
+  (~18) gets `cosmos.ZeroUint()` added for the new `appLayerFees` arg (after
+  `totalLiquidityFees`).
+- `x/thorchain/types/type_event_test.go`: update the `NewEventRewards` call;
+  add a `NewEventSystemIncome` test (attribute values + `Type()`).
 
----
-
-## 8. Test plan
-
-**Handler (`handler_reserve_contrib_test.go` — Rujira branch):**
-- valid collector + valid memo + THOR.RUNE → `system_income` event emitted
-- wrong sender → rejected (deposit reverts)
-- non-RUNE asset → rejected
-- zero amount → rejected
-- funds land in the **`RujiraIncomeName` module** (assert balance delta), and
-  **Reserve is unchanged** at deposit time
-- reserve memo still emits the existing `reserve` event (no regression from the
-  dual-purpose handler branch)
-
-**Emission isolation (the key regression test):**
-- a Rujira deposit in block N does **not** change the emission-curve block reward
-  computed in block N's EndBlock (assert `blockReward` identical with/without the
-  deposit) — proves the funds bypass the emission curve
-
-**Network manager (`manager_network_*_test.go`):**
-- rujira income is added to `systemIncome` *before* tcy/burn/dev/pendulum splits
-- after a normal distribution block: `RujiraIncomeName` drained to zero, Reserve
-  net-neutral on the rujira amount (in then fully out)
-- `RujiraIncomeName` balance **persists** (rolls forward) on an
-  `availablePoolsRune == 0` guarded block (no funds lost, no double count, no
-  premature move to Reserve)
-- `system_income` event emitted with correct attrs
-
-**Double-count guard:** assert the rujira amount is added to `systemIncome` only
-on the path that also moves it to Reserve and distributes it (never added without
-moved, never moved without added).
+**New behaviour**
+- **Income inclusion:** with a funded `app_layer` module, `systemIncome` includes
+  `appLayerFees`; total distributed to pools/bond increases by the drained amount.
+- **Emission isolation (key regression):** an `app_layer` balance present at the
+  `totalReserve` snapshot does **not** change `blockReward` (assert identical
+  block reward with/without the balance) — proves the drain happens after the
+  snapshot.
+- **Guard roll-forward:** on an `availablePoolsRune == 0` (or `totalReserve == 0`)
+  block, the `app_layer` balance is **not** drained — it persists in the module and
+  is distributed on the next healthy block. (Guards against the strand-in-Reserve
+  bug.)
+- **Drain completeness:** after a healthy block, the `app_layer` module is emptied.
+- **Events:** `system_income` event emitted with correct `block_reward`,
+  `liquidity_fees`, `app_layer_fees`, `rev_share`, `system_income`; the `rewards`
+  event carries a non-zero `app_layer_fees` attribute.
 
 ---
 
-## 9. Decisions (locked)
-
-All design questions resolved — no open items.
-
-1. **Collector address:** per-network constant + Mimir override (step 1).
-2. **Memo string:** `rujira-income` (step 2).
-3. **Distribution timing:** immediate, same-block (decision #4, step 5).
-4. **Reserve rail:** the transient Rujira→Reserve rail is accepted — it keeps
-   Rujira out of the emission curve, which is the actual requirement (decision #2,
-   step 5.4). Funds never enter Reserve before the emission snapshot.
-5. **Message:** reuse `MsgReserveContributor`, no dedicated `MsgRujiraIncome`
-   proto; the handler branches on memo (step 4).
-6. **Events:** per-tx `system_income` event only; no aggregate split event
-   (step 6).
+## Verification
+1. `go build ./...` — compiles.
+2. `go test ./x/thorchain/... -run TestBlockRewards` — pendulum tests pass with the
+   new zero-value arg.
+3. Mocknet manual check: fund the `app_layer` module address with RUNE; on the next
+   block confirm:
+   - a `system_income` event with correct component + gross values,
+   - a non-zero `app_layer_fees` attribute on the `rewards` event,
+   - pool/bond distribution increased by the drained amount,
+   - and (guarded-block case) if no available pools, the funds remain in `app_layer`
+     and are not stranded in Reserve.
