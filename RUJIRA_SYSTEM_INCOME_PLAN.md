@@ -20,12 +20,53 @@ systemIncome = blockReward + totalLiquidityFees + appLayerFees − totalRevShare
 The drained RUNE is then distributed through the **same Incentive Pendulum split**
 as all other income (LPs, bonders, dev fund, burn, TCY, marketing, POL).
 
-> **First consumer: Rujira.** Rujira's Revenue Collector
+> Rujira's Revenue Collector
 > (`thor1txum04wp8ykqudphxy9prtwsd9jpcm2kwdaxctxeeyr6g0r0we9qpfdktr`) is the
 > motivating use case — it sends RUNE to the `app_layer` module so its revenue is
 > counted as explicit, indexable system income instead of being inferred from
 > Reserve transfers. `app_layer` is intentionally generic so other sources can use
 > the same path.
+
+---
+
+## Revenue flow
+
+```mermaid
+flowchart TD
+    RUJIRA["Rujira Revenue Collector<br/>thor1txum…fdktr"]
+    APP["app_layer module account<br/>balance = per-block accumulator"]
+
+    RUJIRA -->|"MsgSend RUNE"| APP
+
+    subgraph BLOCK["Per block — UpdateNetwork (EndBlock)"]
+        SNAP["1 · Snapshot totalReserve<br/>before drain — keeps blockReward unaffected"]
+        GUARD{"healthy block?<br/>reserve and pools both funded"}
+        ROLL["Leave funds in app_layer<br/>roll forward to next block"]
+        DRAIN["2 · Drain app_layer → Reserve<br/>appLayerFees"]
+        CALC["3 · Add to system income<br/>systemIncome += appLayerFees"]
+    end
+
+    APP -. "balance read" .-> SNAP
+    SNAP --> GUARD
+    GUARD -->|"no"| ROLL
+    ROLL -. "next block" .-> APP
+    GUARD -->|"yes"| DRAIN
+    APP -->|"RUNE drained"| DRAIN
+    DRAIN --> CALC
+
+    CALC --> SPLIT["Distributed the same block through the<br/>existing system-income split<br/>(dev fund · burn · TCY · marketing · POL · LPs · bonders)"]
+
+    CALC -. "emit" .-> EV1["system_income event<br/>incl. app_layer_fees"]
+    SPLIT -. "emit" .-> EV2["rewards event<br/>incl. app_layer_fees"]
+```
+
+**Reading the chart:** Rujira's collector sends RUNE into the `app_layer` module,
+where it accumulates. Each block, `UpdateNetwork` snapshots the Reserve *before*
+touching `app_layer` (so the emission-curve block reward is unaffected); on a
+healthy block it drains `app_layer` into Reserve and adds the amount to system
+income, which is then distributed the same block through the existing split. On a
+guarded block nothing is drained — the funds stay in `app_layer` and roll forward.
+The `system_income` and `rewards` events make Rujira's contribution indexable.
 
 ---
 
