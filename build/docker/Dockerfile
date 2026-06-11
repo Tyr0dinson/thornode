@@ -40,7 +40,7 @@ COPY version version
 COPY tools/thorscan tools/thorscan
 COPY tools/recover-keyshare-backup tools/recover-keyshare-backup
 
-ARG TAG=mainnet
+ARG TAG=mainnet,pebbledb
 ARG COMMIT=unknown
 
 RUN make install
@@ -57,8 +57,8 @@ RUN apt-get update && \
   curl=7.74.0-1.3+deb11u16 \
   jq=1.6-2.1+deb11u2 \
   libffi-dev=3.3-6 \
-  libssl-dev=1.1.1w-0+deb11u5 \
-  openssl=1.1.1w-0+deb11u5 \
+  libssl-dev=1.1.1w-0+deb11u* \
+  openssl=1.1.1w-0+deb11u* \
   procps=2:3.3.17-5 \
   python3=3.9.2-3 \
   python3-pip=20.3.4-4+deb11u2 && \
@@ -72,7 +72,7 @@ COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/ap
 COPY build/scripts /scripts
 
 # default to mainnet
-ARG TAG=mainnet
+ARG TAG="mainnet,pebbledb"
 ENV NET=$TAG
 
 # default to fullnode

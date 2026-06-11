@@ -501,6 +501,7 @@ type Thornode struct {
 		Pruning         string `mapstructure:"pruning"`
 		HaltHeight      int64  `mapstructure:"halt_height"`
 		MinRetainBlocks int64  `mapstructure:"min_retain_blocks"`
+		IAVLCacheSize   uint64 `mapstructure:"iavl_cache_size"`
 
 		Telemetry struct {
 			Enabled                 bool  `mapstructure:"enabled"`
@@ -538,6 +539,11 @@ type Thornode struct {
 
 	// Tendermint contains values used in templating the Tendermint config.toml.
 	Tendermint struct {
+		DB struct {
+			Backend string `mapstructure:"backend"`
+			Dir     string `mapstructure:"dir"`
+		} `mapstructure:"db"`
+
 		Consensus struct {
 			TimeoutProposeDelta   time.Duration `mapstructure:"timeout_propose_delta"`
 			TimeoutPrevoteDelta   time.Duration `mapstructure:"timeout_prevote_delta"`

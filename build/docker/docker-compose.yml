@@ -176,7 +176,7 @@ services:
       context: ../..
       dockerfile: ./build/docker/Dockerfile
       args:
-        TAG: mocknet
+        TAG: mocknet,pebbledb
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
         - ci_job_token

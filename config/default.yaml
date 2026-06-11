@@ -1046,6 +1046,7 @@ thor:
     pruning: nothing
     halt_height: 0
     min_retain_blocks: 0
+    iavl_cache_size: 781250
     telemetry:
       enabled: false
       prometheus_retention_time: 600
@@ -1068,6 +1069,9 @@ thor:
       query_gas_limit: 3000000
       memory_cache_size: 100
   tendermint:
+    db:
+      backend: goleveldb
+      dir: data
     log:
       level: info
       format: plain

@@ -41,10 +41,10 @@ fast_sync = true
 # * badgerdb (uses github.com/dgraph-io/badger)
 #   - EXPERIMENTAL
 #   - use badgerdb build tag (go build -tags badgerdb)
-db_backend = "goleveldb"
+db_backend = "{{ .DB.Backend }}"
 
 # Database directory
-db_dir = "data"
+db_dir = "{{ .DB.Dir }}"
 
 # Output level for logging, including package level options
 log_level = "{{ .Log.Level }}"
