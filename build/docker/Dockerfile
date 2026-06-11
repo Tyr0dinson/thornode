@@ -72,7 +72,7 @@ COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/ap
 COPY build/scripts /scripts
 
 # default to mainnet
-ARG TAG="mainnet,pebbledb"
+ARG TAG=mainnet,pebbledb
 ENV NET=$TAG
 
 # default to fullnode
