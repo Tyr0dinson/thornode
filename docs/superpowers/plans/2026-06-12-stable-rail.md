@@ -1780,11 +1780,11 @@ Fresh NEAR Intents public Explorer sample, successful USDC/USDT
 stable-to-stable swaps, 24h from 2026-06-11 09:49:24 UTC to
 2026-06-12 09:49:24 UTC:
 
-| Route type | Count | 24h volume | Average | Median |
-| --- | ---: | ---: | ---: | ---: |
-| Different-symbol `USDC <-> USDT` | 1,577 | 5.05M USD | 3,199 USD | 134 USD |
-| Same-symbol cross-chain | 2,491 | 7.65M USD | 3,070 USD | 90 USD |
-| All stable-to-stable | 4,068 | 12.69M USD | 3,120 USD | 100 USD |
+| Route type                       | Count | 24h volume |   Average |  Median |
+| -------------------------------- | ----: | ---------: | --------: | ------: |
+| Different-symbol `USDC <-> USDT` | 1,577 |  5.05M USD | 3,199 USD | 134 USD |
+| Same-symbol cross-chain          | 2,491 |  7.65M USD | 3,070 USD |  90 USD |
+| All stable-to-stable             | 4,068 | 12.69M USD | 3,120 USD | 100 USD |
 
 Tail:
 
@@ -1797,27 +1797,27 @@ max = 599,333 USD
 
 Direction mix:
 
-| Direction | Count | 24h volume | Median |
-| --- | ---: | ---: | ---: |
-| `USDT -> USDT` | 1,535 | 5.36M USD | 105 USD |
-| `USDC -> USDC` | 956 | 2.29M USD | 50 USD |
-| `USDC -> USDT` | 943 | 2.89M USD | 219 USD |
-| `USDT -> USDC` | 634 | 2.15M USD | 72 USD |
+| Direction      | Count | 24h volume |  Median |
+| -------------- | ----: | ---------: | ------: |
+| `USDT -> USDT` | 1,535 |  5.36M USD | 105 USD |
+| `USDC -> USDC` |   956 |  2.29M USD |  50 USD |
+| `USDC -> USDT` |   943 |  2.89M USD | 219 USD |
+| `USDT -> USDC` |   634 |  2.15M USD |  72 USD |
 
 Amount buckets:
 
-| Swap amount | Count | 24h volume |
-| --- | ---: | ---: |
-| 0-10 USD | 846 | 3.6K USD |
-| 10-50 USD | 822 | 20.4K USD |
-| 50-100 USD | 376 | 29.5K USD |
-| 100-250 USD | 463 | 75.2K USD |
-| 250-500 USD | 294 | 111.5K USD |
-| 500-1,000 USD | 410 | 340.6K USD |
-| 1,000-5,000 USD | 471 | 1.30M USD |
-| 5,000-10,000 USD | 166 | 1.32M USD |
-| 10,000-50,000 USD | 189 | 4.09M USD |
-| Over 50,000 USD | 31 | 5.40M USD |
+| Swap amount       | Count | 24h volume |
+| ----------------- | ----: | ---------: |
+| 0-10 USD          |   846 |   3.6K USD |
+| 10-50 USD         |   822 |  20.4K USD |
+| 50-100 USD        |   376 |  29.5K USD |
+| 100-250 USD       |   463 |  75.2K USD |
+| 250-500 USD       |   294 | 111.5K USD |
+| 500-1,000 USD     |   410 | 340.6K USD |
+| 1,000-5,000 USD   |   471 |  1.30M USD |
+| 5,000-10,000 USD  |   166 |  1.32M USD |
+| 10,000-50,000 USD |   189 |  4.09M USD |
+| Over 50,000 USD   |    31 |  5.40M USD |
 
 Subsidy sizing proxy:
 
@@ -1837,14 +1837,14 @@ Inventory-worsening flow adds the inventory fee to the fixed outbound cost.
 Estimated daily STAR fund spend needed to make every included swap beat NEAR:
 
 | Include swaps above | Count | 24h volume | 0.25 USD outbound | 0.50 USD outbound | 1.00 USD outbound |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 USD | 4,068 | 12.69M USD | 487 USD/day | 1,141 USD/day | 2,592 USD/day |
-| 10 USD | 3,222 | 12.69M USD | 280 USD/day | 722 USD/day | 1,750 USD/day |
-| 50 USD | 2,400 | 12.67M USD | 96 USD/day | 333 USD/day | 950 USD/day |
-| 100 USD | 2,024 | 12.64M USD | 34 USD/day | 178 USD/day | 606 USD/day |
-| 250 USD | 1,561 | 12.56M USD | 0 USD/day | 28 USD/day | 225 USD/day |
-| 500 USD | 1,267 | 12.45M USD | 0 USD/day | 0 USD/day | 53 USD/day |
-| 1,000 USD | 857 | 12.11M USD | 0 USD/day | 0 USD/day | 0 USD/day |
+| ------------------: | ----: | ---------: | ----------------: | ----------------: | ----------------: |
+|               0 USD | 4,068 | 12.69M USD |       487 USD/day |     1,141 USD/day |     2,592 USD/day |
+|              10 USD | 3,222 | 12.69M USD |       280 USD/day |       722 USD/day |     1,750 USD/day |
+|              50 USD | 2,400 | 12.67M USD |        96 USD/day |       333 USD/day |       950 USD/day |
+|             100 USD | 2,024 | 12.64M USD |        34 USD/day |       178 USD/day |       606 USD/day |
+|             250 USD | 1,561 | 12.56M USD |         0 USD/day |        28 USD/day |       225 USD/day |
+|             500 USD | 1,267 | 12.45M USD |         0 USD/day |         0 USD/day |        53 USD/day |
+|           1,000 USD |   857 | 12.11M USD |         0 USD/day |         0 USD/day |         0 USD/day |
 
 Implications:
 

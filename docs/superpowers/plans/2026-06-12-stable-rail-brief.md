@@ -179,7 +179,7 @@ All consensus math uses integers.
 
 ## Subsidy Mode
 
-Subsidy mode is how STAR gets as close to free as the imlementation allows.
+Subsidy mode is how STAR gets as close to free as the implementation allows.
 
 The STAR fund can pay a top-up:
 
