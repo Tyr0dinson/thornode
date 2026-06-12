@@ -133,6 +133,7 @@ var maccPerms = map[string][]string{
 	thorchain.TCYClaimingName:        {},
 	thorchain.TCYStakeName:           {},
 	thorchain.POLReserveName:         {},
+	thorchain.AppLayerName:           {},
 }
 
 var (
@@ -941,6 +942,8 @@ func BlockedAddresses() map[string]bool {
 	// Allow lending and treasury to receive funds
 	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.LendingName).String())
 	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.TreasuryName).String())
+	// Allow the app layer module to receive external RUNE income directly
+	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.AppLayerName).String())
 
 	return modAccAddrs
 }

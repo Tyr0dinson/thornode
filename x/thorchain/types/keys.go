@@ -25,6 +25,8 @@ const (
 	TCYStakeName = "tcy_stake"
 	// POLReserveName the name of the account used to store POL reserve funds from system income
 	POLReserveName = "pol_reserve"
+	// AppLayerName the name of the account used to receive app layer income
+	AppLayerName = "app_layer"
 
 	// StoreKey to be used when creating the KVStore
 	StoreKey = ModuleName

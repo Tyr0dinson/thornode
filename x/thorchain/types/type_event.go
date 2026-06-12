@@ -65,6 +65,8 @@ const (
 	VaultOverSolvencyEventType      = "vault_over_solvency"
 	POLReserveDeployEventType       = "pol_reserve_deploy"
 	DynamicL1FeeUpdateEventType     = "dynamic_l1_fee_update"
+	SystemIncomeEventType           = "system_income"
+	AppLayerIncomeEventType         = "app_layer_income"
 )
 
 // PoolMods a list of pool modifications
@@ -473,6 +475,82 @@ func (m *EventRewards) Events() (cosmos.Events, error) {
 		evt = evt.AppendAttributes(cosmos.NewAttribute(item.Asset.String(), strconv.FormatInt(item.Amount, 10)))
 	}
 	return cosmos.Events{evt}, nil
+}
+
+// EventSystemIncome is emitted once per block with the breakdown of gross system
+// income: its component inputs (block reward, liquidity fees, app layer fees),
+// the rev share subtracted, and the resulting gross. This is a plain event struct
+// (not a generated proto message) — it is emitted as standard cosmos event
+// attributes, which is all indexers consume.
+type EventSystemIncome struct {
+	BlockReward   cosmos.Uint
+	LiquidityFees cosmos.Uint
+	AppLayerFees  cosmos.Uint
+	RevShare      cosmos.Uint
+	SystemIncome  cosmos.Uint
+}
+
+// NewEventSystemIncome create a new system income event
+func NewEventSystemIncome(blockReward, liquidityFees, appLayerFees, revShare, systemIncome cosmos.Uint) *EventSystemIncome {
+	return &EventSystemIncome{
+		BlockReward:   blockReward,
+		LiquidityFees: liquidityFees,
+		AppLayerFees:  appLayerFees,
+		RevShare:      revShare,
+		SystemIncome:  systemIncome,
+	}
+}
+
+// Type return system income event type
+func (m *EventSystemIncome) Type() string {
+	return SystemIncomeEventType
+}
+
+// Events return a standard cosmos event
+func (m *EventSystemIncome) Events() (cosmos.Events, error) {
+	return cosmos.Events{
+		cosmos.NewEvent(
+			m.Type(),
+			cosmos.NewAttribute("block_reward", m.BlockReward.String()),
+			cosmos.NewAttribute("liquidity_fees", m.LiquidityFees.String()),
+			cosmos.NewAttribute("app_layer_fees", m.AppLayerFees.String()),
+			cosmos.NewAttribute("rev_share", m.RevShare.String()),
+			cosmos.NewAttribute("system_income", m.SystemIncome.String()),
+		),
+	}, nil
+}
+
+// EventAppLayerIncome is emitted at the per-block app layer drain with the exact
+// amount of app layer income recognised that block. This is the canonical signal
+// for indexing app layer revenue, independent of the aggregate system income
+// event. Plain event struct (not a generated proto message).
+type EventAppLayerIncome struct {
+	Amount cosmos.Uint
+	Asset  common.Asset
+}
+
+// NewEventAppLayerIncome create a new app layer income event
+func NewEventAppLayerIncome(amount cosmos.Uint, asset common.Asset) *EventAppLayerIncome {
+	return &EventAppLayerIncome{
+		Amount: amount,
+		Asset:  asset,
+	}
+}
+
+// Type return app layer income event type
+func (m *EventAppLayerIncome) Type() string {
+	return AppLayerIncomeEventType
+}
+
+// Events return a standard cosmos event
+func (m *EventAppLayerIncome) Events() (cosmos.Events, error) {
+	return cosmos.Events{
+		cosmos.NewEvent(
+			m.Type(),
+			cosmos.NewAttribute("amount", m.Amount.String()),
+			cosmos.NewAttribute("asset", m.Asset.String()),
+		),
+	}, nil
 }
 
 // NewEventRefund create a new EventRefund

@@ -21,6 +21,7 @@ const (
 	TCYClaimingName        = types.TCYClaimingName
 	TCYStakeName           = types.TCYStakeName
 	POLReserveName         = types.POLReserveName
+	AppLayerName           = types.AppLayerName
 	RouterKey              = types.RouterKey
 	StoreKey               = types.StoreKey
 	DefaultCodespace       = types.DefaultCodespace
@@ -147,6 +148,8 @@ var (
 	NewTxOut                       = types.NewTxOut
 	NewEventRewards                = types.NewEventRewards
 	NewEventRevShare               = types.NewEventRevShare
+	NewEventSystemIncome           = types.NewEventSystemIncome
+	NewEventAppLayerIncome         = types.NewEventAppLayerIncome
 	NewEventPOLReserveDeploy       = types.NewEventPOLReserveDeploy
 	NewEventPool                   = types.NewEventPool
 	NewEventDonate                 = types.NewEventDonate
@@ -350,6 +353,8 @@ type (
 	EventWithdraw            = types.EventWithdraw
 	EventDonate              = types.EventDonate
 	EventRewards             = types.EventRewards
+	EventSystemIncome        = types.EventSystemIncome
+	EventAppLayerIncome      = types.EventAppLayerIncome
 	EventErrata              = types.EventErrata
 	EventReserve             = types.EventReserve
 	PoolAmt                  = types.PoolAmt

@@ -98,6 +98,39 @@ func (s EventSuite) TestReward(c *C) {
 	c.Check(events, NotNil)
 }
 
+func (s EventSuite) TestSystemIncome(c *C) {
+	evt := NewEventSystemIncome(
+		cosmos.NewUint(100), // block reward
+		cosmos.NewUint(20),  // liquidity fees
+		cosmos.NewUint(30),  // app layer fees
+		cosmos.NewUint(5),   // rev share
+		cosmos.NewUint(145), // gross system income
+	)
+	c.Check(evt.Type(), Equals, "system_income")
+	c.Check(evt.BlockReward.String(), Equals, "100")
+	c.Check(evt.LiquidityFees.String(), Equals, "20")
+	c.Check(evt.AppLayerFees.String(), Equals, "30")
+	c.Check(evt.RevShare.String(), Equals, "5")
+	c.Check(evt.SystemIncome.String(), Equals, "145")
+	events, err := evt.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(events, HasLen, 1)
+	c.Check(events[0].Type, Equals, "system_income")
+}
+
+func (s EventSuite) TestAppLayerIncome(c *C) {
+	evt := NewEventAppLayerIncome(cosmos.NewUint(1234), common.RuneNative)
+	c.Check(evt.Type(), Equals, "app_layer_income")
+	c.Check(evt.Amount.String(), Equals, "1234")
+	c.Check(evt.Asset.Equals(common.RuneNative), Equals, true)
+	events, err := evt.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(events, HasLen, 1)
+	c.Check(events[0].Type, Equals, "app_layer_income")
+}
+
 func (s EventSuite) TestSlash(c *C) {
 	evt := NewEventSlash(common.ETHAsset, []PoolAmt{
 		{common.ETHAsset, -20},

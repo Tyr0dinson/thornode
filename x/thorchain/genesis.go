@@ -381,6 +381,8 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	ctx.Logger().Info("Claiming Module", "address", ClaimingAddr.String())
 	tcyStakeAddr, _ := keeper.GetModuleAddress(TCYStakeName)
 	ctx.Logger().Info("TCYStake Module", "address", tcyStakeAddr.String())
+	appLayerAddr, _ := keeper.GetModuleAddress(AppLayerName)
+	ctx.Logger().Info("AppLayer Module", "address", appLayerAddr.String())
 
 	return validators
 }

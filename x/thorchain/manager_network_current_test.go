@@ -254,12 +254,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 1)
 	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 1)
 
-	bondR, poolR, lpShare, _, _, _, _, _ := networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ := networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1586), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(1585), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(4998), Commentf("%d", lpShare.Uint64())) // Equilibrium
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1903), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR := bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1268), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -267,13 +267,13 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(3999), Commentf("%d", lpShare.Uint64())) // ~40% for availablePoolsRune, ~40% for effectiveSecurityBond (equilibrium), ~60% for totalEffectiveBond
 
 	// vaultsLiquidityRune more than availablePoolsRune.
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	// TODO: poolR here is intended to be non-zero; find out what's strange.
 	c.Check(bondR.Uint64(), Equals, uint64(2114), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(1057), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(3333), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting half the rewards of 2000 effectiveSecurityBond; same yield)
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(2378), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1585), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -281,12 +281,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(2501), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting a third the rewards of 3000 totalEffectiveBond; same yield)
 
 	// Liquidity fees non-zero.
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3086), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(3085), Commentf("%d", poolR.Uint64()))     // Equilibrium with bondR.  (Liquidity fees sent to Reserve in swap, some received back in EndBlock rewards.)
 	c.Check(lpShare.Uint64(), Equals, uint64(4999), Commentf("%d", lpShare.Uint64())) // Equilibrium
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3703), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(2468), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -294,12 +294,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(3999), Commentf("%d", lpShare.Uint64())) // ~40% for availablePoolsRune, ~40% for effectiveSecurityBond (equilibrium), ~60% for totalEffectiveBond
 
 	// Empty Reserve and no liquidity fees (all rewards zero).
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(0), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(0), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(0), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -310,12 +310,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	effectiveSecurityBond = cosmos.NewUint(1000 * common.One)
 
 	// Provided liquidity equal to effectiveSecurityBond (no pool rewards).
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1057), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -323,12 +323,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 
 	// Zero provided liquidity (incapable of receiving pool rewards).
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64())) // No pools are capable of receiving rewards, so should not transfer any RUNE to the Pool Module (broken invariant).
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1057), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -336,12 +336,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 
 	// Provided liquidity more than effectiveSecurityBond.
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1057), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -356,12 +356,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 1)
 	effectiveSecurityBond = cosmos.NewUint(2000 * common.One) // Resetting from the half-size comparison.
 
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1586), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(1585), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(4998), Commentf("%d", lpShare.Uint64())) // Equilibrium
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1057), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(704), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -369,13 +369,13 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(6667), Commentf("%d", lpShare.Uint64())) // ~67% for availablePoolsRune, ~22% for effectiveSecurityBond (equilibrium), ~33% for totalEffectiveBond
 
 	// vaultsLiquidityRune more than availablePoolsRune.
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	// TODO: poolR here is intended to be non-zero; find out what's strange.
 	c.Check(bondR.Uint64(), Equals, uint64(2114), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(1057), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(3333), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting half the rewards of 2000 effectiveSecurityBond; same yield)
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1585), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1056), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -383,12 +383,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(5002), Commentf("%d", lpShare.Uint64())) // 500 availablePoolsRune (1000 rune value asset+rune liquidity) is getting half the rewards of 3000 totalEffectiveBond; 3/2 higher yield)
 
 	// Liquidity fees non-zero.
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3086), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(3085), Commentf("%d", poolR.Uint64()))     // Equilibrium with bondR.  (Liquidity fees sent to Reserve in swap, some received back in EndBlock rewards.)
 	c.Check(lpShare.Uint64(), Equals, uint64(4999), Commentf("%d", lpShare.Uint64())) // Equilibrium
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, cosmos.NewUint(3000), cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(2057), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1371), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -396,12 +396,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(6667), Commentf("%d", lpShare.Uint64())) // ~67% for availablePoolsRune, ~22% for effectiveSecurityBond (equilibrium), ~33% for totalEffectiveBond
 
 	// Empty Reserve and no liquidity fees (all rewards zero).
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(0), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, cosmos.ZeroUint(), totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(0), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(0), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -412,12 +412,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	effectiveSecurityBond = cosmos.NewUint(1000 * common.One)
 
 	// Provided liquidity equal to effectiveSecurityBond (still pool rewards since less than totalEffectiveRune).
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1057), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(352), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -425,12 +425,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(6667), Commentf("%d", lpShare.Uint64()))
 
 	// Zero provided liquidity (incapable of receiving pool rewards).
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64())) // No pools are capable of receiving rewards, so should not transfer any RUNE to the Pool Module (broken invariant).
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(1057), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -438,12 +438,12 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 
 	// Provided liquidity more than effectiveSecurityBond.
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(3171), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 	// With totalEffectiveBond = 1.5 * effectiveSecurityBond:
-	bondR, poolR, lpShare, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, lpShare, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, cosmos.NewUint(2001*common.One), cosmos.NewUint(2001*common.One), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(2115), Commentf("%d", bondR.Uint64()))
 	effectiveSecurityBondR = bondR.Mul(effectiveSecurityBond).Quo(totalEffectiveBond)
 	c.Check(effectiveSecurityBondR.Uint64(), Equals, uint64(705), Commentf("%d", effectiveSecurityBondR.Uint64()))
@@ -463,7 +463,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(vaultsLiquidityRune.String(), Equals, cosmos.NewUint(1000*common.One).String())
 	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())
 
-	bondR, poolR, _, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, _, _ := networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, _, _, _, _ := networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(devFundDeduct.String(), Equals, "0")
 	c.Check(systemIncomeBurnDeduct.String(), Equals, "0")
 	c.Check(tcyStakeDeduct.String(), Equals, "0")
@@ -481,7 +481,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	// PendulumAssetsBasisPoints 13,333:
 	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 13_333)
 
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "9060")
@@ -491,7 +491,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	///////////////////////////////////////////////////////////////////////////////
 	// PendulumAssetsBasisPoints 6,666:
 	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 6666)
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "6343")
@@ -508,7 +508,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
 	c.Check(vaultsLiquidityRune.String(), Equals, cosmos.NewUint(1000*common.One).String())
 
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "5283")
@@ -516,7 +516,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	// The pendulum perceives the secured vaults liquidity as being 1/3rd of the securing total effective bond, so nodes get 1/3rd the yield of pools.
 
 	// Equilbrium yield when vaultsLiquidityRune is 3/2 greater:
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune.MulUint64(3).QuoUint64(2), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune.MulUint64(3).QuoUint64(2), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "7930")
@@ -533,7 +533,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(effectiveSecurityBond.String(), Equals, cosmos.NewUint(2000*common.One).String())
 	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())
 
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "3526")
@@ -541,7 +541,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	// The pendulum perceives secured liquidity as being 1/4th of securing liquidity rather than 1/2, so nodes get less than the yield of pools (1/6th).
 
 	// Equilbrium yield when availablePoolsRune is doubled:
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(2), vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(2), vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2).MulUint64(2)) // The (doubled) pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "6343")
@@ -549,7 +549,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
 
 	// No change when ignoring L1 Assets when vaultsLiquidityRune is equally increased in order to increase availablePoolsRune:
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(2), vaultsLiquidityRune.Add(availablePoolsRune), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(2), vaultsLiquidityRune.Add(availablePoolsRune), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2).MulUint64(2)) // The (doubled) pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "6343")
@@ -566,7 +566,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
 	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())
 
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "1763")
@@ -574,7 +574,7 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewards(c *C) {
 	// The pendulum perceives secured liquidity as being 1/6th of securing liquidity rather than 1/2, so nodes get less than the yield of pools (1/15th).
 
 	// Equilbrium yield when availablePoolsRune is tripled:
-	bondR, poolR, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(3), vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
+	bondR, poolR, _, _, _, _, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(3), vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve, blocksPerYear, 0, 0, 0, 0, 0)
 	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
 	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(3).MulUint64(2)) // The (tripled) pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
 	c.Check(e12BondYield.String(), Equals, "5286")
@@ -3188,22 +3188,22 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewardsPOLReserveDeduct(c *C) {
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
 
 	// With 0 bps, polReserveDeduct should be zero
-	_, _, _, _, _, _, _, polReserveDeduct := networkMgr.calcBlockRewards(ctx,
+	_, _, _, _, _, _, _, polReserveDeduct, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve,
 		blocksPerYear, 0, 0, 0, 0, 0)
 	c.Check(polReserveDeduct.IsZero(), Equals, true)
 
 	// With 500 bps (5%), polReserveDeduct should reduce bond+pool rewards
-	bondR1, poolR1, _, _, _, _, _, _ := networkMgr.calcBlockRewards(ctx,
+	bondR1, poolR1, _, _, _, _, _, _, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve,
 		blocksPerYear, 0, 0, 0, 0, 0)
 	totalWithout := bondR1.Add(poolR1)
 
-	bondR2, poolR2, _, _, _, _, _, polReserveDeduct := networkMgr.calcBlockRewards(ctx,
+	bondR2, poolR2, _, _, _, _, _, polReserveDeduct, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve,
 		blocksPerYear, 0, 0, 0, 0, 500)
 	totalWith := bondR2.Add(poolR2)
 	c.Check(polReserveDeduct.IsZero(), Equals, false)
@@ -3663,15 +3663,15 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewardsPOLReserveHighBPSClamping(
 
 	// Set all five deductions to 3000 BPS each (15000 total > 10000)
 	// The clamping cascade should ensure POL reserve gets whatever remains
-	_, _, _, devFundDeduct, burnDeduct, tcyDeduct, marketingDeduct, polReserveDeduct := networkMgr.calcBlockRewards(ctx,
+	_, _, _, devFundDeduct, burnDeduct, tcyDeduct, marketingDeduct, polReserveDeduct, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve,
 		blocksPerYear, 3000, 3000, 3000, 3000, 3000)
 
 	// Total deducted cannot exceed original system income
-	bondR0, poolR0, _, _, _, _, _, _ := networkMgr.calcBlockRewards(ctx,
+	bondR0, poolR0, _, _, _, _, _, _, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(), emissionCurve,
 		blocksPerYear, 0, 0, 0, 0, 0)
 	originalSystemIncome := bondR0.Add(poolR0)
 
@@ -3712,17 +3712,17 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewardsRevShareReducesSystemIncom
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
 
 	// Baseline: totalRevShare = 0.
-	bondR0, poolR0, _, dev0, burn0, tcy0, mkt0, pol0 := networkMgr.calcBlockRewards(ctx,
+	bondR0, poolR0, _, dev0, burn0, tcy0, mkt0, pol0, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(),
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), cosmos.ZeroUint(),
 		emissionCurve, blocksPerYear, 500, 500, 500, 500, 500)
 
 	// With non-zero revshare: ~25% of liquidity-fee base diverted from
 	// systemIncome. Every split should shrink versus baseline.
 	totalRevShare := totalLiquidityFees.QuoUint64(4)
-	bondR1, poolR1, _, dev1, burn1, tcy1, mkt1, pol1 := networkMgr.calcBlockRewards(ctx,
+	bondR1, poolR1, _, dev1, burn1, tcy1, mkt1, pol1, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, totalRevShare,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), totalRevShare,
 		emissionCurve, blocksPerYear, 500, 500, 500, 500, 500)
 
 	c.Check(bondR1.LT(bondR0), Equals, true,
@@ -3744,9 +3744,9 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewardsRevShareReducesSystemIncom
 	// SafeSub should clamp to zero rather than underflow, and every
 	// downstream split should be zero.
 	huge := totalLiquidityFees.MulUint64(1000)
-	_, _, _, devH, burnH, tcyH, mktH, polH := networkMgr.calcBlockRewards(ctx,
+	_, _, _, devH, burnH, tcyH, mktH, polH, _, _ := networkMgr.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, huge,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), huge,
 		emissionCurve, blocksPerYear, 500, 500, 500, 500, 500)
 	c.Check(devH.IsZero(), Equals, true, Commentf("devFundDeduct should clamp to 0 when revshare exceeds systemIncome"))
 	c.Check(burnH.IsZero(), Equals, true)

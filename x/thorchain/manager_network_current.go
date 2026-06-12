@@ -1864,6 +1864,27 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("fail to get total liquidity fee: %w", err)
 	}
 
+	// Drain app layer fees into Reserve each block. This runs AFTER the
+	// totalReserve snapshot above (so the emission-curve block reward is not
+	// inflated by these funds) and AFTER the totalReserve / availablePoolsRune
+	// early-return guards (so on a guarded block the funds are left in the
+	// app_layer module to roll forward, rather than being stranded in Reserve).
+	// The drained amount is folded into systemIncome by calcBlockRewards below
+	// and distributed through the same split as all other income.
+	appLayerFees := vm.k.GetRuneBalanceOfModule(ctx, AppLayerName)
+	if !appLayerFees.IsZero() {
+		coin := common.NewCoin(common.RuneNative, appLayerFees)
+		if err = vm.k.SendFromModuleToModule(ctx, AppLayerName, ReserveName, common.NewCoins(coin)); err != nil {
+			return fmt.Errorf("fail to transfer app layer fees to reserve: %w", err)
+		}
+		// Dedicated event: the exact app-layer amount recognised this block, the
+		// canonical per-block signal for indexers (independent of system_income).
+		appLayerEvt := NewEventAppLayerIncome(appLayerFees, common.RuneNative)
+		if err = eventMgr.EmitEvent(ctx, appLayerEvt); err != nil {
+			return fmt.Errorf("fail to emit app layer income event: %w", err)
+		}
+	}
+
 	// NOTE: if we continue to have remaining gas to pay off (which is
 	// extremely unlikely), ignore it for now (attempt to recover in the next
 	// block). This should be OK as the asset amount in the pool has already
@@ -1889,10 +1910,16 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	marketingFundSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.MarketingFundSystemIncomeBps)
 	polReserveSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.POLReserveSystemIncomeBps)
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
-	bondReward, totalPoolRewards, lpShare, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct := vm.calcBlockRewards(ctx,
+	bondReward, totalPoolRewards, lpShare, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct, blockReward, grossSystemIncome := vm.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, totalRevShare, emissionCurve,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, appLayerFees, totalRevShare, emissionCurve,
 		blocksPerYear, devFundSystemIncomeBps, systemIncomeBurnRateBps, tcyStakeSystemIncomeBps, marketingFundSystemIncomeBps, polReserveSystemIncomeBps)
+
+	// Emit the per-block gross system income breakdown (inputs + gross).
+	systemIncomeEvt := NewEventSystemIncome(blockReward, totalLiquidityFees, appLayerFees, totalRevShare, grossSystemIncome)
+	if err = eventMgr.EmitEvent(ctx, systemIncomeEvt); err != nil {
+		return fmt.Errorf("fail to emit system income event: %w", err)
+	}
 
 	if !devFundDeduct.IsZero() {
 		// Send to dev fund address
@@ -2142,6 +2169,7 @@ func (vm *NetworkMgr) calcBlockRewards(
 	totalEffectiveBond,
 	totalReserve,
 	totalLiquidityFees,
+	appLayerFees,
 	totalRevShare cosmos.Uint,
 	emissionCurve int64,
 	blocksPerYear int64,
@@ -2158,6 +2186,8 @@ func (vm *NetworkMgr) calcBlockRewards(
 	tcyStakeDeduct cosmos.Uint,
 	marketingFundDeduct cosmos.Uint,
 	polReserveDeduct cosmos.Uint,
+	blockReward cosmos.Uint,
+	grossSystemIncome cosmos.Uint,
 ) {
 	// Block Rewards will take the latest reserve, divide it by the emission
 	// curve factor, then divide by blocks per year
@@ -2168,12 +2198,14 @@ func (vm *NetworkMgr) calcBlockRewards(
 	if emissionCurve <= 0 || blocksPerYear <= 0 {
 		ctx.Logger().Error("invalid emission curve or blocks per year", "emissionCurve", emissionCurve, "blocksPerYear", blocksPerYear)
 		// Return zero rewards if config is invalid
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()
 	}
 	blockRewardD := trD.Quo(ecD).Quo(bpyD)
-	blockReward := cosmos.NewUint(uint64(blockRewardD.RoundInt64()))
+	blockReward = cosmos.NewUint(uint64(blockRewardD.RoundInt64()))
 
-	systemIncome := blockReward.Add(totalLiquidityFees) // Get total system income for block
+	// app layer fees are a third additive system-income source alongside the
+	// reserve-emitted block reward and the block's liquidity (swap) fees.
+	systemIncome := blockReward.Add(totalLiquidityFees).Add(appLayerFees) // Get total system income for block
 
 	// Subtract REVSHARE payouts from systemIncome so all subsequent splits
 	// (dev fund, burn, TCY stake, marketing, POL reserve, pool/bond) work
@@ -2183,6 +2215,11 @@ func (vm *NetworkMgr) calcBlockRewards(
 	// and rev_share events still fire even when those guards skip the
 	// remainder of UpdateNetwork (and therefore this calcBlockRewards call).
 	systemIncome = common.SafeSub(systemIncome, totalRevShare)
+
+	// Gross system income for the block: the sum of all income sources less
+	// REVSHARE, captured before the dev fund / burn / TCY / marketing / POL
+	// deductions and the pendulum split below. Returned for the system_income event.
+	grossSystemIncome = systemIncome
 
 	devFundSystemIncomeBpsUint := cosmos.SafeUintFromInt64(devFundSystemIncomeBps)
 	systemIncomeBurnRateBpsUint := cosmos.SafeUintFromInt64(systemIncomeBurnRateBps)
@@ -2256,6 +2293,7 @@ func (vm *NetworkMgr) calcBlockRewards(
 		"available_pools_rune", availablePoolsRune,
 		"block_reward", blockReward,
 		"total_liquidity_fees", totalLiquidityFees,
+		"app_layer_fees", appLayerFees,
 		"dev_fund_reward", devFundDeduct,
 		"income_burn", systemIncomeBurnDeduct,
 		"marketing_fund_reward", marketingFundDeduct,
@@ -2272,7 +2310,7 @@ func (vm *NetworkMgr) calcBlockRewards(
 
 	lpShare = common.GetSafeShare(lpSplit, systemIncome, cosmos.NewUint(10_000))
 
-	return bonderSplit, lpSplit, lpShare, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct
+	return bonderSplit, lpSplit, lpShare, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct, blockReward, grossSystemIncome
 }
 
 // getPoolShare calculates the pool share of the total rewards. The distribution is
