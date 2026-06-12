@@ -56,6 +56,7 @@ flowchart TD
 
     CALC --> SPLIT["Distributed the same block through the<br/>existing system-income split<br/>(dev fund · burn · TCY · marketing · POL · LPs · bonders)"]
 
+    DRAIN -. "emit" .-> EV0["app_layer_income event<br/>amount = exact app-layer RUNE this block"]
     CALC -. "emit" .-> EV1["system_income event<br/>incl. app_layer_fees"]
     SPLIT -. "emit" .-> EV2["rewards event<br/>incl. app_layer_fees"]
 ```
@@ -66,7 +67,10 @@ touching `app_layer` (so the emission-curve block reward is unaffected); on a
 healthy block it drains `app_layer` into Reserve and adds the amount to system
 income, which is then distributed the same block through the existing split. On a
 guarded block nothing is drained — the funds stay in `app_layer` and roll forward.
-The `system_income` and `rewards` events make Rujira's contribution indexable.
+A dedicated `app_layer_income` event fires at the drain with the **exact app-layer
+amount** for that block — the clean signal for indexers — while the aggregate
+`system_income` and `rewards` events carry it as one component among the block's
+totals.
 
 ---
 
@@ -167,10 +171,18 @@ if !appLayerFees.IsZero() {
     if err = vm.k.SendFromModuleToModule(ctx, AppLayerName, ReserveName, common.NewCoins(coin)); err != nil {
         return fmt.Errorf("fail to transfer app layer fees to reserve: %w", err)
     }
+    // Dedicated event: the exact app-layer amount recognised this block. This is
+    // the canonical per-block signal for indexers tracking app-layer revenue —
+    // independent of the aggregate system_income event.
+    appLayerEvt := NewEventAppLayerIncome(appLayerFees, common.RuneAsset())
+    if err = eventMgr.EmitEvent(ctx, appLayerEvt); err != nil {
+        return fmt.Errorf("fail to emit app layer income event: %w", err)
+    }
 }
 ```
 Pass `appLayerFees` to `calcBlockRewards` (new param after `totalLiquidityFees`),
-and to the `NewEventRewards` call (see #9).
+and to the `NewEventRewards` call (see #9). The dedicated `app_layer_income` event
+(#8/#9) is emitted here, at the drain, only when the amount is non-zero.
 
 ### 7. `x/thorchain/manager_network_current.go` — `calcBlockRewards` (~line 2137)
 - Add `appLayerFees cosmos.Uint` parameter (after `totalLiquidityFees`).
@@ -194,7 +206,7 @@ string app_layer_fees = 8 [
   (gogoproto.nullable) = false
 ];
 ```
-Add a new `EventSystemIncome` message:
+Add a new `EventSystemIncome` message (aggregate, full block breakdown):
 ```proto
 message EventSystemIncome {
   string block_reward    = 1 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
@@ -202,6 +214,14 @@ message EventSystemIncome {
   string app_layer_fees  = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
   string rev_share       = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
   string system_income   = 5 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}
+```
+Add a new `EventAppLayerIncome` message (dedicated, the app-layer amount only —
+the canonical per-block signal for indexing app-layer revenue):
+```proto
+message EventAppLayerIncome {
+  string amount = 1 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string asset  = 2;
 }
 ```
 Then run `make proto-gen` to regenerate `type_events.pb.go`.
@@ -217,12 +237,18 @@ Then run `make proto-gen` to regenerate `type_events.pb.go`.
     `rev_share`, `system_income`.
   - `system_income` is the **gross** (= sum of the inputs minus rev_share), so
     indexers can reconcile it against the component attributes.
+- Add `NewEventAppLayerIncome(amount cosmos.Uint, asset common.Asset)` constructor
+  + `Type()` / `Events()`:
+  - `Type()` → `"app_layer_income"`.
+  - `Events()` attributes: `amount`, `asset`.
 
 ### 10. `x/thorchain/alias.go`
-Add aliases for the new event:
+Add aliases for the new events:
 ```go
-NewEventSystemIncome = types.NewEventSystemIncome
-EventSystemIncome    = types.EventSystemIncome
+NewEventSystemIncome   = types.NewEventSystemIncome
+EventSystemIncome      = types.EventSystemIncome
+NewEventAppLayerIncome = types.NewEventAppLayerIncome
+EventAppLayerIncome    = types.EventAppLayerIncome
 ```
 
 ### 11. `x/thorchain/manager_network_current.go` — `UpdateNetwork`
@@ -245,7 +271,8 @@ Update the existing `NewEventRewards(...)` call (line 2014) to pass `appLayerFee
   (~18) gets `cosmos.ZeroUint()` added for the new `appLayerFees` arg (after
   `totalLiquidityFees`).
 - `x/thorchain/types/type_event_test.go`: update the `NewEventRewards` call;
-  add a `NewEventSystemIncome` test (attribute values + `Type()`).
+  add `NewEventSystemIncome` and `NewEventAppLayerIncome` tests (attribute values
+  + `Type()`).
 
 **New behaviour**
 - **Income inclusion:** with a funded `app_layer` module, `systemIncome` includes
@@ -259,9 +286,12 @@ Update the existing `NewEventRewards(...)` call (line 2014) to pass `appLayerFee
   is distributed on the next healthy block. (Guards against the strand-in-Reserve
   bug.)
 - **Drain completeness:** after a healthy block, the `app_layer` module is emptied.
-- **Events:** `system_income` event emitted with correct `block_reward`,
+- **Events:** the dedicated `app_layer_income` event is emitted at the drain with
+  `amount` == the drained balance (and **not** emitted on a zero-balance or guarded
+  block); the `system_income` event carries correct `block_reward`,
   `liquidity_fees`, `app_layer_fees`, `rev_share`, `system_income`; the `rewards`
-  event carries a non-zero `app_layer_fees` attribute.
+  event carries a non-zero `app_layer_fees` attribute. All three agree on the
+  app-layer amount.
 
 ---
 
@@ -271,6 +301,7 @@ Update the existing `NewEventRewards(...)` call (line 2014) to pass `appLayerFee
    new zero-value arg.
 3. Mocknet manual check: fund the `app_layer` module address with RUNE; on the next
    block confirm:
+   - an `app_layer_income` event with `amount` == the funded amount,
    - a `system_income` event with correct component + gross values,
    - a non-zero `app_layer_fees` attribute on the `rewards` event,
    - pool/bond distribution increased by the drained amount,
