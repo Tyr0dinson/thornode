@@ -79,6 +79,7 @@ const (
 )
 
 var ErrSidecarNotConfigured = errors.New("xmr sidecar requires signer_endpoint or api_host configuration")
+var errXMRBalanceUnreconciled = errors.New("xmr sidecar balance is not reconciled")
 
 type signedTxPayload struct {
 	TxHash          string                `json:"tx_hash"`
@@ -2128,7 +2129,15 @@ func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.A
 	return c.GetAccountByAddress(addr.String(), height)
 }
 
-func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account, error) {
+func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
+	return c.getAccountByAddress(address, height, false)
+}
+
+func (c *Client) getSolvencyAccountByAddress(address string) (common.Account, error) {
+	return c.getAccountByAddress(address, nil, true)
+}
+
+func (c *Client) getAccountByAddress(address string, _ *big.Int, requireReconciled bool) (common.Account, error) {
 	if c.sidecar == nil {
 		return common.Account{}, fmt.Errorf("xmr account query requires sidecar")
 	}
@@ -2149,6 +2158,14 @@ func (c *Client) GetAccountByAddress(address string, _ *big.Int) (common.Account
 	balance, err := c.sidecar.Balance(pubKey.String())
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get monero wallet balance for %s: %w", address, err)
+	}
+	if requireReconciled && !balance.IsReconciled() {
+		return common.Account{}, fmt.Errorf(
+			"%w for %s: pending_outgoing_count=%d",
+			errXMRBalanceUnreconciled,
+			address,
+			balance.PendingOutgoingCount,
+		)
 	}
 	// Account reporting (used by solvency comparison vs thornode's vault.coins)
 	// must use the TOTAL on-chain balance — locked + unlocked. Locked outputs
@@ -2537,14 +2554,20 @@ func (c *Client) ReportSolvency(height int64) error {
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	checkedVaults := 0
+	deferredForReconciliation := false
 	for i := range asgardVaults {
 		address := c.resolveVaultAddress(asgardVaults[i])
 		if address.IsEmpty() {
 			continue
 		}
 
-		acct, acctErr := c.GetAccountByAddress(address.String(), nil)
+		acct, acctErr := c.getSolvencyAccountByAddress(address.String())
 		if acctErr != nil {
+			if errors.Is(acctErr, errXMRBalanceUnreconciled) {
+				deferredForReconciliation = true
+				c.logger.Info().Err(acctErr).Str("address", address.String()).Msg("defer monero solvency while sidecar balance reconciles")
+				continue
+			}
 			c.logger.Err(acctErr).Str("address", address.String()).Msg("fail to get monero account balance for solvency")
 			continue
 		}
@@ -2562,6 +2585,10 @@ func (c *Client) ReportSolvency(height int64) error {
 			continue
 		}
 		msgs = append(msgs, msg)
+	}
+
+	if deferredForReconciliation {
+		return nil
 	}
 
 	if !c.IsBlockScannerHealthy() && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
