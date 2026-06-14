@@ -73,7 +73,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 
 	var result []btcjson.ListUnspentResult
 	var toSpend btcutil.Amount
-	minUTXOAmt := btcutil.Amount(c.cfg.ChainID.DustThreshold().Uint64()).ToBTC()
+	minUTXOAmt := c.satsToRPCAmount(int64(c.cfg.ChainID.DustThreshold().Uint64()))
 	utxosToSpend := c.getMaximumUtxosToSpend() // can be set by mimir
 
 	for _, item := range utxos {
@@ -135,11 +135,11 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 		}
 
 		result = append(result, item)
-		amt, err := btcutil.NewAmount(item.Amount)
+		amt, err := c.rpcAmountToSats(item.Amount)
 		if err != nil {
 			return nil, fmt.Errorf("fail to convert to btcutil amount: %w", err)
 		}
-		toSpend += amt
+		toSpend += btcutil.Amount(amt)
 
 		// in the scenario that there are too many unspent utxos available, make sure it
 		// doesn't spend too much as too much UTXO will cause huge pressure on TSS, also
@@ -267,6 +267,13 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
 		return bchtxscript.PayToAddrScript(addr)
+	case common.XECChain:
+		var addr bchutil.Address
+		addr, err = bchutil.DecodeAddress(sourceAddr.String(), c.getChainCfgXEC())
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
+		}
+		return bchtxscript.PayToAddrScript(addr)
 	case common.LTCChain:
 		var addr ltcutil.Address
 		addr, err = ltctxscript.DecodeAddress(sourceAddr.String(), c.getChainCfgLTC())
@@ -367,7 +374,7 @@ func (c *Client) isSegwitChain() bool {
 	switch c.cfg.ChainID {
 	case common.BTCChain, common.LTCChain:
 		return true
-	case common.DOGEChain, common.BCHChain, common.ZECChain:
+	case common.DOGEChain, common.BCHChain, common.XECChain, common.ZECChain:
 		return false
 	default:
 		c.log.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
@@ -387,12 +394,12 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 		}
 		// analyze-ignore(float-comparison)
 		if fee != 0.0 && vSize != 0 {
-			var amt btcutil.Amount
-			amt, err = btcutil.NewAmount(fee)
+			var amt int64
+			amt, err = c.rpcAmountToSats(fee)
 			if err != nil {
 				c.log.Err(err).Msg("fail to convert amount from float64 to int64")
 			} else {
-				gasRate = int64(amt) / int64(vBytes) // sats per vbyte
+				gasRate = amt / int64(vBytes) // sats per vbyte
 			}
 		}
 	}
@@ -439,13 +446,13 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		outputPoint := wire.NewOutPoint(txID, item.Vout)
 		sourceTxIn := wire.NewTxIn(outputPoint, nil, nil)
 		redeemTx.AddTxIn(sourceTxIn)
-		var amt btcutil.Amount
-		amt, err = btcutil.NewAmount(item.Amount)
+		var amt int64
+		amt, err = c.rpcAmountToSats(item.Amount)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
 		}
-		individualAmounts[formatUtxoKey(txID.String(), item.Vout)] = int64(amt)
-		totalAmt += int64(amt)
+		individualAmounts[formatUtxoKey(txID.String(), item.Vout)] = amt
+		totalAmt += amt
 	}
 
 	var buf []byte
@@ -468,6 +475,20 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	case common.BCHChain:
 		var outputAddr bchutil.Address
 		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		buf, err = bchtxscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+		}
+		nullDataScripts, err = MemoToScripts(tx.Memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+		}
+	case common.XECChain:
+		var outputAddr bchutil.Address
+		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgXEC())
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
@@ -592,7 +613,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	}
 
 	gasAmt := btcutil.Amount(gasAmtSats)
-	if err = c.temporalStorage.UpsertTransactionFee(gasAmt.ToBTC(), int32(totalSize)); err != nil {
+	if err = c.temporalStorage.UpsertTransactionFee(c.satsToRPCAmount(int64(gasAmt)), int32(totalSize)); err != nil {
 		c.log.Err(err).Msg("fail to save gas info to UTXO storage")
 	}
 
@@ -753,11 +774,11 @@ func (c *Client) buildConsolidateTxOutItem(vault types.Vault, utxos []btcjson.Li
 	// Convert each UTXO amount to sats before summing to avoid float accumulation drift.
 	total := btcutil.Amount(0)
 	for _, item := range utxos {
-		amt, err := btcutil.NewAmount(item.Amount)
+		amt, err := c.rpcAmountToSats(item.Amount)
 		if err != nil {
 			return stypes.TxOutItem{}, fmt.Errorf("convert utxo amount %f: %w", item.Amount, err)
 		}
-		total += amt
+		total += btcutil.Amount(amt)
 	}
 
 	addr, err := vault.PubKey.GetAddress(c.cfg.ChainID)

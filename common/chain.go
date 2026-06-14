@@ -20,6 +20,7 @@ const (
 	BTCChain   = Chain("BTC")
 	LTCChain   = Chain("LTC")
 	BCHChain   = Chain("BCH")
+	XECChain   = Chain("XEC")
 	DOGEChain  = Chain("DOGE")
 	THORChain  = Chain("THOR")
 	GAIAChain  = Chain("GAIA")
@@ -47,6 +48,7 @@ var AllChains = [...]Chain{
 	BTCChain,
 	LTCChain,
 	BCHChain,
+	XECChain,
 	DOGEChain,
 	THORChain,
 	GAIAChain,
@@ -135,7 +137,7 @@ func GetSubstrateChains() []Chain {
 
 // GetUTXOChains returns all "UTXO" chains connected to THORChain.
 func GetUTXOChains() []Chain {
-	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain}
+	return []Chain{BTCChain, LTCChain, BCHChain, XECChain, DOGEChain, ZECChain}
 }
 
 // IsEVM returns true if given chain is an EVM chain.
@@ -208,6 +210,8 @@ func (c Chain) GetGasAsset() Asset {
 		return LTCAsset
 	case BCHChain:
 		return BCHAsset
+	case XECChain:
+		return XECAsset
 	case DOGEChain:
 		return DOGEAsset
 	case ETHChain:
@@ -261,7 +265,7 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "drop", cosmos.NewUint(1e6)
 	case TRONChain:
 		return "sun", cosmos.NewUint(1e6)
-	case BTCChain, BCHChain, LTCChain, DOGEChain, ZECChain:
+	case BTCChain, BCHChain, XECChain, LTCChain, DOGEChain, ZECChain:
 		return "satsperbyte", cosmos.NewUint(1e8)
 	case ETHChain, BSCChain, POLChain:
 		return "gwei", cosmos.NewUint(1e9)
@@ -381,6 +385,9 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 	if c.IsEVM() {
 		return "0x"
 	}
+	if c.Equals(XECChain) {
+		return "ecash"
+	}
 	if c.Equals(TAOChain) {
 		return "5" // SS58 prefix 42 addresses start with "5"
 	}
@@ -452,6 +459,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(100_000)
 	case BCHChain:
 		return cosmos.NewUint(10_000)
+	case XECChain:
+		return cosmos.NewUint(546)
 	case ZECChain:
 		return cosmos.NewUint(15_000)
 	case DOGEChain:
@@ -508,7 +517,7 @@ func (c Chain) P2WPKHOutputValue() int64 {
 		// DOGE creates P2PKH scripts for memo overflow outputs and has a dustRelayFee of
 		// 1 DOGE/kB (100,000,000 koinu/kB). P2PKH dust = (34 + 148) * 100,000,000 / 1000.
 		return 18_200_000
-	case BCHChain:
+	case BCHChain, XECChain:
 		// using bitcoin default for p2pkh txout
 		return 546
 	case ZECChain:
@@ -522,7 +531,7 @@ func (c Chain) P2WPKHOutputValue() int64 {
 // MaxMemoLength returns the max memo length for each chain.
 func (c Chain) MaxMemoLength() int {
 	switch c {
-	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain:
+	case BTCChain, LTCChain, BCHChain, XECChain, DOGEChain, ZECChain:
 		return constants.MaxOpReturnDataSize
 	default:
 		// Default to the max memo size that we will process, regardless
@@ -542,6 +551,8 @@ func (c Chain) DefaultCoinbase() float64 {
 		return 6.25
 	case BCHChain:
 		return 3.125
+	case XECChain:
+		return 3_125_000
 	case DOGEChain:
 		return 10000
 	case ZECChain:
@@ -589,7 +600,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 600_000
 	case LTCChain:
 		return 150_000
-	case BCHChain:
+	case BCHChain, XECChain:
 		return 600_000
 	case DOGEChain:
 		return 60_000
@@ -636,7 +647,7 @@ func (c Chain) InboundNotes() string {
 	switch c {
 	case LTCChain:
 		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats. MWEB addresses are not supported; do not use ltcmweb1 addresses or peg-in transactions."
-	case BTCChain, BCHChain, DOGEChain, ZECChain:
+	case BTCChain, BCHChain, XECChain, DOGEChain, ZECChain:
 		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats."
 	case ETHChain, AVAXChain, BSCChain, BASEChain, POLChain:
 		return "Base Asset: Send the inbound_address the asset with the memo encoded in hex in the data field. Tokens: First approve router to spend tokens from user: asset.approve(router, amount). Then call router.depositWithExpiry(inbound_address, asset, amount, memo, expiry). Asset is the token contract address. Amount should be in native asset decimals (eg 1e18 for most tokens). Do not swap to smart contract addresses."

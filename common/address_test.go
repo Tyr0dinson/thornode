@@ -28,7 +28,7 @@ func (s *AddressSuite) TestAddressEqualsNonXMRPreservesLegacyBehavior(c *C) {
 }
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 19)
+	c.Assert(AllChains, HasLen, 20)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)
@@ -366,6 +366,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 	addr, err = NewAddress("noble1vx6vkpn8mgk7tfv3x6n8kaypw080pa46h2t72q")
 	c.Assert(err, IsNil)
 	c.Check(addr.IsChain(GAIAChain), Equals, false)
+
 }
 
 func (s *AddressSuite) TestAddressMapping(c *C) {

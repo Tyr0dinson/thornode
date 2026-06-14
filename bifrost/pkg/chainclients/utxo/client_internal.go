@@ -10,7 +10,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	bchtxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/bchd-txscript"
 	dogetxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/dogd-txscript"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
@@ -220,20 +219,20 @@ func (c *Client) updateNetworkInfo() {
 		c.log.Err(err).Msg("fail to get network info")
 		return
 	}
-	amt, err := btcutil.NewAmount(networkInfo.RelayFee)
+	amt, err := c.rpcAmountToSats(networkInfo.RelayFee)
 	if err != nil {
 		c.log.Err(err).Msg("fail to get minimum relay fee")
 		return
 	}
-	c.minRelayFeeSats.Store(uint64(amt.ToUnit(btcutil.AmountSatoshi)))
+	c.minRelayFeeSats.Store(uint64(amt))
 }
 
 func (c *Client) sendNetworkFee(height int64) error {
 	// get block stats
 	var feeRate uint64
 	switch c.cfg.ChainID {
-	case common.BCHChain:
-		// BCH is a special case since the response uses floats
+	case common.BCHChain, common.XECChain:
+		// BCH/XEC return avgfeerate as a float in sats/vbyte.
 		hash, err := c.rpc.GetBlockHash(height)
 		if err != nil {
 			return fmt.Errorf("fail to get block hash: %w", err)
@@ -246,7 +245,7 @@ func (c *Client) sendNetworkFee(height int64) error {
 		if err != nil {
 			return fmt.Errorf("fail to get block stats: %w", err)
 		}
-		feeRate = uint64(bs.AverageFeeRate * common.One)
+		feeRate = uint64(bs.AverageFeeRate)
 
 	case common.LTCChain, common.BTCChain:
 		hash, err := c.rpc.GetBlockHash(height)
@@ -349,13 +348,13 @@ func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxR
 		if totalVSize == 0 {
 			return nil
 		}
-		amt, err := btcutil.NewAmount(total - c.cfg.ChainID.DefaultCoinbase())
+		amt, err := c.rpcAmountToSats(total - c.cfg.ChainID.DefaultCoinbase())
 		if err != nil {
 			return fmt.Errorf("fail to parse total block fee amount, err: %w", err)
 		}
 
 		// average fee rate in sats/vbyte or default min relay fee
-		feeRateSats = uint64(amt.ToUnit(btcutil.AmountSatoshi) / float64(totalVSize))
+		feeRateSats = uint64(float64(amt) / float64(totalVSize))
 		if c.cfg.UTXO.DefaultMinRelayFeeSats > feeRateSats {
 			feeRateSats = c.cfg.UTXO.DefaultMinRelayFeeSats
 		}
@@ -424,6 +423,19 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		}
 	case common.BCHChain:
 		scriptType, addresses, requireSigs, err := bchtxscript.ExtractPkScriptAddrs(buf, c.getChainCfgBCH())
+		if err != nil {
+			c.log.Err(err).Msg("fail to extract pub key script")
+			return false
+		}
+		switch scriptType {
+		case bchtxscript.MultiSigTy:
+			return false
+
+		default:
+			return len(addresses) == 1 && requireSigs == 1
+		}
+	case common.XECChain:
+		scriptType, addresses, requireSigs, err := bchtxscript.ExtractPkScriptAddrs(buf, c.getChainCfgXEC())
 		if err != nil {
 			c.log.Err(err).Msg("fail to extract pub key script")
 			return false
@@ -515,9 +527,12 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	addresses := c.getAddressesFromScriptPubKey(output.ScriptPubKey)
 	toAddr := addresses[0]
 
-	// strip BCH address prefixes
+	// strip CashAddr prefixes for BCH/XEC before matching vault addresses
 	if c.cfg.ChainID.Equals(common.BCHChain) {
-		toAddr = c.stripBCHAddress(toAddr)
+		toAddr = c.stripCashAddressPrefix(toAddr)
+	}
+	if c.cfg.ChainID.Equals(common.XECChain) {
+		toAddr = stripXECAddressPrefix(toAddr)
 	}
 
 	isInbound := c.isAsgardAddress(toAddr)
@@ -527,11 +542,10 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 			return types.TxInItem{}, fmt.Errorf("invalid utxo")
 		}
 	}
-	amount, err := btcutil.NewAmount(output.Value)
+	amount, err := c.rpcAmountToSatsU64(output.Value)
 	if err != nil {
 		return types.TxInItem{}, fmt.Errorf("fail to parse float64: %w", err)
 	}
-	amt := uint64(amount.ToUnit(btcutil.AmountSatoshi))
 
 	gas, err := c.getGas(tx, isInbound)
 	if err != nil {
@@ -543,15 +557,15 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 		Sender:      sender,
 		To:          toAddr,
 		Coins: common.Coins{
-			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(amt)),
+			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(amount)),
 		},
 		Memo: memo,
 		Gas:  gas,
 	}, nil
 }
 
-// stripBCHAddress removes prefix on bch addresses.
-func (c *Client) stripBCHAddress(addr string) string {
+// stripCashAddressPrefix removes the CashAddr prefix before ":" when present.
+func (c *Client) stripCashAddressPrefix(addr string) string {
 	split := strings.Split(addr, ":")
 	if len(split) > 1 {
 		return split[1]
@@ -576,7 +590,7 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 		}
 
 		// skip if sum of vout value is under thorchain dust threshold
-		voutSats, err := sumVoutSats(&block.Tx[i])
+		voutSats, err := sumVoutSats(c.cfg.ChainID, &block.Tx[i])
 		if err != nil {
 			c.log.Error().Err(err).Str("txid", block.Tx[i].Txid).Msg("fail to sum vout sats")
 		} else if voutSats < dustThreshold {
@@ -760,7 +774,10 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 		}
 		receiver := addresses[0]
 		if c.cfg.ChainID.Equals(common.BCHChain) {
-			receiver = c.stripBCHAddress(receiver)
+			receiver = c.stripCashAddressPrefix(receiver)
+		}
+		if c.cfg.ChainID.Equals(common.XECChain) {
+			receiver = stripXECAddressPrefix(receiver)
 		}
 		// To be observed, either the sender or receiver must be an observed THORChain vault;
 		// if the sender is a vault then assume the first Vout is the output (and a later Vout could be change).
@@ -816,7 +833,7 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 		vinTx, ok := vinZeroTxs[tx.Vin[0].Txid]
 		if !ok {
 			// if vouts are below dust this is expected, so skip log noise
-			value, err := sumVoutSats(tx)
+			value, err := sumVoutSats(c.cfg.ChainID, tx)
 			if err != nil || value >= c.cfg.ChainID.DustThreshold().Uint64() {
 				c.log.Debug().Str("txid", tx.Txid).Msg("vin zero tx not found")
 			}
@@ -847,7 +864,10 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 	address := addresses[0]
 
 	if c.cfg.ChainID.Equals(common.BCHChain) {
-		address = c.stripBCHAddress(address)
+		address = c.stripCashAddressPrefix(address)
+	}
+	if c.cfg.ChainID.Equals(common.XECChain) {
+		address = stripXECAddressPrefix(address)
 	}
 	return address, nil
 }
@@ -894,7 +914,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 		switch c.cfg.ChainID {
 		case common.DOGEChain:
 			asm, err = dogetxscript.DisasmString(buf)
-		case common.BCHChain:
+		case common.BCHChain, common.XECChain:
 			asm, err = bchtxscript.DisasmString(buf)
 		case common.LTCChain:
 			asm, err = ltctxscript.DisasmString(buf)
@@ -1050,11 +1070,11 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 			return common.Gas{}, fmt.Errorf("fail to query raw tx from node")
 		}
 
-		amount, err := btcutil.NewAmount(vinTx.Vout[vin.Vout].Value)
+		amount, err := c.rpcAmountToSatsU64(vinTx.Vout[vin.Vout].Value)
 		if err != nil {
 			return nil, err
 		}
-		sumVin += uint64(amount.ToUnit(btcutil.AmountSatoshi))
+		sumVin += amount
 	}
 	var sumVout uint64 = 0
 	for _, vout := range tx.Vout {
@@ -1064,11 +1084,11 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 			break
 		}
 
-		amount, err := btcutil.NewAmount(vout.Value)
+		amount, err := c.rpcAmountToSatsU64(vout.Value)
 		if err != nil {
 			return nil, err
 		}
-		sumVout += uint64(amount.ToUnit(btcutil.AmountSatoshi))
+		sumVout += amount
 	}
 	totalGas := sumVin - sumVout
 	return common.Gas{
@@ -1088,12 +1108,12 @@ func (c *Client) getCoinbaseValue(blockHeight int64) (int64, error) {
 			for _, opt := range tx.Vout {
 				total += opt.Value
 			}
-			var amt btcutil.Amount
-			amt, err = btcutil.NewAmount(total)
+			var amt int64
+			amt, err = c.rpcAmountToSats(total)
 			if err != nil {
 				return 0, fmt.Errorf("fail to parse amount: %w", err)
 			}
-			return int64(amt), nil
+			return amt, nil
 		}
 	}
 	return 0, fmt.Errorf("fail to get coinbase value")
@@ -1115,12 +1135,12 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 		c.log.Err(err).Msgf("fail to get conf multiplier mimir value for %s", c.GetChain().String())
 	}
 	if totalFeeAndSubsidy == 0 {
-		var cbValue btcutil.Amount
-		cbValue, err = btcutil.NewAmount(c.cfg.ChainID.DefaultCoinbase())
+		var cbValue int64
+		cbValue, err = c.rpcAmountToSats(c.cfg.ChainID.DefaultCoinbase())
 		if err != nil {
 			return 0, fmt.Errorf("fail to get default coinbase value: %w", err)
 		}
-		totalFeeAndSubsidy = int64(cbValue)
+		totalFeeAndSubsidy = cbValue
 	}
 	confValue := common.GetUncappedShare(confMul, cosmos.NewUint(constants.MaxBasisPts), cosmos.SafeUintFromInt64(totalFeeAndSubsidy))
 	confirm := totalTxValue.Quo(confValue).Uint64()

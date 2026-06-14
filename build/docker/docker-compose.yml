@@ -197,6 +197,7 @@ services:
     depends_on: &bifrost-depends-on
       - bitcoin
       - bitcoin-cash
+      - xec
       - dogecoin
       - gaia
       - litecoin
@@ -255,6 +256,10 @@ services:
 
       # enable bch
       BIFROST_CHAINS_BCH_DISABLED: "${BIFROST_CHAINS_BCH_DISABLED:-false}"
+
+      # enable xec
+      BIFROST_CHAINS_XEC_DISABLED: "${BIFROST_CHAINS_XEC_DISABLED:-false}"
+      BIFROST_CHAINS_XEC_RPC_HOST: "${BIFROST_CHAINS_XEC_RPC_HOST:-http://xec:18443}"
 
       # enable ltc
       BIFROST_CHAINS_LTC_DISABLED: "${BIFROST_CHAINS_LTC_DISABLED:-false}"
@@ -634,6 +639,27 @@ services:
     ports:
       - 28443:28443
     entrypoint: "/scripts/entrypoint-mock.sh"
+
+  # ------------------------------ ecash ------------------------------
+
+  xec:
+    user: root
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: ${DOCKER_MIRROR:-}bitcoinabc/bitcoin-abc
+    restart: unless-stopped
+    volumes:
+      - "./mocknet/ecash/entrypoint.sh:/mocknet/entrypoint.sh"
+    environment:
+      RPC_PORT: "18443"
+      BLOCK_TIME: ${BLOCK_TIME:-1}
+      XEC_MASTER_ADDR: ${XEC_MASTER_ADDR:-ecregtest:qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2}
+      SIGNER_NAME: thorchain
+      SIGNER_PASSWD: password
+    ports:
+      - 28543:18443
+    entrypoint: "/mocknet/entrypoint.sh"
 
   # ------------------------------ dogecoin ------------------------------
 

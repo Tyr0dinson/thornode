@@ -197,23 +197,35 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		addressString = addr.String()
-	case BCHChain:
+	case BCHChain, XECChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
 		if err != nil {
 			return NoAddress, err
 		}
+
 		var net *bchchaincfg.Params
-		switch chainNetwork {
-		case MockNet:
-			net = &bchchaincfg.RegressionNetParams
-		case MainNet, StageNet, ChainNet:
-			net = &bchchaincfg.MainNetParams
+		if chain == XECChain {
+			net = GetXECAddressParams(chainNetwork)
+			if net == nil {
+				return NoAddress, fmt.Errorf("XEC address derivation is not configured for network: %v", chainNetwork)
+			}
+		} else {
+			switch chainNetwork {
+			case MockNet:
+				net = &bchchaincfg.RegressionNetParams
+			case MainNet, StageNet, ChainNet:
+				net = &bchchaincfg.MainNetParams
+			}
 		}
+
 		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		addressString = addr.String()
+		if chain == XECChain {
+			addressString = net.CashAddressPrefix + ":" + addressString
+		}
 	case SOLChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {

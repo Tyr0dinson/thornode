@@ -40,7 +40,7 @@ const (
 
 var alphaNumRegex = regexp.MustCompile("^[:_A-Za-z0-9]*$")
 
-// NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP/XMR.
+// NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/XEC/DOGE/XRP/XMR.
 func NewAddress(address string) (Address, error) {
 	if len(address) == 0 {
 		return NoAddress, nil
@@ -82,6 +82,10 @@ func NewAddress(address string) (Address, error) {
 
 	// Check is xmr address
 	if IsValidXMRAddress(address) {
+		return Address(address), nil
+	}
+
+	if IsValidXECAddress(address) {
 		return Address(address), nil
 	}
 
@@ -195,6 +199,37 @@ func IsValidADAAddress(address string) bool {
 	return err == nil
 }
 
+func hasCashAddrPrefix(address, prefix string) bool {
+	if len(address) == 0 || len(prefix) == 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(address), strings.ToLower(prefix)+":")
+}
+
+func IsValidXECAddress(address string) bool {
+	params := GetXECAddressParams(CurrentChainNetwork)
+	if params == nil {
+		return false
+	}
+
+	if !hasCashAddrPrefix(address, params.CashAddressPrefix) {
+		return false
+	}
+
+	bchAddr, err := bchutil.DecodeAddress(address, params)
+	if err != nil {
+		return false
+	}
+
+	switch bchAddr.(type) {
+	case *bchutil.LegacyAddressPubKeyHash, *bchutil.LegacyAddressScriptHash,
+		*bchutil.AddressPubKey:
+		return false
+	default:
+		return true
+	}
+}
+
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format
 func (addr Address) IsValidBCHAddress() bool {
 	// Check mainnet other formats
@@ -223,6 +258,10 @@ func (addr Address) IsValidBCHAddress() bool {
 		return true
 	}
 	return false
+}
+
+func (addr Address) IsValidXECAddress() bool {
+	return IsValidXECAddress(addr.String())
 }
 
 // ConvertToNewBCHAddressFormat convert the given BCH to new address format
@@ -334,6 +373,8 @@ func (addr Address) IsChain(chain Chain) bool {
 			return true
 		}
 		return false
+	case XECChain:
+		return addr.IsValidXECAddress()
 	case DOGEChain:
 		// Check mainnet other formats
 		_, err := dogutil.DecodeAddress(addr.String(), &dogchaincfg.MainNetParams)
@@ -373,7 +414,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, XECChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -466,6 +507,10 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		_, err = bchutil.DecodeAddress(addr.String(), &bchchaincfg.RegressionNetParams)
 		if err == nil {
 			return MockNet
+		}
+	case XECChain:
+		if addr.IsChain(chain) {
+			return mainNetPredicate()
 		}
 	case DOGEChain:
 		// Check mainnet other formats

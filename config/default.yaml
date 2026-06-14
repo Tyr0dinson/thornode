@@ -23,6 +23,7 @@ bifrost:
       - BCH
       - BTC
       - DOGE
+      - XEC
       - ETH
       - GAIA
       - LTC
@@ -550,6 +551,24 @@ bifrost:
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1500
         max_mempool_ancestors: 0 # BCH removed ancestor limits in May 2021
+
+    xec:
+      <<: *default-chain
+      chain_id: XEC
+      block_scanner:
+        <<: *default-block-scanner
+        max_reorg_rescan_blocks: 72 # 12h
+        chain_id: XEC
+        observation_flexibility_blocks: 3
+      mempool_tx_id_cache_size: 1_000_000
+      scanner_leveldb: *default-leveldb
+      utxo:
+        <<: *utxo
+        block_cache_count: 144
+        max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
+        min_sats_per_vbyte: 2
+        estimated_average_tx_size: 1500
+        max_mempool_ancestors: 0 # disabled; THORNode uses 0 to mean no limit, matching BCH/XEC policy
 
     sol:
       <<: *default-chain

@@ -4,6 +4,8 @@
 package common
 
 import (
+	"strings"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -76,4 +78,30 @@ func (s *AddressSuite) TestConvertToNewBCHAddressFormat(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(addr7Result.IsEmpty(), Equals, false)
 	c.Assert(addr7Result.String(), Equals, "prkhwf3etusv88eu7fekcxgce7pj0vuf4sys9u2mns")
+}
+
+func (s *AddressSuite) TestPrefixlessCashAddrIsNotXEC(c *C) {
+	addr, err := NewAddress("qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cswjhml4x")
+	c.Assert(err, IsNil)
+	c.Assert(addr.IsChain(BCHChain), Equals, true)
+	c.Assert(addr.IsChain(XECChain), Equals, false)
+}
+
+func (s *AddressSuite) TestWrongCashAddrPrefixIsNotXEC(c *C) {
+	addr, err := NewAddress("bitcoincash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cswjhml4x")
+	c.Assert(err, IsNil)
+	c.Assert(addr.IsChain(BCHChain), Equals, true)
+	c.Assert(addr.IsChain(XECChain), Equals, false)
+}
+
+func (s *AddressSuite) TestXECCashAddrCasing(c *C) {
+	lower := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	upper := strings.ToUpper(lower)
+	mixedPrefix := "eCash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	mixedPayload := "ecash:qzFuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+
+	c.Assert(IsValidXECAddress(lower), Equals, true)
+	c.Assert(IsValidXECAddress(upper), Equals, true)
+	c.Assert(IsValidXECAddress(mixedPrefix), Equals, false)
+	c.Assert(IsValidXECAddress(mixedPayload), Equals, false)
 }

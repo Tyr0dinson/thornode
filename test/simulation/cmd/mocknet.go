@@ -35,6 +35,7 @@ var chainRPCs = map[common.Chain]string{
 	common.BTCChain:   "http://127.0.0.1:18443",
 	common.LTCChain:   "http://127.0.0.1:38443",
 	common.BCHChain:   "http://127.0.0.1:28443",
+	common.XECChain:   "http://127.0.0.1:28543",
 	common.DOGEChain:  "http://127.0.0.1:18332",
 	common.ZECChain:   "http://127.0.0.1:18232",
 	common.ETHChain:   "http://127.0.0.1:8545",
@@ -205,6 +206,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.ZECChain, 1, 50_000},
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
+				{common.XECChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
 				{common.TRONChain, 1, 1_000_000},
 			}
@@ -346,7 +348,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		// determine the amount of txs for seeding, to create multiple utxos
 		chainSeedTxs := 1
 		switch chain {
-		case common.BTCChain, common.LTCChain, common.BCHChain:
+		case common.BTCChain, common.LTCChain, common.BCHChain, common.XECChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
 		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)

@@ -53,7 +53,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return evm.NewEVMClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		case common.GAIAChain, common.NOBLEChain:
 			return gaia.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator)
-		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain:
+		case common.BTCChain, common.BCHChain, common.XECChain, common.LTCChain, common.DOGEChain, common.ZECChain:
 			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.TRONChain:
 			return tron.NewTronClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
@@ -86,7 +86,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 		// retrieval, which is not supported by zebrad (replacement for the
 		// deprecated zcashd)
 		switch chain.ChainID {
-		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain:
+		case common.BTCChain, common.BCHChain, common.XECChain, common.LTCChain, common.DOGEChain:
 			utxoClient, ok := client.(*utxo.Client)
 			if !ok {
 				logger.Error().Stringer("chain", chain.ChainID).Msg("unexpected non-utxo client for utxo public key registration")

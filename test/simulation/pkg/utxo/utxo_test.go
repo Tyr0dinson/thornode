@@ -16,6 +16,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/gcash/bchutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -223,6 +224,47 @@ func TestZECSpentUtxosOnlyFinalizedAfterSuccessfulBroadcast(t *testing.T) {
 	client.finalizePendingSpentUtxos(payloadHex, true)
 	if !client.spentUtxos[key] {
 		t.Fatal("expected successful ZEC broadcast to mark selected UTXOs spent")
+	}
+}
+
+func TestXECRPCAmountConversion(t *testing.T) {
+	client := &Client{chain: common.XECChain}
+
+	testCases := []struct {
+		rpcAmount float64
+		wantSats  int64
+	}{
+		{rpcAmount: 0.01, wantSats: 1},
+		{rpcAmount: 1.23, wantSats: 123},
+		{rpcAmount: 100, wantSats: 10000},
+	}
+
+	for _, tc := range testCases {
+		gotSats, err := client.rpcAmountToSats(tc.rpcAmount)
+		if err != nil {
+			t.Fatalf("rpcAmountToSats(%f) returned error: %v", tc.rpcAmount, err)
+		}
+		if gotSats != tc.wantSats {
+			t.Fatalf("rpcAmountToSats(%f) = %d, want %d", tc.rpcAmount, gotSats, tc.wantSats)
+		}
+		if gotRPC := client.satsToRPCAmount(tc.wantSats); gotRPC != tc.rpcAmount {
+			t.Fatalf("satsToRPCAmount(%d) = %f, want %f", tc.wantSats, gotRPC, tc.rpcAmount)
+		}
+	}
+}
+
+func TestXECMocknetAddressUsesECRegtestPrefix(t *testing.T) {
+	params := common.GetXECAddressParams(common.MockNet)
+	if params == nil {
+		t.Fatal("expected mocknet XEC params")
+	}
+	if params.CashAddressPrefix != "ecregtest" {
+		t.Fatalf("unexpected XEC mocknet prefix: %s", params.CashAddressPrefix)
+	}
+
+	addr := "ecregtest:qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2"
+	if _, err := bchutil.DecodeAddress(addr, params); err != nil {
+		t.Fatalf("expected mocknet XEC address to decode, got %v", err)
 	}
 }
 

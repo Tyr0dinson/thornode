@@ -6,6 +6,7 @@ package common
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
@@ -60,6 +61,12 @@ func (s *PubKeyTestSuite) TestPubKeyGetAddress(c *C) {
 		addrBCH, err := pk.GetAddress(BCHChain)
 		c.Assert(err, IsNil)
 		c.Assert(addrBCH.String(), Equals, d.addrBCH.mainnet)
+
+		addrXEC, err := pk.GetAddress(XECChain)
+		c.Assert(err, IsNil)
+		c.Assert(strings.HasPrefix(strings.ToLower(addrXEC.String()), "ecash:"), Equals, true)
+		c.Assert(addrXEC.IsChain(XECChain), Equals, true)
+		c.Assert(addrXEC.IsChain(BCHChain), Equals, false)
 
 		addrDOGE, err := pk.GetAddress(DOGEChain)
 		c.Assert(err, IsNil)

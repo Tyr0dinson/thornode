@@ -224,13 +224,13 @@ func (s *CoverageBackfillSuite) TestSumVoutSats(c *C) {
 			{Value: 0.1},
 		},
 	}
-	sum, err := sumVoutSats(tx)
+	sum, err := sumVoutSats(common.BTCChain, tx)
 	c.Assert(err, IsNil)
 	c.Assert(sum, Equals, uint64(160000000)) // 1.6 BTC in sats
 
 	// Test with no vouts
 	tx = &btcjson.TxRawResult{Vout: nil}
-	sum, err = sumVoutSats(tx)
+	sum, err = sumVoutSats(common.BTCChain, tx)
 	c.Assert(err, IsNil)
 	c.Assert(sum, Equals, uint64(0))
 }
@@ -431,9 +431,9 @@ func (s *CoverageBackfillSuite) TestGetAccount(c *C) {
 // client_internal.go tests
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func (s *CoverageBackfillSuite) TestStripBCHAddress(c *C) {
-	c.Assert(s.client.stripBCHAddress("bitcoincash:qp3w"), Equals, "qp3w")
-	c.Assert(s.client.stripBCHAddress("qp3w"), Equals, "qp3w")
+func (s *CoverageBackfillSuite) TestStripCashAddressPrefix(c *C) {
+	c.Assert(s.client.stripCashAddressPrefix("bitcoincash:qp3w"), Equals, "qp3w")
+	c.Assert(s.client.stripCashAddressPrefix("qp3w"), Equals, "qp3w")
 }
 
 func (s *CoverageBackfillSuite) TestDecodeHexString(c *C) {
@@ -1466,7 +1466,7 @@ var _ = Suite(&HelpersSuite{})
 
 func (s *HelpersSuite) TestSumVoutSatsEmpty(c *C) {
 	tx := &btcjson.TxRawResult{}
-	sum, err := sumVoutSats(tx)
+	sum, err := sumVoutSats(common.BTCChain, tx)
 	c.Assert(err, IsNil)
 	c.Assert(sum, Equals, uint64(0))
 }
@@ -1477,7 +1477,7 @@ func (s *HelpersSuite) TestSumVoutSatsSingleVout(c *C) {
 			{Value: 1.0},
 		},
 	}
-	sum, err := sumVoutSats(tx)
+	sum, err := sumVoutSats(common.BTCChain, tx)
 	c.Assert(err, IsNil)
 	c.Assert(sum, Equals, uint64(100000000))
 }

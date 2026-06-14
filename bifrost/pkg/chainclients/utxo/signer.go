@@ -67,6 +67,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, nil
 		}
 	}
+	if c.cfg.ChainID.Equals(common.XECChain) {
+		if !tx.ToAddress.IsValidXECAddress() {
+			c.log.Error().Msgf("to address: %s is not a valid ecash cashaddr", tx.ToAddress)
+			return nil, nil, nil, nil
+		}
+	}
 
 	// skip outbounds that have been signed
 	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.cfg.ChainID)
@@ -122,6 +128,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("decoded bch address has unexpected type %T", outputAddr)
 		}
 		outputAddrStr = bchAddr.String()
+	case common.XECChain:
+		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgXEC())
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		xecAddr, ok := outputAddr.(bchutil.Address)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("decoded xec address has unexpected type %T", outputAddr)
+		}
+		outputAddrStr = xecAddr.String()
 	case common.LTCChain:
 		outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
 		if err != nil {
@@ -223,7 +239,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	switch c.cfg.ChainID {
 	case common.DOGEChain:
 		stx = wireToDOGE(redeemTx)
-	case common.BCHChain:
+	case common.BCHChain, common.XECChain:
 		stx = wireToBCH(redeemTx)
 	case common.LTCChain:
 		stx = wireToLTC(redeemTx)
@@ -278,10 +294,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 					break
 				}
 				signErr = c.signUTXODOGE(msgTx, tx, amount, sourceScript, i, thorchainHeight)
-			case common.BCHChain:
+			case common.BCHChain, common.XECChain:
 				msgTx, ok := stx.(*bchwire.MsgTx)
 				if !ok {
-					signErr = fmt.Errorf("unexpected bch signing tx type %T", stx)
+					signErr = fmt.Errorf("unexpected bch/xec signing tx type %T", stx)
 					break
 				}
 				signErr = c.signUTXOBCH(msgTx, tx, amount, sourceScript, i, thorchainHeight)
@@ -329,10 +345,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, checkpointBytes, nil, fmt.Errorf("unexpected doge signed tx type %T", stx)
 		}
 		redeemTx = dogeToWire(msgTx)
-	case common.BCHChain:
+	case common.BCHChain, common.XECChain:
 		msgTx, ok := stx.(*bchwire.MsgTx)
 		if !ok {
-			return nil, checkpointBytes, nil, fmt.Errorf("unexpected bch signed tx type %T", stx)
+			return nil, checkpointBytes, nil, fmt.Errorf("unexpected bch/xec signed tx type %T", stx)
 		}
 		redeemTx = bchToWire(msgTx)
 	case common.LTCChain:
@@ -560,7 +576,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 		var maxFee any
 		switch c.cfg.ChainID {
-		case common.DOGEChain, common.BCHChain:
+		case common.DOGEChain, common.BCHChain, common.XECChain:
 			maxFee = true // "allowHighFees"
 		case common.LTCChain, common.BTCChain:
 			// "maxfeerate" is denominated in BTC/kvB, not sats - Core multiplies by 1e8

@@ -16,8 +16,6 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcutil"
-
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -109,6 +107,7 @@ func NewClient(
 	supported := map[common.Chain]bool{
 		common.DOGEChain: true,
 		common.BCHChain:  true,
+		common.XECChain:  true,
 		common.LTCChain:  true,
 		common.BTCChain:  true,
 		common.ZECChain:  true,
@@ -338,7 +337,7 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 		return acct, fmt.Errorf("fail to get UTXOs: %w", err)
 	}
 
-	total := 0.0
+	totalSats := int64(0)
 	for _, item := range utxos {
 		if !c.isValidUTXO(item.ScriptPubKey) {
 			continue
@@ -349,15 +348,15 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 				continue
 			}
 		}
-		total += item.Amount
-	}
-	totalAmt, err := btcutil.NewAmount(total)
-	if err != nil {
-		return acct, fmt.Errorf("fail to convert total amount: %w", err)
+		amt, err := c.rpcAmountToSats(item.Amount)
+		if err != nil {
+			return acct, fmt.Errorf("fail to convert UTXO amount: %w", err)
+		}
+		totalSats += amt
 	}
 	return common.NewAccount(0, 0,
 		common.Coins{
-			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(totalAmt))),
+			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(totalSats))),
 		}, false), nil
 }
 
@@ -497,7 +496,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		switch c.cfg.ChainID {
 		case common.DOGEChain, common.ZECChain:
 			err = c.sendNetworkFeeFromBlock(block)
-		case common.BCHChain, common.LTCChain, common.BTCChain:
+		case common.BCHChain, common.XECChain, common.LTCChain, common.BTCChain:
 			err = c.sendNetworkFee(height)
 		default:
 			c.log.Fatal().Msg("unsupported chain")
@@ -734,7 +733,7 @@ func (c *Client) shouldReportSolvency(height int64) bool {
 	switch c.cfg.ChainID {
 	case common.DOGEChain, common.ZECChain:
 		return height%10 == 0
-	case common.BCHChain, common.BTCChain:
+	case common.BCHChain, common.XECChain, common.BTCChain:
 		return true
 	case common.LTCChain:
 		return height-lastHeight > 5 && height%5 == 0

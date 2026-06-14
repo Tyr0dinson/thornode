@@ -4,6 +4,8 @@
 package common
 
 import (
+	"strings"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -56,4 +58,14 @@ func (s *AddressSuite) TestToTexConversion(c *C) {
 	p2shAddrMain, _ := NewAddress("t2BeXPVjcVq4XDf7dgW4w3mK6ZjoePxy7Gb")
 	addr, err = p2shAddrMain.ToTexAddress()
 	c.Assert(err, NotNil)
+}
+
+func (s *AddressSuite) TestXECCashAddrCasing(c *C) {
+	lower := "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+	upper := strings.ToUpper(lower)
+	mixed := "eCregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+
+	c.Assert(IsValidXECAddress(lower), Equals, true)
+	c.Assert(IsValidXECAddress(upper), Equals, true)
+	c.Assert(IsValidXECAddress(mixed), Equals, false)
 }

@@ -310,6 +310,7 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.XMR.disabled", "XMR_DISABLED"))
+	assert(viper.BindEnv("bifrost.chains.XEC.disabled", "XEC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
 
@@ -652,6 +653,7 @@ type Bifrost struct {
 		BSC   BifrostChainConfiguration `mapstructure:"bsc"`
 		BTC   BifrostChainConfiguration `mapstructure:"btc"`
 		DOGE  BifrostChainConfiguration `mapstructure:"doge"`
+		XEC   BifrostChainConfiguration `mapstructure:"xec"`
 		ETH   BifrostChainConfiguration `mapstructure:"eth"`
 		GAIA  BifrostChainConfiguration `mapstructure:"gaia"`
 		NOBLE BifrostChainConfiguration `mapstructure:"noble"`
@@ -700,6 +702,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.BSCChain:   b.Chains.BSC,
 		common.BTCChain:   b.Chains.BTC,
 		common.DOGEChain:  b.Chains.DOGE,
+		common.XECChain:   b.Chains.XEC,
 		common.ETHChain:   b.Chains.ETH,
 		common.GAIAChain:  b.Chains.GAIA,
 		common.NOBLEChain: b.Chains.NOBLE,
@@ -1062,7 +1065,7 @@ func (b *BifrostChainConfiguration) Validate() {
 				Int64("max_mempool_ancestors", b.UTXO.MaxMempoolAncestors).
 				Msg("max_mempool_ancestors exceeds chain limit of 25")
 		}
-	case common.BCHChain:
+	case common.BCHChain, common.XECChain:
 		// BCH removed ancestor limits in May 2021, so any value (including 0) is valid
 	}
 }

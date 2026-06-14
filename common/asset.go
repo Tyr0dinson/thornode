@@ -25,6 +25,8 @@ var (
 	LTCAsset = Asset{Chain: LTCChain, Symbol: "LTC", Ticker: "LTC", Synth: false}
 	// BCHAsset BCH
 	BCHAsset = Asset{Chain: BCHChain, Symbol: "BCH", Ticker: "BCH", Synth: false}
+	// XECAsset XEC
+	XECAsset = Asset{Chain: XECChain, Symbol: "XEC", Ticker: "XEC", Synth: false}
 	// DOGEAsset DOGE
 	DOGEAsset = Asset{Chain: DOGEChain, Symbol: "DOGE", Ticker: "DOGE", Synth: false}
 	// ETHAsset ETH
@@ -135,6 +137,9 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[DOGEAsset.ShortCode()] = DOGEAsset.String()
 	shorts[ETHAsset.ShortCode()] = ETHAsset.String()
 	shorts[LTCAsset.ShortCode()] = LTCAsset.String()
+	if shortCode := XECAsset.ShortCode(); shortCode != "" {
+		shorts[shortCode] = XECAsset.String()
+	}
 	shorts[SOLAsset.ShortCode()] = SOLAsset.String()
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
@@ -365,6 +370,8 @@ func (a Asset) ShortCode() string {
 		return "z"
 	case "XMR.XMR":
 		return "m"
+	case "XEC.XEC":
+		return "xe"
 	case "POL.POL":
 		return "p"
 	case "SUI.SUI":

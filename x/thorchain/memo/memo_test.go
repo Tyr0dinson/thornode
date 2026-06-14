@@ -1158,8 +1158,8 @@ func (s *MemoSuite) TestReferenceWriteMemoValidation(c *C) {
 	c.Assert(err, Not(IsNil))
 	c.Assert(strings.Contains(err.Error(), "embedded memo is invalid"), Equals, true)
 
-	// Test invalid embedded memo - empty parts
-	invalidMemo2 := "reference:ETH:=:::"
+	// Test invalid embedded memo - invalid asset token
+	invalidMemo2 := "reference:ETH:=:INVALID!ASSET:"
 	_, err = ParseMemoWithTHORNames(ctx, k, invalidMemo2)
 	c.Assert(err, Not(IsNil))
 	c.Assert(strings.Contains(err.Error(), "embedded memo is invalid"), Equals, true)

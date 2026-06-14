@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -160,6 +161,26 @@ func getUTXOStartupImportLock(chain common.Chain) *sync.Mutex {
 	return actual.(*sync.Mutex)
 }
 
+func (c *Client) rpcAmountToSats(value float64) (int64, error) {
+	if c.chain.Equals(common.XECChain) {
+		return int64(math.Round(value * 100)), nil
+	}
+
+	amt, err := btcutil.NewAmount(value)
+	if err != nil {
+		return 0, err
+	}
+	return int64(amt), nil
+}
+
+func (c *Client) satsToRPCAmount(sats int64) float64 {
+	if c.chain.Equals(common.XECChain) {
+		return float64(sats) / 100
+	}
+
+	return btcutil.Amount(sats).ToBTC()
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // GetAccount
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -182,17 +203,17 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	}
 
 	// sum balance
-	total := 0.0
+	totalSats := int64(0)
 	for _, item := range utxos {
-		total += item.Amount
-	}
-	totalAmt, err := btcutil.NewAmount(total)
-	if err != nil {
-		return nil, fmt.Errorf("fail to convert total amount: %w", err)
+		amt, err := c.rpcAmountToSats(item.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("fail to convert UTXO amount: %w", err)
+		}
+		totalSats += amt
 	}
 
 	// create account
-	coin := common.NewCoin(c.chain.GetGasAsset(), cosmos.NewUint(uint64(totalAmt)))
+	coin := common.NewCoin(c.chain.GetGasAsset(), cosmos.NewUint(uint64(totalSats)))
 	a := common.NewAccount(0, 0, common.NewCoins(coin), false)
 
 	return &a, nil
@@ -242,7 +263,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	switch c.chain {
 	case common.DOGEChain:
 		stx = wireToDOGE(redeemTx)
-	case common.BCHChain:
+	case common.BCHChain, common.XECChain:
 		stx = wireToBCH(redeemTx)
 	case common.LTCChain:
 		stx = wireToLTC(redeemTx)
@@ -285,7 +306,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 			switch c.chain {
 			case common.DOGEChain:
 				err = c.signUTXODOGE(stx.(*dogewire.MsgTx), amount, sourceScript, i)
-			case common.BCHChain:
+			case common.BCHChain, common.XECChain:
 				err = c.signUTXOBCH(stx.(*bchwire.MsgTx), amount, sourceScript, i)
 			case common.LTCChain:
 				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), amount, sourceScript, i)
@@ -313,7 +334,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	switch c.chain {
 	case common.DOGEChain:
 		redeemTx = dogeToWire(stx.(*dogewire.MsgTx))
-	case common.BCHChain:
+	case common.BCHChain, common.XECChain:
 		redeemTx = bchToWire(stx.(*bchwire.MsgTx))
 	case common.LTCChain:
 		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
@@ -364,7 +385,7 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 
 	var maxFee any
 	switch c.chain {
-	case common.DOGEChain, common.BCHChain:
+	case common.DOGEChain, common.BCHChain, common.XECChain:
 		maxFee = true // "allowHighFees"
 	case common.LTCChain, common.BTCChain:
 		maxFee = 10_000_000
@@ -390,6 +411,13 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 	case common.BCHChain:
 		var addr bchutil.Address
 		addr, err := bchutil.DecodeAddress(c.address.String(), c.getChainCfgBCH())
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
+		}
+		return bchtxscript.PayToAddrScript(addr)
+	case common.XECChain:
+		var addr bchutil.Address
+		addr, err := bchutil.DecodeAddress(c.address.String(), c.getChainCfgXEC())
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
 		}
@@ -478,6 +506,8 @@ func (c *Client) getGasSats() float64 {
 		return 0.1
 	case common.BCHChain:
 		return 0.0001
+	case common.XECChain:
+		return 100
 	case common.LTCChain:
 		return 0.0001
 	case common.BTCChain:
@@ -492,11 +522,11 @@ func (c *Client) getGasSats() float64 {
 
 func (c *Client) getPaymentAmount(tx SimTx) float64 {
 	amtToPay1e8 := tx.Coin.Amount.Uint64()
-	amtToPay := btcutil.Amount(int64(amtToPay1e8)).ToBTC()
+	amtToPay := c.satsToRPCAmount(int64(amtToPay1e8))
 	amtToPay += c.getGasSats()
 	if memoScripts, err := c.getMemoScripts(tx.Memo); err == nil && len(memoScripts) > 1 {
 		p2wpkhOutputsCost := int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
-		amtToPay += btcutil.Amount(p2wpkhOutputsCost).ToBTC()
+		amtToPay += c.satsToRPCAmount(p2wpkhOutputsCost)
 	}
 	return amtToPay
 }
@@ -505,7 +535,7 @@ func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
 	switch c.chain {
 	case common.DOGEChain:
 		return memoToScripts(memo, dogetxscript.MaxDataCarrierSize, dogetxscript.NullDataScript, dogetxscript.PayToWitnessScript)
-	case common.BCHChain:
+	case common.BCHChain, common.XECChain:
 		return memoToScripts(memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
 	case common.LTCChain:
 		return memoToScripts(memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
@@ -653,13 +683,12 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 		outputPoint := wire.NewOutPoint(txID, item.Vout)
 		sourceTxIn := wire.NewTxIn(outputPoint, nil, nil)
 		redeemTx.AddTxIn(sourceTxIn)
-		var amt btcutil.Amount
-		amt, err = btcutil.NewAmount(item.Amount)
+		amt, err := c.rpcAmountToSats(item.Amount)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
 		}
-		individualAmounts[fmt.Sprintf("%s-%d", txID, item.Vout)] = int64(amt)
-		totalAmt += int64(amt)
+		individualAmounts[fmt.Sprintf("%s-%d", txID, item.Vout)] = amt
+		totalAmt += amt
 	}
 
 	var buf []byte
@@ -677,6 +706,16 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	case common.BCHChain:
 		var outputAddr bchutil.Address
 		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		buf, err = bchtxscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+		}
+	case common.XECChain:
+		var outputAddr bchutil.Address
+		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgXEC())
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
@@ -733,7 +772,11 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	}
 
 	// add output to pay the balance back ourselves
-	balance := totalAmt - redeemTxOut.Value - int64(c.getGasSats()*common.One) - p2wpkhOutputsCost
+	gasSats, err := c.rpcAmountToSats(c.getGasSats())
+	if err != nil {
+		return nil, nil, fmt.Errorf("fail to convert gas amount: %w", err)
+	}
+	balance := totalAmt - redeemTxOut.Value - gasSats - p2wpkhOutputsCost
 	if balance < 0 {
 		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
 	}
@@ -786,6 +829,14 @@ func (c *Client) getChainCfgBCH() *bchchaincfg.Params {
 		log.Fatal().Msg("unsupported network")
 		return nil
 	}
+}
+
+func (c *Client) getChainCfgXEC() *bchchaincfg.Params {
+	params := common.GetXECAddressParams(common.CurrentChainNetwork)
+	if params == nil {
+		log.Fatal().Msg("unsupported network")
+	}
+	return params
 }
 
 func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
