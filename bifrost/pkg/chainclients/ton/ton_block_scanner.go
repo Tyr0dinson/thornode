@@ -3,6 +3,7 @@ package ton
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -394,37 +395,20 @@ func (s *TonBlockScanner) processShard(
 		src := in.SrcAddr
 		txs, found := txLookBackCache[src.String()]
 		if !found {
-			var acc *tlb.Account
-			acc, err = s.api.WaitForBlock(block.SeqNo).GetAccount(s.ctx, block, src)
-			if err != nil {
-				// possible by sending all funds from wallet
-				s.logger.Err(err).Msg("source account not found")
-
-				// assuming the account does not exist, exclude the address
-				// from being queried again for this shard
-				txLookBackCache[src.String()] = nil
-				continue
-			}
-
-			lt := acc.LastTxLT
-			hash := acc.LastTxHash
-
-			txs, err = s.api.ListTransactions(s.ctx, src, extInLookback, lt, hash)
-			if err != nil {
+			txs, err = s.getSentTxs(block, src)
+			if err != nil && !errors.Is(err, ton.ErrNoTransactionsWereFound) {
 				s.logger.Err(err).
-					Str("address", src.String()).
-					Msg("failed to list transactions")
-				// assuming there are no transactions, exclude the address
-				// from being queried again for this shard
-				txLookBackCache[src.String()] = nil
-				continue
+					Str("shard", shardId(shard)).
+					Str("account", src.String()).
+					Msg("failed to get sent txs")
+				return nil, err
 			}
 
-			if len(txs) == 0 {
-				// doesn't have any tx in this shard, don't query again
-				txLookBackCache[src.String()] = nil
-				continue
-			}
+			txLookBackCache[src.String()] = txs
+		}
+
+		if txs == nil {
+			continue
 		}
 
 		txInItem, err = s.processMessage(tx, msg.AsInternal(), txs)
@@ -553,6 +537,11 @@ func (s *TonBlockScanner) processMessage(
 		return txInItem, err
 	}
 
+	// round fees up (1e9 -> 1e8) to avoid vault solvency issues
+	if new(big.Int).Mod(fees, big.NewInt(10)).Sign() > 0 {
+		amountGas.Add(amountGas, big.NewInt(1))
+	}
+
 	txInItem = types.TxInItem{
 		Tx:     hash,
 		Memo:   msg.Comment(),
@@ -613,6 +602,28 @@ func (s *TonBlockScanner) findExternalInTx(
 	}
 
 	return nil, nil
+}
+
+func (s *TonBlockScanner) getSentTxs(
+	block *ton.BlockIDExt,
+	addr *address.Address,
+) ([]*tlb.Transaction, error) {
+	acc, err := s.api.WaitForBlock(block.SeqNo).GetAccount(s.ctx, block, addr)
+	if err != nil {
+		// possible by sending all funds from wallet
+		return nil, fmt.Errorf("failed to get account: %w", err)
+	}
+
+	lt := acc.LastTxLT
+	hash := acc.LastTxHash
+
+	var txs []*tlb.Transaction
+	txs, err = s.api.ListTransactions(s.ctx, addr, extInLookback, lt, hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list transactions: %w", err)
+	}
+
+	return txs, nil
 }
 
 func skipTx(tx *tlb.Transaction) (bool, string) {

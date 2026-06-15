@@ -91,7 +91,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 		return nil, fmt.Errorf("failed to decode BOC: %w", err)
 	}
 
-	accountID := tonWallet.Bounce(false).Testnet(true).String()
+	accountID := tonWallet.Bounce(false).Testnet(common.IsMocknet).String()
 
 	return &Client{
 		chain:      chain,

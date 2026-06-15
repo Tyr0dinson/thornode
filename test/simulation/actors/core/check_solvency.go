@@ -189,17 +189,25 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			a.Log().Error().Str("asset", asset).Msg("L1 amount not found for asset")
 		}
 
-		// TODO: find a more elegant way for handling unpredictable fees
-		switch asset {
-		case "TON.TON":
-			// ignore difference up to 0.01 TON
-			diff := vaultAmount.Sub(l1Amount)
-			if diff.LT(cosmos.NewUint(1e6)) {
-				l1Amount = vaultAmount
-			}
+		// For chains with native decimals > THORChain decimals (e.g. TON 9 > 8),
+		// decimal conversions introduce small rounding drifts:
+		// - Each outbound gas conversion can drift by up to 1 unit (bounded by OutboundTxCount)
+		// - The L1 balance floor conversion (nanotons → thorchain units) adds up to 1 unit
+		// The +1 ensures tolerance is non-zero even when OutboundTxCount is 0
+		// (e.g. new vault after churn before outbound observations propagate).
+		maxDrift := cosmos.ZeroUint()
+		parsedAsset, parseErr := common.NewAsset(asset)
+		if parseErr == nil && parsedAsset.Chain.GetGasAssetDecimal() > common.THORChainDecimals {
+			maxDrift = cosmos.NewUint(uint64(vaults[0].GetOutboundTxCount()) + 1)
 		}
 
-		if !vaultAmount.Equal(l1Amount) {
+		var absDiff cosmos.Uint
+		if vaultAmount.GT(l1Amount) {
+			absDiff = vaultAmount.Sub(l1Amount)
+		} else {
+			absDiff = l1Amount.Sub(vaultAmount)
+		}
+		if absDiff.GT(maxDrift) {
 			a.Log().Error().
 				Str("asset", asset).
 				Str("vault_address", vaultAddrs[asset].String()).
@@ -207,6 +215,7 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 				Str("vault_pubkey_eddsa", pubkeyEddsa.String()).
 				Str("vault_amount", vaultAmount.String()).
 				Str("l1_amount", l1Amount.String()).
+				Str("max_drift", maxDrift.String()).
 				Msg("vault and L1 amounts do not match")
 			vaultL1Mismatch = true
 		}
