@@ -136,9 +136,14 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 				err = json.Unmarshal(rpcRequest.Params, &params)
 				c.Assert(err, IsNil)
 				c.Assert(params[0], Equals, lastBroadcastTx)
+				// echo the request id back so batch responses match regardless of
+				// how many requests the client made before this one
+				var idBytes []byte
+				idBytes, err = json.Marshal(rpcRequest.ID)
+				c.Assert(err, IsNil)
 				_, err = rw.Write([]byte(`[{
 						"jsonrpc": "2.0",
-						"id": 6,
+						"id": ` + string(idBytes) + `,
 						"result": {
 							"blockHash": "0x96395fbdb39e33293999dc1a0a3b87c8a9e51185e177760d1482c2155bb35b87",
 							"blockNumber": "0x1",
