@@ -54,8 +54,8 @@ chains:
 | `name`                  | Human-readable label used in logs and metrics.                     |
 | `rpc_host`              | The endpoint URL (JSON-RPC / HTTP API).                            |
 | `api_host`              | Secondary HTTP API host, where the chain client needs one (TRON).  |
-| `cosmos_grpc_host`      | Cosmos SDK gRPC host (GAIA, NOBLE).                                 |
-| `cosmos_grpc_tls`       | Whether the gRPC host uses TLS.                                     |
+| `cosmos_grpc_host`      | Cosmos SDK gRPC host (GAIA, NOBLE).                                |
+| `cosmos_grpc_tls`       | Whether the gRPC host uses TLS.                                    |
 | `priority`              | Lower number is preferred. Endpoints are tried in priority order.  |
 | `username` / `password` | Optional basic-auth credentials.                                   |
 | `authorization_bearer`  | Optional bearer token (sent as an `Authorization: Bearer` header). |
@@ -65,7 +65,7 @@ chains:
 Because environment variables cannot be bound to elements of a list, endpoints are
 configured via explicit indexed keys of the form:
 
-```
+```text
 BIFROST_CHAINS_<CHAIN>_ENDPOINTS_<N>_<FIELD>
 ```
 
