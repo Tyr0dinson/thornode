@@ -128,7 +128,7 @@ func NewClient(thorKeys *thorclient.Keys,
 		return nil, err
 	}
 
-	ethClient, err := evm.DialWithFallbacks(cfg.GetEndpoints())
+	ethClient, err := evm.DialWithFallbacks(cfg.GetEndpoints(), cfg.BlockScanner.HTTPRequestTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial ETH rpc: %w", err)
 	}
