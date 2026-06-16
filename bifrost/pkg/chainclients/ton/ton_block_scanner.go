@@ -307,12 +307,11 @@ func (s *TonBlockScanner) processShard(
 		return nil, fmt.Errorf("failed to lookup shard block %d: %w", shard.SeqNo, err)
 	}
 
-	data, err := s.api.GetBlockData(s.ctx, block)
+	var info *tlb.BlockHeader
+	info, err = s.api.GetBlockHeader(s.ctx, block)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get shard block data %d: %w", shard.SeqNo, err)
+		return nil, fmt.Errorf("failed to get shard block header %d: %w", shard.SeqNo, err)
 	}
-
-	info := data.BlockInfo
 
 	txInfos, _, err := s.api.GetBlockTransactionsV2(
 		s.ctx,
@@ -423,7 +422,7 @@ func (s *TonBlockScanner) processShard(
 	if info.AfterSplit || info.AfterMerge {
 		s.logger.Debug().Msg("merged or split shard")
 
-		parents, err := ton.GetParentBlocks(&info)
+		parents, err := ton.GetParentBlocks(info)
 		if err != nil {
 			s.logger.Err(err).Msg("failed to get parent blocks")
 			return nil, err
@@ -548,12 +547,12 @@ func (s *TonBlockScanner) processMessage(
 		Sender: src.String(),
 		To:     dst.String(),
 		Coins: common.Coins{{
-			Asset:    common.TONAsset,
+			Asset:    common.GRAMAsset,
 			Amount:   math.NewUintFromBigInt(amountCoins),
 			Decimals: decimals,
 		}},
 		Gas: common.Gas{{
-			Asset:    common.TONAsset,
+			Asset:    common.GRAMAsset,
 			Amount:   math.NewUintFromBigInt(amountGas),
 			Decimals: decimals,
 		}},

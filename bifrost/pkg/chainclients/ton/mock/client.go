@@ -217,3 +217,41 @@ func (c MockClient) FindLastTransactionByInMsgHash(ctx context.Context, addr *to
 func (c MockClient) FindLastTransactionByOutMsgHash(ctx context.Context, addr *tonaddress.Address, msgHash []byte, maxTxNumToScan ...int) (*tlb.Transaction, error) {
 	return nil, nil
 }
+
+func (c MockClient) GetBlockHeader(ctx context.Context, block *ton.BlockIDExt) (*tlb.BlockHeader,
+	error) {
+	switch block.Shard {
+	case shard0, shard1:
+		return &tlb.BlockHeader{}, nil
+	default:
+		return nil, fmt.Errorf("block shard not exist")
+	}
+}
+
+func (c MockClient) WithLSInfoInErrors() ton.APIClientWrapped {
+	return c
+}
+
+func (c MockClient) FindLastTransactionByInMsgHashAfterTime(ctx context.Context, addr *tonaddress.Address, msgHash []byte, after time.Time) (*tlb.Transaction, error) {
+	return nil, nil
+}
+
+func (c MockClient) FindLastTransactionByOutMsgHashAfterTime(ctx context.Context, addr *tonaddress.Address, msgHash []byte, after time.Time) (*tlb.Transaction, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetOutMsgQueueSizes(ctx context.Context, wc *int32, shard *int64) (*ton.OutMsgQueueSizes, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetBlockOutMsgQueueSize(ctx context.Context, block *ton.BlockIDExt) (*ton.BlockOutMsgQueueSize, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetDispatchQueueInfo(ctx context.Context, block *ton.BlockIDExt, afterAddr *tonaddress.Address, maxAccounts int) (*ton.DispatchQueueInfo, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetDispatchQueueMessages(ctx context.Context, block *ton.BlockIDExt, addr *tonaddress.Address, afterLT uint64, maxMessages int, options ...func(*ton.GetDispatchQueueMessages)) (*ton.DispatchQueueMessages, error) {
+	return nil, nil
+}

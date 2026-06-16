@@ -39,7 +39,6 @@ import (
 )
 
 const (
-	V3R2CodeHex              = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
 	ConfirmationBlocks int64 = 1
 	TransactionTimeout       = 5 * time.Minute
 )
@@ -60,7 +59,6 @@ type TonClient struct {
 	globalSolvencyQueue chan types.Solvency
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
-	walletCode          *cell.Cell
 }
 
 // NewTonClient creates a new instance of a TON chain client
@@ -216,19 +214,6 @@ func NewTonClient(
 		return nil, err
 	}
 
-	// store code
-	data, err := hex.DecodeString(V3R2CodeHex)
-	if err != nil {
-		logger.Err(err).Msg("failed to decode V3R2CodeHex")
-		return nil, err
-	}
-
-	c.walletCode, err = cell.FromBOC(data)
-	if err != nil {
-		logger.Err(err).Msg("failed to decode BOC")
-		return nil, err
-	}
-
 	return &c, nil
 }
 
@@ -323,7 +308,7 @@ func (c *TonClient) GetAccountByAddress(
 		return common.Account{}, err
 	}
 
-	asset, err := common.NewAsset("TON.TON")
+	asset, err := common.NewAsset("TON.GRAM")
 	if err != nil {
 		c.logger.Err(err).Msg("failed to create asset")
 		return common.Account{}, err
@@ -548,23 +533,14 @@ func (c *TonClient) BroadcastTx(
 			return "", err
 		}
 
-		data := cell.BeginCell()
-		// seqno
-		if err = data.StoreUInt(0, 32); err != nil {
-			return "", fmt.Errorf("failed to store seqno: %w", err)
-		}
-		// sub wallet
-		if err = data.StoreUInt(uint64(wallet.DefaultSubwallet), 32); err != nil {
-			return "", fmt.Errorf("failed to store sub wallet: %w", err)
-		}
-		// pubkey
-		if err = data.StoreSlice(pubKey.Bytes(), 256); err != nil {
-			return "", fmt.Errorf("failed to store pubkey: %w", err)
-		}
-
-		stateInit = &tlb.StateInit{
-			Data: data.EndCell(),
-			Code: c.walletCode,
+		stateInit, err = wallet.GetStateInit(
+			ed25519.PublicKey(pubKey.Bytes()),
+			wallet.V3R2,
+			wallet.DefaultSubwallet,
+		)
+		if err != nil {
+			c.logger.Err(err).Msg("failed to get state init")
+			return "", err
 		}
 	}
 
@@ -695,7 +671,7 @@ func (c *TonClient) ReportSolvency(height int64) error {
 func (c *TonClient) createAndSignTx(
 	txOutItem types.TxOutItem,
 ) ([]byte, error) {
-	coin := txOutItem.Coins.GetCoin(common.TONAsset)
+	coin := txOutItem.Coins.GetCoin(common.GRAMAsset)
 
 	if coin.IsEmpty() {
 		err := fmt.Errorf("no TON coins found")

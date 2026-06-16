@@ -2,6 +2,7 @@ package ton
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -25,17 +26,15 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 const (
-	V3R2CodeHex       = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
 	MyLocalTonLiteKey = "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="
 )
 
 type Client struct {
-	chain      common.Chain
-	keys       *thorclient.Keys
-	k          *cosmoscryptoed25519.PrivKey
-	api        ton.APIClientWrapped
-	walletCode *cell.Cell
-	accountID  string
+	chain     common.Chain
+	keys      *thorclient.Keys
+	k         *cosmoscryptoed25519.PrivKey
+	api       ton.APIClientWrapped
+	accountID string
 }
 
 var _ types.LiteChainClient = &Client{}
@@ -80,26 +79,14 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 	// Create API client with fast proof checks
 	api := ton.NewAPIClient(pool, ton.ProofCheckPolicyFast).WithRetry()
 
-	// Parse wallet code
-	data, err := hex.DecodeString(V3R2CodeHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode V3R2CodeHex: %w", err)
-	}
-
-	walletCode, err := cell.FromBOC(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode BOC: %w", err)
-	}
-
 	accountID := tonWallet.Bounce(false).Testnet(common.IsMocknet).String()
 
 	return &Client{
-		chain:      chain,
-		keys:       keys,
-		k:          priv,
-		api:        api,
-		walletCode: walletCode,
-		accountID:  accountID,
+		chain:     chain,
+		keys:      keys,
+		k:         priv,
+		api:       api,
+		accountID: accountID,
 	}, nil
 }
 
@@ -139,7 +126,7 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	}
 
 	// Create TON asset
-	asset, err := common.NewAsset("TON.TON")
+	asset, err := common.NewAsset("TON.GRAM")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create asset: %w", err)
 	}
@@ -308,14 +295,13 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 
 	// Create stateInit if wallet not initialized
 	if !initialized {
-		pubKey := c.k.PubKey().Bytes()
-		stateInit = &tlb.StateInit{
-			Data: cell.BeginCell().
-				MustStoreUInt(0, 32).                               // seqno
-				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
-				MustStoreSlice(pubKey, 256).                        // public key
-				EndCell(),
-			Code: c.walletCode,
+		stateInit, err = wallet.GetStateInit(
+			ed25519.PublicKey(c.k.PubKey().Bytes()),
+			wallet.V3R2,
+			wallet.DefaultSubwallet,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to build state init: %w", err)
 		}
 	}
 

@@ -35,7 +35,7 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(GAIAChain.GetGasAsset(), Equals, ATOMAsset)
 	c.Assert(NOBLEChain.GetGasAsset(), Equals, USDCAsset)
 	c.Assert(TRONChain.GetGasAsset(), Equals, TRXAsset)
-	c.Assert(TONChain.GetGasAsset(), Equals, TONAsset)
+	c.Assert(TONChain.GetGasAsset(), Equals, GRAMAsset)
 	c.Assert(EmptyChain.GetGasAsset(), Equals, EmptyAsset)
 
 	// Test GetGasUnits

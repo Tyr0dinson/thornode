@@ -137,7 +137,7 @@ require (
 	github.com/coder/websocket v1.8.13
 	github.com/dchest/blake2b v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1 v1.0.4
-	github.com/xssnick/tonutils-go v1.15.5
+	github.com/xssnick/tonutils-go v1.16.0
 )
 
 require github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.0 // indirect

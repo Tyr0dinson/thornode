@@ -200,7 +200,7 @@ func (c Chain) GetGasAsset() Asset {
 	case ADAChain:
 		return ADAAsset
 	case TONChain:
-		return TONAsset
+		return GRAMAsset
 	default:
 		return EmptyAsset
 	}
@@ -431,7 +431,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case ADAChain:
 		return 20_000
 	case TONChain:
-		return 2_500
+		return 400
 	default:
 		return 0
 	}

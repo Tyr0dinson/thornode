@@ -212,7 +212,7 @@ func (s *TonTestSuite) TestAccountByAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(account, NotNil)
 	c.Assert(account.Coins, HasLen, 1)
-	c.Assert(account.Coins[0].Asset.Equals(common.TONAsset), Equals, true)
+	c.Assert(account.Coins[0].Asset.Equals(common.GRAMAsset), Equals, true)
 	c.Assert(account.Coins[0].Amount.String(), Equals, "1231978")
 }
 
@@ -245,7 +245,7 @@ func (s *TonTestSuite) TestCreateTx(c *C) {
 	for _, tc := range testCases {
 
 		coins := []common.Coin{{
-			Asset:    common.TONAsset,
+			Asset:    common.GRAMAsset,
 			Amount:   cosmos.NewUint(tc.Amount),
 			Decimals: 9,
 		}}

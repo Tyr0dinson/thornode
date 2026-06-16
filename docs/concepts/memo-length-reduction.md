@@ -27,7 +27,7 @@ The examples below use the following features to reduce memo length:
 Native asset names can be shortened to reduce the length of the memo. The exact list is [here](https://gitlab.com/thorchain/thornode/-/blob/develop/common/asset.go#L231).
 
 | Shorten Asset | Asset Notation |
-| ------------- | -------------- |
+|---------------|----------------|
 | r or rune     | THOR.RUNE      |
 | a             | AVAX.AVAX      |
 | b             | BTC.BTC        |
@@ -41,7 +41,7 @@ Native asset names can be shortened to reduce the length of the memo. The exact 
 | s             | BSC.BNB        |
 | tr            | TRON.TRX       |
 | x             | XRP.XRP        |
-| t             | TON.TON        |
+| gr            | TON.GRAM       |
 
 **Example Swaps**:
 

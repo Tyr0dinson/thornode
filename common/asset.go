@@ -48,8 +48,8 @@ var (
 	// ADAAsset ADA
 	ADAAsset = Asset{Chain: ADAChain, Symbol: "ADA", Ticker: "ADA", Synth: false}
 
-	// TONAsset TON
-	TONAsset = Asset{Chain: TONChain, Symbol: "TON", Ticker: "TON", Synth: false}
+	// GRAMAsset GRAM
+	GRAMAsset = Asset{Chain: TONChain, Symbol: "GRAM", Ticker: "GRAM", Synth: false}
 	// RuneNative RUNE on thorchain
 	RuneNative = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
 	TCY        = Asset{Chain: THORChain, Symbol: "TCY", Ticker: "TCY", Synth: false}
@@ -139,7 +139,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[SUIAsset.ShortCode()] = SUIAsset.String()
 	shorts[ADAAsset.ShortCode()] = ADAAsset.String()
 	shorts[ZECAsset.ShortCode()] = ZECAsset.String()
-	shorts[TONAsset.ShortCode()] = TONAsset.String()
+	shorts[GRAMAsset.ShortCode()] = GRAMAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -349,8 +349,8 @@ func (a Asset) ShortCode() string {
 	case "ADA.ADA":
 		return "ad"
 
-	case "TON.TON":
-		return "t"
+	case "TON.GRAM":
+		return "gr"
 	default:
 		return ""
 	}
