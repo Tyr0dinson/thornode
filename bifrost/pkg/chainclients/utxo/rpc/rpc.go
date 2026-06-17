@@ -465,6 +465,19 @@ func (c *Client) Call(result any, method string, args ...interface{}) error {
 	return extractBTCError(err)
 }
 
+// CallWithFallback issues a generic JSON-RPC read against the primary and fails over to
+// each read fallback when the primary errors (and the error is not a rate limit). Use it
+// for reads that have no typed helper — e.g. BCH getblockstats, whose float avgfeerate
+// needs a chain-specific result struct that the typed GetBlockStats cannot represent.
+// Writes must keep using Call, which is primary-only.
+func (c *Client) CallWithFallback(result any, method string, args ...interface{}) error {
+	err := c.callRaw(result, method, args...)
+	err = c.withFallback(err, func(fb UTXOReader) error {
+		return fb.Call(result, method, args...)
+	})
+	return extractBTCError(err)
+}
+
 // callRaw performs a JSON-RPC call with retry but without extractBTCError, so the raw
 // HTTP status (e.g. "429 Too Many Requests: ...") is preserved for withFallback to inspect.
 func (c *Client) callRaw(result any, method string, args ...interface{}) error {

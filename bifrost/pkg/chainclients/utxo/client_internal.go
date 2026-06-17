@@ -242,7 +242,7 @@ func (c *Client) sendNetworkFee(height int64) error {
 			AverageFeeRate float64 `json:"avgfeerate"`
 		}
 		var bs BlockStats
-		err = c.rpc.Call(&bs, "getblockstats", hash)
+		err = c.rpc.CallWithFallback(&bs, "getblockstats", hash)
 		if err != nil {
 			return fmt.Errorf("fail to get block stats: %w", err)
 		}

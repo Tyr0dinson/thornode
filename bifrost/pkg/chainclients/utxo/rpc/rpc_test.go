@@ -1072,6 +1072,7 @@ func (s *RPCSuite) TestZecClientTimeout(c *C) {
 
 type mockUTXOReader struct {
 	getBlockCountFn func() (int64, error)
+	callFn          func(result any, method string, args ...interface{}) error
 	called          bool
 }
 
@@ -1129,7 +1130,11 @@ func (m *mockUTXOReader) GetNetworkInfo() (*btcjson.GetNetworkInfoResult, error)
 	return nil, errMockNotSupported
 }
 
-func (m *mockUTXOReader) Call(_ any, _ string, _ ...interface{}) error {
+func (m *mockUTXOReader) Call(result any, method string, args ...interface{}) error {
+	m.called = true
+	if m.callFn != nil {
+		return m.callFn(result, method, args...)
+	}
 	return errMockNotSupported
 }
 
@@ -1205,6 +1210,73 @@ func (s *RPCSuite) TestAllFallbacksFailReturnsError(c *C) {
 	_, err = cl.GetBlockCount()
 	c.Assert(err, NotNil)
 	c.Assert(mock.called, Equals, true)
+}
+
+// blockStatsFloat mirrors the BCH-specific struct used for getblockstats, whose
+// avgfeerate is a float (unlike btcjson.GetBlockStatsResult's int64).
+type blockStatsFloat struct {
+	AverageFeeRate float64 `json:"avgfeerate"`
+}
+
+// CallWithFallback must fail over to a read fallback when the primary errors on a
+// generic JSON-RPC read (e.g. BCH getblockstats).
+func (s *RPCSuite) TestCallWithFallbackTriedOnPrimaryFailure(c *C) {
+	srv := newErrorServer(500)
+	defer srv.Close()
+
+	mock := &mockUTXOReader{
+		callFn: func(result any, method string, args ...interface{}) error {
+			bs, ok := result.(*blockStatsFloat)
+			c.Assert(ok, Equals, true)
+			c.Assert(method, Equals, "getblockstats")
+			bs.AverageFeeRate = 1.5
+			return nil
+		},
+	}
+
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	c.Assert(err, IsNil)
+
+	var bs blockStatsFloat
+	err = cl.CallWithFallback(&bs, "getblockstats", "somehash")
+	c.Assert(err, IsNil)
+	c.Assert(bs.AverageFeeRate, Equals, 1.5)
+	c.Assert(mock.called, Equals, true)
+}
+
+// CallWithFallback must not consult fallbacks when the primary succeeds.
+func (s *RPCSuite) TestCallWithFallbackNotTriedOnSuccess(c *C) {
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		return map[string]interface{}{"avgfeerate": 2.5}, nil
+	})
+	defer srv.Close()
+
+	mock := &mockUTXOReader{}
+
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	c.Assert(err, IsNil)
+
+	var bs blockStatsFloat
+	err = cl.CallWithFallback(&bs, "getblockstats", "somehash")
+	c.Assert(err, IsNil)
+	c.Assert(bs.AverageFeeRate, Equals, 2.5)
+	c.Assert(mock.called, Equals, false)
+}
+
+// CallWithFallback must back off (not fail over) on HTTP 429.
+func (s *RPCSuite) TestCallWithFallbackNotTriedOnRateLimit(c *C) {
+	srv := newErrorServer(429)
+	defer srv.Close()
+
+	mock := &mockUTXOReader{}
+
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	c.Assert(err, IsNil)
+
+	var bs blockStatsFloat
+	err = cl.CallWithFallback(&bs, "getblockstats", "somehash")
+	c.Assert(err, NotNil)
+	c.Assert(mock.called, Equals, false)
 }
 
 func (s *RPCSuite) TestIsRateLimitError(c *C) {
