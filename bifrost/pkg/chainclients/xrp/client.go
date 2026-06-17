@@ -131,7 +131,7 @@ func NewClient(
 	}
 
 	c.xrpScanner, err = NewXrpBlockScanner(
-		c.cfg.RPCHost,
+		c.cfg.GetEndpoints()[0].RPCHost,
 		c.cfg.BlockScanner,
 		c.storage,
 		c.thorchainBridge,

@@ -111,7 +111,7 @@ func NewTronClient(
 		wg:        &sync.WaitGroup{},
 		stopchan:  make(chan struct{}),
 		whitelist: whitelist,
-		api:       api.NewTronApi(config.APIHost, config.BlockScanner.HTTPRequestTimeout),
+		api:       api.NewTronApi(config.GetEndpoints()[0].APIHost, config.BlockScanner.HTTPRequestTimeout),
 		rpc:       rpc.NewTronRpc(config.GetEndpoints()[0].RPCHost, config.BlockScanner.HTTPRequestTimeout),
 	}
 

@@ -81,7 +81,7 @@ func NewTronBlockScanner(
 		config:         cfg.BlockScanner,
 		logger:         logger,
 		whitelist:      whitelist,
-		api:            api.NewTronApi(cfg.APIHost, cfg.BlockScanner.HTTPRequestTimeout),
+		api:            api.NewTronApi(cfg.GetEndpoints()[0].APIHost, cfg.BlockScanner.HTTPRequestTimeout),
 		bridge:         bridge,
 		pubkeyMgr:      pubkeyMgr,
 		refBlocks:      []RefBlock{},
