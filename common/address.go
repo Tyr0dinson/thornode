@@ -111,11 +111,11 @@ func NewAddress(address string) (Address, error) {
 }
 
 // IsValidDASHAddress returns true if the address decodes as a Dash P2PKH or
-// P2SH address on mainnet, testnet, or regtest. Dash uses Bitcoin-style
-// base58check with different prefix bytes. Bare pubkey hex (compressed or
-// uncompressed, 66 / 130 chars) is rejected — btcutil.DecodeAddress accepts
-// those as P2PK for the caller's defaultNet, but THORChain treats them as
-// non-addresses across all chains.
+// P2SH address on mainnet or regtest. Dash regtest shares testnet's address
+// prefix bytes, so testnet addresses decode through the regtest params. Bare
+// pubkey hex (compressed or uncompressed, 66 / 130 chars) is rejected because
+// btcutil.DecodeAddress accepts those as P2PK for the caller's defaultNet, but
+// THORChain treats them as non-addresses across all chains.
 func IsValidDASHAddress(address string) bool {
 	for _, params := range []*chaincfg.Params{
 		&dashutil.MainNetParams,
