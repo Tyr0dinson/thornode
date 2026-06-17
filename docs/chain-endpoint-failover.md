@@ -1,14 +1,25 @@
 # Chain Endpoint Failover
 
-THORNode bifrost supports multiple data endpoints per chain. An endpoint is a full node
-RPC/API — either a self-hosted daemon or an external provider exposing the same interface
-(e.g. another node hosted by the operator, Ankr, QuickNode). When the preferred endpoint
-is unavailable, bifrost automatically fails over to the next one and recovers when the
-preferred endpoint comes back.
+THORNode bifrost supports configuring multiple data endpoints per chain. An endpoint is a
+full node RPC/API, either a self-hosted daemon or an external provider exposing the same
+interface (e.g. another node hosted by the operator, Ankr, QuickNode).
+
+Failover support varies by chain:
+
+- UTXO (BTC, LTC, BCH, DOGE, ZEC): each read request fails over to the next endpoint when
+  the primary errors. Writes always use the primary, and an HTTP 429 backs off
+  (`rate_limit_backoff`) rather than failing over.
+- EVM (ETH, AVAX, BSC, BASE, POL): the first endpoint that answers an `eth_chainId` probe
+  is selected when the client starts.
+- Cosmos (GAIA, NOBLE): the first endpoint whose gRPC host is TCP-reachable is selected at
+  startup, and its `rpc_host` is used for the block scanner.
+- Solana, XRP, Tron: only the highest-priority endpoint is used. XMR uses only the legacy
+  `rpc_host` and ignores the `endpoints` list. Automatic failover for these is tracked in
+  #2828.
 
 All endpoints for a chain speak that chain's native protocol. There is no support for
 partial third-party APIs (e.g. Blockchair, BlockCypher) that implement only a subset of
-methods — a fallback must be able to serve the same requests as the primary.
+methods. A fallback must be able to serve the same requests as the primary.
 
 ## Configuration
 
@@ -46,6 +57,10 @@ chains:
         priority: 2
         authorization_bearer: YOUR_BEARER_TOKEN
 ```
+
+Only `rate_limit_backoff` is consumed today (the minimum sleep applied to UTXO reads on an
+HTTP 429). The other `failover:` keys are parsed and defaulted but not yet acted on; they
+are reserved for the health-monitor failover and failback work tracked in #2828.
 
 ### Per-endpoint fields
 
@@ -85,7 +100,7 @@ endpoint index. An endpoint with no explicit `PRIORITY` defaults to its index, s
 | `PASSWORD`             | `password`             |
 | `AUTHORIZATION_BEARER` | `authorization_bearer` |
 
-Example — a primary local daemon with an external fallback for BTC:
+Example, a primary local daemon with an external fallback for BTC:
 
 ```bash
 BIFROST_CHAINS_BTC_ENDPOINTS_1_URL=http://localhost:8332
@@ -96,5 +111,6 @@ BIFROST_CHAINS_BTC_ENDPOINTS_2_URL=https://rpc.ankr.com/btc/YOUR_ANKR_KEY
 
 ## Monitoring
 
-Endpoint health is visible at the `/status/provider` HTTP endpoint on the bifrost health
-port. Prometheus metrics are exposed under the `bifrost_provider_*` namespace.
+The `/status/provider` HTTP endpoint on the bifrost health port lists the configured
+endpoints per chain (name, priority, and classified host). Per-endpoint health checks and
+Prometheus metrics are tracked in #2828.
