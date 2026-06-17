@@ -343,3 +343,94 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(txIn.TxArray[0].Memo, Equals, "NOOP")
 	c.Assert(txIn.TxArray[0].Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(10_000_000))
 }
+
+func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
+	asgardAddress := newDashTestAddress(c, 0x33)
+	senderAddress := newDashTestAddress(c, 0x44)
+
+	mempoolLocked := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	prevLocked := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+	lockedOutputScript := newDashP2PKHScriptHex(c, asgardAddress)
+	senderScript := newDashP2PKHScriptHex(c, senderAddress)
+	memoScript := newDashMemoScriptHex(c, "NOOP")
+
+	mempoolCalls := 0
+	server := newDashTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			mempoolCalls++
+			baseFee := 0.000002 // 1 sat/vB for a 200-vbyte tx, below policy.
+			if mempoolCalls > 1 {
+				baseFee = 0.00002 // 10 sat/vB for a 200-vbyte tx, above policy.
+			}
+			return map[string]any{
+				mempoolLocked: map[string]any{
+					"size":   200,
+					"vsize":  200,
+					"weight": 800,
+					"fees": map[string]any{
+						"base": baseFee,
+					},
+					"time":   time.Now().Unix(),
+					"height": 123,
+				},
+			}
+		case "getrawtransaction":
+			var txid string
+			if err := json.Unmarshal(params[0], &txid); err != nil {
+				c.Fatalf("decode txid: %v", err)
+			}
+
+			switch txid {
+			case mempoolLocked:
+				return map[string]any{
+					"txid":                 mempoolLocked,
+					"hash":                 mempoolLocked,
+					"version":              2,
+					"locktime":             0,
+					"confirmations":        0,
+					"instantlock":          true,
+					"instantlock_internal": false,
+					"vin":                  []map[string]any{{"txid": prevLocked, "vout": 0, "sequence": uint32(4294967295)}},
+					"vout":                 []map[string]any{{"n": 0, "value": 0.1, "scriptPubKey": map[string]any{"hex": lockedOutputScript, "type": "pubkeyhash", "addresses": []string{asgardAddress}}}, {"n": 1, "value": 0.0, "scriptPubKey": map[string]any{"hex": memoScript, "type": "nulldata"}}},
+				}
+			case prevLocked:
+				return map[string]any{
+					"txid":          txid,
+					"hash":          txid,
+					"version":       2,
+					"locktime":      0,
+					"confirmations": 1,
+					"vin":           []map[string]any{{"txid": "coinbase", "vout": 0}},
+					"vout":          []map[string]any{{"n": 0, "value": 0.10002, "scriptPubKey": map[string]any{"hex": senderScript, "type": "pubkeyhash", "addresses": []string{senderAddress}}}},
+				}
+			default:
+				c.Fatalf("unexpected tx lookup: %s", txid)
+			}
+		default:
+			c.Fatalf("unexpected method: %s", method)
+		}
+		return nil
+	})
+	defer server.Close()
+
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+
+	addr, err := common.NewAddress(asgardAddress)
+	c.Assert(err, IsNil)
+	client.asgardCache.Store(&sharedutxo.AsgardCache{
+		Addresses: []common.Address{addr},
+		FetchedAt: time.Now(),
+	})
+
+	txIn, err := client.getInstantSendLocks(123)
+	c.Assert(err, IsNil)
+	c.Assert(len(txIn.TxArray), Equals, 0)
+
+	txIn, err = client.getInstantSendLocks(123)
+	c.Assert(err, IsNil)
+	c.Assert(len(txIn.TxArray), Equals, 1)
+	c.Assert(txIn.TxArray[0].Tx, Equals, mempoolLocked)
+}

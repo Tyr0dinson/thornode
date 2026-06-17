@@ -225,6 +225,7 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 
 			txInItem, err := c.getTxIn(&rawTx.TxRawResult, height, true, nil)
 			if err != nil {
+				c.removeFromMemPoolCache(hash)
 				c.log.Debug().Err(err).Str("txid", hash).Msg("fail to build TxInItem for instantsend")
 				return nil
 			}
@@ -257,6 +258,7 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 			// back to the normal chainlocked block path instead.
 			allow, reason := c.allowInstantSend(feeRateMilliSatPerVByte, age, fromAsgard, usdValue)
 			if !allow {
+				c.removeFromMemPoolCache(hash)
 				c.log.Info().Str("txid", hash).Str("reason", reason).Msg("instantsend tx did not meet policy; waiting for block")
 				return nil
 			}
@@ -265,6 +267,7 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 			// in a chainlocked block and the normal block scanner sees it.
 			added, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
 			if err != nil {
+				c.removeFromMemPoolCache(hash)
 				c.log.Err(err).Str("txid", hash).Msg("fail to track observed instantsend tx")
 				return nil
 			}
