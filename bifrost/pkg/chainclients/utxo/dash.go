@@ -139,12 +139,12 @@ func (c *Client) getMemoDASH(tx *btcjson.TxRawResult) (string, error) {
 // SignatureScript. Verification uses btctxscript.StandardVerifyFlags;
 // witness-related flags in that set are no-ops for P2PKH inputs (no witness
 // stack means no evaluation path), and BIP16 P2SH support matches Dash.
-func (c *Client) signUTXODASH(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int) error {
+func (c *Client) signUTXODASH(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
 	var signable btctxscript.Signable
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
 		signable = btctxscript.NewPrivateKeySignable(c.nodePrivKey)
 	} else {
-		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.log)
+		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
 	}
 
 	sig, err := btctxscript.RawTxInSignature(redeemTx, idx, sourceScript, btctxscript.SigHashAll, signable)
