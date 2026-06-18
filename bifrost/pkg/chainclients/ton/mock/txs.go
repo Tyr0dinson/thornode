@@ -71,7 +71,7 @@ func GetTxs() ([]tlb.Transaction, error) {
 			return nil, err
 		}
 
-		slice := c.BeginParse()
+		slice := c.MustBeginParse()
 		var tx tlb.Transaction
 		err = tlb.LoadFromCell(&tx, slice)
 		if err != nil {

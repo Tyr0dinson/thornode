@@ -17,6 +17,7 @@ import (
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -26,7 +27,7 @@ import (
 )
 
 const (
-	minNetworkFee = 10_000_000
+	minNetworkFee = 100_000
 	extInLookback = 1000
 )
 
@@ -43,6 +44,8 @@ type TonBlockScanner struct {
 	feeRateMtx   sync.Mutex
 	feeRate      atomic.Uint64
 
+	pubkeyMgr pubkeymanager.PubKeyValidator
+
 	globalNetworkFeeQueue chan common.NetworkFee
 }
 
@@ -50,6 +53,7 @@ func NewTonBlockScanner(
 	cfg config.BifrostBlockScannerConfiguration,
 	bridge thorclient.ThorchainBridge,
 	api ton.APIClientWrapped,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*TonBlockScanner, error) {
 	if cfg.GasCacheBlocks <= 0 {
 		cfg.GasCacheBlocks = 10
@@ -68,6 +72,7 @@ func NewTonBlockScanner(
 		bridge:        bridge,
 		ctx:           context.Background(),
 		api:           api,
+		pubkeyMgr:     pubkeyMgr,
 		feeRateCache:  make([][]uint64, 0),
 		feeRateMtx:    sync.Mutex{},
 		lastShards:    make(map[string]uint32),
@@ -208,6 +213,8 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 }
 
 func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, error) {
+	start := time.Now()
+
 	master, err := s.api.LookupBlock(
 		s.ctx,
 		masterChainId,
@@ -236,6 +243,8 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 	var mu sync.Mutex
 	var eg errgroup.Group
 
+	eg.SetLimit(8)
+
 	// s.lastShards is updated inside the spawned go routines, so use
 	// lastShards to ensure correct seq no
 	lastShards := map[string]uint32{}
@@ -257,7 +266,7 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 			sh := shard.Copy()
 			sh.SeqNo = shardSeqno
 			eg.Go(func() error {
-				newTxInItems, shardErr := s.processShard(sh)
+				newTxInItems, shardErr := s.processShard(sh, master)
 				if shardErr != nil {
 					return fmt.Errorf("failed to process shard %d: %w", sh.SeqNo, shardErr)
 				}
@@ -285,19 +294,22 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		s.lastShards[shardId(shard)] = shard.SeqNo
 	}
 
-	s.logger.Debug().
+	s.logger.Info().
 		Int32("workchain", master.Workchain).
 		Str("shard", shardId(master)).
 		Uint32("seqno", master.SeqNo).
 		Int("txs", len(txInItems)).
+		Dur("time", time.Since(start)).
 		Msg("master block processed")
 
 	return txInItems, nil
 }
 
 func (s *TonBlockScanner) processShard(
-	shard *ton.BlockIDExt,
+	shard, master *ton.BlockIDExt,
 ) ([]types.TxInItem, error) {
+	start := time.Now()
+
 	if shard.SeqNo == 0 {
 		return nil, nil
 	}
@@ -307,20 +319,16 @@ func (s *TonBlockScanner) processShard(
 		return nil, fmt.Errorf("failed to lookup shard block %d: %w", shard.SeqNo, err)
 	}
 
-	var info *tlb.BlockHeader
-	info, err = s.api.GetBlockHeader(s.ctx, block)
+	data, err := s.api.GetBlockData(s.ctx, block)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get shard block header %d: %w", shard.SeqNo, err)
+		return nil, fmt.Errorf("failed to get block %d: %w", shard.SeqNo, err)
 	}
+	info := data.BlockInfo
 
-	txInfos, _, err := s.api.GetBlockTransactionsV2(
-		s.ctx,
-		block,
-		500_000,
-		nil,
-	)
+	var txs []*tlb.Transaction
+	txs, err = data.ListTransactions()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get transactions %d: %w", shard.SeqNo, err)
+		return nil, fmt.Errorf("failed to list transactions: %w", err)
 	}
 
 	// reverse order to have highest lt per tx first, so lookback cache needs
@@ -329,20 +337,10 @@ func (s *TonBlockScanner) processShard(
 	txLookBackCache := map[string][]*tlb.Transaction{}
 
 	var txInItems []types.TxInItem
-	for _, txInfo := range txInfos {
-		addr := address.NewAddress(0x17, 0x00, txInfo.Account)
+	for _, tx := range txs {
+		addr := address.NewAddress(0x17, 0x00, tx.AccountAddr)
 		addr.SetBounce(false)
 		addr.SetTestnetOnly(common.IsMocknet)
-
-		var tx *tlb.Transaction
-		tx, err = s.api.GetTransaction(s.ctx, block, addr, txInfo.LT)
-		if err != nil {
-			s.logger.Err(err).
-				Str("shard", shardId(shard)).
-				Str("account", addr.String()).
-				Msg("failed getting tx info")
-			return nil, fmt.Errorf("failed to get tx: %w", err)
-		}
 
 		skip, reason := skipTx(tx)
 		if skip {
@@ -391,10 +389,24 @@ func (s *TonBlockScanner) processShard(
 
 		in := msg.AsInternal()
 
+		valid := false
+		for _, a := range []*address.Address{in.DstAddr, in.SrcAddr} {
+			a.SetBounce(false)
+			a.SetTestnetOnly(common.IsMocknet)
+			valid, _ = s.pubkeyMgr.IsValidPoolAddress(a.String(), common.TONChain)
+			if valid {
+				break
+			}
+		}
+
+		if !valid {
+			continue
+		}
+
 		src := in.SrcAddr
 		txs, found := txLookBackCache[src.String()]
 		if !found {
-			txs, err = s.getSentTxs(block, src)
+			txs, err = s.getSentTxs(master, src)
 			if err != nil && !errors.Is(err, ton.ErrNoTransactionsWereFound) {
 				s.logger.Err(err).
 					Str("shard", shardId(shard)).
@@ -412,7 +424,10 @@ func (s *TonBlockScanner) processShard(
 
 		txInItem, err = s.processMessage(tx, msg.AsInternal(), txs)
 		if err != nil {
-			s.logger.Err(err).Msg("failed to process message")
+			if !errors.Is(err, ErrBounceFlag) {
+				s.logger.Err(err).Msg("failed to process message")
+			}
+
 			continue
 		}
 
@@ -422,7 +437,7 @@ func (s *TonBlockScanner) processShard(
 	if info.AfterSplit || info.AfterMerge {
 		s.logger.Debug().Msg("merged or split shard")
 
-		parents, err := ton.GetParentBlocks(info)
+		parents, err := ton.GetParentBlocks(&info)
 		if err != nil {
 			s.logger.Err(err).Msg("failed to get parent blocks")
 			return nil, err
@@ -434,13 +449,15 @@ func (s *TonBlockScanner) processShard(
 		}
 	}
 
-	s.logger.Debug().
+	s.logger.Info().
 		Bool("split", info.AfterSplit).
 		Bool("merged", info.AfterMerge).
 		Int32("workchain", shard.Workchain).
 		Str("shard", shardId(shard)).
 		Uint32("seqno", shard.SeqNo).
-		Int("txs", len(txInItems)).
+		Int("txs_found", len(txInItems)).
+		Int("txs_total", len(txs)).
+		Dur("time_per_tx", time.Since(start)/time.Duration(max(1, len(txs)))).
 		Msg("Processed shard")
 
 	return txInItems, nil
@@ -452,7 +469,7 @@ func (s *TonBlockScanner) processMessage(
 	txs []*tlb.Transaction,
 ) (txInItem types.TxInItem, err error) {
 	if msg.Bounce {
-		return txInItem, fmt.Errorf("bounce flag set")
+		return txInItem, ErrBounceFlag
 	}
 
 	if msg.Bounced {
@@ -604,10 +621,10 @@ func (s *TonBlockScanner) findExternalInTx(
 }
 
 func (s *TonBlockScanner) getSentTxs(
-	block *ton.BlockIDExt,
+	master *ton.BlockIDExt,
 	addr *address.Address,
 ) ([]*tlb.Transaction, error) {
-	acc, err := s.api.WaitForBlock(block.SeqNo).GetAccount(s.ctx, block, addr)
+	acc, err := s.api.WaitForBlock(master.SeqNo).GetAccount(s.ctx, master, addr)
 	if err != nil {
 		// possible by sending all funds from wallet
 		return nil, fmt.Errorf("failed to get account: %w", err)

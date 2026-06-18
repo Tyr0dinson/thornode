@@ -255,3 +255,35 @@ func (c MockClient) GetDispatchQueueInfo(ctx context.Context, block *ton.BlockID
 func (c MockClient) GetDispatchQueueMessages(ctx context.Context, block *ton.BlockIDExt, addr *tonaddress.Address, afterLT uint64, maxMessages int, options ...func(*ton.GetDispatchQueueMessages)) (*ton.DispatchQueueMessages, error) {
 	return nil, nil
 }
+
+func (c MockClient) GetBlockDataAsCell(ctx context.Context, block *ton.BlockIDExt) (*cell.Cell, error) {
+	return nil, nil
+}
+
+func (c MockClient) RunGetMethodByID(ctx context.Context, blockInfo *ton.BlockIDExt, addr *tonaddress.Address, methodID uint64, params ...interface{}) (*ton.ExecutionResult, error) {
+	return nil, nil
+}
+
+func (c MockClient) WithRetryTimeout(maxRetries int, timeout time.Duration) ton.APIClientWrapped {
+	return c
+}
+
+func (c MockClient) GetAllNonfinalValidatorGroups(ctx context.Context) (*ton.NonfinalValidatorGroups, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetNonfinalValidatorGroups(ctx context.Context, wc int32, shard int64) (*ton.NonfinalValidatorGroups, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetNonfinalCandidate(ctx context.Context, id *ton.NonfinalCandidateID) (*ton.NonfinalCandidate, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetAllNonfinalPendingShardBlocks(ctx context.Context) (*ton.NonfinalPendingShardBlocks, error) {
+	return nil, nil
+}
+
+func (c MockClient) GetNonfinalPendingShardBlocks(ctx context.Context, wc int32, shard int64) (*ton.NonfinalPendingShardBlocks, error) {
+	return nil, nil
+}

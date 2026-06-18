@@ -13,6 +13,7 @@ import (
 
 	"cosmossdk.io/math"
 	"github.com/xssnick/tonutils-go/liteclient"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -68,6 +69,7 @@ func NewTonClient(
 	server *tctss.TssServer,
 	bridge thorclient.ThorchainBridge,
 	metrics *tcmetrics.Metrics,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*TonClient, error) {
 	var err error
 
@@ -189,6 +191,7 @@ func NewTonClient(
 		config.BlockScanner,
 		c.bridge,
 		c.api,
+		pubkeyMgr,
 	)
 	if err != nil {
 		return nil, err
@@ -557,7 +560,13 @@ func (c *TonClient) BroadcastTx(
 		if strings.Contains(errSend.Error(), "inbound external message rejected by transaction") {
 			// try to find the hash for this transaction
 			var slice *cell.Slice
-			slice, err = body.BeginParse().LoadRef()
+			slice, err = body.BeginParse()
+			if err != nil {
+				c.logger.Err(err).Msg("failed to begin parse")
+				return "", errSend
+			}
+
+			slice, err := slice.LoadRef()
 			if err != nil {
 				c.logger.Err(err).Msg("failed to load ref")
 				return "", errSend
