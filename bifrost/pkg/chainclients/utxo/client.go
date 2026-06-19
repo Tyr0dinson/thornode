@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"math/rand"
 	"regexp"
+	"strings"
 	"sync"
 	stdatomic "sync/atomic"
 	"time"
@@ -34,7 +35,16 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// walletRecoveryRescanStartSafetyBlocks rewinds the timestamp-selected rescan start so
+// fallback block-time searches cannot skip recoverable UTXOs near the horizon edge.
+const walletRecoveryRescanStartSafetyBlocks int64 = 144
+
+// defaultWalletRecoveryRescanTimeout bounds startup recovery even when older configs
+// do not define wallet_recovery_rescan_timeout yet.
+const defaultWalletRecoveryRescanTimeout = 24 * time.Hour
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Generate
@@ -208,6 +218,13 @@ func NewClient(
 	}
 	c.signerCacheManager = signerCacheManager
 	c.updateNetworkInfo()
+
+	// Run wallet recovery before the block scanner starts. If this fails, the chain
+	// client is not loaded and Bifrost avoids reporting false insolvency from an
+	// incomplete local UTXO wallet.
+	if err = c.preflightWalletRecovery(); err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
@@ -730,6 +747,319 @@ func (c *Client) updateCurrentBlockHeight(height int64) {
 // Client - Solvency
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// walletRecoveryEnabled reports whether this chain should run the startup wallet
+// recovery preflight. The horizon is local operator config and defaults off because
+// a local wallet mismatch may also be genuine insolvency, not only stale history.
+func (c *Client) walletRecoveryEnabled() bool {
+	if c.cfg.UTXO.WalletRecoveryHorizon <= 0 {
+		return false
+	}
+
+	switch c.cfg.ChainID {
+	// DOGE participates in the startup preflight so operators get an explicit
+	// unsupported-recovery error when they opt in on a chain without bounded rescan.
+	case common.BCHChain, common.BTCChain, common.DOGEChain, common.LTCChain:
+		return true
+	default:
+		return false
+	}
+}
+
+// currentSolvencyGasFee returns the same gas tolerance used by normal solvency
+// reporting. Keep this tied to lastFeeRate so ReportSolvency behavior does not change
+// when startup recovery is enabled.
+func (c *Client) currentSolvencyGasFee() cosmos.Uint {
+	return c.solvencyGasFee(c.lastFeeRate.Load())
+}
+
+// preflightSolvencyGasFee returns a startup-only gas tolerance. At startup the normal
+// fee rate may not be populated yet, so use configured fallbacks to avoid treating a
+// small gas-fee-sized gap as a wallet history failure.
+func (c *Client) preflightSolvencyGasFee() cosmos.Uint {
+	feeRate := c.lastFeeRate.Load()
+	if feeRate == 0 && c.cfg.UTXO.DefaultSatsPerVByte > 0 {
+		feeRate = uint64(c.cfg.UTXO.DefaultSatsPerVByte)
+	}
+	if feeRate == 0 && c.cfg.UTXO.MinSatsPerVByte > 0 {
+		feeRate = uint64(c.cfg.UTXO.MinSatsPerVByte)
+	}
+	return c.solvencyGasFee(feeRate)
+}
+
+// solvencyGasFee converts a fee rate into the existing solvency tolerance amount.
+func (c *Client) solvencyGasFee(feeRate uint64) cosmos.Uint {
+	txSize := c.cfg.UTXO.EstimatedAverageTxSize
+	if c.GetChain() == common.ZECChain {
+		txSize = 1 // ZEC lastFeeRate is already the full ZIP-317 fee, not a per-byte rate
+	}
+	return cosmos.NewUint(3 * txSize * feeRate)
+}
+
+// preflightWalletRecovery verifies that funded Asgard vaults are visible in the local
+// UTXO wallet before scanning begins. BTC/BCH/LTC may repair by bounded wallet rescan;
+// DOGE fails closed when explicitly enabled because the production daemon does not
+// have a safe bounded rescan.
+func (c *Client) preflightWalletRecovery() error {
+	if !c.walletRecoveryEnabled() {
+		return nil
+	}
+
+	if c.bridge == nil {
+		return fmt.Errorf("wallet recovery preflight requires thorchain bridge")
+	}
+
+	asgardVaults, err := c.bridge.GetAsgards()
+	if err != nil {
+		return fmt.Errorf("fail to get asgards for wallet recovery preflight: %w", err)
+	}
+
+	// Only chain-funded vaults matter here. Empty vaults should not force a rescan or
+	// block chain startup.
+	chainVaults := make(ttypes.Vaults, 0, len(asgardVaults))
+	for _, asgard := range asgardVaults {
+		if asgard.HasFundsForChain(c.cfg.ChainID) {
+			chainVaults = append(chainVaults, asgard)
+		}
+	}
+	if len(chainVaults) == 0 {
+		return nil
+	}
+
+	// Thornode vault state can be ahead of the local daemon during startup catch-up.
+	// In that case a missing wallet UTXO is inconclusive, so defer recovery until the
+	// normal failed-chain retry loop reloads this client with a caught-up daemon.
+	if err = c.ensureWalletRecoveryDaemonCaughtUp(); err != nil {
+		return err
+	}
+
+	insolventVaults, err := c.findLocallyInsolventVaults(chainVaults)
+	if err != nil {
+		return err
+	}
+	if len(insolventVaults) == 0 {
+		return nil
+	}
+
+	// DOGE deliberately bypasses the horizon/pruneheight logic. If the local wallet
+	// cannot see a funded vault, the operator must provide a wallet/snapshot that can
+	// or disable the opt-in startup gate and let normal solvency reporting proceed.
+	if c.cfg.ChainID.Equals(common.DOGEChain) {
+		// Dogecoin Core used in production does not provide a safe bounded wallet
+		// rescan path, so fail startup instead of blocking Bifrost on importaddress
+		// with rescan=true.
+		return fmt.Errorf("DOGE wallet recovery preflight found funded vaults not locally solvent (%s); automatic DOGE wallet rescan is disabled, use a DOGE snapshot/full wallet that already contains the vault history or set wallet_recovery_horizon=0 to allow normal solvency reporting", formatVaultPubKeys(insolventVaults))
+	}
+
+	// Import all suspect vault addresses without rescan first. The following bounded
+	// rescan then covers every suspect address in one wallet pass.
+	for _, vault := range insolventVaults {
+		if err = c.importVaultAddress(vault); err != nil {
+			return err
+		}
+	}
+
+	startHeight, stopHeight, err := c.walletRecoveryRescanRange()
+	if err != nil {
+		return err
+	}
+	rescanTimeout := c.walletRecoveryRescanTimeout()
+
+	c.log.Warn().
+		Int("vaults", len(insolventVaults)).
+		Int64("start_height", startHeight).
+		Int64("stop_height", stopHeight).
+		Dur("wallet_recovery_horizon", c.cfg.UTXO.WalletRecoveryHorizon).
+		Dur("wallet_recovery_rescan_timeout", rescanTimeout).
+		Msg("starting UTXO wallet recovery rescan before block scanner startup")
+	if err = c.rpc.RescanBlockchain(startHeight, stopHeight, rescanTimeout); err != nil {
+		return fmt.Errorf("fail to rescan %s wallet from height %d to %d: %w", c.cfg.ChainID, startHeight, stopHeight, err)
+	}
+
+	// Re-read all chain vaults after repair. A remaining mismatch may be genuine
+	// insolvency or wallet history outside the configured horizon, so keep the failure
+	// explicit and tell operators how to return to normal solvency reporting.
+	insolventVaults, err = c.findLocallyInsolventVaults(chainVaults)
+	if err != nil {
+		return err
+	}
+	if len(insolventVaults) > 0 {
+		return fmt.Errorf("%s wallet recovery rescan completed but funded vaults are still not locally solvent (%s); this may be real insolvency or wallet history outside the configured horizon, use an older/full snapshot, increase wallet_recovery_horizon, or set wallet_recovery_horizon=0 to allow normal solvency reporting", c.cfg.ChainID, formatVaultPubKeys(insolventVaults))
+	}
+
+	return nil
+}
+
+// walletRecoveryRescanTimeout returns a bounded timeout for the daemon-side rescan.
+// It must be much longer than ordinary RPC timeouts but still finite so a wedged
+// daemon request can return control to LoadChains' retry loop.
+func (c *Client) walletRecoveryRescanTimeout() time.Duration {
+	if c.cfg.UTXO.WalletRecoveryRescanTimeout > 0 {
+		return c.cfg.UTXO.WalletRecoveryRescanTimeout
+	}
+	return defaultWalletRecoveryRescanTimeout
+}
+
+// ensureWalletRecoveryDaemonCaughtUp prevents false startup failures while the local
+// daemon is still behind THORNode's latest consensus external-chain observation.
+func (c *Client) ensureWalletRecoveryDaemonCaughtUp() error {
+	daemonHeight, err := c.rpc.GetBlockCount()
+	if err != nil {
+		return fmt.Errorf("fail to get daemon height for wallet recovery readiness: %w", err)
+	}
+
+	lastObservedHeight, err := c.bridge.GetLastObservedInHeight(c.cfg.ChainID)
+	if err != nil {
+		return fmt.Errorf("fail to get last observed height for wallet recovery readiness: %w", err)
+	}
+
+	if lastObservedHeight > 0 && daemonHeight < lastObservedHeight {
+		return fmt.Errorf("%s daemon height %d is behind THORNode last observed height %d; waiting for daemon catch-up before wallet recovery", c.cfg.ChainID, daemonHeight, lastObservedHeight)
+	}
+	return nil
+}
+
+// findLocallyInsolventVaults returns funded vaults whose local wallet balance does not
+// satisfy the existing Bifrost solvency comparison.
+func (c *Client) findLocallyInsolventVaults(vaults ttypes.Vaults) (ttypes.Vaults, error) {
+	insolventVaults := make(ttypes.Vaults, 0, len(vaults))
+	currentGasFee := c.preflightSolvencyGasFee()
+	for _, vault := range vaults {
+		acct, err := c.GetAccount(vault.PubKey, nil)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get account balance for wallet recovery preflight: %w", err)
+		}
+		if !runners.IsVaultSolvent(c.cfg.ChainID, acct, vault, currentGasFee) {
+			insolventVaults = append(insolventVaults, vault)
+		}
+	}
+	return insolventVaults, nil
+}
+
+// importVaultAddress ensures the daemon wallet watches the vault address without
+// triggering an unbounded importaddress rescan.
+func (c *Client) importVaultAddress(vault ttypes.Vault) error {
+	addr, err := vault.PubKey.GetAddress(c.cfg.ChainID)
+	if err != nil {
+		return fmt.Errorf("fail to get address from pubkey(%s): %w", vault.PubKey, err)
+	}
+
+	imported, err := c.rpc.IsAddressImported(addr.String())
+	if err != nil {
+		return fmt.Errorf("fail to query address info(%s): %w", addr, err)
+	}
+	if imported {
+		return nil
+	}
+
+	if err = c.rpc.ImportAddress(addr.String()); err != nil {
+		return fmt.Errorf("fail to import address(%s): %w", addr, err)
+	}
+	return nil
+}
+
+// walletRecoveryRescanRange chooses the bounded rescan window for BTC/BCH/LTC.
+// Pruned snapshots must retain blocks older than the configured horizon; otherwise the
+// node fails startup and asks the operator for an older/full snapshot.
+func (c *Client) walletRecoveryRescanRange() (int64, int64, error) {
+	stopHeight, err := c.rpc.GetBlockCount()
+	if err != nil {
+		return 0, 0, fmt.Errorf("fail to get block count for wallet recovery: %w", err)
+	}
+
+	info, err := c.rpc.GetBlockChainInfo()
+	if err != nil {
+		return 0, 0, fmt.Errorf("fail to get blockchain info for wallet recovery: %w", err)
+	}
+
+	earliestHeight := int64(0)
+	cutoff := time.Now().Add(-c.cfg.UTXO.WalletRecoveryHorizon)
+	if info.Pruned {
+		// pruneheight is the earliest block the daemon can still rescan. If it is
+		// already newer than the horizon cutoff, automatic repair cannot prove that
+		// older vault UTXOs exist in the wallet.
+		earliestHeight = int64(info.PruneHeight)
+		earliestTime, err := c.blockMedianTime(earliestHeight)
+		if err != nil {
+			return 0, 0, fmt.Errorf("fail to get pruned snapshot start time at height %d: %w", earliestHeight, err)
+		}
+		if earliestTime.After(cutoff) {
+			return 0, 0, fmt.Errorf("%s pruned snapshot starts at height %d (%s), newer than configured wallet_recovery_horizon %s cutoff (%s); use an older/full snapshot", c.cfg.ChainID, earliestHeight, earliestTime.UTC().Format(time.RFC3339), c.cfg.UTXO.WalletRecoveryHorizon, cutoff.UTC().Format(time.RFC3339))
+		}
+	}
+
+	startHeight, err := c.findBlockAtOrBeforeTime(earliestHeight, stopHeight, cutoff)
+	if err != nil {
+		return 0, 0, err
+	}
+	startHeight = rewindWalletRecoveryStartHeight(startHeight, earliestHeight)
+	return startHeight, stopHeight, nil
+}
+
+// findBlockAtOrBeforeTime returns the latest available height whose block timestamp is
+// at or before target. This keeps rescans close to the configured horizon instead of
+// always starting from genesis.
+func (c *Client) findBlockAtOrBeforeTime(low, high int64, target time.Time) (int64, error) {
+	if high < low {
+		return low, nil
+	}
+
+	targetUnix := target.Unix()
+	result := low
+	for low <= high {
+		mid := low + (high-low)/2
+		blockTime, err := c.blockMedianTime(mid)
+		if err != nil {
+			return 0, fmt.Errorf("fail to get block time at height %d: %w", mid, err)
+		}
+		if blockTime.Unix() <= targetUnix {
+			result = mid
+			low = mid + 1
+			continue
+		}
+		high = mid - 1
+	}
+	return result, nil
+}
+
+// rewindWalletRecoveryStartHeight moves the rescan start before the selected horizon
+// block. This is cheap compared to the configured horizon and protects fallbacks that
+// only have non-monotonic block time data.
+func rewindWalletRecoveryStartHeight(startHeight, earliestHeight int64) int64 {
+	if startHeight-earliestHeight <= walletRecoveryRescanStartSafetyBlocks {
+		return earliestHeight
+	}
+	return startHeight - walletRecoveryRescanStartSafetyBlocks
+}
+
+// blockMedianTime returns median time past at height. Median time is monotonic for
+// Bitcoin-family chains and is therefore safe for the horizon binary search; if a
+// daemon lacks getblockheader metadata, fall back to block time plus the rewind guard.
+func (c *Client) blockMedianTime(height int64) (time.Time, error) {
+	hash, err := c.rpc.GetBlockHash(height)
+	if err != nil {
+		return time.Time{}, err
+	}
+	header, err := c.rpc.GetBlockHeaderVerbose(hash)
+	if err == nil && header.MedianTime > 0 {
+		return time.Unix(header.MedianTime, 0), nil
+	}
+
+	block, err := c.rpc.GetBlockVerbose(hash)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(block.Time, 0), nil
+}
+
+// formatVaultPubKeys returns a compact vault list for startup error messages.
+func formatVaultPubKeys(vaults ttypes.Vaults) string {
+	pubkeys := make([]string, 0, len(vaults))
+	for _, vault := range vaults {
+		pubkeys = append(pubkeys, vault.PubKey.String())
+	}
+	return strings.Join(pubkeys, ",")
+}
+
 // ShouldReportSolvency returns true if solvency should be reported at the given height.
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	return c.shouldReportSolvency(height)
@@ -769,11 +1099,7 @@ func (c *Client) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
-	txSize := c.cfg.UTXO.EstimatedAverageTxSize
-	if c.GetChain() == common.ZECChain {
-		txSize = 1 // ZEC lastFeeRate is already the full ZIP-317 fee, not a per-byte rate
-	}
-	currentGasFee := cosmos.NewUint(3 * txSize * c.lastFeeRate.Load())
+	currentGasFee := c.currentSolvencyGasFee()
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent

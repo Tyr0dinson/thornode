@@ -2,6 +2,7 @@ package utxo
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -30,6 +32,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	utxorpc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -382,6 +385,19 @@ func (s *CoverageBackfillSuite) TestShouldReportSolvency(c *C) {
 
 	// Restore
 	s.client.cfg.ChainID = common.BTCChain
+}
+
+func (s *CoverageBackfillSuite) TestWalletRecoveryEnabledIsOptIn(c *C) {
+	s.client.cfg.ChainID = common.BTCChain
+	s.client.cfg.UTXO.WalletRecoveryHorizon = 0
+	c.Assert(s.client.walletRecoveryEnabled(), Equals, false)
+
+	s.client.cfg.UTXO.WalletRecoveryHorizon = time.Hour
+	c.Assert(s.client.walletRecoveryEnabled(), Equals, true)
+
+	// ZEC account lookup uses getaddressutxos rather than the imported wallet path.
+	s.client.cfg.ChainID = common.ZECChain
+	c.Assert(s.client.walletRecoveryEnabled(), Equals, false)
 }
 
 func (s *CoverageBackfillSuite) TestConfirmationCountReady(c *C) {
@@ -1238,6 +1254,290 @@ func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenNotHaltedOnChain
 func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenHaltStateUnreadable(c *C) {
 	_, queued := s.reportSolventVault(c, &solvencyGateBridge{solvencyHalted: true, mimirErr: fmt.Errorf("bridge unavailable")})
 	c.Assert(queued, HasLen, 0)
+}
+
+type walletRecoveryBridge struct {
+	thorclient.ThorchainBridge
+	vaults             ttypes.Vaults
+	lastObservedHeight int64
+}
+
+// GetAsgards returns the test vault set used by startup wallet recovery checks.
+func (b walletRecoveryBridge) GetAsgards() (ttypes.Vaults, error) {
+	return b.vaults, nil
+}
+
+// GetLastObservedInHeight returns the mocked THORNode consensus height used by the
+// startup daemon catch-up gate.
+func (b walletRecoveryBridge) GetLastObservedInHeight(common.Chain) (int64, error) {
+	return b.lastObservedHeight, nil
+}
+
+type walletRecoveryRPCState struct {
+	chain                  common.Chain
+	address                string
+	scriptPubKey           string
+	walletAmount           float64
+	recoveredAmount        float64
+	pruned                 bool
+	pruneHeight            int64
+	blockCount             int64
+	lastObservedHeight     int64
+	now                    time.Time
+	getBlockChainInfoCalls int
+	listUnspentCalls       int
+	importAddressCalls     int
+	rescanBlockchainCalls  int
+	rescanBlockchainStart  int64
+	rescanBlockchainStop   int64
+}
+
+// setupWalletRecovery installs a funded vault and a mock UTXO RPC server around the
+// existing suite client so tests can exercise preflightWalletRecovery directly.
+func (s *CoverageBackfillSuite) setupWalletRecovery(c *C, state *walletRecoveryRPCState) *httptest.Server {
+	if state.blockCount == 0 {
+		state.blockCount = 100
+	}
+	if state.now.IsZero() {
+		state.now = time.Now()
+	}
+	if state.lastObservedHeight == 0 {
+		state.lastObservedHeight = state.blockCount
+	}
+
+	vault := ttypes.NewVault(1, ttypes.VaultStatus_ActiveVault, ttypes.VaultType_AsgardVault, s.client.nodePubKey, []string{state.chain.String()}, nil)
+	vault.AddFunds(common.Coins{
+		common.NewCoin(state.chain.GetGasAsset(), cosmos.NewUint(100_000_000)),
+	})
+	s.client.bridge = walletRecoveryBridge{
+		ThorchainBridge:    s.bridge,
+		vaults:             ttypes.Vaults{vault},
+		lastObservedHeight: state.lastObservedHeight,
+	}
+	s.client.cfg.ChainID = state.chain
+	s.client.cfg.UTXO.WalletRecoveryHorizon = 60 * 24 * time.Hour
+	s.client.lastFeeRate.Store(1)
+
+	addr, err := s.client.nodePubKey.GetAddress(state.chain)
+	c.Assert(err, IsNil)
+	state.address = addr.String()
+	if state.chain.Equals(common.BTCChain) && (state.walletAmount > 0 || state.recoveredAmount > 0) {
+		decodedAddr, err := btcutil.DecodeAddress(state.address, s.client.getChainCfgBTC())
+		c.Assert(err, IsNil)
+		script, err := btctxscript.PayToAddrScript(decodedAddr)
+		c.Assert(err, IsNil)
+		state.scriptPubKey = hex.EncodeToString(script)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		c.Assert(err, IsNil)
+		defer req.Body.Close()
+
+		var rpcReq struct {
+			Method string        `json:"method"`
+			Params []interface{} `json:"params"`
+			ID     interface{}   `json:"id"`
+		}
+		c.Assert(json.Unmarshal(body, &rpcReq), IsNil)
+
+		result, rpcErr := state.handleRPCRequest(c, rpcReq.Method, rpcReq.Params)
+		resp := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      rpcReq.ID,
+		}
+		if rpcErr != nil {
+			resp["error"] = map[string]interface{}{
+				"code":    rpcErr.Code,
+				"message": rpcErr.Message,
+			}
+		} else {
+			resp["result"] = result
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		c.Assert(json.NewEncoder(rw).Encode(resp), IsNil)
+	}))
+
+	rpcClient, err := utxorpc.NewClient(server.URL, bob, password, 0, time.Second*10, state.chain, s.client.log)
+	c.Assert(err, IsNil)
+	s.client.rpc = rpcClient
+
+	return server
+}
+
+// handleRPCRequest emulates just the wallet and chain RPCs used by startup recovery.
+func (s *walletRecoveryRPCState) handleRPCRequest(c *C, method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+	switch method {
+	case "getaddressinfo":
+		return map[string]interface{}{
+			"ismine":      false,
+			"iswatchonly": false,
+		}, nil
+	case "getblockcount":
+		return float64(s.blockCount), nil
+	case "getblockchaininfo":
+		s.getBlockChainInfoCalls++
+		result := map[string]interface{}{
+			"blocks":        float64(s.blockCount),
+			"headers":       float64(s.blockCount),
+			"bestblockhash": fmt.Sprintf("hash-%d", s.blockCount),
+			"pruned":        s.pruned,
+		}
+		if s.pruned {
+			result["pruneheight"] = float64(s.pruneHeight)
+		}
+		return result, nil
+	case "getblockhash":
+		c.Assert(params, HasLen, 1)
+		return fmt.Sprintf("hash-%d", rpcParamInt64(params[0])), nil
+	case "getblock":
+		c.Assert(params, HasLen, 2)
+		hash, ok := params[0].(string)
+		c.Assert(ok, Equals, true)
+		var height int64
+		_, err := fmt.Sscanf(hash, "hash-%d", &height)
+		c.Assert(err, IsNil)
+		return map[string]interface{}{
+			"hash":   hash,
+			"height": height,
+			"time":   s.blockUnixTime(height),
+		}, nil
+	case "getblockheader":
+		c.Assert(params, HasLen, 2)
+		hash, ok := params[0].(string)
+		c.Assert(ok, Equals, true)
+		var height int64
+		_, err := fmt.Sscanf(hash, "hash-%d", &height)
+		c.Assert(err, IsNil)
+		return map[string]interface{}{
+			"hash":       hash,
+			"height":     height,
+			"mediantime": s.blockUnixTime(height),
+		}, nil
+	case "importaddress":
+		s.importAddressCalls++
+		return nil, nil
+	case "rescanblockchain":
+		s.rescanBlockchainCalls++
+		c.Assert(params, HasLen, 2)
+		s.rescanBlockchainStart = rpcParamInt64(params[0])
+		s.rescanBlockchainStop = rpcParamInt64(params[1])
+		if s.recoveredAmount > 0 {
+			s.walletAmount = s.recoveredAmount
+		}
+		return map[string]interface{}{
+			"start_height": s.rescanBlockchainStart,
+			"stop_height":  s.rescanBlockchainStop,
+		}, nil
+	case "listunspent":
+		s.listUnspentCalls++
+		if s.walletAmount == 0 {
+			return []interface{}{}, nil
+		}
+		return []interface{}{
+			map[string]interface{}{
+				"txid":          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"vout":          0,
+				"address":       s.address,
+				"scriptPubKey":  s.scriptPubKey,
+				"amount":        s.walletAmount,
+				"confirmations": 10,
+				"spendable":     true,
+			},
+		}, nil
+	default:
+		c.Fatalf("unexpected RPC method %s", method)
+		return nil, nil
+	}
+}
+
+// blockUnixTime maps synthetic block heights to one-day-spaced timestamps, making the
+// configured 60 day horizon deterministic in the bounded rescan tests.
+func (s *walletRecoveryRPCState) blockUnixTime(height int64) int64 {
+	return s.now.Add(time.Duration(height-s.blockCount) * 24 * time.Hour).Unix()
+}
+
+// rpcParamInt64 normalizes JSON-RPC numeric parameters decoded by the test server.
+func rpcParamInt64(v interface{}) int64 {
+	switch value := v.(type) {
+	case float64:
+		return int64(value)
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	default:
+		return 0
+	}
+}
+
+func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryRescansCoveredBitcoinSnapshot(c *C) {
+	state := &walletRecoveryRPCState{
+		chain:           common.BTCChain,
+		pruned:          true,
+		pruneHeight:     20,
+		blockCount:      100,
+		recoveredAmount: 1,
+	}
+	server := s.setupWalletRecovery(c, state)
+	defer server.Close()
+
+	err := s.client.preflightWalletRecovery()
+	c.Assert(err, IsNil)
+	c.Assert(state.listUnspentCalls, Equals, 2)
+	c.Assert(state.importAddressCalls, Equals, 1)
+	c.Assert(state.rescanBlockchainCalls, Equals, 1)
+	c.Assert(state.rescanBlockchainStart, Equals, int64(20))
+	c.Assert(state.rescanBlockchainStop, Equals, int64(100))
+}
+
+func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryWaitsForDaemonCatchUp(c *C) {
+	state := &walletRecoveryRPCState{
+		chain:              common.BTCChain,
+		blockCount:         50,
+		lastObservedHeight: 100,
+	}
+	server := s.setupWalletRecovery(c, state)
+	defer server.Close()
+
+	err := s.client.preflightWalletRecovery()
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*waiting for daemon catch-up.*")
+	c.Assert(state.listUnspentCalls, Equals, 0)
+	c.Assert(state.rescanBlockchainCalls, Equals, 0)
+}
+
+func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryFailsWhenPrunedSnapshotTooNew(c *C) {
+	state := &walletRecoveryRPCState{
+		chain:       common.BTCChain,
+		pruned:      true,
+		pruneHeight: 95,
+		blockCount:  100,
+	}
+	server := s.setupWalletRecovery(c, state)
+	defer server.Close()
+
+	err := s.client.preflightWalletRecovery()
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*newer than configured wallet_recovery_horizon.*")
+	c.Assert(state.getBlockChainInfoCalls, Equals, 1)
+	c.Assert(state.rescanBlockchainCalls, Equals, 0)
+}
+
+func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryDogecoinRequiresManualRecovery(c *C) {
+	state := &walletRecoveryRPCState{
+		chain:      common.DOGEChain,
+		blockCount: 100,
+	}
+	server := s.setupWalletRecovery(c, state)
+	defer server.Close()
+
+	err := s.client.preflightWalletRecovery()
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*automatic DOGE wallet rescan is disabled.*")
+	c.Assert(state.getBlockChainInfoCalls, Equals, 0)
+	c.Assert(state.importAddressCalls, Equals, 0)
+	c.Assert(state.rescanBlockchainCalls, Equals, 0)
 }
 
 func (s *CoverageBackfillSuite) TestRegisterPublicKey(c *C) {

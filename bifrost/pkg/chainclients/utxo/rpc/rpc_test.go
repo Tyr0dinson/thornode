@@ -234,6 +234,30 @@ func (s *RPCSuite) TestGetBlockCountError(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *RPCSuite) TestGetBlockChainInfo(c *C) {
+	log := zerolog.Nop()
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		c.Assert(method, Equals, "getblockchaininfo")
+		return map[string]interface{}{
+			"chain":         "main",
+			"blocks":        800000,
+			"headers":       800000,
+			"bestblockhash": "abc123",
+			"pruned":        true,
+			"pruneheight":   700000,
+		}, nil
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	info, err := cl.GetBlockChainInfo()
+	c.Assert(err, IsNil)
+	c.Assert(info.Pruned, Equals, true)
+	c.Assert(info.PruneHeight, Equals, int32(700000))
+}
+
 // ---------------------------------------------------------------------------
 // GetBlockHash tests
 // ---------------------------------------------------------------------------
@@ -302,6 +326,31 @@ func (s *RPCSuite) TestGetBlockVerbose(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(block, NotNil)
 	c.Assert(block.Hash, Equals, "abc123")
+}
+
+func (s *RPCSuite) TestGetBlockHeaderVerbose(c *C) {
+	log := zerolog.Nop()
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		c.Assert(method, Equals, "getblockheader")
+		c.Assert(params, HasLen, 2)
+		c.Assert(params[0], Equals, "abc123")
+		c.Assert(params[1], Equals, true)
+		return map[string]interface{}{
+			"hash":       "abc123",
+			"height":     100,
+			"mediantime": 1710000000,
+		}, nil
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	header, err := cl.GetBlockHeaderVerbose("abc123")
+	c.Assert(err, IsNil)
+	c.Assert(header, NotNil)
+	c.Assert(header.Hash, Equals, "abc123")
+	c.Assert(header.MedianTime, Equals, int64(1710000000))
 }
 
 // ---------------------------------------------------------------------------
@@ -617,6 +666,63 @@ func (s *RPCSuite) TestImportAddressRescan(c *C) {
 
 	err = cl.ImportAddressRescan("bc1qtest")
 	c.Assert(err, IsNil)
+}
+
+func (s *RPCSuite) TestRescanBlockchain(c *C) {
+	log := zerolog.Nop()
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		c.Assert(method, Equals, "rescanblockchain")
+		c.Assert(params, HasLen, 2)
+		c.Assert(params[0], Equals, float64(10))
+		c.Assert(params[1], Equals, float64(20))
+		return map[string]interface{}{
+			"start_height": 10,
+			"stop_height":  20,
+		}, nil
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	err = cl.RescanBlockchain(10, 20, time.Hour)
+	c.Assert(err, IsNil)
+}
+
+func (s *RPCSuite) TestRescanBlockchainUsesRecoveryTimeout(c *C) {
+	log := zerolog.Nop()
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		c.Assert(method, Equals, "rescanblockchain")
+		time.Sleep(80 * time.Millisecond)
+		return map[string]interface{}{
+			"start_height": 10,
+			"stop_height":  20,
+		}, nil
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, 20*time.Millisecond, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	err = cl.RescanBlockchain(10, 20, time.Second)
+	c.Assert(err, IsNil)
+}
+
+func (s *RPCSuite) TestRescanBlockchainTimesOutWedgedRequest(c *C) {
+	log := zerolog.Nop()
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		c.Assert(method, Equals, "rescanblockchain")
+		time.Sleep(100 * time.Millisecond)
+		return nil, nil
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	err = cl.RescanBlockchain(10, 20, 20*time.Millisecond)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*context deadline exceeded.*")
 }
 
 // ---------------------------------------------------------------------------

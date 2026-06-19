@@ -23,6 +23,10 @@ import (
 // op-geth rpc uses 10s timeouts
 const ZecClientTimeout = time.Second * 10
 
+// defaultRescanBlockchainTimeout keeps direct RPC callers finite even when they do
+// not pass the higher-level Bifrost wallet recovery timeout.
+const defaultRescanBlockchainTimeout = 24 * time.Hour
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Interfaces
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -30,6 +34,15 @@ const ZecClientTimeout = time.Second * 10
 type SerializableTx interface {
 	SerializeSize() int
 	Serialize(io.Writer) error
+}
+
+// BlockHeaderVerboseResult keeps fields needed by wallet recovery without depending
+// on btcjson versions that may not expose mediantime on GetBlockHeaderVerboseResult.
+type BlockHeaderVerboseResult struct {
+	Hash       string `json:"hash"`
+	Height     int64  `json:"height"`
+	Time       int64  `json:"time"`
+	MedianTime int64  `json:"mediantime"`
 }
 
 type rpcClient interface {
@@ -103,6 +116,13 @@ func (c *Client) GetBlockCount() (int64, error) {
 	return count, extractBTCError(err)
 }
 
+// GetBlockChainInfo returns metadata about the current chain and pruning state.
+func (c *Client) GetBlockChainInfo() (*btcjson.GetBlockChainInfoResult, error) {
+	var info btcjson.GetBlockChainInfoResult
+	err := c.Call(&info, "getblockchaininfo")
+	return &info, extractBTCError(err)
+}
+
 // SendRawTransaction serializes and sends the transaction. The maxFeeParam differs in
 // type between chains - ensure the correct variant is used.
 func (c *Client) SendRawTransaction(tx SerializableTx, maxFeeParam any) (string, error) {
@@ -141,6 +161,13 @@ func (c *Client) GetBlockVerbose(hash string) (*btcjson.GetBlockVerboseResult, e
 	var block btcjson.GetBlockVerboseResult
 	err := c.Call(&block, "getblock", hash, 1)
 	return &block, extractBTCError(err)
+}
+
+// GetBlockHeaderVerbose returns header metadata including median time.
+func (c *Client) GetBlockHeaderVerbose(hash string) (*BlockHeaderVerboseResult, error) {
+	var header BlockHeaderVerboseResult
+	err := c.Call(&header, "getblockheader", hash, true)
+	return &header, extractBTCError(err)
 }
 
 // GetBlockStats returns statistics about the block at the given hash.
@@ -254,6 +281,18 @@ func (c *Client) ImportAddress(address string) error {
 // ImportAddressRescan imports the address with rescan.
 func (c *Client) ImportAddressRescan(address string) error {
 	err := c.Call(nil, "importaddress", address, "", true)
+	return extractBTCError(err)
+}
+
+// RescanBlockchain rescans the node wallet over the provided block range.
+func (c *Client) RescanBlockchain(startHeight, stopHeight int64, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = defaultRescanBlockchainTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err := c.CallContext(ctx, nil, "rescanblockchain", startHeight, stopHeight)
 	return extractBTCError(err)
 }
 
@@ -423,6 +462,15 @@ func (c *Client) Call(result any, method string, args ...interface{}) error {
 	}
 
 	err := c.retry(fn)
+	return extractBTCError(err)
+}
+
+// CallContext runs one RPC under the caller's context. It is used for operations
+// that need a deadline different from the normal short request timeout.
+func (c *Client) CallContext(ctx context.Context, result any, method string, args ...interface{}) error {
+	err := c.retry(func() error {
+		return c.client.CallContext(ctx, result, method, args...)
+	})
 	return extractBTCError(err)
 }
 

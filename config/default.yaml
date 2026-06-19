@@ -136,6 +136,8 @@ bifrost:
         reconstruct_liabilities_concurrency: 0
       utxo: &utxo
         block_cache_count: 144
+        wallet_recovery_horizon: 0s # opt-in local startup wallet recovery gate; e.g. 1440h for 60d
+        wallet_recovery_rescan_timeout: 24h # max duration for one opt-in startup wallet rescan
         transaction_batch_size: 500
         max_mempool_batches: 10
         estimated_average_tx_size: 1000

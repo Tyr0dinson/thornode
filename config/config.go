@@ -997,6 +997,14 @@ type BifrostChainConfiguration struct {
 		// BlockCacheCount is the number of blocks to cache in storage.
 		BlockCacheCount uint64 `mapstructure:"block_cache_count"`
 
+		// WalletRecoveryHorizon is the lookback window used by UTXO wallet startup recovery
+		// before the block scanner starts. A zero value disables startup wallet recovery.
+		WalletRecoveryHorizon time.Duration `mapstructure:"wallet_recovery_horizon"`
+
+		// WalletRecoveryRescanTimeout is the maximum time to wait for one startup wallet
+		// recovery rescan before returning control to the failed-chain retry loop.
+		WalletRecoveryRescanTimeout time.Duration `mapstructure:"wallet_recovery_rescan_timeout"`
+
 		// TransactionBatchSize is the number of transactions to batch in a single request.
 		// This is used as the limit for one iteration of the mempool check, and for fanout
 		// in fetching block transactions for chains that do not yet support verbosity level
