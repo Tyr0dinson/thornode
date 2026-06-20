@@ -1322,16 +1322,16 @@ func (s *CoverageBackfillSuite) setupWalletRecovery(c *C, state *walletRecoveryR
 	c.Assert(err, IsNil)
 	state.address = addr.String()
 	if state.chain.Equals(common.BTCChain) && (state.walletAmount > 0 || state.recoveredAmount > 0) {
-		decodedAddr, err := btcutil.DecodeAddress(state.address, s.client.getChainCfgBTC())
-		c.Assert(err, IsNil)
-		script, err := btctxscript.PayToAddrScript(decodedAddr)
-		c.Assert(err, IsNil)
+		decodedAddr, decodeErr := btcutil.DecodeAddress(state.address, s.client.getChainCfgBTC())
+		c.Assert(decodeErr, IsNil)
+		script, payErr := btctxscript.PayToAddrScript(decodedAddr)
+		c.Assert(payErr, IsNil)
 		state.scriptPubKey = hex.EncodeToString(script)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		body, err := io.ReadAll(req.Body)
-		c.Assert(err, IsNil)
+		body, readErr := io.ReadAll(req.Body)
+		c.Assert(readErr, IsNil)
 		defer req.Body.Close()
 
 		var rpcReq struct {

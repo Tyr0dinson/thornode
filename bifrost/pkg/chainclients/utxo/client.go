@@ -978,9 +978,9 @@ func (c *Client) walletRecoveryRescanRange() (int64, int64, error) {
 		// already newer than the horizon cutoff, automatic repair cannot prove that
 		// older vault UTXOs exist in the wallet.
 		earliestHeight = int64(info.PruneHeight)
-		earliestTime, err := c.blockMedianTime(earliestHeight)
-		if err != nil {
-			return 0, 0, fmt.Errorf("fail to get pruned snapshot start time at height %d: %w", earliestHeight, err)
+		earliestTime, blockTimeErr := c.blockMedianTime(earliestHeight)
+		if blockTimeErr != nil {
+			return 0, 0, fmt.Errorf("fail to get pruned snapshot start time at height %d: %w", earliestHeight, blockTimeErr)
 		}
 		if earliestTime.After(cutoff) {
 			return 0, 0, fmt.Errorf("%s pruned snapshot starts at height %d (%s), newer than configured wallet_recovery_horizon %s cutoff (%s); use an older/full snapshot", c.cfg.ChainID, earliestHeight, earliestTime.UTC().Format(time.RFC3339), c.cfg.UTXO.WalletRecoveryHorizon, cutoff.UTC().Format(time.RFC3339))
