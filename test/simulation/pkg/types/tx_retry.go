@@ -95,13 +95,11 @@ func isSubmittedButUnconfirmedSimTxBroadcast(chain common.Chain, err error) bool
 	message := strings.ToLower(err.Error())
 	switch {
 	case chain.Equals(common.TRONChain):
-		// TRON "not confirmed" means the fullnode could query the tx but it
-		// did not mine it before the local wait expired. Keep that txid to
-		// avoid replacing a possibly-valid inbound with another transfer.
-		// "Not observed" is different: the fullnode never returned the tx, so
-		// reporting it as broadcasted leaves the swap actor waiting on a txid
-		// Bifrost cannot observe.
-		return strings.Contains(message, "not confirmed on tron node")
+		// TRON simulation broadcasts are only useful once they are mined and
+		// observable by Bifrost. The TRON client waits for expiration before
+		// returning "not confirmed", so retry with a fresh tx instead of
+		// letting the actor wait on an unobservable txid.
+		return false
 	case chain.Equals(common.SOLChain):
 		return strings.Contains(message, "not confirmed on solana node")
 	default:
