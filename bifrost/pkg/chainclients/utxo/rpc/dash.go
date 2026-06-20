@@ -1,6 +1,10 @@
 package rpc
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcutil"
 )
@@ -63,6 +67,20 @@ type DashTxRawResult struct {
 	ChainLock           bool `json:"chainlock,omitempty"`
 }
 
+type DashISLockInput struct {
+	TxID string `json:"txid"`
+	Vout uint32 `json:"vout"`
+}
+
+type DashISLockResult struct {
+	TxID      string            `json:"txid"`
+	Inputs    []DashISLockInput `json:"inputs"`
+	ID        string            `json:"id,omitempty"`
+	CycleHash string            `json:"cycleHash"`
+	Signature string            `json:"signature"`
+	Hex       string            `json:"hex"`
+}
+
 func (c *Client) GetBestChainlock() (*GetBestChainlockResult, error) {
 	var result GetBestChainlockResult
 	err := c.Call(&result, "getbestchainlock")
@@ -79,4 +97,30 @@ func (c *Client) GetRawTransactionVerboseDASH(txid string) (*DashTxRawResult, er
 	var tx DashTxRawResult
 	err := c.Call(&tx, "getrawtransaction", txid, true)
 	return &tx, extractBTCError(err)
+}
+
+func (c *Client) GetISLocks(txids []string) ([]*DashISLockResult, error) {
+	var rawLocks []json.RawMessage
+	err := c.Call(&rawLocks, "getislocks", txids)
+	if err != nil {
+		return nil, extractBTCError(err)
+	}
+
+	// Dash returns one array entry per requested txid. Missing locks are the
+	// string "None" rather than a JSON null/object, so keep nils in-place to
+	// preserve the caller's txid-to-result ordering.
+	locks := make([]*DashISLockResult, len(rawLocks))
+	for i, raw := range rawLocks {
+		var none string
+		if err := json.Unmarshal(raw, &none); err == nil && strings.EqualFold(none, "None") {
+			continue
+		}
+
+		var lock DashISLockResult
+		if err := json.Unmarshal(raw, &lock); err != nil {
+			return nil, fmt.Errorf("decode getislocks result %d: %w", i, err)
+		}
+		locks[i] = &lock
+	}
+	return locks, nil
 }

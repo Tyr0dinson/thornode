@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -149,6 +151,30 @@ func cosmosAmountToFloat(u cosmos.Uint) float64 {
 	return f
 }
 
+// instantSendObservationHeight returns the deterministic height used for a
+// mempool InstantSend observation. The scanner height passed into
+// getInstantSendLocks is node-local, so using it would split attestations across
+// observers that saw the same lock at slightly different scan positions.
+func (c *Client) instantSendObservationHeight(lock *rpc.DashISLockResult) (int64, error) {
+	if lock == nil {
+		return 0, errors.New("missing instantsend lock")
+	}
+	cycleHash := strings.TrimSpace(lock.CycleHash)
+	if cycleHash == "" {
+		return 0, errors.New("missing instantsend cycle hash")
+	}
+	cycleBlock, err := c.rpc.GetBlockVerbose(cycleHash)
+	if err != nil {
+		return 0, fmt.Errorf("fail to fetch instantsend cycle block: %w", err)
+	}
+	if cycleBlock.Height <= 0 {
+		return 0, fmt.Errorf("instantsend cycle block has invalid height: %d", cycleBlock.Height)
+	}
+	// Use the lock's network-agreed cycle block, not the scanner's local
+	// current height, so all observers sign the same InstantSend observation.
+	return cycleBlock.Height, nil
+}
+
 // getInstantSendLocks surfaces InstantSend-locked mempool txs as finalised observations.
 func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 	// Collect InstantSend-locked transactions from the mempool and surface them
@@ -218,12 +244,36 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 				return nil
 			}
 
+			// The raw tx flags only tell us that dashd considers the tx
+			// InstantSend-locked. Fetch the actual lock before caching so we
+			// can anchor the observation to the lock's cycle block instead of
+			// the caller's local scanner height. If the lock is not available
+			// yet, leave the tx uncached and try again on the next mempool pass.
+			isLocks, err := c.rpc.GetISLocks([]string{hash})
+			if err != nil {
+				c.log.Err(err).Str("txid", hash).Msg("fail to fetch instantsend lock")
+				return nil
+			}
+			if len(isLocks) != 1 || isLocks[0] == nil {
+				c.log.Debug().Str("txid", hash).Msg("instantsend lock not available yet")
+				return nil
+			}
+			if isLocks[0].TxID != "" && !strings.EqualFold(isLocks[0].TxID, hash) {
+				c.log.Debug().Str("txid", hash).Str("lock_txid", isLocks[0].TxID).Msg("instantsend lock txid mismatch")
+				return nil
+			}
+			observedHeight, err := c.instantSendObservationHeight(isLocks[0])
+			if err != nil {
+				c.log.Debug().Err(err).Str("txid", hash).Msg("skip instantsend tx without deterministic lock height")
+				return nil
+			}
+
 			// Skip if we've already processed this instant-locked mempool tx.
 			if !c.tryAddToMemPoolCache(hash) {
 				return nil
 			}
 
-			txInItem, err := c.getTxIn(&rawTx.TxRawResult, height, true, nil)
+			txInItem, err := c.getTxIn(&rawTx.TxRawResult, observedHeight, true, nil)
 			if err != nil {
 				c.removeFromMemPoolCache(hash)
 				c.log.Debug().Err(err).Str("txid", hash).Msg("fail to build TxInItem for instantsend")

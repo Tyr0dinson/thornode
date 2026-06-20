@@ -171,6 +171,10 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	mempoolUnlocked := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	prevLocked := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	prevUnlocked := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	cycleHash := "1111111111111111111111111111111111111111111111111111111111111111"
+	// Deliberately different from the scanner height passed below; InstantSend
+	// observations should use the lock cycle height, not the local scan height.
+	cycleHeight := int64(122)
 
 	lockedOutputScript := newDashP2PKHScriptHex(c, asgardAddress)
 	senderScript := newDashP2PKHScriptHex(c, senderAddress)
@@ -243,6 +247,30 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 			default:
 				c.Fatalf("unexpected tx lookup: %s", txid)
 			}
+		case "getislocks":
+			var txids []string
+			if err := json.Unmarshal(params[0], &txids); err != nil {
+				c.Fatalf("decode getislocks txids: %v", err)
+			}
+			c.Assert(txids, DeepEquals, []string{mempoolLocked})
+			return []any{map[string]any{
+				"txid":      mempoolLocked,
+				"id":        "islock-request-id",
+				"inputs":    []map[string]any{{"txid": prevLocked, "vout": 0}},
+				"cycleHash": cycleHash,
+				"signature": "signature",
+				"hex":       "010203",
+			}}
+		case "getblock":
+			var hash string
+			if err := json.Unmarshal(params[0], &hash); err != nil {
+				c.Fatalf("decode block hash: %v", err)
+			}
+			c.Assert(hash, Equals, cycleHash)
+			return map[string]any{
+				"hash":   cycleHash,
+				"height": cycleHeight,
+			}
 		default:
 			c.Fatalf("unexpected method: %s", method)
 		}
@@ -271,6 +299,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(txIn.MemPool, Equals, false)
 	c.Assert(txIn.ConfirmationRequired, Equals, int64(0))
 	c.Assert(len(txIn.TxArray), Equals, 1)
+	c.Assert(txIn.TxArray[0].BlockHeight, Equals, cycleHeight)
 	c.Assert(txIn.TxArray[0].Tx, Equals, mempoolLocked)
 	c.Assert(txIn.TxArray[0].Sender, Equals, senderAddress)
 	c.Assert(txIn.TxArray[0].To, Equals, asgardAddress)
@@ -284,6 +313,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
 
 	mempoolLocked := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	prevLocked := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	cycleHash := "7777777777777777777777777777777777777777777777777777777777777777"
 
 	lockedOutputScript := newDashP2PKHScriptHex(c, asgardAddress)
 	senderScript := newDashP2PKHScriptHex(c, senderAddress)
@@ -341,6 +371,30 @@ func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
 				}
 			default:
 				c.Fatalf("unexpected tx lookup: %s", txid)
+			}
+		case "getislocks":
+			var txids []string
+			if err := json.Unmarshal(params[0], &txids); err != nil {
+				c.Fatalf("decode getislocks txids: %v", err)
+			}
+			c.Assert(txids, DeepEquals, []string{mempoolLocked})
+			return []any{map[string]any{
+				"txid":      mempoolLocked,
+				"id":        "islock-request-id",
+				"inputs":    []map[string]any{{"txid": prevLocked, "vout": 0}},
+				"cycleHash": cycleHash,
+				"signature": "signature",
+				"hex":       "010203",
+			}}
+		case "getblock":
+			var hash string
+			if err := json.Unmarshal(params[0], &hash); err != nil {
+				c.Fatalf("decode block hash: %v", err)
+			}
+			c.Assert(hash, Equals, cycleHash)
+			return map[string]any{
+				"hash":   cycleHash,
+				"height": int64(123),
 			}
 		default:
 			c.Fatalf("unexpected method: %s", method)
