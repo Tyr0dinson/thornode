@@ -111,6 +111,31 @@ func newDashClientForRPCServer(c *C, serverURL string) (*Client, func()) {
 	}, cleanup
 }
 
+func dashTestMempoolEntry() map[string]any {
+	return map[string]any{
+		"size":   200,
+		"vsize":  200,
+		"weight": 800,
+		"fees": map[string]any{
+			"base": 0.00002,
+		},
+		"time":   time.Now().Unix(),
+		"height": 123,
+	}
+}
+
+func dashUnlockedRawTx(txid string) map[string]any {
+	return map[string]any{
+		"txid":                 txid,
+		"hash":                 txid,
+		"version":              2,
+		"locktime":             0,
+		"confirmations":        0,
+		"instantlock":          false,
+		"instantlock_internal": false,
+	}
+}
+
 func (s *DashSuite) TestDashGetHeightUsesBestChainlock(c *C) {
 	server := newDashTestServer(c, func(method string, _ []json.RawMessage) any {
 		c.Assert(method, Equals, "getbestchainlock")
@@ -129,6 +154,106 @@ func (s *DashSuite) TestDashGetHeightUsesBestChainlock(c *C) {
 	height, err := client.GetHeight()
 	c.Assert(err, IsNil)
 	c.Assert(height, Equals, int64(321))
+}
+
+// TestDashGetInstantSendLocksSkipsCachedBeforeRawTxFetch protects the cheap
+// cache gate. Already-processed InstantSend mempool txs should not trigger a
+// full raw transaction RPC on every scan while they remain in the mempool.
+func (s *DashSuite) TestDashGetInstantSendLocksSkipsCachedBeforeRawTxFetch(c *C) {
+	cached := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	fresh := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	var rawLookups []string
+
+	server := newDashTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			return map[string]any{
+				cached: dashTestMempoolEntry(),
+				fresh:  dashTestMempoolEntry(),
+			}
+		case "getrawtransaction":
+			var txid string
+			if err := json.Unmarshal(params[0], &txid); err != nil {
+				c.Fatalf("decode txid: %v", err)
+			}
+			// This is the regression guard: cached txids must be filtered before
+			// the expensive GetRawTransactionVerboseDASH call is made.
+			if txid == cached {
+				c.Fatalf("cached tx should not be fetched again")
+			}
+			rawLookups = append(rawLookups, txid)
+			return dashUnlockedRawTx(txid)
+		case "getislocks":
+			c.Fatalf("unlocked tx should not fetch instantsend locks")
+		default:
+			c.Fatalf("unexpected method: %s", method)
+		}
+		return nil
+	})
+	defer server.Close()
+
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+	client.cfg.UTXO.TransactionBatchSize = 10
+	client.cfg.UTXO.MaxMempoolBatches = 1
+	// Simulate a tx already handled by a previous InstantSend mempool pass.
+	c.Assert(client.tryAddToMemPoolCache(cached), Equals, true)
+
+	txIn, err := client.getInstantSendLocks(123)
+	c.Assert(err, IsNil)
+	c.Assert(len(txIn.TxArray), Equals, 0)
+	c.Assert(rawLookups, DeepEquals, []string{fresh})
+}
+
+// TestDashGetInstantSendLocksCapsMempoolWork protects the per-cycle work
+// bound. The InstantSend path should not spawn one worker or raw tx RPC per
+// mempool entry when the generic UTXO mempool settings impose a smaller cap.
+func (s *DashSuite) TestDashGetInstantSendLocksCapsMempoolWork(c *C) {
+	txA := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	txB := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	txC := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	rawLookups := 0
+
+	server := newDashTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			return map[string]any{
+				txA: dashTestMempoolEntry(),
+				txB: dashTestMempoolEntry(),
+				txC: dashTestMempoolEntry(),
+			}
+		case "getrawtransaction":
+			var txid string
+			if err := json.Unmarshal(params[0], &txid); err != nil {
+				c.Fatalf("decode txid: %v", err)
+			}
+			rawLookups++
+			// If candidate selection is unbounded, the second mempool entry will
+			// reach this handler and fail the test immediately.
+			if rawLookups > 1 {
+				c.Fatalf("expected per-cycle cap to allow only one raw tx lookup")
+			}
+			return dashUnlockedRawTx(txid)
+		case "getislocks":
+			c.Fatalf("unlocked tx should not fetch instantsend locks")
+		default:
+			c.Fatalf("unexpected method: %s", method)
+		}
+		return nil
+	})
+	defer server.Close()
+
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+	// Force a one-tx cap so a three-entry mempool proves candidate selection is
+	// bounded before goroutines and raw tx RPCs are created.
+	client.cfg.UTXO.TransactionBatchSize = 1
+	client.cfg.UTXO.MaxMempoolBatches = 1
+
+	txIn, err := client.getInstantSendLocks(123)
+	c.Assert(err, IsNil)
+	c.Assert(len(txIn.TxArray), Equals, 0)
+	c.Assert(rawLookups, Equals, 1)
 }
 
 func (s *DashSuite) TestDashAllowInstantSendPolicyBoundaries(c *C) {

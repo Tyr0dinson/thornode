@@ -220,11 +220,43 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 	sem := semaphore.NewWeighted(int64(maxWorkers))
 	var mu sync.Mutex
 
+	maxEntries := len(mempool)
+	if c.cfg.UTXO.TransactionBatchSize > 0 && c.cfg.UTXO.MaxMempoolBatches > 0 {
+		if configuredMax := c.cfg.UTXO.TransactionBatchSize * c.cfg.UTXO.MaxMempoolBatches; configuredMax < maxEntries {
+			maxEntries = configuredMax
+		}
+	}
+
+	type instantSendCandidate struct {
+		hash  string
+		entry rpc.GetRawMempoolVerboseResult
+	}
+	candidates := make([]instantSendCandidate, 0, maxEntries)
 	for hash, entry := range mempool {
-		hash := hash
-		entry := entry
+		if len(candidates) >= maxEntries {
+			break
+		}
+		// Reserve the txid before fetching the full raw transaction. This skips
+		// already processed InstantSend txs before the expensive RPC and also
+		// caps the number of workers spawned for a large mempool.
+		if !c.tryAddToMemPoolCache(hash) {
+			continue
+		}
+		candidates = append(candidates, instantSendCandidate{hash: hash, entry: entry})
+	}
+
+	for _, candidate := range candidates {
+		hash := candidate.hash
+		entry := candidate.entry
 
 		g.Go(func() error {
+			removeFromCache := true
+			defer func() {
+				if removeFromCache {
+					c.removeFromMemPoolCache(hash)
+				}
+			}()
+
 			if err := sem.Acquire(ctx, 1); err != nil {
 				return err
 			}
@@ -245,10 +277,10 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 			}
 
 			// The raw tx flags only tell us that dashd considers the tx
-			// InstantSend-locked. Fetch the actual lock before caching so we
-			// can anchor the observation to the lock's cycle block instead of
-			// the caller's local scanner height. If the lock is not available
-			// yet, leave the tx uncached and try again on the next mempool pass.
+			// InstantSend-locked. Fetch the actual lock so we can anchor the
+			// observation to the lock's cycle block instead of the caller's
+			// local scanner height. If the lock is not available yet, the
+			// deferred cache removal leaves it retryable on the next pass.
 			isLocks, err := c.rpc.GetISLocks([]string{hash})
 			if err != nil {
 				c.log.Err(err).Str("txid", hash).Msg("fail to fetch instantsend lock")
@@ -268,23 +300,19 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 				return nil
 			}
 
-			// Skip if we've already processed this instant-locked mempool tx.
-			if !c.tryAddToMemPoolCache(hash) {
-				return nil
-			}
-
 			txInItem, err := c.getTxIn(&rawTx.TxRawResult, observedHeight, true, nil)
 			if err != nil {
-				c.removeFromMemPoolCache(hash)
 				c.log.Debug().Err(err).Str("txid", hash).Msg("fail to build TxInItem for instantsend")
 				return nil
 			}
 			// Ignore txs that do not decode into an inbound coin movement.
 			if txInItem.IsEmpty() || txInItem.Coins.IsEmpty() {
+				removeFromCache = false
 				return nil
 			}
 			// Skip if it's not an inbound tx - the destination is not an Asgard address.
 			if !c.isAsgardAddress(txInItem.To) {
+				removeFromCache = false
 				return nil
 			}
 
@@ -308,7 +336,6 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 			// back to the normal chainlocked block path instead.
 			allow, reason := c.allowInstantSend(feeRateMilliSatPerVByte, age, fromAsgard, usdValue)
 			if !allow {
-				c.removeFromMemPoolCache(hash)
 				c.log.Info().Str("txid", hash).Str("reason", reason).Msg("instantsend tx did not meet policy; waiting for block")
 				return nil
 			}
@@ -317,12 +344,12 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 			// in a chainlocked block and the normal block scanner sees it.
 			added, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
 			if err != nil {
-				c.removeFromMemPoolCache(hash)
 				c.log.Err(err).Str("txid", hash).Msg("fail to track observed instantsend tx")
 				return nil
 			}
 			// Another path already recorded this tx, so do not emit it again.
 			if !added {
+				removeFromCache = false
 				return nil
 			}
 
@@ -336,6 +363,7 @@ func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
 			mu.Lock()
 			txIn.TxArray = append(txIn.TxArray, &txInItem)
 			mu.Unlock()
+			removeFromCache = false
 			return nil
 		})
 	}
