@@ -1,9 +1,11 @@
 package mock
 
 import (
-	"bytes"
 	"context"
+	_ "embed"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	tonaddress "github.com/xssnick/tonutils-go/address"
@@ -13,22 +15,93 @@ import (
 	"github.com/xssnick/tonutils-go/tvm/cell"
 )
 
-// MockClient returns valid info for block 100000, error otherwise
+// MockClient serves a TON shard block captured from a mocknet simulation run
+// so the scanner exercises the real GetBlockData -> ListTransactions path.
+// Fixtures live in testdata/.
 
 const (
 	shard0 = int64(-9223372036854775808) // 0x8000000000000000, 0b10...
 	shard1 = int64(-4611686018427387904) // 0xC000000000000000, 0b11...
+
+	masterDeposit uint32 = 120
+	masterRegular uint32 = 30
+	shardDeposit  uint32 = 121
+	shardRegular  uint32 = 27
 )
 
+//go:embed testdata/deposit_block.hex
+var depositBlockHex string
+
+//go:embed testdata/regular_block.hex
+var regularBlockHex string
+
+//go:embed testdata/sender_txs.txt
+var txsRaw string
+
+// blocks
 type MockClient struct {
-	txs []tlb.Transaction
+	txs    map[string][]*tlb.Transaction
+	blocks map[uint32]*tlb.Block
+	shards map[uint32]uint32
 }
 
 func NewMockApiClient() ton.APIClientWrapped {
-	txs, _ := GetTxs()
 	return MockClient{
-		txs: txs,
+		txs: mustTxs(txsRaw),
+		blocks: map[uint32]*tlb.Block{
+			shardDeposit: mustBlock(depositBlockHex),
+			shardRegular: mustBlock(regularBlockHex),
+		},
+		shards: map[uint32]uint32{
+			masterDeposit: shardDeposit,
+			masterRegular: shardRegular,
+		},
 	}
+}
+
+func mustCell(h string) *cell.Cell {
+	raw, err := hex.DecodeString(strings.TrimSpace(h))
+	if err != nil {
+		panic(err)
+	}
+	c, err := cell.FromBOC(raw)
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func mustBlock(h string) *tlb.Block {
+	var b tlb.Block
+	if err := tlb.LoadFromCell(&b, mustCell(h).MustBeginParse()); err != nil {
+		panic(err)
+	}
+	return &b
+}
+
+func mustTx(h string) *tlb.Transaction {
+	var tx tlb.Transaction
+	if err := tlb.LoadFromCell(&tx, mustCell(h).MustBeginParse()); err != nil {
+		panic(err)
+	}
+	c, err := tlb.ToCell(tx)
+	if err != nil {
+		panic(err)
+	}
+	tx.Hash = c.Hash()
+	return &tx
+}
+
+func mustTxs(raw string) map[string][]*tlb.Transaction {
+	m := map[string][]*tlb.Transaction{}
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		m[fields[0]] = append(m[fields[0]], mustTx(fields[1]))
+	}
+	return m
 }
 
 func (c MockClient) Client() ton.LiteClient {
@@ -45,12 +118,16 @@ func (c MockClient) GetLibraries(ctx context.Context, list ...[]byte) ([]*cell.C
 
 func (c MockClient) LookupBlock(ctx context.Context, workchain int32, shard int64, seqno uint32) (*ton.BlockIDExt, error) {
 	if workchain == -1 {
-		if seqno != 100000 {
-			return nil, fmt.Errorf("seqno != 100000")
+		// return master block
+		_, found := c.shards[seqno]
+		if !found {
+			return nil, fmt.Errorf("unknown master seqno")
 		}
 	} else {
-		if seqno != 100 && seqno != 101 {
-			return nil, fmt.Errorf("seqno != 100000")
+		// return shard block
+		_, found := c.blocks[seqno]
+		if !found {
+			return nil, fmt.Errorf("unknown shard seqno")
 		}
 	}
 
@@ -64,62 +141,26 @@ func (c MockClient) LookupBlock(ctx context.Context, workchain int32, shard int6
 }
 
 func (c MockClient) GetBlockData(ctx context.Context, block *ton.BlockIDExt) (*tlb.Block, error) {
-	switch block.Shard {
-	case shard0, shard1:
-		return &tlb.Block{}, nil
-	default:
-		return nil, fmt.Errorf("block shard not exist")
+	data, found := c.blocks[block.SeqNo]
+	if !found {
+		return nil, fmt.Errorf("no block data found")
 	}
+	return data, nil
 }
 
 func (c MockClient) GetBlockTransactionsV2(ctx context.Context, block *ton.BlockIDExt, count uint32, after ...*ton.TransactionID3) ([]ton.TransactionShortInfo, bool, error) {
-	var txs []tlb.Transaction
-
-	if len(c.txs) > 0 {
-		index := len(c.txs) - 1
-		if index > 1 {
-			index /= 2
-		}
-
-		switch block.Shard {
-		case shard0:
-			// first half of txs
-			txs = c.txs[:index]
-		case shard1:
-			// second half of txs
-			txs = c.txs[index:]
-		}
-	}
-
-	var infos []ton.TransactionShortInfo
-
-	for _, tx := range txs {
-		infos = append(infos, ton.TransactionShortInfo{
-			Account: tx.AccountAddr,
-			LT:      tx.LT,
-			Hash:    tx.Hash,
-		})
-	}
-
-	return infos, false, nil
+	return nil, false, nil
 }
 
 func (c MockClient) GetBlockShardsInfo(ctx context.Context, master *ton.BlockIDExt) ([]*ton.BlockIDExt, error) {
-	if master.SeqNo != 100000 {
-		return nil, fmt.Errorf("seqno != 100000")
+	seqno, found := c.shards[master.SeqNo]
+	if !found {
+		return nil, fmt.Errorf("no shard for master")
 	}
 
+	// single shard carrying the captured block
 	return []*ton.BlockIDExt{
-		{
-			Workchain: 0,
-			Shard:     int64(-9223372036854775808),
-			SeqNo:     100,
-		},
-		{
-			Workchain: 0,
-			Shard:     int64(-4611686018427387904),
-			SeqNo:     101,
-		},
+		{Workchain: 0, Shard: shard0, SeqNo: seqno},
 	}, nil
 }
 
@@ -161,20 +202,15 @@ func (c MockClient) RunGetMethod(ctx context.Context, blockInfo *ton.BlockIDExt,
 	return nil, err
 }
 
+// ListTransactions returns the captured tx history for the given sender,
+// keyed by its address string (matching the TONCAPTURE_TX src field).
 func (c MockClient) ListTransactions(ctx context.Context, addr *tonaddress.Address, num uint32, lt uint64, txHash []byte) ([]*tlb.Transaction, error) {
-	var result []*tlb.Transaction
-	for i := range c.txs {
-		result = append(result, &c.txs[i])
-	}
-	return result, nil
+	return c.txs[addr.String()], nil
 }
 
+// GetTransaction is unused now that the scanner reads transactions from
+// GetBlockData -> ListTransactions; kept only to satisfy the interface.
 func (c MockClient) GetTransaction(ctx context.Context, block *ton.BlockIDExt, addr *tonaddress.Address, lt uint64) (*tlb.Transaction, error) {
-	for _, tx := range c.txs {
-		if bytes.Equal(tx.AccountAddr, addr.Data()) {
-			return &tx, nil
-		}
-	}
 	return nil, nil
 }
 

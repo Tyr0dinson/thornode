@@ -236,7 +236,7 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 	case ADAChain:
 		return "lovelace", cosmos.NewUint(1e6)
 	case TONChain:
-		return "nanoton", cosmos.NewUint(1e9)
+		return "nanogram", cosmos.NewUint(1e9)
 	default:
 		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/tvm/cell"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -130,6 +131,7 @@ func (s *TonTestSuite) SetUpSuite(c *C) {
 		nil,
 		bridge,
 		metrics,
+		pubkeymanager.NewMockPoolAddressValidator(),
 	)
 	c.Assert(err, IsNil)
 
@@ -274,7 +276,8 @@ func (s *TonTestSuite) TestCreateTx(c *C) {
 		payload, err := root.PeekRef(0)
 		c.Assert(err, IsNil)
 
-		slice := payload.BeginParse()
+		slice, err := payload.BeginParse()
+		c.Assert(err, IsNil)
 
 		var msg tlb.InternalMessage
 		err = tlb.LoadFromCell(&msg, slice)

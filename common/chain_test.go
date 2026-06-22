@@ -68,8 +68,8 @@ func (s ChainSuite) TestChain(c *C) {
 
 	// TON chain tests
 	tonGasUnits, _ := TONChain.GetGasUnits()
-	c.Assert(tonGasUnits, Equals, "nanoton")
+	c.Assert(tonGasUnits, Equals, "nanogram")
 	c.Assert(TONChain.GetGasAssetDecimal(), Equals, int64(9))
-	c.Assert(TONChain.ApproximateBlockMilliseconds(), Equals, int64(2500))
+	c.Assert(TONChain.ApproximateBlockMilliseconds(), Equals, int64(400))
 	c.Assert(TONChain.GetSigningAlgo(), Equals, SigningAlgoEd25519)
 }

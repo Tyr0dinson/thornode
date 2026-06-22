@@ -31,6 +31,11 @@ const (
 	extInLookback = 1000
 )
 
+type vaultCache interface {
+	Reset() error
+	Has(key string) bool
+}
+
 type TonBlockScanner struct {
 	config        config.BifrostBlockScannerConfiguration
 	logger        zerolog.Logger
@@ -44,7 +49,7 @@ type TonBlockScanner struct {
 	feeRateMtx   sync.Mutex
 	feeRate      atomic.Uint64
 
-	pubkeyMgr pubkeymanager.PubKeyValidator
+	vaultCache vaultCache
 
 	globalNetworkFeeQueue chan common.NetworkFee
 }
@@ -72,7 +77,7 @@ func NewTonBlockScanner(
 		bridge:        bridge,
 		ctx:           context.Background(),
 		api:           api,
-		pubkeyMgr:     pubkeyMgr,
+		vaultCache:    NewCache(pubkeyMgr, cfg.ChainID),
 		feeRateCache:  make([][]uint64, 0),
 		feeRateMtx:    sync.Mutex{},
 		lastShards:    make(map[string]uint32),
@@ -98,13 +103,18 @@ func (s *TonBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {
 func (s *TonBlockScanner) FetchTxs(
 	fetchHeight, _ int64,
 ) (types.TxIn, error) {
-	var txInItems []*types.TxInItem
+	var allTxInItems, txInItems []*types.TxInItem
 
 	if fetchHeight < 1 {
 		return types.TxIn{}, nil
 	}
 
-	items, err := s.processMaster(uint32(fetchHeight))
+	err := s.vaultCache.Reset()
+	if err != nil {
+		return types.TxIn{}, err
+	}
+
+	txInItems, err = s.processMaster(uint32(fetchHeight))
 	if err != nil {
 		s.logger.
 			Err(err).
@@ -113,15 +123,15 @@ func (s *TonBlockScanner) FetchTxs(
 		return types.TxIn{}, err
 	}
 
-	txInItems = append(txInItems, items...)
+	allTxInItems = append(allTxInItems, txInItems...)
 
-	for i := range txInItems {
-		txInItems[i].BlockHeight = fetchHeight
+	for i := range allTxInItems {
+		allTxInItems[i].BlockHeight = fetchHeight
 	}
 
 	txIn := types.TxIn{
 		Chain:   s.config.ChainID,
-		TxArray: txInItems,
+		TxArray: allTxInItems,
 	}
 
 	if fetchHeight%20 == 0 {
@@ -213,8 +223,6 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 }
 
 func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, error) {
-	start := time.Now()
-
 	master, err := s.api.LookupBlock(
 		s.ctx,
 		masterChainId,
@@ -294,12 +302,11 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		s.lastShards[shardId(shard)] = shard.SeqNo
 	}
 
-	s.logger.Info().
+	s.logger.Debug().
 		Int32("workchain", master.Workchain).
 		Str("shard", shardId(master)).
 		Uint32("seqno", master.SeqNo).
 		Int("txs", len(txInItems)).
-		Dur("time", time.Since(start)).
 		Msg("master block processed")
 
 	return txInItems, nil
@@ -308,8 +315,6 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 func (s *TonBlockScanner) processShard(
 	shard, master *ton.BlockIDExt,
 ) ([]types.TxInItem, error) {
-	start := time.Now()
-
 	if shard.SeqNo == 0 {
 		return nil, nil
 	}
@@ -338,10 +343,6 @@ func (s *TonBlockScanner) processShard(
 
 	var txInItems []types.TxInItem
 	for _, tx := range txs {
-		addr := address.NewAddress(0x17, 0x00, tx.AccountAddr)
-		addr.SetBounce(false)
-		addr.SetTestnetOnly(common.IsMocknet)
-
 		skip, reason := skipTx(tx)
 		if skip {
 			s.logger.Debug().
@@ -349,7 +350,6 @@ func (s *TonBlockScanner) processShard(
 				Str("shard", shardId(shard)).
 				Uint32("block_height", block.SeqNo).
 				Str("lt", fmt.Sprintf("%d", tx.LT)).
-				Str("account", addr.String()).
 				Str("reason", reason).
 				Msg("skipping transaction")
 			continue
@@ -360,7 +360,6 @@ func (s *TonBlockScanner) processShard(
 			Str("shard", shardId(shard)).
 			Uint32("block_height", block.SeqNo).
 			Str("lt", fmt.Sprintf("%d", tx.LT)).
-			Str("account", addr.String()).
 			Msg("processing transaction")
 
 		// this should be already filtered by skipTx(), just in case
@@ -389,21 +388,12 @@ func (s *TonBlockScanner) processShard(
 
 		in := msg.AsInternal()
 
-		valid := false
-		for _, a := range []*address.Address{in.DstAddr, in.SrcAddr} {
-			a.SetBounce(false)
-			a.SetTestnetOnly(common.IsMocknet)
-			valid, _ = s.pubkeyMgr.IsValidPoolAddress(a.String(), common.TONChain)
-			if valid {
-				break
-			}
-		}
-
-		if !valid {
+		src := normalize(in.SrcAddr)
+		dst := normalize(in.DstAddr)
+		if !s.vaultCache.Has(dst.String()) && !s.vaultCache.Has(src.String()) {
 			continue
 		}
 
-		src := in.SrcAddr
 		txs, found := txLookBackCache[src.String()]
 		if !found {
 			txs, err = s.getSentTxs(master, src)
@@ -449,7 +439,7 @@ func (s *TonBlockScanner) processShard(
 		}
 	}
 
-	s.logger.Info().
+	s.logger.Debug().
 		Bool("split", info.AfterSplit).
 		Bool("merged", info.AfterMerge).
 		Int32("workchain", shard.Workchain).
@@ -457,7 +447,6 @@ func (s *TonBlockScanner) processShard(
 		Uint32("seqno", shard.SeqNo).
 		Int("txs_found", len(txInItems)).
 		Int("txs_total", len(txs)).
-		Dur("time_per_tx", time.Since(start)/time.Duration(max(1, len(txs)))).
 		Msg("Processed shard")
 
 	return txInItems, nil
@@ -487,13 +476,8 @@ func (s *TonBlockScanner) processMessage(
 		}
 	}
 
-	src := msg.SrcAddr
-	src.SetBounce(false)
-	src.SetTestnetOnly(common.IsMocknet)
-
-	dst := msg.DstAddr
-	dst.SetBounce(false)
-	dst.SetTestnetOnly(common.IsMocknet)
+	src := normalize(msg.SrcAddr)
+	dst := normalize(msg.DstAddr)
 
 	// Try to find the external in message, that triggered the spending
 	// wallet to transfer the funds. In case the message wasn't triggered
@@ -678,4 +662,8 @@ func skipTx(tx *tlb.Transaction) (bool, string) {
 
 func shardId(block *ton.BlockIDExt) string {
 	return fmt.Sprintf("%d,%x", block.Workchain, uint64(block.Shard))
+}
+
+func normalize(addr *address.Address) *address.Address {
+	return addr.Bounce(false).Testnet(common.IsMocknet)
 }
