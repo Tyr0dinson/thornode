@@ -227,7 +227,7 @@ func (d *dispatcher) enqueueProcess(chain common.Chain, from triggeredFrom, heig
 func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, height int64) {
 	logger := d.logger.With().Stringer("chain", chain).Stringer("from", from).Int64("height", height).Logger()
 
-	var allMsgs, reportedMsgs ReportBatch
+	var allMsgs ReportBatch
 	taskHeight, err := d.resolveTaskHeight(chain, from, height)
 	if err != nil {
 		logger.Err(err).Msg("failed to resolve report height")
@@ -238,14 +238,14 @@ func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, hei
 		logger.Error().Msg("internal error: reporters not found for chain")
 		return
 	}
-	for _, reporter := range reporters {
-		if !reporter.ShouldReport(from, taskHeight) {
+	for _, rep := range reporters {
+		if !rep.ShouldReport(from, taskHeight) {
 			continue
 		}
 		// collect all report messages from this reporter
-		reportedMsgs, err = reporter.Collect(from, taskHeight)
-		if err != nil {
-			logger.Err(err).Stringer("reporter", reporter).Msg("fail to collect reports")
+		reportedMsgs, collectErr := rep.Collect(from, taskHeight)
+		if collectErr != nil {
+			logger.Err(collectErr).Stringer("reporter", rep).Msg("fail to collect reports")
 			continue
 		}
 		allMsgs = append(allMsgs, reportedMsgs...)
