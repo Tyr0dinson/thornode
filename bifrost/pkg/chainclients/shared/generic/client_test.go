@@ -86,6 +86,7 @@ func (m *mockTssKeyManager) RemoteSign(
 	msg []byte,
 	algo common.SigningAlgo,
 	_ string,
+	_ int64,
 ) ([]byte, []byte, error) {
 	if m.forcedErr != nil {
 		return nil, nil, m.forcedErr
@@ -242,7 +243,7 @@ func (s *ClientSuite) TestSign(c *C) {
 		}
 
 		msg := []byte("d22d2f71fad067ae897af825c36e09b3")
-		sig, err := client.Sign(msg, txOutItem)
+		sig, err := client.Sign(msg, txOutItem, 0)
 		c.Assert(err, IsNil, label)
 		c.Assert(verifyPubKey.IsEmpty(), Equals, false, label)
 
@@ -271,7 +272,7 @@ func (s *ClientSuite) TestVerify(c *C) {
 	}
 
 	msg := []byte("66d2d6b5eb564972c59e4797683a1225")
-	sig, err := client.Sign(msg, txOutItem)
+	sig, err := client.Sign(msg, txOutItem, 0)
 	c.Assert(err, IsNil)
 	c.Assert(len(sig), Equals, 65)
 
@@ -346,7 +347,7 @@ func (s *ClientSuite) TestSignErrors(c *C) {
 			Coins:            common.Coins{coin},
 		}
 
-		sig, err := client.Sign(hash[:], txOutItem)
+		sig, err := client.Sign(hash[:], txOutItem, 0)
 		c.Assert(sig, IsNil)
 		c.Assert(err, NotNil)
 

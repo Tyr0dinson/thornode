@@ -649,7 +649,7 @@ func (s *ClientSuite) TestCreateAndSignExtrinsic_NullAddressGuard(c *C) {
 			Coins:     common.NewCoins(common.NewCoin(common.TAOAsset, cosmos.NewUint(1_000))),
 		}
 
-		_, err = cl.createAndSignExtrinsic(tx, "vault", 0, "", 100)
+		_, err = cl.createAndSignExtrinsic(tx, "vault", 0, "", 100, 1)
 
 		if tt.wantNullErr {
 			c.Assert(err, NotNil, Commentf("%s: expected error", tt.name))

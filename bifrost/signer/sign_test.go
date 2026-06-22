@@ -781,11 +781,13 @@ func (s *SignSuite) TestBroadcastRetry_Substrate(c *C) {
 		sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
 		c.Assert(err, IsNil, Commentf("%s: NewSignerStore", tt.name))
 		err = sign.storage.Set(TxOutStoreItem{
+			Height: 1,
 			TxOutItem: types.TxOutItem{
 				Chain:       common.TAOChain,
 				ToAddress:   "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
 				Memo:        msg,
 				VaultPubKey: vaultPubKey,
+				Height:      1,
 				Coins: common.Coins{
 					common.NewCoin(common.TAOAsset, cosmos.NewUint(1000000)),
 				},

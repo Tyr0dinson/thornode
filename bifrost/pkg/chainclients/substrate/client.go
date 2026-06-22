@@ -365,7 +365,14 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	}
 
 	// Build the extrinsic (uses consistent block hash/height for mortal era)
-	rawTx, err := c.createAndSignExtrinsic(tx, vaultAddr.String(), reservedNonce, latestBlockHash, currentHeight)
+	rawTx, err := c.createAndSignExtrinsic(
+		tx,
+		vaultAddr.String(),
+		reservedNonce,
+		latestBlockHash,
+		currentHeight,
+		thorchainHeight,
+	)
 	if err != nil {
 		// If the scanner hasn't observed any blocks, the nonce was reserved at height 0
 		// without on-chain verification. Don't return the checkpoint — on retry (once the
@@ -416,6 +423,7 @@ func (c *Client) createAndSignExtrinsic(
 	nonce uint32,
 	latestBlockHash string,
 	latestBlockHeight int64,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	// Decode destination address
 	_, destPubkey, err := ss58.Decode(tx.ToAddress.String())
@@ -514,7 +522,7 @@ func (c *Client) createAndSignExtrinsic(
 		return nil, fmt.Errorf("failed to decode vault address: %w", err)
 	}
 
-	sig, err = c.Sign(signingData, tx)
+	sig, err = c.Sign(signingData, tx, thorchainHeight)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}

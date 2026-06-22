@@ -119,6 +119,7 @@ func (c *Client) GetPubKey() common.PubKey {
 func (c *Client) Sign(
 	data []byte,
 	txOutItem types.TxOutItem,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	var signature []byte
 
@@ -141,6 +142,7 @@ func (c *Client) Sign(
 			data,
 			algo,
 			vaultPubKey.String(),
+			thorchainHeight,
 		)
 
 		if algo == common.SigningAlgoSecp256k1 && err == nil && signature != nil {
