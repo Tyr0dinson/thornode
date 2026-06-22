@@ -46,7 +46,7 @@ const solvencyDivisor = 10
 // and generous against prolonged scanner or consensus lag. It corresponds to 4x
 // SigningTransactionPeriod (1200 thorchain blocks at 6s), so a stuck outbound gets
 // at most a few rescheduled reschedules before this window allows re-sign.
-const signerCacheExpiry = 2 * time.Hour
+var signerCacheExpiry = 2 * time.Hour
 
 // broadcastLookupDelay is the time to wait after a broadcast error before
 // querying the chain to see if the transaction landed anyway. Exposed as a
@@ -285,9 +285,12 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 		return nil
 	}
 
-	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes currentBlockHeight, while SolvencyCheckRunner passes chainHeight)
-	if !c.IsBlockScannerHealthy() && height == int64(c.solScanner.lastHeight) { //nolint:staticcheck
+	// When the block scanner is unhealthy, only report from the auto-unhalt
+	// SolvencyCheckRunner. The scan loop stores the slot it is processing in
+	// currentScanSlot just before calling here, while the runner passes the live
+	// chain tip (GetHeight); so a scan-driven call matches currentScanSlot and is
+	// skipped, deferring to the runner's up-to-date report.
+	if !c.IsBlockScannerHealthy() && height == c.solScanner.CurrentScanSlot() {
 		return nil
 	}
 
@@ -297,7 +300,8 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards, err: %w", err)
 	}
 
-	currentFeeRate := cosmos.NewUint(3 * c.cfg.BlockScanner.MaxGasLimit * c.solScanner.lastFeeRate)
+	nativeCurrentFee := cosmos.NewUint(3).MulUint64(c.cfg.BlockScanner.MaxGasLimit).MulUint64(c.solScanner.lastFeeRate)
+	currentFeeRate := c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -441,8 +445,11 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
 	}
 
-	signedTx, err := c.signTransaction(solTx, tx)
+	signedTx, err := c.signTransaction(solTx, tx, height)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		// Forward blamed TSS failures to Thornode so EdDSA outbounds participate
 		// in the same slash/freeze handling as the secp256k1 signer paths.
 		var keysignError tss.KeysignError
@@ -466,6 +473,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return checkPointBytes, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
 	}
 
+	gasCoin := tx.Chain.NativeGasToThorCoin(cosmos.NewUint(baseFeePerSigLamports))
 	txIn := stypes.NewTxInItem(
 		height,
 		base58.Encode(signedTx.Signatures[0]),
@@ -473,7 +481,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		fromAddr.String(),
 		tx.ToAddress.String(),
 		tx.Coins,
-		common.Gas([]common.Coin{{Asset: common.SOLAsset, Amount: cosmos.NewUint(5000), Decimals: 9}}),
+		common.Gas([]common.Coin{gasCoin}),
 		tx.VaultPubKeyEddsa,
 		"",
 		"",
@@ -484,7 +492,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 }
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
-func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutItem) (types.Transaction, error) {
+func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutItem, thorchainHeight int64) (types.Transaction, error) {
 	message, err := solTx.Message.Serialize()
 	if err != nil {
 		return solTx, fmt.Errorf("failed to serialize transaction: %w", err)
@@ -503,9 +511,12 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 			return types.Transaction{}, fmt.Errorf("failed to sign local transaction: %w", err)
 		}
 	} else {
-		sig, _, err = c.tssKeyManager.RemoteSign(message, common.SigningAlgoEd25519, txOut.VaultPubKeyEddsa.String())
+		sig, _, err = c.tssKeyManager.RemoteSign(message, common.SigningAlgoEd25519, txOut.VaultPubKeyEddsa.String(), thorchainHeight)
 		if err != nil {
 			return types.Transaction{}, fmt.Errorf("failed to sign remote transaction: %w", err)
+		}
+		if sig == nil {
+			return types.Transaction{}, tss.ErrNotSelectedForKeysign
 		}
 	}
 

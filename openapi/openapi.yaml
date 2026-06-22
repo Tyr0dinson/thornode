@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 3.18.0
+  version: 3.19.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -330,6 +330,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/TCYClaimersResponse"
 
+  /thorchain/tcy_protocol_owned:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns the amount of TCY held by the claim module in excess of the outstanding tcy_claimer entitlements (protocol-owned TCY accumulated by the claim-module rune→TCY swap cycle).
+      operationId: tcyProtocolOwned
+      tags:
+        - TCY Claimers
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TCYProtocolOwnedResponse"
+
   # ------------------------------ rune pool ------------------------------
 
   /thorchain/runepool:
@@ -592,6 +608,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VaultResponse"
+
+  /thorchain/vault/{pubkey}/keysign_party:
+    parameters:
+      - $ref: "#/components/parameters/querySigningHeight"
+      - $ref: "#/components/parameters/pubkey"
+    get:
+      description: Returns the keysign-eligible signer set for the provided vault pubkey. The optional signing_height is the signing height used for jail-release evaluation against current vault and node-account state; it is not a historical state query.
+      operationId: vaultKeysignParty
+      tags:
+        - Vaults
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeysignPartyResponse"
 
   /thorchain/vaults/pubkeys:
     parameters:
@@ -1060,6 +1093,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SwapQueueResponse"
+
+  /thorchain/queue/swap/paginated:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        description: Number of items to skip
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 100
+          maximum: 1000
+        description: Number of items to return
+    get:
+      description: Returns the swap queue with pagination.
+      operationId: queueSwapPaginated
+      tags:
+        - Queue
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwapQueuePaginatedResponse"
 
   /thorchain/queue/limit_swaps:
     parameters:
@@ -1839,6 +1905,16 @@ components:
       name: height
       in: query
       description: optional block height, defaults to current tip
+      required: false
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+
+    querySigningHeight:
+      name: signing_height
+      in: query
+      description: optional signing height, defaults to current tip
       required: false
       schema:
         type: integer
@@ -3662,6 +3738,16 @@ components:
     TCYClaimerResponse:
       $ref: "#/components/schemas/TCYClaimer"
 
+    TCYProtocolOwnedResponse:
+      type: object
+      properties:
+        amount:
+          type: string
+          example: "3096016855586000"
+          description: protocol-owned TCY in 1e8 base units (claim module tcy balance minus the sum of outstanding tcy_claimer entitlements)
+      required:
+        - amount
+
     SaverResponse:
       $ref: "#/components/schemas/Saver"
 
@@ -3963,6 +4049,49 @@ components:
     VaultResponse:
       $ref: "#/components/schemas/Vault"
 
+    KeysignPartyResponse:
+      type: object
+      required:
+        - pub_key
+        - signers
+        - height
+        - threshold
+        - required_signers
+        - never_signers
+        - jailed_fallback_signers
+        - active_signer_count
+      properties:
+        pub_key:
+          type: string
+          example: thorpub1addwnpep...
+        signers:
+          type: array
+          items:
+            type: string
+            example: thorpub1addwnpep...
+        height:
+          type: integer
+          format: int64
+        threshold:
+          type: integer
+          format: int64
+        required_signers:
+          type: integer
+          format: int64
+        never_signers:
+          type: array
+          items:
+            type: string
+            example: thorpub1addwnpep...
+        jailed_fallback_signers:
+          type: array
+          items:
+            type: string
+            example: thorpub1addwnpep...
+        active_signer_count:
+          type: integer
+          format: int64
+
     VaultPubkeysResponse:
       type: object
       required:
@@ -4226,6 +4355,17 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/MsgSwap"
+
+    SwapQueuePaginatedResponse:
+      type: object
+      properties:
+        swap_queue:
+          type: array
+          items:
+            $ref: "#/components/schemas/MsgSwap"
+          description: Array of queued swaps
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
 
     SwapDetailsResponse:
       type: object

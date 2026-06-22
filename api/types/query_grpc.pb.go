@@ -66,12 +66,14 @@ const (
 	Query_QuoteLimit_FullMethodName              = "/types.Query/QuoteLimit"
 	Query_ConstantValues_FullMethodName          = "/types.Query/ConstantValues"
 	Query_SwapQueue_FullMethodName               = "/types.Query/SwapQueue"
+	Query_SwapQueuePaginated_FullMethodName      = "/types.Query/SwapQueuePaginated"
 	Query_SwapDetails_FullMethodName             = "/types.Query/SwapDetails"
 	Query_LimitSwaps_FullMethodName              = "/types.Query/LimitSwaps"
 	Query_LimitSwapsSummary_FullMethodName       = "/types.Query/LimitSwapsSummary"
 	Query_LastBlocks_FullMethodName              = "/types.Query/LastBlocks"
 	Query_ChainsLastBlock_FullMethodName         = "/types.Query/ChainsLastBlock"
 	Query_Vault_FullMethodName                   = "/types.Query/Vault"
+	Query_KeysignParty_FullMethodName            = "/types.Query/KeysignParty"
 	Query_XMRSpentOutputRefs_FullMethodName      = "/types.Query/XMRSpentOutputRefs"
 	Query_AsgardVaults_FullMethodName            = "/types.Query/AsgardVaults"
 	Query_VaultsPubkeys_FullMethodName           = "/types.Query/VaultsPubkeys"
@@ -98,6 +100,7 @@ const (
 	Query_TCYStakers_FullMethodName              = "/types.Query/TCYStakers"
 	Query_TCYClaimer_FullMethodName              = "/types.Query/TCYClaimer"
 	Query_TCYClaimers_FullMethodName             = "/types.Query/TCYClaimers"
+	Query_TCYProtocolOwned_FullMethodName        = "/types.Query/TCYProtocolOwned"
 	Query_OraclePrices_FullMethodName            = "/types.Query/OraclePrices"
 	Query_OraclePrice_FullMethodName             = "/types.Query/OraclePrice"
 	Query_Eip712TypedData_FullMethodName         = "/types.Query/Eip712TypedData"
@@ -172,12 +175,14 @@ type QueryClient interface {
 	QuoteLimit(ctx context.Context, in *QueryQuoteLimitRequest, opts ...grpc.CallOption) (*QueryQuoteLimitResponse, error)
 	ConstantValues(ctx context.Context, in *QueryConstantValuesRequest, opts ...grpc.CallOption) (*QueryConstantValuesResponse, error)
 	SwapQueue(ctx context.Context, in *QuerySwapQueueRequest, opts ...grpc.CallOption) (*QuerySwapQueueResponse, error)
+	SwapQueuePaginated(ctx context.Context, in *QuerySwapQueuePaginatedRequest, opts ...grpc.CallOption) (*QuerySwapQueuePaginatedResponse, error)
 	SwapDetails(ctx context.Context, in *QuerySwapDetailsRequest, opts ...grpc.CallOption) (*QuerySwapDetailsResponse, error)
 	LimitSwaps(ctx context.Context, in *QueryLimitSwapsRequest, opts ...grpc.CallOption) (*QueryLimitSwapsResponse, error)
 	LimitSwapsSummary(ctx context.Context, in *QueryLimitSwapsSummaryRequest, opts ...grpc.CallOption) (*QueryLimitSwapsSummaryResponse, error)
 	LastBlocks(ctx context.Context, in *QueryLastBlocksRequest, opts ...grpc.CallOption) (*QueryLastBlocksResponse, error)
 	ChainsLastBlock(ctx context.Context, in *QueryChainsLastBlockRequest, opts ...grpc.CallOption) (*QueryLastBlocksResponse, error)
 	Vault(ctx context.Context, in *QueryVaultRequest, opts ...grpc.CallOption) (*QueryVaultResponse, error)
+	KeysignParty(ctx context.Context, in *QueryKeysignPartyRequest, opts ...grpc.CallOption) (*QueryKeysignPartyResponse, error)
 	XMRSpentOutputRefs(ctx context.Context, in *QueryXMRSpentOutputRefsRequest, opts ...grpc.CallOption) (*QueryXMRSpentOutputRefsResponse, error)
 	AsgardVaults(ctx context.Context, in *QueryAsgardVaultsRequest, opts ...grpc.CallOption) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysRequest, opts ...grpc.CallOption) (*QueryVaultsPubkeysResponse, error)
@@ -204,6 +209,7 @@ type QueryClient interface {
 	TCYStakers(ctx context.Context, in *QueryTCYStakersRequest, opts ...grpc.CallOption) (*QueryTCYStakersResponse, error)
 	TCYClaimer(ctx context.Context, in *QueryTCYClaimerRequest, opts ...grpc.CallOption) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(ctx context.Context, in *QueryTCYClaimersRequest, opts ...grpc.CallOption) (*QueryTCYClaimersResponse, error)
+	TCYProtocolOwned(ctx context.Context, in *QueryTCYProtocolOwnedRequest, opts ...grpc.CallOption) (*QueryTCYProtocolOwnedResponse, error)
 	OraclePrices(ctx context.Context, in *QueryOraclePricesRequest, opts ...grpc.CallOption) (*QueryOraclePricesResponse, error)
 	OraclePrice(ctx context.Context, in *QueryOraclePriceRequest, opts ...grpc.CallOption) (*QueryOraclePriceResponse, error)
 	Eip712TypedData(ctx context.Context, in *QueryEip712TypedDataRequest, opts ...grpc.CallOption) (*QueryEip712TypedDataResponse, error)
@@ -649,6 +655,15 @@ func (c *queryClient) SwapQueue(ctx context.Context, in *QuerySwapQueueRequest, 
 	return out, nil
 }
 
+func (c *queryClient) SwapQueuePaginated(ctx context.Context, in *QuerySwapQueuePaginatedRequest, opts ...grpc.CallOption) (*QuerySwapQueuePaginatedResponse, error) {
+	out := new(QuerySwapQueuePaginatedResponse)
+	err := c.cc.Invoke(ctx, Query_SwapQueuePaginated_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) SwapDetails(ctx context.Context, in *QuerySwapDetailsRequest, opts ...grpc.CallOption) (*QuerySwapDetailsResponse, error) {
 	out := new(QuerySwapDetailsResponse)
 	err := c.cc.Invoke(ctx, Query_SwapDetails_FullMethodName, in, out, opts...)
@@ -697,6 +712,15 @@ func (c *queryClient) ChainsLastBlock(ctx context.Context, in *QueryChainsLastBl
 func (c *queryClient) Vault(ctx context.Context, in *QueryVaultRequest, opts ...grpc.CallOption) (*QueryVaultResponse, error) {
 	out := new(QueryVaultResponse)
 	err := c.cc.Invoke(ctx, Query_Vault_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) KeysignParty(ctx context.Context, in *QueryKeysignPartyRequest, opts ...grpc.CallOption) (*QueryKeysignPartyResponse, error) {
+	out := new(QueryKeysignPartyResponse)
+	err := c.cc.Invoke(ctx, Query_KeysignParty_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -937,6 +961,15 @@ func (c *queryClient) TCYClaimers(ctx context.Context, in *QueryTCYClaimersReque
 	return out, nil
 }
 
+func (c *queryClient) TCYProtocolOwned(ctx context.Context, in *QueryTCYProtocolOwnedRequest, opts ...grpc.CallOption) (*QueryTCYProtocolOwnedResponse, error) {
+	out := new(QueryTCYProtocolOwnedResponse)
+	err := c.cc.Invoke(ctx, Query_TCYProtocolOwned_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) OraclePrices(ctx context.Context, in *QueryOraclePricesRequest, opts ...grpc.CallOption) (*QueryOraclePricesResponse, error) {
 	out := new(QueryOraclePricesResponse)
 	err := c.cc.Invoke(ctx, Query_OraclePrices_FullMethodName, in, out, opts...)
@@ -1105,12 +1138,14 @@ type QueryServer interface {
 	QuoteLimit(context.Context, *QueryQuoteLimitRequest) (*QueryQuoteLimitResponse, error)
 	ConstantValues(context.Context, *QueryConstantValuesRequest) (*QueryConstantValuesResponse, error)
 	SwapQueue(context.Context, *QuerySwapQueueRequest) (*QuerySwapQueueResponse, error)
+	SwapQueuePaginated(context.Context, *QuerySwapQueuePaginatedRequest) (*QuerySwapQueuePaginatedResponse, error)
 	SwapDetails(context.Context, *QuerySwapDetailsRequest) (*QuerySwapDetailsResponse, error)
 	LimitSwaps(context.Context, *QueryLimitSwapsRequest) (*QueryLimitSwapsResponse, error)
 	LimitSwapsSummary(context.Context, *QueryLimitSwapsSummaryRequest) (*QueryLimitSwapsSummaryResponse, error)
 	LastBlocks(context.Context, *QueryLastBlocksRequest) (*QueryLastBlocksResponse, error)
 	ChainsLastBlock(context.Context, *QueryChainsLastBlockRequest) (*QueryLastBlocksResponse, error)
 	Vault(context.Context, *QueryVaultRequest) (*QueryVaultResponse, error)
+	KeysignParty(context.Context, *QueryKeysignPartyRequest) (*QueryKeysignPartyResponse, error)
 	XMRSpentOutputRefs(context.Context, *QueryXMRSpentOutputRefsRequest) (*QueryXMRSpentOutputRefsResponse, error)
 	AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error)
@@ -1137,6 +1172,7 @@ type QueryServer interface {
 	TCYStakers(context.Context, *QueryTCYStakersRequest) (*QueryTCYStakersResponse, error)
 	TCYClaimer(context.Context, *QueryTCYClaimerRequest) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(context.Context, *QueryTCYClaimersRequest) (*QueryTCYClaimersResponse, error)
+	TCYProtocolOwned(context.Context, *QueryTCYProtocolOwnedRequest) (*QueryTCYProtocolOwnedResponse, error)
 	OraclePrices(context.Context, *QueryOraclePricesRequest) (*QueryOraclePricesResponse, error)
 	OraclePrice(context.Context, *QueryOraclePriceRequest) (*QueryOraclePriceResponse, error)
 	Eip712TypedData(context.Context, *QueryEip712TypedDataRequest) (*QueryEip712TypedDataResponse, error)
@@ -1297,6 +1333,9 @@ func (UnimplementedQueryServer) ConstantValues(context.Context, *QueryConstantVa
 func (UnimplementedQueryServer) SwapQueue(context.Context, *QuerySwapQueueRequest) (*QuerySwapQueueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SwapQueue not implemented")
 }
+func (UnimplementedQueryServer) SwapQueuePaginated(context.Context, *QuerySwapQueuePaginatedRequest) (*QuerySwapQueuePaginatedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SwapQueuePaginated not implemented")
+}
 func (UnimplementedQueryServer) SwapDetails(context.Context, *QuerySwapDetailsRequest) (*QuerySwapDetailsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SwapDetails not implemented")
 }
@@ -1314,6 +1353,9 @@ func (UnimplementedQueryServer) ChainsLastBlock(context.Context, *QueryChainsLas
 }
 func (UnimplementedQueryServer) Vault(context.Context, *QueryVaultRequest) (*QueryVaultResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Vault not implemented")
+}
+func (UnimplementedQueryServer) KeysignParty(context.Context, *QueryKeysignPartyRequest) (*QueryKeysignPartyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method KeysignParty not implemented")
 }
 func (UnimplementedQueryServer) XMRSpentOutputRefs(context.Context, *QueryXMRSpentOutputRefsRequest) (*QueryXMRSpentOutputRefsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method XMRSpentOutputRefs not implemented")
@@ -1392,6 +1434,9 @@ func (UnimplementedQueryServer) TCYClaimer(context.Context, *QueryTCYClaimerRequ
 }
 func (UnimplementedQueryServer) TCYClaimers(context.Context, *QueryTCYClaimersRequest) (*QueryTCYClaimersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TCYClaimers not implemented")
+}
+func (UnimplementedQueryServer) TCYProtocolOwned(context.Context, *QueryTCYProtocolOwnedRequest) (*QueryTCYProtocolOwnedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TCYProtocolOwned not implemented")
 }
 func (UnimplementedQueryServer) OraclePrices(context.Context, *QueryOraclePricesRequest) (*QueryOraclePricesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method OraclePrices not implemented")
@@ -2288,6 +2333,24 @@ func _Query_SwapQueue_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_SwapQueuePaginated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuerySwapQueuePaginatedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SwapQueuePaginated(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_SwapQueuePaginated_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SwapQueuePaginated(ctx, req.(*QuerySwapQueuePaginatedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_SwapDetails_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QuerySwapDetailsRequest)
 	if err := dec(in); err != nil {
@@ -2392,6 +2455,24 @@ func _Query_Vault_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).Vault(ctx, req.(*QueryVaultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_KeysignParty_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryKeysignPartyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).KeysignParty(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_KeysignParty_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).KeysignParty(ctx, req.(*QueryKeysignPartyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2864,6 +2945,24 @@ func _Query_TCYClaimers_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_TCYProtocolOwned_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryTCYProtocolOwnedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).TCYProtocolOwned(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_TCYProtocolOwned_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).TCYProtocolOwned(ctx, req.(*QueryTCYProtocolOwnedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_OraclePrices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryOraclePricesRequest)
 	if err := dec(in); err != nil {
@@ -3276,6 +3375,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_SwapQueue_Handler,
 		},
 		{
+			MethodName: "SwapQueuePaginated",
+			Handler:    _Query_SwapQueuePaginated_Handler,
+		},
+		{
 			MethodName: "SwapDetails",
 			Handler:    _Query_SwapDetails_Handler,
 		},
@@ -3298,6 +3401,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Vault",
 			Handler:    _Query_Vault_Handler,
+		},
+		{
+			MethodName: "KeysignParty",
+			Handler:    _Query_KeysignParty_Handler,
 		},
 		{
 			MethodName: "XMRSpentOutputRefs",
@@ -3402,6 +3509,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TCYClaimers",
 			Handler:    _Query_TCYClaimers_Handler,
+		},
+		{
+			MethodName: "TCYProtocolOwned",
+			Handler:    _Query_TCYProtocolOwned_Handler,
 		},
 		{
 			MethodName: "OraclePrices",

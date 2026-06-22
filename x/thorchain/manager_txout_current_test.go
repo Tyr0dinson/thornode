@@ -394,7 +394,8 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 
 	// outbound originating from a pool should pay fee from asgard to reserve
 	FundModule(c, w.ctx, w.keeper, AsgardName, 1000*common.One)
-	testAndCheckModuleBalances(c, w.ctx, w.keeper,
+	testAndCheckModuleBalances(
+		c, w.ctx, w.keeper,
 		func() {
 			item = TxOutItem{
 				Chain:     common.THORChain,
@@ -418,7 +419,8 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 
 	// outbound originating from bond should pay fee from bond to reserve
 	FundModule(c, w.ctx, w.keeper, BondName, 1000*common.One)
-	testAndCheckModuleBalances(c, w.ctx, w.keeper,
+	testAndCheckModuleBalances(
+		c, w.ctx, w.keeper,
 		func() {
 			item = TxOutItem{
 				ModuleName: BondName,
@@ -1076,6 +1078,82 @@ func (s TxOutStoreSuite) TestAddOutTxItem_SecurityVersusOutboundNumber(c *C) {
 	}
 	// There are no scheduled outbounds.
 	c.Assert(scheduledOutbounds, HasLen, 0)
+}
+
+// TestPrepareTxOutItemExcludesCompromisedVaults verifies initial outbound
+// scheduling filters flagged vaults before both Active and Retiring candidates
+// are considered. The compromised vaults are funded enough to be selected if the
+// filter is accidentally removed.
+func (s TxOutStoreSuite) TestPrepareTxOutItemExcludesCompromisedVaults(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	activeCompromisedPubKey := GetRandomPubKey()
+	retiringCompromisedPubKey := GetRandomPubKey()
+	retiringSafePubKey := GetRandomPubKey()
+
+	activeCompromisedVault := GetRandomVault()
+	activeCompromisedVault.PubKey = activeCompromisedPubKey
+	activeCompromisedVault.Type = AsgardVault
+	activeCompromisedVault.Status = ActiveVault
+	activeCompromisedVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, activeCompromisedVault), IsNil)
+
+	retiringCompromisedVault := GetRandomVault()
+	retiringCompromisedVault.PubKey = retiringCompromisedPubKey
+	retiringCompromisedVault.Type = AsgardVault
+	retiringCompromisedVault.Status = RetiringVault
+	retiringCompromisedVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, retiringCompromisedVault), IsNil)
+
+	retiringSafeVault := GetRandomVault()
+	retiringSafeVault.PubKey = retiringSafePubKey
+	retiringSafeVault.Type = AsgardVault
+	retiringSafeVault.Status = RetiringVault
+	retiringSafeVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(5000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, retiringSafeVault), IsNil)
+
+	pool, err := w.keeper.GetPool(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	pool.Asset = common.ETHAsset
+	pool.BalanceAsset = cosmos.NewUint(50000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(50000 * common.One)
+	pool.LPUnits = cosmos.NewUint(50000 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	w.keeper.SetMimir(w.ctx, compromisedVaultMimirKeyPrefix+activeCompromisedVault.PubKey.String(), 1)
+	w.keeper.SetMimir(w.ctx, compromisedVaultMimirKeyPrefix+retiringCompromisedVault.PubKey.String(), 1)
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, common.ObservedTxs{
+		common.ObservedTx{
+			Tx:             GetRandomTx(),
+			Status:         common.Status_incomplete,
+			BlockHeight:    1,
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+			KeysignMs:      0,
+			FinaliseHeight: 1,
+		},
+	})
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	outputs, _, err := txOutStore.prepareTxOutItem(w.ctx, TxOutItem{
+		Chain:     common.ETHChain,
+		ToAddress: GetRandomETHAddress(),
+		InHash:    inTxID,
+		Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(outputs, HasLen, 1)
+	c.Assert(outputs[0].VaultPubKey.Equals(activeCompromisedPubKey), Equals, false)
+	c.Assert(outputs[0].VaultPubKey.Equals(retiringCompromisedPubKey), Equals, false)
+	c.Assert(outputs[0].VaultPubKey.Equals(retiringSafePubKey), Equals, true)
 }
 
 func (s TxOutStoreSuite) TestAddOutTxItem_VaultStatusVersusOutboundNumber(c *C) {
@@ -1764,6 +1842,55 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokXRPLeavesReserve(c *C) {
 
 	c.Assert(outputs, HasLen, 1)
 	c.Assert(outputs[0].Coin.Amount.Equal(cosmos.NewUint(250560398000)), Equals, true)
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(eventMgr.securityEvents(), HasLen, 0)
+}
+
+// TestDiscoverOutboundsRagnarokSOLLeavesRentReserve covers the SOL Ragnarok
+// failure seen in simulation: txout discovery scheduled a near-full SOL sweep,
+// the transaction signed, and Solana rejected every broadcast because the
+// source account would fall below rent-exempt balance. The fix must cap only the
+// sweep amount and then treat the left-behind rent reserve as an intentional
+// Ragnarok residual rather than a security/recovery deficit.
+func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokSOLLeavesRentReserve(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = RetiringVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.SOLAsset, cosmos.NewUint(2524534019)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	eventMgr := newRecordingEventMgr()
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+
+	// This request mirrors the stuck RAGNAROK:2520 item from the default
+	// simulation run: it leaves only gas-sized dust unless txout discovery first
+	// subtracts the same SOL account reserve used by migration.
+	toi := TxOutItem{
+		Chain:     common.SOLChain,
+		ToAddress: common.Address("AfzXzUhKw57x9Pub9Dj4CxYovYCktSrXY7mcr1XEcftY"),
+		InHash:    common.BlankTxID,
+		Coin:      common.NewCoin(common.SOLAsset, cosmos.NewUint(2524532519)),
+		Memo:      NewRagnarokMemo(ctx.BlockHeight()).String(),
+	}
+
+	outputs, remaining := txOutStore.DiscoverOutbounds(
+		ctx,
+		cosmos.NewUint(1000),
+		common.NewCoin(common.SOLAsset, cosmos.NewUint(750)),
+		toi,
+		Vaults{vault},
+	)
+
+	// The scheduled outbound is capped to the vault balance minus the chain dust
+	// threshold, matching migration's SOL account-reserve convention. The
+	// leftover Ragnarok residual is intentionally zeroed instead of being routed
+	// into fallback/security handling.
+	c.Assert(outputs, HasLen, 1)
+	c.Assert(outputs[0].Coin.Amount.Equal(cosmos.NewUint(2524434019)), Equals, true)
 	c.Assert(remaining.IsZero(), Equals, true)
 	c.Assert(eventMgr.securityEvents(), HasLen, 0)
 }

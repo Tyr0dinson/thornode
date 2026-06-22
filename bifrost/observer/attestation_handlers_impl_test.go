@@ -67,11 +67,17 @@ func TestAttestMessageInterface(t *testing.T) {
 
 	// Test GetSignablePayload for each type
 	t.Run("GetSignablePayload returns marshaled data", func(t *testing.T) {
-		// ObservedTx
+		// ObservedTx — payload covers the full wrapper (with KeysignMs zeroed)
+		// plus the inbound bit, so a proposer cannot mutate FinaliseHeight,
+		// BlockHeight, or QuorumTx.Inbound without invalidating signatures.
 		txPayload, err := attestTx.GetSignablePayload()
 		require.NoError(t, err)
-		expectedTxPayload, err := tx.Marshal()
+		canonical := obsTx
+		canonical.KeysignMs = 0
+		expectedTxPayload, err := canonical.Marshal()
 		require.NoError(t, err)
+		// AttestTx.Inbound defaults to false here; trailing byte is 0.
+		expectedTxPayload = append(expectedTxPayload, 0)
 		assert.Equal(t, expectedTxPayload, txPayload)
 
 		// NetworkFee
@@ -225,7 +231,7 @@ func TestSendAttestationsToThornode(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := ag.observedTxsPool.NewAttestationState(obsTx)
+	state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// Add two attestations
 	state.attestations = []attestationSentState{
@@ -273,6 +279,10 @@ func TestSendAttestationsToThornode(t *testing.T) {
 	assert.False(t, state.lastAttestationsSent.IsZero())
 }
 
+// TestHandleObservedTxAttestationSeparatesFutureObservation ensures the same
+// observed tx is tracked separately when AllowFutureObservation differs. The
+// quorum path must not merge future outbound migration observations with normal
+// observations for the same tx hash.
 func TestHandleObservedTxAttestationSeparatesFutureObservation(t *testing.T) {
 	ag, _, _, _, _, _ := setupTestGossip(t)
 
@@ -326,6 +336,74 @@ func TestHandleObservedTxAttestationSeparatesFutureObservation(t *testing.T) {
 	require.Contains(t, ag.observedTxs, normalKey)
 	assert.Equal(t, 1, ag.observedTxs[futureKey].AttestationCount())
 	assert.Equal(t, 1, ag.observedTxs[normalKey].AttestationCount())
+}
+
+// TestHandleObservedTxAttestationFutureObservationUsesActiveValidatorQuorum
+// locks in the denominator for future outbound observations. Bifrost must wait
+// for the active-validator supermajority that THORNode accounting will accept,
+// not the smaller keysign party that produced the outbound.
+func TestHandleObservedTxAttestationFutureObservationUsesActiveValidatorQuorum(t *testing.T) {
+	ag, _, _, grpcClient, bridge, _ := setupTestGossip(t)
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	valPrivs := make([]*secp256k1.PrivKey, 4)
+	valPubKeys := make(common.PubKeys, 4)
+	for i := range valPrivs {
+		valPrivs[i] = secp256k1.GenPrivKey()
+		pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, valPrivs[i].PubKey())
+		require.NoError(t, err)
+		valPubKeys[i] = common.PubKey(pub)
+	}
+	ag.setActiveValidators(valPubKeys)
+
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey, _ int64) (common.PubKeys, error) {
+		t.Fatal("future observation quorum must not query keysign party")
+		return nil, nil
+	}
+
+	var sent []*common.QuorumTx
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		sent = append(sent, quorumTx)
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "future-active-validator-quorum",
+			Chain: common.BTCChain,
+		},
+	}
+
+	attest := func(i int) {
+		ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+			ObsTx:                  obsTx,
+			Inbound:                false,
+			AllowFutureObservation: true,
+			Attestation: &common.Attestation{
+				PubKey:    valPrivs[i].PubKey().Bytes(),
+				Signature: []byte(fmt.Sprintf("sig-%d", i)),
+			},
+		})
+	}
+
+	// With four active validators, two attestations are not enough. This would
+	// have been enough if the future-observation denominator fell back to a
+	// smaller keysign party.
+	attest(0)
+	attest(1)
+	require.Empty(t, sent)
+
+	// The third attestation is the active-validator supermajority for 4 nodes.
+	attest(2)
+	require.Len(t, sent, 1)
+	assert.True(t, sent[0].AllowFutureObservation)
+	assert.Equal(t, obsTx.Tx.ID, sent[0].ObsTx.Tx.ID)
+	assert.Len(t, sent[0].Attestations, 3)
 }
 
 // TestAttestableItemImplementation tests the AttestableItem interface implementation for all types
@@ -592,9 +670,14 @@ func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
 		return nil
 	}
 
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey, _ int64) (common.PubKeys, error) {
 		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
 	}
+
+	var importedTx *common.ObservedTx
+	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+		importedTx = &tx
+	})
 
 	obsTx := common.ObservedTx{
 		Tx: common.Tx{
@@ -611,7 +694,7 @@ func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
 
 	// Simulate a signing peer sending its attestation to the non-signer.
 	signerKey := secp256k1.GenPrivKey()
-	signBz, err := obsTx.GetSignablePayload()
+	signBz, err := obsTx.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 	signerSig, err := signerKey.Sign(signBz)
 	require.NoError(t, err)
@@ -642,6 +725,9 @@ func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
 	state.mu.Unlock()
 
 	assert.Equal(t, 1, count, "should only retain the peer attestation")
+	// Peer refs are no longer imported merely because they are XMR outbound
+	// refs. The peer must pass the XMR source-vault/planned-outbound gates.
+	require.Nil(t, importedTx, "unplanned peer spent refs should not be imported for sidecar verification")
 }
 
 // TestXMRBlindCoAttestationSkipsNonXMR verifies that non-XMR observations do
@@ -655,7 +741,7 @@ func TestXMRBlindCoAttestationSkipsNonXMR(t *testing.T) {
 		return nil
 	}
 
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey, _ int64) (common.PubKeys, error) {
 		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
 	}
 
@@ -670,7 +756,7 @@ func TestXMRBlindCoAttestationSkipsNonXMR(t *testing.T) {
 	}
 
 	signerKey := secp256k1.GenPrivKey()
-	signBz, err := obsTx.GetSignablePayload()
+	signBz, err := obsTx.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 	signerSig, err := signerKey.Sign(signBz)
 	require.NoError(t, err)
@@ -713,7 +799,7 @@ func TestXMRBlindCoAttestationIdempotent(t *testing.T) {
 		return nil
 	}
 
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey, _ int64) (common.PubKeys, error) {
 		return common.PubKeys{"pubkey1", "pubkey2", "pubkey3"}, nil
 	}
 
@@ -730,7 +816,7 @@ func TestXMRBlindCoAttestationIdempotent(t *testing.T) {
 	}
 
 	signerKey := secp256k1.GenPrivKey()
-	signBz, err := obsTx.GetSignablePayload()
+	signBz, err := obsTx.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 	signerSig, err := signerKey.Sign(signBz)
 	require.NoError(t, err)
@@ -765,6 +851,10 @@ func TestXMRBlindCoAttestationIdempotent(t *testing.T) {
 	assert.Equal(t, 1, count, "should only retain one peer attestation")
 }
 
+// TestXMRObservedTxAttestationsWithDifferentSpentRefsUseDifferentBuckets
+// verifies that conflicting spent-ref sets do not collapse into one
+// attestation state. Each exact observed-tx/ref-set variant must collect its
+// own quorum so a malicious alternative ref set cannot overwrite the valid one.
 func TestXMRObservedTxAttestationsWithDifferentSpentRefsUseDifferentBuckets(t *testing.T) {
 	ag, _, _, _, _, _ := setupTestGossip(t)
 
@@ -791,11 +881,11 @@ func TestXMRObservedTxAttestationsWithDifferentSpentRefsUseDifferentBuckets(t *t
 	}
 
 	signerKey := secp256k1.GenPrivKey()
-	signBzA, err := obsTxA.GetSignablePayload()
+	signBzA, err := obsTxA.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 	sigA, err := signerKey.Sign(signBzA)
 	require.NoError(t, err)
-	signBzB, err := obsTxB.GetSignablePayload()
+	signBzB, err := obsTxB.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 	sigB, err := signerKey.Sign(signBzB)
 	require.NoError(t, err)

@@ -98,11 +98,21 @@ func (m *MockThorchainBridge) FetchNodeStatus() (types.NodeStatus, error) {
 	return types.NodeStatus_Unknown, nil
 }
 func (m *MockThorchainBridge) FetchActiveNodes() ([]common.PubKey, error) { return nil, nil }
-func (m *MockThorchainBridge) GetKeysignParty(common.PubKey) (common.PubKeys, error) {
+
+// GetKeysignPolicy satisfies the expanded bridge interface for node-gater
+// tests; peer gating does not inspect keysign signer filtering.
+func (m *MockThorchainBridge) GetKeysignPolicy(common.PubKey, int64) (thorclient.KeysignPolicy, error) {
+	return thorclient.KeysignPolicy{}, nil
+}
+
+// GetKeysignParty satisfies legacy callers on the mock bridge without making
+// node-gater tests set up vault signer state.
+func (m *MockThorchainBridge) GetKeysignParty(common.PubKey, int64) (common.PubKeys, error) {
 	return nil, nil
 }
 func (m *MockThorchainBridge) GetAsgards() (types.Vaults, error)           { return nil, nil }
 func (m *MockThorchainBridge) GetVault(pubkey string) (types.Vault, error) { return types.Vault{}, nil }
+
 func (m *MockThorchainBridge) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}
 }
@@ -125,7 +135,9 @@ func (m *MockThorchainBridge) GetContext() client.Context { return client.Contex
 func (m *MockThorchainBridge) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) {
 	return nil, nil
 }
+
 func (m *MockThorchainBridge) GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg { return nil }
+
 func (m *MockThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types.Blame, inputPks common.PubKeys, keygenType types.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdk.Msg, error) {
 	return nil, nil
 }
@@ -193,7 +205,9 @@ func (m *MockThorchainBridge) GetKeygenBlock(int64, string) (types.KeygenBlock, 
 func (m *MockThorchainBridge) GetReferenceMemo(chain common.Chain, ref string) (string, error) {
 	return "", nil
 }
+
 func (m *MockThorchainBridge) GetReferenceMemoByTxHash(hash string) (string, error) { return "", nil }
+
 func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*types.QueryObservedTxVoter, error) {
 	return nil, nil
 }

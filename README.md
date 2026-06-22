@@ -6,7 +6,7 @@
 
 # THORChain
 
-THORChain is a decentralised liquidity network built with [CosmosSDK](https://cosmos.network) and [TSS-lib](https://github.com/bnb-chain/tss-lib)
+THORChain is a decentralised liquidity network built with [CosmosSDK](https://cosmos.network) and [tss-lib-private](https://gitlab.com/thorchain/tss/tss-lib-private)
 
 ## Repository Line
 
@@ -15,7 +15,7 @@ This repository is the canonical Rust-sidecar line for THORChain's Monero/XMR im
 - Default implementation branch: `rust-sidecar`
 - `develop` is retained only for upstream sync from `thorchain/thornode`
 - Supported XMR architecture here: Go Bifrost/go-tss plus the `xmr-frost-signer` Rust sidecar
-- The sidecar is consumed as a pre-built Docker image from `registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:boonew-xmr-frost-signer` by default in this branch, overridable via `XMR_FROST_SIGNER_IMAGE`
+- The sidecar is consumed as a pre-built Docker image from `registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:3f9c6b66a11e175741b914e401c09d0a048d833ca9a45000dd3d0bba4a659553` by default in this branch, overridable via `XMR_FROST_SIGNER_IMAGE`
 - The separate all-Go cutover line lives at [boonew/thornode-go](https://gitlab.com/boonew/thornode-go)
 
 ## THORNodes
@@ -70,11 +70,11 @@ ln -sf $(which gawk) /usr/local/bin/awk
 
 Install [Docker and Docker Compose V2](https://docs.docker.com/engine/install/).
 
-This project must be built with **Go `1.23.10`** (see `go.mod` and `.go-version`).<br/>
+This project must be built with **Go `1.26.4`** (see `go.mod` and `.go-version`).<br/>
 If your workspace has multiple Go versions, set:
 
 ```bash
-go env -w GOTOOLCHAIN=go1.23.10
+go env -w GOTOOLCHAIN=go1.26.4
 ```
 
 Ensure go modules are enabled.<br/>

@@ -45,6 +45,7 @@ func (p *AttestationStatePool[T]) NewAttestationState(initialItem T) *Attestatio
 	state.quorumAttestationsSent = time.Time{}
 	state.lastAttestationsSent = time.Time{}
 	state.lastCommittedAttestation = time.Time{}
+	state.spentRefsApplied = false
 
 	return state
 }
@@ -57,6 +58,7 @@ func (p *AttestationStatePool[T]) PutAttestationState(state *AttestationState[T]
 	state.quorumAttestationsSent = time.Time{}
 	state.lastAttestationsSent = time.Time{}
 	state.lastCommittedAttestation = time.Time{}
+	state.spentRefsApplied = false
 	// Return to pool
 	p.Put(state)
 }
@@ -81,7 +83,7 @@ type AttestMessage interface {
 
 // Ensure all required types implement AttestableItem
 var (
-	_ AttestableItem = &common.ObservedTx{}
+	_ AttestableItem = &attestableObservedTx{}
 	_ AttestableItem = &common.NetworkFee{}
 	_ AttestableItem = &common.Solvency{}
 	_ AttestableItem = &common.ErrataTx{}

@@ -131,12 +131,12 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 		eventClient: eventClient,
 		batcher:     batcher,
 
-		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
+		observedTxs: make(map[txKey]*AttestationState[*attestableObservedTx]),
 		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
 		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
 
-		observedTxsPool: NewAttestationStatePool[*common.ObservedTx](),
+		observedTxsPool: NewAttestationStatePool[*attestableObservedTx](),
 		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
 		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
 		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
@@ -317,6 +317,10 @@ func TestAttestObservedTx(t *testing.T) {
 	})
 }
 
+// TestAttestObservedTxPropagatesAllowFutureObservation verifies that future
+// outbound observations keep their AllowFutureObservation bit when they enter
+// gossip state. XMR migration observations rely on this bit staying attached to
+// the exact attested payload.
 func TestAttestObservedTxPropagatesAllowFutureObservation(t *testing.T) {
 	ag, _, _, grpcClient, bridge, _ := setupTestGossip(t)
 
@@ -327,7 +331,7 @@ func TestAttestObservedTxPropagatesAllowFutureObservation(t *testing.T) {
 	vaultPubKey := thorchain.GetRandomPubKey()
 	selfPubKey, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, ag.privKey.PubKey())
 	require.NoError(t, err)
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey, blockHeight int64) (common.PubKeys, error) {
 		require.Equal(t, vaultPubKey, pubKey)
 		return common.PubKeys{common.PubKey(selfPubKey)}, nil
 	}
@@ -626,7 +630,7 @@ func TestPruningLogic(t *testing.T) {
 		Tx: *pruneTx,
 	}
 
-	pruneState := ag.observedTxsPool.NewAttestationState(obsTx)
+	pruneState := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// Set quorum time in the distant past
 	pruneState.quorumAttestationsSent = time.Now().Add(-24 * time.Hour)
@@ -698,7 +702,7 @@ func TestSendLateAttestations(t *testing.T) {
 		ID:    tx.ID,
 	}
 
-	lateState := ag.observedTxsPool.NewAttestationState(obsTx)
+	lateState := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// Add two attestations
 	lateState.attestations = append(lateState.attestations, attestationSentState{
@@ -939,6 +943,9 @@ func TestConcurrentAttestationHandling(t *testing.T) {
 	assert.Equal(t, numAttestations, state.AttestationCount())
 }
 
+// TestXMRSpentOutputRefsCallback covers the handler-level spent-ref callback
+// filter before the deeper XMR authorization helper runs. It proves only XMR
+// outbound refs are candidates and unauthorized peer refs are skipped.
 func TestXMRSpentOutputRefsCallback(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 
@@ -948,7 +955,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		return nil
 	}
 
-	bridge.getKeysignPartyFunc = func(pubKey common.PubKey) (common.PubKeys, error) {
+	bridge.getKeysignPartyFunc = func(pubKey common.PubKey, _ int64) (common.PubKeys, error) {
 		return common.PubKeys{"pk1", "pk2", "pk3"}, nil
 	}
 
@@ -982,12 +989,15 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 		assert.Equal(t, "aaa111", callbackTx.SpentOutputRefs[0].TxHash)
 	})
 
-	t.Run("callback does not import peer XMR attestation before quorum commit", func(t *testing.T) {
+	t.Run("callback skips unauthorized peer XMR outbound spent refs", func(t *testing.T) {
 		var called bool
 		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
 			called = true
 		})
 
+		// This peer has a syntactically valid attestation, but it is not an
+		// active source-vault member with a matching planned outbound. The
+		// handler should retain the peer vote without importing refs.
 		tx := common.ObservedTx{
 			Tx:              common.Tx{ID: "xmr-peer-out-1", Chain: common.XMRChain},
 			ObservedPubKey:  "pk1",
@@ -1079,6 +1089,9 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 	})
 }
 
+// TestGetSignablePayloadConsistency verifies that ObservedTx and AttestTx sign
+// the same canonical payload. This matters for XMR because spent refs are part
+// of the signed observation and must aggregate consistently across peers.
 func TestGetSignablePayloadConsistency(t *testing.T) {
 	refs := []common.OutputRef{
 		{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "test-tx"},
@@ -1089,7 +1102,7 @@ func TestGetSignablePayloadConsistency(t *testing.T) {
 		SpentOutputRefs: refs,
 	}
 
-	payload1, err := obsTx.GetSignablePayload()
+	payload1, err := obsTx.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 
 	attestTx := common.AttestTx{ObsTx: obsTx}
@@ -1101,7 +1114,7 @@ func TestGetSignablePayloadConsistency(t *testing.T) {
 	obsTxNoRefs := common.ObservedTx{
 		Tx: common.Tx{ID: "test-tx", Chain: common.XMRChain, Memo: "OUT:abc"},
 	}
-	payloadNoRefs, err := obsTxNoRefs.GetSignablePayload()
+	payloadNoRefs, err := obsTxNoRefs.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 
 	assert.NotEqual(t, payload1, payloadNoRefs, "payload with refs should differ from without")

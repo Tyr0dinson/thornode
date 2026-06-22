@@ -632,6 +632,18 @@ func (s *ClientBackfillSuite) makeClient(c *C, server *httptest.Server) *SOLClie
 	return client
 }
 
+// vaultPubKeyEDDSA returns the test node's EdDSA pubkey in THORChain pubkey
+// form for SOL signing paths.
+func (s *ClientBackfillSuite) vaultPubKeyEDDSA(c *C) common.PubKey {
+	privKey, err := s.keys.GetPrivateKeyEDDSA()
+	c.Assert(err, IsNil)
+	pubKeyBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey.PubKey())
+	c.Assert(err, IsNil)
+	pubKey, err := common.NewPubKey(pubKeyBech32)
+	c.Assert(err, IsNil)
+	return pubKey
+}
+
 // -------------------------------------------------------------------------
 // NewSOLClient error paths
 // -------------------------------------------------------------------------
@@ -1046,12 +1058,9 @@ func (s *ClientBackfillSuite) TestCreateTxZeroAmount(c *C) {
 	client := s.makeClient(c, server)
 	client.solScanner.setRecentBlockHash("blockhash123")
 
-	// Use a known test pubkey
-	testVaultPubKey := common.PubKey("tthorpub1zcjduepq829qzzhllcktltnfdudyupw5qjtyyjzcmv9wx2jvpah4d6nxtl2s7vwca8")
-
 	txHash := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	_, err := client.CreateTx(stypes.TxOutItem{
-		VaultPubKeyEddsa: testVaultPubKey,
+		VaultPubKeyEddsa: s.vaultPubKeyEDDSA(c),
 		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 		Coins:            common.Coins{common.NewCoin(common.SOLAsset, cosmos.NewUint(0))},
 	}, fmt.Sprintf("OUT:%s", txHash))
@@ -1067,11 +1076,9 @@ func (s *ClientBackfillSuite) TestCreateTxEmptyMemoDefaultsToOutbound(c *C) {
 	client := s.makeClient(c, server)
 	client.solScanner.setRecentBlockHash("blockhash123")
 
-	testVaultPubKey := common.PubKey("tthorpub1zcjduepq829qzzhllcktltnfdudyupw5qjtyyjzcmv9wx2jvpah4d6nxtl2s7vwca8")
-
 	txHash := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	tx, err := client.CreateTx(stypes.TxOutItem{
-		VaultPubKeyEddsa: testVaultPubKey,
+		VaultPubKeyEddsa: s.vaultPubKeyEDDSA(c),
 		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 		Coins:            common.Coins{common.NewCoin(common.SOLAsset, cosmos.NewUint(1000))},
 		InHash:           common.TxID(txHash),
@@ -1106,16 +1113,58 @@ func (s *ClientBackfillSuite) TestReportSolvencyUnhealthyScannerSameHeight(c *C)
 	client := s.makeClient(c, server)
 	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
 
-	// Set scanner unhealthy and lastHeight = 100
+	// Unhealthy scanner with the scan loop currently processing slot 100
+	// (recorded in currentScanSlot just before it calls ReportSolvency).
 	client.solScanner.healthy = &atomic.Bool{}
 	client.solScanner.healthy.Store(false)
-	client.solScanner.lastHeightMu.Lock()
-	client.solScanner.lastHeight = 100
-	client.solScanner.lastHeightMu.Unlock()
+	client.solScanner.currentScanSlot.Store(100)
 
-	// height = 100 (same as lastHeight), scanner unhealthy -> skip
+	// height = 100 (same as currentScanSlot) => this is the scan-driven call, so
+	// while unhealthy it must be skipped (defer to the SolvencyCheckRunner).
+	// Nothing should be queued.
 	err := client.ReportSolvency(100)
 	c.Assert(err, IsNil)
+	c.Assert(len(client.globalSolvencyQueue), Equals, 0)
+}
+
+// TestReportSolvencyUnhealthyScannerRunnerHeight verifies the other half of the
+// guard: an unhealthy scanner does NOT suppress a call whose height differs from
+// currentScanSlot — i.e. the SolvencyCheckRunner calling with the live chain tip
+// while the scan loop is frozen (paused because the chain is halted). The
+// runner's report must still go through so auto-unhalt can fire.
+func (s *ClientBackfillSuite) TestReportSolvencyUnhealthyScannerRunnerHeight(c *C) {
+	server := makeSolRPCServer(c, map[string]string{
+		"getSlot":    `{"jsonrpc":"2.0","result":11,"id":1}`,
+		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":11},"value":10000000000},"id":1}`,
+	})
+	defer server.Close()
+	client := s.makeClient(c, server)
+	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
+	client.solScanner.healthy.Store(false)
+	client.solScanner.lastFeeRate = 1
+
+	// Scan loop is frozen at slot 10 (chain halted => scanner paused); the runner
+	// calls with the live tip (11) != currentScanSlot, so the unhealthy guard must
+	// NOT fire and the report must still be queued.
+	client.solScanner.currentScanSlot.Store(10)
+
+	solVault := types2.Vault{
+		PubKey:      types2.GetRandomPubKey(),
+		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
+		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	client.bridge = &mockSOLSolvencyBridge{asgards: types2.Vaults{solVault}}
+
+	err := client.ReportSolvency(11)
+	c.Assert(err, IsNil)
+
+	select {
+	case msg := <-client.globalSolvencyQueue:
+		c.Assert(msg.Chain, Equals, common.SOLChain)
+		c.Assert(msg.PubKey.Equals(solVault.PubKey), Equals, true)
+	case <-time.After(time.Second):
+		c.Fatal("runner-path call (height != currentScanSlot) must NOT be suppressed by the unhealthy guard")
+	}
 }
 
 func (s *ClientBackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C) {
@@ -1158,6 +1207,39 @@ func (s *ClientBackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults
 	case msg := <-client.globalSolvencyQueue:
 		c.Fatalf("unexpected extra solvency report for %s", msg.PubKey)
 	default:
+	}
+}
+
+func (s *ClientBackfillSuite) TestReportSolvencyConvertsLamportFeeToThorchainUnits(c *C) {
+	server := makeSolRPCServer(c, map[string]string{
+		"getSlot":    `{"jsonrpc":"2.0","result":11,"id":1}`,
+		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":11},"value":10000000000},"id":1}`,
+	})
+	defer server.Close()
+
+	client := s.makeClient(c, server)
+	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
+	client.solScanner.lastFeeRate = 1
+
+	solVault := types2.Vault{
+		PubKey:      types2.GetRandomPubKey(),
+		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
+		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_100_000))),
+	}
+	client.bridge = &mockSOLSolvencyBridge{
+		asgards: types2.Vaults{solVault},
+	}
+
+	err := client.ReportSolvency(11)
+	c.Assert(err, IsNil)
+
+	select {
+	case msg := <-client.globalSolvencyQueue:
+		c.Assert(msg.Height, Equals, int64(10))
+		c.Assert(msg.Chain, Equals, common.SOLChain)
+		c.Assert(msg.PubKey.Equals(solVault.PubKey), Equals, true)
+	case <-time.After(time.Second):
+		c.Fatal("expected insolvency report when SOL fee buffer is converted to THORChain units")
 	}
 }
 

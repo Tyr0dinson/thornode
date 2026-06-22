@@ -36,6 +36,7 @@ const (
 	StreamingSwapEventType          = "streaming_swap"
 	SwapEventType                   = "swap"
 	AffiliateFeeEventType           = "affiliate_fee"
+	RevShareEventType               = "rev_share"
 	LimitSwapEventType              = "limit_swap"
 	ModifyLimitSwapEventType        = "limit_swap_mod"
 	LimitSwapCloseEventType         = "limit_swap_close"
@@ -96,7 +97,8 @@ func (m *EventLimitSwap) Type() string {
 
 // Events convert EventLimitSwap to key value pairs used in cosmos
 func (m *EventLimitSwap) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("source", m.Source.String()),
 		cosmos.NewAttribute("target", m.Target.String()),
 		cosmos.NewAttribute("txid", m.TxID.String()),
@@ -121,7 +123,8 @@ func (m *EventModifyLimitSwap) Type() string {
 
 // Events convert EventModifyLimitSwap to key value pairs used in cosmos
 func (m *EventModifyLimitSwap) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("from", m.From.String()),
 		cosmos.NewAttribute("source", m.Source.String()),
 		cosmos.NewAttribute("target", m.Target.String()),
@@ -146,7 +149,8 @@ func (m *EventLimitSwapClose) Type() string {
 
 // Events convert EventLimitSwapClose to key value pairs used in cosmos
 func (m *EventLimitSwapClose) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("txid", m.TxID.String()),
 		cosmos.NewAttribute("reason", m.Reason),
 		cosmos.NewAttribute("block_height", fmt.Sprintf("%d", m.BlockHeight)),
@@ -178,7 +182,8 @@ func (m *EventSwap) Type() string {
 
 // Events convert EventSwap to key value pairs used in cosmos
 func (m *EventSwap) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("pool", m.Pool.String()),
 		cosmos.NewAttribute("swap_target", m.SwapTarget.String()),
 		cosmos.NewAttribute("swap_slip", m.SwapSlip.String()),
@@ -224,7 +229,8 @@ func (m *EventStreamingSwap) Events() (cosmos.Events, error) {
 		failedSwaps[i] = strconv.FormatUint(num, 10)
 	}
 
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("tx_id", m.TxID.String()),
 		cosmos.NewAttribute("interval", strconv.FormatUint(m.Interval, 10)),
 		cosmos.NewAttribute("quantity", strconv.FormatUint(m.Quantity, 10)),
@@ -258,7 +264,8 @@ func (m *EventAffiliateFee) Type() string {
 
 func (m *EventAffiliateFee) Events() (cosmos.Events, error) {
 	return cosmos.Events{
-		cosmos.NewEvent(m.Type(),
+		cosmos.NewEvent(
+			m.Type(),
 			cosmos.NewAttribute("tx_id", m.TxID.String()),
 			cosmos.NewAttribute("memo", m.Memo),
 			cosmos.NewAttribute("thorname", m.Thorname),
@@ -267,6 +274,44 @@ func (m *EventAffiliateFee) Events() (cosmos.Events, error) {
 			cosmos.NewAttribute("gross_amount", m.GrossAmount.String()),
 			cosmos.NewAttribute("fee_bps", strconv.FormatUint(m.FeeBps, 10)),
 			cosmos.NewAttribute("fee_amount", m.FeeAmount.String()),
+		),
+	}, nil
+}
+
+// NewEventRevShare creates a new rev_share event. accruedFee is the raw
+// liquidity fee attributed to the thorname this block. bps is the
+// REVSHARE-<thorname> mimir value applied (0 if unset). payout is the RUNE
+// moved from reserve to AffiliateCollector (0 if no payout).
+//
+// Negative bps values (e.g. the GetMimirWithRef "unset" sentinel of -1)
+// are normalised to 0 so the contract above holds for every caller and
+// indexers never see a negative attribute.
+func NewEventRevShare(thorname string, owner cosmos.AccAddress, accruedFee cosmos.Uint, bps int64, payout cosmos.Uint) *EventRevShare {
+	if bps < 0 {
+		bps = 0
+	}
+	return &EventRevShare{
+		Thorname:   thorname,
+		Owner:      owner,
+		AccruedFee: accruedFee,
+		Bps:        bps,
+		Payout:     payout,
+	}
+}
+
+func (m *EventRevShare) Type() string {
+	return RevShareEventType
+}
+
+func (m *EventRevShare) Events() (cosmos.Events, error) {
+	return cosmos.Events{
+		cosmos.NewEvent(
+			m.Type(),
+			cosmos.NewAttribute("thorname", m.Thorname),
+			cosmos.NewAttribute("owner", m.Owner.String()),
+			cosmos.NewAttribute("accrued_fee", m.AccruedFee.String()),
+			cosmos.NewAttribute("bps", strconv.FormatInt(m.Bps, 10)),
+			cosmos.NewAttribute("payout", m.Payout.String()),
 		),
 	}, nil
 }
@@ -300,7 +345,8 @@ func (m *EventAddLiquidity) Type() string {
 
 // Events return cosmos.Events which is cosmos.Attribute(key value pairs)
 func (m *EventAddLiquidity) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("pool", m.Pool.String()),
 		cosmos.NewAttribute("liquidity_provider_units", m.ProviderUnits.String()),
 		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
@@ -414,7 +460,8 @@ func (m *EventRewards) Type() string {
 
 // Events return a standard cosmos event
 func (m *EventRewards) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("bond_reward", m.BondReward.String()),
 		cosmos.NewAttribute("dev_fund_reward", m.DevFundReward.String()),
 		cosmos.NewAttribute("income_burn", m.IncomeBurn.String()),
@@ -445,7 +492,8 @@ func (m *EventRefund) Type() string {
 
 // Events return events
 func (m *EventRefund) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("code", strconv.FormatUint(uint64(m.Code), 10)),
 		cosmos.NewAttribute("reason", m.Reason),
 	)
@@ -565,7 +613,8 @@ func (m *EventReserve) Type() string {
 
 // Events return standard cosmos event
 func (m *EventReserve) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("contributor_address", m.ReserveContributor.Address.String()),
 		cosmos.NewAttribute("amount", m.ReserveContributor.Amount.String()),
 	)
@@ -749,7 +798,8 @@ func (m *EventTssKeygenSuccess) Type() string {
 
 // Events return cosmos sdk events
 func (m *EventTssKeygenSuccess) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("pubkey", m.PubKey.String()),
 		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
 		cosmos.NewAttribute("members", strings.Join(m.Members, ", ")),
@@ -775,7 +825,8 @@ func (m *EventTssKeygenFailure) Type() string {
 
 // Events return cosmos sdk events
 func (m *EventTssKeygenFailure) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("reason", m.FailReason),
 		cosmos.NewAttribute("round", m.Round),
 		cosmos.NewAttribute("is_unicast", fmt.Sprintf("%v", m.IsUnicast)),
@@ -904,7 +955,8 @@ func (m *EventPendingLiquidity) Type() string {
 
 // Events return cosmos.Events which is cosmos.Attribute(key value pairs)
 func (m *EventPendingLiquidity) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("pool", m.Pool.String()),
 		cosmos.NewAttribute("type", m.PendingType.String()),
 		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
@@ -1151,7 +1203,8 @@ func (m *EventRUNEPoolDeposit) Type() string {
 
 // Events return the cosmos event
 func (m *EventRUNEPoolDeposit) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
 		cosmos.NewAttribute("rune_amount", m.RuneAmount.String()),
 		cosmos.NewAttribute("units", m.Units.String()),
@@ -1175,7 +1228,8 @@ func (m *EventSetMimir) Type() string {
 
 // Events return cosmos sdk events
 func (m *EventSetMimir) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("key", m.Key),
 		cosmos.NewAttribute("value", m.Value),
 	)
@@ -1222,7 +1276,8 @@ func (m *EventSetNodeMimir) Type() string {
 
 // Events return cosmos sdk events
 func (m *EventSetNodeMimir) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("key", m.Key),
 		cosmos.NewAttribute("value", m.Value),
 		cosmos.NewAttribute("address", m.Address),
@@ -1243,7 +1298,8 @@ func (m *EventVersion) Type() string {
 
 // Events return cosmos sdk events
 func (m *EventVersion) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("version", m.Version),
 	)
 	return cosmos.Events{evt}, nil
@@ -1297,7 +1353,8 @@ func (m *EventTCYDistribution) Type() string {
 
 // Events return events
 func (m *EventTCYDistribution) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
 		cosmos.NewAttribute("rune_amount", m.RuneAmount.String()),
 	)
@@ -1321,7 +1378,8 @@ func (m *EventTCYClaim) Type() string {
 
 // Events return events
 func (m *EventTCYClaim) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
 		cosmos.NewAttribute("l1_address", m.L1Address.String()),
 		cosmos.NewAttribute("asset", m.Asset.String()),
@@ -1345,7 +1403,8 @@ func (m *EventTCYStake) Type() string {
 
 // Events return events
 func (m *EventTCYStake) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("address", m.Address.String()),
 		cosmos.NewAttribute("amount", m.Amount.String()),
 	)
@@ -1367,7 +1426,8 @@ func (m *EventTCYUnstake) Type() string {
 
 // Events return events
 func (m *EventTCYUnstake) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("address", m.Address.String()),
 		cosmos.NewAttribute("amount", m.Amount.String()),
 	)
@@ -1392,7 +1452,8 @@ func (m *EventOperatorRotate) Type() string {
 
 // Events return the cosmos event.
 func (m *EventOperatorRotate) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("signer", m.Signer.String()),
 		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
 		cosmos.NewAttribute("operator_address", m.OperatorAddress.String()),
@@ -1413,7 +1474,8 @@ func (m *EventOraclePrice) Type() string { return OraclePriceEvent }
 
 // Events return events
 func (m EventOraclePrice) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("symbol", m.Symbol),
 		cosmos.NewAttribute("price", m.Price),
 	)
@@ -1435,7 +1497,8 @@ func (m *EventVaultOverSolvency) Type() string {
 
 // Events convert EventVaultOverSolvency to key value pairs used in cosmos
 func (m *EventVaultOverSolvency) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("over_solvency_basis_points", strconv.FormatInt(m.OverSolvencyBasisPoints, 10)),
 	)
 	// Add individual asset details as attributes
@@ -1466,7 +1529,8 @@ func (m *EventPOLReserveDeploy) Type() string {
 // Events convert EventPOLReserveDeploy to key value pairs used in cosmos
 func (m *EventPOLReserveDeploy) Events() (cosmos.Events, error) {
 	return cosmos.Events{
-		cosmos.NewEvent(m.Type(),
+		cosmos.NewEvent(
+			m.Type(),
 			cosmos.NewAttribute("pool", m.Pool.String()),
 			cosmos.NewAttribute("rune_amount", m.RuneAmount.String()),
 		),
@@ -1491,7 +1555,8 @@ func (m *EventFailedOutboundRecovery) Type() string {
 
 // Events return events
 func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
+	evt := cosmos.NewEvent(
+		m.Type(),
 		cosmos.NewAttribute("in_tx_id", m.InTxID.String()),
 		cosmos.NewAttribute("coin", m.Coin.String()),
 		cosmos.NewAttribute("recovery_type", m.RecoveryType),

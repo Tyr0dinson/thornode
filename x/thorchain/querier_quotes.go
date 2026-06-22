@@ -216,16 +216,18 @@ func quoteConvertAsset(ctx cosmos.Context, mgr *Mgrs, fromAsset common.Asset, am
 }
 
 func quoteReverseFuzzyAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) (common.Asset, error) {
+	// return the asset if no symbol to shorten - checked before fetching pools to
+	// avoid a full pool-store scan for the common case (native gas assets, RUNE,
+	// and any asset without a symbol suffix to disambiguate).
+	aSplit := strings.Split(asset.Symbol.String(), "-")
+	if len(aSplit) == 1 {
+		return asset, nil
+	}
+
 	// get all pools
 	pools, err := mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return asset, fmt.Errorf("failed to get pools: %w", err)
-	}
-
-	// return the asset if no symbol to shorten
-	aSplit := strings.Split(asset.Symbol.String(), "-")
-	if len(aSplit) == 1 {
-		return asset, nil
 	}
 
 	// find all other assets that match the chain and ticker
@@ -370,6 +372,13 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		active, err = mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err
+		}
+		// Filter compromised vaults only for non-WASM callers. WASM contracts rely
+		// on a deterministic response; changing it mid-upgrade would break consensus
+		// for any contract that has already committed to the raw grpc output.
+		isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
+		if !isWasm {
+			active = filterCompromisedVaults(ctx, mgr.Keeper(), active)
 		}
 		constAccessor := mgr.GetConstants()
 		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
@@ -1039,6 +1048,15 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		AffiliateBasisPoints: cosmos.ZeroUint(),
 	}
 
+	// Resolve the inbound vault before simulation. Simulation may also touch
+	// outbound vault selection; if the source vault is unavailable or
+	// compromised, surface that direct quote error instead of an incidental
+	// outbound simulation failure.
+	inboundAddress, routerAddress, inboundConfirmations, err := quoteInboundInfo(ctx, qs.mgr, amount, fromAsset.GetChain(), fromAsset)
+	if err != nil {
+		return nil, err
+	}
+
 	// simulate the swap
 	res, emitAmount, outboundFeeAmount, err := quoteSimulateSwap(ctx, qs.mgr, amount, msg, 1)
 	if err != nil {
@@ -1058,7 +1076,13 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	if autoStreamingQuantity {
 		streamingQuantity = maxSwapQuantity
 	}
-	if shouldQuoteStreaming && streamingQuantity > 0 {
+	// Only re-simulate for streaming when the quantity is greater than 1. With a
+	// streaming quantity of 1 the streaming simulation is identical to the
+	// non-streaming simulation above (same msg, same amount, fresh cache store),
+	// so the second simulate() - including its end-block loop - would be pure
+	// redundant work. res/emitAmount from the quantity-1 simulation already hold
+	// the correct values.
+	if shouldQuoteStreaming && streamingQuantity > 1 {
 		if autoStreamingQuantity && streamingInterval == 0 && streamingQuantity > 1 {
 			memo.StreamQuantity = streamingQuantity
 			memoString = memo.ShortString()
@@ -1138,11 +1162,6 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	res.StreamingSwapBlocks = streamSwapBlocks
 	res.StreamingSwapSeconds = streamSwapBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
 
-	// estimate the inbound info
-	inboundAddress, routerAddress, inboundConfirmations, err := quoteInboundInfo(ctx, qs.mgr, amount, fromAsset.GetChain(), fromAsset)
-	if err != nil {
-		return nil, err
-	}
 	res.InboundAddress = inboundAddress.String()
 	if inboundConfirmations > 0 {
 		res.InboundConfirmationBlocks = inboundConfirmations

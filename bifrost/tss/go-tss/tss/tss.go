@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	bkeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
@@ -15,6 +14,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	bkeygen "gitlab.com/thorchain/tss/tss-lib-private.git/v3/ecdsa/keygen"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
@@ -151,7 +151,7 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 	case keysign.Request:
 		sort.Strings(value.Messages)
 		dat = []byte(strings.Join(value.Messages, ","))
-		keys = value.SignerPubKeys
+		dat = append(dat, []byte(strings.TrimSpace(value.PoolPubKey))...)
 		algo = string(value.Algo)
 	default:
 		t.logger.Error().Msg("unknown request type")
@@ -237,3 +237,17 @@ func (t *TssServer) persistPeerAddressBook() {
 		t.logger.Error().Err(err).Msg("fail to save the peer addresses")
 	}
 }
+
+// GetP2PComm returns the underlying p2p.Communication.
+// TEMP: keyverify — remove with the keyverify rollout.
+func (t *TssServer) GetP2PComm() *p2p.Communication { return t.p2pCommunication }
+
+// GetBroadcastChan returns the shared broadcast message channel.
+// TEMP: keyverify — remove with the keyverify rollout.
+func (t *TssServer) GetBroadcastChan() chan *messages.BroadcastMsgChan {
+	return t.p2pCommunication.BroadcastMsgChan
+}
+
+// GetLocalNodePubKey returns the bech32-encoded thorpub of the local node.
+// TEMP: keyverify — remove with the keyverify rollout.
+func (t *TssServer) GetLocalNodePubKey() string { return t.localNodePubKey }

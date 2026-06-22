@@ -94,6 +94,7 @@ docs/KeygenMetric.md
 docs/KeygenResponse.md
 docs/KeysignInfo.md
 docs/KeysignMetrics.md
+docs/KeysignPartyResponse.md
 docs/KeysignResponse.md
 docs/LastBlock.md
 docs/LimitOrderApi.md
@@ -165,12 +166,14 @@ docs/SupplyResponse.md
 docs/SwapApi.md
 docs/SwapDetailsResponse.md
 docs/SwapFinalisedStage.md
+docs/SwapQueuePaginatedResponse.md
 docs/SwapState.md
 docs/SwapStatus.md
 docs/SwapperCloutResponse.md
 docs/TCYClaimer.md
 docs/TCYClaimerSummary.md
 docs/TCYClaimersApi.md
+docs/TCYProtocolOwnedResponse.md
 docs/TCYStaker.md
 docs/TCYStakerSummary.md
 docs/TCYStakersApi.md
@@ -252,6 +255,7 @@ model_keygen_metric.go
 model_keygen_response.go
 model_keysign_info.go
 model_keysign_metrics.go
+model_keysign_party_response.go
 model_keysign_response.go
 model_last_block.go
 model_limit_swap_with_details.go
@@ -304,11 +308,13 @@ model_streaming_swap.go
 model_supply_response.go
 model_swap_details_response.go
 model_swap_finalised_stage.go
+model_swap_queue_paginated_response.go
 model_swap_state.go
 model_swap_status.go
 model_swapper_clout_response.go
 model_tcy_claimer.go
 model_tcy_claimer_summary.go
+model_tcy_protocol_owned_response.go
 model_tcy_staker.go
 model_tcy_staker_summary.go
 model_thorname.go

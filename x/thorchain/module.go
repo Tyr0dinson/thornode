@@ -144,7 +144,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 15
+	return 16
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -160,8 +160,8 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
 	m := NewMigrator(am.mgr)
-	if err := cfg.RegisterMigration(types.ModuleName, 14, m.Migrate14to15); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 14 to 15: %v", err))
+	if err := cfg.RegisterMigration(types.ModuleName, 15, m.Migrate15to16); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 15 to 16: %v", err))
 	}
 }
 
@@ -239,7 +239,7 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	am.mgr.ObMgr().EndBlock(ctx, am.mgr.Keeper())
 
 	// update network data to account for block rewards and reward units
-	if err := am.mgr.NetworkMgr().UpdateNetwork(ctx, am.mgr.GetConstants(), am.mgr.GasMgr(), am.mgr.EventMgr()); err != nil {
+	if err := am.mgr.NetworkMgr().UpdateNetwork(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to update network data", "error", err)
 	}
 
@@ -274,6 +274,8 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	if err := am.mgr.ScheduledMigrationManager().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process scheduled migration", "error", err)
 	}
+
+	am.mgr.Keeper().PruneRefundCleanups(ctx)
 
 	return validators, nil
 }

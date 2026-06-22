@@ -3,10 +3,10 @@ package blame
 import (
 	"sync"
 
-	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 )
 
 type Manager struct {
@@ -63,6 +63,20 @@ func (m *Manager) UpdateAcceptShare(round RoundInfo, id string) {
 	}
 	partyList = append(partyList, id)
 	m.acceptedShares[round] = partyList
+}
+
+// GetAcceptedSharesSnapshot returns a copy of the accepted-shares map
+// (round → party IDs whose share for that round was accepted). Used by the
+// keyverify timeout path to build per-culprit detail records.
+// TEMP: keyverify — remove with the keyverify rollout.
+func (m *Manager) GetAcceptedSharesSnapshot() map[RoundInfo][]string {
+	m.acceptShareLocker.Lock()
+	defer m.acceptShareLocker.Unlock()
+	out := make(map[RoundInfo][]string, len(m.acceptedShares))
+	for round, ids := range m.acceptedShares {
+		out[round] = append([]string(nil), ids...)
+	}
+	return out
 }
 
 func (m *Manager) CheckMsgDuplication(round RoundInfo, id string) bool {

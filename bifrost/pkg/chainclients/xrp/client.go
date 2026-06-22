@@ -369,18 +369,17 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	}
 
 	// gas rate from gas rate units to THORChain decimals
-	gasRate := c.cfg.ChainID.NativeGasToThorchain(cosmos.NewUint(uint64(tx.GasRate)))
-	if gasRate.IsZero() {
-		gasRate = cosmos.OneUint()
+	gasCoin := c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(tx.GasRate)))
+	if gasCoin.Amount.IsZero() {
+		gasCoin.Amount = cosmos.OneUint()
 	}
-	gasCoin := common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate)))
 
 	// TODO: Optionally
 	// (to avoid overpaying for already-queued TxOutItems when changing units),
 	// rather than assuming Transaction Size 1 here,
 	// use the tx.MaxGas instead like GAIA?
 
-	feeCurrency, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, gasRate))
+	feeCurrency, err := fromThorchainToXrp(gasCoin)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get fee: %w", err)
 	}
@@ -403,8 +402,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		}
 	}
 
-	txBytes, err := c.signMsg(msg, tx.VaultPubKey)
+	txBytes, err := c.signMsg(msg, tx.VaultPubKey, thorchainHeight)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to sign message: %w", err)
 	}
 
@@ -441,6 +443,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 func (c *Client) signMsg(
 	payment *transactions.Payment,
 	pubkey common.PubKey,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	xrpPubKey, err := pubkey.Secp256K1()
 	if err != nil {
@@ -467,14 +470,13 @@ func (c *Client) signMsg(
 	} else {
 		hashedMsg := sha512.Sum512(signBytes)
 		var signature []byte
-		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String())
+		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
 		if err != nil {
 			c.logger.Err(err).Msg("xrp remote sign")
 			return nil, fmt.Errorf("error, xrp remote sign: %w", err)
 		}
 		if signature == nil {
-			c.logger.Error().Msg("xrp remote sign, signature is nil")
-			return nil, fmt.Errorf("error, xrp remote sign, signature is nil")
+			return nil, tss.ErrNotSelectedForKeysign
 		}
 		if len(signature) < 64 {
 			c.logger.Error().Msg("xrp remote sign, signature is <64 bytes")

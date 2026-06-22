@@ -752,6 +752,40 @@ type BifrostSignerConfiguration struct {
 	KeysignTimeout     time.Duration `mapstructure:"keysign_timeout"`
 	PartyTimeout       time.Duration `mapstructure:"party_timeout"`
 	PreParamTimeout    time.Duration `mapstructure:"pre_param_timeout"`
+
+	// -------------------- keyverify timeouts --------------------
+	// Keyverify is bifrost/tss/keyverify's transitional scheduler with its
+	// own round + outer budget independent of KeyGen/KeySign above. These
+	// surfaced as a knob so proxy-fronted operators can adjust without a
+	// release cut. Zero falls back to the package defaults in
+	// bifrost/tss/keyverify (DefaultPerVaultTimeout, 180s) and
+	// bifrost/tss/go-tss/keyverify/ecdsa (DefaultKeyverifyRoundTimeout, 120s).
+
+	// KeyverifyRoundTimeout — inner per-round wait inside processVerify.
+	// Must remain strictly less than KeyverifyPerVaultTimeout so the inner
+	// timeout fires first and the protocol can attribute the failure to
+	// specific culprits — otherwise an outer ctx-cancellation preempts the
+	// per-peer blame path.
+	KeyverifyRoundTimeout time.Duration `mapstructure:"keyverify_round_timeout"`
+	// KeyverifyPerVaultTimeout — outer safety-net bound around each per-
+	// vault verify attempt. Sized as KeyverifyRoundTimeout + slack for
+	// stagger and teardown.
+	KeyverifyPerVaultTimeout time.Duration `mapstructure:"keyverify_per_vault_timeout"`
+	// KeyverifyRetryInterval — cadence of the per-attempt recovery ticker
+	// (unicast re-send, confirm re-broadcast, share re-request). Zero falls
+	// back to DefaultKeyverifyRetryInterval (5s) in go-tss/keyverify/ecdsa.
+	KeyverifyRetryInterval time.Duration `mapstructure:"keyverify_retry_interval"`
+	// KeyverifyMaxRetries — per-artifact cap on recovery re-sends within one
+	// attempt. Zero falls back to DefaultKeyverifyMaxRetries (3).
+	KeyverifyMaxRetries int `mapstructure:"keyverify_max_retries"`
+	// KeyverifyDisabled lets an operator turn the keyverify scheduler off
+	// entirely so it stops generating its every-100-blocks TSS load. Default
+	// (false) preserves the current always-on behavior; absent from an older
+	// config it also decodes to false, so existing nodes are unaffected.
+	// Disabled nodes still receive keyverify traffic from enabled peers; a
+	// background sweeper releases those parked streams so they don't
+	// accumulate.
+	KeyverifyDisabled bool `mapstructure:"keyverify_disabled"`
 }
 
 type BifrostAttestationGossipConfig struct {
@@ -992,7 +1026,17 @@ func (b *BifrostChainConfiguration) Validate() {
 }
 
 type BifrostBlockScannerConfiguration struct {
-	StartBlockHeight           int64         `mapstructure:"start_block_height"`
+	StartBlockHeight int64 `mapstructure:"start_block_height"`
+	// FloorBlockHeight is a forward-only floor for the bifrost block scanner start
+	// position (0 = disabled). The effective start is max(FloorBlockHeight, persisted
+	// scan pos), so the scanner never starts below the configured height nor below
+	// where it has already scanned; with the rollback clamp it also never rolls back
+	// below FloorBlockHeight on a reorg. Intended to durably SKIP a known-bad block
+	// range across restarts; for catch-up use MaxResumeBlockLag. On Solana it is
+	// best-effort (minContextSlot is an RPC-readiness hint, not a hard lower bound).
+	// MUST be set uniformly across the validator set: uncoordinated skipping can drop
+	// a real inbound below observation supermajority.
+	FloorBlockHeight           int64         `mapstructure:"floor_block_height"`
 	BlockScanProcessors        int           `mapstructure:"block_scan_processors"`
 	HTTPRequestTimeout         time.Duration `mapstructure:"http_request_timeout"`
 	HTTPRequestReadTimeout     time.Duration `mapstructure:"http_request_read_timeout"`

@@ -592,6 +592,19 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 			}
 		}
 
+		// SOL Ragnarok sweeps must leave enough balance for the source account to
+		// remain rent-exempt. Without this cap, the txout item can drain the vault
+		// down to gas-sized dust: signing succeeds, but Solana rejects every
+		// broadcast with "insufficient funds for rent" and Ragnarok cannot finish.
+		// Reuse the chain dust threshold here because migration already treats it
+		// as SOL's account-reserve amount when draining retiring vaults.
+		if isRagnarok && toi.Coin.Asset.Equals(common.SOLAsset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.SOLChain.DustThreshold())
+			if vaultCoinAmount.IsZero() {
+				continue
+			}
+		}
+
 		toi.VaultPubKey = vault.PubKey
 		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
 		toi.VaultPubKeyFrost = vault.PubKeyFrost
@@ -609,7 +622,8 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 	}
 
 	// Ragnarok can intentionally leave a chain-specific residual behind, such as
-	// XRP's account reserve. Do not route that non-spendable remainder through
+	// XRP's account reserve or SOL's rent reserve. Do not route that
+	// non-spendable remainder through
 	// fallback/recovery, because the pool is being closed and the residual is not
 	// an actionable outbound deficit.
 	if isRagnarok && !toi.Coin.Amount.IsZero() && len(outputs) > 0 {
@@ -761,6 +775,9 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			if err != nil {
 				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get active vaults: %w", err)
 			}
+			// Compromised vaults stay Active on-chain so they can be observed and
+			// recovered, but they must not receive newly scheduled outbounds.
+			activeAsgards = filterCompromisedVaults(ctx, tos.keeper, activeAsgards)
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			activeAsgards = tos.keeper.SortBySecurity(ctx, activeAsgards, signingTransactionPeriod)
@@ -778,6 +795,9 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			if err != nil {
 				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get retiring vaults: %w", err)
 			}
+			// Retiring vaults are still valid outbound candidates, so apply the same
+			// compromised-vault exclusion before they are considered for fallback.
+			retiringAsgards = filterCompromisedVaults(ctx, tos.keeper, retiringAsgards)
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			retiringAsgards = tos.keeper.SortBySecurity(ctx, retiringAsgards, signingTransactionPeriod)

@@ -194,9 +194,14 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	}
 	if ok {
 		splitGroups := vm.splitNext(ctx, next, asgardSize)
-		for _, nodeAccSet := range splitGroups {
+		for i, nodeAccSet := range splitGroups {
+			// Churn scheduling is intentionally all-or-nothing under the churn
+			// CacheContext. If any split cannot form a threshold-safe keygen after
+			// member filtering, abort the whole churn so earlier split keygens and
+			// mark/reset changes roll back together. Scheduling only surviving
+			// splits would create a partial replacement vault set for this churn.
 			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
-				return err
+				return fmt.Errorf("fail to trigger keygen for split %d/%d: %w", i+1, len(splitGroups), err)
 			}
 		}
 		allVaults, err := vm.k.GetAsgardVaults(ctx)
@@ -377,8 +382,17 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 
 	// payout all active node accounts their rewards
 	// This including nodes churning out, and takes place before changing the activity status below.
+	//
+	// distributeBondReward wraps each per-node payout in a CacheContext, so a
+	// partial failure cannot leave any single node in a half-paid state: either
+	// that node's bond reward is fully applied or none of it is. The unpaid
+	// share remains in network.BondRewardRune and is redistributed in the next
+	// churn. We deliberately log-and-continue rather than halt EndBlock here:
+	// returning an error would prevent the churn (and validator-set update)
+	// from happening this block, which is far more disruptive to chain
+	// liveness than a one-off skipped payout for the affected node(s).
 	if err = vm.distributeBondReward(ctx, mgr); err != nil {
-		ctx.Logger().Error("fail to pay node bond rewards", "error", err)
+		ctx.Logger().Error("fail to pay node bond rewards; undistributed reward remains in BondRewardRune for next churn", "error", err)
 	}
 
 	validators := make([]abci.ValidatorUpdate, 0, len(newNodes)+len(removedNodes))
@@ -387,7 +401,8 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 			cosmos.NewEvent("UpdateNodeAccountStatus",
 				cosmos.NewAttribute("Address", na.NodeAddress.String()),
 				cosmos.NewAttribute("Former:", na.Status.String()),
-				cosmos.NewAttribute("Current:", NodeActive.String())))
+				cosmos.NewAttribute("Current:", NodeActive.String())),
+		)
 		na.UpdateStatus(NodeActive, height)
 		na.LeaveScore = 0
 		na.RequestedToLeave = false
@@ -426,7 +441,8 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 			cosmos.NewEvent("UpdateNodeAccountStatus",
 				cosmos.NewAttribute("Address", nodeRemove.NodeAddress.String()),
 				cosmos.NewAttribute("Former:", nodeRemove.Status.String()),
-				cosmos.NewAttribute("Current:", status.String())))
+				cosmos.NewAttribute("Current:", status.String())),
+		)
 		nodeRemove.UpdateStatus(status, height)
 		if err = vm.k.SetNodeAccount(ctx, nodeRemove); err != nil {
 			ctx.Logger().Error("fail to save node account", "error", err)
@@ -594,24 +610,17 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	}
 	lastNodeOperatorProviderBond := nodeOperatorProvider.Bond
 
-	// Add to their bond the amount rewarded
+	// Compute all state changes in memory first; do not commit anything to the
+	// store until after the irreversible operator-fee transfer has succeeded.
+	// This pairs with the per-node CacheContext in distributeBondReward to make
+	// the whole payout atomic even if a future caller invokes this function
+	// without an outer cache wrap.
 	na.Bond = na.Bond.Add(reward)
-
-	// Minus the number of rune THORNode have awarded them
 	network.BondRewardRune = common.SafeSub(network.BondRewardRune, reward)
-
-	// Minus the number of units na has (do not include slash points)
 	network.TotalBondUnits = common.SafeSub(
 		network.TotalBondUnits,
 		cosmos.NewUint(uint64(totalActiveBlocks)),
 	)
-
-	if err := vm.k.SetNetwork(ctx, network); err != nil {
-		return fmt.Errorf("fail to save network data: %w", err)
-	}
-
-	// minus slash points used in this calculation
-	vm.k.SetNodeAccountSlashPoints(ctx, na.NodeAddress, slashPts-totalActiveBlocks)
 
 	// Distribute reward to bond providers and remove the NodeOperatorFee portion for node operator payout.
 	// (This is the full fee from other bond providers' rewards, plus an equivalent proportion of the node operator's rewards.)
@@ -628,32 +637,40 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		bp.Unbond(nodeOperatorFees, nodeOperatorAccAddr)
 	}
 
-	// Set node account and bond providers, then emit BondReward event (for the full pre-payout reward)
-	if err := vm.k.SetNodeAccount(ctx, na); err != nil {
-		return fmt.Errorf("fail to save node account: %w", err)
-	}
-	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
-		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
-	}
-	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
-	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
-		ctx.Logger().Error("fail to emit bond event", "error", err)
-	}
-
-	// Transfer node operator fees
+	// Transfer node operator fees BEFORE persisting accounting updates.
+	// If the bank send fails, the in-memory bond/network changes above are
+	// discarded with the function error and no accounting is corrupted.
 	if !nodeOperatorFees.IsZero() {
 		coin := common.NewCoin(common.RuneNative, nodeOperatorFees)
 		sdkErr := vm.k.SendFromModuleToAccount(ctx, BondName, nodeOperatorAccAddr, common.NewCoins(coin))
 		if sdkErr != nil {
 			return fmt.Errorf("fail to send node operator fees: %w", sdkErr)
 		}
+	}
 
+	// Now commit the accounting updates. SetNetwork/SetNodeAccount/SetBondProviders
+	// in the THORChain keeper always return nil, so reaching this point means
+	// the payout is fully consistent.
+	if err := vm.k.SetNetwork(ctx, network); err != nil {
+		return fmt.Errorf("fail to save network data: %w", err)
+	}
+	vm.k.SetNodeAccountSlashPoints(ctx, na.NodeAddress, slashPts-totalActiveBlocks)
+	if err := vm.k.SetNodeAccount(ctx, na); err != nil {
+		return fmt.Errorf("fail to save node account: %w", err)
+	}
+	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
+	}
+
+	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
+	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
+		ctx.Logger().Error("fail to emit bond event", "error", err)
+	}
+	if !nodeOperatorFees.IsZero() {
 		// TODO: Remove this NewAddress call entirely in the next version of this manager.
-		_, err := common.NewAddress(na.NodeAddress.String())
-		if err != nil {
+		if _, err := common.NewAddress(na.NodeAddress.String()); err != nil {
 			return fmt.Errorf("fail to parse node address: %w", err)
 		}
-		// emit BondReturned event
 		bondReturnedEvent := NewEventBond(nodeOperatorFees, BondReturned, common.Tx{}, &na, nodeOperatorAccAddr)
 		if err := mgr.EventMgr().EmitEvent(ctx, bondReturnedEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)

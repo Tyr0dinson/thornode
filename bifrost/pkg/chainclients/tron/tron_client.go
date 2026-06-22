@@ -352,7 +352,7 @@ func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 // SignTx returns the signed transaction.
 func (c *TronClient) SignTx(
 	txOutItem types.TxOutItem,
-	_ int64,
+	thorchainHeight int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
 	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
 		prevTxID, err := c.signerCacheManager.GetTransactionHash(txOutItem.CacheHash())
@@ -481,12 +481,13 @@ func (c *TronClient) SignTx(
 			return nil, nil, nil, err
 		}
 
+		nativeFeeLimit := c.config.ChainID.ThorchainToNativeGas(txOutItem.MaxGas[0].Amount)
 		tronTx, err = c.createTrc20Transaction(
 			fromAddress,
 			txOutItem.ToAddress.String(),
 			contract,
 			*amount,
-			*txOutItem.MaxGas[0].Amount.BigInt(), // 1e8 -> 1e6
+			*nativeFeeLimit.BigInt(),
 		)
 		if err != nil {
 			c.logger.Err(err).Msg("failed to create trc20 tx")
@@ -548,8 +549,11 @@ func (c *TronClient) SignTx(
 		return nil, nil, nil, err
 	}
 
-	signature, err := c.sign(hash, txOutItem)
+	signature, err := c.sign(hash, txOutItem, thorchainHeight)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		c.logger.Err(err).Msg("failed to sign tx")
 		return nil, nil, nil, err
 	}
@@ -568,10 +572,7 @@ func (c *TronClient) SignTx(
 		return nil, nil, nil, err
 	}
 
-	gasCoin := common.NewCoin(
-		common.TRXAsset,
-		cosmos.NewUint(uint64(txOutItem.GasRate)),
-	)
+	gasCoin := c.config.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(txOutItem.GasRate)))
 
 	txIn := types.NewTxInItem(
 		currentHeight,
@@ -746,6 +747,7 @@ func (c *TronClient) ReportSolvency(height int64) error {
 func (c *TronClient) sign(
 	data []byte,
 	txOutItem types.TxOutItem,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	var err error
 	var signature, recovery []byte
@@ -759,9 +761,12 @@ func (c *TronClient) sign(
 			return nil, err
 		}
 	} else {
-		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String())
+		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
 		if err == nil && signature != nil {
 			return append(signature, recovery...), nil
+		}
+		if err == nil && signature == nil {
+			return nil, tss.ErrNotSelectedForKeysign
 		}
 
 		var keysignError tss.KeysignError

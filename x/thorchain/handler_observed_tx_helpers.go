@@ -137,6 +137,35 @@ func ensureVaultAndGetTxInVoter(ctx cosmos.Context, vaultPubKey common.PubKey, t
 	return voter, nil
 }
 
+const (
+	compromisedVaultMimirKeyPrefix  = "CompromisedVault-"
+	compromisedVaultNoOpSecurityMsg = "inbound to compromised vault no-oped"
+)
+
+// isVaultCompromised reports whether CompromisedVault-<pubkey> is set.
+// The compromised-vault Mimir is keyed by vault pubkey rather than chain or
+// address so it covers every inbound address exposed by the same vault.
+// On KV read failure it returns true so callers can fail closed.
+func isVaultCompromised(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) (bool, error) {
+	flagged, err := k.GetMimir(ctx, compromisedVaultMimirKeyPrefix+vaultPubKey.String())
+	if err != nil {
+		return true, err
+	}
+	return flagged > 0, nil
+}
+
+// emitCompromisedVaultNoOpSecurityEvent emits the operator-facing alert for an
+// inbound that reached quorum but was intentionally skipped because its vault is
+// flagged by CompromisedVault-<pubkey>.
+func emitCompromisedVaultNoOpSecurityEvent(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, vaultPubKey common.PubKey) {
+	// EventSecurity includes the external tx attributes, but not the observed
+	// vault pubkey, so keep the vault key in the message for incident review.
+	msg := fmt.Sprintf("%s: vault=%s", compromisedVaultNoOpSecurityMsg, vaultPubKey.String())
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
+		ctx.Logger().Error("fail to emit compromised vault no-op security event", "pub_key", vaultPubKey.String(), "tx", tx.Tx.ID.String(), "error", err)
+	}
+}
+
 // handleObservedTxInQuorum - will process the observed tx in quorum.
 // used by both MsgObservedTxIn and MsgObservedTxInQuorum after processing
 // attestation(s).
@@ -177,6 +206,37 @@ func handleObservedTxInQuorum(
 
 	voter.Tx.Tx.Memo = tx.Tx.Memo
 
+	hasFinalised := voter.HasFinalised(activeNodeAccounts)
+
+	compromised, compromisedErr := isVaultCompromised(ctx, k, vault.PubKey)
+	if compromisedErr != nil {
+		ctx.Logger().Error("failed to read CompromisedVault mimir, treating inbound as no-op", "pub_key", vault.PubKey.String(), "error", compromisedErr)
+	}
+	if compromised {
+		// The tx has already reached observation quorum. Record observation
+		// metadata, but deliberately skip every value-changing action below:
+		// vault accounting, memo resolution, refunds, swap queueing, and
+		// internal handler dispatch. Funds sent to a compromised vault should
+		// not affect THORChain state.
+		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+			ctx.Logger().Error("fail to set last chain height", "error", err)
+		}
+
+		mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
+		if hasFinalised {
+			// Mark finalised no-op observations done so they do not remain as
+			// pending inbound work waiting for an outbound that will never be
+			// scheduled.
+			emitCompromisedVaultNoOpSecurityEvent(ctx, mgr, tx, vault.PubKey)
+			voter.SetDone()
+			ctx.Logger().Info("observed tx in to compromised vault no-oped", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
+		} else {
+			ctx.Logger().Info("observed tx in to compromised vault pending confirmation counting", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
+		}
+		k.SetObservedTxInVoter(ctx, voter)
+		return nil
+	}
+
 	// add memo for memoless transactions (after consensus is reached)
 	if len(tx.Tx.Coins) > 0 {
 		// Use the asset from the first coin for reference memo lookup
@@ -202,8 +262,6 @@ func handleObservedTxInQuorum(
 	// memo errors are ignored here and will be caught later in processing,
 	// after vault update, voter setup, etc and the coin will be refunded
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
-
-	hasFinalised := voter.HasFinalised(activeNodeAccounts)
 
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
@@ -251,7 +309,8 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
-	ctx.Logger().Debug("tx in finalized and has consensus",
+	ctx.Logger().Debug(
+		"tx in finalized and has consensus",
 		"id", tx.Tx.ID.String(),
 		"chain", tx.Tx.Chain.String(),
 		"height", tx.BlockHeight,
@@ -417,7 +476,8 @@ func processTxOutAttestation(
 			voter.FinalisedHeight = ctx.BlockHeight()
 			voter.Tx = *voter.GetTx(nas)
 
-			ctx.Logger().Debug("tx out finalized and has consensus",
+			ctx.Logger().Debug(
+				"tx out finalized and has consensus",
 				"id", tx.Tx.ID.String(),
 				"chain", tx.Tx.Chain.String(),
 				"height", tx.BlockHeight,
@@ -585,7 +645,8 @@ func correctOutboundGas(ctx cosmos.Context, mgr Manager, consensusTx common.Obse
 		mgr.GasMgr().AddGasAsset(outAsset, additionalGas, false)
 	}
 
-	ctx.Logger().Info("corrected outbound gas after reorg",
+	ctx.Logger().Info(
+		"corrected outbound gas after reorg",
 		"txid", correctedTx.Tx.ID,
 		"old_gas", common.Coins(oldGas).String(),
 		"new_gas", common.Coins(newGas).String(),
@@ -694,10 +755,27 @@ func handleObservedTxOutQuorum(
 	// Even if the handler fails, vault accounting must still happen because
 	// the outbound transaction is irrevocable (funds already left the vault).
 	vaultSlash := false
+	slashObservedOutbound := func(reason string, err error) {
+		ctx.Logger().Error("slash observed outbound", "reason", reason, "error", err, "tx", tx.Tx.String())
+		toSlash := make(common.Coins, len(tx.Tx.Coins))
+		copy(toSlash, tx.Tx.Coins)
+		toSlash = toSlash.Add(tx.Tx.Gas.ToCoins()...)
+
+		slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
+			telemetry.NewLabel("reason", reason),
+			telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		}))
+
+		if slashErr := mgr.Slasher().SlashVault(slashCtx, tx.ObservedPubKey, toSlash, mgr); slashErr != nil {
+			ctx.Logger().Error("fail to slash account for observed outbound", "error", slashErr)
+		} else {
+			vaultSlash = true
+		}
+	}
 	txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 	if txOut == nil || txOut.IsEmpty() {
 		ctx.Logger().Error("fail to get consensus tx from voter", "txid", tx.Tx.ID)
-		// Continue with vault accounting below - outbound is irrevocable
+		slashObservedOutbound("missing_consensus_tx", nil)
 	} else {
 		txOut.Tx.Memo = tx.Tx.Memo
 
@@ -711,10 +789,12 @@ func handleObservedTxOutQuorum(
 
 		if tx.Tx.Chain.IsEmpty() {
 			ctx.Logger().Error("fail to process txOut: chain is empty", "tx", tx.Tx.String())
+			slashObservedOutbound("empty_chain", nil)
 		} else if m, mErr := processOneTxIn(ctx, k, *txOut, signer); mErr != nil {
 			ctx.Logger().Error("fail to process txOut",
 				"error", mErr,
 				"tx", tx.Tx.String())
+			slashObservedOutbound("invalid_outbound", mErr)
 		} else {
 			// add addresses to observing addresses. This is used to detect
 			// active/inactive observing node accounts
@@ -736,7 +816,7 @@ func handleObservedTxOutQuorum(
 			res, hErr := handler(ctx, m)
 			if hErr != nil {
 				ctx.Logger().Error("handler failed:", "error", hErr)
-				// Continue with vault accounting - outbound is irrevocable
+				slashObservedOutbound("failed_outbound", hErr)
 			} else if res != nil && res.Events != nil {
 				for _, ev := range res.Events {
 					if ev.Type == "vault-slash" {

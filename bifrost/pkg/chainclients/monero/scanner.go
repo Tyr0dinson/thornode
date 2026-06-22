@@ -22,12 +22,12 @@ import (
 const (
 	// Monero uses 1e12 atomic units and THORChain uses 1e8 decimals.
 	moneroAtomicToThorchain = 10000
-
-	// typicalVaultOutboundWeight is the representative vault FROST outbound tx
+	// typicalVaultOutboundWeight is the conservative vault/FROST outbound tx
 	// weight in Monero weight units used for THORChain network fee reporting.
-	// We report tx_size separately from per-weight fee so MaxGas tracks a
-	// realistic XMR outbound instead of collapsing to size=1.
-	typicalVaultOutboundWeight = 1500
+	// Keep it over-reserved for now so migration txs that spend many UTXOs are
+	// less likely to be blocked by fee spikes before the full MaxGas feedback and
+	// reschedule path lands.
+	typicalVaultOutboundWeight = 10000
 )
 
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.

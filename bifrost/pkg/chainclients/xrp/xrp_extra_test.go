@@ -985,6 +985,9 @@ func (s *XrpTestSuite) TestSignTxFullPath(c *C) {
 	c.Check(checkpoint, IsNil) // nil checkpoint since we got txIn
 	c.Check(txIn, NotNil)
 	c.Check(txIn.Memo, Equals, "OUT:txhash123")
+	c.Assert(txIn.Gas, HasLen, 1)
+	c.Check(txIn.Gas[0].Amount.Uint64(), Equals, uint64(75000000))
+	c.Check(txIn.Gas[0].Decimals, Equals, int64(6))
 }
 
 // Test SignTx with checkpoint (deserialized metadata)
@@ -1979,7 +1982,7 @@ func (s *XrpTestSuite) TestSignMsgLocalKeyManager(c *C) {
 	c.Assert(err, IsNil)
 
 	// signMsg with local key - should succeed
-	txBytes, err := client.signMsg(payment, vaultPubKey)
+	txBytes, err := client.signMsg(payment, vaultPubKey, 0)
 	c.Assert(err, IsNil)
 	c.Check(len(txBytes) > 0, Equals, true)
 }
@@ -2555,7 +2558,7 @@ func (s *XrpTestSuite) TestSignMsgBadPubKey(c *C) {
 	c.Assert(err, IsNil)
 
 	// signMsg with invalid pubkey
-	_, err = client.signMsg(nil, common.PubKey("invalid"))
+	_, err = client.signMsg(nil, common.PubKey("invalid"), 0)
 	c.Assert(err, NotNil)
 }
 

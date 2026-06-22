@@ -388,6 +388,9 @@ func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID) {}
 func (k KVStoreDummy) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
 	return nil
 }
+func (k KVStoreDummy) SetRefundCleanup(_ cosmos.Context, _ string)          {}
+func (k KVStoreDummy) HasRefundCleanup(_ cosmos.Context, _ string) bool     { return false }
+func (k KVStoreDummy) PruneRefundCleanups(_ cosmos.Context)                 {}
 func (k KVStoreDummy) SetTssVoter(_ cosmos.Context, _ TssVoter)             {}
 func (k KVStoreDummy) GetTssVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetTssVoter(_ cosmos.Context, _ string) (TssVoter, error) {
@@ -400,6 +403,7 @@ func (k KVStoreDummy) GetKeygenBlock(_ cosmos.Context, _ int64) (KeygenBlock, er
 func (k KVStoreDummy) SetKeygenBlock(_ cosmos.Context, _ KeygenBlock)          {}
 func (k KVStoreDummy) GetKeygenBlockIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error)      { return nil, kaboom }
+
 func (k KVStoreDummy) GetTxOutValue(_ cosmos.Context, _ int64) (cosmos.Uint, cosmos.Uint, error) {
 	return cosmos.ZeroUint(), cosmos.ZeroUint(), kaboom
 }
@@ -438,6 +442,16 @@ func (k KVStoreDummy) GetPrevCyclePoolLiquidityFee(ctx cosmos.Context, asset com
 func (k KVStoreDummy) GetEffectivePoolLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error) {
 	return 0, kaboom
 }
+
+func (k KVStoreDummy) AddAffiliateLiquidityFee(ctx cosmos.Context, thorname string, fee cosmos.Uint) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetAffiliateLiquidityFees(ctx cosmos.Context) []AffiliateLiquidityFee {
+	return nil
+}
+
+func (k KVStoreDummy) DeleteAffiliateLiquidityFees(ctx cosmos.Context) {}
 
 func (k KVStoreDummy) GetChains(_ cosmos.Context) (common.Chains, error) { return nil, kaboom }
 func (k KVStoreDummy) SetChains(_ cosmos.Context, _ common.Chains)       {}
@@ -499,8 +513,10 @@ func (k KVStoreDummy) RemoveFromAsgardIndex(ctx cosmos.Context, pubkey common.Pu
 	return kaboom
 }
 
-func (k KVStoreDummy) GetLeastSecure(_ cosmos.Context, _ Vaults, _ int64) Vault      { return Vault{} }
-func (k KVStoreDummy) GetMostSecure(_ cosmos.Context, _ Vaults, _ int64) Vault       { return Vault{} }
+func (k KVStoreDummy) GetLeastSecure(_ cosmos.Context, _ Vaults, _ int64) Vault { return Vault{} }
+
+func (k KVStoreDummy) GetMostSecure(_ cosmos.Context, _ Vaults, _ int64) Vault { return Vault{} }
+
 func (k KVStoreDummy) GetMostSecureStrict(_ cosmos.Context, _ Vaults, _ int64) Vault { return Vault{} }
 func (k KVStoreDummy) SortBySecurity(_ cosmos.Context, _ Vaults, _ int64) Vaults     { return nil }
 func (k KVStoreDummy) GetPendingOutbounds(_ cosmos.Context, _ common.Asset) []TxOutItem {
@@ -568,6 +584,7 @@ func (k KVStoreDummy) GetBanVoter(_ cosmos.Context, _ cosmos.AccAddress) (BanVot
 func (k KVStoreDummy) GetBanVoterIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
+
 func (k KVStoreDummy) SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, i int) error { return kaboom }
 func (k KVStoreDummy) GetSwapQueueIterator(ctx cosmos.Context) cosmos.Iterator       { return nil }
 func (k KVStoreDummy) RemoveSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ int)  {}
@@ -614,6 +631,14 @@ func (k KVStoreDummy) HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, e
 }
 
 func (k KVStoreDummy) RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) RemoveMarketAdvSwapQueueIndexEntry(_ cosmos.Context, _ common.TxID, _ int) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) RemoveLimitAdvSwapQueueIndexEntry(_ cosmos.Context, _ []byte, _ common.TxID, _ int) error {
 	return kaboom
 }
 
@@ -710,7 +735,9 @@ func (k KVStoreDummy) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddres
 func (k KVStoreDummy) IsOperationalMimir(key string) bool {
 	key = strings.ToUpper(key)
 	// Simplified representation.
-	return strings.Contains(key, "HALT") || strings.Contains(key, "PAUSE")
+	return strings.Contains(key, "HALT") ||
+		strings.Contains(key, "PAUSE") ||
+		strings.Contains(key, "EVMDIRECTERC20INBOUND")
 }
 
 func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
@@ -814,15 +841,22 @@ func (k KVStoreDummy) GetConfigInt64(ctx cosmos.Context, key constants.ConstantN
 	return -1
 }
 
-func (k KVStoreDummy) IsRagnarok(ctx cosmos.Context, assets []common.Asset) bool        { return false }
-func (k KVStoreDummy) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool            { return false }
-func (k KVStoreDummy) IsGlobalTradingHalted(ctx cosmos.Context) bool                    { return false }
+func (k KVStoreDummy) IsRagnarok(ctx cosmos.Context, assets []common.Asset) bool { return false }
+
+func (k KVStoreDummy) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool { return false }
+
+func (k KVStoreDummy) IsGlobalTradingHalted(ctx cosmos.Context) bool { return false }
+
 func (k KVStoreDummy) IsChainTradingHalted(ctx cosmos.Context, chain common.Chain) bool { return false }
-func (k KVStoreDummy) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool        { return false }
-func (k KVStoreDummy) IsLPPaused(ctx cosmos.Context, chain common.Chain) bool           { return false }
-func (k KVStoreDummy) IsPoolDepositPaused(ctx cosmos.Context, asset common.Asset) bool  { return false }
+
+func (k KVStoreDummy) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool { return false }
+
+func (k KVStoreDummy) IsLPPaused(ctx cosmos.Context, chain common.Chain) bool { return false }
+
+func (k KVStoreDummy) IsPoolDepositPaused(ctx cosmos.Context, asset common.Asset) bool { return false }
 
 func (k KVStoreDummy) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Asset { return nil }
+
 func (k KVStoreDummy) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
@@ -906,6 +940,7 @@ func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.As
 
 func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterator    { return nil }
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }
+
 func (k KVStoreDummy) GetSwapperClout(ctx cosmos.Context, addr common.Address) (SwapperClout, error) {
 	return SwapperClout{}, kaboom
 }
@@ -947,9 +982,11 @@ func (k KVStoreDummy) SetVolume(_ cosmos.Context, _ Volume) error {
 func (k KVStoreDummy) GetDynamicFeeRecord(_ cosmos.Context, _, _, _ string) (DynamicFeeRecord, error) {
 	return DynamicFeeRecord{}, kaboom
 }
+
 func (k KVStoreDummy) SetDynamicFeeRecord(_ cosmos.Context, _ DynamicFeeRecord) error { return kaboom }
-func (k KVStoreDummy) DeleteDynamicFeeRecord(_ cosmos.Context, _, _, _ string) error  { return kaboom }
-func (k KVStoreDummy) GetDynamicFeeRecordIterator(_ cosmos.Context) cosmos.Iterator   { return nil }
+
+func (k KVStoreDummy) DeleteDynamicFeeRecord(_ cosmos.Context, _, _, _ string) error { return kaboom }
+func (k KVStoreDummy) GetDynamicFeeRecordIterator(_ cosmos.Context) cosmos.Iterator  { return nil }
 func (k KVStoreDummy) GetDynamicFeeRecordIteratorForThorname(_ cosmos.Context, _ string) cosmos.Iterator {
 	return nil
 }
@@ -965,7 +1002,9 @@ func (k KVStoreDummy) SetDynamicFeeAccumulator(_ cosmos.Context, _ DynamicFeeAcc
 func (k KVStoreDummy) DeleteDynamicFeeAccumulator(_ cosmos.Context, _, _, _ string) error {
 	return kaboom
 }
+
 func (k KVStoreDummy) GetDynamicFeeAccumulatorIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+
 func (k KVStoreDummy) DeleteAllDynamicFeeStateForThorname(_ cosmos.Context, _ string) error {
 	return kaboom
 }

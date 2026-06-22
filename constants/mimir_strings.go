@@ -5,13 +5,15 @@ package constants
 // Each string should clearly indicate its usage for the final Mimir key (key, template, reference)
 // and no Mimir key should require the combination of more than two strings.
 const (
-	MimirKeySecuredAssetHaltGlobal = "HaltSecuredGlobal"
-	MimirKeyWasmPermissionless     = "WasmPermissionless"
-	MimirKeyWasmHaltGlobal         = "HaltWasmGlobal"
-	MimirKeyWasmMinGasPrice        = "WasmMinGasPrice"
-	MimirKeyScheduledMigration     = "ScheduledMigration"
+	MimirKeySecuredAssetHaltGlobal    = "HaltSecuredGlobal"
+	MimirKeyWasmPermissionless        = "WasmPermissionless"
+	MimirKeyWasmHaltGlobal            = "HaltWasmGlobal"
+	MimirKeyWasmMinGasPrice           = "WasmMinGasPrice"
+	MimirKeyScheduledMigration        = "ScheduledMigration"
+	MimirKeyDisableTSSSignerFiltering = "DisableTSSSignerFiltering"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
+	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain
 	MimirTemplateMaxConfirmations          = "MaxConfirmations-%s"          // Use with Chain
 	MimirTemplateSwapSlipBasisPointsMin    = "SwapSlipBasisPointsMin-%s"    // Use with MimirRef
@@ -21,6 +23,7 @@ const (
 	MimirTemplateWasmHaltContract          = "HaltWasmContract-%s"          // Use contract address checksum (last 6) for brevity and to fit inside mimir's 64 char length
 	MimirTemplateWasmHaltDeployer          = "HaltWasmDeployer-%s"          // Use full deployer address to prevent a deployer from instantiating new contracts
 	MimirTemplateMaxGas                    = "MaxGas-%s"                    // Use with Chain (e.g., MaxGas-ETH)
+	MimirTemplateRevShareThorName          = "REVSHARE-%s"                  // Use with thorname (e.g., REVSHARE-foobar)
 	MimirTemplateSwitch                    = "EnableSwitch-%s-%s"           // Use with Chain, Symbol
 	MimirTemplatePauseLPDeposit            = "PauseLPDeposit-%s"            // Use with Asset MimirString
 	MimirTemplateHaltSigning               = "HaltSigning%s"                // Use with Chain (mixed case, e.g., HaltSigningETH)

@@ -2,6 +2,18 @@
 # Config
 ########################################################################################
 
+# tss-lib-private is a private GitLab subgroup repo. The Dockerfiles that fetch
+# Go modules (build/docker/Dockerfile, build/docker/cli/Dockerfile,
+# tools/events/Dockerfile, ci/Dockerfile.simtest, ci/Dockerfile.regtest) use
+# `--mount=type=secret,id=ci_job_token,required=false`. Pipe CI_JOB_TOKEN
+# through to every `docker compose build` here so cache-miss rebuilds work in
+# CI. Local builds without CI_JOB_TOKEN set will still work because the mount
+# is optional and falls back to anonymous fetch (which is fine for non-private
+# repos, and the dev presumably has their own git auth for the private one).
+secrets:
+  ci_job_token:
+    environment: CI_JOB_TOKEN
+
 volumes:
   cli: {}
   thornode: {}
@@ -56,6 +68,8 @@ services:
       dockerfile: ./build/docker/cli/Dockerfile
       args:
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
+      secrets:
+        - ci_job_token
     environment:
       <<: *thorchain-environment
     entrypoint: /bin/bash
@@ -76,6 +90,8 @@ services:
       args:
         TAG: mocknet
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
+      secrets:
+        - ci_job_token
     environment:
       CONSOLE: 1
       ENDPOINTS_THORNODE: http://thornode:1317
@@ -143,9 +159,9 @@ services:
       - start
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:26657/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
+      interval: 3s
+      timeout: 5s
+      retries: 30
       # Clean-volume mocknet boots can spend tens of seconds validating genesis,
       # upgrading IAVL stores, and importing the first state before RPC is ready.
       # Keep the container in "starting" during that bootstrap window so cluster
@@ -162,6 +178,8 @@ services:
       args:
         TAG: mocknet
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
+      secrets:
+        - ci_job_token
     profiles:
       - thornode
       - mocknet
@@ -208,7 +226,7 @@ services:
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
       GAIA_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
       THOR_BLOCK_TIME: ${BLOCK_TIME:-1s}
-      BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-5s}
+      BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-1s}
       PEER: ${PEER:-}
       BIFROST_METRICS_PPROF_ENABLED: "true"
       BIFROST_SIGNER_BACKUP_KEYSHARES: "true"
@@ -473,7 +491,7 @@ services:
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
     ports:
       - 5040
-      - 6040
+      - 6041:6040 # host-side simulation readiness probe
     volumes:
       - "../scripts:/docker/scripts"
       - bifrost-cat:/var/data/bifrost
@@ -508,7 +526,7 @@ services:
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
     ports:
       - 5040
-      - 6040
+      - 6042:6040 # host-side simulation readiness probe
     volumes:
       - "../scripts:/docker/scripts"
       - bifrost-fox:/var/data/bifrost
@@ -543,7 +561,7 @@ services:
       SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
     ports:
       - 5040
-      - 6040
+      - 6043:6040 # host-side simulation readiness probe
     volumes:
       - "../scripts:/docker/scripts"
       - bifrost-pig:/var/data/bifrost
@@ -614,7 +632,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-cash-daemon-28.0.1
+    image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-cash-daemon-29.0.0
     restart: unless-stopped
     environment:
       RPC_PORT: "28443"
@@ -668,7 +686,7 @@ services:
     image: ${DOCKER_MIRROR:-}ethereum/client-go:v1.17.2
     restart: unless-stopped
     environment:
-      BLOCK_TIME: ${BLOCK_TIME:-5}
+      BLOCK_TIME: ${BLOCK_TIME:-2}
     ports:
       - 8545:8545
       - 30301:30301
@@ -686,7 +704,7 @@ services:
     image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101609.1
     restart: unless-stopped
     environment:
-      BLOCK_TIME: ${BLOCK_TIME:-5}
+      BLOCK_TIME: ${BLOCK_TIME:-2}
       OP_NODE_L1_ETH_RPC: ${ETH_HOST:-http://ethereum:8545}
     ports:
       - 8547:8545
@@ -786,7 +804,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:boonew-xmr-frost-signer}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:3f9c6b66a11e175741b914e401c09d0a048d833ca9a45000dd3d0bba4a659553}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -830,7 +848,8 @@ services:
       - mocknet-cluster
     volumes:
       - xmr-frost-data-cat:/home/serai/xmr-frost
-    ports: []
+    ports:
+      - 8285:8283 # host-side simulation readiness probe
 
   xmr-frost-signer-fox:
     <<: *xmr-frost-signer
@@ -838,7 +857,8 @@ services:
       - mocknet-cluster
     volumes:
       - xmr-frost-data-fox:/home/serai/xmr-frost
-    ports: []
+    ports:
+      - 8286:8283 # host-side simulation readiness probe
 
   xmr-frost-signer-pig:
     <<: *xmr-frost-signer
@@ -846,13 +866,14 @@ services:
       - mocknet-cluster
     volumes:
       - xmr-frost-data-pig:/home/serai/xmr-frost
-    ports: []
+    ports:
+      - 8287:8283 # host-side simulation readiness probe
 
   xmr-sim-helper:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:boonew-xmr-frost-signer}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:3f9c6b66a11e175741b914e401c09d0a048d833ca9a45000dd3d0bba4a659553}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -996,7 +1017,7 @@ services:
       - "8091:8091"
     environment:
       TRON_NODE_TYPE: mocknet-fullnode
-      TRON_SEED_NODE: docker-tron-supernode-1:18888
+      TRON_SEED_NODE: tron-supernode:18888
     healthcheck:
       # The simulator signs TRON txs with wall-clock timestamps, but TRON sets tx
       # expiration from the fullnode's latest block. Require a fresh fullnode tip
@@ -1139,7 +1160,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${DOCKER_MIRROR:-}zfnd/zebra:4.3.0
+    image: ${DOCKER_MIRROR:-}zfnd/zebra:5.0.0
     restart: unless-stopped
     entrypoint: ["/etc/entrypoint.sh"]
     environment:

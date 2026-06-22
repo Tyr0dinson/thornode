@@ -17,6 +17,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("pools", PoolsInvariant(k)),
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
+		common.NewInvariantRoute("tcy_claim", TCYClaimInvariant(k)),
 	}
 }
 
@@ -333,7 +334,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: swap.coin %s != state.deposit %s",
 					swap.Tx.ID.String(),
 					swap.Tx.Coins[0].Amount,
-					swap.State.Deposit.String()))
+					swap.State.Deposit.String(),
+				))
 			}
 
 			// Check count doesn't exceed quantity
@@ -355,7 +357,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					swap.Tx.ID.String(),
 					countLabel,
 					countToCheck,
-					swap.State.Quantity))
+					swap.State.Quantity,
+				))
 			}
 
 			// Check In doesn't exceed Deposit
@@ -365,7 +368,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: state.in %s > state.deposit %s",
 					swap.Tx.ID.String(),
 					swap.State.In.String(),
-					swap.State.Deposit.String()))
+					swap.State.Deposit.String(),
+				))
 			}
 		}
 
@@ -419,7 +423,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: swap.coin %s != stream.deposit %s",
 					stream.TxID.String(),
 					swap.Tx.Coins[0].Amount,
-					stream.Deposit.String()))
+					stream.Deposit.String(),
+				))
 			}
 			if stream.Count > stream.Quantity {
 				broken = true
@@ -427,7 +432,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: stream.count %d > stream.quantity %d",
 					stream.TxID.String(),
 					stream.Count,
-					stream.Quantity))
+					stream.Quantity,
+				))
 			}
 			if stream.In.GT(stream.Deposit) {
 				broken = true
@@ -435,8 +441,36 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: stream.in %s > stream.deposit %s",
 					stream.TxID.String(),
 					stream.In.String(),
-					stream.Deposit.String()))
+					stream.Deposit.String(),
+				))
 			}
+		}
+
+		return msg, broken
+	}
+}
+
+// TCYClaimInvariant the tcy_claim module must hold at least enough TCY to back
+// every outstanding TCYClaimer entitlement. Any surplus is protocol-owned TCY
+// accumulated by claimingSwapRuneToTCY and is not flagged.
+func TCYClaimInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		moduleTCY := k.GetBalanceOfModule(ctx, TCYClaimingName, common.TCY.Native())
+
+		claimerSum := cosmos.ZeroUint()
+		iter := k.GetTCYClaimerIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var claimer TCYClaimer
+			k.Cdc().MustUnmarshal(iter.Value(), &claimer)
+			claimerSum = claimerSum.Add(claimer.Amount)
+		}
+
+		if claimerSum.GT(moduleTCY) {
+			diff := claimerSum.Sub(moduleTCY)
+			coin, _ := common.NewCoin(common.TCY, diff).Native()
+			msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
+			broken = true
 		}
 
 		return msg, broken

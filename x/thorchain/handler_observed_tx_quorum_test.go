@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"strings"
+
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
@@ -43,8 +45,10 @@ func nodeWithPrivKey(c *C, k keeper.Keeper, ctx cosmos.Context) (NodeAccount, se
 }
 
 // attestObservedTx creates an attestation for an observed tx using the given private key.
-func attestObservedTx(c *C, privKey secp256k1.PrivKey, obsTx common.ObservedTx) *common.Attestation {
-	data, err := obsTx.GetSignablePayload()
+// inbound must match the QuorumTx.Inbound the attestation will be aggregated into;
+// it is included in the signed payload to prevent a proposer from flipping the bit.
+func attestObservedTx(c *C, privKey secp256k1.PrivKey, obsTx common.ObservedTx, inbound bool) *common.Attestation {
+	data, err := obsTx.GetSignablePayloadWithInbound(inbound)
 	c.Assert(err, IsNil)
 
 	signature, err := privKey.Sign(data)
@@ -178,7 +182,7 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleInboundVaultNotFound(c *C) {
 		1024, vaultPubKey, 1024,
 	)
 
-	att := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx)
+	att := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx, true)
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
 		Inbound:      true,
@@ -216,7 +220,7 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleOutboundVaultNotFound(c *C) {
 		1024, vaultPubKey, 1024,
 	)
 
-	att := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx)
+	att := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx, false)
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
 		Inbound:      false,
@@ -259,7 +263,7 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleInboundInvalidAttestations(c *C
 	)
 
 	// Attestation with bad signature (random key, not an active node)
-	badAtt := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx)
+	badAtt := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx, true)
 
 	// Attestation with empty signature
 	emptyAtt := &common.Attestation{
@@ -314,9 +318,9 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleInboundValidAttestations(c *C) 
 	)
 
 	// Create valid attestations from 3 nodes (enough for 2/3 consensus with 4 nodes)
-	att1 := attestObservedTx(c, privKey1, obsTx)
-	att2 := attestObservedTx(c, privKey2, obsTx)
-	att3 := attestObservedTx(c, privKey3, obsTx)
+	att1 := attestObservedTx(c, privKey1, obsTx, true)
+	att2 := attestObservedTx(c, privKey2, obsTx, true)
+	att3 := attestObservedTx(c, privKey3, obsTx, true)
 
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
@@ -333,6 +337,79 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleInboundValidAttestations(c *C) 
 	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, obsTx.Tx.ID)
 	c.Assert(err, IsNil)
 	c.Assert(len(voter.Txs) > 0, Equals, true)
+}
+
+// TestHandleInboundCompromisedVaultNoOp verifies the ebifrost quorum path uses
+// the same compromised-vault no-op semantics as legacy MsgObservedTxIn.
+func (s *HandlerObservedTxQuorumSuite) TestHandleInboundCompromisedVaultNoOp(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(18)
+	handler := NewObservedTxQuorumHandler(mgr)
+	k := mgr.Keeper()
+
+	na1, privKey1 := nodeWithPrivKey(c, k, ctx)
+	_, privKey2 := nodeWithPrivKey(c, k, ctx)
+	_, privKey3 := nodeWithPrivKey(c, k, ctx)
+	nodeWithPrivKey(c, k, ctx)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	// The Mimir flag disables value-changing inbound processing for this vault
+	// even when enough valid attestations cross quorum.
+	k.SetMimir(ctx, compromisedVaultMimirKeyPrefix+vaultPubKey.String(), 1)
+
+	vaultAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.ETHChain,
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   vaultAddr,
+			Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+			Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+			Memo:        "swap:BTC.BTC:" + GetRandomBTCAddress().String(),
+		},
+		12, vaultPubKey, 12,
+	)
+
+	quoTx := &common.QuorumTx{
+		ObsTx:   obsTx,
+		Inbound: true,
+		Attestations: []*common.Attestation{
+			attestObservedTx(c, privKey1, obsTx, true),
+			attestObservedTx(c, privKey2, obsTx, true),
+			attestObservedTx(c, privKey3, obsTx, true),
+		},
+	}
+
+	msg := types.NewMsgObservedTxQuorum(quoTx, na1.NodeAddress)
+	result, err := handler.handle(ctx, *msg)
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+
+	updatedVault, err := k.GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.GetCoin(common.ETHAsset).Amount.IsZero(), Equals, true)
+	c.Assert(updatedVault.InboundTxCount, Equals, int64(0))
+
+	voter, err := k.GetObservedTxInVoter(ctx, obsTx.Tx.ID)
+	c.Assert(err, IsNil)
+	// A finalized no-op is marked done so the voter does not wait for an
+	// outbound action that was intentionally skipped.
+	c.Assert(voter.Tx.Status, Equals, common.Status_done)
+	c.Assert(voter.UpdatedVault, Equals, false)
+	// The quorum path should emit the same security event as the legacy
+	// observed-tx handler so operators see the compromised-vault no-op.
+	securityMsg := compromisedVaultNoOpSecurityMsgFromEvents(ctx)
+	c.Assert(securityMsg, Not(Equals), "")
+	c.Assert(strings.Contains(securityMsg, vaultPubKey.String()), Equals, true)
+
+	queue := newSwapQueue(k)
+	swaps, err := queue.FetchQueue(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(swaps, HasLen, 0)
 }
 
 func (s *HandlerObservedTxQuorumSuite) TestHandleOutboundValidAttestations(c *C) {
@@ -368,9 +445,9 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleOutboundValidAttestations(c *C)
 	)
 
 	// Create valid attestations from 3 nodes (enough for 2/3 consensus)
-	att1 := attestObservedTx(c, privKey1, obsTx)
-	att2 := attestObservedTx(c, privKey2, obsTx)
-	att3 := attestObservedTx(c, privKey3, obsTx)
+	att1 := attestObservedTx(c, privKey1, obsTx, false)
+	att2 := attestObservedTx(c, privKey2, obsTx, false)
+	att3 := attestObservedTx(c, privKey3, obsTx, false)
 
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
@@ -424,7 +501,7 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleInboundNoQuorum(c *C) {
 	)
 
 	// Only 1 attestation, not enough for quorum
-	att1 := attestObservedTx(c, privKey1, obsTx)
+	att1 := attestObservedTx(c, privKey1, obsTx, true)
 
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
@@ -468,7 +545,7 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleDuplicateAttestations(c *C) {
 	)
 
 	// Duplicate attestations from same key should be deduplicated
-	att := attestObservedTx(c, privKey1, obsTx)
+	att := attestObservedTx(c, privKey1, obsTx, true)
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
 		Inbound:      true,
@@ -513,10 +590,10 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleMixedValidInvalidAttestations(c
 	)
 
 	// Mix of valid and invalid attestations
-	att1 := attestObservedTx(c, privKey1, obsTx)
-	att2 := attestObservedTx(c, privKey2, obsTx)
-	att3 := attestObservedTx(c, privKey3, obsTx)
-	badAtt := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx) // not active node
+	att1 := attestObservedTx(c, privKey1, obsTx, true)
+	att2 := attestObservedTx(c, privKey2, obsTx, true)
+	att3 := attestObservedTx(c, privKey3, obsTx, true)
+	badAtt := attestObservedTx(c, secp256k1.GenPrivKey(), obsTx, true) // not active node
 
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
@@ -562,9 +639,9 @@ func (s *HandlerObservedTxQuorumSuite) TestRunFullInboundFlow(c *C) {
 		1024, vaultPubKey, 1024,
 	)
 
-	att1 := attestObservedTx(c, privKey1, obsTx)
-	att2 := attestObservedTx(c, privKey2, obsTx)
-	att3 := attestObservedTx(c, privKey3, obsTx)
+	att1 := attestObservedTx(c, privKey1, obsTx, true)
+	att2 := attestObservedTx(c, privKey2, obsTx, true)
+	att3 := attestObservedTx(c, privKey3, obsTx, true)
 
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
@@ -610,9 +687,9 @@ func (s *HandlerObservedTxQuorumSuite) TestRunFullOutboundFlow(c *C) {
 		1024, vaultPubKey, 1024,
 	)
 
-	att1 := attestObservedTx(c, privKey1, obsTx)
-	att2 := attestObservedTx(c, privKey2, obsTx)
-	att3 := attestObservedTx(c, privKey3, obsTx)
+	att1 := attestObservedTx(c, privKey1, obsTx, false)
+	att2 := attestObservedTx(c, privKey2, obsTx, false)
+	att3 := attestObservedTx(c, privKey3, obsTx, false)
 
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,

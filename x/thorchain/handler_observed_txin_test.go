@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
@@ -17,6 +18,22 @@ import (
 )
 
 type HandlerObservedTxInSuite struct{}
+
+// compromisedVaultNoOpSecurityMsgFromEvents returns the security-event message
+// for a compromised-vault no-op so tests can assert the operator alert path.
+func compromisedVaultNoOpSecurityMsgFromEvents(ctx cosmos.Context) string {
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != types.SecurityEventType {
+			continue
+		}
+		for _, attr := range event.Attributes {
+			if attr.Key == "msg" && strings.HasPrefix(attr.Value, compromisedVaultNoOpSecurityMsg) {
+				return attr.Value
+			}
+		}
+	}
+	return ""
+}
 
 type TestObservedTxInValidateKeeper struct {
 	keeper.KVStoreDummy
@@ -160,6 +177,165 @@ func (s *HandlerObservedTxInSuite) TestXMRRefundSkipsUnknownSenderWithoutExplici
 	c.Check(items[0].ToAddress.Equals(refundAddress), Equals, true)
 }
 
+func (s *HandlerObservedTxInSuite) TestRefundDoesNotDuplicatePendingOutbound(c *C) {
+	w := getHandlerTestWrapper(c, 12345, true, false)
+
+	pool := NewPool()
+	pool.Asset = common.XMRAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(200000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(300000 * common.One)
+	pool.LPUnits = cosmos.NewUint(200000 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.XMRChain, NewNetworkFee(common.XMRChain, 10000, 10000)), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.EnableMemolessOutbound.String(), 1)
+
+	sourceVault := NewVaultV2(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil, GetRandomEd25519PubKey())
+	sourceVault.PubKeyFrost = GetRandomEd25519PubKey()
+	sourceVault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50000*common.One))))
+	c.Assert(w.keeper.SetVault(w.ctx, sourceVault), IsNil)
+
+	activeVault := NewVaultV2(2, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil, GetRandomEd25519PubKey())
+	activeVault.PubKeyFrost = GetRandomEd25519PubKey()
+	activeVault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50000*common.One))))
+	c.Assert(w.keeper.SetVault(w.ctx, activeVault), IsNil)
+
+	tx := NewObservedTx(GetRandomTx(), 3673000, sourceVault.PubKey, w.ctx.BlockHeight())
+	tx.Tx.Chain = common.XMRChain
+	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(20000*common.One)))
+	tx.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))}
+	var err error
+	tx.Tx.ToAddress, err = sourceVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	refundAddr := common.Address(common.XMRSeededDummyAddress('8', []byte("xmr-refund-sender")))
+	tx.Tx.FromAddress, err = common.NewAddress(refundAddr.String())
+	c.Assert(err, IsNil)
+	tx.Tx.Memo = fmt.Sprintf("ADD:%s:%s", common.XMRAsset.String(), GetRandomTHORAddress().String())
+
+	voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
+	voter.Tx = tx
+	voter.Height = w.ctx.BlockHeight()
+	voter.FinalisedHeight = w.ctx.BlockHeight()
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	c.Assert(refundTx(w.ctx, tx, w.mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""), IsNil)
+	c.Assert(refundTx(w.ctx, tx, w.mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""), IsNil)
+
+	voter, err = w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Actions, HasLen, 1)
+	c.Check(voter.Actions[0].ToAddress.Equals(refundAddr), Equals, true)
+	c.Check(voter.Actions[0].GetMemo(), Equals, NewRefundMemo(tx.Tx.ID).String())
+	c.Check(voter.Actions[0].Memo, Equals, "")
+	c.Check(voter.Actions[0].OriginalMemo, Equals, NewRefundMemo(tx.Tx.ID).String())
+	c.Check(voter.Actions[0].VaultPubKey.Equals(sourceVault.PubKey), Equals, true)
+	blockOut, err := w.keeper.GetTxOut(w.ctx, voter.OutboundHeight)
+	c.Assert(err, IsNil)
+	c.Assert(blockOut.TxArray, HasLen, 1)
+	c.Check(blockOut.TxArray[0].InHash.Equals(tx.Tx.ID), Equals, true)
+	c.Check(blockOut.TxArray[0].Coin.Asset.Equals(common.XMRAsset), Equals, true)
+}
+
+func (s *HandlerObservedTxInSuite) TestRefundDoesNotDuplicatePendingOutboundWithMemoPassthrough(c *C) {
+	w := getHandlerTestWrapper(c, 12345, true, false)
+
+	pool := NewPool()
+	pool.Asset = common.XMRAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(200000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(300000 * common.One)
+	pool.LPUnits = cosmos.NewUint(200000 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.XMRChain, NewNetworkFee(common.XMRChain, 10000, 10000)), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.EnableMemolessOutbound.String(), 1)
+
+	sourceVault := NewVaultV2(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil, GetRandomEd25519PubKey())
+	sourceVault.PubKeyFrost = GetRandomEd25519PubKey()
+	sourceVault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50000*common.One))))
+	c.Assert(w.keeper.SetVault(w.ctx, sourceVault), IsNil)
+
+	activeVault := NewVaultV2(2, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil, GetRandomEd25519PubKey())
+	activeVault.PubKeyFrost = GetRandomEd25519PubKey()
+	activeVault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50000*common.One))))
+	c.Assert(w.keeper.SetVault(w.ctx, activeVault), IsNil)
+
+	tx := NewObservedTx(GetRandomTx(), 3673000, sourceVault.PubKey, w.ctx.BlockHeight())
+	tx.Tx.Chain = common.XMRChain
+	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(20000*common.One)))
+	tx.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))}
+	var err error
+	tx.Tx.ToAddress, err = sourceVault.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	refundAddr := common.Address(common.XMRSeededDummyAddress('8', []byte("xmr-refund-sender")))
+	tx.Tx.FromAddress, err = common.NewAddress(refundAddr.String())
+	c.Assert(err, IsNil)
+	tx.Tx.Memo = fmt.Sprintf("ADD:%s:%s|memo-passthrough", common.XMRAsset.String(), GetRandomTHORAddress().String())
+
+	voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
+	voter.Tx = tx
+	voter.Height = w.ctx.BlockHeight()
+	voter.FinalisedHeight = w.ctx.BlockHeight()
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	c.Assert(refundTx(w.ctx, tx, w.mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""), IsNil)
+	c.Assert(refundTx(w.ctx, tx, w.mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""), IsNil)
+
+	expectedMemo := NewRefundMemo(tx.Tx.ID).String() + "|memo-passthrough"
+	voter, err = w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Actions, HasLen, 1)
+	c.Check(voter.Actions[0].ToAddress.Equals(refundAddr), Equals, true)
+	c.Check(voter.Actions[0].GetMemo(), Equals, expectedMemo)
+	c.Check(voter.Actions[0].Memo, Equals, expectedMemo)
+	c.Check(voter.Actions[0].OriginalMemo, Equals, expectedMemo)
+	c.Check(voter.Actions[0].VaultPubKey.Equals(sourceVault.PubKey), Equals, true)
+	blockOut, err := w.keeper.GetTxOut(w.ctx, voter.OutboundHeight)
+	c.Assert(err, IsNil)
+	c.Assert(blockOut.TxArray, HasLen, 1)
+	c.Check(blockOut.TxArray[0].InHash.Equals(tx.Tx.ID), Equals, true)
+	c.Check(blockOut.TxArray[0].Coin.Asset.Equals(common.XMRAsset), Equals, true)
+}
+
+func (s *HandlerObservedTxInSuite) TestRefundCleanupDoesNotDuplicatePoolAccounting(c *C) {
+	w := getHandlerTestWrapper(c, 12345, true, false)
+
+	refundAmount := cosmos.NewUint(20000 * common.One)
+	pool := NewPool()
+	pool.Asset = common.XMRAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(200000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(300000 * common.One)
+	pool.LPUnits = cosmos.NewUint(200000 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	tx := NewObservedTx(GetRandomTx(), 3673000, common.EmptyPubKey, w.ctx.BlockHeight())
+	tx.Tx.Chain = common.XMRChain
+	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, refundAmount))
+	tx.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))}
+	tx.Tx.ToAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("xmr-refund-vault")))
+	destination := common.Address(common.XMRSeededDummyAddress('8', []byte("xmr-refund-destination")))
+	tx.Tx.Memo = fmt.Sprintf("=:%s:%s", common.XMRAsset.String(), destination.String())
+	var err error
+	tx.Tx.FromAddress, err = common.NewAddress(common.XMRUnknownSenderAddress(tx.Tx.ID.String(), tx.Tx.ToAddress.String()))
+	c.Assert(err, IsNil)
+
+	voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
+	voter.Tx = tx
+	voter.Height = w.ctx.BlockHeight()
+	voter.FinalisedHeight = w.ctx.BlockHeight()
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	c.Assert(refundTx(w.ctx, tx, w.mgr, CodeInvalidMemo, "Invalid memo", ""), IsNil)
+	c.Assert(refundTx(w.ctx, tx, w.mgr, CodeInvalidMemo, "Invalid memo", ""), IsNil)
+
+	pool, err = w.keeper.GetPool(w.ctx, common.XMRAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(300000*common.One).Add(refundAmount)), Equals, true)
+	items, err := w.mgr.TxOutStore().GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+}
+
 type TestObservedTxInHandleKeeper struct {
 	keeper.KVStoreDummy
 	nas                  NodeAccounts
@@ -292,6 +468,9 @@ func (k *TestObservedTxInHandleKeeper) GetMimir(_ cosmos.Context, key string) (i
 	// For tests, memoless transactions are not halted
 	if key == "HaltMemoless" {
 		return 0, nil
+	}
+	if strings.HasPrefix(key, compromisedVaultMimirKeyPrefix) {
+		return -1, nil
 	}
 	return 0, fmt.Errorf("mimir not found")
 }
@@ -495,6 +674,68 @@ func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C) {
 	c.Check(keeper.height, Equals, int64(12))
 	ethCoin := keeper.vault.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.OneUint()), Equals, true)
+}
+
+// TestCompromisedVaultInboundIsNoOp verifies the legacy MsgObservedTxIn path
+// still records quorum, but does not credit the vault, queue swaps, or schedule
+// refunds/outbounds for a vault flagged by CompromisedVault-<pubkey>.
+func (s *HandlerObservedTxInSuite) TestCompromisedVaultInboundIsNoOp(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(18)
+	k := mgr.Keeper()
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	// The flag is per vault pubkey, matching the existing keysign and inbound
+	// address filtering semantics.
+	k.SetMimir(ctx, compromisedVaultMimirKeyPrefix+vaultPubKey.String(), 1)
+
+	vaultAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		vaultAddr,
+		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))),
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(37500))},
+		"swap:BTC.BTC:"+GetRandomBTCAddress().String(),
+	)
+	obsTx := NewObservedTx(tx, 12, vaultPubKey, 12)
+	msg := NewMsgObservedTxIn(ObservedTxs{obsTx}, na.NodeAddress)
+
+	handler := NewObservedTxInHandler(mgr)
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	updatedVault, err := k.GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.GetCoin(common.ETHAsset).Amount.IsZero(), Equals, true)
+	c.Assert(updatedVault.InboundTxCount, Equals, int64(0))
+
+	voter, err := k.GetObservedTxInVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	// Finalised observations are closed out even though no tx handler is run.
+	c.Assert(voter.FinalisedHeight, Equals, ctx.BlockHeight())
+	c.Assert(voter.Tx.Status, Equals, common.Status_done)
+	c.Assert(voter.UpdatedVault, Equals, false)
+	// Operators need an explicit security signal that the tx was skipped
+	// because the destination vault has been flagged compromised.
+	securityMsg := compromisedVaultNoOpSecurityMsgFromEvents(ctx)
+	c.Assert(securityMsg, Not(Equals), "")
+	c.Assert(strings.Contains(securityMsg, vaultPubKey.String()), Equals, true)
+
+	queue := newSwapQueue(k)
+	swaps, err := queue.FetchQueue(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(swaps, HasLen, 0)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 0)
 }
 
 // Test migrate memo
@@ -835,17 +1076,18 @@ func (s HandlerObservedTxInSuite) TestSwapWithAffiliate(c *C) {
 
 	affAddr := GetRandomTHORAddress()
 
-	msg := NewMsgSwap(common.Tx{
-		ID:          common.TxID("5E1DF027321F1FE37CA19B9ECB11C2B4ABEC0D8322199D335D9CE4C39F85F115"),
-		FromAddress: GetRandomETHAddress(),
-		ToAddress:   GetRandomETHAddress(),
-		Gas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(10000)),
-		},
-		Chain: common.ETHChain,
-		Coins: common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One))},
-		Memo:  "=:THOR.RUNE:" + GetRandomTHORAddress().String() + "::" + affAddr.String() + ":1000",
-	}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000),
+	msg := NewMsgSwap(
+		common.Tx{
+			ID:          common.TxID("5E1DF027321F1FE37CA19B9ECB11C2B4ABEC0D8322199D335D9CE4C39F85F115"),
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   GetRandomETHAddress(),
+			Gas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(10000)),
+			},
+			Chain: common.ETHChain,
+			Coins: common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One))},
+			Memo:  "=:THOR.RUNE:" + GetRandomTHORAddress().String() + "::" + affAddr.String() + ":1000",
+		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000),
 		"",
 		"", nil,
 		types.SwapType_market,
@@ -894,15 +1136,16 @@ func (s HandlerObservedTxInSuite) TestAddSwapEmitsLimitEventOnlyForLimitSwaps(c 
 	limitSwapEventsBefore := countEvents(types.LimitSwapEventType)
 
 	// V2 market swap should not emit a limit_swap event.
-	marketMsg := NewMsgSwap(common.Tx{
-		ID:          GetRandomTxHash(),
-		FromAddress: GetRandomTHORAddress(),
-		ToAddress:   GetRandomTHORAddress(),
-		Gas:         common.Gas{},
-		Chain:       common.THORChain,
-		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
-		Memo:        "=:BTC.BTC:" + GetRandomBTCAddress().String(),
-	}, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
+	marketMsg := NewMsgSwap(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			FromAddress: GetRandomTHORAddress(),
+			ToAddress:   GetRandomTHORAddress(),
+			Gas:         common.Gas{},
+			Chain:       common.THORChain,
+			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
+			Memo:        "=:BTC.BTC:" + GetRandomBTCAddress().String(),
+		}, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 		"",
 		"", nil,
 		types.SwapType_market,
@@ -912,15 +1155,16 @@ func (s HandlerObservedTxInSuite) TestAddSwapEmitsLimitEventOnlyForLimitSwaps(c 
 	c.Assert(countEvents(types.LimitSwapEventType), Equals, limitSwapEventsBefore)
 
 	// V2 limit swap should emit exactly one limit_swap event.
-	limitMsg := NewMsgSwap(common.Tx{
-		ID:          GetRandomTxHash(),
-		FromAddress: GetRandomTHORAddress(),
-		ToAddress:   GetRandomTHORAddress(),
-		Gas:         common.Gas{},
-		Chain:       common.THORChain,
-		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
-		Memo:        "=<:BTC.BTC:" + GetRandomBTCAddress().String() + ":1",
-	}, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(1), common.NoAddress, cosmos.ZeroUint(),
+	limitMsg := NewMsgSwap(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			FromAddress: GetRandomTHORAddress(),
+			ToAddress:   GetRandomTHORAddress(),
+			Gas:         common.Gas{},
+			Chain:       common.THORChain,
+			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
+			Memo:        "=<:BTC.BTC:" + GetRandomBTCAddress().String() + ":1",
+		}, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(1), common.NoAddress, cosmos.ZeroUint(),
 		"",
 		"", nil,
 		types.SwapType_limit,
@@ -956,15 +1200,16 @@ func (s HandlerObservedTxInSuite) TestAddSwapDoesNotEmitLimitEventWhenQueueInser
 
 	limitSwapEventsBefore := countEvents(types.LimitSwapEventType)
 
-	limitMsg := NewMsgSwap(common.Tx{
-		ID:          GetRandomTxHash(),
-		FromAddress: GetRandomTHORAddress(),
-		ToAddress:   GetRandomTHORAddress(),
-		Gas:         common.Gas{},
-		Chain:       common.THORChain,
-		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
-		Memo:        "=<:BTC.BTC:" + GetRandomBTCAddress().String() + ":1",
-	}, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(1), common.NoAddress, cosmos.ZeroUint(),
+	limitMsg := NewMsgSwap(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			FromAddress: GetRandomTHORAddress(),
+			ToAddress:   GetRandomTHORAddress(),
+			Gas:         common.Gas{},
+			Chain:       common.THORChain,
+			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
+			Memo:        "=<:BTC.BTC:" + GetRandomBTCAddress().String() + ":1",
+		}, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(1), common.NoAddress, cosmos.ZeroUint(),
 		"",
 		"", nil,
 		types.SwapType_limit,

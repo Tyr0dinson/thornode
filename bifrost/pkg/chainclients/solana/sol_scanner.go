@@ -66,6 +66,14 @@ type SOLScanner struct {
 
 	healthy *atomic.Bool
 
+	// currentScanSlot holds the slot the scan loop is currently processing. It is
+	// stored immediately before invoking the solvency reporter so ReportSolvency
+	// can tell a scan-driven call (height == currentScanSlot) apart from a
+	// SolvencyCheckRunner call (height == live chain tip). Mirrors EVM's
+	// evmScanner.currentBlockHeight, and is kept separate from lastHeight (the
+	// persisted resume cursor, which is only advanced after a scan completes).
+	currentScanSlot atomic.Int64
+
 	// recent block hash (needed for tx construction / signing)
 	// needs to be in consensus between validators
 	recentBlockHash   string
@@ -155,6 +163,18 @@ func (s *SOLScanner) Start() {
 	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
 		s.logger.Error().Err(err).Msg("failed to get last scan pos")
 		return
+	}
+	// FloorBlockHeight prevents the scanner from ever resuming below this slot.
+	// Bump lastHeight forward and persist so subsequent restarts honour the floor.
+	if s.cfg.FloorBlockHeight > 0 && uint64(s.cfg.FloorBlockHeight) > lastHeight {
+		s.logger.Info().
+			Uint64("floor", uint64(s.cfg.FloorBlockHeight)).
+			Uint64("previous", lastHeight).
+			Msg("advancing SOL scanner to configured floor block height")
+		lastHeight = uint64(s.cfg.FloorBlockHeight)
+		if err := s.db.SetScanPos(lastHeight); err != nil {
+			s.logger.Error().Err(err).Msg("failed to persist floor block height")
+		}
 	}
 	s.lastHeightMu.Lock()
 	s.lastHeight = lastHeight
@@ -300,6 +320,19 @@ func (s *SOLScanner) scan() {
 			// it only ensures that minContextSlot is in the history on the rpc node.
 		}
 
+		// FloorBlockHeight: never query a vault below the configured floor. If the
+		// resolved minContextSlot is below the floor, advance to the floor and
+		// clear the cursor since any cached lastSig predates the floor.
+		if s.cfg.FloorBlockHeight > 0 && uint64(s.cfg.FloorBlockHeight) > minContextSlot {
+			s.logger.Info().
+				Str("vault", vaultAddr).
+				Uint64("floor", uint64(s.cfg.FloorBlockHeight)).
+				Uint64("previous", minContextSlot).
+				Msg("advancing vault scanner to configured floor block height")
+			minContextSlot = uint64(s.cfg.FloorBlockHeight)
+			queryLastSig = ""
+		}
+
 		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
 	}
 	wg.Wait()
@@ -353,6 +386,12 @@ func (s *SOLScanner) scan() {
 		// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
 		s.sendNetworkFeeIfNecessary(currentSlot)
 	}
+	// Record the slot being scanned before reporting so ReportSolvency can
+	// distinguish this scan-driven call from a SolvencyCheckRunner call (which
+	// passes the live chain tip). Without this, the unhealthy-scanner guard in
+	// ReportSolvency never matches and a lagging/unhealthy scanner keeps
+	// reporting where it should defer to the runner.
+	s.currentScanSlot.Store(int64(currentSlot))
 	if err = s.solvencyReporter(int64(currentSlot)); err != nil {
 		s.logger.Err(err).Msg("fail to send solvency to THORChain")
 	}
@@ -538,6 +577,13 @@ func (s *SOLScanner) GetHeight() (int64, error) {
 		return -1, err
 	}
 	return int64(height), nil
+}
+
+// CurrentScanSlot returns the slot the scan loop is currently processing, set
+// just before the solvency reporter is invoked. ReportSolvency uses it to tell
+// a scan-driven solvency call apart from a SolvencyCheckRunner call.
+func (s *SOLScanner) CurrentScanSlot() int64 {
+	return s.currentScanSlot.Load()
 }
 
 // ScanHeight returns the current scanned height

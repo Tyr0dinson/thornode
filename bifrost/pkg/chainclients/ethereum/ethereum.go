@@ -769,6 +769,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		var approvalRawTx []byte
 		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, height, tx)
 		if err != nil {
+			if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+				return nil, nil, nil, nil
+			}
 			c.logger.Err(err).Msg("fail to sign approval transaction")
 			return nil, nonceBytes, nil, fmt.Errorf("fail to sign approval transaction: %w", err)
 		}
@@ -1015,6 +1018,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	// Sign main transaction
 	rawTx, err = c.sign(createdTx, tx.VaultPubKey, height, tx)
 	if err != nil || len(rawTx) == 0 {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
 
@@ -1061,9 +1067,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 
 // sign is design to sign a given message with keysign party and keysign wrapper
 func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
-	rawBytes, err := c.kw.Sign(tx, poolPubKey)
+	rawBytes, err := c.kw.Sign(tx, poolPubKey, height)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
+	}
+	if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+		return nil, tss.ErrNotSelectedForKeysign
 	}
 	var keysignError tss.KeysignError
 	if errors.As(err, &keysignError) {
@@ -1143,7 +1152,7 @@ func (c *Client) GetBalances(addr string, height *big.Int, contractAddr string) 
 				return nil, err
 			}
 		}
-		bal := c.ethScanner.convertAmount(token.Address, balance)
+		bal := c.ethScanner.ConvertAmount(token.Address, balance)
 		coins = append(coins, common.NewCoin(asset, bal))
 	}
 
@@ -1179,7 +1188,7 @@ func (c *Client) GetVaultBalances(addr string, height *big.Int, contractAddr str
 			c.logger.Err(err).Msgf("fail to get balance for token:%s", tokenAddr)
 			continue
 		}
-		bal := c.ethScanner.convertAmount(tokenAddr, balance)
+		bal := c.ethScanner.ConvertAmount(tokenAddr, balance)
 		coins = append(coins, common.NewCoin(asset, bal))
 	}
 

@@ -830,7 +830,7 @@ func (s *ObserveExtraSuite) TestAttestationGossipActiveValidators(c *C) {
 func (s *ObserveExtraSuite) TestHandleQuorumTxCommittedNotFound(c *C) {
 	ag := &AttestationGossip{
 		logger:      log.Logger,
-		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
+		observedTxs: make(map[txKey]*AttestationState[*attestableObservedTx]),
 		pubKey:      []byte("test"),
 	}
 
@@ -860,7 +860,7 @@ func (s *ObserveExtraSuite) TestHandleQuorumTxCommittedNotFound(c *C) {
 func (s *ObserveExtraSuite) TestHandleQuorumTxCommittedInvalidPayload(c *C) {
 	ag := &AttestationGossip{
 		logger:      log.Logger,
-		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
+		observedTxs: make(map[txKey]*AttestationState[*attestableObservedTx]),
 	}
 
 	en := &ebifrost.EventNotification{
@@ -1066,7 +1066,7 @@ func (s *ObserveExtraSuite) TestAttestationBatcherTriggerBatchSend(c *C) {
 // ---------------------------------------------------------------------------
 
 func (s *ObserveExtraSuite) TestAttestationStatePool(c *C) {
-	pool := NewAttestationStatePool[*common.ObservedTx]()
+	pool := NewAttestationStatePool[*attestableObservedTx]()
 
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{
@@ -1075,9 +1075,9 @@ func (s *ObserveExtraSuite) TestAttestationStatePool(c *C) {
 		},
 	}
 
-	state := pool.NewAttestationState(obsTx)
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 	c.Assert(state, NotNil)
-	c.Assert(state.Item, DeepEquals, obsTx)
+	c.Assert(state.Item.ObservedTx, DeepEquals, obsTx)
 	c.Assert(len(state.attestations), Equals, 0)
 
 	// Return it to pool
@@ -1090,9 +1090,9 @@ func (s *ObserveExtraSuite) TestAttestationStatePool(c *C) {
 			Chain: common.ETHChain,
 		},
 	}
-	state2 := pool.NewAttestationState(obsTx2)
+	state2 := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx2})
 	c.Assert(state2, NotNil)
-	c.Assert(state2.Item, DeepEquals, obsTx2)
+	c.Assert(state2.Item.ObservedTx, DeepEquals, obsTx2)
 }
 
 // ---------------------------------------------------------------------------
@@ -1116,8 +1116,8 @@ func (s *ObserveExtraSuite) TestAttestationStateAddAttestation(c *C) {
 		FinaliseHeight: 106,
 	}
 
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// Add first attestation
 	err := state.AddAttestation(&common.Attestation{
@@ -1160,8 +1160,8 @@ func (s *ObserveExtraSuite) TestAttestationStateUnsentAndCopy(c *C) {
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	_ = state.AddAttestation(&common.Attestation{PubKey: []byte("pk1"), Signature: []byte("sig1")})
 	_ = state.AddAttestation(&common.Attestation{PubKey: []byte("pk2"), Signature: []byte("sig2")})
@@ -1189,8 +1189,8 @@ func (s *ObserveExtraSuite) TestAttestationStateMarkCommitted(c *C) {
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	att1 := &common.Attestation{PubKey: []byte("pk1"), Signature: []byte("sig1")}
 	att2 := &common.Attestation{PubKey: []byte("pk2"), Signature: []byte("sig2")}
@@ -1213,8 +1213,8 @@ func (s *ObserveExtraSuite) TestAttestationStateShouldSendLate(c *C) {
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	// No unsent - should not send late
 	c.Assert(state.ShouldSendLate(30*time.Second), Equals, false)
@@ -1251,8 +1251,8 @@ func (s *ObserveExtraSuite) TestAttestationStateExpiredAfterQuorum(c *C) {
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	lateTimeout := 2 * time.Minute
 	nonQuorumTimeout := 10 * time.Hour
@@ -1278,8 +1278,8 @@ func (s *ObserveExtraSuite) TestAttestationStateState(c *C) {
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	result := state.State()
 	c.Assert(result, Equals, "sent: 0, total: 0 post-quorum: false")
@@ -1293,8 +1293,8 @@ func (s *ObserveExtraSuite) TestAttestationStateMarkSentQuorum(c *C) {
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	_ = state.AddAttestation(&common.Attestation{PubKey: []byte("pk1"), Signature: []byte("sig1")})
 
@@ -1384,8 +1384,8 @@ func (s *ObserveExtraSuite) TestAttestationStateExpiredAllCommitted(c *C) {
 	obsTx := &common.ObservedTx{
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 
 	att := &common.Attestation{PubKey: []byte("pk1"), Signature: []byte("sig1")}
 	err := state.AddAttestation(att)
@@ -1524,7 +1524,7 @@ func (s *ObserveExtraSuite) TestHandleQuorumTxCommittedWithOurAttestation(c *C) 
 	ag := &AttestationGossip{
 		logger:                            log.Logger,
 		pubKey:                            pubKey,
-		observedTxs:                       make(map[txKey]*AttestationState[*common.ObservedTx]),
+		observedTxs:                       make(map[txKey]*AttestationState[*attestableObservedTx]),
 		observerHandleObservedTxCommitted: obs.handleObservedTxCommitted,
 	}
 
@@ -1706,9 +1706,9 @@ func (s *ObserveExtraSuite) TestSendBatchesForce(c *C) {
 // ---------------------------------------------------------------------------
 
 func (s *ObserveExtraSuite) TestAttestationStateAddAttestationInvalidItem(c *C) {
-	pool := NewAttestationStatePool[*common.ObservedTx]()
+	pool := NewAttestationStatePool[*attestableObservedTx]()
 	// Create state with nil item
-	state := &AttestationState[*common.ObservedTx]{
+	state := &AttestationState[*attestableObservedTx]{
 		Item:         nil,
 		attestations: make([]attestationSentState, 0),
 	}
@@ -1772,12 +1772,12 @@ func newTestAttestationGossip(c *C, peers []peer.ID) (*AttestationGossip, *MockG
 		bridge:          bridge,
 		config:          cfg,
 		eventClient:     NewMockEventClient(),
-		observedTxs:     make(map[txKey]*AttestationState[*common.ObservedTx]),
+		observedTxs:     make(map[txKey]*AttestationState[*attestableObservedTx]),
 		networkFees:     make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
 		solvencies:      make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:       make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
 		priceFeeds:      make(map[string]*AttestationState[*common.PriceFeed]),
-		observedTxsPool: NewAttestationStatePool[*common.ObservedTx](),
+		observedTxsPool: NewAttestationStatePool[*attestableObservedTx](),
 		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
 		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
 		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
@@ -1814,6 +1814,49 @@ func (s *ObserveExtraSuite) TestAttestObservedTx(c *C) {
 	ag.mu.Lock()
 	c.Assert(len(ag.observedTxs) > 0, Equals, true)
 	ag.mu.Unlock()
+}
+
+// TestAttestObservedTxPropagatesAllowFutureObservation verifies that locally
+// created future-observation attestations retain that flag through quorum send.
+func (s *ObserveExtraSuite) TestAttestObservedTxPropagatesAllowFutureObservation(c *C) {
+	ag, grpcClient := newTestAttestationGossip(c, []peer.ID{"self"})
+
+	tx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "future-observation-tx",
+			Chain: common.BTCChain,
+		},
+		ObservedPubKey: stypes.GetRandomPubKey(),
+	}
+
+	var sentTx *common.QuorumTx
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		sentTx = quorumTx
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	err := ag.AttestObservedTx(context.Background(), tx, false, true)
+	c.Assert(err, IsNil)
+
+	key := txKey{
+		Chain:                  tx.Tx.Chain,
+		ID:                     tx.Tx.ID,
+		UniqueHash:             tx.Tx.Hash(0),
+		AllowFutureObservation: true,
+		Finalized:              tx.IsFinal(),
+		Inbound:                false,
+	}
+
+	// Future observations must use a distinct key, otherwise they collide with
+	// normal outbound observations for the same transaction.
+	ag.mu.Lock()
+	_, exists := ag.observedTxs[key]
+	ag.mu.Unlock()
+
+	c.Assert(exists, Equals, true)
+	c.Assert(sentTx, NotNil)
+	c.Assert(sentTx.AllowFutureObservation, Equals, true)
+	c.Assert(sentTx.Inbound, Equals, false)
 }
 
 func (s *ObserveExtraSuite) TestAttestObservedTxNotActive(c *C) {
@@ -2166,8 +2209,8 @@ func (s *ObserveExtraSuite) TestSendObservedTxAttestationsNoUnsent(c *C) {
 		Tx: common.Tx{ID: "tx1", Chain: common.BTCChain},
 	}
 
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(&obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: &obsTx})
 	// No attestations added - should be a no-op
 
 	ag.sendObservedTxAttestationsToThornode(context.Background(), obsTx, state, true, false, true)
@@ -2299,7 +2342,7 @@ func (s *ObserveExtraSuite) TestHandleQuorumTxCommittedWithState(c *C) {
 		Inbound:    true,
 	}
 
-	state := ag.observedTxsPool.NewAttestationState(&obsTx)
+	state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: &obsTx, inbound: true})
 	state.attestations = []attestationSentState{
 		{attestation: &common.Attestation{PubKey: ag.pubKey, Signature: []byte("sig")}, sent: false},
 	}
@@ -2524,6 +2567,78 @@ func (s *ObserveExtraSuite) TestHandleObservedTxAttestationFutureObservation(c *
 	ag.mu.Unlock()
 }
 
+// TestHandleObservedTxAttestationFutureObservationUsesActiveValidatorQuorum
+// verifies future outbound observations use active-validator quorum rather than
+// the filtered keysign signer count.
+func (s *ObserveExtraSuite) TestHandleObservedTxAttestationFutureObservationUsesActiveValidatorQuorum(c *C) {
+	ag, grpcClient := newTestAttestationGossip(c, []peer.ID{"self", "peer1", "peer2"})
+
+	origVerifySignature := verifySignature
+	defer func() { verifySignature = origVerifySignature }()
+	verifySignature = func(signBz, signature, attester []byte) error {
+		return nil
+	}
+
+	ag.bridge = &MockThorchainBridge{
+		getKeysignPartyFunc: func(pubKey common.PubKey, _ int64) (common.PubKeys, error) {
+			c.Fatalf("observer quorum must not read keysign policy")
+			return nil, nil
+		},
+	}
+
+	var sentTx *common.QuorumTx
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		sentTx = quorumTx
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	ag.avMu.Lock()
+	ag.activeVals = map[peer.ID]bool{
+		"self":  true,
+		"peer1": true,
+		"peer2": true,
+	}
+	ag.avMu.Unlock()
+
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    "future-active-validator-quorum",
+			Chain: common.BTCChain,
+		},
+		ObservedPubKey: "thorpub1addwnpepqfuturequorumtest",
+	}
+
+	c.Assert(ag.activeValidatorCount(), Equals, 3)
+
+	// One of three active-validator attestations must not be enough, even
+	// though it would satisfy quorum if the denominator were one keysign signer.
+	ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+		ObsTx:                  obsTx,
+		Inbound:                false,
+		AllowFutureObservation: true,
+		Attestation: &common.Attestation{
+			PubKey:    []byte("future-pubkey-one"),
+			Signature: []byte("future-sig-one"),
+		},
+	})
+	c.Assert(sentTx, IsNil)
+
+	// Two of three is active-validator supermajority, so the local observer can
+	// now send the quorum tx while preserving AllowFutureObservation.
+	ag.handleObservedTxAttestation(context.Background(), common.AttestTx{
+		ObsTx:                  obsTx,
+		Inbound:                false,
+		AllowFutureObservation: true,
+		Attestation: &common.Attestation{
+			PubKey:    []byte("future-pubkey-two"),
+			Signature: []byte("future-sig-two"),
+		},
+	})
+	c.Assert(sentTx, NotNil)
+	c.Assert(sentTx.AllowFutureObservation, Equals, true)
+	c.Assert(sentTx.Attestations, HasLen, 2)
+}
+
 // ---------------------------------------------------------------------------
 // sendObservedTxAttestationsToThornode - gRPC error
 // ---------------------------------------------------------------------------
@@ -2537,8 +2652,8 @@ func (s *ObserveExtraSuite) TestSendObservedTxAttestationsGrpcError(c *C) {
 	obsTx := common.ObservedTx{
 		Tx: common.Tx{ID: "tx_err", Chain: common.BTCChain},
 	}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(&obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: &obsTx})
 	state.attestations = []attestationSentState{
 		{attestation: &common.Attestation{PubKey: []byte("pk1"), Signature: []byte("sig1")}, sent: false},
 	}
@@ -2868,8 +2983,8 @@ func (s *ObserveExtraSuite) TestSendAttestationStateWithData(c *C) {
 	// Add some state
 	ag.mu.Lock()
 	obsTx := &common.ObservedTx{Tx: common.Tx{ID: "tx1"}}
-	pool := NewAttestationStatePool[*common.ObservedTx]()
-	state := pool.NewAttestationState(obsTx)
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
 	key := txKey{ID: "tx1"}
 	ag.observedTxs[key] = state
 

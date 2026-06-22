@@ -16,6 +16,7 @@ import (
 	ecommon "github.com/ethereum/go-ethereum/common"
 	"github.com/rs/zerolog/log"
 
+	thorapp "gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
@@ -86,6 +87,37 @@ const (
 	mocknetInitConcurrency     = 2
 )
 
+// getHeightProvider lets chains with non-replayable mock histories seed
+// network fees at their current chain height instead of the legacy height 1.
+type getHeightProvider interface {
+	GetHeight() (int64, error)
+}
+
+// getHeight preserves the old height-1 behavior for most chains, while
+// allowing XRP to avoid writing a stale last-chain-height that late Bifrosts
+// cannot scan from against the mock XRPL daemon.
+func getHeight(chain common.Chain, clients map[common.Chain]LiteChainClient) (int64, error) {
+	client, ok := clients[chain]
+	if !ok {
+		return 1, nil
+	}
+
+	provider, ok := client.(getHeightProvider)
+	if !ok {
+		return 1, nil
+	}
+
+	height, err := provider.GetHeight()
+	if err != nil {
+		return 0, err
+	}
+	if height <= 0 {
+		return 0, fmt.Errorf("%s network fee height must be positive, got %d", chain, height)
+	}
+
+	return height, nil
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Init
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -122,6 +154,13 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	os.Setenv("BIFROST_THORCHAIN_CHAIN_RPC", "127.0.0.1:26657")
 	os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "127.0.0.1:50051")
 	config.Init()
+
+	// Build the encoding config once, up front, before the concurrent NewUser and
+	// funding goroutines below. MakeEncodingConfig instantiates a temp app that
+	// registers global amino/crypto codecs (not concurrency-safe); doing it here
+	// single-threaded prevents racing that one-time registration against concurrent
+	// key decryption (PrivKeyFromBytes) and tx broadcasts. Subsequent calls are cached.
+	thorapp.MakeEncodingConfig()
 
 	// validators
 	for i, mnemonic := range mocknetValidatorMnemonics {
@@ -171,15 +210,23 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
+				{common.TRONChain, 1, 1_000_000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
 				for {
-					_, err := a.Thorchain.PostNetworkFee(1, fee.chain, fee.size, fee.rate)
+					height, err := getHeight(fee.chain, a.ChainClients)
+					if err != nil {
+						log.Error().Err(err).Stringer("chain", fee.chain).Msg("failed to get network fee height")
+						time.Sleep(2 * time.Second)
+						continue
+					}
+
+					_, err = a.Thorchain.PostNetworkFee(height, fee.chain, fee.size, fee.rate)
 					if err == nil {
 						break
 					}
-					log.Error().Err(err).Msg("failed to post network fee")
+					log.Error().Err(err).Int64("height", height).Msg("failed to post network fee")
 					time.Sleep(2 * time.Second)
 				}
 			}

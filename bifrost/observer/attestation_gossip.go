@@ -98,6 +98,23 @@ func observedTxKey(obsTx common.ObservedTx, inbound, allowFutureObservation bool
 	}
 }
 
+// attestableObservedTx binds an ObservedTx to its inbound/outbound classification
+// so GetSignablePayload produces the same bytes the observer signed (which include
+// the inbound bit). Without this wrapper, AttestationState could not verify
+// observer signatures because *common.ObservedTx alone doesn't carry the bit.
+type attestableObservedTx struct {
+	*common.ObservedTx
+	inbound bool
+}
+
+func (a *attestableObservedTx) GetSignablePayload() ([]byte, error) {
+	return a.ObservedTx.GetSignablePayloadWithInbound(a.inbound)
+}
+
+func (a *attestableObservedTx) IsValid() bool {
+	return a != nil && a.ObservedTx != nil
+}
+
 type KeysInterface interface {
 	GetPrivateKey() (*secp256k1.PrivKey, error)
 }
@@ -123,14 +140,14 @@ type AttestationGossip struct {
 	config config.BifrostAttestationGossipConfig
 
 	// Generic maps for different attestation types
-	observedTxs map[txKey]*AttestationState[*common.ObservedTx]
+	observedTxs map[txKey]*AttestationState[*attestableObservedTx]
 	networkFees map[common.NetworkFee]*AttestationState[*common.NetworkFee]
 	solvencies  map[common.TxID]*AttestationState[*common.Solvency]
 	errataTxs   map[common.ErrataTx]*AttestationState[*common.ErrataTx]
 	priceFeeds  map[string]*AttestationState[*common.PriceFeed]
 	mu          sync.Mutex
 
-	observedTxsPool *AttestationStatePool[*common.ObservedTx]
+	observedTxsPool *AttestationStatePool[*attestableObservedTx]
 	networkFeesPool *AttestationStatePool[*common.NetworkFee]
 	solvenciesPool  *AttestationStatePool[*common.Solvency]
 	errataTxsPool   *AttestationStatePool[*common.ErrataTx]
@@ -201,7 +218,7 @@ func NewAttestationGossip(
 		eventClient: eventClient,
 
 		// Initialize generic maps
-		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
+		observedTxs: make(map[txKey]*AttestationState[*attestableObservedTx]),
 		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
 		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
@@ -209,7 +226,7 @@ func NewAttestationGossip(
 
 		peerMgr: newPeerManager(logger, config.PeerConcurrentReceives),
 
-		observedTxsPool: NewAttestationStatePool[*common.ObservedTx](),
+		observedTxsPool: NewAttestationStatePool[*attestableObservedTx](),
 		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
 		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
 		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
@@ -306,13 +323,6 @@ func (s *AttestationGossip) activeValidatorCount() int {
 	return len(s.activeVals)
 }
 
-func (s *AttestationGossip) getKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
-	if s.bridge == nil {
-		return nil, fmt.Errorf("thorchain bridge is nil")
-	}
-	return s.bridge.GetKeysignParty(vaultPubKey)
-}
-
 // Check if a public key belongs to an active validator
 func (s *AttestationGossip) isActiveValidator(p peer.ID) bool {
 	s.avMu.Lock()
@@ -343,17 +353,11 @@ func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx) {
 		go s.observerApplySpentOutputRefs(tx)
 		return
 	}
-	select {
-	case s.applySpentRefsSem <- struct{}{}:
-		go func() {
-			defer func() { <-s.applySpentRefsSem }()
-			s.observerApplySpentOutputRefs(tx)
-		}()
-	default:
-		s.logger.Warn().
-			Str("tx_id", tx.Tx.ID.String()).
-			Msg("apply spent refs queue full, dropping (will be caught by periodic catchup)")
-	}
+	go func() {
+		s.applySpentRefsSem <- struct{}{}
+		defer func() { <-s.applySpentRefsSem }()
+		s.observerApplySpentOutputRefs(tx)
+	}()
 }
 
 // Handle a committed quorum transaction event
@@ -515,8 +519,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
 					s.logger.Debug().Msg("sending late observed tx attestations")
 
-					obsTx := state.Item
-					s.sendObservedTxAttestationsToThornode(ctx, *obsTx, state, k.Inbound, k.AllowFutureObservation, false)
+					s.sendObservedTxAttestationsToThornode(ctx, *state.Item.ObservedTx, state, k.Inbound, k.AllowFutureObservation, false)
 				}
 				state.mu.Unlock()
 			}

@@ -27,7 +27,7 @@ func init() {
 		// ArtificialRagnarokBlockHeight: 200,
 		DesiredValidatorSet:                 12,
 		ChurnInterval:                       60,
-		ChurnRetryInterval:                  30,
+		ChurnRetryInterval:                  365,         // Keep above mocknet XMR FROST keygen timeout (300s) so churn keygen votes do not expire.
 		MinimumBondInRune:                   100_000_000, // 1 rune
 		MemolessTxnTTL:                      100,
 		MemolessTxnMaxUse:                   5, // higher limit for testing
@@ -66,6 +66,7 @@ func init() {
 		TCYStakeSystemIncomeBps:             0,
 		MultipleAffiliatesMaxCount:          5,
 		BankSendEnabled:                     1,
+		MaxAbsentKeygenReporters:            0,
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,

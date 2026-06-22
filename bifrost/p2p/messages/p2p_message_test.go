@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"testing"
 
-	btss "github.com/binance-chain/tss-lib/tss"
+	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 	. "gopkg.in/check.v1"
 )
 
@@ -16,10 +16,12 @@ var _ = Suite(&THORChainTSSMessageTypeSuite{})
 
 func (THORChainTSSMessageTypeSuite) TestTHORChainTSSMessageType_String(c *C) {
 	m := map[THORChainTSSMessageType]string{
-		TSSKeyGenMsg:     "TSSKeyGenMsg",
-		TSSKeySignMsg:    "TSSKeySignMsg",
-		TSSKeyGenVerMsg:  "TSSKeyGenVerMsg",
-		TSSKeySignVerMsg: "TSSKeySignVerMsg",
+		TSSKeyGenMsg:       "TSSKeyGenMsg",
+		TSSKeySignMsg:      "TSSKeySignMsg",
+		TSSKeyGenVerMsg:    "TSSKeyGenVerMsg",
+		TSSKeySignVerMsg:   "TSSKeySignVerMsg",
+		TSSKeyVerifyMsg:    "TSSKeyVerifyMsg",
+		TSSKeyVerifyVerMsg: "TSSKeyVerifyVerMsg",
 	}
 	for k, v := range m {
 		c.Assert(k.String(), Equals, v)

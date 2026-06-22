@@ -126,6 +126,7 @@ Class | Method | HTTP request | Description
 *QueueApi* | [**QueueOutbound**](docs/QueueApi.md#queueoutbound) | **Get** /thorchain/queue/outbound | 
 *QueueApi* | [**QueueScheduled**](docs/QueueApi.md#queuescheduled) | **Get** /thorchain/queue/scheduled | 
 *QueueApi* | [**QueueSwap**](docs/QueueApi.md#queueswap) | **Get** /thorchain/queue/swap | 
+*QueueApi* | [**QueueSwapPaginated**](docs/QueueApi.md#queueswappaginated) | **Get** /thorchain/queue/swap/paginated | 
 *QuoteApi* | [**Quoteswap**](docs/QuoteApi.md#quoteswap) | **Get** /thorchain/quote/swap | 
 *RUNEPoolApi* | [**RunePool**](docs/RUNEPoolApi.md#runepool) | **Get** /thorchain/runepool | 
 *RUNEPoolApi* | [**RuneProvider**](docs/RUNEPoolApi.md#runeprovider) | **Get** /thorchain/rune_provider/{address} | 
@@ -146,6 +147,7 @@ Class | Method | HTTP request | Description
 *SwapApi* | [**SwapDetails**](docs/SwapApi.md#swapdetails) | **Get** /thorchain/queue/swap/details/{tx_id} | 
 *TCYClaimersApi* | [**TcyClaimer**](docs/TCYClaimersApi.md#tcyclaimer) | **Get** /thorchain/tcy_claimer/{address} | 
 *TCYClaimersApi* | [**TcyClaimers**](docs/TCYClaimersApi.md#tcyclaimers) | **Get** /thorchain/tcy_claimers | 
+*TCYClaimersApi* | [**TcyProtocolOwned**](docs/TCYClaimersApi.md#tcyprotocolowned) | **Get** /thorchain/tcy_protocol_owned | 
 *TCYStakersApi* | [**TcyStaker**](docs/TCYStakersApi.md#tcystaker) | **Get** /thorchain/tcy_staker/{address} | 
 *TCYStakersApi* | [**TcyStakers**](docs/TCYStakersApi.md#tcystakers) | **Get** /thorchain/tcy_stakers | 
 *TSSApi* | [**KeygenPubkey**](docs/TSSApi.md#keygenpubkey) | **Get** /thorchain/keygen/{height}/{pubkey} | 
@@ -165,6 +167,7 @@ Class | Method | HTTP request | Description
 *TransactionsApi* | [**TxStatus**](docs/TransactionsApi.md#txstatus) | **Get** /thorchain/tx/status/{hash} | 
 *VaultsApi* | [**Asgard**](docs/VaultsApi.md#asgard) | **Get** /thorchain/vaults/asgard | 
 *VaultsApi* | [**Vault**](docs/VaultsApi.md#vault) | **Get** /thorchain/vault/{pubkey} | 
+*VaultsApi* | [**VaultKeysignParty**](docs/VaultsApi.md#vaultkeysignparty) | **Get** /thorchain/vault/{pubkey}/keysign_party | 
 *VaultsApi* | [**VaultPubkeys**](docs/VaultsApi.md#vaultpubkeys) | **Get** /thorchain/vaults/pubkeys | 
 *VaultsApi* | [**VaultSolvency**](docs/VaultsApi.md#vaultsolvency) | **Get** /thorchain/vaults/solvency | 
 *VaultsApi* | [**Yggdrasil**](docs/VaultsApi.md#yggdrasil) | **Get** /thorchain/vaults/yggdrasil | 
@@ -215,6 +218,7 @@ Class | Method | HTTP request | Description
  - [KeygenResponse](docs/KeygenResponse.md)
  - [KeysignInfo](docs/KeysignInfo.md)
  - [KeysignMetrics](docs/KeysignMetrics.md)
+ - [KeysignPartyResponse](docs/KeysignPartyResponse.md)
  - [KeysignResponse](docs/KeysignResponse.md)
  - [LastBlock](docs/LastBlock.md)
  - [LimitSwapWithDetails](docs/LimitSwapWithDetails.md)
@@ -267,11 +271,13 @@ Class | Method | HTTP request | Description
  - [SupplyResponse](docs/SupplyResponse.md)
  - [SwapDetailsResponse](docs/SwapDetailsResponse.md)
  - [SwapFinalisedStage](docs/SwapFinalisedStage.md)
+ - [SwapQueuePaginatedResponse](docs/SwapQueuePaginatedResponse.md)
  - [SwapState](docs/SwapState.md)
  - [SwapStatus](docs/SwapStatus.md)
  - [SwapperCloutResponse](docs/SwapperCloutResponse.md)
  - [TCYClaimer](docs/TCYClaimer.md)
  - [TCYClaimerSummary](docs/TCYClaimerSummary.md)
+ - [TCYProtocolOwnedResponse](docs/TCYProtocolOwnedResponse.md)
  - [TCYStaker](docs/TCYStaker.md)
  - [TCYStakerSummary](docs/TCYStakerSummary.md)
  - [Thorname](docs/Thorname.md)
