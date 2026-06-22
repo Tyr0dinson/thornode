@@ -484,6 +484,21 @@ func (GasManagerTestSuite) TestGetGasDetailsHighPrecisionRoundsUp(c *C) {
 	c.Assert(common.DOTChain.ThorchainToNativeGas(maxGasCoin.Amount).GTE(cosmos.NewUint(157)), Equals, true)
 }
 
+func (GasManagerTestSuite) TestGetGasDetailsEVMGasUnitsDoNotRoundUp(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	gasMgr := newGasMgr(constAccessor, k)
+
+	networkFee := NewNetworkFee(common.ETHChain, 123, 130)
+	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, networkFee), IsNil)
+
+	maxGasCoin, gasRate, err := gasMgr.GetGasDetails(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(gasRate, Equals, int64(195))
+	c.Assert(maxGasCoin.Amount.Uint64(), Equals, uint64(2398))
+	c.Assert(maxGasCoin.Decimals, Equals, common.ETHChain.GetGasAssetDecimal())
+}
+
 func (GasManagerTestSuite) TestGetAssetOutboundFeeLowDecimalGasChains(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())

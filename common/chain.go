@@ -313,12 +313,12 @@ func (c Chain) NativeGasToThorchain(native cosmos.Uint) cosmos.Uint {
 }
 
 // NativeGasToThorchainCeil converts native gas units to THORChain units (1e8),
-// rounding up when the chain gas unit is finer than THORChain precision.
+// preserving the legacy ceil semantics based on gas asset precision.
 func (c Chain) NativeGasToThorchainCeil(native cosmos.Uint) cosmos.Uint {
 	amount := c.NativeGasToThorchain(native)
 
-	_, gasRateUnitsPerOne := c.GetGasUnits()
-	if gasRateUnitsPerOne.GT(cosmos.NewUint(One)) {
+	if c.GetGasAssetDecimal() > THORChainDecimals {
+		_, gasRateUnitsPerOne := c.GetGasUnits()
 		if native.GT(amount.Mul(gasRateUnitsPerOne).QuoUint64(One)) {
 			amount = amount.Add(cosmos.OneUint())
 		}

@@ -155,10 +155,10 @@ func (s ChainSuite) TestNativeGasToThorCoinCeil(c *C) {
 	c.Assert(TAOChain.NativeGasToThorCoinCeil(cosmos.NewUint(10)).Decimals,
 		Equals, TAOChain.GetGasAssetDecimal())
 
-	// EVM gas rates are tracked in gwei, which is finer than 1e8 even though
-	// gas asset amounts are normalized to THORChain precision.
+	// EVM gas rates are tracked in gwei, but gas asset decimals are 8 in
+	// THORChain metadata, so preserve the legacy no-ceil behavior.
 	c.Assert(ETHChain.NativeGasToThorchainCeil(cosmos.NewUint(1)).Uint64(),
-		Equals, uint64(1))
+		Equals, uint64(0))
 
 	// Chains with decimal <= 8 take the no-ceil path.
 	c.Assert(BTCChain.NativeGasToThorCoinCeil(cosmos.NewUint(50_000_000)).Amount.Uint64(),
