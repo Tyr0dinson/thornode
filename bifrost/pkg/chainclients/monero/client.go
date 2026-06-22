@@ -3778,7 +3778,7 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 	if c.scanner == nil || c.scanner.lastFee == nil {
 		return cosmos.ZeroUint()
 	}
-	return cosmos.NewUint(3 * totalFeeAtomicToThorchain(c.scanner.lastFee.Load()))
+	return cosmos.NewUint(3).MulUint64(totalFeeAtomicToThorchain(c.scanner.lastFee.Load()))
 }
 
 func (c *Client) CustomKeygen() bool {
@@ -4284,7 +4284,7 @@ func (c *Client) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
-	currentGasFee := cosmos.NewUint(3 * totalFeeAtomicToThorchain(c.scanner.lastFee.Load()))
+	currentGasFee := cosmos.NewUint(3).MulUint64(totalFeeAtomicToThorchain(c.scanner.lastFee.Load()))
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	checkedVaults := 0
