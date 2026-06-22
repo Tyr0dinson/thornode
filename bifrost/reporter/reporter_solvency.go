@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"sync/atomic"
@@ -74,6 +75,14 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	for _, asgard := range chainVaults {
 		acct, err := r.client.GetVaultAccount(asgard, queryHeight)
 		if err != nil {
+			if isSolvencyDeferred(err) {
+				r.logger.Info().
+					Err(err).
+					Stringer("vault", asgard.PubKey).
+					Int64("query_height", height).
+					Msg("defer vault solvency while balance reconciliation is pending")
+				continue
+			}
 			r.logger.Err(err).
 				Stringer("vault", asgard.PubKey).
 				Int64("query_height", height).
@@ -368,4 +377,14 @@ func (r *solvencyReporter) createSolvencyMsg(pubKey common.PubKey, coins common.
 		return nil, fmt.Errorf("fail to create msg solvency")
 	}
 	return msg, nil
+}
+
+type solvencyDeferredError interface {
+	error
+	SolvencyDeferred() bool
+}
+
+func isSolvencyDeferred(err error) bool {
+	var deferred solvencyDeferredError
+	return errors.As(err, &deferred) && deferred.SolvencyDeferred()
 }

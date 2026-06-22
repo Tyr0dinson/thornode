@@ -98,6 +98,27 @@ var (
 	errXMRBalanceUnreconciled = errors.New("xmr sidecar balance is not reconciled")
 )
 
+type BalanceReconciliationPendingError struct {
+	VaultPubKey          string
+	PendingOutgoingCount int
+}
+
+func (e BalanceReconciliationPendingError) Error() string {
+	return fmt.Sprintf(
+		"xmr balance reconciliation pending for vault %s: pending_outgoing_count=%d",
+		e.VaultPubKey,
+		e.PendingOutgoingCount,
+	)
+}
+
+func (e BalanceReconciliationPendingError) SolvencyDeferred() bool {
+	return true
+}
+
+func (e BalanceReconciliationPendingError) Unwrap() error {
+	return errXMRBalanceUnreconciled
+}
+
 type signedTxPayload struct {
 	TxHash           string                `json:"tx_hash"`
 	TxMetadata       string                `json:"tx_metadata"`
@@ -3629,8 +3650,12 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 }
 
 func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error) {
+	return c.getAccount(poolPubKey, height, false)
+}
+
+func (c *Client) getAccount(poolPubKey common.PubKey, height *big.Int, requireReconciled bool) (common.Account, error) {
 	if addr := c.deriveVaultAddress(poolPubKey); addr != "" {
-		return c.GetAccountByAddress(addr, height)
+		return c.getAccountByAddress(addr, height, requireReconciled)
 	}
 
 	addr, err := poolPubKey.GetAddress(c.chain)
@@ -3640,7 +3665,7 @@ func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.A
 	if addr.IsEmpty() {
 		return common.Account{}, fmt.Errorf("fail to resolve monero vault address for %s", poolPubKey.String())
 	}
-	return c.GetAccountByAddress(addr.String(), height)
+	return c.getAccountByAddress(addr.String(), height, requireReconciled)
 }
 
 // GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
@@ -3649,7 +3674,7 @@ func (c *Client) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Ac
 	if err != nil {
 		return common.Account{}, err
 	}
-	return c.GetAccount(accountPubKey, height)
+	return c.getAccount(accountPubKey, height, true)
 }
 
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
@@ -3687,12 +3712,10 @@ func (c *Client) getAccountByAddress(address string, _ *big.Int, requireReconcil
 		if balance.PendingOutgoingCount != nil {
 			pendingOutgoingCount = *balance.PendingOutgoingCount
 		}
-		return common.Account{}, fmt.Errorf(
-			"%w for %s: pending_outgoing_count=%d",
-			errXMRBalanceUnreconciled,
-			address,
-			pendingOutgoingCount,
-		)
+		return common.Account{}, BalanceReconciliationPendingError{
+			VaultPubKey:          pubKey.String(),
+			PendingOutgoingCount: pendingOutgoingCount,
+		}
 	}
 	if requireReconciled && balance.QuarantinedOutgoingCount != nil && *balance.QuarantinedOutgoingCount > 0 {
 		c.logger.Error().

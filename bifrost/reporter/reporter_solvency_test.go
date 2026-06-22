@@ -139,6 +139,16 @@ func (m *mockVaultAccountChainClient) GetVaultAccount(vault ctypes.Vault, _ *big
 	return common.Account{}, fmt.Errorf("missing vault account for %s", vault.PubKey)
 }
 
+type solvencyDeferredTestError struct{}
+
+func (solvencyDeferredTestError) Error() string {
+	return "balance reconciliation pending"
+}
+
+func (solvencyDeferredTestError) SolvencyDeferred() bool {
+	return true
+}
+
 type mimirMap struct {
 	mimir map[string]int64
 	mu    sync.Mutex
@@ -1196,6 +1206,99 @@ func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnPartialFailure(c *C) {
 	c.Assert(batch, HasLen, 0)
 	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
 	c.Assert(reporter.ShouldReport(fromBlockScanner, 3), Equals, true)
+}
+
+func (s *SolvencySuite) TestCollectDefersOnlyPendingReconciliationVault(c *C) {
+	deferredVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	deferredVault.PubKeyFrost = deferredVault.PubKey
+	insolventVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(2_000_000_000))),
+	}
+	insolventVault.PubKeyFrost = insolventVault.PubKey
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{deferredVault, insolventVault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.XMRChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 1,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 10,
+			},
+		},
+		accounts: map[string]common.Account{
+			insolventVault.PubKey.String(): {
+				Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+			},
+		},
+		accountErrors: map[string]error{
+			deferredVault.PubKey.String(): solvencyDeferredTestError{},
+		},
+		chainHeight: 3,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromBlockScanner, 2)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 1)
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
+
+	msg, ok := batch[0].(*ctypes.MsgSolvency)
+	c.Assert(ok, Equals, true)
+	c.Assert(msg.PubKey.Equals(insolventVault.PubKey), Equals, true)
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 3), Equals, true)
+}
+
+func (s *SolvencySuite) TestCollectDoesNotAutoUnhaltWithPendingReconciliation(c *C) {
+	deferredVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	deferredVault.PubKeyFrost = deferredVault.PubKey
+	solventVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(2_000_000_000))),
+	}
+	solventVault.PubKeyFrost = solventVault.PubKey
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{deferredVault, solventVault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.XMRChain,
+		blockScannerIsHealthy: false,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 1,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 10,
+			},
+		},
+		accounts: map[string]common.Account{
+			solventVault.PubKey.String(): {Coins: solventVault.Coins},
+		},
+		accountErrors: map[string]error{
+			deferredVault.PubKey.String(): solvencyDeferredTestError{},
+		},
+		chainHeight: 3,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromRunner, 2)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 0)
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
 }
 
 // TestCollectDoesNotAdvanceCadenceOnEmptyAsgards verifies an empty Asgard list

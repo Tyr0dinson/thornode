@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -412,6 +413,59 @@ func TestGetAccountByAddressUsesTotalBalanceWhenSpendableAlsoProvided(t *testing
 	coin := account.Coins.GetCoin(common.XMRAsset)
 	if coin.Amount.Uint64() != 9 {
 		t.Fatalf("expected total 9 XMR units, got %s", coin.Amount.String())
+	}
+}
+
+func TestGetVaultAccountDefersUnreconciledBalance(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "account-query-defers-unreconciled-balance")
+	address, err := vaultPubKey.GetAddress(common.XMRChain)
+	if err != nil {
+		t.Fatalf("derive address: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/monero/vaults/register":
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
+		case strings.HasPrefix(r.URL.Path, "/v1/monero/balance/"):
+			_ = json.NewEncoder(w).Encode(sidecar.Balance{
+				Balance:              9 * moneroAtomicToThorchain,
+				UnlockedBalance:      9 * moneroAtomicToThorchain,
+				ReconciliationState:  "pending_outgoing",
+				PendingOutgoingCount: intPtr(2),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	client := &Client{
+		logger:          log.Logger,
+		chain:           common.XMRChain,
+		sidecar:         signer,
+		vaultAddressMap: make(map[string]common.Address),
+	}
+	client.setVaultAddressMapping(vaultPubKey, address)
+
+	_, err = client.GetVaultAccount(ttypes.Vault{PubKeyFrost: vaultPubKey}, nil)
+	if err == nil {
+		t.Fatal("expected reconciliation pending error")
+	}
+	var pending BalanceReconciliationPendingError
+	if !errors.As(err, &pending) {
+		t.Fatalf("expected BalanceReconciliationPendingError, got %T: %v", err, err)
+	}
+	if pending.PendingOutgoingCount != 2 {
+		t.Fatalf("expected 2 pending outgoing transfers, got %d", pending.PendingOutgoingCount)
 	}
 }
 
