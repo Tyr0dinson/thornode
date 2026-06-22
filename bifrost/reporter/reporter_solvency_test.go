@@ -1164,9 +1164,10 @@ func (s *SolvencySuite) TestShouldReportSkipsTronHeightsBeforeFinalityFloor(c *C
 	c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, true)
 }
 
-// TestCollectDoesNotAdvanceCadenceOnPartialFailure verifies a failed vault lookup
-// does not consume the next cadence window for height-gated chains.
-func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnPartialFailure(c *C) {
+// TestCollectAdvancesCadenceOnNonDeferredPartialFailure verifies a persistent
+// non-deferred vault lookup failure does not force every subsequent eligible
+// block to recheck the healthy vaults.
+func (s *SolvencySuite) TestCollectAdvancesCadenceOnNonDeferredPartialFailure(c *C) {
 	solventVault := ctypes.Vault{
 		PubKey: ctypes.GetRandomPubKey(),
 		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000_000))),
@@ -1186,7 +1187,7 @@ func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnPartialFailure(c *C) {
 		blockScannerIsHealthy: true,
 		gas:                   cosmos.NewUint(10),
 		cfg: config.BifrostChainConfiguration{
-			SolvencyBlocks: 1,
+			SolvencyBlocks: 10,
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				ObservationFlexibilityBlocks: 10,
 			},
@@ -1197,15 +1198,54 @@ func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceOnPartialFailure(c *C) {
 		accountErrors: map[string]error{
 			failingVault.PubKey.String(): fmt.Errorf("boom"),
 		},
-		chainHeight: 3,
+		chainHeight: 30,
 	}
 
 	reporter := newSolvencyReporter(client, bridge)
-	batch, err := reporter.Collect(fromBlockScanner, 2)
+	batch, err := reporter.Collect(fromBlockScanner, 20)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 0)
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(20))
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 21), Equals, false)
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 30), Equals, true)
+}
+
+// TestCollectDoesNotAdvanceCadenceWhenAllVaultsFail verifies a full lookup
+// failure still retries on the next eligible trigger because no vault state was
+// checked successfully.
+func (s *SolvencySuite) TestCollectDoesNotAdvanceCadenceWhenAllVaultsFail(c *C) {
+	failingVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(2_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{failingVault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.BTCChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 10,
+			},
+		},
+		accountErrors: map[string]error{
+			failingVault.PubKey.String(): fmt.Errorf("boom"),
+		},
+		chainHeight: 30,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromBlockScanner, 20)
 	c.Assert(err, IsNil)
 	c.Assert(batch, HasLen, 0)
 	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
-	c.Assert(reporter.ShouldReport(fromBlockScanner, 3), Equals, true)
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 21), Equals, true)
 }
 
 func (s *SolvencySuite) TestCollectDefersOnlyPendingReconciliationVault(c *C) {

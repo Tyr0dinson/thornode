@@ -70,12 +70,15 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	msgs := make(ReportBatch, 0, len(chainVaults))
 	solventMsgs := make(ReportBatch, 0, len(chainVaults))
 	processedVaults := 0
+	hasDeferredVault := false
+	hasNonDeferredFailure := false
 	msgHeight := solvencyMsgHeight(chain, height)
 	queryHeight := big.NewInt(height)
 	for _, asgard := range chainVaults {
 		acct, err := r.client.GetVaultAccount(asgard, queryHeight)
 		if err != nil {
 			if isSolvencyDeferred(err) {
+				hasDeferredVault = true
 				r.logger.Info().
 					Err(err).
 					Stringer("vault", asgard.PubKey).
@@ -83,6 +86,7 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 					Msg("defer vault solvency while balance reconciliation is pending")
 				continue
 			}
+			hasNonDeferredFailure = true
 			r.logger.Err(err).
 				Stringer("vault", asgard.PubKey).
 				Int64("query_height", height).
@@ -92,6 +96,7 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 		var msg *types.MsgSolvency
 		msg, err = r.createSolvencyMsg(asgard.PubKey, acct.Coins, msgHeight)
 		if err != nil {
+			hasNonDeferredFailure = true
 			r.logger.Err(err).Stringer("chain", r.client.GetChain()).Msg("fail to create solvency msg")
 			continue
 		}
@@ -139,8 +144,13 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 			Msg("reporting solvency")
 	}
 
-	// Only advance cadence state when every vault was checked successfully.
-	if allVaultsProcessed {
+	// Advance cadence for complete checks. For generic partial failures, advance
+	// once at least one vault was successfully checked so a persistent vault error
+	// does not hammer the same healthy vaults every eligible block. Explicit
+	// solvency deferrals keep cadence strict because reconciliation state is
+	// intentionally incomplete.
+	partialFailureWithProgress := processedVaults > 0 && hasNonDeferredFailure && !hasDeferredVault
+	if allVaultsProcessed || partialFailureWithProgress {
 		r.setLastSolvencyCheckHeight(height)
 	}
 
