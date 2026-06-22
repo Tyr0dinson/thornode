@@ -528,7 +528,7 @@ func (c *SOLClient) nextSolvencyReportSlotMultiple(height int64) int64 {
 		return current
 	}
 	if c.solScanner.lastFeeRate.Load() == 0 {
-		return false
+		return current
 	}
 
 	crossedMultiple := height / c.cfg.SolvencyBlocks

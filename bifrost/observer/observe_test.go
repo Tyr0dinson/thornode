@@ -426,7 +426,7 @@ func (s *ObserverSuite) TestStopTimesOutReporterWait(c *C) {
 	c.Assert(obs, NotNil)
 
 	// Simulate a stuck reporter goroutine so Stop() has to use the timeout path.
-	obs.wg.Add(1)
+	obs.reporterWG.Add(1)
 
 	done := make(chan error, 1)
 	go func() {
@@ -441,7 +441,7 @@ func (s *ObserverSuite) TestStopTimesOutReporterWait(c *C) {
 	}
 
 	// Release the synthetic waitgroup entry so the test does not leak the helper goroutine.
-	obs.wg.Done()
+	obs.reporterWG.Done()
 }
 
 func (s *ObserverSuite) TestObserverDeckStorage(c *C) {

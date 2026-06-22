@@ -14,6 +14,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	types "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -891,8 +892,8 @@ type errataStartOrderChain struct {
 func (c *errataStartOrderChain) Start(
 	chan types.TxIn,
 	chan types.ErrataBlock,
-	chan types.Solvency,
 	chan common.NetworkFee,
+	reporter.Dispatcher,
 ) {
 	c.starts++
 }

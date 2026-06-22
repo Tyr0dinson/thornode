@@ -112,7 +112,7 @@ type Observer struct {
 	pubkeyMgr             *pubkeymanager.PubKeyManager
 	onDeck                map[txInKey]*types.TxIn
 	lock                  *sync.Mutex
-	wg                    *sync.WaitGroup
+	reporterWG            *sync.WaitGroup
 	xmrStartupWG          sync.WaitGroup
 	globalTxsQueue        chan types.TxIn
 	globalErrataQueue     chan types.ErrataBlock
@@ -211,7 +211,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		m:                     m,
 		pubkeyMgr:             pubkeyMgr,
 		lock:                  &sync.Mutex{},
-		wg:                    &sync.WaitGroup{},
+		reporterWG:            &sync.WaitGroup{},
 		onDeck:                make(map[txInKey]*types.TxIn),
 		globalTxsQueue:        make(chan types.TxIn),
 		globalErrataQueue:     make(chan types.ErrataBlock),
@@ -440,7 +440,7 @@ func (o *Observer) Start(ctx context.Context) error {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
 	// The reporter dispatcher is the active solvency path.
-	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.attestationGossip, o.errCounter, o.stopChan, o.wg)
+	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.attestationGossip, o.errCounter, o.stopChan, o.reporterWG)
 	deferXMR, err := o.startRestoredChainClients()
 	if err != nil {
 		return err
@@ -2246,7 +2246,7 @@ func (o *Observer) Stop() error {
 // waitForReporterShutdown waits for reporter goroutines to drain, but keeps
 // observer shutdown bounded if a reporter is stuck in slow external work.
 func (o *Observer) waitForReporterShutdown() bool {
-	if o.wg == nil {
+	if o.reporterWG == nil {
 		return true
 	}
 
@@ -2255,7 +2255,7 @@ func (o *Observer) waitForReporterShutdown() bool {
 		// If shutdown times out, this goroutine can remain blocked on Wait.
 		// Observer shutdown is terminal, so prefer bounded Stop latency over
 		// waiting indefinitely for stuck reporter work.
-		o.wg.Wait()
+		o.reporterWG.Wait()
 		close(done)
 	}()
 
