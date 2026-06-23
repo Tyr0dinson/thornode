@@ -388,6 +388,9 @@ func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID) {}
 func (k KVStoreDummy) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
 	return nil
 }
+func (k KVStoreDummy) SetRefundCleanup(_ cosmos.Context, _ string)          {}
+func (k KVStoreDummy) HasRefundCleanup(_ cosmos.Context, _ string) bool     { return false }
+func (k KVStoreDummy) PruneRefundCleanups(_ cosmos.Context)                 {}
 func (k KVStoreDummy) SetTssVoter(_ cosmos.Context, _ TssVoter)             {}
 func (k KVStoreDummy) GetTssVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetTssVoter(_ cosmos.Context, _ string) (TssVoter, error) {
@@ -631,6 +634,14 @@ func (k KVStoreDummy) RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
 	return kaboom
 }
 
+func (k KVStoreDummy) RemoveMarketAdvSwapQueueIndexEntry(_ cosmos.Context, _ common.TxID, _ int) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) RemoveLimitAdvSwapQueueIndexEntry(_ cosmos.Context, _ []byte, _ common.TxID, _ int) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) SetLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHashes []common.TxID) error {
 	return kaboom
 }
@@ -724,7 +735,9 @@ func (k KVStoreDummy) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddres
 func (k KVStoreDummy) IsOperationalMimir(key string) bool {
 	key = strings.ToUpper(key)
 	// Simplified representation.
-	return strings.Contains(key, "HALT") || strings.Contains(key, "PAUSE")
+	return strings.Contains(key, "HALT") ||
+		strings.Contains(key, "PAUSE") ||
+		strings.Contains(key, "EVMDIRECTERC20INBOUND")
 }
 
 func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {

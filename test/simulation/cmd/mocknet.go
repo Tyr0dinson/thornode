@@ -16,6 +16,7 @@ import (
 	ecommon "github.com/ethereum/go-ethereum/common"
 	"github.com/rs/zerolog/log"
 
+	thorapp "gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
@@ -152,6 +153,13 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "127.0.0.1:50051")
 	config.Init()
 
+	// Build the encoding config once, up front, before the concurrent NewUser and
+	// funding goroutines below. MakeEncodingConfig instantiates a temp app that
+	// registers global amino/crypto codecs (not concurrency-safe); doing it here
+	// single-threaded prevents racing that one-time registration against concurrent
+	// key decryption (PrivKeyFromBytes) and tx broadcasts. Subsequent calls are cached.
+	thorapp.MakeEncodingConfig()
+
 	// validators
 	for i, mnemonic := range mocknetValidatorMnemonics {
 		wg.Add(1)
@@ -198,6 +206,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
+				{common.TRONChain, 1, 1_000_000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
