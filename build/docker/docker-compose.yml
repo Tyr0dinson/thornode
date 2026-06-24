@@ -176,7 +176,8 @@ services:
       context: ../..
       dockerfile: ./build/docker/Dockerfile
       args:
-        TAG: mocknet,pebbledb
+        TAG: mocknet,pebbledb # Go build tags: mocknet + pebbledb backend
+        NET: mocknet # runtime network only (must not include build tags)
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
         - ci_job_token
