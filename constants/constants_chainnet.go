@@ -17,6 +17,11 @@ func init() {
 		MaxRuneSupply:              500_000_000_00000000,
 		MultipleAffiliatesMaxCount: 5,
 		MaxAbsentKeygenReporters:   0,
+		// Shorten the keygen jail so a churn-straggler is back in minutes, not
+		// the ~7h default (4320 blocks), for fast churn testing. Stay above the
+		// ~5m TSS ceremony timeout so a jailed node can't rejoin mid-keygen.
+		// ~6s blocks -> 100 blocks ~= 10m. Keysign jail stays at the default 60.
+		JailTimeKeygen: 100,
 	}
 	stringOverrides = map[ConstantName]string{
 		DevFundAddress:       "cthor1jydyvc8wt84jcdl6qex0ps9czfmcaqurljevkt",
