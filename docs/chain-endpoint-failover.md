@@ -75,6 +75,11 @@ are reserved for the health-monitor failover and failback work tracked in #2828.
 | `username` / `password` | Optional basic-auth credentials.                                   |
 | `authorization_bearer`  | Optional bearer token (sent as an `Authorization: Bearer` header). |
 
+`authorization_bearer` is honored by EVM, UTXO, and XMR endpoints; Cosmos (GAIA, NOBLE),
+Solana, XRP, and Tron currently ignore it and use only `username` / `password`. Set only
+one auth method per endpoint: if both are set, EVM and UTXO use the bearer token while XMR
+uses basic auth.
+
 ## Environment variables
 
 Because environment variables cannot be bound to elements of a list, endpoints are

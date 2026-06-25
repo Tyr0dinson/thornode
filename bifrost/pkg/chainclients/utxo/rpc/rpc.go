@@ -59,7 +59,22 @@ type Client struct {
 func NewClient(host, user, password string, maxRetries int, timeout time.Duration, chain common.Chain, log zerolog.Logger) (
 	*Client, error,
 ) {
+	return NewClientWithAuth(host, user, password, "", maxRetries, timeout, chain, log)
+}
+
+// NewClientWithAuth creates a UTXO rpc client. When bearer is non-empty it authenticates
+// with an Authorization: Bearer header; otherwise it falls back to HTTP Basic auth built
+// from user/password. Only the bearer branch mirrors the EVM dialer; the Basic branch
+// retains existing UTXO behavior unchanged (including the empty-credential case) for
+// backward compatibility.
+func NewClientWithAuth(host, user, password, bearer string, maxRetries int, timeout time.Duration, chain common.Chain, log zerolog.Logger) (
+	*Client, error,
+) {
 	authFn := func(h http.Header) error {
+		if bearer != "" {
+			h.Set("Authorization", fmt.Sprintf("Bearer %s", bearer))
+			return nil
+		}
 		auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
 		h.Set("Authorization", fmt.Sprintf("Basic %s", auth))
 		return nil
@@ -98,12 +113,12 @@ func NewClient(host, user, password string, maxRetries int, timeout time.Duratio
 	return &client, nil
 }
 
-// NewClientWithFallbacks wraps NewClient and attaches read-only fallback providers.
+// NewClientWithFallbacks wraps NewClientWithAuth and attaches read-only fallback providers.
 // Fallbacks are tried in slice order after the primary exhausts its retries.
-// rateLimitBackoff is the sleep duration when the primary returns HTTP 429 — no
-// failover occurs on rate-limit errors.
+// rateLimitBackoff is the sleep duration when the primary returns HTTP 429 (no
+// failover occurs on rate-limit errors).
 func NewClientWithFallbacks(
-	host, user, password string,
+	host, user, password, bearer string,
 	maxRetries int,
 	timeout time.Duration,
 	chain common.Chain,
@@ -111,7 +126,7 @@ func NewClientWithFallbacks(
 	fallbacks []UTXOReader,
 	rateLimitBackoff time.Duration,
 ) (*Client, error) {
-	cl, err := NewClient(host, user, password, maxRetries, timeout, chain, log)
+	cl, err := NewClientWithAuth(host, user, password, bearer, maxRetries, timeout, chain, log)
 	if err != nil {
 		return nil, err
 	}

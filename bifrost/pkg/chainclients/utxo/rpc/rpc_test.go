@@ -3,6 +3,7 @@ package rpc
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -1154,7 +1155,7 @@ func (s *RPCSuite) TestFallbackTriedOnPrimaryFailure(c *C) {
 		getBlockCountFn: func() (int64, error) { return 12345, nil },
 	}
 
-	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", "", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
 	c.Assert(err, IsNil)
 
 	count, err := cl.GetBlockCount()
@@ -1171,7 +1172,7 @@ func (s *RPCSuite) TestFallbackNotTriedOnSuccess(c *C) {
 
 	mock := &mockUTXOReader{}
 
-	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", "", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
 	c.Assert(err, IsNil)
 
 	count, err := cl.GetBlockCount()
@@ -1188,7 +1189,7 @@ func (s *RPCSuite) TestFallbackNotTriedOnRateLimit(c *C) {
 		getBlockCountFn: func() (int64, error) { return 99999, nil },
 	}
 
-	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", "", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
 	c.Assert(err, IsNil)
 
 	_, err = cl.GetBlockCount()
@@ -1204,7 +1205,7 @@ func (s *RPCSuite) TestAllFallbacksFailReturnsError(c *C) {
 		getBlockCountFn: func() (int64, error) { return 0, errors.New("fallback also failed") },
 	}
 
-	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", "", 0, time.Second*10, common.BTCChain, zerolog.Nop(), []UTXOReader{mock}, 0)
 	c.Assert(err, IsNil)
 
 	_, err = cl.GetBlockCount()
@@ -1234,7 +1235,7 @@ func (s *RPCSuite) TestCallWithFallbackTriedOnPrimaryFailure(c *C) {
 		},
 	}
 
-	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", "", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
 	c.Assert(err, IsNil)
 
 	var bs blockStatsFloat
@@ -1253,7 +1254,7 @@ func (s *RPCSuite) TestCallWithFallbackNotTriedOnSuccess(c *C) {
 
 	mock := &mockUTXOReader{}
 
-	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", "", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
 	c.Assert(err, IsNil)
 
 	var bs blockStatsFloat
@@ -1270,13 +1271,111 @@ func (s *RPCSuite) TestCallWithFallbackNotTriedOnRateLimit(c *C) {
 
 	mock := &mockUTXOReader{}
 
-	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
+	cl, err := NewClientWithFallbacks(srv.URL, "u", "p", "", 0, time.Second*10, common.BCHChain, zerolog.Nop(), []UTXOReader{mock}, 0)
 	c.Assert(err, IsNil)
 
 	var bs blockStatsFloat
 	err = cl.CallWithFallback(&bs, "getblockstats", "somehash")
 	c.Assert(err, NotNil)
 	c.Assert(mock.called, Equals, false)
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Basic / Bearer) tests
+// ---------------------------------------------------------------------------
+
+// newAuthCapturingServer records the Authorization header of the last request and
+// answers getblockcount so a read can complete.
+func newAuthCapturingServer(captured *string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*captured = r.Header.Get("Authorization")
+		body, _ := io.ReadAll(r.Body)
+		var req jsonRPCRequest
+		_ = json.Unmarshal(body, &req)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"jsonrpc": "2.0", "id": req.ID, "result": 800000,
+		})
+	}))
+}
+
+// A bearer token must be sent as Authorization: Bearer.
+func (s *RPCSuite) TestNewClientWithAuthBearer(c *C) {
+	var got string
+	srv := newAuthCapturingServer(&got)
+	defer srv.Close()
+
+	cl, err := NewClientWithAuth(srv.URL, "", "", "tok123", 0, time.Second*10, common.BTCChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "Bearer tok123")
+}
+
+// With no bearer, Basic auth is sent from user/password (legacy behavior).
+func (s *RPCSuite) TestNewClientWithAuthBasicWhenNoBearer(c *C) {
+	var got string
+	srv := newAuthCapturingServer(&got)
+	defer srv.Close()
+
+	cl, err := NewClientWithAuth(srv.URL, "user", "pass", "", 0, time.Second*10, common.BTCChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "Basic "+base64.StdEncoding.EncodeToString([]byte("user:pass")))
+}
+
+// Bearer takes precedence when both bearer and basic creds are set (mirrors EVM).
+func (s *RPCSuite) TestNewClientWithAuthBearerPrecedence(c *C) {
+	var got string
+	srv := newAuthCapturingServer(&got)
+	defer srv.Close()
+
+	cl, err := NewClientWithAuth(srv.URL, "user", "pass", "tok123", 0, time.Second*10, common.BTCChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "Bearer tok123")
+}
+
+// The legacy NewClient wrapper still sends Basic auth unchanged.
+func (s *RPCSuite) TestNewClientWrapperStillBasic(c *C) {
+	var got string
+	srv := newAuthCapturingServer(&got)
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "Basic "+base64.StdEncoding.EncodeToString([]byte("user:pass")))
+}
+
+// Empty credentials with no bearer preserve the legacy empty-Basic header.
+func (s *RPCSuite) TestNewClientWithAuthEmptyCreds(c *C) {
+	var got string
+	srv := newAuthCapturingServer(&got)
+	defer srv.Close()
+
+	cl, err := NewClientWithAuth(srv.URL, "", "", "", 0, time.Second*10, common.BTCChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "Basic "+base64.StdEncoding.EncodeToString([]byte(":")))
+}
+
+// ZEC uses a different transport (zec.NewClient with a pre-populated header); verify the
+// bearer token reaches the wire there too.
+func (s *RPCSuite) TestNewClientWithAuthBearerZEC(c *C) {
+	var got string
+	srv := newAuthCapturingServer(&got)
+	defer srv.Close()
+
+	cl, err := NewClientWithAuth(srv.URL, "", "", "zectok", 0, time.Second*10, common.ZECChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "Bearer zectok")
 }
 
 func (s *RPCSuite) TestIsRateLimitError(c *C) {

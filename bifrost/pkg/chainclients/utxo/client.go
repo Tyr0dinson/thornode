@@ -130,6 +130,7 @@ func NewClient(
 		primary.RPCHost,
 		primary.UserName,
 		primary.Password,
+		primary.AuthorizationBearer,
 		cfg.MaxRPCRetries,
 		cfg.BlockScanner.HTTPRequestTimeout,
 		cfg.ChainID,
@@ -226,7 +227,7 @@ func buildUTXOFallbacks(endpoints []config.ChainEndpointConfig, maxRetries int, 
 				Msg("endpoint has no rpc host, skipping fallback")
 			continue
 		}
-		cl, err := rpc.NewClient(host, e.UserName, e.Password, maxRetries, timeout, chain, log)
+		cl, err := rpc.NewClientWithAuth(host, e.UserName, e.Password, e.AuthorizationBearer, maxRetries, timeout, chain, log)
 		if err != nil {
 			log.Warn().Err(err).Stringer("chain", chain).Str("endpoint", e.Name).
 				Msg("failed to create fallback rpc client, skipping")
