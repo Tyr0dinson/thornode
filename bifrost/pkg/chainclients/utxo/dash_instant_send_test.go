@@ -136,6 +136,12 @@ func dashUnlockedRawTx(txid string) map[string]any {
 	}
 }
 
+func dashLockedRawTx(txid string) map[string]any {
+	tx := dashUnlockedRawTx(txid)
+	tx["instantlock"] = true
+	return tx
+}
+
 func (s *DashSuite) TestDashGetHeightUsesBestChainlock(c *C) {
 	server := newDashTestServer(c, func(method string, _ []json.RawMessage) any {
 		c.Assert(method, Equals, "getbestchainlock")
@@ -254,6 +260,167 @@ func (s *DashSuite) TestDashGetInstantSendLocksCapsMempoolWork(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(rawLookups, Equals, 1)
+}
+
+func (s *DashSuite) TestDashGetInstantSendLocksBatchesLockLookupAndCachesCycleHeight(c *C) {
+	txA := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	txB := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	cycleHash := "1111111111111111111111111111111111111111111111111111111111111111"
+	var lockBatches [][]string
+	getBlockCalls := 0
+
+	server := newDashTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			return map[string]any{
+				txA: dashTestMempoolEntry(),
+				txB: dashTestMempoolEntry(),
+			}
+		case "getrawtransaction":
+			var txid string
+			if err := json.Unmarshal(params[0], &txid); err != nil {
+				c.Fatalf("decode txid: %v", err)
+			}
+			switch txid {
+			case txA, txB:
+				return dashLockedRawTx(txid)
+			default:
+				c.Fatalf("unexpected tx lookup: %s", txid)
+			}
+		case "getislocks":
+			var requested []string
+			if err := json.Unmarshal(params[0], &requested); err != nil {
+				c.Fatalf("decode getislocks txids: %v", err)
+			}
+			lockBatches = append(lockBatches, requested)
+			locks := make([]any, len(requested))
+			for i, txid := range requested {
+				locks[i] = map[string]any{
+					"txid":      txid,
+					"id":        "islock-request-id",
+					"inputs":    []map[string]any{},
+					"cycleHash": cycleHash,
+					"signature": "signature",
+					"hex":       "010203",
+				}
+			}
+			return locks
+		case "getblock":
+			var hash string
+			if err := json.Unmarshal(params[0], &hash); err != nil {
+				c.Fatalf("decode block hash: %v", err)
+			}
+			c.Assert(hash, Equals, cycleHash)
+			getBlockCalls++
+			return map[string]any{
+				"hash":   cycleHash,
+				"height": int64(123),
+			}
+		default:
+			c.Fatalf("unexpected method: %s", method)
+		}
+		return nil
+	})
+	defer server.Close()
+
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+	client.cfg.UTXO.TransactionBatchSize = 10
+	client.cfg.UTXO.MaxMempoolBatches = 1
+
+	txIn, err := client.getInstantSendLocks(123)
+	c.Assert(err, IsNil)
+	c.Assert(len(txIn.TxArray), Equals, 0)
+	c.Assert(lockBatches, HasLen, 1)
+	c.Assert(lockBatches[0], HasLen, 2)
+	seen := map[string]bool{}
+	for _, txid := range lockBatches[0] {
+		seen[txid] = true
+	}
+	c.Assert(seen[txA], Equals, true)
+	c.Assert(seen[txB], Equals, true)
+	c.Assert(getBlockCalls, Equals, 1)
+}
+
+func (s *DashSuite) TestDashGetInstantSendLocksRejectsFutureCycleHeight(c *C) {
+	txid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	cycleHash := "1111111111111111111111111111111111111111111111111111111111111111"
+
+	server := newDashTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			return map[string]any{txid: dashTestMempoolEntry()}
+		case "getrawtransaction":
+			return dashLockedRawTx(txid)
+		case "getislocks":
+			return []any{map[string]any{
+				"txid":      txid,
+				"id":        "islock-request-id",
+				"inputs":    []map[string]any{},
+				"cycleHash": cycleHash,
+				"signature": "signature",
+				"hex":       "010203",
+			}}
+		case "getblock":
+			return map[string]any{
+				"hash":   cycleHash,
+				"height": int64(124),
+			}
+		default:
+			c.Fatalf("unexpected method: %s", method)
+		}
+		_ = params
+		return nil
+	})
+	defer server.Close()
+
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+
+	txIn, err := client.getInstantSendLocks(123)
+	c.Assert(err, IsNil)
+	c.Assert(len(txIn.TxArray), Equals, 0)
+}
+
+func (s *DashSuite) TestDashGetInstantSendLocksRejectsStaleCycleHeight(c *C) {
+	txid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	cycleHash := "1111111111111111111111111111111111111111111111111111111111111111"
+
+	server := newDashTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			return map[string]any{txid: dashTestMempoolEntry()}
+		case "getrawtransaction":
+			return dashLockedRawTx(txid)
+		case "getislocks":
+			return []any{map[string]any{
+				"txid":      txid,
+				"id":        "islock-request-id",
+				"inputs":    []map[string]any{},
+				"cycleHash": cycleHash,
+				"signature": "signature",
+				"hex":       "010203",
+			}}
+		case "getblock":
+			return map[string]any{
+				"hash":   cycleHash,
+				"height": int64(121),
+			}
+		default:
+			c.Fatalf("unexpected method: %s", method)
+		}
+		_ = params
+		return nil
+	})
+	defer server.Close()
+
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+	client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
+
+	txIn, err := client.getInstantSendLocks(123)
+	c.Assert(err, IsNil)
+	c.Assert(len(txIn.TxArray), Equals, 0)
 }
 
 func (s *DashSuite) TestDashAllowInstantSendPolicyBoundaries(c *C) {
