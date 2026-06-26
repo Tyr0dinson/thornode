@@ -2,13 +2,13 @@ package constants
 
 import "strings"
 
-var assetSlipMinBpsPrefixes = []string{
-	L1SlipMinBps.String() + "-",
-	SynthSlipMinBps.String() + "-",
-	TradeAccountsSlipMinBps.String() + "-",
-	DerivedSlipMinBps.String() + "-",
-	SecuredAssetSlipMinBps.String() + "-",
-	StableSlipMinBps.String() + "-",
+var assetSlipMinBpsRefs = []ConstantName{
+	L1SlipMinBps,
+	SynthSlipMinBps,
+	TradeAccountsSlipMinBps,
+	DerivedSlipMinBps,
+	SecuredAssetSlipMinBps,
+	StableSlipMinBps,
 }
 
 // AssetSlipMinBpsMimirKey returns the per-asset override key for a slip-min-bps
@@ -23,17 +23,25 @@ func SlipMinBpsMaxMimirKey(assetRef string) string {
 	return SlipMinBpsMax.String() + "-" + assetRef
 }
 
+// AssetSlipMinBpsMimirRef returns the slip-min-bps class and asset reference
+// suffix from a supported per-asset slip-min-bps mimir key.
+func AssetSlipMinBpsMimirRef(key string) (ConstantName, string, bool) {
+	upperKey := strings.ToUpper(key)
+	for _, ref := range assetSlipMinBpsRefs {
+		prefix := ref.String() + "-"
+		upperPrefix := strings.ToUpper(prefix)
+		if strings.HasPrefix(upperKey, upperPrefix) && len(key) > len(prefix) {
+			return ref, key[len(prefix):], true
+		}
+	}
+	return ConstantName(0), "", false
+}
+
 // AssetSlipMinBpsAssetRef returns the asset reference suffix from a supported
 // per-asset slip-min-bps mimir key.
 func AssetSlipMinBpsAssetRef(key string) (string, bool) {
-	upperKey := strings.ToUpper(key)
-	for _, prefix := range assetSlipMinBpsPrefixes {
-		upperPrefix := strings.ToUpper(prefix)
-		if strings.HasPrefix(upperKey, upperPrefix) && len(key) > len(prefix) {
-			return key[len(prefix):], true
-		}
-	}
-	return "", false
+	_, assetRef, ok := AssetSlipMinBpsMimirRef(key)
+	return assetRef, ok
 }
 
 // IsAssetSlipMinBpsMimirKey returns true for supported per-asset slip-min-bps

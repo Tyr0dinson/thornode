@@ -71,6 +71,13 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 		return err
 	}
 
+	if canonicalKey, ok, err := canonicalSlipMinBpsMaxMimirKey(msg.Key); ok {
+		if err != nil || msg.Key != canonicalKey {
+			return cosmos.ErrUnknownRequest("invalid per-asset SlipMinBpsMax mimir key")
+		}
+		return nil
+	}
+
 	// REVSHARE-<thorname> operational mimir validation.
 	if isRevShare {
 		thornameName := upperKey[len("REVSHARE-"):]
@@ -81,6 +88,13 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 			return cosmos.ErrUnknownRequest(fmt.Sprintf("REVSHARE value must be between 0 and %d bps", constants.RevShareMaxBps))
 		}
 		return nil
+	}
+
+	if ref, assetRef, ok := constants.AssetSlipMinBpsMimirRef(msg.Key); ok {
+		canonicalKey, err := canonicalAssetSlipMinBpsMimirKey(ref, assetRef)
+		if err != nil || msg.Key != canonicalKey {
+			return cosmos.ErrUnknownRequest("invalid per-asset min slip mimir key")
+		}
 	}
 
 	// nothing else to verify if this is not a min slip mimir
@@ -94,6 +108,77 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 		return cosmos.ErrUnknownRequest("min slip mimir exceeds SlipMinBpsMax")
 	}
 	return nil
+}
+
+func canonicalSlipMinBpsMaxMimirKey(key string) (string, bool, error) {
+	prefix := constants.SlipMinBpsMax.String() + "-"
+	if !strings.HasPrefix(strings.ToUpper(key), strings.ToUpper(prefix)) {
+		return "", false, nil
+	}
+	asset, err := assetFromMimirString(key[len(prefix):], ".")
+	if err != nil {
+		return "", true, err
+	}
+	return constants.SlipMinBpsMaxMimirKey(asset.MimirString()), true, nil
+}
+
+func canonicalAssetSlipMinBpsMimirKey(ref constants.ConstantName, assetRef string) (string, error) {
+	asset, err := assetForSlipMinBpsMimirRef(ref, assetRef)
+	if err != nil {
+		return "", err
+	}
+	return constants.AssetSlipMinBpsMimirKey(ref, asset.MimirString()), nil
+}
+
+func assetForSlipMinBpsMimirRef(ref constants.ConstantName, assetRef string) (common.Asset, error) {
+	separator := "."
+	switch ref {
+	case constants.SynthSlipMinBps:
+		separator = "/"
+	case constants.TradeAccountsSlipMinBps:
+		separator = "~"
+	case constants.SecuredAssetSlipMinBps:
+		separator = "-"
+	}
+
+	asset, err := assetFromMimirString(assetRef, separator)
+	if err != nil {
+		return common.EmptyAsset, err
+	}
+
+	switch ref {
+	case constants.L1SlipMinBps, constants.StableSlipMinBps:
+		if asset.IsSyntheticAsset() || asset.IsTradeAsset() || asset.IsSecuredAsset() || asset.IsDerivedAsset() {
+			return common.EmptyAsset, fmt.Errorf("asset %s is not an L1 asset", asset)
+		}
+	case constants.SynthSlipMinBps:
+		if !asset.IsSyntheticAsset() {
+			return common.EmptyAsset, fmt.Errorf("asset %s is not a synth asset", asset)
+		}
+	case constants.TradeAccountsSlipMinBps:
+		if !asset.IsTradeAsset() {
+			return common.EmptyAsset, fmt.Errorf("asset %s is not a trade asset", asset)
+		}
+	case constants.DerivedSlipMinBps:
+		if !asset.IsDerivedAsset() {
+			return common.EmptyAsset, fmt.Errorf("asset %s is not a derived asset", asset)
+		}
+	case constants.SecuredAssetSlipMinBps:
+		if !asset.IsSecuredAsset() {
+			return common.EmptyAsset, fmt.Errorf("asset %s is not a secured asset", asset)
+		}
+	default:
+		return common.EmptyAsset, fmt.Errorf("unsupported slip min bps class %s", ref)
+	}
+	return asset, nil
+}
+
+func assetFromMimirString(assetRef, separator string) (common.Asset, error) {
+	chain, symbol, ok := strings.Cut(assetRef, "-")
+	if !ok || chain == "" || symbol == "" {
+		return common.EmptyAsset, fmt.Errorf("invalid asset mimir reference %s", assetRef)
+	}
+	return common.NewAsset(chain + separator + symbol)
 }
 
 func (h MimirHandler) getSlipMinBpsMax(ctx cosmos.Context, key string) int64 {

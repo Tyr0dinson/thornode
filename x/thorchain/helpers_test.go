@@ -2439,6 +2439,40 @@ func (s *HelperSuite) TestGetMaxSwapQuantityHonorsDynamicFloor(c *C) {
 	c.Assert(withDyn*5, Equals, withoutDyn, Commentf("dynamic 50bps is 5x the static 10bps → 1/5 the sub-swaps"))
 }
 
+func (s *HelperSuite) TestGetMaxSwapQuantityDoubleSwapUsesRestrictivePerAssetFloor(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	for _, asset := range []common.Asset{common.ETHAsset, common.BTCAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 1_000_000)
+
+	deposit := cosmos.NewUint(100 * common.One)
+	qClass, err := getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, StreamingSwap{
+		Interval: 1,
+		Deposit:  deposit,
+	}, nil, nil)
+	c.Assert(err, IsNil)
+
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.L1SlipMinBps, common.BTCAsset.MimirString()), 50)
+	qTargetAsset, err := getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, StreamingSwap{
+		Interval: 1,
+		Deposit:  deposit,
+	}, nil, nil)
+	c.Assert(err, IsNil)
+
+	c.Assert(qTargetAsset < qClass, Equals, true, Commentf("stricter target floor should reduce double-swap quantity"))
+	c.Assert(qTargetAsset*5, Equals, qClass, Commentf("target 50bps floor should be 5x stricter than class 10bps floor"))
+}
+
 func (s *HelperSuite) TestIsStableToStable(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()

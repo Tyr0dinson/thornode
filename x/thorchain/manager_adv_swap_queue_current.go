@@ -485,9 +485,9 @@ func (vm *SwapQueueAdv) getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sour
 			continue
 		}
 
-		// compute the minimum rune swap size for this leg of the swap
+		// Use the most restrictive leg so every sub-swap clears every floor.
 		minRuneSwapSize := common.GetSafeShare(minSlip, cosmos.NewUint(constants.MaxBasisPts), pool.BalanceRune)
-		if minSwapSize.IsZero() || minRuneSwapSize.LT(minSwapSize) {
+		if minRuneSwapSize.GT(minSwapSize) {
 			minSwapSize = minRuneSwapSize
 		}
 	}

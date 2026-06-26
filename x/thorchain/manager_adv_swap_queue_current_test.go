@@ -4508,6 +4508,47 @@ func (s AdvSwapQueueSuite) TestGetMaxSwapQuantityHonorsPerAssetFloor(c *C) {
 	c.Assert(qAsset*5, Equals, qClass, Commentf("per-asset 50bps is 5x the static 10bps -> 1/5 the sub-swaps"))
 }
 
+func (s AdvSwapQueueSuite) TestGetMaxSwapQuantityDoubleSwapUsesRestrictivePerAssetFloor(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	for _, asset := range []common.Asset{common.ETHAsset, common.BTCAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+
+	k.SetMimir(ctx, "L1SlipMinBps", 10)
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 1_000_000)
+
+	vm := newSwapQueueAdv(k)
+	deposit := cosmos.NewUint(100 * common.One)
+	msg := MsgSwap{
+		Tx: common.Tx{
+			Coins: common.Coins{common.NewCoin(common.ETHAsset, deposit)},
+			Memo:  "=:BTC.BTC:" + GetRandomBTCAddress().String(),
+		},
+		TargetAsset: common.BTCAsset,
+		State: &types.SwapState{
+			Deposit:  deposit,
+			Interval: 1,
+			Quantity: 0,
+		},
+	}
+	qClass, err := vm.getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, msg)
+	c.Assert(err, IsNil)
+
+	k.SetMimir(ctx, constants.AssetSlipMinBpsMimirKey(constants.L1SlipMinBps, common.BTCAsset.MimirString()), 50)
+	qTargetAsset, err := vm.getMaxSwapQuantity(ctx, mgr, common.ETHAsset, common.BTCAsset, msg)
+	c.Assert(err, IsNil)
+
+	c.Assert(qTargetAsset < qClass, Equals, true, Commentf("stricter target floor should reduce double-swap quantity"))
+	c.Assert(qTargetAsset*5, Equals, qClass, Commentf("target 50bps floor should be 5x stricter than class 10bps floor"))
+}
+
 // TestRapidSwapFailedMarketSwapSkip verifies that failed market swaps on rapid swap
 // iteration 1+ do not count as attempts. This prevents rapid swaps from burning through
 // all subswaps of a streaming swap in a single block when swaps fail.
