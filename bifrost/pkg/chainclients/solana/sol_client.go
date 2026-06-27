@@ -33,7 +33,20 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-const solvencyDivisor = 10
+// solvencyHeightFloor rounds a height down to the nearest SolvencyBlocks cadence
+// boundary. SOL reports solvency against each node's live slot (sol_scanner passes
+// GetSlot()), which differs across the fleet; flooring to SolvencyBlocks — the same
+// cadence the ShouldReportSolvency gate fires on — makes every node reporting within
+// a bucket emit the identical boundary height, so the fleet converges on a single
+// solvency Id = Hash(Chain, PubKey, Coins, Height) and can reach 2/3 consensus.
+// Other chains get this for free by reporting their consensus-shared scanned height;
+// SOL has no shared scan height, so it floors the tip to the cadence instead.
+// (Previously floored by an unrelated solvencyDivisor=10 — issue #3065.)
+// solvencyBlocks is guaranteed > 0 at the only call site (ShouldReportSolvency
+// returns false otherwise, gating ReportSolvency before this runs).
+func solvencyHeightFloor(height, solvencyBlocks int64) int64 {
+	return (height / solvencyBlocks) * solvencyBlocks
+}
 
 // signerCacheExpiry is the window after a broadcast during which SignTx respects
 // the cache unconditionally, without an RPC lookup. Past this window, SignTx
@@ -325,7 +338,9 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 			c.logger.Err(err).Msg("fail to get account balance")
 			continue
 		}
-		heightNearestFloor := (height / solvencyDivisor) * solvencyDivisor
+		// Align Height to the shared SolvencyBlocks cadence so the whole fleet
+		// converges on one solvency Id (see solvencyHeightFloor / issue #3065).
+		heightNearestFloor := solvencyHeightFloor(height, c.cfg.SolvencyBlocks)
 		msg := stypes.Solvency{
 			Height: heightNearestFloor,
 			Chain:  c.cfg.ChainID,

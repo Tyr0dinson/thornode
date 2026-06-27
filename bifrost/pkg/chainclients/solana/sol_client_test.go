@@ -1014,3 +1014,32 @@ func (s *SolTestSuite) TestBroadcastTxWritesExpiringCacheEntry(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(sig, Equals, "broadcast-sig")
 }
+
+// TestSolvencyHeightFloor guards the issue #3065 fix: SOL must report its solvency
+// Height floored to the shared SolvencyBlocks cadence, NOT each node's live slot
+// (or a divisor unrelated to the cadence). The consensus-critical property is
+// bucket-stability: any two nodes whose live slots fall in the same SolvencyBlocks
+// bucket must produce the IDENTICAL height, so they share one solvency Id and can
+// reach 2/3. A regression to a per-node or wrong-granularity floor breaks this.
+func TestSolvencyHeightFloor(t *testing.T) {
+	const sb = int64(100) // SolvencyBlocks cadence
+
+	// Bucket-stability: distinct slots within one bucket all floor to its boundary.
+	for _, h := range []int64{100, 101, 150, 199} {
+		require.Equal(t, int64(100), solvencyHeightFloor(h, sb),
+			"slots in [100,200) must all report boundary 100 (issue #3065)")
+	}
+	// Exact boundary maps to itself.
+	require.Equal(t, int64(100), solvencyHeightFloor(100, sb))
+	require.Equal(t, int64(200), solvencyHeightFloor(200, sb))
+	// Different buckets give different boundaries.
+	require.NotEqual(t, solvencyHeightFloor(199, sb), solvencyHeightFloor(200, sb))
+
+	// Two fleet nodes a few slots apart (the real failure mode) converge as long as
+	// they share a bucket, and a coarse cadence keeps them in the same bucket.
+	nodeA, nodeB := int64(428_000_037), int64(428_000_041)
+	require.Equal(t, solvencyHeightFloor(nodeA, sb), solvencyHeightFloor(nodeB, sb),
+		"nodes a few slots apart must share a solvency height")
+	require.Equal(t, int64(0), solvencyHeightFloor(nodeA, sb)%sb,
+		"reported height must land on a SolvencyBlocks boundary")
+}
