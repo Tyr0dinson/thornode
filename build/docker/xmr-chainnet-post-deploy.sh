@@ -255,7 +255,12 @@ done
 
 echo ""
 echo "[6.5/8] Restarting bifrosts in bootstrap order (dog first, then others)..."
-"$SCRIPT_DIR/xmr-chainnet-restart-bifrosts.sh" restart
+compose restart bifrost
+sleep 10
+for name in $(joiner_names); do
+  compose restart "bifrost-$name"
+  sleep 5
+done
 
 echo ""
 echo "[6.6/8] Lifting HaltChurning so the first keygen can fire..."

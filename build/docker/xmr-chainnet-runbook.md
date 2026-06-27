@@ -558,6 +558,23 @@ docker logs --since 5m docker-xmr-frost-signer-1 2>&1 | egrep 'scanner reset com
 docker logs --since 5m docker-bifrost-1 2>&1 | egrep 'xmr key-image catchup|xmr tx-key catchup' || true
 ```
 
+## Inactive Vault Churn Guard
+
+When testing churns, run the inactive-vault guard in another terminal before
+lifting `HALTCHURNING`. It checks `/thorchain/vaults/pubkeys`, fetches inactive
+vault details, and votes `HALTCHURNING=1` from all nodes as soon as any inactive
+XMR vault has a non-zero vault balance.
+
+```bash
+bash build/docker/xmr-chainnet-guard-inactive-vaults.sh --host root@91.99.89.216 --interval 5
+```
+
+One-shot check:
+
+```bash
+bash build/docker/xmr-chainnet-guard-inactive-vaults.sh --host root@91.99.89.216 --once
+```
+
 ## Fresh Teardown
 
 Do not remove the Monero volume unless you intend to fully rebuild Monero state.
