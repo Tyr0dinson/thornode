@@ -207,12 +207,7 @@ bifrost:
       cosmos_grpc_host: ""
       cosmos_grpc_tls: false
       opt_to_retire: false
-      # SOL ~2.5 slots/s. The solvency Height is floored to this cadence so the
-      # whole fleet converges on one solvency Id (#3065); the bucket must sit well
-      # above both the per-scan slot jump (~37 slots @ 15s scan) and the fleet
-      # live-slot spread (tens of slots) or it shatters. 500 slots ≈ 3.3 min gives
-      # ~13x margin over the scan jump (in family with BSC 50/BASE 100 by time).
-      solvency_blocks: 500
+      solvency_blocks: 0
 
     eth:
       <<: *default-chain
@@ -571,7 +566,13 @@ bifrost:
         max_contract_tx_logs: 0
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
-      solvency_blocks: 50
+      # SOL ~2.5 slots/s. The solvency Height is floored to this cadence so the
+      # whole fleet converges on one solvency Id (#3065); the bucket must sit well
+      # above both the per-scan slot jump (~37 slots @ 15s scan) and the fleet
+      # live-slot spread (tens of slots) or it shatters. 500 slots ≈ 3.3 min gives
+      # ~13x margin over the scan jump (in family with BSC 50/BASE 100 by time).
+      # Was 50 (~20s) — too close to the fleet spread, so reports still shattered.
+      solvency_blocks: 500
 
     zec:
       <<: *default-chain
