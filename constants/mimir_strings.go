@@ -17,6 +17,13 @@ const (
 	MimirKeySignatureRefreshBlocks = "SignatureRefreshBlocks"
 	MimirKeyStableReserveEnabled   = "StableReserveEnabled"
 
+	// MimirKeyHaltMonovaultKeygen gates ONLY the XMR monovault FROST keygen,
+	// decoupled from HaltChurning (which halts all keygen scheduling). The "Halt"
+	// prefix makes IsOperationalMimir classify it node-votable (operational quorum).
+	// Default 0 (off); set > 0 (and <= current height) to stop scheduling the XMR
+	// monovault keygen while leaving normal Asgard churn running.
+	MimirKeyHaltMonovaultKeygen = "HaltMonovaultKeygen"
+
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain

@@ -1561,6 +1561,18 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 			return nil
 		}
 	}
+	// HaltMonovaultKeygen (operational mimir) gates ONLY the XMR monovault keygen,
+	// independent of HaltChurning, so it can be halted without stopping Asgard
+	// churn. Checked here so every scheduling path is covered (churn trigger,
+	// genesis bootstrap). Not gated on genesisBlockHeight: at real genesis the
+	// mimir is 0, but covering the genesis code path keeps the guard total.
+	if keygenType == XMRMonovaultKeygen {
+		halt, err := vm.k.GetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen)
+		if err == nil && halt > 0 && halt <= ctx.BlockHeight() {
+			ctx.Logger().Info("xmr monovault keygen skipped due to HaltMonovaultKeygen mimir")
+			return nil
+		}
+	}
 	eligible, err := keygenEligibleNodeAccounts(ctx, vm.k, nas)
 	if err != nil {
 		return err
