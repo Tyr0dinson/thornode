@@ -52,8 +52,12 @@ func (m *mockThorchainBridge) GetMimir(key string) (int64, error) {
 	return 0, nil
 }
 
-// Create a local gRPC server on the provided listener.
-func createLocalGrpcServer(c *C, eb *ebifrost.EnshrinedBifrost, lis net.Listener) (*grpc.Server, string) {
+// Create a local gRPC server
+func createLocalGrpcServer(c *C, eb *ebifrost.EnshrinedBifrost, port int) (*grpc.Server, string) {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	lis, err := net.Listen("tcp", addr)
+	c.Assert(err, IsNil)
+
 	s := grpc.NewServer()
 	ebifrost.RegisterLocalhostBifrostServer(s, eb)
 
@@ -63,7 +67,7 @@ func createLocalGrpcServer(c *C, eb *ebifrost.EnshrinedBifrost, lis net.Listener
 		}
 	}()
 
-	return s, lis.Addr().String()
+	return s, addr
 }
 
 func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
@@ -74,14 +78,11 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 
 	// Initialize enshrined bifrost server for each validator
 	for i := 0; i < 4; i++ {
-		lis, err := net.Listen("tcp", "127.0.0.1:0")
-		c.Assert(err, IsNil)
-		addr := lis.Addr().String()
 		ebs[i] = ebifrost.NewEnshrinedBifrost(s.bridge.GetContext().Codec, log.NewNopLogger(), ebifrost.EBifrostConfig{
 			Enable:  true,
-			Address: addr,
+			Address: fmt.Sprintf("127.0.0.1:%d", 50061+i),
 		})
-		grpcServers[i], grpcAddresses[i] = createLocalGrpcServer(c, ebs[i], lis)
+		grpcServers[i], grpcAddresses[i] = createLocalGrpcServer(c, ebs[i], 50061+i)
 	}
 
 	// Ensure we clean up all servers at the end
