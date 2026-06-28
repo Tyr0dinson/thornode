@@ -327,20 +327,31 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 
 	msgs := make([]stypes.Solvency, 0, len(chainVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(chainVaults))
+	// Align the reported Height to the shared SolvencyBlocks cadence so the whole
+	// fleet emits one boundary height per report → one solvency Id = Hash(Chain,
+	// PubKey, Coins, Height) and can reach 2/3 (issue #3065). Loop-invariant, so
+	// compute it once for the whole report rather than per vault.
+	heightNearestFloor := solvencyHeightFloor(height, c.cfg.SolvencyBlocks)
 	processedVaults := 0
 	for _, v := range chainVaults {
 		if v.PubKeyEddsa.IsEmpty() {
 			c.logger.Error().Msg("asgard vault pubkey is empty, skipping solvency check")
 			continue
 		}
+		// NOTE: GetAccount reads the balance at the live finalized tip — it ignores
+		// the height arg (GetBalance(addr,"finalized",0)) — so Coins is NOT pinned to
+		// heightNearestFloor. If a vault balance shifts within a SolvencyBlocks bucket,
+		// two nodes can emit the same Height but different Coins → different Id. This
+		// is strictly better than the pre-#3065 per-node-Height shatter and self-heals
+		// on the next stable bucket, but full 2/3 convergence still assumes balance
+		// stability across the bucket. Pinning Coins to the floored height (as EVM
+		// does) needs a historical-balance read SOL RPC doesn't cheaply support —
+		// tracked as a follow-up.
 		acct, err := c.GetAccount(v.PubKeyEddsa, nil)
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get account balance")
 			continue
 		}
-		// Align Height to the shared SolvencyBlocks cadence so the whole fleet
-		// converges on one solvency Id (see solvencyHeightFloor / issue #3065).
-		heightNearestFloor := solvencyHeightFloor(height, c.cfg.SolvencyBlocks)
 		msg := stypes.Solvency{
 			Height: heightNearestFloor,
 			Chain:  c.cfg.ChainID,

@@ -570,8 +570,10 @@ bifrost:
       # whole fleet converges on one solvency Id (#3065); the bucket must sit well
       # above both the per-scan slot jump (~37 slots @ 15s scan) and the fleet
       # live-slot spread (tens of slots) or it shatters. 500 slots ≈ 3.3 min gives
-      # ~13x margin over the scan jump (in family with BSC 50/BASE 100 by time).
-      # Was 50 (~20s) — too close to the fleet spread, so reports still shattered.
+      # comfortable margin over the scan jump; in family by time with BASE/BSC 100
+      # (those report a consensus-shared scanned height so they tolerate a smaller
+      # bucket — SOL floors the live tip and needs more). Was 50 (~20s) — too close
+      # to the fleet spread, so reports still shattered.
       solvency_blocks: 500
 
     zec:
