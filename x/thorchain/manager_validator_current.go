@@ -290,22 +290,32 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	}
 
 	// XMR monovault maintenance is independent from ordinary vault rotation.
-	// At the BFT floor the validator membership can be stable (ok == false)
-	// while the XMR vault is missing or its last keygen has expired. Recover the
-	// monovault without scheduling an unnecessary regular Asgard keygen.
-	needsXMR, err := vm.xmrVaultMembershipNeedsKeygen(ctx, next)
-	if err != nil {
-		return err
-	}
-	if needsXMR {
-		pendingXMR, err := vm.hasPendingKeygen(ctx, XMRMonovaultKeygen)
-		if err != nil {
-			return err
+	// Check the dedicated halt before any XMR-specific vault or pending-keygen
+	// reads so a halted XMR path cannot roll back regular Asgard scheduling.
+	monovaultHalt, haltErr := vm.k.GetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen)
+	switch {
+	case haltErr != nil:
+		ctx.Logger().Error("unable to verify HaltMonovaultKeygen; skipping XMR monovault maintenance", "error", haltErr)
+	case monovaultHalt > 0 && monovaultHalt <= ctx.BlockHeight():
+		ctx.Logger().Info("xmr monovault keygen skipped due to HaltMonovaultKeygen mimir")
+	default:
+		// At the BFT floor the validator membership can be stable (ok == false)
+		// while the XMR vault is missing or its last keygen has expired. Recover the
+		// monovault without scheduling an unnecessary regular Asgard keygen.
+		needsXMR, xmrErr := vm.xmrVaultMembershipNeedsKeygen(ctx, next)
+		if xmrErr != nil {
+			return xmrErr
 		}
-		if pendingXMR {
-			ctx.Logger().Info("Skipping XMR FROST keygen due to pending keygen")
-		} else if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
-			return err
+		if needsXMR {
+			pendingXMR, pendingErr := vm.hasPendingKeygen(ctx, XMRMonovaultKeygen)
+			if pendingErr != nil {
+				return pendingErr
+			}
+			if pendingXMR {
+				ctx.Logger().Info("Skipping XMR FROST keygen due to pending keygen")
+			} else if triggerErr := vm.networkMgr.TriggerXMRKeygen(ctx, next); triggerErr != nil {
+				return triggerErr
+			}
 		}
 	}
 	return nil
