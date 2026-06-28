@@ -821,6 +821,37 @@ func (*NetworkManagerTestSuite) TestFreshGenesisEarlyXMRKeygensRotateSequentiall
 	c.Assert(delayedVault.Status, Equals, ActiveVault)
 }
 
+// TestHaltMonovaultKeygenMimir verifies the HaltMonovaultKeygen operational mimir
+// stops ONLY the XMR monovault keygen while leaving normal Asgard vault setup
+// running. Mirrors TestProcessGenesisSetup (which sets HaltChurning and the XMR
+// keygen IS still scheduled, HasLen 1) — here the dedicated mimir is set instead
+// and the XMR keygen is skipped (HasLen 0), proving the two halts are decoupled.
+func (*NetworkManagerTestSuite) TestHaltMonovaultKeygenMimir(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	ctx = ctx.WithBlockHeight(1)
+	mgr.K = helper
+	networkMgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	nodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount), IsNil)
+	// Halt ONLY the XMR monovault keygen (HaltChurning intentionally left unset).
+	mgr.Keeper().SetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen, 1)
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+
+	// Asgard setup is unaffected: the regular (non-XMR) Asgard vault is still made.
+	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 1)
+	c.Assert(vaults[0].HasChain(common.XMRChain), Equals, false)
+
+	// The XMR monovault keygen is NOT scheduled while the mimir is set.
+	xmrBootstrapHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, xmrBootstrapHeight)
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 0, Commentf("XMR monovault keygen must be skipped when HaltMonovaultKeygen mimir is set"))
+}
+
 func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
