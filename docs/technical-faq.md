@@ -146,7 +146,7 @@ Accounts must choose which validator to stake to, and a [node operator](https://
 
 **How soon after calling the staking operation can a staker start accruing rewards?**
 
-After the validator [churns in](https://docs.thorchain.org/thornodes/overview/node-operations#churning), rewards begin accruing based on system income from swap fees and block rewards. Validators churn their vaults every 3 days, proving liveness of funds and giving an opportunity for new validators to participate. Every churn, the lowest bond, highest slash, and oldest node churn out. Once a validator has churned out, bond providers can withdraw their principal + pro-rata share of rewards.
+After the validator [churns in](https://docs.thorchain.org/thornodes/overview/node-operations#churning), rewards begin accruing based on system income from swap fees and block rewards. Validators churn their vaults every 3 days, proving liveness of funds and giving an opportunity for new validators to participate. Every churn, the highest slash and oldest nodes churn out. The lowest-bond node only churns out once the active set is at capacity (the active validator count has reached `DesiredValidatorSet`); while the network is below the cap, low bond alone does not force a churn out, so that new operators can churn in without evicting performing nodes. Once a validator has churned out, bond providers can withdraw their principal + pro-rata share of rewards.
 
 **What are the slashing conditions and penalties?**
 

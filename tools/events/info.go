@@ -417,7 +417,15 @@ func notifyChurnStarted(height, keygenHeight int64, keyshareBackups map[string]m
 	}
 
 	// find lowest bond
-	if len(removed) > 0 {
+	//
+	// The chain only churns out the lowest-bond node once the active set is at
+	// capacity (see markLowBondActor: it is skipped while the active validator
+	// count is below DesiredValidatorSet). Mirror that here so we don't
+	// mislabel a node that actually left for another reason (oldest, leave,
+	// missing) as "(lowest bond)" while the network is below the cap.
+	desiredValidatorSet := util.GetConfigInt64(keygenHeight, constants.DesiredValidatorSet)
+	atCapacity := int64(len(oldActive)) >= desiredValidatorSet
+	if len(removed) > 0 && atCapacity {
 		lowestIdx := 0
 		for i, node := range removed {
 			if cosmos.NewUintFromString(node.TotalBond).LT(cosmos.NewUintFromString(removed[lowestIdx].TotalBond)) {
