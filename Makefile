@@ -41,12 +41,22 @@ BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 # build instead of an auth error. A file source (src=) is read reliably by
 # the docker build client. CI writes the token to a file and exports
 # CI_JOB_TOKEN_FILE; env= remains a fallback and local builds stay tokenless.
+#
+# DOCKER_BUILD_NETWORK forces the build's RUN steps onto the host network when
+# a token is present (i.e. in CI). In the DinD long-test jobs the default
+# buildkit sandbox could not reach gitlab.com to clone tss-lib-private, so the
+# authenticated `go mod download` failed with "no secure protocol found for
+# repository" even with the token mounted. Host networking gives RUN the
+# daemon's working DNS/egress. Empty locally so normal builds are unaffected.
 ifneq ($(strip $(CI_JOB_TOKEN_FILE)),)
 DOCKER_BUILD_SECRETS := --secret id=ci_job_token,src=$(CI_JOB_TOKEN_FILE)
+DOCKER_BUILD_NETWORK := --network=host
 else ifneq ($(strip $(CI_JOB_TOKEN)),)
 DOCKER_BUILD_SECRETS := --secret id=ci_job_token,env=CI_JOB_TOKEN
+DOCKER_BUILD_NETWORK := --network=host
 else
 DOCKER_BUILD_SECRETS :=
+DOCKER_BUILD_NETWORK :=
 endif
 
 # compiler flags
@@ -344,6 +354,7 @@ build-test-regression:
 		-f ci/Dockerfile.regtest \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DOCKER_MIRROR \
+		$(DOCKER_BUILD_NETWORK) \
 		$(DOCKER_BUILD_SECRETS)
 
 test-regression-coverage:
@@ -398,6 +409,7 @@ build-test-simulation:
 		-f ci/Dockerfile.simtest \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DOCKER_MIRROR \
+		$(DOCKER_BUILD_NETWORK) \
 		$(DOCKER_BUILD_SECRETS)
 
 test-simulation-events:

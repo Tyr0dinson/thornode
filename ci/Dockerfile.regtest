@@ -22,7 +22,6 @@ COPY go.mod go.sum ./
 # required=false keeps local `make` builds working when CI_JOB_TOKEN is unset.
 # File-based mount instead of env= so hadolint 2.12.1-beta can parse the RUN.
 RUN --mount=type=secret,id=ci_job_token,required=false \
-    echo "ci_job_token secret bytes: $(wc -c < /run/secrets/ci_job_token 2>/dev/null || echo 0)"; \
     if [ -s /run/secrets/ci_job_token ]; then \
       git config --global url."https://gitlab-ci-token:$(cat /run/secrets/ci_job_token)@gitlab.com/".insteadOf "https://gitlab.com/"; \
     fi && \

@@ -54,7 +54,6 @@ variables:
       fi
       printf '%s' "$CI_JOB_TOKEN" > /tmp/ci_job_token
       export CI_JOB_TOKEN_FILE=/tmp/ci_job_token
-      echo "ci_job_token file: $(wc -c < /tmp/ci_job_token) bytes; CI_JOB_TOKEN_FILE=$CI_JOB_TOKEN_FILE"
 
 stages:
   - .pre
