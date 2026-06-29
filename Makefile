@@ -34,7 +34,16 @@ BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 # Forward CI_JOB_TOKEN into docker builds as a BuildKit secret so the
 # in-image `go mod download` can fetch tss-lib-private. Empty when running
 # locally without the token (Dockerfile mount is required=false).
-ifneq ($(strip $(CI_JOB_TOKEN)),)
+#
+# Prefer a file-based secret (CI_JOB_TOKEN_FILE) over env=: in the DinD
+# long-test jobs the `env=` secret source can resolve empty, which surfaces
+# as an opaque "no secure protocol found for repository" failure deep in the
+# build instead of an auth error. A file source (src=) is read reliably by
+# the docker build client. CI writes the token to a file and exports
+# CI_JOB_TOKEN_FILE; env= remains a fallback and local builds stay tokenless.
+ifneq ($(strip $(CI_JOB_TOKEN_FILE)),)
+DOCKER_BUILD_SECRETS := --secret id=ci_job_token,src=$(CI_JOB_TOKEN_FILE)
+else ifneq ($(strip $(CI_JOB_TOKEN)),)
 DOCKER_BUILD_SECRETS := --secret id=ci_job_token,env=CI_JOB_TOKEN
 else
 DOCKER_BUILD_SECRETS :=

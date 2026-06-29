@@ -38,6 +38,23 @@ variables:
   before_script:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
 
+# Write CI_JOB_TOKEN to a file outside the docker build context and export
+# CI_JOB_TOKEN_FILE, so `make` passes it to `docker build` as a file-based
+# BuildKit secret (src=) rather than env=, which can resolve empty in the DinD
+# long-test jobs. Fail fast if the token is missing so the cause is obvious
+# instead of an opaque in-build `go mod download` failure. Include with
+# `!reference [.ci-job-token-file, before_script]` in DinD jobs that build the
+# regtest/simtest images.
+.ci-job-token-file:
+  before_script:
+    - |
+      if [ -z "$CI_JOB_TOKEN" ]; then
+        echo "ERROR: CI_JOB_TOKEN is empty; cannot authenticate private tss-lib-private fetch" >&2
+        exit 1
+      fi
+      printf '%s' "$CI_JOB_TOKEN" > /tmp/ci_job_token
+      export CI_JOB_TOKEN_FILE=/tmp/ci_job_token
+
 stages:
   - .pre
   - fork
@@ -367,6 +384,7 @@ test-simulation:
   environment:
     name: integration
   before_script:
+    - !reference [.ci-job-token-file, before_script]
     - apk -U add git make protoc bash go
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
@@ -430,6 +448,7 @@ test-regression:
     PARALLELISM: "6"
     FAIL_FAST: "true"
   before_script:
+    - !reference [.ci-job-token-file, before_script]
     - apk -U add make git bash
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
