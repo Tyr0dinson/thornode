@@ -54,6 +54,7 @@ variables:
       fi
       printf '%s' "$CI_JOB_TOKEN" > /tmp/ci_job_token
       export CI_JOB_TOKEN_FILE=/tmp/ci_job_token
+      echo "ci_job_token file: $(wc -c < /tmp/ci_job_token) bytes; CI_JOB_TOKEN_FILE=$CI_JOB_TOKEN_FILE"
 
 stages:
   - .pre
@@ -402,7 +403,7 @@ test-simulation:
       wget https://github.com/docker/compose/releases/download/v2.28.1/docker-compose-linux-x86_64 -O $PLUGIN
       chmod +x $PLUGIN
   script:
-    - make test-simulation-cluster
+    - CI_JOB_TOKEN_FILE=/tmp/ci_job_token make test-simulation-cluster
   after_script:
     - make test-simulation-events || true
     - mkdir -p logs/xmr-debug
@@ -461,7 +462,7 @@ test-regression:
         fi
       fi
   script:
-    - make test-regression
+    - CI_JOB_TOKEN_FILE=/tmp/ci_job_token make test-regression
     - |
       CHANGES=$(git status --porcelain test/regression/mnt/exports/ test/regression/mnt/blocks/)
       if [ -n "$CHANGES" ]; then
