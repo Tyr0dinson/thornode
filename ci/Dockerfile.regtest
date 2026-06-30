@@ -18,18 +18,6 @@ RUN mkdir /regtest
 
 WORKDIR /app
 COPY go.mod go.sum ./
-# TEMP DIAGNOSTIC: non-failing probe to capture why the authenticated
-# tss-lib-private fetch fails (DNS vs git auth vs go env). Remove after triage.
-RUN --mount=type=secret,id=ci_job_token,required=false \
-    if [ -s /run/secrets/ci_job_token ]; then \
-      git config --global url."https://gitlab-ci-token:$(cat /run/secrets/ci_job_token)@gitlab.com/".insteadOf "https://gitlab.com/"; \
-    fi; \
-    echo "PROBE token-bytes: $(wc -c < /run/secrets/ci_job_token 2>/dev/null || echo 0)"; \
-    echo "PROBE dns:"; getent hosts gitlab.com || echo "  DNS-FAIL rc=$?"; \
-    echo "PROBE ls-remote:"; GIT_TERMINAL_PROMPT=0 git ls-remote https://gitlab.com/thorchain/tss/tss-lib-private.git HEAD 2>&1 || echo "  LS-REMOTE-FAIL rc=$?"; \
-    echo "PROBE go-env:"; go env GOPRIVATE GOINSECURE GOFLAGS GOPROXY; \
-    rm -f /root/.gitconfig
-
 # Mount CI_JOB_TOKEN as a BuildKit secret to authenticate the private fetch.
 # required=false keeps local `make` builds working when CI_JOB_TOKEN is unset.
 # File-based mount instead of env= so hadolint 2.12.1-beta can parse the RUN.
