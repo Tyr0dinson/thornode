@@ -797,7 +797,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:16f06497@sha256:5224d4fc192ead39ab313b7f96282994204e895c0f06c8af65ed9dc7abe599f1}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:chainnet}
     restart: unless-stopped
     user: root
     entrypoint:
