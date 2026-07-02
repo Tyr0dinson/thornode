@@ -102,7 +102,7 @@ services:
   # ================================ Monero mainnet ================================
 
   monero-daemon:
-    image: sethsimmons/simple-monerod:v0.18.3.4
+    image: sethsimmons/simple-monerod:v0.18.5.0
     restart: unless-stopped
     command:
       - --rpc-bind-ip=0.0.0.0
