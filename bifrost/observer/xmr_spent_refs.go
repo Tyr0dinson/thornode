@@ -2,7 +2,9 @@ package observer
 
 import (
 	"bytes"
+	"sort"
 	"strings"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -11,6 +13,51 @@ import (
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// xmrSpentRefsConflictKey intentionally excludes the ref set. Different ref
+// sets for the same outbound must collide so only one authorized set can reach
+// the sidecar at a time.
+type xmrSpentRefsConflictKey struct {
+	chain          string
+	txID           string
+	observedPubKey string
+}
+
+type xmrSpentRefsImportState int
+
+const (
+	// xmrSpentRefsImportPending: an import of this ref set may be in flight;
+	// differing authorized sets are blocked until the outcome is known.
+	xmrSpentRefsImportPending xmrSpentRefsImportState = iota
+	// xmrSpentRefsImportConfirmed: the local sidecar accepted this ref set;
+	// differing sets stay blocked (the sidecar bindings are authoritative).
+	xmrSpentRefsImportConfirmed
+	// xmrSpentRefsImportFailed: the import failed terminally or exhausted its
+	// retries; a differing authorized set may replace this entry so one bad
+	// authorized attestation cannot pin the txid until restart.
+	xmrSpentRefsImportFailed
+)
+
+type xmrSpentRefsConflictEntry struct {
+	identity  string
+	state     xmrSpentRefsImportState
+	updatedAt time.Time
+}
+
+// xmrSpentRefsConflictKeyFor identifies the outbound across gossip payloads,
+// without depending on the order or contents of refs. The tx ID is normalized
+// because TxID equality is case-insensitive (and hex validation trims and
+// accepts mixed case), so case variants of the same spend tx must collide
+// here rather than evade conflict detection. PubKey equality is exact, so a
+// case-variant pubkey fails the authority checks long before this point and
+// needs no normalization.
+func xmrSpentRefsConflictKeyFor(obsTx common.ObservedTx) xmrSpentRefsConflictKey {
+	return xmrSpentRefsConflictKey{
+		chain:          obsTx.Tx.Chain.String(),
+		txID:           strings.ToLower(strings.TrimSpace(obsTx.Tx.ID.String())),
+		observedPubKey: obsTx.ObservedPubKey.String(),
+	}
+}
 
 type plannedXMROutbound struct {
 	chain            common.Chain
@@ -39,8 +86,9 @@ func (s *AttestationGossip) shouldApplyXMRSpentRefsFromAttestation(obsTx common.
 	}
 	if bytes.Equal(att.PubKey, s.pubKey) {
 		// This node produced the attestation, so the refs came from its local
-		// signing/observation path. No peer authority check is needed here.
-		return true
+		// signing/observation path. No peer authority check is needed here, but
+		// the ref set still seeds conflict detection for later peer variants.
+		return s.rememberAuthorizedXMRSpentRefs(obsTx)
 	}
 	// AddAttestation has already verified the signature over the exact
 	// ObservedTx payload. The checks below decide whether this peer is an
@@ -65,7 +113,125 @@ func (s *AttestationGossip) shouldApplyXMRSpentRefsFromAttestation(obsTx common.
 			Msg("skip peer xmr spent refs: observed outbound does not match planned txout")
 		return false
 	}
+	if !s.rememberAuthorizedXMRSpentRefs(obsTx) {
+		return false
+	}
 	return true
+}
+
+// rememberAuthorizedXMRSpentRefs reserves the outbound/ref identity before the
+// sidecar import runs. Pending or confirmed identities block differing sets;
+// terminally failed identities can be replaced so one bad authorized peer does
+// not pin the txid for the process lifetime.
+func (s *AttestationGossip) rememberAuthorizedXMRSpentRefs(obsTx common.ObservedTx) bool {
+	key := xmrSpentRefsConflictKeyFor(obsTx)
+	identity := xmrSpentRefsIdentity(obsTx.SpentOutputRefs)
+	now := time.Now()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.authorizedXMRSpentRefs == nil {
+		s.authorizedXMRSpentRefs = make(map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry)
+	}
+	entry, ok := s.authorizedXMRSpentRefs[key]
+	if !ok {
+		s.authorizedXMRSpentRefs[key] = &xmrSpentRefsConflictEntry{
+			identity:  identity,
+			state:     xmrSpentRefsImportPending,
+			updatedAt: now,
+		}
+		return true
+	}
+	if entry.identity == identity {
+		// Same set again: a new import attempt may start, so a previously
+		// failed entry goes back to pending. A confirmed entry stays confirmed.
+		if entry.state == xmrSpentRefsImportFailed {
+			entry.state = xmrSpentRefsImportPending
+		}
+		entry.updatedAt = now
+		return true
+	}
+	if entry.state == xmrSpentRefsImportFailed {
+		// The recorded set never made it into the sidecar, so it holds no
+		// authority; let the differing authorized set take its place.
+		s.logger.Warn().
+			Str("tx_id", obsTx.Tx.ID.String()).
+			Str("vault", obsTx.ObservedPubKey.String()).
+			Msg("replacing failed authorized xmr spent ref set with differing authorized set")
+		entry.identity = identity
+		entry.state = xmrSpentRefsImportPending
+		entry.updatedAt = now
+		return true
+	}
+	s.logger.Warn().
+		Str("tx_id", obsTx.Tx.ID.String()).
+		Str("vault", obsTx.ObservedPubKey.String()).
+		Msg("skip peer xmr spent refs: conflicting authorized ref set already seen")
+	return false
+}
+
+// resolveAuthorizedXMRSpentRefs records the final import outcome for a ref set
+// previously admitted by rememberAuthorizedXMRSpentRefs. The identity guard
+// keeps a late outcome from clobbering an entry that was replaced meanwhile.
+func (s *AttestationGossip) resolveAuthorizedXMRSpentRefs(key xmrSpentRefsConflictKey, identity string, applied bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.authorizedXMRSpentRefs[key]
+	if !ok || entry.identity != identity {
+		return
+	}
+	if applied {
+		entry.state = xmrSpentRefsImportConfirmed
+	} else if entry.state != xmrSpentRefsImportConfirmed {
+		entry.state = xmrSpentRefsImportFailed
+	}
+	entry.updatedAt = time.Now()
+}
+
+// recordCommittedXMRSpentRefs stores a thornode-committed quorum ref set that
+// the local sidecar accepted. Committed refs outrank pre-quorum gossip, so this
+// overwrites whatever conflict memory an earlier attestation left behind.
+func (s *AttestationGossip) recordCommittedXMRSpentRefs(key xmrSpentRefsConflictKey, identity string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.authorizedXMRSpentRefs == nil {
+		s.authorizedXMRSpentRefs = make(map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry)
+	}
+	s.authorizedXMRSpentRefs[key] = &xmrSpentRefsConflictEntry{
+		identity:  identity,
+		state:     xmrSpentRefsImportConfirmed,
+		updatedAt: time.Now(),
+	}
+}
+
+// pruneAuthorizedXMRSpentRefsLocked expires conflict memory. The TTL is double
+// the non-quorum attestation timeout so the memory comfortably outlives the
+// observed-tx state buckets it protects, while still bounding the map. The
+// caller must hold s.mu.
+func (s *AttestationGossip) pruneAuthorizedXMRSpentRefsLocked(now time.Time) {
+	ttl := 2 * s.config.NonQuorumTimeout
+	if ttl <= 0 {
+		ttl = 2 * defaultNonQuorumTimeout
+	}
+	for key, entry := range s.authorizedXMRSpentRefs {
+		if now.Sub(entry.updatedAt) > ttl {
+			delete(s.authorizedXMRSpentRefs, key)
+		}
+	}
+}
+
+// xmrSpentRefsIdentity sorts refs before joining them so gossip order does not
+// create a false conflict for the same sidecar binding.
+func xmrSpentRefsIdentity(refs []common.OutputRef) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	ids := make([]string, len(refs))
+	for i, ref := range refs {
+		ids[i] = common.SpentOutputRefIdentity(ref)
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, "|")
 }
 
 // isActiveAttesterPubKey maps the raw secp256k1 attestation key to the peer ID

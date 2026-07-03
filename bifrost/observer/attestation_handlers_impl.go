@@ -75,6 +75,7 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	state.mu.Unlock()
 
 	var applySpentRefs *common.ObservedTx
+	var onApplySpentRefsOutcome func(applied bool)
 	if maybeApplySpentRefs != nil && s.observerApplySpentOutputRefs != nil &&
 		s.shouldApplyXMRSpentRefsFromAttestation(*maybeApplySpentRefs, tx.Attestation) {
 		s.mu.Lock()
@@ -89,11 +90,20 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 
 		if ok {
 			if !liveState.spentRefsApplied {
-				// Only mutate the currently indexed state bucket. If the bucket was
-				// pruned while authorization was running, skip the import instead
-				// of marking a stale or recycled state object.
-				liveState.spentRefsApplied = true
+				// Only the currently indexed state bucket may be marked applied,
+				// and only after the sidecar confirms import success. Retryable or
+				// terminal failures must leave the opportunity open for a later
+				// authorized peer attestation, and must release the conflict-map
+				// entry so a differing authorized set is not pinned out.
 				applySpentRefs = maybeApplySpentRefs
+				conflictKey := xmrSpentRefsConflictKeyFor(*maybeApplySpentRefs)
+				identity := xmrSpentRefsIdentity(maybeApplySpentRefs.SpentOutputRefs)
+				onApplySpentRefsOutcome = func(applied bool) {
+					if applied {
+						s.markXMRSpentRefsApplied(k)
+					}
+					s.resolveAuthorizedXMRSpentRefs(conflictKey, identity, applied)
+				}
 			}
 			liveState.mu.Unlock()
 		}
@@ -102,8 +112,26 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	// Apply XMR spent output refs after all authorization and state bookkeeping.
 	// This seeds the sidecar only; it does not add a local attestation.
 	if applySpentRefs != nil && s.observerApplySpentOutputRefs != nil {
-		s.applySpentRefsAsync(*applySpentRefs)
+		s.applySpentRefsAsync(*applySpentRefs, onApplySpentRefsOutcome)
 	}
+}
+
+// markXMRSpentRefsApplied flips the latch only on the live state bucket after
+// the sidecar confirms import success. This avoids marking a pruned or reused
+// AttestationState captured before the async import completed.
+func (s *AttestationGossip) markXMRSpentRefsApplied(k txKey) {
+	s.mu.Lock()
+	liveState, ok := s.observedTxs[k]
+	if ok {
+		liveState.mu.Lock()
+	}
+	s.mu.Unlock()
+
+	if !ok {
+		return
+	}
+	liveState.spentRefsApplied = true
+	liveState.mu.Unlock()
 }
 
 // sendObservedTxAttestationsToThornode sends attestations to thornode via gRPC

@@ -145,7 +145,14 @@ type AttestationGossip struct {
 	solvencies  map[common.TxID]*AttestationState[*common.Solvency]
 	errataTxs   map[common.ErrataTx]*AttestationState[*common.ErrataTx]
 	priceFeeds  map[string]*AttestationState[*common.PriceFeed]
-	mu          sync.Mutex
+	// authorizedXMRSpentRefs remembers the authorized pre-quorum ref set seen
+	// for an XMR outbound so later authorized disagreements do not race a
+	// conflicting sidecar import. Entries track the import outcome: a set whose
+	// import failed terminally may be replaced by a differing authorized set,
+	// and entries expire so one bad authorized attestation cannot pin a txid
+	// for the life of the process.
+	authorizedXMRSpentRefs map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry
+	mu                     sync.Mutex
 
 	observedTxsPool *AttestationStatePool[*attestableObservedTx]
 	networkFeesPool *AttestationStatePool[*common.NetworkFee]
@@ -159,7 +166,7 @@ type AttestationGossip struct {
 	avMu       sync.Mutex
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
-	observerApplySpentOutputRefs      func(tx common.ObservedTx)
+	observerApplySpentOutputRefs      func(tx common.ObservedTx, onOutcome func(applied bool))
 	applySpentRefsSem                 chan struct{}
 
 	batcher *AttestationBatcher
@@ -218,11 +225,12 @@ func NewAttestationGossip(
 		eventClient: eventClient,
 
 		// Initialize generic maps
-		observedTxs: make(map[txKey]*AttestationState[*attestableObservedTx]),
-		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
-		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
-		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
-		priceFeeds:  make(map[string]*AttestationState[*common.PriceFeed]),
+		observedTxs:            make(map[txKey]*AttestationState[*attestableObservedTx]),
+		networkFees:            make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
+		solvencies:             make(map[common.TxID]*AttestationState[*common.Solvency]),
+		errataTxs:              make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
+		priceFeeds:             make(map[string]*AttestationState[*common.PriceFeed]),
+		authorizedXMRSpentRefs: make(map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry),
 
 		peerMgr: newPeerManager(logger, config.PeerConcurrentReceives),
 
@@ -341,22 +349,27 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 	s.observerHandleObservedTxCommitted = o.handleObservedTxCommitted
 }
 
-func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.ObservedTx)) {
+// SetObserverApplySpentOutputRefs wires the XMR sidecar import. The import
+// reports its final outcome through onOutcome exactly once, which may happen
+// after the call returns when the client retries transient failures.
+func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.ObservedTx, onOutcome func(applied bool))) {
 	s.observerApplySpentOutputRefs = fn
 }
 
-func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx) {
+// applySpentRefsAsync keeps sidecar imports off the attestation hot path while
+// preserving the final outcome callback through the concurrency limiter.
+func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx, onOutcome func(applied bool)) {
 	if s.observerApplySpentOutputRefs == nil {
 		return
 	}
 	if s.applySpentRefsSem == nil {
-		go s.observerApplySpentOutputRefs(tx)
+		go s.observerApplySpentOutputRefs(tx, onOutcome)
 		return
 	}
 	go func() {
 		s.applySpentRefsSem <- struct{}{}
 		defer func() { <-s.applySpentRefsSem }()
-		s.observerApplySpentOutputRefs(tx)
+		s.observerApplySpentOutputRefs(tx, onOutcome)
 	}()
 }
 
@@ -387,7 +400,16 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
 		len(qtx.ObsTx.SpentOutputRefs) > 0 &&
 		len(qtx.ObsTx.SpentOutputRefs) <= common.MaxXMRSpentOutputRefs {
-		s.applySpentRefsAsync(qtx.ObsTx)
+		// Thornode-committed quorum refs outrank any pre-quorum conflict memory:
+		// once the local sidecar accepts them, record them as the confirmed set
+		// so stale pre-quorum entries cannot block them being remembered.
+		conflictKey := xmrSpentRefsConflictKeyFor(qtx.ObsTx)
+		identity := xmrSpentRefsIdentity(qtx.ObsTx.SpentOutputRefs)
+		s.applySpentRefsAsync(qtx.ObsTx, func(applied bool) {
+			if applied {
+				s.recordCommittedXMRSpentRefs(conflictKey, identity)
+			}
+		})
 	}
 
 	k := observedTxKey(qtx.ObsTx, qtx.Inbound, qtx.AllowFutureObservation)
@@ -565,6 +587,9 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 
 			// Prune price feeds
 			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
+
+			// Prune XMR spent-ref conflict memory
+			s.pruneAuthorizedXMRSpentRefsLocked(time.Now())
 
 			s.mu.Unlock()
 			s.reconcileMimirConfigs()
