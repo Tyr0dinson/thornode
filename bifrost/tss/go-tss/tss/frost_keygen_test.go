@@ -910,27 +910,23 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 }
 
 // TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout pins
-// the bifrost half of the chainnet mass-jailing mechanism. The remote peer
-// participates fully through rounds 1 and 2 — payloads and transcript
-// verifications — and goes silent only in round 3, after the local sidecar
-// has already derived the group key. The DKG was one peer message away from
-// completing, yet:
+// the bifrost half of the chainnet mass-jailing mechanism and its fix. The
+// remote peer participates fully through rounds 1 and 2 — payloads and
+// transcript verifications — and goes silent only in round 3, after the
+// local sidecar has already derived the group key. The DKG was one peer
+// message away from completing, and Execute still fails with a round-3
+// timeout blame (unchanged: the coordinator cannot know the peers finished).
 //
-//   - the peer is blamed exactly like a node that never showed up, and the
-//     resulting failure MsgTssPool slashes it via the on-chain blame path;
-//   - the local node's only output is that failure message, whose tss ID
-//     differs from the success ID the finishers report, so judgeLateSigner
-//     jails this node with no way to self-heal (see
-//     TestXMRMonovaultKeygenFailureSubmitterStaysJailedAfterSuccessConsensus
-//     in x/thorchain).
-//
-// At 95-party scale, per-round timing skew makes this split routine: whoever
-// crosses the round timer last becomes either a blamer or the blamed. A fix
-// must let a node whose DKG completes just after the local timer still
-// submit the same-ID success (and/or stop blaming peers that demonstrably
-// participated in every earlier round). When that lands, this test's
-// expectations change: a completed-late DKG should produce a success
-// response instead of a timeout failure.
+// The healing now happens one level up: when the peers' result broadcasts
+// reach the on-chain supermajority threshold, AdoptQuorumSuccess proves the
+// local keyshare against the adopted group key via the sidecar finalize and
+// converts the failure into the same success the finishers report — same tss
+// ID, so the node votes with the quorum instead of filing a permanently
+// unreleasable failure (see
+// TestXMRMonovaultKeygenFailureSubmitterStaysJailedAfterSuccessConsensus in
+// x/thorchain for the on-chain half, which still needs the
+// MajorityConsensusBlockHeight fix for reports landing after consensus).
+// The tail of this test covers exactly that adoption.
 func TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout(t *testing.T) {
 	ensureBech32Prefix()
 
@@ -1070,6 +1066,122 @@ func TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout(t *tes
 	}
 	if len(sidecar.finalizeReqs) != 0 {
 		t.Fatalf("expected no finalize call after timeout, got %d", len(sidecar.finalizeReqs))
+	}
+
+	// The fix: once the finishers' result broadcasts reach quorum, the node
+	// adopts their success — the sidecar finalize proves the local session
+	// derived exactly the adopted group key and hands back the keyshare, so
+	// the node reports the same-ID success instead of the failure above.
+	quorumResp := FrostKeygenResponse{
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+		Status:               tcommon.Success,
+	}
+	adopted, ok := coord.AdoptQuorumSuccess(FrostKeygenRequest{
+		VaultPubKey:   "thorpub-vault",
+		SignerPubKeys: members,
+		ExpectedAddr:  groupAddress,
+	}, quorumResp)
+	if !ok {
+		t.Fatalf("expected quorum success adoption after completed local DKG")
+	}
+	if adopted.Status != tcommon.Success {
+		t.Fatalf("expected adopted success status, got %d", adopted.Status)
+	}
+	if adopted.Address != groupAddress || adopted.GroupKey != groupKey {
+		t.Fatalf("adopted result must carry the quorum vault: %+v", adopted)
+	}
+	if adopted.ObservedMoneroHeight != 456 {
+		t.Fatalf("adopted result must carry the quorum monero height, got %d", adopted.ObservedMoneroHeight)
+	}
+	if adopted.KeyBytesHex != "abcd" {
+		t.Fatalf("adopted result must carry the locally finalized keyshare, got %q", adopted.KeyBytesHex)
+	}
+	if len(sidecar.finalizeReqs) != 1 {
+		t.Fatalf("expected exactly one finalize call for the adoption proof, got %d", len(sidecar.finalizeReqs))
+	}
+	if sidecar.finalizeReqs[0].GroupKey != groupKey || sidecar.finalizeReqs[0].Address != groupAddress {
+		t.Fatalf("adoption must finalize against the adopted vault: %+v", sidecar.finalizeReqs[0])
+	}
+}
+
+// TestFrostKeygenAdoptQuorumSuccessRequiresKeyshareProof pins the safety of
+// the adoption path: a node may only convert a quorum success into its own
+// result when the sidecar finalize proves its DKG session derived exactly
+// the adopted vault. Every failure of that proof keeps the local failure.
+func TestFrostKeygenAdoptQuorumSuccessRequiresKeyshareProof(t *testing.T) {
+	ensureBech32Prefix()
+
+	groupAddress := "48xmrvaultaddress"
+	groupKey := strings.Repeat("ab", 32)
+	req := FrostKeygenRequest{VaultPubKey: "thorpub-vault", ExpectedAddr: groupAddress}
+	quorumResp := FrostKeygenResponse{
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+		Status:               tcommon.Success,
+	}
+
+	// No completed local DKG session: the sidecar rejects the finalize and the
+	// adoption must be refused.
+	sidecar := &mockFrostSidecarKeygen{finalizeErr: errors.New("DKG session keys not found")}
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", make(chan *p2p.Message, 1), time.Second)
+	coord.sidecar = sidecar
+	if _, ok := coord.AdoptQuorumSuccess(req, quorumResp); ok {
+		t.Fatalf("expected adoption refusal without a finalizable local session")
+	}
+
+	// Address not matching the expected vault address: refuse before ever
+	// touching the sidecar.
+	sidecar = &mockFrostSidecarKeygen{finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"}}
+	coord.sidecar = sidecar
+	mismatched := quorumResp
+	mismatched.Address = "48otheraddress"
+	if _, ok := coord.AdoptQuorumSuccess(req, mismatched); ok {
+		t.Fatalf("expected adoption refusal on expected-address mismatch")
+	}
+	if len(sidecar.finalizeReqs) != 0 {
+		t.Fatalf("expected no finalize call on address mismatch, got %d", len(sidecar.finalizeReqs))
+	}
+
+	// Finalize succeeding without key bytes cannot prove keyshare possession.
+	sidecar = &mockFrostSidecarKeygen{finalizeResp: FrostSidecarDKGFinalizeResp{Success: true}}
+	coord.sidecar = sidecar
+	if _, ok := coord.AdoptQuorumSuccess(req, quorumResp); ok {
+		t.Fatalf("expected adoption refusal on empty keyshare bytes")
+	}
+
+	// A quorum response without a positive monero height cannot build a valid
+	// XMR keygen success message.
+	sidecar = &mockFrostSidecarKeygen{finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"}}
+	coord.sidecar = sidecar
+	noHeight := quorumResp
+	noHeight.ObservedMoneroHeight = 0
+	if _, ok := coord.AdoptQuorumSuccess(req, noHeight); ok {
+		t.Fatalf("expected adoption refusal without observed monero height")
+	}
+}
+
+// TestFrostKeygenAdoptionQuorumMatchesOnChainSupermajority keeps the bifrost
+// adoption threshold aligned with x/thorchain/types.HasSuperMajority: adopt
+// exactly when THORChain will finalize the vault.
+func TestFrostKeygenAdoptionQuorumMatchesOnChainSupermajority(t *testing.T) {
+	cases := []struct {
+		total, quorum int
+	}{
+		{0, 0},
+		{1, 1},
+		{2, 2},
+		{3, 2},
+		{4, 3},
+		{9, 6},
+		{95, 64},
+	}
+	for _, tc := range cases {
+		if got := frostKeygenAdoptionQuorum(tc.total); got != tc.quorum {
+			t.Fatalf("adoption quorum for %d participants: expected %d, got %d", tc.total, tc.quorum, got)
+		}
 	}
 }
 

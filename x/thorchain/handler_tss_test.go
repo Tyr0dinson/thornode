@@ -831,10 +831,14 @@ func (s *HandlerTssSuite) TestXMRMonovaultKeygenFinalizesOnSuperMajority(c *C) {
 // "first consensus" branch instead of the release branch: it is NOT released,
 // and every remaining absentee is RE-jailed with a fresh release height.
 //
-// The assertions encode the CURRENT (buggy) behavior so this test documents
-// the incident and must be flipped by the fix (grace window / no-jail for
-// XMRMonovaultKeygen, MajorityConsensusBlockHeight persisted correctly, and
-// bifrost submitting a late DKG success instead of a timeout failure).
+// The assertions encode the CURRENT (buggy) on-chain behavior. The bifrost
+// half of the fix has landed (AdoptQuorumSuccess: a timed-out member with a
+// completed DKG session adopts the quorum success and votes the same ID, so
+// the failure vote below mostly stops being produced). This test's
+// expectations flip with the on-chain half: MajorityConsensusBlockHeight
+// persisted correctly so late same-ID signers are released (defect 2), and
+// optionally a grace window / no-jail for XMRMonovaultKeygen (defect 1 for
+// members that genuinely cannot adopt).
 func (s *HandlerTssSuite) TestXMRMonovaultKeygenFailureSubmitterStaysJailedAfterSuccessConsensus(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))

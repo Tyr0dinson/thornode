@@ -225,10 +225,30 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		return resp, nil
 	}
 
-	waitResp, waitErr := coordinator.WaitForResult(activeParticipants, quorum, coordinator.timeout+5*time.Second)
+	// The local execution failed, but THORChain finalizes the vault once a
+	// supermajority reports the same success, so wait for peer results at
+	// exactly that threshold. The previous full-set quorum could never be met
+	// after a local failure - at most n-1 peers can have succeeded - which made
+	// the adoption below unreachable and let per-round timing skew turn a
+	// completed DKG into a permanent keygen-jail sentence (the tss ID of a
+	// failure vote differs from the success, so judgeLateSigner never releases
+	// a failure submitter).
+	adoptionQuorum := frostKeygenAdoptionQuorum(len(activeSet.originalByNormalized))
+	waitResp, waitErr := coordinator.WaitForResult(activeParticipants, adoptionQuorum, coordinator.timeout+5*time.Second)
 	if waitErr == nil && waitResp.Status == tcommon.Success {
-		t.persistPeerAddressBook()
-		return waitResp, nil
+		if adopted, ok := coordinator.AdoptQuorumSuccess(req, waitResp); ok {
+			t.persistPeerAddressBook()
+			t.logger.Info().
+				Str("msg_id", msgID).
+				Str("address", adopted.Address).
+				Msg("local frost keygen failed but quorum succeeded; adopted result with locally finalized keyshare")
+			if err := coordinator.BroadcastResult(adopted, allPeerIDs); err != nil {
+				t.logger.Warn().Err(err).Msg("fail to broadcast adopted frost keygen result")
+			}
+			return adopted, nil
+		}
+		// This node cannot prove it holds a keyshare for the quorum vault, so
+		// it must not report success; fall through to the local failure.
 	}
 	if err := coordinator.BroadcastResult(resp, allPeerIDs); err != nil {
 		t.logger.Warn().Err(err).Msg("fail to broadcast local frost keygen failure result")
@@ -237,6 +257,21 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		return waitResp, nil
 	}
 	return resp, nil
+}
+
+// frostKeygenAdoptionQuorum mirrors the on-chain supermajority rule
+// (x/thorchain/types.HasSuperMajority): ceil(2/3 * total). Once that many
+// members report the same keygen success, THORChain will finalize the vault,
+// so adopting the result is the only outcome consistent with the network.
+func frostKeygenAdoptionQuorum(total int) int {
+	if total <= 0 {
+		return 0
+	}
+	quorum := total * 2 / 3
+	if (total*2)%3 > 0 {
+		quorum++
+	}
+	return quorum
 }
 
 func frostKeygenJoinThreshold(participantCount int) int {
@@ -974,6 +1009,65 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 	}
 
 	return groupAddress, groupKey, minMoneroHeight, nil
+}
+
+// AdoptQuorumSuccess turns a quorum keygen success into this node's own
+// result after a failed local execution, if and only if the node can prove it
+// holds a keyshare for exactly that vault: the sidecar finalize validates the
+// stored DKG session key material against the adopted group key and address
+// and returns the keyshare backup. This heals the timing-skew split where a
+// round timer expires moments before the last peer message and a completed
+// DKG would otherwise be reported as a keygen failure - whose tss ID differs
+// from the success, jailing this node with no path to release. A node whose
+// DKG session did not complete fails the finalize and keeps its failure
+// result: a member without a keyshare must never report success.
+func (c *FrostKeygenCoordinator) AdoptQuorumSuccess(req FrostKeygenRequest, quorumResp FrostKeygenResponse) (FrostKeygenResponse, bool) {
+	address := strings.TrimSpace(quorumResp.Address)
+	groupKey := strings.TrimSpace(quorumResp.GroupKey)
+	if address == "" || groupKey == "" {
+		c.logger.Warn().Msg("skip adopting quorum keygen success: empty address or group key")
+		return FrostKeygenResponse{}, false
+	}
+	if req.ExpectedAddr != "" && address != req.ExpectedAddr {
+		c.logger.Error().
+			Str("expected", req.ExpectedAddr).
+			Str("address", address).
+			Msg("skip adopting quorum keygen success: address does not match expected")
+		return FrostKeygenResponse{}, false
+	}
+	if quorumResp.ObservedMoneroHeight <= 0 {
+		c.logger.Warn().Msg("skip adopting quorum keygen success: missing observed monero height")
+		return FrostKeygenResponse{}, false
+	}
+	finalizeResp, err := c.sidecar.FrostDKGFinalize(FrostSidecarDKGFinalizeReq{
+		SessionID: c.msgID,
+		GroupKey:  groupKey,
+		Address:   address,
+	})
+	if err != nil {
+		c.logger.Warn().Err(err).Msg("cannot adopt quorum keygen success: local keyshare finalize failed")
+		return FrostKeygenResponse{}, false
+	}
+	if !finalizeResp.Success {
+		c.logger.Warn().Msg("cannot adopt quorum keygen success: finalize returned unsuccessful response")
+		return FrostKeygenResponse{}, false
+	}
+	keyBytesHex := strings.TrimSpace(finalizeResp.KeyBytesHex)
+	if keyBytesHex == "" {
+		c.logger.Warn().Msg("cannot adopt quorum keygen success: finalize returned empty key bytes")
+		return FrostKeygenResponse{}, false
+	}
+	if _, err := hex.DecodeString(keyBytesHex); err != nil {
+		c.logger.Warn().Err(err).Msg("cannot adopt quorum keygen success: finalize returned invalid key bytes hex")
+		return FrostKeygenResponse{}, false
+	}
+	return FrostKeygenResponse{
+		Address:              address,
+		GroupKey:             groupKey,
+		KeyBytesHex:          keyBytesHex,
+		ObservedMoneroHeight: quorumResp.ObservedMoneroHeight,
+		Status:               tcommon.Success,
+	}, true
 }
 
 func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quorum int, timeout time.Duration) (FrostKeygenResponse, error) {
