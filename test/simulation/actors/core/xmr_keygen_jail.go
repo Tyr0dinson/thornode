@@ -29,10 +29,14 @@ import (
 // TestXMRMonovaultKeygenFailureSubmitterStaysJailedAfterSuccessConsensus).
 //
 // The actor asserts the CURRENT (buggy) network behavior: the new XMR vault
-// is created AND at least one member sits in keygen jail. Once the fix lands
-// (late-success adoption in bifrost and/or on-chain grace), flip the
-// assertion: the same fault injection must end with the vault created and
-// nobody jailed.
+// is created AND at least one member sits in keygen jail. The bifrost half of
+// the fix (AdoptQuorumSuccess) already lets the victim adopt the quorum
+// success, but at 4 nodes the 3 finishers reach on-chain supermajority before
+// the victim's adopted vote can land (adoption costs netem-delayed p2p
+// round-trips), so the victim is still jailed at consensus — and the
+// MajorityConsensusBlockHeight clobber in x/thorchain (defect 2) then blocks
+// its release. Flip the assertion to "vault created and nobody stays jailed"
+// once that on-chain fix lands.
 type XMRKeygenJailActor struct {
 	Actor
 
