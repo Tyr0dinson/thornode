@@ -909,6 +909,170 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	}
 }
 
+// TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout pins
+// the bifrost half of the chainnet mass-jailing mechanism. The remote peer
+// participates fully through rounds 1 and 2 — payloads and transcript
+// verifications — and goes silent only in round 3, after the local sidecar
+// has already derived the group key. The DKG was one peer message away from
+// completing, yet:
+//
+//   - the peer is blamed exactly like a node that never showed up, and the
+//     resulting failure MsgTssPool slashes it via the on-chain blame path;
+//   - the local node's only output is that failure message, whose tss ID
+//     differs from the success ID the finishers report, so judgeLateSigner
+//     jails this node with no way to self-heal (see
+//     TestXMRMonovaultKeygenFailureSubmitterStaysJailedAfterSuccessConsensus
+//     in x/thorchain).
+//
+// At 95-party scale, per-round timing skew makes this split routine: whoever
+// crosses the round timer last becomes either a blamer or the blamed. A fix
+// must let a node whose DKG completes just after the local timer still
+// submit the same-ID success (and/or stop blaming peers that demonstrably
+// participated in every earlier round). When that lands, this test's
+// expectations change: a completed-late DKG should produce a success
+// response instead of a timeout failure.
+func TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+	activePeerIDs, err := conversion.GetPeerIDsFromPubKeys(members)
+	if err != nil {
+		t.Fatalf("peer ids: %v", err)
+	}
+
+	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	remoteIndex := participantIndexMap[normalizePubKey(testPubKeys[1])]
+	localIndexKey := strconv.FormatUint(uint64(localIndex), 10)
+	remoteIndexKey := strconv.FormatUint(uint64(remoteIndex), 10)
+
+	msgChan := make(chan *p2p.Message, 32)
+	groupAddress := "48xmrvaultaddress"
+	groupKey := strings.Repeat("ab", 32)
+
+	localRound1 := FrostDKGRound1Payload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: localIndex,
+		Commitments:      "local-commitment",
+	}
+	remoteRound1 := FrostDKGRound1Payload{
+		SenderPubKey:     testPubKeys[1],
+		ParticipantIndex: remoteIndex,
+		Commitments:      "remote-commitment",
+	}
+	localRound1Hash, err := FrostTranscriptDKGRound1Hash("msg-id", localRound1)
+	if err != nil {
+		t.Fatalf("local round1 hash: %v", err)
+	}
+	remoteRound1Hash, err := FrostTranscriptDKGRound1Hash("msg-id", remoteRound1)
+	if err != nil {
+		t.Fatalf("remote round1 hash: %v", err)
+	}
+
+	localRound2 := FrostDKGRound2Payload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: localIndex,
+		EncryptedShares: map[string]string{
+			remoteIndexKey: "local-to-remote",
+		},
+	}
+	remoteRound2 := FrostDKGRound2Payload{
+		SenderPubKey:     testPubKeys[1],
+		ParticipantIndex: remoteIndex,
+		EncryptedShares: map[string]string{
+			localIndexKey: "remote-to-local",
+		},
+	}
+	localRound2Hash, err := FrostTranscriptDKGRound2Hash("msg-id", localRound2)
+	if err != nil {
+		t.Fatalf("local round2 hash: %v", err)
+	}
+	remoteRound2Hash, err := FrostTranscriptDKGRound2Hash("msg-id", remoteRound2)
+	if err != nil {
+		t.Fatalf("remote round2 hash: %v", err)
+	}
+
+	// Rounds 1 and 2: the remote peer is fully present and verifiable.
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], remoteRound1)
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
+		SenderPubKey:           testPubKeys[1],
+		Round:                  frostDKGRound1,
+		TargetSenderPubKey:     testPubKeys[1],
+		TargetParticipantIndex: remoteIndex,
+		PayloadHash:            remoteRound1Hash,
+	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
+		SenderPubKey:           testPubKeys[1],
+		Round:                  frostDKGRound1,
+		TargetSenderPubKey:     testPubKeys[0],
+		TargetParticipantIndex: localIndex,
+		PayloadHash:            localRound1Hash,
+	})
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound2Msg, "msg-id", testPubKeys[1], remoteRound2)
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
+		SenderPubKey:           testPubKeys[1],
+		Round:                  frostDKGRound2,
+		TargetSenderPubKey:     testPubKeys[1],
+		TargetParticipantIndex: remoteIndex,
+		PayloadHash:            remoteRound2Hash,
+	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
+		SenderPubKey:           testPubKeys[1],
+		Round:                  frostDKGRound2,
+		TargetSenderPubKey:     testPubKeys[0],
+		TargetParticipantIndex: localIndex,
+		PayloadHash:            localRound2Hash,
+	})
+	// Round 3: nothing from the remote peer — its final message is a moment
+	// too late for the local per-round timer.
+
+	sidecar := &mockFrostSidecarKeygen{
+		round1Resp: FrostSidecarDKGRound1Resp{Commitments: "local-commitment"},
+		round2Resp: FrostSidecarDKGRound2Resp{EncryptedShares: localRound2.EncryptedShares},
+		round3Resp: FrostSidecarDKGRound3Resp{
+			Address:  groupAddress,
+			GroupKey: groupKey,
+		},
+		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"},
+		chainHeight:  456,
+	}
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 150*time.Millisecond)
+	coord.sidecar = sidecar
+	resp := coord.Execute(FrostKeygenRequest{
+		VaultPubKey:   "thorpub-vault",
+		SignerPubKeys: members,
+		ExpectedAddr:  groupAddress,
+	}, activeSet, activePeerIDs)
+
+	// Current behavior: timeout failure blaming the almost-complete peer.
+	if resp.Status != tcommon.Fail {
+		t.Fatalf("expected fail status, got %d (resp %+v)", resp.Status, resp)
+	}
+	if resp.Blame.Round != frostDKGRound3 {
+		t.Fatalf("expected blame round %s, got %s", frostDKGRound3, resp.Blame.Round)
+	}
+	if len(resp.Blame.BlameNodes) != 1 || resp.Blame.BlameNodes[0].Pubkey != testPubKeys[1] {
+		t.Fatalf("expected round3 timeout blame for %s, got %+v", testPubKeys[1], resp.Blame.BlameNodes)
+	}
+
+	// The local sidecar had already derived the group key: the DKG state was
+	// one peer message away from done when the node gave up.
+	if len(sidecar.round3Reqs) != 1 {
+		t.Fatalf("expected local round3 sidecar call to have happened, got %d", len(sidecar.round3Reqs))
+	}
+	if len(sidecar.finalizeReqs) != 0 {
+		t.Fatalf("expected no finalize call after timeout, got %d", len(sidecar.finalizeReqs))
+	}
+}
+
 func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 	ensureBech32Prefix()
 
