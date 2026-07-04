@@ -834,7 +834,18 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 		resp := c.failForPubKeys(failure.reason, frostDKGRound3, failure.blamePubKey)
 		return "", "", 0, &resp
 	}
-	timer := time.NewTimer(c.timeout)
+	// Test-only fault injection for the keygen-jail simulation: shrink ONLY the
+	// round-3 wait so this node abandons the DKG after it has sent everything
+	// peers need to finish without it, reproducing the timing-skew split behind
+	// the chainnet keygen mass-jailing. Unset in production; empty is a no-op.
+	round3Timeout := c.timeout
+	if ms := frostKeygenTestRound3TimeoutMS(); ms > 0 {
+		round3Timeout = time.Duration(ms) * time.Millisecond
+		c.logger.Warn().
+			Dur("round3_timeout", round3Timeout).
+			Msg("TEST override active: XMR_FROST_KEYGEN_TEST_ROUND3_TIMEOUT_MS shrinks the round-3 wait")
+	}
+	timer := time.NewTimer(round3Timeout)
 	defer timer.Stop()
 
 	for !verifier.isComplete() {
