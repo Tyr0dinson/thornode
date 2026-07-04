@@ -26,6 +26,12 @@ func XMRPostChurn(rng *rand.Rand) *Actor {
 	return a
 }
 
+func XMRKeygenJail(rng *rand.Rand) *Actor {
+	a := NewActor("XMRKeygenJail", rng)
+	a.Append(core.NewXMRKeygenJailActor(rng))
+	return a
+}
+
 func XMRSpentRefTracking(rng *rand.Rand) *Actor {
 	a := NewActor("XMRSpentRefTracking", rng)
 	a.Append(core.NewXMRSpentRefVerifyActor(rng))

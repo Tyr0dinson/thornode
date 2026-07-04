@@ -374,6 +374,38 @@ test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mockn
 		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
+# Reproduce the XMR monovault keygen mass-jailing (issue: keygen timing skew
+# jails members that participated). One bifrost (pig) gets a test-only
+# shortened FROST round-3 wait via XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS, and
+# netem adds symmetric latency on every bifrost's p2p port so transcript
+# verifications lag round payloads by one hop. The victim then abandons a DKG
+# its peers can finish, and the xmr-keygen-jail actor asserts the resulting
+# split: new XMR vault created AND a member jailed for "failed to vote keygen
+# in time". Tune the two knobs if the split does not reproduce: the round-3
+# timeout must sit between one and two netem delays after round-3 start.
+XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS ?= 3600
+XMR_KEYGEN_JAIL_NETEM_DELAY_MS ?= 2500
+
+test-simulation-keygen-jail: export XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS := $(XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS)
+test-simulation-keygen-jail: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+	@echo "applying netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms to bifrost p2p (port 5040)"
+	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1; do \
+		docker run --rm --net container:$$c --cap-add NET_ADMIN alpine:3.20 sh -c "\
+			apk add -q iproute2 && \
+			tc qdisc replace dev eth0 root handle 1: prio bands 4 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 && \
+			tc qdisc add dev eth0 parent 1:4 handle 40: netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms && \
+			tc filter add dev eth0 parent 1: protocol ip u32 match ip dport 5040 0xffff flowid 1:4 && \
+			tc filter add dev eth0 parent 1: protocol ip u32 match ip sport 5040 0xffff flowid 1:4" \
+			|| exit 1; \
+	done
+	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
+	@STAGES=seed,bootstrap,xmr-keygen-jail docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
+		thornode-simtest sh -c 'make _test-simulation'
+
 test-simulation-no-reset: build-test-simulation
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
