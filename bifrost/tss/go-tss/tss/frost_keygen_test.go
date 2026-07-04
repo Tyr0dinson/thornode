@@ -1185,6 +1185,121 @@ func TestFrostKeygenAdoptionQuorumMatchesOnChainSupermajority(t *testing.T) {
 	}
 }
 
+// TestFrostKeygenWaitForResultSurvivesInvalidResultMessages pins the result
+// waiter's noise tolerance: the keygen msg ID is derivable by any connected
+// peer, so a single malformed or unauthorized DKG result message arriving
+// before the genuine quorum must be skipped, not end the wait — otherwise one
+// peer could veto the quorum-success adoption and every non-active waiter.
+// (This mirrors the keysign result waiter's behavior.)
+func TestFrostKeygenWaitForResultSurvivesInvalidResultMessages(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	groupAddress := "48xmrvaultaddress"
+	groupKey := strings.Repeat("ab", 32)
+	success := FrostDKGResult{
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+		Status:               uint8(tcommon.Success),
+	}
+
+	msgChan := make(chan *p2p.Message, 16)
+
+	// 1. Unparseable result payload.
+	enqueueWrappedPayload(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], []byte("{not-json"))
+	// 2. Empty sender pubkey.
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
+		SenderPubKey: "",
+		Response:     success,
+	})
+	// 3. Sender outside the active participant set.
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[3], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[3],
+		Response:     success,
+	})
+	// 4. Sender/peer binding mismatch: claims to be member 1 but arrives from
+	// member 2's peer.
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[2], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[1],
+		Response:     success,
+	})
+	// 5. Structurally invalid result (success without an address).
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[1],
+		Response: FrostDKGResult{
+			GroupKey:             groupKey,
+			ObservedMoneroHeight: 456,
+			Status:               uint8(tcommon.Success),
+		},
+	})
+	// The genuine quorum arrives after all the noise.
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[1],
+		Response:     success,
+	})
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[2], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[2],
+		Response:     success,
+	})
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	resp, err := coord.WaitForResult(members, 2, 2*time.Second)
+	if err != nil {
+		t.Fatalf("expected quorum success despite invalid result noise, got error: %v", err)
+	}
+	if resp.Status != tcommon.Success {
+		t.Fatalf("expected success status, got %d (blame %+v)", resp.Status, resp.Blame)
+	}
+	if resp.Address != groupAddress || resp.GroupKey != groupKey {
+		t.Fatalf("unexpected adopted result: %+v", resp)
+	}
+}
+
+// TestFrostKeygenWaitForResultLastVoteWinsPerSender pins the per-sender vote
+// accounting: a sender re-voting with a different result moves between vote
+// buckets, so one member cannot hold votes in two buckets at once (or count
+// toward a quorum with a result it has since replaced).
+func TestFrostKeygenWaitForResultLastVoteWinsPerSender(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	groupKey := strings.Repeat("ab", 32)
+	resultX := FrostDKGResult{
+		Address:              "48addressX",
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+		Status:               uint8(tcommon.Success),
+	}
+	resultY := FrostDKGResult{
+		Address:              "48addressY",
+		GroupKey:             strings.Repeat("cd", 32),
+		ObservedMoneroHeight: 456,
+		Status:               uint8(tcommon.Success),
+	}
+
+	msgChan := make(chan *p2p.Message, 8)
+	// Member 1 votes X, then replaces it with Y; member 2 votes X. No result
+	// may reach quorum 2: X holds only member 2 after the replacement.
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[1],
+		Response:     resultX,
+	})
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[1],
+		Response:     resultY,
+	})
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[2], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[2],
+		Response:     resultX,
+	})
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	if _, err := coord.WaitForResult(members, 2, 500*time.Millisecond); err == nil {
+		t.Fatalf("expected timeout: the replaced vote must not count toward quorum")
+	}
+}
+
 func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 	ensureBech32Prefix()
 

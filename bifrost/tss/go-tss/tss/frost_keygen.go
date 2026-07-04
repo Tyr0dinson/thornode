@@ -1089,6 +1089,11 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 	}
 
 	buckets := make(map[string]*dkgResultVoteBucket)
+	// Last write wins per sender: an active sender re-voting with a different
+	// result moves between buckets instead of inflating the map, so a single
+	// hostile member can neither grow memory without bound nor hold votes in
+	// two buckets at once.
+	voteBySender := make(map[string]string)
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
@@ -1101,31 +1106,49 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 			if strings.TrimSpace(wrapped.MsgID) != c.msgID {
 				continue
 			}
+			// Invalid result messages are gossip noise and must never end the
+			// wait: the msg ID is derivable by any connected peer, so a single
+			// malformed or unauthorized message arriving before the genuine
+			// quorum would otherwise veto the adoption path and every
+			// non-active waiter. Mirror the keysign result waiter: log, skip,
+			// and keep waiting for quorum or timeout.
 			var payload FrostDKGResultPayload
 			if err := json.Unmarshal(wrapped.Payload, &payload); err != nil {
-				resp := c.failForMalformed(msg.PeerID, "invalid frost dkg result payload", frostDKGResult)
-				return resp, nil
+				c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("skipping malformed frost dkg result payload")
+				continue
 			}
 
 			senderNorm := normalizePubKey(payload.SenderPubKey)
 			if senderNorm == "" {
-				resp := c.failForMalformed(msg.PeerID, "empty sender pubkey in frost dkg result", frostDKGResult)
-				return resp, nil
+				c.logger.Warn().Str("peer", msg.PeerID.String()).Msg("skipping frost dkg result with empty sender pubkey")
+				continue
 			}
 			if _, ok := activeByNormalized[senderNorm]; !ok {
-				resp := c.failForPubKeys("result sender is not in active signer set", frostDKGResult, []string{payload.SenderPubKey})
-				return resp, nil
+				c.logger.Warn().Str("sender", payload.SenderPubKey).Msg("skipping frost dkg result from non-active participant")
+				continue
 			}
 			if err := c.validateSenderPeerBinding(msg.PeerID, payload.SenderPubKey); err != nil {
-				resp := c.failForPubKeys(err.Error(), frostDKGResult, []string{payload.SenderPubKey})
-				return resp, nil
+				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping frost dkg result with peer binding mismatch")
+				continue
 			}
 
 			normalized, matchKey, err := normalizeDKGResultPayload(payload.Response)
 			if err != nil {
-				resp := c.failForPubKeys(err.Error(), frostDKGResult, []string{payload.SenderPubKey})
-				return resp, nil
+				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping malformed frost dkg result")
+				continue
 			}
+			if prevKey, voted := voteBySender[senderNorm]; voted {
+				if prevKey == matchKey {
+					continue
+				}
+				if prev := buckets[prevKey]; prev != nil {
+					delete(prev.voters, senderNorm)
+					if len(prev.voters) == 0 {
+						delete(buckets, prevKey)
+					}
+				}
+			}
+			voteBySender[senderNorm] = matchKey
 			bucket := buckets[matchKey]
 			if bucket == nil {
 				bucket = &dkgResultVoteBucket{
