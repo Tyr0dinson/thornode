@@ -15,6 +15,12 @@ import (
 // integer. Compiled into mocknet builds only; every other build uses the
 // constant-zero stub, so the fault injection cannot exist in production
 // binaries.
+//
+// NOTE: the variable travels under two names before reaching this reader - the
+// Makefile exports XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS and build/docker/docker-compose.yml
+// bridges it to XMR_FROST_KEYGEN_TEST_ROUND3_TIMEOUT_MS (the name read below).
+// Renaming either name in only one place silently disables the fault injection
+// with no test failure, so keep all three in sync.
 func frostKeygenTestRound3TimeoutMS() int {
 	v := strings.TrimSpace(os.Getenv("XMR_FROST_KEYGEN_TEST_ROUND3_TIMEOUT_MS"))
 	if v == "" {

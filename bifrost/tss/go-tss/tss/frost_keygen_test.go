@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	tcommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
+	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type mockFrostSidecarKeygen struct {
@@ -1165,22 +1166,23 @@ func TestFrostKeygenAdoptQuorumSuccessRequiresKeyshareProof(t *testing.T) {
 
 // TestFrostKeygenAdoptionQuorumMatchesOnChainSupermajority keeps the bifrost
 // adoption threshold aligned with x/thorchain/types.HasSuperMajority: adopt
-// exactly when THORChain will finalize the vault.
+// exactly when THORChain will finalize the vault. It asserts against the
+// on-chain rule itself rather than hardcoded literals, so a change to
+// SuperMajorityFactor is caught here instead of silently diverging from the
+// bifrost copy.
 func TestFrostKeygenAdoptionQuorumMatchesOnChainSupermajority(t *testing.T) {
-	cases := []struct {
-		total, quorum int
-	}{
-		{0, 0},
-		{1, 1},
-		{2, 2},
-		{3, 2},
-		{4, 3},
-		{9, 6},
-		{95, 64},
+	if got := frostKeygenAdoptionQuorum(0); got != 0 {
+		t.Fatalf("adoption quorum for 0 participants: expected 0, got %d", got)
 	}
-	for _, tc := range cases {
-		if got := frostKeygenAdoptionQuorum(tc.total); got != tc.quorum {
-			t.Fatalf("adoption quorum for %d participants: expected %d, got %d", tc.total, tc.quorum, got)
+	for total := 1; total <= 128; total++ {
+		q := frostKeygenAdoptionQuorum(total)
+		// q must be the exact on-chain supermajority threshold for `total`
+		// members: q reaches it, q-1 does not.
+		if !thorchaintypes.HasSuperMajority(q, total) {
+			t.Fatalf("adoption quorum %d for %d participants is below the on-chain supermajority", q, total)
+		}
+		if thorchaintypes.HasSuperMajority(q-1, total) {
+			t.Fatalf("adoption quorum %d for %d participants exceeds the on-chain supermajority (q-1 already reaches it)", q, total)
 		}
 	}
 }

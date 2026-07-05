@@ -34,9 +34,16 @@ import (
 // success, but at 4 nodes the 3 finishers reach on-chain supermajority before
 // the victim's adopted vote can land (adoption costs netem-delayed p2p
 // round-trips), so the victim is still jailed at consensus — and the
-// MajorityConsensusBlockHeight clobber in x/thorchain (defect 2) then blocks
-// its release. Flip the assertion to "vault created and nobody stays jailed"
-// once that on-chain fix lands.
+// MajorityConsensusBlockHeight clobber in x/thorchain (defect 2 of
+// gitlab.com/thorchain/thornode issue #3092) then blocks its release.
+//
+// This assertion pins a KNOWN-OPEN bug on purpose and is tied to #3092: when
+// the defect-2 consensus-lane fix (persist MajorityConsensusBlockHeight
+// correctly) lands, flip it to "vault created and nobody stays jailed". Until
+// then, note the assertion succeeds on "at least one victim"; if adoption
+// timing shifts it could pass for the wrong reason (vault created but a
+// different/extra member jailed), so the `len(jailed) > 1` case is logged
+// loudly below rather than silently accepted.
 type XMRKeygenJailActor struct {
 	Actor
 
