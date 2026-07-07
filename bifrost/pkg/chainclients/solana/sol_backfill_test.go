@@ -890,6 +890,7 @@ func (s *ClientBackfillSuite) TestNextSolvencyReportSlotMultiple(c *C) {
 	defer server.Close()
 	client := s.makeClient(c, server)
 	client.cfg.SolvencyBlocks = 50
+	client.solScanner.lastFeeRate.Store(1)
 
 	c.Assert(client.nextSolvencyReportSlotMultiple(50), Equals, int64(0))
 	c.Assert(client.nextSolvencyReportSlotMultiple(51), Equals, int64(1))
