@@ -285,11 +285,11 @@ func (c *Client) ImportAddressRescan(address string) error {
 }
 
 // RescanBlockchain rescans the node wallet over the provided block range.
-func (c *Client) RescanBlockchain(startHeight, stopHeight int64, timeout time.Duration) error {
+func (c *Client) RescanBlockchain(ctx context.Context, startHeight, stopHeight int64, timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = defaultRescanBlockchainTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	err := c.CallContext(ctx, nil, "rescanblockchain", startHeight, stopHeight)

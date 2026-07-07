@@ -2,6 +2,7 @@ package utxo
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -363,6 +364,19 @@ func (s *CoverageBackfillSuite) TestShouldReportSolvency(c *C) {
 	// BTC chain: always true if height is past 1
 	s.client.lastSolvencyCheckHeight.Store(98)
 	c.Assert(s.client.ShouldReportSolvency(100), Equals, true)
+
+	// Wallet recovery gates solvency reporting only; signing remains available while recovery runs.
+	s.client.cfg.UTXO.WalletRecoveryHorizon = time.Hour
+	s.client.setWalletRecoveryPending()
+	s.client.lastSolvencyCheckHeight.Store(98)
+	c.Assert(s.client.ShouldReportSolvency(100), Equals, false)
+	s.client.setWalletRecoveryFailed()
+	s.client.lastSolvencyCheckHeight.Store(98)
+	c.Assert(s.client.ShouldReportSolvency(100), Equals, false)
+	s.client.setWalletRecoveryReady()
+	s.client.lastSolvencyCheckHeight.Store(98)
+	c.Assert(s.client.ShouldReportSolvency(100), Equals, true)
+	s.client.cfg.UTXO.WalletRecoveryHorizon = 0
 
 	// DOGE chain: only on height % 10 == 0
 	s.client.cfg.ChainID = common.DOGEChain
@@ -1262,6 +1276,14 @@ type walletRecoveryBridge struct {
 	lastObservedHeight int64
 }
 
+type getAsgardsFailBridge struct {
+	thorclient.ThorchainBridge
+}
+
+func (b getAsgardsFailBridge) GetAsgards() (ttypes.Vaults, error) {
+	return nil, fmt.Errorf("GetAsgards should not be called from NewClient")
+}
+
 // GetAsgards returns the test vault set used by startup wallet recovery checks.
 func (b walletRecoveryBridge) GetAsgards() (ttypes.Vaults, error) {
 	return b.vaults, nil
@@ -1482,7 +1504,7 @@ func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryRescansCoveredBitcoin
 	server := s.setupWalletRecovery(c, state)
 	defer server.Close()
 
-	err := s.client.preflightWalletRecovery()
+	err := s.client.preflightWalletRecovery(context.Background())
 	c.Assert(err, IsNil)
 	c.Assert(state.listUnspentCalls, Equals, 2)
 	c.Assert(state.importAddressCalls, Equals, 1)
@@ -1500,7 +1522,7 @@ func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryWaitsForDaemonCatchUp
 	server := s.setupWalletRecovery(c, state)
 	defer server.Close()
 
-	err := s.client.preflightWalletRecovery()
+	err := s.client.preflightWalletRecovery(context.Background())
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*waiting for daemon catch-up.*")
 	c.Assert(state.listUnspentCalls, Equals, 0)
@@ -1517,7 +1539,7 @@ func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryFailsWhenPrunedSnapsh
 	server := s.setupWalletRecovery(c, state)
 	defer server.Close()
 
-	err := s.client.preflightWalletRecovery()
+	err := s.client.preflightWalletRecovery(context.Background())
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*newer than configured wallet_recovery_horizon.*")
 	c.Assert(state.getBlockChainInfoCalls, Equals, 1)
@@ -1532,7 +1554,7 @@ func (s *CoverageBackfillSuite) TestPreflightWalletRecoveryDogecoinRequiresManua
 	server := s.setupWalletRecovery(c, state)
 	defer server.Close()
 
-	err := s.client.preflightWalletRecovery()
+	err := s.client.preflightWalletRecovery(context.Background())
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*automatic DOGE wallet rescan is disabled.*")
 	c.Assert(state.getBlockChainInfoCalls, Equals, 0)
@@ -1583,6 +1605,15 @@ func (s *CoverageBackfillSuite) TestNewClientUnsupportedChain(c *C) {
 	_, err := NewClient(s.keys, cfg, nil, s.bridge, s.m)
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "unsupported utxo chain"), Equals, true)
+}
+
+func (s *CoverageBackfillSuite) TestNewClientDefersWalletRecoveryPreflight(c *C) {
+	cfg := s.cfg
+	cfg.UTXO.WalletRecoveryHorizon = time.Hour
+
+	client, err := NewClient(s.keys, cfg, nil, getAsgardsFailBridge{ThorchainBridge: s.bridge}, s.m)
+	c.Assert(err, IsNil)
+	c.Assert(client.walletRecoveryState.Load(), Equals, walletRecoveryPending)
 }
 
 func (s *CoverageBackfillSuite) TestGetSenderWithVinZeroTxs(c *C) {

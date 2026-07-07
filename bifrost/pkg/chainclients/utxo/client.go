@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -46,6 +47,14 @@ const walletRecoveryRescanStartSafetyBlocks int64 = 144
 // do not define wallet_recovery_rescan_timeout yet.
 const defaultWalletRecoveryRescanTimeout = 24 * time.Hour
 
+const walletRecoveryStartupRetryInterval = time.Minute
+
+const (
+	walletRecoveryReady int32 = iota
+	walletRecoveryPending
+	walletRecoveryFailed
+)
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Generate
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -78,7 +87,10 @@ type Client struct {
 	vaultLocks            map[string]*sync.Mutex
 	networkFeeLock        sync.Mutex
 	solvencyLock          sync.Mutex
+	startLock             sync.Mutex
 	consolidateInProgress stdatomic.Bool
+	runtimeStarted        stdatomic.Bool
+	stopOnce              sync.Once
 
 	// ---------- scanner ----------
 	blockScanner    *blockscanner.BlockScanner
@@ -89,6 +101,8 @@ type Client struct {
 	globalSolvencyQueue   chan<- types.Solvency
 	globalNetworkFeeQueue chan<- common.NetworkFee
 	stopchan              chan struct{}
+	walletRecoveryCancel  context.CancelFunc
+	walletRecoveryState   stdatomic.Int32
 	currentBlockHeight    stdatomic.Int64
 
 	// ---------- thornode state ----------
@@ -218,12 +232,8 @@ func NewClient(
 	}
 	c.signerCacheManager = signerCacheManager
 	c.updateNetworkInfo()
-
-	// Run wallet recovery before the block scanner starts. If this fails, the chain
-	// client is not loaded and Bifrost avoids reporting false insolvency from an
-	// incomplete local UTXO wallet.
-	if err = c.preflightWalletRecovery(); err != nil {
-		return nil, err
+	if c.walletRecoveryEnabled() {
+		c.setWalletRecoveryPending()
 	}
 
 	return c, nil
@@ -301,20 +311,116 @@ func (c *Client) Start(
 	c.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.globalNetworkFeeQueue = globalNetworkFeeQueue
+
+	recoveryEnabled := c.walletRecoveryEnabled()
+	var recoveryCtx context.Context
+	var recoveryCancel context.CancelFunc
+	if recoveryEnabled {
+		c.setWalletRecoveryPending()
+		recoveryCtx, recoveryCancel = context.WithCancel(context.Background())
+
+		c.startLock.Lock()
+		c.walletRecoveryCancel = recoveryCancel
+		c.startLock.Unlock()
+
+		c.wg.Add(1)
+	}
+
+	runtimeStarted := c.startRuntime(globalTxsQueue, globalNetworkFeeQueue)
+	if recoveryEnabled {
+		if !runtimeStarted {
+			recoveryCancel()
+			c.wg.Done()
+			return
+		}
+
+		go c.runWalletRecoveryStartup(recoveryCtx)
+	}
+}
+
+func (c *Client) runWalletRecoveryStartup(ctx context.Context) {
+	defer c.wg.Done()
+
+	for {
+		c.setWalletRecoveryPending()
+		if err := c.preflightWalletRecovery(ctx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				c.setWalletRecoveryFailed()
+				return
+			}
+
+			c.setWalletRecoveryFailed()
+			c.log.Error().
+				Err(err).
+				Dur("retry_in", walletRecoveryStartupRetryInterval).
+				Msg("UTXO wallet recovery preflight failed; delaying solvency reporting")
+
+			timer := time.NewTimer(walletRecoveryStartupRetryInterval)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				c.setWalletRecoveryFailed()
+				return
+			case <-timer.C:
+				continue
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			c.setWalletRecoveryFailed()
+			return
+		default:
+		}
+
+		c.setWalletRecoveryReady()
+		c.log.Info().Msg("UTXO wallet recovery preflight passed; solvency reporting enabled")
+		return
+	}
+}
+
+func (c *Client) startRuntime(globalTxsQueue chan types.TxIn, globalNetworkFeeQueue chan common.NetworkFee) bool {
+	c.startLock.Lock()
+	defer c.startLock.Unlock()
+
+	select {
+	case <-c.stopchan:
+		return false
+	default:
+	}
+
+	if c.runtimeStarted.Swap(true) {
+		return true
+	}
+
 	c.tssKeySigner.Start()
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(
 		c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime,
 	)
+	return true
 }
 
 // Stop stops the scanner, signer, and solvency check.
 func (c *Client) Stop() {
-	c.blockScanner.Stop()
-	c.tssKeySigner.Stop()
-	close(c.stopchan)
-	c.wg.Wait()
+	c.stopOnce.Do(func() {
+		c.startLock.Lock()
+		if c.walletRecoveryCancel != nil {
+			c.walletRecoveryCancel()
+		}
+		runtimeStarted := c.runtimeStarted.Load()
+		close(c.stopchan)
+		c.startLock.Unlock()
+
+		if runtimeStarted {
+			c.blockScanner.Stop()
+			c.tssKeySigner.Stop()
+		}
+		c.wg.Wait()
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -765,6 +871,22 @@ func (c *Client) walletRecoveryEnabled() bool {
 	}
 }
 
+func (c *Client) setWalletRecoveryPending() {
+	c.walletRecoveryState.Store(walletRecoveryPending)
+}
+
+func (c *Client) setWalletRecoveryReady() {
+	c.walletRecoveryState.Store(walletRecoveryReady)
+}
+
+func (c *Client) setWalletRecoveryFailed() {
+	c.walletRecoveryState.Store(walletRecoveryFailed)
+}
+
+func (c *Client) walletRecoveryReadyForSolvency() bool {
+	return !c.walletRecoveryEnabled() || c.walletRecoveryState.Load() == walletRecoveryReady
+}
+
 // currentSolvencyGasFee returns the same gas tolerance used by normal solvency
 // reporting. Keep this tied to lastFeeRate so ReportSolvency behavior does not change
 // when startup recovery is enabled.
@@ -796,10 +918,14 @@ func (c *Client) solvencyGasFee(feeRate uint64) cosmos.Uint {
 }
 
 // preflightWalletRecovery verifies that funded Asgard vaults are visible in the local
-// UTXO wallet before scanning begins. BTC/BCH/LTC may repair by bounded wallet rescan;
+// UTXO wallet before solvency reporting begins. BTC/BCH/LTC may repair by bounded wallet rescan;
 // DOGE fails closed when explicitly enabled because the production daemon does not
 // have a safe bounded rescan.
-func (c *Client) preflightWalletRecovery() error {
+func (c *Client) preflightWalletRecovery(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if !c.walletRecoveryEnabled() {
 		return nil
 	}
@@ -825,9 +951,13 @@ func (c *Client) preflightWalletRecovery() error {
 		return nil
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Thornode vault state can be ahead of the local daemon during startup catch-up.
-	// In that case a missing wallet UTXO is inconclusive, so defer recovery until the
-	// normal failed-chain retry loop reloads this client with a caught-up daemon.
+	// In that case a missing wallet UTXO is inconclusive, so let the per-chain
+	// startup recovery retry run again after the daemon catches up.
 	if err = c.ensureWalletRecoveryDaemonCaughtUp(); err != nil {
 		return err
 	}
@@ -870,8 +1000,8 @@ func (c *Client) preflightWalletRecovery() error {
 		Int64("stop_height", stopHeight).
 		Dur("wallet_recovery_horizon", c.cfg.UTXO.WalletRecoveryHorizon).
 		Dur("wallet_recovery_rescan_timeout", rescanTimeout).
-		Msg("starting UTXO wallet recovery rescan before block scanner startup")
-	if err = c.rpc.RescanBlockchain(startHeight, stopHeight, rescanTimeout); err != nil {
+		Msg("starting UTXO wallet recovery rescan before solvency reporting")
+	if err = c.rpc.RescanBlockchain(ctx, startHeight, stopHeight, rescanTimeout); err != nil {
 		return fmt.Errorf("fail to rescan %s wallet from height %d to %d: %w", c.cfg.ChainID, startHeight, stopHeight, err)
 	}
 
@@ -891,7 +1021,7 @@ func (c *Client) preflightWalletRecovery() error {
 
 // walletRecoveryRescanTimeout returns a bounded timeout for the daemon-side rescan.
 // It must be much longer than ordinary RPC timeouts but still finite so a wedged
-// daemon request can return control to LoadChains' retry loop.
+// daemon request can return control to the per-chain startup retry loop.
 func (c *Client) walletRecoveryRescanTimeout() time.Duration {
 	if c.cfg.UTXO.WalletRecoveryRescanTimeout > 0 {
 		return c.cfg.UTXO.WalletRecoveryRescanTimeout
@@ -1066,6 +1196,10 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 }
 
 func (c *Client) shouldReportSolvency(height int64) bool {
+	if !c.walletRecoveryReadyForSolvency() {
+		return false
+	}
+
 	lastHeight := c.lastSolvencyCheckHeight.Load()
 	if height-lastHeight <= 1 {
 		return false

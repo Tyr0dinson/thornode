@@ -685,7 +685,7 @@ func (s *RPCSuite) TestRescanBlockchain(c *C) {
 	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
 	c.Assert(err, IsNil)
 
-	err = cl.RescanBlockchain(10, 20, time.Hour)
+	err = cl.RescanBlockchain(context.Background(), 10, 20, time.Hour)
 	c.Assert(err, IsNil)
 }
 
@@ -704,7 +704,7 @@ func (s *RPCSuite) TestRescanBlockchainUsesRecoveryTimeout(c *C) {
 	cl, err := NewClient(srv.URL, "user", "pass", 0, 20*time.Millisecond, common.BTCChain, log)
 	c.Assert(err, IsNil)
 
-	err = cl.RescanBlockchain(10, 20, time.Second)
+	err = cl.RescanBlockchain(context.Background(), 10, 20, time.Second)
 	c.Assert(err, IsNil)
 }
 
@@ -720,7 +720,7 @@ func (s *RPCSuite) TestRescanBlockchainTimesOutWedgedRequest(c *C) {
 	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second, common.BTCChain, log)
 	c.Assert(err, IsNil)
 
-	err = cl.RescanBlockchain(10, 20, 20*time.Millisecond)
+	err = cl.RescanBlockchain(context.Background(), 10, 20, 20*time.Millisecond)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*context deadline exceeded.*")
 }
