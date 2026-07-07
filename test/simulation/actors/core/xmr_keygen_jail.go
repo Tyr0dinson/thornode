@@ -48,7 +48,21 @@ type XMRKeygenJailActor struct {
 	Actor
 
 	vaultsBefore map[string]bool
+
+	// jailSeenAt marks when the keygen-vote jail first appeared without the new
+	// XMR vault. The jail proves the XMR FROST keygen reached success consensus,
+	// so from that point the vault is only waiting on the regular Asgard
+	// rotation. If that does not land within xmrKeygenJailVaultGrace (one full
+	// churn retry plus rotation time), the Asgard go-tss keygen is failing
+	// (typically the netem delay is too aggressive for it) and waiting longer
+	// cannot succeed, so the actor fails fast with a diagnostic instead of
+	// spinning to the 20 minute timeout.
+	jailSeenAt time.Time
 }
+
+// xmrKeygenJailVaultGrace is how long the actor waits for the new XMR vault
+// after the keygen-vote jail proved XMR keygen success consensus.
+const xmrKeygenJailVaultGrace = 10 * time.Minute
 
 // xmrKeygenJailReason is the jail reason set by judgeLateSigner in
 // x/thorchain/handler_tss.go for members that did not sign the consensus
@@ -145,6 +159,14 @@ func (a *XMRKeygenJailActor) startChurn(config *OpConfig) OpResult {
 			Msg("broadcasted mimir")
 	}
 
+	// Log the timing expectations once here so the per-second wait line in
+	// waitForKeygenJailSplit can stay short.
+	a.Log().Info().Msg(fmt.Sprintf(
+		"churn unhalted; expecting the split (new XMR vault + a member jailed %q) "+
+			"within ~5 min: churn ~1 min, keygen ~2-3 min under netem; a failed keygen "+
+			"retries every CHURNRETRYINTERVAL (~12 min); actor times out after 20 min",
+		xmrKeygenJailReason))
+
 	return OpResult{Continue: true}
 }
 
@@ -185,10 +207,42 @@ func (a *XMRKeygenJailActor) waitForKeygenJailSplit(config *OpConfig) OpResult {
 	}
 
 	if newXMRVault == "" || len(jailed) == 0 {
+		// Fail fast on the known stall: the jail proves the XMR FROST keygen
+		// reached success consensus, but the monovault only activates after the
+		// regular Asgard rotation. If that rotation does not land within the
+		// grace window, the Asgard go-tss keygen is failing every churn retry
+		// and waiting longer cannot succeed.
+		if len(jailed) > 0 && newXMRVault == "" {
+			if a.jailSeenAt.IsZero() {
+				a.jailSeenAt = time.Now()
+			} else if time.Since(a.jailSeenAt) > xmrKeygenJailVaultGrace {
+				return OpResult{
+					Finish: true,
+					Error: fmt.Errorf(
+						"XMR keygen success consensus reached (member jailed %q) but no new XMR vault activated within %s: "+
+							"the regular Asgard go-tss keygen is failing every churn retry, so the monovault stays waiting for "+
+							"regular vault rotation - check bifrost keygen logs and lower XMR_KEYGEN_JAIL_NETEM_DELAY_MS",
+						xmrKeygenJailReason, xmrKeygenJailVaultGrace,
+					),
+				}
+			}
+		}
+		// Keep the per-second wait line terse; startChurn logged the timing
+		// expectations once. The two halves land independently: the jail is set
+		// at the 2/3 success crossing, the vault only after the monovault
+		// rotation registers its address, so either one can appear first.
+		missing := make([]string, 0, 2)
+		if newXMRVault == "" {
+			missing = append(missing, "vault")
+		}
+		if len(jailed) == 0 {
+			missing = append(missing, "jail")
+		}
 		a.Log().Info().
+			Str("waiting_for", strings.Join(missing, "+")).
 			Str("new_xmr_vault", newXMRVault).
 			Strs("keygen_jailed", jailed).
-			Msg("waiting for keygen success consensus and keygen jail")
+			Msg("waiting for keygen jail split")
 		return OpResult{Continue: false}
 	}
 
@@ -201,6 +255,7 @@ func (a *XMRKeygenJailActor) waitForKeygenJailSplit(config *OpConfig) OpResult {
 	a.Log().Info().
 		Str("new_xmr_vault", newXMRVault).
 		Strs("keygen_jailed", jailed).
-		Msg("reproduced keygen mass-jailing split: success consensus reached while a participating member is jailed")
+		Msg("XMRKeygenJail PASSED: reproduced the keygen jail split - new XMR vault reached " +
+			"success consensus AND a participating member sits in keygen jail")
 	return OpResult{Continue: true}
 }
