@@ -647,7 +647,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	}
 
 	// consolidate UTXOs if there is not one in progress
-	if c.consolidateInProgress.CompareAndSwap(false, true) {
+	if c.walletRecoveryReady() && c.consolidateInProgress.CompareAndSwap(false, true) {
 		c.wg.Add(1)
 		go c.consolidateUTXOs(height)
 	}
@@ -883,7 +883,7 @@ func (c *Client) setWalletRecoveryFailed() {
 	c.walletRecoveryState.Store(walletRecoveryFailed)
 }
 
-func (c *Client) walletRecoveryReadyForSolvency() bool {
+func (c *Client) walletRecoveryReady() bool {
 	return !c.walletRecoveryEnabled() || c.walletRecoveryState.Load() == walletRecoveryReady
 }
 
@@ -1196,7 +1196,7 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 }
 
 func (c *Client) shouldReportSolvency(height int64) bool {
-	if !c.walletRecoveryReadyForSolvency() {
+	if !c.walletRecoveryReady() {
 		return false
 	}
 

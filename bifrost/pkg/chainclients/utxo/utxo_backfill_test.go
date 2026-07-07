@@ -365,15 +365,18 @@ func (s *CoverageBackfillSuite) TestShouldReportSolvency(c *C) {
 	s.client.lastSolvencyCheckHeight.Store(98)
 	c.Assert(s.client.ShouldReportSolvency(100), Equals, true)
 
-	// Wallet recovery gates solvency reporting only; signing remains available while recovery runs.
+	// Wallet recovery gates wallet-dependent background work; signing remains available while recovery runs.
 	s.client.cfg.UTXO.WalletRecoveryHorizon = time.Hour
 	s.client.setWalletRecoveryPending()
+	c.Assert(s.client.walletRecoveryReady(), Equals, false)
 	s.client.lastSolvencyCheckHeight.Store(98)
 	c.Assert(s.client.ShouldReportSolvency(100), Equals, false)
 	s.client.setWalletRecoveryFailed()
+	c.Assert(s.client.walletRecoveryReady(), Equals, false)
 	s.client.lastSolvencyCheckHeight.Store(98)
 	c.Assert(s.client.ShouldReportSolvency(100), Equals, false)
 	s.client.setWalletRecoveryReady()
+	c.Assert(s.client.walletRecoveryReady(), Equals, true)
 	s.client.lastSolvencyCheckHeight.Store(98)
 	c.Assert(s.client.ShouldReportSolvency(100), Equals, true)
 	s.client.cfg.UTXO.WalletRecoveryHorizon = 0
