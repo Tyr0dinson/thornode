@@ -2565,7 +2565,7 @@ func (c *Client) ReportSolvency(height int64) error {
 		if acctErr != nil {
 			if errors.Is(acctErr, errXMRBalanceUnreconciled) {
 				deferredForReconciliation = true
-				c.logger.Info().Err(acctErr).Str("address", address.String()).Msg("defer monero solvency while sidecar balance reconciles")
+				c.logger.Warn().Err(acctErr).Str("address", address.String()).Int64("height", height).Msg("defer monero solvency while sidecar balance reconciles")
 				continue
 			}
 			c.logger.Err(acctErr).Str("address", address.String()).Msg("fail to get monero account balance for solvency")
@@ -2587,11 +2587,11 @@ func (c *Client) ReportSolvency(height int64) error {
 		msgs = append(msgs, msg)
 	}
 
-	if deferredForReconciliation {
+	if deferredForReconciliation && checkedVaults == 0 {
 		return nil
 	}
 
-	if !c.IsBlockScannerHealthy() && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
+	if !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
 		msgs = solventMsgs
 	}
 

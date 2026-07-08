@@ -108,6 +108,137 @@ func TestReportSolvencySkipsUnreconciledSidecarBalance(t *testing.T) {
 	}
 }
 
+func TestReportSolvencyReportsReconciledVaultWhenSiblingUnreconciled(t *testing.T) {
+	t.Parallel()
+
+	unreconciledPubKey, unreconciledAddress := testVaultPubKeyAndAddress(t)
+	reconciledPubKey, reconciledAddress := testVaultPubKeyAndAddress(t)
+	reconciled := true
+	unreconciled := false
+	balanceServer := newFrostBalanceServer(t, map[string]sidecar.Balance{
+		unreconciledPubKey.String(): {
+			Balance:              100 * moneroAtomicToThorchain,
+			UnlockedBalance:      100 * moneroAtomicToThorchain,
+			SpendableBalance:     uint64Ptr(100 * moneroAtomicToThorchain),
+			Reconciled:           &unreconciled,
+			PendingOutgoingCount: 1,
+		},
+		reconciledPubKey.String(): {
+			Balance:          10 * moneroAtomicToThorchain,
+			UnlockedBalance:  10 * moneroAtomicToThorchain,
+			SpendableBalance: uint64Ptr(10 * moneroAtomicToThorchain),
+			Reconciled:       &reconciled,
+		},
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	queue := make(chan stypes.Solvency, 2)
+	c := &Client{
+		logger: log.Logger,
+		cfg:    config.BifrostChainConfiguration{SolvencyBlocks: 10},
+		chain:  common.XMRChain,
+		thorchainBridge: &solvencyBridge{asgards: ttypes.Vaults{
+			{PubKey: unreconciledPubKey, PubKeyEddsa: unreconciledPubKey, PubKeyFrost: unreconciledPubKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100)))},
+			{PubKey: reconciledPubKey, PubKeyEddsa: reconciledPubKey, PubKeyFrost: reconciledPubKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500)))},
+		}},
+		scanner:                 &Scanner{lastFee: atomic.NewUint64(10)},
+		sidecar:                 frostSigner,
+		globalSolvencyQueue:     queue,
+		vaultAddressMap:         map[string]common.Address{unreconciledPubKey.String(): unreconciledAddress, reconciledPubKey.String(): reconciledAddress},
+		lastSolvencyCheckHeight: atomic.NewInt64(0),
+	}
+
+	if err := c.ReportSolvency(10); err != nil {
+		t.Fatalf("report solvency: %v", err)
+	}
+	if len(queue) != 1 {
+		t.Fatalf("expected reconciled insolvent vault to report, got %d messages", len(queue))
+	}
+	msg := <-queue
+	if !msg.PubKey.Equals(reconciledPubKey) {
+		t.Fatalf("expected solvency message for reconciled vault %s, got %s", reconciledPubKey, msg.PubKey)
+	}
+	if got := c.lastSolvencyCheckHeight.Load(); got != 10 {
+		t.Fatalf("expected mixed report to consume solvency height 10, got %d", got)
+	}
+}
+
+func TestReportSolvencyResumesAfterUnreconciledSidecarBalance(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
+	reconciled := true
+	unreconciled := false
+	balanceCalls := 0
+	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/monero/balance/") {
+			balanceCalls++
+			resp := sidecar.Balance{
+				Balance:          100 * moneroAtomicToThorchain,
+				UnlockedBalance:  100 * moneroAtomicToThorchain,
+				SpendableBalance: uint64Ptr(100 * moneroAtomicToThorchain),
+				Reconciled:       &reconciled,
+			}
+			if balanceCalls == 1 {
+				resp.Reconciled = &unreconciled
+				resp.PendingOutgoingCount = 1
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer balanceServer.Close()
+
+	frostSigner, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, balanceServer.URL)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	queue := make(chan stypes.Solvency, 1)
+	c := &Client{
+		logger:                  log.Logger,
+		cfg:                     config.BifrostChainConfiguration{SolvencyBlocks: 10},
+		chain:                   common.XMRChain,
+		thorchainBridge:         &solvencyBridge{asgards: ttypes.Vaults{{PubKey: vaultPubKey, PubKeyEddsa: vaultPubKey, PubKeyFrost: vaultPubKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000)))}}},
+		scanner:                 &Scanner{lastFee: atomic.NewUint64(10)},
+		sidecar:                 frostSigner,
+		globalSolvencyQueue:     queue,
+		vaultAddressMap:         map[string]common.Address{vaultPubKey.String(): vaultAddress},
+		lastSolvencyCheckHeight: atomic.NewInt64(0),
+	}
+
+	if err := c.ReportSolvency(10); err != nil {
+		t.Fatalf("first report solvency: %v", err)
+	}
+	if len(queue) != 0 {
+		t.Fatalf("expected unreconciled balance to defer first solvency report, got %d messages", len(queue))
+	}
+	if got := c.lastSolvencyCheckHeight.Load(); got != 0 {
+		t.Fatalf("unreconciled balance should not consume solvency height, got %d", got)
+	}
+
+	if err := c.ReportSolvency(10); err != nil {
+		t.Fatalf("second report solvency: %v", err)
+	}
+	if len(queue) != 1 {
+		t.Fatalf("expected reconciled balance to resume solvency report, got %d messages", len(queue))
+	}
+	if got := c.lastSolvencyCheckHeight.Load(); got != 10 {
+		t.Fatalf("expected resumed report to consume solvency height 10, got %d", got)
+	}
+}
+
 func TestReportSolvencyAutoUnhaltUsesCheckedVaultCount(t *testing.T) {
 	t.Parallel()
 
