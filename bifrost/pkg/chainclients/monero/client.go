@@ -78,8 +78,10 @@ const (
 	defaultXMRSpentRefsRetryMaxAttempts        = 60                 // bounded peer-import retry window after the first failed attempt
 )
 
-var ErrSidecarNotConfigured = errors.New("xmr sidecar requires signer_endpoint or api_host configuration")
-var errXMRBalanceUnreconciled = errors.New("xmr sidecar balance is not reconciled")
+var (
+	ErrSidecarNotConfigured   = errors.New("xmr sidecar requires signer_endpoint or api_host configuration")
+	errXMRBalanceUnreconciled = errors.New("xmr sidecar balance is not reconciled")
+)
 
 type signedTxPayload struct {
 	TxHash          string                `json:"tx_hash"`
