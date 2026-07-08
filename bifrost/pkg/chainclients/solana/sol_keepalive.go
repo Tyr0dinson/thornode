@@ -92,7 +92,13 @@ func (c *SOLClient) keepAliveLoop() {
 			if boundary <= c.getKeepAliveSlotMultiple() {
 				continue // no new boundary crossed
 			}
-			c.keepAliveCheck(scanSlot)
+			// Anchor on the boundary's canonical slot (boundary × cadence), NOT the
+			// raw per-node scanSlot: scanSlot differs between members (each polls at a
+			// slightly different tip), so passing it as the keysign height would put
+			// members in different keysign sessions — the very divergence this design
+			// fixes. boundary is identical across all members crossing it, so
+			// boundary×cadence is the shared height every member hands the keysign.
+			c.keepAliveCheck(boundary * keepAliveSlotCadence)
 			// Advance past this boundary so it is acted on exactly once, whether or
 			// not a keysign actually fired (disabled/inactive/not-yet-stale all
 			// legitimately no-op until the next boundary).
@@ -144,10 +150,11 @@ func (c *SOLClient) setKeepAliveSlotMultiple(v int64) {
 	c.keepAliveSlotMultiple = v
 }
 
-// keepAliveCheck evaluates every vault this node is a member of at a shared scan
-// slot. anchorSlot is the finalized scan slot the boundary was crossed at; it is
-// used both as the staleness reference and, critically, as the height handed to
-// SignTx so every member's keysign coordinates on the same value.
+// keepAliveCheck evaluates every vault this node is a member of at a shared
+// cadence boundary. anchorSlot is the boundary's canonical slot (boundary ×
+// cadence) — identical across all members crossing that boundary — used both as
+// the staleness reference and, critically, as the height handed to SignTx so
+// every member's keysign coordinates on the same value.
 func (c *SOLClient) keepAliveCheck(anchorSlot int64) {
 	refreshBlocks, err := c.bridge.GetMimir(constants.MimirKeySignatureRefreshBlocks)
 	if err != nil {
