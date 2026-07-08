@@ -6,6 +6,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -83,6 +84,7 @@ func (s *RecoverKeysharesSuite) TestMsgMatchesRecoveryTargetRequiresExactKeyType
 func (s *RecoverKeysharesSuite) TestRecoverySeedPhraseUsesSharedSignerSeed(c *C) {
 	originalSeedPhrase, hadOriginalSeedPhrase := os.LookupEnv("SIGNER_SEED_PHRASE")
 	originalSeedPhraseFile, hadOriginalSeedPhraseFile := os.LookupEnv("SIGNER_SEED_PHRASE_FILE")
+	seedPhraseFile := filepath.Join(c.MkDir(), "seed-phrase")
 	defer func() {
 		if hadOriginalSeedPhrase {
 			_ = os.Setenv("SIGNER_SEED_PHRASE", originalSeedPhrase)
@@ -100,14 +102,109 @@ func (s *RecoverKeysharesSuite) TestRecoverySeedPhraseUsesSharedSignerSeed(c *C)
 	_ = os.Unsetenv("SIGNER_SEED_PHRASE_FILE")
 	seedPhrase, err := recoverySeedPhrase()
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "failed to get signer seed phrase: neither SIGNER_SEED_PHRASE_FILE nor SIGNER_SEED_PHRASE is set")
+	c.Assert(err.Error(), Equals, "failed to get signer seed phrase: could not load signer seed phrase: SIGNER_SEED_PHRASE_FILE is unset or invalid (SIGNER_SEED_PHRASE env var is only honored on mocknet)")
 	c.Assert(seedPhrase, Equals, "")
 
-	err = os.Setenv("SIGNER_SEED_PHRASE", "  "+Mnemonic+"  ")
+	c.Assert(os.WriteFile(seedPhraseFile, []byte("  "+Mnemonic+"  "), 0o600), IsNil)
+	err = os.Setenv("SIGNER_SEED_PHRASE_FILE", seedPhraseFile)
 	c.Assert(err, IsNil)
 	seedPhrase, err = recoverySeedPhrase()
 	c.Assert(err, IsNil)
 	c.Assert(seedPhrase, Equals, Mnemonic)
+}
+
+func (s *RecoverKeysharesSuite) TestRecoverLegacyKeySharesRecoversMissingEddsaWhenECDSAExists(c *C) {
+	dir, cleanup := setupRecoveryKeysharesTest(c)
+	defer cleanup()
+
+	legacyPubKey := types.GetRandomPubKey()
+	eddsaPubKey := types.GetRandomEd25519PubKey()
+	signer, err := types.GetRandomPubKey().GetThorAddress()
+	c.Assert(err, IsNil)
+	target := keyshareRecoveryTarget{
+		kind:            recoveryTargetLegacy,
+		pubKey:          legacyPubKey,
+		poolPubKeyEddsa: eddsaPubKey,
+	}
+	vaults := types.Vaults{{PubKey: legacyPubKey, PubKeyEddsa: eddsaPubKey, BlockHeight: 123}}
+	original := readLocalStateTestFile(c)
+	c.Assert(os.WriteFile(localstateKeysharePath(legacyPubKey), original, 0o600), IsNil)
+
+	err = recoverLegacyKeySharesFromBackups(signer, target, vaults, recoveryBackups{
+		eddsa: encryptedLocalStateTestFile(c),
+	})
+	c.Assert(err, IsNil)
+	assertRecoveredLocalState(c, filepath.Join(dir, "localstate-"+eddsaPubKey.String()+".json"), original)
+}
+
+func (s *RecoverKeysharesSuite) TestRecoverLegacyKeySharesRecoversMissingECDSAWhenEddsaExists(c *C) {
+	_, cleanup := setupRecoveryKeysharesTest(c)
+	defer cleanup()
+
+	legacyPubKey := types.GetRandomPubKey()
+	eddsaPubKey := types.GetRandomEd25519PubKey()
+	signer, err := types.GetRandomPubKey().GetThorAddress()
+	c.Assert(err, IsNil)
+	target := keyshareRecoveryTarget{
+		kind:            recoveryTargetLegacy,
+		pubKey:          legacyPubKey,
+		poolPubKeyEddsa: eddsaPubKey,
+	}
+	vaults := types.Vaults{{PubKey: legacyPubKey, PubKeyEddsa: eddsaPubKey, BlockHeight: 123}}
+	original := readLocalStateTestFile(c)
+	c.Assert(os.WriteFile(localstateKeysharePath(eddsaPubKey), original, 0o600), IsNil)
+
+	err = recoverLegacyKeySharesFromBackups(signer, target, vaults, recoveryBackups{
+		secp256k1: encryptedLocalStateTestFile(c),
+	})
+	c.Assert(err, IsNil)
+	assertRecoveredLocalState(c, localstateKeysharePath(legacyPubKey), original)
+}
+
+func (s *RecoverKeysharesSuite) TestRecoverLegacyKeySharesBothExistingSkipsBackupsAndSeed(c *C) {
+	_, cleanup := setupRecoveryKeysharesTest(c)
+	defer cleanup()
+	c.Assert(os.Unsetenv("SIGNER_SEED_PHRASE"), IsNil)
+
+	legacyPubKey := types.GetRandomPubKey()
+	eddsaPubKey := types.GetRandomEd25519PubKey()
+	signer, err := types.GetRandomPubKey().GetThorAddress()
+	c.Assert(err, IsNil)
+	target := keyshareRecoveryTarget{
+		kind:            recoveryTargetLegacy,
+		pubKey:          legacyPubKey,
+		poolPubKeyEddsa: eddsaPubKey,
+	}
+	vaults := types.Vaults{{PubKey: legacyPubKey, PubKeyEddsa: eddsaPubKey, BlockHeight: 123}}
+	original := readLocalStateTestFile(c)
+	c.Assert(os.WriteFile(localstateKeysharePath(legacyPubKey), original, 0o600), IsNil)
+	c.Assert(os.WriteFile(localstateKeysharePath(eddsaPubKey), original, 0o600), IsNil)
+
+	err = recoverLegacyKeySharesFromBackups(signer, target, vaults, recoveryBackups{})
+	c.Assert(err, IsNil)
+}
+
+func (s *RecoverKeysharesSuite) TestRecoverLegacyKeySharesMissingEddsaBackupReturnsError(c *C) {
+	_, cleanup := setupRecoveryKeysharesTest(c)
+	defer cleanup()
+
+	legacyPubKey := types.GetRandomPubKey()
+	eddsaPubKey := types.GetRandomEd25519PubKey()
+	signer, err := types.GetRandomPubKey().GetThorAddress()
+	c.Assert(err, IsNil)
+	target := keyshareRecoveryTarget{
+		kind:            recoveryTargetLegacy,
+		pubKey:          legacyPubKey,
+		poolPubKeyEddsa: eddsaPubKey,
+	}
+	vaults := types.Vaults{{PubKey: legacyPubKey, PubKeyEddsa: eddsaPubKey, BlockHeight: 123}}
+	c.Assert(os.WriteFile(localstateKeysharePath(legacyPubKey), readLocalStateTestFile(c), 0o600), IsNil)
+
+	err = recoverLegacyKeySharesFromBackups(signer, target, vaults, recoveryBackups{})
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "eddsa key shares backup not found for "+eddsaPubKey.String())
+	_, statErr := os.Stat(localstateKeysharePath(eddsaPubKey))
+	c.Assert(os.IsNotExist(statErr), Equals, true)
 }
 
 func (s *RecoverKeysharesSuite) TestWriteRecoveredDecompressedKeysharesWritesOwnerOnlyFile(c *C) {
@@ -128,7 +225,13 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredDecompressedKeysharesWritesOwn
 
 	original, err := os.ReadFile(LocalStateTestFile)
 	c.Assert(err, IsNil)
-	recovered, err := os.ReadFile(path)
+	recoveredRaw, err := os.ReadFile(path)
+	c.Assert(err, IsNil)
+
+	// recovered file should be at-rest encrypted
+	c.Assert(storage.IsEncryptedAtRest(recoveredRaw), Equals, true)
+	atRestKey := storage.DeriveAtRestKey(Mnemonic)
+	recovered, err := storage.DecryptAtRest(atRestKey, recoveredRaw)
 	c.Assert(err, IsNil)
 	c.Assert(recovered, DeepEquals, original)
 }
@@ -167,7 +270,67 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredRawKeysharesWritesOwnerOnlyFil
 	c.Assert(err, IsNil)
 	c.Assert(fi.Mode().Perm(), Equals, os.FileMode(0o600))
 
-	recovered, err := os.ReadFile(path)
+	recoveredRaw, err := os.ReadFile(path)
+	c.Assert(err, IsNil)
+
+	// recovered file should be at-rest encrypted
+	c.Assert(storage.IsEncryptedAtRest(recoveredRaw), Equals, true)
+	atRestKey := storage.DeriveAtRestKey(Mnemonic)
+	recovered, err := storage.DecryptAtRest(atRestKey, recoveredRaw)
 	c.Assert(err, IsNil)
 	c.Assert(recovered, DeepEquals, rawKeyshares)
+}
+
+func setupRecoveryKeysharesTest(c *C) (string, func()) {
+	dir, err := os.MkdirTemp("", "recover-keyshares-home-*")
+	c.Assert(err, IsNil)
+
+	originalHome := keyshareRecoveryNodeHome
+	originalSeedPhrase, hadOriginalSeedPhrase := os.LookupEnv("SIGNER_SEED_PHRASE")
+	originalSeedPhraseFile, hadOriginalSeedPhraseFile := os.LookupEnv("SIGNER_SEED_PHRASE_FILE")
+
+	keyshareRecoveryNodeHome = dir
+	seedPhraseFile := filepath.Join(dir, "seed-phrase")
+	c.Assert(os.WriteFile(seedPhraseFile, []byte(Mnemonic), 0o600), IsNil)
+	c.Assert(os.Setenv("SIGNER_SEED_PHRASE_FILE", seedPhraseFile), IsNil)
+
+	return dir, func() {
+		keyshareRecoveryNodeHome = originalHome
+		if hadOriginalSeedPhrase {
+			_ = os.Setenv("SIGNER_SEED_PHRASE", originalSeedPhrase)
+		} else {
+			_ = os.Unsetenv("SIGNER_SEED_PHRASE")
+		}
+		if hadOriginalSeedPhraseFile {
+			_ = os.Setenv("SIGNER_SEED_PHRASE_FILE", originalSeedPhraseFile)
+		} else {
+			_ = os.Unsetenv("SIGNER_SEED_PHRASE_FILE")
+		}
+		_ = os.RemoveAll(dir)
+	}
+}
+
+func encryptedLocalStateTestFile(c *C) []byte {
+	encrypted, err := EncryptKeyshares(LocalStateTestFile, Mnemonic)
+	c.Assert(err, IsNil)
+	return encrypted
+}
+
+func readLocalStateTestFile(c *C) []byte {
+	original, err := os.ReadFile(LocalStateTestFile)
+	c.Assert(err, IsNil)
+	return original
+}
+
+func assertRecoveredLocalState(c *C, path string, original []byte) {
+	recovered, err := os.ReadFile(path)
+	c.Assert(err, IsNil)
+	c.Assert(storage.IsEncryptedAtRest(recovered), Equals, true)
+	atRestKey := storage.DeriveAtRestKey(Mnemonic)
+	decrypted, err := storage.DecryptAtRest(atRestKey, recovered)
+	c.Assert(err, IsNil)
+	c.Assert(decrypted, DeepEquals, original)
+	fi, err := os.Stat(path)
+	c.Assert(err, IsNil)
+	c.Assert(fi.Mode().Perm(), Equals, os.FileMode(0o600))
 }

@@ -3,6 +3,7 @@ package tss
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,12 +16,15 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/app"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+var keyshareRecoveryNodeHome = app.DefaultNodeHome
 
 func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge) error {
 	tctx := thorchain.GetContext()
@@ -98,8 +102,12 @@ func findKeyshareRecoveryTarget(vault common.PubKey, vaults types.Vaults) (keysh
 }
 
 func recoverFrostKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge, signer ctypes.AccAddress, target keyshareRecoveryTarget) error {
-	frostRecoveryPath := filepath.Join(app.DefaultNodeHome, fmt.Sprintf("frost-recovery-%s.hex", target.pubKey))
-	if _, err := os.Stat(frostRecoveryPath); !os.IsNotExist(err) {
+	frostRecoveryPath := frostKeyshareRecoveryPath(target.pubKey)
+	exists, err := recoveryFileExists(frostRecoveryPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat frost key shares for %s: %w", target.pubKey, err)
+	}
+	if exists {
 		log.Info().Msgf("frost key shares for %s already exist, skipping recovery", target.pubKey)
 		return nil
 	}
@@ -125,11 +133,12 @@ func recoverFrostKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBr
 }
 
 func recoverLegacyKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge, signer ctypes.AccAddress, target keyshareRecoveryTarget, vaults types.Vaults) error {
-	keysharesPath := filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", target.pubKey))
-
-	// skip recovery if keyshares for the nodes current vault already exist
-	if _, err := os.Stat(keysharesPath); !os.IsNotExist(err) {
-		log.Info().Msgf("ecdsa key shares for %s already exist, skipping recovery", target.pubKey)
+	state, err := legacyKeyshareRecoveryState(target, vaults)
+	if err != nil {
+		return err
+	}
+	logExistingLegacyKeyshares(target, state)
+	if state.recovered() {
 		return nil
 	}
 
@@ -137,27 +146,81 @@ func recoverLegacyKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainB
 	if err != nil {
 		return err
 	}
-	if len(backups.secp256k1) == 0 {
-		return fmt.Errorf("key shares backup not found for %s", target.pubKey)
-	}
+	return recoverLegacyKeySharesFromBackups(signer, target, vaults, backups)
+}
 
-	seedPhrase, err := recoverySeedPhrase()
+type legacyKeyshareState struct {
+	ecdsaPath   string
+	ecdsaExists bool
+	eddsaPath   string
+	eddsaExists bool
+	hasEddsa    bool
+}
+
+func (s legacyKeyshareState) recovered() bool {
+	return s.ecdsaExists && (!s.hasEddsa || s.eddsaExists)
+}
+
+func recoverLegacyKeySharesFromBackups(signer ctypes.AccAddress, target keyshareRecoveryTarget, vaults types.Vaults, backups recoveryBackups) error {
+	state, err := legacyKeyshareRecoveryState(target, vaults)
 	if err != nil {
 		return err
 	}
-
-	if err = writeRecoveredDecompressedKeyshares(keysharesPath, backups.secp256k1, seedPhrase); err != nil {
-		return fmt.Errorf("failed to recover ecdsa key shares: %w", err)
-	}
-
-	// success
-	log.Info().Str("path", keysharesPath).Msgf("recovered ecdsa key shares for %s", signer)
-
-	if target.poolPubKeyEddsa.IsEmpty() || len(backups.eddsa) == 0 {
+	logExistingLegacyKeyshares(target, state)
+	if state.recovered() {
 		return nil
 	}
 
-	keysharesPath = filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", target.poolPubKeyEddsa))
+	needsSeed := (!state.ecdsaExists && len(backups.secp256k1) > 0) ||
+		(state.hasEddsa && !state.eddsaExists && len(backups.eddsa) > 0)
+	seedPhrase := ""
+	if needsSeed {
+		seedPhrase, err = recoverySeedPhrase()
+		if err != nil {
+			return err
+		}
+	}
+
+	var resultErr error
+	if !state.ecdsaExists {
+		if len(backups.secp256k1) == 0 {
+			resultErr = errors.Join(resultErr, fmt.Errorf("ecdsa key shares backup not found for %s", target.pubKey))
+		} else if err = writeRecoveredDecompressedKeyshares(state.ecdsaPath, backups.secp256k1, seedPhrase); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("failed to recover ecdsa key shares: %w", err))
+		} else {
+			log.Info().Str("path", state.ecdsaPath).Msgf("recovered ecdsa key shares for %s", signer)
+		}
+	}
+
+	if state.hasEddsa && !state.eddsaExists {
+		if len(backups.eddsa) == 0 {
+			resultErr = errors.Join(resultErr, fmt.Errorf("eddsa key shares backup not found for %s", target.poolPubKeyEddsa))
+		} else if err = writeRecoveredDecompressedKeyshares(state.eddsaPath, backups.eddsa, seedPhrase); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("failed to recover eddsa key shares: %w", err))
+		} else {
+			log.Info().Str("path", state.eddsaPath).Msgf("recovered eddsa key shares for %s", signer)
+		}
+	}
+
+	return resultErr
+}
+
+func legacyKeyshareRecoveryState(target keyshareRecoveryTarget, vaults types.Vaults) (legacyKeyshareState, error) {
+	state := legacyKeyshareState{
+		ecdsaPath: localstateKeysharePath(target.pubKey),
+	}
+
+	var err error
+	state.ecdsaExists, err = recoveryFileExists(state.ecdsaPath)
+	if err != nil {
+		return legacyKeyshareState{}, fmt.Errorf("failed to stat ecdsa key shares for %s: %w", target.pubKey, err)
+	}
+
+	if target.poolPubKeyEddsa.IsEmpty() {
+		return state, nil
+	}
+	state.hasEddsa = true
+	state.eddsaPath = localstateKeysharePath(target.poolPubKeyEddsa)
 
 	lastVaultHeight := int64(0)
 	for _, v := range vaults {
@@ -167,22 +230,46 @@ func recoverLegacyKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainB
 		}
 	}
 	if lastVaultHeight == 0 {
-		return fmt.Errorf("fail to get creation height of %s", target.poolPubKeyEddsa)
+		return legacyKeyshareState{}, fmt.Errorf("fail to get creation height of %s", target.poolPubKeyEddsa)
 	}
 
-	// skip recovery if keyshares for the nodes current vault already exist
-	if _, err = os.Stat(keysharesPath); !os.IsNotExist(err) {
+	state.eddsaExists, err = recoveryFileExists(state.eddsaPath)
+	if err != nil {
+		return legacyKeyshareState{}, fmt.Errorf("failed to stat eddsa key shares for %s: %w", target.poolPubKeyEddsa, err)
+	}
+
+	return state, nil
+}
+
+func logExistingLegacyKeyshares(target keyshareRecoveryTarget, state legacyKeyshareState) {
+	if state.ecdsaExists {
+		log.Info().Msgf("ecdsa key shares for %s already exist, skipping recovery", target.pubKey)
+	}
+	if state.hasEddsa && state.eddsaExists {
 		log.Info().Msgf("eddsa key shares for %s already exist, skipping recovery", target.poolPubKeyEddsa)
-		return nil
 	}
+}
 
-	if err = writeRecoveredDecompressedKeyshares(keysharesPath, backups.eddsa, seedPhrase); err != nil {
-		return fmt.Errorf("failed to recover eddsa key shares: %w", err)
+func localstateKeysharePath(pubKey common.PubKey) string {
+	return filepath.Join(keyshareRecoveryNodeHome, fmt.Sprintf("localstate-%s.json", pubKey))
+}
+
+func frostKeyshareRecoveryPath(pubKey common.PubKey) string {
+	return filepath.Join(keyshareRecoveryNodeHome, fmt.Sprintf("frost-recovery-%s.hex", pubKey))
+}
+
+func recoveryFileExists(path string) (bool, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
 	}
-
-	// success
-	log.Info().Str("path", keysharesPath).Msgf("recovered key shares for %s", signer)
-	return nil
+	if fi.IsDir() {
+		return false, fmt.Errorf("recovery path is a directory: %s", path)
+	}
+	return fi.Size() > 0, nil
 }
 
 type recoveryBackups struct {
@@ -287,7 +374,11 @@ func writeRecoveredDecompressedKeyshares(path string, encrypted []byte, seedPhra
 		return fmt.Errorf("failed to decompress key shares: %w", err)
 	}
 
-	return writeRecoveredBytes(path, rawKeyshares)
+	encryptedAtRest, err := encryptAtRestForRecovery(rawKeyshares, seedPhrase)
+	if err != nil {
+		return err
+	}
+	return writeRecoveredBytes(path, encryptedAtRest)
 }
 
 func writeRecoveredRawKeyshares(path string, encrypted []byte, seedPhrase string) error {
@@ -300,7 +391,24 @@ func writeRecoveredRawKeyshares(path string, encrypted []byte, seedPhrase string
 		return fmt.Errorf("failed to decrypt raw key shares: %w", err)
 	}
 
-	return writeRecoveredBytes(path, rawKeyshares)
+	encryptedAtRest, err := encryptAtRestForRecovery(rawKeyshares, seedPhrase)
+	if err != nil {
+		return err
+	}
+	return writeRecoveredBytes(path, encryptedAtRest)
+}
+
+// encryptAtRestForRecovery at-rest encrypts recovered key material before it is
+// written to disk. It fails hard rather than falling back to plaintext: the xmr
+// sidecar rejects plaintext keyshares on restore, and key material must never be
+// persisted or transported in the clear.
+func encryptAtRestForRecovery(data []byte, seedPhrase string) ([]byte, error) {
+	atRestKey := storage.DeriveAtRestKey(seedPhrase)
+	encrypted, err := storage.EncryptAtRest(atRestKey, data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to at-rest encrypt recovered keyshares: %w", err)
+	}
+	return encrypted, nil
 }
 
 func writeRecoveredBytes(path string, data []byte) error {

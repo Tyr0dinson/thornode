@@ -818,6 +818,125 @@ func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c
 	c.Assert(items, HasLen, 0)
 }
 
+func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithUnexpiredStalePendingMigrateTx(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(400)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 2)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XRPChain, NetworkFee{
+		Chain:              common.XRPChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 15,
+	}), IsNil)
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XRPChain}.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XRPChain}.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XRPAsset, cosmos.NewUint(2*common.One))))
+	retiring.PendingTxBlockHeights = []int64{staleHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	toAddress, err := target.GetAddress(common.XRPChain)
+	c.Assert(err, IsNil)
+	txOut := &TxOut{
+		Height: staleHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XRPChain,
+				ToAddress:   toAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(staleHeight).String(),
+			},
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 0)
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{staleHeight})
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsReissuesExpiredStalePendingMigrateTx(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(5000)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 2)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XRPChain, NetworkFee{
+		Chain:              common.XRPChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 15,
+	}), IsNil)
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XRPChain}.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)*constants.StaleMigratePendingSigningPeriodMultiplier - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XRPChain}.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(common.NewCoin(common.XRPAsset, cosmos.NewUint(2*common.One))))
+	// The same height can appear more than once when multiple migrate txouts are
+	// scheduled for one vault in the same block.
+	retiring.PendingTxBlockHeights = []int64{staleHeight, staleHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	toAddress, err := target.GetAddress(common.XRPChain)
+	c.Assert(err, IsNil)
+	// Both stale txouts match the same retiring vault and memo height, so expiry
+	// should replace both old requests and clear both old pending-height entries.
+	txOut := &TxOut{
+		Height: staleHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XRPChain,
+				ToAddress:   toAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(staleHeight).String(),
+			},
+			{
+				Chain:       common.XRPChain,
+				ToAddress:   toAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(staleHeight).String(),
+			},
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	// Only the freshly reissued migrate should remain pending.
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight()})
+
+	updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, staleHeight)
+	c.Assert(err, IsNil)
+	c.Assert(updatedTxOut.TxArray, HasLen, 2)
+	c.Assert(updatedTxOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+	c.Assert(updatedTxOut.TxArray[1].OutHash.Equals(common.BlankTxID), Equals, true)
+}
+
 func (*NetworkManagerTestSuite) TestMigrateFundsLeavesXMRDustBufferForFinalRound(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
@@ -2620,6 +2739,61 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	err = nmgr.processOverSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
 	// Should complete without error even when under-solvent
+}
+
+func (s *NetworkManagerTestSuite) TestProcessOverSolvencyUsesPerAssetBps(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
+
+	ctx = ctx.WithBlockHeight(432000)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyCheckInterval.String(), 432000)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String()+"-"+common.BTCAsset.MimirString(), 5000)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String()+"-"+common.ETHAsset.MimirString(), 0)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(160*common.One)),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	err := nmgr.processOverSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+	defer iter.Close()
+
+	var btcSwaps, ethSwaps int
+	for ; iter.Valid(); iter.Next() {
+		var msg types.MsgSwap
+		c.Assert(mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg), IsNil)
+		switch {
+		case msg.Tx.Coins[0].Asset.Equals(common.BTCAsset):
+			btcSwaps++
+			c.Assert(msg.Tx.Coins[0].Amount.Equal(cosmos.NewUint(25*common.One)), Equals, true)
+		case msg.Tx.Coins[0].Asset.Equals(common.ETHAsset):
+			ethSwaps++
+		}
+	}
+
+	c.Assert(btcSwaps, Equals, 1)
+	c.Assert(ethSwaps, Equals, 0)
 }
 
 func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
