@@ -156,7 +156,13 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			}
 		}
 
-		xmrPubKey := common.EmptyPubKey
+		xmrPubKey, err := thornode.GetInboundAddressPubKey(common.XMRChain)
+		if err != nil {
+			a.Log().Error().Err(err).Msg("failed to get active XMR inbound pubkey")
+			return OpResult{
+				Continue: false,
+			}
+		}
 
 		// get all L1 balances
 		l1CoinAmounts := make(map[string]cosmos.Uint)
@@ -202,15 +208,6 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 						algoPubKey := vaultPubKeyEddsa
 						queryKey := vaultPubKeyEddsaStr
 						if asset.Chain.Equals(common.XMRChain) {
-							if xmrPubKey.IsEmpty() {
-								xmrPubKey, err = thornode.GetInboundAddressPubKey(common.XMRChain)
-								if err != nil {
-									a.Log().Error().Err(err).Msg("failed to get active XMR inbound pubkey")
-									return OpResult{
-										Continue: false,
-									}
-								}
-							}
 							algoPubKey = xmrPubKey
 							queryKey = xmrPubKey.String()
 						}
