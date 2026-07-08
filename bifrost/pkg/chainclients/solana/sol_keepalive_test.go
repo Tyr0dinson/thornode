@@ -58,6 +58,14 @@ func TestKeepAliveSlotBoundary(t *testing.T) {
 	require.Equal(t, a.nextKeepAliveSlotMultiple(10*cad+1), b.nextKeepAliveSlotMultiple(10*cad+40))
 	require.Equal(t, int64(10), a.nextKeepAliveSlotMultiple(10*cad+1))
 
+	// The keysign anchor is boundary×cadence, NOT the raw scan slot: two members at
+	// different raw slots in the same window must hand SignTx the SAME height.
+	anchorA := a.nextKeepAliveSlotMultiple(10*cad+1) * cad
+	anchorB := b.nextKeepAliveSlotMultiple(10*cad+40) * cad
+	require.Equal(t, anchorA, anchorB)
+	require.Equal(t, int64(10)*cad, anchorA)
+	require.NotEqual(t, int64(10)*cad+1, anchorA) // ≠ the raw scan slot that crossed it
+
 	// Already acted on boundary 10: not due again until the slot crosses boundary 11.
 	c := &SOLClient{}
 	c.setKeepAliveSlotMultiple(10)
