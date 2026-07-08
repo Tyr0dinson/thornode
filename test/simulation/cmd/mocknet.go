@@ -16,6 +16,7 @@ import (
 	ecommon "github.com/ethereum/go-ethereum/common"
 	"github.com/rs/zerolog/log"
 
+	thorapp "gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
@@ -152,6 +153,13 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "127.0.0.1:50051")
 	config.Init()
 
+	// Build the encoding config once, up front, before the concurrent NewUser and
+	// funding goroutines below. MakeEncodingConfig instantiates a temp app that
+	// registers global amino/crypto codecs (not concurrency-safe); doing it here
+	// single-threaded prevents racing that one-time registration against concurrent
+	// key decryption (PrivKeyFromBytes) and tx broadcasts. Subsequent calls are cached.
+	thorapp.MakeEncodingConfig()
+
 	// validators
 	for i, mnemonic := range mocknetValidatorMnemonics {
 		wg.Add(1)
@@ -198,6 +206,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
+				{common.TRONChain, 1, 1_000_000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
@@ -564,6 +573,22 @@ func fundUserXMRAccounts(master *User, users []*User, amount sdkmath.Uint) {
 	if !ok {
 		log.Fatal().Msg("failed to get monero simulation client")
 	}
+
+	birthdayHeight, err := client.GetHeight()
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to get XMR simulation birthday height")
+	}
+	client.SetBirthdayHeight(uint64(birthdayHeight))
+	for _, user := range users {
+		userClient, ok := user.ChainClients[common.XMRChain].(*monero.Client)
+		if !ok {
+			log.Fatal().Str("user", user.Name()).Msg("failed to get user monero simulation client")
+		}
+		userClient.SetBirthdayHeight(uint64(birthdayHeight))
+	}
+	log.Info().
+		Uint64("birthday_height", uint64(birthdayHeight)).
+		Msg("set XMR simulation account birthday height")
 
 	for _, user := range users {
 		addr, err := user.PubKey(common.XMRChain).GetAddress(common.XMRChain)
