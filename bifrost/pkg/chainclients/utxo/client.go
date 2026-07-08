@@ -951,7 +951,7 @@ func (c *Client) preflightWalletRecovery(ctx context.Context) error {
 		return nil
 	}
 
-	if err := ctx.Err(); err != nil {
+	if err = ctx.Err(); err != nil {
 		return err
 	}
 
