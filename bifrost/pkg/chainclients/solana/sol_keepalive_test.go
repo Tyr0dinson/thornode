@@ -38,42 +38,45 @@ func TestKeepAliveDue(t *testing.T) {
 	require.False(t, keepAliveDue(999_999, 1_000_000, refreshBlocks))
 }
 
-// TestKeepAliveSlotBoundary covers the convergence mechanism: every member derives
-// the same cadence boundary (and therefore the same keysign anchor slot) from the
-// same finalized scan slot, mirroring how scheduled outbounds share txOut.Height.
-func TestKeepAliveSlotBoundary(t *testing.T) {
-	cad := int64(keepAliveSlotCadence)
+// TestKeepAliveThorBoundary covers the convergence mechanism: every member derives
+// the same cadence boundary (and therefore the same keysign anchor HEIGHT) from the
+// consensus THORChain block height, mirroring how scheduled outbounds share
+// txOut.Height. The anchor is a valid THORChain height (≤ tip), not a Solana slot.
+func TestKeepAliveThorBoundary(t *testing.T) {
+	cad := int64(keepAliveThorBlockCadence)
 
 	// Fresh node (multiple 0) jumps straight to the current boundary — it does not
 	// replay every historical boundary from zero.
 	fresh := &SOLClient{}
 	require.True(t, fresh.ShouldKeepAlive(10*cad+5))
-	require.Equal(t, int64(10), fresh.nextKeepAliveSlotMultiple(10*cad+5))
+	require.Equal(t, int64(10), fresh.nextKeepAliveThorMultiple(10*cad+5))
 
-	// Two members a few slots apart but inside the SAME cadence window derive the
-	// same next boundary → identical anchor slot → same keysign session.
+	// Two members a few blocks apart but inside the SAME cadence window derive the
+	// same next boundary → identical anchor height → same keysign session.
 	a, b := &SOLClient{}, &SOLClient{}
-	a.setKeepAliveSlotMultiple(9)
-	b.setKeepAliveSlotMultiple(9)
-	require.Equal(t, a.nextKeepAliveSlotMultiple(10*cad+1), b.nextKeepAliveSlotMultiple(10*cad+40))
-	require.Equal(t, int64(10), a.nextKeepAliveSlotMultiple(10*cad+1))
+	a.setKeepAliveThorMultiple(9)
+	b.setKeepAliveThorMultiple(9)
+	require.Equal(t, a.nextKeepAliveThorMultiple(10*cad+1), b.nextKeepAliveThorMultiple(10*cad+40))
+	require.Equal(t, int64(10), a.nextKeepAliveThorMultiple(10*cad+1))
 
-	// The keysign anchor is boundary×cadence, NOT the raw scan slot: two members at
-	// different raw slots in the same window must hand SignTx the SAME height.
-	anchorA := a.nextKeepAliveSlotMultiple(10*cad+1) * cad
-	anchorB := b.nextKeepAliveSlotMultiple(10*cad+40) * cad
+	// The keysign anchor is boundary×cadence, NOT the raw height: two members at
+	// different tips in the same window must hand SignTx the SAME height, and it
+	// must be ≤ their tip (a node only fires after crossing the boundary).
+	anchorA := a.nextKeepAliveThorMultiple(10*cad+1) * cad
+	anchorB := b.nextKeepAliveThorMultiple(10*cad+40) * cad
 	require.Equal(t, anchorA, anchorB)
 	require.Equal(t, int64(10)*cad, anchorA)
-	require.NotEqual(t, int64(10)*cad+1, anchorA) // ≠ the raw scan slot that crossed it
+	require.LessOrEqual(t, anchorA, 10*cad+1)     // ≤ the firing node's tip → valid signing_height
+	require.NotEqual(t, int64(10)*cad+1, anchorA) // ≠ the raw per-node height
 
-	// Already acted on boundary 10: not due again until the slot crosses boundary 11.
+	// Already acted on boundary 10: not due again until the height crosses boundary 11.
 	c := &SOLClient{}
-	c.setKeepAliveSlotMultiple(10)
-	require.False(t, c.ShouldKeepAlive(10*cad+700))
+	c.setKeepAliveThorMultiple(10)
+	require.False(t, c.ShouldKeepAlive(10*cad+cad-1))
 	require.True(t, c.ShouldKeepAlive(11*cad+1))
 
 	// Advances one boundary at a time once initialized (never skips ahead).
-	require.Equal(t, int64(11), c.nextKeepAliveSlotMultiple(20*cad))
+	require.Equal(t, int64(11), c.nextKeepAliveThorMultiple(20*cad))
 }
 
 func TestKeepAliveAmount(t *testing.T) {

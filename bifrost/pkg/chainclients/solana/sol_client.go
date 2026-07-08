@@ -68,14 +68,14 @@ type SOLClient struct {
 	signerCacheManager  *signercache.CacheManager
 	rpcClient           *rpc.SolRPC
 
-	// keepAliveSlotMultiple is the last keep-alive cadence boundary this node acted
-	// on. The keep-alive trigger is driven off the shared finalized scan slot (not
-	// a per-node wall clock) so every member crosses the same boundary and hands
-	// the keysign an identical anchor slot, converging the party the way scheduled
-	// outbounds do via their consensus txOut.Height. Guarded by the mutex since the
-	// loop reads and writes it.
-	keepAliveSlotMultipleMu sync.Mutex
-	keepAliveSlotMultiple   int64
+	// keepAliveThorMultiple is the last keep-alive cadence boundary this node acted
+	// on. The trigger + keysign anchor are driven off the shared THORChain block
+	// height (not a per-node wall clock or Solana slot) so every member crosses the
+	// same boundary and hands the keysign an identical, valid THORChain height —
+	// converging the party the way scheduled outbounds do via their consensus
+	// txOut.Height. Guarded by the mutex since the loop reads and writes it.
+	keepAliveThorMultipleMu sync.Mutex
+	keepAliveThorMultiple   int64
 
 	// solvencySlotMultiple is the last reported solvency cadence boundary. It is
 	// read and written from two goroutines — the block scanner's solvency reporter

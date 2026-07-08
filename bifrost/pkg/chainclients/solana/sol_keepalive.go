@@ -48,33 +48,37 @@ const (
 	// slots (6s thorchain block / ~400ms solana slot).
 	solSlotsPerThorchainBlock = 15
 
-	// keepAlivePollInterval is how often the loop polls the scanner's finalized
-	// scan slot for a cadence-boundary crossing. It is only a detection cadence,
-	// not the trigger: the trigger is the shared boundary below, so this is kept
-	// well under the ~20s blockhash quantization so every member detects the same
-	// boundary within one blockhash tick and signs identical bytes.
+	// keepAlivePollInterval is how often the loop checks the THORChain block height
+	// for a cadence-boundary crossing. Kept well under the boundary spacing so every
+	// member detects the same crossing promptly.
 	keepAlivePollInterval = 10 * time.Second
 
-	// keepAliveSlotCadence is the spacing, in Solana slots, of the keep-alive
-	// evaluation boundaries (~5 min at 400ms/slot). The keep-alive fires only when
-	// the shared finalized scan slot crosses one of these boundaries, so all
-	// members trigger together and — like a scheduled outbound inheriting its
-	// consensus txOut.Height — derive the identical anchor slot to hand the keysign.
-	keepAliveSlotCadence = 750
+	// keepAliveThorBlockCadence is the spacing, in THORChain blocks, of the
+	// keep-alive evaluation boundaries (~5 min at 6s/block). The keysign anchor for
+	// a crossing is boundary × this cadence — a THORChain height that is (a) ≤ the
+	// tip by construction (a node only fires after crossing it), so it is a VALID
+	// signing_height the keysign-party query accepts, and (b) identical across every
+	// member crossing the same boundary, so they batch into one keysign session
+	// (go-tss batches by {algo, height}) and seed an identical self-send amount. A
+	// Solana slot cannot serve here: it far exceeds the THORChain tip, so the party
+	// query rejects it ("block height not available yet").
+	keepAliveThorBlockCadence = 50
 
 	// keepAliveFeeMarginLamports is the balance headroom required beyond the
 	// self-send amount so the transaction fee is always payable.
 	keepAliveFeeMarginLamports = 100_000
 )
 
-// keepAliveLoop watches the scanner's finalized scan slot and fires the keep-alive
-// once per shared cadence boundary. Driving the trigger off the shared scan slot
-// rather than a per-node wall clock is what makes the keysign converge: every
-// member crosses the same boundary and hands SignTx the identical anchor slot as
-// its height, exactly as scheduled outbounds all sign at their consensus
-// txOut.Height. A per-node ticker (the previous design) let members sign at
-// different heights/blockhash ticks, so the keysign party could never reach
-// threshold on identical bytes.
+// keepAliveLoop watches the THORChain block height and fires the keep-alive once
+// per shared cadence boundary. The keysign height MUST be a valid THORChain height
+// (≤ tip — the keysign-party query rejects anything higher) AND identical across
+// members (go-tss batches keysign tasks by {algo, height}). Deriving the anchor
+// from a THORChain-block boundary satisfies both: THORChain height is consensus
+// state every member agrees on, boundary×cadence is ≤ the firing node's tip, and
+// every member crossing the same boundary derives the same value — exactly the
+// property scheduled outbounds get from their consensus txOut.Height. The Solana
+// scan slot is still read, but only as the staleness reference (a Solana slot is
+// invalid as a THORChain signing height).
 func (c *SOLClient) keepAliveLoop() {
 	defer c.wg.Done()
 	ticker := time.NewTicker(keepAlivePollInterval)
@@ -84,49 +88,51 @@ func (c *SOLClient) keepAliveLoop() {
 		case <-c.stopchan:
 			return
 		case <-ticker.C:
+			thorHeight, err := c.bridge.GetBlockHeight()
+			if err != nil || thorHeight <= 0 {
+				continue
+			}
+			boundary := c.nextKeepAliveThorMultiple(thorHeight)
+			if boundary <= c.getKeepAliveThorMultiple() {
+				continue // no new boundary crossed
+			}
+			// Staleness reference stays in the Solana domain (newest sig slot vs
+			// current scan slot); only the keysign anchor moves to THORChain height.
 			scanSlot, err := c.solScanner.ScanHeight()
 			if err != nil || scanSlot <= 0 {
 				continue
 			}
-			boundary := c.nextKeepAliveSlotMultiple(scanSlot)
-			if boundary <= c.getKeepAliveSlotMultiple() {
-				continue // no new boundary crossed
-			}
-			// Anchor on the boundary's canonical slot (boundary × cadence), NOT the
-			// raw per-node scanSlot: scanSlot differs between members (each polls at a
-			// slightly different tip), so passing it as the keysign height would put
-			// members in different keysign sessions — the very divergence this design
-			// fixes. boundary is identical across all members crossing it, so
-			// boundary×cadence is the shared height every member hands the keysign.
-			c.keepAliveCheck(boundary * keepAliveSlotCadence)
+			// anchorHeight = boundary × cadence: identical across members crossing
+			// this boundary and ≤ the firing node's tip, so it is both a converged
+			// AND a valid THORChain signing_height.
+			c.keepAliveCheck(scanSlot, boundary*keepAliveThorBlockCadence)
 			// Advance past this boundary so it is acted on exactly once, whether or
 			// not a keysign actually fired (disabled/inactive/not-yet-stale all
 			// legitimately no-op until the next boundary).
-			c.setKeepAliveSlotMultiple(boundary)
+			c.setKeepAliveThorMultiple(boundary)
 		}
 	}
 }
 
-// ShouldKeepAlive reports whether the shared finalized scan slot has crossed a new
-// keep-alive cadence boundary since this node last acted. Mirrors
-// ShouldReportSolvency: because every member drives it off the same scanned slot,
-// they cross boundaries together.
-func (c *SOLClient) ShouldKeepAlive(slot int64) bool {
-	return c.nextKeepAliveSlotMultiple(slot) > c.getKeepAliveSlotMultiple()
+// ShouldKeepAlive reports whether the THORChain height has crossed a new keep-alive
+// cadence boundary since this node last acted. Because THORChain height is
+// consensus state, every member crosses boundaries together.
+func (c *SOLClient) ShouldKeepAlive(thorHeight int64) bool {
+	return c.nextKeepAliveThorMultiple(thorHeight) > c.getKeepAliveThorMultiple()
 }
 
-// nextKeepAliveSlotMultiple returns the boundary this node should act on for the
-// given scan slot. Mirrors nextSolvencyReportSlotMultiple: a fresh node jumps
-// straight to the current boundary instead of replaying history, and otherwise
-// advances one boundary at a time so members with slightly different tips still
-// converge on the same next boundary.
-func (c *SOLClient) nextKeepAliveSlotMultiple(slot int64) int64 {
-	current := c.getKeepAliveSlotMultiple()
-	if keepAliveSlotCadence <= 0 {
+// nextKeepAliveThorMultiple returns the boundary this node should act on for the
+// given THORChain height. Mirrors nextSolvencyReportSlotMultiple: a fresh node
+// jumps straight to the current boundary instead of replaying history, and
+// otherwise advances one boundary at a time so members with slightly different
+// tips still converge on the same next boundary.
+func (c *SOLClient) nextKeepAliveThorMultiple(thorHeight int64) int64 {
+	current := c.getKeepAliveThorMultiple()
+	if keepAliveThorBlockCadence <= 0 {
 		return current
 	}
-	crossedMultiple := slot / keepAliveSlotCadence
-	if slot%keepAliveSlotCadence == 0 {
+	crossedMultiple := thorHeight / keepAliveThorBlockCadence
+	if thorHeight%keepAliveThorBlockCadence == 0 {
 		crossedMultiple--
 	}
 	if crossedMultiple <= current {
@@ -138,24 +144,25 @@ func (c *SOLClient) nextKeepAliveSlotMultiple(slot int64) int64 {
 	return current + 1
 }
 
-func (c *SOLClient) getKeepAliveSlotMultiple() int64 {
-	c.keepAliveSlotMultipleMu.Lock()
-	defer c.keepAliveSlotMultipleMu.Unlock()
-	return c.keepAliveSlotMultiple
+func (c *SOLClient) getKeepAliveThorMultiple() int64 {
+	c.keepAliveThorMultipleMu.Lock()
+	defer c.keepAliveThorMultipleMu.Unlock()
+	return c.keepAliveThorMultiple
 }
 
-func (c *SOLClient) setKeepAliveSlotMultiple(v int64) {
-	c.keepAliveSlotMultipleMu.Lock()
-	defer c.keepAliveSlotMultipleMu.Unlock()
-	c.keepAliveSlotMultiple = v
+func (c *SOLClient) setKeepAliveThorMultiple(v int64) {
+	c.keepAliveThorMultipleMu.Lock()
+	defer c.keepAliveThorMultipleMu.Unlock()
+	c.keepAliveThorMultiple = v
 }
 
 // keepAliveCheck evaluates every vault this node is a member of at a shared
-// cadence boundary. anchorSlot is the boundary's canonical slot (boundary ×
-// cadence) — identical across all members crossing that boundary — used both as
-// the staleness reference and, critically, as the height handed to SignTx so
-// every member's keysign coordinates on the same value.
-func (c *SOLClient) keepAliveCheck(anchorSlot int64) {
+// cadence boundary. currentSlot is the current Solana scan slot (the staleness
+// reference); anchorHeight is the boundary's canonical THORChain height (boundary
+// × cadence) — identical across members and ≤ tip — handed to SignTx as the keysign
+// height and used to seed the self-send amount, so every member's keysign
+// coordinates on the same valid value.
+func (c *SOLClient) keepAliveCheck(currentSlot, anchorHeight int64) {
 	refreshBlocks, err := c.bridge.GetMimir(constants.MimirKeySignatureRefreshBlocks)
 	if err != nil {
 		c.logger.Err(err).Msgf("fail to get %s mimir", constants.MimirKeySignatureRefreshBlocks)
@@ -196,9 +203,10 @@ func (c *SOLClient) keepAliveCheck(anchorSlot int64) {
 		return
 	}
 
-	// anchorSlot (the shared finalized scan slot) is the staleness reference and
-	// the keysign height. Deliberately NOT c.rpcClient.GetSlot()/GetBlockHeight():
-	// those are per-node and would desync the keysign message and party.
+	// currentSlot (Solana scan slot) gates staleness; anchorHeight (the shared
+	// THORChain boundary) is the keysign height + amount seed. Deliberately NOT
+	// c.rpcClient.GetSlot()/a per-node GetBlockHeight read: those desync the party
+	// and message. anchorHeight comes from the shared boundary the loop crossed.
 	for _, vault := range vaults {
 		if !vault.Contains(nodePubKey) {
 			// not a member of this vault, its members handle the keep-alive
@@ -207,7 +215,7 @@ func (c *SOLClient) keepAliveCheck(anchorSlot int64) {
 		if vault.PubKeyEddsa.IsEmpty() {
 			continue
 		}
-		if err := c.keepAliveVault(vault, uint64(anchorSlot), refreshBlocks, anchorSlot); err != nil {
+		if err := c.keepAliveVault(vault, uint64(currentSlot), refreshBlocks, anchorHeight); err != nil {
 			c.logger.Err(err).
 				Str("vault_pubkey", vault.PubKey.String()).
 				Msg("fail to keep alive vault")
@@ -215,7 +223,7 @@ func (c *SOLClient) keepAliveCheck(anchorSlot int64) {
 	}
 }
 
-func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refreshBlocks, anchorSlot int64) error {
+func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refreshBlocks, anchorHeight int64) error {
 	addr, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
 	if err != nil {
 		return fmt.Errorf("fail to get vault address: %w", err)
@@ -240,7 +248,11 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 		return nil
 	}
 
-	amount := keepAliveAmount(newest.Slot)
+	// Seed the amount from the shared anchorHeight, NOT the per-node newest.Slot:
+	// the amount is serialized into the TSS-signed Solana message, so a per-node
+	// seed would make the message bytes differ across members and the keysign could
+	// not pair. anchorHeight is identical across the whole party.
+	amount := keepAliveAmount(uint64(anchorHeight))
 
 	// Balance guard: the transfer momentarily debits the full amount before
 	// crediting it back, so the account must hold amount plus fee headroom.
@@ -278,14 +290,14 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 		Str("vault", vaultAddr).
 		Uint64("newest_sig_slot", newest.Slot).
 		Uint64("current_slot", currentSlot).
-		Int64("anchor_slot", anchorSlot).
+		Int64("anchor_height", anchorHeight).
 		Str("amount", amount.String()).
 		Msg("vault signature is stale, sending keep-alive self-sign")
 
-	// anchorSlot is the shared keysign height: every member of the party derives
-	// the same value from the same finalized scan boundary, so they coordinate on
-	// one keysign session — the property scheduled outbounds get from txOut.Height.
-	signed, _, _, err := c.SignTx(toi, anchorSlot)
+	// anchorHeight is the shared, valid keysign height: every member derives the
+	// same THORChain-block boundary (≤ tip), so they batch into one keysign session
+	// — the property scheduled outbounds get from their consensus txOut.Height.
+	signed, _, _, err := c.SignTx(toi, anchorHeight)
 	if err != nil {
 		return fmt.Errorf("fail to sign keep-alive tx: %w", err)
 	}
