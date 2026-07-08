@@ -152,3 +152,12 @@ func TestSolvencyMismatchRetryable(t *testing.T) {
 		})
 	}
 }
+
+func TestEd25519SolvencyPubKeyUsesVaultKeyForXMR(t *testing.T) {
+	vaultKey := common.PubKey("tthorpub1zcjduepqamk0ywsr8x95evuv4xm85p225sd7w763y69l9lyclznp6eyqqv9qgvhalh")
+
+	got := ed25519SolvencyPubKey(common.XMRAsset, vaultKey)
+	if !got.Equals(vaultKey) {
+		t.Fatalf("expected XMR solvency to query vault pubkey %s, got %s", vaultKey, got)
+	}
+}

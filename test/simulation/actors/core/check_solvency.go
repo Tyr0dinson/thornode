@@ -93,6 +93,10 @@ func solvencyMismatchRetryable(mismatches []solvencyMismatch) bool {
 	return true
 }
 
+func ed25519SolvencyPubKey(_ common.Asset, vaultPubKeyEddsa common.PubKey) common.PubKey {
+	return vaultPubKeyEddsa
+}
+
 func appendUniqueString(items []string, item string) []string {
 	if item == "" {
 		return items
@@ -156,14 +160,6 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 			}
 		}
 
-		xmrPubKey, err := thornode.GetInboundAddressPubKey(common.XMRChain)
-		if err != nil {
-			a.Log().Error().Err(err).Msg("failed to get active XMR inbound pubkey")
-			return OpResult{
-				Continue: false,
-			}
-		}
-
 		// get all L1 balances
 		l1CoinAmounts := make(map[string]cosmos.Uint)
 		vaultAssets := make(map[string]common.Asset)
@@ -205,12 +201,8 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 				case asset.IsGasAsset():
 					switch asset.Chain.GetSigningAlgo() {
 					case common.SigningAlgoEd25519:
-						algoPubKey := vaultPubKeyEddsa
-						queryKey := vaultPubKeyEddsaStr
-						if asset.Chain.Equals(common.XMRChain) {
-							algoPubKey = xmrPubKey
-							queryKey = xmrPubKey.String()
-						}
+						algoPubKey := ed25519SolvencyPubKey(asset, vaultPubKeyEddsa)
+						queryKey := algoPubKey.String()
 						if algoPubKey.IsEmpty() {
 							a.Log().Error().Str("asset", assetStr).Msg("missing ed25519 vault pubkey")
 							return OpResult{Continue: false}
