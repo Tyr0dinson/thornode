@@ -414,12 +414,6 @@ func (c *TronClient) SignTx(
 		}
 	}
 
-	if len(c.tronScanner.refBlocks) == 0 {
-		err := fmt.Errorf("no ref blocks found")
-		c.logger.Err(err).Msg("")
-		return nil, nil, nil, err
-	}
-
 	// TODO: Discuss checkpoint
 
 	if len(txOutItem.Coins) != 1 {
@@ -506,28 +500,35 @@ func (c *TronClient) SignTx(
 		return nil, nil, nil, err
 	}
 
-	// Look 2 minutes back to reduce race around the latest scanned ref block
-	refTimestamp := thorTimestamp.Add(-2 * time.Minute)
-
 	// Convert to milliseconds for TRON
 	timestamp := thorTimestamp.UnixMilli()
-	refTimestampMs := refTimestamp.UnixMilli()
 
-	// Find the reference block closest to (but before) the THORChain timestamp
-	// This ensures the ref block is deterministic while still being valid for TRON
-	index := len(c.tronScanner.refBlocks) - 1
-	for i := index; i >= 0; i-- {
-		refBlock := c.tronScanner.refBlocks[i]
-		if refBlock.Timestamp <= refTimestampMs {
-			index = i
-			break
-		}
+	// Deterministic ref block. The old path selected from tronScanner.refBlocks, an
+	// in-memory PER-NODE list; a member whose scanner lagged or had restarted picked
+	// a different ref block -> different TxId (via Rehash) -> different go-tss msgID
+	// -> "signers fail to sync" and the outbound never keysigns. Instead derive a
+	// boundary height from the consensus-observed TRON height and fetch that exact
+	// block, so every signer uses the same ref block regardless of local scanner
+	// state (same shape as the SOL keep-alive convergence fix: derive the shared
+	// input from consensus, not per-node state).
+	// REVIEW: GetLastObservedInHeight is the network-agreed TRON tip (quorum-gated,
+	// stable over a signing window); rounding one boundary back keeps it finalized.
+	// For byte-perfect determinism, pin it to txOutItem.Height via a height-scoped
+	// /lastblock query. Gate on a stagenet keysign-convergence repro before merge.
+	observedTronHeight, err := c.bridge.GetLastObservedInHeight(common.TRONChain)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to get observed TRON height for ref block")
+		return nil, nil, nil, err
+	}
+	refHeight := ((observedTronHeight / refBlockInterval) - 1) * refBlockInterval
+	refBlockData, err := c.api.GetBlock(refHeight)
+	if err != nil {
+		c.logger.Err(err).Int64("ref_height", refHeight).Msg("failed to fetch deterministic ref block")
+		return nil, nil, nil, err
 	}
 
-	refBlock := c.tronScanner.refBlocks[index]
-
-	refBlockHash := refBlock.Id[16:32]
-	refBlockBytes := fmt.Sprintf("%016x", refBlock.Height)[12:16]
+	refBlockHash := refBlockData.BlockId[16:32]
+	refBlockBytes := fmt.Sprintf("%016x", refBlockData.Header.RawData.Number)[12:16]
 
 	tronTx.RawData.RefBlockBytes = refBlockBytes
 	tronTx.RawData.RefBlockHash = refBlockHash
