@@ -41,6 +41,10 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 const (
+	// defaultSignatureRefreshBlocks is ~1 day of THORChain blocks at 6s — the
+	// keep-alive staleness threshold when SignatureRefreshBlocks mimir is unset.
+	defaultSignatureRefreshBlocks = 14400
+
 	// solSlotsPerThorchainBlock converts the THORChain-block threshold to Solana
 	// slots (6s thorchain block / ~400ms solana slot).
 	solSlotsPerThorchainBlock = 15
@@ -165,8 +169,11 @@ func (c *SOLClient) keepAliveCheck(currentSlot, anchorHeight int64) {
 		c.logger.Err(err).Msgf("fail to get %s mimir", constants.MimirKeySignatureRefreshBlocks)
 		return
 	}
-	if refreshBlocks <= 0 {
-		return // keep-alive disabled
+	if refreshBlocks < 0 {
+		refreshBlocks = defaultSignatureRefreshBlocks
+	}
+	if refreshBlocks == 0 {
+		return // keep-alive disabled by an explicit SignatureRefreshBlocks=0 mimir
 	}
 
 	nodeStatus, err := c.bridge.FetchNodeStatus()

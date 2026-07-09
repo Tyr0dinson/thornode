@@ -28,8 +28,10 @@ var Upgrades = []upgrades.Upgrade{
 	// v3_12_0.NewUpgrade(),
 	//
 	// Example pattern: https://gitlab.com/thorchain/thornode/-/merge_requests/3837
-
-	standard.NewUpgrade("3.19.0"),
+	//
+	// 3.20.0 is a CONSENSUS-breaking release (performed with an upgrade proposal),
+	// so this list stays empty and RegisterUpgradeHandlers auto-registers
+	// NewUpgrade(app.Version()) == NewUpgrade("3.20.0").
 }
 
 // RegisterUpgradeHandlers registers the chain upgrade handlers

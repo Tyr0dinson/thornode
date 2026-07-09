@@ -263,6 +263,22 @@ func handleObservedTxInQuorum(
 	// after vault update, voter setup, etc and the coin will be refunded
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
 
+	// A consolidate self-send (vault→vault — e.g. the SOL keep-alive) spends the tx
+	// fee, but because To == the vault it is observed as an inbound and never reaches
+	// the outbound gas path (addGasFees in handleObservedTxOutQuorum), so the fee is
+	// never debited → LIVE < RECORDS → SOLVENCYHALT. Debit it here, scoped to the
+	// consolidate self-send so it cannot affect normal deposits (which also carry Gas
+	// but are paid by the sender, not the vault).
+	// WIP(3.20.0): confirm via a stagenet repro that the *outbound* observation for
+	// such a self-send is dropped (no matching TxOut), so this cannot double-debit
+	// with the outbound addGasFees. See !4936 discussion.
+	if hasFinalised && memo.IsType(TxConsolidate) &&
+		tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) && vault.IsAsgard() {
+		if gErr := addGasFees(ctx, mgr, tx); gErr != nil {
+			ctx.Logger().Error("fail to debit consolidate self-send gas", "error", gErr)
+		}
+	}
+
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
 	// TODO: In future somehow update both balances in a single action,

@@ -18,7 +18,7 @@ import (
 
 func TestKeepAliveDue(t *testing.T) {
 	// 14400 thorchain blocks * 15 slots = 216_000 slots (~1 day)
-	refreshBlocks := int64(14400)
+	refreshBlocks := int64(defaultSignatureRefreshBlocks)
 	thresholdSlots := uint64(refreshBlocks) * solSlotsPerThorchainBlock
 
 	// fresh signature: not due

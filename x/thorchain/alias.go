@@ -86,6 +86,7 @@ const (
 	TxAdd               = mem.TxAdd
 	TxBond              = mem.TxBond
 	TxMigrate           = mem.TxMigrate
+	TxConsolidate       = mem.TxConsolidate
 	TxRagnarok          = mem.TxRagnarok
 	TxReserve           = mem.TxReserve
 	TxOutbound          = mem.TxOutbound
