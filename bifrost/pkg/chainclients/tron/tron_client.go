@@ -26,6 +26,7 @@ import (
 	tcmetrics "gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -503,6 +504,21 @@ func (c *TronClient) SignTx(
 	// Convert to milliseconds for TRON
 	timestamp := thorTimestamp.UnixMilli()
 
+	// The Expiration set below is pinned to the scheduled height's block time for TSS
+	// determinism, so a sign attempt that starts after (scheduled + TimestampValidity)
+	// can only ever produce an already-expired tx that TRON will reject. Skip it here
+	// rather than waste a multi-party keysign on dead-on-arrival bytes; the slasher
+	// reschedules the outbound at a new height with a fresh timestamp. time.Now() here
+	// only gates participation (like the pending-tx expiry check above) and never
+	// feeds the signed bytes, so signers cannot diverge on the message.
+	if time.Now().UnixMilli() >= timestamp+TimestampValidity.Milliseconds() {
+		c.logger.Warn().
+			Interface("tx", txOutItem).
+			Int64("scheduled_ms", timestamp).
+			Msg("deterministic expiration already passed, skipping sign until reschedule")
+		return nil, nil, nil, nil
+	}
+
 	// Deterministic ref block. The old path selected from tronScanner.refBlocks, an
 	// in-memory PER-NODE list; a member whose scanner lagged or had restarted picked
 	// a different ref block -> different TxId (via Rehash) -> different go-tss msgID
@@ -627,6 +643,14 @@ func (c *TronClient) BroadcastTx(
 		c.logger.Info().Str("txid", tx.TxId).Msg("dup transaction treated as success")
 		response.Result = true
 		response.TxId = tx.TxId
+	}
+
+	// A permanently expired tx can never land; signal the signer to discard it (and
+	// free the vault/chain retry slot) rather than re-broadcasting dead bytes until
+	// the reschedule re-issues the outbound. Loose match on the code to be robust to
+	// the exact java-tron enum string.
+	if !response.Result && strings.Contains(response.Code, "EXPIRATION") {
+		return "", fmt.Errorf("broadcast rejected as expired: %s - %s: %w", response.Code, response.Message, stypes.ErrTxRejectedExpired)
 	}
 
 	// check the response

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	sharedtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -419,6 +421,66 @@ func (s *BackfillSuite) TestBroadcastTxDupTransaction(c *C) {
 	c.Assert(txId, Equals, "abc123")
 
 	s.client.api = savedApi
+}
+
+// TestBroadcastTxExpiredReturnsSentinel verifies an expired-tx broadcast rejection
+// is wrapped as ErrTxRejectedExpired so the signer discards the item instead of
+// looping dead re-broadcasts.
+func (s *BackfillSuite) TestBroadcastTxExpiredReturnsSentinel(c *C) {
+	expServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		resp := api.BroadcastResponse{
+			Result:  false,
+			Code:    "TRANSACTION_EXPIRATION_ERROR",
+			Message: "Transaction expired",
+		}
+		data, _ := json.Marshal(resp)
+		_, _ = w.Write(data)
+	}))
+	defer expServer.Close()
+
+	savedApi := s.client.api
+	s.client.api = api.NewTronApi(expServer.URL, time.Second*2)
+	defer func() { s.client.api = savedApi }()
+
+	txOutItem := types.TxOutItem{
+		Chain:       common.TRONChain,
+		ToAddress:   "TU6nEM4GTca2L5AuDTnY1qp1rkQ2t8NxvM",
+		VaultPubKey: s.client.localKeyManager.Pubkey(),
+		GasRate:     1,
+	}
+	txBytes, _ := json.Marshal(api.Transaction{TxId: "expired1"})
+
+	_, err := s.client.BroadcastTx(txOutItem, txBytes)
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, sharedtypes.ErrTxRejectedExpired), Equals, true)
+}
+
+// TestSignTxSkipsWhenDeterministicallyExpired verifies SignTx skips (returns nil,
+// no error) when the pinned block timestamp is already older than TimestampValidity,
+// so no keysign is wasted on a dead-on-arrival tx.
+func (s *BackfillSuite) TestSignTxSkipsWhenDeterministicallyExpired(c *C) {
+	mb := s.client.bridge.(*mockBridge)
+	saved := mb.blockTimestamp
+	mb.blockTimestamp = time.Now().Add(-TimestampValidity - time.Minute)
+	defer func() { mb.blockTimestamp = saved }()
+
+	txOutItem := types.TxOutItem{
+		Chain:       common.TRONChain,
+		ToAddress:   "TU6nEM4GTca2L5AuDTnY1qp1rkQ2t8NxvM",
+		VaultPubKey: s.client.localKeyManager.Pubkey(),
+		Coins: common.Coins{{
+			Asset:    common.TRXAsset,
+			Amount:   cosmos.NewUint(123_000_000_000),
+			Decimals: 6,
+		}},
+		MaxGas:  common.Gas{{Asset: common.TRXAsset, Amount: cosmos.NewUint(1_100_000), Decimals: 6}},
+		GasRate: 1,
+	}
+
+	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(signed, IsNil)
 }
 
 func (s *BackfillSuite) TestBroadcastTxFailedBroadcast(c *C) {

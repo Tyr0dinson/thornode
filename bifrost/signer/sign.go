@@ -1119,6 +1119,16 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// broadcast the transaction
 	hash, err := chain.BroadcastTx(tx, signedTx)
 	if err != nil {
+		// A chain that reports the signed bytes as permanently expired can never land
+		// them; discard the item (return nil observation so the never-landed txid is
+		// not auto-observed) and let the reschedule re-issue the outbound, rather than
+		// re-broadcasting dead bytes which also hold this vault/chain's exclusive retry
+		// slot. Inert for chains that never wrap ErrTxRejectedExpired.
+		if errors.Is(err, chainclienttypes.ErrTxRejectedExpired) {
+			s.logger.Warn().Str("memo", tx.Memo).Err(err).Msg("signed tx expired on chain, discarding until reschedule")
+			return nil, nil, nil
+		}
+
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
 
 		// store the signed tx for the next retry

@@ -73,8 +73,20 @@ func (s *BlockScannerTestSuite) TestGetHeight(c *C) {
 func (s *BlockScannerTestSuite) TestFetchTxs(c *C) {
 	txIn, err := s.scanner.FetchTxs(69351239, 0)
 	c.Assert(err, IsNil)
-	c.Assert(len(txIn.TxArray), Equals, 1)
-	c.Assert(txIn.TxArray[0].Tx, Equals, "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c")
+	// Every relevant transfer in the block is observed. Txs whose info fetch errors
+	// (mock 404) are observed with the fallback gas (1 sun) rather than dropped.
+	c.Assert(len(txIn.TxArray), Equals, 63)
+	var found, sawFallbackGas bool
+	for _, tx := range txIn.TxArray {
+		if tx.Tx == "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c" {
+			found = true
+		}
+		if len(tx.Gas) == 1 && tx.Gas[0].Amount.String() == "1" {
+			sawFallbackGas = true
+		}
+	}
+	c.Assert(found, Equals, true)
+	c.Assert(sawFallbackGas, Equals, true)
 }
 
 func (s *BlockScannerTestSuite) TestGetMaxEnergy(c *C) {

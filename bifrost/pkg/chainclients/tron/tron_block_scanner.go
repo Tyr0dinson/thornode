@@ -322,14 +322,19 @@ func (s *TronBlockScanner) processTxs(
 			continue
 		}
 
-		// get fee
-		info, err := s.api.GetTransactionInfo(rawTx.TxId)
-		if err != nil {
-			logger.Err(err).Msg("failed to get transaction info")
-			continue
+		// get fee; on a node-local info fetch error still observe the tx with the
+		// fallback gas rather than dropping the observation entirely. java-tron
+		// returns empty info (Fee=0) for a missing/lagging tx, which already falls
+		// through to the 1-sun fallback below, so an errored fetch is treated the
+		// same way instead of leaving the inbound/outbound unobserved on this node.
+		var infoFee uint64
+		if info, infoErr := s.api.GetTransactionInfo(rawTx.TxId); infoErr != nil {
+			logger.Err(infoErr).Msg("failed to get transaction info, observing with fallback gas")
+		} else {
+			infoFee = info.Fee
 		}
 
-		gasAmount := math.NewUint(info.Fee).Mul(math.NewUint(100))
+		gasAmount := math.NewUint(infoFee).Mul(math.NewUint(100))
 		if gasAmount.IsZero() {
 			gasAmount = math.NewUint(1)
 		}
@@ -400,14 +405,17 @@ func (s *TronBlockScanner) getTxInFromFailedTransaction(
 		return nil
 	}
 
-	// get fee
-	info, err := s.api.GetTransactionInfo(rawTx.TxId)
-	if err != nil {
-		s.logger.Err(err).Msg("failed to get transaction info")
-		return nil
+	// get fee; observe the failed outbound with fallback gas on a node-local info
+	// fetch error rather than dropping it (same rationale as processTxs — an
+	// unobserved failed vault outbound is worse than an approximate gas figure).
+	var infoFee uint64
+	if info, infoErr := s.api.GetTransactionInfo(rawTx.TxId); infoErr != nil {
+		s.logger.Err(infoErr).Msg("failed to get transaction info, observing with fallback gas")
+	} else {
+		infoFee = info.Fee
 	}
 
-	gasAmount := math.NewUint(info.Fee).Mul(math.NewUint(100))
+	gasAmount := math.NewUint(infoFee).Mul(math.NewUint(100))
 	if gasAmount.IsZero() {
 		gasAmount = math.NewUint(1)
 	}

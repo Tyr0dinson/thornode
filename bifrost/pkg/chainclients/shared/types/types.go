@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"math/big"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -8,6 +9,14 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// ErrTxRejectedExpired signals that a chain permanently rejected the signed bytes
+// as expired. They can never land, so the signer should discard the item and let
+// the reschedule re-issue the outbound instead of re-broadcasting the dead bytes
+// (which also holds the vault/chain retry slot). BroadcastTx implementations wrap
+// this via fmt.Errorf("...: %w", ErrTxRejectedExpired); the signer matches it with
+// errors.Is. Inert for any chain that never wraps it.
+var ErrTxRejectedExpired = errors.New("signed tx rejected as expired")
 
 // ChainClient is the interface for chain clients.
 type ChainClient interface {

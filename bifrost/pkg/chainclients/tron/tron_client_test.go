@@ -54,11 +54,17 @@ type mockBridge struct {
 	// observedInHeight overrides the ref-block observed TRON height when non-zero;
 	// the default maps to the getblockbynum_55088560.json fixture (see below).
 	observedInHeight int64
+	// blockTimestamp overrides the block timestamp when set; the default is time.Now()
+	// so SignTx's deterministic-expiration skip guard doesn't fire during tests. Set it
+	// to the past to exercise the skip.
+	blockTimestamp time.Time
 }
 
 func (m *mockBridge) GetBlockTimestamp(height int64) (time.Time, error) {
-	// Return a fixed timestamp that matches the test's refBlock
-	return time.Unix(0, 1749121581000*int64(time.Millisecond)), nil
+	if !m.blockTimestamp.IsZero() {
+		return m.blockTimestamp, nil
+	}
+	return time.Now(), nil
 }
 
 func (m *mockBridge) GetLastObservedInHeightAt(chain common.Chain, height int64) (int64, error) {
@@ -267,7 +273,13 @@ func (s *TronTestSuite) TestSignAndBroadcastTx(c *C) {
 		GasRate:     1,
 	}
 
-	//
+	// pin a recent block timestamp so the deterministic-expiration skip guard doesn't
+	// fire, and assert the signed tx carries exactly it.
+	ts := time.Now()
+	mb := s.client.bridge.(*mockBridge)
+	mb.blockTimestamp = ts
+	defer func() { mb.blockTimestamp = time.Time{} }()
+
 	signed, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
@@ -279,8 +291,8 @@ func (s *TronTestSuite) TestSignAndBroadcastTx(c *C) {
 	// values used from scanner.refBlocks (api/test-tron/getnowblock.json)
 	c.Assert(tx.RawData.RefBlockBytes, Equals, "95b0")
 	c.Assert(tx.RawData.RefBlockHash, Equals, "e5029588a71f9689")
-	c.Assert(tx.RawData.Timestamp, Equals, int64(1749121581000))
-	c.Assert(tx.RawData.Expiration, Equals, 1749121581000+TimestampValidity.Milliseconds())
+	c.Assert(tx.RawData.Timestamp, Equals, ts.UnixMilli())
+	c.Assert(tx.RawData.Expiration, Equals, ts.UnixMilli()+TimestampValidity.Milliseconds())
 	c.Assert(tx.RawData.Contract[0].Type, Equals, "TransferContract")
 	c.Assert(len(tx.Signature), Equals, 1)
 	c.Assert(len(tx.Signature[0]), Equals, 130)
