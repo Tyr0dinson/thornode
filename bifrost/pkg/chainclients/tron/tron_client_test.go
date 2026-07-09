@@ -51,11 +51,23 @@ type TronTestSuite struct {
 // mockBridge is a mock implementation of ThorchainBridge for testing
 type mockBridge struct {
 	thorclient.ThorchainBridge
+	// observedInHeight overrides the ref-block observed TRON height when non-zero;
+	// the default maps to the getblockbynum_55088560.json fixture (see below).
+	observedInHeight int64
 }
 
 func (m *mockBridge) GetBlockTimestamp(height int64) (time.Time, error) {
 	// Return a fixed timestamp that matches the test's refBlock
 	return time.Unix(0, 1749121581000*int64(time.Millisecond)), nil
+}
+
+func (m *mockBridge) GetLastObservedInHeightAt(chain common.Chain, height int64) (int64, error) {
+	if m.observedInHeight != 0 {
+		return m.observedInHeight, nil
+	}
+	// With the mocknet refBlockInterval=10, ((55088570/10)-1)*10 == 55088560, the
+	// getblockbynum_55088560.json fixture whose block bytes/hash the assertions expect.
+	return 55088570, nil
 }
 
 var _ = Suite(&TronTestSuite{})

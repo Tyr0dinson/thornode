@@ -163,6 +163,10 @@ func (m *mockBridgeForKeysign) GetBlockTimestamp(int64) (time.Time, error) {
 
 func (m *mockBridgeForKeysign) GetLastObservedInHeight(common.Chain) (int64, error) { return 0, nil }
 
+func (m *mockBridgeForKeysign) GetLastObservedInHeightAt(common.Chain, int64) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockBridgeForKeysign) GetLastSignedOutHeight(common.Chain) (int64, error) { return 0, nil }
 
 func (m *mockBridgeForKeysign) Broadcast(...sdk.Msg) (common.TxID, error) { return "", nil }

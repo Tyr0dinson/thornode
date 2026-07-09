@@ -511,20 +511,35 @@ func (c *TronClient) SignTx(
 	// block, so every signer uses the same ref block regardless of local scanner
 	// state (same shape as the SOL keep-alive convergence fix: derive the shared
 	// input from consensus, not per-node state).
-	// REVIEW: GetLastObservedInHeight is the network-agreed TRON tip (quorum-gated,
-	// stable over a signing window); rounding one boundary back keeps it finalized.
-	// For byte-perfect determinism, pin it to txOutItem.Height via a height-scoped
-	// /lastblock query. Gate on a stagenet keysign-convergence repro before merge.
-	observedTronHeight, err := c.bridge.GetLastObservedInHeight(common.TRONChain)
+	// Pin the observed TRON height to txOutItem.Height (historical consensus state,
+	// same height GetBlockTimestamp above uses) so every signer derives the identical
+	// ref block. A live "latest" query is per-node cached and advances in jumps that
+	// straddle the refBlockInterval boundary, which would reintroduce the TxId
+	// divergence this fix removes.
+	// TODO(follow-up): on a quiet TRON chain last_observed_in can freeze and eventually
+	// age past TRON's TAPOS window (~65k blocks) — keysign stays deterministic but the
+	// broadcast is rejected until a new inbound lands. Bound the ref-block age then.
+	observedTronHeight, err := c.bridge.GetLastObservedInHeightAt(common.TRONChain, txOutItem.Height)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get observed TRON height for ref block")
 		return nil, nil, nil, err
 	}
 	refHeight := ((observedTronHeight / refBlockInterval) - 1) * refBlockInterval
+	if refHeight <= 0 {
+		// Not enough observed TRON history (fresh/quiet chain) to derive a boundary;
+		// bail rather than fetch a zero/negative height and panic on an empty block.
+		return nil, nil, nil, fmt.Errorf("derived TRON ref height %d not usable (observed %d, interval %d)", refHeight, observedTronHeight, refBlockInterval)
+	}
 	refBlockData, err := c.api.GetBlock(refHeight)
 	if err != nil {
 		c.logger.Err(err).Int64("ref_height", refHeight).Msg("failed to fetch deterministic ref block")
 		return nil, nil, nil, err
+	}
+	// java-tron answers getblockbynum with HTTP 200 + {} for an unknown / not-yet-
+	// synced block, yielding a zero-value Block; slicing an empty BlockId would panic
+	// and crash bifrost. Treat a short/empty id as a transient fetch failure.
+	if len(refBlockData.BlockId) < 32 {
+		return nil, nil, nil, fmt.Errorf("ref block %d returned empty/short BlockId (node behind?)", refHeight)
 	}
 
 	refBlockHash := refBlockData.BlockId[16:32]

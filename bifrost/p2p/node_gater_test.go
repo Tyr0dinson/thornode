@@ -186,6 +186,10 @@ func (m *MockThorchainBridge) GetLastObservedInHeight(chain common.Chain) (int64
 	return 0, nil
 }
 
+func (m *MockThorchainBridge) GetLastObservedInHeightAt(chain common.Chain, thorHeight int64) (int64, error) {
+	return 0, nil
+}
+
 func (m *MockThorchainBridge) GetLastSignedOutHeight(chain common.Chain) (int64, error) {
 	return 0, nil
 }

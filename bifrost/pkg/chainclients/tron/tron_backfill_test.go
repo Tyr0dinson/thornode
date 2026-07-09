@@ -246,31 +246,30 @@ func (s *BackfillSuite) TestSignTxAlreadySigned(c *C) {
 	c.Assert(signed2, IsNil)
 }
 
-func (s *BackfillSuite) TestSignTxNoRefBlocks(c *C) {
-	// Save and clear refBlocks
-	saved := s.scanner.refBlocks
-	s.scanner.refBlocks = nil
-
-	coins := []common.Coin{{
-		Asset:    common.TRXAsset,
-		Amount:   cosmos.NewUint(100_000_000),
-		Decimals: 6,
-	}}
+func (s *BackfillSuite) TestSignTxInsufficientObservedHeight(c *C) {
+	// A too-low observed TRON height drives the boundary math ((x/interval)-1)*interval
+	// negative; the client must error rather than fetch a bad block and panic on an
+	// empty BlockId (replaces the old empty-refBlocks path, which this fix removed).
+	mb := s.client.bridge.(*mockBridge)
+	saved := mb.observedInHeight
+	mb.observedInHeight = 5 // below refBlockInterval → refHeight <= 0
+	defer func() { mb.observedInHeight = saved }()
 
 	txOutItem := types.TxOutItem{
 		Chain:       common.TRONChain,
 		ToAddress:   "TU6nEM4GTca2L5AuDTnY1qp1rkQ2t8NxvM",
 		VaultPubKey: s.client.localKeyManager.Pubkey(),
-		Coins:       coins,
-		GasRate:     1,
+		Coins: []common.Coin{{
+			Asset:    common.TRXAsset,
+			Amount:   cosmos.NewUint(100_000_000),
+			Decimals: 6,
+		}},
+		GasRate: 1,
 	}
 
 	_, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "no ref blocks found")
-
-	// Restore
-	s.scanner.refBlocks = saved
+	c.Assert(err, ErrorMatches, ".*not usable.*")
 }
 
 func (s *BackfillSuite) TestSignTxMultipleCoins(c *C) {
