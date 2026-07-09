@@ -72,8 +72,11 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	processedVaults := 0
 	hasDeferredVault := false
 	hasNonDeferredFailure := false
-	msgHeight := solvencyMsgHeight(chain, height)
-	queryHeight := big.NewInt(height)
+	reportHeight, ok := r.reportHeight(height)
+	if !ok {
+		return nil, fmt.Errorf("invalid report height after chain-specific normalization: %d", height)
+	}
+	queryHeight := big.NewInt(reportHeight)
 	for _, asgard := range chainVaults {
 		acct, err := r.client.GetVaultAccount(asgard, queryHeight)
 		if err != nil {
@@ -82,19 +85,19 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 				r.logger.Info().
 					Err(err).
 					Stringer("vault", asgard.PubKey).
-					Int64("query_height", height).
+					Int64("query_height", reportHeight).
 					Msg("defer vault solvency while balance reconciliation is pending")
 				continue
 			}
 			hasNonDeferredFailure = true
 			r.logger.Err(err).
 				Stringer("vault", asgard.PubKey).
-				Int64("query_height", height).
+				Int64("query_height", reportHeight).
 				Msg("fail to get vault-scoped account balance")
 			continue
 		}
 		var msg *types.MsgSolvency
-		msg, err = r.createSolvencyMsg(asgard.PubKey, acct.Coins, msgHeight)
+		msg, err = r.createSolvencyMsg(asgard.PubKey, acct.Coins, reportHeight)
 		if err != nil {
 			hasNonDeferredFailure = true
 			r.logger.Err(err).Stringer("chain", r.client.GetChain()).Msg("fail to create solvency msg")
@@ -151,23 +154,31 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	// intentionally incomplete.
 	partialFailureWithProgress := processedVaults > 0 && hasNonDeferredFailure && !hasDeferredVault
 	if allVaultsProcessed || partialFailureWithProgress {
-		r.setLastSolvencyCheckHeight(height)
+		r.setLastSolvencyCheckHeight(reportHeight)
 	}
 
 	return msgs, nil
 }
 
-// solvencyMsgHeight applies legacy chain-specific report height shaping while
-// keeping cadence checks on the unmodified trigger height.
-func solvencyMsgHeight(chain common.Chain, height int64) int64 {
-	switch chain {
-	case common.TRONChain:
-		return height - tronSolvencyFinalityBlocks
-	case common.SOLChain:
-		return (height / solanaSolvencyHeightFloorStep) * solanaSolvencyHeightFloorStep
-	default:
-		return height
+// reportHeight returns the canonical solvency height for a raw trigger height.
+// It preserves legacy scanner-compatible TRON/SOL report grids while converging
+// runner tips in the same cadence bucket onto one solvency hash.
+func (r *solvencyReporter) reportHeight(height int64) (int64, bool) {
+	blocks := r.solvencyBlocks()
+	if blocks <= 0 || height <= 0 {
+		return 0, false
 	}
+
+	reportHeight := (height / blocks) * blocks
+	chain := r.client.GetChain()
+	if chain == common.SOLChain && height%blocks == 0 {
+		reportHeight -= blocks
+	}
+	if chain == common.TRONChain {
+		reportHeight -= tronSolvencyFinalityBlocks
+	}
+
+	return reportHeight, reportHeight > 0
 }
 
 // ShouldReport decides whether a solvency collection/report cycle should run for
@@ -178,15 +189,6 @@ func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {
 			Stringer("from", from).
 			Int64("height", height).
 			Msg("skip solvency report: invalid raw height")
-		return false
-	}
-	if r.client.GetChain() == common.TRONChain && height <= tronSolvencyFinalityBlocks {
-		// Safety addition versus the legacy per-chain code: do not emit non-positive
-		// TRON solvency message heights on low/mocknet block heights.
-		r.logger.Debug().
-			Stringer("from", from).
-			Int64("height", height).
-			Msg("skip solvency report: TRON report height would be non-positive")
 		return false
 	}
 	if from == fromRunner && !r.shouldReportFromRunner() {
@@ -231,23 +233,14 @@ func (r *solvencyReporter) requiresNonZeroGas() bool {
 	}
 }
 
-// shouldReportAtHeight applies per-chain solvency cadence rules.
-// SOL keeps its legacy "strictly after the next boundary" behavior.
-// All other chains report once they enter a later cadence bucket
-// than the last successful report.
+// shouldReportAtHeight reports once a raw trigger height maps to a later
+// canonical solvency height than the last completed report.
 func (r *solvencyReporter) shouldReportAtHeight(height int64) bool {
-	solvencyBlocks := r.solvencyBlocks()
-
-	switch r.client.GetChain() {
-	case common.SOLChain:
-		lastSlotMultiple := r.getLastSolvencyCheckHeight() / solvencyBlocks
-		return height > (lastSlotMultiple+1)*solvencyBlocks
-	default:
-		// return true once the current height has moved into a later solvency
-		// cadence bucket than the last successful report height. This avoids
-		// missing reports when a runner skips over the exact modulo height.
-		return height/solvencyBlocks > r.getLastSolvencyCheckHeight()/solvencyBlocks
+	reportHeight, ok := r.reportHeight(height)
+	if !ok {
+		return false
 	}
+	return reportHeight > r.getLastSolvencyCheckHeight()
 }
 
 // solvencyBlocks returns the effective cadence interval for the current chain.

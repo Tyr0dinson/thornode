@@ -44,6 +44,35 @@ func runnerIntervalForTest(chain common.Chain) time.Duration {
 	}
 }
 
+func expectedReportHeightForTest(chain common.Chain, cfg config.BifrostChainConfiguration, height int64) int64 {
+	blocks := cfg.SolvencyBlocks
+	if blocks <= 0 {
+		switch chain {
+		case common.ETHChain:
+			blocks = 20
+		case common.SOLChain:
+			blocks = 50
+		case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain, common.XMRChain:
+			blocks = 10
+		case common.BTCChain, common.BCHChain:
+			blocks = 2
+		case common.LTCChain:
+			blocks = 5
+		default:
+			blocks = 1
+		}
+	}
+
+	reportHeight := (height / blocks) * blocks
+	if chain == common.SOLChain && height%blocks == 0 {
+		reportHeight -= blocks
+	}
+	if chain == common.TRONChain {
+		reportHeight -= tronSolvencyFinalityBlocks
+	}
+	return reportHeight
+}
+
 // mockChainClient is a mock that satisfies the chainclients.ChainClient interface
 type mockChainClient struct {
 	chain    common.Chain
@@ -57,6 +86,7 @@ type mockChainClient struct {
 	blockScannerHeight    int64
 	blockScannerIsHealthy bool
 	chainHeight           int64
+	vaultAccountHeights   []int64
 }
 
 func (m *mockChainClient) GetChain() common.Chain                      { return m.chain }
@@ -82,6 +112,9 @@ func (m *mockChainClient) GetAccount(pk common.PubKey, height *big.Int) (common.
 }
 
 func (m *mockChainClient) GetVaultAccount(vault ctypes.Vault, height *big.Int) (common.Account, error) {
+	if height != nil {
+		m.vaultAccountHeights = append(m.vaultAccountHeights, height.Int64())
+	}
 	accountPubKey, err := vault.AlgoPubKey(m.chain)
 	if err != nil {
 		return common.Account{}, err
@@ -124,6 +157,7 @@ type mockVaultAccountChainClient struct {
 	vaultAccounts        map[string]common.Account
 	getAccountCalls      int
 	getVaultAccountCalls int
+	vaultAccountHeights  []int64
 }
 
 func (m *mockVaultAccountChainClient) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
@@ -131,8 +165,11 @@ func (m *mockVaultAccountChainClient) GetAccount(pk common.PubKey, height *big.I
 	return m.mockChainClient.GetAccount(pk, height)
 }
 
-func (m *mockVaultAccountChainClient) GetVaultAccount(vault ctypes.Vault, _ *big.Int) (common.Account, error) {
+func (m *mockVaultAccountChainClient) GetVaultAccount(vault ctypes.Vault, height *big.Int) (common.Account, error) {
 	m.getVaultAccountCalls++
+	if height != nil {
+		m.vaultAccountHeights = append(m.vaultAccountHeights, height.Int64())
+	}
 	if acct, ok := m.vaultAccounts[vault.PubKey.String()]; ok {
 		return acct, nil
 	}
@@ -578,9 +615,9 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 		verifyReport := func(from triggeredFrom, msg ctypes.MsgSolvency) {
 			var expectedHeight int64
 			if from == fromBlockScanner {
-				expectedHeight = tc.client.blockScannerHeight
+				expectedHeight = expectedReportHeightForTest(tc.client.GetChain(), tc.client.GetConfig(), tc.client.blockScannerHeight)
 			} else {
-				expectedHeight = tc.client.chainHeight
+				expectedHeight = expectedReportHeightForTest(tc.client.GetChain(), tc.client.GetConfig(), tc.client.chainHeight)
 			}
 			c.Assert(msg.Height, Equals, expectedHeight)
 			c.Assert(msg.Chain, Equals, tc.client.GetChain())
@@ -592,9 +629,9 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 		verifyAttestedReport := func(from triggeredFrom, solvency common.Solvency) {
 			var expectedHeight int64
 			if from == fromBlockScanner {
-				expectedHeight = tc.client.blockScannerHeight
+				expectedHeight = expectedReportHeightForTest(tc.client.GetChain(), tc.client.GetConfig(), tc.client.blockScannerHeight)
 			} else {
-				expectedHeight = tc.client.chainHeight
+				expectedHeight = expectedReportHeightForTest(tc.client.GetChain(), tc.client.GetConfig(), tc.client.chainHeight)
 			}
 			c.Assert(solvency.Height, Equals, expectedHeight)
 			c.Assert(solvency.Chain, Equals, tc.client.GetChain())
@@ -909,7 +946,7 @@ func (s *SolvencySuite) TestCollectAllSolventUsesChainVaultCount(c *C) {
 	batch, err := reporter.Collect(fromRunner, client.chainHeight)
 	c.Assert(err, IsNil)
 	c.Assert(batch, HasLen, 1)
-	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, client.chainHeight)
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(199))
 
 	msg, ok := batch[0].(*ctypes.MsgSolvency)
 	c.Assert(ok, Equals, true)
@@ -1090,6 +1127,122 @@ func (s *SolvencySuite) TestShouldReportAtHeightBTCUsesTwoBlockFallback(c *C) {
 
 	c.Assert(reporter.shouldReportAtHeight(1), Equals, false)
 	c.Assert(reporter.shouldReportAtHeight(2), Equals, true)
+}
+
+func (s *SolvencySuite) TestCollectCanonicalizesDefaultRunnerHeightWithinBucket(c *C) {
+	vault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{vault}, nil
+	}
+
+	collect := func(height int64) (*ctypes.MsgSolvency, []int64) {
+		client := &mockChainClient{
+			chain:                 common.ETHChain,
+			blockScannerIsHealthy: false,
+			gas:                   cosmos.NewUint(10),
+			cfg: config.BifrostChainConfiguration{
+				SolvencyBlocks: 20,
+			},
+			account: common.Account{Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))},
+		}
+		reporter := newSolvencyReporter(client, bridge)
+		batch, err := reporter.Collect(fromRunner, height)
+		c.Assert(err, IsNil)
+		c.Assert(batch, HasLen, 1)
+		msg, ok := batch[0].(*ctypes.MsgSolvency)
+		c.Assert(ok, Equals, true)
+		c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(120))
+		return msg, client.vaultAccountHeights
+	}
+
+	msgA, queryHeightsA := collect(121)
+	msgB, queryHeightsB := collect(139)
+
+	c.Assert(msgA.Height, Equals, int64(120))
+	c.Assert(msgB.Height, Equals, int64(120))
+	c.Assert(msgA.Id.Equals(msgB.Id), Equals, true)
+	c.Assert(queryHeightsA, DeepEquals, []int64{120})
+	c.Assert(queryHeightsB, DeepEquals, []int64{120})
+}
+
+func (s *SolvencySuite) TestReportHeightKeepsTronLegacyGrid(c *C) {
+	client := &mockChainClient{
+		chain: common.TRONChain,
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+		},
+		account: common.Account{Coins: common.NewCoins(common.NewCoin(common.TRXAsset, cosmos.NewUint(1)))},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+
+	height, ok := reporter.reportHeight(120)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(101))
+
+	height, ok = reporter.reportHeight(125)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(101))
+
+	reporter.setLastSolvencyCheckHeight(101)
+	c.Assert(reporter.shouldReportAtHeight(129), Equals, false)
+	c.Assert(reporter.shouldReportAtHeight(130), Equals, true)
+}
+
+func (s *SolvencySuite) TestReportHeightUsesConfiguredSolanaCadence(c *C) {
+	client := &mockChainClient{
+		chain: common.SOLChain,
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 100,
+		},
+		account: common.Account{Coins: common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1)))},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+
+	_, ok := reporter.reportHeight(100)
+	c.Assert(ok, Equals, false)
+
+	height, ok := reporter.reportHeight(101)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(100))
+
+	height, ok = reporter.reportHeight(199)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(100))
+
+	height, ok = reporter.reportHeight(200)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(100))
+
+	height, ok = reporter.reportHeight(201)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(200))
+}
+
+func (s *SolvencySuite) TestReportHeightBoundaryStraddleConvergesNextBucket(c *C) {
+	client := &mockChainClient{
+		chain: common.ETHChain,
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 20,
+		},
+		account: common.Account{Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+
+	height, ok := reporter.reportHeight(139)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(120))
+
+	height, ok = reporter.reportHeight(141)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(140))
+
+	height, ok = reporter.reportHeight(159)
+	c.Assert(ok, Equals, true)
+	c.Assert(height, Equals, int64(140))
 }
 
 func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
@@ -1468,7 +1621,7 @@ func (s *SolvencySuite) TestDispatcherUsesLegacyTronCadenceAndMsgHeight(c *C) {
 	c.Assert(msg.Height, Equals, int64(11))
 }
 
-func (s *SolvencySuite) TestDispatcherUsesLegacySolanaMsgHeightFloor(c *C) {
+func (s *SolvencySuite) TestDispatcherUsesConfiguredSolanaMsgHeightFloor(c *C) {
 	vault := ctypes.Vault{
 		PubKey:      ctypes.GetRandomPubKey(),
 		PubKeyEddsa: ctypes.GetRandomEd25519PubKey(),
@@ -1518,7 +1671,7 @@ func (s *SolvencySuite) TestDispatcherUsesLegacySolanaMsgHeightFloor(c *C) {
 	c.Assert(batch, HasLen, 1)
 	msg, ok := batch[0].(*ctypes.MsgSolvency)
 	c.Assert(ok, Equals, true)
-	c.Assert(msg.Height, Equals, int64(110))
+	c.Assert(msg.Height, Equals, int64(100))
 }
 
 func (s *SolvencySuite) TestSendCollectedToThorchainLogsInactiveNode(c *C) {

@@ -34,10 +34,8 @@ type reportTask struct {
 const (
 	chainTaskQueueSize = 64
 
-	// - TRON uses height-19 for solvency reports.
-	// - SOL rounds report height down to the nearest 10-slot boundary.
-	tronSolvencyFinalityBlocks    = 19
-	solanaSolvencyHeightFloorStep = 10
+	// TRON uses height-19 for solvency reports.
+	tronSolvencyFinalityBlocks = 19
 )
 
 type dispatcher struct {
