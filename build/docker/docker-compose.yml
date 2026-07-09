@@ -127,7 +127,7 @@ services:
       NEW_GENESIS_TIME: ${NEW_GENESIS_TIME:-}
       CHURN_MIGRATE_ROUNDS: 2
       FUND_MIGRATION_INTERVAL: 30
-      SIGNING_TRANSACTION_PERIOD: 30
+      SIGNING_TRANSACTION_PERIOD: 120
       EMISSION_CURVE: 100000
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
       ETH_HOST: ${ETH_HOST:-http://ethereum:8545}
@@ -549,6 +549,9 @@ services:
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-pig:50051
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-pig:8283"
       SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
+      # Test-only FROST DKG fault injection for `make test-simulation-keygen-jail`;
+      # empty (the default) is a no-op.
+      XMR_FROST_KEYGEN_TEST_ROUND3_TIMEOUT_MS: ${XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS:-}
     ports:
       - 5040
       - 6043:6040 # host-side simulation readiness probe
@@ -694,7 +697,7 @@ services:
     image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101609.1
     restart: unless-stopped
     environment:
-      BLOCK_TIME: ${BLOCK_TIME:-2}
+      BLOCK_TIME: ${BLOCK_TIME:-3}
       OP_NODE_L1_ETH_RPC: ${ETH_HOST:-http://ethereum:8545}
     ports:
       - 8547:8545
@@ -794,7 +797,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:3f9c6b66a11e175741b914e401c09d0a048d833ca9a45000dd3d0bba4a659553}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:49752e667970026bba9c8efe4119530668e5f1f53c6a87284e7106a6f89d41a5}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -863,7 +866,8 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:3f9c6b66a11e175741b914e401c09d0a048d833ca9a45000dd3d0bba4a659553}
+    # Keep simulation faucet/balance behavior independent from signer image upgrades.
+    image: ${XMR_SIM_HELPER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:3f9c6b66a11e175741b914e401c09d0a048d833ca9a45000dd3d0bba4a659553}
     restart: unless-stopped
     user: root
     entrypoint:

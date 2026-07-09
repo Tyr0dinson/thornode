@@ -5,6 +5,7 @@ package sidecar
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -172,15 +173,16 @@ func IsLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// AllowInsecureHTTP decides whether http:// endpoints are accepted. Used only
-// in mocknet / non-public environments.
+// AllowInsecureHTTP decides whether http:// endpoints are accepted. Allowed on
+// the non-public networks (mocknet, chainnet, stagenet), where the sidecar and
+// monerod are reached over internal cluster traffic; mainnet requires TLS.
 func AllowInsecureHTTP(cfg config.BifrostChainConfiguration) bool {
 	chainNetwork := strings.TrimSpace(cfg.ChainNetwork)
 	if strings.EqualFold(chainNetwork, "mocknet") {
 		return true
 	}
 	net := common.CurrentChainNetwork
-	return net == common.MockNet || net == common.ChainNet
+	return net == common.MockNet || net == common.ChainNet || net == common.StageNet
 }
 
 // --- FROST DKG ---
@@ -503,17 +505,20 @@ func (c *Client) ExportKeys(vaultPubKey string) (string, error) {
 	return out.KeyBytesHex, nil
 }
 
-// RestoreKeys imports a previously exported recovery blob back into the sidecar.
-func (c *Client) RestoreKeys(vaultPubKey, keyBytesHex string) (bool, error) {
+// RestoreKeys imports a recovery blob back into the sidecar. The blob is the
+// raw on-disk recovery file, which may be at-rest encrypted (binary). It is
+// base64-encoded for transport because raw bytes are not valid UTF-8 and would
+// be mangled by JSON string encoding.
+func (c *Client) RestoreKeys(vaultPubKey string, keyBlob []byte) (bool, error) {
 	var out struct {
 		Restored bool `json:"restored"`
 	}
 	req := struct {
 		VaultPubKey string `json:"vault_pub_key"`
-		KeyBytesHex string `json:"key_bytes_hex"`
+		KeyBlobB64  string `json:"key_blob_b64"`
 	}{
 		VaultPubKey: vaultPubKey,
-		KeyBytesHex: keyBytesHex,
+		KeyBlobB64:  base64.StdEncoding.EncodeToString(keyBlob),
 	}
 	if err := c.call(http.MethodPost, "/v1/monero/keys/restore", req, &out); err != nil {
 		return false, fmt.Errorf("fail to restore keys: %w", err)

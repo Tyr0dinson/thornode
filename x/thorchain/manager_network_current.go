@@ -33,6 +33,11 @@ type assetAmount struct {
 	Amount math.Int
 }
 
+type overSolvencyEventGroup struct {
+	bps    int64
+	assets []types.AssetOverSolvency
+}
+
 const xmrMonovaultGenesisBootstrapDelayBlocks int64 = 128
 
 func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
@@ -579,24 +584,19 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	if signingTransactionPeriod <= 0 {
+		return fmt.Errorf("invalid signing transaction period: %d", signingTransactionPeriod)
+	}
 	startHeight := ctx.BlockHeight() - signingTransactionPeriod
 	if startHeight < 1 {
 		startHeight = 1
 	}
 	txOutDelayMax := mgr.Keeper().GetConfigInt64(ctx, constants.TxOutDelayMax)
 	maxTxOutOffset := mgr.Keeper().GetConfigInt64(ctx, constants.MaxTxOutOffset)
-	for height := startHeight; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
-		var blockOut *TxOut
-		blockOut, err = mgr.Keeper().GetTxOut(ctx, height)
-		if err != nil {
-			ctx.Logger().Error("fail to get block tx out", "error", err)
-			continue
-		}
-		if height > ctx.BlockHeight()+maxTxOutOffset && len(blockOut.TxArray) == 0 {
-			// we've hit our max offset, and an empty block, we can assume the
-			// rest will be empty as well
-			break
-		}
+	staleMigratePendingBlocks := signingTransactionPeriod * constants.StaleMigratePendingSigningPeriodMultiplier
+	// Keep pending outbound accounting in one place because migrateFunds scans both
+	// the normal signing window and explicit stale migrate heights below.
+	processBlockOut := func(blockOut *TxOut) {
 		for _, toi := range blockOut.TxArray {
 			// only still outstanding txout will be considered
 			if !toi.OutHash.IsEmpty() {
@@ -617,6 +617,106 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			// Having deducted from the Coins, ensure the map reflects the new amounts.
 			vaultsAvailableCoins[toi.VaultPubKey] = availableCoins
 		}
+	}
+	for height := startHeight; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
+		var blockOut *TxOut
+		blockOut, err = mgr.Keeper().GetTxOut(ctx, height)
+		if err != nil {
+			ctx.Logger().Error("fail to get block tx out", "error", err)
+			continue
+		}
+		if height > ctx.BlockHeight()+maxTxOutOffset && len(blockOut.TxArray) == 0 {
+			// we've hit our max offset, and an empty block, we can assume the
+			// rest will be empty as well
+			break
+		}
+		processBlockOut(blockOut)
+	}
+
+	// Migrate outbounds may remain unobserved past SigningTransactionPeriod. The
+	// vault's pending heights are durable references to those txouts, so scan them
+	// explicitly even when they are older than the rolling txout window.
+	stalePendingBlockOuts := make(map[int64]*TxOut)
+	stalePendingHeights := make([]int64, 0)
+	for vaultIdx := range retiring {
+		vault := retiring[vaultIdx]
+		for _, height := range vault.PendingTxBlockHeights {
+			if height < 1 || height >= startHeight {
+				continue
+			}
+			// Multiple retiring vaults may reference the same txout height, so
+			// keep one loaded blockOut for both stale pruning and later accounting.
+			blockOut, ok := stalePendingBlockOuts[height]
+			if !ok {
+				var blockOutErr error
+				blockOut, blockOutErr = mgr.Keeper().GetTxOut(ctx, height)
+				if blockOutErr != nil {
+					ctx.Logger().Error("fail to get stale pending migrate tx out", "error", blockOutErr, "height", height)
+					continue
+				}
+				stalePendingBlockOuts[height] = blockOut
+				stalePendingHeights = append(stalePendingHeights, height)
+			}
+
+			if staleMigratePendingBlocks > 0 && ctx.BlockHeight()-height > staleMigratePendingBlocks {
+				prunedMigrateCount := 0
+				// Only expire unobserved migrate requests for this vault and exact
+				// memo height. Unrelated pending txouts at the same height still count.
+				for itemIdx := range blockOut.TxArray {
+					toi := &blockOut.TxArray[itemIdx]
+					if !toi.OutHash.IsEmpty() || !toi.VaultPubKey.Equals(vault.PubKey) {
+						continue
+					}
+					memo, memoErr := ParseMemo(mgr.GetVersion(), toi.Memo)
+					if memoErr != nil {
+						ctx.Logger().Error("fail to parse stale pending migrate memo", "error", memoErr, "height", height, "memo", toi.Memo)
+						continue
+					}
+					if !memo.IsType(TxMigrate) {
+						continue
+					}
+					if memo.GetBlockHeight() != height {
+						ctx.Logger().Info("stale pending migrate memo height does not match txout height",
+							"vault_pubkey", vault.PubKey,
+							"txout_height", height,
+							"memo_height", memo.GetBlockHeight(),
+							"chain", toi.Chain)
+						continue
+					}
+					ctx.Logger().Info("marking stale pending migrate txout for retry",
+						"vault_pubkey", vault.PubKey,
+						"height", height,
+						"age", ctx.BlockHeight()-height,
+						"chain", toi.Chain)
+					// Mark the old request as replaced so bifrost will not sign it after
+					// the pending height is cleared and a fresh migrate is scheduled.
+					toi.OutHash = common.BlankTxID
+					prunedMigrateCount++
+				}
+				if prunedMigrateCount > 0 {
+					// Clear one durable pending-height entry per expired migrate so
+					// duplicate same-height migrations stay in sync with the txout block.
+					for i := 0; i < prunedMigrateCount; i++ {
+						vault.RemovePendingTxBlockHeights(height)
+					}
+					retiring[vaultIdx] = vault
+					if err = mgr.Keeper().SetTxOut(ctx, blockOut); err != nil {
+						return fmt.Errorf("fail to save stale pending migrate tx out: %w", err)
+					}
+					if err = mgr.Keeper().SetVault(ctx, vault); err != nil {
+						return fmt.Errorf("fail to save vault after stale pending migrate retry: %w", err)
+					}
+				}
+			}
+		}
+	}
+	// Process cached stale txouts in height order; map iteration is not
+	// deterministic and this path affects consensus accounting.
+	sort.Slice(stalePendingHeights, func(i, j int) bool {
+		return stalePendingHeights[i] < stalePendingHeights[j]
+	})
+	for _, height := range stalePendingHeights {
+		processBlockOut(stalePendingBlockOuts[height])
 	}
 
 	for _, vault := range retiring {
@@ -3018,18 +3118,11 @@ func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error
 		return nil // No over-solvency, nothing to do
 	}
 
-	// Get the mimir setting for how much to swap to over-solvency address
-	overSolvencyBps := vm.k.GetConfigInt64(ctx, constants.OverSolvencyToTreasuryBps)
-	if overSolvencyBps < 0 {
-		overSolvencyBps = 0
-	}
-	if overSolvencyBps > int64(constants.MaxBasisPts) {
-		overSolvencyBps = int64(constants.MaxBasisPts)
-	}
-
 	// Build event data
-	assetOverSolvencies := make([]types.AssetOverSolvency, 0, len(overSolventAssets))
+	eventGroups := make([]overSolvencyEventGroup, 0, len(overSolventAssets))
 	for _, assetAmt := range overSolventAssets {
+		overSolvencyBps := vm.getOverSolvencyToTreasuryBps(ctx, assetAmt.Asset)
+
 		// Convert signed Int to unsigned Uint for the amount
 		overSolventAmount := math.NewUintFromBigInt(assetAmt.Amount.BigInt())
 
@@ -3052,22 +3145,51 @@ func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error
 		if swapCreated {
 			eventSwapAmount = swapAmount
 		}
-		assetOverSolvencies = append(assetOverSolvencies, types.AssetOverSolvency{
+		eventAsset := types.AssetOverSolvency{
 			Asset:               assetAmt.Asset,
 			OverSolventAmount:   overSolventAmount,
 			SwapToReserveAmount: eventSwapAmount,
-		})
+		}
+
+		grouped := false
+		for i := range eventGroups {
+			if eventGroups[i].bps == overSolvencyBps {
+				eventGroups[i].assets = append(eventGroups[i].assets, eventAsset)
+				grouped = true
+				break
+			}
+		}
+		if !grouped {
+			eventGroups = append(eventGroups, overSolvencyEventGroup{
+				bps:    overSolvencyBps,
+				assets: []types.AssetOverSolvency{eventAsset},
+			})
+		}
 	}
 
 	// Emit event (only if there are over-solvent assets)
-	if len(assetOverSolvencies) > 0 {
-		evt := types.NewEventVaultOverSolvency(assetOverSolvencies, overSolvencyBps)
+	for _, group := range eventGroups {
+		evt := types.NewEventVaultOverSolvency(group.assets, group.bps)
 		if err := vm.eventMgr.EmitEvent(ctx, evt); err != nil {
 			ctx.Logger().Error("failed to emit vault over-solvency event", "error", err)
 		}
 	}
 
 	return nil
+}
+
+func (vm *NetworkMgr) getOverSolvencyToTreasuryBps(ctx cosmos.Context, asset common.Asset) int64 {
+	bps, err := vm.k.GetMimirWithRef(ctx, constants.MimirTemplateOverSolvencyToTreasuryBps, asset.MimirString())
+	if err != nil || bps < 0 {
+		bps = vm.k.GetConfigInt64(ctx, constants.OverSolvencyToTreasuryBps)
+	}
+	if bps < 0 {
+		return 0
+	}
+	if bps > int64(constants.MaxBasisPts) {
+		return int64(constants.MaxBasisPts)
+	}
+	return bps
 }
 
 // createSwapToOverSolvency creates a swap from the over-solvent asset to RUNE and sends to over-solvency address

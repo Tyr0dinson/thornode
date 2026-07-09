@@ -24,6 +24,7 @@ type XMRPostChurnActor struct {
 
 const (
 	xmrPostChurnNewNodesPerChurn = int64(3)
+	xmrPostChurnLeadBlocks       = int64(10)
 	// Keep this above the 300s FROST keygen timeout, but low enough that a
 	// missed local keygen gets a retry before the actor deadline. This matches
 	// the mocknet ChurnRetryInterval override; 360 would also clear the timeout,
@@ -99,7 +100,35 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	txid, err := a.broadcastMimir(node, accAddr, "NUMBEROFNEWNODESPERCHURN", xmrPostChurnNewNodesPerChurn)
+	currentHeight, err := node.Thorchain.GetBlockHeight()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get thorchain block height")
+		return OpResult{Continue: false}
+	}
+	vaults, err := thornode.GetVaults()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get active vaults")
+		return OpResult{Continue: false}
+	}
+	lastChurnHeight, ok := xmrPostChurnLastActiveVaultHeight(vaults)
+	if !ok {
+		a.Log().Error().Msg("failed to find active vault status height")
+		return OpResult{Continue: false}
+	}
+	churnInterval := xmrPostChurnScheduledInterval(currentHeight, lastChurnHeight)
+	txid, err := a.broadcastMimir(node, accAddr, "CHURNINTERVAL", churnInterval)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast churn interval mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", churnInterval).
+		Int64("current_height", currentHeight).
+		Int64("last_churn_height", lastChurnHeight).
+		Str("txid", txid.String()).
+		Msg("broadcasted churn interval mimir")
+
+	txid, err = a.broadcastMimir(node, accAddr, "NUMBEROFNEWNODESPERCHURN", xmrPostChurnNewNodesPerChurn)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast node expansion mimir")
 		return OpResult{Continue: false}
@@ -172,22 +201,12 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 		a.Log().Info().Err(err).Msg("waiting for active XMR vault spendable balance")
 		return OpResult{Continue: false}
 	}
-	if snapshot.spendable.IsZero() {
+	if !xmrPostChurnReady(vaults, a.inboundBefore, inboundAddress, activeNodes, snapshot) {
 		a.Log().Info().
 			Stringer("vault_pubkey", snapshot.pubKey).
 			Stringer("total", snapshot.total).
 			Stringer("spendable", snapshot.spendable).
 			Msg("waiting for active XMR vault spendable balance")
-		return OpResult{Continue: false}
-	}
-
-	network, err := thornode.GetNetwork()
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to get network")
-		return OpResult{Continue: false}
-	}
-	if network.VaultsMigrating {
-		a.Log().Info().Msg("waiting for post-churn vault migrations to settle")
 		return OpResult{Continue: false}
 	}
 
@@ -197,6 +216,10 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 		Stringer("inbound_after", a.inboundAfter).
 		Msg("XMR active vault rotated")
 	return OpResult{Continue: true}
+}
+
+func xmrPostChurnReady(vaults []openapi.Vault, inboundBefore, inboundAfter common.Address, activeNodes int, snapshot xmrVaultBalanceSnapshot) bool {
+	return xmrVaultRotationReady(vaults, inboundBefore, inboundAfter, activeNodes) && !snapshot.spendable.IsZero()
 }
 
 func xmrVaultRotationReady(vaults []openapi.Vault, inboundBefore, inboundAfter common.Address, activeNodes int) bool {
@@ -219,6 +242,29 @@ func xmrVaultRotationReady(vaults []openapi.Vault, inboundBefore, inboundAfter c
 		return true
 	}
 	return false
+}
+
+func xmrPostChurnScheduledInterval(currentHeight, lastChurnHeight int64) int64 {
+	interval := currentHeight - lastChurnHeight + xmrPostChurnLeadBlocks
+	if interval < xmrPostChurnLeadBlocks {
+		return xmrPostChurnLeadBlocks
+	}
+	return interval
+}
+
+func xmrPostChurnLastActiveVaultHeight(vaults []openapi.Vault) (int64, bool) {
+	var lastChurnHeight int64
+	found := false
+	for _, vault := range vaults {
+		if vault.Status != thorchain.ActiveVault.String() || vault.StatusSince == nil {
+			continue
+		}
+		if !found || *vault.StatusSince > lastChurnHeight {
+			lastChurnHeight = *vault.StatusSince
+			found = true
+		}
+	}
+	return lastChurnHeight, found
 }
 
 func vaultHasAddress(vault openapi.Vault, chain common.Chain, address common.Address) bool {

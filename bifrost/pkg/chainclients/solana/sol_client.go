@@ -33,8 +33,6 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-const solvencyDivisor = 10
-
 // signerCacheExpiry is the window after a broadcast during which SignTx respects
 // the cache unconditionally, without an RPC lookup. Past this window, SignTx
 // verifies the recorded signature on chain and only re-signs if the RPC
@@ -55,20 +53,43 @@ var broadcastLookupDelay = 3 * time.Second
 
 // SOLClient is a client for the Solana blockchain
 type SOLClient struct {
-	logger               zerolog.Logger
-	cfg                  config.BifrostChainConfiguration
-	localPubKey          string
-	k                    *cosmoscryptoed25519.PrivKey
-	solScanner           *SOLScanner
-	bridge               thorclient.ThorchainBridge
-	poolMgr              thorclient.PoolManager
-	tssKeyManager        tss.ThorchainKeyManager
-	wg                   *sync.WaitGroup
-	stopchan             chan struct{}
-	globalSolvencyQueue  chan stypes.Solvency
-	signerCacheManager   *signercache.CacheManager
-	rpcClient            *rpc.SolRPC
-	solvencySlotMultiple int64
+	logger              zerolog.Logger
+	cfg                 config.BifrostChainConfiguration
+	localPubKey         string
+	k                   *cosmoscryptoed25519.PrivKey
+	solScanner          *SOLScanner
+	bridge              thorclient.ThorchainBridge
+	poolMgr             thorclient.PoolManager
+	tssKeyManager       tss.ThorchainKeyManager
+	pubkeyMgr           pubkeymanager.PubKeyValidator
+	wg                  *sync.WaitGroup
+	stopchan            chan struct{}
+	globalSolvencyQueue chan stypes.Solvency
+	signerCacheManager  *signercache.CacheManager
+	rpcClient           *rpc.SolRPC
+
+	// keepAliveThorMultiple is the last keep-alive cadence boundary this node acted
+	// on. The trigger + keysign anchor are driven off the shared THORChain block
+	// height (not a per-node wall clock or Solana slot) so every member crosses the
+	// same boundary and hands the keysign an identical, valid THORChain height —
+	// converging the party the way scheduled outbounds do via their consensus
+	// txOut.Height. Guarded by the mutex since the loop reads and writes it.
+	keepAliveThorMultipleMu sync.Mutex
+	keepAliveThorMultiple   int64
+
+	// solvencySlotMultiple is the last reported solvency cadence boundary. It is
+	// read and written from two goroutines — the block scanner's solvency reporter
+	// and the SolvencyCheckRunner, both of which reach ReportSolvency — so every
+	// access goes through solvencySlotMultipleMu.
+	solvencySlotMultipleMu sync.Mutex
+	solvencySlotMultiple   int64
+
+	// reportInFlight gates ReportSolvency so only one report runs at a time. The
+	// two callers can otherwise both pass the boundary guard and either emit a
+	// duplicate solvency Id (self-slashed on chain) or redundantly fetch balances.
+	// The loser TryLocks, fails, and returns immediately (no stall); the winner
+	// still writes the counter at the end, preserving retry-on-failure.
+	reportInFlight sync.Mutex
 }
 
 // NewSOLClient creates a new instance of a SOLClient
@@ -122,6 +143,7 @@ func NewSOLClient(
 		bridge:        bridge,
 		poolMgr:       poolMgr,
 		tssKeyManager: tssKm,
+		pubkeyMgr:     pubkeyMgr,
 		wg:            &sync.WaitGroup{},
 		stopchan:      make(chan struct{}),
 		rpcClient:     rpcClient,
@@ -175,6 +197,8 @@ func (c *SOLClient) Start(
 	go c.solScanner.Start()
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	c.wg.Add(1)
+	go c.keepAliveLoop()
 }
 
 // Stop stops the chain client.
@@ -281,9 +305,15 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 
 // ReportSolvency reports solvency once per configured solvency blocks.
 func (c *SOLClient) ReportSolvency(height int64) error {
-	if !c.ShouldReportSolvency(height) {
+	reportSlotMultiple := c.nextSolvencyReportSlotMultiple(height)
+	if !c.reportInFlight.TryLock() {
 		return nil
 	}
+	defer c.reportInFlight.Unlock()
+	if reportSlotMultiple <= c.getSolvencySlotMultiple() {
+		return nil
+	}
+	reportHeight := reportSlotMultiple * c.cfg.SolvencyBlocks
 
 	// When the block scanner is unhealthy, only report from the auto-unhalt
 	// SolvencyCheckRunner. The scan loop stores the slot it is processing in
@@ -325,9 +355,8 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 			c.logger.Err(err).Msg("fail to get account balance")
 			continue
 		}
-		heightNearestFloor := (height / solvencyDivisor) * solvencyDivisor
 		msg := stypes.Solvency{
-			Height: heightNearestFloor,
+			Height: reportHeight,
 			Chain:  c.cfg.ChainID,
 			PubKey: v.PubKey, // or v.PubKeyEddsa
 			Coins:  acct.Coins,
@@ -368,17 +397,58 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 			c.logger.Info().Msg("fail to send solvency info to thorchain, timeout")
 		}
 	}
-	c.solvencySlotMultiple = height / c.cfg.SolvencyBlocks
+	c.advanceSolvencySlotMultiple(reportSlotMultiple)
 	return nil
 }
 
 // ShouldReportSolvency returns true if the given height is a solvency report height.
 func (c *SOLClient) ShouldReportSolvency(height int64) bool {
+	return c.nextSolvencyReportSlotMultiple(height) > c.getSolvencySlotMultiple()
+}
+
+func (c *SOLClient) nextSolvencyReportSlotMultiple(height int64) int64 {
+	current := c.getSolvencySlotMultiple()
 	if c.cfg.SolvencyBlocks <= 0 {
-		return false
+		return current
 	}
 
-	return height > (c.solvencySlotMultiple+1)*c.cfg.SolvencyBlocks
+	crossedMultiple := height / c.cfg.SolvencyBlocks
+	if height%c.cfg.SolvencyBlocks == 0 {
+		crossedMultiple--
+	}
+	if crossedMultiple <= current {
+		return current
+	}
+
+	// Fresh nodes should not replay historical SOL solvency windows from zero.
+	// After initialization, advance one cadence boundary at a time so nodes with
+	// different tips still report the same next solvency height.
+	if current == 0 && crossedMultiple > 1 {
+		return crossedMultiple
+	}
+	return current + 1
+}
+
+// getSolvencySlotMultiple returns the last reported solvency cadence boundary,
+// guarded by solvencySlotMultipleMu.
+func (c *SOLClient) getSolvencySlotMultiple() int64 {
+	c.solvencySlotMultipleMu.Lock()
+	defer c.solvencySlotMultipleMu.Unlock()
+	return c.solvencySlotMultiple
+}
+
+// advanceSolvencySlotMultiple records v as the last reported solvency cadence
+// boundary, but only ever moves the counter forward. The check-then-set in
+// ReportSolvency is not atomic, so two reporters racing on the fresh-node
+// catch-up path (current == 0) can compute different boundaries from their own
+// heights; a plain write would let the lower one regress the counter and
+// re-report already-reported boundaries. Guarded by solvencySlotMultipleMu.
+func (c *SOLClient) advanceSolvencySlotMultiple(v int64) {
+	c.solvencySlotMultipleMu.Lock()
+	defer c.solvencySlotMultipleMu.Unlock()
+	if v > c.solvencySlotMultiple {
+		c.solvencySlotMultiple = v
+	}
 }
 
 // --------------------------------- sign ---------------------------------
@@ -578,6 +648,12 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing string) (types.
 	solValue := convertToLamports(tx.Coins[0].Amount)
 	if solValue.Int64() == 0 {
 		return solTx, errors.New("sol value is zero")
+	}
+
+	// A vault sending to its own address (the keep-alive self-sign) must list the
+	// vault account exactly once, or Solana rejects the tx with AccountLoadedTwice.
+	if toPubkey == vaultPubKey {
+		return types.NewSelfTransferTransaction(vaultPubKey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
 	}
 
 	return types.NewTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
