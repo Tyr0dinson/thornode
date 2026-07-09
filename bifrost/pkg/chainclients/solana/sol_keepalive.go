@@ -41,9 +41,6 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 const (
-	// defaultSignatureRefreshBlocks is ~1 day of THORChain blocks at 6s.
-	defaultSignatureRefreshBlocks = 14400
-
 	// solSlotsPerThorchainBlock converts the THORChain-block threshold to Solana
 	// slots (6s thorchain block / ~400ms solana slot).
 	solSlotsPerThorchainBlock = 15
@@ -168,10 +165,7 @@ func (c *SOLClient) keepAliveCheck(currentSlot, anchorHeight int64) {
 		c.logger.Err(err).Msgf("fail to get %s mimir", constants.MimirKeySignatureRefreshBlocks)
 		return
 	}
-	if refreshBlocks < 0 {
-		refreshBlocks = defaultSignatureRefreshBlocks
-	}
-	if refreshBlocks == 0 {
+	if refreshBlocks <= 0 {
 		return // keep-alive disabled
 	}
 
