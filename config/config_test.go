@@ -480,6 +480,7 @@ func (Test) TestValidateTRON(c *C) {
 	cfg := BifrostChainConfiguration{
 		ChainID: common.TRONChain,
 		APIHost: "localhost:8090",
+		RPCHost: "localhost:50051",
 	}
 	cfg.Validate() // should not panic
 }
