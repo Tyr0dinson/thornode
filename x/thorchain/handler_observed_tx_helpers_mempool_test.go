@@ -1165,7 +1165,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(
 	// Disable mempool swaps (cap = 0)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
 
-	// Verify swap memo is NOT admitted before finalization
+	// Policy eligibility is independent of the runtime cap; only checkMempoolSwapCapacity reflects the disabled state.
 	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), "=:ETH.ETH:"+GetRandomETHAddress().String()+":0/1/1")
 	c.Assert(err, IsNil)
 	canProcessMempoolSwap := canUseMempoolSwap(
