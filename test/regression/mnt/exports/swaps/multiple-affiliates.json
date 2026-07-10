@@ -423,31 +423,31 @@
               "chain": "THOR",
               "coins": [
                 {
-                  "amount": "251145168",
+                  "amount": "251297409",
                   "asset": "THOR.RUNE"
                 }
               ],
               "from_address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
               "gas": null,
-              "id": "D7041A9ECC85A08ED3BC50C2A627835C2D470C9FDDE42E6F1361F312381837C4",
+              "id": "482B68075C78A65F5DAEB36B253945CB3DC55DE28802CAC0360B27FE6B04307E",
               "memo": "THOR-PREFERRED-ASSET-a",
               "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
             }
           },
-          "tx_id": "D7041A9ECC85A08ED3BC50C2A627835C2D470C9FDDE42E6F1361F312381837C4",
+          "tx_id": "482B68075C78A65F5DAEB36B253945CB3DC55DE28802CAC0360B27FE6B04307E",
           "txs": [
             {
               "tx": {
                 "chain": "THOR",
                 "coins": [
                   {
-                    "amount": "251145168",
+                    "amount": "251297409",
                     "asset": "THOR.RUNE"
                   }
                 ],
                 "from_address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
                 "gas": null,
-                "id": "D7041A9ECC85A08ED3BC50C2A627835C2D470C9FDDE42E6F1361F312381837C4",
+                "id": "482B68075C78A65F5DAEB36B253945CB3DC55DE28802CAC0360B27FE6B04307E",
                 "memo": "THOR-PREFERRED-ASSET-a",
                 "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
               }
