@@ -79,8 +79,6 @@ const (
 	defaultXMRConsolidationMaxLockBps          = int64(1000)        // 10.00%
 	defaultXMRConsolidationMinReserveAtomic    = uint64(50_000_000) // 0.00005 XMR (piconero)
 	defaultXMRSpentRefsRetryMaxAttempts        = 60                 // bounded peer-import retry window after the first failed attempt
-	defaultXMRSpentRefsRetryConcurrency        = 16                 // hard cap on retry goroutines and long-lived sidecar work
-	defaultXMRSpentRefsRetryMaxWaiters         = 16                 // hard cap on callbacks coalesced behind one exact import
 	defaultXMRRecoveryRetryMaxAttempts         = 0                  // zero means retry for the process lifetime
 	maxXMRRecoveryFileBytes                    = int64(1024 * 1024) // encrypted keyshare envelopes are expected to be far smaller
 
@@ -140,10 +138,6 @@ type consolidationVaultState struct {
 	ConsecutiveFails  int64
 }
 
-type spentRefsRetryEntry struct {
-	callbacks []func(bool)
-}
-
 // Client implements the chain client interface for Monero.
 type Client struct {
 	logger zerolog.Logger
@@ -190,9 +184,6 @@ type Client struct {
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
-	spentRefsRetryMu          sync.Mutex
-	spentRefsRetrySem         chan struct{}
-	spentRefsRetries          map[string]*spentRefsRetryEntry
 
 	recoveryRetryInterval    time.Duration
 	recoveryRetryMaxAttempts int
@@ -300,8 +291,6 @@ func NewClient(
 		stopchan:                  make(chan struct{}),
 		spentRefsRetryInterval:    constants.ThorchainBlockTime,
 		spentRefsRetryMaxAttempts: defaultXMRSpentRefsRetryMaxAttempts,
-		spentRefsRetrySem:         make(chan struct{}, defaultXMRSpentRefsRetryConcurrency),
-		spentRefsRetries:          make(map[string]*spentRefsRetryEntry),
 		recoveryRetryInterval:     constants.ThorchainBlockTime,
 		recoveryRetryMaxAttempts:  defaultXMRRecoveryRetryMaxAttempts,
 	}
@@ -442,10 +431,6 @@ func (c *Client) restoreKeysharesFromDir(dir string) {
 	}
 }
 
-func (c *Client) restoreKeysharesPass(dir string, attempt int) (pending int, found bool) {
-	return c.restoreKeysharesPassContext(context.Background(), dir, attempt)
-}
-
 func (c *Client) restoreKeysharesPassContext(ctx context.Context, dir string, attempt int) (pending int, found bool) {
 	pattern := filepath.Join(dir, "frost-recovery-*.hex")
 	matches, err := filepath.Glob(pattern)
@@ -511,10 +496,6 @@ func recoveryBackoff(base time.Duration, attempt int) time.Duration {
 // registration path and 400s until it happens to land. Registration is
 // idempotent and derived entirely from local inputs. The pair is retried
 // together because at bifrost startup the sidecar may not be reachable yet.
-func (c *Client) registerAndRestoreKeyshare(vaultPubKey common.PubKey, keyBlob []byte) error {
-	return c.registerAndRestoreKeyshareContext(context.Background(), vaultPubKey, keyBlob)
-}
-
 func (c *Client) registerAndRestoreKeyshareContext(ctx context.Context, vaultPubKey common.PubKey, keyBlob []byte) error {
 	if err := c.ensureVaultRegisteredContext(ctx, vaultPubKey); err != nil {
 		return fmt.Errorf("register vault before restore: %w", err)
@@ -2155,50 +2136,6 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 	}()
 }
 
-// spentRefsRetryKey binds retry deduplication to the exact signed observation,
-// including the source vault, outbound intent fields, and normalized ref set.
-func spentRefsRetryKey(tx common.ObservedTx) string {
-	payload, err := tx.GetSignablePayloadWithInbound(false)
-	if err == nil {
-		digest := sha256.Sum256(payload)
-		return hex.EncodeToString(digest[:])
-	}
-	// Validation normally makes the marshal failure unreachable. Keep a
-	// deterministic fallback so even malformed callers cannot bypass bounds.
-	return strings.Join([]string{
-		tx.ObservedPubKey.String(),
-		strings.ToLower(strings.TrimSpace(tx.Tx.ID.String())),
-		xmrSpentRefsIdentityForRetry(tx.SpentOutputRefs),
-	}, "|")
-}
-
-func xmrSpentRefsIdentityForRetry(refs []common.OutputRef) string {
-	identities := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		identities = append(identities, common.SpentOutputRefIdentity(ref))
-	}
-	sort.Strings(identities)
-	return strings.Join(identities, ",")
-}
-
-func (c *Client) finishSpentOutputRefsRetry(key string, applied bool) {
-	c.spentRefsRetryMu.Lock()
-	entry, ok := c.spentRefsRetries[key]
-	if ok {
-		delete(c.spentRefsRetries, key)
-		<-c.spentRefsRetrySem
-	}
-	var callbacks []func(bool)
-	if entry != nil {
-		callbacks = append(callbacks, entry.callbacks...)
-	}
-	c.spentRefsRetryMu.Unlock()
-
-	for _, callback := range callbacks {
-		callback(applied)
-	}
-}
-
 // applySpentOutputRefsOnce performs one verified mark-spent attempt. It returns
 // true only for transient failures where another bounded retry can still seed
 // the sidecar, such as the spend tx not being indexed yet or the sidecar being
@@ -2698,12 +2635,6 @@ func monovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members [
 		return hrp + "1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
 	}
 	return placeholder
-}
-
-// sidecarHasVaultKeys reports whether the sidecar has a signable share bound
-// to the exact requested FROST group key.
-func (c *Client) sidecarHasVaultKeys(vaultPubKey common.PubKey) (bool, error) {
-	return c.sidecarHasVaultKeysContext(context.Background(), vaultPubKey)
 }
 
 func (c *Client) sidecarHasVaultKeysContext(ctx context.Context, vaultPubKey common.PubKey) (bool, error) {
