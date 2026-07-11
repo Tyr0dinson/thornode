@@ -943,8 +943,9 @@ type BifrostChainConfiguration struct {
 	// SignerExpectedNetwork binds the local sidecar to the intended deployment
 	// network (mocknet, chainnet, stagenet, or mainnet).
 	SignerExpectedNetwork string `mapstructure:"signer_expected_network"`
-	// SignerExpectedCommit is the exact reviewed 40-hex Serai source revision
-	// baked into the immutable signer image.
+	// SignerExpectedCommit is optional release metadata for comparing the
+	// sidecar's reported source revision. Deployment tooling must enforce the
+	// immutable image digest; this self-report is not a runtime trust root.
 	SignerExpectedCommit string `mapstructure:"signer_expected_commit"`
 	// SignerAllowInsecureHTTP is a development-only escape hatch for isolated
 	// mocknet/chainnet compose networks. Production deployments should use TLS

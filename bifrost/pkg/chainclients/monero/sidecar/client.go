@@ -80,7 +80,6 @@ type Client struct {
 	daemonUsername  string
 	daemonPassword  string
 	expectedNetwork string
-	expectedCommit  string
 
 	// Sync calls remain serialized, while registration/reset responses may
 	// update the continuity cache as soon as they arrive. Keeping those locks
@@ -197,7 +196,6 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		daemonUsername:  daemonUsername,
 		daemonPassword:  daemonPassword,
 		expectedNetwork: strings.TrimSpace(cfg.SignerExpectedNetwork),
-		expectedCommit:  strings.ToLower(strings.TrimSpace(cfg.SignerExpectedCommit)),
 
 		signCombineMaxAttempts:    defaultSignCombineMaxAttempts,
 		signCombineInitialBackoff: defaultSignCombineInitialBackoff,
@@ -1253,16 +1251,6 @@ func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, err
 	decodedCommit, decodeErr := hex.DecodeString(commit)
 	if decodeErr != nil || len(decodedCommit) != 20 {
 		return Info{}, fmt.Errorf("sidecar source revision must be a full 40-hex commit")
-	}
-	if c.expectedCommit == "" {
-		return Info{}, fmt.Errorf("expected sidecar source revision is not configured")
-	}
-	expectedCommit, expectedErr := hex.DecodeString(c.expectedCommit)
-	if expectedErr != nil || len(expectedCommit) != 20 {
-		return Info{}, fmt.Errorf("configured expected sidecar revision must be a full 40-hex commit")
-	}
-	if !strings.EqualFold(commit, c.expectedCommit) {
-		return Info{}, fmt.Errorf("sidecar source revision does not match reviewed revision")
 	}
 	for _, capability := range requiredCapabilities {
 		if !info.HasCapability(capability) {
