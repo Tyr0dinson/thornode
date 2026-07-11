@@ -3126,14 +3126,22 @@ func (c *Client) setVaultAddressMapping(vaultPubKey common.PubKey, address commo
 	if c.vaultAddressMap == nil {
 		c.vaultAddressMap = make(map[string]common.Address)
 	}
-	if existing, ok := c.vaultAddressMap[key]; ok && existing.Equals(address) {
-		c.vaultAddressMu.Unlock()
-		return
-	}
-	c.vaultAddressMap[key] = address
 	if c.vaultAddrToKey == nil {
 		c.vaultAddrToKey = make(map[string]string)
 	}
+	if existing, ok := c.vaultAddressMap[key]; ok && existing.Equals(address) {
+		// Repair the reverse index as well as accepting an idempotent forward
+		// mapping. Tests and recovery paths may construct a client with only the
+		// forward cache populated; leaving the reverse cache empty makes inbound
+		// attribution depend on its slower forward-map fallback.
+		c.vaultAddrToKey[strings.ToLower(address.String())] = key
+		c.vaultAddressMu.Unlock()
+		return
+	}
+	if existing, ok := c.vaultAddressMap[key]; ok {
+		delete(c.vaultAddrToKey, strings.ToLower(existing.String()))
+	}
+	c.vaultAddressMap[key] = address
 	c.vaultAddrToKey[strings.ToLower(address.String())] = key
 	c.vaultAddressMu.Unlock()
 

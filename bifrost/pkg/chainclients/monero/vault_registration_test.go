@@ -61,6 +61,47 @@ func TestVaultPubKeyFromGroupKeyHex(t *testing.T) {
 	}
 }
 
+func TestSetVaultAddressMappingInitializesZeroValueCaches(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "zero-value-vault-address-cache")
+	address, err := vaultPubKey.GetAddress(common.XMRChain)
+	if err != nil {
+		t.Fatalf("derive address: %v", err)
+	}
+	client := &Client{logger: log.Logger, chain: common.XMRChain}
+
+	client.setVaultAddressMapping(vaultPubKey, address)
+
+	if got, ok := client.vaultAddressMap[vaultPubKey.String()]; !ok || !got.Equals(address) {
+		t.Fatalf("forward vault mapping was not initialized: %v", got)
+	}
+	if got := client.vaultAddrToKey[address.String()]; got != vaultPubKey.String() {
+		t.Fatalf("reverse vault mapping was not initialized: %q", got)
+	}
+}
+
+func TestSetVaultAddressMappingRepairsMissingReverseCache(t *testing.T) {
+	t.Parallel()
+
+	vaultPubKey := testVaultPubKey(t, "missing-reverse-vault-address-cache")
+	address, err := vaultPubKey.GetAddress(common.XMRChain)
+	if err != nil {
+		t.Fatalf("derive address: %v", err)
+	}
+	client := &Client{
+		logger:          log.Logger,
+		chain:           common.XMRChain,
+		vaultAddressMap: map[string]common.Address{vaultPubKey.String(): address},
+	}
+
+	client.setVaultAddressMapping(vaultPubKey, address)
+
+	if got := client.vaultAddrToKey[address.String()]; got != vaultPubKey.String() {
+		t.Fatalf("reverse vault mapping was not repaired: %q", got)
+	}
+}
+
 func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 	t.Parallel()
 
