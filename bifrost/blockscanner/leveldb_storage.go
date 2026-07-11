@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 // LevelDBScannerStorage is a scanner storage backed by level db
@@ -32,7 +33,7 @@ func (ldbss *LevelDBScannerStorage) GetScanPos() (int64, error) {
 func (ldbss *LevelDBScannerStorage) SetScanPos(block int64) error {
 	buf := make([]byte, 8)
 	n := binary.PutVarint(buf, block)
-	return ldbss.db.Put([]byte(ScanPosKey), buf[:n], nil)
+	return ldbss.db.Put([]byte(ScanPosKey), buf[:n], &opt.WriteOptions{Sync: true})
 }
 
 func (ldbss *LevelDBScannerStorage) Close() error {
