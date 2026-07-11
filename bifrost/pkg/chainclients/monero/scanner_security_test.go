@@ -417,11 +417,14 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
 	vaultAddress := vaultAddr.String()
 	destinationAddress := common.XMRChecksummedDummyAddress('9')
+	scannerNextHeight := atomic.NewUint64(100)
 
 	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/scanner/state":
+			writeTestScannerState(t, w, scannerNextHeight.Load())
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
 			rawHeight := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/")
 			height, err := strconv.ParseInt(rawHeight, 10, 64)
@@ -468,11 +471,15 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 					},
 				}
 			}
+			scannerNextHeight.Store(uint64(req.Height + 1))
 			_ = json.NewEncoder(w).Encode(resp)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/addresses/"):
 			_ = json.NewEncoder(w).Encode(sidecar.Addresses{Addresses: []string{vaultAddress}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+				Registered:         true,
+				ExpectedNextHeight: uint64Ptr(scannerNextHeight.Load()),
+			})
 		default:
 			http.NotFound(w, r)
 		}

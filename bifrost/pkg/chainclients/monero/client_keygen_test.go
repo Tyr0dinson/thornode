@@ -43,7 +43,10 @@ func newTestSidecarClient(t *testing.T) *sidecar.Client {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/monero/vaults/register":
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+				Registered:         true,
+				ExpectedNextHeight: uint64Ptr(0),
+			})
 		case "/v1/monero/chain/height":
 			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 100})
 		default:
@@ -249,7 +252,10 @@ func TestClientKeygenRegistersObservedMoneroHeightAsBirthday(t *testing.T) {
 				t.Fatalf("decode register request: %v", decodeErr)
 			}
 			registerReqCh <- req
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+				Registered:         true,
+				ExpectedNextHeight: uint64Ptr(777),
+			})
 		case "/v1/monero/chain/height":
 			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 100})
 		default:

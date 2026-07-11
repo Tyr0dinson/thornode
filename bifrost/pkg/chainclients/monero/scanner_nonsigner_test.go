@@ -240,6 +240,8 @@ func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []sidecar.Tran
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/scanner/state":
+			writeTestScannerState(t, w, uint64(blockHeight))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
 			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: blockHeight + 50})
 

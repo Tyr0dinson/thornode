@@ -192,7 +192,16 @@ func newFrostSignTxCleanupFixture(t *testing.T, tssServer *mockFrostTssServer, c
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			var req sidecar.RegisterVaultReq
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid register request", http.StatusBadRequest)
+				return
+			}
+			nextHeight := uint64(req.VaultCreationHeight)
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+				Registered:         true,
+				ExpectedNextHeight: &nextHeight,
+			})
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/sessions/clear" {
