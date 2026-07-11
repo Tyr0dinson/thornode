@@ -65,6 +65,28 @@ func TestBalanceIsReconciled(t *testing.T) {
 	}
 }
 
+func TestBalanceDecodesNonSpendableQuarantineCount(t *testing.T) {
+	t.Parallel()
+
+	var balance Balance
+	if err := json.Unmarshal([]byte(`{
+		"balance":1000,
+		"unlocked_balance":1000,
+		"spendable_balance":400,
+		"reconciliation_state":"reconciled",
+		"pending_outgoing_count":0,
+		"quarantined_outgoing_count":2
+	}`), &balance); err != nil {
+		t.Fatalf("decode balance: %v", err)
+	}
+	if balance.QuarantinedOutgoingCount == nil || *balance.QuarantinedOutgoingCount != 2 {
+		t.Fatalf("unexpected quarantine count: %v", balance.QuarantinedOutgoingCount)
+	}
+	if !balance.IsReconciled() {
+		t.Fatal("non-spendable quarantine should not perpetuate solvency deferral")
+	}
+}
+
 func TestRegisterVaultRespDecodesContinuity(t *testing.T) {
 	t.Parallel()
 

@@ -23,7 +23,7 @@ func TestSignerAndDaemonCredentialsAreIsolated(t *testing.T) {
 			APIMajor:     APIMajorV2,
 			GitCommit:    strings.Repeat("a", 40),
 			Network:      "mocknet",
-			StateSchema:  3,
+			StateSchema:  StateSchemaV4,
 			Capabilities: []string{CapabilityBalanceReconciliation},
 		})
 	}))
@@ -154,7 +154,7 @@ func TestRequireCompatibilityFailsClosed(t *testing.T) {
 			APIMajor:    APIMajorV2,
 			GitCommit:   strings.Repeat("b", 40),
 			Network:     "chainnet",
-			StateSchema: 3,
+			StateSchema: StateSchemaV4,
 			Capabilities: []string{
 				CapabilityBalanceReconciliation,
 				CapabilityScannerBoundedRewind,
@@ -188,7 +188,7 @@ func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t 
 
 	info := Info{
 		Protocol: ProtocolName, APIMajor: APIMajorV2, GitCommit: strings.Repeat("c", 40),
-		Network: "chainnet", StateSchema: 3,
+		Network: "chainnet", StateSchema: StateSchemaV4,
 		Capabilities: []string{CapabilityBalanceReconciliation},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

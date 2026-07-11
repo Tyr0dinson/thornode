@@ -1238,7 +1238,7 @@ func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, err
 	if info.APIMajor != APIMajorV2 {
 		return Info{}, fmt.Errorf("unsupported sidecar api major %d", info.APIMajor)
 	}
-	if info.StateSchema != 3 {
+	if info.StateSchema != StateSchemaV4 {
 		return Info{}, fmt.Errorf("unsupported sidecar state schema %d", info.StateSchema)
 	}
 	if c.expectedNetwork == "" {

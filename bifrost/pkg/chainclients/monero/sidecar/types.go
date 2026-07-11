@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	ProtocolName = "thorchain-xmr-frost"
-	APIMajorV2   = 2
+	ProtocolName  = "thorchain-xmr-frost"
+	APIMajorV2    = 2
+	StateSchemaV4 = 4
 
 	CapabilityAtomicOutgoingV2       = "atomic-outgoing-v2"
 	CapabilityBalanceReconciliation  = "balance-reconciliation-v1"
@@ -19,6 +20,7 @@ const (
 	CapabilityDurableInboundReplay   = "durable-inbound-replay-v1"
 	CapabilityScannerBoundedRewind   = "scanner-bounded-rewind-v1"
 	CapabilitySharePlanQuarantine    = "share-issued-plan-quarantine-v1"
+	CapabilityVerifiedAbsenceBalance = "verified-absence-balance-quarantine-v1"
 )
 
 // Info is the authenticated compatibility contract exposed by the signer.
@@ -218,6 +220,9 @@ type Balance struct {
 	ReconciliationState  string  `json:"reconciliation_state,omitempty"`
 	ReconciliationReason string  `json:"reconciliation_reason,omitempty"`
 	PendingOutgoingCount *int    `json:"pending_outgoing_count"`
+	// Verified-absent outgoings whose value counts toward balance while their
+	// inputs remain durably reserved and unavailable to signing.
+	QuarantinedOutgoingCount *int `json:"quarantined_outgoing_count,omitempty"`
 }
 
 func (b Balance) IsReconciled() bool {

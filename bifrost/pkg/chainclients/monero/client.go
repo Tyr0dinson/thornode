@@ -241,6 +241,7 @@ func NewClient(
 		sidecar.CapabilityDurableInboundReplay,
 		sidecar.CapabilityScannerBoundedRewind,
 		sidecar.CapabilitySharePlanQuarantine,
+		sidecar.CapabilityVerifiedAbsenceBalance,
 	)
 	if compatibilityErr != nil {
 		return nil, fmt.Errorf("xmr signer compatibility check failed: %w", compatibilityErr)
@@ -2496,6 +2497,12 @@ func (c *Client) getAccountByAddress(address string, _ *big.Int, requireReconcil
 			pendingOutgoingCount,
 		)
 	}
+	if requireReconciled && balance.QuarantinedOutgoingCount != nil && *balance.QuarantinedOutgoingCount > 0 {
+		c.logger.Error().
+			Str("address", address).
+			Int("quarantined_outgoing_count", *balance.QuarantinedOutgoingCount).
+			Msg("monero balance reconciled with verified-absent outgoings held non-spendable")
+	}
 	// Account reporting (used by solvency comparison vs thornode's vault.coins)
 	// must use the TOTAL on-chain balance — locked + unlocked. Locked outputs
 	// (those in the 10-conf maturity window) DO exist on chain and must count
@@ -2958,11 +2965,10 @@ func (c *Client) ReportSolvency(height int64) error {
 				rounds := c.noteSolvencyDeferral(address.String())
 				logEvent := c.logger.Warn()
 				if rounds >= xmrSolvencyDeferralEscalationRounds {
-					// The sidecar's verified expiry resolves dead spends on its
-					// own, so a deferral running this long means the pending
-					// spend is neither landing nor expiring - operator attention
-					// needed (stuck outbound, daemon issues, or an expiry knob
-					// set too conservatively).
+					// Verified absence should move a dead spend into balance-counted,
+					// non-spendable quarantine. A deferral running this long means
+					// the pending spend is neither landing nor reaching that evidence
+					// threshold, so operator attention is required.
 					logEvent = c.logger.Error()
 				}
 				logEvent.Err(acctErr).Str("address", address.String()).Int64("height", height).Int("consecutive_rounds", rounds).Msg("defer monero solvency while sidecar balance reconciles")
