@@ -120,6 +120,7 @@ func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
 			w.WriteHeader(http.StatusConflict)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"error": "scanner sync hash mismatch at height 200",
+				"code":  "scanner_hash_mismatch",
 			})
 		default:
 			http.NotFound(w, r)
