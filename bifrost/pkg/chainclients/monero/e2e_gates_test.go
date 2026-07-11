@@ -117,7 +117,9 @@ func newFrostTransfersServer(
 
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(100))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/scanner/state":
+			writeTestScannerState(t, w, 100)
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/height"):
 			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 500})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
@@ -359,8 +361,8 @@ func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
 
 	// Mock frost signer that returns balance by vault pub key
 	balanceByPK := map[string]sidecar.Balance{
-		pkA.String(): {Balance: 100 * moneroAtomicToThorchain, UnlockedBalance: 100 * moneroAtomicToThorchain},
-		pkB.String(): {Balance: 10 * moneroAtomicToThorchain, UnlockedBalance: 10 * moneroAtomicToThorchain},
+		pkA.String(): {Balance: 100 * moneroAtomicToThorchain, UnlockedBalance: 100 * moneroAtomicToThorchain, ReconciliationState: "reconciled", PendingOutgoingCount: intPtr(0)},
+		pkB.String(): {Balance: 10 * moneroAtomicToThorchain, UnlockedBalance: 10 * moneroAtomicToThorchain, ReconciliationState: "reconciled", PendingOutgoingCount: intPtr(0)},
 	}
 	balanceServer := newFrostBalanceServer(t, balanceByPK)
 	defer balanceServer.Close()

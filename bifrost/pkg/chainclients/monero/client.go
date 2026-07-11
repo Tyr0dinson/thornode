@@ -1,11 +1,13 @@
 package monero
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/blang/semver"
@@ -76,7 +79,10 @@ const (
 	defaultXMRConsolidationMaxLockBps          = int64(1000)        // 10.00%
 	defaultXMRConsolidationMinReserveAtomic    = uint64(50_000_000) // 0.00005 XMR (piconero)
 	defaultXMRSpentRefsRetryMaxAttempts        = 60                 // bounded peer-import retry window after the first failed attempt
-	defaultXMRRecoveryRetryMaxAttempts         = 10                 // startup window for the sidecar to come up before keyshare restore gives up
+	defaultXMRSpentRefsRetryConcurrency        = 16                 // hard cap on retry goroutines and long-lived sidecar work
+	defaultXMRSpentRefsRetryMaxWaiters         = 16                 // hard cap on callbacks coalesced behind one exact import
+	defaultXMRRecoveryRetryMaxAttempts         = 0                  // zero means retry for the process lifetime
+	maxXMRRecoveryFileBytes                    = int64(1024 * 1024) // encrypted keyshare envelopes are expected to be far smaller
 
 	// xmrSolvencyDeferralEscalationRounds is the number of consecutive deferred
 	// solvency rounds (one per SolvencyBlocks interval) after which the deferral
@@ -93,6 +99,7 @@ var (
 type signedTxPayload struct {
 	TxHash          string                `json:"tx_hash"`
 	TxMetadata      string                `json:"tx_metadata"`
+	TxKey           string                `json:"tx_key"`
 	FeeAtomic       uint64                `json:"fee_atomic"`
 	MsgID           string                `json:"msg_id,omitempty"`
 	Eventuality     tssp.FrostEventuality `json:"eventuality,omitempty"`
@@ -131,6 +138,10 @@ type consolidationVaultState struct {
 	LastSuccessHeight int64
 	LastTxHash        string
 	ConsecutiveFails  int64
+}
+
+type spentRefsRetryEntry struct {
+	callbacks []func(bool)
 }
 
 // Client implements the chain client interface for Monero.
@@ -179,6 +190,9 @@ type Client struct {
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
+	spentRefsRetryMu          sync.Mutex
+	spentRefsRetrySem         chan struct{}
+	spentRefsRetries          map[string]*spentRefsRetryEntry
 
 	recoveryRetryInterval    time.Duration
 	recoveryRetryMaxAttempts int
@@ -195,6 +209,9 @@ func NewClient(
 	if !cfg.ChainID.Equals(common.XMRChain) {
 		return nil, fmt.Errorf("monero client requires chain id %s, got %s", common.XMRChain, cfg.ChainID)
 	}
+	if cfg.BlockScanner.PrefetchBlocks > 1 {
+		return nil, fmt.Errorf("xmr block prefetch must be 0 or 1 to preserve scanner height order")
+	}
 	if bridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
 	}
@@ -209,6 +226,30 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create sidecar client: %w", err)
 	}
+	expectedSignerNetwork := strings.TrimSpace(cfg.SignerExpectedNetwork)
+	if expectedSignerNetwork == "" {
+		return nil, fmt.Errorf("xmr signer_expected_network is required")
+	}
+	info, compatibilityErr := sc.RequireCompatibility(
+		sidecar.CapabilityAtomicOutgoingV2,
+		sidecar.CapabilityBalanceReconciliation,
+		sidecar.CapabilityBoundRecovery,
+		sidecar.CapabilityPerVaultKeyStatus,
+		sidecar.CapabilityRestartReservation,
+		sidecar.CapabilityDeadOutgoingQuarantine,
+		sidecar.CapabilityScannerContinuity,
+		sidecar.CapabilityDurableInboundReplay,
+		sidecar.CapabilityScannerBoundedRewind,
+		sidecar.CapabilitySharePlanQuarantine,
+	)
+	if compatibilityErr != nil {
+		return nil, fmt.Errorf("xmr signer compatibility check failed: %w", compatibilityErr)
+	}
+	logger.Info().
+		Str("signer_revision", info.GitCommit).
+		Str("signer_network", info.Network).
+		Int("signer_state_schema", info.StateSchema).
+		Msg("verified xmr signer compatibility contract")
 	if cleared, clearErr := sc.ClearSessions(); clearErr != nil {
 		logger.Warn().Err(clearErr).Msg("fail to clear sidecar sessions on bifrost startup; sidecar may carry stale state")
 	} else if cleared > 0 {
@@ -258,6 +299,8 @@ func NewClient(
 		stopchan:                  make(chan struct{}),
 		spentRefsRetryInterval:    constants.ThorchainBlockTime,
 		spentRefsRetryMaxAttempts: defaultXMRSpentRefsRetryMaxAttempts,
+		spentRefsRetrySem:         make(chan struct{}, defaultXMRSpentRefsRetryConcurrency),
+		spentRefsRetries:          make(map[string]*spentRefsRetryEntry),
 		recoveryRetryInterval:     constants.ThorchainBlockTime,
 		recoveryRetryMaxAttempts:  defaultXMRRecoveryRetryMaxAttempts,
 	}
@@ -305,7 +348,7 @@ func (c *Client) Start(
 ) {
 	c.ensureConsolidationState()
 	c.globalSolvencyQueue = globalSolvencyQueue
-	c.scanner.SetErrataQueue(globalErrataQueue)
+	c.scanner.SetErrataQueueWithAck(globalErrataQueue)
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
@@ -321,51 +364,144 @@ func (c *Client) Start(
 }
 
 func (c *Client) restoreKeysharesFromRecoveryFiles() {
-	c.restoreKeysharesFromDir(app.DefaultNodeHome)
+	interval := c.recoveryRetryInterval
+	if interval <= 0 {
+		interval = constants.ThorchainBlockTime
+	}
+	for {
+		// A pass may return because no artifact exists yet, every current file
+		// was consumed, or a configured per-pass retry ceiling was reached.
+		// Keep supervising for the process lifetime so a recovery artifact
+		// generated later is never missed.
+		c.restoreKeysharesFromDir(app.DefaultNodeHome)
+		timer := time.NewTimer(interval)
+		select {
+		case <-timer.C:
+		case <-c.stopchan:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		}
+	}
 }
 
 func (c *Client) restoreKeysharesFromDir(dir string) {
 	if c.sidecar == nil {
 		return
 	}
+	interval := c.recoveryRetryInterval
+	if interval <= 0 {
+		interval = constants.ThorchainBlockTime
+	}
+	maxAttempts := c.recoveryRetryMaxAttempts
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	defer func() {
+		close(done)
+		cancel()
+	}()
+	go func() {
+		select {
+		case <-c.stopchan:
+			cancel()
+		case <-done:
+		}
+	}()
+
+	for attempt := 1; ; attempt++ {
+		pending, found := c.restoreKeysharesPassContext(ctx, dir, attempt)
+		if ctx.Err() != nil {
+			return
+		}
+		if !found || pending == 0 {
+			return
+		}
+		if maxAttempts > 0 && attempt >= maxAttempts {
+			c.logger.Error().Int("attempts", attempt).Int("pending", pending).Msg("xmr recovery: retry limit reached; encrypted artifacts retained")
+			return
+		}
+
+		delay := recoveryBackoff(interval, attempt)
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-c.stopchan:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		}
+	}
+}
+
+func (c *Client) restoreKeysharesPass(dir string, attempt int) (pending int, found bool) {
+	return c.restoreKeysharesPassContext(context.Background(), dir, attempt)
+}
+
+func (c *Client) restoreKeysharesPassContext(ctx context.Context, dir string, attempt int) (pending int, found bool) {
 	pattern := filepath.Join(dir, "frost-recovery-*.hex")
 	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
-		return
+	if err != nil {
+		c.logger.Error().Err(err).Msg("xmr recovery: invalid recovery glob")
+		return 1, true
 	}
 	for _, path := range matches {
+		if ctx.Err() != nil {
+			return pending, found
+		}
+		found = true
 		base := filepath.Base(path)
-		vaultPubKeyStr := strings.TrimPrefix(base, "frost-recovery-")
-		vaultPubKeyStr = strings.TrimSuffix(vaultPubKeyStr, ".hex")
-
+		vaultPubKeyStr := strings.TrimSuffix(strings.TrimPrefix(base, "frost-recovery-"), ".hex")
 		vaultPubKey, parseErr := common.NewPubKey(vaultPubKeyStr)
 		if parseErr != nil {
+			pending++
 			c.logger.Err(parseErr).Str("file", base).Msg("xmr recovery: invalid vault pubkey in filename")
 			continue
 		}
 
-		keyBlob, readErr := os.ReadFile(path)
+		keyBlob, readErr := readRecoveryFile(path)
 		if readErr != nil {
-			c.logger.Err(readErr).Str("file", base).Msg("xmr recovery: failed to read recovery file")
+			pending++
+			c.logger.Err(readErr).Str("file", base).Msg("xmr recovery: rejected recovery file")
 			continue
 		}
 
-		restoreErr := c.registerAndRestoreKeyshare(vaultPubKey, keyBlob)
-		if restoreErr != nil {
-			c.logger.Err(restoreErr).Str("vault", vaultPubKeyStr).Msg("xmr recovery: failed to restore frost keyshare, keeping recovery file for next startup")
+		if restoreErr := c.registerAndRestoreKeyshareContext(ctx, vaultPubKey, keyBlob); restoreErr != nil {
+			pending++
+			c.logger.Warn().Err(restoreErr).Str("vault", vaultPubKeyStr).Int("attempt", attempt).Msg("xmr recovery: restore not yet verified; encrypted artifact retained")
 			continue
 		}
 
-		if removeErr := wipeAndRemoveRecoveryFile(path); removeErr != nil {
-			c.logger.Error().
-				Err(removeErr).
-				Str("vault", vaultPubKeyStr).
-				Str("path", path).
-				Msg("xmr recovery: frost keyshare restored but failed to remove raw recovery file")
+		if removeErr := consumeRecoveryFile(path); removeErr != nil {
+			pending++
+			c.logger.Error().Err(removeErr).Str("vault", vaultPubKeyStr).Str("path", path).Msg("xmr recovery: verified restore but failed to consume encrypted artifact")
 			continue
 		}
-		c.logger.Info().Str("vault", vaultPubKeyStr).Msg("xmr recovery: frost keyshare restored and recovery file removed")
+		c.logger.Info().Str("vault", vaultPubKeyStr).Msg("xmr recovery: exact-vault signability verified and encrypted artifact consumed")
 	}
+	return pending, found
+}
+
+func recoveryBackoff(base time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		base = time.Second
+	}
+	shift := attempt - 1
+	if shift > 6 {
+		shift = 6
+	}
+	delay := base * time.Duration(1<<shift)
+	if delay > 5*time.Minute {
+		return 5 * time.Minute
+	}
+	return delay
 }
 
 // registerAndRestoreKeyshare registers the vault with the sidecar before
@@ -375,78 +511,123 @@ func (c *Client) restoreKeysharesFromDir(dir string) {
 // idempotent and derived entirely from local inputs. The pair is retried
 // together because at bifrost startup the sidecar may not be reachable yet.
 func (c *Client) registerAndRestoreKeyshare(vaultPubKey common.PubKey, keyBlob []byte) error {
-	interval := c.recoveryRetryInterval
-	if interval <= 0 {
-		interval = constants.ThorchainBlockTime
-	}
-	maxAttempts := c.recoveryRetryMaxAttempts
-	if maxAttempts <= 0 {
-		maxAttempts = defaultXMRRecoveryRetryMaxAttempts
-	}
-
-	var err error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if attempt > 1 {
-			time.Sleep(interval)
-		}
-		if err = c.ensureVaultRegistered(vaultPubKey); err != nil {
-			c.logger.Warn().Err(err).Str("vault", vaultPubKey.String()).Int("attempt", attempt).Msg("xmr recovery: failed to register vault with sidecar before restore")
-			continue
-		}
-		if err = c.RestoreKeyshare(vaultPubKey, keyBlob); err != nil {
-			c.logger.Warn().Err(err).Str("vault", vaultPubKey.String()).Int("attempt", attempt).Msg("xmr recovery: failed to restore frost keyshare")
-			continue
-		}
-		return nil
-	}
-	return err
+	return c.registerAndRestoreKeyshareContext(context.Background(), vaultPubKey, keyBlob)
 }
 
-func wipeAndRemoveRecoveryFile(path string) error {
-	info, err := os.Stat(path)
+func (c *Client) registerAndRestoreKeyshareContext(ctx context.Context, vaultPubKey common.PubKey, keyBlob []byte) error {
+	if err := c.ensureVaultRegisteredContext(ctx, vaultPubKey); err != nil {
+		return fmt.Errorf("register vault before restore: %w", err)
+	}
+	return c.restoreKeyshareContext(ctx, vaultPubKey, keyBlob)
+}
+
+func readRecoveryFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
 	if err != nil {
-		return fmt.Errorf("stat recovery file: %w", err)
+		return nil, fmt.Errorf("lstat recovery file: %w", err)
 	}
-	if info.IsDir() {
-		return fmt.Errorf("recovery file is a directory")
+	if err = repairRecoveryReadAlias(path, info); err != nil {
+		return nil, err
 	}
+	info, err = os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("lstat repaired recovery file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("recovery path is not a regular file")
+	}
+	if info.Size() <= 0 || info.Size() > maxXMRRecoveryFileBytes {
+		return nil, fmt.Errorf("recovery file size %d is outside 1..%d", info.Size(), maxXMRRecoveryFileBytes)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open recovery file: %w", err)
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat opened recovery file: %w", err)
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return nil, fmt.Errorf("recovery file changed during no-follow validation")
+	}
+	if stat, ok := opened.Sys().(*syscall.Stat_t); ok && stat.Nlink != 1 {
+		return nil, fmt.Errorf("recovery file must have exactly one hard link")
+	}
+	buf := make([]byte, opened.Size())
+	if _, err = io.ReadFull(f, buf); err != nil {
+		return nil, fmt.Errorf("read recovery file: %w", err)
+	}
+	return buf, nil
+}
 
-	size := info.Size()
-	if size > 0 {
-		f, openErr := os.OpenFile(path, os.O_WRONLY, 0)
-		if openErr != nil {
-			return fmt.Errorf("open recovery file for wipe: %w", openErr)
-		}
-		zeros := make([]byte, 4096)
-		remaining := size
-		for remaining > 0 {
-			n := int64(len(zeros))
-			if remaining < n {
-				n = remaining
+// repairRecoveryReadAlias completes a crash-interrupted no-replace publish.
+// It only removes a tool-owned same-directory temporary name that references
+// the exact final inode; unrelated hard links remain a fail-closed condition.
+func repairRecoveryReadAlias(path string, finalInfo os.FileInfo) error {
+	stat, ok := finalInfo.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink <= 1 {
+		return nil
+	}
+	matches, err := filepath.Glob(path + ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("inspect recovery publish aliases: %w", err)
+	}
+	removed := false
+	for _, candidate := range matches {
+		candidateInfo, statErr := os.Lstat(candidate)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
 			}
-			nInt := int(n)
-			written, writeErr := f.Write(zeros[:nInt])
-			if writeErr != nil {
-				_ = f.Close()
-				return fmt.Errorf("wipe recovery file: %w", writeErr)
-			}
-			if written != nInt {
-				_ = f.Close()
-				return fmt.Errorf("wipe recovery file: short write")
-			}
-			remaining -= n
+			return fmt.Errorf("stat recovery publish alias: %w", statErr)
 		}
-		if err = f.Sync(); err != nil {
-			_ = f.Close()
-			return fmt.Errorf("sync wiped recovery file: %w", err)
+		if !candidateInfo.Mode().IsRegular() || !os.SameFile(finalInfo, candidateInfo) {
+			continue
 		}
-		if err = f.Close(); err != nil {
-			return fmt.Errorf("close wiped recovery file: %w", err)
+		if removeErr := os.Remove(candidate); removeErr != nil {
+			return fmt.Errorf("remove recovery publish alias: %w", removeErr)
+		}
+		removed = true
+	}
+	if removed {
+		if err = syncDirectory(filepath.Dir(path)); err != nil {
+			return err
 		}
 	}
+	refreshed, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("lstat recovery file after alias repair: %w", err)
+	}
+	refreshedStat, ok := refreshed.Sys().(*syscall.Stat_t)
+	if !ok || refreshedStat.Nlink != 1 {
+		return fmt.Errorf("recovery file has unexpected hard links")
+	}
+	return nil
+}
 
-	if err = os.Remove(path); err != nil {
-		return fmt.Errorf("remove recovery file: %w", err)
+func consumeRecoveryFile(path string) error {
+	consumed := fmt.Sprintf("%s.consumed-%d", path, time.Now().UnixNano())
+	if err := os.Rename(path, consumed); err != nil {
+		return fmt.Errorf("rename consumed recovery file: %w", err)
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	if err := os.Remove(consumed); err != nil {
+		return fmt.Errorf("remove consumed recovery file: %w", err)
+	}
+	return syncDirectory(filepath.Dir(path))
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open recovery directory: %w", err)
+	}
+	defer dir.Close()
+	if err = dir.Sync(); err != nil {
+		return fmt.Errorf("sync recovery directory: %w", err)
 	}
 	return nil
 }
@@ -560,7 +741,9 @@ func (c *Client) observedXMROutboundForSpentRefs(txHash string, vaultPubKey comm
 			Msg("xmr catchup: skipping invalid spent output refs")
 		return common.ObservedTx{}, nil, false
 	}
-	return observed, xmrOutboundMeta(observed.Tx), true
+	outbound := xmrOutboundMeta(observed.Tx)
+	outbound.Origin = sidecar.OutgoingOriginChainCommitted
+	return observed, outbound, true
 }
 
 func queryObservedXMRTx(voter *ttypes.QueryObservedTxVoter, txID common.TxID) (common.ObservedTx, bool) {
@@ -1310,6 +1493,13 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 	if strings.TrimSpace(payload.TxMetadata) == "" {
 		return "", fmt.Errorf("FROST signed tx payload missing tx_hex for broadcast")
 	}
+	txKeyHash, err := tssp.FrostTxKeyHash(payload.TxKey)
+	if err != nil {
+		return "", fmt.Errorf("FROST signed tx payload has invalid tx_key: %w", err)
+	}
+	if !strings.EqualFold(txKeyHash, strings.TrimSpace(payload.Eventuality.TxKeyHash)) {
+		return "", fmt.Errorf("FROST signed tx payload tx_key does not match eventuality")
+	}
 	msgID := strings.TrimSpace(payload.MsgID)
 	if msgID == "" {
 		return "", fmt.Errorf("FROST signed tx payload missing msg_id")
@@ -1326,11 +1516,15 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 	resp, err := c.sidecar.Broadcast(sidecar.BroadcastReq{
 		TxHex:       payload.TxMetadata,
 		TxHash:      payload.TxHash,
+		TxKey:       payload.TxKey,
 		VaultPubKey: vaultPubKey,
 		MsgID:       msgID,
 	})
 	if err != nil {
 		return "", fmt.Errorf("fail to broadcast FROST tx: %w", err)
+	}
+	if strings.TrimSpace(resp.TxKey) != payload.TxKey {
+		return "", fmt.Errorf("sidecar broadcast returned tx_key that differs from FROST quorum result")
 	}
 
 	// Use the FROST-validated tx hash; never allow the sidecar to override it.
@@ -1459,6 +1653,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	}
 	frostReq := tssp.FrostKeySignRequest{
 		VaultPubKey:                 signReqCtx.vaultPubKey.String(),
+		Network:                     strings.ToLower(strings.TrimSpace(c.cfg.SignerExpectedNetwork)),
 		ToAddress:                   signReqCtx.toAddress,
 		AmountAtomic:                signReqCtx.amountAtomic,
 		Memo:                        tx.Memo,
@@ -1481,7 +1676,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	c.sidecarSignMu.Lock()
 	defer c.sidecarSignMu.Unlock()
 
-	resp, err := c.tssServer.FrostKeySign(frostReq, sidecar.NewFrostAdapter(c.sidecar))
+	resp, err := c.tssServer.FrostKeySign(frostReq, sidecar.NewFrostAdapterWithStop(c.sidecar, c.stopchan))
 	if err != nil {
 		c.clearSidecarSessionsAfterFrostFailure("frost_keysign_error", err)
 		return nil, nil, nil, fmt.Errorf("fail to execute FROST keysign: %w", err)
@@ -1520,6 +1715,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		msgID,
 		resp.TxHash,
 		resp.TxHex,
+		resp.TxKey,
 		resp.FeeAtomic,
 		resp.Eventuality,
 	); validateErr != nil {
@@ -1539,6 +1735,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	payload := signedTxPayload{
 		TxHash:          resp.TxHash,
 		TxMetadata:      resp.TxHex,
+		TxKey:           resp.TxKey,
 		FeeAtomic:       resp.FeeAtomic,
 		MsgID:           msgID,
 		Eventuality:     resp.Eventuality,
@@ -1897,16 +2094,28 @@ func (c *Client) ExportKeyshare(groupKey common.PubKey) ([]byte, error) {
 }
 
 func (c *Client) RestoreKeyshare(vaultPubKey common.PubKey, keyBlob []byte) error {
+	return c.restoreKeyshareContext(context.Background(), vaultPubKey, keyBlob)
+}
+
+func (c *Client) restoreKeyshareContext(ctx context.Context, vaultPubKey common.PubKey, keyBlob []byte) error {
 	if c.sidecar == nil {
 		return fmt.Errorf("sidecar not configured")
 	}
-	restored, err := c.sidecar.RestoreKeys(vaultPubKey.String(), keyBlob)
+	restored, err := c.sidecar.RestoreKeysContext(ctx, vaultPubKey.String(), keyBlob)
 	if err != nil {
 		return err
 	}
-	if restored {
-		c.logger.Info().Str("vault", vaultPubKey.String()).Msg("restored FROST keyshare from on-chain backup")
+	if !restored {
+		return fmt.Errorf("sidecar returned an unverified restore result for vault %s", vaultPubKey)
 	}
+	signable, statusErr := c.sidecarHasVaultKeysContext(ctx, vaultPubKey)
+	if statusErr != nil {
+		return fmt.Errorf("verify restored keyshare signability: %w", statusErr)
+	}
+	if !signable {
+		return fmt.Errorf("restored keyshare for vault %s is not signable", vaultPubKey)
+	}
+	c.logger.Info().Str("vault", vaultPubKey.String()).Msg("restored and verified FROST keyshare from on-chain backup")
 	return nil
 }
 
@@ -1945,6 +2154,50 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 	}()
 }
 
+// spentRefsRetryKey binds retry deduplication to the exact signed observation,
+// including the source vault, outbound intent fields, and normalized ref set.
+func spentRefsRetryKey(tx common.ObservedTx) string {
+	payload, err := tx.GetSignablePayloadWithInbound(false)
+	if err == nil {
+		digest := sha256.Sum256(payload)
+		return hex.EncodeToString(digest[:])
+	}
+	// Validation normally makes the marshal failure unreachable. Keep a
+	// deterministic fallback so even malformed callers cannot bypass bounds.
+	return strings.Join([]string{
+		tx.ObservedPubKey.String(),
+		strings.ToLower(strings.TrimSpace(tx.Tx.ID.String())),
+		xmrSpentRefsIdentityForRetry(tx.SpentOutputRefs),
+	}, "|")
+}
+
+func xmrSpentRefsIdentityForRetry(refs []common.OutputRef) string {
+	identities := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		identities = append(identities, common.SpentOutputRefIdentity(ref))
+	}
+	sort.Strings(identities)
+	return strings.Join(identities, ",")
+}
+
+func (c *Client) finishSpentOutputRefsRetry(key string, applied bool) {
+	c.spentRefsRetryMu.Lock()
+	entry, ok := c.spentRefsRetries[key]
+	if ok {
+		delete(c.spentRefsRetries, key)
+		<-c.spentRefsRetrySem
+	}
+	var callbacks []func(bool)
+	if entry != nil {
+		callbacks = append(callbacks, entry.callbacks...)
+	}
+	c.spentRefsRetryMu.Unlock()
+
+	for _, callback := range callbacks {
+		callback(applied)
+	}
+}
+
 // applySpentOutputRefsOnce performs one verified mark-spent attempt. It returns
 // true only for transient failures where another bounded retry can still seed
 // the sidecar, such as the spend tx not being indexed yet or the sidecar being
@@ -1962,7 +2215,15 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) bool {
 	txHash := tx.Tx.ID.String()
 
 	refs := xmrSpentRefsToSidecar(tx.SpentOutputRefs)
-	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, xmrOutboundMeta(tx.Tx))
+	certificateHash, hashErr := xmrSpentRefsCertificateHash(tx)
+	if hashErr != nil {
+		c.logger.Warn().Err(hashErr).Str("tx_hash", txHash).Msg("skip xmr spent refs with unhashable source-vault certificate")
+		return false, false
+	}
+	outbound := xmrOutboundMeta(tx.Tx)
+	outbound.Origin = sidecar.OutgoingOriginVaultCertified
+	outbound.CertificateHash = certificateHash
+	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
 		// Peer pre-quorum imports cannot rely on Thornode catchup until the refs
 		// are committed, so retry sidecar-local transient failures. Validation
@@ -1991,6 +2252,15 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) bool {
 		Int("not_found", result.NotFound).
 		Msg("applied spent output refs from attestation")
 	return false
+}
+
+func xmrSpentRefsCertificateHash(tx common.ObservedTx) (string, error) {
+	payload, err := tx.GetSignablePayloadWithInbound(false)
+	if err != nil {
+		return "", fmt.Errorf("encode exact observed tx certificate payload: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 // isRetryableSpentRefsSidecarErr identifies sidecar failures that should not
@@ -2215,11 +2485,15 @@ func (c *Client) getAccountByAddress(address string, _ *big.Int, requireReconcil
 		return common.Account{}, fmt.Errorf("fail to get monero wallet balance for %s: %w", address, err)
 	}
 	if requireReconciled && !balance.IsReconciled() {
+		pendingOutgoingCount := -1
+		if balance.PendingOutgoingCount != nil {
+			pendingOutgoingCount = *balance.PendingOutgoingCount
+		}
 		return common.Account{}, fmt.Errorf(
 			"%w for %s: pending_outgoing_count=%d",
 			errXMRBalanceUnreconciled,
 			address,
-			balance.PendingOutgoingCount,
+			pendingOutgoingCount,
 		)
 	}
 	// Account reporting (used by solvency comparison vs thornode's vault.coins)
@@ -2356,15 +2630,22 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		)
 	}
 
-	if _, err := c.sidecar.RegisterVault(sidecar.RegisterVaultReq{
+	if c.scanner != nil {
+		c.scanner.scanMu.Lock()
+	}
+	_, registerErr := c.sidecar.RegisterVault(sidecar.RegisterVaultReq{
 		VaultPubKey:         frostVaultPubKey.String(),
 		GroupKey:            groupKeyHex,
 		Address:             frostAddr.String(),
 		Source:              "bifrost",
 		VaultCreationHeight: frostResp.ObservedMoneroHeight,
-	}); err != nil {
-		c.logFailClosedCoordination("frost_tss_keygen_register", err)
-		return types.CustomKeygenResult{}, fmt.Errorf("fail to register FROST vault mapping for %s: %w", frostVaultPubKey.String(), err)
+	})
+	if c.scanner != nil {
+		c.scanner.scanMu.Unlock()
+	}
+	if registerErr != nil {
+		c.logFailClosedCoordination("frost_tss_keygen_register", registerErr)
+		return types.CustomKeygenResult{}, fmt.Errorf("fail to register FROST vault mapping for %s: %w", frostVaultPubKey.String(), registerErr)
 	}
 
 	c.setVaultAddressMapping(frostVaultPubKey, frostAddr)
@@ -2748,11 +3029,22 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 }
 
 func (c *Client) ensureVaultRegistered(vaultPubKey common.PubKey) error {
+	return c.ensureVaultRegisteredContext(context.Background(), vaultPubKey)
+}
+
+func (c *Client) ensureVaultRegisteredContext(ctx context.Context, vaultPubKey common.PubKey) error {
 	if c.sidecar == nil || vaultPubKey.IsEmpty() {
 		return nil
 	}
 
-	address, err := ensureVaultRegistered(c.logger, c.sidecar, c.chain, vaultPubKey, c.vaultBootstrap, "bifrost", 0)
+	// Registration can atomically rewind the sidecar cursor to an older vault
+	// birthday. Serialize every Client entry point with FetchTxs so a reset
+	// cannot land between reorg processing and local metadata persistence.
+	if c.scanner != nil {
+		c.scanner.scanMu.Lock()
+		defer c.scanner.scanMu.Unlock()
+	}
+	address, err := ensureVaultRegisteredContext(ctx, c.logger, c.sidecar, c.chain, vaultPubKey, c.vaultBootstrap, "bifrost", 0)
 	if err != nil {
 		return err
 	}

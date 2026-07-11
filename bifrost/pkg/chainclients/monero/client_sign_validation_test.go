@@ -157,7 +157,7 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 			return
 		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
@@ -216,7 +216,7 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 			return
 		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
@@ -389,7 +389,7 @@ func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]sidecar.Bala
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 			return
 		}
 		// Path format: /v1/monero/balance/{vault_pub_key}
