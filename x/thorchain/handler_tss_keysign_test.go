@@ -364,6 +364,32 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 	}
 }
 
+func (h HandlerTssKeysignSuite) TestDuplicateKeysignFailureVoteDoesNotSlashAgain(c *C) {
+	helper := newTssKeysignHandlerTestHelper(c)
+	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+	msg, err := NewMsgTssKeysignFail(
+		helper.ctx.BlockHeight(),
+		helper.blame,
+		"duplicate-vote",
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+		helper.nodeAccount.NodeAddress,
+		helper.retiringVault.PubKey,
+	)
+	c.Assert(err, IsNil)
+	voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Sign(msg.Signer), Equals, true)
+	helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter)
+
+	before, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
+	c.Assert(err, IsNil)
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+	after, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
+	c.Assert(err, IsNil)
+	c.Assert(after, Equals, before)
+}
+
 func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_messages(c *C) {
 	helper := newTssKeysignHandlerTestHelper(c)
 	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
