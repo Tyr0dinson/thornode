@@ -416,9 +416,8 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 		if to == "" {
 			continue
 		}
-		_, err := common.NewAddress(to)
-		if err != nil {
-			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip incoming transfer with invalid to address")
+		if _, addressErr := common.NewAddress(to); addressErr != nil {
+			s.logger.Debug().Err(addressErr).Str("txid", transfer.TxID).Str("to", to).Msg("skip incoming transfer with invalid to address")
 			continue
 		}
 
