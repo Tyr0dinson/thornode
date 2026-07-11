@@ -191,8 +191,8 @@ func readStreamWithBufferPreflight(
 	if n != prefixBytes || err != nil {
 		return nil, fmt.Errorf("short TSS preflight read err(%w), wanted:%d read:%d", err, prefixBytes, n)
 	}
-	if err := preflight(length, prefix); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTSSFramePreflightRejected, err)
+	if preflightErr := preflight(length, prefix); preflightErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrTSSFramePreflightRejected, preflightErr)
 	}
 
 	dataBuf := make([]byte, int(length))
