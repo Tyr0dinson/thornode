@@ -1,6 +1,10 @@
 package p2p
 
 import (
+	"testing"
+	"time"
+
+	"github.com/libp2p/go-libp2p-core/peer"
 	. "gopkg.in/check.v1"
 )
 
@@ -20,4 +24,146 @@ func (MessageIDSubscriberTestSuit) TestMessageIDSubscriber(c *C) {
 	channel2 := ms.GetSubscriber("hello")
 	c.Assert(channel2, IsNil)
 	c.Assert(ms.IsEmpty(), Equals, true)
+}
+
+func (MessageIDSubscriberTestSuit) TestRestrictedSubscription(c *C) {
+	allowed := peer.ID("allowed-peer")
+	outsider := peer.ID("outsider-peer")
+	ms := NewMessageIDSubscriber()
+	ms.SubscribeRestricted("frost", make(chan *Message, 1), []peer.ID{allowed}, 4, 2)
+	sub := ms.GetSubscriber("frost")
+	c.Assert(sub, NotNil)
+	c.Assert(sub.maxBytesPerPeer, Equals, FrostMaxBytesPerPeer)
+	c.Assert(sub.maxSessionBytes, Equals, FrostMaxSessionBytes)
+	c.Assert(sub.nonBlocking, Equals, true)
+	c.Assert(sub.accepts(outsider, 1), Equals, false)
+	c.Assert(sub.accepts(allowed, 5), Equals, false)
+	c.Assert(sub.accepts(allowed, 4), Equals, true)
+	c.Assert(sub.accepts(allowed, 4), Equals, true)
+	c.Assert(sub.accepts(allowed, 4), Equals, false)
+
+	c.Assert(ms.UpdateAllowedPeers("frost", []peer.ID{outsider}), Equals, true)
+	c.Assert(sub.accepts(allowed, 1), Equals, false)
+	c.Assert(sub.accepts(outsider, 1), Equals, true)
+}
+
+func TestRestrictedSubscriptionEnforcesByteBudgetsFairly(t *testing.T) {
+	peerA := peer.ID("peer-a")
+	peerB := peer.ID("peer-b")
+	outsider := peer.ID("outsider")
+	ms := NewMessageIDSubscriber()
+	ms.SubscribeRestrictedWithBudgets(
+		"frost",
+		make(chan *Message, 1),
+		[]peer.ID{peerA, peerB},
+		8,
+		10,
+		8,
+		12,
+	)
+	sub := ms.GetSubscriber("frost")
+	if sub == nil {
+		t.Fatal("expected restricted subscription")
+	}
+
+	// Authorization failures must not consume any cumulative allowance.
+	if sub.accepts(outsider, 4) {
+		t.Fatal("outsider must not reserve session bytes")
+	}
+	if sub.accepts(peerA, 9) {
+		t.Fatal("oversized frame must not reserve session bytes")
+	}
+	if sub.sessionBytes != 0 || len(sub.peerBytes) != 0 {
+		t.Fatalf("rejected frames consumed bytes: session=%d peers=%v", sub.sessionBytes, sub.peerBytes)
+	}
+
+	if !sub.accepts(peerA, 8) {
+		t.Fatal("peer A should be able to spend its byte allowance")
+	}
+	if sub.accepts(peerA, 1) {
+		t.Fatal("peer A must not spend peer B's fair-share allowance")
+	}
+	if !sub.accepts(peerB, 4) {
+		t.Fatal("peer B should retain room after peer A is exhausted")
+	}
+	if sub.accepts(peerB, 1) {
+		t.Fatal("cumulative session budget must reject further frames")
+	}
+	if sub.sessionBytes != 12 || sub.peerBytes[peerA] != 8 || sub.peerBytes[peerB] != 4 {
+		t.Fatalf("unexpected byte accounting: session=%d peers=%v", sub.sessionBytes, sub.peerBytes)
+	}
+	if sub.peerCounts[peerA] != 1 || sub.peerCounts[peerB] != 1 {
+		t.Fatalf("rejections must not consume message counts: %v", sub.peerCounts)
+	}
+}
+
+func TestRestrictedSubscriptionPeerNarrowingDoesNotRestoreAllowance(t *testing.T) {
+	peerA := peer.ID("peer-a")
+	peerB := peer.ID("peer-b")
+	ms := NewMessageIDSubscriber()
+	ms.SubscribeRestrictedWithBudgets(
+		"frost",
+		make(chan *Message, 1),
+		[]peer.ID{peerA, peerB},
+		8,
+		10,
+		8,
+		32,
+	)
+	sub := ms.GetSubscriber("frost")
+	if !sub.accepts(peerA, 6) {
+		t.Fatal("initial peer A reservation failed")
+	}
+	if !ms.UpdateAllowedPeers("frost", []peer.ID{peerB}) ||
+		!ms.UpdateAllowedPeers("frost", []peer.ID{peerA, peerB}) {
+		t.Fatal("failed to update allowed peers")
+	}
+	if !sub.accepts(peerA, 2) {
+		t.Fatal("peer A should retain its remaining allowance")
+	}
+	if sub.accepts(peerA, 1) {
+		t.Fatal("removing and re-adding peer A must not reset its allowance")
+	}
+}
+
+func TestSubscriptionDeliveryModes(t *testing.T) {
+	legacyChannel := make(chan *Message)
+	legacy := NewMessageIDSubscriber()
+	legacy.Subscribe("legacy", legacyChannel)
+	legacySub := legacy.GetSubscriber("legacy")
+	delivered := make(chan bool, 1)
+	go func() {
+		delivered <- legacySub.deliver(&Message{PeerID: peer.ID("legacy-peer")}, nil)
+	}()
+
+	select {
+	case <-delivered:
+		t.Fatal("legacy unrestricted delivery returned before a receiver was ready")
+	case <-time.After(25 * time.Millisecond):
+	}
+	select {
+	case <-legacyChannel:
+	case <-time.After(time.Second):
+		t.Fatal("legacy delivery did not reach the receiver")
+	}
+	select {
+	case ok := <-delivered:
+		if !ok {
+			t.Fatal("legacy delivery unexpectedly failed")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("legacy delivery remained blocked after receive")
+	}
+
+	restrictedChannel := make(chan *Message, 1)
+	restrictedChannel <- &Message{}
+	restricted := NewMessageIDSubscriber()
+	restricted.SubscribeRestricted("frost", restrictedChannel, []peer.ID{peer.ID("frost-peer")}, 1024, 1)
+	start := time.Now()
+	if restricted.GetSubscriber("frost").deliver(&Message{}, nil) {
+		t.Fatal("restricted delivery must fail when its bounded queue is full")
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("restricted delivery blocked for %s", elapsed)
+	}
 }
