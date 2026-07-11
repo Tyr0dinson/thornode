@@ -106,10 +106,37 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start pubkey manager")
 	}
 
-	// automatically attempt to recover TSS keyshares if they are missing
-	if err = btss.RecoverKeyShares(cfg, thorchainBridge); err != nil {
-		log.Error().Err(err).Msg("fail to recover key shares")
+	// Recover every still-assigned keyshare before starting TSS or chain
+	// clients. A transient THORChain/RPC failure must not turn this process into
+	// a permanently keyless signer, and retiring members still need their share
+	// to migrate funds. Retry until recovery is complete or shutdown is asked.
+	recoveryCtx, stopRecoverySignals := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	for attempt := 1; ; attempt++ {
+		err = btss.RecoverKeyShares(cfg, thorchainBridge)
+		if err == nil {
+			break
+		}
+		log.Error().Err(err).Int("attempt", attempt).Msg("keyshare recovery incomplete; retrying before signer startup")
+		timer := time.NewTimer(constants.ThorchainBlockTime)
+		select {
+		case <-timer.C:
+		case <-recoveryCtx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			stopRecoverySignals()
+			log.Info().Msg("shutdown requested while waiting for keyshare recovery")
+			return
+		}
 	}
+	stopRecoverySignals()
 
 	// setup TSS signing
 	priKey, err := k.GetPrivateKey()
