@@ -53,7 +53,13 @@ func mustSuccessResult(
 		TxKey:       testTxKey,
 		FeeAtomic:   feeAtomic,
 		Eventuality: eventuality,
-		Status:      uint8(tcommon.Success),
+		SpentOutputRefs: []FrostSpentOutputRef{{
+			TxHash:      testHashOf('c'),
+			OutputIndex: 1,
+			KeyImage:    testHashOf('d'),
+			SpendTxHash: txHash,
+		}},
+		Status: uint8(tcommon.Success),
 	}
 }
 
@@ -340,6 +346,40 @@ func TestValidateFrostPreparedInputs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := validateFrostPreparedInputs(tc.selected, tc.spent, tc.txHash); err == nil {
 				t.Fatal("expected input binding validation to fail")
+			}
+		})
+	}
+}
+
+func TestNormalizeFrostResultSpentRefs(t *testing.T) {
+	txHash := testHashOf('f')
+	valid := []FrostSpentOutputRef{
+		{TxHash: testHashOf('a'), OutputIndex: 1, KeyImage: testHashOf('c'), SpendTxHash: txHash},
+		{TxHash: testHashOf('b'), OutputIndex: 2, KeyImage: testHashOf('d'), SpendTxHash: txHash},
+	}
+	normalized, err := normalizeFrostResultSpentRefs(valid, txHash)
+	if err != nil {
+		t.Fatalf("valid spent refs rejected: %v", err)
+	}
+	if len(normalized) != len(valid) {
+		t.Fatalf("unexpected normalized ref count: %d", len(normalized))
+	}
+
+	tests := []struct {
+		name string
+		refs []FrostSpentOutputRef
+	}{
+		{name: "missing refs"},
+		{name: "malformed funding hash", refs: []FrostSpentOutputRef{{TxHash: "bad", OutputIndex: 1, KeyImage: testHashOf('c'), SpendTxHash: txHash}}},
+		{name: "missing key image", refs: []FrostSpentOutputRef{{TxHash: testHashOf('a'), OutputIndex: 1, SpendTxHash: txHash}}},
+		{name: "wrong spend transaction", refs: []FrostSpentOutputRef{{TxHash: testHashOf('a'), OutputIndex: 1, KeyImage: testHashOf('c'), SpendTxHash: testHashOf('e')}}},
+		{name: "duplicate input", refs: []FrostSpentOutputRef{valid[0], valid[0]}},
+		{name: "duplicate key image", refs: []FrostSpentOutputRef{valid[0], {TxHash: testHashOf('b'), OutputIndex: 2, KeyImage: valid[0].KeyImage, SpendTxHash: txHash}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := normalizeFrostResultSpentRefs(tc.refs, txHash); err == nil {
+				t.Fatal("expected spent-ref validation to fail")
 			}
 		})
 	}

@@ -470,6 +470,72 @@ func validateFrostPreparedInputs(selected, spent []FrostSpentOutputRef, txHash s
 	return nil
 }
 
+// normalizeFrostResultSpentRefs validates the portable spent-ref metadata on a
+// quorum-gossiped result. Stand-by nodes did not run prepare locally, so they
+// cannot compare against a selected-input set, but they can still reject
+// malformed, duplicated, or cross-transaction refs before persisting a signed
+// payload and checkpoint.
+func normalizeFrostResultSpentRefs(refs []FrostSpentOutputRef, txHash string) ([]FrostSpentOutputRef, error) {
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("frost success result has no spent refs")
+	}
+	if len(refs) > frostMaxResultSpentRefs {
+		return nil, fmt.Errorf("frost success result spent refs exceeds limit")
+	}
+
+	normalizeHash := func(label, value string) (string, error) {
+		value = strings.TrimSpace(value)
+		if err := validateHashHex(label, value); err != nil {
+			return "", err
+		}
+		return strings.ToLower(value), nil
+	}
+	finalTxHash, err := normalizeHash("tx_hash", txHash)
+	if err != nil {
+		return nil, err
+	}
+
+	normalized := make([]FrostSpentOutputRef, len(refs))
+	seenRefs := make(map[string]struct{}, len(refs))
+	seenKeyImages := make(map[string]struct{}, len(refs))
+	for i, ref := range refs {
+		fundingTxHash, normalizeErr := normalizeHash(fmt.Sprintf("spent_output_refs[%d].tx_hash", i), ref.TxHash)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		inputID := fmt.Sprintf("%s:%d", fundingTxHash, ref.OutputIndex)
+		if _, duplicate := seenRefs[inputID]; duplicate {
+			return nil, fmt.Errorf("frost success result repeated input %s", inputID)
+		}
+		seenRefs[inputID] = struct{}{}
+
+		keyImage, normalizeErr := normalizeHash(fmt.Sprintf("spent_output_refs[%d].key_image", i), ref.KeyImage)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		if _, duplicate := seenKeyImages[keyImage]; duplicate {
+			return nil, fmt.Errorf("frost success result repeated key image %s", keyImage)
+		}
+		seenKeyImages[keyImage] = struct{}{}
+
+		spendTxHash, normalizeErr := normalizeHash(fmt.Sprintf("spent_output_refs[%d].spend_tx_hash", i), ref.SpendTxHash)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		if spendTxHash != finalTxHash {
+			return nil, fmt.Errorf("frost success result input %s names a different spend transaction", inputID)
+		}
+
+		normalized[i] = FrostSpentOutputRef{
+			TxHash:      fundingTxHash,
+			OutputIndex: ref.OutputIndex,
+			KeyImage:    keyImage,
+			SpendTxHash: spendTxHash,
+		}
+	}
+	return normalized, nil
+}
+
 func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarClient) (FrostKeySignResponse, error) {
 	if sidecar == nil {
 		return FrostKeySignResponse{}, fmt.Errorf("frost sidecar client is nil")
@@ -1632,14 +1698,9 @@ func normalizeResultPayload(result FrostResult, expectedMsgID, expectedPlanHash 
 		if eventuality.EventualityID != strings.ToLower(expectedEventualityID) {
 			return FrostKeySignResponse{}, "", fmt.Errorf("frost success result eventuality_id mismatch")
 		}
-		normalizedRefs := make([]FrostSpentOutputRef, len(result.SpentOutputRefs))
-		for i, ref := range result.SpentOutputRefs {
-			normalizedRefs[i] = FrostSpentOutputRef{
-				TxHash:      strings.ToLower(strings.TrimSpace(ref.TxHash)),
-				OutputIndex: ref.OutputIndex,
-				KeyImage:    strings.ToLower(strings.TrimSpace(ref.KeyImage)),
-				SpendTxHash: strings.ToLower(strings.TrimSpace(ref.SpendTxHash)),
-			}
+		normalizedRefs, err := normalizeFrostResultSpentRefs(result.SpentOutputRefs, txHash)
+		if err != nil {
+			return FrostKeySignResponse{}, "", err
 		}
 		normalized.MsgID = payloadMsgID
 		normalized.TxHash = txHash
