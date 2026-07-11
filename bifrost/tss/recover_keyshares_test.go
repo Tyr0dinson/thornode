@@ -255,6 +255,7 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredDecompressedKeysharesDoesNotLe
 
 func (s *RecoverKeysharesSuite) TestWriteRecoveredRawKeysharesWritesOwnerOnlyFile(c *C) {
 	rawKeyshares := []byte("deadbeefcafebabe")
+	vaultPubKey := types.GetRandomEd25519PubKey()
 	encrypted, err := EncryptRawKeyshares(rawKeyshares, Mnemonic)
 	c.Assert(err, IsNil)
 
@@ -263,7 +264,7 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredRawKeysharesWritesOwnerOnlyFil
 	defer os.RemoveAll(dir)
 
 	path := filepath.Join(dir, "frost-recovery.hex")
-	err = writeRecoveredRawKeyshares(path, encrypted, Mnemonic)
+	err = writeRecoveredRawKeyshares(path, encrypted, Mnemonic, "mocknet", vaultPubKey)
 	c.Assert(err, IsNil)
 
 	fi, err := os.Stat(path)
@@ -276,9 +277,53 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredRawKeysharesWritesOwnerOnlyFil
 	// recovered file should be at-rest encrypted
 	c.Assert(storage.IsEncryptedAtRest(recoveredRaw), Equals, true)
 	atRestKey := storage.DeriveAtRestKey(Mnemonic)
-	recovered, err := storage.DecryptAtRest(atRestKey, recoveredRaw)
+	recoveredEnvelope, err := storage.DecryptAtRest(atRestKey, recoveredRaw)
+	c.Assert(err, IsNil)
+	recovered, err := decodeFrostRecoveryEnvelope(recoveredEnvelope, "mocknet", vaultPubKey)
 	c.Assert(err, IsNil)
 	c.Assert(recovered, DeepEquals, rawKeyshares)
+	c.Assert(validateFrostRecoveryFile(path, Mnemonic, "mocknet", vaultPubKey), IsNil)
+	c.Assert(validateFrostRecoveryFile(path, Mnemonic, "chainnet", vaultPubKey), NotNil)
+	c.Assert(validateFrostRecoveryFile(path, Mnemonic, "mocknet", types.GetRandomEd25519PubKey()), NotNil)
+}
+
+func (s *RecoverKeysharesSuite) TestFrostRecoveryEnvelopeRejectsLegacyAndTampering(c *C) {
+	vaultPubKey := types.GetRandomEd25519PubKey()
+	_, err := decodeFrostRecoveryEnvelope([]byte("legacy-raw-keyshare"), "mocknet", vaultPubKey)
+	c.Assert(err, NotNil)
+
+	envelope, err := encodeFrostRecoveryEnvelope([]byte("secret-keyshare"), "mocknet", vaultPubKey)
+	c.Assert(err, IsNil)
+	recovered, err := decodeFrostRecoveryEnvelope(envelope, "mocknet", vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(recovered, DeepEquals, []byte("secret-keyshare"))
+
+	tampered := append([]byte(nil), envelope...)
+	tampered[len(tampered)-1] ^= 1
+	_, err = decodeFrostRecoveryEnvelope(tampered, "mocknet", vaultPubKey)
+	c.Assert(err, NotNil)
+}
+
+func (s *RecoverKeysharesSuite) TestRepairRecoveryPublishAlias(c *C) {
+	dir, err := os.MkdirTemp("", "recover-keyshares-publish-*")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	path := filepath.Join(dir, "frost-recovery-test.hex")
+	c.Assert(os.WriteFile(path, []byte("authenticated-encrypted-envelope"), 0o600), IsNil)
+	alias := path + ".tmp-crash"
+	c.Assert(os.Link(path, alias), IsNil)
+	info, err := os.Lstat(path)
+	c.Assert(err, IsNil)
+	c.Assert(repairRecoveryPublishAlias(path, info), IsNil)
+	_, err = os.Lstat(alias)
+	c.Assert(os.IsNotExist(err), Equals, true)
+
+	retained := filepath.Join(dir, "retained-copy")
+	c.Assert(os.Link(path, retained), IsNil)
+	info, err = os.Lstat(path)
+	c.Assert(err, IsNil)
+	c.Assert(repairRecoveryPublishAlias(path, info), NotNil)
 }
 
 func setupRecoveryKeysharesTest(c *C) (string, func()) {

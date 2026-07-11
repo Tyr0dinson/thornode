@@ -3,12 +3,17 @@ package tss
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
@@ -19,12 +24,29 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 var keyshareRecoveryNodeHome = app.DefaultNodeHome
+
+const (
+	maxFrostRecoveryFileBytes  = int64(1024 * 1024)
+	frostRecoveryEnvelopeMagic = "THOR-XMR-FROST-RECOVERY\x02"
+	frostRecoveryProtocol      = "thorchain-xmr-frost-recovery"
+	frostRecoveryVersion       = 2
+)
+
+type frostRecoveryEnvelope struct {
+	Protocol    string `json:"protocol"`
+	Version     int    `json:"version"`
+	Network     string `json:"network"`
+	VaultPubKey string `json:"vault_pub_key"`
+	GroupKey    string `json:"group_key"`
+	KeyBytesB64 string `json:"key_bytes_b64"`
+}
 
 func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge) error {
 	tctx := thorchain.GetContext()
@@ -35,35 +57,43 @@ func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge)
 		return fmt.Errorf("fail to get node account: %w", err)
 	}
 
-	// skip recovery if the current node is not active
-	if na.Status != types.NodeStatus_Active {
-		log.Info().Msgf("%s is not active, skipping key shares recovery", na.NodeAddress)
-		return nil
-	}
-
-	// the current vault is the last pub key in the signer membership list
+	// Recover every membership still assigned to this node. A retiring XMR vault
 	membership := na.GetSignerMembership()
 	if len(membership) == 0 {
 		log.Info().Msgf("no signer membership for %s, skipping key shares recovery", na.NodeAddress)
-		return fmt.Errorf("fail to get signer membership")
+		return nil
 	}
-	vault := membership[len(membership)-1]
-
 	// get all vaults
 	vaults, err := thorchain.GetAsgards()
 	if err != nil {
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
-	target, ok := findKeyshareRecoveryTarget(vault, vaults)
-	if !ok {
-		return fmt.Errorf("fail to get creation height of %s", vault)
-	}
-	if target.kind == recoveryTargetFrost {
-		return recoverFrostKeyShares(conf, thorchain, na.NodeAddress, target)
-	}
+	seen := make(map[string]struct{}, len(membership))
+	var recoveryErrs []error
+	for _, vault := range membership {
+		target, ok := findKeyshareRecoveryTarget(vault, vaults)
+		if !ok {
+			recoveryErrs = append(recoveryErrs, fmt.Errorf("fail to get creation height of %s", vault))
+			continue
+		}
+		key := fmt.Sprintf("%d:%s", target.kind, target.pubKey)
+		if _, ok = seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
 
-	return recoverLegacyKeyShares(conf, thorchain, na.NodeAddress, target, vaults)
+		var targetErr error
+		if target.kind == recoveryTargetFrost {
+			targetErr = recoverFrostKeyShares(conf, thorchain, na.NodeAddress, target)
+		} else {
+			targetErr = recoverLegacyKeyShares(conf, thorchain, na.NodeAddress, target, vaults)
+		}
+		if targetErr != nil {
+			recoveryErrs = append(recoveryErrs, fmt.Errorf("recover keyshares for %s: %w", target.pubKey, targetErr))
+		}
+	}
+	return errors.Join(recoveryErrs...)
 }
 
 type recoveryTargetKind int
@@ -103,13 +133,28 @@ func findKeyshareRecoveryTarget(vault common.PubKey, vaults types.Vaults) (keysh
 
 func recoverFrostKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge, signer ctypes.AccAddress, target keyshareRecoveryTarget) error {
 	frostRecoveryPath := frostKeyshareRecoveryPath(target.pubKey)
+	network, err := frostRecoveryNetwork(conf)
+	if err != nil {
+		return err
+	}
+	seedPhrase, err := recoverySeedPhrase()
+	if err != nil {
+		return err
+	}
 	exists, err := recoveryFileExists(frostRecoveryPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat frost key shares for %s: %w", target.pubKey, err)
 	}
 	if exists {
-		log.Info().Msgf("frost key shares for %s already exist, skipping recovery", target.pubKey)
-		return nil
+		if validateErr := validateFrostRecoveryFile(frostRecoveryPath, seedPhrase, network, target.pubKey); validateErr == nil {
+			log.Info().Msgf("valid encrypted frost key shares for %s already exist, skipping recovery", target.pubKey)
+			return nil
+		} else {
+			log.Error().Err(validateErr).Str("path", frostRecoveryPath).Msg("quarantining invalid frost recovery artifact")
+			if quarantineErr := quarantineRecoveryFile(frostRecoveryPath); quarantineErr != nil {
+				return fmt.Errorf("failed to quarantine invalid frost recovery artifact: %w", quarantineErr)
+			}
+		}
 	}
 
 	backups, err := findRecoveryBackups(conf, thorchain, signer, target)
@@ -120,11 +165,7 @@ func recoverFrostKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBr
 		return fmt.Errorf("frost key shares backup not found for %s", target.pubKey)
 	}
 
-	seedPhrase, err := recoverySeedPhrase()
-	if err != nil {
-		return err
-	}
-	if err = writeRecoveredRawKeyshares(frostRecoveryPath, backups.frost, seedPhrase); err != nil {
+	if err = writeRecoveredRawKeyshares(frostRecoveryPath, backups.frost, seedPhrase, network, target.pubKey); err != nil {
 		return fmt.Errorf("failed to recover frost key shares: %w", err)
 	}
 
@@ -259,17 +300,120 @@ func frostKeyshareRecoveryPath(pubKey common.PubKey) string {
 }
 
 func recoveryFileExists(path string) (bool, error) {
-	fi, err := os.Stat(path)
+	fi, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	if fi.IsDir() {
-		return false, fmt.Errorf("recovery path is a directory: %s", path)
+	if !fi.Mode().IsRegular() {
+		return false, fmt.Errorf("recovery path is not a regular file: %s", path)
 	}
 	return fi.Size() > 0, nil
+}
+
+func validateFrostRecoveryFile(path, seedPhrase, network string, vaultPubKey common.PubKey) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if err = repairRecoveryPublishAlias(path, fi); err != nil {
+		return err
+	}
+	fi, err = os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("recovery artifact is not a regular file")
+	}
+	if fi.Size() <= 0 || fi.Size() > maxFrostRecoveryFileBytes {
+		return fmt.Errorf("recovery artifact size %d is outside 1..%d", fi.Size(), maxFrostRecoveryFileBytes)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(fi, opened) {
+		return fmt.Errorf("recovery artifact changed during validation")
+	}
+	data := make([]byte, opened.Size())
+	if _, err = io.ReadFull(f, data); err != nil {
+		return err
+	}
+	plaintext, err := storage.DecryptAtRest(storage.DeriveAtRestKey(seedPhrase), data)
+	if err != nil {
+		return fmt.Errorf("recovery artifact authentication failed: %w", err)
+	}
+	defer func() {
+		for i := range plaintext {
+			plaintext[i] = 0
+		}
+	}()
+	keyBytes, err := decodeFrostRecoveryEnvelope(plaintext, network, vaultPubKey)
+	zeroBytes(keyBytes)
+	return err
+}
+
+// repairRecoveryPublishAlias finishes the only safe incomplete state left by
+// writeRecoveredBytes: the final name and its tool-owned temporary name both
+// reference the same, already-synced inode. Arbitrary hard links remain a hard
+// failure; only same-directory aliases with our exact temporary-name prefix
+// are removed, and the final inode must have exactly one link afterwards.
+func repairRecoveryPublishAlias(path string, finalInfo os.FileInfo) error {
+	stat, ok := finalInfo.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink <= 1 {
+		return nil
+	}
+	matches, err := filepath.Glob(path + ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to inspect recovery publish aliases: %w", err)
+	}
+	removed := false
+	for _, candidate := range matches {
+		candidateInfo, statErr := os.Lstat(candidate)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			return fmt.Errorf("failed to stat recovery publish alias: %w", statErr)
+		}
+		if !candidateInfo.Mode().IsRegular() || !os.SameFile(finalInfo, candidateInfo) {
+			continue
+		}
+		if removeErr := os.Remove(candidate); removeErr != nil {
+			return fmt.Errorf("failed to remove recovery publish alias: %w", removeErr)
+		}
+		removed = true
+	}
+	if removed {
+		if err = syncRecoveryDirectory(filepath.Dir(path)); err != nil {
+			return err
+		}
+	}
+	refreshed, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	refreshedStat, ok := refreshed.Sys().(*syscall.Stat_t)
+	if !ok || refreshedStat.Nlink != 1 {
+		return fmt.Errorf("recovery artifact has unexpected hard links")
+	}
+	return nil
+}
+
+func quarantineRecoveryFile(path string) error {
+	quarantined := fmt.Sprintf("%s.invalid-%d", path, time.Now().UnixNano())
+	if err := os.Rename(path, quarantined); err != nil {
+		return err
+	}
+	return syncRecoveryDirectory(filepath.Dir(path))
 }
 
 type recoveryBackups struct {
@@ -381,7 +525,7 @@ func writeRecoveredDecompressedKeyshares(path string, encrypted []byte, seedPhra
 	return writeRecoveredBytes(path, encryptedAtRest)
 }
 
-func writeRecoveredRawKeyshares(path string, encrypted []byte, seedPhrase string) error {
+func writeRecoveredRawKeyshares(path string, encrypted []byte, seedPhrase, network string, vaultPubKey common.PubKey) error {
 	if len(encrypted) == 0 {
 		return fmt.Errorf("encrypted raw key shares backup is empty")
 	}
@@ -390,12 +534,132 @@ func writeRecoveredRawKeyshares(path string, encrypted []byte, seedPhrase string
 	if err != nil {
 		return fmt.Errorf("failed to decrypt raw key shares: %w", err)
 	}
+	defer zeroBytes(rawKeyshares)
 
-	encryptedAtRest, err := encryptAtRestForRecovery(rawKeyshares, seedPhrase)
+	envelope, err := encodeFrostRecoveryEnvelope(rawKeyshares, network, vaultPubKey)
+	if err != nil {
+		return err
+	}
+	defer zeroBytes(envelope)
+
+	encryptedAtRest, err := encryptAtRestForRecovery(envelope, seedPhrase)
 	if err != nil {
 		return err
 	}
 	return writeRecoveredBytes(path, encryptedAtRest)
+}
+
+func frostRecoveryNetwork(conf config.Bifrost) (string, error) {
+	network := strings.TrimSpace(conf.GetChains()[common.XMRChain].SignerExpectedNetwork)
+	switch network {
+	case "mocknet", "chainnet", "stagenet", "mainnet":
+		return network, nil
+	default:
+		return "", fmt.Errorf("xmr signer expected network must be one of mocknet, chainnet, stagenet, or mainnet")
+	}
+}
+
+func frostRecoveryGroupKey(vaultPubKey common.PubKey) (string, error) {
+	if vaultPubKey.IsEmpty() {
+		return "", fmt.Errorf("frost recovery vault pubkey is empty")
+	}
+	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, vaultPubKey.String())
+	if err != nil {
+		return "", fmt.Errorf("fail to decode frost recovery vault pubkey: %w", err)
+	}
+	raw := pk.Bytes()
+	if len(raw) != 32 {
+		return "", fmt.Errorf("unexpected frost recovery group key length %d", len(raw))
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func encodeFrostRecoveryEnvelope(keyBytes []byte, network string, vaultPubKey common.PubKey) ([]byte, error) {
+	if len(keyBytes) == 0 {
+		return nil, fmt.Errorf("frost recovery key material is empty")
+	}
+	if err := validateFrostRecoveryNetwork(network); err != nil {
+		return nil, err
+	}
+	groupKey, err := frostRecoveryGroupKey(vaultPubKey)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(frostRecoveryEnvelope{
+		Protocol:    frostRecoveryProtocol,
+		Version:     frostRecoveryVersion,
+		Network:     network,
+		VaultPubKey: vaultPubKey.String(),
+		GroupKey:    groupKey,
+		KeyBytesB64: base64.StdEncoding.EncodeToString(keyBytes),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode frost recovery envelope: %w", err)
+	}
+	return append([]byte(frostRecoveryEnvelopeMagic), payload...), nil
+}
+
+func decodeFrostRecoveryEnvelope(data []byte, expectedNetwork string, expectedVault common.PubKey) ([]byte, error) {
+	if !bytes.HasPrefix(data, []byte(frostRecoveryEnvelopeMagic)) {
+		return nil, fmt.Errorf("frost recovery envelope magic/version mismatch")
+	}
+	if err := validateFrostRecoveryNetwork(expectedNetwork); err != nil {
+		return nil, err
+	}
+	groupKey, err := frostRecoveryGroupKey(expectedVault)
+	if err != nil {
+		return nil, err
+	}
+
+	var envelope frostRecoveryEnvelope
+	decoder := json.NewDecoder(bytes.NewReader(data[len(frostRecoveryEnvelopeMagic):]))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("invalid frost recovery envelope: %w", err)
+	}
+	var extra any
+	if trailingErr := decoder.Decode(&extra); !errors.Is(trailingErr, io.EOF) {
+		if trailingErr == nil {
+			return nil, fmt.Errorf("invalid frost recovery envelope: trailing JSON value")
+		}
+		return nil, fmt.Errorf("invalid frost recovery envelope trailer: %w", trailingErr)
+	}
+	if envelope.Protocol != frostRecoveryProtocol || envelope.Version != frostRecoveryVersion {
+		return nil, fmt.Errorf("frost recovery protocol/version mismatch")
+	}
+	if envelope.Network != expectedNetwork {
+		return nil, fmt.Errorf("frost recovery network mismatch")
+	}
+	if envelope.VaultPubKey != expectedVault.String() {
+		return nil, fmt.Errorf("frost recovery vault pubkey mismatch")
+	}
+	if envelope.GroupKey != groupKey {
+		return nil, fmt.Errorf("frost recovery group key mismatch")
+	}
+	keyBytes, err := base64.StdEncoding.Strict().DecodeString(envelope.KeyBytesB64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid frost recovery key material encoding: %w", err)
+	}
+	if len(keyBytes) == 0 || int64(len(keyBytes)) > maxFrostRecoveryFileBytes {
+		zeroBytes(keyBytes)
+		return nil, fmt.Errorf("frost recovery key material size is outside bounds")
+	}
+	return keyBytes, nil
+}
+
+func validateFrostRecoveryNetwork(network string) error {
+	switch network {
+	case "mocknet", "chainnet", "stagenet", "mainnet":
+		return nil
+	default:
+		return fmt.Errorf("invalid frost recovery network")
+	}
+}
+
+func zeroBytes(data []byte) {
+	for i := range data {
+		data[i] = 0
+	}
 }
 
 // encryptAtRestForRecovery at-rest encrypts recovered key material before it is
@@ -412,6 +676,9 @@ func encryptAtRestForRecovery(data []byte, seedPhrase string) ([]byte, error) {
 }
 
 func writeRecoveredBytes(path string, data []byte) error {
+	if len(data) == 0 || int64(len(data)) > maxFrostRecoveryFileBytes {
+		return fmt.Errorf("recovery artifact size %d is outside 1..%d", len(data), maxFrostRecoveryFileBytes)
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("failed to open recovery temp file: %w", err)
@@ -419,9 +686,10 @@ func writeRecoveredBytes(path string, data []byte) error {
 
 	tmpPath := tmp.Name()
 	success := false
+	published := false
 	defer func() {
 		_ = tmp.Close()
-		if !success {
+		if !success && !published {
 			_ = os.Remove(tmpPath)
 		}
 	}()
@@ -433,15 +701,46 @@ func writeRecoveredBytes(path string, data []byte) error {
 	if _, err := tmp.Write(data); err != nil {
 		return fmt.Errorf("failed to write recovery temp file: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("failed to sync recovery temp file: %w", err)
+	}
 
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("failed to close recovery temp file: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("failed to move recovery file into place: %w", err)
+	// Link publishes without replacing an existing destination. Both paths are
+	// in the same directory/filesystem; unlinking the temporary name leaves the
+	// fully synced inode at the final path.
+	if err := os.Link(tmpPath, path); err != nil {
+		return fmt.Errorf("failed to publish recovery file without replacement: %w", err)
+	}
+	published = true
+	// Make the final name durable before removing the temporary name. A crash
+	// between these operations leaves two names for one authenticated inode;
+	// repairRecoveryPublishAlias completes that state on restart.
+	if err := syncRecoveryDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	if err := os.Remove(tmpPath); err != nil {
+		return fmt.Errorf("failed to remove recovery temp name: %w", err)
+	}
+	if err := syncRecoveryDirectory(filepath.Dir(path)); err != nil {
+		return err
 	}
 
 	success = true
+	return nil
+}
+
+func syncRecoveryDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open recovery directory: %w", err)
+	}
+	defer dir.Close()
+	if err = dir.Sync(); err != nil {
+		return fmt.Errorf("failed to sync recovery directory: %w", err)
+	}
 	return nil
 }
