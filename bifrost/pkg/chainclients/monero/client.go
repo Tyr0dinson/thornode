@@ -2465,14 +2465,14 @@ func (c *Client) findVaultPubKeyByAddress(address string) (common.PubKey, bool) 
 	}
 	c.vaultAddressMu.RLock()
 	defer c.vaultAddressMu.RUnlock()
-	if pubKeyStr, ok := c.vaultAddrToKey[strings.ToLower(address)]; ok {
+	if pubKeyStr, ok := c.vaultAddrToKey[address]; ok {
 		pk, err := common.NewPubKey(pubKeyStr)
 		if err == nil {
 			return pk, true
 		}
 	}
 	for pubKeyStr, addr := range c.vaultAddressMap {
-		if strings.EqualFold(addr.String(), address) {
+		if addr.String() == address {
 			pk, err := common.NewPubKey(pubKeyStr)
 			if err == nil {
 				return pk, true
@@ -3071,15 +3071,15 @@ func (c *Client) setVaultAddressMapping(vaultPubKey common.PubKey, address commo
 		// mapping. Tests and recovery paths may construct a client with only the
 		// forward cache populated; leaving the reverse cache empty makes inbound
 		// attribution depend on its slower forward-map fallback.
-		c.vaultAddrToKey[strings.ToLower(address.String())] = key
+		c.vaultAddrToKey[address.String()] = key
 		c.vaultAddressMu.Unlock()
 		return
 	}
 	if existing, ok := c.vaultAddressMap[key]; ok {
-		delete(c.vaultAddrToKey, strings.ToLower(existing.String()))
+		delete(c.vaultAddrToKey, existing.String())
 	}
 	c.vaultAddressMap[key] = address
-	c.vaultAddrToKey[strings.ToLower(address.String())] = key
+	c.vaultAddrToKey[address.String()] = key
 	c.vaultAddressMu.Unlock()
 
 	if c.vaultAddressStore != nil {

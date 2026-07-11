@@ -457,6 +457,8 @@ func TestResolveVaultAddressOnlyMapsFrostKey(t *testing.T) {
 	require.True(t, found)
 	assert.Equal(t, frostKey, pubKey,
 		"findVaultPubKeyByAddress should return the frost key, not eddsa")
+	_, found = c.findVaultPubKeyByAddress(strings.ToUpper(addr.String()))
+	assert.False(t, found, "case-variant xmr address must not resolve through the vault reverse map")
 }
 
 // TestTxVaultPubKeyNeverReturnsEddsa verifies that txVaultPubKey returns the
