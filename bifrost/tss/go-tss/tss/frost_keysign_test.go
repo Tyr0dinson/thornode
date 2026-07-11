@@ -21,6 +21,8 @@ var setupBech32PrefixOnce sync.Once
 
 const testExpectedPlanHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
+var testTxKey = strings.Repeat("1", 64)
+
 func ensureBech32Prefix() {
 	setupBech32PrefixOnce.Do(func() {
 		conversion.SetupBech32Prefix()
@@ -40,7 +42,7 @@ func mustSuccessResult(
 	feeAtomic uint64,
 ) FrostResult {
 	t.Helper()
-	eventuality, err := BuildFrostEventuality(planHash, txHash, txHex, feeAtomic)
+	eventuality, err := BuildFrostEventuality(planHash, txHash, txHex, testTxKey, feeAtomic)
 	if err != nil {
 		t.Fatalf("build eventuality: %v", err)
 	}
@@ -48,6 +50,7 @@ func mustSuccessResult(
 		MsgID:       msgID,
 		TxHash:      txHash,
 		TxHex:       txHex,
+		TxKey:       testTxKey,
 		FeeAtomic:   feeAtomic,
 		Eventuality: eventuality,
 		Status:      uint8(tcommon.Success),
@@ -57,6 +60,7 @@ func mustSuccessResult(
 func TestFrostKeySignMsgIDDeterministic(t *testing.T) {
 	base := FrostKeySignRequest{
 		VaultPubKey:   "thorpub-vault-1",
+		Network:       "mainnet",
 		ToAddress:     "48abc",
 		AmountAtomic:  12345,
 		Memo:          "OUT:1",
@@ -94,6 +98,16 @@ func TestFrostKeySignMsgIDDeterministic(t *testing.T) {
 	}
 	if id1 != id4 {
 		t.Fatalf("expected active signer changes not to affect msg id, got %q != %q", id1, id4)
+	}
+
+	otherNetwork := base
+	otherNetwork.Network = "stagenet"
+	otherNetworkID, err := FrostKeySignMsgID(otherNetwork)
+	if err != nil {
+		t.Fatalf("msg id other network: %v", err)
+	}
+	if id1 == otherNetworkID {
+		t.Fatal("deployment network must affect FROST session identity")
 	}
 }
 
@@ -218,6 +232,37 @@ func TestFrostKeySignIdentityIncludesSpendConstraints(t *testing.T) {
 	}
 	if basePlan == maxGasPlan {
 		t.Fatalf("expected max gas to affect plan hash")
+	}
+}
+
+func TestFrostKeySignIdentityBindsDustThreshold(t *testing.T) {
+	base := FrostKeySignRequest{
+		VaultPubKey:   "vault",
+		ToAddress:     "48destination",
+		AmountAtomic:  100,
+		SignerPubKeys: []string{"a", "b"},
+		DustThreshold: 10,
+	}
+	firstID, err := FrostKeySignMsgID(base)
+	if err != nil {
+		t.Fatalf("first msg id: %v", err)
+	}
+	firstPlan, err := FrostPlanHash(base, firstID)
+	if err != nil {
+		t.Fatalf("first plan: %v", err)
+	}
+	changed := base
+	changed.DustThreshold++
+	secondID, err := FrostKeySignMsgID(changed)
+	if err != nil {
+		t.Fatalf("second msg id: %v", err)
+	}
+	secondPlan, err := FrostPlanHash(changed, secondID)
+	if err != nil {
+		t.Fatalf("second plan: %v", err)
+	}
+	if firstID == secondID || firstPlan == secondPlan {
+		t.Fatalf("dust threshold must change both commitments")
 	}
 }
 
@@ -420,8 +465,8 @@ func TestFrostExchangePreprocessTimeoutMissingVerifications(t *testing.T) {
 	if failResp.Status != tcommon.Fail {
 		t.Fatalf("expected fail status, got %d", failResp.Status)
 	}
-	if len(failResp.Blame.BlameNodes) != 1 || failResp.Blame.BlameNodes[0].Pubkey != testPubKeys[1] {
-		t.Fatalf("expected missing verifier blame for %s, got %+v", testPubKeys[1], failResp.Blame.BlameNodes)
+	if len(failResp.Blame.BlameNodes) != 0 {
+		t.Fatalf("missing verification without signed evidence must not be slashable: %+v", failResp.Blame.BlameNodes)
 	}
 }
 
@@ -638,6 +683,77 @@ func TestFrostWaitForResultRejectsConflictingSuccessPayloads(t *testing.T) {
 	}
 }
 
+func TestFrostWaitForResultQuorumBindsTransactionKey(t *testing.T) {
+	ensureBech32Prefix()
+	msgChan := make(chan *p2p.Message, 3)
+	coord := &FrostSignCoordinator{
+		localPubKey:      testPubKeys[0],
+		msgID:            "msg-id",
+		expectedPlanHash: testExpectedPlanHash,
+		msgChan:          msgChan,
+		timeout:          time.Second,
+	}
+	first := mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('a'), "deadbeef", 10)
+	second := first
+	second.TxKey = strings.Repeat("2", 64)
+	var err error
+	second.Eventuality, err = BuildFrostEventuality(testExpectedPlanHash, second.TxHash, second.TxHex, second.TxKey, second.FeeAtomic)
+	if err != nil {
+		t.Fatalf("build second eventuality: %v", err)
+	}
+	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[0], testPubKeys[0], FrostResultPayload{SenderPubKey: testPubKeys[0], Response: first})
+	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[1], testPubKeys[1], FrostResultPayload{SenderPubKey: testPubKeys[1], Response: second})
+	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[2], testPubKeys[2], FrostResultPayload{SenderPubKey: testPubKeys[2], Response: first})
+
+	resp, err := coord.WaitForResult([]string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}, 2, time.Second)
+	if err != nil {
+		t.Fatalf("wait for result: %v", err)
+	}
+	if resp.TxKey != first.TxKey {
+		t.Fatalf("quorum adopted a transaction key without two matching votes")
+	}
+}
+
+func TestFrostWaitForResultDisqualifiesConflictingSender(t *testing.T) {
+	ensureBech32Prefix()
+	msgChan := make(chan *p2p.Message, 3)
+	coord := &FrostSignCoordinator{
+		localPubKey:      testPubKeys[0],
+		msgID:            "msg-id",
+		expectedPlanHash: testExpectedPlanHash,
+		msgChan:          msgChan,
+		timeout:          50 * time.Millisecond,
+		logger:           zerolog.Nop(),
+	}
+	first := mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('a'), "deadbeef", 10)
+	conflict := mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('b'), "deadbeef", 10)
+	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[0], testPubKeys[0], FrostResultPayload{SenderPubKey: testPubKeys[0], Response: first})
+	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[0], testPubKeys[0], FrostResultPayload{SenderPubKey: testPubKeys[0], Response: conflict})
+	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[1], testPubKeys[1], FrostResultPayload{SenderPubKey: testPubKeys[1], Response: first})
+
+	if _, err := coord.WaitForResult([]string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}, 2, 100*time.Millisecond); !errors.Is(err, errFrostResultTimeout) {
+		t.Fatalf("equivocating sender must not remain counted in first bucket: %v", err)
+	}
+}
+
+func TestFrostTxKeyCanonicalValidation(t *testing.T) {
+	valid := strings.Repeat("ab", 32)
+	if _, err := FrostTxKeyHash(valid); err != nil {
+		t.Fatalf("valid tx key rejected: %v", err)
+	}
+	for _, invalid := range []string{
+		strings.ToUpper(valid),
+		" " + valid,
+		valid + " ",
+		strings.Repeat("0", 64),
+		valid[:62],
+	} {
+		if _, err := FrostTxKeyHash(invalid); err == nil {
+			t.Fatalf("invalid tx key accepted: %q", invalid)
+		}
+	}
+}
+
 func TestFrostWaitForResultSkipsPeerBindingMismatch(t *testing.T) {
 	ensureBech32Prefix()
 
@@ -832,6 +948,8 @@ func newTestFrostSignCoordinator(localPubKey, msgID string, msgChan chan *p2p.Me
 		p2pCommunication: &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
 		localPubKey:      localPubKey,
 		msgID:            msgID,
+		vaultPubKey:      "thorpub1test-vault",
+		network:          "mainnet",
 		expectedPlanHash: testExpectedPlanHash,
 		msgChan:          msgChan,
 		timeout:          timeout,
