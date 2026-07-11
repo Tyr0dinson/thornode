@@ -3123,6 +3123,9 @@ func (c *Client) setVaultAddressMapping(vaultPubKey common.PubKey, address commo
 
 	key := vaultPubKey.String()
 	c.vaultAddressMu.Lock()
+	if c.vaultAddressMap == nil {
+		c.vaultAddressMap = make(map[string]common.Address)
+	}
 	if existing, ok := c.vaultAddressMap[key]; ok && existing.Equals(address) {
 		c.vaultAddressMu.Unlock()
 		return
