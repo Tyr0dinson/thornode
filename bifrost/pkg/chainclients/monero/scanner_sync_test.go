@@ -26,6 +26,8 @@ func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/scanner/state":
+			writeTestScannerState(t, w, 100)
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
 			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 150})
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
@@ -96,6 +98,8 @@ func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
 	frostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/scanner/state":
+			writeTestScannerState(t, w, 200)
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/height":
 			_ = json.NewEncoder(w).Encode(sidecar.ChainHeightResp{Height: 220})
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):

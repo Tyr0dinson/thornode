@@ -50,7 +50,10 @@ func TestRefreshAsgardRegistersOnlyFrostKey(t *testing.T) {
 				return
 			}
 
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+				Registered:         true,
+				ExpectedNextHeight: uint64Ptr(0),
+			})
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
@@ -91,7 +94,10 @@ func TestRefreshAsgardSkipsVaultWithoutPubKeyFrost(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/monero/vaults/register" {
 			registerCalls++
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+				Registered:         true,
+				ExpectedNextHeight: uint64Ptr(0),
+			})
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
