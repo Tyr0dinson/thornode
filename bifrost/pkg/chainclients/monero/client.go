@@ -2693,6 +2693,42 @@ func monovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members [
 	return placeholder
 }
 
+// sidecarHasVaultKeys reports whether the sidecar has a signable share bound
+// to the exact requested FROST group key.
+func (c *Client) sidecarHasVaultKeys(vaultPubKey common.PubKey) (bool, error) {
+	return c.sidecarHasVaultKeysContext(context.Background(), vaultPubKey)
+}
+
+func (c *Client) sidecarHasVaultKeysContext(ctx context.Context, vaultPubKey common.PubKey) (bool, error) {
+	if c.sidecar == nil {
+		return false, fmt.Errorf("sidecar not configured")
+	}
+	if vaultPubKey.IsEmpty() {
+		return false, fmt.Errorf("vault pubkey is empty")
+	}
+	vaults, err := c.sidecar.VaultsContext(ctx)
+	if err != nil {
+		return false, fmt.Errorf("fail to list sidecar vault keys: %w", err)
+	}
+	expectedGroupKey, err := groupKeyHexFromVaultPubKey(vaultPubKey)
+	if err != nil {
+		return false, fmt.Errorf("derive expected sidecar group key: %w", err)
+	}
+	identifiers := []string{vaultPubKey.String(), expectedGroupKey}
+	for _, vault := range vaults {
+		recorded := strings.TrimSpace(vault.VaultPubKey)
+		for _, identifier := range identifiers {
+			if strings.EqualFold(recorded, identifier) {
+				if !strings.EqualFold(strings.TrimSpace(vault.GroupKey), expectedGroupKey) {
+					return false, fmt.Errorf("sidecar vault key record does not match requested vault group key")
+				}
+				return vault.HasFrostKeys && vault.Signable, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // vaultSigningMembers returns both signer views needed by FROST: full vault
 // membership for participant indexes and active membership for this keysign.
 func (c *Client) vaultSigningMembers(vaultPubKey common.PubKey, blockHeight int64) ([]string, []string, error) {
