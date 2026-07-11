@@ -359,6 +359,9 @@ func (c *Client) SignCombineContext(ctx context.Context, req SignCombineReq) (Si
 		if err == nil {
 			break
 		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return SignCombineResp{}, fmt.Errorf("sign combine canceled: %w", ctxErr)
+		}
 		if attempt == maxAttempts || !isRetryableSignCombineError(ctx, err) {
 			return SignCombineResp{}, fmt.Errorf("fail to call sign combine endpoint: %w", err)
 		}
