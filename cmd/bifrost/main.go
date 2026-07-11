@@ -106,37 +106,14 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start pubkey manager")
 	}
 
-	// Recover every still-assigned keyshare before starting TSS or chain
-	// clients. A transient THORChain/RPC failure must not turn this process into
-	// a permanently keyless signer, and retiring members still need their share
-	// to migrate funds. Retry until recovery is complete or shutdown is asked.
-	recoveryCtx, stopRecoverySignals := signal.NotifyContext(
-		context.Background(),
-		syscall.SIGINT,
-		syscall.SIGTERM,
-	)
-	for attempt := 1; ; attempt++ {
-		err = btss.RecoverKeyShares(cfg, thorchainBridge)
-		if err == nil {
-			break
-		}
-		log.Error().Err(err).Int("attempt", attempt).Msg("keyshare recovery incomplete; retrying before signer startup")
-		timer := time.NewTimer(constants.ThorchainBlockTime)
-		select {
-		case <-timer.C:
-		case <-recoveryCtx.Done():
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			stopRecoverySignals()
-			log.Info().Msg("shutdown requested while waiting for keyshare recovery")
-			return
-		}
+	// Legacy shares back the process-wide TSS stack and remain a startup
+	// prerequisite. XMR FROST shares are isolated by exact-vault readiness, so a
+	// missing historical XMR vault is retried without disabling healthy chains.
+	if !recoverLegacyKeysharesBeforeStartup(cfg, thorchainBridge) {
+		return
 	}
-	stopRecoverySignals()
+	recoveryCtx, cancelRecovery := context.WithCancel(context.Background())
+	go superviseFrostKeyshareRecovery(recoveryCtx, cfg, thorchainBridge)
 
 	// setup TSS signing
 	priKey, err := k.GetPrivateKey()
@@ -447,6 +424,7 @@ func main() {
 	case <-restart:
 	}
 	log.Info().Msg("stop signal received")
+	cancelRecovery()
 
 	// TEMP: keyverify — fire both stop signals together. keyverifyCancel
 	// cancels the per-attempt ctx (processVerify exits via <-ctx.Done()
@@ -492,6 +470,54 @@ func main() {
 	tssIns.Stop()
 	if err = healthServer.Stop(); err != nil {
 		log.Fatal().Err(err).Msg("fail to stop health server")
+	}
+}
+
+func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.ThorchainBridge) bool {
+	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+
+	for attempt := 1; ; attempt++ {
+		if err := btss.RecoverLegacyKeyShares(cfg, bridge); err == nil {
+			return true
+		} else {
+			log.Error().Err(err).Int("attempt", attempt).Msg("legacy keyshare recovery incomplete; retrying before TSS startup")
+		}
+		timer := time.NewTimer(constants.ThorchainBlockTime)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return false
+		}
+	}
+}
+
+func superviseFrostKeyshareRecovery(ctx context.Context, cfg config.Bifrost, bridge thorclient.ThorchainBridge) {
+	for attempt := 1; ; attempt++ {
+		if err := btss.RecoverFrostKeyShares(cfg, bridge); err == nil {
+			return
+		} else {
+			log.Error().Err(err).Int("attempt", attempt).Msg("XMR FROST keyshare recovery incomplete; healthy vaults remain available while retrying")
+		}
+
+		timer := time.NewTimer(constants.ThorchainBlockTime)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		}
 	}
 }
 

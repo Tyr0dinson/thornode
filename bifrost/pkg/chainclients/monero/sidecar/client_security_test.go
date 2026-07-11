@@ -183,7 +183,7 @@ func TestRequireCompatibilityFailsClosed(t *testing.T) {
 	}
 }
 
-func TestRequireCompatibilityRejectsUnreviewedRevisionAndSchema(t *testing.T) {
+func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t *testing.T) {
 	t.Parallel()
 
 	info := Info{
@@ -203,11 +203,10 @@ func TestRequireCompatibilityRejectsUnreviewedRevisionAndSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	if _, err = client.RequireCompatibility(CapabilityBalanceReconciliation); err == nil {
-		t.Fatal("expected unreviewed revision rejection")
+	if _, err = client.RequireCompatibility(CapabilityBalanceReconciliation); err != nil {
+		t.Fatalf("source revision mismatch should be deployment metadata, got: %v", err)
 	}
 
-	client.expectedCommit = strings.Repeat("c", 40)
 	info.StateSchema = 2
 	if _, err = client.RequireCompatibility(CapabilityBalanceReconciliation); err == nil {
 		t.Fatal("expected unreviewed state schema rejection")
