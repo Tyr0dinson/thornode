@@ -178,6 +178,9 @@ func TestSubscriptionDeliveryBackpressure(t *testing.T) {
 		t.Fatal("restricted delivery did not resume after capacity became available")
 	}
 
+	// Drain the message delivered above before filling the queue again to test
+	// cancellation. Otherwise this test itself blocks on the prefill send.
+	<-restrictedChannel
 	restrictedChannel <- &Message{}
 	cancelledDelivery := make(chan bool, 1)
 	sub := restricted.GetSubscriber("frost")
