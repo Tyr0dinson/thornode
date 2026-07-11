@@ -20,7 +20,8 @@ type MessageSubscription struct {
 	maxMessagesPerPeer uint32
 	maxBytesPerPeer    uint64
 	maxSessionBytes    uint64
-	nonBlocking        bool
+	done               chan struct{}
+	doneOnce           sync.Once
 
 	lock         sync.Mutex
 	peerCounts   map[peer.ID]uint32
@@ -35,7 +36,6 @@ func newMessageSubscription(
 	maxMessagesPerPeer uint32,
 	maxBytesPerPeer uint64,
 	maxSessionBytes uint64,
-	nonBlocking bool,
 ) *MessageSubscription {
 	var allowed map[peer.ID]struct{}
 	if allowedPeers != nil {
@@ -51,7 +51,7 @@ func newMessageSubscription(
 		maxMessagesPerPeer: maxMessagesPerPeer,
 		maxBytesPerPeer:    maxBytesPerPeer,
 		maxSessionBytes:    maxSessionBytes,
-		nonBlocking:        nonBlocking,
+		done:               make(chan struct{}),
 		peerCounts:         make(map[peer.ID]uint32, len(allowed)),
 		peerBytes:          make(map[peer.ID]uint64, len(allowed)),
 	}
@@ -150,27 +150,30 @@ func (s *MessageSubscription) Channel() chan *Message {
 	return s.channel
 }
 
-// deliver preserves the historical blocking handoff for unrestricted TSS
-// subscriptions. Restricted FROST subscriptions use bounded queues and must
-// never pin an inbound stream handler when that queue is saturated.
+// deliver applies backpressure when a bounded protocol queue is full. Dropping
+// an authenticated FROST frame here can make an otherwise healthy ceremony
+// fail merely because a valid burst exceeded the local buffer. Session byte
+// and message budgets bound the number of blocked handlers, and stop unblocks
+// them during shutdown.
 func (s *MessageSubscription) deliver(message *Message, stop <-chan struct{}) bool {
 	if s == nil || s.channel == nil || message == nil {
 		return false
 	}
-	if s.nonBlocking {
-		select {
-		case s.channel <- message:
-			return true
-		default:
-			return false
-		}
-	}
 	select {
 	case s.channel <- message:
 		return true
+	case <-s.done:
+		return false
 	case <-stop:
 		return false
 	}
+}
+
+func (s *MessageSubscription) stop() {
+	if s == nil {
+		return
+	}
+	s.doneOnce.Do(func() { close(s.done) })
 }
 
 // MessageIDSubscriber
@@ -191,13 +194,16 @@ func NewMessageIDSubscriber() *MessageIDSubscriber {
 func (ms *MessageIDSubscriber) Subscribe(msgID string, channel chan *Message) {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
-	ms.subscribers[msgID] = newMessageSubscription(channel, nil, 0, 0, 0, 0, false)
+	if previous := ms.subscribers[msgID]; previous != nil {
+		previous.stop()
+	}
+	ms.subscribers[msgID] = newMessageSubscription(channel, nil, 0, 0, 0, 0)
 }
 
 // SubscribeRestricted registers a session-scoped authenticated peer allow-list
-// and resource bounds. A nil allow-list permits every authenticated peer but
-// still uses bounded, nonblocking delivery; an empty non-nil list accepts no
-// peers. Only Subscribe preserves the legacy blocking delivery behavior.
+// and resource bounds. A nil allow-list permits every authenticated peer; an
+// empty non-nil list accepts no peers. Delivery uses bounded backpressure so a
+// valid burst is not silently discarded.
 func (ms *MessageIDSubscriber) SubscribeRestricted(
 	msgID string,
 	channel chan *Message,
@@ -231,6 +237,9 @@ func (ms *MessageIDSubscriber) SubscribeRestrictedWithBudgets(
 ) {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
+	if previous := ms.subscribers[msgID]; previous != nil {
+		previous.stop()
+	}
 	ms.subscribers[msgID] = newMessageSubscription(
 		channel,
 		allowedPeers,
@@ -238,7 +247,6 @@ func (ms *MessageIDSubscriber) SubscribeRestrictedWithBudgets(
 		maxMessagesPerPeer,
 		maxBytesPerPeer,
 		maxSessionBytes,
-		true,
 	)
 }
 
@@ -246,6 +254,9 @@ func (ms *MessageIDSubscriber) SubscribeRestrictedWithBudgets(
 func (ms *MessageIDSubscriber) UnSubscribe(msgID string) {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
+	if subscription := ms.subscribers[msgID]; subscription != nil {
+		subscription.stop()
+	}
 	delete(ms.subscribers, msgID)
 }
 

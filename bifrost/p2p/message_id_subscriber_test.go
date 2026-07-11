@@ -35,7 +35,6 @@ func (MessageIDSubscriberTestSuit) TestRestrictedSubscription(c *C) {
 	c.Assert(sub, NotNil)
 	c.Assert(sub.maxBytesPerPeer, Equals, FrostMaxBytesPerPeer)
 	c.Assert(sub.maxSessionBytes, Equals, FrostMaxSessionBytes)
-	c.Assert(sub.nonBlocking, Equals, true)
 	c.Assert(sub.accepts(outsider, 1), Equals, false)
 	c.Assert(sub.accepts(allowed, 5), Equals, false)
 	c.Assert(sub.accepts(allowed, 4), Equals, true)
@@ -126,7 +125,7 @@ func TestRestrictedSubscriptionPeerNarrowingDoesNotRestoreAllowance(t *testing.T
 	}
 }
 
-func TestSubscriptionDeliveryModes(t *testing.T) {
+func TestSubscriptionDeliveryBackpressure(t *testing.T) {
 	legacyChannel := make(chan *Message)
 	legacy := NewMessageIDSubscriber()
 	legacy.Subscribe("legacy", legacyChannel)
@@ -159,11 +158,44 @@ func TestSubscriptionDeliveryModes(t *testing.T) {
 	restrictedChannel <- &Message{}
 	restricted := NewMessageIDSubscriber()
 	restricted.SubscribeRestricted("frost", restrictedChannel, []peer.ID{peer.ID("frost-peer")}, 1024, 1)
-	start := time.Now()
-	if restricted.GetSubscriber("frost").deliver(&Message{}, nil) {
-		t.Fatal("restricted delivery must fail when its bounded queue is full")
+	restrictedDelivered := make(chan bool, 1)
+	stop := make(chan struct{})
+	go func() {
+		restrictedDelivered <- restricted.GetSubscriber("frost").deliver(&Message{}, stop)
+	}()
+	select {
+	case <-restrictedDelivered:
+		t.Fatal("restricted delivery returned while its queue was full")
+	case <-time.After(25 * time.Millisecond):
 	}
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
-		t.Fatalf("restricted delivery blocked for %s", elapsed)
+	<-restrictedChannel
+	select {
+	case ok := <-restrictedDelivered:
+		if !ok {
+			t.Fatal("restricted delivery unexpectedly failed after capacity became available")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restricted delivery did not resume after capacity became available")
+	}
+
+	restrictedChannel <- &Message{}
+	cancelledDelivery := make(chan bool, 1)
+	sub := restricted.GetSubscriber("frost")
+	go func() {
+		cancelledDelivery <- sub.deliver(&Message{}, stop)
+	}()
+	select {
+	case <-cancelledDelivery:
+		t.Fatal("restricted delivery returned before cancellation")
+	case <-time.After(25 * time.Millisecond):
+	}
+	restricted.UnSubscribe("frost")
+	select {
+	case ok := <-cancelledDelivery:
+		if ok {
+			t.Fatal("cancelled subscription reported successful delivery")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subscription cancellation did not unblock delivery")
 	}
 }

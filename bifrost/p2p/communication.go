@@ -406,15 +406,15 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 			Payload: dataBuf,
 		}
 		// Park before delivery so a consumer cannot race ReleaseStream ahead of
-		// this stream being tracked. Legacy subscriptions retain their historical
-		// blocking handoff; restricted FROST queues fail closed when saturated.
+		// this stream being tracked. Bounded FROST queues apply backpressure rather
+		// than dropping a valid ceremony frame during a burst.
 		c.streamMgr.AddStream(wrappedMsg.MsgID, stream)
 		if !subscription.deliver(message, c.stopChan) {
 			c.logger.Warn().
 				Str("peer", remotePeer.String()).
 				Str("msg_id", wrappedMsg.MsgID).
 				Str("message_type", wrappedMsg.MessageType.String()).
-				Msg("dropping TSS session message because delivery was stopped or its bounded queue is full")
+				Msg("stopped before TSS session message delivery completed")
 			if err := stream.Reset(); err != nil {
 				c.logger.Debug().Err(err).Msg("fail to reset undelivered TSS stream")
 			}
