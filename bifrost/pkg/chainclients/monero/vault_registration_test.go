@@ -105,7 +105,7 @@ func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 			mu.Lock()
 			registered = true
 			mu.Unlock()
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 		case "/v1/monero/balance/" + vaultPubKey.String():
 			mu.Lock()
 			isRegistered := registered
@@ -192,7 +192,7 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+		_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 	}))
 	defer server.Close()
 
@@ -240,7 +240,7 @@ func TestEnsureFrostVaultRegisteredOmitsBootstrapSpendKeyForOtherVault(t *testin
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+		_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 	}))
 	defer server.Close()
 
@@ -281,7 +281,7 @@ func TestGetAccountByAddressRegistersVaultBeforeBalanceQuery(t *testing.T) {
 			mu.Lock()
 			registered = true
 			mu.Unlock()
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/balance/"):
 			mu.Lock()
 			isRegistered := registered
@@ -337,7 +337,7 @@ func TestGetAccountByAddressUsesTotalBalanceWhenSpendableAlsoProvided(t *testing
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v1/monero/vaults/register":
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/balance/"):
 			_ = json.NewEncoder(w).Encode(sidecar.Balance{
 				Balance:          9 * moneroAtomicToThorchain,
