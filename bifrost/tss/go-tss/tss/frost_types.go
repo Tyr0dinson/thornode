@@ -163,8 +163,9 @@ type FrostSidecarPrepareReq struct {
 }
 
 type FrostSidecarPrepareResp struct {
-	SessionID  string `json:"session_id"`
-	Preprocess string `json:"preprocess"`
+	SessionID      string                `json:"session_id"`
+	Preprocess     string                `json:"preprocess"`
+	SelectedInputs []FrostSpentOutputRef `json:"selected_inputs"`
 }
 
 type FrostSidecarPartialReq struct {

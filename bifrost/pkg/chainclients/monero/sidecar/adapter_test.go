@@ -26,8 +26,9 @@ func TestFrostAdapterTranslation(t *testing.T) {
 				t.Fatalf("decode prepare request: %v", err)
 			}
 			_ = json.NewEncoder(w).Encode(SignPrepareResp{
-				SessionID:  "session-1",
-				Preprocess: "preprocess-hex",
+				SessionID:      "session-1",
+				Preprocess:     "preprocess-hex",
+				SelectedInputs: []SpentRef{{TxHash: strings.Repeat("a", 64), OutputIndex: 3}},
 			})
 		case "/v1/monero/sign/partial":
 			if err := json.NewDecoder(r.Body).Decode(&gotPartial); err != nil {
@@ -76,6 +77,11 @@ func TestFrostAdapterTranslation(t *testing.T) {
 	}
 	if prepareResp.SessionID != "session-1" || prepareResp.Preprocess != "preprocess-hex" {
 		t.Fatalf("unexpected prepare response: %+v", prepareResp)
+	}
+	if len(prepareResp.SelectedInputs) != 1 ||
+		prepareResp.SelectedInputs[0].TxHash != strings.Repeat("a", 64) ||
+		prepareResp.SelectedInputs[0].OutputIndex != 3 {
+		t.Fatalf("selected input response translation mismatch: %+v", prepareResp.SelectedInputs)
 	}
 	if gotPrepare.VaultPubKey != prepareReq.VaultPubKey ||
 		gotPrepare.ToAddress != prepareReq.ToAddress ||
