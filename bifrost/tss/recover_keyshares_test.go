@@ -304,26 +304,21 @@ func (s *RecoverKeysharesSuite) TestFrostRecoveryEnvelopeRejectsLegacyAndTamperi
 	c.Assert(err, NotNil)
 }
 
-func (s *RecoverKeysharesSuite) TestRepairRecoveryPublishAlias(c *C) {
+func (s *RecoverKeysharesSuite) TestWriteRecoveredBytesDoesNotReplaceExisting(c *C) {
 	dir, err := os.MkdirTemp("", "recover-keyshares-publish-*")
 	c.Assert(err, IsNil)
 	defer os.RemoveAll(dir)
 
 	path := filepath.Join(dir, "frost-recovery-test.hex")
-	c.Assert(os.WriteFile(path, []byte("authenticated-encrypted-envelope"), 0o600), IsNil)
-	alias := path + ".tmp-crash"
-	c.Assert(os.Link(path, alias), IsNil)
-	info, err := os.Lstat(path)
+	want := []byte("existing-authenticated-envelope")
+	c.Assert(os.WriteFile(path, want, 0o600), IsNil)
+	c.Assert(writeRecoveredBytes(path, []byte("replacement")), NotNil)
+	got, err := os.ReadFile(path)
 	c.Assert(err, IsNil)
-	c.Assert(repairRecoveryPublishAlias(path, info), IsNil)
-	_, err = os.Lstat(alias)
-	c.Assert(os.IsNotExist(err), Equals, true)
-
-	retained := filepath.Join(dir, "retained-copy")
-	c.Assert(os.Link(path, retained), IsNil)
-	info, err = os.Lstat(path)
+	c.Assert(got, DeepEquals, want)
+	entries, err := os.ReadDir(dir)
 	c.Assert(err, IsNil)
-	c.Assert(repairRecoveryPublishAlias(path, info), NotNil)
+	c.Assert(entries, HasLen, 1)
 }
 
 func setupRecoveryKeysharesTest(c *C) (string, func()) {

@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	ctypes "github.com/cosmos/cosmos-sdk/types"
@@ -49,6 +48,25 @@ type frostRecoveryEnvelope struct {
 }
 
 func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge) error {
+	return recoverKeyShares(conf, thorchain, nil)
+}
+
+// RecoverLegacyKeyShares restores key material used by the process-wide TSS
+// stack. Bifrost must not start that stack while this recovery is incomplete.
+func RecoverLegacyKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge) error {
+	kind := recoveryTargetLegacy
+	return recoverKeyShares(conf, thorchain, &kind)
+}
+
+// RecoverFrostKeyShares restores XMR vault material consumed by the sidecar.
+// Exact-vault readiness can isolate a missing FROST share, so callers may retry
+// this scope without holding all of Bifrost at startup.
+func RecoverFrostKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge) error {
+	kind := recoveryTargetFrost
+	return recoverKeyShares(conf, thorchain, &kind)
+}
+
+func recoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge, selectedKind *recoveryTargetKind) error {
 	tctx := thorchain.GetContext()
 
 	// fetch the node account
@@ -74,7 +92,14 @@ func RecoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge)
 	for _, vault := range membership {
 		target, ok := findKeyshareRecoveryTarget(vault, vaults)
 		if !ok {
-			recoveryErrs = append(recoveryErrs, fmt.Errorf("fail to get creation height of %s", vault))
+			// The legacy startup barrier owns unknown memberships because it is
+			// unsafe to assume an unclassified share is XMR-only.
+			if selectedKind == nil || *selectedKind == recoveryTargetLegacy {
+				recoveryErrs = append(recoveryErrs, fmt.Errorf("fail to get creation height of %s", vault))
+			}
+			continue
+		}
+		if selectedKind != nil && target.kind != *selectedKind {
 			continue
 		}
 		key := fmt.Sprintf("%d:%s", target.kind, target.pubKey)
@@ -318,13 +343,6 @@ func validateFrostRecoveryFile(path, seedPhrase, network string, vaultPubKey com
 	if err != nil {
 		return err
 	}
-	if err = repairRecoveryPublishAlias(path, fi); err != nil {
-		return err
-	}
-	fi, err = os.Lstat(path)
-	if err != nil {
-		return err
-	}
 	if !fi.Mode().IsRegular() {
 		return fmt.Errorf("recovery artifact is not a regular file")
 	}
@@ -359,53 +377,6 @@ func validateFrostRecoveryFile(path, seedPhrase, network string, vaultPubKey com
 	keyBytes, err := decodeFrostRecoveryEnvelope(plaintext, network, vaultPubKey)
 	zeroBytes(keyBytes)
 	return err
-}
-
-// repairRecoveryPublishAlias finishes the only safe incomplete state left by
-// writeRecoveredBytes: the final name and its tool-owned temporary name both
-// reference the same, already-synced inode. Arbitrary hard links remain a hard
-// failure; only same-directory aliases with our exact temporary-name prefix
-// are removed, and the final inode must have exactly one link afterwards.
-func repairRecoveryPublishAlias(path string, finalInfo os.FileInfo) error {
-	stat, ok := finalInfo.Sys().(*syscall.Stat_t)
-	if !ok || stat.Nlink <= 1 {
-		return nil
-	}
-	matches, err := filepath.Glob(path + ".tmp-*")
-	if err != nil {
-		return fmt.Errorf("failed to inspect recovery publish aliases: %w", err)
-	}
-	removed := false
-	for _, candidate := range matches {
-		candidateInfo, statErr := os.Lstat(candidate)
-		if statErr != nil {
-			if os.IsNotExist(statErr) {
-				continue
-			}
-			return fmt.Errorf("failed to stat recovery publish alias: %w", statErr)
-		}
-		if !candidateInfo.Mode().IsRegular() || !os.SameFile(finalInfo, candidateInfo) {
-			continue
-		}
-		if removeErr := os.Remove(candidate); removeErr != nil {
-			return fmt.Errorf("failed to remove recovery publish alias: %w", removeErr)
-		}
-		removed = true
-	}
-	if removed {
-		if err = syncRecoveryDirectory(filepath.Dir(path)); err != nil {
-			return err
-		}
-	}
-	refreshed, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-	refreshedStat, ok := refreshed.Sys().(*syscall.Stat_t)
-	if !ok || refreshedStat.Nlink != 1 {
-		return fmt.Errorf("recovery artifact has unexpected hard links")
-	}
-	return nil
 }
 
 func quarantineRecoveryFile(path string) error {
@@ -686,10 +657,9 @@ func writeRecoveredBytes(path string, data []byte) error {
 
 	tmpPath := tmp.Name()
 	success := false
-	published := false
 	defer func() {
 		_ = tmp.Close()
-		if !success && !published {
+		if !success {
 			_ = os.Remove(tmpPath)
 		}
 	}()
@@ -709,21 +679,13 @@ func writeRecoveredBytes(path string, data []byte) error {
 		return fmt.Errorf("failed to close recovery temp file: %w", err)
 	}
 
-	// Link publishes without replacing an existing destination. Both paths are
-	// in the same directory/filesystem; unlinking the temporary name leaves the
-	// fully synced inode at the final path.
-	if err := os.Link(tmpPath, path); err != nil {
-		return fmt.Errorf("failed to publish recovery file without replacement: %w", err)
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("recovery file already exists: %s", path)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to inspect recovery destination: %w", err)
 	}
-	published = true
-	// Make the final name durable before removing the temporary name. A crash
-	// between these operations leaves two names for one authenticated inode;
-	// repairRecoveryPublishAlias completes that state on restart.
-	if err := syncRecoveryDirectory(filepath.Dir(path)); err != nil {
-		return err
-	}
-	if err := os.Remove(tmpPath); err != nil {
-		return fmt.Errorf("failed to remove recovery temp name: %w", err)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("failed to publish recovery file: %w", err)
 	}
 	if err := syncRecoveryDirectory(filepath.Dir(path)); err != nil {
 		return err
