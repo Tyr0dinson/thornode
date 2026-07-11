@@ -375,6 +375,101 @@ func validateHashHex(label, value string) error {
 	return nil
 }
 
+// validateFrostPreparedInputs binds the signed Monero transaction back to the
+// exact vault outputs selected when this local sidecar prepared the ceremony.
+// Ordering is intentionally ignored because Monero may reorder transaction
+// inputs while constructing the final prefix.
+func validateFrostPreparedInputs(selected, spent []FrostSpentOutputRef, txHash string) error {
+	if len(selected) == 0 {
+		return fmt.Errorf("prepare returned no selected inputs")
+	}
+	if len(selected) > frostMaxResultSpentRefs {
+		return fmt.Errorf("prepare returned too many selected inputs: %d", len(selected))
+	}
+	if len(spent) != len(selected) {
+		return fmt.Errorf("signed input count %d does not match prepared input count %d", len(spent), len(selected))
+	}
+
+	normalizeHash := func(label, value string) (string, error) {
+		value = strings.TrimSpace(value)
+		if err := validateHashHex(label, value); err != nil {
+			return "", err
+		}
+		return strings.ToLower(value), nil
+	}
+
+	finalTxHash, err := normalizeHash("tx_hash", txHash)
+	if err != nil {
+		return err
+	}
+
+	selectedByRef := make(map[string]string, len(selected))
+	selectedKeyImages := make(map[string]struct{}, len(selected))
+	for i, ref := range selected {
+		inputHash, err := normalizeHash(fmt.Sprintf("selected_inputs[%d].tx_hash", i), ref.TxHash)
+		if err != nil {
+			return err
+		}
+		inputID := fmt.Sprintf("%s:%d", inputHash, ref.OutputIndex)
+		if _, exists := selectedByRef[inputID]; exists {
+			return fmt.Errorf("prepare returned duplicate selected input %s", inputID)
+		}
+
+		keyImage := ""
+		if strings.TrimSpace(ref.KeyImage) != "" {
+			keyImage, err = normalizeHash(fmt.Sprintf("selected_inputs[%d].key_image", i), ref.KeyImage)
+			if err != nil {
+				return err
+			}
+			if _, exists := selectedKeyImages[keyImage]; exists {
+				return fmt.Errorf("prepare returned duplicate key image %s", keyImage)
+			}
+			selectedKeyImages[keyImage] = struct{}{}
+		}
+		selectedByRef[inputID] = keyImage
+	}
+
+	seenRefs := make(map[string]struct{}, len(spent))
+	seenKeyImages := make(map[string]struct{}, len(spent))
+	for i, ref := range spent {
+		inputHash, err := normalizeHash(fmt.Sprintf("spent_output_refs[%d].tx_hash", i), ref.TxHash)
+		if err != nil {
+			return err
+		}
+		inputID := fmt.Sprintf("%s:%d", inputHash, ref.OutputIndex)
+		preparedKeyImage, exists := selectedByRef[inputID]
+		if !exists {
+			return fmt.Errorf("signed transaction spent unprepared input %s", inputID)
+		}
+		if _, duplicate := seenRefs[inputID]; duplicate {
+			return fmt.Errorf("signed transaction repeated input %s", inputID)
+		}
+		seenRefs[inputID] = struct{}{}
+
+		keyImage, err := normalizeHash(fmt.Sprintf("spent_output_refs[%d].key_image", i), ref.KeyImage)
+		if err != nil {
+			return err
+		}
+		if _, duplicate := seenKeyImages[keyImage]; duplicate {
+			return fmt.Errorf("signed transaction repeated key image %s", keyImage)
+		}
+		seenKeyImages[keyImage] = struct{}{}
+		if preparedKeyImage != "" && keyImage != preparedKeyImage {
+			return fmt.Errorf("signed key image does not match prepared input %s", inputID)
+		}
+
+		spendTxHash, err := normalizeHash(fmt.Sprintf("spent_output_refs[%d].spend_tx_hash", i), ref.SpendTxHash)
+		if err != nil {
+			return err
+		}
+		if spendTxHash != finalTxHash {
+			return fmt.Errorf("spent input %s names a different spend transaction", inputID)
+		}
+	}
+
+	return nil
+}
+
 func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarClient) (FrostKeySignResponse, error) {
 	if sidecar == nil {
 		return FrostKeySignResponse{}, fmt.Errorf("frost sidecar client is nil")
@@ -702,6 +797,12 @@ func (c *FrostSignCoordinator) Execute(
 				fmt.Sprintf("%s actual_fee_atomic=%d max_gas_atomic=%d", FrostFailReasonXMRMaxGasExceeded, combineResp.FeeAtomic, req.MaxGasAtomic),
 				nil,
 			),
+		}
+	}
+	if err := validateFrostPreparedInputs(prepareResp.SelectedInputs, combineResp.SpentOutputRefs, combineResp.TxHash); err != nil {
+		return FrostKeySignResponse{
+			Status: tcommon.Fail,
+			Blame:  blame.NewBlame(fmt.Sprintf("frost combine input binding failed: %v", err), nil),
 		}
 	}
 	txKey := combineResp.TxKey

@@ -266,6 +266,85 @@ func TestFrostKeySignIdentityBindsDustThreshold(t *testing.T) {
 	}
 }
 
+func TestValidateFrostPreparedInputs(t *testing.T) {
+	txHash := testHashOf('f')
+	selected := []FrostSpentOutputRef{
+		{TxHash: testHashOf('a'), OutputIndex: 1, KeyImage: testHashOf('c')},
+		{TxHash: testHashOf('b'), OutputIndex: 2},
+	}
+	spent := []FrostSpentOutputRef{
+		{TxHash: testHashOf('b'), OutputIndex: 2, KeyImage: testHashOf('d'), SpendTxHash: txHash},
+		{TxHash: testHashOf('a'), OutputIndex: 1, KeyImage: testHashOf('c'), SpendTxHash: txHash},
+	}
+
+	if err := validateFrostPreparedInputs(selected, spent, txHash); err != nil {
+		t.Fatalf("valid reordered inputs rejected: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		selected []FrostSpentOutputRef
+		spent    []FrostSpentOutputRef
+		txHash   string
+	}{
+		{name: "empty prepared set", spent: spent, txHash: txHash},
+		{name: "missing signed input", selected: selected, spent: spent[:1], txHash: txHash},
+		{
+			name:     "unprepared input",
+			selected: selected,
+			spent: []FrostSpentOutputRef{
+				spent[0],
+				{TxHash: testHashOf('e'), OutputIndex: 1, KeyImage: testHashOf('c'), SpendTxHash: txHash},
+			},
+			txHash: txHash,
+		},
+		{
+			name:     "changed known key image",
+			selected: selected,
+			spent: []FrostSpentOutputRef{
+				spent[0],
+				{TxHash: testHashOf('a'), OutputIndex: 1, KeyImage: testHashOf('e'), SpendTxHash: txHash},
+			},
+			txHash: txHash,
+		},
+		{
+			name:     "duplicate final key image",
+			selected: selected,
+			spent: []FrostSpentOutputRef{
+				{TxHash: testHashOf('b'), OutputIndex: 2, KeyImage: testHashOf('c'), SpendTxHash: txHash},
+				spent[1],
+			},
+			txHash: txHash,
+		},
+		{
+			name:     "different spend transaction",
+			selected: selected,
+			spent: []FrostSpentOutputRef{
+				spent[0],
+				{TxHash: testHashOf('a'), OutputIndex: 1, KeyImage: testHashOf('c'), SpendTxHash: testHashOf('e')},
+			},
+			txHash: txHash,
+		},
+		{
+			name: "duplicate prepared ref",
+			selected: []FrostSpentOutputRef{
+				selected[0],
+				selected[0],
+			},
+			spent:  spent,
+			txHash: txHash,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateFrostPreparedInputs(tc.selected, tc.spent, tc.txHash); err == nil {
+				t.Fatal("expected input binding validation to fail")
+			}
+		})
+	}
+}
+
 func TestFrostKeySignMsgIDIncludesTxInHashRequestIDAndHeight(t *testing.T) {
 	base := FrostKeySignRequest{
 		VaultPubKey:   "thorpub-vault-1",

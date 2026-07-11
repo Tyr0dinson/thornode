@@ -117,8 +117,9 @@ type SignPrepareReq struct {
 }
 
 type SignPrepareResp struct {
-	SessionID  string `json:"session_id"`
-	Preprocess string `json:"preprocess"`
+	SessionID      string     `json:"session_id"`
+	Preprocess     string     `json:"preprocess"`
+	SelectedInputs []SpentRef `json:"selected_inputs"`
 }
 
 type SignPartialReq struct {
