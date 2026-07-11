@@ -2218,7 +2218,7 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) bool {
 	certificateHash, hashErr := xmrSpentRefsCertificateHash(tx)
 	if hashErr != nil {
 		c.logger.Warn().Err(hashErr).Str("tx_hash", txHash).Msg("skip xmr spent refs with unhashable source-vault certificate")
-		return false, false
+		return false
 	}
 	outbound := xmrOutboundMeta(tx.Tx)
 	outbound.Origin = sidecar.OutgoingOriginVaultCertified
