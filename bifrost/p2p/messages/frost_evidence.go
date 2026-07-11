@@ -1,17 +1,41 @@
 package messages
 
 import (
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
 
 const (
-	FrostProtocolVersion  = uint16(2)
+	FrostProtocolVersion = uint16(2)
+
+	FrostBlameRoundPreprocessEquivocation = "FROSTV2PreprocessEquivocation"
+	FrostBlameRoundShareEquivocation      = "FROSTV2ShareEquivocation"
+
+	FrostMaxEvidenceBytes = 16 * 1024
 	frostHashHexChars     = 64
+	frostMaxSignatureSize = 128
 	frostMaxVaultKeyChars = 256
 )
+
+func IsFrostEvidenceBlameRound(round string) bool {
+	return round == FrostBlameRoundPreprocessEquivocation || round == FrostBlameRoundShareEquivocation
+}
+
+func FrostEvidenceTranscriptRound(round string) (string, bool) {
+	switch round {
+	case FrostBlameRoundPreprocessEquivocation:
+		return "frost_preprocess", true
+	case FrostBlameRoundShareEquivocation:
+		return "frost_share", true
+	default:
+		return "", false
+	}
+}
 
 // FrostSignedEnvelope is an application-authenticated statement by the node
 // that owns a FROST round payload. Unlike transport authentication, it remains
@@ -100,4 +124,78 @@ func (e FrostSignedEcho) SignBytes() ([]byte, error) {
 		"target_statement=" + hex.EncodeToString(targetBytes),
 		"target_signature=" + hex.EncodeToString(e.Target.Signature),
 	}, "\n")), nil
+}
+
+type FrostEquivocationEvidence struct {
+	ProtocolVersion uint16              `json:"protocol_version"`
+	First           FrostSignedEnvelope `json:"first"`
+	Second          FrostSignedEnvelope `json:"second"`
+}
+
+func (e FrostEquivocationEvidence) Validate() error {
+	if e.ProtocolVersion != FrostProtocolVersion {
+		return fmt.Errorf("unsupported FROST evidence version")
+	}
+	if _, err := e.First.SignBytes(); err != nil {
+		return fmt.Errorf("invalid first envelope: %w", err)
+	}
+	if _, err := e.Second.SignBytes(); err != nil {
+		return fmt.Errorf("invalid second envelope: %w", err)
+	}
+	if len(e.First.Signature) == 0 || len(e.First.Signature) > frostMaxSignatureSize ||
+		len(e.Second.Signature) == 0 || len(e.Second.Signature) > frostMaxSignatureSize {
+		return fmt.Errorf("invalid FROST evidence signature size")
+	}
+	if !strings.EqualFold(strings.TrimSpace(e.First.SessionID), strings.TrimSpace(e.Second.SessionID)) ||
+		!strings.EqualFold(strings.TrimSpace(e.First.VaultPubKey), strings.TrimSpace(e.Second.VaultPubKey)) ||
+		!strings.EqualFold(strings.TrimSpace(e.First.Network), strings.TrimSpace(e.Second.Network)) ||
+		e.First.Round != e.Second.Round ||
+		e.First.SenderPubKey != e.Second.SenderPubKey ||
+		e.First.ParticipantIndex != e.Second.ParticipantIndex {
+		return fmt.Errorf("FROST evidence envelopes identify different statements")
+	}
+	if strings.EqualFold(strings.TrimSpace(e.First.PayloadHash), strings.TrimSpace(e.Second.PayloadHash)) {
+		return fmt.Errorf("FROST evidence payload hashes are identical")
+	}
+	return nil
+}
+
+func MarshalFrostEquivocationEvidence(e FrostEquivocationEvidence) ([]byte, error) {
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	if strings.ToLower(e.Second.PayloadHash) < strings.ToLower(e.First.PayloadHash) {
+		e.First, e.Second = e.Second, e.First
+	}
+	buf, err := json.Marshal(e)
+	if err != nil {
+		return nil, err
+	}
+	if len(buf) > FrostMaxEvidenceBytes {
+		return nil, fmt.Errorf("FROST evidence exceeds size limit")
+	}
+	return buf, nil
+}
+
+func UnmarshalFrostEquivocationEvidence(buf []byte) (FrostEquivocationEvidence, error) {
+	if len(buf) == 0 || len(buf) > FrostMaxEvidenceBytes {
+		return FrostEquivocationEvidence{}, fmt.Errorf("invalid FROST evidence size")
+	}
+	var evidence FrostEquivocationEvidence
+	decoder := json.NewDecoder(bytes.NewReader(buf))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&evidence); err != nil {
+		return FrostEquivocationEvidence{}, fmt.Errorf("invalid FROST evidence encoding: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return FrostEquivocationEvidence{}, fmt.Errorf("trailing FROST evidence data")
+	}
+	if err := evidence.Validate(); err != nil {
+		return FrostEquivocationEvidence{}, err
+	}
+	if strings.ToLower(evidence.Second.PayloadHash) < strings.ToLower(evidence.First.PayloadHash) {
+		return FrostEquivocationEvidence{}, fmt.Errorf("non-canonical FROST evidence ordering")
+	}
+	return evidence, nil
 }

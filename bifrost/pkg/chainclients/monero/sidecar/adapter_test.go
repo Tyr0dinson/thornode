@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"

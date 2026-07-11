@@ -776,6 +776,29 @@ func (s *Scanner) processReorg(block sidecar.ChainBlock, chainHeight int64) ([]*
 	return s.replayReorgJournal(journal, chainHeight, block)
 }
 
+// refreshDiscoveredReorgJournal rebuilds a persisted intent against the
+// current canonical chain before replay. A crash may leave the journal in the
+// discovered phase while the daemon advances or reorganizes again.
+func (s *Scanner) refreshDiscoveredReorgJournal(journal *reorgJournal, nextHeight int64) (*reorgJournal, error) {
+	if journal == nil || journal.Phase != reorgPhaseDiscovered {
+		return nil, fmt.Errorf("invalid discovered xmr reorg journal")
+	}
+	refreshed, err := s.buildReorgJournal(nextHeight)
+	if err != nil {
+		return nil, err
+	}
+	if refreshed == nil {
+		if err = s.reorgStore.DeleteJournal(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if err = s.reorgStore.SetJournal(refreshed); err != nil {
+		return nil, err
+	}
+	return refreshed, nil
+}
+
 func (s *Scanner) replayReorgJournal(journal *reorgJournal, chainHeight int64, nextBlock sidecar.ChainBlock) ([]*stypes.TxInItem, error) {
 	// The durable Discovered record is an intent only. Rewind the authenticated
 	// sidecar cursor before scanning, changing phase, delivering errata, or
