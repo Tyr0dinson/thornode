@@ -661,8 +661,11 @@ func TestFrostTranscriptVerifierRejectsUnanimousHashMismatch(t *testing.T) {
 	if _, failure := verifier.recordVerification(testPubKeys[0], targetPayload.SenderPubKey, targetPayload.ParticipantIndex, badHash); failure != nil {
 		t.Fatalf("first mismatched verification should not fail before quorum: %v", failure)
 	}
-	if _, failure := verifier.recordVerification(testPubKeys[1], targetPayload.SenderPubKey, targetPayload.ParticipantIndex, badHash); failure == nil {
-		t.Fatalf("expected unanimous hash mismatch failure")
+	if _, failure := verifier.recordVerification(testPubKeys[1], targetPayload.SenderPubKey, targetPayload.ParticipantIndex, badHash); failure != nil {
+		t.Fatalf("unsigned hash mismatch must not assign blame: %v", failure)
+	}
+	if verifier.isComplete() {
+		t.Fatalf("mismatched verification quorum must not complete the transcript")
 	}
 }
 
@@ -786,10 +789,11 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	}
 
 	localRound3 := FrostDKGRound3Payload{
-		SenderPubKey:     testPubKeys[0],
-		ParticipantIndex: localIndex,
-		Address:          groupAddress,
-		GroupKey:         groupKey,
+		SenderPubKey:         testPubKeys[0],
+		ParticipantIndex:     localIndex,
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
 	}
 	remoteRound3 := FrostDKGRound3Payload{
 		SenderPubKey:     testPubKeys[1],
