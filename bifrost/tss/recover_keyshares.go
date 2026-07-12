@@ -89,7 +89,7 @@ func recoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge,
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
-	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults)
+	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults, selectedKind)
 	for _, target := range targets {
 		var targetErr error
 		if target.kind == recoveryTargetFrost {
@@ -107,7 +107,7 @@ func recoverKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainBridge,
 // keyshareRecoveryTargets resolves every distinct membership still assigned to
 // the node. It deliberately does not collapse to the newest target of each key
 // type: an older retiring vault may still need migration or refund signatures.
-func keyshareRecoveryTargets(membership common.PubKeys, vaults types.Vaults) ([]keyshareRecoveryTarget, []error) {
+func keyshareRecoveryTargets(membership common.PubKeys, vaults types.Vaults, selectedKind *recoveryTargetKind) ([]keyshareRecoveryTarget, []error) {
 	seen := make(map[string]struct{}, len(membership))
 	targets := make([]keyshareRecoveryTarget, 0, len(membership))
 	var recoveryErrs []error

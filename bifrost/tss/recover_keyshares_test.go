@@ -63,7 +63,7 @@ func (s *RecoverKeysharesSuite) TestKeyshareRecoveryTargetsResolvesEveryMembersh
 	}
 	membership := common.PubKeys{legacyPubKey, frostPubKey}
 
-	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults)
+	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults, nil)
 	c.Assert(recoveryErrs, HasLen, 0)
 	c.Assert(targets, HasLen, 2)
 	c.Check(targets[0].kind, Equals, recoveryTargetLegacy)
@@ -71,6 +71,29 @@ func (s *RecoverKeysharesSuite) TestKeyshareRecoveryTargetsResolvesEveryMembersh
 	c.Check(targets[0].poolPubKeyEddsa.Equals(eddsaPubKey), Equals, true)
 	c.Check(targets[1].kind, Equals, recoveryTargetFrost)
 	c.Check(targets[1].pubKey.Equals(frostPubKey), Equals, true)
+}
+
+func (s *RecoverKeysharesSuite) TestKeyshareRecoveryTargetsFiltersRecoveryScope(c *C) {
+	legacyPubKey := types.GetRandomPubKey()
+	frostPubKey := types.GetRandomEd25519PubKey()
+	unknownPubKey := types.GetRandomPubKey()
+	vaults := types.Vaults{
+		{PubKey: legacyPubKey, BlockHeight: 100},
+		{PubKey: frostPubKey, PubKeyFrost: frostPubKey, BlockHeight: 200},
+	}
+	membership := common.PubKeys{unknownPubKey, legacyPubKey, frostPubKey}
+
+	frostKind := recoveryTargetFrost
+	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults, &frostKind)
+	c.Assert(recoveryErrs, HasLen, 0)
+	c.Assert(targets, HasLen, 1)
+	c.Check(targets[0].kind, Equals, recoveryTargetFrost)
+
+	legacyKind := recoveryTargetLegacy
+	targets, recoveryErrs = keyshareRecoveryTargets(membership, vaults, &legacyKind)
+	c.Assert(recoveryErrs, HasLen, 1)
+	c.Assert(targets, HasLen, 1)
+	c.Check(targets[0].kind, Equals, recoveryTargetLegacy)
 }
 
 func (s *RecoverKeysharesSuite) TestKeyshareRecoveryTargetsRetainsOlderVaults(c *C) {
@@ -84,7 +107,7 @@ func (s *RecoverKeysharesSuite) TestKeyshareRecoveryTargetsRetainsOlderVaults(c 
 	// migrate funds or issue refunds while retiring.
 	membership := common.PubKeys{newPubKey, oldPubKey}
 
-	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults)
+	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults, nil)
 	c.Assert(recoveryErrs, HasLen, 0)
 	c.Assert(targets, HasLen, 2)
 	c.Check(targets[0].kind, Equals, recoveryTargetLegacy)
@@ -99,13 +122,13 @@ func (s *RecoverKeysharesSuite) TestKeyshareRecoveryTargetsReportsUnknownMembers
 	vaults := types.Vaults{{PubKey: legacyPubKey, BlockHeight: 100}}
 	membership := common.PubKeys{types.GetRandomPubKey(), legacyPubKey}
 
-	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults)
+	targets, recoveryErrs := keyshareRecoveryTargets(membership, vaults, nil)
 	c.Assert(targets, HasLen, 1)
 	c.Assert(recoveryErrs, HasLen, 1)
 	c.Check(targets[0].pubKey.Equals(legacyPubKey), Equals, true)
 
 	// No membership entry matches a known vault.
-	targets, recoveryErrs = keyshareRecoveryTargets(common.PubKeys{types.GetRandomPubKey()}, vaults)
+	targets, recoveryErrs = keyshareRecoveryTargets(common.PubKeys{types.GetRandomPubKey()}, vaults, nil)
 	c.Assert(targets, HasLen, 0)
 	c.Assert(recoveryErrs, HasLen, 1)
 }
