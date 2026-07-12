@@ -334,31 +334,22 @@ func (s *BlockScannerExtraSuite) TestRollbackChannelClearsStalePrefetch(c *C) {
 		MaxHealthyLag:              time.Hour,
 	}, storage, m, bridge, fetcher)
 	c.Assert(err, IsNil)
+	// Buffer the test's rollback channel so the request can be queued
+	// deterministically while scanBlocks is parked waiting for persistence.
+	// Production delivery semantics are exercised elsewhere; this test is about
+	// clearing stale prefetch after a queued rollback is consumed.
+	scanner.rollbackChan = make(chan int64, 1)
 
 	scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4))
 	defer scanner.Stop()
 	c.Assert(waitForFetchCalls(fetcher.callCount, 12, 1), Equals, true)
 
 	// The scanner loop is parked in waitTxInPersistence for height 10, so it cannot
-	// consume the height-11/12 prefetch until we release persistence below. Park the
-	// rollback sender on the unbuffered rollbackChan first: when the loop wakes and
-	// reaches its top-level select, the ready rollback case wins over the default
-	// branch. Otherwise the loop races ahead, consumes the stale prefetch normally,
-	// and clearPrefetch finds nothing to abort. The sleep only lets the rollback
-	// goroutine reach its blocking send while the loop is still frozen.
-	rollbackSent := make(chan struct{})
-	go func() {
-		scanner.rollbackChan <- 9
-		close(rollbackSent)
-	}()
-	time.Sleep(200 * time.Millisecond)
+	// consume the height-11/12 prefetch until we release persistence below. Queue
+	// the rollback first so the loop's top-level select cannot race with a sender
+	// that has not yet been scheduled.
+	scanner.rollbackChan <- 9
 	fetcher.persisted <- nil
-
-	select {
-	case <-rollbackSent:
-	case <-time.After(3 * time.Second):
-		c.Fatal("timed out delivering rollback request")
-	}
 
 	// The prefetched height 12 from before rollback must not survive the move
 	// back to height 9.
