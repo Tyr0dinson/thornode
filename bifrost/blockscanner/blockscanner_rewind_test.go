@@ -339,11 +339,19 @@ func (s *BlockScannerExtraSuite) TestRollbackChannelClearsStalePrefetch(c *C) {
 	defer scanner.Stop()
 	c.Assert(waitForFetchCalls(fetcher.callCount, 12, 1), Equals, true)
 
+	// The scanner loop is parked in waitTxInPersistence for height 10, so it cannot
+	// consume the height-11/12 prefetch until we release persistence below. Park the
+	// rollback sender on the unbuffered rollbackChan first: when the loop wakes and
+	// reaches its top-level select, the ready rollback case wins over the default
+	// branch. Otherwise the loop races ahead, consumes the stale prefetch normally,
+	// and clearPrefetch finds nothing to abort. The sleep only lets the rollback
+	// goroutine reach its blocking send while the loop is still frozen.
 	rollbackSent := make(chan struct{})
 	go func() {
 		scanner.rollbackChan <- 9
 		close(rollbackSent)
 	}()
+	time.Sleep(200 * time.Millisecond)
 	fetcher.persisted <- nil
 
 	select {
