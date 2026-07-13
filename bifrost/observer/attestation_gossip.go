@@ -159,6 +159,7 @@ type AttestationGossip struct {
 	avMu       sync.Mutex
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
+	observerHandleErrataCommitted     func(errata common.ErrataTx)
 	observerApplySpentOutputRefs      func(tx common.ObservedTx)
 	applySpentRefsSem                 chan struct{}
 
@@ -169,6 +170,15 @@ type AttestationGossip struct {
 
 	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
 	stateInitMu    sync.Mutex
+}
+
+// SetErrataCommittedHandler registers the durable-outbox acknowledgment used
+// by the observer. It is invoked even when this process has already pruned the
+// in-memory attestation state.
+func (s *AttestationGossip) SetErrataCommittedHandler(handler func(common.ErrataTx)) {
+	s.mu.Lock()
+	s.observerHandleErrataCommitted = handler
+	s.mu.Unlock()
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip
@@ -469,8 +479,13 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		s.logger.Error().Err(err).Msg("fail to unmarshal quorum errata")
 		return
 	}
+	if qe.ErrataTx == nil {
+		s.logger.Error().Msg("quorum errata commit omitted errata tx")
+		return
+	}
 
 	s.mu.Lock()
+	committedHandler := s.observerHandleErrataCommitted
 	as, ok := s.errataTxs[*qe.ErrataTx]
 	if ok {
 		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
@@ -478,6 +493,9 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		as.mu.Lock()
 	}
 	s.mu.Unlock()
+	if committedHandler != nil {
+		committedHandler(*qe.ErrataTx)
+	}
 	if !ok {
 		return
 	}

@@ -20,6 +20,10 @@ type TxIn struct {
 	// whether this originated from a "instant observation" - e.g. by a member of the signing party
 	// immediately after signing, and also has incorrect gas, requiring a re-observation to correct.
 	AllowFutureObservation bool `json:"allow_future_observation"`
+
+	// Persisted optionally acknowledges that Observer durably stored the
+	// delivery before its producer advances a restart journal.
+	Persisted chan error `json:"-"`
 }
 
 type TxInItem struct {

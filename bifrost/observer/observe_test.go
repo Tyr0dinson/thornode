@@ -431,7 +431,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txInMempool)
+		c.Assert(observer.processObservedTx(*txInMempool), IsNil)
 
 		// Verify transaction is in both memory and storage
 		key := TxInKey(txInMempool)
@@ -475,7 +475,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txInBlock)
+		c.Assert(observer.processObservedTx(*txInBlock), IsNil)
 
 		// Should still be in both memory and storage
 		assertTxExists(observer, key, txID.String())
@@ -554,7 +554,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txInBlock)
+		c.Assert(observer.processObservedTx(*txInBlock), IsNil)
 
 		// Verify transaction is in both memory and storage
 		key := TxInKey(txInBlock)
@@ -633,7 +633,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txFinal)
+		c.Assert(observer.processObservedTx(*txFinal), IsNil)
 
 		// Verify transaction is in both memory and storage
 		key := TxInKey(txFinal)
