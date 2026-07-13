@@ -1369,6 +1369,13 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialR
 	partialSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
 	c.Assert(err, IsNil)
 	c.Check(partialSwap.State.Out.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should accumulate emitted output"))
+	// Only the executed slice of the deposit has reached the pool so far, so the
+	// rollback must unwind State.In rather than the full deposit.
+	c.Check(partialSwap.State.In.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should credit part of the deposit"))
+	c.Check(partialSwap.State.In.LT(partialSwap.State.Deposit), Equals, true, Commentf("stream must still be mid-flight for this to be a partial rollback"))
+
+	poolBeforeRollback, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
 
 	partialVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
@@ -1397,6 +1404,18 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialR
 	c.Check(expectedReverse.TargetAsset.Equals(common.BTCAsset), Equals, true, Commentf("partial rollback should target the original source asset"))
 	_, err = mgr.Keeper().GetSwapQueueItem(ctx, CreateMempoolRollbackTxID(inTxID, 0), 0)
 	c.Assert(err, NotNil, Commentf("partial rollback should settle inline instead of queueing a reverse swap"))
+
+	// The inline reverse swap emits source asset from the pool and the DONATE
+	// post-swap memo puts exactly that back, so the only lasting asset change is
+	// the removal of the phantom credit. Deducting the deposit instead of the
+	// executed State.In would silently strip the pool of asset it never held.
+	sourcePoolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(sourcePoolAfter.BalanceAsset.Equal(common.SafeSub(poolBeforeRollback.BalanceAsset, partialSwap.State.In)), Equals, true,
+		Commentf("partial rollback should deduct only the credited State.In (%s), got balance %s from %s",
+			partialSwap.State.In, sourcePoolAfter.BalanceAsset, poolBeforeRollback.BalanceAsset))
+	c.Check(sourcePoolAfter.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true,
+		Commentf("partial rollback should restore the source pool asset balance to its pre-swap value"))
 }
 
 // TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative

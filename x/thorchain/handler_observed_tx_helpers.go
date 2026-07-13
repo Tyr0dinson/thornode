@@ -3046,9 +3046,35 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	return nil
 }
 
+// mempoolRollbackCreditedSourceAmount reports how much of the inbound source
+// asset the speculative swap actually credited to the pool.
+//
+// A completed swap moves the whole deposit into the pool, but a streaming swap
+// only credits the slices it has already executed (State.In). A rollback that
+// catches a stream mid-flight must unwind what was credited, not what was
+// deposited, otherwise it removes asset the pool never received.
+func mempoolRollbackCreditedSourceAmount(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, deposit cosmos.Uint) cosmos.Uint {
+	if !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
+		// Nothing left in the queue means the swap ran to completion, so the
+		// full deposit reached the pool.
+		return deposit
+	}
+	msg, err := k.GetAdvSwapQueueItem(ctx, voter.TxID, 0)
+	if err != nil || msg.State == nil || msg.State.In.IsNil() {
+		ctx.Logger().Error("fail to read advanced-queue swap state for mempool rollback deduction, falling back to deposit",
+			"error", err, "hash", voter.TxID)
+		return deposit
+	}
+	if msg.State.In.GT(deposit) {
+		return deposit
+	}
+	return msg.State.In
+}
+
 // deductMempoolRollbackSourceAsset removes the source asset that was credited
 // speculatively when the mempool swap started but never actually arrived on
-// chain. Callers must do this exactly once per rolled-back inbound.
+// chain. Callers must do this exactly once per rolled-back inbound, and must
+// pass the credited amount, not the deposit.
 func deductMempoolRollbackSourceAsset(ctx cosmos.Context, mgr Manager, sourceAsset common.Asset, sourceAmount cosmos.Uint) error {
 	pool, err := mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
 	if err != nil {
@@ -3157,10 +3183,14 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		"hash", voter.TxID,
 		"count", len(actionsToRollback))
 
-	// Get the source amount from the voter's inbound transaction
-	// This is the asset that was credited to the pool on mempool observation
-	// but will never be received, so we need to remove it once (not per outbound)
+	// Get the source amount from the voter's inbound transaction. This is the
+	// deposit the swap was built from, which will never be received.
+	//
+	// Only the portion the swap actually executed made it into the pool, so the
+	// pool deduction below uses the credited amount rather than the deposit. The
+	// two are equal for a completed swap and differ for a half-run stream.
 	sourceAmount := voter.Tx.Tx.Coins[0].Amount
+	creditedSourceAmount := mempoolRollbackCreditedSourceAmount(ctx, keeper, voter, sourceAmount)
 	assetRemovedFromPool := false
 	aggregateDonatedAmount := cosmos.ZeroUint()
 	var rollbackSwapVault Vault
@@ -3192,13 +3222,13 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			// Subtract the source asset from the pool ONLY ONCE
 			// (remove asset that was credited on mempool observation but never received)
 			if !assetRemovedFromPool {
-				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, creditedSourceAmount)
 				assetRemovedFromPool = true
 				deductedSource = true
 				ctx.Logger().Info("rolled back native mempool swap pool balances",
 					"pool", sourceAsset.GetLayer1Asset(),
 					"rune_added", action.Coin.Amount,
-					"asset_removed", sourceAmount)
+					"asset_removed", creditedSourceAmount)
 			} else {
 				ctx.Logger().Info("rolled back native mempool swap (rune only)",
 					"pool", sourceAsset.GetLayer1Asset(),
@@ -3210,7 +3240,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			}
 			eventAssetAmount := cosmos.ZeroUint()
 			if deductedSource {
-				eventAssetAmount = sourceAmount
+				eventAssetAmount = creditedSourceAmount
 			}
 			emitPoolBalanceChangedEvent(ctx,
 				NewPoolMod(sourceAsset.GetLayer1Asset(), action.Coin.Amount, true, eventAssetAmount, false),
@@ -3242,7 +3272,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		if !assetRemovedFromPool {
 			// Deduct the phantom source asset only after the first rollback swap
 			// succeeds so a failed rollback does not leave pool accounting half-updated.
-			if err = deductMempoolRollbackSourceAsset(ctx, mgr, sourceAsset, sourceAmount); err != nil {
+			if err = deductMempoolRollbackSourceAsset(ctx, mgr, sourceAsset, creditedSourceAmount); err != nil {
 				return err
 			}
 			assetRemovedFromPool = true
