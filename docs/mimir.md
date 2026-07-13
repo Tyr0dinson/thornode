@@ -20,6 +20,23 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - Star (\*) indicates a Mimir override of a Constant.
 - Hash (#) indicates Mimir with no Constant.
 
+### Voting
+
+Nodes change a Mimir by voting for a value. The threshold to take effect depends on whether the key is _operational_ or _economic_ (the network classifies each key internally; it is not indicated by the `*`/`#` symbols above).
+
+**Operational mimirs** — the halt/pause family and other operational-control keys — are set by node vote as follows:
+
+- Each active node has one vote per key; voting again replaces that node's previous vote for the key.
+- The effective value is the most-voted value, and it takes effect only when it has at least `OperationalVotesMin` votes (mainnet default 3) with no tie. A tie, or fewer than `OperationalVotesMin` votes, means there is no effective value and nothing changes.
+- Voting a **negative** value (e.g. `-1`) **withdraws** your vote entirely. It does not set the mimir to `-1`, and it does not reset the mimir to its constant — your vote is simply removed from the tally.
+- A change is applied on the vote that makes a value the winner: the on-chain mimir updates only when the submitting vote's value equals the new effective value. A withdrawal (`-1`) therefore never itself applies a change.
+- Once set, a mimir keeps its last value until a different value wins. Withdrawing the votes that set it does not revert it to the default.
+- Operational votes are purged on churn, so a vote must reach the threshold within one churn window or be re-cast.
+
+**Economic mimirs** — everything else — instead require a 2/3 supermajority of active nodes to change.
+
+To undo an operational mimir, N+1 nodes — where N is the current vote count for the active value — must vote a new value; you therefore need to know the current value first.
+
 ## Outbound Transactions
 
 - `OutboundTransactionFee`: Amount of rune to withhold on all outbound transactions (1e8 notation)
