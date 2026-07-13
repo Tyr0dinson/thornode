@@ -369,7 +369,7 @@ func FrostTranscriptDKGRound2Hash(msgID string, payload FrostDKGRound2Payload) (
 }
 
 // FrostTranscriptDKGRound3Hash returns the signed transcript hash for the DKG
-// final address and group key announcement.
+// final address, group key, and observed Monero height announcement.
 func FrostTranscriptDKGRound3Hash(msgID string, payload FrostDKGRound3Payload) (string, error) {
 	address := strings.TrimSpace(payload.Address)
 	groupKey := strings.ToLower(strings.TrimSpace(payload.GroupKey))
@@ -378,6 +378,9 @@ func FrostTranscriptDKGRound3Hash(msgID string, payload FrostDKGRound3Payload) (
 	}
 	if groupKey == "" {
 		return "", fmt.Errorf("round3 group key is empty")
+	}
+	if payload.ObservedMoneroHeight < 0 {
+		return "", fmt.Errorf("round3 observed monero height cannot be negative")
 	}
 	return frostTranscriptHash(
 		frostDKGRound3,

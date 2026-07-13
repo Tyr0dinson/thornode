@@ -281,6 +281,9 @@ func (v *frostTranscriptVerifier) missingPayloadPubKeys() []string {
 func (v *frostTranscriptVerifier) missingVerifierPubKeys() []string {
 	missingByNorm := make(map[string]struct{})
 	for targetNorm := range v.payloadHashByTarget {
+		if _, ok := v.verifiedTargets[targetNorm]; ok {
+			continue
+		}
 		votesByAttester := v.votesByTarget[targetNorm]
 		for attesterNorm := range v.activeSet.originalByNormalized {
 			if votesByAttester != nil {
