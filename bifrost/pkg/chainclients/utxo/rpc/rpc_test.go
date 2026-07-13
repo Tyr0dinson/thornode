@@ -766,6 +766,7 @@ func (s *RPCSuite) TestGetNetworkInfo(c *C) {
 			"subversion":      "/Satoshi:21.1.0/",
 			"protocolversion": 70016,
 			"relayfee":        0.00001,
+			"warnings":        "some warning",
 		}, nil
 	})
 	defer srv.Close()
@@ -777,6 +778,34 @@ func (s *RPCSuite) TestGetNetworkInfo(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info, NotNil)
 	c.Assert(info.Version, Equals, int32(210100))
+	c.Assert(info.RelayFee, Equals, 0.00001)
+	c.Assert(info.Warnings, Equals, "some warning")
+}
+
+func (s *RPCSuite) TestGetNetworkInfoWarningsArray(c *C) {
+	// Bitcoin Core 28.0+ returns warnings as an array of strings.
+	log := zerolog.Nop()
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		c.Assert(method, Equals, "getnetworkinfo")
+		return map[string]interface{}{
+			"version":         290100,
+			"subversion":      "/Satoshi:29.1.0/",
+			"protocolversion": 70016,
+			"relayfee":        0.00001,
+			"warnings":        []string{"first warning", "second warning"},
+		}, nil
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	info, err := cl.GetNetworkInfo()
+	c.Assert(err, IsNil)
+	c.Assert(info, NotNil)
+	c.Assert(info.Version, Equals, int32(290100))
+	c.Assert(info.RelayFee, Equals, 0.00001)
+	c.Assert(info.Warnings, Equals, "first warning; second warning")
 }
 
 // ---------------------------------------------------------------------------

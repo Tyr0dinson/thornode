@@ -359,8 +359,24 @@ func (c *Client) ListUnspent(address string) ([]btcjson.ListUnspentResult, error
 }
 
 func (c *Client) GetNetworkInfo() (*btcjson.GetNetworkInfoResult, error) {
-	var info btcjson.GetNetworkInfoResult
-	err := c.Call(&info, "getnetworkinfo")
+	// Bitcoin Core 28.0 changed the warnings field from a string to an array
+	// of strings, which fails to unmarshal into the string field of the
+	// btcjson v0.22.1 struct pinned in go.mod. Shadow the field and decode it
+	// leniently so both encodings are accepted.
+	var raw struct {
+		btcjson.GetNetworkInfoResult
+		Warnings json.RawMessage `json:"warnings"`
+	}
+	err := c.Call(&raw, "getnetworkinfo")
+	info := raw.GetNetworkInfoResult
+	if err == nil && len(raw.Warnings) > 0 {
+		var warnings []string
+		if json.Unmarshal(raw.Warnings, &warnings) == nil {
+			info.Warnings = strings.Join(warnings, "; ")
+		} else {
+			_ = json.Unmarshal(raw.Warnings, &info.Warnings)
+		}
+	}
 	return &info, extractBTCError(err)
 }
 
