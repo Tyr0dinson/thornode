@@ -1187,18 +1187,10 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping malformed frost dkg result")
 				continue
 			}
-			if prevKey, voted := voteBySender[senderNorm]; voted {
-				if prevKey == matchKey {
-					continue
-				}
-				if prev := buckets[prevKey]; prev != nil {
-					delete(prev.voters, senderNorm)
-					if len(prev.voters) == 0 {
-						delete(buckets, prevKey)
-					}
-				}
+			prevKey, voted := voteBySender[senderNorm]
+			if voted && prevKey == matchKey {
+				continue
 			}
-			voteBySender[senderNorm] = matchKey
 			bucket := buckets[matchKey]
 			if bucket == nil {
 				bucket = &dkgResultVoteBucket{
@@ -1207,6 +1199,15 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 				}
 				buckets[matchKey] = bucket
 			}
+			if voted {
+				if prev := buckets[prevKey]; prev != nil {
+					delete(prev.voters, senderNorm)
+					if len(prev.voters) == 0 {
+						delete(buckets, prevKey)
+					}
+				}
+			}
+			voteBySender[senderNorm] = matchKey
 			bucket.voters[senderNorm] = struct{}{}
 			if len(bucket.voters) >= quorum {
 				return bucket.response, nil
