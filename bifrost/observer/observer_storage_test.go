@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -121,6 +123,99 @@ func TestCreateTxKey(t *testing.T) {
 			assert.Equal(t, tc.expectedKey, key)
 		})
 	}
+}
+
+func TestPendingErrataPersistsUntilCommitted(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: "deadbeef"}
+	block := types.ErrataBlock{
+		Height:     123,
+		DeliveryID: "xmr-reorg-123-deadbeef",
+		Txs:        []types.ErrataTx{tx},
+	}
+	require.NoError(t, storage.AddErrataBlock(block))
+
+	pending, err := storage.GetPendingErrata()
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, block.Height, pending[0].Height)
+	assert.Equal(t, block.DeliveryID, pending[0].DeliveryID)
+	assert.Equal(t, tx, pending[0].Tx)
+	assert.True(t, pending[0].DeliverySeen)
+	assert.False(t, pending[0].CleanupComplete)
+	assert.False(t, pending[0].Committed)
+
+	// Re-delivery is idempotent, and neither half of the state machine removes
+	// the record on its own.
+	require.NoError(t, storage.AddErrataBlock(block))
+	require.NoError(t, storage.MarkErrataCommitted(tx))
+	pending, err = storage.GetPendingErrata()
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.True(t, pending[0].Committed)
+	assert.False(t, pending[0].CleanupComplete)
+
+	require.NoError(t, storage.CompleteErrataCleanup([]types.ErrataTx{tx}, nil))
+	pending, err = storage.GetPendingErrata()
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+}
+
+func TestErrataCleanupPersistsAcrossRestart(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer os.RemoveAll(tempDir)
+
+	txIn := &types.TxIn{
+		Chain:                common.XMRChain,
+		Filtered:             true,
+		ConfirmationRequired: 6,
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 100, Tx: "orphaned"},
+			{BlockHeight: 100, Tx: "retained"},
+		},
+	}
+	require.NoError(t, storage.AddOrUpdateTx(txIn))
+	errata := types.ErrataTx{Chain: common.XMRChain, TxID: "orphaned"}
+	block := types.ErrataBlock{
+		Height:     99,
+		DeliveryID: "xmr-reorg-99-orphaned",
+		Txs:        []types.ErrataTx{errata},
+	}
+	require.NoError(t, storage.AddErrataBlock(block))
+
+	key := TxInKey(txIn)
+	observer := &Observer{
+		logger:  log.Logger,
+		lock:    &sync.Mutex{},
+		onDeck:  map[txInKey]*types.TxIn{key: txIn},
+		storage: storage,
+	}
+	require.NoError(t, observer.filterErrataTx(block))
+	require.Len(t, observer.onDeck[key].TxArray, 1)
+	assert.Equal(t, "retained", observer.onDeck[key].TxArray[0].Tx)
+
+	require.NoError(t, storage.Close())
+	reopened, err := NewObserverStorage(tempDir, config.LevelDBOptions{})
+	require.NoError(t, err)
+	defer reopened.Close()
+
+	stored, err := reopened.GetOnDeckTxs()
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+	require.Len(t, stored[0].TxArray, 1)
+	assert.Equal(t, "retained", stored[0].TxArray[0].Tx)
+
+	record, found, err := reopened.GetPendingErrataTx(errata)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, record.CleanupComplete)
+	assert.False(t, record.Committed)
+	require.NoError(t, reopened.MarkErrataCommitted(errata))
+	pending, err := reopened.GetPendingErrata()
+	require.NoError(t, err)
+	assert.Empty(t, pending)
 }
 
 func TestGetOnDeckTxs(t *testing.T) {
