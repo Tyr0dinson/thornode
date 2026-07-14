@@ -385,7 +385,7 @@ func (b *BlockScanner) scanBlocks() {
 		case amount := <-b.rollbackChan:
 			if err := b.rollback(amount); err != nil {
 				b.logger.Error().Err(err).Msg("fail to rollback block scanner")
-				b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
+				b.recordError("rollback_failed")
 				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
 				continue
 			}
@@ -451,7 +451,7 @@ func (b *BlockScanner) scanBlocks() {
 						Int64("next_height", recoveryRequired.NextHeight).
 						Msg("chain scanner stopped pending operator recovery")
 					b.healthy.Store(false)
-					b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
+					b.recordError("operator_recovery_required")
 					return
 				}
 
@@ -465,7 +465,7 @@ func (b *BlockScanner) scanBlocks() {
 							Int64("next_height", nextHeight).
 							Msg("reject chain scanner cursor rewind")
 						b.healthy.Store(false)
-						b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
+						b.recordError("cursor_rewind_rejected")
 						time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
 						continue
 					}
@@ -558,21 +558,21 @@ func (b *BlockScanner) scanBlocks() {
 				if txIn.AbortPersistence != nil {
 					txIn.AbortPersistence()
 				}
-				if !b.backoffAfterPersistenceFailure(err, "observer failed to persist scanned transactions") {
+				if !b.backoffAfterPersistenceFailure(err, "observation_persistence_failed", "observer failed to persist scanned transactions") {
 					return
 				}
 				continue
 			}
 			if txIn.FinalizePersistence != nil {
 				if err = txIn.FinalizePersistence(); err != nil {
-					if !b.backoffAfterPersistenceFailure(err, "chain scanner failed to finalize persisted transactions") {
+					if !b.backoffAfterPersistenceFailure(err, "persistence_finalize_failed", "chain scanner failed to finalize persisted transactions") {
 						return
 					}
 					continue
 				}
 			}
 			if err = b.scannerStorage.SetScanPos(currentBlock); err != nil {
-				if !b.backoffAfterPersistenceFailure(err, "fail to save block scan pos") {
+				if !b.backoffAfterPersistenceFailure(err, "scan_position_persistence_failed", "fail to save block scan pos") {
 					return
 				}
 				continue
@@ -585,10 +585,10 @@ func (b *BlockScanner) scanBlocks() {
 // backoffAfterPersistenceFailure makes a durable-progress failure visible and
 // prevents the scanner from hammering the same block and re-enqueuing its
 // observations in a tight loop. The wait is cancellable so Stop remains prompt.
-func (b *BlockScanner) backoffAfterPersistenceFailure(err error, message string) bool {
+func (b *BlockScanner) backoffAfterPersistenceFailure(err error, errorName, message string) bool {
 	b.logger.Error().Err(err).Msg(message)
 	b.healthy.Store(false)
-	b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
+	b.recordError(errorName)
 
 	backoff := b.cfg.BlockHeightDiscoverBackoff
 	if backoff <= 0 {
@@ -602,6 +602,13 @@ func (b *BlockScanner) backoffAfterPersistenceFailure(err error, message string)
 	case <-timer.C:
 		return true
 	}
+}
+
+func (b *BlockScanner) recordError(errorName string) {
+	if b.errorCounter == nil {
+		return
+	}
+	b.errorCounter.WithLabelValues(errorName, b.cfg.ChainID.String()).Inc()
 }
 
 func waitTxInPersistence(txIn types.TxIn, stop <-chan struct{}) error {
