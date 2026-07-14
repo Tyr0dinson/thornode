@@ -78,3 +78,14 @@ func (s *sessionNonceSuite) TestKeysignNonceUniquePerMessage(c *C) {
 	keygenNonce := KeygenSessionNonce(nonceTestKeys, 0, "")
 	c.Assert(base.Cmp(keygenNonce), Not(Equals), 0)
 }
+
+func (s *sessionNonceSuite) TestSessionNonceEnabled(c *C) {
+	c.Assert(SessionNonceEnabled(SessionNonceActivationVersion), Equals, true)
+	c.Assert(SessionNonceEnabled("99.0.0"), Equals, true)
+
+	// below activation, empty, or unparseable → nonce stays off
+	c.Assert(SessionNonceEnabled("3.19.0"), Equals, false)
+	c.Assert(SessionNonceEnabled("0.14.0"), Equals, false)
+	c.Assert(SessionNonceEnabled(""), Equals, false)
+	c.Assert(SessionNonceEnabled("not-a-version"), Equals, false)
+}

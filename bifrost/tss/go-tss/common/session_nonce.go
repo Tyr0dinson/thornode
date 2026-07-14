@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"sort"
 	"strconv"
+
+	"github.com/blang/semver"
 )
 
 // Session nonces bind tss-lib's SSID to a single ceremony so that a
@@ -17,6 +19,31 @@ import (
 // the ceremony already agrees on, and must be byte-identical across all
 // parties — a divergent nonce makes peer proof verification fail and aborts
 // the ceremony (fail-safe, but a liveness failure).
+
+// SessionNonceActivationVersion is the THORChain network version from which
+// bifrost sets the session nonce. The pinned tss-lib already mixes the nonce
+// into the SSID that each party uses to verify its peers' proofs, so a
+// committee where only some members set it diverges and aborts every
+// ceremony. Gating on the consensus network version — which only advances
+// once all active nodes run the new release — flips the whole network in the
+// same block, so no mixed committee can occur.
+// TODO(tss owners): confirm the activation version before release.
+const SessionNonceActivationVersion = "3.20.0"
+
+var sessionNonceActivation = semver.MustParse(SessionNonceActivationVersion)
+
+// SessionNonceEnabled reports whether the session nonce should be set for a
+// ceremony at the given network version. The version comes from the ceremony
+// request and is the consensus-agreed THORChain version, identical on every
+// participant. An unparseable or empty version leaves the nonce off,
+// matching pre-activation peers.
+func SessionNonceEnabled(networkVersion string) bool {
+	v, err := semver.Make(networkVersion)
+	if err != nil {
+		return false
+	}
+	return v.GTE(sessionNonceActivation)
+}
 
 // sessionNonce hashes a domain tag and the given parts into a positive
 // big.Int. Parts are NUL-separated to prevent ambiguity between adjacent
