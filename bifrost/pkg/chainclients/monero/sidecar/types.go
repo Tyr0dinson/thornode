@@ -21,6 +21,14 @@ const (
 	CapabilityScannerBoundedRewind   = "scanner-bounded-rewind-v1"
 	CapabilitySharePlanQuarantine    = "share-issued-plan-quarantine-v1"
 	CapabilityVerifiedAbsenceBalance = "verified-absence-balance-quarantine-v1"
+
+	// CapabilityIdempotentCombine asserts that the signer durably replays combine
+	// by (msg_id, session_id, all_shares), so a retried combine cannot produce a
+	// second Monero broadcast. It is deliberately NOT required by NewClient: a
+	// signer that does not advertise it still works, it just gets single-shot
+	// combine. Requiring it would hard-fail every deployment whose signer image
+	// predates the contract.
+	CapabilityIdempotentCombine = "idempotent-combine-v1"
 )
 
 // Info is the authenticated compatibility contract exposed by the signer.

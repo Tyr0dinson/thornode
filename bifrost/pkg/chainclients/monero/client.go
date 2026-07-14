@@ -237,10 +237,16 @@ func NewClient(
 	if compatibilityErr != nil {
 		return nil, fmt.Errorf("xmr signer compatibility check failed: %w", compatibilityErr)
 	}
+	// Bounded combine retries are only safe once the signer proves it durably
+	// replays combine; an older signer keeps single-shot combine rather than
+	// risking a second broadcast of the same Monero transaction.
+	idempotentCombine := info.HasCapability(sidecar.CapabilityIdempotentCombine)
+	sc.SetSignCombineIdempotent(idempotentCombine)
 	logger.Info().
 		Str("signer_revision", info.GitCommit).
 		Str("signer_network", info.Network).
 		Int("signer_state_schema", info.StateSchema).
+		Bool("idempotent_combine", idempotentCombine).
 		Msg("verified xmr signer compatibility contract")
 	if cleared, clearErr := sc.ClearSessions(); clearErr != nil {
 		logger.Warn().Err(clearErr).Msg("fail to clear sidecar sessions on bifrost startup; sidecar may carry stale state")

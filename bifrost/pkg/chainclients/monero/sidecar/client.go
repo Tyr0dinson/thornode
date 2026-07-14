@@ -26,15 +26,13 @@ import (
 
 const (
 	// Retrying combine is only safe against a duplicate Monero broadcast if the
-	// signer durably replays combine by (msg_id, session_id, all_shares). No
-	// capability in RequireCompatibility asserts that contract yet, and the
-	// sidecar image digest is unpinned, so a rollback to a signer without the
-	// durable path would silently double-broadcast. Stay single-shot until the
-	// signer advertises an idempotent-combine capability and NewClient requires
-	// it; then restore this to 3. The backoff policy below stays wired so that
-	// is a one-line change.
-	// ponytail: single-shot combine, raise once idempotency is handshake-proven.
+	// signer durably replays combine by (msg_id, session_id, all_shares). The
+	// sidecar image digest is unpinned, so a rollback to a signer without that
+	// contract must not silently double-broadcast: default to single-shot and
+	// only raise the bound for a signer that proves the contract by advertising
+	// CapabilityIdempotentCombine. See SetSignCombineIdempotent.
 	defaultSignCombineMaxAttempts    = 1
+	idempotentSignCombineMaxAttempts = 3
 	defaultSignCombineInitialBackoff = 200 * time.Millisecond
 	defaultSignCombineMaxBackoff     = time.Second
 	scannerStatePath                 = "/v1/monero/scanner/state"
@@ -386,6 +384,18 @@ func (c *Client) SignCombineContext(ctx context.Context, req SignCombineReq) (Si
 		return SignCombineResp{}, fmt.Errorf("sign combine endpoint returned empty tx_key")
 	}
 	return out, nil
+}
+
+// SetSignCombineIdempotent enables bounded combine retries, and must be called
+// only with a signer that advertises CapabilityIdempotentCombine. Retrying a
+// combine against a signer without the durable replay contract can broadcast the
+// same Monero transaction twice, so an unproven signer stays single-shot.
+func (c *Client) SetSignCombineIdempotent(idempotent bool) {
+	if idempotent {
+		c.signCombineMaxAttempts = idempotentSignCombineMaxAttempts
+		return
+	}
+	c.signCombineMaxAttempts = defaultSignCombineMaxAttempts
 }
 
 func (c *Client) signCombineRetryPolicy() (int, time.Duration, time.Duration) {

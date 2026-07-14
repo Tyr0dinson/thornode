@@ -233,3 +233,54 @@ func TestSignCombineRetriesTransientRateLimit(t *testing.T) {
 		t.Fatalf("expected one retry after HTTP 429, got %d attempts", attempts.Load())
 	}
 }
+
+// Combine may only be retried against a signer that proves it durably replays
+// combine. An unproven signer must be broadcast to exactly once, or a retry can
+// put the same Monero transaction on the chain twice.
+func TestSignCombineRetriesOnlyWhenSignerProvesIdempotency(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name         string
+		capabilities []string
+		wantAttempts int32
+	}{
+		{name: "unproven signer is single-shot", capabilities: nil, wantAttempts: 1},
+		{
+			name:         "idempotent signer retries",
+			capabilities: []string{CapabilityIdempotentCombine},
+			wantAttempts: idempotentSignCombineMaxAttempts,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var attempts atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				attempts.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"code":"internal"}`))
+			}))
+			defer server.Close()
+
+			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+			if err != nil {
+				t.Fatalf("new sidecar client: %v", err)
+			}
+			client.signCombineInitialBackoff = time.Millisecond
+			client.signCombineMaxBackoff = time.Millisecond
+			client.SetSignCombineIdempotent(Info{Capabilities: tc.capabilities}.HasCapability(CapabilityIdempotentCombine))
+
+			if _, err = client.SignCombineContext(context.Background(), SignCombineReq{
+				MsgID:     "msg-idempotency",
+				SessionID: "session-idempotency",
+			}); err == nil {
+				t.Fatal("expected the 5xx combine to fail")
+			}
+			if got := attempts.Load(); got != tc.wantAttempts {
+				t.Fatalf("combine broadcast %d times, want %d", got, tc.wantAttempts)
+			}
+		})
+	}
+}

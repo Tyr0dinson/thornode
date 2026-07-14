@@ -282,6 +282,15 @@ required capability) over `/v1/monero/info`. An old or partially-featured signer
 is rejected at construction rather than at first use, so the signer image must be
 upgraded in lockstep with Bifrost.
 
+One capability is optional rather than required: `idempotent-combine-v1`. It asserts
+that the signer durably replays combine by `(msg_id, session_id, all_shares)`, so a
+retried combine cannot broadcast the same Monero transaction twice. A signer that
+advertises it gets bounded combine retries; a signer that does not still runs, but
+combine is single-shot, because retrying against a signer without the durable replay
+contract risks a double broadcast. It is deliberately not in the required set so that
+an older signer image degrades rather than failing to start. The chosen policy is
+logged at startup as `idempotent_combine` on the compatibility line.
+
 ## Current `x/thorchain` Follow-Up Findings
 
 These are working notes from the current XMR integration review and should be revisited before trimming the branch or upstreaming follow-up cleanup.
