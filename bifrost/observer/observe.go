@@ -769,6 +769,14 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 			if !more {
 				return
 			}
+			if errataBlock.Persisted == nil {
+				if processErr := o.processLegacyErrataBlock(ctx, errataBlock); processErr != nil {
+					o.logger.Error().Err(processErr).
+						Int64("height", errataBlock.Height).
+						Msg("failed to process one-shot errata block")
+				}
+				continue
+			}
 			persistErr := o.storage.AddErrataBlock(errataBlock)
 			if persistErr != nil {
 				ackErrataPersistence(errataBlock, persistErr)
@@ -791,6 +799,39 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// processLegacyErrataBlock preserves the one-shot behavior used by chain
+// clients that do not opt into the acknowledged XMR delivery contract. These
+// events clean local observer state and attest once without entering the
+// durable retry outbox.
+func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock types.ErrataBlock) error {
+	if err := o.filterErrataTx(errataBlock); err != nil {
+		return err
+	}
+	if o.attestationGossip == nil {
+		return fmt.Errorf("attestation gossip is not configured")
+	}
+
+	var broadcastErr error
+	for _, errataTx := range errataBlock.Txs {
+		if err := o.attestationGossip.AttestErrata(ctx, common.ErrataTx{
+			Chain: errataTx.Chain,
+			Id:    errataTx.TxID,
+		}); err != nil {
+			if broadcastErr == nil {
+				broadcastErr = fmt.Errorf("failed to broadcast one-shot errata attestation for %s/%s: %w", errataTx.Chain, errataTx.TxID, err)
+			}
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_broadcast_errata_tx", "").Inc()
+			}
+			o.logger.Error().Err(err).
+				Str("chain", errataTx.Chain.String()).
+				Str("txid", errataTx.TxID.String()).
+				Msg("fail to broadcast one-shot errata tx")
+		}
+	}
+	return broadcastErr
 }
 
 func ackErrataPersistence(block types.ErrataBlock, err error) {

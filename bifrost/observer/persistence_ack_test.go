@@ -127,6 +127,63 @@ func TestProcessErrataAcknowledgesOnlyAfterDurableCleanup(t *testing.T) {
 	waitObserverLoop(t, done)
 }
 
+func TestProcessErrataWithoutAckPreservesLegacyOneShotPath(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	tx := types.ErrataTx{Chain: common.BTCChain, TxID: "btc-orphan"}
+	orphaned := &types.TxIn{
+		Chain:                common.BTCChain,
+		Filtered:             true,
+		ConfirmationRequired: 6,
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 500, Tx: tx.TxID.String()},
+		},
+	}
+	require.NoError(t, storage.AddOrUpdateTx(orphaned))
+	key := TxInKey(orphaned)
+	gossip, _, _, _, _, _ := setupTestGossip(t)
+	observer := &Observer{
+		logger:            log.Logger,
+		stopChan:          stop,
+		lock:              &sync.Mutex{},
+		onDeck:            map[txInKey]*types.TxIn{key: orphaned},
+		globalErrataQueue: make(chan types.ErrataBlock, 1),
+		storage:           storage,
+		attestationGossip: gossip,
+	}
+	go func() {
+		observer.processErrataTx(context.Background())
+		close(done)
+	}()
+
+	// A nil acknowledgement channel is the production contract used by the
+	// non-XMR chain clients. It must remain a one-shot event.
+	observer.globalErrataQueue <- types.ErrataBlock{
+		Height: 500,
+		Txs:    []types.ErrataTx{tx},
+	}
+	require.Eventually(t, func() bool {
+		gossip.mu.Lock()
+		defer gossip.mu.Unlock()
+		_, found := gossip.errataTxs[common.ErrataTx{Chain: tx.Chain, Id: tx.TxID}]
+		return found
+	}, 2*time.Second, 10*time.Millisecond)
+
+	pending, err := storage.GetPendingErrata()
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+	assert.Empty(t, observer.onDeck)
+	stored, err := storage.GetOnDeckTxs()
+	require.NoError(t, err)
+	assert.Empty(t, stored)
+
+	close(stop)
+	waitObserverLoop(t, done)
+}
+
 func TestProcessErrataReturnsAttestationFailureWithoutDroppingOutbox(t *testing.T) {
 	storage, tempDir := setupTestDB(t)
 	defer cleanupTestDB(t, storage, tempDir)
