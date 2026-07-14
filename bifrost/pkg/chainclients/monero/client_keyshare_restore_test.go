@@ -156,6 +156,54 @@ func TestReadRecoveryFileRepairsInterruptedPublishAlias(t *testing.T) {
 	}
 }
 
+func TestConsumeRecoveryFileLeavesNoStrandedArtifact(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "frost-recovery-test.hex")
+	if err := os.WriteFile(path, []byte("authenticated-encrypted-envelope"), 0o600); err != nil {
+		t.Fatalf("write final recovery file: %v", err)
+	}
+
+	if err := consumeRecoveryFile(path); err != nil {
+		t.Fatalf("consume recovery file: %v", err)
+	}
+
+	left, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read recovery dir: %v", err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("consume left artifacts behind: %v", left[0].Name())
+	}
+}
+
+func TestSweepStaleConsumedRecoveryFilesReclaimsCrashLeftovers(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	stale := filepath.Join(dir, "frost-recovery-test.hex.consumed-1752451200000000000")
+	if err := os.WriteFile(stale, []byte("stranded"), 0o600); err != nil {
+		t.Fatalf("write stale consumed file: %v", err)
+	}
+	// An in-flight publish alias must survive: removing it would race the writer.
+	pending := filepath.Join(dir, "frost-recovery-test.hex.tmp-inflight")
+	if err := os.WriteFile(pending, []byte("publishing"), 0o600); err != nil {
+		t.Fatalf("write in-flight publish alias: %v", err)
+	}
+
+	if err := sweepStaleConsumedRecoveryFiles(dir); err != nil {
+		t.Fatalf("sweep stale consumed recovery files: %v", err)
+	}
+
+	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale consumed artifact was not reclaimed: %v", err)
+	}
+	if _, err := os.Lstat(pending); err != nil {
+		t.Fatalf("in-flight publish alias must not be swept: %v", err)
+	}
+}
+
 func TestReadRecoveryFileRejectsUnownedHardLink(t *testing.T) {
 	t.Parallel()
 

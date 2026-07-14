@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -70,6 +71,70 @@ func framedPreflightStream(t *testing.T, declaredLength uint32, prefix []byte) *
 	return &preflightBoundedStream{
 		MockNetworkStream: base,
 		maxRead:           LengthHeader + len(prefix),
+	}
+}
+
+// TestTSSFramePreflightAcceptsRealWrappedMessage round-trips an actual
+// json.Marshal(messages.WrappedMessage) through the preflight reader. The
+// header parser only sees message_type and message_id before payload because
+// WrappedMessage declares its fields in that order and encoding/json marshals
+// in declaration order; reordering those fields, or adding one ahead of
+// Payload, fails preflight closed and resets every TSS and FROST stream. This
+// test is the guard on that coupling — the hand-built tssFramePrefix frames
+// used elsewhere cannot catch it.
+func TestTSSFramePreflightAcceptsRealWrappedMessage(t *testing.T) {
+	ApplyDeadline.Store(false)
+	t.Cleanup(func() { ApplyDeadline.Store(true) })
+
+	topic := messages.TSSFrostShareMsg
+	msgID := "frost-session"
+	remote := peer.ID("allowed-peer")
+
+	tests := []struct {
+		name        string
+		payloadSize int
+	}{
+		{name: "small frame", payloadSize: 32},
+		{name: "frame exceeding preflight bound", payloadSize: 4 * TSSFramePreflightBytes},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sent := messages.WrappedMessage{
+				MessageType: topic,
+				MsgID:       msgID,
+				Payload:     bytes.Repeat([]byte("p"), tc.payloadSize),
+			}
+			frame, err := json.Marshal(sent)
+			if err != nil {
+				t.Fatalf("marshal wrapped message: %v", err)
+			}
+
+			base := NewMockNetworkStream()
+			header := make([]byte, LengthHeader)
+			binary.LittleEndian.PutUint32(header, uint32(len(frame)))
+			_, _ = base.Write(header)
+			_, _ = base.Write(frame)
+
+			comm := newTSSPreflightCommunication(topic, msgID, []peer.ID{remote}, FrostMaxSessionPayload, 2)
+			got, err := readStreamWithBufferPreflight(base, TSSFramePreflightBytes, func(length uint32, prefix []byte) error {
+				_, _, preflightErr := comm.preflightTSSFrame(remote, length, prefix)
+				return preflightErr
+			})
+			if err != nil {
+				t.Fatalf("real WrappedMessage must survive preflight: %v", err)
+			}
+
+			var received messages.WrappedMessage
+			if err = json.Unmarshal(got, &received); err != nil {
+				t.Fatalf("unmarshal round-tripped frame: %v", err)
+			}
+			if received.MessageType != sent.MessageType || received.MsgID != sent.MsgID {
+				t.Fatalf("frame header did not survive round trip: %+v", received)
+			}
+			if !bytes.Equal(received.Payload, sent.Payload) {
+				t.Fatalf("payload did not survive round trip: got %d bytes, want %d", len(received.Payload), len(sent.Payload))
+			}
+		})
 	}
 }
 

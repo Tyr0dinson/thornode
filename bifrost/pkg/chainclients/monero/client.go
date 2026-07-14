@@ -432,6 +432,9 @@ func (c *Client) restoreKeysharesFromDir(dir string) {
 }
 
 func (c *Client) restoreKeysharesPassContext(ctx context.Context, dir string, attempt int) (pending int, found bool) {
+	if sweepErr := sweepStaleConsumedRecoveryFiles(dir); sweepErr != nil {
+		c.logger.Warn().Err(sweepErr).Str("dir", dir).Msg("xmr recovery: failed to sweep stale consumed artifacts")
+	}
 	pattern := filepath.Join(dir, "frost-recovery-*.hex")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
@@ -588,18 +591,46 @@ func repairRecoveryReadAlias(path string, finalInfo os.FileInfo) error {
 	return nil
 }
 
+// consumeRecoveryFile unlinks a restored recovery artifact. The unlink is
+// atomic and the directory sync makes it durable, so no intermediate
+// ".consumed-*" name is published: a crash mid-consume either leaves the
+// original file (retried on the next pass) or nothing at all, never a stranded
+// alias that no glob revisits.
 func consumeRecoveryFile(path string) error {
-	consumed := fmt.Sprintf("%s.consumed-%d", path, time.Now().UnixNano())
-	if err := os.Rename(path, consumed); err != nil {
-		return fmt.Errorf("rename consumed recovery file: %w", err)
-	}
-	if err := syncDirectory(filepath.Dir(path)); err != nil {
-		return err
-	}
-	if err := os.Remove(consumed); err != nil {
+	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove consumed recovery file: %w", err)
 	}
 	return syncDirectory(filepath.Dir(path))
+}
+
+// sweepStaleConsumedRecoveryFiles removes ".consumed-*" artifacts left behind
+// by the previous rename-then-remove consume path when it crashed between the
+// two steps. They no longer match the recovery glob, so nothing else would ever
+// reclaim them.
+//
+// ponytail: only ".consumed-*" is swept. An orphaned ".tmp-*" with no final
+// inode may be an in-flight publish by the recovery tool, and removing it would
+// race that writer; repairRecoveryReadAlias already reclaims the ".tmp-*"
+// aliases that reference a published inode.
+func sweepStaleConsumedRecoveryFiles(dir string) error {
+	matches, err := filepath.Glob(filepath.Join(dir, "frost-recovery-*.hex.consumed-*"))
+	if err != nil {
+		return fmt.Errorf("inspect stale consumed recovery files: %w", err)
+	}
+	removed := false
+	for _, path := range matches {
+		if removeErr := os.Remove(path); removeErr != nil {
+			if os.IsNotExist(removeErr) {
+				continue
+			}
+			return fmt.Errorf("remove stale consumed recovery file: %w", removeErr)
+		}
+		removed = true
+	}
+	if !removed {
+		return nil
+	}
+	return syncDirectory(dir)
 }
 
 func syncDirectory(path string) error {
@@ -1505,7 +1536,7 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 	if err != nil {
 		return "", fmt.Errorf("fail to broadcast FROST tx: %w", err)
 	}
-	if strings.TrimSpace(resp.TxKey) != payload.TxKey {
+	if !strings.EqualFold(strings.TrimSpace(resp.TxKey), strings.TrimSpace(payload.TxKey)) {
 		return "", fmt.Errorf("sidecar broadcast returned tx_key that differs from FROST quorum result")
 	}
 
