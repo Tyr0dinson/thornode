@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -70,9 +69,6 @@ func TestBuildReorgJournalFailsClosedOnLeadingMetadataGap(t *testing.T) {
 			}
 			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp(block))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/chain/tx/"):
-			path := strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/tx/")
-			path = strings.TrimSuffix(path, "/exists")
-			path, _ = url.PathUnescape(path)
 			_ = json.NewEncoder(w).Encode(sidecar.TxExistsResp{Exists: false})
 		default:
 			http.NotFound(w, r)
