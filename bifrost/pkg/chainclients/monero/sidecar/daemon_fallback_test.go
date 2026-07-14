@@ -162,7 +162,7 @@ func TestParseDaemonEndpointURLRejected(t *testing.T) {
 			wantErrPart: "must not contain a query or fragment",
 		},
 
-		// --- empty / hostless / unparseable ---
+		// --- empty / hostless / unparsable ---
 		{
 			name:        "empty",
 			endpoint:    "",
@@ -184,7 +184,7 @@ func TestParseDaemonEndpointURLRejected(t *testing.T) {
 			wantErrPart: "invalid monero rpc host",
 		},
 		{
-			name:        "unparseable_url",
+			name:        "unparsable_url",
 			endpoint:    "http:monerod",
 			wantErrPart: "invalid monero rpc host URL",
 		},

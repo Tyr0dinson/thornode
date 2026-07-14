@@ -80,12 +80,12 @@ func TestFrostEvidenceRejectsNonCanonicalEnvelope(t *testing.T) {
 	}{
 		{"padded payload hash", func(e *FrostSignedEnvelope) { e.PayloadHash = " " + e.PayloadHash }},
 		{"upper payload hash", func(e *FrostSignedEnvelope) { e.PayloadHash = strings.ToUpper(e.PayloadHash) }},
-		{"padded session id", func(e *FrostSignedEnvelope) { e.SessionID = e.SessionID + " " }},
+		{"padded session id", func(e *FrostSignedEnvelope) { e.SessionID += " " }},
 		{"upper session id", func(e *FrostSignedEnvelope) { e.SessionID = strings.ToUpper(e.SessionID) }},
 		{"padded network", func(e *FrostSignedEnvelope) { e.Network = " " + e.Network }},
-		{"padded round", func(e *FrostSignedEnvelope) { e.Round = e.Round + " " }},
+		{"padded round", func(e *FrostSignedEnvelope) { e.Round += " " }},
 		{"padded sender", func(e *FrostSignedEnvelope) { e.SenderPubKey = " " + e.SenderPubKey }},
-		{"padded vault", func(e *FrostSignedEnvelope) { e.VaultPubKey = e.VaultPubKey + " " }},
+		{"padded vault", func(e *FrostSignedEnvelope) { e.VaultPubKey += " " }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			evidence := testEvidence()
