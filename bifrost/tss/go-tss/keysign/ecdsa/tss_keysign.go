@@ -142,6 +142,10 @@ func (tKeySign *TssKeySign) SignMessage(msgsToSign [][]byte, localStateItem stor
 		tKeySign.logger.Info().Msgf("message: (%s) keysign parties: %+v", m.String(), parties)
 		tKeySign.localParties = nil
 		params := tss.NewParameters(tss.S256(), ctx, eachLocalPartyID, len(partiesID), threshold)
+		// Bind the SSID to this message's sub-session so proofs cannot be
+		// replayed across sessions; msgsToSign is sorted by digest before
+		// this loop, so (m, i) is identical on every signer.
+		params.SetSessionNonce(common.KeysignSessionNonce(localStateItem.PubKey, m.String(), i, parties))
 
 		keySignParty := signing.NewLocalParty(m, params, localData, outCh, endCh)
 		keySignPartyMap.Store(moniker, keySignParty)
