@@ -7,7 +7,9 @@ type ErrataBlock struct {
 	Txs        []ErrataTx
 	DeliveryID string
 	// Persisted optionally acknowledges that Observer durably stored the
-	// errata delivery before the scanner advances its reorg journal.
+	// errata delivery before the scanner advances its reorg journal. Producers
+	// must provide a buffered channel with capacity for one result because
+	// Observer never blocks on delivery.
 	Persisted chan error
 }
 

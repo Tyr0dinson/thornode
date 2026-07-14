@@ -643,13 +643,32 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 }
 
 func ackTxInPersisted(txIn types.TxIn, err error) {
-	if txIn.Persisted == nil {
-		return
+	tryAckPersisted(txIn.Persisted, err)
+}
+
+// tryAckPersisted reports a storage result without allowing an abandoned
+// acknowledgement channel to stall Observer's shared processing loops.
+func tryAckPersisted(persisted chan error, err error) bool {
+	if persisted == nil {
+		return true
 	}
 	select {
-	case txIn.Persisted <- err:
+	case persisted <- err:
+		return true
 	default:
+		return false
 	}
+}
+
+// ackErrataPersisted reports a violated acknowledgement contract without
+// sacrificing progress for every other chain sharing the errata queue.
+func (o *Observer) ackErrataPersisted(errataBlock types.ErrataBlock, err error) {
+	if tryAckPersisted(errataBlock.Persisted, err) {
+		return
+	}
+	o.logger.Error().
+		Str("delivery_id", errataBlock.DeliveryID).
+		Msg("errata persistence acknowledgement channel is not ready")
 }
 
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
@@ -784,9 +803,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 				return
 			}
 			persistErr := o.storage.AddErrataBlock(errataBlock)
-			if errataBlock.Persisted != nil {
-				errataBlock.Persisted <- persistErr
-			}
+			o.ackErrataPersisted(errataBlock, persistErr)
 			if persistErr != nil {
 				o.logger.Error().Err(persistErr).Str("delivery_id", errataBlock.DeliveryID).Msg("failed to persist errata before attestation")
 				continue

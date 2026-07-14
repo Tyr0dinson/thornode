@@ -22,7 +22,9 @@ type TxIn struct {
 	AllowFutureObservation bool `json:"allow_future_observation"`
 
 	// Persisted optionally acknowledges that Observer durably stored the
-	// delivery before its producer advances a restart journal.
+	// delivery before its producer advances a restart journal. Producers must
+	// provide a buffered channel with capacity for one result because Observer
+	// never blocks on delivery.
 	Persisted chan error `json:"-"`
 }
 
