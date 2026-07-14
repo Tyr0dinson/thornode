@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/opt"
 	"gitlab.com/thorchain/thornode/v3/bifrost/db"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
@@ -67,7 +66,7 @@ func (ldbss *LevelDBScannerStorageSolana) GetScanPos() (uint64, error) {
 func (ldbss *LevelDBScannerStorageSolana) SetScanPos(slot uint64) error {
 	buf := make([]byte, 8)
 	n := binary.PutUvarint(buf, slot)
-	return ldbss.db.Put([]byte(ScanPosKey), buf[:n], &opt.WriteOptions{Sync: true})
+	return ldbss.db.Put([]byte(ScanPosKey), buf[:n], nil)
 }
 
 func (ldbss *LevelDBScannerStorageSolana) Close() error {

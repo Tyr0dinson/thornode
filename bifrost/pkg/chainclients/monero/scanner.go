@@ -158,7 +158,8 @@ func (s *Scanner) SetErrataQueue(globalErrataQueue chan<- stypes.ErrataBlock) {
 }
 
 // SetErrataQueueWithAck requires the observer to durably persist each errata
-// record before reorg replay is considered delivered.
+// record, complete its local on-deck cleanup, and accept the local errata
+// attestation before reorg replay is considered delivered.
 func (s *Scanner) SetErrataQueueWithAck(globalErrataQueue chan<- stypes.ErrataBlock) {
 	s.globalErrataQueue = globalErrataQueue
 	s.errataAckRequired = true
@@ -473,6 +474,18 @@ func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHa
 func (s *Scanner) mapScannerContinuityError(fetchHeight int64, err error) error {
 	var rewind *sidecar.ScannerRewindRequiredError
 	if errors.As(err, &rewind) {
+		distance := fetchHeight - rewind.NextHeight
+		if rewind.NextHeight <= 0 || rewind.NextHeight >= fetchHeight || distance > btypes.MaxCursorRewindBlocks {
+			return &btypes.ScannerRecoveryRequiredError{
+				CurrentHeight: fetchHeight,
+				NextHeight:    rewind.NextHeight,
+				Reason: fmt.Sprintf(
+					"authenticated sidecar cursor discontinuity is outside the automatic 1..%d block recovery window (reset epoch %d); restore compatible sidecar state or deliberately reset the Bifrost cursor",
+					btypes.MaxCursorRewindBlocks,
+					rewind.ResetEpoch,
+				),
+			}
+		}
 		return &btypes.RewindRequiredError{NextHeight: rewind.NextHeight}
 	}
 	if isFrostScannerHashMismatchErr(err) {
@@ -1047,10 +1060,10 @@ func (s *Scanner) deliverReorgErrata(records []reorgErrataRecord) error {
 			select {
 			case err := <-block.Persisted:
 				if err != nil {
-					return fmt.Errorf("observer failed to persist monero errata: %w", err)
+					return fmt.Errorf("observer failed to durably process monero errata: %w", err)
 				}
 			case <-time.After(2 * constants.ThorchainBlockTime):
-				return fmt.Errorf("timed out waiting for observer to persist monero errata")
+				return fmt.Errorf("timed out waiting for observer to durably process monero errata")
 			}
 		}
 	}

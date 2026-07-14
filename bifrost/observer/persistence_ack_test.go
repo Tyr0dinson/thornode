@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -58,26 +59,46 @@ func TestProcessTxInsAcknowledgesDurableObservation(t *testing.T) {
 	waitObserverLoop(t, done)
 }
 
-func TestProcessErrataAcknowledgesDurableOutbox(t *testing.T) {
+func TestProcessErrataAcknowledgesOnlyAfterDurableCleanup(t *testing.T) {
 	storage, tempDir := setupTestDB(t)
 	defer cleanupTestDB(t, storage, tempDir)
 
 	stop := make(chan struct{})
 	done := make(chan struct{})
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: "xmr-orphan"}
+	orphaned := &types.TxIn{
+		Chain:                common.XMRChain,
+		Filtered:             true,
+		ConfirmationRequired: 6,
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 456, Tx: tx.TxID.String()},
+		},
+	}
+	require.NoError(t, storage.AddOrUpdateTx(orphaned))
+	key := TxInKey(orphaned)
+	gossip, _, _, _, _, _ := setupTestGossip(t)
+	require.NoError(t, gossip.AttestObservedTx(context.Background(), &common.ObservedTx{
+		Tx: common.Tx{
+			ID:    tx.TxID,
+			Chain: tx.Chain,
+		},
+		BlockHeight:    456,
+		FinaliseHeight: 456,
+	}, true, false))
 	observer := &Observer{
 		logger:            log.Logger,
 		stopChan:          stop,
 		lock:              &sync.Mutex{},
-		onDeck:            make(map[txInKey]*types.TxIn),
+		onDeck:            map[txInKey]*types.TxIn{key: orphaned},
 		globalErrataQueue: make(chan types.ErrataBlock, 1),
 		storage:           storage,
+		attestationGossip: gossip,
 	}
 	go func() {
 		observer.processErrataTx(context.Background())
 		close(done)
 	}()
 
-	tx := types.ErrataTx{Chain: common.XMRChain, TxID: "xmr-orphan"}
 	persisted := make(chan error, 1)
 	observer.globalErrataQueue <- types.ErrataBlock{
 		Height:     456,
@@ -91,7 +112,75 @@ func TestProcessErrataAcknowledgesDurableOutbox(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.True(t, record.DeliverySeen)
+	assert.True(t, record.CleanupComplete)
 	assert.False(t, record.Committed)
+	assert.Empty(t, observer.onDeck)
+
+	stored, err := storage.GetOnDeckTxs()
+	require.NoError(t, err)
+	assert.Empty(t, stored)
+	gossip.mu.Lock()
+	assert.Empty(t, gossip.observedTxs)
+	gossip.mu.Unlock()
+
+	close(stop)
+	waitObserverLoop(t, done)
+}
+
+func TestProcessErrataReturnsAttestationFailureWithoutDroppingOutbox(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	gossip, _, _, _, _, _ := setupTestGossip(t)
+	gossip.setActiveValidators(nil)
+	observer := &Observer{
+		logger:            log.Logger,
+		stopChan:          stop,
+		lock:              &sync.Mutex{},
+		onDeck:            make(map[txInKey]*types.TxIn),
+		globalErrataQueue: make(chan types.ErrataBlock, 1),
+		storage:           storage,
+		attestationGossip: gossip,
+	}
+	go func() {
+		observer.processErrataTx(context.Background())
+		close(done)
+	}()
+
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: "xmr-attestation-failure"}
+	persisted := make(chan error, 1)
+	observer.globalErrataQueue <- types.ErrataBlock{
+		Height:     457,
+		DeliveryID: "xmr-reorg-457-xmr-attestation-failure",
+		Txs:        []types.ErrataTx{tx},
+		Persisted:  persisted,
+	}
+	require.ErrorContains(t, waitPersistenceAck(t, persisted), "skipping attest errata tx: not active")
+
+	record, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, record.CleanupComplete)
+	assert.Equal(t, uint32(1), record.AttestationAttempts)
+	assert.False(t, record.Committed)
+
+	// A scanner redelivery forces another real attempt even though the
+	// autonomous outbox is still inside its retry delay. It must not receive a
+	// false-success acknowledgement for deferred work.
+	retryAck := make(chan error, 1)
+	observer.globalErrataQueue <- types.ErrataBlock{
+		Height:     457,
+		DeliveryID: "xmr-reorg-457-xmr-attestation-failure",
+		Txs:        []types.ErrataTx{tx},
+		Persisted:  retryAck,
+	}
+	require.ErrorContains(t, waitPersistenceAck(t, retryAck), "skipping attest errata tx: not active")
+	record, found, err = storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, uint32(2), record.AttestationAttempts)
 
 	close(stop)
 	waitObserverLoop(t, done)
@@ -129,6 +218,52 @@ func TestQuorumErrataCommitCompletesDurableOutbox(t *testing.T) {
 	pending, err := storage.GetPendingErrata()
 	require.NoError(t, err)
 	assert.Empty(t, pending)
+}
+
+func TestErrataAttestationRetryIsBackedOffAndTerminal(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: "unconfirmed-errata"}
+	block := types.ErrataBlock{Height: 900, Txs: []types.ErrataTx{tx}}
+	require.NoError(t, storage.AddErrataBlock(block))
+	require.NoError(t, storage.CompleteErrataCleanup([]types.ErrataTx{tx}, nil))
+
+	now := time.Unix(1_750_000_000, 0)
+	_, recorded, err := storage.RecordErrataAttestationAttempt(tx, now.Add(-errataAttestationRetryHorizon))
+	require.NoError(t, err)
+	require.True(t, recorded)
+
+	observer := &Observer{logger: log.Logger, storage: storage}
+	require.NoError(t, observer.broadcastErrataBlock(context.Background(), block, now, false))
+	record, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, record.AttestationRetryExhausted)
+	assert.Equal(t, uint32(1), record.AttestationAttempts)
+	pending, err := storage.GetPendingErrata()
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+
+	// Terminal quarantine suppresses later sends even when no gossip client is
+	// configured; without it this call would try to attest and fail.
+	require.NoError(t, observer.broadcastErrataBlock(context.Background(), block, now.Add(time.Hour), false))
+	require.ErrorContains(
+		t,
+		observer.broadcastErrataBlock(context.Background(), block, now.Add(time.Hour), true),
+		"operator recovery required",
+	)
+	record, found, err = storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, uint32(1), record.AttestationAttempts)
+}
+
+func TestErrataAttestationRetryDelayIsExponentiallyBounded(t *testing.T) {
+	assert.Zero(t, errataAttestationRetryDelay(0))
+	assert.Equal(t, constants.ThorchainBlockTime, errataAttestationRetryDelay(1))
+	assert.Equal(t, 2*constants.ThorchainBlockTime, errataAttestationRetryDelay(2))
+	assert.Equal(t, errataAttestationRetryMaxDelay, errataAttestationRetryDelay(32))
 }
 
 func waitPersistenceAck(t *testing.T, persisted <-chan error) error {

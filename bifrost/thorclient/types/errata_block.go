@@ -7,8 +7,9 @@ type ErrataBlock struct {
 	Txs        []ErrataTx
 	DeliveryID string
 	// Persisted is an optional in-process durability acknowledgment. The XMR
-	// reorg journal waits for ObserverStorage to persist the errata before it
-	// advances its delivery phase.
+	// reorg journal waits until ObserverStorage has persisted both the errata
+	// outbox record and its local on-deck cleanup, and the local errata
+	// attestation has been accepted, before advancing delivery.
 	Persisted chan error
 }
 

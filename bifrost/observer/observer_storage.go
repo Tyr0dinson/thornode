@@ -31,13 +31,18 @@ const (
 )
 
 type persistedErrata struct {
-	Height              int64          `json:"height"`
-	DeliveryID          string         `json:"delivery_id,omitempty"`
-	Tx                  types.ErrataTx `json:"tx"`
-	DeliverySeen        bool           `json:"delivery_seen,omitempty"`
-	CleanupComplete     bool           `json:"cleanup_complete,omitempty"`
-	Committed           bool           `json:"committed,omitempty"`
-	CommittedAtUnixNano int64          `json:"committed_at_unix_nano,omitempty"`
+	Height                    int64          `json:"height"`
+	DeliveryID                string         `json:"delivery_id,omitempty"`
+	Tx                        types.ErrataTx `json:"tx"`
+	DeliverySeen              bool           `json:"delivery_seen,omitempty"`
+	CleanupComplete           bool           `json:"cleanup_complete,omitempty"`
+	Committed                 bool           `json:"committed,omitempty"`
+	CommittedAtUnixNano       int64          `json:"committed_at_unix_nano,omitempty"`
+	AttestationAttempts       uint32         `json:"attestation_attempts,omitempty"`
+	FirstAttemptAtUnixNano    int64          `json:"first_attempt_at_unix_nano,omitempty"`
+	LastAttemptAtUnixNano     int64          `json:"last_attempt_at_unix_nano,omitempty"`
+	AttestationRetryExhausted bool           `json:"attestation_retry_exhausted,omitempty"`
+	RetryExhaustedAtUnixNano  int64          `json:"retry_exhausted_at_unix_nano,omitempty"`
 }
 
 // errataDeckMutation is one exact on-deck storage transition performed in the
@@ -215,6 +220,9 @@ func (s *ObserverStorage) GetPendingErrata() ([]persistedErrata, error) {
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode pending errata: %w", err)
 		}
+		if record.AttestationRetryExhausted {
+			continue
+		}
 		result = append(result, record)
 	}
 	if err := iter.Error(); err != nil {
@@ -256,6 +264,66 @@ func (s *ObserverStorage) MarkErrataCommitted(tx types.ErrataTx) error {
 		record.CommittedAtUnixNano = time.Now().UnixNano()
 	}
 	return s.writePersistedErrataLocked(record)
+}
+
+// RecordErrataAttestationAttempt durably advances the retry schedule before an
+// attestation is emitted. It never creates or resurrects a record: a concurrent
+// commit notification that removed the outbox item wins.
+func (s *ObserverStorage) RecordErrataAttestationAttempt(tx types.ErrataTx, at time.Time) (persistedErrata, bool, error) {
+	if s == nil || s.db == nil {
+		return persistedErrata{}, false, fmt.Errorf("observer storage is not configured")
+	}
+	if at.IsZero() {
+		return persistedErrata{}, false, fmt.Errorf("errata attestation attempt time is zero")
+	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
+
+	record, found, err := s.getPersistedErrataLocked(tx)
+	if err != nil || !found {
+		return record, false, err
+	}
+	if record.Committed || record.AttestationRetryExhausted || !record.CleanupComplete {
+		return record, false, nil
+	}
+	atNano := at.UnixNano()
+	if record.FirstAttemptAtUnixNano == 0 {
+		record.FirstAttemptAtUnixNano = atNano
+	}
+	record.LastAttemptAtUnixNano = atNano
+	record.AttestationAttempts++
+	if err = s.writePersistedErrataLocked(record); err != nil {
+		return persistedErrata{}, false, err
+	}
+	return record, true, nil
+}
+
+// MarkErrataAttestationRetryExhausted places an unconfirmed errata record in a
+// durable terminal quarantine. A later commit event still completes and
+// removes it, but the observer will no longer gossip it indefinitely.
+func (s *ObserverStorage) MarkErrataAttestationRetryExhausted(tx types.ErrataTx, at time.Time) (bool, error) {
+	if s == nil || s.db == nil {
+		return false, fmt.Errorf("observer storage is not configured")
+	}
+	if at.IsZero() {
+		return false, fmt.Errorf("errata retry exhaustion time is zero")
+	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
+
+	record, found, err := s.getPersistedErrataLocked(tx)
+	if err != nil || !found {
+		return false, err
+	}
+	if record.Committed || record.AttestationRetryExhausted || !record.CleanupComplete {
+		return false, nil
+	}
+	record.AttestationRetryExhausted = true
+	record.RetryExhaustedAtUnixNano = at.UnixNano()
+	if err = s.writePersistedErrataLocked(record); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // PruneCommittedOnlyErrata bounds commit-before-delivery tombstones after a

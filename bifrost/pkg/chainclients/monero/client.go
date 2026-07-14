@@ -300,7 +300,7 @@ func NewClient(
 		path = fmt.Sprintf("%s/%s", c.cfg.BlockScanner.DBPath, c.cfg.BlockScanner.ChainID)
 	}
 
-	c.storage, err = blockscanner.NewBlockScannerStorage(path, c.cfg.ScannerLevelDB)
+	c.storage, err = blockscanner.NewBlockScannerStorageWithScanPosSync(path, c.cfg.ScannerLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create scanner storage: %w", err)
 	}

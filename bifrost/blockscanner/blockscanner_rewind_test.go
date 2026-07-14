@@ -21,11 +21,15 @@ import (
 
 type failingRewindStorage struct {
 	*MockScannerStorage
-	err error
+	err       error
+	onFailure func()
 }
 
 func (s *failingRewindStorage) SetScanPos(block int64) error {
 	if s.err != nil {
+		if s.onFailure != nil {
+			s.onFailure()
+		}
 		return s.err
 	}
 	return s.MockScannerStorage.SetScanPos(block)
@@ -359,6 +363,139 @@ func (s *BlockScannerExtraSuite) TestRollbackChannelClearsStalePrefetch(c *C) {
 
 type abortingErrorFetcher struct {
 	aborts atomic.Int64
+}
+
+type persistenceFailureFetcher struct {
+	mode            string
+	calls           atomic.Int64
+	failureObserved chan struct{}
+	failureOnce     sync.Once
+}
+
+func (f *persistenceFailureFetcher) signalFailure() {
+	f.failureOnce.Do(func() { close(f.failureObserved) })
+}
+
+func (f *persistenceFailureFetcher) FetchMemPool(int64) (stypes.TxIn, error) {
+	return stypes.TxIn{}, nil
+}
+
+func (f *persistenceFailureFetcher) FetchTxs(int64, int64) (stypes.TxIn, error) {
+	f.calls.Add(1)
+	switch f.mode {
+	case "observer_ack":
+		persisted := make(chan error, 1)
+		persisted <- errors.New("forced observer persistence failure")
+		return stypes.TxIn{
+			Chain:   common.ETHChain,
+			TxArray: []*stypes.TxInItem{{Tx: "persistence-failure"}},
+			AbortPersistence: func() {
+				f.signalFailure()
+			},
+			Persisted: persisted,
+		}, nil
+	case "finalize":
+		return stypes.TxIn{
+			FinalizePersistence: func() error {
+				f.signalFailure()
+				return errors.New("forced finalize failure")
+			},
+		}, nil
+	default:
+		return stypes.TxIn{}, nil
+	}
+}
+
+func (f *persistenceFailureFetcher) GetHeight() (int64, error) {
+	return 2, nil
+}
+
+func (f *persistenceFailureFetcher) GetNetworkFee() (uint64, uint64) {
+	return 250, 30
+}
+
+func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealthy(c *C) {
+	server, bridge := s.newRewindTestBridge(c)
+	defer server.Close()
+
+	for _, mode := range []string{"observer_ack", "finalize", "scan_pos"} {
+		fetcher := &persistenceFailureFetcher{mode: mode, failureObserved: make(chan struct{})}
+		var scannerStorage ScannerStorage = NewMockScannerStorage()
+		if mode == "scan_pos" {
+			scannerStorage = &failingRewindStorage{
+				MockScannerStorage: NewMockScannerStorage(),
+				err:                errors.New("forced scan position failure"),
+				onFailure:          fetcher.signalFailure,
+			}
+		}
+		scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+			StartBlockHeight:           1,
+			BlockHeightDiscoverBackoff: 200 * time.Millisecond,
+			ChainID:                    common.ETHChain,
+			MaxHealthyLag:              time.Hour,
+		}, scannerStorage, m, bridge, fetcher)
+		c.Assert(err, IsNil, Commentf("mode %s", mode))
+
+		scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4))
+		select {
+		case <-fetcher.failureObserved:
+		case <-time.After(time.Second):
+			c.Fatalf("mode %s did not reach persistence failure", mode)
+		}
+		time.Sleep(30 * time.Millisecond)
+		c.Check(fetcher.calls.Load(), Equals, int64(1), Commentf("mode %s retried without backoff", mode))
+		c.Check(scanner.IsHealthy(), Equals, false, Commentf("mode %s reported healthy", mode))
+		scanner.Stop()
+	}
+}
+
+type terminalRecoveryFetcher struct {
+	calls atomic.Int64
+}
+
+func (f *terminalRecoveryFetcher) FetchMemPool(int64) (stypes.TxIn, error) {
+	return stypes.TxIn{}, nil
+}
+
+func (f *terminalRecoveryFetcher) FetchTxs(fetchHeight, _ int64) (stypes.TxIn, error) {
+	f.calls.Add(1)
+	return stypes.TxIn{}, &btypes.ScannerRecoveryRequiredError{
+		CurrentHeight: fetchHeight,
+		NextHeight:    fetchHeight - btypes.MaxCursorRewindBlocks - 1,
+		Reason:        "test discontinuity",
+	}
+}
+
+func (f *terminalRecoveryFetcher) GetHeight() (int64, error) {
+	return 1_000, nil
+}
+
+func (f *terminalRecoveryFetcher) GetNetworkFee() (uint64, uint64) {
+	return 250, 30
+}
+
+func (s *BlockScannerExtraSuite) TestOperatorRecoveryErrorStopsRetryLoop(c *C) {
+	server, bridge := s.newRewindTestBridge(c)
+	defer server.Close()
+
+	fetcher := &terminalRecoveryFetcher{}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           999,
+		BlockHeightDiscoverBackoff: time.Millisecond,
+		ChainID:                    common.XMRChain,
+		MaxHealthyLag:              time.Hour,
+	}, NewMockScannerStorage(), m, bridge, fetcher)
+	c.Assert(err, IsNil)
+
+	scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && fetcher.calls.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(30 * time.Millisecond)
+	c.Check(fetcher.calls.Load(), Equals, int64(1))
+	c.Check(scanner.IsHealthy(), Equals, false)
+	scanner.Stop()
 }
 
 func (f *abortingErrorFetcher) FetchMemPool(int64) (stypes.TxIn, error) {

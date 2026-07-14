@@ -20,15 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
-const (
-	// maxCursorRewindBlocks is a hard safety boundary for a chain client asking
-	// the shared scanner to move its durable cursor. XMR's normal replay window
-	// is 72 blocks; 730 still permits an exceptional roughly one-day recovery at
-	// Monero's two-minute block cadence without accepting an unbounded rewind
-	// from a compromised or malfunctioning sidecar.
-	maxCursorRewindBlocks int64 = 730
-)
-
 // BlockScannerFetcher define the methods a block scanner need to implement
 type BlockScannerFetcher interface {
 	// FetchMemPool scan the mempool
@@ -181,12 +172,12 @@ func (b *BlockScanner) rewindToNextHeight(currentHeight, nextHeight int64) error
 	if nextHeight >= currentHeight {
 		return fmt.Errorf("invalid cursor rewind next height %d: must be below current height %d", nextHeight, currentHeight)
 	}
-	if currentHeight-nextHeight > maxCursorRewindBlocks {
+	if currentHeight-nextHeight > btypes.MaxCursorRewindBlocks {
 		return fmt.Errorf(
 			"cursor rewind from %d to %d exceeds hard limit of %d blocks",
 			currentHeight,
 			nextHeight,
-			maxCursorRewindBlocks,
+			btypes.MaxCursorRewindBlocks,
 		)
 	}
 
@@ -452,6 +443,18 @@ func (b *BlockScanner) scanBlocks() {
 					txIn.AbortPersistence()
 				}
 
+				var recoveryRequired *btypes.ScannerRecoveryRequiredError
+				if errors.As(err, &recoveryRequired) {
+					clearPrefetch()
+					b.logger.Error().Err(err).
+						Int64("current_height", recoveryRequired.CurrentHeight).
+						Int64("next_height", recoveryRequired.NextHeight).
+						Msg("chain scanner stopped pending operator recovery")
+					b.healthy.Store(false)
+					b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
+					return
+				}
+
 				if nextHeight, rewindRequired := rewindRequiredNextHeight(err); rewindRequired {
 					// Even a rejected rewind proves the prefetched results were
 					// produced against a cursor lineage the chain client abandoned.
@@ -555,22 +558,49 @@ func (b *BlockScanner) scanBlocks() {
 				if txIn.AbortPersistence != nil {
 					txIn.AbortPersistence()
 				}
-				b.logger.Error().Err(err).Msg("observer failed to persist scanned transactions")
+				if !b.backoffAfterPersistenceFailure(err, "observer failed to persist scanned transactions") {
+					return
+				}
 				continue
 			}
 			if txIn.FinalizePersistence != nil {
 				if err = txIn.FinalizePersistence(); err != nil {
-					b.logger.Error().Err(err).Msg("chain scanner failed to finalize persisted transactions")
+					if !b.backoffAfterPersistenceFailure(err, "chain scanner failed to finalize persisted transactions") {
+						return
+					}
 					continue
 				}
 			}
 			if err = b.scannerStorage.SetScanPos(currentBlock); err != nil {
-				b.logger.Error().Err(err).Msg("fail to save block scan pos")
-				// alert!!
+				if !b.backoffAfterPersistenceFailure(err, "fail to save block scan pos") {
+					return
+				}
 				continue
 			}
 			atomic.StoreInt64(&b.previousBlock, currentBlock)
 		}
+	}
+}
+
+// backoffAfterPersistenceFailure makes a durable-progress failure visible and
+// prevents the scanner from hammering the same block and re-enqueuing its
+// observations in a tight loop. The wait is cancellable so Stop remains prompt.
+func (b *BlockScanner) backoffAfterPersistenceFailure(err error, message string) bool {
+	b.logger.Error().Err(err).Msg(message)
+	b.healthy.Store(false)
+	b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
+
+	backoff := b.cfg.BlockHeightDiscoverBackoff
+	if backoff <= 0 {
+		backoff = constants.ThorchainBlockTime
+	}
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+	select {
+	case <-b.stopChan:
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

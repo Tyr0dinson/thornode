@@ -138,12 +138,64 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	scanner := NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72)
 	scanner.SetReorgStore(reorgStore)
 	errataQueue := make(chan stypes.ErrataBlock, 2)
-	scanner.SetErrataQueue(errataQueue)
+	scanner.SetErrataQueueWithAck(errataQueue)
 
-	txIn, err := scanner.FetchTxs(101, 101)
-	if err != nil {
-		t.Fatalf("fetch txs: %v", err)
+	type fetchResult struct {
+		txIn stypes.TxIn
+		err  error
 	}
+	fetch := func() <-chan fetchResult {
+		result := make(chan fetchResult, 1)
+		go func() {
+			txIn, fetchErr := scanner.FetchTxs(101, 101)
+			result <- fetchResult{txIn: txIn, err: fetchErr}
+		}()
+		return result
+	}
+
+	// Production uses the acknowledged queue. A durable observer error must
+	// fail FetchTxs and leave the replay journal ready to redrive.
+	firstResult := fetch()
+	firstErrata := <-errataQueue
+	if firstErrata.Persisted == nil {
+		t.Fatal("production errata delivery omitted acknowledgement channel")
+	}
+	select {
+	case result := <-firstResult:
+		t.Fatalf("FetchTxs returned before errata acknowledgement: %v", result.err)
+	default:
+	}
+	firstErrata.Persisted <- errors.New("forced observer persistence failure")
+	result := <-firstResult
+	if result.err == nil || !strings.Contains(result.err.Error(), "forced observer persistence failure") {
+		t.Fatalf("expected observer persistence failure, got %v", result.err)
+	}
+	failedJournal, err := reorgStore.GetJournal()
+	if err != nil {
+		t.Fatalf("load failed-delivery journal: %v", err)
+	}
+	if failedJournal == nil || failedJournal.Phase != reorgPhaseReplayed {
+		t.Fatalf("failed acknowledged delivery must remain replayable: %#v", failedJournal)
+	}
+
+	// The next FetchTxs must redrive the same errata and remain blocked until
+	// cleanup persistence is acknowledged.
+	secondResult := fetch()
+	secondErrata := <-errataQueue
+	if secondErrata.DeliveryID != firstErrata.DeliveryID || !reflect.DeepEqual(secondErrata.Txs, firstErrata.Txs) {
+		t.Fatalf("retry did not redrive exact errata: first=%#v second=%#v", firstErrata, secondErrata)
+	}
+	select {
+	case result = <-secondResult:
+		t.Fatalf("retry returned before errata acknowledgement: %v", result.err)
+	default:
+	}
+	secondErrata.Persisted <- nil
+	result = <-secondResult
+	if result.err != nil {
+		t.Fatalf("fetch txs after acknowledged retry: %v", result.err)
+	}
+	txIn := result.txIn
 	if len(txIn.TxArray) != 0 {
 		t.Fatalf("expected no observed transfers, got %d", len(txIn.TxArray))
 	}
@@ -170,20 +222,15 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 		t.Fatalf("finalize reorg checkpoint: %v", err)
 	}
 
-	select {
-	case errata := <-errataQueue:
-		if errata.Height != 100 {
-			t.Fatalf("expected errata height 100, got %d", errata.Height)
-		}
-		expected := []stypes.ErrataTx{{
-			TxID:  common.TxID("tx-drop"),
-			Chain: common.XMRChain,
-		}}
-		if !reflect.DeepEqual(errata.Txs, expected) {
-			t.Fatalf("unexpected errata txs: %#v", errata.Txs)
-		}
-	default:
-		t.Fatal("expected errata for dropped tx")
+	if secondErrata.Height != 100 {
+		t.Fatalf("expected errata height 100, got %d", secondErrata.Height)
+	}
+	expected := []stypes.ErrataTx{{
+		TxID:  common.TxID("tx-drop"),
+		Chain: common.XMRChain,
+	}}
+	if !reflect.DeepEqual(secondErrata.Txs, expected) {
+		t.Fatalf("unexpected errata txs: %#v", secondErrata.Txs)
 	}
 
 	select {

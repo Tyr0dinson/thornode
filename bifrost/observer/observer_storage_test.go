@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -161,6 +162,59 @@ func TestPendingErrataPersistsUntilCommitted(t *testing.T) {
 	pending, err = storage.GetPendingErrata()
 	require.NoError(t, err)
 	assert.Empty(t, pending)
+}
+
+func TestErrataAttestationRetryStatePersistsWithoutResurrection(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: "retry-state"}
+	require.NoError(t, storage.AddErrataBlock(types.ErrataBlock{
+		Height: 321,
+		Txs:    []types.ErrataTx{tx},
+	}))
+	require.NoError(t, storage.CompleteErrataCleanup([]types.ErrataTx{tx}, nil))
+
+	firstAttempt := time.Unix(1_750_000_000, 123)
+	record, recorded, err := storage.RecordErrataAttestationAttempt(tx, firstAttempt)
+	require.NoError(t, err)
+	require.True(t, recorded)
+	assert.Equal(t, uint32(1), record.AttestationAttempts)
+	assert.Equal(t, firstAttempt.UnixNano(), record.FirstAttemptAtUnixNano)
+	assert.Equal(t, firstAttempt.UnixNano(), record.LastAttemptAtUnixNano)
+
+	require.NoError(t, storage.Close())
+	reopened, err := NewObserverStorage(tempDir, config.LevelDBOptions{})
+	require.NoError(t, err)
+	defer cleanupTestDB(t, reopened, tempDir)
+
+	record, found, err := reopened.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, uint32(1), record.AttestationAttempts)
+	assert.Equal(t, firstAttempt.UnixNano(), record.FirstAttemptAtUnixNano)
+
+	exhaustedAt := firstAttempt.Add(errataAttestationRetryHorizon)
+	marked, err := reopened.MarkErrataAttestationRetryExhausted(tx, exhaustedAt)
+	require.NoError(t, err)
+	require.True(t, marked)
+	record, found, err = reopened.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, record.AttestationRetryExhausted)
+	assert.Equal(t, exhaustedAt.UnixNano(), record.RetryExhaustedAtUnixNano)
+
+	_, recorded, err = reopened.RecordErrataAttestationAttempt(tx, exhaustedAt.Add(time.Hour))
+	require.NoError(t, err)
+	assert.False(t, recorded)
+
+	// A late live commit still completes the quarantined record, while a stale
+	// attempt observed after deletion cannot resurrect it.
+	require.NoError(t, reopened.MarkErrataCommitted(tx))
+	_, found, err = reopened.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	assert.False(t, found)
+	_, recorded, err = reopened.RecordErrataAttestationAttempt(tx, exhaustedAt.Add(2*time.Hour))
+	require.NoError(t, err)
+	assert.False(t, recorded)
 }
 
 func TestErrataCleanupPersistsAcrossRestart(t *testing.T) {

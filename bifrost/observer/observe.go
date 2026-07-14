@@ -46,6 +46,8 @@ const defaultOracleUpdateInterval = 1 * time.Second
 const (
 	committedOnlyErrataSafetyHorizon = 30 * 24 * time.Hour
 	committedOnlyErrataPruneInterval = time.Hour
+	errataAttestationRetryHorizon    = 24 * time.Hour
+	errataAttestationRetryMaxDelay   = time.Hour
 )
 
 type txInKey struct {
@@ -754,7 +756,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 					DeliveryID: record.DeliveryID,
 					Txs:        []types.ErrataTx{record.Tx},
 				}
-				if processErr := o.attestErrataBlock(ctx, block); processErr != nil {
+				if processErr := o.attestErrataBlock(ctx, block, false); processErr != nil {
 					o.logger.Error().Err(processErr).
 						Str("chain", record.Tx.Chain.String()).
 						Str("txid", record.Tx.TxID.String()).
@@ -768,21 +770,32 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 				return
 			}
 			persistErr := o.storage.AddErrataBlock(errataBlock)
-			if errataBlock.Persisted != nil {
-				errataBlock.Persisted <- persistErr
-			}
 			if persistErr != nil {
+				ackErrataPersistence(errataBlock, persistErr)
 				o.logger.Error().Err(persistErr).
 					Str("delivery_id", errataBlock.DeliveryID).
 					Msg("failed to persist errata before attestation")
 				continue
 			}
-			if processErr := o.attestErrataBlock(ctx, errataBlock); processErr != nil {
+
+			// The XMR scanner may emit a re-mined transaction as soon as this
+			// acknowledgement is released. Finish both durable on-deck cleanup
+			// and the local errata attestation first, so neither cleanup path can
+			// delete the fresh observation after it enters observer/gossip state.
+			processErr := o.attestErrataBlock(ctx, errataBlock, true)
+			ackErrataPersistence(errataBlock, processErr)
+			if processErr != nil {
 				o.logger.Error().Err(processErr).
 					Str("delivery_id", errataBlock.DeliveryID).
 					Msg("failed to process durable errata block")
 			}
 		}
+	}
+}
+
+func ackErrataPersistence(block types.ErrataBlock, err error) {
+	if block.Persisted != nil {
+		block.Persisted <- err
 	}
 }
 
@@ -797,7 +810,14 @@ func (o *Observer) pruneCommittedOnlyErrata() {
 	}
 }
 
-func (o *Observer) attestErrataBlock(ctx context.Context, errataBlock types.ErrataBlock) error {
+func (o *Observer) attestErrataBlock(ctx context.Context, errataBlock types.ErrataBlock, forceAttempt bool) error {
+	if err := o.cleanupErrataBlock(errataBlock); err != nil {
+		return err
+	}
+	return o.broadcastErrataBlock(ctx, errataBlock, time.Now(), forceAttempt)
+}
+
+func (o *Observer) cleanupErrataBlock(errataBlock types.ErrataBlock) error {
 	cleanupBlock := types.ErrataBlock{Height: errataBlock.Height, DeliveryID: errataBlock.DeliveryID}
 	for _, errataTx := range errataBlock.Txs {
 		record, found, err := o.storage.GetPendingErrataTx(errataTx)
@@ -813,10 +833,14 @@ func (o *Observer) attestErrataBlock(ctx context.Context, errataBlock types.Erra
 			return err
 		}
 	}
+	return nil
+}
 
+func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.ErrataBlock, now time.Time, forceAttempt bool) error {
 	o.logger.Info().Int64("height", errataBlock.Height).
 		Str("delivery_id", errataBlock.DeliveryID).
 		Msg("processing durable errata block")
+	var broadcastErr error
 	for _, errataTx := range errataBlock.Txs {
 		record, found, err := o.storage.GetPendingErrataTx(errataTx)
 		if err != nil {
@@ -825,8 +849,51 @@ func (o *Observer) attestErrataBlock(ctx context.Context, errataBlock types.Erra
 		if !found || record.Committed {
 			continue
 		}
+		if record.AttestationRetryExhausted {
+			if forceAttempt && broadcastErr == nil {
+				broadcastErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
+			}
+			continue
+		}
 		if !record.CleanupComplete {
 			return fmt.Errorf("local cleanup is not durable for errata %s/%s", errataTx.Chain, errataTx.TxID)
+		}
+		if record.FirstAttemptAtUnixNano != 0 {
+			firstAttempt := time.Unix(0, record.FirstAttemptAtUnixNano)
+			if !now.Before(firstAttempt.Add(errataAttestationRetryHorizon)) {
+				exhausted, exhaustErr := o.storage.MarkErrataAttestationRetryExhausted(errataTx, now)
+				if exhaustErr != nil {
+					return exhaustErr
+				}
+				if exhausted {
+					o.logger.Error().
+						Str("chain", errataTx.Chain.String()).
+						Str("txid", errataTx.TxID.String()).
+						Uint32("attempts", record.AttestationAttempts).
+						Msg("errata attestation retry horizon exhausted; operator must verify THORChain voter state")
+					if o.errCounter != nil {
+						o.errCounter.WithLabelValues("errata_retry_exhausted", errataTx.Chain.String()).Inc()
+					}
+				}
+				if forceAttempt && broadcastErr == nil {
+					broadcastErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
+				}
+				continue
+			}
+		}
+		if !forceAttempt && record.LastAttemptAtUnixNano != 0 {
+			lastAttempt := time.Unix(0, record.LastAttemptAtUnixNano)
+			if now.Before(lastAttempt.Add(errataAttestationRetryDelay(record.AttestationAttempts))) {
+				continue
+			}
+		}
+
+		attempt, recorded, attemptErr := o.storage.RecordErrataAttestationAttempt(errataTx, now)
+		if attemptErr != nil {
+			return attemptErr
+		}
+		if !recorded {
+			continue
 		}
 		if o.attestationGossip == nil {
 			return fmt.Errorf("attestation gossip is not configured")
@@ -835,16 +902,37 @@ func (o *Observer) attestErrataBlock(ctx context.Context, errataBlock types.Erra
 			Chain: errataTx.Chain,
 			Id:    errataTx.TxID,
 		}); err != nil {
+			if broadcastErr == nil {
+				broadcastErr = fmt.Errorf("failed to accept local errata attestation for %s/%s: %w", errataTx.Chain, errataTx.TxID, err)
+			}
 			if o.errCounter != nil {
 				o.errCounter.WithLabelValues("fail_to_broadcast_errata_tx", "").Inc()
 			}
 			o.logger.Error().Err(err).
 				Str("chain", errataTx.Chain.String()).
 				Str("txid", errataTx.TxID.String()).
+				Uint32("attempt", attempt.AttestationAttempts).
 				Msg("fail to broadcast durable errata tx")
 		}
 	}
-	return nil
+	return broadcastErr
+}
+
+func errataAttestationRetryDelay(attempts uint32) time.Duration {
+	if attempts == 0 {
+		return 0
+	}
+	delay := constants.ThorchainBlockTime
+	for attempt := uint32(1); attempt < attempts && delay < errataAttestationRetryMaxDelay; attempt++ {
+		if delay >= errataAttestationRetryMaxDelay/2 {
+			return errataAttestationRetryMaxDelay
+		}
+		delay *= 2
+	}
+	if delay > errataAttestationRetryMaxDelay {
+		return errataAttestationRetryMaxDelay
+	}
+	return delay
 }
 
 // filterErrataTx with confirmation counting logic in place, all inbound tx to asgard will be parked and waiting for confirmation count to reach

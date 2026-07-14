@@ -133,6 +133,41 @@ func TestFetchTxsReturnsCursorRewindBeforeReorgMutation(t *testing.T) {
 	}
 }
 
+func TestMapScannerContinuityErrorRequiresOperatorForUnsafeDeficit(t *testing.T) {
+	t.Parallel()
+
+	scanner := NewScanner(log.Logger, nil, nil, common.XMRChain, common.EmptyPubKey, 72)
+	for _, nextHeight := range []int64{
+		0,
+		1_000 - btypes.MaxCursorRewindBlocks - 1,
+		1_000,
+		1_001,
+	} {
+		err := scanner.mapScannerContinuityError(1_000, &sidecar.ScannerRewindRequiredError{
+			RequestedHeight: 1_000,
+			NextHeight:      nextHeight,
+			ResetEpoch:      7,
+		})
+		var recovery *btypes.ScannerRecoveryRequiredError
+		if !errors.As(err, &recovery) {
+			t.Fatalf("next height %d must require operator recovery, got %v", nextHeight, err)
+		}
+		if recovery.CurrentHeight != 1_000 || recovery.NextHeight != nextHeight {
+			t.Fatalf("unexpected operator recovery error: %+v", recovery)
+		}
+	}
+
+	err := scanner.mapScannerContinuityError(1_000, &sidecar.ScannerRewindRequiredError{
+		RequestedHeight: 1_000,
+		NextHeight:      1_000 - btypes.MaxCursorRewindBlocks,
+		ResetEpoch:      7,
+	})
+	var rewind *btypes.RewindRequiredError
+	if !errors.As(err, &rewind) {
+		t.Fatalf("bounded deficit must remain automatically recoverable, got %v", err)
+	}
+}
+
 func TestClientVaultRegistrationSerializesWithScanner(t *testing.T) {
 	requestSeen := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
