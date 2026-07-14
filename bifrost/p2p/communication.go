@@ -65,9 +65,20 @@ const (
 	// message type and session. 128 covers one transcript echo per member in the
 	// current maximum-size vault while preventing unbounded variants.
 	FrostMaxMessagesPerPeer = uint32(128)
-	// FrostMaxBytesPerPeer prevents one authenticated party member from spending
-	// the entire session allowance. FrostMaxSessionBytes bounds cumulative bytes
-	// accepted for one type+msgID subscription before any full-frame allocation.
+	// FrostMaxBytesPerPeer is a per-peer MEMORY backstop, not a fairness
+	// guarantee. It is a fixed constant, so it does not scale down with party
+	// size: at the maximum ~128-member vault it is ~16x a peer's fair share of
+	// FrostMaxSessionBytes, which means a handful of authenticated members
+	// (FrostMaxSessionBytes/FrostMaxBytesPerPeer = 8) can spend the whole
+	// session budget and starve the rest. This is tolerated because such an
+	// attacker must already be an authorized party member, who can fail the
+	// ceremony by other means (bad share, refusing to sign) and is attributable
+	// via equivocation evidence. Honest full-size load stays far under the
+	// session cap (see TestFrostFullPartyCompletesWithinSessionBudget); the
+	// starvation characteristic is pinned by
+	// TestFrostPerPeerCapIsAMemoryBackstopNotFairness.
+	// FrostMaxSessionBytes bounds cumulative bytes accepted for one type+msgID
+	// subscription before any full-frame allocation.
 	FrostMaxBytesPerPeer = uint64(8 * 1024 * 1024)
 	FrostMaxSessionBytes = uint64(64 * 1024 * 1024)
 )

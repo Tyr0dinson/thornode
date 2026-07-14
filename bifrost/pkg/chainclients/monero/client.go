@@ -456,8 +456,12 @@ func (c *Client) restoreKeysharesPassContext(ctx context.Context, dir string, at
 		vaultPubKeyStr := strings.TrimSuffix(strings.TrimPrefix(base, "frost-recovery-"), ".hex")
 		vaultPubKey, parseErr := common.NewPubKey(vaultPubKeyStr)
 		if parseErr != nil {
-			pending++
-			c.logger.Err(parseErr).Str("file", base).Msg("xmr recovery: invalid vault pubkey in filename")
+			// A malformed pubkey filename can never become valid; retrying it
+			// would keep this supervisor alive for the process lifetime even
+			// after every real keyshare has restored. Log and skip WITHOUT
+			// counting it pending. The file is left on disk for an operator to
+			// inspect. Transient failures below still keep the loop retrying.
+			c.logger.Err(parseErr).Str("file", base).Msg("xmr recovery: invalid vault pubkey in filename; skipping permanently")
 			continue
 		}
 
